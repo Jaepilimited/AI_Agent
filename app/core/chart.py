@@ -84,7 +84,10 @@ def _format_short(val: float) -> str:
 def _pivot_grouped_data(
     data: List[Dict], x_col: str, y_col: str, group_col: str
 ) -> tuple:
-    """Pivot long-format grouped data into wide format for multi-series charts."""
+    """Pivot long-format grouped data into wide format for multi-series charts.
+
+    Groups are sorted by total value (descending) for legend ordering.
+    """
     from collections import OrderedDict
 
     try:
@@ -92,11 +95,17 @@ def _pivot_grouped_data(
         groups = list(OrderedDict.fromkeys(str(row.get(group_col, "")) for row in data))
 
         pivot = {x: {} for x in x_order}
+        group_totals = {g: 0.0 for g in groups}
+
         for row in data:
             x = str(row.get(x_col, ""))
             g = str(row.get(group_col, ""))
             v = float(row.get(y_col, 0) or 0)
             pivot[x][g] = v
+            group_totals[g] += v
+
+        # Sort groups by total value (descending)
+        groups = sorted(groups, key=lambda g: group_totals[g], reverse=True)
 
         wide_data = []
         for x in x_order:
