@@ -108,20 +108,59 @@ def _validate_tables(sql: str, allowed_tables: List[str]) -> Tuple[bool, str]:
 
 
 def sanitize_sql(sql: str) -> str:
-    """Clean up SQL query formatting.
+    """Clean up SQL query formatting and extract SQL from mixed responses.
 
     Args:
-        sql: Raw SQL query.
+        sql: Raw SQL query (may contain markdown, JSON, or explanatory text).
 
     Returns:
-        Cleaned SQL query.
+        Cleaned SQL query, or empty string if no valid SQL found.
     """
+    if not sql or not sql.strip():
+        return ""
+
     # Remove markdown code blocks if present
     sql = re.sub(r'```sql\s*', '', sql)
     sql = re.sub(r'```\s*', '', sql)
 
     # Strip whitespace
     sql = sql.strip()
+
+    # If response starts with JSON-like content, try to extract SQL
+    if sql.startswith('{') or sql.startswith('['):
+        logger.warning("sanitize_sql_json_response", preview=sql[:200])
+        return ""
+
+    # Find SELECT statement if response contains explanatory text
+    # Look for SELECT ... FROM pattern
+    select_match = re.search(
+        r'(SELECT\s+[\s\S]*?FROM\s+[\s\S]*?)(?:```|$)',
+        sql,
+        re.IGNORECASE
+    )
+    if select_match:
+        sql = select_match.group(1).strip()
+    elif not sql.upper().strip().startswith('SELECT'):
+        # No SELECT statement found
+        logger.warning("sanitize_sql_no_select", preview=sql[:200])
+        return ""
+
+    # Strip whitespace again
+    sql = sql.strip()
+
+    # Remove trailing explanatory text after the SQL
+    # Look for common patterns that indicate end of SQL
+    end_patterns = [
+        r'\n\n이\s',  # Korean explanation starting with "이"
+        r'\n\n위\s',  # Korean explanation starting with "위"
+        r'\n\n참고',  # Korean "참고" (note)
+        r'\n\nNote:',
+        r'\n\nThis query',
+    ]
+    for pattern in end_patterns:
+        match = re.search(pattern, sql, re.IGNORECASE)
+        if match:
+            sql = sql[:match.start()].strip()
 
     # Ensure LIMIT exists
     normalized = sql.upper()
