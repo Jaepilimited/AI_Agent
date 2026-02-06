@@ -21,7 +21,7 @@ TEXT_COLOR = "#374151"
 TITLE_COLOR = "#111827"
 LABEL_COLOR = "#6b7280"
 
-# Vibrant colors for data series
+# 30 distinct colors for data series (no duplicates)
 COLORS = [
     "#6366f1",  # Indigo
     "#f59e0b",  # Amber
@@ -33,6 +33,26 @@ COLORS = [
     "#84cc16",  # Lime
     "#ec4899",  # Pink
     "#14b8a6",  # Teal
+    "#3b82f6",  # Blue
+    "#a855f7",  # Purple
+    "#22c55e",  # Green
+    "#eab308",  # Yellow
+    "#f43f5e",  # Rose
+    "#0ea5e9",  # Sky
+    "#d946ef",  # Fuchsia
+    "#64748b",  # Slate
+    "#78716c",  # Stone
+    "#dc2626",  # Red-600
+    "#2563eb",  # Blue-600
+    "#16a34a",  # Green-600
+    "#ca8a04",  # Yellow-600
+    "#9333ea",  # Purple-600
+    "#0891b2",  # Cyan-600
+    "#ea580c",  # Orange-600
+    "#be185d",  # Pink-600
+    "#4f46e5",  # Indigo-600
+    "#059669",  # Emerald-600
+    "#7c3aed",  # Violet-600
 ]
 
 CHARTS_DIR = Path(__file__).resolve().parent.parent / "static" / "charts"
