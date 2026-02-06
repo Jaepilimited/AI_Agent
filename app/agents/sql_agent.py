@@ -213,16 +213,14 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
             return ""
 
         logger.info("chart_requested", chart_type=config.get("chart_type"), group_column=config.get("group_column"))
+
+        # Generate PNG chart
         filename = generate_chart(config, results)
         if filename:
             settings = get_settings()
             chart_url = f"{settings.chart_base_url}/static/charts/{filename}"
             logger.info("chart_url_generated", url=chart_url)
-            # Return markdown image for PNG, iframe for HTML
-            if filename.endswith(".png"):
-                return f"![chart]({chart_url})"
-            else:
-                return f'<iframe src="{chart_url}" width="100%" height="500" frameborder="0"></iframe>'
+            return f"\n\n![chart]({chart_url})"
         logger.warning("chart_generate_returned_none")
         return ""
     except Exception as e:

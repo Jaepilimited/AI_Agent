@@ -1,7 +1,7 @@
 """Chart generation module using Plotly.
 
-Generates interactive HTML charts with hover tooltips.
-Charts are served via FastAPI static endpoint.
+ChatGPT-style clean charts with data labels.
+Saves as PNG files served via FastAPI static endpoint.
 """
 
 import uuid
@@ -10,26 +10,29 @@ from typing import Any, Dict, List, Optional
 
 import structlog
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 logger = structlog.get_logger(__name__)
 
-# --- Looker Studio Dark Theme Constants ---
-DARK_BG = "#1e1e1e"
-PLOT_BG = "#1e1e1e"
-GRID_COLOR = "#333333"
-TEXT_COLOR = "#cccccc"
-TITLE_COLOR = "#ffffff"
-LABEL_COLOR = "#999999"
+# --- ChatGPT-style Light Theme ---
+BG_COLOR = "#ffffff"
+PLOT_BG = "#ffffff"
+GRID_COLOR = "#e5e5e5"
+TEXT_COLOR = "#374151"
+TITLE_COLOR = "#111827"
+LABEL_COLOR = "#6b7280"
 
-# Line chart colors
-LINE_COLORS = ["#4285F4", "#EA4335", "#34A853", "#FBBC04", "#FF6D01", "#46BDC6",
-               "#7BAAF7", "#F07B72", "#57BB8A", "#FFD54F"]
-
-# Bar/Pie chart colors
-BAR_COLORS = [
-    "#EA4335", "#4285F4", "#FBBC04", "#34A853", "#FF6D01",
-    "#46BDC6", "#7BAAF7", "#F07B72", "#57BB8A", "#FFD54F",
+# Vibrant colors for data series
+COLORS = [
+    "#6366f1",  # Indigo
+    "#f59e0b",  # Amber
+    "#10b981",  # Emerald
+    "#ef4444",  # Red
+    "#8b5cf6",  # Violet
+    "#06b6d4",  # Cyan
+    "#f97316",  # Orange
+    "#84cc16",  # Lime
+    "#ec4899",  # Pink
+    "#14b8a6",  # Teal
 ]
 
 CHARTS_DIR = Path(__file__).resolve().parent.parent / "static" / "charts"
@@ -46,25 +49,28 @@ def _format_number(val: float) -> str:
         return f"{val:,.0f}"
 
 
+def _format_short(val: float) -> str:
+    """Short format for data labels on chart."""
+    if abs(val) >= 1e9:
+        return f"{val / 1e9:.1f}B"
+    elif abs(val) >= 1e6:
+        return f"{val / 1e6:.1f}M"
+    elif abs(val) >= 1e3:
+        return f"{val / 1e3:.0f}K"
+    else:
+        return f"{val:,.0f}"
+
+
 def _pivot_grouped_data(
     data: List[Dict], x_col: str, y_col: str, group_col: str
 ) -> tuple:
-    """Pivot long-format grouped data into wide format for multi-series charts.
-
-    Input:  [{continent: "CIS", month: "01", sales: 100}, {continent: "US", month: "01", sales: 200}, ...]
-    Output: [{month: "01", CIS: 100, US: 200}, ...], ["CIS", "US"]
-
-    Returns:
-        (pivoted_data, y_columns_list) or ([], []) on failure.
-    """
+    """Pivot long-format grouped data into wide format for multi-series charts."""
     from collections import OrderedDict
 
     try:
-        # Collect unique x values (preserving order) and group names
         x_order = list(OrderedDict.fromkeys(str(row.get(x_col, "")) for row in data))
         groups = list(OrderedDict.fromkeys(str(row.get(group_col, "")) for row in data))
 
-        # Build pivot dict: {x_val: {group: y_val}}
         pivot = {x: {} for x in x_order}
         for row in data:
             x = str(row.get(x_col, ""))
@@ -72,7 +78,6 @@ def _pivot_grouped_data(
             v = float(row.get(y_col, 0) or 0)
             pivot[x][g] = v
 
-        # Convert to wide-format rows
         wide_data = []
         for x in x_order:
             row = {x_col: x}
@@ -80,66 +85,21 @@ def _pivot_grouped_data(
                 row[g] = pivot[x].get(g, 0)
             wide_data.append(row)
 
-        logger.info("pivot_grouped_data", x_count=len(x_order), groups=len(groups), group_names=groups[:5])
+        logger.info("pivot_grouped_data", x_count=len(x_order), groups=len(groups))
         return wide_data, groups
     except Exception as e:
         logger.error("pivot_failed", error=str(e))
         return [], []
 
 
-def _get_dark_layout(title: str, x_label: str, y_label: str, chart_type: str) -> dict:
-    """Create Plotly layout with dark theme."""
-    layout = dict(
-        title=dict(
-            text=title,
-            font=dict(size=16, color=TITLE_COLOR, family="Malgun Gothic, sans-serif"),
-            x=0.5,
-            xanchor="center",
-        ),
-        paper_bgcolor=DARK_BG,
-        plot_bgcolor=PLOT_BG,
-        font=dict(color=TEXT_COLOR, family="Malgun Gothic, sans-serif"),
-        xaxis=dict(
-            title=dict(text=x_label, font=dict(size=12, color=LABEL_COLOR)),
-            tickfont=dict(size=10, color=LABEL_COLOR),
-            gridcolor=GRID_COLOR,
-            linecolor=GRID_COLOR,
-            showgrid=True,
-            zeroline=False,
-        ),
-        yaxis=dict(
-            title=dict(text=y_label, font=dict(size=12, color=LABEL_COLOR)),
-            tickfont=dict(size=10, color=LABEL_COLOR),
-            gridcolor=GRID_COLOR,
-            linecolor=GRID_COLOR,
-            showgrid=True,
-            zeroline=False,
-        ),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor="rgba(30,30,30,0.8)",
-            bordercolor=GRID_COLOR,
-            borderwidth=1,
-            font=dict(size=10, color=TEXT_COLOR),
-        ),
-        margin=dict(l=60, r=30, t=80, b=60),
-        hovermode="x unified" if chart_type == "line" else "closest",
-    )
-    return layout
-
-
 def generate_chart(
     chart_config: Dict[str, Any],
     data: List[Dict[str, Any]],
 ) -> Optional[str]:
-    """Generate an interactive chart and save as HTML file.
+    """Generate a clean ChatGPT-style chart as PNG.
 
     Returns:
-        Filename of saved HTML, or None if generation fails.
+        Filename of saved PNG, or None if generation fails.
     """
     try:
         chart_type = chart_config.get("chart_type", "bar")
@@ -148,151 +108,241 @@ def generate_chart(
         title = chart_config.get("title", "")
         x_label = chart_config.get("x_label", "")
         y_label = chart_config.get("y_label", "")
-
         group_col = chart_config.get("group_column")
 
         if not data or not x_col or not y_col:
             return None
 
-        # Pivot long-format grouped data into wide format for multi-series charts
+        # Pivot grouped data
         if group_col and isinstance(y_col, str):
             data, y_col = _pivot_grouped_data(data, x_col, y_col, group_col)
             if not data:
                 return None
 
-        # Readability guard: skip chart if too many categories
+        # Readability guard
         max_items = {"bar": 15, "horizontal_bar": 20, "pie": 10, "line": 36}
         limit = max_items.get(chart_type, 20)
-        check_count = len(data)
-        if check_count > limit:
-            logger.info("chart_skipped_too_many_items", chart_type=chart_type, items=check_count, limit=limit)
+        if len(data) > limit:
+            logger.info("chart_skipped_too_many_items", chart_type=chart_type, items=len(data))
             return None
 
         x_values = [str(row.get(x_col, "")) for row in data]
 
         if isinstance(y_col, list):
-            y_series = {}
-            for col in y_col:
-                y_series[col] = [float(row.get(col, 0) or 0) for row in data]
+            y_series = {col: [float(row.get(col, 0) or 0) for row in data] for col in y_col}
         else:
             y_values = [float(row.get(y_col, 0) or 0) for row in data]
 
         fig = go.Figure()
 
-        # --- Line Chart ---
+        # Calculate legend item count for layout adjustment
+        legend_count = len(y_col) if isinstance(y_col, list) else 1
+
+        # --- LINE CHART ---
         if chart_type == "line":
             if isinstance(y_col, list):
                 for i, col in enumerate(y_col):
-                    color = LINE_COLORS[i % len(LINE_COLORS)]
-                    hover_template = f"<b>{col}</b><br>%{{x}}: %{{y:,.0f}}<extra></extra>"
+                    color = COLORS[i % len(COLORS)]
                     fig.add_trace(go.Scatter(
                         x=x_values,
                         y=y_series[col],
-                        mode="lines+markers",
+                        mode="lines+markers+text",
                         name=col,
-                        line=dict(color=color, width=2),
-                        marker=dict(size=6, color=color),
-                        hovertemplate=hover_template,
+                        line=dict(color=color, width=2.5),
+                        marker=dict(size=8, color=color),
+                        text=[_format_short(v) for v in y_series[col]],
+                        textposition="top center",
+                        textfont=dict(size=9, color=color),
+                        hovertemplate=f"<b>{col}</b><br>%{{x}}: %{{y:,.0f}}<extra></extra>",
                     ))
             else:
-                hover_template = f"<b>{y_col}</b><br>%{{x}}: %{{y:,.0f}}<extra></extra>"
+                color = COLORS[0]
                 fig.add_trace(go.Scatter(
                     x=x_values,
                     y=y_values,
-                    mode="lines+markers",
-                    name=y_col,
-                    line=dict(color=LINE_COLORS[0], width=2.5),
-                    marker=dict(size=7, color=LINE_COLORS[0]),
-                    hovertemplate=hover_template,
+                    mode="lines+markers+text",
+                    name=y_col if y_col else "값",
+                    line=dict(color=color, width=3),
+                    marker=dict(size=10, color=color),
+                    text=[_format_short(v) for v in y_values],
+                    textposition="top center",
+                    textfont=dict(size=10, color=TEXT_COLOR, family="Arial"),
+                    hovertemplate="%{x}<br>%{y:,.0f}<extra></extra>",
                 ))
 
-        # --- Bar Chart ---
+        # --- BAR CHART ---
         elif chart_type == "bar":
-            hover_texts = [f"{x}: {_format_number(y)}" for x, y in zip(x_values, y_values)]
             fig.add_trace(go.Bar(
                 x=x_values,
                 y=y_values,
-                marker_color=BAR_COLORS[:len(x_values)],
-                text=[_format_number(v) for v in y_values],
+                marker_color=COLORS[0],
+                text=[_format_short(v) for v in y_values],
                 textposition="outside",
-                textfont=dict(size=10, color=TEXT_COLOR),
+                textfont=dict(size=11, color=TEXT_COLOR, family="Arial"),
                 hovertemplate="%{x}<br>%{y:,.0f}<extra></extra>",
             ))
 
-        # --- Horizontal Bar Chart ---
+        # --- HORIZONTAL BAR ---
         elif chart_type == "horizontal_bar":
+            # Sort by value for better readability
+            sorted_pairs = sorted(zip(x_values, y_values), key=lambda x: x[1], reverse=True)
+            x_values, y_values = zip(*sorted_pairs) if sorted_pairs else ([], [])
+
             fig.add_trace(go.Bar(
-                x=y_values,
-                y=x_values,
+                x=list(y_values),
+                y=list(x_values),
                 orientation="h",
-                marker_color=BAR_COLORS[:len(x_values)],
-                text=[_format_number(v) for v in y_values],
+                marker_color=COLORS[0],
+                text=[_format_short(v) for v in y_values],
                 textposition="outside",
                 textfont=dict(size=10, color=TEXT_COLOR),
                 hovertemplate="%{y}<br>%{x:,.0f}<extra></extra>",
             ))
 
-        # --- Pie/Donut Chart ---
+        # --- PIE/DONUT ---
         elif chart_type == "pie":
             filtered = [(x, y) for x, y in zip(x_values, y_values) if y > 0]
             if not filtered:
                 return None
             pie_labels, pie_values = zip(*filtered)
+
             fig.add_trace(go.Pie(
                 labels=pie_labels,
                 values=pie_values,
-                hole=0.4,
-                marker=dict(colors=BAR_COLORS[:len(pie_values)], line=dict(color=DARK_BG, width=2)),
+                hole=0.45,
+                marker=dict(colors=COLORS[:len(pie_values)], line=dict(color=BG_COLOR, width=2)),
                 textinfo="label+percent",
-                textfont=dict(size=10, color=TITLE_COLOR),
+                textposition="outside",
+                textfont=dict(size=11, color=TEXT_COLOR),
                 hovertemplate="%{label}<br>%{value:,.0f} (%{percent})<extra></extra>",
+                pull=[0.02] * len(pie_values),
             ))
+            legend_count = len(pie_values)
 
-        # --- Stacked Bar ---
+        # --- STACKED BAR ---
         elif chart_type == "stacked_bar" and isinstance(y_col, list):
             for i, col in enumerate(y_col):
                 fig.add_trace(go.Bar(
                     x=x_values,
                     y=y_series[col],
                     name=col,
-                    marker_color=BAR_COLORS[i % len(BAR_COLORS)],
+                    marker_color=COLORS[i % len(COLORS)],
+                    text=[_format_short(v) if v > 0 else "" for v in y_series[col]],
+                    textposition="inside",
+                    textfont=dict(size=9, color="white"),
                     hovertemplate=f"<b>{col}</b><br>%{{x}}: %{{y:,.0f}}<extra></extra>",
                 ))
             fig.update_layout(barmode="stack")
 
-        # --- Grouped Bar ---
+        # --- GROUPED BAR ---
         elif chart_type == "grouped_bar" and isinstance(y_col, list):
             for i, col in enumerate(y_col):
                 fig.add_trace(go.Bar(
                     x=x_values,
                     y=y_series[col],
                     name=col,
-                    marker_color=BAR_COLORS[i % len(BAR_COLORS)],
+                    marker_color=COLORS[i % len(COLORS)],
+                    text=[_format_short(v) for v in y_series[col]],
+                    textposition="outside",
+                    textfont=dict(size=9, color=TEXT_COLOR),
                     hovertemplate=f"<b>{col}</b><br>%{{x}}: %{{y:,.0f}}<extra></extra>",
                 ))
             fig.update_layout(barmode="group")
 
-        # Apply dark theme layout
-        layout = _get_dark_layout(title, x_label, y_label, chart_type)
+        # --- LAYOUT ---
+        # Calculate margins based on content
+        top_margin = 80
+        if legend_count > 5:
+            top_margin = 120  # More space for legend
 
-        # Adjust layout for specific chart types
-        if chart_type == "pie":
-            layout.pop("xaxis", None)
-            layout.pop("yaxis", None)
-            layout["legend"]["orientation"] = "v"
-            layout["legend"]["y"] = 0.5
-            layout["legend"]["yanchor"] = "middle"
-            layout["legend"]["x"] = 1.05
-            layout["legend"]["xanchor"] = "left"
-        elif chart_type == "horizontal_bar":
+        bottom_margin = 80
+        if len(x_values) > 8 or any(len(str(x)) > 10 for x in x_values):
+            bottom_margin = 100  # More space for rotated labels
+
+        layout = dict(
+            title=dict(
+                text=f"<b>{title}</b>" if title else "",
+                font=dict(size=18, color=TITLE_COLOR, family="Arial"),
+                x=0.5,
+                xanchor="center",
+                y=0.95,
+                yanchor="top",
+            ),
+            paper_bgcolor=BG_COLOR,
+            plot_bgcolor=PLOT_BG,
+            font=dict(color=TEXT_COLOR, family="Arial"),
+            margin=dict(l=80, r=40, t=top_margin, b=bottom_margin),
+            showlegend=legend_count > 1,
+        )
+
+        # Legend positioning - always outside chart area
+        if legend_count > 1:
+            if legend_count <= 5:
+                # Horizontal legend above chart
+                layout["legend"] = dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="center",
+                    x=0.5,
+                    bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor=GRID_COLOR,
+                    borderwidth=1,
+                    font=dict(size=11, color=TEXT_COLOR),
+                )
+            else:
+                # Vertical legend to the right
+                layout["legend"] = dict(
+                    orientation="v",
+                    yanchor="middle",
+                    y=0.5,
+                    xanchor="left",
+                    x=1.02,
+                    bgcolor="rgba(255,255,255,0.9)",
+                    bordercolor=GRID_COLOR,
+                    borderwidth=1,
+                    font=dict(size=10, color=TEXT_COLOR),
+                )
+                layout["margin"]["r"] = 150  # More right margin for legend
+
+        # Axis styling
+        if chart_type != "pie":
+            layout["xaxis"] = dict(
+                title=dict(text=x_label, font=dict(size=12, color=LABEL_COLOR)),
+                tickfont=dict(size=10, color=LABEL_COLOR),
+                gridcolor=GRID_COLOR,
+                linecolor=GRID_COLOR,
+                showgrid=False,
+                zeroline=False,
+                tickangle=-45 if len(x_values) > 8 else 0,
+            )
+            layout["yaxis"] = dict(
+                title=dict(text=y_label, font=dict(size=12, color=LABEL_COLOR)),
+                tickfont=dict(size=10, color=LABEL_COLOR),
+                gridcolor=GRID_COLOR,
+                linecolor=GRID_COLOR,
+                showgrid=True,
+                zeroline=False,
+                tickformat=",",
+            )
+
+        # Horizontal bar adjustments
+        if chart_type == "horizontal_bar":
             layout["xaxis"]["title"]["text"] = y_label
             layout["yaxis"]["title"]["text"] = x_label
-            layout["yaxis"]["autorange"] = "reversed"
-            layout["margin"]["l"] = 120
+            layout["yaxis"]["tickangle"] = 0
+            layout["xaxis"]["tickangle"] = 0
+            layout["margin"]["l"] = 150  # More space for y-axis labels
 
         fig.update_layout(**layout)
 
-        # Save as PNG image (for Open WebUI compatibility)
+        # Ensure data labels don't get clipped
+        if chart_type in ("bar", "line"):
+            fig.update_yaxes(
+                range=[0, max(y_values) * 1.15] if not isinstance(y_col, list) else None
+            )
+
+        # Save as PNG
         filename = f"{uuid.uuid4().hex}.png"
         filepath = CHARTS_DIR / filename
 
@@ -300,7 +350,7 @@ def generate_chart(
             fig.write_image(
                 str(filepath),
                 format="png",
-                width=1200,
+                width=1000,
                 height=600,
                 scale=2,
             )
@@ -308,20 +358,10 @@ def generate_chart(
             return filename
         except Exception as img_error:
             logger.warning("chart_png_failed", error=str(img_error))
-            # Fallback to HTML if PNG fails
+            # Fallback to HTML
             html_filename = f"{uuid.uuid4().hex}.html"
             html_filepath = CHARTS_DIR / html_filename
-            fig.write_html(
-                str(html_filepath),
-                include_plotlyjs="cdn",
-                full_html=True,
-                config={
-                    "displayModeBar": True,
-                    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-                    "displaylogo": False,
-                    "responsive": True,
-                },
-            )
+            fig.write_html(str(html_filepath), include_plotlyjs="cdn", full_html=True)
             logger.info("chart_generated_html_fallback", file=html_filename)
             return html_filename
 
@@ -350,18 +390,16 @@ def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_coun
 - 결과가 2행 이상이고 숫자 컬럼이 있으면 차트 권장
 
 ## ⚠️ 가독성 판단 — 아래 경우 needs_chart: false
-- bar 차트: 카테고리가 15개 초과 → 읽기 어려움
+- bar 차트: 카테고리가 15개 초과
 - horizontal_bar: 항목이 20개 초과
 - pie/donut: 항목이 10개 초과
-- line: x축 고유값 36개 초과 (3년치 월별 이상). 단, group_column이 있으면 x축 고유값 기준으로 판단 (예: 10대륙 x 12개월 = 120행이지만 x축은 12개로 OK)
-- 라벨이 매우 길어서(30자+) 겹칠 경우
-- 사람이 한눈에 파악하기 어려운 복잡한 데이터는 차트를 생성하지 마세요
+- line: x축 고유값 36개 초과. 단, group_column이 있으면 x축 고유값 기준으로 판단
 
-## 차트 타입 선택 (중요!)
-- **line**: 월별/일별 매출 추이, 시계열 데이터. "추이", "트렌드", "변화" 요청 시 반드시 line. 대륙별/국가별 등 그룹이 있으면 group_column을 지정하세요 (각 그룹이 별도 라인으로 표시됨)
-- bar: 카테고리별 비교 (국가별, 플랫폼별 매출 등)
-- horizontal_bar: 항목이 많을 때 (7개 이상) 또는 이름이 긴 카테고리
-- pie: 비율/구성 (전체 대비 비중) - 도넛 스타일로 렌더됨
+## 차트 타입 선택
+- **line**: 월별/일별 추이, 시계열. 대륙별/국가별 그룹이 있으면 group_column 지정
+- bar: 카테고리별 비교 (국가별, 플랫폼별 등)
+- horizontal_bar: 항목이 많을 때 (7개 이상) 또는 긴 이름
+- pie: 비율/구성 (전체 대비 비중)
 - grouped_bar: 여러 지표를 카테고리별로 비교
 - stacked_bar: 누적 비교
 
@@ -371,7 +409,7 @@ def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_coun
   "chart_type": "bar|horizontal_bar|line|pie|grouped_bar|stacked_bar",
   "x_column": "결과 컬럼명",
   "y_column": "결과 컬럼명" 또는 ["컬럼1", "컬럼2"],
-  "group_column": "그룹 컬럼명 (대륙별/국가별 등 long format일 때, 없으면 null)",
+  "group_column": "그룹 컬럼명 (없으면 null)",
   "title": "차트 제목 (한국어)",
   "x_label": "X축 라벨",
   "y_label": "Y축 라벨"
