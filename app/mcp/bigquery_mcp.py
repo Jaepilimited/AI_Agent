@@ -13,6 +13,7 @@ async def get_bigquery_mcp_tools():
     """Return BigQuery MCP tools."""
     client = MultiServerMCPClient({
         "bigquery": {
+            "transport": "stdio",
             "command": "npx",
             "args": ["-y", "@anthropic/bigquery-mcp-server"],
             "env": {

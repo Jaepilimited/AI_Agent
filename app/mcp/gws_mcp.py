@@ -12,6 +12,7 @@ async def get_gws_mcp_tools():
     """Return Google Workspace MCP tools."""
     client = MultiServerMCPClient({
         "google-workspace": {
+            "transport": "stdio",
             "command": "npx",
             "args": ["-y", "google-workspace-mcp-server"],
             "env": {

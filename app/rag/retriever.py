@@ -7,7 +7,7 @@ import structlog
 
 from app.core.bigquery import get_bigquery_client
 from app.core.embeddings import get_embedding_model
-from app.core.llm import get_gemini_client
+from app.core.llm import get_llm_client
 
 logger = structlog.get_logger(__name__)
 
@@ -96,7 +96,7 @@ class VectorRetriever:
         if not documents:
             return [], "no"
 
-        llm = get_gemini_client()
+        llm = get_llm_client()
         relevant_docs = []
 
         for doc in documents:
@@ -144,7 +144,7 @@ class VectorRetriever:
         if len(documents) <= 1:
             return documents
 
-        llm = get_gemini_client()
+        llm = get_llm_client()
         prompt = f"""다음 문서들을 질문과의 관련성 순으로 정렬하세요.
 
 질문: {query}

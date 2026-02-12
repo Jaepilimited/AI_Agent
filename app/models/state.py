@@ -47,3 +47,7 @@ class AgentState(TypedDict):
 
     # Conversation
     messages: Optional[List[dict]]
+    conversation_context: Optional[str]
+
+    # Model selection
+    model_type: Optional[str]

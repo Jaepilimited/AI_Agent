@@ -31,7 +31,7 @@ services:
     environment:
       - OPENAI_API_BASE_URL=http://ai-agent:8100/v1
       - OPENAI_API_KEY=sk-skin1004
-      - WEBUI_AUTH=false
+      - WEBUI_AUTH=true
     volumes:
       - open-webui-data:/app/backend/data
     depends_on:

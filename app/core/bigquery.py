@@ -27,7 +27,7 @@ class BigQueryClient:
         self,
         sql: str,
         timeout: float = 30.0,
-        max_rows: int = 1000,
+        max_rows: int = 10000,
     ) -> List[Dict[str, Any]]:
         """Execute a SQL query with timeout and row limit.
 

@@ -21,12 +21,14 @@ class Settings(BaseSettings):
     google_application_credentials: str = "C:/json_key/skin1004-319714-60527c477460.json"
 
     # Gemini
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = "gemini-3-pro-preview"
+    gemini_flash_model: str = "gemini-2.5-flash"
     gemini_api_key: str = ""
 
     # BigQuery - Sales
     bq_dataset_sales: str = "Sales_Integration"
     bq_table_sales: str = "SALES_ALL_Backup"
+    bq_table_product: str = "Product"
 
     # BigQuery - RAG
     bq_dataset_rag: str = "AI_RAG"
@@ -37,11 +39,23 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-m3"
     embedding_dim: int = 768
 
-    # Anthropic (v3.0)
+    # Anthropic (v3.0) — Opus (complex) + Sonnet (light)
     anthropic_api_key: str = ""
+    anthropic_opus_model: str = "claude-opus-4-6"
+    anthropic_sonnet_model: str = "claude-sonnet-4-5-20250929"
 
     # Notion MCP (v3.0)
     notion_mcp_token: str = ""
+
+    # Google OAuth (GWS per-user auth)
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:8100/auth/google/callback"
+    gws_default_email: str = ""
+
+    # Open WebUI integration (read OAuth tokens from its DB)
+    openwebui_db_path: str = ""
+    openwebui_secret_key: str = ""
 
     # Tavily
     tavily_api_key: str = ""
@@ -59,6 +73,11 @@ class Settings(BaseSettings):
         return f"{self.gcp_project_id}.{self.bq_dataset_sales}.{self.bq_table_sales}"
 
     @property
+    def product_table_full_path(self) -> str:
+        """Full BigQuery path for the product table."""
+        return f"{self.gcp_project_id}.{self.bq_dataset_sales}.{self.bq_table_product}"
+
+    @property
     def embeddings_table_full_path(self) -> str:
         """Full BigQuery path for the embeddings table."""
         return f"{self.gcp_project_id}.{self.bq_dataset_rag}.{self.bq_table_embeddings}"
@@ -69,10 +88,16 @@ class Settings(BaseSettings):
         return f"{self.gcp_project_id}.{self.bq_dataset_rag}.{self.bq_table_qa_logs}"
 
     @property
+    def gws_token_dir(self) -> str:
+        """Directory for storing per-user Google OAuth tokens."""
+        return "data/gws_tokens"
+
+    @property
     def allowed_tables(self) -> List[str]:
         """Tables allowed for Text-to-SQL queries."""
         return [
             self.sales_table_full_path,
+            self.product_table_full_path,
         ]
 
 

@@ -31,7 +31,7 @@ INJECTION_PATTERNS = [
 ]
 
 MAX_TIMEOUT_SECONDS = 30
-MAX_RESULT_ROWS = 1000
+MAX_RESULT_ROWS = 10000
 
 
 def validate_sql(sql: str) -> Tuple[bool, str]:
@@ -49,8 +49,8 @@ def validate_sql(sql: str) -> Tuple[bool, str]:
 
     normalized = sql.strip().upper()
 
-    # 1. Check that it starts with SELECT
-    if not normalized.startswith("SELECT"):
+    # 1. Check that it starts with SELECT or WITH (CTE)
+    if not (normalized.startswith("SELECT") or normalized.startswith("(SELECT") or normalized.startswith("WITH")):
         return False, "SELECT 문만 허용됩니다. 다른 SQL 문은 실행할 수 없습니다."
 
     # 2. Check for blocked keywords
@@ -131,19 +131,31 @@ def sanitize_sql(sql: str) -> str:
         logger.warning("sanitize_sql_json_response", preview=sql[:200])
         return ""
 
-    # Find SELECT statement if response contains explanatory text
-    # Look for SELECT ... FROM pattern
-    select_match = re.search(
-        r'(SELECT\s+[\s\S]*?FROM\s+[\s\S]*?)(?:```|$)',
-        sql,
-        re.IGNORECASE
-    )
-    if select_match:
-        sql = select_match.group(1).strip()
-    elif not sql.upper().strip().startswith('SELECT'):
-        # No SELECT statement found
-        logger.warning("sanitize_sql_no_select", preview=sql[:200])
-        return ""
+    # Find SQL statement if response contains explanatory text
+    # Look for WITH ... or SELECT ... FROM pattern
+    upper_sql = sql.upper().strip()
+    if upper_sql.startswith('WITH') or upper_sql.startswith('SELECT') or upper_sql.startswith('(SELECT'):
+        # Already starts with valid SQL — keep as-is
+        pass
+    else:
+        # Try to extract WITH or SELECT from mixed text
+        with_match = re.search(
+            r'(WITH\s+\w+\s+AS\s*\([\s\S]*?FROM\s+[\s\S]*?)(?:```|$)',
+            sql,
+            re.IGNORECASE,
+        )
+        select_match = re.search(
+            r'(\(?SELECT\s+[\s\S]*?FROM\s+[\s\S]*?)(?:```|$)',
+            sql,
+            re.IGNORECASE,
+        )
+        if with_match:
+            sql = with_match.group(1).strip()
+        elif select_match:
+            sql = select_match.group(1).strip()
+        else:
+            logger.warning("sanitize_sql_no_select", preview=sql[:200])
+            return ""
 
     # Strip whitespace again
     sql = sql.strip()

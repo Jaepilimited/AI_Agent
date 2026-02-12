@@ -13,7 +13,9 @@ from langgraph.graph import END, StateGraph
 
 from app.config import get_settings
 from app.core.bigquery import get_bigquery_client
-from app.core.llm import get_gemini_client
+import concurrent.futures
+
+from app.core.llm import MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.security import sanitize_sql, validate_sql
 from app.models.state import AgentState
 
@@ -21,6 +23,9 @@ logger = structlog.get_logger(__name__)
 
 # Load prompts
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
+
+# Schema cache (fetched once, reused)
+_schema_cache: str = ""
 
 
 def _load_prompt(filename: str) -> str:
@@ -44,26 +49,38 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     query = state["query"]
     logger.info("generating_sql", query=query)
 
-    llm = get_gemini_client()
+    # Use Flash for SQL generation (Pro is too slow due to thinking mode)
+    llm = get_flash_client()
     system_prompt = _load_prompt("sql_generator.txt")
 
-    # Get table schema for context if available
-    schema_context = ""
-    try:
-        bq = get_bigquery_client()
-        settings = get_settings()
-        schema = bq.get_table_schema(settings.sales_table_full_path)
-        schema_lines = [
-            f"  - {col['name']} ({col['type']}): {col['description']}"
-            for col in schema
-        ]
-        schema_context = "\n\n### 실제 테이블 스키마\n" + "\n".join(schema_lines)
-    except Exception as e:
-        logger.warning("schema_fetch_failed", error=str(e))
+    # Get table schema (cached after first fetch)
+    global _schema_cache
+    schema_context = _schema_cache
+    if not schema_context:
+        try:
+            bq = get_bigquery_client()
+            settings = get_settings()
+            schema = bq.get_table_schema(settings.sales_table_full_path)
+            schema_lines = [
+                f"  - {col['name']} ({col['type']}): {col['description']}"
+                for col in schema
+            ]
+            schema_context = "\n\n### 실제 테이블 스키마\n" + "\n".join(schema_lines)
+            _schema_cache = schema_context
+            logger.info("schema_cached")
+        except Exception as e:
+            logger.warning("schema_fetch_failed", error=str(e))
 
     today = datetime.now().strftime("%Y-%m-%d")
     date_context = f"\n\n## 오늘 날짜\n{today} (사용자가 '이번 달', '지난 달', '올해' 등 상대적 날짜를 사용하면 이 날짜를 기준으로 계산하세요)"
-    full_prompt = f"{system_prompt}{schema_context}{date_context}\n\n## 사용자 질문\n{query}"
+
+    # Include conversation context if available
+    conv_context = state.get("conversation_context", "")
+    conv_section = ""
+    if conv_context:
+        conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?' 같은 참조를 이해하세요."
+
+    full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}\n\n## 사용자 질문\n{query}"
 
     try:
         sql = llm.generate(full_prompt, temperature=0.0)
@@ -115,7 +132,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
 
     try:
         bq = get_bigquery_client()
-        results = bq.execute_query(sql, timeout=30.0, max_rows=1000)
+        results = bq.execute_query(sql, timeout=30.0, max_rows=10000)
         logger.info("sql_executed", row_count=len(results))
         return {"sql_result": results, "error": None}
     except Exception as e:
@@ -148,14 +165,15 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             "answer": "조회 결과가 없습니다. 검색 조건을 확인해 주세요."
         }
 
-    # Format results for LLM
-    llm = get_gemini_client()
+    # Use Flash for answer formatting (faster, 3-5s vs 15-25s with Pro)
+    llm = get_flash_client()
 
     # Limit result preview for prompt
     result_preview = json.dumps(results[:20], ensure_ascii=False, indent=2, default=str)
 
+    today = datetime.now().strftime("%Y-%m-%d")
     prompt = f"""다음은 사용자의 질문과 BigQuery 실행 결과입니다.
-결과를 바탕으로 사용자에게 친절하고 정확한 한국어 답변을 작성하세요.
+결과를 바탕으로 사용자에게 **구조화된 분석 보고서** 형태로 한국어 답변을 작성하세요.
 
 ## 사용자 질문
 {query}
@@ -170,21 +188,56 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 {result_preview}
 ```
 
-## 답변 작성 규칙
-1. 핵심 수치를 먼저 제시하세요.
-2. 금액은 천 단위 구분 쉼표를 사용하세요.
-3. 필요하면 표 형식으로 정리하세요.
-4. 데이터의 의미나 트렌드를 간단히 설명하세요.
-5. 결과가 20행을 초과하면 주요 항목만 요약하세요.
+## 답변 형식 (반드시 아래 섹션 구조를 따르세요)
+
+### 📊 [질문에 맞는 제목]
+
+#### 요약
+[1-3문장으로 핵심 결론. 가장 중요한 수치는 **굵게** 표시]
+
+#### 상세 데이터
+[3행 이상의 비교 데이터는 반드시 마크다운 표로 정리. 숫자는 오른쪽 정렬(---:)]
+
+#### 분석 및 인사이트
+[2-3개 핵심 포인트를 bullet으로. 주목할 만한 인사이트는 `> ` 인용 형식으로 강조]
+
+---
+*조회 기준: {today} | SKIN1004 내부 매출 데이터 (BigQuery)*
+
+## 작성 규칙
+1. **반드시** 위 섹션 구조(요약 → 상세 데이터 → 분석 및 인사이트)를 따르세요.
+2. 핵심 수치는 **굵게** 표시하세요.
+3. 금액 표기: 1억 이상은 "약 OO.O억원", 1억 미만은 천 단위 쉼표 (예: 5,312만원).
+4. 3행 이상 비교 데이터는 반드시 마크다운 표(`| 컬럼 | ... |`)로 정리하세요.
+5. 결과가 20행 초과 시 상위 항목만 표로 보여주고 나머지는 요약하세요.
+6. ⚠️ **제품명(SET/product 컬럼)은 영어 원본 그대로** 표시 (한국어 번역 금지).
+7. 단순 수치 1개만 반환되는 경우(합계 등)에는 "상세 데이터" 섹션을 생략하고 요약만 작성하세요.
 """
 
     try:
-        answer = llm.generate(prompt, temperature=0.3)
+        # Run answer generation and chart generation in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            answer_future = executor.submit(llm.generate, prompt, None, 0.3)
+            # Use Flash for chart config generation (faster, Pro too slow)
+            chart_llm = get_flash_client()
+            chart_future = executor.submit(
+                _try_generate_chart, chart_llm, query, sql, result_preview, results
+            )
 
-        # Try to generate a chart if appropriate
-        chart_markdown = _try_generate_chart(llm, query, sql, result_preview, results)
+            answer = answer_future.result()
+            chart_markdown = chart_future.result()
+
         if chart_markdown:
-            answer = answer + "\n\n" + chart_markdown
+            # Insert chart before "분석 및 인사이트" section if found
+            insight_markers = ["#### 분석 및 인사이트", "#### 분석", "### 분석 및 인사이트", "### 분석"]
+            inserted = False
+            for marker in insight_markers:
+                if marker in answer:
+                    answer = answer.replace(marker, f"#### 시각화\n{chart_markdown}\n\n{marker}", 1)
+                    inserted = True
+                    break
+            if not inserted:
+                answer = answer + f"\n\n#### 시각화\n{chart_markdown}"
 
         return {"answer": answer}
     except Exception as e:
@@ -298,11 +351,17 @@ def build_sql_agent_graph() -> StateGraph:
 sql_agent = build_sql_agent_graph()
 
 
-async def run_sql_agent(query: str) -> str:
+async def run_sql_agent(
+    query: str,
+    conversation_context: str = "",
+    model_type: str = MODEL_GEMINI,
+) -> str:
     """Run the Text-to-SQL agent on a query.
 
     Args:
         query: Natural language question about data.
+        conversation_context: Previous conversation context for reference resolution.
+        model_type: "gemini" or "claude" — which LLM to use.
 
     Returns:
         Natural language answer based on SQL results.
@@ -321,6 +380,8 @@ async def run_sql_agent(query: str) -> str:
         "retry_count": 0,
         "error": None,
         "messages": None,
+        "conversation_context": conversation_context,
+        "model_type": model_type,
     }
 
     logger.info("sql_agent_started", query=query)

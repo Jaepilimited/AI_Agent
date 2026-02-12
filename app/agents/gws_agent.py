@@ -1,40 +1,187 @@
-"""Google Workspace Sub Agent (v3.0).
+"""Google Workspace Sub Agent (v4.2 — per-user OAuth2 + timeout + recursion limit).
 
-Accesses Drive, Gmail, Calendar via Google Workspace MCP.
-WARNING: Community MCP - security review required.
-Uses Sonnet 4 for cost efficiency.
+Replaces MCP-based single-user approach with individual OAuth2 authentication.
+Each user authenticates with their own Google account to access Gmail/Drive/Calendar.
+Uses Claude Sonnet as ReAct agent with bound API tools.
+
+v4.1: Added 120s timeout for ReAct agent to prevent 300s+ hangs on complex searches.
+v4.2: Added recursion_limit=10 to cap tool call iterations (~4-5 tool calls max).
 """
 
+import asyncio
+from typing import List
+
+import structlog
 from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langgraph.errors import GraphRecursionError
 from langgraph.prebuilt import create_react_agent
 
+from app.config import get_settings
+from app.core.google_auth import GoogleAuthManager
+from app.core.google_workspace import list_calendar_events, search_drive, search_gmail
 from app.models.agent_models import AgentModel
-from app.mcp.gws_mcp import get_gws_mcp_tools
+
+logger = structlog.get_logger(__name__)
+
+_auth_manager = None
+
+
+def _get_auth_manager() -> GoogleAuthManager:
+    global _auth_manager
+    if _auth_manager is None:
+        _auth_manager = GoogleAuthManager()
+    return _auth_manager
 
 
 class GWSAgent:
+    """Google Workspace agent with per-user OAuth2 authentication."""
+
     def __init__(self):
+        settings = get_settings()
         self.llm = ChatAnthropic(
             model=AgentModel.GWS_AGENT.value,
+            anthropic_api_key=settings.anthropic_api_key,
             temperature=0,
             max_tokens=4096,
         )
 
-    async def run(self, query: str) -> str:
+    async def run(self, query: str, user_email: str = "") -> str:
         """Search Google Workspace for relevant info.
 
         Args:
             query: User question.
+            user_email: User's email for OAuth credential lookup.
 
         Returns:
-            Answer text.
+            Answer text, or auth URL if not authenticated.
         """
+        # No user_email → can't authenticate
+        if not user_email:
+            return (
+                "Google Workspace 기능을 사용하려면 사용자 이메일이 필요합니다.\n"
+                "Open WebUI 설정에서 이메일이 올바르게 설정되어 있는지 확인해주세요."
+            )
+
+        auth_manager = _get_auth_manager()
+        creds = auth_manager.get_credentials(user_email)
+
+        # No valid token → guide user to re-login
+        if creds is None:
+            return (
+                "Google Workspace에 접근하려면 Google 계정 재로그인이 필요합니다.\n\n"
+                "Open WebUI에서 **로그아웃 후 다시 Google 로그인**해주세요.\n"
+                "새로운 로그인 시 Gmail, Calendar, Drive 접근 권한이 함께 부여됩니다.\n\n"
+                "로그인 후 같은 질문을 다시 해주세요."
+            )
+
+        # Build tools with user's credentials bound via closure
+        tools = self._build_tools(creds)
+
         try:
-            tools = await get_gws_mcp_tools()
             agent = create_react_agent(self.llm, tools)
-            result = await agent.ainvoke({
-                "messages": [{"role": "user", "content": query}]
-            })
+            system_msg = (
+                "당신은 SKIN1004의 Google Workspace 검색 AI입니다.\n"
+                "사용자의 Gmail, Google Drive, Google Calendar에서 정보를 검색합니다.\n\n"
+                "## 답변 형식 규칙\n"
+                "1. 항상 한국어로 답변하세요.\n"
+                "2. 검색 결과를 아래 구조로 정리하세요:\n\n"
+                "### 📬 [검색 유형] 검색 결과\n\n"
+                "**검색 조건**: [사용한 검색어/기간]\n"
+                "**결과**: [N]건\n\n"
+                "결과를 마크다운 표 또는 번호 목록으로 정리하세요:\n"
+                "- 메일: 제목, 보낸사람, 날짜, 요약을 표로\n"
+                "- 일정: 날짜별로 그룹핑하여 시간/제목/장소\n"
+                "- 파일: 파일명, 유형, 수정일, 링크를 표로\n\n"
+                "3. 검색 결과가 없으면 '검색 결과가 없습니다'라고 간결하게 답변하세요.\n"
+                "4. 날짜/시간은 한국어 형식으로 (예: 2026년 2월 12일 오후 3시)\n"
+                "5. 핵심 항목은 **굵게** 강조하세요.\n"
+                "6. 도구 호출은 최소화하세요. 한 번의 검색으로 결과를 얻을 수 있으면 반복하지 마세요."
+            )
+            result = await asyncio.wait_for(
+                agent.ainvoke(
+                    {
+                        "messages": [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user", "content": query},
+                        ]
+                    },
+                    config={"recursion_limit": 10},
+                ),
+                timeout=120.0,
+            )
             return result["messages"][-1].content
+        except asyncio.TimeoutError:
+            logger.warning("gws_agent_timeout", query=query[:100], user_email=user_email)
+            return (
+                "Google Workspace 검색이 시간 초과되었습니다 (120초).\n\n"
+                "**원인**: 검색 범위가 넓거나 결과가 많아 처리 시간이 초과되었습니다.\n\n"
+                "**해결 방법**:\n"
+                "- 더 구체적인 검색어를 사용해주세요 (예: 발신자, 제목, 날짜 범위)\n"
+                "- 검색 범위를 좁혀주세요 (예: '오늘 메일' 대신 '오늘 SKIN1004 메일')"
+            )
+        except GraphRecursionError:
+            logger.warning("gws_agent_recursion_limit", query=query[:100], user_email=user_email)
+            return (
+                "Google Workspace 검색이 최대 반복 횟수에 도달했습니다.\n\n"
+                "검색을 완료하기 위해 더 구체적인 질문으로 다시 시도해주세요.\n"
+                "예: 기간, 발신자, 키워드 등을 함께 지정해주세요."
+            )
         except Exception as e:
+            logger.error("gws_agent_failed", error=str(e), user_email=user_email)
             return f"Google Workspace 검색 중 오류 발생: {str(e)}"
+
+    def _build_tools(self, creds) -> List:
+        """Build LangChain tools with user credentials bound.
+
+        Args:
+            creds: Valid Google OAuth2 Credentials.
+
+        Returns:
+            List of LangChain tools.
+        """
+
+        @tool
+        def gmail_search(query: str) -> str:
+            """Gmail에서 메일을 검색합니다. query에 검색어를 입력하세요. 예: 'from:boss', 'subject:보고서', '최근 메일'"""
+            try:
+                results = search_gmail(creds, query, max_results=10)
+                if not results:
+                    return "검색 결과가 없습니다."
+                lines = []
+                for m in results:
+                    lines.append(f"- **{m['subject']}** (보낸사람: {m['from']}, 날짜: {m['date']})\n  {m['snippet']}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"Gmail 검색 오류: {str(e)}"
+
+        @tool
+        def drive_search(query: str) -> str:
+            """Google Drive에서 파일을 검색합니다. query에 검색어를 입력하세요. 예: '보고서', '회의록'"""
+            try:
+                results = search_drive(creds, query, max_results=10)
+                if not results:
+                    return "검색 결과가 없습니다."
+                lines = []
+                for f in results:
+                    lines.append(f"- **{f['name']}** ({f['mimeType']}, 수정: {f['modifiedTime']})\n  {f['webViewLink']}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"Drive 검색 오류: {str(e)}"
+
+        @tool
+        def calendar_search(query: str = "", days_ahead: int = 7) -> str:
+            """Google Calendar 일정을 조회합니다. query에 검색어(선택), days_ahead에 며칠 후까지 조회할지 입력하세요."""
+            try:
+                results = list_calendar_events(creds, query=query or None, days_ahead=days_ahead)
+                if not results:
+                    return "일정이 없습니다."
+                lines = []
+                for e in results:
+                    loc = f" (장소: {e['location']})" if e['location'] else ""
+                    lines.append(f"- **{e['summary']}**: {e['start']} ~ {e['end']}{loc}")
+                return "\n".join(lines)
+            except Exception as e:
+                return f"Calendar 조회 오류: {str(e)}"
+
+        return [gmail_search, drive_search, calendar_search]

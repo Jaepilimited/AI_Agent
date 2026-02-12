@@ -5,10 +5,12 @@ import time
 from typing import AsyncGenerator
 
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.agents.orchestrator import OrchestratorAgent
+from app.config import get_settings
+from app.core.llm import resolve_model_type
 from app.models.schemas import (
     ChatCompletionChoice,
     ChatCompletionRequest,
@@ -38,16 +40,24 @@ router = APIRouter()
 
 
 @router.post("/v1/chat/completions")
-async def chat_completions(request: ChatCompletionRequest):
+async def chat_completions(http_request: Request, request: ChatCompletionRequest):
     """OpenAI-compatible chat completions endpoint.
 
     Supports both streaming and non-streaming responses.
     """
+    # Extract user_email: header > request body > default fallback
+    user_email = (
+        getattr(http_request.state, "user_email", "")
+        or request.user
+        or get_settings().gws_default_email
+    )
+
     logger.info(
         "chat_completion_request",
         model=request.model,
         message_count=len(request.messages),
         stream=request.stream,
+        user_email=user_email or None,
     )
 
     # Extract the last user message as the query
@@ -57,15 +67,25 @@ async def chat_completions(request: ChatCompletionRequest):
 
     query = user_messages[-1].content
 
+    # Resolve which LLM to use based on model selection
+    model_type = resolve_model_type(request.model)
+
+    # Build conversation history for context continuity
+    messages_for_context = [
+        {"role": m.role, "content": m.content} for m in request.messages
+    ]
+
     if request.stream:
         return StreamingResponse(
-            _stream_response(query, request),
+            _stream_response(query, messages_for_context, model_type, request, user_email),
             media_type="text/event-stream",
         )
 
     # Non-streaming response (v3.0: Orchestrator)
     try:
-        result = await _get_orchestrator().route_and_execute(query)
+        result = await _get_orchestrator().route_and_execute(
+            query, messages_for_context, model_type, user_email=user_email
+        )
         answer = result.get("answer", "")
     except Exception as e:
         logger.error("agent_failed", error=str(e))
@@ -92,13 +112,19 @@ async def chat_completions(request: ChatCompletionRequest):
 
 async def _stream_response(
     query: str,
+    messages: list,
+    model_type: str,
     request: ChatCompletionRequest,
+    user_email: str = "",
 ) -> AsyncGenerator[str, None]:
     """Stream response chunks in SSE format.
 
     Args:
         query: User query.
+        messages: Full conversation history.
+        model_type: "gemini" or "claude".
         request: Original request.
+        user_email: User's email for GWS auth.
 
     Yields:
         SSE-formatted response chunks.
@@ -121,7 +147,9 @@ async def _stream_response(
 
     # Generate the full answer (v3.0: Orchestrator)
     try:
-        result = await _get_orchestrator().route_and_execute(query)
+        result = await _get_orchestrator().route_and_execute(
+            query, messages, model_type, user_email=user_email
+        )
         answer = result.get("answer", "")
     except Exception as e:
         error_msg = f"오류가 발생했습니다: {str(e)}"
@@ -176,9 +204,8 @@ async def list_models():
     """List available models (OpenAI-compatible)."""
     return ModelListResponse(
         data=[
-            ModelInfo(id="skin1004-ai", owned_by="skin1004"),
-            ModelInfo(id="skin1004-sql", owned_by="skin1004"),
-            ModelInfo(id="skin1004-rag", owned_by="skin1004"),
+            ModelInfo(id="skin1004-Search", owned_by="skin1004"),
+            ModelInfo(id="skin1004-Analysis", owned_by="skin1004"),
         ]
     )
 
@@ -187,3 +214,5 @@ async def list_models():
 async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "service": "SKIN1004 AI Agent"}
+
+

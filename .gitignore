@@ -1,5 +1,77 @@
-nul
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
 .env
+.env.*
+*.env
+
+# Credentials & Keys
+*.json_key
+C:/json_key/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code local settings
+.claude/
+
+# Generated charts (runtime)
 app/static/charts/*.png
+app/static/charts/*.html
+
+# GWS OAuth tokens (sensitive)
+data/gws_tokens/
+data/*.log
+
+# Temp files (development/debugging)
+temp_*
+nul
+
+# Test result files (generated output, not source)
+test_*.txt
+test_*.pdf
+*_result.txt
+*_result.json
+
+# Root-level data dumps
+all_products.txt
+product_tab.txt
+product_table_info.txt
+sales_all_tab.txt
+sales_all_tab_full.txt
+
+# Generated PDF/HTML reports (keep .md source only)
+docs/*.pdf
+docs/*.html
+
+# Root-level Office/PDF files (reports are in docs/)
+/*.docx
+/*.pdf
+/*.xlsx
+~$*
+
+# Temp directories
+temp_logos/
+temp_pdf_preview/
+
+# CSS dev files
+custom_login.css
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Broken path files (Windows encoding artifacts)
+C:*
+CUsersDB_PC*

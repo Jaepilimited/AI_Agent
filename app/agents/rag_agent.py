@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 import structlog
 from langgraph.graph import END, StateGraph
 
-from app.core.llm import get_gemini_client
+from app.core.llm import get_llm_client
 from app.models.state import AgentState
 from app.rag.retriever import get_retriever
 
@@ -132,7 +132,7 @@ def rewrite_query(state: AgentState) -> Dict[str, Any]:
     query = state["query"]
     logger.info("rewriting_query", original=query[:100])
 
-    llm = get_gemini_client()
+    llm = get_llm_client()
     prompt = f"""사용자의 질문을 문서 검색에 더 적합하도록 재작성하세요.
 원래 의미를 유지하면서, 더 구체적이고 검색에 효과적인 키워드를 포함하세요.
 
@@ -180,7 +180,7 @@ def generate_answer(state: AgentState) -> Dict[str, Any]:
     prompt_template = _load_prompt("rag_generator.txt")
     prompt = prompt_template.replace("{context}", context).replace("{query}", query)
 
-    llm = get_gemini_client()
+    llm = get_llm_client()
     try:
         answer = llm.generate(prompt, temperature=0.3)
         return {"answer": answer}
@@ -205,7 +205,7 @@ def check_hallucination(state: AgentState) -> Dict[str, Any]:
     if not answer or not docs or retry_count >= 2:
         return {"needs_retry": False}
 
-    llm = get_gemini_client()
+    llm = get_llm_client()
     context = "\n\n".join(docs[:3])
 
     prompt = f"""다음 답변이 제공된 문서 내용에 기반한 것인지 판단하세요.
@@ -336,6 +336,8 @@ async def run_rag_agent(query: str) -> str:
         "retry_count": 0,
         "error": None,
         "messages": None,
+        "conversation_context": None,
+        "model_type": None,
     }
 
     logger.info("rag_agent_started", query=query)

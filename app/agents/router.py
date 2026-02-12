@@ -6,7 +6,7 @@ from typing import Any, Dict, Literal
 
 import structlog
 
-from app.core.llm import get_gemini_client
+from app.core.llm import get_llm_client
 from app.models.schemas import QueryAnalysis
 
 logger = structlog.get_logger(__name__)
@@ -34,7 +34,7 @@ def analyze_query(query: str) -> QueryAnalysis:
     """
     logger.info("analyzing_query", query=query[:100])
 
-    llm = get_gemini_client()
+    llm = get_llm_client()
     system_prompt = _load_prompt("query_analyzer.txt")
 
     try:

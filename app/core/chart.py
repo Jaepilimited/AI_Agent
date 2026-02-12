@@ -81,6 +81,24 @@ def _format_short(val: float) -> str:
         return f"{int(val):,}"
 
 
+def _find_numeric_column(
+    data: List[Dict], exclude: List[str]
+) -> Optional[str]:
+    """Find a numeric column in the data, excluding specified columns."""
+    if not data:
+        return None
+    row = data[0]
+    for col, val in row.items():
+        if col in exclude:
+            continue
+        try:
+            float(val if val is not None else 0)
+            return col
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
 def _pivot_grouped_data(
     data: List[Dict], x_col: str, y_col: str, group_col: str
 ) -> tuple:
@@ -141,6 +159,25 @@ def generate_chart(
 
         if not data or not x_col or not y_col:
             return None
+
+        # Validate y_column is numeric — auto-fix if LLM picked a string column
+        if isinstance(y_col, str):
+            sample_val = data[0].get(y_col)
+            try:
+                float(sample_val if sample_val is not None else 0)
+            except (ValueError, TypeError):
+                # y_col contains strings — try to find a numeric column instead
+                logger.warning("chart_y_col_not_numeric", y_col=y_col, sample=str(sample_val)[:50])
+                fixed = _find_numeric_column(data, exclude=[x_col, y_col])
+                if fixed:
+                    # Swap: old y_col might be the label, use it as x_col
+                    logger.info("chart_y_col_auto_fixed", old_y=y_col, new_y=fixed)
+                    if x_col == fixed:
+                        x_col = y_col
+                    y_col = fixed
+                else:
+                    logger.warning("chart_no_numeric_column_found")
+                    return None
 
         # Pivot grouped data
         if group_col and isinstance(y_col, str):
