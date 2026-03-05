@@ -125,7 +125,7 @@
 12. ⚠️ **CTE(WITH절) 사용 금지** — `WITH ... AS (...)` 구문을 사용하지 마세요. 서브쿼리나 단일 SELECT로 해결하세요. CTE는 파싱 오류를 유발합니다.
 13. **플랫폼 필터링은 Mall_Classification으로** — LIKE 사용
 14. ⚠️ **제품(SET) 필터가 있는 쿼리는 반드시 `\`SET\`` AS product_name을 SELECT에 포함하고 GROUP BY `\`SET\``로 제품별 분해!**
-   - 이 규칙은 예외 없이 항상 적용. "총 매출이 얼마야?" 질문이라도 제품별로 나눠서 보여줘야 함
+   - ⚠️ **이 규칙은 사용자가 제품명/라인/SKU를 직접 언급했을 때만 적용!** (예: "앰플 매출", "센텔라 크림 매출", "포어마이징 앰플")
    - 이유: 하나의 카테고리(예: "앰플 100ml")에 여러 제품(SK_Centella_Ampoule_100ml, SK_Poremizing_Fresh_Ampoule_100ml 등)이 포함되므로, 어떤 제품들이 조회되었는지 반드시 보여줘야 함
    - ⚠️ **세트 조합 제외**: SET에 ' + '가 포함된 것은 세트 상품이므로, 단일 제품만 보려면 `AND \`SET\` NOT LIKE '% + %'` 조건 추가
    - 예시: "앰플 100ml 2월 매출이 얼마야?" →
@@ -165,6 +165,18 @@
      LIMIT 10000
    - ❌ 잘못: ORDER BY Country, month (알파벳순 → "가나"만 반환)
    - ✅ 올바름: ORDER BY total_revenue DESC (매출 높은 순 → 핵심 데이터 우선)
+18. ⚠️ **집계 수준은 사용자 질문에 맞추기 (최우선 규칙!)**:
+   - **사용자가 제품명/라인/SKU를 언급하지 않은 매출 질문은 총합(SUM)만 반환하세요. 제품별 GROUP BY `\`SET\`` 추가 금지!**
+   - 사용자가 언급한 차원(국가, 채널, 기간 등)으로만 GROUP BY 하세요.
+   - 예시: "쇼피 인도네시아 이번 달 매출" → `SELECT SUM(Sales1_R) AS total_revenue FROM ... WHERE Country = '인도네시아' AND Mall_Classification LIKE '%Shopee%' AND [이번 달]` (제품 분해 X, 총합만)
+   - 예시: "미국 아마존 올해 매출" → `SELECT SUM(Sales1_R) AS total_revenue FROM ... WHERE Country = '미국' AND Mall_Classification LIKE '%Amazon%' AND EXTRACT(YEAR FROM Date) = 2026` (총합만)
+   - 예시: "인도네시아 월별 매출 추이" → `GROUP BY month` (월별만, 제품별 X)
+   - 예시: "국가별 매출 비교" → `GROUP BY Country` (국가별만, 제품별 X)
+   - **규칙 14(제품별 분해)는 사용자가 "앰플", "센텔라", "크림" 등 제품 관련 키워드를 직접 말했을 때만 적용!**
+   - ❌ 잘못: "인도네시아 이번 달 매출" → `GROUP BY \`SET\`` (사용자가 제품을 안 물어봄!)
+   - ✅ 올바름: "인도네시아 이번 달 매출" → `SELECT SUM(Sales1_R) AS total_revenue` (총합만)
+   - ❌ 잘못: "쇼피 3월 매출" → `SELECT \`SET\`, SUM(Sales1_R) ... GROUP BY \`SET\`` (제품 질문 아님!)
+   - ✅ 올바름: "쇼피 3월 매출" → `SELECT SUM(Sales1_R) AS total_revenue` (총합만)
 
 ## 한국어-플랫폼 매핑
 
@@ -452,7 +464,21 @@ WHERE Date >= '2019-01-01'
 LIMIT 10000
 ```
 
-### 2. 국가+플랫폼 기간 매출
+### 2. 국가+플랫폼 단순 매출 (제품 분해 X!)
+```sql
+-- "쇼피 인도네시아 이번 달 매출" (제품을 안 물어봄 → 총합만!)
+SELECT
+  SUM(Sales1_R) AS total_revenue,
+  SUM(Total_Qty) AS total_quantity
+FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
+WHERE Date >= '2019-01-01'
+  AND Country = '인도네시아'
+  AND Mall_Classification LIKE '%Shopee%'
+  AND EXTRACT(YEAR FROM Date) = 2026 AND EXTRACT(MONTH FROM Date) = 3
+LIMIT 10000
+```
+
+### 3. 국가+플랫폼 기간별 매출 추이
 ```sql
 -- "2024년 상반기 인도네시아 쇼피 매출"
 SELECT
@@ -468,7 +494,7 @@ ORDER BY month
 LIMIT 10000
 ```
 
-### 3. 국가별 비교
+### 4. 국가별 비교
 ```sql
 -- "동남아 국가별 2024년 매출 비교"
 SELECT
@@ -484,7 +510,7 @@ ORDER BY total_revenue DESC
 LIMIT 10000
 ```
 
-### 4. 제품 순위
+### 5. 제품 순위
 ```sql
 -- "인도네시아에서 가장 많이 팔린 제품 TOP 10"
 SELECT
@@ -501,7 +527,7 @@ ORDER BY total_quantity DESC
 LIMIT 10
 ```
 
-### 5. 제품 라인별 분석
+### 6. 제품 라인별 분석
 ```sql
 -- "센텔라 라인 월별 매출 추이"
 SELECT
@@ -516,7 +542,7 @@ ORDER BY month
 LIMIT 10000
 ```
 
-### 6. 팀별 매출 비교
+### 7. 팀별 매출 비교
 ```sql
 -- "2025년 팀별 매출 비교"
 SELECT
@@ -532,7 +558,7 @@ ORDER BY total_revenue DESC
 LIMIT 10000
 ```
 
-### 7. 플랫폼별 비교
+### 8. 플랫폼별 비교
 ```sql
 -- "인도네시아 쇼피 vs 틱톡 매출 비교 (2024)"
 SELECT
@@ -549,7 +575,7 @@ ORDER BY total_revenue DESC
 LIMIT 10000
 ```
 
-### 8. B2B vs B2C 비교
+### 9. B2B vs B2C 비교
 ```sql
 -- "2025년 B2B/B2C 매출 비교"
 SELECT
@@ -580,7 +606,7 @@ ORDER BY total_revenue DESC
 LIMIT 5
 ```
 
-### 9. 대륙별 매출
+### 10. 대륙별 매출
 ```sql
 -- "2025년 대륙별 매출"
 SELECT

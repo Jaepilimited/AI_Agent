@@ -245,19 +245,21 @@ except:
             )
             return None
 
-    def get_auth_url(self, user_email: str) -> str:
+    def get_auth_url(self, user_email: str, redirect_uri: str = "") -> str:
         """Generate Google OAuth2 authorization URL.
 
         Args:
             user_email: User's email for state parameter.
+            redirect_uri: Dynamic redirect URI from request host. Falls back to config.
 
         Returns:
             Authorization URL to redirect user to.
         """
+        uri = redirect_uri or self.settings.google_oauth_redirect_uri
         flow = Flow.from_client_config(
             self._client_config(),
             scopes=SCOPES,
-            redirect_uri=self.settings.google_oauth_redirect_uri,
+            redirect_uri=uri,
         )
         auth_url, _ = flow.authorization_url(
             access_type="offline",
@@ -267,20 +269,22 @@ except:
         )
         return auth_url
 
-    def exchange_code(self, code: str, user_email: str) -> Credentials:
+    def exchange_code(self, code: str, user_email: str, redirect_uri: str = "") -> Credentials:
         """Exchange authorization code for credentials and save.
 
         Args:
             code: Authorization code from Google callback.
             user_email: User's email (from state parameter).
+            redirect_uri: Dynamic redirect URI (must match the one used in get_auth_url).
 
         Returns:
             The obtained Credentials.
         """
+        uri = redirect_uri or self.settings.google_oauth_redirect_uri
         flow = Flow.from_client_config(
             self._client_config(),
             scopes=SCOPES,
-            redirect_uri=self.settings.google_oauth_redirect_uri,
+            redirect_uri=uri,
         )
         flow.fetch_token(code=code)
         creds = flow.credentials

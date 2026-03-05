@@ -84,9 +84,16 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     model_type = resolve_model_type(request.model)
 
     # Build conversation history for context continuity
+    # Truncate to last 30 messages (15 turns) to prevent unbounded context bloat
     # Strip images from older messages to keep payload small
+    MAX_CONTEXT_MESSAGES = 30
+    raw_messages = list(request.messages)
+    if len(raw_messages) > MAX_CONTEXT_MESSAGES + 1:
+        # Always keep the last message (current query) + recent history
+        raw_messages = raw_messages[-(MAX_CONTEXT_MESSAGES + 1):]
+
     messages_for_context = []
-    for idx, m in enumerate(request.messages):
+    for idx, m in enumerate(raw_messages):
         content = m.content
         if isinstance(content, list):
             # Keep images only on the last user message

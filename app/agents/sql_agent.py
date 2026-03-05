@@ -25,23 +25,38 @@ logger = structlog.get_logger(__name__)
 # Load prompts
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
-# Schema cache (fetched once, reused)
-_schema_cache: str = ""
+# Schema cache: per-table individual caches for lazy loading
+_schema_cache_sales: str = ""
+_schema_cache_tables: Dict[str, str] = {}  # table_path -> schema text
 
-# Marketing / review / ad tables to include in schema context
+# Marketing / review / ad tables with keyword triggers for lazy loading
 MARKETING_TABLES = [
-    ("skin1004-319714.marketing_analysis.integrated_advertising_data", "통합 광고 데이터"),
-    ("skin1004-319714.marketing_analysis.Integrated_marketing_cost", "통합 마케팅 비용"),
-    ("skin1004-319714.marketing_analysis.shopify_analysis_sales", "Shopify 판매 데이터"),
-    ("skin1004-319714.Platform_Data.raw_data", "플랫폼 메트릭스"),
-    ("skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS", "인플루언서 마케팅"),
-    ("skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance", "아마존 검색 분석"),
-    ("skin1004-319714.Review_Data.Amazon_Review", "아마존 리뷰"),
-    ("skin1004-319714.Review_Data.Qoo10_Review", "큐텐 리뷰"),
-    ("skin1004-319714.Review_Data.Shopee_Review", "쇼피 리뷰"),
-    ("skin1004-319714.Review_Data.Smartstore_Review", "스마트스토어 리뷰"),
-    ("skin1004-319714.ad_data.meta data_test", "메타 광고 라이브러리"),
+    ("skin1004-319714.marketing_analysis.integrated_advertising_data", "통합 광고 데이터",
+     ["광고", "ad", "advertising", "클릭", "노출", "roas", "cpc", "cpm", "틱톡광고", "페이스북광고", "구글광고", "카카오", "네이버광고"]),
+    ("skin1004-319714.marketing_analysis.Integrated_marketing_cost", "통합 마케팅 비용",
+     ["마케팅", "marketing", "비용", "roi", "매체", "팀별"]),
+    ("skin1004-319714.marketing_analysis.shopify_analysis_sales", "Shopify 판매 데이터",
+     ["shopify", "쇼피파이", "반품", "return", "환불"]),
+    ("skin1004-319714.Platform_Data.raw_data", "플랫폼 메트릭스",
+     ["플랫폼", "platform", "순위", "rank", "가격", "할인", "채널별 제품", "채널별 가격"]),
+    ("skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS", "인플루언서 마케팅",
+     ["인플루언서", "influencer", "팔로워", "캠페인", "kol"]),
+    ("skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance", "아마존 검색 분석",
+     ["아마존 검색", "amazon search", "장바구니", "cart", "ctr", "전환율", "asin"]),
+    ("skin1004-319714.Review_Data.Amazon_Review", "아마존 리뷰",
+     ["아마존 리뷰", "amazon review"]),
+    ("skin1004-319714.Review_Data.Qoo10_Review", "큐텐 리뷰",
+     ["큐텐 리뷰", "qoo10 review", "큐텐리뷰"]),
+    ("skin1004-319714.Review_Data.Shopee_Review", "쇼피 리뷰",
+     ["쇼피 리뷰", "shopee review", "쇼피리뷰"]),
+    ("skin1004-319714.Review_Data.Smartstore_Review", "스마트스토어 리뷰",
+     ["스마트스토어 리뷰", "smartstore review", "스마트스토어리뷰", "네이버 리뷰"]),
+    ("skin1004-319714.ad_data.meta data_test", "메타 광고 라이브러리",
+     ["메타 광고", "meta ad", "페이스북 광고 라이브러리", "인스타 광고"]),
 ]
+
+# Backward-compatible flat schema cache (filled on first full load)
+_schema_cache: str = ""
 
 
 def _load_prompt(filename: str) -> str:
@@ -69,14 +84,13 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     llm = get_flash_client()
     system_prompt = _load_prompt("sql_generator.txt")
 
-    # Get table schema (cached after first fetch)
-    global _schema_cache
-    schema_context = _schema_cache
-    if not schema_context:
-        bq = get_bigquery_client()
-        settings = get_settings()
+    # Get table schemas (lazy: only include tables relevant to the query)
+    global _schema_cache_sales, _schema_cache_tables, _schema_cache
+    bq = get_bigquery_client()
+    settings = get_settings()
 
-        # 1) Primary sales table
+    # 1) Always include primary sales table
+    if not _schema_cache_sales:
         try:
             schema = bq.get_table_schema(settings.sales_table_full_path)
             schema_lines = [
@@ -84,12 +98,23 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
                 for col in schema
             ]
             table_short = settings.sales_table_full_path.rsplit(".", 1)[-1]
-            schema_context = f"\n\n### 실제 테이블 스키마 ({table_short})\n" + "\n".join(schema_lines)
+            _schema_cache_sales = f"\n\n### 실제 테이블 스키마 ({table_short})\n" + "\n".join(schema_lines)
         except Exception as e:
             logger.warning("schema_fetch_failed", table="SALES_ALL_Backup", error=str(e))
 
-        # 2) Marketing / review / ad tables
-        for table_path, label in MARKETING_TABLES:
+    schema_context = _schema_cache_sales
+
+    # 2) Lazy-load: only include marketing tables whose keywords match the query
+    query_lower = query.lower()
+    matched_tables = 0
+    for table_entry in MARKETING_TABLES:
+        table_path, label, keywords = table_entry[0], table_entry[1], table_entry[2]
+        # Check if any keyword matches the query
+        if not any(kw in query_lower for kw in keywords):
+            continue
+        matched_tables += 1
+        # Fetch and cache individual table schema
+        if table_path not in _schema_cache_tables:
             try:
                 tbl_schema = bq.get_table_schema(table_path)
                 tbl_lines = [
@@ -97,13 +122,13 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
                     for col in tbl_schema
                 ]
                 table_short = table_path.rsplit(".", 1)[-1]
-                schema_context += f"\n\n### {label} ({table_short})\n" + "\n".join(tbl_lines)
+                _schema_cache_tables[table_path] = f"\n\n### {label} ({table_short})\n" + "\n".join(tbl_lines)
             except Exception as e:
                 logger.warning("schema_fetch_failed", table=table_path, error=str(e))
+                _schema_cache_tables[table_path] = ""
+        schema_context += _schema_cache_tables.get(table_path, "")
 
-        if schema_context:
-            _schema_cache = schema_context
-            logger.info("schema_cached", tables=1 + len(MARKETING_TABLES))
+    logger.info("schema_context_built", total_tables=1 + matched_tables, query_matched=matched_tables)
 
     today = datetime.now().strftime("%Y-%m-%d")
     date_context = f"\n\n## 오늘 날짜\n{today} (사용자가 '이번 달', '지난 달', '올해' 등 상대적 날짜를 사용하면 이 날짜를 기준으로 계산하세요)"
@@ -147,49 +172,29 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
 
     logger.info("sql_validation_passed", sql=sql[:200])
 
-    # QueryVerifier: additional LLM-based verification (best-effort, non-blocking)
+    # QueryVerifier: fire-and-forget (non-blocking, log-only)
+    # Previously blocked up to 15s — now runs in background thread
     try:
         import asyncio
+        import threading
 
         verifier = QueryVerifierAgent()
         schema_info = _schema_cache or ""
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                verify_result = pool.submit(
-                    asyncio.run, verifier.verify(sql, schema_info)
-                ).result(timeout=15)
-        else:
-            verify_result = loop.run_until_complete(verifier.verify(sql, schema_info))
+        _sql_ref = sql  # capture for closure
 
-        if isinstance(verify_result, dict):
-            if not verify_result.get("valid", True) and verify_result.get("corrected_sql"):
-                corrected = verify_result["corrected_sql"]
-                # Re-validate corrected SQL through security checks
-                corrected_valid, corrected_err = validate_sql(corrected)
-                if corrected_valid:
-                    logger.info(
-                        "query_verifier_corrected",
-                        original_sql=sql[:200],
-                        corrected_sql=corrected[:200],
-                        errors=verify_result.get("errors", []),
-                    )
-                    return {"generated_sql": corrected, "sql_valid": True, "error": None}
+        def _verify_bg():
+            try:
+                vr = asyncio.run(verifier.verify(_sql_ref, schema_info))
+                if isinstance(vr, dict) and not vr.get("valid", True):
+                    logger.info("query_verifier_bg_issue", errors=vr.get("errors", []))
                 else:
-                    logger.warning(
-                        "query_verifier_corrected_sql_failed_security",
-                        corrected_err=corrected_err,
-                    )
-            elif verify_result.get("valid", True):
-                logger.info("query_verifier_passed")
-            else:
-                logger.info(
-                    "query_verifier_invalid_no_correction",
-                    errors=verify_result.get("errors", []),
-                )
+                    logger.debug("query_verifier_bg_passed")
+            except Exception as ex:
+                logger.debug("query_verifier_bg_skipped", error=str(ex))
+
+        threading.Thread(target=_verify_bg, daemon=True).start()
     except Exception as e:
-        logger.warning("query_verifier_skipped", error=str(e))
+        logger.debug("query_verifier_launch_failed", error=str(e))
 
     return {"sql_valid": True, "error": None}
 
@@ -211,7 +216,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
 
     try:
         bq = get_bigquery_client()
-        results = bq.execute_query(sql, timeout=30.0, max_rows=10000)
+        results = bq.execute_query(sql, timeout=45.0, max_rows=10000)
         logger.info("sql_executed", row_count=len(results))
         return {"sql_result": results, "error": None}
     except Exception as e:
@@ -530,8 +535,8 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
         # Generate PNG chart
         filename = generate_chart(config, results)
         if filename:
-            settings = get_settings()
-            chart_url = f"{settings.chart_base_url}/static/charts/{filename}"
+            # Use relative path so charts work from any host (localhost, IP, domain)
+            chart_url = f"/static/charts/{filename}"
             logger.info("chart_url_generated", url=chart_url)
             return f"\n\n![chart]({chart_url})"
         logger.warning("chart_generate_returned_none")

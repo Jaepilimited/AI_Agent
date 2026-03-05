@@ -1,7 +1,7 @@
 """OAuth2 authentication endpoints for Google Workspace."""
 
 import structlog
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.google_auth import GoogleAuthManager
@@ -20,8 +20,30 @@ def _get_auth_manager() -> GoogleAuthManager:
     return _auth_manager
 
 
+def _get_redirect_uri(request: Request) -> str:
+    """Build redirect URI dynamically from the request's Host header.
+
+    Google rejects raw IP addresses as redirect URIs (except localhost).
+    For LAN IPs, we append .nip.io (wildcard DNS that resolves IP.nip.io → IP).
+    The resulting URI must be registered in Google Cloud Console.
+    """
+    import re
+    host = request.headers.get("host", "localhost:3000")
+    scheme = "https" if request.url.scheme == "https" else "http"
+    # Convert raw IP to nip.io domain (Google requires a real domain)
+    # e.g. 172.16.1.250:3000 → 172.16.1.250.nip.io:3000
+    m = re.match(r'^(\d+\.\d+\.\d+\.\d+)(:\d+)?$', host)
+    if m and not host.startswith("127."):
+        ip, port = m.group(1), m.group(2) or ""
+        host = f"{ip}.nip.io{port}"
+    return f"{scheme}://{host}/auth/google/callback"
+
+
 @auth_router.get("/login")
-async def google_login(user_email: str = Query(..., description="사용자 이메일")):
+async def google_login(
+    request: Request,
+    user_email: str = Query(..., description="사용자 이메일"),
+):
     """Redirect user to Google OAuth consent screen.
 
     Args:
@@ -30,12 +52,14 @@ async def google_login(user_email: str = Query(..., description="사용자 이�
     if not user_email:
         raise HTTPException(status_code=400, detail="user_email 파라미터가 필요합니다.")
 
-    auth_url = _get_auth_manager().get_auth_url(user_email)
+    redirect_uri = _get_redirect_uri(request)
+    auth_url = _get_auth_manager().get_auth_url(user_email, redirect_uri=redirect_uri)
     return RedirectResponse(url=auth_url)
 
 
 @auth_router.get("/callback")
 async def google_callback(
+    request: Request,
     code: str = Query(..., description="Authorization code from Google"),
     state: str = Query("", description="User email passed as state"),
 ):
@@ -50,7 +74,8 @@ async def google_callback(
         raise HTTPException(status_code=400, detail="state 파라미터(user_email)가 없습니다.")
 
     try:
-        _get_auth_manager().exchange_code(code, user_email)
+        redirect_uri = _get_redirect_uri(request)
+        _get_auth_manager().exchange_code(code, user_email, redirect_uri=redirect_uri)
         logger.info("oauth_callback_success", user_email=user_email)
     except Exception as e:
         logger.error("oauth_callback_failed", user_email=user_email, error=str(e))

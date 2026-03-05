@@ -67,15 +67,15 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 3000
 
-    # Chart
-    chart_base_url: str = "http://localhost:3000"
+    # Chart — use empty string to auto-detect from request
+    chart_base_url: str = ""
 
     # Auth (custom frontend)
     jwt_secret_key: str = "skin1004-ai-secret-change-me"
     sqlite_db_path: str = "C:/Users/DB_PC/.open-webui/data/skin1004_chat.db"
 
     # CORS
-    cors_origins: str = "http://localhost:3000,http://localhost:8000"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:8000,http://172.16.1.250:3000,http://172.16.1.250:3001"
     # Cookie
     cookie_secure: bool = False
 

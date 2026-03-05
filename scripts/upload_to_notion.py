@@ -465,7 +465,7 @@ def build_updatelog_blocks() -> list:
         if lf.endswith(".html"):
             children = html_to_text_blocks(content, max_blocks=30)
         else:
-            children = md_to_blocks(content, max_blocks=25)
+            children = md_to_blocks(content, max_blocks=95)
 
         # Unified title: "2026-02-26 | v7.2.2"
         title = f"{date_key} | {ver_str}" if ver_str else date_key

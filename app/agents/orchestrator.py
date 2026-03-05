@@ -42,7 +42,7 @@ def _content_to_text(content) -> str:
     return str(content)
 
 
-def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int = 5) -> str:
+def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int = 15) -> str:
     """Build a conversation context string from recent messages.
 
     Extracts the last N turns (user+assistant pairs) excluding the final user message,
@@ -50,7 +50,7 @@ def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int =
 
     Args:
         messages: Full conversation history [{"role": ..., "content": ...}].
-        max_turns: Maximum number of previous turns to include.
+        max_turns: Maximum number of previous turns to include (default 15 for max memory).
 
     Returns:
         Context string, or empty string if no history.
@@ -74,9 +74,9 @@ def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int =
         if role == "user":
             lines.append(f"사용자: {content}")
         elif role in ("assistant", "model"):
-            # Truncate long assistant responses
-            if len(content) > 500:
-                content = content[:500] + "..."
+            # Truncate long assistant responses (1500 chars for better memory)
+            if len(content) > 1500:
+                content = content[:1500] + "..."
             lines.append(f"AI: {content}")
 
     return "\n".join(lines)
@@ -176,10 +176,18 @@ class OrchestratorAgent:
         handler = handlers.get(route, self._handle_direct)
         result = await handler(query, messages, conversation_context, model_type, user_email)
 
-        # Step 3: Coherence check — verify answer actually addresses the question
-        # Skip for: direct (no data), multi (synthesis prompt already validates scope)
-        if "answer" in result and route not in ("direct", "multi"):
-            result["answer"] = await self._verify_coherence(query, result["answer"], route)
+        # Step 3: Coherence check — fire-and-forget background (was blocking 2-3s)
+        # Only log mismatches; don't delay the response
+        if "answer" in result and route not in ("direct", "multi", "cs"):
+            import threading
+            _q, _a, _r = query, result["answer"], route
+            def _bg_coherence():
+                try:
+                    import asyncio as _aio
+                    _aio.run(self._verify_coherence(_q, _a, _r))
+                except Exception:
+                    pass
+            threading.Thread(target=_bg_coherence, daemon=True).start()
 
         # Step 4: Post-process response for consistent markdown formatting
         if "answer" in result:
@@ -425,20 +433,25 @@ class OrchestratorAgent:
         if self._is_fulldata_request(query, conversation_context):
             return await self._handle_fulldata_request(query, messages, conversation_context, model_type)
 
-        # Maintenance guard: block BQ queries during table update
+        # Maintenance check: warn but don't block (production-ready)
+        _maintenance_warning = ""
         from app.core.safety import get_maintenance_manager
         mm = get_maintenance_manager()
-        if mm.active:
+        if mm.active and mm.manual:
+            # Manual maintenance = hard block (admin explicitly requested)
             return {
                 "source": "bigquery",
                 "answer": (
                     "**데이터 점검 중입니다** — "
-                    "매출 데이터 테이블이 업데이트 중이어서 "
-                    "조회가 일시 중단되었습니다. "
+                    "관리자가 수동으로 점검을 활성화했습니다. "
                     "잠시 후 다시 시도해 주세요.\n\n"
                     f"*사유: {mm.reason}*"
                 ),
             }
+        elif mm.active:
+            # Auto-detected update = soft warning, still execute query
+            _maintenance_warning = f"\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
+            logger.info("maintenance_soft_warning", reason=mm.reason)
         try:
             answer = await run_sql_agent(
                 query,
@@ -451,7 +464,7 @@ class OrchestratorAgent:
                 return await self._handle_bigquery_fallback(
                     query, messages, conversation_context, model_type, user_email
                 )
-            return {"source": "bigquery", "answer": answer}
+            return {"source": "bigquery", "answer": answer + _maintenance_warning}
         except Exception as e:
             logger.error("orchestrator_bigquery_failed", error=str(e))
             return await self._handle_bigquery_fallback(
@@ -645,11 +658,11 @@ class OrchestratorAgent:
             return flash.generate_with_search(search_prompt, temperature=0.2, max_output_tokens=4096)
 
         def _bq_query_sync():
-            # Maintenance guard: skip BQ in multi route during table update
+            # Maintenance: only hard-block on manual maintenance
             from app.core.safety import get_maintenance_manager
             mm = get_maintenance_manager()
-            if mm.active:
-                return "", "\ub370\uc774\ud130 \uc810\uac80 \uc911\uc73c\ub85c \ub9e4\ucd9c \ub370\uc774\ud130 \uc870\ud68c\uac00 \uc77c\uc2dc \uc911\ub2e8\ub418\uc5c8\uc2b5\ub2c8\ub2e4."
+            if mm.active and mm.manual:
+                return "", "데이터 점검 중으로 매출 데이터 조회가 일시 중단되었습니다."
 
             flash = get_flash_client()
             data_query = flash.generate(data_query_prompt, temperature=0.0).strip()

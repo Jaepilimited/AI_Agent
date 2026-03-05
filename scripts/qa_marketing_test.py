@@ -18,10 +18,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import requests
 
-API_URL = "http://localhost:3000/v1/chat/completions"
+API_URL = "http://localhost:3001/v1/chat/completions"
 RESULT_FILE = Path(__file__).resolve().parent.parent / "test_results_marketing.json"
 MODEL = "skin1004-Analysis"
-NUM_GROUPS = 1
+NUM_GROUPS = 2
 
 # ---------------------------------------------------------------------------
 # ALL 500 QUESTIONS
