@@ -63,7 +63,7 @@
 - SKU (STRING): SKU 코드
 - Barcode (STRING): 바코드
 - SET (STRING): **제품명** — 상품/세트 이름. 제품 조회 시 이 컬럼 사용 ⭐ ⚠️ SQL 예약어! 반드시 백틱으로 감싸기: `\`SET\``
-- Line (STRING): 제품 라인 — 'Centella', 'Centella-Teca', 'Hyalucica', 'Probiocica', 'Teatrica', 'Tone_Brightening', 'B_Line', 'C_Line', 'E_Line', 'Dual_Triple', 'Poremizing' 등
+- Line (STRING): 제품 라인 — 'Centella', 'Centella_Teca', 'Hyalu_Teca', 'Hyalucica', 'Probiocica', 'Teatrica', 'Tone_Brightening', 'Poremizing', 'LabinNature', 'ZB', 'Others', 'B_Line', 'C_Line', 'E_Line', 'Dual_Triple', 'SET' 등
 
 #### 매출 (핵심) ⭐
 - Sales1_R (FLOAT): **매출1 (원화 KRW) — 기본 매출 지표** ⭐. 매출 = Sales1_R 우선 사용
@@ -225,7 +225,8 @@
 | 한국어 | 영어 | LIKE 필터 |
 |--------|------|----------|
 | 센텔라 | Centella | `'%Centella%'` |
-| 센텔라-테카 | Centella-Teca | `'%Centella-Teca%'` |
+| 센텔라테카, 센텔라-테카 | Centella_Teca | `'%Centella_Teca%'` |
+| 히알루테카, 히알루-테카 | Hyalu_Teca | `'%Hyalu_Teca%'` |
 | 히알루시카 | Hyalucica | `'%Hyalucica%'` |
 | 프로바이오시카 | Probiocica | `'%Probiocica%'` |
 | 티트리카, 티트리 | Teatrica | `'%Teatrica%'` |
@@ -260,6 +261,7 @@
 | 스팟패치 | Spot_Cover_Patch | `'%Spot_Cover_Patch%'` |
 | 블루세럼 | Blue_Serum | `'%Blue_Serum%'` |
 | 클레이마스크 | Clay_Stick_Mask | `'%Clay_Stick_Mask%'` |
+| 아젤라산, 아젤라익 | Azelaic_Acid | `'%Azelaic_Acid%'` |
 | 블러디필 | Bloody_Peel | `'%Bloody_Peel%'` |
 | 좀비팩 | Zombie_Pack | `'%Zombie_Pack%'` |
 | 마미팩 | Mummy_Pack | `'%Mummy_Pack%'` |
@@ -283,8 +285,13 @@
 - `SK_Centella_Watergel_sheet_ampoule_mask_25ml`, `_5ea`, `_10ea`, `_30ea` (워터겔 시트마스크)
 - `SK_Centella_scar_Oinment_30g` (스카 연고)
 
-#### SK — Centella-Teca 라인
-- `SK_Centella-Teca_Ampoule_50ml`, `SK_Centella-Teca_Cream_75ml`, `SK_Centella-Teca_Soothing_Toner_210ml`
+#### SK — Centella_Teca 라인 (⚠️ 언더스코어! 하이픈 아님)
+- `SK_Centella_Teca_Ampoule_50ml`, `SK_Centella_Teca_Cream_75ml`, `SK_Centella_Teca_Soothing_Toner_210ml`
+
+#### SK — Hyalu_Teca 라인 (신규)
+- `SK_Hyalu_Teca_Plumping_Ampoule_50ml` (플럼핑 앰플)
+- `SK_Hyalu_Teca_Firming_Cream_50ml` (퍼밍 크림)
+- `SK_Hyalu_Teca_Glass_Skin_Milk_210ml` (글래스스킨 밀크)
 
 #### SK — Hyalucica 라인
 - `SK_Hyalucica_First_Ampoule_100ml`, `SK_Hyalucica_First_Ampoule_50ml`, `SK_Hyalucica_First_Ampoule_15ml` (퍼스트 앰플)
@@ -343,6 +350,8 @@
 - `SK_LabinNature_Matrixyl_10_Boosting_Shot_Ampoule_30ml`, `_9ml` (마트릭실 부스팅샷앰플)
 - `SK_LabinNature_Niacinamide_10_Boosting_Shot_Ampoule_30ml`, `_9ml` (나이아신아마이드 부스팅샷앰플)
 - `SK_LabinNature_Retinol_02_Boosting_Shot_Ampoule_30ml`, `_9ml` (레티놀 부스팅샷앰플)
+- `SK_LabinNature_Azelaic_Acid_10_Ampoule_30ml`, `_9ml` (아젤라산 앰플) — 신규
+- `SK_LabinNature_Boosting_Ampoule_Kit` (부스팅앰플키트)
 
 #### SK — 기획세트/에디션/기타
 - `SK_Centella_Travel_Kit`, `SK_Hyalucica_Travel_Kit`, `SK_Poremizing_Travel_Kit`, `SK_Teatrica_Travel_Kit` (트래블키트)
@@ -506,7 +515,7 @@ LIMIT 10000
 SELECT
   Country,
   SUM(Sales1_R) AS total_revenue,
-  SUM(Quantity + Event_Qty) AS total_qty
+  SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
   AND Country IN ('태국', '베트남', '필리핀', '말레이시아', '인도네시아', '싱가포르')
@@ -570,7 +579,7 @@ LIMIT 10000
 SELECT
   Mall_Classification,
   SUM(Sales1_R) AS total_revenue,
-  SUM(Quantity + Event_Qty) AS total_qty
+  SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
   AND Country = '인도네시아'
@@ -601,7 +610,7 @@ LIMIT 10000
 SELECT
   Company_Name,
   SUM(Sales1_R) AS total_revenue,
-  SUM(Quantity + Event_Qty) AS total_qty
+  SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
   AND Sales_Type = 'B2B'
@@ -639,9 +648,9 @@ LIMIT 10000
 
 #### 핵심 컬럼
 - Product (STRING): **개별 제품명** — SALES_ALL의 SET과 동일한 네이밍 규칙 (예: `SK_Centella_Ampoule_100ml`) ⭐ 제품을 물어봤을때, 제품명을 가져오면서 설명해주기
-- ⚠️ **수량 = `SUM(Quantity + Event_Qty) AS Total_Qty`** — Quantity(일반수량) + Event_Qty(이벤트수량) 합산이 전체수량! ⭐
-  - Quantity (FLOAT): 일반 판매 수량
-  - Event_Qty (FLOAT): 이벤트/프로모션 수량
+- Total_Qty (FLOAT): **전체수량 / 수량** — 수량 조회 시 이 컬럼 사용! `SUM(Total_Qty)` ⭐
+- ⚠️ **Quantity, Event_Qty 컬럼은 사용 금지 (X 표시됨)** — 반드시 `Total_Qty`만 사용하세요!
+- ⚠️ **제품 관련 질문은 Brand IN ('SK', 'CL') 내에서만 답변!** — ETC, DD, UM 브랜드 제외 필수
 
 #### 공통 필터 컬럼 (SALES_ALL과 동일)
 - Mall_Classification (STRING): 몰 분류 (동일). ⚠️ 맨 앞 접두사가 브랜드를 나타냄 (SK_=스킨1004, CL_=커먼랩스, CBT_=중국, DD_=UM, ETC_=무시)
@@ -660,7 +669,6 @@ LIMIT 10000
 - Continent2 (STRING): 대륙2 (상세) — 대륙1이 우선순위
 - Category (STRING): **제품 카테고리** — 카테고리별 수량 분석 시 이 컬럼 사용! ⭐
   - 실제 값: 'Ampoule'(앰플), 'Suncare'(선케어), 'SET'(세트), 'Cream'(크림), 'Pack'(팩), 'Cleanser'(클렌저), 'Oil'(오일), 'Toner'(토너), 'Others'(기타)
-  - Total_Qty (FLOAT): **전체수량** — Product 테이블에서도 수량 조회 가능 ⭐
 
 ⚠️ Product 테이블 사용 금지 컬럼: Product_Name_Base, Qty_NameBase, Event_Qty_NameBase, Team, Manager, Type_of_Company, Type_of_Company_ENG, Country_ENG, Continent1_ENG, Continent2_ENG, Line_ENG, Channel, In_out_bound, Product_Type, TIER, foc2, Type_of_Item, Product_ENG (모두 X 표시됨)
 ⚠️ Product 테이블에는 Sales1_R, Sales2_R, Order_Count 등 **매출 관련 컬럼이 없음!**
@@ -672,9 +680,10 @@ LIMIT 10000
 -- "센텔라 앰플 2월 수량"
 SELECT
   Product AS product_name,
-  SUM(Quantity + Event_Qty) AS total_qty
+  SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.Product`
 WHERE Date >= '2019-01-01'
+  AND Brand IN ('SK', 'CL')
   AND Product LIKE '%Centella%Ampoule%'
   AND EXTRACT(YEAR FROM Date) = 2026
   AND EXTRACT(MONTH FROM Date) = 2
@@ -688,9 +697,10 @@ LIMIT 10000
 -- "인도네시아에서 가장 많이 팔린 제품 TOP 10 (수량 기준)"
 SELECT
   Product AS product_name,
-  SUM(Quantity + Event_Qty) AS total_qty
+  SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.Product`
 WHERE Date >= '2019-01-01'
+  AND Brand IN ('SK', 'CL')
   AND Country = '인도네시아'
   AND EXTRACT(YEAR FROM Date) = 2025
   AND Product IS NOT NULL AND Product != '' AND Product != 'Others'
@@ -705,9 +715,10 @@ LIMIT 10
 SELECT
   Company_Name,
   Product AS product_name,
-  SUM(Quantity + Event_Qty) AS total_qty
+  SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.Product`
 WHERE Date >= '2019-01-01'
+  AND Brand IN ('SK', 'CL')
   AND Sales_Type = 'B2B'
   AND Mall_Classification LIKE '%Overseas%'
   AND Product LIKE '%Ampoule_100ml%'
@@ -720,6 +731,7 @@ LIMIT 20
 - Product 테이블의 `Product` 컬럼도 **영어**임. 한국어-영어 매핑은 위 SALES_ALL 섹션과 동일하게 적용
 - `Product` 컬럼 = SALES_ALL의 `SET`을 unpivot한 것이므로 같은 제품명 사용
 - ⚠️ Product 테이블에는 세트 조합(` + `)이 이미 분리되어 있으므로 `NOT LIKE '% + %'` 조건 불필요
+- ⚠️ **제품 질문 시 반드시 `Brand IN ('SK', 'CL')` 조건 추가** — ETC/DD/UM 브랜드는 제외!
 
 ---
 
