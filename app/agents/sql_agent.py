@@ -216,7 +216,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
 
     try:
         bq = get_bigquery_client()
-        results = bq.execute_query(sql, timeout=45.0, max_rows=10000)
+        results = bq.execute_query(sql, timeout=45.0, max_rows=1000)
         logger.info("sql_executed", row_count=len(results))
         return {"sql_result": results, "error": None}
     except Exception as e:
@@ -301,17 +301,39 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     _ts_keywords = ("월별", "주차별", "주별", "일별", "분기별", "추이", "트렌드", "변동")
     _is_timeseries = any(kw in query for kw in _ts_keywords)
 
+    # Truncate long text fields (review content etc.) to reduce prompt size
+    def _truncate_row(row, max_text_len=150):
+        truncated = {}
+        for k, v in row.items():
+            if isinstance(v, str) and len(v) > max_text_len:
+                truncated[k] = v[:max_text_len] + "..."
+            else:
+                truncated[k] = v
+        return truncated
+
     if len(results) > 100:
         try:
             result_preview = _build_smart_preview(results, query)
         except Exception as e:
             logger.warning("smart_preview_failed_fallback", error=str(e))
-            result_preview = json.dumps(results[:20], ensure_ascii=False, indent=2, default=str)
+            preview_rows = [_truncate_row(r) for r in results[:15]]
+            result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
+    elif _is_timeseries and len(results) <= 60:
+        # Time-series: send ALL rows so LLM can show full table & chart (cap at 60)
+        preview_rows = [_truncate_row(r) for r in results]
+        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     elif _is_timeseries and len(results) <= 100:
-        # Time-series: send ALL rows so LLM can show full table & chart
-        result_preview = json.dumps(results, ensure_ascii=False, indent=2, default=str)
+        # Large time-series: send first 60 rows + summary
+        preview_rows = [_truncate_row(r) for r in results[:60]]
+        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     else:
-        result_preview = json.dumps(results[:20], ensure_ascii=False, indent=2, default=str)
+        preview_rows = [_truncate_row(r) for r in results[:15]]
+        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
+
+    # Hard cap on preview size to keep LLM prompt manageable (max ~8KB)
+    if len(result_preview) > 8000:
+        preview_rows = [_truncate_row(r) for r in results[:10]]
+        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
 
     today = datetime.now().strftime("%Y-%m-%d")
     today_kr = datetime.now().strftime("%Y년 %m월 %d일")
@@ -329,22 +351,22 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
     # Pre-build conditional warnings (avoid backslash in f-string)
     _preview_warning = ""
-    if len(results) > 20:
-        _preview_warning = f"⚠️ 위 JSON은 전체 {len(results)}행 중 상위 프리뷰입니다. 나머지 데이터도 존재하므로 '20일까지만 존재' 등 프리뷰 기반으로 데이터 범위를 단정하지 마세요."
+    if len(results) > 15:
+        _preview_warning = f"⚠️ 위 JSON은 전체 {len(results)}행 중 상위 프리뷰입니다. 나머지 데이터도 존재하므로 프리뷰 기반으로 데이터 범위를 단정하지 마세요."
 
     _limit_warning = ""
-    if len(results) >= 10000:
+    if len(results) >= 1000:
         _limit_warning = (
-            f"⚠️ 결과가 {len(results)}행으로 LIMIT 10,000에 도달했습니다. "
+            f"⚠️ 결과가 {len(results)}행으로 LIMIT 1,000에 도달했습니다. "
             "전체 데이터 중 일부만 포함되어 있습니다. "
             '답변 마지막에 반드시 다음 경고를 추가하세요: '
-            '\'> ⚠️ 조회 결과가 10,000행 제한에 도달하여 일부 데이터만 표시되었습니다. '
-            '전체 데이터가 필요하시면 **"전체 데이터 줘"**라고 말씀해주세요.\''
+            '\'> ⚠️ 조회 결과가 1,000행 제한에 도달하여 일부 데이터만 표시되었습니다. '
+            '더 구체적인 조건으로 검색해주세요.\''
         )
 
     _result_header = f"총 {len(results)}행"
-    if len(results) > 20:
-        _result_header += f", 아래는 상위 {min(20, len(results))}건 프리뷰"
+    if len(results) > 15:
+        _result_header += f", 아래는 상위 {min(15, len(results))}건 프리뷰"
 
     prompt = f"""다음은 사용자의 질문과 BigQuery 실행 결과입니다.
 결과를 바탕으로 사용자에게 **구조화된 분석 보고서** 형태로 한국어 답변을 작성하세요.
@@ -504,11 +526,22 @@ def _build_smart_preview(results: list, query: str) -> str:
         sorted_rows = sorted(results, key=lambda r: float(r.get(sort_col) or 0), reverse=True)
     else:
         sorted_rows = results
-    top_rows = sorted_rows[:20]
+    top_rows = sorted_rows[:15]
+
+    # Truncate long text fields in preview rows
+    truncated_rows = []
+    for row in top_rows:
+        tr = {}
+        for k, v in row.items():
+            if isinstance(v, str) and len(v) > 150:
+                tr[k] = v[:150] + "..."
+            else:
+                tr[k] = v
+        truncated_rows.append(tr)
 
     preview = {
         "summary": "\n".join(summary_parts),
-        "top_20_by_revenue": top_rows,
+        "top_15_sample": truncated_rows,
     }
     return json.dumps(preview, ensure_ascii=False, indent=2, default=str)
 

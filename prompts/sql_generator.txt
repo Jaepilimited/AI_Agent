@@ -92,6 +92,11 @@
   - ⚠️ 카테고리 질문 시 이 컬럼으로 GROUP BY! (예: "카테고리별 매출" → `GROUP BY Category`)
   - 한국어 매핑: 앰플/세럼 → 'Ampoule', 선크림/자외선차단 → 'Suncare', 크림 → 'Cream', 팩/마스크 → 'Pack', 클렌저/클렌징/세안 → 'Cleanser', 오일 → 'Oil', 토너 → 'Toner', 세트 → 'SET'
 
+#### ⚠️ 제품 관련 매출 질문 시 Brand 필터 필수!
+- **제품/카테고리/라인 관련 매출 질문은 `Brand IN ('SK', 'CL')` 조건 필수!** — ETC, DD, UM 브랜드 제외
+- 예: "앰플 매출", "센텔라 라인 매출", "카테고리별 매출" 등 → `WHERE Brand IN ('SK', 'CL')` 추가
+- 단, 브랜드 전체 비교 질문(예: "브랜드별 매출 비교")은 필터 없이 전체 브랜드 포함
+
 #### 조직/관리
 - Team_NEW (STRING): **팀** — 실제 값 목록 (⚠️ 이 외의 팀명은 존재하지 않음!):
   - 'GM_EAST1' (글로벌마케팅 동남아1팀 — 인도네시아/필리핀/싱가포르 등)
@@ -120,7 +125,7 @@
    - 안전 나눗셈: `SAFE_DIVIDE(a, b)`
    - 문자열: `LOWER()`, `UPPER()`, `CONTAINS_SUBSTR()`
 3. **테이블명은 반드시 백틱(`)으로 감싸기**: `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
-4. **결과는 10000행 이내로 LIMIT 추가**
+4. **결과는 1000행 이내로 LIMIT 추가** (대형 테이블도 1000행이면 충분. 10000은 LLM 응답 생성이 느려짐)
 5. ⚠️ **Country 값은 한국어** — 영어 아님! 변환 불필요
 6. ⚠️ **Date는 DATETIME** — DATE 함수로 감싸거나 EXTRACT 사용
 7. ⚠️ **매출 조회 시 Sales1_R 사용** (원화 환산 매출). Sales2_R은 Sales1_R이 없을 때만 보조
@@ -138,7 +143,7 @@
      ```sql
      SELECT `SET` AS product_name, SUM(Sales1_R) AS total_revenue
      FROM ... WHERE ... AND `SET` LIKE '%Ampoule_100ml%' AND `SET` NOT LIKE '% + %'
-     GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10000
+     GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 1000
      ```
    - ❌ 잘못된 SQL: `SELECT SUM(Sales1_R) FROM ... WHERE SET LIKE '%Ampoule%'` (총합만, 제품 미표시)
    - ✅ 올바른 SQL: `SELECT \`SET\` AS product_name, SUM(Sales1_R) FROM ... WHERE ... AND \`SET\` NOT LIKE '% + %' GROUP BY \`SET\``
@@ -159,7 +164,7 @@
 17. ⚠️ **광범위 쿼리 처리 (매우 중요!)**:
    - 사용자가 3개 이상 차원(국가 + 업체 + 제품 + 월 등)을 동시에 요청하면, 결과가 수만 행이 될 수 있습니다.
    - 이런 경우 **반드시 ORDER BY total_revenue DESC** (또는 해당 집계 컬럼 DESC)로 매출 높은 순서대로 정렬하세요.
-   - LIMIT은 10000을 유지하되, 가장 중요한 데이터가 먼저 나오도록 ORDER BY DESC 필수!
+   - LIMIT은 1000을 유지하되, 가장 중요한 데이터가 먼저 나오도록 ORDER BY DESC 필수!
    - 예시: "국가별 제품 업체 월별 매출" →
      SELECT Country, Company_Name, `SET` AS product_name,
             FORMAT_DATETIME('%Y-%m', Date) AS month,
@@ -168,10 +173,40 @@
      WHERE Date >= '2024-01-01' AND Date < '2026-02-01'
      GROUP BY Country, Company_Name, `SET`, month
      ORDER BY total_revenue DESC
-     LIMIT 10000
+     LIMIT 1000
    - ❌ 잘못: ORDER BY Country, month (알파벳순 → "가나"만 반환)
    - ✅ 올바름: ORDER BY total_revenue DESC (매출 높은 순 → 핵심 데이터 우선)
-18. ⚠️ **집계 수준은 사용자 질문에 맞추기 (최우선 규칙!)**:
+18. ⚠️ **리뷰/메타/플랫폼/검색 테이블 성능 최적화 (최우선!)**:
+   - **Review 테이블** (Amazon_Review, Qoo10_Review, Shopee_Review, Smartstore_Review):
+     - 반드시 `collect_date >= '2025-01-01'` 이상으로 날짜 제한 (최근 1년)
+     - 리뷰 본문(content/review_text) 조회 시 `LIMIT 30` 필수
+     - 트렌드/통계 → `SELECT COUNT(*), AVG(rating) ... GROUP BY` (집계만, raw 금지)
+     - "최근 리뷰" → `ORDER BY collect_date DESC LIMIT 20`
+     - "전체 리뷰 수" → `SELECT COUNT(*) FROM ...` (raw 반환 금지)
+     - LIMIT 없이 전체 스캔 절대 금지!
+   - **메타 광고 테이블** (meta data_test):
+     - `LIMIT 200` 필수 (풀스캔 금지)
+     - 집계 위주: COUNT, SUM, AVG 사용 권장
+   - **플랫폼 테이블** (raw_data):
+     - 반드시 `LIMIT 500` 이하
+     - 순위/가격 분석 → 집계(GROUP BY + AVG/MAX) 사용, raw 행 나열 금지
+     - "채널별 경쟁" 등 복합 분석 → `GROUP BY channel` + 집계 함수
+   - **아마존 검색 분석** (amazon_search_analytics):
+     - **필수**: 항상 `GROUP BY Country` + 집계 함수 사용 (raw 행 나열 절대 금지!)
+     - 전환율 분석 → `SELECT Country, AVG(Purchases_Conversion_Rate) AS avg_conversion_rate ... GROUP BY Country` (개별 행 X)
+     - 국가별 비교 → `GROUP BY Country ORDER BY ... LIMIT 50`
+     - CTR/퍼널 분석 → `SUM(Impressions), SUM(Clicks), AVG(CTR) GROUP BY Country`
+     - `LIMIT 100` 이하 필수
+   - **인플루언서** (influencer_input_ALL_TEAMS):
+     - **필수**: 항상 `GROUP BY Team` 또는 `GROUP BY` 집계 사용 (raw 행 나열 금지!)
+     - 상관관계/분석 질문 → `SELECT Team, AVG(followers) AS avg_followers, AVG(views) AS avg_views ... GROUP BY Team LIMIT 50`
+     - 팔로워/조회수/비용 분석 → 집계(SUM/AVG/COUNT) + `GROUP BY` 필수
+     - `LIMIT 100` 이하 필수
+   - **스마트스토어 리뷰** (Smartstore_Review):
+     - 주간/월별 트렌드 → `SELECT DATE_TRUNC(collect_date, WEEK) AS week, COUNT(*) AS cnt, AVG(rating) GROUP BY week` (raw 리뷰 X)
+     - `collect_date >= '2025-01-01'` 필수
+   - **공통 규칙**: 모든 마케팅 테이블에서 집계(COUNT/SUM/AVG/GROUP BY)를 **항상** 사용. raw 데이터 나열은 LIMIT 30 이하. "분석/비교/트렌드/상관관계" 키워드 → 반드시 GROUP BY 집계로 처리
+19. ⚠️ **집계 수준은 사용자 질문에 맞추기 (최우선 규칙!)**:
    - **사용자가 제품명/라인/SKU를 언급하지 않은 매출 질문은 총합(SUM)만 반환하세요. 제품별 GROUP BY `\`SET\`` 추가 금지!**
    - 사용자가 언급한 차원(국가, 채널, 기간 등)으로만 GROUP BY 하세요.
    - 예시: "쇼피 인도네시아 이번 달 매출" → `SELECT SUM(Sales1_R) AS total_revenue FROM ... WHERE Country = '인도네시아' AND Mall_Classification LIKE '%Shopee%' AND [이번 달]` (제품 분해 X, 총합만)
@@ -446,7 +481,7 @@ WHERE Date >= '2019-01-01'
   AND Country = '미국'
 GROUP BY month
 ORDER BY total_revenue DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ```sql
@@ -460,7 +495,7 @@ WHERE Date >= '2019-01-01'
     OR (EXTRACT(YEAR FROM Date) = 2026 AND EXTRACT(MONTH FROM Date) = 1))
 GROUP BY month
 ORDER BY month
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -476,7 +511,7 @@ FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
   AND EXTRACT(YEAR FROM Date) = 2024
   AND EXTRACT(MONTH FROM Date) = 1
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 2. 국가+플랫폼 단순 매출 (제품 분해 X!)
@@ -490,7 +525,7 @@ WHERE Date >= '2019-01-01'
   AND Country = '인도네시아'
   AND Mall_Classification LIKE '%Shopee%'
   AND EXTRACT(YEAR FROM Date) = 2026 AND EXTRACT(MONTH FROM Date) = 3
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 3. 국가+플랫폼 기간별 매출 추이
@@ -506,7 +541,7 @@ WHERE Country = '인도네시아'
   AND Date >= '2024-01-01' AND Date < '2024-07-01'
 GROUP BY month
 ORDER BY month
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 4. 국가별 비교
@@ -522,7 +557,7 @@ WHERE Date >= '2019-01-01'
   AND EXTRACT(YEAR FROM Date) = 2024
 GROUP BY Country
 ORDER BY total_revenue DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 5. 제품 순위
@@ -534,6 +569,7 @@ SELECT
   SUM(Sales1_R) AS total_revenue
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
+  AND Brand IN ('SK', 'CL')
   AND Country = '인도네시아'
   AND EXTRACT(YEAR FROM Date) = 2024
   AND `SET` IS NOT NULL AND `SET` != ''
@@ -550,11 +586,12 @@ SELECT
   SUM(Sales1_R) AS monthly_revenue
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
+  AND Brand IN ('SK', 'CL')
   AND Line = 'Centella'
   AND EXTRACT(YEAR FROM Date) = 2024
 GROUP BY month
 ORDER BY month
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 7. 팀별 매출 비교
@@ -570,7 +607,7 @@ WHERE Date >= '2019-01-01'
   AND Team_NEW IS NOT NULL AND Team_NEW != ''
 GROUP BY Team_NEW
 ORDER BY total_revenue DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 8. 플랫폼별 비교
@@ -587,7 +624,7 @@ WHERE Date >= '2019-01-01'
   AND EXTRACT(YEAR FROM Date) = 2024
 GROUP BY Mall_Classification
 ORDER BY total_revenue DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 9. B2B vs B2C 비교
@@ -601,7 +638,7 @@ FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
   AND EXTRACT(YEAR FROM Date) = 2025
 GROUP BY Sales_Type
-LIMIT 10000
+LIMIT 1000
 ```
 
 ### 8-2. 해외B2B 제품별 TOP 업체 (중요!)
@@ -613,6 +650,7 @@ SELECT
   SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
+  AND Brand IN ('SK', 'CL')
   AND Sales_Type = 'B2B'
   AND Mall_Classification LIKE '%Overseas%'
   AND `SET` LIKE '%Ampoule_100ml%'
@@ -633,7 +671,7 @@ WHERE Date >= '2019-01-01'
   AND Continent1 IS NOT NULL AND Continent1 != ''
 GROUP BY Continent1
 ORDER BY total_revenue DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -689,7 +727,7 @@ WHERE Date >= '2019-01-01'
   AND EXTRACT(MONTH FROM Date) = 2
 GROUP BY Product
 ORDER BY total_qty DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### P2. 국가별 제품 수량
@@ -835,7 +873,7 @@ FROM `skin1004-319714.marketing_analysis.integrated_advertising_data`
 WHERE EXTRACT(YEAR FROM Date) = 2025
 GROUP BY month
 ORDER BY month
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### A2. 국가별 광고 ROAS
@@ -850,7 +888,7 @@ FROM `skin1004-319714.marketing_analysis.integrated_advertising_data`
 WHERE EXTRACT(YEAR FROM Date) = 2025
   AND Country = 'Indonesia'
 GROUP BY Country
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### A3. 전체 플랫폼 광고비 비교
@@ -869,7 +907,7 @@ SELECT
 FROM `skin1004-319714.marketing_analysis.integrated_advertising_data`
 WHERE EXTRACT(YEAR FROM Date) = 2025
   AND EXTRACT(MONTH FROM Date) = 1
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -907,7 +945,7 @@ FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`
 WHERE EXTRACT(YEAR FROM Date) = 2025
 GROUP BY Media
 ORDER BY total_cost DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### M2. 팀별 마케팅 비용 추이
@@ -921,7 +959,7 @@ FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`
 WHERE EXTRACT(YEAR FROM Date) = 2025
 GROUP BY Team, month
 ORDER BY Team, month
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### M3. 국가별 마케팅 ROI
@@ -936,7 +974,7 @@ FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`
 WHERE EXTRACT(YEAR FROM Date) = 2025
 GROUP BY Country
 ORDER BY total_cost DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -973,7 +1011,7 @@ FROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`
 WHERE EXTRACT(YEAR FROM Date) = 2025
 GROUP BY Country
 ORDER BY total_sales DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### S2. 제품별 Shopify 판매 순위
@@ -1001,7 +1039,7 @@ FROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`
 WHERE EXTRACT(YEAR FROM Date) = 2025
 GROUP BY month
 ORDER BY month
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -1037,7 +1075,7 @@ SELECT
 FROM `skin1004-319714.Platform_Data.raw_data`
 WHERE Brand_Name LIKE '%SKIN1004%'
 ORDER BY Channel, Rank
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### R2. 채널별 가격 비교
@@ -1052,7 +1090,7 @@ FROM `skin1004-319714.Platform_Data.raw_data`
 WHERE Brand_Name LIKE '%SKIN1004%'
 GROUP BY Channel
 ORDER BY avg_price DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -1121,7 +1159,7 @@ FROM `skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS`
 WHERE EXTRACT(YEAR FROM Content_upload_date) = 2025
 GROUP BY Team
 ORDER BY total_cost_krw DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### I2. 인플루언서 티어별 성과
@@ -1137,7 +1175,7 @@ FROM `skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS`
 WHERE EXTRACT(YEAR FROM Content_upload_date) = 2025
 GROUP BY Influencer_tier
 ORDER BY avg_views DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### I3. 국가별 인플루언서 성과
@@ -1154,7 +1192,7 @@ FROM `skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS`
 WHERE EXTRACT(YEAR FROM Content_upload_date) = 2025
 GROUP BY Target_country
 ORDER BY total_cost_krw DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -1191,7 +1229,7 @@ SELECT
 FROM `skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance`
 GROUP BY Country
 ORDER BY total_impressions DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### AZ2. 아마존 전환율 분석
@@ -1205,7 +1243,7 @@ SELECT
 FROM `skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance`
 GROUP BY Country
 ORDER BY avg_conversion_rate DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -1246,7 +1284,7 @@ FROM `skin1004-319714.Review_Data.Amazon_Review`
 WHERE brand LIKE '%SKIN1004%'
 GROUP BY product_name
 ORDER BY review_count DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### RV2. 쇼피 최근 리뷰
@@ -1273,7 +1311,7 @@ FROM `skin1004-319714.Review_Data.Smartstore_Review`
 WHERE skin_concern IS NOT NULL AND skin_concern != ''
 GROUP BY skin_concern
 ORDER BY review_count DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
@@ -1314,7 +1352,7 @@ FROM `skin1004-319714.ad_data.meta data_test`
 WHERE is_active = TRUE
 GROUP BY brand
 ORDER BY active_ad_count DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### MT2. 국가별 광고 분포
@@ -1328,7 +1366,7 @@ FROM `skin1004-319714.ad_data.meta data_test`
 WHERE brand LIKE '%SKIN1004%'
 GROUP BY country_name
 ORDER BY ad_count DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 #### MT3. 광고 유형별 분석
@@ -1342,7 +1380,7 @@ FROM `skin1004-319714.ad_data.meta data_test`
 WHERE brand LIKE '%SKIN1004%'
 GROUP BY ad_type, publisher_platform
 ORDER BY ad_count DESC
-LIMIT 10000
+LIMIT 1000
 ```
 
 ---
