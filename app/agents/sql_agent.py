@@ -4,6 +4,7 @@ Workflow: generate_sql → validate_sql → execute_sql → format_answer
 """
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
@@ -224,6 +225,50 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
         return {"sql_result": None, "error": f"SQL 실행 실패: {str(e)}"}
 
 
+# Friendly display names for BigQuery tables
+_TABLE_DISPLAY_NAMES = {
+    "SALES_ALL_Backup": "통합 매출 (SALES_ALL)",
+    "integrated_advertising_data": "통합 광고 데이터",
+    "Integrated_marketing_cost": "통합 마케팅 비용",
+    "shopify_analysis_sales": "Shopify 판매",
+    "raw_data": "플랫폼 메트릭스",
+    "influencer_input_ALL_TEAMS": "인플루언서 마케팅",
+    "amazon_search_analytics_catalog_performance": "아마존 검색 분석",
+    "Amazon_Review": "아마존 리뷰",
+    "Qoo10_Review": "큐텐 리뷰",
+    "Shopee_Review": "쇼피 리뷰",
+    "Smartstore_Review": "스마트스토어 리뷰",
+    "meta data_test": "메타 광고 라이브러리",
+    "Product": "제품 마스터",
+}
+
+
+def _extract_table_sources(sql: str) -> str:
+    """Extract table names from SQL and return a friendly source string."""
+    if not sql:
+        return "BigQuery"
+    # Match backtick-quoted full paths: `project.dataset.table`
+    matches = re.findall(r'`([^`]+)`', sql)
+    table_names = set()
+    for m in matches:
+        parts = m.split(".")
+        if len(parts) >= 2:
+            table_short = parts[-1]
+            display = _TABLE_DISPLAY_NAMES.get(table_short, table_short)
+            table_names.add(display)
+    if not table_names:
+        # Fallback: try unquoted FROM/JOIN table references
+        from_matches = re.findall(r'(?:FROM|JOIN)\s+([\w.-]+)', sql, re.IGNORECASE)
+        for fm in from_matches:
+            parts = fm.split(".")
+            table_short = parts[-1]
+            display = _TABLE_DISPLAY_NAMES.get(table_short, table_short)
+            table_names.add(display)
+    if not table_names:
+        return "BigQuery"
+    return " + ".join(sorted(table_names))
+
+
 def format_answer(state: AgentState) -> Dict[str, Any]:
     """Format SQL results into a natural language answer with optional chart.
 
@@ -338,6 +383,9 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     today = datetime.now().strftime("%Y-%m-%d")
     today_kr = datetime.now().strftime("%Y년 %m월 %d일")
 
+    # Extract actual table names for source attribution
+    table_source = _extract_table_sources(sql)
+
     # Detect data date range from results for scope verification
     _date_cols = [k for k in (results[0].keys() if results else [])
                   if any(d in k.lower() for d in ("date", "month", "year", "날짜", "연도", "월"))]
@@ -404,7 +452,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 [2-3개 핵심 포인트를 bullet으로. 주목할 만한 인사이트는 `> ` 인용 형식으로 강조]
 
 ---
-*조회 기준: {today} | SKIN1004 내부 매출 데이터 (BigQuery)*
+*조회 기준: {today} | 데이터소스: {table_source}*
 
 ## 작성 규칙
 1. **반드시** 위 섹션 구조(요약 → 상세 데이터 → 분석 및 인사이트)를 따르세요.
