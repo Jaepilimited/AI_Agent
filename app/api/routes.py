@@ -84,9 +84,9 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     model_type = resolve_model_type(request.model)
 
     # Build conversation history for context continuity
-    # Truncate to last 30 messages (15 turns) to prevent unbounded context bloat
+    # Truncate to last 50 messages (25 turns) for deeper conversation memory
     # Strip images from older messages to keep payload small
-    MAX_CONTEXT_MESSAGES = 30
+    MAX_CONTEXT_MESSAGES = 50
     raw_messages = list(request.messages)
     if len(raw_messages) > MAX_CONTEXT_MESSAGES + 1:
         # Always keep the last message (current query) + recent history
@@ -224,7 +224,7 @@ async def _stream_response(
     yield f"data: {source_chunk.model_dump_json()}\n\n"
 
     # Stream the answer in chunks
-    chunk_size = 20  # characters per chunk
+    chunk_size = 80  # characters per chunk (bigger = fewer SSE frames = faster)
     for i in range(0, len(answer), chunk_size):
         text_chunk = answer[i : i + chunk_size]
         stream_chunk = ChatCompletionStreamResponse(

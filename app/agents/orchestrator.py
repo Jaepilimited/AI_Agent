@@ -42,15 +42,17 @@ def _content_to_text(content) -> str:
     return str(content)
 
 
-def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int = 15) -> str:
+def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int = 25) -> str:
     """Build a conversation context string from recent messages.
 
     Extracts the last N turns (user+assistant pairs) excluding the final user message,
     so agents can understand references like "아까 그 데이터", "그거 다시", "2월은?" etc.
 
+    Uses tiered truncation: recent messages get more space, older ones less.
+
     Args:
         messages: Full conversation history [{"role": ..., "content": ...}].
-        max_turns: Maximum number of previous turns to include (default 15 for max memory).
+        max_turns: Maximum number of previous turns to include (default 25).
 
     Returns:
         Context string, or empty string if no history.
@@ -67,16 +69,27 @@ def _build_conversation_context(messages: List[Dict[str, str]], max_turns: int =
     if not history:
         return ""
 
+    total = len(history)
     lines = []
-    for msg in history:
+    for idx, msg in enumerate(history):
         role = msg.get("role", "user")
         content = _content_to_text(msg.get("content", ""))
         if role == "user":
             lines.append(f"사용자: {content}")
         elif role in ("assistant", "model"):
-            # Truncate long assistant responses (1500 chars for better memory)
-            if len(content) > 1500:
-                content = content[:1500] + "..."
+            # Tiered truncation: recent messages keep more context
+            # Last 6 messages (3 turns): 4000 chars
+            # Middle messages: 2000 chars
+            # Older messages: 800 chars
+            remaining = total - idx
+            if remaining <= 6:
+                max_len = 4000
+            elif remaining <= 16:
+                max_len = 2000
+            else:
+                max_len = 800
+            if len(content) > max_len:
+                content = content[:max_len] + "..."
             lines.append(f"AI: {content}")
 
     return "\n".join(lines)
