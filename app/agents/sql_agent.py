@@ -371,9 +371,11 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         preview_rows = [_truncate_row(r) for r in results]
         result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     elif _is_timeseries and len(results) <= 100:
-        # Large time-series: send first 60 rows + summary
-        preview_rows = [_truncate_row(r) for r in results[:60]]
-        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
+        # Grouped time-series (e.g. 월별 몰별): pivot to compact table
+        result_preview = _try_pivot_timeseries(results, query)
+        if not result_preview:
+            preview_rows = [_truncate_row(r) for r in results[:60]]
+            result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     else:
         preview_rows = [_truncate_row(r) for r in results[:15]]
         result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
@@ -519,6 +521,84 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         return {
             "answer": f"SQL 실행 결과 ({len(results)}행):\n```json\n{result_preview}\n```"
         }
+
+
+def _try_pivot_timeseries(results: list, query: str) -> str:
+    """Pivot grouped time-series data into a compact table for LLM.
+
+    Converts long-format (month, mall, revenue) → pivot (mall rows × month columns).
+    Returns markdown table string, or empty string if pivot fails.
+    """
+    if not results or len(results) < 3:
+        return ""
+    try:
+        keys = list(results[0].keys())
+        if len(keys) < 3:
+            return ""
+
+        # Detect time column (first string column with time-like values)
+        time_col = None
+        group_col = None
+        value_col = None
+
+        for k in keys:
+            vals = [str(r.get(k, "")) for r in results[:10]]
+            is_time = any(
+                any(h in v.lower() for h in ("2024", "2025", "2026", "월", "분기", "q1", "q2", "q3", "q4"))
+                for v in vals
+            )
+            if is_time and not time_col:
+                time_col = k
+                continue
+            # Numeric column
+            try:
+                float(results[0].get(k, 0) or 0)
+                if not value_col:
+                    value_col = k
+            except (ValueError, TypeError):
+                if not group_col:
+                    group_col = k
+
+        if not (time_col and group_col and value_col):
+            return ""
+
+        # Build pivot
+        from collections import OrderedDict
+        time_order = list(OrderedDict.fromkeys(str(r.get(time_col, "")) for r in results))
+        groups = list(OrderedDict.fromkeys(str(r.get(group_col, "")) for r in results))
+
+        pivot = {}
+        group_totals = {}
+        for r in results:
+            t = str(r.get(time_col, ""))
+            g = str(r.get(group_col, ""))
+            v = float(r.get(value_col, 0) or 0)
+            if g not in pivot:
+                pivot[g] = {}
+                group_totals[g] = 0
+            pivot[g][t] = v
+            group_totals[g] += v
+
+        # Sort groups by total descending, limit to top 20
+        groups = sorted(groups, key=lambda g: group_totals.get(g, 0), reverse=True)[:20]
+
+        # Build markdown table
+        header = f"| {group_col} | " + " | ".join(time_order) + " | 합계 |"
+        separator = "|---:" + "|---:" * len(time_order) + "|---:|"
+        rows = []
+        for g in groups:
+            vals = [pivot.get(g, {}).get(t, 0) for t in time_order]
+            total = sum(vals)
+            formatted = [f"{int(v):,}" for v in vals]
+            rows.append(f"| {g} | " + " | ".join(formatted) + f" | {int(total):,} |")
+
+        table = f"## 피벗 테이블 ({group_col} × {time_col}, 값: {value_col})\n\n{header}\n{separator}\n" + "\n".join(rows)
+        table += f"\n\n*총 {len(results)}행 → 피벗: {len(groups)}그룹 × {len(time_order)}기간*"
+        logger.info("pivot_timeseries_built", groups=len(groups), periods=len(time_order))
+        return table
+    except Exception as e:
+        logger.warning("pivot_timeseries_failed", error=str(e))
+        return ""
 
 
 def _build_smart_preview(results: list, query: str) -> str:

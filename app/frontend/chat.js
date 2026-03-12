@@ -887,17 +887,33 @@
         if (config.options.plugins && config.options.plugins.legend && config.options.plugins.legend.labels) {
           config.options.plugins.legend.labels.color = textColor;
         }
-        // Tooltip
+        // Tooltip — no decimals, comma-formatted
         if (config.options.plugins && config.options.plugins.tooltip) {
           config.options.plugins.tooltip.backgroundColor = tooltipBg;
+          config.options.plugins.tooltip.callbacks = {
+            label: function(ctx) {
+              var label = ctx.dataset.label || "";
+              var val = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed.x;
+              if (ctx.parsed.r != null) val = ctx.parsed.r;
+              // Doughnut/pie: use raw value
+              if (ctx.chart.config.type === "doughnut" || ctx.chart.config.type === "pie") {
+                val = ctx.raw;
+              }
+              var formatted = typeof val === "number" ? Math.round(val).toLocaleString() : val;
+              return label ? label + ": " + formatted : formatted;
+            }
+          };
         }
         // Scales
         if (config.options.scales) {
           ["x", "y"].forEach(function(axis) {
             if (config.options.scales[axis]) {
-              if (config.options.scales[axis].ticks) {
-                config.options.scales[axis].ticks.color = textColor;
-              }
+              if (!config.options.scales[axis].ticks) config.options.scales[axis].ticks = {};
+              config.options.scales[axis].ticks.color = textColor;
+              // No decimals on numeric axes
+              config.options.scales[axis].ticks.callback = function(value) {
+                return typeof value === "number" ? Math.round(value).toLocaleString() : value;
+              };
               if (config.options.scales[axis].grid) {
                 config.options.scales[axis].grid.color = gridColor;
               }
