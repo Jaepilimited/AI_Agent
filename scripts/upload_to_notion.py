@@ -19,7 +19,7 @@ import sys
 import time
 
 # ── Configuration ──
-PAGE_ID = "3032b428-3b00-80ae-8241-cedef71fc3be"
+PAGE_ID = "3252b428-3b00-802a-aff3-f33f63ec91de"
 NOTION_VERSION = "2022-06-28"
 MAX_TEXT_LEN = 1900  # Notion limit is 2000, leave margin
 MAX_BLOCKS_PER_CALL = 100
@@ -511,9 +511,16 @@ def build_updatelog_blocks() -> list:
             with open(filepath, "r", encoding="cp949") as f:
                 content = f.read()
 
-        # Extract version from content
-        ver_match = re.search(r"\(v([\d.]+)", content)
-        ver_str = f"v{ver_match.group(1)}" if ver_match else ""
+        # Extract version and description from H1 title
+        # e.g. "# Update Log — 2026-03-16 (v7.5.1 QA 검증 + SQL 캐시 + ...)"
+        h1_match = re.search(r"#\s+.*?\((v[\d.]+)\s*(.+?)\)", content)
+        if h1_match:
+            ver_str = h1_match.group(1)
+            desc_str = h1_match.group(2).strip().rstrip(")")
+        else:
+            ver_match = re.search(r"\(v([\d.]+)", content)
+            ver_str = f"v{ver_match.group(1)}" if ver_match else ""
+            desc_str = ""
 
         # Convert based on file type
         if lf.endswith(".html"):
@@ -521,8 +528,13 @@ def build_updatelog_blocks() -> list:
         else:
             children = md_to_blocks(content, max_blocks=95)
 
-        # Unified title: "2026-02-26 | v7.2.2"
-        title = f"{date_key} | {ver_str}" if ver_str else date_key
+        # Unified title: "2026-03-16 | v7.5.1 (QA 검증 + SQL 캐시 + ...)"
+        if ver_str and desc_str:
+            title = f"{date_key} | {ver_str} ({desc_str})"
+        elif ver_str:
+            title = f"{date_key} | {ver_str}"
+        else:
+            title = date_key
         blocks.append(toggle(title, children or [paragraph(content[:500])]))
 
     return blocks
@@ -1338,41 +1350,107 @@ def main():
 
     print(f"Target page: {PAGE_ID}")
 
-    # Clear existing content
-    print("Clearing page...")
-    clear_page(token, PAGE_ID)
-    time.sleep(0.5)
+    # Only clear + rebuild header when uploading ALL sections
+    # Individual flags (--updatelog, --qa) do incremental append
+    if do_all:
+        print("Clearing page (full rebuild)...")
+        clear_page(token, PAGE_ID)
+        time.sleep(0.5)
 
-    # Build top-level structure
-    all_blocks = []
+        # Build top-level structure
+        all_blocks = []
+        all_blocks.append(callout(
+            "SKIN1004 AI Agent 개발 리포트 아카이브\n"
+            "Update Log: 증분 누적 | QA Report: 매일 하루치 모음",
+            "🤖"
+        ))
+        all_blocks.append(paragraph(""))
 
-    # Page description
-    all_blocks.append(callout(
-        "SKIN1004 AI Agent 개발 리포트 아카이브\n"
-        "Update Log: 증분 누적 | QA Report: 매일 하루치 모음",
-        "🤖"
-    ))
-    all_blocks.append(paragraph(""))
-
-    # Append top-level blocks first
-    print("Adding page header...")
-    append_blocks(token, PAGE_ID, all_blocks)
-    time.sleep(0.3)
+        print("Adding page header...")
+        append_blocks(token, PAGE_ID, all_blocks)
+        time.sleep(0.3)
 
     # ── Update Log Section ──
     if do_log:
-        print("Building Update Log section...")
-        log_blocks = build_updatelog_blocks()
-        section = [
-            heading1("📝 Update Log"),
-            paragraph("새로운 업데이트가 위에 추가됩니다."),
-        ]
-        append_blocks(token, PAGE_ID, section)
-        time.sleep(0.3)
-        append_blocks(token, PAGE_ID, log_blocks)
-        time.sleep(0.3)
-        append_blocks(token, PAGE_ID, [divider()])
-        print(f"  Update Log: {len(log_blocks)} blocks added")
+        if do_all:
+            # Full rebuild: add header + all logs
+            print("Building Update Log section (full)...")
+            log_blocks = build_updatelog_blocks()
+            section = [
+                heading1("📝 Update Log"),
+                paragraph("새로운 업데이트가 위에 추가됩니다."),
+            ]
+            append_blocks(token, PAGE_ID, section)
+            time.sleep(0.3)
+            append_blocks(token, PAGE_ID, log_blocks)
+            time.sleep(0.3)
+            append_blocks(token, PAGE_ID, [divider()])
+            print(f"  Update Log: {len(log_blocks)} blocks added")
+        else:
+            # Incremental: find latest update log file, replace existing toggle or insert new
+            print("Building Update Log section (incremental)...")
+            log_blocks = build_updatelog_blocks()
+            if not log_blocks:
+                print("  No update log files found")
+            else:
+                latest_toggle = log_blocks[0]  # Newest entry (sorted descending)
+                latest_title = "".join(
+                    seg.get("text", {}).get("content", "") or seg.get("plain_text", "")
+                    for seg in latest_toggle.get("toggle", {}).get("rich_text", [])
+                )
+
+                # Find existing blocks on page
+                hdrs = headers(token)
+                r = httpx.get(
+                    f"https://api.notion.com/v1/blocks/{PAGE_ID}/children?page_size=100",
+                    headers=hdrs, timeout=30,
+                )
+                page_blocks = r.json().get("results", [])
+
+                # Find the "새로운 업데이트가 위에 추가됩니다." paragraph (insert point)
+                insert_after_id = None
+                existing_toggle_ids = []
+                date_prefix = latest_title[:10]  # "2026-03-16"
+                for b in page_blocks:
+                    btype = b["type"]
+                    plain = "".join(
+                        seg.get("plain_text", "")
+                        for seg in b.get(btype, {}).get("rich_text", [])
+                    ) if btype != "divider" else ""
+
+                    # Find insert point (paragraph after Update Log heading)
+                    if btype == "paragraph" and "위에 추가됩니다" in plain:
+                        insert_after_id = b["id"]
+
+                    # Collect ALL toggles with same date prefix (for replacement)
+                    if btype == "toggle" and date_prefix in plain[:15]:
+                        existing_toggle_ids.append(b["id"])
+
+                for old_id in existing_toggle_ids:
+                    httpx.delete(
+                        f"https://api.notion.com/v1/blocks/{old_id}",
+                        headers=hdrs, timeout=30,
+                    )
+                    time.sleep(0.3)
+                if existing_toggle_ids:
+                    print(f"  Deleted {len(existing_toggle_ids)} existing toggle(s) for {date_prefix}")
+
+                if insert_after_id:
+                    # Insert after the description paragraph
+                    r = httpx.patch(
+                        f"https://api.notion.com/v1/blocks/{PAGE_ID}/children",
+                        headers=hdrs,
+                        json={"children": [latest_toggle], "after": insert_after_id},
+                        timeout=60,
+                    )
+                    if r.status_code == 200:
+                        print(f"  Inserted: {latest_title[:60]}")
+                    else:
+                        print(f"  ERROR inserting: {r.status_code} {r.text[:200]}")
+                else:
+                    # Fallback: append at end
+                    append_blocks(token, PAGE_ID, [latest_toggle])
+                    print(f"  Appended (fallback): {latest_title[:60]}")
 
     # ── QA Detail Report Section ──
     if do_qa:
@@ -1395,7 +1473,7 @@ def main():
             if detail_blocks:
                 append_blocks(token, ids[0], detail_blocks)
             time.sleep(0.3)
-            print(f"  {title[:65]}")
+            print(f"  {title[:65].encode('ascii', 'replace').decode()}")
 
         # 2026-03-09 Speed Optimization Report
         summ, det = build_optimization_report_blocks()

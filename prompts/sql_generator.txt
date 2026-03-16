@@ -7,8 +7,8 @@
 
 | 질문 유형 | 사용 테이블 | 이유 |
 |-----------|-----------|------|
-| **수량** (몇 개, 몇 ea, 판매량, 판매 수량, 제품별 수량) | `Product` | 개별 제품 단위 수량 (정확) |
-| **매출** (얼마, 매출액, 금액, 매출, revenue) | `SALES_ALL_Backup` | 매출 데이터 보유 |
+| **수량** (몇 개, 몇 ea, 판매량, 판매 수량, 제품별 수량, 갯수, 총 팔린) | `Product` | 개별 제품 단위 수량 (정확) ⭐ |
+| **매출** (얼마, 매출액, 금액, 매출, revenue, 세일즈, 매상) | `SALES_ALL_Backup` | 매출 데이터 보유 |
 | **매출 + 수량** 동시 | `SALES_ALL_Backup` | Total_Qty도 있으므로 한 테이블에서 해결 |
 | **제품 리스트** (어떤 제품 있어?, 제품 목록) | `Product` | 개별 제품 단위로 정확 |
 | **광고 데이터** (광고비, ROAS, CTR, 노출, 클릭, 전환) | `integrated_advertising_data` | 플랫폼별 광고 성과 통합 |
@@ -74,8 +74,12 @@
 - Total_Qty (FLOAT): **총 수량** — 수량 조회 시 이 컬럼 사용 ⭐
 
 #### 비용/할인
-- Production_Cost (FLOAT): 제조원가
+- Production_Cost2 (FLOAT): **원가** — 원가/제조원가 조회 시 이 컬럼 사용 ⭐ (⚠️ Production_Cost 아님! Production_Cost2가 정확한 컬럼!)
 - Discount_Coupon (FLOAT): 할인/쿠폰 금액
+
+#### FOC 관련 (매출 테이블)
+- Sales1_R_FOC (FLOAT): FOC 매출1 (원화)
+- Sales2_R_FOC (FLOAT): FOC 매출2 (원화)
 
 #### 통화
 - Sales_Currency (STRING): 매출 통화 — 'KRW', 'USD', 'IDR', 'PHP', 'MYR', 'VND', 'SGD', 'TWD', 'JPY', 'CNY', 'EUR', 'AUD', 'CAD' 등
@@ -84,6 +88,7 @@
 #### 지역 분류
 - Country (STRING): **국가명 (한국어!)** — '미국', '인도네시아', '말레이시아', '필리핀', '싱가포르', '중국', '일본', '한국', '호주', '독일', '프랑스', '태국', '베트남' 등
 - Continent1 (STRING): **대륙 (우선)** — 대륙 조회 시 이 컬럼 사용 ⭐
+  - 실제 값: 'CIS', '글로벌', '기타', '남미', '북미', '아시아', '아프리카', '오세아니아', '유럽', '중동', '중미'
 - Continent2 (STRING): 대륙 상세 — '동남아시아', '동아시아', '서유럽', '북유럽', '북미', '남아메리카', '동남유럽', '중동', '오세아니아' 등
 
 #### 카테고리 ⭐
@@ -115,7 +120,17 @@
   - '기타'
   - ⚠️ 'GM_WEST'는 존재하지 않음! 사용자가 "GM WEST" 또는 "서쪽팀"을 말하면 해당 팀이 없다고 안내
 - Manager_NEW (STRING): 담당자
+- Type_of_Company (STRING): 업체 유형
 - ID (STRING): 아이디
+
+#### FOC 여부 (SALES_ALL)
+- FOC_or_Not (STRING): **FOC 여부** — 무료 제공 여부 (SALES_ALL 테이블에서만 유효!)
+
+#### 신규/기존 구분
+- New_Flag (STRING): **신규/기존 업체 구분** — 실제 값: '신규', '기존'
+  - "신규업체수" = `COUNT(DISTINCT Company_Name) WHERE New_Flag = '신규'`
+  - "기존업체수" = `COUNT(DISTINCT Company_Name) WHERE New_Flag = '기존'`
+- First_Cohort (DATETIME): 업체 최초 거래일 (코호트 분석용)
 
 ## 규칙
 
@@ -134,6 +149,10 @@
 10. ⚠️ **대륙 조회 시 Continent1 사용** (Continent2는 상세 지역 필요 시만)
 11. ⚠️ **팀 조회 시 Team_NEW 사용** (Team 사용 금지)
 12. ⚠️ **CTE(WITH절) 사용 금지** — `WITH ... AS (...)` 구문을 사용하지 마세요. 서브쿼리나 단일 SELECT로 해결하세요. CTE는 파싱 오류를 유발합니다.
+15. ⚠️ **신규업체수 = `COUNT(DISTINCT Company_Name) WHERE New_Flag = '신규'`** — 업체수는 항상 DISTINCT Company_Name 카운트!
+   - ⚠️ "신규 업체 매출" = `WHERE New_Flag = '신규'` — First_Cohort 연도 비교 사용 금지!
+   - ❌ 잘못: `EXTRACT(YEAR FROM First_Cohort) = EXTRACT(YEAR FROM CURRENT_DATE())`
+   - ✅ 올바름: `WHERE New_Flag = '신규'`
 13. **플랫폼 필터링은 Mall_Classification으로** — LIKE 사용
 14. ⚠️ **제품(SET) 필터가 있는 쿼리는 반드시 `\`SET\`` AS product_name을 SELECT에 포함하고 GROUP BY `\`SET\``로 제품별 분해!**
    - ⚠️ **이 규칙은 사용자가 제품명/라인/SKU를 직접 언급했을 때만 적용!** (예: "앰플 매출", "센텔라 크림 매출", "포어마이징 앰플")
@@ -221,11 +240,46 @@
    - 예시: "미국 아마존 올해 매출" → `SELECT SUM(Sales1_R) AS total_revenue FROM ... WHERE Country = '미국' AND Mall_Classification LIKE '%Amazon%' AND EXTRACT(YEAR FROM Date) = 2026` (총합만)
    - 예시: "인도네시아 월별 매출 추이" → `GROUP BY month` (월별만, 제품별 X)
    - 예시: "국가별 매출 비교" → `GROUP BY Country` (국가별만, 제품별 X)
-   - **규칙 14(제품별 분해)는 사용자가 "앰플", "센텔라", "크림" 등 제품 관련 키워드를 직접 말했을 때만 적용!**
+   - **규칙 14(제품별 분해)는 사용자가 특정 라인+제품 조합(예: "센텔라 크림", "히알루시카 토너")을 직접 말했을 때만 적용!**
+   - ⚠️ **카테고리 수준 질문은 Category 컬럼 사용 (규칙 20 참조)!** "크림 매출", "앰플 수량", "토너 매출" 등 라인 지정 없이 카테고리만 언급하면 → `Category = 'Cream'` 사용, `SET LIKE '%Cream%'` 사용 금지!
    - ❌ 잘못: "인도네시아 이번 달 매출" → `GROUP BY \`SET\`` (사용자가 제품을 안 물어봄!)
    - ✅ 올바름: "인도네시아 이번 달 매출" → `SELECT SUM(Sales1_R) AS total_revenue` (총합만)
    - ❌ 잘못: "쇼피 3월 매출" → `SELECT \`SET\`, SUM(Sales1_R) ... GROUP BY \`SET\`` (제품 질문 아님!)
    - ✅ 올바름: "쇼피 3월 매출" → `SELECT SUM(Sales1_R) AS total_revenue` (총합만)
+
+20. ⚠️ **카테고리 수준 질문은 Category 컬럼으로 필터 (매우 중요!)**:
+   - 사용자가 라인 지정 없이 카테고리만 언급하면 (예: "크림 매출", "앰플 수량", "토너 매출", "선크림 매출", "클렌저 수량") → **Category 컬럼** 사용!
+   - `SET LIKE '%Cream%'` 또는 `Product LIKE '%Cream%'` 사용 금지! → `Category = 'Cream'` 사용!
+   - 매핑: 크림 → `Category = 'Cream'`, 앰플/세럼 → `Category = 'Ampoule'`, 토너 → `Category = 'Toner'`, 선크림/선케어 → `Category = 'Suncare'`, 클렌저/클렌징 → `Category = 'Cleanser'`, 오일 → `Category = 'Oil'`, 팩/마스크 → `Category = 'Pack'`, 세트 → `Category = 'SET'`
+   - ⚠️ 라인+제품 조합(예: "센텔라 크림", "히알루시카 토너")은 기존 LIKE 필터 유지!
+   - ❌ 잘못: "국가별 크림 매출" → `WHERE \`SET\` LIKE '%Cream%'` (제품명에서 Cream 검색)
+   - ✅ 올바름: "국가별 크림 매출" → `WHERE Category = 'Cream'` (카테고리 필터)
+   - ❌ 잘못: "미국 토너 제품 매출" → `WHERE \`SET\` LIKE '%Toner%'`
+   - ✅ 올바름: "미국 토너 제품 매출" → `WHERE Category = 'Toner'`
+21. ⚠️ **Product 테이블: Sachet 제외 (매우 중요!)**:
+   - Product 테이블에서 제품별 수량 조회 시 **Sachet 제외 필수**: `AND Product != 'Sachet'`
+   - Sachet은 샘플/증정품이므로 일반 제품 분석에서 제외
+   - ⚠️ **FOC 관련 질문은 Sachet 포함** (FOC 분석은 샘플 포함이 맞음)
+   - 예: "제품별 수량 순위" → `AND Product != 'Sachet' AND Product != 'Others'`
+   - 예: "FOC 제품 수량" → Sachet 포함 (제외 조건 넣지 말 것)
+22. ⚠️ **동남아 → Continent2 사용**:
+   - "동남아", "동남아시아" → `Continent2 = '동남아시아'` (Continent1에 '동남아시아' 없음!)
+   - Continent1 실제 값: 'CIS', '글로벌', '기타', '남미', '북미', '아시아', '아프리카', '오세아니아', '유럽', '중동', '중미'
+   - Continent2 실제 값: '동남아시아', '동아시아', '서유럽', '북유럽', '북미', '남아메리카', '동남유럽', '중동', '오세아니아' 등
+   - ⚠️ "동남아"가 Continent1에 없으므로 반드시 Continent2에서 조회!
+   - ❌ 잘못: `WHERE Continent1 = '동남아시아'` (값 없음 → 0행)
+   - ✅ 올바름: `WHERE Continent2 = '동남아시아'`
+23. ⚠️ **"인기 제품", "베스트셀러" → 매출(Sales1_R) 기준 정렬**:
+   - "인기 제품", "베스트셀러", "가장 잘 팔리는" → `ORDER BY total_revenue DESC` (매출 기준)
+   - 명시적으로 "수량 기준"이라고 하지 않는 한, 인기도는 매출 기준!
+24. ⚠️ **B2C의 Company_Name = Mall_Classification**:
+   - Sales_Type = 'B2C'인 경우, Company_Name이 Mall_Classification 값으로 들어가 있음
+   - B2C "업체별" 질문 → Mall_Classification으로 GROUP BY하는 것이 더 의미 있음
+25. ⚠️ **수량 질문 → Product 테이블 우선 (테이블 선택 재확인)**:
+   - "판매 수량", "수량 순위", "몇 개 팔렸어", "갯수" 등 수량 중심 질문 → **Product 테이블** 사용!
+   - SALES_ALL_Backup의 Total_Qty는 세트 묶음 포함이므로 개별 제품 수량이 부정확
+   - ⚠️ "총 판매 수량" (전체 합산) 질문도 Product 테이블 사용 권장
+   - 매출+수량 동시 질문만 SALES_ALL_Backup 사용
 
 ## 한국어-플랫폼 매핑
 
@@ -275,7 +329,7 @@
 | 티트리카, 티트리 | Teatrica | `'%Teatrica%'` |
 | 톤브라이트닝, 톤업, TB | Tone_Brightening | `'%Tone_Brightening%'` |
 | 포어마이징 | Poremizing | `'%Poremizing%'` |
-| 라빈네이처 | LabinNature | `'%LabinNature%'` |
+| 랩인네이쳐, 라빈네이처, 라빈네이쳐 | LabinNature | `'%LabinNature%'` |
 | 비타민B5, 비타민B | Vitamin_B5 | `'%Vitamin_B5%'` |
 | 비타민C | Vitamin_C | `'%Vitamin_C%'` |
 | 비타민E | Vitamin_E | `'%Vitamin_E%'` |
@@ -554,35 +608,36 @@ LIMIT 1000
 
 ### 4. 국가별 비교
 ```sql
--- "동남아 국가별 2024년 매출 비교"
+-- "동남아 국가별 2024년 매출 비교" → Continent2 = '동남아시아' 사용!
 SELECT
   Country,
   SUM(Sales1_R) AS total_revenue,
   SUM(Total_Qty) AS total_qty
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
-  AND Country IN ('태국', '베트남', '필리핀', '말레이시아', '인도네시아', '싱가포르')
+  AND Continent2 = '동남아시아'
   AND EXTRACT(YEAR FROM Date) = 2024
 GROUP BY Country
 ORDER BY total_revenue DESC
 LIMIT 1000
 ```
 
-### 5. 제품 순위
+### 5. 제품 순위 (인기/베스트셀러 = 매출 기준!)
 ```sql
--- "인도네시아에서 가장 많이 팔린 제품 TOP 10"
+-- "인도네시아에서 인기 제품 TOP 10" → 매출 기준 정렬!
 SELECT
   `SET` AS product,
-  SUM(Total_Qty) AS total_quantity,
-  SUM(Sales1_R) AS total_revenue
+  SUM(Sales1_R) AS total_revenue,
+  SUM(Total_Qty) AS total_quantity
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Date >= '2019-01-01'
   AND Brand IN ('SK', 'CL')
   AND Country = '인도네시아'
   AND EXTRACT(YEAR FROM Date) = 2024
-  AND `SET` IS NOT NULL AND `SET` != ''
+  AND `SET` IS NOT NULL AND `SET` != '' AND `SET` != 'Sachet'
+  AND `SET` NOT LIKE '% + %'
 GROUP BY `SET`
-ORDER BY total_quantity DESC
+ORDER BY total_revenue DESC
 LIMIT 10
 ```
 
@@ -697,6 +752,7 @@ LIMIT 1000
 - Total_Qty (FLOAT): **전체수량 / 수량** — 수량 조회 시 이 컬럼 사용! `SUM(Total_Qty)` ⭐
 - ⚠️ **Quantity, Event_Qty 컬럼은 사용 금지 (X 표시됨)** — 반드시 `Total_Qty`만 사용하세요!
 - ⚠️ **제품 관련 질문은 Brand IN ('SK', 'CL') 내에서만 답변!** — ETC, DD, UM 브랜드 제외 필수
+- ⚠️ **Sachet 제외 필수!** 제품별 수량 조회 시 `AND Product != 'Sachet'` 추가 (샘플/증정품이므로). 단, FOC 관련 질문은 Sachet 포함!
 
 #### 공통 필터 컬럼 (SALES_ALL과 동일)
 - Mall_Classification (STRING): 몰 분류 (동일). ⚠️ 맨 앞 접두사가 브랜드를 나타냄 (SK_=스킨1004, CL_=커먼랩스, CBT_=중국, DD_=UM, ETC_=무시)
@@ -709,14 +765,15 @@ LIMIT 1000
 - Brand (STRING): 브랜드 — SK=스킨천사, CL=커먼랩스, **ETC=아예 무시**, UM=우마, DD
 - Team_NEW (STRING): 팀 (동일)
 - Line (STRING): 라인 (동일)
-- FOC_or_Not (STRING): **FOC 여부** — 무료 제공 여부
+- FOC_Qty (FLOAT): **FOC 수량** — 무료 제공 수량 ⭐ (Product 테이블에만 존재!)
 - Manager_NEW (STRING): 담당자 (동일)
 - Continent1 (STRING): 대륙1 (우선 사용) — 대륙 조회 시 이 컬럼 사용 ⭐
 - Continent2 (STRING): 대륙2 (상세) — 대륙1이 우선순위
 - Category (STRING): **제품 카테고리** — 카테고리별 수량 분석 시 이 컬럼 사용! ⭐
   - 실제 값: 'Ampoule'(앰플), 'Suncare'(선케어), 'SET'(세트), 'Cream'(크림), 'Pack'(팩), 'Cleanser'(클렌저), 'Oil'(오일), 'Toner'(토너), 'Others'(기타)
 
-⚠️ Product 테이블 사용 금지 컬럼: Product_Name_Base, Qty_NameBase, Event_Qty_NameBase, Team, Manager, Type_of_Company, Type_of_Company_ENG, Country_ENG, Continent1_ENG, Continent2_ENG, Line_ENG, Channel, In_out_bound, Product_Type, TIER, foc2, Type_of_Item, Product_ENG (모두 X 표시됨)
+⚠️ Product 테이블 사용 금지 컬럼: Product_Name_Base, Qty_NameBase, Event_Qty_NameBase, Team, Manager, FOC_or_Not, Type_of_Company, Type_of_Company_ENG, Country_ENG, Continent1_ENG, Continent2_ENG, Line_ENG, Channel, In_out_bound, Product_Type, TIER, foc2, Type_of_Item, Product_ENG (모두 X 표시됨)
+⚠️ Product 테이블에서 FOC 관련: FOC_Qty (FOC 수량) 사용! FOC_or_Not은 사용 금지!
 ⚠️ Product 테이블에는 Sales1_R, Sales2_R, Order_Count 등 **매출 관련 컬럼이 없음!**
 
 ### Product 테이블 예시 쿼리
@@ -749,7 +806,7 @@ WHERE Date >= '2019-01-01'
   AND Brand IN ('SK', 'CL')
   AND Country = '인도네시아'
   AND EXTRACT(YEAR FROM Date) = 2025
-  AND Product IS NOT NULL AND Product != '' AND Product != 'Others'
+  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'
 GROUP BY Product
 ORDER BY total_qty DESC
 LIMIT 10

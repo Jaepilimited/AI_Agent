@@ -154,13 +154,24 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS access_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE,
-    description TEXT
+    description TEXT,
+    brand_filter TEXT
 );
 CREATE TABLE IF NOT EXISTS user_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ad_user_id INTEGER,
     group_id INTEGER,
     UNIQUE(ad_user_id, group_id)
+);
+CREATE TABLE IF NOT EXISTS sql_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT UNIQUE,
+    query_text TEXT,
+    generated_sql TEXT,
+    brand_filter TEXT,
+    hit_count INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_used_at TEXT DEFAULT (datetime('now'))
 );
 """
 

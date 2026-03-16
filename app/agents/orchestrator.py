@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 import structlog
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
+from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
 from app.core.response_formatter import ensure_formatting
 
 # Existing agent
@@ -128,6 +129,38 @@ class OrchestratorAgent:
             self._gws_agent = GWSAgent()
         return self._gws_agent
 
+    # Source name → route mapping (matches frontend DATA_SOURCE_KEYS)
+    _SOURCE_ROUTE_MAP = {
+        "BigQuery 매출": "bigquery", "BigQuery 제품": "bigquery",
+        "BQ 광고데이터": "bigquery", "BQ 마케팅비용": "bigquery",
+        "BQ Shopify": "bigquery", "BQ 플랫폼": "bigquery",
+        "BQ 인플루언서": "bigquery", "BQ 아마존검색": "bigquery",
+        "BQ 아마존리뷰": "bigquery", "BQ 큐텐리뷰": "bigquery",
+        "BQ 쇼피리뷰": "bigquery", "BQ 스마트스토어": "bigquery",
+        "BQ 메타광고": "bigquery",
+        "Notion 문서": "notion",
+        "CS Q&A": "cs",
+        "Google Workspace": "gws",
+    }
+
+    def _allowed_routes(self, enabled_sources: Optional[List[str]]) -> Optional[set]:
+        """Derive the set of allowed routes from enabled_sources.
+
+        Returns None if no filtering should be applied (param not provided).
+        Returns {"direct"} if explicitly empty list (all sources disabled).
+        """
+        if enabled_sources is None:
+            return None
+        routes = {"direct"}  # direct is always allowed
+        for src in enabled_sources:
+            route = self._SOURCE_ROUTE_MAP.get(src)
+            if route:
+                routes.add(route)
+        # Allow multi if bigquery is enabled
+        if "bigquery" in routes:
+            routes.add("multi")
+        return routes
+
     async def route_and_execute(
         self,
         query: str,
@@ -135,6 +168,8 @@ class OrchestratorAgent:
         model_type: str = MODEL_GEMINI,
         user_email: str = "",
         images: Optional[List[dict]] = None,
+        brand_filter: Optional[str] = None,
+        enabled_sources: Optional[List[str]] = None,
     ) -> dict:
         """Main entry point: analyze query -> delegate to Sub Agent -> return result.
 
@@ -144,6 +179,8 @@ class OrchestratorAgent:
             model_type: "gemini" or "claude" — which LLM to use.
             user_email: User's email for GWS OAuth authentication.
             images: Extracted images [{"data": bytes, "mime_type": str}].
+            brand_filter: Comma-separated brand codes (e.g. "SK,CL,CBT" or "UM").
+            enabled_sources: List of enabled source keys from frontend checkboxes.
 
         Returns:
             {"source": str, "answer": str, ...}
@@ -172,12 +209,19 @@ class OrchestratorAgent:
             if len(query.strip()) <= 30:
                 flash = get_flash_client()
                 route = await self._classify_with_llm(query, conversation_context, flash)
+        # Apply enabled_sources filter — redirect to direct if route is disabled
+        allowed = self._allowed_routes(enabled_sources)
+        if allowed is not None and route not in allowed:
+            logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
+            route = "direct"
+
         logger.info(
             "orchestrator_routed",
             query=query[:100],
             route=route,
             model_type=model_type,
             has_context=bool(conversation_context),
+            enabled_sources=enabled_sources,
         )
 
         # Step 2: Execute via Sub Agent with context
@@ -189,7 +233,10 @@ class OrchestratorAgent:
             "multi": self._handle_multi,
         }
         handler = handlers.get(route, self._handle_direct)
-        result = await handler(query, messages, conversation_context, model_type, user_email)
+        if route in ("bigquery", "multi"):
+            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
+        else:
+            result = await handler(query, messages, conversation_context, model_type, user_email)
 
         # Step 3: Coherence check — fire-and-forget background (was blocking 2-3s)
         # Only log mismatches; don't delay the response
@@ -294,6 +341,12 @@ class OrchestratorAgent:
         "shopify", "쇼피파이", "자사몰 매출", "반품", "환불",
         # Platform metrics
         "플랫폼 순위", "제품 순위", "랭킹 데이터", "할인가",
+        # Region / Continent / Team / Account
+        "cis", "동남아", "유럽", "북미", "남미", "중동", "대륙",
+        "신규", "업체", "거래처", "바이어", "b2b", "b2c",
+        "세일즈", "매상", "비중", "비율", "갯수", "개수",
+        "판매량", "전년 대비", "전년대비",
+        "베스트셀러", "인기 제품", "가장 많이 팔",
     ]
 
     # External-only keywords (triggers web search when combined with data keywords → multi)
@@ -341,7 +394,7 @@ class OrchestratorAgent:
         "사용 순서", "사용순서", "바르는 순서",
         "세럼", "앰플", "토너", "클렌저", "선크림", "크림", "마스크",
         "레티놀", "pha", "bha", "aha",
-        "영유아", "어린이", "아이", "아기",
+        "영유아", "어린이", "아기", "아이 피부", "아이에게", "아이가 써", "아이한테",
         "붉어", "따가", "가려", "피부 반응",
         "예민", "홍조", "건조", "좁쌀", "뾰루지",
         "불량", "교환", "환불", "이물질",
@@ -353,10 +406,54 @@ class OrchestratorAgent:
         "기름지", "피부 관리", "피부관리",
     ]
 
+    # How-to / guide keywords — when combined with platform/tool names, route to Notion
+    # e.g. "틱톡샵 접속 방법 알려줘" → Notion (documented process), NOT sales data
+    _HOWTO_KEYWORDS = [
+        "접속 방법", "접속방법", "접속법", "로그인 방법", "로그인방법",
+        "설정 방법", "설정방법", "설정법", "세팅 방법", "세팅방법",
+        "등록 방법", "등록방법", "등록법",
+        "연동 방법", "연동방법", "연동법",
+        "어떻게 접속", "어떻게 들어가",
+        "어떻게 로그인", "어떻게 설정", "어떻게 등록", "어떻게 연동",
+        "접속하는 법", "들어가는 법",
+        "접속하는 방법", "들어가는 방법",
+        "접속해", "접속하", "어디서 접속", "어디로 접속",
+    ]
+
+    # Broader how-to keywords — only routed to Notion when a platform/tool name is also present
+    # (avoids stealing CS queries like "센텔라 사용법")
+    _HOWTO_BROAD_KEYWORDS = [
+        "사용 방법", "사용방법", "사용법", "이용 방법", "이용방법", "이용법",
+        "어떻게 사용", "어떻게 이용",
+        "사용하는 법", "사용하는 방법",
+        "가이드", "튜토리얼", "매뉴얼",
+        "방법 알려", "방법알려", "방법 좀", "방법좀",
+        "링크", "url", "주소",
+    ]
+
+    # Platform/tool names that, combined with how-to keywords, indicate a Notion doc question
+    _PLATFORM_TOOL_NAMES = [
+        "틱톡", "tiktok", "쇼피", "shopee", "라자다", "lazada", "아마존", "amazon",
+        "쇼피파이", "shopify", "큐텐", "qoo10",
+        "스마트스토어", "smartstore", "네이버",
+        "셀러센터", "seller center", "셀러 센터",
+        "노션", "notion", "지라", "jira", "슬랙", "slack",
+        "빅쿼리", "bigquery", "구글 애널리틱스", "ga4",
+        "erp", "sap", "crm",
+    ]
+
+    # Capability question patterns ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
+    # NOTE: "되나", "돼?" excluded — too broad (matches CS: "임산부가 써도 되나요")
+    _CAPABILITY_PATTERNS = ["가능해", "가능한가", "가능하나", "수 있어", "뭐할 수", "뭐 할 수"]
+
+    # Compound notion keywords that take priority over _DATA_KEYWORDS exclusion
+    # e.g. "반품 정책 알려줘" → notion (not blocked by "반품" in data keywords)
+    _COMPOUND_NOTION = ["반품 정책", "반품정책"]
+
     def _keyword_classify(self, query: str) -> str:
         """Keyword-based query classification.
 
-        Priority: System tasks > Full data request > Notion (explicit) > GWS > CS > Data > External > Direct
+        Priority: System tasks > Full data request > How-to (Notion) > Notion (explicit) > GWS > CS > Data > External > Direct
         """
         # Open WebUI system tasks (title/tag/follow-up) → direct, skip BQ false routing
         if query.strip().startswith("### Task:"):
@@ -364,35 +461,74 @@ class OrchestratorAgent:
 
         q = query.lower()
 
+        # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
+        if any(p in q for p in self._CAPABILITY_PATTERNS):
+            return "direct"
+
         # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
         if any(kw in q for kw in self._FULLDATA_KEYWORDS):
             return "bigquery"
 
+        # How-to / guide questions about platforms → Notion (not BigQuery)
+        # "틱톡샵 접속 방법 알려줘" = how to access TikTok Shop (documented in Notion)
+        # vs "틱톡 2월 매출" = sales data query (BigQuery)
+        # Narrow how-to keywords (접속방법, 로그인방법 etc.) → always Notion
+        if any(kw in q for kw in self._HOWTO_KEYWORDS):
+            return "notion"
+        # Broad how-to keywords (사용법, 가이드 etc.) → Notion only with platform/tool names
+        # This avoids stealing CS queries like "센텔라 사용법" (skincare product)
+        if any(kw in q for kw in self._HOWTO_BROAD_KEYWORDS):
+            if any(p in q for p in self._PLATFORM_TOOL_NAMES):
+                return "notion"
+
+        # Pre-compute data keyword match (used in Notion guard + later routing)
+        has_data = any(kw in q for kw in self._DATA_KEYWORDS)
+
         # Notion check — but defer to bigquery when strong data keywords present
         if any(kw in q for kw in self._NOTION_KEYWORDS):
+            # Compound notion keywords (e.g. "반품 정책") take priority over data exclusion
+            if any(kw in q for kw in self._COMPOUND_NOTION):
+                return "notion"
             # Don't steal data queries: "Shopify 반품 추이" → bigquery, not notion
-            if not any(kw in q for kw in self._DATA_KEYWORDS):
+            if not has_data:
                 return "notion"
 
         # GWS check — highest priority for personal workspace queries
         if any(kw in q for kw in self._GWS_KEYWORDS):
             return "gws"
 
-        has_data = any(kw in q for kw in self._DATA_KEYWORDS)
+        # Web search guard: if search keywords match but NO SKIN1004 business context → direct
+        # "올해 한국 GDP 성장률" → direct (general knowledge)
+        # "올해 미국 매출" → bigquery (매출 = SKIN1004 data)
+        if has_data and any(kw in q for kw in self._SEARCH_KEYWORDS):
+            _SKIN1004_TERMS = [
+                "skin1004", "스킨", "센텔라", "히알루", "커먼랩스", "좀비뷰티", "랩인네이처",
+                "매출", "수량", "주문", "판매", "재고", "실적", "매상", "세일즈",
+                "쇼피", "아마존", "틱톡", "라자다", "큐텐", "shopify", "쇼피파이",
+                "광고비", "roas", "ctr", "마케팅비", "노출수", "클릭수",
+                "인플루언서", "리뷰", "반품", "환불",
+                "b2b", "b2c", "거래처", "바이어", "업체",
+            ]
+            if not any(t in q for t in _SKIN1004_TERMS):
+                return "direct"
 
         # CS check — product Q&A, ingredients, usage, skincare
         # When both CS + DATA keywords present, only prefer BQ for strong analytics keywords
         # (매출, 수량, 주문 etc.), not ambiguous ones like "라인", "제품 목록"
         _STRONG_DATA = [
             "매출", "수량", "주문", "sales", "revenue",
+            "판매량", "판매 수량", "세일즈", "매상", "갯수", "개수",
             "국가별", "월별", "분기별", "대륙별", "플랫폼별", "연도별", "채널별", "카테고리별", "카테고리",
             "재고", "집계", "합계", "통계", "데이터", "조회",
             "차트", "그래프", "그려",
             "top", "순위", "랭킹", "성장률", "증감", "추이",
+            "비교", "비중", "비율", "전년 대비", "전년대비", "대비",
+            "베스트셀러", "인기 제품", "가장 많이 팔",
             # Marketing strong data keywords
             "광고비", "광고 비용", "마케팅비", "ROAS", "CTR",
             "노출수", "클릭수", "전환율", "전환수",
             "인플루언서", "리뷰", "GMV",
+            "신규", "업체", "거래처", "바이어", "b2b", "b2c",
         ]
         has_strong_data = any(kw in q for kw in _STRONG_DATA)
         if any(kw in q for kw in self._CS_KEYWORDS) and not has_strong_data:
@@ -440,6 +576,8 @@ class OrchestratorAgent:
         conversation_context: str,
         model_type: str,
         user_email: str = "",
+        brand_filter: Optional[str] = None,
+        enabled_sources: Optional[List[str]] = None,
     ) -> dict:
         """BigQuery Agent with conversation context.
 
@@ -475,6 +613,8 @@ class OrchestratorAgent:
                 query,
                 conversation_context=sql_context,
                 model_type=model_type,
+                brand_filter=brand_filter,
+                enabled_sources=enabled_sources,
             )
             # Check if SQL agent returned an error (it returns error as string, not exception)
             if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
@@ -642,6 +782,8 @@ class OrchestratorAgent:
         conversation_context: str,
         model_type: str,
         user_email: str = "",
+        brand_filter: Optional[str] = None,
+        enabled_sources: Optional[List[str]] = None,
     ) -> dict:
         """Multi-source analysis: internal data (BigQuery) + external info (Google Search).
 
@@ -695,6 +837,7 @@ class OrchestratorAgent:
                 "messages": None,
                 "conversation_context": conversation_context,
                 "model_type": model_type,
+                "brand_filter": brand_filter,
             }
             result = _graph.invoke(state)
             return data_query, result.get("answer", "")
@@ -895,23 +1038,25 @@ JSON만 반환:
 
     # Keywords that indicate the query needs real-time web search
     _SEARCH_KEYWORDS = [
-        "날씨", "뉴스", "오늘", "현재", "실시간", "최신",
+        "날씨", "뉴스", "오늘", "현재", "실시간", "최신", "지금",
         "환율", "주가", "코스피", "나스닥", "다우",
         "검색", "찾아봐", "알아봐",
         "경쟁사", "시장", "트렌드", "업계",
         "정책", "법률", "규정",
         "이벤트", "행사",
+        "대통령", "총리", "선거", "국회", "정부",
+        "올해", "이번 달", "이번달", "최근",
     ]
 
     def _needs_web_search(self, query: str) -> bool:
         """Check if query needs real-time web search or can be answered directly."""
         q = query.lower().strip()
+        # Check search keywords FIRST — even short queries like "현재 대통령" need search
+        if any(kw in q for kw in self._SEARCH_KEYWORDS):
+            return True
         # Very short queries (greetings, single words) → no search
         if len(q) <= 10:
             return False
-        # Explicit search keywords
-        if any(kw in q for kw in self._SEARCH_KEYWORDS):
-            return True
         # Questions about external topics (not SKIN1004 internal) that are long enough
         # to be substantive → search for freshness
         if len(q) > 50 and "?" in query:
@@ -951,8 +1096,25 @@ JSON만 반환:
 이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.
 오늘 날짜는 {today}입니다.
 
+{LANGUAGE_DETECTION_RULE}
+
+## 회사 소개 (SKIN1004)
+SKIN1004는 마다가스카르 센텔라 아시아티카 기반 클린 뷰티 스킨케어 브랜드입니다.
+주요 제품으로 센텔라 앰플, 크림, 토너 등이 있으며, 한국을 포함해 미국, 일본, 동남아 등 글로벌 시장에서 판매하고 있습니다.
+"우리 회사", "SKIN1004가 뭐하는 회사", "회사 소개" 등의 질문에는 위 정보를 활용하여 답변하세요.
+
+## 시스템 기능 (사용자에게 정확히 안내할 것)
+- **Google 실시간 웹검색** 연동: 날씨, 뉴스, 환율, 인물, 시사 등 최신 정보를 검색하여 제공합니다.
+- **BigQuery SQL 실행**: 매출, 수량, 순위, 국가별/제품별 데이터를 직접 조회합니다.
+- **Notion 사내 문서 검색**: 사내 정책, 매뉴얼, 프로세스 문서를 검색합니다.
+- **Google Workspace 연동**: Gmail 메일, Google Calendar 일정, Google Drive 파일을 조회합니다.
+- **CS 제품 Q&A**: 제품 성분, 사용법, 비건인증 등 고객상담 데이터베이스를 검색합니다.
+- **이미지 분석**: 업로드된 이미지를 분석하여 설명하거나 질문에 답변합니다.
+- **차트 생성**: 매출/데이터 질문 시 자동으로 차트(막대, 라인, 파이 등)를 생성합니다.
+- "뭐 할 수 있어?", "기능이 뭐야?" 등의 질문에는 위 기능들을 안내하세요.
+
 ## 핵심 원칙
-- 사용자의 질문에 친절하고 정확하게 한국어로 답변하세요.
+- 사용자의 질문에 친절하고 정확하게 답변하세요.
 - 질문한 내용만 답변하세요. 질문과 무관한 부가 정보나 홍보성 안내를 덧붙이지 마세요.
 - 실시간 정보가 제공된 경우, 최신 정보를 있는 그대로 전달하세요.
 - 모르는 것은 모른다고 솔직하게 답변하세요. 추측하거나 지어내지 마세요.
@@ -1127,4 +1289,4 @@ JSON만 반환:
             return search_result
         except Exception as e:
             logger.warning("search_context_failed", error=str(e))
-            return ""
+            return "(실시간 검색에 실패했습니다. 최신 정보가 반영되지 않을 수 있습니다.)"

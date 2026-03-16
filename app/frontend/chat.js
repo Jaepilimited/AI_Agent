@@ -14,6 +14,58 @@
   var isStreaming = false;
   var lastUserQuery = "";
 
+  // ===== Data Source Filter =====
+  // Queryable data sources — shown with checkboxes in System Status
+  var DATA_SOURCE_KEYS = [
+    "BigQuery 매출", "BigQuery 제품",
+    "BQ 광고데이터", "BQ 마케팅비용", "BQ Shopify", "BQ 플랫폼",
+    "BQ 인플루언서", "BQ 아마존검색",
+    "BQ 아마존리뷰", "BQ 큐텐리뷰", "BQ 쇼피리뷰", "BQ 스마트스토어", "BQ 메타광고",
+    "Notion 문서", "CS Q&A", "Google Workspace"
+  ];
+  // Source key → route mapping for orchestrator
+  var SOURCE_ROUTE_MAP = {
+    "BigQuery 매출": "bigquery", "BigQuery 제품": "bigquery",
+    "BQ 광고데이터": "bigquery", "BQ 마케팅비용": "bigquery",
+    "BQ Shopify": "bigquery", "BQ 플랫폼": "bigquery",
+    "BQ 인플루언서": "bigquery", "BQ 아마존검색": "bigquery",
+    "BQ 아마존리뷰": "bigquery", "BQ 큐텐리뷰": "bigquery",
+    "BQ 쇼피리뷰": "bigquery", "BQ 스마트스토어": "bigquery",
+    "BQ 메타광고": "bigquery",
+    "Notion 문서": "notion", "CS Q&A": "cs", "Google Workspace": "gws"
+  };
+  var enabledSources = loadEnabledSources();
+
+  function loadEnabledSources() {
+    try {
+      var saved = localStorage.getItem("skin1004_enabled_sources");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    // Default: all enabled
+    return DATA_SOURCE_KEYS.slice();
+  }
+  function saveEnabledSources() {
+    localStorage.setItem("skin1004_enabled_sources", JSON.stringify(enabledSources));
+  }
+  function toggleSource(key) {
+    var idx = enabledSources.indexOf(key);
+    if (idx >= 0) enabledSources.splice(idx, 1);
+    else enabledSources.push(key);
+    saveEnabledSources();
+  }
+  function getEnabledRoutes() {
+    var routes = {};
+    enabledSources.forEach(function(k) {
+      var r = SOURCE_ROUTE_MAP[k];
+      if (r) routes[r] = true;
+    });
+    return Object.keys(routes);
+  }
+  function getEnabledTableKeys() {
+    // Return BQ table keys only (for SQL agent table filtering)
+    return enabledSources.filter(function(k) { return SOURCE_ROUTE_MAP[k] === "bigquery"; });
+  }
+
   // ===== Image Upload State =====
   var pendingImages = [];  // Array of { file: File, dataUrl: string }
   var MAX_IMAGE_SIZE = 10 * 1024 * 1024;  // 10MB
@@ -109,6 +161,7 @@
     updateTheme();
     pollSystemStatus();
     setInterval(pollSystemStatus, 30000);
+    updateSourceFilterBadge();
     checkGwsStatus();
   }
 
@@ -120,6 +173,13 @@
         e.preventDefault();
         sendMessage();
       }
+      if (e.key === "Escape") {
+        var dd = document.getElementById("slash-source-dropdown");
+        if (dd && dd.style.display !== "none") {
+          dd.style.display = "none";
+          _slashTempSelection = [];
+        }
+      }
     });
 
     chatInput.addEventListener("input", function () {
@@ -127,6 +187,14 @@
       this.style.height = Math.min(this.scrollHeight, 150) + "px";
       updateSendButton();
     });
+
+    // Source select button → toggle dropdown
+    var btnSourceSelect = document.getElementById("btn-source-select");
+    if (btnSourceSelect) {
+      btnSourceSelect.addEventListener("click", function () {
+        toggleSourceDropdown();
+      });
+    }
 
     // Image attach button → trigger file input
     btnAttach.addEventListener("click", function () {
@@ -591,6 +659,15 @@
     chatInput.style.height = "auto";
     clearPendingImages();
     btnSend.disabled = true;
+    // Snapshot slash override BEFORE clearing (used in fetch body below)
+    var _sendSources = slashOverrideSource || enabledSources.slice();
+    // Clear one-time slash override after snapshot
+    if (slashOverrideSource) {
+      slashOverrideSource = null;
+      var badge = document.getElementById("source-filter-badge");
+      if (badge) badge.style.display = "none";
+      updateSourceFilterBadge();
+    }
 
     // Build content for API (multimodal if images present)
     var apiContent;
@@ -629,7 +706,13 @@
       var response = await fetch("/v1/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: modelSelect.value, messages: messages, stream: true }),
+        body: JSON.stringify({
+          model: modelSelect.value,
+          messages: messages,
+          stream: true,
+          brand_filter: (currentUser && currentUser.my_brand_filter) || null,
+          enabled_sources: _sendSources
+        }),
       });
 
       var reader = response.body.getReader();
@@ -891,13 +974,29 @@
         if (config.options.plugins && config.options.plugins.tooltip) {
           config.options.plugins.tooltip.backgroundColor = tooltipBg;
           config.options.plugins.tooltip.callbacks = {
+            title: function(items) {
+              // For horizontal bar, default title is the index. Use the label instead.
+              if (items.length > 0) {
+                var labels = items[0].chart.data.labels;
+                if (labels && labels[items[0].dataIndex] != null) {
+                  return labels[items[0].dataIndex];
+                }
+              }
+              return items[0] ? items[0].label : "";
+            },
             label: function(ctx) {
               var label = ctx.dataset.label || "";
-              var val = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed.x;
-              if (ctx.parsed.r != null) val = ctx.parsed.r;
-              // Doughnut/pie: use raw value
+              // For horizontal bar (indexAxis=y), value is on x-axis
+              var isHoriz = ctx.chart.options.indexAxis === "y";
+              var val;
               if (ctx.chart.config.type === "doughnut" || ctx.chart.config.type === "pie") {
                 val = ctx.raw;
+              } else if (ctx.parsed.r != null) {
+                val = ctx.parsed.r;
+              } else if (isHoriz) {
+                val = ctx.parsed.x;
+              } else {
+                val = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed.x;
               }
               var formatted = typeof val === "number" ? Math.round(val).toLocaleString() : val;
               return label ? label + ": " + formatted : formatted;
@@ -906,14 +1005,27 @@
         }
         // Scales
         if (config.options.scales) {
+          var isHorizontalBar = config.options.indexAxis === "y";
           ["x", "y"].forEach(function(axis) {
             if (config.options.scales[axis]) {
               if (!config.options.scales[axis].ticks) config.options.scales[axis].ticks = {};
               config.options.scales[axis].ticks.color = textColor;
-              // No decimals on numeric axes
-              config.options.scales[axis].ticks.callback = function(value) {
-                return typeof value === "number" ? Math.round(value).toLocaleString() : value;
-              };
+              // Category axis: return label text, not formatted index number
+              // For horizontal_bar (indexAxis=y), Y is the category axis
+              // For regular bar/line, X is the category axis
+              var isCategoryAxis = (isHorizontalBar && axis === "y") || (!isHorizontalBar && axis === "x");
+              if (isCategoryAxis) {
+                config.options.scales[axis].ticks.callback = function(value, index) {
+                  var labels = config.data && config.data.labels;
+                  if (labels && labels[index] != null) return labels[index];
+                  return value;
+                };
+              } else {
+                // Numeric value axis: no decimals, comma-formatted
+                config.options.scales[axis].ticks.callback = function(value) {
+                  return typeof value === "number" ? Math.round(value).toLocaleString() : value;
+                };
+              }
               if (config.options.scales[axis].grid) {
                 config.options.scales[axis].grid.color = gridColor;
               }
@@ -1115,6 +1227,185 @@
     },
   };
 
+  // ===== // Slash Command & Source Filter =====
+  var slashOverrideSource = null;  // One-time override from // command
+  var _slashTempSelection = [];    // Temp selection state for // multi-select
+
+  // Quick-select presets for // command
+  var SLASH_PRESETS = [
+    { cmd: "매출", label: "매출 데이터", keys: ["BigQuery 매출"] },
+    { cmd: "제품", label: "제품 데이터", keys: ["BigQuery 제품"] },
+    { cmd: "광고", label: "광고 데이터", keys: ["BQ 광고데이터", "BQ 메타광고"] },
+    { cmd: "리뷰", label: "리뷰 전체", keys: ["BQ 아마존리뷰", "BQ 큐텐리뷰", "BQ 쇼피리뷰", "BQ 스마트스토어"] },
+    { cmd: "notion", label: "Notion 문서", keys: ["Notion 문서"] },
+    { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
+    { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
+  ];
+
+  function toggleSourceDropdown() {
+    var dd = document.getElementById("slash-source-dropdown");
+    if (!dd) return;
+
+    // Toggle: if open, close
+    if (dd.style.display === "block") {
+      dd.style.display = "none";
+      _slashTempSelection = [];
+      return;
+    }
+
+    var filter = "";
+
+    // Initialize temp selection from current enabledSources
+    if (_slashTempSelection.length === 0) {
+      _slashTempSelection = enabledSources.slice();
+    }
+
+    // Build multi-select dropdown with all sources
+    var html = '<div class="slash-dd-title">다음 질문에 사용할 소스 선택</div>';
+
+    // Quick presets row
+    html += '<div class="slash-presets-row">';
+    SLASH_PRESETS.forEach(function(p) {
+      if (!filter || p.cmd.indexOf(filter) >= 0 || p.label.indexOf(filter) >= 0) {
+        html += '<button class="slash-preset-btn" data-cmd="' + p.cmd + '">' + p.label + '</button>';
+      }
+    });
+    html += '<button class="slash-preset-btn slash-preset-all">전체</button>';
+    html += '<button class="slash-preset-btn slash-preset-none">해제</button>';
+    html += '</div>';
+
+    // Individual source checkboxes
+    html += '<div class="slash-source-list">';
+    DATA_SOURCE_KEYS.forEach(function(key) {
+      if (!filter || key.toLowerCase().indexOf(filter) >= 0) {
+        var checked = _slashTempSelection.indexOf(key) >= 0 ? ' checked' : '';
+        html += '<label class="slash-source-item">' +
+          '<input type="checkbox" class="slash-source-cb" data-key="' + key + '"' + checked + '>' +
+          '<span>' + key + '</span></label>';
+      }
+    });
+    html += '</div>';
+
+    // Confirm button
+    var selCount = _slashTempSelection.length;
+    html += '<div class="slash-dd-footer">' +
+      '<button class="slash-confirm-btn" id="slash-confirm">' + selCount + '개 소스로 질문하기</button>' +
+      '<button class="slash-cancel-btn" id="slash-cancel">취소</button>' +
+      '</div>';
+
+    dd.innerHTML = html;
+    dd.style.display = "block";
+
+    // Checkbox listeners
+    dd.querySelectorAll(".slash-source-cb").forEach(function(cb) {
+      cb.addEventListener("change", function() {
+        var key = this.getAttribute("data-key");
+        var idx = _slashTempSelection.indexOf(key);
+        if (this.checked && idx < 0) _slashTempSelection.push(key);
+        else if (!this.checked && idx >= 0) _slashTempSelection.splice(idx, 1);
+        var confirmBtn = document.getElementById("slash-confirm");
+        if (confirmBtn) confirmBtn.textContent = _slashTempSelection.length + '개 소스로 질문하기';
+      });
+    });
+
+    // Preset button listeners
+    dd.querySelectorAll(".slash-preset-btn[data-cmd]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var cmd = this.getAttribute("data-cmd");
+        var preset = SLASH_PRESETS.find(function(p) { return p.cmd === cmd; });
+        if (preset) {
+          // Toggle preset keys
+          var allOn = preset.keys.every(function(k) { return _slashTempSelection.indexOf(k) >= 0; });
+          preset.keys.forEach(function(k) {
+            var idx = _slashTempSelection.indexOf(k);
+            if (allOn) { if (idx >= 0) _slashTempSelection.splice(idx, 1); }
+            else { if (idx < 0) _slashTempSelection.push(k); }
+          });
+          toggleSourceDropdown();
+        }
+      });
+    });
+
+    // Select all / none
+    var allBtn = dd.querySelector(".slash-preset-all");
+    if (allBtn) allBtn.addEventListener("click", function() {
+      _slashTempSelection = DATA_SOURCE_KEYS.slice();
+      toggleSourceDropdown();
+    });
+    var noneBtn = dd.querySelector(".slash-preset-none");
+    if (noneBtn) noneBtn.addEventListener("click", function() {
+      _slashTempSelection = [];
+      toggleSourceDropdown();
+    });
+
+    // Confirm
+    document.getElementById("slash-confirm").addEventListener("click", function() {
+      slashOverrideSource = _slashTempSelection.slice();
+      _slashTempSelection = [];
+      chatInput.value = "";
+      chatInput.focus();
+      dd.style.display = "none";
+      showSourceOverrideBadge(slashOverrideSource);
+    });
+
+    // Cancel
+    document.getElementById("slash-cancel").addEventListener("click", function() {
+      _slashTempSelection = [];
+      chatInput.value = "";
+      chatInput.focus();
+      dd.style.display = "none";
+    });
+  }
+
+  function showSourceOverrideBadge(keys) {
+    var badge = document.getElementById("source-filter-badge");
+    if (!badge) return;
+    var label = keys.length === DATA_SOURCE_KEYS.length
+      ? '전체 소스'
+      : keys.length + '개 소스 선택됨';
+    badge.innerHTML =
+      '<span class="sfb-icon">&#9881;</span>' +
+      '<span class="sfb-text">' + label + '</span>' +
+      '<button class="sfb-clear" title="필터 해제">&times;</button>';
+    badge.style.display = "flex";
+    badge.querySelector(".sfb-clear").addEventListener("click", function() {
+      slashOverrideSource = null;
+      badge.style.display = "none";
+      _updateSourceButton();
+      updateSourceFilterBadge();
+    });
+    _updateSourceButton();
+  }
+
+  function _updateSourceButton() {
+    var btn = document.getElementById("btn-source-select");
+    if (!btn) return;
+    var hasFilter = slashOverrideSource || enabledSources.length < DATA_SOURCE_KEYS.length;
+    btn.classList.toggle("has-filter", !!hasFilter);
+  }
+
+  function updateSourceFilterBadge() {
+    // Show persistent badge when not all sources enabled
+    var badge = document.getElementById("source-filter-badge");
+    if (!badge || slashOverrideSource) return;
+    if (enabledSources.length < DATA_SOURCE_KEYS.length) {
+      var count = enabledSources.length;
+      badge.innerHTML =
+        '<span class="sfb-icon">&#9881;</span>' +
+        '<span class="sfb-text">' + count + '/' + DATA_SOURCE_KEYS.length + ' 소스 활성</span>' +
+        '<button class="sfb-clear" title="전체 활성화">&times;</button>';
+      badge.style.display = "flex";
+      badge.querySelector(".sfb-clear").addEventListener("click", function() {
+        enabledSources = DATA_SOURCE_KEYS.slice();
+        saveEnabledSources();
+        badge.style.display = "none";
+        pollSystemStatus();  // Refresh checkboxes
+      });
+    } else {
+      badge.style.display = "none";
+    }
+  }
+
   function pollSystemStatus() {
     fetch("/safety/status")
       .then(function (r) { return r.json(); })
@@ -1144,9 +1435,17 @@
             issues.push(info.label + ": 오류");
           }
 
+          // Checkbox for queryable data sources
+          var isQueryable = DATA_SOURCE_KEYS.indexOf(name) >= 0;
+          var isChecked = enabledSources.indexOf(name) >= 0;
+          var checkboxHtml = isQueryable
+            ? '<label class="status-checkbox-label"><input type="checkbox" class="status-source-cb" data-source="' + name + '"' + (isChecked ? ' checked' : '') + '></label>'
+            : '';
+
           html +=
             '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + '">' +
             '<div class="status-item-row">' +
+            checkboxHtml +
             '<span class="status-dot' + (st !== "ok" ? " error" : "") + '"></span>' +
             '<span class="status-icon">' + info.svg + '</span>' +
             '<span class="status-name">' + info.label + '</span>' +
@@ -1160,7 +1459,36 @@
           }
           html += '</div>';
         }
-        container.innerHTML = html;
+        // Add select-all / deselect-all toolbar before items
+        var toolbar = '<div class="source-select-toolbar">' +
+          '<button class="source-btn-all" id="source-select-all">전체 선택</button>' +
+          '<button class="source-btn-none" id="source-deselect-all">전체 해제</button>' +
+          '<span class="source-count-label" id="source-count-label">' + enabledSources.length + '/' + DATA_SOURCE_KEYS.length + '</span>' +
+          '</div>';
+        container.innerHTML = toolbar + html;
+
+        // Attach select-all / deselect-all listeners
+        document.getElementById("source-select-all").addEventListener("click", function() {
+          enabledSources = DATA_SOURCE_KEYS.slice();
+          saveEnabledSources();
+          pollSystemStatus();
+          updateSourceFilterBadge();
+        });
+        document.getElementById("source-deselect-all").addEventListener("click", function() {
+          enabledSources = [];
+          saveEnabledSources();
+          pollSystemStatus();
+          updateSourceFilterBadge();
+        });
+
+        // Attach checkbox listeners (event delegation)
+        container.querySelectorAll(".status-source-cb").forEach(function(cb) {
+          cb.addEventListener("change", function() {
+            toggleSource(this.getAttribute("data-source"));
+            document.getElementById("source-count-label").textContent = enabledSources.length + '/' + DATA_SOURCE_KEYS.length;
+            updateSourceFilterBadge();
+          });
+        });
 
         // Update inline sidebar status indicator
         if (inlineEl) {
@@ -1256,7 +1584,7 @@
   };
 
   function showAdminButton() {
-    if (currentUser) {
+    if (currentUser && currentUser.role === "admin") {
       document.getElementById("admin-btn-wrap").style.display = "";
     }
   }
@@ -1377,10 +1705,12 @@
       html += '<div class="admin-group-actions">';
       html += '<button onclick="adminViewGroup(' + g.id + ', \'' + escapeHtml(g.name) + '\')">멤버</button>';
       if (isAdmin()) {
-        html += '<button onclick="adminEditGroup(' + g.id + ', \'' + escapeHtml(g.name) + '\', \'' + escapeHtml(g.description || '') + '\')">편집</button>';
+        html += '<button onclick="adminAssignDept(' + g.id + ', \'' + escapeHtml(g.name) + '\')">부서 배정</button>';
+        html += '<button onclick="adminEditGroup(' + g.id + ')">편집</button>';
         html += '<button class="danger" onclick="adminDeleteGroup(' + g.id + ', \'' + escapeHtml(g.name) + '\')">삭제</button>';
       }
       html += '</div></div></div>';
+      if (g.brand_filter) html += '<div class="admin-group-brand-filter"><span class="brand-filter-badge">Brand: ' + escapeHtml(g.brand_filter) + '</span></div>';
       if (g.description) html += '<div class="admin-group-desc">' + escapeHtml(g.description) + '</div>';
       html += '</div>';
     });
@@ -1389,11 +1719,11 @@
 
   // Create group
   document.getElementById("btn-create-group").addEventListener("click", function() {
-    showAdminModal("새 그룹 만들기", "", "", function(name, desc) {
+    showAdminModal("새 그룹 만들기", "", "", "", function(name, desc, brandFilter) {
       fetch("/api/admin/groups", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({name: name, description: desc})
+        body: JSON.stringify({name: name, description: desc, brand_filter: brandFilter})
       }).then(function(r) {
         if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail); });
         return r.json();
@@ -1504,42 +1834,373 @@
     .catch(function(e) { alert("배정 실패: " + e.message); });
   };
 
-  // View group members
+  // Assign department to group (bulk)
+  window.adminAssignDept = function(groupId, groupName) {
+    var overlay = document.createElement("div");
+    overlay.className = "admin-modal-overlay";
+
+    // Build dept tree from cached _adminDepts — group into top-level categories
+    var topDepts = {};
+    _adminDepts.forEach(function(d) {
+      var parts = d.department.split(" > ");
+      // Top-level = depth 2 (e.g. "Craver_Accounts > Users > Brand")
+      var topKey = parts.slice(0, 3).join(" > ");
+      var topLabel = parts[2] || parts[parts.length - 1];
+      if (!topDepts[topKey]) topDepts[topKey] = { label: topLabel, fullPath: topKey, children: [], totalCount: 0 };
+      topDepts[topKey].children.push(d);
+      topDepts[topKey].totalCount += d.cnt;
+    });
+
+    var topOptions = '<option value="">-- 상위 부서 선택 --</option>';
+    Object.keys(topDepts).sort().forEach(function(key) {
+      var t = topDepts[key];
+      topOptions += '<option value="' + escapeHtml(key) + '">' + escapeHtml(t.label) + ' (' + t.totalCount + '명)</option>';
+    });
+
+    overlay.innerHTML =
+      '<div class="admin-modal admin-modal-wide">' +
+      '<h3>\'' + escapeHtml(groupName) + '\' 부서 일괄 배정</h3>' +
+      '<select id="modal-top-dept" style="width:100%;padding:8px;margin:8px 0;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:14px">' + topOptions + '</select>' +
+      '<div id="sub-dept-list" class="dept-user-list" style="display:none">' +
+      '<div class="dept-user-header"><span id="sub-dept-count"></span>' +
+      '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="sub-dept-check-all" checked> 전체 선택</label></div>' +
+      '<div id="sub-dept-items" class="dept-user-items"></div></div>' +
+      '<div id="dept-user-list" class="dept-user-list" style="display:none">' +
+      '<div class="dept-user-header"><span id="dept-user-count"></span>' +
+      '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="dept-check-all" checked> 전체 선택</label></div>' +
+      '<div id="dept-user-items" class="dept-user-items"></div></div>' +
+      '<div id="assign-mode-wrap" style="display:none;margin:8px 0;padding:8px 10px;border-radius:6px;background:rgba(229,62,62,0.08);border:1px solid rgba(229,62,62,0.2)">' +
+      '<label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px">' +
+      '<input type="checkbox" id="assign-replace-mode"> ' +
+      '<span><b>교체 모드</b> — 기존 멤버 전부 제거 후 선택한 사용자만 배정</span></label></div>' +
+      '<div class="admin-modal-actions">' +
+      '<button class="admin-btn-secondary" id="modal-cancel">취소</button>' +
+      '<button class="admin-btn-primary" id="modal-load-users" style="display:none">사용자 불러오기</button>' +
+      '<button class="admin-btn-primary" id="modal-ok" style="display:none">배정</button>' +
+      '</div></div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector("#modal-cancel").addEventListener("click", function() { overlay.remove(); });
+    overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+
+    var topSelect = overlay.querySelector("#modal-top-dept");
+    var subDeptDiv = overlay.querySelector("#sub-dept-list");
+    var subDeptItems = overlay.querySelector("#sub-dept-items");
+    var subDeptCount = overlay.querySelector("#sub-dept-count");
+    var subCheckAll = overlay.querySelector("#sub-dept-check-all");
+    var btnLoad = overlay.querySelector("#modal-load-users");
+    var btnOk = overlay.querySelector("#modal-ok");
+    var assignModeWrap = overlay.querySelector("#assign-mode-wrap");
+    var replaceCheckbox = overlay.querySelector("#assign-replace-mode");
+    var userListDiv = overlay.querySelector("#dept-user-list");
+    var userItemsDiv = overlay.querySelector("#dept-user-items");
+    var countSpan = overlay.querySelector("#dept-user-count");
+    var checkAll = overlay.querySelector("#dept-check-all");
+    var _deptUsers = [];
+
+    // Step 1: Top dept selected → show sub-dept checkboxes
+    topSelect.addEventListener("change", function() {
+      var topKey = this.value;
+      btnLoad.style.display = "none";
+      btnOk.style.display = "none";
+      userListDiv.style.display = "none";
+      _deptUsers = [];
+
+      if (!topKey || !topDepts[topKey]) { subDeptDiv.style.display = "none"; return; }
+
+      var children = topDepts[topKey].children;
+      var html = "";
+      children.sort(function(a, b) { return a.department.localeCompare(b.department); });
+      children.forEach(function(d) {
+        var parts = d.department.split(" > ");
+        var label = parts.slice(3).join(" > ") || parts[parts.length - 1];
+        var indent = Math.max(0, parts.length - 4);
+        var indentStr = "";
+        for (var i = 0; i < indent; i++) indentStr += "\u00A0\u00A0\u00A0";
+        var prefix = indent > 0 ? "└ " : "";
+        html += '<label class="dept-user-item">' +
+          '<input type="checkbox" checked data-dept="' + escapeHtml(d.department) + '"> ' +
+          '<span class="dept-user-name">' + indentStr + prefix + escapeHtml(label) + '</span>' +
+          '<span class="dept-user-dept">' + d.cnt + '명</span>' +
+          '</label>';
+      });
+      subDeptItems.innerHTML = html;
+      subDeptCount.textContent = children.length + "개 부서 선택됨";
+      subCheckAll.checked = true;
+      subDeptDiv.style.display = "";
+      btnLoad.style.display = "";
+    });
+
+    // Sub-dept checkbox change (outside dropdown handler to avoid duplicate listeners)
+    subDeptItems.addEventListener("change", function() {
+      var boxes = subDeptItems.querySelectorAll('input[type="checkbox"]');
+      var checked = subDeptItems.querySelectorAll('input[type="checkbox"]:checked').length;
+      subDeptCount.textContent = checked + "/" + boxes.length + "개 부서 선택됨";
+      subCheckAll.checked = (checked === boxes.length);
+    });
+
+    // Sub-dept check all toggle
+    subCheckAll.addEventListener("change", function() {
+      var boxes = subDeptItems.querySelectorAll('input[type="checkbox"]');
+      var val = this.checked;
+      boxes.forEach(function(cb) { cb.checked = val; });
+      var total = boxes.length;
+      subDeptCount.textContent = (val ? total : 0) + "/" + total + "개 부서 선택됨";
+    });
+
+    // Step 2: Load users from checked departments
+    btnLoad.addEventListener("click", function() {
+      var checkedDepts = [];
+      subDeptItems.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) {
+        checkedDepts.push(cb.getAttribute("data-dept"));
+      });
+      if (!checkedDepts.length) { alert("부서를 선택하세요."); return; }
+
+      btnLoad.textContent = "불러오는 중...";
+      btnLoad.disabled = true;
+
+      // Fetch users for the top dept (includes all sub), then filter client-side
+      var topKey = topSelect.value;
+      fetch("/api/admin/ad/users?dept=" + encodeURIComponent(topKey))
+        .then(function(r) { return r.json(); })
+        .then(function(users) {
+          // Filter to only checked departments
+          var deptSet = {};
+          checkedDepts.forEach(function(d) { deptSet[d] = true; });
+          users = users.filter(function(u) { return deptSet[u.department]; });
+
+          _deptUsers = users;
+          btnLoad.textContent = "사용자 불러오기";
+          btnLoad.disabled = false;
+
+          if (!users.length) {
+            userItemsDiv.innerHTML = '<div style="padding:12px;text-align:center;color:var(--text-muted)">선택된 부서에 사용자가 없습니다.</div>';
+            userListDiv.style.display = "";
+            countSpan.textContent = "0명";
+            btnOk.style.display = "none";
+            return;
+          }
+
+          var html = "";
+          users.forEach(function(u) {
+            var deptShort = u.department ? u.department.split(" > ").slice(-1)[0] : "";
+            html += '<label class="dept-user-item">' +
+              '<input type="checkbox" checked data-uid="' + u.id + '"> ' +
+              '<span class="dept-user-name">' + escapeHtml(u.display_name) + '</span>' +
+              '<span class="dept-user-dept">' + escapeHtml(deptShort) + '</span>' +
+              (u.group_names ? '<span class="dept-user-groups">' + escapeHtml(u.group_names) + '</span>' : '') +
+              '</label>';
+          });
+          userItemsDiv.innerHTML = html;
+          countSpan.textContent = users.length + "명 선택됨";
+          checkAll.checked = true;
+          userListDiv.style.display = "";
+          btnOk.style.display = "";
+          assignModeWrap.style.display = "";
+        }).catch(function(e) {
+          btnLoad.textContent = "사용자 불러오기";
+          btnLoad.disabled = false;
+          alert("사용자 목록 불러오기 실패: " + e.message);
+        });
+    });
+
+    // User checkbox change (outside load handler to avoid duplicate listeners)
+    userItemsDiv.addEventListener("change", function() {
+      var checked = userItemsDiv.querySelectorAll('input[type="checkbox"]:checked').length;
+      var total = userItemsDiv.querySelectorAll('input[type="checkbox"]').length;
+      countSpan.textContent = checked + "/" + total + "명 선택됨";
+      checkAll.checked = (checked === total);
+    });
+
+    // User check all toggle
+    checkAll.addEventListener("change", function() {
+      var boxes = userItemsDiv.querySelectorAll('input[type="checkbox"]');
+      var val = this.checked;
+      boxes.forEach(function(cb) { cb.checked = val; });
+      countSpan.textContent = (val ? _deptUsers.length : 0) + "/" + _deptUsers.length + "명 선택됨";
+    });
+
+    // Step 3: Submit checked users
+    btnOk.addEventListener("click", async function() {
+      var checked = userItemsDiv.querySelectorAll('input[type="checkbox"]:checked');
+      var ids = [];
+      checked.forEach(function(cb) { ids.push(parseInt(cb.getAttribute("data-uid"))); });
+      if (!ids.length) { alert("배정할 사용자를 선택하세요."); return; }
+
+      var isReplace = replaceCheckbox && replaceCheckbox.checked;
+      if (isReplace && !confirm("교체 모드: 기존 멤버를 모두 제거하고 " + ids.length + "명만 배정합니다.\n계속하시겠습니까?")) return;
+
+      btnOk.textContent = isReplace ? "교체 중..." : "배정 중...";
+      btnOk.disabled = true;
+
+      try {
+        // Replace mode: remove all existing members first
+        if (isReplace) {
+          var existRes = await fetch("/api/admin/groups/" + groupId + "/members");
+          var existMembers = await existRes.json();
+          if (existMembers.length) {
+            var removeRes = await fetch("/api/admin/groups/" + groupId + "/members", {
+              method: "DELETE",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({ad_user_ids: existMembers.map(function(m) { return m.id; })})
+            });
+            if (!removeRes.ok) { var err = await removeRes.json(); throw new Error(err.detail); }
+          }
+        }
+
+        // Add selected users
+        var addRes = await fetch("/api/admin/groups/" + groupId + "/members", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ad_user_ids: ids})
+        });
+        if (!addRes.ok) { var err2 = await addRes.json(); throw new Error(err2.detail); }
+        var res = await addRes.json();
+
+        overlay.remove();
+        if (isReplace) {
+          alert("교체 완료!\n배정: " + res.added + "명\n총 대상: " + res.total + "명");
+        } else {
+          alert("배정 완료!\n추가: " + res.added + "명\n이미 배정됨: " + res.skipped + "명\n총 대상: " + res.total + "명");
+        }
+        loadAdminGroups();
+        loadAdminStats();
+      } catch(e) {
+        btnOk.textContent = "배정";
+        btnOk.disabled = false;
+        alert("배정 실패: " + e.message);
+      }
+    });
+  };
+
+  // View group members — modal with dept grouping, search, checkbox removal
   window.adminViewGroup = function(groupId, groupName) {
     fetch("/api/admin/groups/" + groupId + "/members")
       .then(function(r) { return r.json(); })
       .then(function(members) {
         if (!members.length) { alert("'" + groupName + "' 그룹에 멤버가 없습니다."); return; }
-        var msg = "'" + groupName + "' 멤버 (" + members.length + "명):\n\n";
+
+        // Group by department
+        var deptMap = {};
         members.forEach(function(m) {
-          msg += "- " + m.display_name + " (" + (m.email || m.username) + ")\n";
+          var dept = m.department || "(부서 없음)";
+          if (!deptMap[dept]) deptMap[dept] = [];
+          deptMap[dept].push(m);
         });
-        if (!isAdmin()) { alert(msg); return; }
-        msg += "\n멤버를 제거하시려면 [확인]을 누르세요.";
-        if (confirm(msg)) {
-          var removeChoice = prompt("제거할 멤버 이름을 입력하세요 (일부 입력 가능):");
-          if (!removeChoice) return;
-          var toRemove = members.filter(function(m) {
-            return m.display_name.includes(removeChoice) || m.username.includes(removeChoice);
+        var sortedDepts = Object.keys(deptMap).sort();
+
+        var overlay = document.createElement("div");
+        overlay.className = "admin-modal-overlay";
+        overlay.innerHTML =
+          '<div class="admin-modal admin-modal-wide" style="max-width:600px">' +
+          '<h3>' + escapeHtml(groupName) + ' 멤버 (' + members.length + '명)</h3>' +
+          '<input type="text" id="member-search" placeholder="이름/부서 검색..." style="width:100%;padding:8px;margin:4px 0 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:13px">' +
+          '<div class="dept-user-header" style="margin-bottom:4px">' +
+          '<span id="member-sel-count">0명 선택</span>' +
+          '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="member-check-all"> 전체 선택</label></div>' +
+          '<div id="member-dept-list" class="dept-user-list" style="max-height:400px;overflow-y:auto"></div>' +
+          '<div class="admin-modal-actions">' +
+          '<button class="admin-btn-secondary" id="member-cancel">닫기</button>' +
+          (isAdmin() ? '<button class="admin-btn-primary danger" id="member-remove" style="display:none">선택 제거</button>' : '') +
+          '</div></div>';
+        document.body.appendChild(overlay);
+        overlay.querySelector("#member-cancel").addEventListener("click", function() { overlay.remove(); });
+        overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+
+        var listDiv = overlay.querySelector("#member-dept-list");
+        var searchInput = overlay.querySelector("#member-search");
+        var selCount = overlay.querySelector("#member-sel-count");
+        var checkAllBox = overlay.querySelector("#member-check-all");
+        var removeBtn = overlay.querySelector("#member-remove");
+
+        function renderMembers(filter) {
+          var q = (filter || "").toLowerCase();
+          var html = "";
+          var visibleCount = 0;
+          sortedDepts.forEach(function(dept) {
+            var filtered = deptMap[dept].filter(function(m) {
+              if (!q) return true;
+              return m.display_name.toLowerCase().indexOf(q) >= 0 || dept.toLowerCase().indexOf(q) >= 0;
+            });
+            if (!filtered.length) return;
+            // Dept header — show short label
+            var parts = dept.split(" > ");
+            var shortDept = parts.slice(2).join(" > ") || dept;
+            html += '<div class="member-dept-group">';
+            html += '<div class="member-dept-header">' + escapeHtml(shortDept) + ' <span style="opacity:0.5">(' + filtered.length + '명)</span></div>';
+            filtered.forEach(function(m) {
+              html += '<label class="dept-user-item">' +
+                '<input type="checkbox" data-mid="' + m.id + '"> ' +
+                '<span class="dept-user-name">' + escapeHtml(m.display_name) + '</span>' +
+                '</label>';
+              visibleCount++;
+            });
+            html += '</div>';
           });
-          if (!toRemove.length) { alert("해당 멤버를 찾을 수 없습니다."); return; }
-          if (!confirm(toRemove.map(function(m) { return m.display_name; }).join(", ") + " 을(를) 제거하시겠습니까?")) return;
-          fetch("/api/admin/groups/" + groupId + "/members", {
-            method: "DELETE",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({ad_user_ids: toRemove.map(function(m) { return m.id; })})
-          }).then(function() { loadAdminGroups(); loadAdminStats(); });
+          listDiv.innerHTML = html || '<div style="padding:16px;text-align:center;color:var(--text-muted)">검색 결과 없음</div>';
+          updateSelCount();
+        }
+
+        function updateSelCount() {
+          var checked = listDiv.querySelectorAll('input[type="checkbox"]:checked').length;
+          var total = listDiv.querySelectorAll('input[type="checkbox"]').length;
+          selCount.textContent = checked + "/" + total + "명 선택";
+          if (removeBtn) removeBtn.style.display = checked > 0 ? "" : "none";
+          if (checkAllBox) checkAllBox.checked = checked > 0 && checked === total;
+        }
+
+        renderMembers("");
+
+        searchInput.addEventListener("input", function() { renderMembers(this.value); });
+
+        listDiv.addEventListener("change", function() { updateSelCount(); });
+
+        if (checkAllBox) {
+          checkAllBox.addEventListener("change", function() {
+            var val = this.checked;
+            listDiv.querySelectorAll('input[type="checkbox"]').forEach(function(cb) { cb.checked = val; });
+            updateSelCount();
+          });
+        }
+
+        if (removeBtn) {
+          removeBtn.addEventListener("click", function() {
+            var checked = listDiv.querySelectorAll('input[type="checkbox"]:checked');
+            var ids = [];
+            checked.forEach(function(cb) { ids.push(parseInt(cb.getAttribute("data-mid"))); });
+            if (!ids.length) return;
+            if (!confirm(ids.length + "명을 '" + groupName + "' 그룹에서 제거하시겠습니까?")) return;
+            removeBtn.textContent = "제거 중...";
+            removeBtn.disabled = true;
+            fetch("/api/admin/groups/" + groupId + "/members", {
+              method: "DELETE",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({ad_user_ids: ids})
+            }).then(function(r) {
+              if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail); });
+              return r.json();
+            }).then(function(res) {
+              alert("제거 완료: " + res.removed + "명");
+              overlay.remove();
+              loadAdminGroups();
+              loadAdminStats();
+            }).catch(function(e) {
+              removeBtn.textContent = "선택 제거";
+              removeBtn.disabled = false;
+              alert("제거 실패: " + e.message);
+            });
+          });
         }
       }).catch(function(e) { alert("멤버 조회 실패: " + e.message); });
   };
 
   // Edit group
-  window.adminEditGroup = function(groupId, name, desc) {
-    showAdminModal("그룹 편집", name, desc, function(newName, newDesc) {
+  window.adminEditGroup = function(groupId) {
+    var g = _adminGroups.find(function(x) { return x.id === groupId; }) || {};
+    showAdminModal("그룹 편집", g.name || "", g.description || "", g.brand_filter || "", function(newName, newDesc, newBrandFilter) {
       fetch("/api/admin/groups/" + groupId, {
         method: "PUT",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({name: newName, description: newDesc})
+        body: JSON.stringify({name: newName, description: newDesc, brand_filter: newBrandFilter})
       }).then(function(r) {
         if (!r.ok) return r.json().then(function(e) { throw new Error(e.detail); });
         return r.json();
@@ -1557,7 +2218,7 @@
   };
 
   // Modal helper
-  function showAdminModal(title, nameVal, descVal, onSubmit) {
+  function showAdminModal(title, nameVal, descVal, brandFilterVal, onSubmit) {
     var overlay = document.createElement("div");
     overlay.className = "admin-modal-overlay";
     overlay.innerHTML =
@@ -1565,6 +2226,10 @@
       '<h3>' + title + '</h3>' +
       '<input type="text" id="modal-name" placeholder="그룹 이름" value="' + escapeHtml(nameVal) + '">' +
       '<textarea id="modal-desc" placeholder="설명 (선택)">' + escapeHtml(descVal) + '</textarea>' +
+      '<div class="modal-brand-filter-section">' +
+      '<label class="modal-label">브랜드 필터 <small style="color:var(--text-muted)">(쉼표 구분, 예: SK,CL,CBT)</small></label>' +
+      '<input type="text" id="modal-brand-filter" placeholder="예: SK,CL,CBT 또는 UM" value="' + escapeHtml(brandFilterVal) + '">' +
+      '</div>' +
       '<div class="admin-modal-actions">' +
       '<button class="admin-btn-secondary" id="modal-cancel">취소</button>' +
       '<button class="admin-btn-primary" id="modal-ok">확인</button>' +
@@ -1576,9 +2241,10 @@
     overlay.querySelector("#modal-ok").addEventListener("click", function() {
       var n = overlay.querySelector("#modal-name").value.trim();
       var d = overlay.querySelector("#modal-desc").value.trim();
+      var bf = overlay.querySelector("#modal-brand-filter").value.trim();
       if (!n) { alert("그룹 이름을 입력하세요."); return; }
       overlay.remove();
-      onSubmit(n, d);
+      onSubmit(n, d, bf);
     });
   }
 

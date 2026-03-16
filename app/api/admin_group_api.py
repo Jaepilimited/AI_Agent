@@ -45,15 +45,19 @@ async def _execute_lastid(sql: str, params: tuple = ()) -> int:
 class GroupCreate(BaseModel):
     name: str
     description: str = ""
+    brand_filter: Optional[str] = None
 
 
 class GroupUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    brand_filter: Optional[str] = None
 
 
 class AssignUsers(BaseModel):
-    ad_user_ids: list[int]
+    ad_user_ids: list[int] = []
+    department: Optional[str] = None
+    include_sub: bool = True
 
 
 class RemoveUsers(BaseModel):
@@ -66,7 +70,7 @@ class RemoveUsers(BaseModel):
 async def list_groups(user: User = Depends(get_current_user)):
     """List all groups with member counts."""
     groups = await _fetch_all("""
-        SELECT g.id, g.name, g.description, g.created_at,
+        SELECT g.id, g.name, g.description, g.brand_filter, g.created_at,
                COUNT(ug.id) as member_count
         FROM access_groups g
         LEFT JOIN user_groups ug ON g.id = ug.group_id
@@ -84,8 +88,8 @@ async def create_group(req: GroupCreate, admin: User = Depends(_require_admin)):
         raise HTTPException(status_code=400, detail="Group name already exists")
 
     gid = await _execute_lastid(
-        "INSERT INTO access_groups (name, description) VALUES (%s, %s)",
-        (req.name, req.description),
+        "INSERT INTO access_groups (name, description, brand_filter) VALUES (%s, %s, %s)",
+        (req.name, req.description, req.brand_filter or None),
     )
     logger.info("group_created", name=req.name, by=admin.email)
     return {"ok": True, "id": gid, "name": req.name}
@@ -109,6 +113,11 @@ async def update_group(group_id: int, req: GroupUpdate, admin: User = Depends(_r
 
     if req.description is not None:
         await _execute("UPDATE access_groups SET description = %s WHERE id = %s", (req.description, group_id))
+
+    if req.brand_filter is not None:
+        # Empty string → NULL (clear filter)
+        bf_val = req.brand_filter.strip() if req.brand_filter.strip() else None
+        await _execute("UPDATE access_groups SET brand_filter = %s WHERE id = %s", (bf_val, group_id))
 
     logger.info("group_updated", group_id=group_id, by=admin.email)
     return {"ok": True}
@@ -146,26 +155,52 @@ async def list_group_members(group_id: int, user: User = Depends(get_current_use
 async def assign_users_to_group(
     group_id: int, req: AssignUsers, admin: User = Depends(_require_admin)
 ):
-    """Assign AD users to a group."""
-    group = await _fetch_one("SELECT id FROM access_groups WHERE id = %s", (group_id,))
+    """Assign AD users to a group. Supports individual IDs or bulk by department."""
+    group = await _fetch_one("SELECT id, name FROM access_groups WHERE id = %s", (group_id,))
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
+    # Resolve user IDs — from explicit list or department lookup
+    user_ids = list(req.ad_user_ids)
+
+    if req.department:
+        if req.include_sub:
+            dept_users = await _fetch_all(
+                "SELECT id FROM ad_users WHERE is_active = 1 AND department LIKE %s",
+                (f"{req.department}%",),
+            )
+        else:
+            dept_users = await _fetch_all(
+                "SELECT id FROM ad_users WHERE is_active = 1 AND department = %s",
+                (req.department,),
+            )
+        user_ids.extend(u["id"] for u in dept_users)
+
+    if not user_ids:
+        raise HTTPException(status_code=400, detail="배정할 사용자가 없습니다")
+
+    # Batch: find already-assigned users in one query
+    placeholders = ",".join(["%s"] * len(user_ids))
+    existing_rows = await _fetch_all(
+        f"SELECT ad_user_id FROM user_groups WHERE group_id = %s AND ad_user_id IN ({placeholders})",
+        (group_id, *user_ids),
+    )
+    existing_ids = {r["ad_user_id"] for r in existing_rows}
+    new_ids = [uid for uid in user_ids if uid not in existing_ids]
+    skipped = len(existing_ids)
+
+    # Batch insert new assignments
     added = 0
-    for uid in req.ad_user_ids:
-        existing = await _fetch_one(
-            "SELECT id FROM user_groups WHERE ad_user_id = %s AND group_id = %s",
+    for uid in new_ids:
+        await _execute(
+            "INSERT INTO user_groups (ad_user_id, group_id) VALUES (%s, %s)",
             (uid, group_id),
         )
-        if not existing:
-            await _execute(
-                "INSERT INTO user_groups (ad_user_id, group_id) VALUES (%s, %s)",
-                (uid, group_id),
-            )
-            added += 1
+        added += 1
 
-    logger.info("users_assigned", group_id=group_id, added=added, by=admin.email)
-    return {"ok": True, "added": added}
+    logger.info("users_assigned", group=group["name"], added=added, skipped=skipped,
+                dept=req.department, by=admin.email)
+    return {"ok": True, "added": added, "skipped": skipped, "total": len(user_ids)}
 
 
 @group_router.delete("/{group_id}/members")

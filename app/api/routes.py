@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.agents.orchestrator import OrchestratorAgent
 from app.config import get_settings
+from app.db.mariadb import fetch_one, fetch_all
 from app.core.llm import resolve_model_type
 from app.models.schemas import (
     ChatCompletionChoice,
@@ -60,12 +61,37 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         or get_settings().gws_default_email
     )
 
+    # Server-side brand_filter enforcement: if client didn't send one,
+    # look up user's group membership and apply automatically (non-admin)
+    brand_filter = request.brand_filter
+    if not brand_filter:
+        user_id = getattr(http_request.state, "user_id", None)
+        if user_id:
+            try:
+                urow = await asyncio.to_thread(
+                    fetch_one, "SELECT role, ad_user_id FROM users WHERE id = %s", (user_id,)
+                )
+                if urow and urow["role"] != "admin" and urow.get("ad_user_id"):
+                    bf_rows = await asyncio.to_thread(
+                        fetch_all,
+                        "SELECT g.brand_filter FROM access_groups g "
+                        "JOIN user_groups ug ON g.id = ug.group_id "
+                        "WHERE ug.ad_user_id = %s AND g.brand_filter IS NOT NULL LIMIT 1",
+                        (urow["ad_user_id"],),
+                    )
+                    if bf_rows:
+                        brand_filter = bf_rows[0]["brand_filter"]
+                        logger.info("brand_filter_enforced", user_id=user_id, brand_filter=brand_filter)
+            except Exception as e:
+                logger.warning("brand_filter_lookup_failed", user_id=user_id, error=str(e))
+
     logger.info(
         "chat_completion_request",
         model=request.model,
         message_count=len(request.messages),
         stream=request.stream,
         user_email=user_email or None,
+        brand_filter=brand_filter or None,
     )
 
     # Extract the last user message as the query
@@ -115,16 +141,18 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         else:
             messages_for_context.append({"role": m.role, "content": content})
 
+    enabled_sources = request.enabled_sources
+
     if request.stream:
         return StreamingResponse(
-            _stream_response(query, messages_for_context, model_type, request, user_email, images=images),
+            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources),
             media_type="text/event-stream",
         )
 
     # Non-streaming response (v3.0: Orchestrator)
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages_for_context, model_type, user_email=user_email, images=images
+            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources
         )
         answer = result.get("answer", "")
     except Exception as e:
@@ -157,6 +185,8 @@ async def _stream_response(
     request: ChatCompletionRequest,
     user_email: str = "",
     images: list = None,
+    brand_filter: str = None,
+    enabled_sources: list = None,
 ) -> AsyncGenerator[str, None]:
     """Stream response chunks in SSE format.
 
@@ -191,7 +221,7 @@ async def _stream_response(
     result = None
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages, model_type, user_email=user_email, images=images or []
+            query, messages, model_type, user_email=user_email, images=images or [], brand_filter=brand_filter, enabled_sources=enabled_sources
         )
         answer = result.get("answer", "")
     except Exception as e:

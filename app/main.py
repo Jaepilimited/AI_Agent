@@ -102,11 +102,26 @@ def create_app() -> FastAPI:
         token = request.cookies.get("token")
         if not token:
             return RedirectResponse(url="/login", status_code=302)
-        return FileResponse(str(_FRONTEND_DIR / "chat.html"), media_type="text/html")
+        from fastapi.responses import HTMLResponse
+        html = (_FRONTEND_DIR / "chat.html").read_text(encoding="utf-8")
+        return HTMLResponse(html, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
 
-    # Serve static files
-    app.mount("/frontend", StaticFiles(directory=str(_FRONTEND_DIR)), name="frontend")
-    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+    # Serve static files (no-cache middleware for dev)
+    from starlette.middleware import Middleware
+    from starlette.responses import Response
+
+    class NoCacheStaticFiles(StaticFiles):
+        async def __call__(self, scope, receive, send):
+            async def _send(msg):
+                if msg.get("type") == "http.response.start":
+                    headers = list(msg.get("headers", []))
+                    headers.append([b"cache-control", b"no-store, no-cache, must-revalidate, max-age=0"])
+                    msg["headers"] = headers
+                await send(msg)
+            await super().__call__(scope, receive, _send)
+
+    app.mount("/frontend", NoCacheStaticFiles(directory=str(_FRONTEND_DIR)), name="frontend")
+    app.mount("/static", NoCacheStaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     return app
 

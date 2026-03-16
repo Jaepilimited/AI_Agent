@@ -32,10 +32,9 @@ COLORS = [
     "rgba(168, 85, 247, 0.85)",   # Purple
 ]
 
+# Solid (opacity=1) variants — used for borders and point fills
 COLORS_SOLID = [c.replace("0.85)", "1)") for c in COLORS]
-
-# Border colors (slightly darker)
-BORDERS = [c.replace("0.85)", "1)") for c in COLORS]
+BORDERS = COLORS_SOLID  # alias for backward compat
 
 
 def _format_short(val: float) -> str:
@@ -81,8 +80,8 @@ def _pivot_grouped_data(data: List[Dict], x_col: str, y_col: str, group_col: str
         pivot[x][g] = v
         group_totals[g] += v
 
-    # Sort groups by total (descending)
-    groups = sorted(groups, key=lambda g: group_totals[g], reverse=True)
+    # Sort groups by total (descending), limit to top 10 for chart readability
+    groups = sorted(groups, key=lambda g: group_totals[g], reverse=True)[:10]
 
     return x_order, groups, pivot
 
@@ -130,8 +129,13 @@ def build_chartjs_config(
         max_items = {"bar": 15, "horizontal_bar": 20, "pie": 12, "line": 36}
         limit = max_items.get(chart_type, 20)
 
-        # Pie: aggregate into Top 9 + others
-        if chart_type == "pie" and len(data) > 10:
+        # For grouped charts, check unique x-values (not total rows)
+        if group_col and chart_type == "line":
+            unique_x = len(set(str(row.get(x_col, "")) for row in data))
+            unique_g = len(set(str(row.get(group_col, "")) for row in data))
+            if unique_x > 36 or unique_g > 15:
+                return None  # Too many periods or groups
+        elif chart_type == "pie" and len(data) > 10:
             _pie_y = y_col if isinstance(y_col, str) else y_col[0]
             data_sorted = sorted(data, key=lambda r: float(r.get(_pie_y, 0) or 0), reverse=True)
             top_items = data_sorted[:9]
@@ -150,7 +154,7 @@ def build_chartjs_config(
             labels = x_order
             for i, g in enumerate(groups):
                 color = COLORS[i % len(COLORS)]
-                border = BORDERS[i % len(BORDERS)]
+                border = COLORS_SOLID[i % len(COLORS_SOLID)]
                 values = [pivot[x].get(g, 0) for x in x_order]
                 ds = {
                     "label": g,
@@ -161,16 +165,18 @@ def build_chartjs_config(
                 }
                 if chart_type == "line":
                     ds["fill"] = False
-                    ds["tension"] = 0.3
-                    ds["pointRadius"] = 4
-                    ds["pointHoverRadius"] = 6
+                    ds["tension"] = 0.35
+                    ds["pointRadius"] = 5
+                    ds["pointHoverRadius"] = 8
+                    ds["pointBackgroundColor"] = border
+                    ds["borderWidth"] = 2.5
                 datasets.append(ds)
 
         elif isinstance(y_col, list):
             # Multiple y columns
             for i, col in enumerate(y_col):
                 color = COLORS[i % len(COLORS)]
-                border = BORDERS[i % len(BORDERS)]
+                border = COLORS_SOLID[i % len(COLORS_SOLID)]
                 values = [float(row.get(col, 0) or 0) for row in data]
                 ds = {
                     "label": col,
@@ -181,9 +187,11 @@ def build_chartjs_config(
                 }
                 if chart_type == "line":
                     ds["fill"] = False
-                    ds["tension"] = 0.3
-                    ds["pointRadius"] = 4
-                    ds["pointHoverRadius"] = 6
+                    ds["tension"] = 0.35
+                    ds["pointRadius"] = 5
+                    ds["pointHoverRadius"] = 8
+                    ds["pointBackgroundColor"] = border
+                    ds["borderWidth"] = 2.5
                 datasets.append(ds)
         else:
             # Single series
@@ -365,13 +373,17 @@ def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_coun
 - pie/donut: 항목이 많아도 OK (시스템이 자동으로 Top 9 + 기타로 집계)
 - line: x축 고유값 36개 초과. 단, group_column이 있으면 x축 고유값 기준으로 판단
 
-## 차트 타입 선택
-- **line**: 월별/일별 추이, 시계열. 대륙별/국가별 그룹이 있으면 group_column 지정
-- bar: 카테고리별 비교 — **카테고리 5개 이하 + 이름이 짧을 때만**
+## 차트 타입 선택 (우선순위)
+- **line**: 월별/일별/분기별 추이, 시계열 데이터는 **반드시 line** 사용. "월별", "추이", "트렌드" 키워드가 있으면 무조건 line.
+  - 그룹별(국가별/몰별/브랜드별) 비교가 있으면 group_column 지정 → 멀티라인 차트
+  - 단일 시계열이면 영역(fill) 라인 차트
+- bar: 카테고리별 비교 — **카테고리 5개 이하 + 이름이 짧을 때만** (시계열 아닐 때만)
 - **horizontal_bar**: 제품명, 브랜드명, SKU명 등 긴 텍스트 라벨이면 **반드시 사용**
 - pie: 비율/구성 (전체 대비 비중). 항목 6개 이하
-- grouped_bar: 여러 지표를 카테고리별로 비교
+- grouped_bar: 여러 지표를 카테고리별로 비교 (시계열 아닐 때만)
 - stacked_bar: 누적 비교
+
+## ⚠️ 핵심: 시계열(월별/일별/분기별) 데이터는 line 차트가 기본. bar로 선택하지 마세요.
 
 ## 반환 JSON 형식
 {{

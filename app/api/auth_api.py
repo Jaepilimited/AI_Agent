@@ -209,11 +209,14 @@ async def signup(req: SignupRequest, response: Response):
     # Hash password
     pw_hash = _bcrypt.hashpw(req.password.encode(), _bcrypt.gensalt()).decode()
 
+    # Use AD email, or generate unique placeholder for users without email
+    user_email = ad_user["email"] or f"ad_{ad_user['id']}@noemail.local"
+
     # Create user
     user_id = await _db_execute_lastid(
         "INSERT INTO users (email, password_hash, display_name, role, allowed_models, ad_user_id) "
         "VALUES (%s, %s, %s, %s, %s, %s)",
-        (ad_user["email"] or "", pw_hash, ad_user["display_name"], "user", "skin1004-Analysis", ad_user["id"]),
+        (user_email, pw_hash, ad_user["display_name"], "user", "skin1004-Analysis", ad_user["id"]),
     )
 
     token = _create_token(user_id, ad_user.get("email") or "")
@@ -276,6 +279,27 @@ async def signin(req: SigninRequest, response: Response):
 @auth_api_router.get("/me")
 async def me(user: User = Depends(get_current_user)):
     """Get current authenticated user."""
+    # brand_filters = what the dropdown shows
+    # Admin: all groups (can choose any filter), no personal filter
+    # Non-admin: only their own groups (auto-enforced)
+    if user.role == "admin":
+        all_groups = await _db_fetch_all(
+            "SELECT name, brand_filter FROM access_groups WHERE brand_filter IS NOT NULL"
+        )
+        brand_filters = [{"group": r["name"], "brands": r["brand_filter"]} for r in all_groups]
+        my_brand_filters = []
+    else:
+        my_brand_filters = []
+        if user.ad_user_id:
+            rows = await _db_fetch_all(
+                "SELECT g.name, g.brand_filter FROM access_groups g "
+                "JOIN user_groups ug ON g.id = ug.group_id "
+                "WHERE ug.ad_user_id = %s AND g.brand_filter IS NOT NULL",
+                (user.ad_user_id,),
+            )
+            my_brand_filters = [{"group": r["name"], "brands": r["brand_filter"]} for r in rows]
+        brand_filters = my_brand_filters
+
     return {
         "id": user.id,
         "email": user.email,
@@ -283,6 +307,8 @@ async def me(user: User = Depends(get_current_user)):
         "department": user.department,
         "role": user.role,
         "allowed_models": _resolve_models(user.role, user.allowed_models),
+        "brand_filters": brand_filters,
+        "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,
     }
 
 
@@ -324,3 +350,4 @@ async def logout(response: Response):
     """Clear auth cookie."""
     response.delete_cookie(key="token", path="/")
     return {"ok": True}
+

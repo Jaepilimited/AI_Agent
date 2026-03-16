@@ -91,6 +91,8 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = 4096
     stream: Optional[bool] = False
     user: Optional[str] = None
+    brand_filter: Optional[str] = None  # e.g. "SK,CL,CBT" or "UM"
+    enabled_sources: Optional[List[str]] = None  # e.g. ["BigQuery 매출", "CS Q&A"]
 
 
 # --- OpenAI-compatible Response Models ---

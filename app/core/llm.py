@@ -21,7 +21,7 @@ logger = structlog.get_logger(__name__)
 # --- Retry Helper ---
 
 _MAX_RETRIES = 3
-_RETRY_DELAYS = [1, 2, 4]  # seconds (exponential backoff)
+_RETRY_DELAYS = [0.3, 0.8, 2]  # seconds (exponential backoff, faster recovery)
 
 
 def _is_retryable(error: Exception) -> bool:
@@ -249,7 +249,7 @@ class GeminiClient:
 
         config = types.GenerateContentConfig(
             temperature=temperature,
-            max_output_tokens=4096,
+            max_output_tokens=1024,
             response_mime_type="application/json",
         )
         if system_instruction:

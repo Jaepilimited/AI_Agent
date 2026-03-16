@@ -51,3 +51,9 @@ class AgentState(TypedDict):
 
     # Model selection
     model_type: Optional[str]
+
+    # Brand filter (group-based access control)
+    brand_filter: Optional[str]
+
+    # Source filter (frontend checkbox selection)
+    enabled_sources: Optional[List[str]]

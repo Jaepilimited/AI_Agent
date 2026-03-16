@@ -3,11 +3,13 @@
 Workflow: generate_sql → validate_sql → execute_sql → format_answer
 """
 
+import hashlib
 import json
 import re
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import structlog
 from langgraph.graph import END, StateGraph
@@ -17,11 +19,93 @@ from app.core.bigquery import get_bigquery_client
 import concurrent.futures
 
 from app.core.llm import MODEL_GEMINI, get_flash_client, get_llm_client
+from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
 from app.agents.query_verifier import QueryVerifierAgent
 from app.core.security import sanitize_sql, validate_sql
 from app.models.state import AgentState
 
 logger = structlog.get_logger(__name__)
+
+
+# ── SQL Cache ──────────────────────────────────────────────
+# Caches (query → SQL) to skip LLM generation for repeated questions.
+# In-memory LRU + MariaDB persistence.
+
+_sql_cache: OrderedDict = OrderedDict()  # query_hash → {sql, tables} (LRU order)
+_SQL_CACHE_MAX = 500
+
+
+def _cache_key(query: str, brand_filter: Optional[str] = None) -> str:
+    """Normalize query and build cache key hash."""
+    normalized = re.sub(r"\s+", " ", query.strip().lower())
+    raw = f"{normalized}|{brand_filter or ''}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _extract_tables_from_sql(sql: str) -> set:
+    """Extract BigQuery table paths from SQL for cache validation."""
+    return set(re.findall(r'`(skin1004-319714\.[^`]+)`', sql))
+
+
+def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Optional[str]:
+    """Check cache, then validate cached SQL only uses allowed tables."""
+    sql = None
+
+    # 1. In-memory (move to end for LRU tracking)
+    if query_hash in _sql_cache:
+        _sql_cache.move_to_end(query_hash)
+        sql = _sql_cache[query_hash]
+
+    # 2. MariaDB persistent cache
+    if sql is None:
+        try:
+            from app.db.mariadb import fetch_one
+            row = fetch_one(
+                "SELECT generated_sql FROM sql_cache WHERE query_hash = %s",
+                (query_hash,),
+            )
+            if row:
+                sql = row["generated_sql"]
+                _sql_cache[query_hash] = sql  # warm in-memory
+        except Exception as e:
+            logger.debug("sql_cache_db_miss", error=str(e))
+
+    if sql is None:
+        return None
+
+    # 3. Validate: cached SQL must only use currently allowed tables
+    if allowed_tables is not None:
+        sql_tables = _extract_tables_from_sql(sql)
+        if sql_tables and not sql_tables.issubset(allowed_tables):
+            logger.info("sql_cache_table_mismatch",
+                        cached_tables=list(sql_tables),
+                        allowed=list(allowed_tables))
+            return None  # Cache hit but targets disallowed table → skip
+
+    return sql
+
+
+def _cache_store(query_hash: str, query: str, sql: str, brand_filter: Optional[str] = None) -> None:
+    """Store in both in-memory and MariaDB."""
+    # In-memory LRU: evict least-recently-used if full
+    if query_hash in _sql_cache:
+        _sql_cache.move_to_end(query_hash)
+    elif len(_sql_cache) >= _SQL_CACHE_MAX:
+        _sql_cache.popitem(last=False)  # Remove LRU entry
+    _sql_cache[query_hash] = sql
+
+    # MariaDB
+    try:
+        from app.db.mariadb import execute
+        execute(
+            "INSERT INTO sql_cache (query_hash, query_text, generated_sql, brand_filter) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE generated_sql = VALUES(generated_sql), "
+            "hit_count = hit_count + 1, last_used_at = NOW()",
+            (query_hash, query[:500], sql, brand_filter),
+        )
+    except Exception as e:
+        logger.debug("sql_cache_store_failed", error=str(e))
 
 # Load prompts
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
@@ -79,7 +163,9 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         Updated state with generated_sql.
     """
     query = state["query"]
-    logger.info("generating_sql", query=query)
+    brand_filter = state.get("brand_filter")
+    enabled_sources = state.get("enabled_sources")
+    logger.info("generating_sql", query=query, enabled_sources=enabled_sources)
 
     # Use Flash for SQL generation (Pro is too slow due to thinking mode)
     llm = get_flash_client()
@@ -90,26 +176,79 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     bq = get_bigquery_client()
     settings = get_settings()
 
-    # 1) Always include primary sales table
-    if not _schema_cache_sales:
+    # enabled_sources → allowed table paths mapping
+    _SOURCE_TABLE_MAP = {
+        "BigQuery 매출": [settings.sales_table_full_path],
+        "BigQuery 제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
+        "BQ 광고데이터": ["skin1004-319714.marketing_analysis.integrated_advertising_data"],
+        "BQ 마케팅비용": ["skin1004-319714.marketing_analysis.Integrated_marketing_cost"],
+        "BQ Shopify": ["skin1004-319714.marketing_analysis.shopify_analysis_sales"],
+        "BQ 플랫폼": ["skin1004-319714.Platform_Data.raw_data"],
+        "BQ 인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
+        "BQ 아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
+        "BQ 아마존리뷰": ["skin1004-319714.Review_Data.Amazon_Review"],
+        "BQ 큐텐리뷰": ["skin1004-319714.Review_Data.Qoo10_Review"],
+        "BQ 쇼피리뷰": ["skin1004-319714.Review_Data.Shopee_Review"],
+        "BQ 스마트스토어": ["skin1004-319714.Review_Data.Smartstore_Review"],
+        "BQ 메타광고": ["skin1004-319714.ad_data.meta data_test"],
+    }
+
+    # Build allowed_tables set from enabled_sources
+    allowed_tables = None  # None = no filtering (all allowed)
+    if enabled_sources is not None:
+        allowed_tables = set()
+        for src in enabled_sources:
+            for tp in _SOURCE_TABLE_MAP.get(src, []):
+                allowed_tables.add(tp)
+        logger.info("sql_table_filter", allowed_count=len(allowed_tables), sources=enabled_sources)
+
+    # ── SQL Cache: skip LLM if cached SQL uses only allowed tables ──
+    conv_context = state.get("conversation_context", "")
+    if not conv_context:  # Only cache standalone questions (not follow-ups)
+        cache_key = _cache_key(query, brand_filter)
+        cached_sql = _cache_lookup(cache_key, allowed_tables)
+        if cached_sql:
+            logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
+            return {"generated_sql": cached_sql, "error": None}
+
+    # 1) Include primary sales table only if allowed
+    include_sales = (allowed_tables is None) or (settings.sales_table_full_path in allowed_tables)
+    if include_sales:
+        if not _schema_cache_sales:
+            try:
+                schema = bq.get_table_schema(settings.sales_table_full_path)
+                schema_lines = [
+                    f"  - {col['name']} ({col['type']}): {col['description']}"
+                    for col in schema
+                ]
+                table_short = settings.sales_table_full_path.rsplit(".", 1)[-1]
+                _schema_cache_sales = f"\n\n### 실제 테이블 스키마 ({table_short})\n" + "\n".join(schema_lines)
+            except Exception as e:
+                logger.warning("schema_fetch_failed", table="SALES_ALL_Backup", error=str(e))
+        schema_context = _schema_cache_sales
+    else:
+        schema_context = ""
+
+    # 1b) Include Product table if allowed
+    product_path = f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"
+    include_product = (allowed_tables is None and any(kw in query.lower() for kw in ["제품", "product", "sku", "카테고리"])) or \
+                      (allowed_tables is not None and product_path in allowed_tables)
+    if include_product and product_path not in _schema_cache_tables:
         try:
-            schema = bq.get_table_schema(settings.sales_table_full_path)
-            schema_lines = [
-                f"  - {col['name']} ({col['type']}): {col['description']}"
-                for col in schema
-            ]
-            table_short = settings.sales_table_full_path.rsplit(".", 1)[-1]
-            _schema_cache_sales = f"\n\n### 실제 테이블 스키마 ({table_short})\n" + "\n".join(schema_lines)
+            tbl_schema = bq.get_table_schema(product_path)
+            tbl_lines = [f"  - {col['name']} ({col['type']}): {col['description']}" for col in tbl_schema]
+            _schema_cache_tables[product_path] = f"\n\n### 제품 마스터 (Product)\n" + "\n".join(tbl_lines)
         except Exception as e:
-            logger.warning("schema_fetch_failed", table="SALES_ALL_Backup", error=str(e))
+            logger.warning("schema_fetch_failed", table="Product", error=str(e))
+    if include_product:
+        schema_context += _schema_cache_tables.get(product_path, "")
 
-    schema_context = _schema_cache_sales
-
-    # 2) Lazy-load: only include marketing tables whose keywords match the query
+    # 2) Lazy-load: only include marketing tables whose keywords match AND are allowed
     query_lower = query.lower()
     matched_entries = [
         (t[0], t[1], t[2]) for t in MARKETING_TABLES
         if any(kw in query_lower for kw in t[2])
+        and (allowed_tables is None or t[0] in allowed_tables)
     ]
 
     # Parallel-fetch uncached schemas (avoid serial BQ roundtrips)
@@ -148,12 +287,31 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     if conv_context:
         conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?' 같은 참조를 이해하세요."
 
-    full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}\n\n## 사용자 질문\n{query}"
+    # Brand filter injection: override default Brand IN ('SK', 'CL') with user's group filter
+    brand_section = ""
+    brand_filter = state.get("brand_filter")
+    if brand_filter:
+        brands = [b.strip() for b in brand_filter.split(",") if b.strip()]
+        brand_in = ", ".join(f"'{b}'" for b in brands)
+        brand_section = (
+            f"\n\n## ⚠️ 브랜드 필터 (최우선 적용)\n"
+            f"이 사용자는 Brand IN ({brand_in}) 그룹에 속합니다.\n"
+            f"- 매출/제품 관련 SQL에 반드시 `WHERE Brand IN ({brand_in})` 조건을 추가하세요.\n"
+            f"- 프롬프트의 기본 Brand IN ('SK', 'CL') 규칙 대신 위 조건을 사용하세요.\n"
+        )
+
+    full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}{brand_section}\n\n## 사용자 질문\n{query}"
 
     try:
         sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=2048)
         sql = sanitize_sql(sql)
         logger.info("sql_generated", sql=sql[:200])
+
+        # Store in cache for future use (only standalone queries)
+        if not conv_context:
+            cache_key = _cache_key(query, brand_filter)
+            _cache_store(cache_key, query, sql, brand_filter)
+
         return {"generated_sql": sql, "error": None}
     except Exception as e:
         logger.error("sql_generation_failed", error=str(e))
@@ -422,7 +580,9 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         _result_header += f", 아래는 상위 {min(15, len(results))}건 프리뷰"
 
     prompt = f"""다음은 사용자의 질문과 BigQuery 실행 결과입니다.
-결과를 바탕으로 사용자에게 **구조화된 분석 보고서** 형태로 한국어 답변을 작성하세요.
+결과를 바탕으로 사용자에게 **구조화된 분석 보고서** 형태로 답변을 작성하세요.
+
+{LANGUAGE_DETECTION_RULE}
 
 ## 오늘 날짜
 {today_kr} (오늘 기준)
@@ -460,6 +620,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 *조회 기준: {today} | 데이터소스: {table_source}*
 
 ## 작성 규칙
+0. **⚠️ 절대 규칙: 위 SQL 실행 결과 데이터만 사용하여 답변하세요! 일반 상식이나 외부 정보를 절대 포함하지 마세요.** 이 답변은 SKIN1004 사내 데이터 분석 결과입니다. 싱가포르 GDP나 유럽 경제 동향 같은 외부 정보를 답변에 넣으면 안 됩니다.
 1. **반드시** 위 섹션 구조(요약 → 상세 데이터 → 분석 및 인사이트)를 따르세요.
 2. 핵심 수치는 **굵게** 표시하세요.
 3. 금액 표기: 1억 이상은 "약 OO.O억원", 1억 미만은 천 단위 쉼표 (예: 5,312만원).
@@ -698,6 +859,13 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
             logger.info("chart_not_needed", config=config)
             return ""
 
+        # Force line chart for monthly/time-series queries
+        _TREND_HINTS = ("월별", "월간", "추이", "트렌드", "trend", "monthly")
+        if any(h in query.lower() for h in _TREND_HINTS):
+            if config.get("chart_type") in ("bar", "grouped_bar", "stacked_bar"):
+                logger.info("chart_type_overridden_to_line", original=config["chart_type"], reason="trend query")
+                config["chart_type"] = "line"
+
         logger.info("chart_requested", chart_type=config.get("chart_type"), group_column=config.get("group_column"))
 
         # Build Chart.js config JSON (rendered interactively by frontend)
@@ -880,6 +1048,8 @@ async def run_sql_agent(
     query: str,
     conversation_context: str = "",
     model_type: str = MODEL_GEMINI,
+    brand_filter: Optional[str] = None,
+    enabled_sources: Optional[list] = None,
 ) -> str:
     """Run the Text-to-SQL agent on a query.
 
@@ -887,6 +1057,8 @@ async def run_sql_agent(
         query: Natural language question about data.
         conversation_context: Previous conversation context for reference resolution.
         model_type: "gemini" or "claude" — which LLM to use.
+        brand_filter: Comma-separated brand codes (e.g. "SK,CL,CBT" or "UM").
+        enabled_sources: List of enabled source keys (e.g. ["BigQuery 제품"]) for table filtering.
 
     Returns:
         Natural language answer based on SQL results.
@@ -907,6 +1079,8 @@ async def run_sql_agent(
         "messages": None,
         "conversation_context": conversation_context,
         "model_type": model_type,
+        "brand_filter": brand_filter,
+        "enabled_sources": enabled_sources,
     }
 
     logger.info("sql_agent_started", query=query)
