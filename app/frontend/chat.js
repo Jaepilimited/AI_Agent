@@ -1018,6 +1018,25 @@
   function highlightCodeBlocks(container) {
     container.querySelectorAll("pre code").forEach(function (block) {
       hljs.highlightElement(block);
+      // Add copy button to code blocks (enterprise feature)
+      var pre = block.parentElement;
+      if (pre && !pre.querySelector(".code-copy-btn")) {
+        var btn = document.createElement("button");
+        btn.className = "code-copy-btn";
+        btn.textContent = "Copy";
+        btn.addEventListener("click", function () {
+          navigator.clipboard.writeText(block.textContent).then(function () {
+            btn.textContent = "Copied!";
+            btn.classList.add("copied");
+            setTimeout(function () {
+              btn.textContent = "Copy";
+              btn.classList.remove("copied");
+            }, 1500);
+          });
+        });
+        pre.style.position = "relative";
+        pre.appendChild(btn);
+      }
     });
   }
 

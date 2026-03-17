@@ -1001,12 +1001,29 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border-radius: 4px;
 }
 
+/* Blockquotes (insight callouts) */
+.message-assistant .message-content blockquote {
+  margin: 12px 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-hover);
+  border-radius: 0 6px 6px 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.message-assistant .message-content blockquote p {
+  margin: 4px 0;
+}
+
 /* Tables */
 .message-assistant .message-content table {
   width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
+  margin: 12px 0;
   font-size: 13px;
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .message-assistant .message-content th,
@@ -1019,7 +1036,53 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .message-assistant .message-content th {
   background: var(--bg-hover);
   font-weight: 600;
+  font-size: 12.5px;
+  text-transform: none;
 }
+
+.message-assistant .message-content tbody tr:nth-child(even) td {
+  background: var(--bg-hover);
+}
+.message-assistant .message-content tr:hover td {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+
+/* Source footer (AI 생성 답변 / 조회 기준) */
+.message-assistant .message-content em:last-of-type {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-tertiary, var(--text-secondary));
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+/* Horizontal rule separator */
+.message-assistant .message-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+  opacity: 0.5;
+}
+
+/* Code block copy button */
+.code-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: var(--font-main);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+pre:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.code-copy-btn.copied { background: #22c55e; color: #fff; border-color: #22c55e; opacity: 1; }
 
 /* Source badge (SVG icon + label) */
 .source-badge {
