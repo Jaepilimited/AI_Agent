@@ -1093,16 +1093,16 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 /* --- Follow-up suggestions --- */
 .followup-suggestions {
   max-width: 800px;
-  margin: 0 auto 8px;
+  margin: 4px auto 10px;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
-  animation: followup-enter 0.3s ease both;
+  animation: followup-enter 0.35s ease both;
 }
 
 @keyframes followup-enter {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -1111,18 +1111,34 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-family: var(--font-main);
-  font-size: 12px;
-  padding: 7px 14px;
+  font-size: 12.5px;
+  padding: 8px 16px;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+}
+
+.followup-chip::before {
+  content: "💡";
+  margin-right: 5px;
+  font-size: 11px;
 }
 
 .followup-chip:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-hover);
+  box-shadow: 0 2px 8px rgba(232, 146, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+.followup-chip:active {
+  transform: translateY(0);
 }
 
 /* --- Input area --- */

@@ -809,11 +809,19 @@
     followupContainer.innerHTML = "";
   }
 
+  /**
+   * Extract follow-up suggestions from LLM answer, fallback to hardcoded pool.
+   * LLM format: > 💡 **이런 것도 물어보세요** \n > - question1 \n > - question2
+   */
   function pickFollowups(query, answer) {
+    // 1. Try extracting LLM-generated follow-ups from answer
+    var llmFollowups = extractFollowupsFromAnswer(answer);
+    if (llmFollowups.length >= 2) return llmFollowups.slice(0, 3);
+
+    // 2. Fallback: hardcoded pool
     var q = (query || "").toLowerCase();
     var pool = [];
 
-    // Detect context from query (based on actual data platforms)
     if (/쇼피|shopee/.test(q)) pool = FOLLOWUP_POOLS.shopee;
     else if (/아마존|amazon/.test(q)) pool = FOLLOWUP_POOLS.amazon;
     else if (/틱톡|tiktok/.test(q)) pool = FOLLOWUP_POOLS.tiktok;
@@ -821,12 +829,45 @@
     else if (/매출|수량|제품|순위|비교|추이|증감|국가|플랫폼/.test(q)) pool = FOLLOWUP_POOLS.sales;
     else pool = FOLLOWUP_POOLS.general;
 
-    // Remove the query itself from suggestions
     pool = pool.filter(function (s) { return s !== query; });
-
-    // Shuffle and pick 3
     var shuffled = pool.slice().sort(function () { return Math.random() - 0.5; });
     return shuffled.slice(0, 3);
+  }
+
+  /**
+   * Parse LLM-generated follow-up suggestions from the answer text.
+   * Matches patterns like:
+   *   > 💡 **이런 것도 물어보세요**
+   *   > - "2024년 미국 매출 알려줘"
+   *   > - 일본 쇼피 매출 비교해줘
+   */
+  function extractFollowupsFromAnswer(answer) {
+    if (!answer) return [];
+    var suggestions = [];
+
+    // Find the follow-up block (after 💡)
+    var blockStart = answer.indexOf("💡");
+    if (blockStart === -1) return [];
+
+    var blockText = answer.substring(blockStart);
+    // Match lines starting with > - or just - after the 💡 marker
+    var lines = blockText.split("\n");
+    for (var i = 1; i < lines.length; i++) {
+      var line = lines[i].trim();
+      // Stop at empty line or new section (heading, horizontal rule)
+      if (!line || line.startsWith("#") || line === "---") break;
+      // Extract suggestion text from "> - text" or "- text" patterns
+      var match = line.match(/^>?\s*[-*]\s*["""]?(.+?)["""]?\s*$/);
+      if (match) {
+        var text = match[1].trim();
+        // Remove trailing quotes and markdown artifacts
+        text = text.replace(/^["""]|["""]$/g, "").trim();
+        if (text.length > 5 && text.length < 100) {
+          suggestions.push(text);
+        }
+      }
+    }
+    return suggestions;
   }
 
   // ===== Source Badge (SVG icons matching system status) =====
@@ -932,10 +973,46 @@
   function renderMarkdown(el, text) {
     if (!text) { el.innerHTML = ""; return; }
     try {
-      el.innerHTML = marked.parse(text, { breaks: true, gfm: true });
+      // Strip follow-up suggestion block from rendered content (shown as chips instead)
+      var cleaned = stripFollowupBlock(text);
+      el.innerHTML = marked.parse(cleaned, { breaks: true, gfm: true });
     } catch (e) {
       el.textContent = text;
     }
+  }
+
+  /**
+   * Remove the "💡 이런 것도 물어보세요" blockquote from rendered markdown.
+   * These suggestions are displayed as interactive chips below the message.
+   */
+  function stripFollowupBlock(text) {
+    if (!text || text.indexOf("💡") === -1) return text;
+    var lines = text.split("\n");
+    var result = [];
+    var inFollowup = false;
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var stripped = line.trim();
+      // Detect start of follow-up block
+      if (stripped.indexOf("💡") !== -1 && (/물어보세요/.test(stripped) || /질문/.test(stripped))) {
+        inFollowup = true;
+        continue;
+      }
+      if (inFollowup) {
+        // Continue skipping follow-up suggestion lines
+        if (stripped.match(/^>?\s*[-*]\s*.+/) || stripped === ">" || stripped === "") {
+          continue;
+        }
+        // End of follow-up block
+        inFollowup = false;
+      }
+      result.push(line);
+    }
+    // Clean trailing empty lines
+    while (result.length > 0 && result[result.length - 1].trim() === "") {
+      result.pop();
+    }
+    return result.join("\n");
   }
 
   function highlightCodeBlocks(container) {
