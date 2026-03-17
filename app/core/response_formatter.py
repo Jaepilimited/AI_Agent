@@ -143,14 +143,14 @@ def _ensure_source_footer(text: str, domain: str) -> str:
     """
     from datetime import datetime
 
-    # Skip if already has a footer (조회 기준, 출처, AI 생성)
-    if '조회 기준' in text or '출처:' in text or 'AI 생성' in text:
+    # Skip if already has a footer (조회 기준, 출처, AI 생성, 분석 기준)
+    if '조회 기준' in text or '출처:' in text or 'AI 생성' in text or '분석 기준' in text:
         return text
     # Skip short answers (greetings, single-line)
     if text.count('\n') < 5:
         return text
-    # Skip non-direct routes (they have their own footers)
-    if domain and domain not in ('direct', ''):
+    # Only add footer for direct and multi routes (others have built-in footers)
+    if domain and domain not in ('direct', 'multi', ''):
         return text
 
     today = datetime.now().strftime("%Y-%m-%d")
@@ -163,7 +163,10 @@ def _ensure_source_footer(text: str, domain: str) -> str:
             followup_line_idx = i
             break
 
-    footer = f"*AI 생성 답변 · {today}*"
+    if domain == 'multi':
+        footer = f"*분석 기준: SKIN1004 내부 데이터 + Google 검색 · {today}*"
+    else:
+        footer = f"*AI 생성 답변 · {today}*"
 
     if followup_line_idx != -1:
         # Find the actual content end (skip blank lines before follow-up)
