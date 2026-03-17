@@ -936,7 +936,23 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   width: 100%;
   margin: 0 auto;
   padding: 0 20px;
+  position: relative;
 }
+
+/* Message timestamp (hover to reveal) */
+.msg-timestamp {
+  position: absolute;
+  top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.message:hover .msg-timestamp { opacity: 1; }
+.message-user .msg-timestamp { right: 22px; }
+.message-assistant .msg-timestamp { left: 22px; }
 
 .message-user {
   display: flex;
@@ -1227,6 +1243,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 
 .chat-input-wrapper:focus-within {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow, rgba(232, 146, 0, 0.15));
 }
 
 .chat-input-wrapper textarea {

@@ -33,6 +33,19 @@ logger = structlog.get_logger(__name__)
 _orchestrator = None
 
 
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count for mixed Korean/English text.
+
+    Korean characters use ~2-3 tokens per character in most LLMs.
+    English words use ~1.3 tokens on average.
+    """
+    if not text:
+        return 0
+    korean = sum(1 for c in text if '\uac00' <= c <= '\ud7a3')
+    ascii_chars = sum(1 for c in text if c.isascii())
+    return int(korean * 2.5 + ascii_chars * 0.3)
+
+
 def _get_orchestrator():
     global _orchestrator
     if _orchestrator is None:
@@ -169,9 +182,9 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
             )
         ],
         usage=UsageInfo(
-            prompt_tokens=len(query),
-            completion_tokens=len(answer),
-            total_tokens=len(query) + len(answer),
+            prompt_tokens=_estimate_tokens(query),
+            completion_tokens=_estimate_tokens(answer),
+            total_tokens=_estimate_tokens(query) + _estimate_tokens(answer),
         ),
     )
 

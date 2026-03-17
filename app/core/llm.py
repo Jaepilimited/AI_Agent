@@ -83,7 +83,7 @@ class LLMClient(Protocol):
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str: ...
 
     def generate_with_history(
@@ -91,7 +91,7 @@ class LLMClient(Protocol):
         messages: List[Dict[str, str]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str: ...
 
     def generate_json(
@@ -120,7 +120,7 @@ class GeminiClient:
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response from Gemini."""
         from google.genai import types
@@ -154,7 +154,7 @@ class GeminiClient:
         images: List[Dict[str, Any]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.3,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response from text + images (vision).
 
@@ -197,7 +197,7 @@ class GeminiClient:
         messages: List[Dict[str, Any]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response with conversation history."""
         from google.genai import types
@@ -272,7 +272,7 @@ class GeminiClient:
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.3,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response with Google Search grounding."""
         from google.genai import types
@@ -331,7 +331,7 @@ class GeminiClient:
         messages: List[Dict[str, Any]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.3,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response with conversation history and Google Search grounding."""
         from google.genai import types
@@ -410,7 +410,7 @@ class ClaudeClient:
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response from Claude."""
         logger.info("claude_generating", model=self.model, prompt_length=len(prompt))
@@ -439,7 +439,7 @@ class ClaudeClient:
         images: List[Dict[str, Any]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.3,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response from text + images (vision).
 
@@ -486,7 +486,7 @@ class ClaudeClient:
         messages: List[Dict[str, Any]],
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
-        max_output_tokens: int = 16384,
+        max_output_tokens: int = 8192,
     ) -> str:
         """Generate a response with conversation history."""
         api_messages = []
