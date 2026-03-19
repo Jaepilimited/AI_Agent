@@ -35,6 +35,8 @@
 
 #### 기본 정보
 - Brand (STRING): 브랜드 — 'SK'(스킨1004), 'CL'(커먼랩스/CommonLabs), 'ETC'(아워 바이오), 'UM'(우마), 'DD'
+  - ⚠️ **매출 조회 시 `Brand != 'ETC'` 기본 적용!** ETC(아워바이오)는 기본 제외. 사용자가 명시적으로 "ETC 포함", "아워바이오 포함", "전 브랜드" 요청 시에만 ETC 포함
+  - ⚠️ **크레이버코퍼레이션 = 전체 회사**. "크레이버", "크레이버코퍼레이션", "Craver", "우리 회사 전체" → Brand 필터 넣지 마라 (Admin에서 AD 그룹별 brand_filter가 별도 적용됨). 단, ETC는 기본 제외
 - Mall_Classification (STRING): 몰/채널 분류 코드
   - SK_B2B_Domestic (스킨1004 국내 도매), SK_B2B_Overseas (스킨1004 해외 도매)
   - SK_B2C_Flagship (플래그십/오프라인/메인), SK_B2C_cafe24_skin1004 (국문/글로벌 자사몰), SK_B2C_sabangnet (사방넷/국내 종합몰), SK_B2C_cafe24_zombiebeauty (좀비뷰티 자사몰)
@@ -119,6 +121,14 @@
   - 'OP' (운영)
   - '기타'
   - ⚠️ 'GM_WEST'는 존재하지 않음! 사용자가 "GM WEST" 또는 "서쪽팀"을 말하면 해당 팀이 없다고 안내
+  - ⚠️ **사업부(Division) 매핑** — "사업부별", "조직별" 질문 시 아래 기준으로 GROUP BY:
+    - **B2B 사업부**: Team_NEW IN ('B2B1', 'B2B2')
+    - **GM 사업부** (글로벌마케팅): Team_NEW IN ('CBT', 'GM_EAST1', 'GM_EAST2', 'GM_Ecomm', 'GM_MKT', 'JBT', 'KBT')
+    - **PR 사업부** (브랜드커머스): Team_NEW IN ('BCM')
+    - **DD 사업부**: Team_NEW IN ('DD_DT1', 'DD_DT2')
+  - "전사 실적" = 모든 팀 합산 (Brand != 'ETC' 기본 적용)
+  - "사업부별 실적" = CASE WHEN으로 사업부 그룹핑 + 팀별 소계 (depth: 사업부/팀)
+  - "실적" = Sales1_R(매출액). 주문수량 = Order_Count
 - Manager_NEW (STRING): 담당자
 - Type_of_Company (STRING): 업체 유형
 - ID (STRING): 아이디
@@ -318,6 +328,7 @@
 | 스킨1004, 스킨천사, SKIN1004 | `SK_` | 메인 브랜드 |
 | 커먼랩스, CommonLabs, 커먼 | `CL_` | 서브 브랜드 |
 | 좀비뷰티, Zombie Beauty | `ZB_` | 서브 브랜드 |
+| 크레이버, 크레이버코퍼레이션, Craver | 전체 | 회사 전체 — Brand 필터 넣지 마라 (시스템 자동 필터링) |
 
 ### 제품 라인 매핑
 
@@ -331,7 +342,7 @@
 | 티트리카, 티트리 | Teatrica | `'%Teatrica%'` |
 | 톤브라이트닝, 톤업, TB | Tone_Brightening | `'%Tone_Brightening%'` |
 | 포어마이징 | Poremizing | `'%Poremizing%'` |
-| 랩인네이쳐, 라빈네이처, 라빈네이쳐 | LabinNature | `'%LabinNature%'` |
+| 랩인네이처, 랩인네이쳐, 라빈네이처, 라빈네이쳐, LIN | LabinNature | `'%LabinNature%'` |
 | 비타민B5, 비타민B | Vitamin_B5 | `'%Vitamin_B5%'` |
 | 비타민C | Vitamin_C | `'%Vitamin_C%'` |
 | 비타민E | Vitamin_E | `'%Vitamin_E%'` |

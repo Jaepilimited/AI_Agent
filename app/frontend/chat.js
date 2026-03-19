@@ -13,6 +13,7 @@
   var currentMessages = [];  // In-memory message history for API calls
   var isStreaming = false;
   var lastUserQuery = "";
+  var currentAbortController = null;  // AbortController for active stream
 
   // ===== Data Source Filter =====
   // Queryable data sources — shown with checkboxes in System Status
@@ -493,6 +494,12 @@
   }
 
   async function loadConversation(id) {
+    // Abort active stream if switching conversations
+    if (isStreaming && currentAbortController) {
+      currentAbortController.abort();
+      isStreaming = false;
+      currentAbortController = null;
+    }
     try {
       _showSkeleton();
       var resp = await fetch("/api/conversations/" + id);
@@ -721,6 +728,8 @@
 
     // Stream response
     isStreaming = true;
+    if (currentAbortController) currentAbortController.abort();
+    currentAbortController = new AbortController();
     var aiContent = "";
     var detectedSource = "";
     var aiMsgEl = appendMessage("assistant", "", true);
@@ -737,6 +746,7 @@
           brand_filter: (currentUser && currentUser.my_brand_filter) || null,
           enabled_sources: _sendSources
         }),
+        signal: currentAbortController.signal,
       });
 
       var reader = response.body.getReader();
@@ -778,6 +788,14 @@
         }
       }
     } catch (e) {
+      if (e.name === "AbortError") {
+        // Stream was cancelled (user switched conversation) — clean up silently
+        var typing = aiMsgEl.querySelector(".typing-indicator");
+        if (typing) typing.remove();
+        isStreaming = false;
+        currentAbortController = null;
+        return;
+      }
       aiContent = "오류가 발생했습니다: " + e.message;
       contentEl.textContent = aiContent;
     }
@@ -802,6 +820,7 @@
     await saveMessage("assistant", cleanContent);
 
     isStreaming = false;
+    currentAbortController = null;
     scrollToBottom();
 
     // Show follow-up suggestions

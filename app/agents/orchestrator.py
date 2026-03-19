@@ -473,7 +473,7 @@ class OrchestratorAgent:
         # "올해 미국 매출" → bigquery (매출 = SKIN1004 data)
         if has_data and any(kw in q for kw in self._SEARCH_KEYWORDS):
             _SKIN1004_TERMS = [
-                "skin1004", "스킨", "센텔라", "히알루", "커먼랩스", "좀비뷰티", "랩인네이처",
+                "skin1004", "스킨", "센텔라", "히알루", "커먼랩스", "좀비뷰티", "랩인네이처", "크레이버",
                 "매출", "수량", "주문", "판매", "재고", "실적", "매상", "세일즈",
                 "쇼피", "아마존", "틱톡", "라자다", "큐텐", "shopify", "쇼피파이",
                 "광고비", "광고", "메타", "roas", "ctr", "마케팅비", "노출수", "클릭수",
@@ -582,10 +582,9 @@ class OrchestratorAgent:
             _maintenance_warning = f"\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
             logger.info("maintenance_soft_warning", reason=mm.reason)
         try:
-            sql_context = _build_conversation_context(messages) if messages else ""
             answer = await run_sql_agent(
                 query,
-                conversation_context=sql_context,
+                conversation_context=conversation_context,
                 model_type=model_type,
                 brand_filter=brand_filter,
                 enabled_sources=enabled_sources,
@@ -596,7 +595,7 @@ class OrchestratorAgent:
                 return await self._handle_bigquery_fallback(
                     query, messages, conversation_context, model_type, user_email
                 )
-            return {"source": "bigquery", "answer": answer + _maintenance_warning + "\n<!-- ROUTE:BQ -->"}
+            return {"source": "bigquery", "answer": answer + _maintenance_warning}
         except Exception as e:
             logger.error("orchestrator_bigquery_failed", error=str(e))
             return await self._handle_bigquery_fallback(

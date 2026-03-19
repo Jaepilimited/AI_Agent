@@ -55,14 +55,6 @@ def _get_orchestrator():
 router = APIRouter()
 
 
-@router.get("/debug/route")
-async def debug_route(q: str = "test"):
-    """Temporary debug endpoint — returns routing classification."""
-    o = _get_orchestrator()
-    route = o._keyword_classify(q)
-    return {"query": q, "route": route}
-
-
 @router.get("/dashboard")
 async def dashboard():
     """Serve the Dashboard Hub page."""
