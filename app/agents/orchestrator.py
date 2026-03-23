@@ -591,10 +591,20 @@ class OrchestratorAgent:
             )
             # Check if SQL agent returned an error (it returns error as string, not exception)
             if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
-                logger.warning("bigquery_sql_failed_fallback_to_direct", query=query[:100])
-                return await self._handle_bigquery_fallback(
-                    query, messages, conversation_context, model_type, user_email
+                # Retry once before falling back
+                logger.warning("bigquery_sql_failed_retry", query=query[:100])
+                answer = await run_sql_agent(
+                    query,
+                    conversation_context=conversation_context,
+                    model_type=model_type,
+                    brand_filter=brand_filter,
+                    enabled_sources=enabled_sources,
                 )
+                if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
+                    logger.warning("bigquery_sql_failed_fallback_to_direct", query=query[:100])
+                    return await self._handle_bigquery_fallback(
+                        query, messages, conversation_context, model_type, user_email
+                    )
             return {"source": "bigquery", "answer": answer + _maintenance_warning}
         except Exception as e:
             logger.error("orchestrator_bigquery_failed", error=str(e))

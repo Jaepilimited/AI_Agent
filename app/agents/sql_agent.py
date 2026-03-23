@@ -300,11 +300,27 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             f"- 프롬프트의 기본 Brand IN ('SK', 'CL') 규칙 대신 위 조건을 사용하세요.\n"
         )
 
-    full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}{brand_section}\n\n## 사용자 질문\n{query}"
+    sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성."
+    full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}{brand_section}\n\n## 사용자 질문\n{query}{sql_only_reminder}"
 
     try:
-        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=2048)
+        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=4096)
         sql = sanitize_sql(sql)
+
+        # Retry once if LLM returned text instead of SQL
+        if not sql or len(sql) < 10:
+            logger.warning("sql_generation_empty_retry", query=query[:80])
+            retry_prompt = (
+                full_prompt
+                + "\n\n⛔ 이전 시도에서 SQL이 아닌 텍스트를 출력했습니다. "
+                "반드시 SELECT로 시작하는 BigQuery SQL만 출력하세요. "
+                "설명, 안내, 되묻기 텍스트 절대 금지! SQL만!"
+            )
+            sql = llm.generate(retry_prompt, temperature=0.1, max_output_tokens=4096)
+            sql = sanitize_sql(sql)
+            if sql:
+                logger.info("sql_generation_retry_success", sql=sql[:200])
+
         logger.info("sql_generated", sql=sql[:200])
 
         # Store in cache for future use (only standalone queries)
@@ -477,7 +493,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 {sql}
 ```
 {f"유효 값: {_hints_text}" if _hints_text else ""}
-간결하게: 1) 데이터 없음 안내 2) 어떤 조건이 문제인지 3) 대안 질문 2개. 한국어."""
+간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 왜 0건인지 가능한 원인 (조건 불일치, 해당 기간 데이터 없음 등) 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
                 answer = f.result(timeout=2.0)
@@ -666,7 +682,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # Answer generation: foreground. Chart: parallel with short timeout.
         # User sees answer immediately; chart appended only if ready fast enough.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            answer_future = executor.submit(llm.generate, prompt, None, 0.3, 8192)
+            answer_future = executor.submit(llm.generate, prompt, None, 0.3, 4096)
             chart_llm = get_flash_client()
             chart_future = executor.submit(
                 _try_generate_chart, chart_llm, query, sql, result_preview, results

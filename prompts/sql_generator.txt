@@ -944,6 +944,70 @@ ORDER BY total_qty DESC
 LIMIT 20
 ```
 
+#### P4. 전년 동기 대비 국가별 수량 증감률 (YoY)
+```sql
+-- "전년 동기 대비 국가별 총 수량 증감률"
+WITH this_year AS (
+  SELECT Country, SUM(Total_Qty) AS qty
+  FROM `skin1004-319714.Sales_Integration.Product`
+  WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL')
+    AND EXTRACT(YEAR FROM Date) = EXTRACT(YEAR FROM CURRENT_DATETIME())
+    AND EXTRACT(MONTH FROM Date) <= EXTRACT(MONTH FROM CURRENT_DATETIME())
+  GROUP BY Country
+),
+last_year AS (
+  SELECT Country, SUM(Total_Qty) AS qty
+  FROM `skin1004-319714.Sales_Integration.Product`
+  WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL')
+    AND EXTRACT(YEAR FROM Date) = EXTRACT(YEAR FROM CURRENT_DATETIME()) - 1
+    AND EXTRACT(MONTH FROM Date) <= EXTRACT(MONTH FROM CURRENT_DATETIME())
+  GROUP BY Country
+)
+SELECT t.Country, t.qty AS this_year_qty, l.qty AS last_year_qty,
+  ROUND(SAFE_DIVIDE(t.qty - l.qty, l.qty) * 100, 1) AS growth_pct
+FROM this_year t LEFT JOIN last_year l ON t.Country = l.Country
+ORDER BY growth_pct DESC LIMIT 30
+```
+
+#### P5. 전년 대비 Category별 수량 변화
+```sql
+-- "전년 대비 Category별 수량 변화"
+WITH this_year AS (
+  SELECT Category, SUM(Total_Qty) AS qty
+  FROM `skin1004-319714.Sales_Integration.Product`
+  WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL')
+    AND EXTRACT(YEAR FROM Date) = EXTRACT(YEAR FROM CURRENT_DATETIME())
+  GROUP BY Category
+),
+last_year AS (
+  SELECT Category, SUM(Total_Qty) AS qty
+  FROM `skin1004-319714.Sales_Integration.Product`
+  WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL')
+    AND EXTRACT(YEAR FROM Date) = EXTRACT(YEAR FROM CURRENT_DATETIME()) - 1
+  GROUP BY Category
+)
+SELECT t.Category, t.qty AS this_year, l.qty AS last_year,
+  ROUND(SAFE_DIVIDE(t.qty - l.qty, l.qty) * 100, 1) AS growth_pct
+FROM this_year t LEFT JOIN last_year l ON t.Category = l.Category
+ORDER BY growth_pct DESC
+```
+
+#### P6. 지난달 대비 이번 달 판매 수량 성장률 (MoM)
+```sql
+-- "지난달 대비 이번 달 총 판매 수량 성장률"
+WITH monthly AS (
+  SELECT FORMAT_DATETIME('%Y-%m', Date) AS month, SUM(Total_Qty) AS qty
+  FROM `skin1004-319714.Sales_Integration.Product`
+  WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL')
+  GROUP BY month
+)
+SELECT a.month AS this_month, a.qty AS this_qty, b.qty AS last_qty,
+  ROUND(SAFE_DIVIDE(a.qty - b.qty, b.qty) * 100, 1) AS growth_pct
+FROM monthly a
+JOIN monthly b ON FORMAT_DATE('%Y-%m', DATE_SUB(PARSE_DATE('%Y-%m', a.month), INTERVAL 1 MONTH)) = b.month
+ORDER BY a.month DESC LIMIT 2
+```
+
 ### Product 테이블 제품 검색 LIKE 규칙
 - Product 테이블의 `Product` 컬럼도 **영어**임. 한국어-영어 매핑은 위 SALES_ALL 섹션과 동일하게 적용
 - `Product` 컬럼 = SALES_ALL의 `SET`을 unpivot한 것이므로 같은 제품명 사용
