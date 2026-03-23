@@ -792,7 +792,18 @@
               } else {
                 aiContent += delta.content;
               }
-              renderMarkdown(contentEl, aiContent);
+              // Throttled markdown render: max once per 300ms for smooth streaming
+              var now = Date.now();
+              if (!contentEl._lastRender || now - contentEl._lastRender > 300) {
+                renderMarkdown(contentEl, aiContent);
+                contentEl._lastRender = now;
+              } else if (!contentEl._pendingRender) {
+                contentEl._pendingRender = setTimeout(function() {
+                  renderMarkdown(contentEl, aiContent);
+                  contentEl._lastRender = Date.now();
+                  contentEl._pendingRender = null;
+                }, 300);
+              }
               scrollToBottom();
             }
           } catch (e) { /* skip */ }
@@ -813,6 +824,12 @@
 
     var typing = aiMsgEl.querySelector(".typing-indicator");
     if (typing) typing.remove();
+
+    // Clear any pending render timeout
+    if (contentEl._pendingRender) {
+      clearTimeout(contentEl._pendingRender);
+      contentEl._pendingRender = null;
+    }
 
     // Strip source tag from final content for storage
     var cleanContent = aiContent.replace(/<!-- source:\w+ -->/g, "");
