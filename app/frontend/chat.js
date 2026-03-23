@@ -737,14 +737,43 @@
     // Use in-memory messages for API (reliable, no DOM parsing)
     var messages = currentMessages.slice();
 
-    // Stream response
+    // Stream response — ChatGPT-style smooth character animation
     isStreaming = true;
     if (currentAbortController) currentAbortController.abort();
     currentAbortController = new AbortController();
     var aiContent = "";
+    var displayedLen = 0;
     var detectedSource = "";
+    var streamDone = false;
     var aiMsgEl = appendMessage("assistant", "", true);
     var contentEl = aiMsgEl.querySelector(".message-content");
+
+    // Smooth drip animation: 3 chars per frame (~180 chars/sec at 60fps)
+    var CHARS_PER_FRAME = 3;
+    var MD_INTERVAL = 500;
+    var lastMdTime = 0;
+    var animRunning = true;
+
+    function animLoop() {
+      if (!animRunning) return;
+      if (displayedLen < aiContent.length) {
+        displayedLen = Math.min(displayedLen + CHARS_PER_FRAME, aiContent.length);
+        var now = Date.now();
+        if (now - lastMdTime > MD_INTERVAL) {
+          renderMarkdown(contentEl, aiContent.substring(0, displayedLen));
+          lastMdTime = now;
+        } else {
+          contentEl.textContent = aiContent.substring(0, displayedLen);
+        }
+        scrollToBottom();
+        requestAnimationFrame(animLoop);
+      } else if (!streamDone) {
+        setTimeout(function() { requestAnimationFrame(animLoop); }, 50);
+      } else {
+        animRunning = false;
+      }
+    }
+    requestAnimationFrame(animLoop);
 
     try {
       var response = await fetch("/v1/chat/completions", {
@@ -767,51 +796,34 @@
       while (true) {
         var result = await reader.read();
         if (result.done) break;
-
         buffer += decoder.decode(result.value, { stream: true });
-        var lines = buffer.split("\n");
+        var lines = buffer.split("
+");
         buffer = lines.pop();
-
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i].trim();
           if (!line.startsWith("data: ")) continue;
           var data = line.slice(6);
           if (data === "[DONE]") continue;
-
           try {
             var parsed = JSON.parse(data);
             var delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
             if (delta && delta.content) {
-              // Detect source tag
               var srcMatch = delta.content.match(/<!-- source:(\w+) -->/);
               if (srcMatch) {
                 detectedSource = srcMatch[1];
-                // Strip source tag from content
                 var stripped = delta.content.replace(/<!-- source:\w+ -->/, "");
                 if (stripped) aiContent += stripped;
               } else {
                 aiContent += delta.content;
               }
-              // Throttled markdown render: max once per 300ms for smooth streaming
-              var now = Date.now();
-              if (!contentEl._lastRender || now - contentEl._lastRender > 300) {
-                renderMarkdown(contentEl, aiContent);
-                contentEl._lastRender = now;
-              } else if (!contentEl._pendingRender) {
-                contentEl._pendingRender = setTimeout(function() {
-                  renderMarkdown(contentEl, aiContent);
-                  contentEl._lastRender = Date.now();
-                  contentEl._pendingRender = null;
-                }, 300);
-              }
-              scrollToBottom();
             }
           } catch (e) { /* skip */ }
         }
       }
     } catch (e) {
       if (e.name === "AbortError") {
-        // Stream was cancelled (user switched conversation) — clean up silently
+        animRunning = false;
         var typing = aiMsgEl.querySelector(".typing-indicator");
         if (typing) typing.remove();
         isStreaming = false;
@@ -819,31 +831,31 @@
         return;
       }
       aiContent = "오류가 발생했습니다: " + e.message;
-      contentEl.textContent = aiContent;
     }
+
+    // Wait for animation to finish rendering all chars (max 5s)
+    streamDone = true;
+    await new Promise(function(resolve) {
+      var iv = setInterval(function() {
+        if (displayedLen >= aiContent.length || !animRunning) { clearInterval(iv); resolve(); }
+      }, 100);
+      setTimeout(function() { clearInterval(iv); resolve(); }, 5000);
+    });
+    animRunning = false;
 
     var typing = aiMsgEl.querySelector(".typing-indicator");
     if (typing) typing.remove();
 
-    // Clear any pending render timeout
-    if (contentEl._pendingRender) {
-      clearTimeout(contentEl._pendingRender);
-      contentEl._pendingRender = null;
-    }
-
-    // Strip source tag from final content for storage
     var cleanContent = aiContent.replace(/<!-- source:\w+ -->/g, "");
     contentEl.dataset.raw = cleanContent;
     renderMarkdown(contentEl, cleanContent);
     detectAndRenderCharts(contentEl, cleanContent);
     highlightCodeBlocks(contentEl);
 
-    // Add source badge
     if (detectedSource && detectedSource !== "direct") {
       addSourceBadge(aiMsgEl, detectedSource);
     }
 
-    // Add assistant message to in-memory history
     currentMessages.push({ role: "assistant", content: cleanContent });
     await saveMessage("assistant", cleanContent);
 
@@ -851,7 +863,6 @@
     currentAbortController = null;
     scrollToBottom();
 
-    // Show follow-up suggestions
     showFollowups(lastUserQuery, aiContent);
   }
 
