@@ -262,8 +262,8 @@ async def _stream_response(
     )
     yield f"data: {source_chunk.model_dump_json()}\n\n"
 
-    # Stream the answer in chunks
-    chunk_size = 80  # characters per chunk (bigger = fewer SSE frames = faster)
+    # Stream the answer in chunks (larger chunks = fewer SSE frames = faster)
+    chunk_size = 120
     for i in range(0, len(answer), chunk_size):
         text_chunk = answer[i : i + chunk_size]
         stream_chunk = ChatCompletionStreamResponse(

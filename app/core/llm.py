@@ -148,6 +148,35 @@ class GeminiClient:
             logger.error("gemini_generation_failed", error=str(e))
             raise
 
+    def generate_stream(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 8192,
+    ):
+        """Generate a streaming response from Gemini. Yields text chunks."""
+        from google.genai import types
+
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+        if system_instruction:
+            config.system_instruction = system_instruction
+
+        try:
+            for chunk in self.client.models.generate_content_stream(
+                model=self.model,
+                contents=prompt,
+                config=config,
+            ):
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            logger.error("gemini_stream_failed", error=str(e))
+            raise
+
     def generate_with_images(
         self,
         text: str,
