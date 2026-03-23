@@ -994,6 +994,17 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   font-size: 14px;
   line-height: 1.7;
   max-width: 100%;
+  overflow: hidden;
+}
+/* Streaming: smooth new content appearance */
+.message-assistant .message-content p:last-child,
+.message-assistant .message-content li:last-child,
+.message-assistant .message-content tr:last-child {
+  animation: fadeInContent 0.15s ease-in;
+}
+@keyframes fadeInContent {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
 }
 
 .message-assistant .message-content p { margin-bottom: 10px; }

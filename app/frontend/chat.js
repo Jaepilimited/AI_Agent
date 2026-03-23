@@ -790,19 +790,20 @@
               } else {
                 aiContent += delta.content;
               }
-              // Throttled markdown render: max once per 300ms
+              // Smooth streaming: render markdown every 150ms for fluid typing feel
               var now = Date.now();
-              if (!contentEl._lastRender || now - contentEl._lastRender > 300) {
+              if (!contentEl._lastRender || now - contentEl._lastRender > 150) {
                 renderMarkdown(contentEl, aiContent);
                 contentEl._lastRender = now;
+                scrollToBottom();
               } else if (!contentEl._pendingRender) {
                 contentEl._pendingRender = setTimeout(function() {
                   renderMarkdown(contentEl, aiContent);
                   contentEl._lastRender = Date.now();
                   contentEl._pendingRender = null;
-                }, 300);
+                  scrollToBottom();
+                }, 150);
               }
-              scrollToBottom();
             }
           } catch (e) { /* skip */ }
         }
