@@ -673,6 +673,17 @@
     var hasImages = pendingImages.length > 0;
     if ((!text && !hasImages) || isStreaming) return;
 
+    // "1번", "2번", "3번", "1", "2", "3" → 후속 질문 칩 텍스트로 대체
+    var numMatch = text.match(/^(\d)번?$/);
+    if (numMatch && followupContainer.style.display !== "none") {
+      var chipIdx = parseInt(numMatch[1]) - 1;
+      var chips = followupContainer.querySelectorAll(".followup-chip");
+      if (chipIdx >= 0 && chipIdx < chips.length) {
+        text = chips[chipIdx].textContent;
+        chatInput.value = text;
+      }
+    }
+
     lastUserQuery = text;
     var imagesToSend = pendingImages.slice();  // snapshot
     hideFollowups();

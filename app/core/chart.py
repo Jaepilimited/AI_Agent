@@ -107,6 +107,31 @@ def build_chartjs_config(
         if not data or not x_col or not y_col:
             return None
 
+        # Validate x_column exists in data — auto-fix if not found
+        data_keys = list(data[0].keys()) if data else []
+        if x_col not in data_keys:
+            # Try case-insensitive match
+            x_lower = x_col.lower()
+            matched = [k for k in data_keys if k.lower() == x_lower]
+            if matched:
+                x_col = matched[0]
+            else:
+                # Pick first non-numeric column as x
+                for k in data_keys:
+                    try:
+                        float(data[0].get(k, ""))
+                    except (ValueError, TypeError):
+                        x_col = k
+                        break
+
+        if isinstance(y_col, str) and y_col not in data_keys:
+            y_lower = y_col.lower()
+            matched = [k for k in data_keys if k.lower() == y_lower]
+            if matched:
+                y_col = matched[0]
+            else:
+                y_col = _find_numeric_column(data, exclude=[x_col]) or y_col
+
         # Validate y_column is numeric — auto-fix if needed
         if isinstance(y_col, str):
             sample_val = data[0].get(y_col)
