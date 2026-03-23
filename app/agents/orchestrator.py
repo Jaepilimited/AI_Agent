@@ -326,16 +326,50 @@ class OrchestratorAgent:
             yield ("done", "")
             return
 
-        # Non-streaming routes (BQ, CS, Notion, GWS, Multi)
+        # BQ route → streaming format_answer
+        if route == "bigquery":
+            import asyncio as _aio
+            from app.agents.sql_agent import run_sql_agent_stream
+
+            yield ("source", "bigquery")
+
+            _q: _aio.Queue = _aio.Queue()
+            _loop = _aio.get_running_loop()
+
+            def _bq_worker():
+                try:
+                    for chunk in run_sql_agent_stream(
+                        query,
+                        conversation_context=conversation_context,
+                        model_type=model_type,
+                        brand_filter=brand_filter,
+                        enabled_sources=enabled_sources,
+                    ):
+                        _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
+                except Exception as e:
+                    _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
+                _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
+
+            _loop.run_in_executor(None, _bq_worker)
+
+            while True:
+                msg_type, data = await _q.get()
+                if msg_type == "end":
+                    break
+                yield ("chunk", data)
+
+            yield ("done", "")
+            return
+
+        # Non-streaming routes (CS, Notion, GWS, Multi)
         handlers = {
-            "bigquery": self._handle_bigquery,
             "notion": self._handle_notion,
             "gws": self._handle_gws,
             "cs": self._handle_cs,
             "multi": self._handle_multi,
         }
         handler = handlers.get(route, self._handle_direct)
-        if route in ("bigquery", "multi"):
+        if route == "multi":
             result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
         else:
             result = await handler(query, messages, conversation_context, model_type, user_email)

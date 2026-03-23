@@ -1088,3 +1088,92 @@ async def run_sql_agent(
     result = sql_agent.invoke(initial_state)
     logger.info("sql_agent_completed", answer_length=len(result.get("answer", "")))
     return result["answer"]
+
+
+def run_sql_agent_stream(
+    query: str,
+    conversation_context: str = "",
+    model_type: str = MODEL_GEMINI,
+    brand_filter: Optional[str] = None,
+    enabled_sources: Optional[list] = None,
+):
+    """Streaming version of run_sql_agent. Yields text chunks during format_answer.
+
+    Runs SQL generation + validation + execution synchronously, then streams
+    the answer formatting via generate_stream.
+
+    Yields:
+        str: text chunks as the answer is generated.
+    """
+    initial_state: AgentState = {
+        "query": query,
+        "route_type": "text_to_sql",
+        "generated_sql": None, "sql_valid": None, "sql_result": None,
+        "retrieved_docs": None, "doc_relevance": None, "web_search_results": None,
+        "answer": "", "needs_retry": False, "retry_count": 0,
+        "error": None, "messages": None,
+        "conversation_context": conversation_context,
+        "model_type": model_type,
+        "brand_filter": brand_filter,
+        "enabled_sources": enabled_sources,
+    }
+
+    # Run SQL generation + validation + execution (non-streaming)
+    state = dict(initial_state)
+    state.update(generate_sql(state))
+    state.update(validate_sql_node(state))
+    if state.get("sql_valid"):
+        state.update(execute_sql(state))
+
+    sql = state.get("generated_sql", "")
+    results = state.get("sql_result")
+    error = state.get("error")
+
+    # Error / empty → yield full message (no streaming needed)
+    if error or not results:
+        state.update(format_answer(state))
+        yield state.get("answer", "")
+        return
+
+    # Build format prompt (same as format_answer but stream the LLM call)
+    from app.core.llm import get_flash_client
+    llm = get_flash_client()
+
+    result_preview = _build_smart_preview(results) if len(results) > 100 else json.dumps(
+        results[:50], ensure_ascii=False, indent=2, default=str
+    )
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_kr = datetime.now().strftime("%Y년 %m월 %d일")
+    table_source = _extract_table_sources(sql)
+
+    prompt = f"""## SQL 실행 결과
+사용자 질문: {query}
+실행된 SQL:
+```sql
+{sql}
+```
+결과 ({len(results)}행):
+{result_preview}
+
+## 답변 형식
+### 📊 [제목] → #### 요약 → #### 상세 데이터 (표) → #### 분석 및 인사이트
+---
+*조회 기준: {today} | {table_source}*
+> 💡 후속 질문 3개
+
+규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로."""
+
+    # Stream answer
+    for chunk in llm.generate_stream(prompt, temperature=0.3, max_output_tokens=8192):
+        yield chunk
+
+    # Append chart + SQL details after streaming
+    try:
+        chart_llm = get_flash_client()
+        chart_markdown = _try_generate_chart(chart_llm, query, sql, result_preview, results)
+        if chart_markdown:
+            yield f"\n\n#### 시각화\n{chart_markdown}"
+    except Exception:
+        pass
+
+    yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
