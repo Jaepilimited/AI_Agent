@@ -576,6 +576,86 @@ class ClaudeClient:
             logger.error("claude_history_failed", error=str(e))
             raise
 
+    def generate_stream(
+        self,
+        prompt: str,
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 8192,
+    ):
+        """Generate a streaming response from Claude. Yields text chunks."""
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_output_tokens,
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system_instruction:
+            kwargs["system"] = system_instruction
+        try:
+            with self.client.messages.stream(**kwargs) as stream:
+                for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            logger.error("claude_stream_failed", error=str(e))
+            raise
+
+    def generate_with_history_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        system_instruction: Optional[str] = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 8192,
+    ):
+        """Stream response with conversation history. Yields text chunks."""
+        api_messages = []
+        for msg in messages:
+            role = msg["role"]
+            if role == "model":
+                role = "assistant"
+            if role == "system":
+                continue
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                claude_content = self._build_claude_content(content)
+                api_messages.append({"role": role, "content": claude_content})
+            else:
+                api_messages.append({"role": role, "content": str(content)})
+        if not api_messages or api_messages[0]["role"] != "user":
+            api_messages.insert(0, {"role": "user", "content": "안녕하세요."})
+        merged = []
+        for msg in api_messages:
+            if merged and merged[-1]["role"] == msg["role"]:
+                prev_c = merged[-1]["content"]
+                curr_c = msg["content"]
+                if isinstance(prev_c, str) and isinstance(curr_c, str):
+                    merged[-1]["content"] = prev_c + "\n" + curr_c
+                else:
+                    prev_text = prev_c if isinstance(prev_c, str) else self._content_to_text(prev_c)
+                    curr_text = curr_c if isinstance(curr_c, str) else self._content_to_text(curr_c)
+                    merged[-1]["content"] = prev_text + "\n" + curr_text
+            else:
+                merged.append(dict(msg))
+        api_messages = merged
+        if api_messages and api_messages[-1]["role"] != "user":
+            api_messages.append({"role": "user", "content": "계속해주세요."})
+
+        kwargs: Dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_output_tokens,
+            "temperature": temperature,
+            "messages": api_messages,
+        }
+        if system_instruction:
+            kwargs["system"] = system_instruction
+        try:
+            with self.client.messages.stream(**kwargs) as stream:
+                for text in stream.text_stream:
+                    yield text
+        except Exception as e:
+            logger.error("claude_history_stream_failed", error=str(e))
+            raise
+
     def generate_json(
         self,
         prompt: str,

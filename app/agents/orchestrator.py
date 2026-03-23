@@ -1085,11 +1085,7 @@ JSON만 반환:
         llm = get_llm_client(model_type)
         today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
 
-        # Model display name for self-identification
-        if model_type == MODEL_CLAUDE:
-            model_name = "Claude Opus (Anthropic) — 복잡한 판단/분석. 내부 경량 작업에는 Claude Sonnet을 사용합니다"
-        else:
-            model_name = "Gemini 2.5 Pro (Google) — 대화용. 내부적으로 SQL 생성/차트 등 빠른 작업에는 Gemini 2.5 Flash를 사용합니다"
+        model_name = "Claude Sonnet 4 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
 
         system = f"""당신은 SKIN1004의 AI 어시스턴트입니다. ({model_name} 기반)
 이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.
@@ -1151,91 +1147,70 @@ SKIN1004는 마다가스카르 센텔라 아시아티카 기반 클린 뷰티 �
                 )
                 return {"source": "direct", "answer": answer}
 
-            # Decide if search grounding is needed (skip for greetings/simple Qs)
+            # Search grounding: use Tavily/Google search if needed
             _needs_search = self._needs_web_search(query)
+            final_system = system
+            if _needs_search:
+                search_context = self._gather_search_context(query)
+                if search_context:
+                    final_system = system + f"\n\n## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}"
 
-            if model_type == MODEL_GEMINI:
-                if _needs_search:
-                    # Gemini: native Google Search grounding
-                    if messages and len(messages) > 1:
-                        answer = llm.generate_with_history_and_search(
-                            messages=messages,
-                            system_instruction=system,
-                            temperature=0.5,
-                        )
-                    else:
-                        answer = llm.generate_with_search(
-                            query,
-                            system_instruction=system,
-                            temperature=0.5,
-                        )
+            # Claude streaming for all direct queries (TTFB 1.7s vs Gemini 7s)
+            import asyncio as _aio
+
+            if stream_callback:
+                # Real-time streaming via thread + async queue
+                if messages and len(messages) > 1:
+                    # Multi-turn: use history stream
+                    _q: _aio.Queue = _aio.Queue()
+                    _loop = _aio.get_running_loop()
+
+                    def _stream_worker():
+                        for chunk in llm.generate_with_history_stream(
+                            messages=messages, system_instruction=final_system, temperature=0.5,
+                        ):
+                            _loop.call_soon_threadsafe(_q.put_nowait, chunk)
+                        _loop.call_soon_threadsafe(_q.put_nowait, None)
+
+                    _loop.run_in_executor(None, _stream_worker)
+                    answer = ""
+                    while True:
+                        chunk = await _q.get()
+                        if chunk is None:
+                            break
+                        answer += chunk
+                        await stream_callback(chunk)
                 else:
-                    # Simple query — skip search, use direct generation
-                    if stream_callback and hasattr(llm, 'generate_stream'):
-                        import asyncio as _aio
-                        # Build prompt (with or without history)
-                        if messages and len(messages) > 1:
-                            history_parts = []
-                            for m in messages[:-1]:
-                                role = m.get("role", "user")
-                                content = _content_to_text(m.get("content", ""))
-                                history_parts.append(f"{'사용자' if role == 'user' else 'AI'}: {content}")
-                            stream_prompt = f"{chr(10).join(history_parts)}\n\n사용자: {query}"
-                        else:
-                            stream_prompt = query
+                    # Single-turn stream
+                    _q: _aio.Queue = _aio.Queue()
+                    _loop = _aio.get_running_loop()
 
-                        # Run sync generator in thread, push chunks to async queue
-                        _q: _aio.Queue = _aio.Queue()
-                        _loop = _aio.get_event_loop()
+                    def _stream_worker():
+                        for chunk in llm.generate_stream(
+                            query, system_instruction=final_system, temperature=0.5,
+                        ):
+                            _loop.call_soon_threadsafe(_q.put_nowait, chunk)
+                        _loop.call_soon_threadsafe(_q.put_nowait, None)
 
-                        def _stream_worker():
-                            for chunk in llm.generate_stream(
-                                stream_prompt, system_instruction=system, temperature=0.5,
-                            ):
-                                _loop.call_soon_threadsafe(_q.put_nowait, chunk)
-                            _loop.call_soon_threadsafe(_q.put_nowait, None)
-
-                        _aio.get_event_loop().run_in_executor(None, _stream_worker)
-
-                        answer = ""
-                        while True:
-                            chunk = await _q.get()
-                            if chunk is None:
-                                break
-                            answer += chunk
-                            await stream_callback(chunk)
-                    elif messages and len(messages) > 1:
-                        answer = llm.generate_with_history(
-                            messages=messages,
-                            system_instruction=system,
-                            temperature=0.5,
-                        )
-                    else:
-                        answer = llm.generate(
-                            query,
-                            system_instruction=system,
-                            temperature=0.5,
-                        )
+                    _loop.run_in_executor(None, _stream_worker)
+                    answer = ""
+                    while True:
+                        chunk = await _q.get()
+                        if chunk is None:
+                            break
+                        answer += chunk
+                        await stream_callback(chunk)
             else:
-                # Claude path
-                if _needs_search:
-                    search_context = self._gather_search_context(query)
-                    search_system = system + f"\n\n## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}" if search_context else system
-                else:
-                    search_system = system
-
+                # Non-streaming fallback
                 if messages and len(messages) > 1:
                     answer = llm.generate_with_history(
-                        messages=messages,
-                        system_instruction=search_system,
-                        temperature=0.5,
+                        messages=messages, system_instruction=final_system, temperature=0.5,
                     )
                 else:
                     answer = llm.generate(
-                        query,
-                        system_instruction=search_system,
-                        temperature=0.5,
+                        query, system_instruction=final_system, temperature=0.5,
                     )
+
             return {"source": "direct", "answer": answer}
         except Exception as e:
             logger.error("direct_llm_failed", error=str(e))
