@@ -81,20 +81,18 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         user_id = getattr(http_request.state, "user_id", None)
         if user_id:
             try:
-                urow = await asyncio.to_thread(
-                    fetch_one, "SELECT role, ad_user_id FROM users WHERE id = %s", (user_id,)
+                # Single query instead of two sequential lookups
+                row = await asyncio.to_thread(
+                    fetch_one,
+                    "SELECT u.role, g.brand_filter FROM users u "
+                    "LEFT JOIN user_groups ug ON u.ad_user_id = ug.ad_user_id "
+                    "LEFT JOIN access_groups g ON ug.group_id = g.id AND g.brand_filter IS NOT NULL "
+                    "WHERE u.id = %s LIMIT 1",
+                    (user_id,),
                 )
-                if urow and urow["role"] != "admin" and urow.get("ad_user_id"):
-                    bf_rows = await asyncio.to_thread(
-                        fetch_all,
-                        "SELECT g.brand_filter FROM access_groups g "
-                        "JOIN user_groups ug ON g.id = ug.group_id "
-                        "WHERE ug.ad_user_id = %s AND g.brand_filter IS NOT NULL LIMIT 1",
-                        (urow["ad_user_id"],),
-                    )
-                    if bf_rows:
-                        brand_filter = bf_rows[0]["brand_filter"]
-                        logger.info("brand_filter_enforced", user_id=user_id, brand_filter=brand_filter)
+                if row and row["role"] != "admin" and row.get("brand_filter"):
+                    brand_filter = row["brand_filter"]
+                    logger.info("brand_filter_enforced", user_id=user_id, brand_filter=brand_filter)
             except Exception as e:
                 logger.warning("brand_filter_lookup_failed", user_id=user_id, error=str(e))
 
@@ -261,7 +259,7 @@ async def _stream_response(
                 else:
                     # Non-streaming route (BQ/CS/Notion): send full answer in chunks
                     answer = content
-                    chunk_size = 120
+                    chunk_size = 500
                     for i in range(0, len(answer), chunk_size):
                         piece = answer[i:i + chunk_size]
                         sc = ChatCompletionStreamResponse(

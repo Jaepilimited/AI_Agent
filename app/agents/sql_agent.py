@@ -144,10 +144,14 @@ MARKETING_TABLES = [
 _schema_cache: str = ""
 
 
+_prompt_cache: dict = {}
+
 def _load_prompt(filename: str) -> str:
-    """Load a prompt template from the prompts directory."""
-    prompt_path = PROMPTS_DIR / filename
-    return prompt_path.read_text(encoding="utf-8")
+    """Load a prompt template from the prompts directory (cached after first read)."""
+    if filename not in _prompt_cache:
+        prompt_path = PROMPTS_DIR / filename
+        _prompt_cache[filename] = prompt_path.read_text(encoding="utf-8")
+    return _prompt_cache[filename]
 
 
 # --- LangGraph Nodes ---
@@ -1163,17 +1167,23 @@ def run_sql_agent_stream(
 
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로."""
 
-    # Stream answer
+    # Start chart generation in background BEFORE streaming answer
+    import concurrent.futures
+    _chart_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    chart_llm = get_flash_client()
+    chart_future = _chart_executor.submit(_try_generate_chart, chart_llm, query, sql, result_preview, results)
+
+    # Stream answer (chart generates in parallel)
     for chunk in llm.generate_stream(prompt, temperature=0.3, max_output_tokens=8192):
         yield chunk
 
-    # Append chart + SQL details after streaming
+    # Chart should be done by now (ran in parallel with answer streaming)
     try:
-        chart_llm = get_flash_client()
-        chart_markdown = _try_generate_chart(chart_llm, query, sql, result_preview, results)
+        chart_markdown = chart_future.result(timeout=2.0)
         if chart_markdown:
             yield f"\n\n#### 시각화\n{chart_markdown}"
-    except Exception:
+    except (concurrent.futures.TimeoutError, Exception):
         pass
+    _chart_executor.shutdown(wait=False)
 
     yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
