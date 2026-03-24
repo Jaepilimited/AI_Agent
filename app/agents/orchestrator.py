@@ -176,7 +176,7 @@ class OrchestratorAgent:
         # Fast path: keyword match first, LLM fallback only for short ambiguous queries
         route = self._keyword_classify(query)
         is_system_task = query.strip().startswith("### Task:")
-        _DIRECT_LOCK_KW = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi"]
+        _DIRECT_LOCK_KW = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi", "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직"]
         _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
         if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
             if len(query.strip()) <= 30:
@@ -405,8 +405,9 @@ class OrchestratorAgent:
 판단 기준:
 - 데이터 조회만 → bigquery
 - 제품 성분/사용법/CS 문의 → cs
-- 데이터 + 외부맥락(날씨/시장/경쟁/원인/영향/트렌드) → multi
+- SKIN1004 데이터 + 외부맥락(날씨/시장/경쟁/원인/영향/트렌드) → multi
 - 외부 정보만 → direct
+- ⚠️ SKIN1004/매출/제품과 무관한 질문(부동산, 주식, 일반상식, 개인질문 등)은 이전 대화가 BQ였어도 반드시 direct!
 - 이전 대화 맥락을 참고하여 "그거", "아까", "다시" 같은 참조를 이해하세요.
 {context_section}현재 질문: {query}
 
