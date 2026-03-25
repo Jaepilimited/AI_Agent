@@ -115,7 +115,16 @@ def sync_to_mariadb(users: list[dict], dry_run: bool = False):
 
             inserted = 0
             updated = 0
+            # Display name overrides: AD 이름과 다르게 사용하는 경우
+            _NAME_OVERRIDES = {
+                "js.bae@skin1004korea.com": "배진서",  # AD: 배서진 → 실제: 배진서
+            }
+
             for u in users:
+                # Apply name override if exists
+                if u.get("email") in _NAME_OVERRIDES:
+                    u["display_name"] = _NAME_OVERRIDES[u["email"]]
+
                 # Upsert: INSERT ON DUPLICATE KEY UPDATE
                 sql = """
                     INSERT INTO ad_users (username, display_name, email, department, full_dn, is_active, synced_at)
