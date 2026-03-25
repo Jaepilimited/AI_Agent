@@ -376,24 +376,26 @@ class OrchestratorAgent:
 
         yield ("source", result.get("source", route))
 
-        # Simulate streaming: send answer in small word-based chunks with delays
+        # Simulate streaming: word-based chunks with natural typing feel
         import asyncio as _aio
         answer = result.get("answer", "")
         if answer:
-            # Split into ~40 char chunks at word boundaries
             pos = 0
             while pos < len(answer):
-                end = min(pos + 40, len(answer))
-                # Find next word boundary
+                # ~25 chars per chunk at word/line boundaries
+                end = min(pos + 25, len(answer))
                 if end < len(answer):
-                    space = answer.rfind(" ", pos, end + 10)
-                    newline = answer.rfind("\n", pos, end + 5)
-                    boundary = max(space, newline)
-                    if boundary > pos:
-                        end = boundary + 1
+                    # Try newline first (natural paragraph break)
+                    nl = answer.find("\n", pos, end + 10)
+                    if nl > pos:
+                        end = nl + 1
+                    else:
+                        sp = answer.rfind(" ", pos, end + 5)
+                        if sp > pos:
+                            end = sp + 1
                 yield ("chunk", answer[pos:end])
                 pos = end
-                await _aio.sleep(0.02)  # 20ms between chunks
+                await _aio.sleep(0.035)  # 35ms — matches 300ms render throttle
         yield ("done", "")
 
     async def _classify_with_llm(self, query: str, conversation_context: str, llm) -> str:

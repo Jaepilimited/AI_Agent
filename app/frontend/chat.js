@@ -818,7 +818,16 @@
                 var stripped = delta.content.replace(/<!-- source:\w+ -->/, "");
                 if (stripped) aiContent += stripped;
               } else {
-                aiContent += delta.content;
+                // Filter out thinking/reasoning patterns from Claude
+                var text = delta.content;
+                // Skip lines that look like internal thinking
+                if (/^(The user|I should|I need to|Let me|I'll |I can|I don't|Actually|Wait|Hmm)/i.test(text.trim())) {
+                  continue;
+                }
+                // Strip thinking blocks
+                text = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
+                text = text.replace(/\[thinking\][\s\S]*?\[\/thinking\]/g, "");
+                if (text) aiContent += text;
               }
               // Streaming render: markdown only, 300ms throttle
               var now = Date.now();
