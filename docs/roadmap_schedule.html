@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI & CRM 프로젝트 일정 계획</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans KR', sans-serif;
+    background: #0f0f1a;
+    color: #fff;
+    min-height: 100vh;
+    padding: 40px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  h1 span { color: #e89200; }
+
+  .subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 14px;
+    margin-bottom: 40px;
+  }
+
+  .timeline {
+    display: grid;
+    grid-template-columns: 80px 1fr 1fr;
+    gap: 0;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* Header row */
+  .header {
+    padding: 16px 20px;
+    font-weight: 700;
+    font-size: 16px;
+    text-align: center;
+    border-bottom: 2px solid #e89200;
+  }
+  .header.month { color: #888; background: rgba(255,255,255,0.03); }
+  .header.ai { color: #e89200; background: rgba(232,146,0,0.08); }
+  .header.crm { color: #3b82f6; background: rgba(59,130,246,0.08); }
+
+  /* Month labels */
+  .month-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 0;
+    border-right: 2px solid rgba(255,255,255,0.1);
+    position: relative;
+  }
+  .month-label {
+    font-size: 22px;
+    font-weight: 700;
+    color: #e89200;
+  }
+  .month-sub {
+    font-size: 11px;
+    color: #666;
+    margin-top: 4px;
+  }
+
+  /* Week rows */
+  .week-row {
+    display: contents;
+  }
+
+  .week-cell {
+    padding: 0;
+    position: relative;
+  }
+
+  .week-label {
+    font-size: 12px;
+    color: #555;
+    text-align: center;
+    padding: 8px 0 4px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* Task items */
+  .task {
+    margin: 4px 12px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    position: relative;
+    transition: transform 0.2s;
+  }
+  .task:hover { transform: translateX(4px); }
+
+  /* AI tasks */
+  .task.ai {
+    background: rgba(232,146,0,0.12);
+    border-left: 3px solid #e89200;
+    color: #ffd580;
+  }
+  .task.ai .icon { color: #e89200; }
+
+  /* CRM tasks */
+  .task.crm {
+    background: rgba(59,130,246,0.12);
+    border-left: 3px solid #3b82f6;
+    color: #93c5fd;
+  }
+  .task.crm .icon { color: #3b82f6; }
+
+  /* Milestone */
+  .task.milestone {
+    border-width: 2px;
+    font-weight: 700;
+  }
+  .task.milestone.ai {
+    background: rgba(232,146,0,0.2);
+    border-color: #e89200;
+    color: #e89200;
+  }
+  .task.milestone.crm {
+    background: rgba(59,130,246,0.2);
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+
+  .task .icon {
+    margin-right: 6px;
+    font-size: 14px;
+  }
+
+  /* Gantt-style bars */
+  .gantt {
+    max-width: 1100px;
+    margin: 50px auto 0;
+  }
+
+  .gantt-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    color: #ccc;
+  }
+
+  .gantt-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .gantt-label {
+    width: 160px;
+    font-size: 13px;
+    color: #aaa;
+    text-align: right;
+    padding-right: 16px;
+    flex-shrink: 0;
+  }
+
+  .gantt-track {
+    flex: 1;
+    height: 32px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .gantt-bar {
+    position: absolute;
+    height: 100%;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: width 0.5s ease;
+  }
+
+  .gantt-bar.ai {
+    background: linear-gradient(90deg, rgba(232,146,0,0.3), rgba(232,146,0,0.6));
+    border: 1px solid rgba(232,146,0,0.4);
+    color: #ffd580;
+  }
+
+  .gantt-bar.crm {
+    background: linear-gradient(90deg, rgba(59,130,246,0.3), rgba(59,130,246,0.6));
+    border: 1px solid rgba(59,130,246,0.4);
+    color: #93c5fd;
+  }
+
+  /* Month markers */
+  .gantt-months {
+    display: flex;
+    margin-left: 160px;
+    margin-bottom: 8px;
+  }
+  .gantt-month {
+    flex: 1;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #666;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 8px;
+  }
+
+  /* Week markers */
+  .gantt-weeks {
+    display: flex;
+    margin-left: 160px;
+    margin-bottom: 12px;
+  }
+  .gantt-week {
+    flex: 1;
+    text-align: center;
+    font-size: 10px;
+    color: #444;
+  }
+
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-top: 40px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #888;
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+  .legend-dot.ai { background: #e89200; }
+  .legend-dot.crm { background: #3b82f6; }
+</style>
+</head>
+<body>
+
+<h1><span>AI & CRM</span> 프로젝트 일정 계획</h1>
+<div class="subtitle">2026년 4월 ~ 6월 | Craver Corporation DB팀</div>
+
+<!-- Gantt Chart -->
+<div class="gantt">
+  <div class="gantt-title">📊 간트 차트</div>
+
+  <div class="gantt-months">
+    <div class="gantt-month">4월</div>
+    <div class="gantt-month">5월</div>
+    <div class="gantt-month">6월</div>
+  </div>
+
+  <div class="gantt-weeks">
+    <div class="gantt-week">1주</div><div class="gantt-week">2주</div><div class="gantt-week">3주</div><div class="gantt-week">4주</div>
+    <div class="gantt-week">1주</div><div class="gantt-week">2주</div><div class="gantt-week">3주</div><div class="gantt-week">4주</div>
+    <div class="gantt-week">1주</div><div class="gantt-week">2주</div><div class="gantt-week">3주</div><div class="gantt-week">4주</div>
+  </div>
+
+  <!-- AI Tasks -->
+  <div class="gantt-row">
+    <div class="gantt-label">🤖 AI 구축</div>
+    <div class="gantt-track">
+      <div class="gantt-bar ai" style="left: 0%; width: 25%;">AI 구축</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">🔄 마이그레이션 (21일)</div>
+    <div class="gantt-track">
+      <div class="gantt-bar ai" style="left: 16.7%; width: 16.7%;">마이그레이션</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">📦 ERP 데이터 연동</div>
+    <div class="gantt-track">
+      <div class="gantt-bar ai" style="left: 33.3%; width: 25%;">ERP 연동</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">⚡ AI 고도화</div>
+    <div class="gantt-track">
+      <div class="gantt-bar ai" style="left: 50%; width: 33.3%;">고도화 + Update</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">🛡️ 보안 검토 완료</div>
+    <div class="gantt-track">
+      <div class="gantt-bar ai" style="left: 75%; width: 16.7%;">보안검토</div>
+    </div>
+  </div>
+
+  <div style="height: 16px;"></div>
+
+  <!-- CRM Tasks -->
+  <div class="gantt-row">
+    <div class="gantt-label">💼 CRM 구축</div>
+    <div class="gantt-track">
+      <div class="gantt-bar crm" style="left: 0%; width: 25%;">CRM 구축</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">📧 Email 마케팅 Test</div>
+    <div class="gantt-track">
+      <div class="gantt-bar crm" style="left: 16.7%; width: 16.7%;">Email Test</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">🔍 내부 검토</div>
+    <div class="gantt-track">
+      <div class="gantt-bar crm" style="left: 33.3%; width: 16.7%;">내부검토</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">🚀 대외적 오픈</div>
+    <div class="gantt-track">
+      <div class="gantt-bar crm" style="left: 50%; width: 8.3%;">오픈</div>
+    </div>
+  </div>
+
+  <div class="gantt-row">
+    <div class="gantt-label">⚙️ 자동화 + 운영</div>
+    <div class="gantt-track">
+      <div class="gantt-bar crm" style="left: 58.3%; width: 33.3%;">자동화 · 운영</div>
+    </div>
+  </div>
+</div>
+
+<!-- Timeline Detail -->
+<div style="max-width: 1100px; margin: 50px auto 0;">
+  <div class="gantt-title">📋 주차별 상세</div>
+</div>
+
+<div class="timeline">
+  <!-- Header -->
+  <div class="header month">월</div>
+  <div class="header ai">🤖 AI 프로젝트</div>
+  <div class="header crm">💼 CRM 프로젝트</div>
+
+  <!-- April -->
+  <div class="month-cell" style="grid-row: span 4;">
+    <div class="month-label">4월</div>
+    <div class="month-sub">April</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">1주차</div>
+    <div class="task ai"><span class="icon">🏗️</span> AI 구축 시작</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">1주차</div>
+    <div class="task crm"><span class="icon">🏗️</span> CRM 구축 시작</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">2주차</div>
+    <div class="task ai"><span class="icon">📊</span> AI 구축 · 데이터 정비</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">2주차</div>
+    <div class="task crm"><span class="icon">📧</span> Email 마케팅 Test</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">3주차 (21일)</div>
+    <div class="task milestone ai"><span class="icon">🔄</span> 마이그레이션 (21일)</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">3주차</div>
+    <div class="task crm"><span class="icon">📧</span> Email 마케팅 Test 계속</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">4주차</div>
+    <div class="task ai"><span class="icon">✅</span> 이전 완료</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">4주차</div>
+    <div class="task crm"><span class="icon">📋</span> 테스트 결과 정리</div>
+  </div>
+
+  <!-- May -->
+  <div class="month-cell" style="grid-row: span 4;">
+    <div class="month-label">5월</div>
+    <div class="month-sub">May</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">1주차</div>
+    <div class="task ai"><span class="icon">📦</span> ERP 데이터 연동 시작</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">1주차</div>
+    <div class="task crm"><span class="icon">🔍</span> 내부 검토</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">2주차</div>
+    <div class="task ai"><span class="icon">📦</span> ERP 연동 · 테스트</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">2주차</div>
+    <div class="task crm"><span class="icon">🔍</span> 내부 검토 계속</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">3주차</div>
+    <div class="task ai"><span class="icon">⚡</span> AI 고도화 시작</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">3주차</div>
+    <div class="task milestone crm"><span class="icon">🚀</span> 대외적 오픈</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">4주차</div>
+    <div class="task ai"><span class="icon">⚡</span> 고도화 진행</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">4주차</div>
+    <div class="task crm"><span class="icon">⚙️</span> 자동화 개발</div>
+  </div>
+
+  <!-- June -->
+  <div class="month-cell" style="grid-row: span 4;">
+    <div class="month-label">6월</div>
+    <div class="month-sub">June</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">1주차</div>
+    <div class="task ai"><span class="icon">🔄</span> Update · 고도화</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">1주차</div>
+    <div class="task crm"><span class="icon">⚙️</span> 자동화 개발</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">2주차</div>
+    <div class="task ai"><span class="icon">🔄</span> Update 계속</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">2주차</div>
+    <div class="task crm"><span class="icon">🏃</span> 운영 안정화</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">3주차</div>
+    <div class="task ai"><span class="icon">🛡️</span> 보안 검토</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">3주차</div>
+    <div class="task crm"><span class="icon">🏃</span> 운영</div>
+  </div>
+
+  <div class="week-cell">
+    <div class="week-label">4주차</div>
+    <div class="task milestone ai"><span class="icon">✅</span> 보안 검토 완료</div>
+  </div>
+  <div class="week-cell">
+    <div class="week-label">4주차</div>
+    <div class="task crm"><span class="icon">🏃</span> 운영 계속</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot ai"></div> AI 프로젝트</div>
+  <div class="legend-item"><div class="legend-dot crm"></div> CRM 프로젝트</div>
+</div>
+
+
+<!-- Editable Mode -->
+<div id="edit-toolbar" style="position:fixed;top:20px;right:20px;z-index:1000;display:flex;gap:8px;">
+  <button onclick="toggleEdit()" id="edit-btn" style="padding:8px 20px;border-radius:8px;border:2px solid #e89200;background:rgba(232,146,0,0.15);color:#e89200;font-size:14px;font-weight:700;cursor:pointer;">✏️ 편집모드</button>
+  <button onclick="addRowAt('ai','above')" id="add-ai-above-btn" class="edit-only-btn" style="padding:6px 10px;border-radius:8px;border:1px solid #e89200;background:rgba(232,146,0,0.1);color:#e89200;font-size:11px;cursor:pointer;display:none;">↑ AI 위에</button>
+  <button onclick="addRowAt('ai','below')" class="edit-only-btn" style="padding:6px 10px;border-radius:8px;border:1px solid #e89200;background:rgba(232,146,0,0.1);color:#e89200;font-size:11px;cursor:pointer;display:none;">↓ AI 아래</button>
+  <button onclick="addRowAt('crm','below')" class="edit-only-btn" style="padding:6px 10px;border-radius:8px;border:1px solid #3b82f6;background:rgba(59,130,246,0.1);color:#3b82f6;font-size:11px;cursor:pointer;display:none;">↓ CRM 아래</button>
+  <button onclick="moveRow(-1)" class="edit-only-btn" style="padding:6px 10px;border-radius:8px;border:1px solid #888;background:rgba(255,255,255,0.05);color:#aaa;font-size:11px;cursor:pointer;display:none;">▲ 위로</button>
+  <button onclick="moveRow(1)" class="edit-only-btn" style="padding:6px 10px;border-radius:8px;border:1px solid #888;background:rgba(255,255,255,0.05);color:#aaa;font-size:11px;cursor:pointer;display:none;">▼ 아래로</button>
+  <button onclick="deleteSelected()" class="edit-only-btn" style="padding:6px 10px;border-radius:8px;border:1px solid #ef4444;background:rgba(239,68,68,0.1);color:#ef4444;font-size:11px;cursor:pointer;display:none;">🗑 삭제</button>
+  <button onclick="saveChanges()" class="edit-only-btn" style="padding:8px 16px;border-radius:8px;border:1px solid #22c55e;background:rgba(34,197,94,0.15);color:#22c55e;font-size:13px;cursor:pointer;display:none;">💾 저장</button>
+  <div id="color-picker" style="display:none;background:rgba(30,30,50,0.95);border:1px solid #444;border-radius:10px;padding:12px;position:fixed;top:60px;right:20px;z-index:1001;">
+    <div style="font-size:12px;color:#888;margin-bottom:8px;">클릭한 항목 색상 변경</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;max-width:200px;">
+      <div class="color-opt" data-color="#e89200" style="width:28px;height:28px;border-radius:6px;background:#e89200;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#3b82f6" style="width:28px;height:28px;border-radius:6px;background:#3b82f6;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#22c55e" style="width:28px;height:28px;border-radius:6px;background:#22c55e;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#ef4444" style="width:28px;height:28px;border-radius:6px;background:#ef4444;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#a855f7" style="width:28px;height:28px;border-radius:6px;background:#a855f7;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#ec4899" style="width:28px;height:28px;border-radius:6px;background:#ec4899;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#14b8a6" style="width:28px;height:28px;border-radius:6px;background:#14b8a6;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+      <div class="color-opt" data-color="#f59e0b" style="width:28px;height:28px;border-radius:6px;background:#f59e0b;cursor:pointer;border:2px solid transparent;" onclick="applyColor(this)"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var isEditing = false;
+var selectedEl = null;
+var selectedRow = null;
+
+function toggleEdit() {
+  isEditing = !isEditing;
+  var btn = document.getElementById("edit-btn");
+  var editBtns = document.querySelectorAll(".edit-only-btn");
+
+  if (isEditing) {
+    btn.textContent = "🔒 편집 잠금";
+    btn.style.borderColor = "#ef4444";
+    btn.style.color = "#ef4444";
+    editBtns.forEach(function(b) { b.style.display = "inline-block"; });
+    document.getElementById("color-picker").style.display = "block";
+
+    document.querySelectorAll(".task, .gantt-bar, .gantt-label, .month-label, .week-label, .gantt-month").forEach(function(el) {
+      el.contentEditable = "true";
+      el.style.outline = "1px dashed rgba(232,146,0,0.2)";
+      el.style.cursor = "text";
+    });
+
+    // Add resize handles to gantt bars
+    document.querySelectorAll(".gantt-bar").forEach(addResizeHandles);
+
+  } else {
+    btn.textContent = "✏️ 편집모드";
+    btn.style.borderColor = "#e89200";
+    btn.style.color = "#e89200";
+    editBtns.forEach(function(b) { b.style.display = "none"; });
+    document.getElementById("color-picker").style.display = "none";
+    selectedEl = null; selectedRow = null;
+
+    document.querySelectorAll("[contenteditable]").forEach(function(el) {
+      el.contentEditable = "false";
+      el.style.outline = "none";
+      el.style.cursor = "";
+    });
+    document.querySelectorAll(".resize-left, .resize-right").forEach(function(h) { h.remove(); });
+  }
+}
+
+// Add resize handles to a gantt bar
+function addResizeHandles(bar) {
+  if (bar.querySelector(".resize-left")) return;
+  var hStyle = "position:absolute;top:0;width:8px;height:100%;cursor:ew-resize;z-index:10;";
+  var left = document.createElement("div");
+  left.className = "resize-left";
+  left.setAttribute("style", hStyle + "left:-2px;border-left:3px solid rgba(255,255,255,0.5);border-radius:3px 0 0 3px;");
+  var right = document.createElement("div");
+  right.className = "resize-right";
+  right.setAttribute("style", hStyle + "right:-2px;border-right:3px solid rgba(255,255,255,0.5);border-radius:0 3px 3px 0;");
+
+  bar.style.position = "absolute";
+  bar.appendChild(left);
+  bar.appendChild(right);
+
+  // Drag resize
+  function startDrag(e, side) {
+    e.preventDefault(); e.stopPropagation();
+    var track = bar.parentElement;
+    var trackW = track.offsetWidth;
+    var startX = e.clientX;
+    var startLeft = parseFloat(bar.style.left) || 0;
+    var startWidth = parseFloat(bar.style.width) || 25;
+
+    function onMove(ev) {
+      var dx = (ev.clientX - startX) / trackW * 100;
+      if (side === "left") {
+        var newLeft = Math.max(0, Math.min(startLeft + dx, startLeft + startWidth - 5));
+        var newWidth = startWidth - (newLeft - startLeft);
+        bar.style.left = newLeft + "%";
+        bar.style.width = newWidth + "%";
+      } else {
+        var newWidth = Math.max(5, startWidth + dx);
+        if (startLeft + newWidth > 100) newWidth = 100 - startLeft;
+        bar.style.width = newWidth + "%";
+      }
+    }
+    function onUp() {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+
+  left.addEventListener("mousedown", function(e) { startDrag(e, "left"); });
+  right.addEventListener("mousedown", function(e) { startDrag(e, "right"); });
+}
+
+// Add row at position relative to selected
+function addRowAt(type, pos) {
+  var row = document.createElement("div");
+  row.className = "gantt-row";
+  row.innerHTML = '<div class="gantt-label">📌 새 항목</div>' +
+    '<div class="gantt-track"><div class="gantt-bar ' + type + '" style="left:0%;width:25%;">새 작업</div></div>';
+
+  var ref = selectedRow;
+  if (!ref) {
+    var rows = document.querySelectorAll(".gantt-row");
+    ref = rows[rows.length - 1];
+    pos = "below";
+  }
+
+  if (pos === "above") {
+    ref.parentNode.insertBefore(row, ref);
+  } else {
+    ref.parentNode.insertBefore(row, ref.nextSibling);
+  }
+
+  if (isEditing) {
+    row.querySelectorAll(".gantt-label, .gantt-bar").forEach(function(el) {
+      el.contentEditable = "true";
+      el.style.outline = "1px dashed rgba(232,146,0,0.2)";
+      el.style.cursor = "text";
+    });
+    addResizeHandles(row.querySelector(".gantt-bar"));
+  }
+  // Select the new row
+  if (selectedRow) selectedRow.style.background = "";
+  if (selectedEl) selectedEl.style.boxShadow = "";
+  selectedRow = row;
+  selectedRow.style.background = "rgba(255,255,255,0.05)";
+  selectedEl = row.querySelector(".gantt-bar");
+  if (selectedEl) selectedEl.style.boxShadow = "0 0 0 2px #fff";
+}
+
+// Move row up/down
+function moveRow(dir) {
+  if (!selectedRow) { alert("이동할 행을 먼저 클릭하세요"); return; }
+  var parent = selectedRow.parentNode;
+  if (dir === -1) {
+    // Move up
+    var prev = selectedRow.previousElementSibling;
+    while (prev && !prev.classList.contains("gantt-row")) prev = prev.previousElementSibling;
+    if (prev) parent.insertBefore(selectedRow, prev);
+  } else {
+    // Move down
+    var next = selectedRow.nextElementSibling;
+    while (next && !next.classList.contains("gantt-row")) next = next.nextElementSibling;
+    if (next) parent.insertBefore(next, selectedRow);
+  }
+}
+
+// Delete selected
+function deleteSelected() {
+  if (selectedRow) {
+    if (confirm("이 행을 삭제하시겠습니까?")) {
+      selectedRow.remove();
+      selectedRow = null;
+      selectedEl = null;
+    }
+  } else if (selectedEl) {
+    var row = selectedEl.closest(".gantt-row");
+    if (row && confirm("이 행을 삭제하시겠습니까?")) {
+      row.remove();
+      selectedEl = null;
+    }
+  } else {
+    alert("삭제할 항목을 먼저 클릭하세요");
+  }
+}
+
+// Save
+function saveChanges() {
+  // Remove resize handles before saving
+  document.querySelectorAll(".resize-left, .resize-right").forEach(function(h) { h.remove(); });
+  var html = document.documentElement.outerHTML;
+  var blob = new Blob(["<!DOCTYPE html>\n" + html], { type: "text/html;charset=utf-8" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "roadmap_schedule_edited.html";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  // Re-add handles
+  document.querySelectorAll(".gantt-bar").forEach(addResizeHandles);
+}
+
+// Click to select
+document.addEventListener("click", function(e) {
+  if (!isEditing) return;
+  if (e.target.closest("#edit-toolbar, #color-picker, .resize-left, .resize-right")) return;
+
+  var target = e.target.closest(".gantt-bar, .task, .gantt-row");
+  if (selectedEl) selectedEl.style.boxShadow = "";
+  if (selectedRow) selectedRow.style.background = "";
+
+  if (target) {
+    if (target.classList.contains("gantt-row")) {
+      selectedRow = target;
+      selectedRow.style.background = "rgba(255,255,255,0.05)";
+      selectedEl = target.querySelector(".gantt-bar");
+    } else {
+      selectedEl = target;
+      selectedRow = target.closest(".gantt-row");
+    }
+    if (selectedEl) selectedEl.style.boxShadow = "0 0 0 2px #fff";
+  }
+});
+
+// Apply color
+function applyColor(opt) {
+  if (!selectedEl) { alert("먼저 색상을 바꿀 항목을 클릭하세요"); return; }
+  var color = opt.getAttribute("data-color");
+  if (selectedEl.classList.contains("gantt-bar")) {
+    selectedEl.style.background = "linear-gradient(90deg, " + color + "44, " + color + "99)";
+    selectedEl.style.borderColor = color + "66";
+    selectedEl.style.color = "#fff";
+    selectedEl.classList.remove("ai", "crm");
+  }
+  if (selectedEl.classList.contains("task")) {
+    selectedEl.style.background = color + "1f";
+    selectedEl.style.borderLeftColor = color;
+    selectedEl.style.color = color;
+    selectedEl.classList.remove("ai", "crm");
+  }
+  selectedEl.style.boxShadow = "0 0 0 2px " + color;
+}
+</script>
+
+</body>
+</html>
