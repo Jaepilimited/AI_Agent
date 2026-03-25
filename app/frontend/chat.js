@@ -820,19 +820,19 @@
               } else {
                 aiContent += delta.content;
               }
-              // Smooth streaming: render markdown every 150ms for fluid typing feel
+              // Smooth streaming: textContent for speed, markdown every 500ms
+              contentEl.textContent = aiContent;
+              scrollToBottom();
               var now = Date.now();
-              if (!contentEl._lastRender || now - contentEl._lastRender > 50) {
+              if (!contentEl._lastRender || now - contentEl._lastRender > 500) {
                 renderMarkdown(contentEl, aiContent);
                 contentEl._lastRender = now;
-                scrollToBottom();
               } else if (!contentEl._pendingRender) {
                 contentEl._pendingRender = setTimeout(function() {
                   renderMarkdown(contentEl, aiContent);
                   contentEl._lastRender = Date.now();
                   contentEl._pendingRender = null;
-                  scrollToBottom();
-                }, 50);
+                }, 500);
               }
             }
           } catch (e) { /* skip */ }
