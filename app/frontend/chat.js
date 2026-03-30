@@ -895,43 +895,29 @@
                 text = text.replace(/\[thinking\][\s\S]*?\[\/thinking\]/g, "");
                 if (text) aiContent += text;
               }
-              // Wave 1: incremental append + sentence-boundary markdown render
+              // ChatGPT-style streaming: 80ms interval markdown render
               var typing = aiMsgEl.querySelector(".typing-indicator");
               if (typing) typing.remove();
-              if (!contentEl._streamText) {
-                contentEl._streamText = document.createElement("span");
-                contentEl._streamText.className = "stream-tail";
-                contentEl._renderedMarkdown = document.createElement("div");
-                contentEl._renderedMarkdown.className = "stream-rendered";
-                contentEl.innerHTML = "";
-                contentEl.appendChild(contentEl._renderedMarkdown);
-                contentEl.appendChild(contentEl._streamText);
-                contentEl._lastSentenceEnd = 0;
-                contentEl._mdTimer = null;
-              }
-              // Append new text to tail (instant, no parse)
-              contentEl._streamText.textContent = aiContent.slice(contentEl._lastSentenceEnd);
-              // Render markdown at sentence boundary or 200ms idle
-              var _isSentenceEnd = /[.!?。]\s*$/.test(aiContent) || /\n\n/.test(aiContent.slice(contentEl._lastSentenceEnd));
-              if (_isSentenceEnd && aiContent.length - contentEl._lastSentenceEnd > 10) {
-                contentEl._renderedMarkdown.innerHTML = marked.parse(stripFollowupBlock(aiContent), { breaks: true, gfm: true });
-                contentEl._streamText.textContent = "";
-                contentEl._lastSentenceEnd = aiContent.length;
-                if (contentEl._mdTimer) { clearTimeout(contentEl._mdTimer); contentEl._mdTimer = null; }
-              } else if (!contentEl._mdTimer) {
-                contentEl._mdTimer = setTimeout(function() {
-                  contentEl._renderedMarkdown.innerHTML = marked.parse(stripFollowupBlock(aiContent), { breaks: true, gfm: true });
-                  contentEl._streamText.textContent = "";
-                  contentEl._lastSentenceEnd = aiContent.length;
-                  contentEl._mdTimer = null;
-                  scrollToBottom();
-                }, 200);
-              }
-              if (!contentEl._rafScroll) {
-                contentEl._rafScroll = requestAnimationFrame(function() {
-                  scrollToBottom();
-                  contentEl._rafScroll = null;
-                });
+
+              if (!contentEl._streamInterval) {
+                // First chunk: render immediately
+                try {
+                  contentEl.innerHTML = marked.parse(stripFollowupBlock(aiContent), { breaks: true, gfm: true });
+                } catch (e) { contentEl.textContent = aiContent; }
+                contentEl._lastRenderedLen = aiContent.length;
+                scrollToBottom();
+
+                // Then render every 80ms (fast enough to feel real-time, slow enough to avoid jank)
+                contentEl._streamInterval = setInterval(function() {
+                  if (aiContent.length === contentEl._lastRenderedLen) return;
+                  try {
+                    var scrollEl = document.getElementById("chat-messages");
+                    var wasAtBottom = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 60;
+                    contentEl.innerHTML = marked.parse(stripFollowupBlock(aiContent), { breaks: true, gfm: true });
+                    contentEl._lastRenderedLen = aiContent.length;
+                    if (wasAtBottom) scrollToBottom();
+                  } catch (e) { contentEl.textContent = aiContent; }
+                }, 80);
               }
             }
           } catch (e) { /* skip */ }
@@ -957,18 +943,12 @@
       clearTimeout(contentEl._pendingRender);
       contentEl._pendingRender = null;
     }
-    if (contentEl._mdTimer) {
-      clearTimeout(contentEl._mdTimer);
-      contentEl._mdTimer = null;
+    if (contentEl._streamInterval) {
+      clearInterval(contentEl._streamInterval);
+      contentEl._streamInterval = null;
     }
-    if (contentEl._rafScroll) {
-      cancelAnimationFrame(contentEl._rafScroll);
-      contentEl._rafScroll = null;
-    }
-    // Remove streaming DOM structure, do final full render below
-    contentEl._streamText = null;
-    contentEl._renderedMarkdown = null;
-    contentEl._lastSentenceEnd = 0;
+    contentEl._mdScheduled = false;
+    contentEl._lastRenderedLen = 0;
 
     var typing = aiMsgEl.querySelector(".typing-indicator");
     if (typing) typing.remove();

@@ -1007,8 +1007,9 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   max-width: 100%;
   overflow: hidden;
 }
-/* Streaming cursor — ChatGPT-style blinking caret */
-.message-assistant.streaming .message-content::after {
+/* Streaming cursor — ChatGPT-style blinking caret on last paragraph */
+.message-assistant.streaming .message-content > *:last-child::after,
+.message-assistant.streaming .message-content:not(:has(*))::after {
   content: "";
   display: inline-block;
   width: 7px;
@@ -1035,27 +1036,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   50% { opacity: 1; }
 }
 
-/* Streaming incremental render */
-.stream-rendered { display: inline; }
-.stream-tail {
-  opacity: 0.85;
-  white-space: pre-wrap;
-}
-.message-assistant.streaming .stream-tail::after {
-  content: "";
-  display: inline-block;
-  width: 7px;
-  height: 1.1em;
-  background: var(--accent);
-  border-radius: 1px;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: cursor-blink 0.8s steps(2) infinite;
-}
-/* Hide old cursor when using new streaming structure */
-.message-assistant.streaming .message-content:has(.stream-tail)::after {
-  display: none;
-}
+/* Streaming cursor — appended to last element in content */
 
 /* Stop button mode */
 #btn-send.stop-mode {
