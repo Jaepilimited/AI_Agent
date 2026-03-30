@@ -226,6 +226,11 @@ async def _stream_response(
     response_id = f"chatcmpl-{int(time.time())}"
     created = int(time.time())
 
+    # Wave 4: Performance timing
+    _t_start = time.monotonic()
+    _t_first_token = None
+    _detected_route = "direct"
+
     # Send initial chunk with role
     initial_chunk = ChatCompletionStreamResponse(
         id=response_id,
@@ -247,6 +252,7 @@ async def _stream_response(
             brand_filter=brand_filter, enabled_sources=enabled_sources,
         ):
             if msg_type == "source":
+                _detected_route = content
                 sc = ChatCompletionStreamResponse(
                     id=response_id, created=created, model=request.model,
                     choices=[ChatCompletionStreamChoice(
@@ -257,6 +263,8 @@ async def _stream_response(
 
             elif msg_type == "chunk":
                 # Real-time streamed token
+                if not streamed_live:
+                    _t_first_token = time.monotonic()
                 streamed_live = True
                 sc = ChatCompletionStreamResponse(
                     id=response_id, created=created, model=request.model,
@@ -291,6 +299,37 @@ async def _stream_response(
             )],
         )
         yield f"data: {err_chunk.model_dump_json()}\n\n"
+
+    # Wave 4: Compute timing metrics
+    _t_end = time.monotonic()
+    _total_ms = int((_t_end - _t_start) * 1000)
+    _first_token_ms = int((_t_first_token - _t_start) * 1000) if _t_first_token else _total_ms
+
+    # Send timing metadata as SSE comment (invisible to OpenAI-compatible clients)
+    yield f"data: {{\"metrics\":{{\"first_token_ms\":{_first_token_ms},\"total_ms\":{_total_ms},\"route\":\"{_detected_route}\"}}}}\n\n"
+
+    logger.info(
+        "stream_completed",
+        route=_detected_route,
+        first_token_ms=_first_token_ms,
+        total_ms=_total_ms,
+        user_email=user_email or None,
+        query=query[:80],
+    )
+
+    # Wave 4: Audit log (fire-and-forget)
+    try:
+        from app.db.mariadb import execute as db_execute
+        asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: db_execute(
+                "INSERT INTO audit_logs (user_email, route, query, first_token_ms, total_ms, model) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (user_email or "", _detected_route, query[:500], _first_token_ms, _total_ms, request.model),
+            ),
+        )
+    except Exception:
+        pass  # Never block response for audit logging
 
     # Send final chunk
     final_chunk = ChatCompletionStreamResponse(

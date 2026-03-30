@@ -53,6 +53,7 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         # Ensure admin user exists in MariaDB
         _ensure_admin()
+        _ensure_audit_table()
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -155,6 +156,40 @@ def _ensure_admin():
             logger.info("admin_user_needs_signup", email="jeffrey@skin1004korea.com")
     except Exception as e:
         logger.warning("ensure_admin_failed", error=str(e))
+
+
+def _ensure_audit_table():
+    """Create audit_logs table if it doesn't exist (MariaDB or SQLite)."""
+    try:
+        execute(
+            """CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                user_email VARCHAR(255),
+                route VARCHAR(50),
+                query TEXT,
+                first_token_ms INT,
+                total_ms INT,
+                model VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+    except Exception:
+        # SQLite syntax fallback (dev mode uses AUTOINCREMENT not AUTO_INCREMENT)
+        try:
+            execute(
+                """CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_email TEXT,
+                    route TEXT,
+                    query TEXT,
+                    first_token_ms INTEGER,
+                    total_ms INTEGER,
+                    model TEXT,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )"""
+            )
+        except Exception as e:
+            logger.warning("audit_table_create_failed", error=str(e))
 
 
 async def _warmup_notion_titles():

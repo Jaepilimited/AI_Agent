@@ -173,6 +173,16 @@ CREATE TABLE IF NOT EXISTS sql_cache (
     created_at TEXT DEFAULT (datetime('now')),
     last_used_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT,
+    route TEXT,
+    query TEXT,
+    first_token_ms INTEGER,
+    total_ms INTEGER,
+    model TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 
