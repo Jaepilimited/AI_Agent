@@ -756,47 +756,52 @@
 
   // ===== Send Message =====
   // ===== Token Buffer Queue — smooth streaming like ChatGPT =====
-  var _tokenQueue = [];
-  var _drainRunning = false;
-  var _drainContentEl = null;
-  var _renderTimer = null;
-  var _completedHtml = "";
-  var _lastCompletedText = "";
+  // All streaming state in one object to avoid closure/scope issues
+  var _S = {
+    queue: [],
+    running: false,
+    el: null,
+    text: "",           // accumulated full text (replaces local aiContent during streaming)
+    completedHtml: "",
+    lastCompleted: "",
+  };
 
   function _startTokenDrain(contentEl) {
-    _drainContentEl = contentEl;
-    _drainRunning = true;
-    _completedHtml = "";
-    _lastCompletedText = "";
+    _S.el = contentEl;
+    _S.running = true;
+    _S.text = "";
+    _S.completedHtml = "";
+    _S.lastCompleted = "";
+    _S.queue = [];
     _scheduleDrain();
   }
 
   function _scheduleDrain() {
-    if (!_drainRunning) return;
+    if (!_S.running) return;
     requestAnimationFrame(_drainFrame);
   }
 
   function _drainFrame() {
-    if (!_drainRunning || !_drainContentEl) return;
+    if (!_S.running || !_S.el) return;
 
     // Adaptive speed: take more chars when queue is large
     var queueLen = 0;
-    for (var i = 0; i < _tokenQueue.length; i++) queueLen += _tokenQueue[i].length;
+    for (var i = 0; i < _S.queue.length; i++) queueLen += _S.queue[i].length;
 
     var take = queueLen > 200 ? 20 : queueLen > 50 ? 8 : 3;
 
-    // Drain 'take' characters from queue into aiContent
+    // Drain 'take' characters from queue
     var drained = 0;
-    while (_tokenQueue.length > 0 && drained < take) {
-      var front = _tokenQueue[0];
+    while (_S.queue.length > 0 && drained < take) {
+      var front = _S.queue[0];
       var need = take - drained;
       if (front.length <= need) {
-        aiContent += front;
+        _S.text += front;
         drained += front.length;
-        _tokenQueue.shift();
+        _S.queue.shift();
       } else {
-        aiContent += front.slice(0, need);
-        _tokenQueue[0] = front.slice(need);
+        _S.text += front.slice(0, need);
+        _S.queue[0] = front.slice(need);
         drained += need;
       }
     }
@@ -806,43 +811,42 @@
     }
 
     // Continue draining if there's more, or keep alive waiting for new tokens
-    if (_tokenQueue.length > 0) {
+    if (_S.queue.length > 0) {
       _scheduleDrain();
-    } else if (_drainRunning) {
-      // Queue empty but stream not done — poll again soon
+    } else if (_S.running) {
       setTimeout(_scheduleDrain, 16);
     }
   }
 
   function _renderStream() {
-    var el = _drainContentEl;
+    var el = _S.el;
     if (!el) return;
 
     // Split into completed paragraphs (\n\n) and in-progress tail
-    var splitIdx = aiContent.lastIndexOf("\n\n");
+    var splitIdx = _S.text.lastIndexOf("\n\n");
     var completedText, tailText;
     if (splitIdx >= 0) {
-      completedText = aiContent.slice(0, splitIdx + 2);
-      tailText = aiContent.slice(splitIdx + 2);
+      completedText = _S.text.slice(0, splitIdx + 2);
+      tailText = _S.text.slice(splitIdx + 2);
     } else {
       completedText = "";
-      tailText = aiContent;
+      tailText = _S.text;
     }
 
     // Re-render completed part only when it changes (stable DOM)
-    if (completedText !== _lastCompletedText) {
-      _lastCompletedText = completedText;
+    if (completedText !== _S.lastCompleted) {
+      _S.lastCompleted = completedText;
       try {
-        _completedHtml = marked.parse(stripFollowupBlock(completedText), { breaks: true, gfm: true });
+        _S.completedHtml = marked.parse(stripFollowupBlock(completedText), { breaks: true, gfm: true });
       } catch (e) {
-        _completedHtml = "<p>" + completedText.replace(/</g, "&lt;") + "</p>";
+        _S.completedHtml = "<p>" + completedText.replace(/</g, "&lt;") + "</p>";
       }
     }
 
     // Tail: escape HTML and show as raw (fast, no parse needed)
     var tailHtml = tailText ? '<span class="stream-tail">' + tailText.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") + '</span>' : "";
 
-    el.innerHTML = _completedHtml + tailHtml;
+    el.innerHTML = _S.completedHtml + tailHtml;
 
     // Auto-scroll only if user is near bottom
     var scrollEl = document.getElementById("chat-messages");
@@ -852,11 +856,11 @@
   }
 
   function _stopTokenDrain() {
-    _drainRunning = false;
-    _drainContentEl = null;
-    _tokenQueue = [];
-    _completedHtml = "";
-    _lastCompletedText = "";
+    _S.running = false;
+    _S.el = null;
+    _S.queue = [];
+    _S.completedHtml = "";
+    _S.lastCompleted = "";
   }
 
   async function sendMessage() {
@@ -928,11 +932,12 @@
     // Use in-memory messages for API (reliable, no DOM parsing)
     var messages = currentMessages.slice();
 
-    // Stream response
+    // Stream response — reset ALL previous streaming state first
+    _stopTokenDrain();
     isStreaming = true;
     if (currentAbortController) currentAbortController.abort();
     currentAbortController = new AbortController();
-    var aiContent = "";
+    _S.text = "";  // Reset stream text for new message
     var detectedSource = "";
     var aiMsgEl = appendMessage("assistant", "", true);
     var contentEl = aiMsgEl.querySelector(".message-content");
@@ -1016,7 +1021,7 @@
                   typingEl.innerHTML = '<span class="loading-text">' + loadingMsgs[detectedSource] + '</span>';
                 }
                 var stripped = delta.content.replace(/<!-- source:\w+ -->/, "");
-                if (stripped) _tokenQueue.push(stripped);
+                if (stripped) _S.queue.push(stripped);
               } else {
                 // Filter out thinking/reasoning patterns from Claude
                 var text = delta.content;
@@ -1027,12 +1032,12 @@
                 // Strip thinking blocks
                 text = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
                 text = text.replace(/\[thinking\][\s\S]*?\[\/thinking\]/g, "");
-                if (text) _tokenQueue.push(text);
+                if (text) _S.queue.push(text);
               }
               // Start token drain animation if not running
               var typing = aiMsgEl.querySelector(".typing-indicator");
               if (typing) typing.remove();
-              if (!_drainRunning) _startTokenDrain(contentEl);
+              if (!_S.running) _startTokenDrain(contentEl);
             }
           } catch (e) { /* skip */ }
         }
@@ -1047,14 +1052,14 @@
         currentAbortController = null;
         return;
       }
-      aiContent = "오류가 발생했습니다: " + e.message;
+      _S.text = "오류가 발생했습니다: " + e.message;
       showToast("응답 중 오류가 발생했습니다", "error");
-      contentEl.innerHTML = '<div class="error-card">⚠️ ' + aiContent + '<br><button class="error-retry-btn" onclick="document.querySelector(\'#chat-input\').value=\'' + lastUserQuery.replace(/'/g, "\\'") + '\';document.querySelector(\'#btn-send\').click();">다시 시도</button></div>';
+      contentEl.innerHTML = '<div class="error-card">⚠️ ' + _S.text + '<br><button class="error-retry-btn" onclick="document.querySelector(\'#chat-input\').value=\'' + lastUserQuery.replace(/'/g, "\\'") + '\';document.querySelector(\'#btn-send\').click();">다시 시도</button></div>';
     }
 
-    // Flush remaining tokens from queue into aiContent
-    while (_tokenQueue.length > 0) {
-      aiContent += _tokenQueue.shift();
+    // Flush remaining tokens from queue
+    while (_S.queue.length > 0) {
+      _S.text += _S.queue.shift();
     }
     _stopTokenDrain();
 
@@ -1065,7 +1070,7 @@
     aiMsgEl.classList.remove("streaming");
     _resetSendBtn();
 
-    var cleanContent = aiContent.replace(/<!-- source:\w+ -->/g, "");
+    var cleanContent = _S.text.replace(/<!-- source:\w+ -->/g, "");
 
     // Auto-open Google OAuth popup if GWS auth required
     var gwsAuthMatch = cleanContent.match(/<!-- gws-auth:(https?:\/\/[^\s]+) -->/);
