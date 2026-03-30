@@ -361,8 +361,17 @@ class OrchestratorAgent:
 
             _loop.run_in_executor(None, _bq_worker)
 
+            # Wave 2: 30s timeout for BQ route (SQL gen + execute + format)
+            _bq_start = asyncio.get_event_loop().time()
             while True:
-                msg_type, data = await _q.get()
+                try:
+                    msg_type, data = await asyncio.wait_for(_q.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    elapsed = asyncio.get_event_loop().time() - _bq_start
+                    if elapsed > 30.0:
+                        yield ("chunk", "\n\n⚠️ 데이터 분석이 30초를 초과했습니다. 더 구체적인 조건으로 다시 질문해주세요.")
+                        break
+                    continue
                 if msg_type == "end":
                     break
                 yield ("chunk", data)
@@ -371,6 +380,9 @@ class OrchestratorAgent:
             return
 
         # Non-streaming routes (CS, Notion, GWS, Multi) → simulate streaming
+        # Wave 2: Timeout (15s) + CircuitBreaker
+        from app.core.safety import get_circuit
+
         handlers = {
             "notion": self._handle_notion,
             "gws": self._handle_gws,
@@ -378,15 +390,36 @@ class OrchestratorAgent:
             "multi": self._handle_multi,
         }
         handler = handlers.get(route, self._handle_direct)
-        if route == "multi":
-            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
+
+        # Check circuit breaker before calling
+        circuit = get_circuit(route)
+        if not circuit.is_available():
+            logger.warning("circuit_open_fallback", route=route)
+            result = {"answer": f"⚠️ {route} 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.", "source": route}
         else:
-            result = await handler(query, messages, conversation_context, model_type, user_email)
+            try:
+                if route == "multi":
+                    result = await asyncio.wait_for(
+                        handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
+                        timeout=30.0,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        handler(query, messages, conversation_context, model_type, user_email),
+                        timeout=15.0,
+                    )
+                circuit.record_success()
+            except asyncio.TimeoutError:
+                logger.warning("route_timeout", route=route, timeout_s=15)
+                circuit.record_failure()
+                result = {"answer": f"⚠️ 분석이 예상보다 오래 걸리고 있습니다. 더 구체적인 조건으로 다시 질문해주세요.", "source": route}
+            except Exception as e:
+                logger.error("route_execution_failed", route=route, error=str(e))
+                circuit.record_failure()
+                result = {"answer": f"⚠️ 처리 중 오류가 발생했습니다: {str(e)}", "source": route}
 
         if "answer" in result:
             result["answer"] = ensure_formatting(result["answer"], domain=route)
-
-        yield ("source", result.get("source", route))
 
         # Simulate streaming: word-based chunks with natural typing feel
         import asyncio as _aio
@@ -604,16 +637,38 @@ class OrchestratorAgent:
     # e.g. "반품 정책 알려줘" → notion (not blocked by "반품" in data keywords)
     _COMPOUND_NOTION = ["반품 정책", "반품정책"]
 
+    # Wave 2: Hard-override keywords — always direct, no exceptions
+    _DIRECT_OVERRIDE = [
+        # Greetings / short social
+        "안녕", "하이", "hello", "hi", "감사", "고마워", "ㅎㅇ", "ㅋㅋ", "ㅎㅎ",
+        # Company identity
+        "회사", "뭐하는", "소개", "누가 만들", "주인",
+        # External topics (never route to BQ/Notion)
+        "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직",
+        "비트코인", "코인", "암호화폐", "주가", "상장",
+        "날씨 알려", "오늘 날씨",
+        # Fun / chitchat
+        "재밌", "농담", "웃긴", "심심",
+    ]
+
     def _keyword_classify(self, query: str) -> str:
         """Keyword-based query classification.
 
-        Priority: System tasks > Full data request > How-to (Notion) > Notion (explicit) > GWS > CS > Data > External > Direct
+        Priority: Hard overrides > System tasks > Full data request > How-to (Notion) > Notion (explicit) > GWS > CS > Data > External > Direct
         """
         # Open WebUI system tasks (title/tag/follow-up) → direct, skip BQ false routing
         if query.strip().startswith("### Task:"):
             return "direct"
 
         q = query.lower()
+
+        # Wave 2: Short greetings (<5 chars) → always direct
+        if len(q.strip()) < 5:
+            return "direct"
+
+        # Wave 2: Hard-override to direct (greetings, external topics, chitchat)
+        if any(kw in q for kw in self._DIRECT_OVERRIDE):
+            return "direct"
 
         # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
         if any(p in q for p in self._CAPABILITY_PATTERNS):
@@ -1253,11 +1308,14 @@ JSON만 반환:
 - 이미지 분석, 차트 생성
 
 ## 핵심 원칙
-- 전문적이면서 친근한 톤. 바로 답변 시작.
-- 질문한 내용만 답변. 모르면 솔직하게.
-- 복잡한 주제는 헤더/표/bullet으로 구조화.
+- 전문적이면서 친근한 톤. 바로 답변 시작. 서론/인사 없이 핵심부터.
+- 질문한 내용만 답변. 모르면 솔직하게. 추측하지 않기.
+- 짧은 질문에는 짧게 (1-3문장), 복잡한 주제는 헤더/표/bullet으로 구조화.
 - 핵심 수치는 **굵게**. 인사이트는 > 인용으로.
-- 후속 질문 제안 (💡 이런 것도 물어보세요).
+- 후속 질문 제안은 답변 맨 끝에만:
+  💡 이런 것도 물어보세요
+  > - 후속질문1
+  > - 후속질문2
 - 지식/설명형 답변 끝에 *AI 생성 답변 · {today}*
 - ⚠️ 이전 대화 맥락과 무관한 일반 질문(잡담, 취미, 상식 등)이 오면 이전 맥락을 무시하고 해당 질문에만 집중하여 자연스럽게 답변하세요. 매번 같은 질문에는 일관된 톤과 분량으로 답변하세요.
 - ⛔ 절대로 내부 사고 과정(thinking)을 사용자에게 노출하지 마세요. "The user is asking...", "I should...", "Let me check..." 같은 영어 사고 과정을 출력하면 안 됩니다. 바로 답변만 출력하세요."""
