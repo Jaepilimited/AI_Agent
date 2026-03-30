@@ -307,7 +307,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}{brand_section}\n\n## 사용자 질문\n{query}{sql_only_reminder}"
 
     try:
-        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=8192)
+        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=4096)
         sql = sanitize_sql(sql)
 
         # Retry once if LLM returned text instead of SQL
@@ -319,7 +319,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
                 "반드시 SELECT로 시작하는 BigQuery SQL만 출력하세요. "
                 "설명, 안내, 되묻기 텍스트 절대 금지! SQL만!"
             )
-            sql = llm.generate(retry_prompt, temperature=0.1, max_output_tokens=8192)
+            sql = llm.generate(retry_prompt, temperature=0.1, max_output_tokens=4096)
             sql = sanitize_sql(sql)
             if sql:
                 logger.info("sql_generation_retry_success", sql=sql[:200])
@@ -499,7 +499,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 왜 0건인지 가능한 원인 (조건 불일치, 해당 기간 데이터 없음 등) 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
-                answer = f.result(timeout=2.0)
+                answer = f.result(timeout=1.5)
             if answer and len(answer) > 30:
                 return {"answer": answer}
         except (concurrent.futures.TimeoutError, Exception):
@@ -653,7 +653,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # Answer generation: foreground. Chart: parallel with short timeout.
         # User sees answer immediately; chart appended only if ready fast enough.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            answer_future = executor.submit(llm.generate, prompt, None, 0.3, 8192)
+            answer_future = executor.submit(llm.generate, prompt, None, 0.3, 4096)
             chart_llm = get_flash_client()
             chart_future = executor.submit(
                 _try_generate_chart, chart_llm, query, sql, result_preview, results
@@ -662,7 +662,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             answer = answer_future.result()
             # Give chart up to 3s after answer is ready; skip if slow
             try:
-                chart_markdown = chart_future.result(timeout=3.0)
+                chart_markdown = chart_future.result(timeout=1.5)
             except concurrent.futures.TimeoutError:
                 chart_markdown = None
                 logger.info("chart_generation_skipped_timeout")
@@ -1174,7 +1174,7 @@ def run_sql_agent_stream(
     chart_future = _chart_executor.submit(_try_generate_chart, chart_llm, query, sql, result_preview, results)
 
     # Stream answer (chart generates in parallel)
-    for chunk in llm.generate_stream(prompt, temperature=0.3, max_output_tokens=8192):
+    for chunk in llm.generate_stream(prompt, temperature=0.3, max_output_tokens=4096):
         yield chunk
 
     # Chart should be done by now (ran in parallel with answer streaming)
