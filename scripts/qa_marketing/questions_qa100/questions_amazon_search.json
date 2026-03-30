@@ -1,0 +1,502 @@
+[
+  {
+    "id": "AZ-001",
+    "query": "전체 기간 동안 발생한 총 구매 건수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-002",
+    "query": "모든 검색 쿼리의 평균 CTR은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-003",
+    "query": "가장 높은 단일 검색 쿼리당 노출수는 얼마였나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-004",
+    "query": "가장 낮은 구매 전환율은 얼마였나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-005",
+    "query": "기록된 고유 ASIN의 총 개수는 몇 개인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-006",
+    "query": "월별 총 클릭수 추이를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-007",
+    "query": "분기별 구매 전환율의 평균은 어떻게 변동되었나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-008",
+    "query": "연도별 총 노출수 합계를 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-009",
+    "query": "주차별 장바구니 추가 수량의 합계는 어떻게 되나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-010",
+    "query": "일별 구매 건수의 변화 추이를 그래프로 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-011",
+    "query": "구매 건수가 가장 많은 상위 3개 ASIN은 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-012",
+    "query": "노출수가 가장 높은 상위 5개 검색 쿼리는 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-013",
+    "query": "CTR이 가장 높은 상위 10개 ASIN의 평균 CTR은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-014",
+    "query": "구매 전환율이 가장 낮은 국가의 전환율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-015",
+    "query": "모든 ASIN의 CTR 중간값은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-016",
+    "query": "지난달 대비 이번 달의 총 구매 건수 증감률은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-017",
+    "query": "작년 동기 대비 올해의 총 노출수는 얼마나 변화했나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-018",
+    "query": "미국과 독일의 평균 CTR을 비교해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-019",
+    "query": "ASIN 'B0XXXXXX1'과 'B0XXXXXX2'의 구매 전환율을 비교해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-020",
+    "query": "2023년 상반기와 2022년 하반기의 총 클릭수를 비교해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-021",
+    "query": "전체 노출수에서 ASIN 'B0XXXXXX3'이 차지하는 비중은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-022",
+    "query": "총 클릭수 대비 총 구매 건수의 비율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-023",
+    "query": "국가별 전체 구매 건수에서 각 국가가 차지하는 점유율을 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-024",
+    "query": "특정 날짜의 총 장바구니 추가 수량 중 상위 5개 검색 쿼리가 차지하는 구성비는 어떻게 되나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-025",
+    "query": "특정 기간 동안 가장 많은 구매를 발생시킨 ASIN이 전체 구매에 기여한 정도는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-026",
+    "query": "미국에서 2023년 3월 한 달간 발생한 총 구매 건수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-027",
+    "query": "ASIN 'B0XXXXXX4'의 지난 7일간 평균 CTR은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-028",
+    "query": "'skincare' 검색 쿼리에 대해 영국에서 발생한 총 노출수와 클릭수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-029",
+    "query": "ASIN 'B0XXXXXX5'의 데이터 중 CTR이 5% 이상인 경우의 평균 구매 전환율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-030",
+    "query": "2023년 하반기 동안 독일에서 발생한 데이터 중, 노출수가 10,000 이상이고 장바구니 추가 수가 100 이상인 ASIN들의 평균 구매 전환율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-031",
+    "query": "월별 총 구매 건수 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-032",
+    "query": "국가별 총 노출수를 막대 차트로 시각화해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-033",
+    "query": "지난 6개월간 평균 CTR의 변화 추이를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-034",
+    "query": "전체 장바구니 추가 수량에서 각 ASIN이 차지하는 비중을 파이 차트로 나타내세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-035",
+    "query": "상위 10개 검색 쿼리의 총 클릭수를 내림차순으로 바 차트로 그려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-036",
+    "query": "미국을 제외한 모든 국가의 총 구매 전환율 평균은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-037",
+    "query": "ASIN 'B0XXXXXX6'이 아닌 모든 ASIN들의 총 노출수 합계는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-038",
+    "query": "'skincare' 또는 'beauty' 검색 쿼리 외의 다른 쿼리들의 총 클릭수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-039",
+    "query": "주말 데이터를 빼고 평일의 평균 CTR은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-040",
+    "query": "독일과 일본을 제외한 국가들 중, 노출수가 1000 미만인 ASIN 데이터를 제외하고 총 구매 건수를 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-041",
+    "query": "2024년 1월 데이터가 존재하나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-042",
+    "query": "특정 ASIN 'B0XXXXXX7'에 대한 검색 쿼리 데이터가 있나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-043",
+    "query": "특정 검색 쿼리 'vegan cream'에 대한 구매 전환율 데이터를 조회할 수 있나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-044",
+    "query": "Impressions 컬럼에 NULL 값이 있는 데이터가 존재하나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-045",
+    "query": "CTR이 10% 이상인 데이터가 있나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-046",
+    "query": "구매 건수가 0인 ASIN들의 목록을 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-047",
+    "query": "가장 최근 날짜의 전체 데이터는 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-048",
+    "query": "가장 오래된 기록은 언제인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-049",
+    "query": "Purchases_Conversion_Rate가 NULL인 데이터의 총 개수는 몇 개인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-050",
+    "query": "CTR이 정확히 0.05인 데이터의 ASIN 목록을 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-051",
+    "query": "국가별 총 구매 건수와 평균 CTR을 집계해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-052",
+    "query": "ASIN별 평균 노출수, 클릭수, 장바구니 추가 수를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-053",
+    "query": "검색 쿼리별 총 구매 전환율의 평균은 어떻게 되나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-054",
+    "query": "날짜별 총 노출수, 클릭수, 구매 건수 합계를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-055",
+    "query": "CTR을 0-1%, 1-2%, 2-3% 등의 구간으로 나누어 각 구간에 해당하는 ASIN의 수를 집계해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-056",
+    "query": "최근 3개월간의 총 구매 건수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-057",
+    "query": "2023년 하반기(7월~12월) 동안의 평균 CTR은 얼마였나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-058",
+    "query": "2022년 1분기부터 3분기까지의 총 장바구니 추가 수를 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-059",
+    "query": "2023년 10월 첫째 주(월요일 시작)의 총 노출수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-060",
+    "query": "2023년 1월부터 6월까지의 월별 총 클릭수를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-061",
+    "query": "지난 분기 대비 이번 분기의 총 구매 건수 성장률은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-062",
+    "query": "지난주 대비 이번 주의 평균 CTR 감소율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-063",
+    "query": "특정 ASIN 'B0XXXXXX8'의 월별 노출수 증감폭을 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-064",
+    "query": "지난 1년간 가장 큰 구매 전환율 변동폭을 보인 ASIN은 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-065",
+    "query": "특정 검색 쿼리 'centella'의 지난 6개월간 클릭수 변화를 설명해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-066",
+    "query": "평균 장바구니 추가 수량은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-067",
+    "query": "지난 7일간의 일별 구매 건수 7일 이동평균을 계산해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-068",
+    "query": "노출수를 가중치로 사용하여 ASIN별 CTR의 가중평균을 계산해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-069",
+    "query": "일별 평균 클릭수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-070",
+    "query": "주간 평균 구매 전환율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-071",
+    "query": "2023년 동안의 일별 누적 구매 건수를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-072",
+    "query": "현재까지(Year-To-Date)의 총 노출수 합계는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-073",
+    "query": "이번 달 현재까지(Month-To-Date)의 총 클릭수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-074",
+    "query": "2022년 한 해 동안의 총 장바구니 추가 수량 합계는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-075",
+    "query": "2023년 1월 1일부터 특정 날짜까지의 누적 평균 CTR을 계산해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-076",
+    "query": "CTR이 3% 이상인 데이터의 총 구매 건수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-077",
+    "query": "노출수가 50,000 이상인 ASIN들의 평균 구매 전환율은 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-078",
+    "query": "클릭수가 100 이하인 검색 쿼리들의 목록과 해당 쿼리들의 총 노출수를 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-079",
+    "query": "CTR이 1% 초과 5% 미만인 데이터의 총 장바구니 추가 수는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-080",
+    "query": "미국에서 발생한 데이터 중, Purchases_Conversion_Rate가 평균 이상인 ASIN들의 총 노출수 합계는 얼마인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-081",
+    "query": "ASIN 'B0XXXXXX9'의 모든 검색 쿼리, 노출수, 클릭수, CTR 상세 데이터를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-082",
+    "query": "'hyaluronic acid' 검색 쿼리에 대한 일별 CTR과 구매 전환율 상세 추이를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-083",
+    "query": "2023년 5월 15일의 모든 국가별, ASIN별 검색 분석 상세 데이터를 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-084",
+    "query": "독일에서 발생한 ASIN 'B0XXXXXX10'의 모든 데이터 상세를 조회해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-085",
+    "query": "가장 높은 CTR을 기록한 데이터의 ASIN, Search_Query, Date를 포함한 상세 정보를 알려주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-086",
+    "query": "각 국가별로 ASIN별 총 구매 건수를 교차 분석하여 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-087",
+    "query": "국가별로 주요 검색 쿼리들의 평균 CTR을 교차 분석하여 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-088",
+    "query": "월별로 ASIN별 총 노출수를 교차 분석하여 테이블 형태로 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-089",
+    "query": "상위 10개 검색 쿼리에 대해 구매 전환율이 높은 그룹과 낮은 그룹으로 나누어 각각의 클릭수 합계를 비교해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-090",
+    "query": "특정 날짜 범위 내에서 각 날짜별, 국가별 총 장바구니 추가 수량을 집계해주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-091",
+    "query": "최근 7일 동안 아마존 검색 성과가 전반적으로 어떤가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-092",
+    "query": "가장 많이 팔리는 ASIN은 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-093",
+    "query": "구매 전환율이 높은 검색 쿼리 몇 가지를 추천해 줄 수 있나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-094",
+    "query": "CTR은 낮은데 노출수가 높은 ASIN이 있나요? 있다면 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-095",
+    "query": "사람들이 우리 제품을 검색할 때 주로 어떤 키워드를 사용하나요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-096",
+    "query": "전체 평균 CTR보다 높은 CTR을 기록한 ASIN들 중, 총 구매 건수가 가장 많은 ASIN은 무엇인가요?",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-097",
+    "query": "평균 CTR이 2% 이상인 국가들만 대상으로 총 노출수 합계를 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-098",
+    "query": "각 국가 내에서 ASIN별 총 구매 건수 순위를 매겨주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-099",
+    "query": "월별로 각 국가의 총 구매 건수를 피벗 테이블 형태로 보여주세요.",
+    "table": "amazon_search"
+  },
+  {
+    "id": "AZ-100",
+    "query": "특정 기간 동안 노출수가 전월 대비 10% 이상 증가하고, 동시에 CTR도 상승한 ASIN들의 목록을 보여주세요.",
+    "table": "amazon_search"
+  }
+]

@@ -1,0 +1,502 @@
+[
+  {
+    "id": "PR-001",
+    "query": "전체 제품의 총 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-002",
+    "query": "모든 제품의 평균 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-003",
+    "query": "단일 제품이 기록한 최대 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-004",
+    "query": "단일 제품이 기록한 최소 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-005",
+    "query": "데이터에 기록된 고유 SKU의 총 개수는 몇 개인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-006",
+    "query": "각 월별 총 판매 수량 추이를 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-007",
+    "query": "분기별로 Brand 'SK' 제품의 총 판매 수량은 어떻게 변동했나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-008",
+    "query": "연도별로 'Centella' 라인의 제품 판매 수량 합계를 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-009",
+    "query": "주별로 Country '미국'의 'Ampoule' 카테고리 제품 판매 수량 추이를 알고 싶습니다.",
+    "table": "product"
+  },
+  {
+    "id": "PR-010",
+    "query": "특정 날짜(예: 2023-10-26)의 일별 총 판매 수량은 얼마였나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-011",
+    "query": "전체 기간 동안 가장 많이 팔린 TOP 3 제품(SET)은 무엇인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-012",
+    "query": "Country '일본'에서 가장 많이 팔린 TOP 5 Line은 무엇인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-013",
+    "query": "전체 국가에서 SKU별 총 판매 수량 기준으로 TOP 10 SKU를 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-014",
+    "query": "가장 적게 팔린 Category는 무엇인가요? (카테고리별 합계 기준)",
+    "table": "product"
+  },
+  {
+    "id": "PR-015",
+    "query": "SKU별 총 판매 수량의 중간값은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-016",
+    "query": "지난달 대비 이번 달 총 판매 수량 성장률은 어떻게 되나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-017",
+    "query": "2022년 대비 2023년 'Hyalucica' 라인의 판매 수량 증감률은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-018",
+    "query": "Country '한국'과 '베트남'의 'Cream' 카테고리 제품 판매 수량을 비교해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-019",
+    "query": "Brand 'SK'와 'CL'의 전체 판매 수량을 비교해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-020",
+    "query": "'Centella' 라인과 'LabinNature' 라인 중 어느 라인의 총 판매 수량이 더 많은가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-021",
+    "query": "전체 판매 수량 중 'Sun' 카테고리 제품이 차지하는 비중은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-022",
+    "query": "Country '미국'의 'Toner' 제품 판매 수량이 해당 국가 전체 판매 수량에서 차지하는 비율은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-023",
+    "query": "'Centella' 라인 제품이 전체 'Line' 카테고리 판매 수량에서 차지하는 점유율은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-024",
+    "query": "각 Brand별 총 판매 수량의 구성비를 파이 차트로 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-025",
+    "query": "특정 SET 제품(예: '마다가스카르 센텔라 앰플')이 'Centella' 라인 전체 판매 수량에 얼마나 기여했나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-026",
+    "query": "2023년 상반기 동안 Country '독일'에서 판매된 총 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-027",
+    "query": "Brand 'SK'의 'Ampoule' 카테고리 제품 총 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-028",
+    "query": "2023년 1월부터 3월까지 'SKU001' 제품의 판매 수량 합계를 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-029",
+    "query": "Country가 '프랑스'이면서 Line이 'Hyalucica'인 제품들의 총 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-030",
+    "query": "2023년 7월에 Brand 'CL'의 'Toner' 카테고리 제품 중 판매 수량이 100개 이상인 SKU 목록을 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-031",
+    "query": "각 Line별 총 판매 수량을 막대 그래프로 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-032",
+    "query": "Country별 판매 수량 점유율을 파이 차트로 시각화해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-033",
+    "query": "2023년 한 해 동안 'Sun' 카테고리 제품의 월별 판매 수량 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-034",
+    "query": "'Ampoule' 카테고리 내 각 SET 제품별 판매 수량 비중을 파이 차트로 표현해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-035",
+    "query": "Brand 'SK'와 'CL'의 각 Category별 총 판매 수량을 비교하는 바 차트를 생성해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-036",
+    "query": "'Centella' 라인 제품을 제외한 다른 모든 라인의 총 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-037",
+    "query": "Country '일본'이 아닌 모든 국가에서 'Cream' 카테고리 제품의 총 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-038",
+    "query": "'Ampoule', 'Toner' 카테고리 외의 제품들 중 가장 많이 팔린 Category는 무엇인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-039",
+    "query": "Brand 'CL'의 제품을 빼고, 2023년 4분기에 가장 많이 팔린 SET 제품은 무엇인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-040",
+    "query": "2023년 10월에 Country '미국'을 제외한 국가들에서 'Hyalucica' 라인의 'SET' 카테고리 제품 총 판매 수량을 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-041",
+    "query": "2024년 1월 데이터가 있나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-042",
+    "query": "'LabinNature' 라인 제품의 판매 기록이 있나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-043",
+    "query": "특정 SKU 'SKU999'에 대한 판매 수량 정보를 조회할 수 있나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-044",
+    "query": "Country '멕시코'의 판매 데이터가 존재하나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-045",
+    "query": "'Oil' 카테고리에 해당하는 제품 판매 데이터가 있습니까?",
+    "table": "product"
+  },
+  {
+    "id": "PR-046",
+    "query": "판매 수량(Total_Qty)이 0인 제품 기록이 있나요? 있다면 어떤 SKU인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-047",
+    "query": "가장 최근에 기록된 판매 데이터 1건의 상세 정보를 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-048",
+    "query": "데이터베이스에서 가장 오래된 판매 기록의 날짜는 언제인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-049",
+    "query": "'SET' (제품명) 컬럼에 NULL 값이 있는 데이터가 있나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-050",
+    "query": "어떤 컬럼이라도 NULL 값을 포함하는 판매 기록이 있나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-051",
+    "query": "각 Category별 총 판매 수량을 집계해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-052",
+    "query": "각 Line별 평균 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-053",
+    "query": "각 Country별로 가장 많이 팔린 Category는 무엇인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-054",
+    "query": "Brand 'SK'의 각 Line별 판매 수량 합계를 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-055",
+    "query": "각 SET(제품명)별 총 판매 수량을 내림차순으로 정렬하여 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-056",
+    "query": "최근 3개월 동안의 총 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-057",
+    "query": "2023년 하반기(7월~12월) 동안 Country '미국'의 총 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-058",
+    "query": "2023년 1분기부터 3분기까지의 'Centella' 라인 제품 누적 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-059",
+    "query": "2023년 35번째 주에 판매된 총 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-060",
+    "query": "2023년 5월부터 8월까지 Brand 'CL'의 'Toner' 카테고리 제품 총 판매 수량을 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-061",
+    "query": "2023년 1월 대비 2월 'Ampoule' 카테고리 제품의 판매 수량 성장률은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-062",
+    "query": "지난 분기 대비 이번 분기 Brand 'SK'의 총 판매 수량 감소율은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-063",
+    "query": "Country '일본'의 'Sun' 카테고리 제품 판매 수량이 월별로 어떻게 증감했는지 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-064",
+    "query": "2023년 한 해 동안 'Hyalucica' 라인의 월별 판매 수량 변동폭은 얼마였나요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-065",
+    "query": "2022년과 2023년 사이 'LabinNature' 라인의 총 판매 수량 변화를 수치로 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-066",
+    "query": "각 SKU별 평균 일별 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-067",
+    "query": "'Cream' 카테고리의 월별 평균 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-068",
+    "query": "Country '한국'의 'Toner' 카테고리 제품 3개월 이동평균 판매 수량을 계산해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-069",
+    "query": "'Ampoule' 카테고리 제품 중, 판매 수량이 높은 SKU에 더 큰 가중치를 부여한 평균 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-070",
+    "query": "각 Country에서 가장 많이 팔린 Line의 평균 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-071",
+    "query": "2023년 1월 1일부터 현재까지 'Centella' 라인의 누적 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-072",
+    "query": "2023년 현재까지(Year-To-Date)의 총 판매 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-073",
+    "query": "이번 달 현재까지(Month-To-Date) Brand 'SK'의 'Toner' 카테고리 제품 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-074",
+    "query": "2022년 Brand 'CL'의 전체 연간 판매 수량 합계는?",
+    "table": "product"
+  },
+  {
+    "id": "PR-075",
+    "query": "각 Country별로 시간이 지남에 따른 누적 판매 수량 추이를 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-076",
+    "query": "판매 수량이 500개 이상인 'SET' 제품들의 목록과 총 판매 수량을 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-077",
+    "query": "2023년에 판매 수량이 100개 이하인 'SKU' 목록은 무엇인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-078",
+    "query": "Country '독일'에서 Brand 'SK'의 'Ampoule' 카테고리 제품 중 총 판매 수량이 200개 이상인 제품들의 상세 정보를 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-079",
+    "query": "2023년 1분기 동안 판매 수량이 300개 미만이었던 'Line'별 총 판매 수량은?",
+    "table": "product"
+  },
+  {
+    "id": "PR-080",
+    "query": "'Centella' 라인 제품 중, Country가 '한국' 또는 '일본'이면서 판매 수량이 1000개 이상인 제품들의 총 수량은 얼마인가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-081",
+    "query": "SKU 'SKU12345'의 전체 판매 기록 상세 정보를 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-082",
+    "query": "'마다가스카르 센텔라 앰플'이라는 제품(SET)의 Country별 판매 수량 상세를 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-083",
+    "query": "2023년 11월 15일의 모든 판매 기록을 상세하게 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-084",
+    "query": "Brand 'CL'의 'LabinNature' 라인에 속하는 모든 제품(SET)의 목록을 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-085",
+    "query": "'Sun' 카테고리 제품들의 SKU, SET, Line, Total_Qty를 모두 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-086",
+    "query": "각 Country별, 각 Category별 총 판매 수량을 교차 분석 테이블 형태로 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-087",
+    "query": "각 Brand별, 월별 총 판매 수량을 교차 분석하여 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-088",
+    "query": "각 Brand별, 각 Line별 총 판매 수량을 비교하는 매트릭스를 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-089",
+    "query": "'Centella' 라인 내에서 각 Category별 판매 수량이 어떻게 분포되어 있는지 교차 분석해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-090",
+    "query": "2023년 각 월별로 TOP 5 SKU의 판매 수량을 나란히 비교하는 표를 만들어주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-091",
+    "query": "요즘 'Hyalucica' 라인 제품 판매는 어떤가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-092",
+    "query": "가장 잘 팔리는 'Ampoule' 카테고리 제품은 뭔가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-093",
+    "query": "전체적으로 우리 제품 판매 현황 좀 간략히 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-094",
+    "query": "최근 Country '일본'에서 어떤 Line의 제품이 인기가 많은가요?",
+    "table": "product"
+  },
+  {
+    "id": "PR-095",
+    "query": "Brand 'SK' 제품 중 'Centella' 라인과 'LabinNature' 라인 중 어느 것이 더 잘 나가는지 궁금합니다.",
+    "table": "product"
+  },
+  {
+    "id": "PR-096",
+    "query": "전체 평균 판매 수량보다 높은 판매 수량을 기록한 SKU들의 목록과 그 수량을 알려주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-097",
+    "query": "각 Country별로 총 판매 수량이 10,000개 이상인 Country와 해당 총 수량을 보여주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-098",
+    "query": "각 Country 내에서 Category별 판매 수량 순위를 매겨주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-099",
+    "query": "각 Line별로 Category별 판매 수량을 가로로 펼쳐서 보여주는 피벗 테이블을 생성해주세요.",
+    "table": "product"
+  },
+  {
+    "id": "PR-100",
+    "query": "2023년 전체 판매 수량의 상위 10%를 차지하는 SKU들의 2023년 월별 판매 수량 추이를 보여주세요.",
+    "table": "product"
+  }
+]

@@ -1,0 +1,1002 @@
+[
+  {
+    "id": "SH-001",
+    "query": "총 순매출 합계는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.6,
+    "answer_len": 1107,
+    "answer_preview": "### 📊 총 순매출 합계 분석  #### 요약  2019년 1월 1일부터 2026년 3월 19일까지 'ETC' 브랜드를 제외한 총 순매출 합계는 **약 14,054.7억원**으로 집계되었습니다. 이는 지난 7년 2개월여 간의 누적 매출액을 나타냅니다.  #### 분석 및 인사이트  *   **누적 매출 규모**: 2019년 1월 1일부터 현재(2026년 3월 19일)까지 약 7년 2개월간의 순매출 합계가 **1조 4천억 원**을 넘어선 것은 회사의 장기적인 시장 지위와 상당한 규모의 비즈니스 성장을 보여주는 중요한 지표입니다. *   **데이터 범위 명확화**: 해당 순매출은 'ETC' 브랜드를 제외한 모든 브랜드의 매출을 합산한 결과입니다. 이는 전체적인 성과를 파악하는 데 유용하며, 특정 브랜드나 채널에 대한 추가 분석을 통해 더 심층적인 인사이트를 얻을 수 있습니다. *   **기간별 성과 분석의 필요성**: 총 순매출 합계는 전체적인 규모를 파악하는 데 유용하지만, 연도별,",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-002",
+    "query": "평균 주문 건수는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 56.3,
+    "answer_len": 1203,
+    "answer_preview": "### 📊 일평균 주문 건수 분석  #### 요약  통합 매출 데이터 분석 결과, 2019년 1월 1일부터 현재까지(2026년 3월 19일 기준) 'ETC' 브랜드를 제외한 **일평균 주문 건수는 6,503.79건**으로 집계되었습니다. 이 수치는 SKIN1004의 장기적인 일일 주문 처리 규모를 보여주는 핵심 지표입니다.  #### 분석 및 인사이트  *   **안정적인 주문 처리 규모:** 2019년 1월 1일부터 현재까지의 장기간 데이터를 기반으로 한 평균이므로, SKIN1004가 일상적으로 처리하는 주문량의 안정적인 기준점을 제시합니다. *   **핵심 브랜드 중심 분석:** 'ETC' 브랜드를 제외하고 계산되어, 주요 브랜드의 주문 건수 흐름에 집중하여 분석할 수 있습니다. *   **운영 효율성 지표:** 이 평균값은 물류, 고객 서비스, 재고 관리 등 일일 운영 효율성을 평가하고, 향후 주문량 변화에 따른 리소스 계획을 수립하는 데 중요한 기초 자료로 활용될 수 있습니다",
+    "used_sql": "SELECT\n  AVG(daily_order_count) AS average_daily_order_count\nFROM (\n  SELECT\n    DATE(Date) AS order_date,\n    COUNT(DISTINCT Order_Number) AS daily_order_count\n  FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\n  WHERE Date >= '2019-01-01'\n    AND Brand != 'ETC'\n  GROUP BY order_date\n)\nLIMIT 1000"
+  },
+  {
+    "id": "SH-003",
+    "query": "단일 주문에서 기록된 최대 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 51.8,
+    "answer_len": 357,
+    "answer_preview": "안녕하세요. 요청하신 **단일 주문 최대 판매 수량** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 예를 들어 기간, 채널, 국가, 제품명 등을 함께 알려주시면 도움이 됩니다.  **질문 예시:** 1. **\"2024년 Amazon US에서 단일 주문 최대 판매 수량은 몇 개인가요?\"** 2. **\"마다가스카르 센텔라 앰플 제품의 단일 주문 최대 판매 수량은 얼마인가요?\"** 3. **\"2025년 1분기 국내 자사몰 기준으로 단일 주문 최대 구매 수량이 어떻게 되나요?\"**  위와 같이 조건을 추가하여 다시 질문해 주시면 감사하겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-004",
+    "query": "전체 데이터에서 가장 낮은 할인 금액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 53.9,
+    "answer_len": 899,
+    "answer_preview": "### 📊 전체 데이터 최저 할인 금액 현황  #### 요약  전체 데이터에서 확인된 가장 낮은 할인 금액은 **0.0**입니다. 이는 할인이 적용되지 않은 거래가 있거나, 할인 금액이 0으로 기록된 경우를 나타냅니다.  #### 분석 및 인사이트  *   **할인 미적용 또는 0원 할인:** 할인 금액이 **0.0**이라는 것은 특정 주문에 할인이 전혀 적용되지 않았거나, 프로모션 조건에 따라 할인 금액이 0원으로 산정된 경우가 존재함을 의미합니다. *   **데이터의 기본값 또는 초기값:** 0.0은 할인 금액 필드의 기본값이거나, 데이터 입력 시 할인이 없는 경우에 사용되는 값일 수 있습니다. *   **추가 분석 필요성:** 이 결과만으로는 0원 할인이 발생한 구체적인 원인(예: 정상가 판매, 특정 상품 제외, 프로모션 조건 미충족 등)을 파악하기 어렵습니다.  > 할인 금액이 **0.0**이라는 것은 할인 정책이 적용되지 않은 거래가 있거나, 특정 조건에서 할인 금액이 발생",
+    "used_sql": "SELECT\n  MIN(Discount_Price) AS lowest_discount_price\nFROM `skin1004-319714.Platform_Data.raw_data`\nLIMIT 1000"
+  },
+  {
+    "id": "SH-005",
+    "query": "총 판매 데이터 건수는 몇 건인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 55.4,
+    "answer_len": 1032,
+    "answer_preview": "### 📊 2019년 1월 1일 이후 총 판매 데이터 건수  #### 요약  2019년 1월 1일 이후의 데이터를 기준으로 조회된 **총 판매 데이터 건수는 23,697,795건**입니다. 이는 해당 기간 동안 통합 매출 데이터베이스에 기록된 전체 판매 활동의 규모를 나타냅니다.  #### 분석 및 인사이트  *   **방대한 데이터 규모**: 2천 3백만 건이 넘는 판매 데이터는 SKIN1004의 광범위한 판매 활동과 고객 접점을 보여줍니다. 이 데이터는 상세한 판매 트렌드, 제품별 성과, 고객 행동 분석의 기반이 될 수 있습니다. *   **기간 명확화**: 현재 집계된 데이터는 2019년 1월 1일 이후의 기록을 포함합니다. 따라서 이 수치는 해당 시작일 이전의 판매 데이터는 포함하지 않습니다. *   **활용 가능성**: 이처럼 방대한 판매 기록은 마케팅 캠페인 효과 측정, 재고 관리 최적화, 신제품 개발 전략 수립 등 다양한 비즈니스 의사결정에 활용될 수 있는 중요한 자원입",
+    "used_sql": "SELECT\n  COUNT(*) AS total_sales_data_records\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-006",
+    "query": "월별 총 순매출의 추이를 보여주세요.",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 68.5,
+    "answer_len": 2809,
+    "answer_preview": "### 📊 월별 총 순매출 추이 분석 보고서 (2019년 1월 ~ 2023년 12월)  #### 요약  2019년 1월부터 2023년 12월까지의 월별 총 순매출은 전반적으로 **강력한 성장 추세**를 보였습니다. 전체 기간 동안 총 순매출은 **약 1조 4,660억원**을 기록했으며, 2019년 월평균 약 2.2억원에서 2023년 월평균 약 58.8억원으로 크게 증가했습니다. 특히 **2023년 11월에 약 97.64억원**으로 가장 높은 월별 순매출을 달성했습니다.  #### 상세 데이터  다음은 2019년 1월부터 2023년 12월까지의 월별 총 순매출 데이터입니다.  | 월      | 총 순매출 (원)           | | :------ | ------------------------: | | 2019-01 | 167,022,415               | | 2019-02 | 62,471,511                | | 2019-03 | 50,906,819",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY\n  month\nORDER BY\n  month\nLIMIT 1000"
+  },
+  {
+    "id": "SH-007",
+    "query": "분기별 총 주문 건수 변화는 어떤가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 44.2,
+    "answer_len": 2913,
+    "answer_preview": "### 📊 연도별 총 주문 건수 추이 분석  #### 요약  제공된 데이터는 연도별 총 주문 건수를 보여주며, 2019년부터 2026년까지 **총 주문 건수가 지속적으로 크게 증가**하는 추세를 보입니다. 특히 **2025년에는 700만 건 이상**을 기록하며 가장 높은 주문 건수를 달성했습니다. (참고: 데이터 형식상 분기별 세부 정보는 확인되지 않으며, 연도별 합계로 분석되었습니다.) 2026년 데이터는 현재 **3월 19일 기준의 부분 데이터**입니다.  #### 상세 데이터 | 연도 | 총 주문 건수 | | :--- | ---: | | 2019 | 236 | | 2020 | 77,442 | | 2021 | 327,986 | | 2022 | 541,268 | | 2023 | 842,490 | | 2024 | 4,091,601 | | 2025 | 7,088,314 | | 2026 | 2,448,701 |  #### 시각화   ```chart-config {\"type\": \"line",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-Q%q', Date) AS quarter,\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY quarter\nORDER BY quarter\nLIMIT 1000"
+  },
+  {
+    "id": "SH-008",
+    "query": "연도별 총 할인 금액 합계를 알려주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 29.6,
+    "answer_len": 3084,
+    "answer_preview": "### 📊 연도별 총 할인 금액 합계 분석  #### 요약  2019년부터 2026년까지의 연도별 총 할인 금액을 분석한 결과, **2025년에 약 183.3억원으로 가장 높은 할인 금액**을 기록했습니다. 특히 2024년부터 할인 금액이 급격히 증가하는 추세를 보였으며, 2026년은 현재 3월 19일 기준으로 약 58.7억원의 할인 금액을 기록하여 이미 2023년 전체 할인 금액을 크게 상회하고 있습니다.  #### 상세 데이터  | 연도 | 총 할인 금액 | | :--- | ---: | | 2019 | 0원 | | 2020 | 2.1억원 | | 2021 | 13.0억원 | | 2022 | 12.7억원 | | 2023 | 11.9억원 | | 2024 | 105.8억원 | | 2025 | **183.3억원** | | 2026 | 58.7억원 | | **총계** | **487.5억원** |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": ",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  SUM(Discount_Coupon) AS total_discount_amount\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nGROUP BY year\nORDER BY year\nLIMIT 1000"
+  },
+  {
+    "id": "SH-009",
+    "query": "주별 평균 판매 수량 트렌드를 분석해 주세요.",
+    "table": "shopify",
+    "status": "FAIL",
+    "time": 90.7,
+    "answer_len": 3479,
+    "answer_preview": "### 📈 주별 평균 판매 수량 트렌드 분석  #### 요약  2019년 1월 1일부터 2026년 4월 26일까지의 'SK' 및 'CL' 브랜드 제품(Sachet 제외)에 대한 주별 평균 판매 수량 분석 결과, 총 375주 동안 **최대 15,400개** (2019년 8월 25일 주)를 기록하며 높은 변동성을 보였습니다. 전체 주차의 평균 판매 수량은 **약 272.89개**로, 특정 시기에 판매량이 집중되는 경향이 뚜렷합니다. 2026년에는 소비 심리 위축과 유통 채널별 양극화가 심화될 것으로 예상되어, 이러한 외부 환경 변화에 맞춰 판매 전략을 수립하는 것이 중요합니다.  #### 내부 데이터 분석  SKIN1004의 내부 매출/주문 데이터를 분석한 결과, 2019년 1월 1일 이후 'SK' 및 'CL' 브랜드 제품(Sachet 제외)의 주별 평균 판매 수량은 다음과 같은 추이를 보였습니다.  | week_start_date | average_weekly_quantity | | ",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-010",
+    "query": "일별 평균 순매출액은 어떻게 변동했나요?",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 68.0,
+    "answer_len": 1953,
+    "answer_preview": "### 📊 일별 순매출액 변동 분석  #### 요약  2019년 1월 2일부터 집계된 1,000일간의 순매출액 데이터를 분석한 결과, 총 순매출액은 **약 604.9억원**을 기록했습니다. 이 기간 동안 **일별 평균 순매출액은 약 6,049만원**으로 나타났으며, 일별 매출액은 최소 약 3.8억원(샘플 기준)에서 최대 약 8.7억원(샘플 기준)까지 큰 폭으로 변동했습니다.  #### 상세 데이터  **1. 전체 기간 순매출액 현황 (1,000일 기준)**  | 지표             | 값                 | | :--------------- | :----------------- | | 분석 대상 기간   | 2019-01-02 ~ (1,000일) | | 총 순매출액      | 60,494,088,408원   | | 분석 대상 일수   | 1,000일            | | 일별 평균 순매출액 | 60,494,088원       |  **2. 일별 순매출액 상",
+    "used_sql": "SELECT\n  DATE(Date) AS sales_date,\n  SUM(Sales1_R) AS daily_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY sales_date\nORDER BY sales_date\nLIMIT 1000"
+  },
+  {
+    "id": "SH-011",
+    "query": "순매출액 기준 TOP 3 제품 타이틀은 무엇인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 36.6,
+    "answer_len": 1993,
+    "answer_preview": "### 📊 순매출액 기준 TOP 3 제품 분석  #### 요약  순매출액 기준 TOP 3 제품은 'SK_Hyalucica_Waterfit_Sun_Serum_50ml', 'SK_Centella_Light_Cleansing_Oil_200ml', 'SK_Centella_Ampoule_100ml'입니다. 이 중 **SK_Hyalucica_Waterfit_Sun_Serum_50ml**가 **약 865.8억원**으로 가장 높은 순매출을 기록했습니다. TOP 3 제품의 총 순매출액은 **약 2,291.3억원**에 달합니다.  #### 상세 데이터  다음은 브랜드 'SK' 및 'CL'을 기준으로 2019년 1월 1일 이후 순매출액이 가장 높은 상위 3개 제품의 상세 데이터입니다.  | 순위 | 제품 타이틀 (product_title)             | 순매출액 (net_revenue) | | :--- | :-------------------------------------- | ------",
+    "used_sql": "SELECT\n  `SET` AS product_title,\n  SUM(Sales1_R) AS net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` != 'Sachet'\nGROUP BY `SET`\nORDER BY net_revenue DESC\nLIMIT 3"
+  },
+  {
+    "id": "SH-012",
+    "query": "총 판매 수량 기준 TOP 5 SKU를 알려주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 41.1,
+    "answer_len": 3372,
+    "answer_preview": "### 📊 총 판매 수량 기준 TOP 5 SKU 분석 보고서  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드의 총 판매 수량을 기준으로 분석한 결과, 'SK_Hyalucica_Waterfit_Sun_Serum_50ml'이 **1,075만 개** 이상 판매되며 가장 높은 판매량을 기록했습니다. 상위 5개 제품 모두 SK 브랜드 제품으로, 총 **3,900만 개** 이상의 판매 수량을 보였습니다.  #### 상세 데이터 | 순위 | 제품명 | 총 판매 수량 | |:---|:---|---:| | 1 | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 10,750,857 | | 2 | SK_Centella_Light_Cleansing_Oil_200ml | 8,609,894 | | 3 | SK_Centella_Ampoule_55ml | 7,295,296 | | 4 | SK_Centella_Ampoule_100ml | 6,518,158 | | 5 | SK",
+    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Product\nORDER BY total_quantity DESC\nLIMIT 5"
+  },
+  {
+    "id": "SH-013",
+    "query": "총 주문 건수 기준 TOP 10 국가를 나열해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 55.9,
+    "answer_len": 1822,
+    "answer_preview": "### 📊 총 주문 건수 기준 TOP 10 국가 분석  #### 요약  총 주문 건수 기준 상위 10개 국가를 분석한 결과, **인도네시아**가 **7,325,347건**으로 압도적인 1위를 차지했습니다. 이는 상위 10개국 전체 주문 건수의 약 **47.6%**에 해당하는 수치입니다. 상위 3개국(인도네시아, 필리핀, 중국)이 전체의 **73.8%**를 차지하며 주문 건수의 높은 집중도를 보였습니다.  #### 상세 데이터 | 순위 | 국가     | 총 주문 건수 | 비중 (%) | |:---|:---------|-------------:|---------:| | 1  | 인도네시아 | 7,325,347    | 47.6     | | 2  | 필리핀   | 2,350,608    | 15.3     | | 3  | 중국     | 1,684,463    | 10.9     | | 4  | 일본     | 1,335,070    | 8.7      | | 5  | 미국     |",
+    "used_sql": "SELECT\n  Country,\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY Country\nORDER BY total_order_count DESC\nLIMIT 10"
+  },
+  {
+    "id": "SH-014",
+    "query": "평균 할인 금액이 가장 낮은 하위 3개 제품 타이틀은 무엇인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.8,
+    "answer_len": 2968,
+    "answer_preview": "### 📊 평균 할인 금액 최하위 3개 제품 분석  #### 요약  평균 할인 금액이 가장 낮은 하위 3개 제품은 'OCUSOFT LID SCRUB FOAM PLUS, 1.68 FL OZ (50ML)', 'EUNYUL - ALOE VERA SOOTHING GEL POUCH', 'BLUE LINE FACE SCRUB GOLD 300GM'으로 나타났습니다. 이들 제품 모두 평균 할인 금액이 **0.0**으로, 데이터상으로는 할인이 적용되지 않았거나 할인 가격이 기록되지 않은 것으로 보입니다.  #### 상세 데이터  | 제품 타이틀                                     | 평균 할인 금액 | | :---------------------------------------------- | -------------: | | OCUSOFT LID SCRUB FOAM PLUS, 1.68 FL OZ (50ML) | 0.0            | | EUNYUL - ALOE",
+    "used_sql": "SELECT\n  Product_Name,\n  AVG(Discount_Price) AS avg_discount_price\nFROM `skin1004-319714.Platform_Data.raw_data`\nWHERE Discount_Price IS NOT NULL\nGROUP BY Product_Name\nORDER BY avg_discount_price ASC\nLIMIT 3"
+  },
+  {
+    "id": "SH-015",
+    "query": "전체 순매출 데이터의 중간값(Median)은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.3,
+    "answer_len": 535,
+    "answer_preview": "안녕하세요. 요청하신 **전체 순매출 데이터의 중간값(Median)** 을 현재 데이터베이스에서 조회하지 못했습니다.  \"전체 순매출\"의 범위가 넓어 조건을 좀 더 구체적으로 지정해 주시면 정확한 결과를 안내해 드릴 수 있습니다. 아래 항목들을 참고하여 질문을 다시 작성해 보시겠어요?  > **구체화하면 좋은 항목**  > - **기간** (예: 특정 연도, 월, 분기)  > - **국가/지역** (예: 한국, 미국, 일본 등)  > - **판매 채널** (예: 자사몰, 아마존, 올리브영 등)  > - **제품명/제품 라인** (예: 마다가스카르 센텔라 라인 등)  ---  > ### 💡 질문 예시 1. **\"2024년 한국 채널별 월간 순매출의 중간값(Median)은 얼마인가요?\"** 2. **\"2023년 아마존(미국) 마다가스카르 센텔라 라인의 순매출 중간값을 알려주세요.\"** 3. **\"2024년 1분기 전체 국가 순매출 중간값을 월 단위로 보여주세요.\"**  위와 같이 조건을",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-016",
+    "query": "직전 월 대비 총 순매출 성장률은 어떻게 되나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.5,
+    "answer_len": 405,
+    "answer_preview": "안녕하세요. 요청하신 **직전 월 대비 총 순매출 성장률** 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회해 드리겠습니다. 아래 항목들을 포함해 주시면 도움이 됩니다.  > **구체화할 수 있는 항목:** 기간(월), 국가/지역, 판매 채널, 제품(라인)명 등  ---  **질문 예시**  1. **\"2025년 5월 대비 6월, 미국 아마존 채널의 순매출 성장률은 어떻게 되나요?\"** 2. **\"2025년 상반기 마다가스카르 센텔라 라인의 월별 순매출 추이를 알려주세요.\"** 3. **\"2025년 6월 vs 5월, 국가별 총 순매출 성장률을 비교해 주세요.\"**  위 예시처럼 기간·채널·제품 등을 명시하여 다시 질문해 주시면 데이터를 조회해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-017",
+    "query": "전년 동기(예: 2023년 1월 vs 2022년 1월) 대비 총 주문 건수 증감률은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 37.3,
+    "answer_len": 1457,
+    "answer_preview": "### 📊 2026년 3월 총 주문 건수 전년 동기 대비 증감률  #### 요약  2026년 3월 총 주문 건수는 전년 동기(2025년 3월) 대비 **7.0% 증가**했습니다. **⚠️ 2026년 3월 데이터는 3월 19일까지의 부분 데이터이므로, 최종 월간 실적과는 차이가 있을 수 있습니다.**  #### 분석 및 인사이트  *   2026년 3월(부분 데이터 기준) 총 주문 건수는 전년 동기 대비 7.0% 증가하며 긍정적인 성장세를 보이고 있습니다. 이는 전년 대비 주문량이 늘었음을 의미합니다. *   현재까지의 데이터만으로도 전년 동기 대비 성장률이 긍정적으로 나타나, 비즈니스 활동이 활발하게 이루어지고 있음을 시사합니다. *   다만, 3월 전체 데이터가 아닌 19일까지의 부분 데이터이므로, 월말까지의 추이를 지속적으로 모니터링하여 최종적인 성장률을 확정하는 것이 중요합니다.  > 2026년 3월의 긍정적인 주문 건수 증가는 고무적이지만, 월말까지의 추이를 지켜보며 최종 성",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    (SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2026 AND EXTRACT(MONTH FROM Date) = 3 THEN Order_Count ELSE 0 END) -\n     SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2025 AND EXTRACT(MONTH FROM Date) = 3 THEN Order_Count ELSE 0 END)),\n    SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2025 AND EXTRACT(MONTH FROM Date) = 3 THEN Order_Count ELSE 0 END)\n  ) AS yoy_order_count_growth_rate\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND ((EXTRACT(YEAR FROM Date) = 2026 AND EXTRACT(MONTH FROM Date) = 3) OR\n       (EXTRACT(YEAR FROM Date) = 2025 AND EXTRACT(MONTH FROM Date) = 3))\nLIMIT 1000"
+  },
+  {
+    "id": "SH-018",
+    "query": "국가별 평균 판매 수량을 서로 비교해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 37.0,
+    "answer_len": 1737,
+    "answer_preview": "📊 국가별 평균 판매 수량 비교 분석  #### 요약  총 140개 국가의 평균 판매 수량을 분석한 결과, **아프가니스탄**이 **4,839.0개**로 가장 높은 평균 판매 수량을 기록했으며, **이스라엘**이 **4,443.6개**로 그 뒤를 이었습니다. 전체 국가의 평균 판매 수량은 약 **377.7개**로, 상위 국가들의 판매량이 두드러지는 양상을 보였습니다. 본 분석은 2019년 1월 1일 이후 'SK', 'CL' 브랜드의 'Sachet'을 제외한 제품 데이터를 기반으로 합니다.  #### 상세 데이터 | 국가 | 평균 판매 수량 (개) | | :---------------- | ---------------: | | 아프가니스탄 | 4,839.0 | | 이스라엘 | 4,443.6 | | 터키 | 2,646.7 | | 태국 | 2,280.1 | | 글로벌_플랫폼 | 1,520.8 | | 예멘 | 1,488.2 | | 베트남 | 1,474.7 | | 폴란드 | 1,405.3 |",
+    "used_sql": "SELECT\n  Country,\n  AVG(Total_Qty) AS avg_total_qty\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY Country\nORDER BY avg_total_qty DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-019",
+    "query": "제품 타이틀별 평균 순매출을 비교하여 어떤 제품이 더 높은지 알려주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 59.7,
+    "answer_len": 3036,
+    "answer_preview": "### 📊 SK 및 CL 브랜드 제품 타이틀별 평균 순매출 비교 분석  #### 요약  SK 및 CL 브랜드 제품 타이틀별 평균 순매출 분석 결과, **'SK_Hyalucica_First_Ampoule_15ml'**이 약 **9,371만원**으로 가장 높은 평균 순매출을 기록하며 선두를 차지했습니다. 이는 2위 제품 대비 약 2배 높은 수치입니다. 총 213개 제품 타이틀의 평균 순매출을 비교 분석했습니다.  #### 상세 데이터  분석 대상 제품 중 평균 순매출 상위 15개 제품은 다음과 같습니다.  | 제품 타이틀 (product_name)             | 평균 순매출 (average_net_revenue) | | :------------------------------------- | --------------------------------: | | SK_Hyalucica_First_Ampoule_15ml        |                        93",
+    "used_sql": "SELECT\n  `SET` AS product_name,\n  AVG(Sales1_R) AS average_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` != 'Sachet'\nGROUP BY `SET`\nORDER BY average_net_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-020",
+    "query": "SKU별 평균 할인율(할인 금액 / 순매출)을 비교 분석해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 36.6,
+    "answer_len": 2388,
+    "answer_preview": "### 📊 SK 및 CL 브랜드 SKU별 평균 할인율 비교 분석  #### 요약  SK 및 CL 브랜드의 SKU별 평균 할인율을 분석한 결과, 'MADAGASCAR CENTELLA TONE BRIGHTENING CAPSULE AMPOULE'이 **965.1%**로 가장 높은 평균 할인율을 기록했습니다. 상위 15개 SKU 중 다수가 100%를 초과하는 매우 높은 할인율을 보였으며, 이는 특정 프로모션 또는 데이터 특이치에 기인할 수 있습니다. 이번 분석은 2019년 1월 1일 이후 데이터 중 평균 할인율이 높은 상위 1,000개 SKU를 대상으로 합니다.  #### 상세 데이터  평균 할인율이 가장 높은 상위 15개 SKU는 다음과 같습니다.  | SKU | 평균 할인율 (%) | |:-------------------------------------------|-------------:| | MADAGASCAR CENTELLA TONE BRIGHTENING CAPSULE AMPOU",
+    "used_sql": "SELECT\n  SKU,\n  SAFE_DIVIDE(SUM(Discount_Coupon), SUM(Sales1_R)) * 100 AS average_discount_rate\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Sales1_R > 0\n  AND Discount_Coupon IS NOT NULL\n  AND SKU IS NOT NULL AND SKU != ''\nGROUP BY SKU\nORDER BY average_discount_rate DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-021",
+    "query": "전체 순매출에서 각 국가가 차지하는 매출 비중은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 42.8,
+    "answer_len": 2308,
+    "answer_preview": "📊 국가별 순매출 비중 분석 보고서 (2019년 1월 1일 이후)  #### 요약  2019년 1월 1일 이후 'ETC' 브랜드를 제외한 전체 순매출 약 **1조 4,054.7억원** 중, **미국**이 약 **2,038.3억원**으로 **14.5%**의 가장 높은 비중을 차지하며 선두를 달리고 있습니다. 이어서 **글로벌_플랫폼**이 약 **1,828.9억원**으로 **13.0%**, **인도네시아**가 약 **1,456.0억원**으로 **10.4%**의 비중을 기록하며 상위 3개 국가/채널이 전체 매출의 약 37.9%를 차지하고 있습니다.  #### 상세 데이터  2019년 1월 1일 이후 'ETC' 브랜드를 제외한 국가별 순매출 및 비중은 다음과 같습니다.  | 국가/채널 | 순매출 | 매출 비중 (%) | | :---------- | -----------: | -------------: | | 미국 | 약 2,038.3억원 | 14.5 | | 글로벌_플랫폼 | 약 1,828.",
+    "used_sql": "SELECT\n  Country,\n  SUM(Sales1_R) AS total_revenue,\n  SAFE_DIVIDE(SUM(Sales1_R), (SELECT SUM(Sales1_R) FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date >= '2019-01-01' AND Brand != 'ETC')) AS sales_proportion\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY Country\nORDER BY sales_proportion DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-022",
+    "query": "총 판매 수량 대비 'Centella Ampoule' 제품의 판매 수량 비율은 몇 %인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 38.3,
+    "answer_len": 1361,
+    "answer_preview": "### 📊 'Centella Ampoule' 제품 판매 수량 비율 분석  #### 요약  총 판매 수량 대비 'Centella Ampoule' 제품의 판매 수량 비율은 **18.8%**입니다. 이는 SK 및 CL 브랜드의 전체 판매량 중 해당 제품이 약 5분의 1에 가까운 비중을 차지하고 있음을 의미합니다.  #### 분석 및 인사이트  *   **높은 비중:** 'Centella Ampoule' 제품은 SK 및 CL 브랜드의 전체 판매 수량에서 약 18.8%의 상당한 비중을 차지하고 있습니다. 이는 해당 제품이 고객들에게 꾸준히 높은 수요를 얻고 있거나, 효과적인 판매 전략이 뒷받침되고 있음을 시사합니다. *   **핵심 제품군:** 전체 판매량에서 높은 기여도를 보이는 만큼, 'Centella Ampoule'은 해당 브랜드의 핵심 제품군 중 하나로 분류될 수 있습니다. *   **전략적 중요성:** 이러한 높은 판매 비중은 마케팅, 재고 관리, 생산 계획 등 전반적인 비즈니스 전",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN Product LIKE '%Centella%Ampoule%' THEN Total_Qty ELSE 0 END),\n    SUM(Total_Qty)\n  ) * 100 AS centella_ampoule_sales_ratio_percent\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-023",
+    "query": "총 할인 금액 중 가장 많은 할인 금액을 차지하는 제품 타이틀의 점유율은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 45.0,
+    "answer_len": 4519,
+    "answer_preview": "아래 쿼리로 총 할인 금액 대비 제품별 점유율을 확인하겠습니다.  먼저 전체 할인 금액과 제품별 할인 금액을 조회합니다.  ```sql SELECT   title,   SUM(total_discount) AS product_discount,   ROUND(SUM(total_discount) / (SELECT SUM(total_discount) FROM `ga4_raw.shopify_orders` WHERE total_discount > 0) * 100, 2) AS share_pct FROM `ga4_raw.shopify_orders` WHERE total_discount > 0 GROUP BY title ORDER BY product_discount DESC LIMIT 20 ```  잠시만요, 테이블 구조를 먼저 확인해보겠습니다.  ```sql SELECT column_name, data_type FROM `ga4_raw.INFORMATION_SCHEMA.COLUMNS` WHERE ",
+    "used_sql": "SELECT\n  title,\n  SUM(total_discount) AS product_discount,\n  ROUND(SUM(total_discount) / (SELECT SUM(total_discount) FROM `ga4_raw.shopify_orders` WHERE total_discount > 0) * 100, 2) AS share_pct\nFROM `ga4_raw.shopify_orders`\nWHERE total_discount > 0\nGROUP BY title\nORDER BY product_discount DESC\nLIMIT 20"
+  },
+  {
+    "id": "SH-024",
+    "query": "총 주문 건수 대비 환불이 발생한 주문 건수의 구성비는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 38.8,
+    "answer_len": 1271,
+    "answer_preview": "### 📊 총 주문 건수 대비 환불 주문 구성비 분석  #### 요약  2019년 1월 1일부터 현재(2026년 3월 19일)까지의 데이터를 기준으로, 총 주문 건수 대비 환불이 발생한 주문 건수의 구성비는 **0.0%**로 나타났습니다. 이는 해당 기간 동안 'Refunded' 상태로 기록된 주문이 없음을 의미합니다.  #### 분석 및 인사이트  *   **환불 주문 없음:** 2019년 1월 1일 이후(ETC 브랜드 제외)의 모든 주문 데이터를 조회한 결과, 'Refunded' 상태로 분류된 주문이 단 한 건도 없어 총 주문 건수 대비 환불 주문의 구성비는 **0.0%**입니다. *   **데이터 해석의 중요성:** 이 결과는 실제 환불이 발생하지 않았거나, 시스템상 'Refunded' 외의 다른 주문 상태(예: 'Cancelled', 'Returned' 등)로 환불이 처리되었을 가능성을 시사합니다. *   **추가 확인 필요:** 만약 실제 비즈니스에서 환불이 발생하고 있다면",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    COUNT(DISTINCT CASE WHEN Order_Status = 'Refunded' THEN Order_Number END),\n    COUNT(DISTINCT Order_Number)\n  ) AS refund_ratio\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-025",
+    "query": "전체 순매출에 대한 가장 높은 순매출을 기록한 SKU의 기여도는 몇 %인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.6,
+    "answer_len": 424,
+    "answer_preview": "안녕하세요. 요청하신 **전체 순매출 대비 최고 순매출 SKU의 기여도** 데이터를 조회하지 못했습니다.  조회 조건을 좀 더 구체적으로 지정해 주시면 정확한 결과를 안내드릴 수 있습니다. 아래 예시를 참고하여 질문을 다시 작성해 보시겠어요?  ---  > **💡 질문 예시** 1. **\"2024년 연간 기준, 전체 순매출에서 가장 높은 순매출을 기록한 SKU의 기여도는 몇 %인가요?\"** 2. **\"2025년 1분기, 아마존 미국 채널에서 순매출 1위 SKU의 전체 매출 기여 비중을 알려주세요.\"** 3. **\"2024년 하반기, 마다가스카르 센텔라 라인 중 순매출이 가장 높은 SKU와 그 기여율을 알려주세요.\"**  ---  **기간, 국가/지역, 판매 채널, 제품 라인** 등을 함께 알려주시면 보다 빠르고 정확하게 데이터를 조회해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-026",
+    "query": "2023년 1월 미국에서의 총 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 57.3,
+    "answer_len": 970,
+    "answer_preview": "### 📊 2023년 1월 미국 총 순매출액 분석  #### 요약  2023년 1월 미국 시장에서의 총 순매출액은 **약 3.53억원**을 기록했습니다. 이는 해당 월의 미국 시장 성과를 나타내는 중요한 지표입니다.  #### 분석 및 인사이트  *   2023년 1월, 미국 시장에서 **352,658,658원**의 순매출액을 달성했습니다. *   이 수치는 2023년 한 해의 미국 시장 매출 시작점을 보여주며, 향후 월별 성과 및 전년 동기 대비 비교를 위한 중요한 기준점이 됩니다. *   미국 시장은 글로벌 매출에서 중요한 비중을 차지하는 경우가 많으므로, 이 초기 성과를 바탕으로 연간 목표 달성 가능성을 가늠해 볼 수 있습니다.  > 2023년 1월 미국 시장의 순매출액은 약 3.53억원으로, 해당 연도 미국 시장의 초기 성과를 나타내는 중요한 기준점입니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 매출 (SALES_ALL)*  > 💡 **이런 것도 물어",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(MONTH FROM Date) = 1\n  AND Country = '미국'\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-027",
+    "query": "SKU 'S001'의 지난 3개월간 총 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 40.0,
+    "answer_len": 1188,
+    "answer_preview": "### 📊 SKU 'S001'의 지난 3개월간 판매 수량 분석  #### 요약  SKU 'S001'의 지난 3개월간 (2025년 12월 19일 ~ 2026년 03월 18일) 총 판매 수량은 **0개**로 확인되었습니다. 이는 조회된 기간 동안 해당 SKU에 대한 판매 기록이 없음을 의미합니다.  #### 분석 및 인사이트  *   **판매 기록 없음**: 2025년 12월 19일부터 2026년 03월 18일까지의 기간 동안, 'SK' 또는 'CL' 브랜드에 해당하는 SKU 'S001'의 판매 데이터가 조회되지 않았습니다. *   **판매 활동 점검 필요**: 해당 SKU가 지난 3개월간 실제로 판매되지 않았거나, 현재 활성 판매 중인 제품이 아닌 단종 또는 재고 부족 상태일 가능성이 있습니다. *   **필터 조건 확인**: 현재 분석은 'SK' 및 'CL' 브랜드로 한정되어 있습니다. 만약 SKU 'S001'이 다른 브랜드로 판매되었을 가능성이 있다면, 브랜드 필터를 확장하여 재조",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n  AND Date < CURRENT_DATE()\n  AND SKU = 'S001'\n  AND Brand IN ('SK', 'CL')\nLIMIT 1000"
+  },
+  {
+    "id": "SH-028",
+    "query": "한국 시장에서 가장 많이 팔린 제품 타이틀(총 주문 건수 기준)은 무엇인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 55.1,
+    "answer_len": 1372,
+    "answer_preview": "### 📊 한국 시장 베스트셀러 제품 분석 (총 주문 건수 기준)  #### 요약  한국 시장에서 총 주문 건수 기준으로 가장 많이 팔린 제품 타이틀은 **SK_Centella_Ampoule_100ml**이며, 총 **43,247건**의 주문을 기록했습니다. 이는 2019년 1월 1일 이후 SK 및 CL 브랜드 제품 중 가장 높은 판매량을 보인 단일 제품입니다.  #### 분석 및 인사이트  *   **압도적인 판매량:** SK_Centella_Ampoule_100ml는 2019년 1월 1일 이후 한국 시장에서 SK 및 CL 브랜드 제품 중 가장 많은 주문 건수를 기록하며, 해당 기간 동안의 베스트셀러임을 입증했습니다. *   **주력 제품의 중요성:** 이 결과는 SK_Centella_Ampoule_100ml가 한국 시장에서 SK 브랜드의 핵심 제품으로서 강력한 입지를 가지고 있음을 시사합니다. 단일 제품으로 4만 건 이상의 주문을 달성한 것은 매우 의미 있는 성과입니다. *   ",
+    "used_sql": "SELECT\n  `SET` AS product_title,\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Country = '한국'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` != 'Sachet'\n  AND `SET` NOT LIKE '% + %'\n  AND Order_Count > 0\nGROUP BY `SET`\nORDER BY total_order_count DESC\nLIMIT 1"
+  },
+  {
+    "id": "SH-029",
+    "query": "할인 금액이 발생한 주문 중, 캐나다의 총 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 37.0,
+    "answer_len": 983,
+    "answer_preview": "### 📊 할인 발생 캐나다 주문의 총 순매출액 분석  #### 요약  할인 금액이 발생한 캐나다 주문의 총 순매출액은 **2,161만 8,013원**으로 집계되었습니다. 이는 캐나다 시장에서 할인 프로모션이 적용된 주문을 통해 발생한 순매출의 규모를 나타냅니다.  #### 분석 및 인사이트  *   **할인 전략의 매출 기여:** 캐나다 시장에서 할인 프로모션이 적용된 주문은 2천만 원 이상의 순매출을 창출하며, 이는 할인 전략이 해당 시장에서 유의미한 매출을 발생시키는 중요한 요소임을 시사합니다. *   **시장별 할인 효과 분석의 필요성:** 이 데이터는 캐나다 시장에 한정된 결과로, 다른 국가에서의 할인 효과와 비교 분석하여 각 시장에 최적화된 할인 전략을 수립하는 데 활용될 수 있습니다.  > 캐나다 시장에서 할인 프로모션은 **2천만 원 이상의 순매출**을 발생시키는 중요한 판매 전략으로 작용하고 있습니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 ",
+    "used_sql": "SELECT\n  SUM(Sales1_R - Discount_Coupon) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Country = '캐나다'\n  AND Discount_Coupon > 0\nLIMIT 1000"
+  },
+  {
+    "id": "SH-030",
+    "query": "2023년 상반기 동안 'Centella Cream' 제품이 기록한 평균 주문 건수는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.5,
+    "answer_len": 1446,
+    "answer_preview": "### 📊 2023년 상반기 Centella Cream 제품의 평균 주문 건수 분석  #### 요약  2023년 상반기 동안 'Centella Cream' 제품이 기록한 평균 주문 건수는 **0.70건**으로 집계되었습니다. 이는 해당 기간 동안 'Centella Cream' 제품이 주문 1건당 평균적으로 1개 미만의 수량으로 판매되었음을 의미합니다.  #### 상세 데이터  *(단일 수치이므로 상세 데이터 섹션은 생략합니다.)*  #### 분석 및 인사이트  *   **주문당 판매량 특성:** 'Centella Cream' 제품의 2023년 상반기 평균 주문 건수가 0.70건이라는 것은, 고객이 해당 제품을 구매할 때 단독으로 1개만 구매하기보다는 다른 제품과 함께 구매하거나, 특정 프로모션으로 인해 주문당 구매 수량이 낮은 특성을 가질 수 있음을 시사합니다. *   **번들/프로모션 영향 가능성:** 평균 주문 건수가 1건 미만인 경우, 해당 제품이 다른 제품과 묶음(번들)으로 ",
+    "used_sql": "SELECT\n  AVG(Order_Count) AS average_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` LIKE '%Centella%Cream%'\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` != 'Sachet'\n  AND Date >= '2023-01-01' AND Date < '2023-07-01'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-031",
+    "query": "월별 순매출 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 51.1,
+    "answer_len": 875,
+    "answer_preview": "### 📊 월별 순매출 추이 분석 보고서  #### 요약  2019년 1월부터 2023년 12월까지의 월별 순매출 추이를 분석한 결과, 해당 기간 동안 순매출이 **약 51배** 성장하며 매우 가파른 상승세를 보였습니다. 특히 2023년 11월에는 **약 97.6억원**으로 역대 최고 순매출을 기록했으며, 2023년 하반기부터는 월별 순매출이 꾸준히 **50억원 이상**을 유지하는 등 괄목할 만한 성장을 달성했습니다. 전체 기간 동안의 총 순매출은 **약 8,990.9억원**으로 집계되었습니다.  #### 상세 데이터  | 월      | 순매출 (원)           | 순매출 (억원/만원) | | :------ | :-------------------- | :----------------- | | 2019-01 | 167022414.60          | 1억 6,702만원      | | 2019-02 | 62471510.80           | 6,247만원       ",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "SH-032",
+    "query": "국가별 순매출 비중을 파이 차트로 나타내주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 50.5,
+    "answer_len": 3800,
+    "answer_preview": "### 📊 국가별 순매출 비중 분석  #### 요약  2019년 1월 1일부터 현재(2026년 3월 19일)까지의 데이터를 기준으로 분석한 결과, 전체 순매출은 **약 1조 4,096억원**이며, 이 중 **미국**이 **약 2,048억원(14.5%)**으로 가장 높은 비중을 차지했습니다. 이어서 **글로벌_플랫폼(약 1,832억원, 13.0%)**과 **인도네시아(약 1,456억원, 10.3%)**가 뒤를 이으며, 상위 3개 국가/플랫폼이 전체 순매출의 **약 37.8%**를 차지하는 것으로 나타났습니다.  #### 상세 데이터 | 국가/플랫폼 | 순매출액 (원) | 비중 (%) | | :---------- | -----------: | -------: | | 미국        | 204,787,473,861 | 14.5 | | 글로벌_플랫폼 | 183,167,335,109 | 13.0 | | 인도네시아  | 145,627,153,204 | 10.3 | | 중국        | 7",
+    "used_sql": "SELECT\n  Country,\n  SUM(Sales1_R) AS total_revenue,\n  SAFE_DIVIDE(SUM(Sales1_R), SUM(SUM(Sales1_R)) OVER ()) AS revenue_proportion\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Sales1_R IS NOT NULL AND Sales1_R > 0\nGROUP BY Country\nORDER BY total_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-033",
+    "query": "TOP 5 제품의 판매 수량을 바 차트로 비교하여 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 33.6,
+    "answer_len": 3299,
+    "answer_preview": "### 📊 SK 및 CL 브랜드 TOP 5 제품 판매 수량 비교 분석  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드 제품 중 총 판매 수량을 기준으로 상위 5개 제품을 분석한 결과, 'SK_Hyalucica_Waterfit_Sun_Serum_50ml'이 **10,750,857개**로 가장 높은 판매 수량을 기록했습니다. 상위 5개 제품의 총 판매 수량은 **39,045,939개**에 달하며, 모두 SK 브랜드 제품으로 나타났습니다.  #### 상세 데이터 | 제품명 | 총 판매 수량 | | :---------------------------------- | -----------: | | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 10,750,857 | | SK_Centella_Light_Cleansing_Oil_200ml | 8,609,894 | | SK_Centella_Ampoule_55ml | 7,295,296 | | SK_Cente",
+    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nGROUP BY Product\nORDER BY total_quantity DESC\nLIMIT 5"
+  },
+  {
+    "id": "SH-034",
+    "query": "일별 주문 건수 변화를 시각화해서 추이를 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 34.1,
+    "answer_len": 403,
+    "answer_preview": "안녕하세요. 요청하신 **일별 주문 건수 데이터를 조회하지 못했습니다.**  좀 더 구체적인 조건을 포함해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 참고하여 질문을 다시 작성해 보시겠어요?  > **구체화하면 좋은 항목:** 조회 기간, 판매 채널(자사몰/쿠팡/아마존 등), 국가(국내/미국/일본 등), 특정 제품명  ---  **질문 예시**  1. *\"2025년 5월 한 달간 쿠팡 채널의 일별 주문 건수 추이를 시각화해 주세요.\"* 2. *\"2025년 1분기 아마존 US에서 마다가스카르 센텔라 라인의 일별 주문 건수 변화를 보여주세요.\"* 3. *\"최근 30일간 자사몰 국내 주문 건수를 일별 그래프로 보여주세요.\"*  위와 같이 조건을 추가하여 다시 질문해 주시면 바로 확인해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-035",
+    "query": "할인 금액이 가장 큰 상위 3개 제품을 막대 그래프로 비교해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 26.7,
+    "answer_len": 1581,
+    "answer_preview": "### 📊 할인 금액 상위 3개 제품 분석  #### 요약  할인 금액이 가장 큰 상위 3개 제품은 **SK_Centella_Ampoule_100ml**, **SK_Hyalucica_Waterfit_Sun_Serum_50ml**, **SK_Centella_Ampoule_55ml**로 나타났습니다. 이 중 **SK_Centella_Ampoule_100ml**이 약 **24.7억원**의 할인 금액으로 가장 높은 비중을 차지했으며, 상위 3개 제품의 총 할인 금액은 약 **57.3억원**에 달합니다.  #### 상세 데이터  | 제품명 | 총 할인 금액 | |:----------------------------------- | ----------:| | SK_Centella_Ampoule_100ml | 약 24.7억원 | | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 약 17.7억원 | | SK_Centella_Ampoule_55ml | 약 14.9억원 | | ",
+    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Discount_Coupon) AS total_discount_amount\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\nGROUP BY `SET`\nORDER BY total_discount_amount DESC\nLIMIT 3"
+  },
+  {
+    "id": "SH-036",
+    "query": "한국을 제외한 모든 국가들의 총 순매출 합계는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 21.8,
+    "answer_len": 1019,
+    "answer_preview": "### 📊 한국 제외 국가들의 총 순매출 합계  #### 요약  2019년 1월 1일 이후 한국을 제외한 모든 국가들의 총 순매출 합계는 **약 1조 3,703억원**으로 집계되었습니다. 이는 'ETC' 브랜드를 제외한 순수 브랜드 매출을 기준으로 합니다.  #### 분석 및 인사이트  *   **글로벌 시장의 견고한 성장**: 한국을 제외한 해외 시장에서 1조원 이상의 누적 순매출을 달성하며, 글로벌 비즈니스 확장에 성공적인 성과를 보이고 있습니다. *   **장기적인 해외 성과**: 2019년 1월 1일부터 현재까지의 데이터를 기준으로, 장기간에 걸쳐 해외 시장에서 꾸준히 매출을 창출하고 있음을 시사합니다. *   **핵심 브랜드 집중**: 'ETC' 브랜드를 제외한 순수 브랜드 매출 합계이므로, 주요 브랜드들이 해외 시장에서 강력한 경쟁력을 가지고 있음을 나타냅니다.  > 한국 외 시장에서 1조원 이상의 매출을 달성하며 글로벌 비즈니스 확장에 성공적인 성과를 보이고 있습니다. ",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Country != '한국'\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-037",
+    "query": "SKU 'S002'가 아닌 다른 제품들의 총 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 33.1,
+    "answer_len": 1188,
+    "answer_preview": "### 📊 SKU 'S002' 제외 제품들의 총 판매 수량 분석 (SK, CL 브랜드, 2019년 이후)  #### 요약  'SK' 및 'CL' 브랜드 내에서 SKU 'S002'를 제외한 제품들의 총 판매 수량은 **193,675,271개**로 집계되었습니다. 이 수치는 2019년 1월 1일 이후의 데이터를 기준으로 합니다.  #### 분석 및 인사이트  *   **상당한 판매 규모**: 'SK' 및 'CL' 브랜드에서 특정 SKU 'S002'를 제외하고도 총 1억 9천만 개 이상의 제품이 판매되어, 해당 브랜드 제품들의 광범위한 판매량을 보여줍니다. *   **데이터 범위 한정**: 이 판매 수량은 'SK' 및 'CL' 브랜드에 한정되며, 2019년 1월 1일 이후의 데이터만을 포함합니다. 따라서 전체 브랜드 또는 전체 기간의 판매량과는 차이가 있을 수 있습니다. *   **특정 SKU 제외 효과**: 'S002' SKU를 제외함으로써, 해당 SKU가 전체 판매량에서 차지하는 비중",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND SKU != 'S002'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-038",
+    "query": "할인 금액이 0이 아닌 주문들의 평균 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 37.0,
+    "answer_len": 1084,
+    "answer_preview": "### 📊 할인 적용 주문의 평균 순매출액 분석  #### 요약  2019년 1월 1일 이후 'ETC' 브랜드를 제외한 주문 중 할인(Discount_Coupon)이 적용된 주문들의 평균 순매출액은 **18,085원**으로 집계되었습니다. 이 수치는 할인 프로모션이 적용된 거래에서 고객이 평균적으로 지출하는 순매출 규모를 나타냅니다.  #### 분석 및 인사이트  *   **할인 적용 주문의 평균 가치**: 할인 쿠폰이 사용된 주문의 평균 순매출액은 약 **18,085원**입니다. 이는 할인 전략이 고객의 구매를 유도했을 때 발생하는 평균적인 거래 가치를 보여주는 중요한 지표입니다. *   **할인 전략 효과 분석의 기초**: 이 평균 순매출액은 향후 할인 미적용 주문의 평균 순매출액과 비교하여 할인 프로모션이 전체 주문 가치에 미치는 영향을 심층적으로 분석하는 데 활용될 수 있습니다. *   **데이터 범위**: 본 분석은 2019년 1월 1일 이후의 데이터와 'ETC' 브랜드를 ",
+    "used_sql": "SELECT\n  AVG(Sales1_R) AS average_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Discount_Coupon != 0\nLIMIT 1000"
+  },
+  {
+    "id": "SH-039",
+    "query": "'Hyalu-Cica Blue Serum' 제품 타이틀 외의 모든 제품의 총 주문 건수는 몇 건인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 30.9,
+    "answer_len": 1330,
+    "answer_preview": "### 📊 'Hyalu-Cica Blue Serum' 외 SK 및 CL 브랜드 제품의 총 주문 건수  #### 요약  'Hyalu-Cica Blue Serum' 제품을 제외한 SK 및 CL 브랜드의 모든 제품에 대한 총 주문 건수는 **13,649,489건**으로 집계되었습니다. 이 수치는 2019년 1월 1일부터 현재까지의 데이터를 기준으로 합니다.  #### 분석 및 인사이트  *   **주력 제품 외 견고한 판매량:** 'Hyalu-Cica Blue Serum'이 주요 제품 중 하나임을 감안할 때, 이를 제외한 다른 제품군에서 1천 3백만 건 이상의 주문 건수를 기록했다는 것은 SK 및 CL 브랜드가 특정 제품에 대한 의존도를 넘어 다양한 제품군에서 견고한 판매 기반을 확보하고 있음을 시사합니다. *   **브랜드 및 제품군별 심층 분석 필요:** 현재 결과는 SK와 CL 두 브랜드를 합산한 총 주문 건수이므로, 각 브랜드별 또는 세부 제품군별 주문 건수를 추가로 분석하면 어떤",
+    "used_sql": "SELECT\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` NOT LIKE '%Hyalucica%Blue_Serum%'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-040",
+    "query": "2023년 데이터를 제외한 전체 기간의 총 환불 금액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 23.9,
+    "answer_len": 980,
+    "answer_preview": "### 📊 2023년을 제외한 전체 기간 총 환불 금액 분석  #### 요약  2023년 데이터를 제외한 전체 기간(2019년 1월 1일 이후) 동안의 총 환불 금액은 **210,690.82**입니다. 이 수치는 특정 연도를 제외한 누적 환불 규모를 나타냅니다.  #### 분석 및 인사이트  *   제공된 데이터에 따르면, 2019년 1월 1일부터 현재까지의 기간 중 2023년을 제외한 총 환불 금액은 **210,690.82**로 집계되었습니다. *   이 금액은 2023년의 환불 데이터를 제외함으로써, 해당 연도의 특이사항이 전체 환불 추이에 미치는 영향을 배제하고 다른 기간의 환불 경향을 파악하는 데 활용될 수 있습니다. *   단일 총액이므로 직접적인 추세나 비교 분석은 어렵지만, 이 수치를 통해 특정 기간 동안의 고객 만족도 및 제품 반품률에 대한 기초적인 이해를 얻을 수 있습니다.  > 2023년 데이터를 제외한 총 환불 금액은 **210,690.82**로, 이는 해당 기간",
+    "used_sql": "SELECT\n  SUM(Returns) AS total_refund_amount\nFROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) != 2023\nLIMIT 1000"
+  },
+  {
+    "id": "SH-041",
+    "query": "'Centella Tone-Up Sunscreen' SKU의 판매 데이터가 있나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 30.7,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-042",
+    "query": "2024년 1월 1일 이후의 데이터가 시스템에 조회 가능한가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 24.8,
+    "answer_len": 522,
+    "answer_preview": "## 데이터 조회 가능 범위 안내  네, **2024년 1월 1일 이후 데이터는 조회 가능합니다.**  현재 시스템에 연동된 **BigQuery 데이터베이스**를 통해 매출, 수량, 국가별/제품별 실적 등의 데이터를 직접 SQL로 조회할 수 있습니다. 다만, 정확한 데이터 범위는 실제 적재된 데이터에 따라 달라질 수 있으므로, 구체적인 기간과 항목을 말씀해 주시면 바로 조회해 드리겠습니다.  ### 조회 가능한 항목 예시  - **매출 데이터**: 일별/월별/분기별 매출액, 매출 추이 - **제품별 실적**: 제품별 판매 수량, 매출 순위 - **국가/채널별 분석**: 국가별·채널별 매출 비교 - **기간 비교**: 전년 동기 대비, 특정 기간 간 비교  > 💡 **이런 것도 물어보세요** > - 2024년 연간 총 매출이 얼마였나요? > - 2025년 1분기 국가별 매출 순위를 알려주세요. > - 최근 3개월간 가장 많이 팔린 제품 TOP 5는? --- *AI 생성 답변 · 202",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-043",
+    "query": "환불 기록(Refund_Amount > 0)이 있는 주문이 존재하나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 34.5,
+    "answer_len": 996,
+    "answer_preview": "### 📊 환불 기록이 있는 주문 현황  #### 요약  2019년 1월 1일 이후 데이터를 기준으로, 환불 기록(SQL의 `Returns > 0` 기준)이 있는 주문은 총 **7,315건** 존재하는 것으로 확인되었습니다. 이는 해당 기간 동안 상당수의 주문에서 환불이 발생했음을 의미합니다.  #### 분석 및 인사이트  *   2019년 1월 1일부터 현재까지 **7,315건**의 주문에서 환불이 발생했습니다. 이는 비즈니스 운영 기간 동안 상당수의 고객이 환불을 경험했음을 시사하며, 환불 관리가 중요한 영역임을 보여줍니다. *   환불 기록이 있는 주문이 존재한다는 것은 고객 서비스 및 제품 품질 관리 측면에서 지속적인 모니터링과 개선이 필요함을 나타냅니다. *   이 데이터는 환불 발생 여부만을 확인한 것으로, 실제 환불 금액, 환불 사유, 또는 특정 기간 동안의 추이 등 심층적인 분석을 통해 환불의 원인을 파악하고 재발 방지 대책을 수립하는 데 활용될 수 있습니다.  > 2",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`\nWHERE Date >= '2019-01-01'\n  AND Returns > 0\nLIMIT 1000"
+  },
+  {
+    "id": "SH-044",
+    "query": "'Germany' 국가의 판매 데이터가 입력되어 있나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 33.0,
+    "answer_len": 920,
+    "answer_preview": "### 📊 독일 국가 판매 데이터 존재 여부 확인  #### 요약  'Germany' 국가의 판매 데이터는 현재 시스템에 **입력되어 있습니다.** 2019년 1월 1일 이후의 데이터 중 '독일'로 분류된 판매 기록이 성공적으로 확인되었습니다.  #### 분석 및 인사이트  *   **데이터 존재 확인:** BigQuery 통합 매출 데이터베이스에서 '독일' 국가에 대한 판매 데이터가 성공적으로 조회되었습니다. 이는 독일 시장 관련 분석을 진행할 수 있는 기반이 마련되었음을 의미합니다. *   **데이터 기간:** 현재 조회된 데이터는 2019년 1월 1일 이후의 기록을 포함하고 있어, 비교적 장기간의 추이 분석이 가능할 것으로 예상됩니다. *   **국가명 일치:** 사용자 질문의 'Germany'와 데이터베이스 내 '독일'이 성공적으로 매칭되어, 데이터 조회에 문제가 없음을 확인했습니다.  > 독일 시장에 대한 판매 데이터가 존재함에 따라, 향후 독일 시장의 매출 추이, 주요 제",
+    "used_sql": "SELECT DISTINCT\n  Country\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Country = '독일'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-045",
+    "query": "특정 Variant_Title (예: '50ml')의 할인 금액 기록이 있나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.6,
+    "answer_len": 705,
+    "answer_preview": "# Variant_Title별 할인 금액 기록 조회  특정 Variant_Title에 할인 금액(Discount) 기록이 있는지 확인해 보겠습니다.  먼저 BigQuery에서 데이터를 조회해야 하는데, 정확한 조회를 위해 몇 가지 확인이 필요합니다.  ## 확인하고 싶은 내용을 좀 더 구체적으로 알려주세요  1. **특정 Variant_Title**: '50ml'만 확인하시면 될까요, 아니면 다른 용량(예: 100ml, 30ml 등)도 함께 비교하고 싶으신가요?  2. **기간**: 전체 기간 기준인지, 특정 기간(예: 2025년, 최근 3개월 등)이 있으신가요?  3. **확인 목적**:    - 할인이 **적용된 적이 있는지** 여부만 확인    - 할인 **금액 합계/평균** 등 통계    - 할인이 적용된 **주문 건수**    - 특정 **제품(Product_Title)** 기준으로 한정  일단 '50ml' Variant_Title의 할인 기록 유무와 기본 통계를 바로 조회",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-046",
+    "query": "할인 금액이 정확히 0인 주문들의 총 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.8,
+    "answer_len": 1021,
+    "answer_preview": "### 📊 할인 금액이 0인 주문의 총 순매출액 분석  #### 요약  2019년 1월 1일부터 현재까지, 할인 쿠폰 금액이 정확히 0인 주문들의 총 순매출액은 **약 1조 2,475.5억원**으로 집계되었습니다. 이는 'ETC' 브랜드를 제외한 전체 브랜드의 비할인 판매가 회사 매출에 상당한 기여를 하고 있음을 보여줍니다.  #### 분석 및 인사이트  *   **비할인 판매의 중요성**: 약 1조 2,475.5억원에 달하는 순매출액은 고객들이 할인 없이도 제품을 구매하는 경우가 매우 많으며, 이는 브랜드 충성도 또는 제품 자체의 가치에 대한 인식이 높음을 시사합니다. *   **수익성 기여**: 할인 쿠폰이 적용되지 않은 매출은 일반적으로 마진율이 더 높으므로, 이 부문의 매출은 전체 수익성 개선에 크게 기여할 것으로 예상됩니다. *   **추가 분석 필요**: 이 수치는 특정 기간 동안의 누적 합계이므로, 연도별 또는 분기별 추이를 분석하여 비할인 판매의 성장세나 변동성을 파악",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Discount_Coupon = 0\nLIMIT 1000"
+  },
+  {
+    "id": "SH-047",
+    "query": "가장 최근에 기록된 판매 데이터 1건의 Product_Title과 Net_Sales는 무엇인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 33.1,
+    "answer_len": 1015,
+    "answer_preview": "### 📊 가장 최근 판매 데이터 분석  #### 요약  가장 최근에 기록된 판매 데이터 1건은 **SK_Centella_Soothing_Cream_75ml** 제품으로, **226만 1,420원**의 순매출을 기록했습니다.  #### 분석 및 인사이트  *   가장 최근에 기록된 판매 데이터는 **SK_Centella_Soothing_Cream_75ml** 제품으로 확인되었습니다. *   해당 제품은 **226만 1,420원**의 순매출을 발생시켰으며, 이는 최근 판매 활동의 한 단면을 보여줍니다. *   이 데이터는 특정 시점의 단일 제품 판매 실적을 나타내며, 전반적인 판매 추이, 다른 제품과의 비교, 또는 전체 매출에서 차지하는 비중 등을 파악하기 위해서는 추가적인 기간 및 제품별 데이터 분석이 필요합니다.  > 가장 최근 판매 데이터는 'SK_Centella_Soothing_Cream_75ml' 제품이 **226만 1,420원**의 매출을 기록했음을 보여주며, 이는 최근 판",
+    "used_sql": "SELECT\n  `SET` AS product_title,\n  Sales1_R AS net_sales\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nORDER BY Date DESC\nLIMIT 1"
+  },
+  {
+    "id": "SH-048",
+    "query": "가장 오래된 판매 날짜(Date)는 언제인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.9,
+    "answer_len": 815,
+    "answer_preview": "### 📊 가장 오래된 판매 날짜 분석  #### 요약  통합 매출 데이터에서 조회된 **가장 오래된 판매 날짜는 2019년 01월 02일**입니다.  #### 분석 및 인사이트  *   **데이터 시작점**: 조회된 가장 오래된 판매 날짜는 2019년 01월 02일로 확인되었습니다. 이는 SQL 쿼리에서 `WHERE Date >= '2019-01-01'` 조건이 적용된 결과입니다. *   **데이터 범위**: 현재 데이터는 2019년 01월 01일 이후의 판매 기록을 포함하고 있으며, 해당 조건 내에서 가장 빠른 판매 기록이 2019년 01월 02일임을 의미합니다.  > 현재 데이터셋은 2019년 01월 01일 이후의 판매 기록을 기준으로 하며, 이 범위 내에서 가장 첫 판매는 2019년 01월 02일에 발생했습니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 매출 (SALES_ALL)*  > 💡 **이런 것도 물어보세요** > - 가장 최근 판매 날짜는 언제",
+    "used_sql": "SELECT\n  MIN(Date) AS oldest_sales_date\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nLIMIT 10000"
+  },
+  {
+    "id": "SH-049",
+    "query": "Variant_Title 컬럼에 NULL 값이 있는 데이터가 존재하나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 36.2,
+    "answer_len": 459,
+    "answer_preview": "안녕하세요. 요청하신 **Variant_Title 컬럼의 NULL 값 존재 여부**에 대해 내부 데이터베이스에서 데이터를 조회하지 못했습니다.  조금 더 구체적인 조건을 추가해 주시면 정확한 조회가 가능할 수 있습니다. 예를 들어, **기간, 판매 채널, 국가, 특정 테이블명** 등을 함께 명시해 주시면 도움이 됩니다.  ---  > **💡 다음과 같이 질문을 바꿔보시는 건 어떨까요?** 1. **\"2024년 Shopify 주문 데이터에서 Variant_Title이 NULL인 주문 건이 몇 건인가요?\"** 2. **\"미국 채널 매출 데이터 중 Variant_Title이 비어 있는 레코드를 조회해 주세요.\"** 3. **\"최근 3개월간 Variant_Title이 NULL인 데이터의 Product_Title과 주문 수량을 확인할 수 있나요?\"**  ---  조건을 추가하여 다시 질문해 주시면 재조회해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-050",
+    "query": "판매 수량이 0인 주문이 몇 건이나 되나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 29.6,
+    "answer_len": 1110,
+    "answer_preview": "### 📊 판매 수량 0건 주문 현황 분석  #### 요약  2019년 1월 1일 이후 'ETC' 브랜드를 제외한 주문 중, 판매 수량이 0인 주문은 총 **1,340,273건**으로 집계되었습니다. 이는 상당한 규모의 주문 건수로, 추가적인 원인 분석이 필요해 보입니다.  #### 분석 및 인사이트  *   **높은 발생 빈도**: 2019년 1월 1일 이후 판매 수량이 0인 주문이 130만 건 이상 발생했다는 것은 단순한 오류를 넘어선 특정 비즈니스 프로세스 또는 시스템적 요인에 의해 발생했을 가능성을 시사합니다. *   **잠재적 원인**: 이러한 주문은 고객의 주문 취소, 재고 부족으로 인한 자동 취소, 테스트 주문, 또는 시스템 오류로 인해 상품이 추가되지 않은 주문 등 다양한 원인으로 발생할 수 있습니다. *   **데이터 품질 및 운영 효율성**: 판매 수량 0건 주문의 정확한 원인을 파악하는 것은 데이터 품질을 개선하고, 주문 처리 과정의 비효율성을 식별하며, 잠재적인",
+    "used_sql": "SELECT\n  COUNT(DISTINCT Order_Number) AS zero_quantity_orders_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Total_Qty = 0\nLIMIT 1000"
+  },
+  {
+    "id": "SH-051",
+    "query": "제품 타이틀별로 총 순매출액을 집계해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 38.8,
+    "answer_len": 3193,
+    "answer_preview": "### 📊 제품 타이틀별 총 순매출액 분석 보고서  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드의 제품 타이틀별 총 순매출액을 집계한 결과, **총 순매출액은 약 1조 271억원**을 기록했습니다. 이 중 'SK_Hyalucica_Waterfit_Sun_Serum_50ml' 제품이 **약 865.8억원**으로 가장 높은 순매출을 달성하며 전체 매출을 견인했습니다.  #### 상세 데이터  조회 기간(2019년 1월 1일 이후) 동안 SK 및 CL 브랜드의 제품 타이틀별 총 순매출액 상위 15개는 다음과 같습니다.  | 순위 | 제품 타이틀 | 총 순매출액 (억원) | |-----|--------------------------------------------|--------------------:| | 1   | SK_Hyalucica_Waterfit_Sun_Serum_50ml       | 865.8               | | 2   | SK_Centell",
+    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_net_sales\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\nGROUP BY `SET`\nORDER BY total_net_sales DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-052",
+    "query": "SKU별로 평균 판매 수량을 계산해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 53.3,
+    "answer_len": 2267,
+    "answer_preview": "### 📊 SKU별 평균 판매 수량 분석 (SK, CL 브랜드, 2019년 이후)  #### 요약  2019년 1월 1일부터 현재(2026년 3월 19일)까지의 SK 및 CL 브랜드 데이터를 기준으로 SKU별 평균 판매 수량을 분석한 결과, **'BL01MDG00480014000'** SKU가 **402,000개**로 가장 높은 평균 판매 수량을 기록했습니다. 상위 SKU들의 판매 집중도가 높은 경향을 보였으며, 총 1,000개의 SKU 데이터가 평균 판매 수량 내림차순으로 조회되었습니다.  #### 상세 데이터  다음은 평균 판매 수량 기준 상위 15개 SKU의 상세 데이터입니다.  | SKU | 평균 판매 수량 | |:--------------------|-------------:| | BL01MDG00480014000  | 402,000.0    | | BL01AMP00480053000  | 177,300.0    | | GLSKH003            | 100,000.0",
+    "used_sql": "SELECT\n  SKU,\n  AVG(Total_Qty) AS average_sales_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND SKU IS NOT NULL AND SKU != ''\nGROUP BY SKU\nORDER BY average_sales_quantity DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-053",
+    "query": "국가별로 총 주문 건수를 합산해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 42.2,
+    "answer_len": 1802,
+    "answer_preview": "### 📊 국가별 총 주문 건수 현황 (2019년 1월 1일 이후)  #### 요약  2019년 1월 1일 이후 데이터 기준으로 총 **198개** 국가에서 주문이 발생했으며, **인도네시아**가 **7,325,347건**으로 가장 많은 주문 건수를 기록했습니다. 상위 15개 국가의 총 주문 건수는 **15,798,193건**으로, 전체 주문의 상당 부분을 차지하고 있습니다.  #### 상세 데이터 | 국가           | 총 주문 건수 | | :------------- | -----------: | | 인도네시아     | 7,325,347    | | 필리핀         | 2,350,608    | | 중국           | 1,684,463    | | 일본           | 1,335,070    | | 미국           | 1,169,153    | | 싱가포르       | 559,218      | | 말레이시아     | 505,656      |",
+    "used_sql": "SELECT\n  Country,\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nGROUP BY Country\nORDER BY total_order_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-054",
+    "query": "Variant_Title별로 총 할인 금액을 집계해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 37.7,
+    "answer_len": 2829,
+    "answer_preview": "### 📊 Variant_Title별 총 할인 금액 분석 보고서  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드의 Variant_Title별 총 할인 금액을 집계한 결과, 총 **214개**의 고유 Variant_Title에서 **약 2조 8,027.9억원**의 할인 금액이 발생했습니다. 이 중 'SK_Centella_Ampoule_100ml'이 **약 2,473.6억원**으로 가장 많은 할인 금액을 기록하며 전체의 약 8.8%를 차지했습니다.  #### 상세 데이터  상위 15개 Variant_Title별 총 할인 금액은 다음과 같습니다.  | Variant_Title                       | 총 할인 금액 (원) | | :---------------------------------- | ----------------: | | SK_Centella_Ampoule_100ml           | 2,473,584,215.60  | | SK_Hyal",
+    "used_sql": "SELECT\n  `SET` AS variant_title,\n  SUM(Discount_Coupon) AS total_discount_amount\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\nGROUP BY\n  `SET`\nORDER BY\n  total_discount_amount DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-055",
+    "query": "환불 금액이 발생한 주문들을 대상으로, 국가별 평균 환불 금액을 알려주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 42.1,
+    "answer_len": 3649,
+    "answer_preview": "### 📊 국가별 평균 환불 금액 분석  #### 요약  환불 금액이 발생한 주문들을 대상으로 국가별 평균 환불 금액을 분석한 결과, **아랍에미리트**가 **425.00원**으로 압도적으로 가장 높은 평균 환불 금액을 기록했습니다. 다음으로는 스페인이 90.61원, 폴란드가 39.10원으로 뒤를 이었습니다. 상위 2개 국가(아랍에미리트, 스페인)의 평균 환불 금액이 다른 국가들에 비해 현저히 높은 특징을 보였습니다.  #### 상세 데이터  환불 금액이 발생한 주문을 기준으로 국가별 평균 환불 금액은 다음과 같습니다.  | 순위 | 국가               | 평균 환불 금액 (원) | | :--- | :----------------- | ------------------: | | 1    | United Arab Emirates | 425.00             | | 2    | Spain              | 90.61              | | 3    |",
+    "used_sql": "SELECT\n  Country,\n  AVG(Returns) AS average_refund_amount\nFROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`\nWHERE Date >= '2019-01-01'\n  AND Returns > 0\nGROUP BY Country\nORDER BY average_refund_amount DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-056",
+    "query": "최근 3개월간의 총 순매출은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 34.9,
+    "answer_len": 1114,
+    "answer_preview": "### 📊 최근 3개월간 총 순매출 분석  #### 요약  최근 3개월(2025년 12월 19일 ~ 2026년 3월 19일) 동안의 총 순매출은 **약 2,675.2억원**으로 집계되었습니다. 이는 SKIN1004의 견조한 매출 규모와 활발한 사업 활동을 보여주는 중요한 지표입니다.  #### 분석 및 인사이트  *   **견조한 매출 규모 유지**: 최근 3개월간 약 2,675.2억원의 순매출은 SKIN1004가 단기적으로도 매우 큰 규모의 매출을 꾸준히 창출하고 있음을 나타냅니다. 이는 시장 내 강력한 브랜드 입지와 제품 경쟁력을 방증합니다. *   **주력 브랜드의 기여**: 이번 분석은 'ETC' 브랜드를 제외한 모든 브랜드의 매출을 합산한 결과로, 주력 브랜드들이 전체 매출 성장에 핵심적인 역할을 하고 있음을 시사합니다. *   **단기 성과 모니터링**: 3개월이라는 비교적 짧은 기간 동안의 총 순매출은 최근 진행된 마케팅 캠페인, 신제품 출시, 또는 시장 변화에 대한 즉",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\nLIMIT 1000"
+  },
+  {
+    "id": "SH-057",
+    "query": "2023년 하반기(7월부터 12월) 동안의 총 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 38.6,
+    "answer_len": 1188,
+    "answer_preview": "### 📊 2023년 하반기(7월~12월) 총 판매 수량 분석  #### 요약  2023년 하반기(7월부터 12월) 동안 SK 및 CL 브랜드의 Sachet 제품을 제외한 총 판매 수량은 **4,687,883개**입니다. 이 수치는 특정 브랜드와 제품군에 한정된 판매 실적을 나타냅니다.  #### 분석 및 인사이트  *   **특정 브랜드 및 제품군 집중:** 2023년 하반기 판매 수량은 SK 및 CL 브랜드에 집중되어 있으며, Sachet 제품은 분석에서 제외되었습니다. 이는 전체 판매 수량이 아닌 특정 전략 제품군 및 브랜드의 성과를 나타냅니다. *   **상당한 판매 볼륨:** 6개월간 460만 개 이상의 판매 수량은 해당 브랜드 및 제품군이 시장에서 상당한 수요를 확보하고 있음을 시사합니다. *   **세부 분석 필요:** 현재 데이터는 총 판매 수량만을 제공하므로, 각 브랜드별, 월별 판매 추이 등 더 상세한 분석을 통해 판매 동향과 기여도를 파악할 필요가 있습니다.  >",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(MONTH FROM Date) BETWEEN 7 AND 12\nLIMIT 1000"
+  },
+  {
+    "id": "SH-058",
+    "query": "2022년 1분기부터 3분기까지의 총 주문 건수는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 50.6,
+    "answer_len": 1134,
+    "answer_preview": "### 📊 2022년 1분기부터 3분기까지의 총 주문 건수  #### 요약  2022년 1분기부터 3분기까지의 총 주문 건수는 **370,954건**으로 집계되었습니다. 이 수치는 해당 기간 동안 'ETC' 브랜드를 제외한 모든 브랜드의 주문을 합산한 결과입니다.  #### 분석 및 인사이트  *   **기간별 주문 현황:** 2022년 1월 1일부터 9월 30일까지의 누적 주문 건수는 370,954건으로, 해당 기간 동안의 활발한 주문 활동을 보여줍니다. *   **데이터 범위:** 이번 분석은 'ETC' 브랜드를 제외한 데이터만을 포함하고 있어, 주요 브랜드의 실적에 집중한 결과입니다. *   **심층 분석 필요:** 총 주문 건수 단일 지표만으로는 구체적인 비즈니스 성과를 파악하기 어렵습니다. 분기별 추이, 브랜드별 기여도, 채널별 성과 등을 추가로 분석하면 더욱 유의미한 인사이트를 얻을 수 있습니다.  > 💡 2022년 1분기부터 3분기까지의 총 주문 건수는 37만 건 이상으",
+    "used_sql": "SELECT\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Date >= '2022-01-01' AND Date < '2022-10-01'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-059",
+    "query": "2023년 10번째 주의 평균 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 34.7,
+    "answer_len": 970,
+    "answer_preview": "### 📊 2023년 10번째 주 평균 순매출액 분석  #### 요약  2023년 10번째 주의 평균 순매출액은 **63,731원**으로 집계되었습니다. 이 수치는 해당 주차 동안 'ETC' 브랜드를 제외한 일별 평균 순매출을 나타냅니다.  #### 분석 및 인사이트  *   2023년 10번째 주의 평균 순매출액은 63,731원으로, 해당 주차의 일별 매출 효율성을 파악하는 데 중요한 지표입니다. *   'ETC' 브랜드를 제외한 데이터이므로, 주요 브랜드의 순수한 매출 성과를 측정하는 데 적합합니다. *   이 평균 순매출액은 다른 주차 또는 전년 동기 대비 비교 분석을 통해 매출 추이 및 성장률을 평가하는 기준으로 활용될 수 있습니다.  > 2023년 10번째 주의 평균 순매출액 **63,731원**은 특정 기간 동안의 일별 매출 성과를 보여주며, 향후 매출 전략 수립에 기초 자료로 활용될 수 있습니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 매출 (S",
+    "used_sql": "SELECT\n  AVG(Sales1_R) AS average_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(WEEK FROM Date) = 10\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-060",
+    "query": "2023년 5월 1일부터 5월 31일까지의 총 할인 금액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 33.3,
+    "answer_len": 979,
+    "answer_preview": "아래 쿼리를 실행하여 2023년 5월의 총 할인 금액을 조회하겠습니다.  ```sql SELECT   SUM(discount_amount) AS total_discount_amount FROM `ga4_raw.sales_data` WHERE order_date BETWEEN '2023-05-01' AND '2023-05-31'; ```  잠시만 기다려 주세요. BigQuery에서 데이터를 조회하고 있습니다.  ---  현재 제가 직접 BigQuery를 실행할 수 있는 환경이 활성화되어 있지 않아, 실제 쿼리 결과를 바로 보여드리기 어려운 상황입니다.  아래 방법으로 확인하실 수 있습니다:  ## 확인 방법  1. **BigQuery 콘솔**에서 아래 쿼리를 직접 실행해 주세요 (테이블명·컬럼명은 실제 스키마에 맞게 조정 필요):  ```sql SELECT   SUM(discount_amount) AS total_discount_amount FROM `프로젝트.데이터셋.테이블명` WH",
+    "used_sql": "SELECT\n  SUM(discount_amount) AS total_discount_amount\nFROM `ga4_raw.sales_data`\nWHERE order_date BETWEEN '2023-05-01' AND '2023-05-31';"
+  },
+  {
+    "id": "SH-061",
+    "query": "전년 대비 전체 총 순매출 성장률은 몇 %인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 32.3,
+    "answer_len": 1480,
+    "answer_preview": "### 📊 전년 대비 전체 총 순매출 성장률 분석  #### 요약  ⚠️ 2026년 데이터는 현재 1월 1일부터 3월 19일까지의 부분 데이터입니다 (오늘: 2026년 03월 19일). 이 기준에 따르면, 2026년 현재까지의 총 순매출은 2025년 전체 총 순매출 대비 **-64.5%** 감소했습니다. 이는 2026년 데이터가 아직 완료되지 않았기 때문에 발생한 것으로 보입니다.  #### 분석 및 인사이트  *   현재 계산된 전년 대비 총 순매출 성장률은 **-64.5%**로, 매우 큰 폭의 감소를 나타냅니다. *   하지만 이 수치는 2026년의 부분적인 매출(1월 1일 ~ 3월 19일)과 2025년 전체 매출을 비교한 결과이므로, 직접적인 연간 성장률로 해석하기에는 한계가 있습니다. *   일반적으로 전년 대비 성장률을 정확히 파악하기 위해서는 동일한 기간(예: 2026년 1월 1일 ~ 3월 19일 매출과 2025년 1월 1일 ~ 3월 19일 매출)을 비교하는 것이 적절합니",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2026 THEN Sales1_R ELSE 0 END) - SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2025 THEN Sales1_R ELSE 0 END),\n    SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2025 THEN Sales1_R ELSE 0 END)\n  ) * 100 AS yoy_net_sales_growth_rate_percentage\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND (EXTRACT(YEAR FROM Date) = 2026 OR EXTRACT(YEAR FROM Date) = 2025)\nLIMIT 1000"
+  },
+  {
+    "id": "SH-062",
+    "query": "'Hyalu-Cica Water-Fit Sun Serum' 제품의 지난 분기 대비 이번 분기 판매 수량 증감은 어떻게 되나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 38.1,
+    "answer_len": 2431,
+    "answer_preview": "### 📊 'Hyalu-Cica Water-Fit Sun Serum' 제품의 분기별 판매 수량 증감 분석  #### 요약  ⚠️ 2026년 1분기 데이터는 2026년 03월 19일 기준이며, 분기 전체 데이터가 아님을 참고 바랍니다. 'Hyalu-Cica Water-Fit Sun Serum' 제품의 이번 분기(2026년 1분기) 판매 수량은 지난 분기(2025년 4분기) 대비 **32.6% 증가**했습니다. 이번 분기 판매 수량은 **2,113,903개**로, 지난 분기 대비 **519,719개** 늘어 강력한 성장세를 보였습니다.  #### 상세 데이터  | 구분           | 판매 수량 (개) | 증감 (개) | 증감률 (%) | | :------------- | -------------: | --------: | ---------: | | 2025년 4분기   |      1,594,184 |         - |          - | | 2026년 1분기   |   ",
+    "used_sql": "SELECT\n  SUM(CASE WHEN DATE(Date) BETWEEN '2026-01-01' AND '2026-03-31' THEN Total_Qty ELSE 0 END) AS current_quarter_quantity,\n  SUM(CASE WHEN DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31' THEN Total_Qty ELSE 0 END) AS last_quarter_quantity,\n  (SUM(CASE WHEN DATE(Date) BETWEEN '2026-01-01' AND '2026-03-31' THEN Total_Qty ELSE 0 END) - SUM(CASE WHEN DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31' THEN Total_Qty ELSE 0 END)) AS quantity_change,\n  SAFE_DIVIDE(\n    (SUM(CASE WHEN DATE(Date) BETWEEN '2026-01-01' AND '2026-03-31' THEN Total_Qty ELSE 0 END) - SUM(CASE WHEN DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31' THEN Total_Qty ELSE 0 END)),\n    SUM(CASE WHEN DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31' THEN Total_Qty ELSE 0 END)\n  ) * 100 AS percentage_change\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product LIKE '%Hyalucica%Waterfit_Sun_Serum%'\n  AND Product != 'Sachet'\n  AND (\n    (DATE(Date) BETWEEN '2026-01-01' AND '2026-03-31')\n    OR\n    (DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31')\n  )\nLIMIT 1000"
+  },
+  {
+    "id": "SH-063",
+    "query": "월별 평균 주문 건수의 최대 변동폭은 얼마였나요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.2,
+    "answer_len": 1637,
+    "answer_preview": "### 📊 월별 평균 주문 건수 최대 변동폭 분석  #### 요약  월별 평균 주문 건수의 최대 변동폭은 **653,315건**으로 나타났습니다. 이는 특정 두 달 사이에 주문 건수가 65만 건 이상 급격하게 증가하거나 감소한 시점이 있었음을 의미하며, 비즈니스 운영에 있어 상당한 변동성이 존재했음을 보여줍니다.  #### 분석 및 인사이트  *   **높은 변동성 확인**: 월별 주문 건수에서 65만 건이 넘는 변동폭은 매우 높은 수준으로, 특정 시기에 주문량이 크게 출렁였음을 시사합니다. 이는 재고 관리, 생산 계획, 마케팅 예산 책정 등 비즈니스 전반에 걸쳐 중요한 영향을 미칠 수 있습니다. *   **변동 원인 파악의 중요성**: 이처럼 큰 변동폭이 발생한 시점을 파악하고, 해당 시기에 어떤 요인(예: 대규모 프로모션, 신제품 출시, 계절적 요인, 경쟁사 동향, 외부 경제 환경 변화 등)이 있었는지 심층적으로 분석하여 변동의 근본적인 원인을 이해하는 것이 중요합니다. *   ",
+    "used_sql": "SELECT\n  MAX(ABS(monthly_total_orders - prev_month_orders)) AS max_monthly_order_count_fluctuation\nFROM (\n  SELECT\n    month,\n    monthly_total_orders,\n    LAG(monthly_total_orders, 1) OVER (ORDER BY month) AS prev_month_orders\n  FROM (\n    SELECT\n      FORMAT_DATETIME('%Y-%m', Date) AS month,\n      SUM(Order_Count) AS monthly_total_orders\n    FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\n    WHERE Date >= '2019-01-01'\n      AND Brand != 'ETC'\n    GROUP BY month\n  )\n)\nWHERE prev_month_orders IS NOT NULL\nLIMIT 1000"
+  },
+  {
+    "id": "SH-064",
+    "query": "지난 6개월 동안 순매출이 가장 크게 감소한 국가는 어디인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 54.4,
+    "answer_len": 2408,
+    "answer_preview": "### 📊 지난 6개월간 순매출 감소 상위 국가 분석  #### 요약  제공된 데이터 프리뷰에 따르면, **글로벌_플랫폼**이 지난 6개월간 순매출이 가장 크게 감소한 국가로 나타났습니다. 글로벌_플랫폼은 이전 6개월(2025년 3월 19일 ~ 2025년 9월 18일) 대비 최근 6개월(2025년 9월 19일 ~ 2026년 3월 19일) 동안 **약 160.79억원**의 순매출이 감소했습니다. 전체 183개 국가/지역의 총 순매출은 지난 6개월간 이전 6개월 대비 **약 868.46억원 증가**하여, 전반적으로는 성장세를 보였습니다.  #### 상세 데이터  제공된 상위 15건의 프리뷰 데이터 내에서 순매출이 감소한 국가는 다음과 같습니다.  | 국가 | 최근 6개월 순매출 | 이전 6개월 순매출 | 순매출 변화 | |:---|---:|---:|---:| | 글로벌_플랫폼 | 약 349.59억원 | 약 510.38억원 | 약 160.79억원 감소 | | 중국 | 약 157.78억원 ",
+    "used_sql": "SELECT\n  Country,\n  SUM(CASE WHEN Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH) AND Date <= CURRENT_DATE() THEN Sales1_R ELSE 0 END) AS recent_6_month_revenue,\n  SUM(CASE WHEN Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH) AND Date < DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH) THEN Sales1_R ELSE 0 END) AS previous_6_month_revenue,\n  (SUM(CASE WHEN Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH) AND Date < DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH) THEN Sales1_R ELSE 0 END) - SUM(CASE WHEN Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH) AND Date <= CURRENT_DATE() THEN Sales1_R ELSE 0 END)) AS revenue_decrease\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY Country\nHAVING recent_6_month_revenue > 0 OR previous_6_month_revenue > 0\nORDER BY revenue_decrease DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-065",
+    "query": "SKU 'S003'의 월별 할인 금액 변화 추이를 분석해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.4,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-066",
+    "query": "제품 타이틀별 평균 단가(순매출 / 수량)는 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 52.4,
+    "answer_len": 2772,
+    "answer_preview": "### 📊 제품 타이틀별 평균 단가 분석  #### 요약  총 213개 제품 타이틀 중 'SK_Probiocica_Perfect_Anti_Aging_Routine_Set'이 **73,232.94원**으로 가장 높은 평균 단가를 기록했습니다. 이번 분석은 2019년 1월 1일 이후의 'SK' 및 'CL' 브랜드 제품 데이터를 기반으로 하며, 상위 제품들은 주로 'SK' 브랜드의 스페셜 에디션 및 세트 상품으로 구성되어 있습니다.  #### 상세 데이터  다음은 평균 단가가 높은 상위 15개 제품 타이틀 목록입니다.  | 제품 타이틀                                         | 평균 단가 (원) | | :-------------------------------------------------- | -------------: | | SK_Probiocica_Perfect_Anti_Aging_Routine_Set        | 73,232.94      | ",
+    "used_sql": "SELECT\n  `SET` AS product_name,\n  SAFE_DIVIDE(SUM(Sales1_R), SUM(Total_Qty)) AS average_unit_price\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` != 'Sachet'\n  AND `SET` NOT LIKE '% + %'\n  AND Total_Qty > 0\nGROUP BY `SET`\nORDER BY average_unit_price DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-067",
+    "query": "주문 1건당 평균 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 32.5,
+    "answer_len": 1154,
+    "answer_preview": "### 📊 주문 1건당 평균 판매 수량 분석  #### 요약  2019년 1월 1일 이후 'ETC' 브랜드를 제외한 전체 주문 데이터를 기준으로, 주문 1건당 평균 판매 수량은 **약 13.29개**로 집계되었습니다. 이는 고객이 한 번의 주문 시 평균적으로 13개 이상의 상품을 구매하고 있음을 의미합니다.  #### 분석 및 인사이트  *   **평균 구매 수량 기준점:** 주문 1건당 평균 13.29개의 상품이 판매되고 있어, 고객들이 한 번의 구매 시 여러 상품을 함께 구매하는 경향이 있음을 보여줍니다. 이는 묶음 상품 판매 전략이나 교차 판매(cross-selling) 기회 탐색에 활용될 수 있는 기준점이 됩니다. *   **데이터 필터링 조건:** 해당 수치는 2019년 1월 1일 이후의 데이터와 'ETC' 브랜드를 제외한 조건으로 산출되었습니다. 특정 기간이나 브랜드, 채널에 따라 평균 수량은 달라질 수 있으므로, 추가적인 세분화 분석을 통해 보다 심층적인 인사이트를 얻을",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(SUM(Total_Qty), COUNT(DISTINCT Order_Number)) AS avg_quantity_per_order\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-068",
+    "query": "일별 순매출의 7일 이동평균 추이를 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.3,
+    "answer_len": 502,
+    "answer_preview": "안녕하세요. 요청하신 **일별 순매출의 7일 이동평균 추이** 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 포함해 다시 질문해 보시겠어요?  > **구체화할 수 있는 항목**  > - **기간** (예: 2024년 1월 ~ 3월)  > - **국가/지역** (예: 한국, 미국, 일본 등)  > - **판매 채널** (예: 자사몰, 아마존, 올리브영 등)  > - **제품명 또는 제품 라인** (예: 마다가스카르 센텔라 라인)  ---  **질문 예시**  1. *\"2024년 1분기 한국 자사몰 일별 순매출의 7일 이동평균 추이를 보여주세요.\"* 2. *\"2024년 상반기 아마존 미국 채널의 일별 순매출 7일 이동평균을 제품별로 비교해 주세요.\"* 3. *\"최근 3개월간 올리브영 채널 순매출의 7일 이동평균 추이를 알려주세요.\"*  위와 같이 조건을 추가하여 다시 질문해 주시면 데이터를 조회해 드리겠습니",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-069",
+    "query": "주문 건수를 가중치로 하여 국가별 평균 할인 금액을 계산해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 32.4,
+    "answer_len": 2349,
+    "answer_preview": "### 📊 국가별 주문 건수 가중 평균 할인 금액 분석  #### 요약  2019년 1월 1일 이후 데이터를 기준으로 주문 건수를 가중치로 하여 국가별 평균 할인 금액을 분석한 결과, **일본**이 **10,253.94원**으로 가장 높은 가중 평균 할인 금액을 기록했습니다. 그 뒤를 **미국(4,227.32원)**과 **싱가포르(2,992.72원)**가 이었습니다. 전체 176개 국가 중 상위 10개 국가가 전체 할인 금액의 상당 부분을 차지하며, 일부 국가에서는 할인 금액이 0원 또는 음수(-)로 나타나기도 했습니다.  #### 상세 데이터  다음은 주문 건수 가중 평균 할인 금액이 높은 상위 10개 국가입니다.  | 국가       | 주문 건수 가중 평균 할인 금액 (원) | | :--------- | ----------------------------------: | | 일본       | 10,253.94                           | | 미국     ",
+    "used_sql": "SELECT\n  Country,\n  SAFE_DIVIDE(SUM(Discount_Coupon * Order_Count), SUM(Order_Count)) AS weighted_average_discount_per_order\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Order_Count > 0\n  AND Discount_Coupon IS NOT NULL\nGROUP BY Country\nORDER BY weighted_average_discount_per_order DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-070",
+    "query": "Variant_Title별 평균 환불 금액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 22.3,
+    "answer_len": 456,
+    "answer_preview": "### 🧴 환불 금액 관련 정보  #### 답변  고객님, 문의하신 **Variant_Title별 평균 환불 금액**에 대한 정보는 현재 제공된 CS 데이터베이스에서 **찾을 수 없습니다.**  #### 상세 정보  제공된 CS 데이터베이스는 주로 제품의 성분 함량, 효능, 사용법, 그리고 특정 제품의 품질 이슈 및 교환/환불 처리 사유에 대한 내용으로 구성되어 있습니다. Variant_Title별 평균 환불 금액과 같은 통계적 데이터는 포함되어 있지 않습니다.  #### 참고 사항  해당 정보는 CS 데이터베이스에 포함되어 있지 않아 안내가 어렵습니다.  --- *출처: CS 제품 Q&A 데이터베이스*  > 💡 **이런 것도 물어보세요** > - [특정 제품의 성분 함량은 어떻게 되나요?] > - [제품 사용 중 문제가 발생했을 때 어떻게 처리해야 하나요?] > - [제품 보관 시 유의할 점이 있나요?]",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-071",
+    "query": "전체 기간 동안의 누적 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 27.7,
+    "answer_len": 985,
+    "answer_preview": "### 📊 전체 기간 누적 순매출액 분석  #### 요약  2019년 1월 1일부터 현재(2026년 3월 19일)까지의 전체 기간 동안, 'ETC' 브랜드를 제외한 누적 순매출액은 **약 1조 4,054.7억원**으로 집계되었습니다. 이는 SKIN1004의 통합 매출 데이터에서 확인된 총 매출 규모입니다.  #### 분석 및 인사이트  *   **매출 규모:** 2019년 1월 1일 이후 현재까지의 누적 순매출액이 1조 4천억원을 넘어섰다는 점은 SKIN1004의 견고한 시장 지위와 지속적인 매출 성장을 보여줍니다. *   **데이터 범위:** 해당 매출액은 2019년 1월 1일부터의 데이터를 기준으로 하며, 'ETC' 브랜드를 제외한 순수 브랜드 매출을 반영합니다. *   **장기적 성과:** 약 7년간(2019년~2026년 3월)의 누적 매출이 1조 4천억원을 돌파한 것은 장기적인 관점에서 매우 긍정적인 성과로 평가될 수 있습니다.  > 이 기간 동안의 1조 4천억원이 넘는 누적",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-072",
+    "query": "2023년 YTD(Year-To-Date) 총 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 36.0,
+    "answer_len": 965,
+    "answer_preview": "### 📊 2023년 YTD(Year-To-Date) 총 순매출액 분석  #### 요약  2023년 1월 1일부터 2023년 3월 19일까지의 총 순매출액은 **약 99.67억원**으로 집계되었습니다. 이는 'ETC' 브랜드를 제외한 전체 브랜드의 2023년 1분기 초반 매출 성과를 나타냅니다.  #### 분석 및 인사이트  *   2023년 1월 1일부터 3월 19일까지의 순매출액은 약 99.67억원으로, 연초부터 견조한 매출 흐름을 보이며 1분기 초반의 안정적인 매출 기반을 다지고 있음을 시사합니다. *   해당 매출액은 'ETC' 브랜드를 제외한 모든 브랜드의 합산 결과로, 특정 브랜드를 제외한 전사적인 매출 현황을 파악하는 데 유용합니다.  > 2023년 1분기 초반(1월 1일 ~ 3월 19일)의 총 순매출액이 약 99.67억원으로 집계되어, 연초 사업 활동이 활발하게 진행되었음을 보여줍니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 매출 (SALES_",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Date >= '2023-01-01'\n  AND Date <= '2023-03-19'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-073",
+    "query": "현재 월 MTD(Month-To-Date) 총 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.5,
+    "answer_len": 1029,
+    "answer_preview": "### 📊 2026년 3월 MTD(Month-To-Date) 총 판매 수량  #### 요약  2026년 3월 MTD(3월 1일부터 3월 19일까지) 동안 SK 및 CL 브랜드의 Sachet 제품을 제외한 총 판매 수량은 **4,028,520개**입니다. 이는 현재 월의 19일까지의 누적 판매 실적입니다.  #### 분석 및 인사이트  *   **기간 및 범위 명확화**: 해당 판매 수량은 2026년 3월 1일부터 3월 19일까지의 데이터이며, 특정 브랜드(SK, CL)에 한정되고 'Sachet' 제품은 제외된 결과입니다. *   **MTD 실적**: 현재 월의 19일까지의 판매 수량으로, 월말까지의 목표 달성 여부를 파악하기 위한 중간 지표로 활용될 수 있습니다. *   **추가 분석 필요**: 이 수치만으로는 판매 추세나 목표 달성률을 판단하기 어려우므로, 전월 동기 대비, 전년 동기 대비, 또는 월간 목표 대비 비교 분석이 필요합니다.  --- *조회 기준: 2026-03-19 ",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Date >= '2026-03-01' AND Date <= '2026-03-19'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-074",
+    "query": "2022년 연간 총 주문 건수는 몇 건인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 30.3,
+    "answer_len": 985,
+    "answer_preview": "### 📊 2022년 연간 총 주문 건수 분석  #### 요약  2022년 한 해 동안의 총 주문 건수는 **541,268건**으로 집계되었습니다. 이는 `ETC` 브랜드를 제외한 주요 브랜드의 연간 주문 활동을 나타냅니다.  #### 분석 및 인사이트  *   2022년 연간 총 주문 건수는 **541,268건**으로, 해당 연도에 SKIN1004의 핵심 브랜드들이 달성한 판매 활동의 규모를 보여줍니다. *   이번 집계는 `Brand != 'ETC'` 조건이 적용되어, 비주력 또는 기타 브랜드의 주문을 제외한 순수 핵심 브랜드의 성과를 파악하는 데 유용합니다. *   이 수치는 향후 연도별 주문 건수 추이를 분석하거나, 특정 기간의 마케팅 및 판매 전략 효과를 평가하는 중요한 기준점이 될 수 있습니다.  > 2022년의 **541,268건** 주문은 SKIN1004의 핵심 브랜드가 해당 연도에 달성한 구체적인 판매 활동 규모를 명확히 보여주며, 이는 전사적인 판매 목표 달성 여부",
+    "used_sql": "SELECT\n  SUM(Order_Count) AS total_order_count\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2022\n  AND Brand != 'ETC'\nLIMIT 1000"
+  },
+  {
+    "id": "SH-075",
+    "query": "2023년 분기별 누적 할인 금액 추이를 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 35.1,
+    "answer_len": 2798,
+    "answer_preview": "📊 2023년 분기별 누적 할인 금액 추이 분석  #### 요약  2023년 분기별 누적 할인 금액은 지속적으로 증가하는 추세를 보였으며, 4분기에는 약 **9.63억원**을 기록했습니다. 특히 2분기와 3분기에 직전 분기 대비 누적 할인 금액이 크게 증가하며 연중 할인 프로모션이 활발했음을 보여줍니다.  #### 상세 데이터  | 분기 | 누적 할인 금액 (원) | |:----|--------------------:| | 1분기 | 70,986,121          | | 2분기 | 183,244,356         | | 3분기 | 474,247,459         | | 4분기 | 963,067,975         |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"1\", \"2\", \"3\", \"4\"], \"datasets\": [{\"label\": \"누적 할인 금액\", \"data\": [70986120.5000",
+    "used_sql": "SELECT\n  quarter,\n  SUM(quarterly_discount) OVER (ORDER BY quarter) AS cumulative_discount_amount\nFROM (\n  SELECT\n    EXTRACT(QUARTER FROM Date) AS quarter,\n    SUM(Discount_Coupon) AS quarterly_discount\n  FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\n  WHERE Date >= '2019-01-01'\n    AND EXTRACT(YEAR FROM Date) = 2023\n    AND Brand != 'ETC'\n  GROUP BY quarter\n)\nORDER BY quarter\nLIMIT 1000"
+  },
+  {
+    "id": "SH-076",
+    "query": "순매출액이 50달러 이상인 주문들의 총 판매 수량은 몇 개인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 43.6,
+    "answer_len": 1144,
+    "answer_preview": "### 📊 총 판매 수량 조회 결과 (순매출액 조건 미반영)  #### 요약  제공된 SQL 실행 결과에 따르면, 2019년 1월 1일 이후 'ETC' 브랜드를 제외한 전체 주문의 총 판매 수량은 **198,693,380개**입니다. **⚠️ 사용자의 질문(\"순매출액이 50달러 이상인 주문\")에 대한 조건이 실행된 SQL 쿼리에 포함되지 않았습니다.** 따라서 이 수치는 순매출액 50달러 이상 조건이 적용되지 않은 전체 데이터의 총 판매 수량입니다.  #### 분석 및 인사이트  *   제공된 데이터는 2019년 1월 1일부터 현재까지 'ETC' 브랜드를 제외한 방대한 양의 총 판매 수량을 보여줍니다. *   하지만, 사용자가 요청한 \"순매출액이 50달러 이상인 주문\"이라는 중요한 필터 조건이 SQL 쿼리에 누락되어 있습니다. *   이로 인해 현재 결과는 사용자의 원래 질문에 대한 정확한 답변이 될 수 없으며, 해당 조건이 반영되지 않은 전체 판매 수량을 나타냅니다. *   정확한",
+    "used_sql": "SELECT\n  SUM(t1.Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` AS t1\nWHERE t1.Date >= '2019-01-01'\n  AND t1.Brand != 'ETC'\nLIMIT 10000"
+  },
+  {
+    "id": "SH-077",
+    "query": "판매 수량이 2개 이하인 주문들의 평균 할인 금액은 얼마인가요?",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 65.4,
+    "answer_len": 1109,
+    "answer_preview": "### 📊 판매 수량 2개 이하 주문의 평균 할인 금액 분석  #### 요약  판매 수량이 2개 이하인 주문들의 평균 할인 금액은 **1,636.59원**으로 집계되었습니다. **⚠️ 이 수치는 2019년 1월 1일 이후 ETC 브랜드를 제외한 데이터 중, 조건을 만족하는 상위 1,000건의 주문만을 기반으로 계산되었습니다.** 따라서 전체 판매 수량 2개 이하 주문에 대한 평균과는 차이가 있을 수 있습니다.  #### 분석 및 인사이트  *   조회된 데이터에 따르면, 판매 수량이 2개 이하인 주문에 대해 평균적으로 약 1,636.59원의 할인 쿠폰이 적용된 것으로 나타났습니다. 이는 소량 구매 고객에게 제공되는 할인 수준을 가늠할 수 있는 지표입니다. *   이 평균 할인 금액은 소량 구매 고객의 구매 유도를 위한 할인 전략 수립에 활용될 수 있는 기초 데이터로 사용될 수 있습니다. *   > **핵심 인사이트:** 현재 분석은 조건을 만족하는 상위 1,000건의 주문에 한정되어",
+    "used_sql": "SELECT\n  AVG(Discount_Coupon) AS average_discount_amount\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Total_Qty <= 2\nLIMIT 1000"
+  },
+  {
+    "id": "SH-078",
+    "query": "할인 금액이 0보다 큰 주문들 중에서, 총 환불 금액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 43.0,
+    "answer_len": 378,
+    "answer_preview": "안녕하세요. 요청하신 **할인 금액이 0보다 큰 주문들의 총 환불 금액** 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래와 같이 **기간, 채널, 국가** 등을 함께 명시해 보시는 것을 권장드립니다.  ---  > **💡 질문 예시** 1. **\"2024년 하반기에 할인이 적용된 주문 중 총 환불 금액은 얼마인가요?\"** 2. **\"아마존 채널에서 할인 금액이 0보다 큰 주문들의 환불 금액을 알려주세요.\"** 3. **\"2025년 1분기, 미국 시장에서 할인 적용 주문의 환불 금액과 환불 건수를 알려주세요.\"**  ---  위와 같이 조건을 추가하여 다시 질문해 주시면 데이터를 조회해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-079",
+    "query": "'Centella Ampoule' 제품의 주문 중, 주문 건수가 5건 이상인 경우의 총 순매출액은 얼마인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 31.0,
+    "answer_len": 819,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'Centella Ampoule' 제품의 주문 건수 5건 이상 조건에 해당하는 총 순매출액** 데이터를 조회하지 못했습니다.  ---  ## 💡 더 정확한 조회를 위한 제안  질문에 아래와 같은 조건을 추가해 주시면 데이터를 보다 정확하게 찾을 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 2024년 12월 등 | | **판매 채널** | Amazon, Shopee, 자사몰, 올리브영 등 | | **국가/지역** | 한국, 미국, 태국 등 | | **정확한 제품명(SKU)** | Madagascar Centella Asiatica Ampoule 100ml 등 | | **주문 건수 기준** | 고객별 주문 건수 / 단일 주문 내 수량 등 |  ---  ## 📝 질문 예시  아래와 같이 수정해서 다시 질문해 보시는 것을 권장드립니다.  > **1.** \"2024년",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-080",
+    "query": "2023년 3월에 발생한 주문 중에서 환불 금액이 0보다 큰 주문의 수는 몇 건인가요?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 54.8,
+    "answer_len": 490,
+    "answer_preview": "안녕하세요. 요청하신 **2023년 3월 환불 금액이 0보다 큰 주문 건수**에 대한 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  > **💡 질문 예시** 1. **\"2023년 3월에 아마존(Amazon) 채널에서 환불이 발생한 주문 건수는 몇 건인가요?\"**    — 판매 채널을 특정  2. **\"2023년 3월 한국 시장에서 환불 금액이 0보다 큰 주문의 수와 총 환불 금액을 알려주세요.\"**    — 국가 및 조회 항목을 명시  3. **\"2023년 3월에 '마다가스카르 센텔라 토닝 토너' 제품의 환불 건수와 환불 사유별 비율을 알 수 있을까요?\"**    — 특정 제품 및 세부 분석 항목을 지정  ---  기간, **국가(시장)**, **판매 채널**, **제품명** 등을 함께 알려주시면 보다 정확한 데이터를 조회해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-081",
+    "query": "SKU 'S004'의 모든 판매 내역을 날짜별로 상세 조회해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 40.9,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-082",
+    "query": "'Brightening Gel' 제품 타이틀의 일별 순매출 상세 추이를 보여주세요.",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 67.6,
+    "answer_len": 3494,
+    "answer_preview": "📊 'Brightening Gel' 제품 일별 순매출 상세 추이 분석  #### 요약  'Brightening Gel' 제품군에 대한 일별 순매출을 분석한 결과, 2020년 7월 7일부터 2022년 2월 2일까지 (총 535개 일자) **총 6억 6,077만원**의 순매출을 기록했습니다. 이 기간 동안 `CL_Vitamin_C_Brightening_Gel_Cream_70g_C_Line` 제품이 가장 높은 매출을 보였으며, 특히 2021년 11월 11일에는 **1,844만원**으로 일별 최고 매출을 달성했습니다. 조회 결과는 1,000행 제한에 도달하여 전체 데이터 중 일부만 표시되었습니다.  #### 상세 데이터  'Brightening Gel' 제품군의 일별 순매출 상위 15건은 다음과 같습니다. 전체 1,000행 중 일부 데이터만 표시되었습니다.  | sales_date | product_name                                  | daily_net_r",
+    "used_sql": "SELECT\n  DATE(Date) AS sales_date,\n  `SET` AS product_name,\n  SUM(Sales1_R) AS daily_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` LIKE '%Brightening%Gel%'\n  AND `SET` NOT LIKE '% + %'\nGROUP BY\n  sales_date,\n  product_name\nORDER BY\n  sales_date ASC,\n  daily_net_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-083",
+    "query": "'France' 국가에서 발생한 모든 주문의 상세 내역을 조회해 주세요.",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 62.0,
+    "answer_len": 2821,
+    "answer_preview": "### 📊 프랑스 국가 주문 상세 내역 분석 보고서  #### 요약  2026년 3월 19일 기준, 프랑스 국가에서 발생한 주문 내역을 조회한 결과, 총 **1,000건**의 상세 주문 데이터가 확인되었습니다. SQL 쿼리는 2019년 1월 1일 이후의 데이터를 요청했으나, 현재 조회된 데이터는 주로 2026년 3월의 16개 고유 날짜에 집중되어 있습니다. 이 주문들을 통해 발생한 총 매출은 **약 10.32억원 (1,031,674,260원)**이며, 총 판매 수량은 **216,328개**입니다. 데이터에는 43개의 고유 회사와 70개의 고유 제품이 포함되어 있습니다.  #### 상세 데이터  프랑스 국가에서 발생한 주문의 상세 내역은 다음과 같습니다. 조회된 데이터는 1,000행으로 제한되어 있으며, 아래는 상위 5건의 주문 상세 내역 예시입니다.  | 날짜 | 주문 번호 | 회사명 | 몰 분류 | 제품명 | 총 수량 | 매출1_R | | :---------- | :--------",
+    "used_sql": "SELECT\n  Date,\n  Order_Number,\n  Company_Name,\n  Mall_Classification,\n  `SET` AS product_name,\n  Total_Qty,\n  Sales1_R\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Country = '프랑스'\n  AND Brand != 'ETC'\nORDER BY Date DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-084",
+    "query": "Variant_Title이 '100ml'인 제품들의 할인 금액 및 환불 금액 상세 내역을 알려주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 45.7,
+    "answer_len": 602,
+    "answer_preview": "### 🧴 제품 할인 및 환불 금액 안내  #### 답변  고객님께서 문의하신 **'100ml' 제품들의 할인 금액 및 환불 금액 상세 내역**에 대한 정보는 현재 제공된 CS 데이터베이스에서 찾을 수 없습니다.  #### 상세 정보 - **할인 금액 관련**: CS 데이터베이스 내에 특정 제품의 할인 금액에 대한 정보는 포함되어 있지 않습니다. - **환불 금액 관련**: 제품의 품질 문제 등으로 인한 환불 처리 과정에 대한 내용은 일부 있으나(예: [6], [8], [9]), 구체적인 환불 금액 산정 기준이나 상세 내역에 대한 정보는 명시되어 있지 않습니다.  #### 참고 사항  제품의 할인 정보는 프로모션 기간 및 채널에 따라 상이할 수 있으며, 환불 금액은 구매 당시의 결제 금액, 제품 상태, 환불 정책 등에 따라 달라질 수 있습니다. 정확한 정보는 구매처 또는 고객센터로 직접 문의해 주시면 상세히 안내받으실 수 있습니다.  --- *출처: CS 제품 Q&A 데이터베이스* ",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-085",
+    "query": "2023년 7월 15일의 모든 주문 데이터 상세 정보를 보여주세요.",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 70.0,
+    "answer_len": 1105,
+    "answer_preview": "### 📊 2023년 7월 15일 주문 데이터 상세 분석 (상위 8건 프리뷰 기준)  #### 요약  2023년 7월 15일의 주문 데이터 중 상위 8건의 프리뷰를 분석한 결과, 총 **109,542.29원**의 매출(Sales1_R)이 발생했으며, 총 **8개**의 제품이 판매되었습니다. 이 중 필리핀이 전체 매출의 **58.0%**를 차지하며 가장 높은 비중을 보였고, 제품 카테고리별로는 Suncare가 **34.6%**로 가장 높은 매출을 기록했습니다. 모든 주문은 'SK' 브랜드의 B2C 형태로 이루어졌습니다.  #### 상세 데이터  **1. 국가별 매출 현황** | 국가      | Sales1_R (원) | 비중 (%) | 주문 건수 | | :-------- | -------------: | --------: | --------: | | 필리핀    | 63,543.06      | 58.0%    | 5         | | 인도네시아 | 27,267.44      |",
+    "used_sql": "SELECT\n  Order_Number,\n  Date,\n  Company_Name,\n  Country,\n  Mall_Classification,\n  `SET` AS product_name,\n  SKU,\n  Total_Qty,\n  Sales1_R,\n  Order_Status,\n  Sales_Type,\n  Brand,\n  Category,\n  Line,\n  Team_NEW,\n  Manager_NEW,\n  Production_Cost2,\n  Discount_Coupon,\n  FOC_or_Not\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND DATE(Date) = '2023-07-15'\n  AND Brand IN ('SK', 'CL')\nLIMIT 1000"
+  },
+  {
+    "id": "SH-086",
+    "query": "국가별, 제품 타이틀별 총 순매출액을 교차 분석하여 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 38.2,
+    "answer_len": 3170,
+    "answer_preview": "### 📊 국가별, 제품별 총 순매출액 교차 분석 보고서  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드의 국가별, 제품별 총 순매출액을 분석한 결과, 총 **8,528.2억원**의 순매출이 발생했습니다 (상위 1,000개 조합 기준). 특히 '글로벌_플랫폼'이 여러 제품에서 높은 매출을 기록하며 선두를 달리고 있으며, 'SK_Hyalucica_Waterfit_Sun_Serum_50ml' 제품이 **약 232.0억원**으로 가장 높은 순매출을 달성했습니다.  #### 상세 데이터  다음은 국가별, 제품별 총 순매출액 상위 15개 조합입니다.  | 순위 | 국가 | 제품명 | 총 순매출액 (원) | 총 순매출액 (억원) | 비중 (%) | | ---: | :--- | :--- | ---: | ---: | ---: | | 1 | 글로벌_플랫폼 | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 23,202,061,936 | 232.0 | 2.7% ",
+    "used_sql": "SELECT\n  Country,\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_net_sales\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\nGROUP BY\n  Country,\n  `SET`\nORDER BY\n  total_net_sales DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-087",
+    "query": "월별, 국가별 총 판매 수량을 교차 집계해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 46.2,
+    "answer_len": 2245,
+    "answer_preview": "### 📊 월별, 국가별 총 판매 수량 분석 보고서  #### 요약  2019년 1월부터 2023년 5월까지의 데이터(오늘 날짜: 2026년 3월 19일 기준, 최신 데이터는 2023년 5월까지 확인됨)에서 월별, 국가별 총 판매 수량을 분석한 결과, 총 **11,354,015**개의 제품이 판매되었습니다. 이 데이터는 54개의 고유 월과 83개의 고유 국가를 포함하며, 특히 **2021년 4월 베트남**이 **286,326**개로 가장 높은 판매량을 기록했습니다.  #### 상세 데이터  아래는 월별, 국가별 총 판매 수량 중 상위 15건의 데이터입니다. 전체 1,000행의 결과 중 일부이며, 전체 데이터는 더 많은 월별/국가별 조합을 포함합니다.  | 월      | 국가         | 총 판매 수량 | | :------ | :----------- | -----------: | | 2021-04 | 베트남       | 286,326      | | 2023-03 | 글로벌_",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  Country,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY\n  month,\n  Country\nORDER BY\n  month,\n  Country\nLIMIT 1000"
+  },
+  {
+    "id": "SH-088",
+    "query": "SKU별, Variant_Title별 평균 할인 금액을 비교 분석해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 55.4,
+    "answer_len": 664,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **SKU별, Variant_Title별 평균 할인 금액** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주시면 도움이 됩니다  분석 범위가 넓어 데이터를 정상적으로 불러오지 못했을 수 있습니다. 아래와 같은 조건을 추가해 주시면 재조회를 시도해 보겠습니다.  > **구체화할 수 있는 항목 예시**  > - **기간** (예: 2024년 1분기, 최근 3개월 등)  > - **판매 채널** (예: Shopify, Amazon, 자사몰 등)  > - **국가/지역** (예: 미국, 일본, 국내 등)  > - **특정 제품/SKU** (예: Madagascar Centella 라인 등)  ---  ## 📝 질문 예시  1. **\"2024년 하반기 Shopify 채널에서 SKU별 평균 할인 금액을 비교해 주세요.\"**  2. **\"미국 시장 기준으로 Madagascar Centella 라인의 V",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-089",
+    "query": "연도별, 국가별 총 주문 건수를 교차 분석하여 트렌드를 보여주세요.",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 85.9,
+    "answer_len": 3878,
+    "answer_preview": "### 📈 연도별, 국가별 총 주문 건수 트렌드 분석  #### 요약  SKIN1004의 2019년부터 2020년까지의 내부 데이터 프리뷰 분석 결과, **2020년에 총 주문 건수가 전년 대비 폭발적으로 증가**했습니다. 특히 **한국 시장이 39,529건으로 압도적인 1위**를 차지하며 주요 성장 동력으로 부상했습니다. 2019년에는 인도네시아, 말레이시아 등 동남아시아 국가들이 주요 시장이었으나, 2020년에는 한국이 시장 구조의 변화를 이끌었습니다. 외부 정보에 따르면 글로벌 전자상거래 시장은 지속적으로 성장하고 있으며, 한국은 2025년 세계 3위의 전자상거래 시장으로 전망되어 SKIN1004의 국내 시장 성장이 외부 트렌드와 일치함을 시사합니다.  #### 내부 데이터 분석  SKIN1004의 2019년부터 2020년까지 연도별, 국가별 총 주문 건수 상위 15건 프리뷰 데이터는 다음과 같습니다.  | year | Country      | total_order_count",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-090",
+    "query": "2023년 1분기 동안 제품 타이틀별, 국가별 평균 순매출액을 교차 분석해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 50.7,
+    "answer_len": 3104,
+    "answer_preview": "### 📊 2023년 1분기 제품 타이틀별, 국가별 평균 순매출액 교차 분석 보고서  #### 요약  2023년 1분기 동안 제품 타이틀별, 국가별 평균 순매출액을 교차 분석한 결과, 총 73개의 고유 제품 타이틀과 49개의 고유 국가에서 평균 순매출액이 발생했습니다. 이 기간 동안 가장 높은 평균 순매출액을 기록한 조합은 태국에서의 **SK_Centella_Ampoule_55ml**로 **66,463,650원**을 달성했습니다. 상위 15개 조합 중 **SK_Centella_Airfit_Suncream_Plus_50ml** 제품이 여러 국가에서 높은 성과를 보이며 두각을 나타냈으며, '글로벌_플랫폼' 또한 중요한 판매 채널로 확인되었습니다. 전체 평균 순매출액 합계는 1,236,253,952원입니다.  #### 상세 데이터  2023년 1분기 동안 제품 타이틀별, 국가별 평균 순매출액 상위 15건은 다음과 같습니다.  | 제품 타이틀 | 국가 | 평균 순매출액 | |:-------",
+    "used_sql": "SELECT\n  `SET` AS product_title,\n  Country,\n  AVG(Sales1_R) AS average_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(MONTH FROM Date) IN (1, 2, 3)\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` != 'Sachet'\nGROUP BY\n  `SET`,\n  Country\nORDER BY\n  average_net_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-091",
+    "query": "요즘 우리 스토어 순매출 흐름은 좀 어때?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 50.7,
+    "answer_len": 4440,
+    "answer_preview": "### 📊 최근 1년간 스토어 순매출 흐름 분석  #### 요약  지난 1년간(2025년 3월 ~ 2026년 2월) 스토어 순매출은 총 **약 295.9억원**을 기록했으며, 월별 매출은 큰 변동성을 보였습니다. 특히 2025년 11월에 약 **47.3억원**으로 연중 최고 매출을 달성했고, 2025년 3월은 약 **9.3억원**으로 가장 낮은 매출을 기록했습니다. 2026년 3월은 현재까지 약 **19.0억원**의 매출을 기록 중이며, 이는 부분 데이터입니다.  #### 상세 데이터  아래는 지난 13개월간의 월별 순매출 현황입니다.  | 월      | 순매출 (원)          | 순매출 (억원) | | :------ | --------------------: | ------------: | | 2025-03 | 930,797,278.31        | 9.3           | | 2025-04 | 2,509,350,114.95      | 25.1          |",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Sales1_R) AS total_net_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND (\n    Mall_Classification LIKE '%Flagship%' OR\n    Mall_Classification LIKE '%cafe24_skin1004%' OR\n    Mall_Classification LIKE '%cafe24_zombiebeauty%' OR\n    Mall_Classification LIKE '%CompanyMall%' OR\n    Mall_Classification LIKE '%DPMall%'\n  )\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "SH-092",
+    "query": "최근 한 달간 가장 잘 팔리는 제품이 뭐야?",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 68.1,
+    "answer_len": 730,
+    "answer_preview": "# 최근 한 달간 인기 제품 (2026년 2월 기준)  종합적인 판매 순위가 공식 발표된 것은 없지만, **카테고리별 인기 상품**을 정리하면 다음과 같습니다.  ---  ## 📚 도서  | 순위 | 도서명 | 저자 | |:---:|------|------| | 1 | **괴테는 모든 것을 말했다** | 스즈키 유이 | | 2 | 안녕이라 그랬어 | 김애란 | | 3 | 혼모노 | 성해나 | | - | 탁 깨달음의 대화 | 법륜 | | - | 나나 올리브에게 | 루리 | | - | 할매 | 황석영 |  ## 💄 뷰티  - **LDM(물방울 리프팅) 가정용 뷰티 디바이스**가 높은 관심을 받고 있으며, 얼굴 마사지기 카테고리에서 다수 추천되고 있습니다.  ## 🛒 온라인 쇼핑몰 생활용품  - 이염방지시트 - 고용량 멀티탭 - 세탁기 도어 클립 - 풋샴푸 / 천연 수세미 - **발난로** (겨울 계절 상품으로 높은 판매량)  ## 🎁 설 명절 선물 (2026년 설)  - 더치커피 선물세",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-093",
+    "query": "할인 금액이 많이 나가는 제품은 어떤 것들이 있는지 알려줄래?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 52.3,
+    "answer_len": 574,
+    "answer_preview": "할인 금액이 많이 나가는 제품을 조회해 보겠습니다. BigQuery에서 제품별 총 할인 금액 데이터를 확인하겠습니다.  <br>  지금 데이터를 조회하고 있습니다. 잠시만 기다려 주세요.  ---  죄송합니다. 현재 BigQuery 데이터베이스의 정확한 테이블 구조와 할인 관련 컬럼명을 확인해야 정확한 조회가 가능합니다.  조회를 위해 몇 가지 확인이 필요합니다:  1. **기간**: 특정 기간(예: 2025년, 최근 3개월 등)을 기준으로 볼까요, 아니면 전체 기간 기준인가요? 2. **채널/마켓**: 특정 판매 채널(예: 아마존, 쿠팡, 자사몰 등)이 있나요, 아니면 전체 채널 합산인가요? 3. **할인 금액 기준**: 총 할인 금액(합계) 기준인가요, 건당 평균 할인 금액 기준인가요?  기준을 알려주시면 바로 정확한 데이터를 조회해 드리겠습니다! 😊  --- *AI 생성 답변 · 2026-03-19*  > 💡 **이런 것도 물어보세요** > - 최근 한 달간 채널별 할인율이 높",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-094",
+    "query": "미국 시장에서 고객들이 어떤 제품을 선호하는지 좀 알려줘.",
+    "table": "shopify",
+    "status": "WARN",
+    "time": 63.8,
+    "answer_len": 1493,
+    "answer_preview": "# 🇺🇸 미국 시장 소비자 제품 선호 트렌드  2024~2025년 기준, 미국 소비자들은 **가치 중심의 신중한 소비**를 하면서도 **건강·개인 만족감**에는 적극적으로 투자하는 이중적 패턴을 보이고 있습니다.  ---  ## 1. 🧴 건강 및 웰빙 제품  - **비타민·보충제, 스킨케어**가 온라인 쇼핑몰 최다 판매 품목 - 면역력 증진, 수면 보조, 피트니스 보충제에 높은 관심 - **클린 뷰티·클린 성분** 제품 수요 급증 → SKIN1004 같은 센텔라 기반 클린 스킨케어와 정확히 맞닿는 트렌드 - 비타민·프리바이오틱스 첨가 기능성 음료(커피, 에너지 드링크)도 인기  ## 2. 💰 가치 소비 & '작은 사치(Small Luxury)'  | 소비 성향 | 구체적 행동 | |---|---| | **신중한 지출** | 식료품 가격 인상에 민감, 할인 판매 대기 | | **작은 사치** | 외식·자기 만족 품목에는 기꺼이 투자 | | **다용도 선호** | 재사용 가능 디자인, ",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-095",
+    "query": "지난주 대비 이번 주 주문 건수가 많이 변했니?",
+    "table": "shopify",
+    "status": "OK",
+    "time": 20.6,
+    "answer_len": 400,
+    "answer_preview": "안녕하세요! 😊  요청하신 **주간 주문 건수 비교 데이터를 조회하지 못했습니다.**  좀 더 구체적인 조건을 포함해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 예시를 참고해 질문을 다시 해보시겠어요?  ---  > **💡 질문 예시** 1. **\"이번 주(6/2~6/8)와 지난주(5/26~6/1) 국내 자사몰 주문 건수를 비교해 줘\"** 2. **\"지난주 대비 이번 주 아마존 US 채널의 마다가스카르 센텔라 라인 주문 건수 변화를 알려줘\"** 3. **\"최근 2주간 일본 Qoo10 채널의 일별 주문 건수 추이를 보여줘\"**  ---  이처럼 **기간, 채널(자사몰·아마존·올리브영 등), 국가, 제품명** 등을 함께 알려주시면 더 정확한 데이터를 안내해 드릴 수 있습니다. 다시 질문해 주세요! 🙏",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-096",
+    "query": "월별 순매출이 전월 대비 15% 이상 성장한 달들의 목록과 그 성장률을 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 20.1,
+    "answer_len": 659,
+    "answer_preview": "안녕하세요. 요청하신 **월별 순매출의 전월 대비 15% 이상 성장 달 목록 및 성장률** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ### 💡 구체화하면 좋은 항목  | 항목 | 예시 | |------|------| | **기간** | 2024년 1월 ~ 2024년 12월 | | **국가/지역** | 한국, 미국, 일본 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 쿠팡 등 | | **제품(라인)** | 마다가스카르 센텔라 라인, 톤업 선크림 등 | | **매출 기준** | 총매출(Gross) / 순매출(Net) |  ---  ### 📝 질문 예시  1. **\"2024년 1월~12월 기준, 한국 채널 전체의 월별 순매출이 전월 대비 15% 이상 성장한 달을 알려주세요.\"**  2. **\"2023~2024년 아마존 US 채널에서 월별 순매출 성장률이 15",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-097",
+    "query": "각 국가별로 가장 높은 순매출을 기록한 Product_Title과 해당 매출액을 조회해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 29.3,
+    "answer_len": 2902,
+    "answer_preview": "### 📊 국가별 최고 순매출 제품 및 매출액 현황  #### 요약  총 **140개** 국가에서 각 국가별로 가장 높은 순매출을 기록한 제품과 해당 매출액을 분석한 결과, 이들 최고 매출 제품들의 총합은 약 **1,337.4억원**에 달합니다. 특히, '글로벌_플랫폼'에서 **SK_Hyalucica_Waterfit_Sun_Serum_50ml**이 약 **232.0억원**으로 가장 높은 매출을 기록하며 전체를 견인하고 있습니다.  #### 상세 데이터  각 국가별로 가장 높은 순매출을 기록한 제품과 해당 매출액은 다음과 같습니다 (상위 15개국 기준):  | 국가 | 최고 매출 제품 | 매출액 | |:---|:---|---:| | 글로벌_플랫폼 | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 232.0억원 | | 베트남 | SK_Centella_Airfit_Suncream_Plus_50ml | 164.5억원 | | 미국 | SK_Centella_Light_C",
+    "used_sql": "SELECT\n  Country,\n  product_name,\n  total_revenue\nFROM (\n  SELECT\n    Country,\n    `SET` AS product_name,\n    SUM(Sales1_R) AS total_revenue,\n    ROW_NUMBER() OVER (PARTITION BY Country ORDER BY SUM(Sales1_R) DESC) AS rn\n  FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND `SET` IS NOT NULL AND `SET` != '' AND `SET` != 'Sachet' AND `SET` != 'Others'\n    AND `SET` NOT LIKE '% + %'\n  GROUP BY Country, `SET`\n)\nWHERE rn = 1\nORDER BY Country\nLIMIT 1000"
+  },
+  {
+    "id": "SH-098",
+    "query": "전체 순매출의 10% 이상을 차지하는 Product_Title들의 총 순매출과 그 비중을 계산해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 25.4,
+    "answer_len": 1970,
+    "answer_preview": "### 📊 전체 순매출의 10% 이상을 차지하는 주요 제품 분석  #### 요약  전체 순매출의 10% 이상을 차지하는 제품은 'Hyalu-Cica Water-Fit Sun Serum SPF50+ PA++++' 단 하나로 확인되었습니다. 이 제품은 **약 195만원**의 순매출을 기록하며, 전체 순매출의 **12.3%**를 차지하고 있습니다.  #### 상세 데이터 | Product_title | 총 순매출 (원) | 판매 비중 (%) | | :------------------------------------------ | -----------: | -----------: | | Hyalu-Cica Water-Fit Sun Serum SPF50+ PA++++ | 1,953,336 | 12.3 | | **합계** | **1,953,336** | **12.3** |  #### 분석 및 인사이트  *   **매출 집중도:** 전체 순매출의 10% 이상을 차지하는 제품이 단 하나라는 점은 ",
+    "used_sql": "SELECT\n  t1.Product_title,\n  SUM(t1.Total_sales) AS total_net_sales,\n  SAFE_DIVIDE(SUM(t1.Total_sales), (\n    SELECT\n      SUM(Total_sales)\n    FROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`\n    WHERE Date >= '2019-01-01'\n  )) AS sales_proportion\nFROM `skin1004-319714.marketing_analysis.shopify_analysis_sales` AS t1\nWHERE\n  t1.Date >= '2019-01-01'\nGROUP BY\n  t1.Product_title\nHAVING\n  SAFE_DIVIDE(SUM(t1.Total_sales), (\n    SELECT\n      SUM(Total_sales)\n    FROM `skin1004-319714.marketing_analysis.shopify_analysis_sales`\n    WHERE Date >= '2019-01-01'\n  )) >= 0.10\nORDER BY\n  total_net_sales DESC\nLIMIT 1000"
+  },
+  {
+    "id": "SH-099",
+    "query": "Date를 행으로, Country를 열로 하여 일별 국가별 순매출을 PIVOT 형태로 보여주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 24.1,
+    "answer_len": 632,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **일별 국가별 순매출 PIVOT 데이터**를 조회하지 못했습니다.  PIVOT 형태의 조회는 데이터 범위가 넓을 경우 처리가 어려울 수 있습니다. **조건을 좀 더 구체적으로 지정**해 주시면 정확한 결과를 안내드릴 수 있습니다.  ---  > ## 💡 이렇게 질문을 바꿔보시면 좋습니다 아래 항목들을 포함해 주세요:  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 12월, 최근 7일 등 | | **국가** | 미국, 일본, 한국 등 특정 국가 지정 | | **채널** | Amazon, Shopee, 자사몰 등 | | **제품** | 마다가스카르 센텔라 앰플 등 |  ---  ## 📝 질문 예시  1. > **\"2024년 12월 한 달간, 미국·일본·한국 3개국의 일별 순매출을 PIVOT 형태로 보여주세요.\"**  2. > **\"2025년 1월 Amazon 채널 기준, 국가별 일별 순매출",
+    "used_sql": ""
+  },
+  {
+    "id": "SH-100",
+    "query": "각 주문별 순매출액이 전체 평균 순매출액보다 높은 주문들의 총 주문 건수와 평균 판매 수량을 계산해 주세요.",
+    "table": "shopify",
+    "status": "OK",
+    "time": 24.3,
+    "answer_len": 697,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **주문별 순매출액 기준 필터링 분석 데이터**를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위한 제안  질문에 아래와 같은 **구체적인 조건**을 추가해 주시면 데이터를 보다 원활하게 조회할 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1분기, 최근 6개월 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 쿠팡 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **제품 또는 제품군** | 마다가스카르 센텔라 라인, 특정 SKU 등 | | **순매출액 기준** | 할인·반품·세금 포함/제외 여부 |  ---  ## 📝 질문 예시  > **1.** \"2024년 하반기 아마존 미국 채널에서 주문별 순매출액이 전체 평균보다 높은 주문들의 총 건수와 평균 판매 수량을 알려주세요.\"  > **2.** \"최근 3개월간 올리브영 채널",
+    "used_sql": ""
+  }
+]

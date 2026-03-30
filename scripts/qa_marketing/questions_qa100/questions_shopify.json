@@ -1,0 +1,502 @@
+[
+  {
+    "id": "SH-001",
+    "query": "총 순매출 합계는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-002",
+    "query": "평균 주문 건수는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-003",
+    "query": "단일 주문에서 기록된 최대 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-004",
+    "query": "전체 데이터에서 가장 낮은 할인 금액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-005",
+    "query": "총 판매 데이터 건수는 몇 건인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-006",
+    "query": "월별 총 순매출의 추이를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-007",
+    "query": "분기별 총 주문 건수 변화는 어떤가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-008",
+    "query": "연도별 총 할인 금액 합계를 알려주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-009",
+    "query": "주별 평균 판매 수량 트렌드를 분석해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-010",
+    "query": "일별 평균 순매출액은 어떻게 변동했나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-011",
+    "query": "순매출액 기준 TOP 3 제품 타이틀은 무엇인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-012",
+    "query": "총 판매 수량 기준 TOP 5 SKU를 알려주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-013",
+    "query": "총 주문 건수 기준 TOP 10 국가를 나열해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-014",
+    "query": "평균 할인 금액이 가장 낮은 하위 3개 제품 타이틀은 무엇인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-015",
+    "query": "전체 순매출 데이터의 중간값(Median)은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-016",
+    "query": "직전 월 대비 총 순매출 성장률은 어떻게 되나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-017",
+    "query": "전년 동기(예: 2023년 1월 vs 2022년 1월) 대비 총 주문 건수 증감률은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-018",
+    "query": "국가별 평균 판매 수량을 서로 비교해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-019",
+    "query": "제품 타이틀별 평균 순매출을 비교하여 어떤 제품이 더 높은지 알려주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-020",
+    "query": "SKU별 평균 할인율(할인 금액 / 순매출)을 비교 분석해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-021",
+    "query": "전체 순매출에서 각 국가가 차지하는 매출 비중은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-022",
+    "query": "총 판매 수량 대비 'Centella Ampoule' 제품의 판매 수량 비율은 몇 %인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-023",
+    "query": "총 할인 금액 중 가장 많은 할인 금액을 차지하는 제품 타이틀의 점유율은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-024",
+    "query": "총 주문 건수 대비 환불이 발생한 주문 건수의 구성비는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-025",
+    "query": "전체 순매출에 대한 가장 높은 순매출을 기록한 SKU의 기여도는 몇 %인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-026",
+    "query": "2023년 1월 미국에서의 총 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-027",
+    "query": "SKU 'S001'의 지난 3개월간 총 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-028",
+    "query": "한국 시장에서 가장 많이 팔린 제품 타이틀(총 주문 건수 기준)은 무엇인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-029",
+    "query": "할인 금액이 발생한 주문 중, 캐나다의 총 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-030",
+    "query": "2023년 상반기 동안 'Centella Cream' 제품이 기록한 평균 주문 건수는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-031",
+    "query": "월별 순매출 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-032",
+    "query": "국가별 순매출 비중을 파이 차트로 나타내주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-033",
+    "query": "TOP 5 제품의 판매 수량을 바 차트로 비교하여 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-034",
+    "query": "일별 주문 건수 변화를 시각화해서 추이를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-035",
+    "query": "할인 금액이 가장 큰 상위 3개 제품을 막대 그래프로 비교해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-036",
+    "query": "한국을 제외한 모든 국가들의 총 순매출 합계는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-037",
+    "query": "SKU 'S002'가 아닌 다른 제품들의 총 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-038",
+    "query": "할인 금액이 0이 아닌 주문들의 평균 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-039",
+    "query": "'Hyalu-Cica Blue Serum' 제품 타이틀 외의 모든 제품의 총 주문 건수는 몇 건인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-040",
+    "query": "2023년 데이터를 제외한 전체 기간의 총 환불 금액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-041",
+    "query": "'Centella Tone-Up Sunscreen' SKU의 판매 데이터가 있나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-042",
+    "query": "2024년 1월 1일 이후의 데이터가 시스템에 조회 가능한가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-043",
+    "query": "환불 기록(Refund_Amount > 0)이 있는 주문이 존재하나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-044",
+    "query": "'Germany' 국가의 판매 데이터가 입력되어 있나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-045",
+    "query": "특정 Variant_Title (예: '50ml')의 할인 금액 기록이 있나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-046",
+    "query": "할인 금액이 정확히 0인 주문들의 총 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-047",
+    "query": "가장 최근에 기록된 판매 데이터 1건의 Product_Title과 Net_Sales는 무엇인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-048",
+    "query": "가장 오래된 판매 날짜(Date)는 언제인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-049",
+    "query": "Variant_Title 컬럼에 NULL 값이 있는 데이터가 존재하나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-050",
+    "query": "판매 수량이 0인 주문이 몇 건이나 되나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-051",
+    "query": "제품 타이틀별로 총 순매출액을 집계해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-052",
+    "query": "SKU별로 평균 판매 수량을 계산해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-053",
+    "query": "국가별로 총 주문 건수를 합산해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-054",
+    "query": "Variant_Title별로 총 할인 금액을 집계해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-055",
+    "query": "환불 금액이 발생한 주문들을 대상으로, 국가별 평균 환불 금액을 알려주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-056",
+    "query": "최근 3개월간의 총 순매출은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-057",
+    "query": "2023년 하반기(7월부터 12월) 동안의 총 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-058",
+    "query": "2022년 1분기부터 3분기까지의 총 주문 건수는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-059",
+    "query": "2023년 10번째 주의 평균 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-060",
+    "query": "2023년 5월 1일부터 5월 31일까지의 총 할인 금액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-061",
+    "query": "전년 대비 전체 총 순매출 성장률은 몇 %인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-062",
+    "query": "'Hyalu-Cica Water-Fit Sun Serum' 제품의 지난 분기 대비 이번 분기 판매 수량 증감은 어떻게 되나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-063",
+    "query": "월별 평균 주문 건수의 최대 변동폭은 얼마였나요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-064",
+    "query": "지난 6개월 동안 순매출이 가장 크게 감소한 국가는 어디인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-065",
+    "query": "SKU 'S003'의 월별 할인 금액 변화 추이를 분석해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-066",
+    "query": "제품 타이틀별 평균 단가(순매출 / 수량)는 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-067",
+    "query": "주문 1건당 평균 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-068",
+    "query": "일별 순매출의 7일 이동평균 추이를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-069",
+    "query": "주문 건수를 가중치로 하여 국가별 평균 할인 금액을 계산해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-070",
+    "query": "Variant_Title별 평균 환불 금액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-071",
+    "query": "전체 기간 동안의 누적 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-072",
+    "query": "2023년 YTD(Year-To-Date) 총 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-073",
+    "query": "현재 월 MTD(Month-To-Date) 총 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-074",
+    "query": "2022년 연간 총 주문 건수는 몇 건인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-075",
+    "query": "2023년 분기별 누적 할인 금액 추이를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-076",
+    "query": "순매출액이 50달러 이상인 주문들의 총 판매 수량은 몇 개인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-077",
+    "query": "판매 수량이 2개 이하인 주문들의 평균 할인 금액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-078",
+    "query": "할인 금액이 0보다 큰 주문들 중에서, 총 환불 금액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-079",
+    "query": "'Centella Ampoule' 제품의 주문 중, 주문 건수가 5건 이상인 경우의 총 순매출액은 얼마인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-080",
+    "query": "2023년 3월에 발생한 주문 중에서 환불 금액이 0보다 큰 주문의 수는 몇 건인가요?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-081",
+    "query": "SKU 'S004'의 모든 판매 내역을 날짜별로 상세 조회해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-082",
+    "query": "'Brightening Gel' 제품 타이틀의 일별 순매출 상세 추이를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-083",
+    "query": "'France' 국가에서 발생한 모든 주문의 상세 내역을 조회해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-084",
+    "query": "Variant_Title이 '100ml'인 제품들의 할인 금액 및 환불 금액 상세 내역을 알려주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-085",
+    "query": "2023년 7월 15일의 모든 주문 데이터 상세 정보를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-086",
+    "query": "국가별, 제품 타이틀별 총 순매출액을 교차 분석하여 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-087",
+    "query": "월별, 국가별 총 판매 수량을 교차 집계해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-088",
+    "query": "SKU별, Variant_Title별 평균 할인 금액을 비교 분석해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-089",
+    "query": "연도별, 국가별 총 주문 건수를 교차 분석하여 트렌드를 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-090",
+    "query": "2023년 1분기 동안 제품 타이틀별, 국가별 평균 순매출액을 교차 분석해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-091",
+    "query": "요즘 우리 스토어 순매출 흐름은 좀 어때?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-092",
+    "query": "최근 한 달간 가장 잘 팔리는 제품이 뭐야?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-093",
+    "query": "할인 금액이 많이 나가는 제품은 어떤 것들이 있는지 알려줄래?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-094",
+    "query": "미국 시장에서 고객들이 어떤 제품을 선호하는지 좀 알려줘.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-095",
+    "query": "지난주 대비 이번 주 주문 건수가 많이 변했니?",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-096",
+    "query": "월별 순매출이 전월 대비 15% 이상 성장한 달들의 목록과 그 성장률을 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-097",
+    "query": "각 국가별로 가장 높은 순매출을 기록한 Product_Title과 해당 매출액을 조회해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-098",
+    "query": "전체 순매출의 10% 이상을 차지하는 Product_Title들의 총 순매출과 그 비중을 계산해 주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-099",
+    "query": "Date를 행으로, Country를 열로 하여 일별 국가별 순매출을 PIVOT 형태로 보여주세요.",
+    "table": "shopify"
+  },
+  {
+    "id": "SH-100",
+    "query": "각 주문별 순매출액이 전체 평균 순매출액보다 높은 주문들의 총 주문 건수와 평균 판매 수량을 계산해 주세요.",
+    "table": "shopify"
+  }
+]

@@ -1,0 +1,502 @@
+[
+  {
+    "id": "AD-001",
+    "query": "전체 기간 동안의 총 광고비(Cost)는 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-002",
+    "query": "전체 캠페인의 평균 ROAS는 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-003",
+    "query": "데이터에 기록된 일일 최대 전환 수(Conversions)는 몇 건인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-004",
+    "query": "전체 데이터에서 가장 낮은 CTR은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-005",
+    "query": "이 데이터셋에 포함된 고유한 캠페인(Campaign) 수는 몇 개인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-006",
+    "query": "월별 총 Revenue 추이를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-007",
+    "query": "분기별 Cost와 Conversions의 변화 추이를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-008",
+    "query": "연도별 평균 ROAS는 어떻게 변화했나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-009",
+    "query": "주별 Clicks의 총합을 그래프로 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-010",
+    "query": "특정 플랫폼(예: 'Google Ads')의 일별 Impressions 추이를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-011",
+    "query": "총 Revenue 기준으로 가장 성과가 좋은 상위 3개 Campaign은 무엇인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-012",
+    "query": "ROAS가 가장 높은 상위 5개 Ad_Group을 플랫폼과 함께 나열해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-013",
+    "query": "전체 기간 동안 Cost가 가장 높았던 상위 10개 Country를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-014",
+    "query": "CVR이 가장 낮은 하위 3개 Ad_Group은 무엇인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-015",
+    "query": "전체 Campaign의 CPC 중간값은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-016",
+    "query": "지난달 대비 이번 달의 총 Revenue 성장률은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-017",
+    "query": "작년 동기 대비 올해 같은 기간의 총 Cost 변화는 어떻게 되나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-018",
+    "query": "'US'와 'KR' 국가 간의 평균 ROAS를 비교해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-019",
+    "query": "각 Platform별 평균 CTR을 비교 분석해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-020",
+    "query": "특정 기간 동안 'Brand A' 캠페인과 'Brand B' 캠페인의 CVR을 비교해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-021",
+    "query": "전체 Cost에서 'Facebook Ads' 플랫폼이 차지하는 비중은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-022",
+    "query": "총 Impressions 대비 총 Clicks의 비율(CTR)을 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-023",
+    "query": "각 Country별 전체 Revenue에 대한 점유율을 파이 차트로 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-024",
+    "query": "특정 Campaign의 총 Conversions 중 각 Ad_Group이 차지하는 구성비를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-025",
+    "query": "가장 높은 Revenue를 기록한 Campaign이 전체 Revenue에 몇 % 기여했나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-026",
+    "query": "'JP' 국가에서 지난 3개월 동안의 총 Conversions는 몇 건인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-027",
+    "query": "'Summer Sale' 캠페인이 'Google Ads' 플랫폼에서 발생시킨 총 Revenue를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-028",
+    "query": "특정 'Product X' Ad_Group의 지난주 Cost와 Clicks를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-029",
+    "query": "2023년 10월 한 달 동안, Cost가 1000 이상이고 ROAS가 300% 이상인 Campaign들의 목록을 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-030",
+    "query": "'US' 또는 'CA' 국가에서 'Instagram Ads' 플랫폼을 통해 발생한 총 Revenue와 Conversions를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-031",
+    "query": "각 Platform별 총 Cost를 막대 그래프로 시각화해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-032",
+    "query": "월별 평균 CPC 변화를 라인 차트로 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-033",
+    "query": "특정 Campaign의 일별 ROAS 추이를 시계열 차트로 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-034",
+    "query": "전체 Clicks에서 각 Country가 차지하는 비중을 파이 차트로 그려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-035",
+    "query": "특정 플랫폼(예: 'TikTok Ads')에서 가장 많은 Revenue를 기록한 상위 5개 Ad_Group을 바 차트로 비교해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-036",
+    "query": "'US' 국가를 제외한 모든 국가의 총 Revenue 합계를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-037",
+    "query": "'Google Ads' 플랫폼이 아닌 다른 모든 플랫폼의 평균 CVR은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-038",
+    "query": "특정 Campaign(예: 'Holiday Sale') 외의 모든 Campaign들의 총 Cost를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-039",
+    "query": "ROAS가 0인 데이터를 제외하고, 전체 Campaign의 평균 ROAS를 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-040",
+    "query": "특정 Ad_Group(예: 'Retargeting')이 아닌 Ad_Group들의 총 Conversions를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-041",
+    "query": "2024년 1월 데이터가 현재 테이블에 포함되어 있나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-042",
+    "query": "'Vietnam' 국가의 광고 성과 데이터가 기록되어 있나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-043",
+    "query": "특정 Campaign(예: 'New Product Launch')의 CPC 데이터를 조회할 수 있나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-044",
+    "query": "ROAS가 500%를 초과하는 Campaign이 존재하나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-045",
+    "query": "특정 Platform에서 Clicks가 0인 기록이 있나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-046",
+    "query": "Conversions가 0인 Ad_Group들의 목록과 해당 Cost를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-047",
+    "query": "가장 최근 날짜의 전체 광고 성과 데이터를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-048",
+    "query": "데이터셋에서 가장 오래된 Date는 언제인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-049",
+    "query": "CVR 값이 NULL인 데이터가 있는지 확인해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-050",
+    "query": "CPC가 0.01 미만이거나 5 이상인 데이터 건수는 몇 건인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-051",
+    "query": "각 Platform별 총 Cost, Clicks, Conversions를 집계해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-052",
+    "query": "Campaign 유형별 평균 ROAS를 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-053",
+    "query": "Ad_Group 카테고리별 총 Revenue를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-054",
+    "query": "Country별로 Campaign의 수를 세어주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-055",
+    "query": "각 Date별로 Platform당 발생한 총 Impressions를 집계해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-056",
+    "query": "최근 3개월 동안의 총 Revenue와 총 Cost를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-057",
+    "query": "작년 하반기(7월~12월)의 평균 ROAS는 얼마였나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-058",
+    "query": "2023년 Q1부터 Q3까지의 누적 Conversions 수를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-059",
+    "query": "2023년 30번째 주의 총 Cost와 Impressions는 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-060",
+    "query": "2023년 1월 1일부터 2023년 6월 30일까지의 평균 CVR을 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-061",
+    "query": "전년 대비 올해의 평균 CTR 성장률은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-062",
+    "query": "지난 분기 대비 이번 분기의 총 Cost 감소율은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-063",
+    "query": "특정 Campaign의 월별 Revenue 증감액을 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-064",
+    "query": "가장 높은 ROAS와 가장 낮은 ROAS 간의 변동폭은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-065",
+    "query": "특정 Ad_Group의 지난 6개월간 평균 CPC 변화 추이를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-066",
+    "query": "전체 데이터의 평균 CPC(클릭당 비용)는 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-067",
+    "query": "일별 평균 Conversions 수는 몇 건인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-068",
+    "query": "특정 Campaign의 7일 이동평균 ROAS를 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-069",
+    "query": "각 Campaign의 Cost를 기준으로 가중평균 ROAS를 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-070",
+    "query": "각 Country별 평균 Cost와 평균 Revenue를 나란히 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-071",
+    "query": "2023년 1월 1일부터 현재까지의 누적 Revenue는 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-072",
+    "query": "올해 YTD(Year-To-Date) 총 Cost를 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-073",
+    "query": "이번 달 MTD(Month-To-Date) 총 Conversions는 몇 건인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-074",
+    "query": "각 연도별 총 Impressions 합산을 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-075",
+    "query": "특정 Campaign의 일별 누적 ROAS를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-076",
+    "query": "ROAS가 200% 이상인 Campaign들의 총 Revenue 합계를 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-077",
+    "query": "CPC가 1.5 이상인 Ad_Group들의 평균 CTR은 얼마인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-078",
+    "query": "Cost가 100 이하인 데이터 중에서 가장 높은 CVR을 기록한 날짜는 언제인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-079",
+    "query": "Clicks가 Impressions의 10% 미만인 Campaign들을 찾아주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-080",
+    "query": "Conversions가 50 이상이고 Cost가 500 이하인 데이터의 평균 ROAS를 계산해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-081",
+    "query": "'Winter Collection' Campaign의 일별 Cost, Revenue, ROAS 상세 데이터를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-082",
+    "query": "'Lipstick_Matte' Ad_Group의 전체 기간 동안의 평균 CPC와 CVR을 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-083",
+    "query": "특정 Date(예: '2023-11-15')의 모든 Platform별 광고 성과 지표를 상세히 조회해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-084",
+    "query": "ROAS가 가장 높았던 날의 Campaign, Ad_Group, Platform 정보를 상세히 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-085",
+    "query": "특정 Country(예: 'DE')의 모든 Campaign 목록과 각 Campaign의 총 Revenue를 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-086",
+    "query": "각 Country별, Platform별 총 Revenue를 교차 분석하여 테이블 형태로 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-087",
+    "query": "Platform별 월별 평균 CTR을 보여주는 피벗 테이블을 생성해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-088",
+    "query": "특정 Country에서 Campaign별 Ad_Group의 총 Cost를 분석해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-089",
+    "query": "각 날짜별로 Platform마다 발생한 Conversions 수를 비교 분석해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-090",
+    "query": "각 Country별로 가장 높은 ROAS를 기록한 Campaign은 무엇인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-091",
+    "query": "최근 한 달간 전체 광고 성과가 전반적으로 어떤가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-092",
+    "query": "어떤 Campaign이 요즘 가장 좋은 성과를 내고 있나요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-093",
+    "query": "광고비 대비 수익률(ROAS)이 가장 높은 Platform은 어디인지 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-094",
+    "query": "CTR은 높은데 CVR이 낮은 Campaign이 있다면 알려주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-095",
+    "query": "특정 Campaign의 CPC가 다른 Campaign들에 비해 효율적인 수준인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-096",
+    "query": "전체 평균 ROAS보다 높은 ROAS를 기록한 Campaign들의 목록과 그 ROAS 값을 보여주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-097",
+    "query": "총 Cost가 10000 이상인 Platform들 중에서 평균 CVR이 가장 높은 Platform은 어디인가요?",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-098",
+    "query": "각 Campaign 내에서 Ad_Group별 Revenue 순위를 매겨주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-099",
+    "query": "각 Platform의 월별 Cost를 컬럼으로 하는 테이블을 생성해 주세요.",
+    "table": "advertising"
+  },
+  {
+    "id": "AD-100",
+    "query": "2023년 데이터에서, 전월 대비 Cost는 증가했지만 Revenue는 감소한 Campaign들을 찾아주세요.",
+    "table": "advertising"
+  }
+]

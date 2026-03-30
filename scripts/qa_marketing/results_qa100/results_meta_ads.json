@@ -1,0 +1,1002 @@
+[
+  {
+    "id": "MT-001",
+    "query": "전체 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 25.0,
+    "answer_len": 298,
+    "answer_preview": "안녕하세요. 요청하신 **전체 광고의 총 건수** 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 예를 들어 **기간, 국가, 광고 채널, 캠페인 유형** 등을 함께 알려주세요.  **질문 예시:** 1. \"2024년 1분기에 집행된 광고 총 건수는 몇 개인가요?\" 2. \"미국 아마존 채널에서 진행한 광고 캠페인은 총 몇 건인가요?\" 3. \"2024년 메타(Meta) 광고 건수를 월별로 알려주세요.\"  위와 같이 조건을 추가하여 다시 질문해 주시면 도움드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-002",
+    "query": "가장 최근 `start_date_formatted`는 언제인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 27.6,
+    "answer_len": 672,
+    "answer_preview": "질문하신 `start_date_formatted`가 어떤 맥락의 데이터인지에 따라 조회 방법이 달라집니다.  ## 확인이 필요한 사항  현재 `start_date_formatted`라는 필드만으로는 어떤 데이터셋을 말씀하시는지 특정하기 어렵습니다. 아래 중 어디에 해당하는지 알려주시면 바로 조회해 드리겠습니다:  | 가능한 맥락 | 설명 | |---|---| | **BigQuery 매출/주문 데이터** | 주문·캠페인·프로모션 등의 시작일 필드 | | **Notion 사내 문서** | 프로젝트·일정 관리 문서의 시작일 | | **Google Calendar 일정** | 일정의 시작 날짜 | | **특정 리포트/대시보드** | 리포트 기간 설정의 시작일 |  ## 다음 단계  아래 정보를 알려주시면 정확히 조회할 수 있습니다:  1. **어떤 시스템/테이블**의 `start_date_formatted`인지 (예: BigQuery의 특정 테이블명) 2. **어떤 목적**으로 확인하려는 ",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-003",
+    "query": "가장 오래된 `end_date_formatted`는 언제인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 26.7,
+    "answer_len": 444,
+    "answer_preview": "아래 쿼리를 실행하여 가장 오래된 `end_date_formatted` 값을 확인하겠습니다.  BigQuery에서 해당 컬럼이 포함된 테이블을 먼저 확인해야 합니다. 일반적으로 사용되는 테이블 구조를 기반으로 조회해 보겠습니다.  잠시만요, 현재 제가 직접 BigQuery 쿼리를 실행할 수 있는 상태인지 확인이 필요합니다. `end_date_formatted` 컬럼이 어떤 테이블에 존재하는지 알려주시면 정확하게 조회해 드릴 수 있습니다.  혹시 아래 정보를 알고 계신가요?  - **데이터셋/테이블 이름** (예: `project.dataset.table_name`) - 또는 **어떤 데이터**와 관련된 컬럼인지 (예: 프로모션 종료일, 캠페인 종료일, 계약 종료일 등)  이 정보를 주시면 바로 쿼리를 실행해서 결과를 알려드리겠습니다!  --- *AI 생성 답변 · 2026-03-19*",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-004",
+    "query": "모든 광고의 평균 활성 기간(일)은 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 30.5,
+    "answer_len": 373,
+    "answer_preview": "안녕하세요. 요청하신 **모든 광고의 평균 활성 기간(일)** 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 결과를 안내해 드릴 수 있습니다. 예를 들어 **기간, 국가/채널, 광고 유형** 등을 함께 알려주시면 도움이 됩니다.  아래와 같이 질문을 바꿔 보시는 건 어떨까요?  1. **\"2024년 하반기 아마존 US에서 집행한 광고의 평균 활성 기간(일)은 얼마인가요?\"** 2. **\"마다가스카르 센텔라 라인 관련 스폰서드 프로덕트 광고의 평균 활성 기간을 알려주세요.\"** 3. **\"2025년 1분기, 국가별 광고 평균 활성 기간을 비교해 주세요.\"**  구체적인 조건을 추가하여 다시 질문해 주시면 바로 확인해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-005",
+    "query": "고유한 `ad_archive_id`의 총 개수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 24.7,
+    "answer_len": 1093,
+    "answer_preview": "### 📊 고유한 광고 아카이브 ID 총 개수 분석  #### 요약  메타 광고 라이브러리 데이터 분석 결과, 고유한 `ad_archive_id`의 총 개수는 **166,704**개로 확인되었습니다. 이는 SKIN1004가 운영하거나 아카이빙한 다양한 광고 소재 및 캠페인의 규모를 나타냅니다.  #### 분석 및 인사이트  *   **광고 소재 다양성:** 총 166,704개의 고유한 `ad_archive_id`는 SKIN1004가 매우 다양한 광고 소재와 크리에이티브를 활용하고 있음을 시사합니다. 이는 A/B 테스트, 타겟 오디언스별 맞춤형 광고, 또는 다양한 제품 라인업 홍보를 위한 전략일 수 있습니다. *   **광고 운영 규모:** 이 수치는 일정 기간 동안 축적된 광고 운영의 규모를 보여주며, 활발한 마케팅 활동이 이루어지고 있음을 나타냅니다. *   **데이터 활용 가능성:** 각 `ad_archive_id`는 특정 광고의 고유한 식별자이므로, 이를 통해 개별 광고의 성과",
+    "used_sql": "SELECT\n  COUNT(DISTINCT ad_archive_id) AS total_unique_ad_archive_ids\nFROM `skin1004-319714.ad_data.meta data_test`\nLIMIT 10000"
+  },
+  {
+    "id": "MT-006",
+    "query": "월별 신규 광고 시작 건수 추이를 보여주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 64.1,
+    "answer_len": 3145,
+    "answer_preview": "### 📊 월별 신규 광고 시작 건수 추이 분석  #### 요약  2022년 9월부터 2026년 3월까지의 월별 신규 광고 시작 건수를 분석한 결과, 전반적으로 **가파른 증가세**를 보였습니다. 특히 2025년 하반기부터 폭발적인 성장을 기록하며, 2025년 12월에는 **404,944건**으로 최고치를 달성했습니다. 2026년 3월 데이터는 현재까지 **109,419건**으로, 월 중순임을 감안할 때 여전히 높은 수준을 유지하고 있습니다. ⚠️ 2026년 3월 데이터는 현재 3월 19일 기준으로 집계된 수치이므로, 월말까지 증가할 수 있습니다.  #### 상세 데이터  | 월      | 신규 광고 시작 건수 | | :------ | ------------------: | | 2022-09 | 328                 | | 2022-10 | 109                 | | 2022-12 | 331                 | | 2023-01 | 777",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', start_date_formatted) AS month,\n  COUNT(*) AS new_ad_starts\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE start_date_formatted IS NOT NULL\nGROUP BY month\nORDER BY month\nLIMIT 200"
+  },
+  {
+    "id": "MT-007",
+    "query": "분기별 활성 상태인 광고의 평균 개수 추이를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.7,
+    "answer_len": 647,
+    "answer_preview": "안녕하세요. 요청하신 **분기별 활성 광고의 평균 개수 추이** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ### 💡 이런 정보를 추가해 주시면 도움이 됩니다  - **기간** — 조회하고 싶은 연도 또는 분기 범위 (예: 2023년 ~ 2025년) - **광고 채널/플랫폼** — Amazon Sponsored Ads, Meta, Google Ads 등 - **국가/마켓** — 미국, 일본, 한국 등 - **광고 유형** — Sponsored Products, Sponsored Brands, Display 등  ---  ### 📝 질문 예시  1. **\"2024년 1분기부터 2025년 1분기까지, 아마존 미국 채널에서 활성 상태인 Sponsored Products 광고의 분기별 평균 개수 추이를 보여주세요.\"**  2. **\"2023년~2024년 동안 국가별로 활성 광",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-008",
+    "query": "연도별 `country_name`의 고유 개수 변화 추이를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 43.3,
+    "answer_len": 2794,
+    "answer_preview": "### 📊 연도별 고유 국가 개수 변화 추이  #### 요약  ⚠️ 2026년은 현재 3월 19일까지의 데이터만 포함되어 있습니다. `country_name`의 고유 개수는 2022년부터 꾸준히 증가하여 **2025년에 16개**로 최고치를 기록했으며, 2026년 현재까지도 **16개**를 유지하고 있습니다. 이는 SKIN1004의 글로벌 시장 확장 노력을 시사합니다.  #### 상세 데이터  | 연도 | 고유 국가 개수 | 전년 대비 증가율 | | :--- | ---: | ---: | | 2022 | 1 | - | | 2023 | 6 | 500.0% | | 2024 | 11 | 83.3% | | 2025 | 16 | 45.5% | | 2026 | 16 | 0.0% |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2022\", \"2023\", \"2024\", \"2025\", \"2026\"], \"datasets\": [{\"",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM DATE(start_date_formatted)) AS year,\n  COUNT(DISTINCT country_name) AS unique_country_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE start_date_formatted IS NOT NULL\n  AND country_name IS NOT NULL AND country_name != ''\nGROUP BY year\nORDER BY year\nLIMIT 20"
+  },
+  {
+    "id": "MT-009",
+    "query": "주별로 `end_date_formatted`가 만료된 광고의 건수 추이를 보여주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 75.6,
+    "answer_len": 4483,
+    "answer_preview": "### 📊 주별 만료 광고 건수 추이  #### 요약  지난 1년간(2025년 3월 19일 ~ 2026년 3월 19일)의 주별 만료 광고 건수 추이를 분석한 결과, 2025년 7월 마지막 주부터 2026년 3월 셋째 주까지 **총 1,220,958건**의 광고가 만료되었습니다. 특히 2025년 11월부터 급격한 증가세를 보였으며, 2026년 3월 첫째 주(2026-03-01)에 **120,222건**으로 가장 많은 광고가 만료된 것으로 나타났습니다. (참고: 데이터는 2025년 7월 넷째 주부터 기록되어 있습니다.)  #### 상세 데이터  | 만료 주차 | 만료 광고 건수 | | :-------- | -------------: | | 2025-07-27 | 20 | | 2025-08-10 | 11 | | 2025-09-14 | 3 | | 2025-09-21 | 24 | | 2025-09-28 | 27 | | 2025-10-05 | 22 | | 2025-10-12 | 34 | | 2",
+    "used_sql": "SELECT\n  DATE_TRUNC(DATE(end_date_formatted), WEEK) AS week_of_expiration,\n  COUNT(ad_archive_id) AS expired_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  end_date_formatted IS NOT NULL\n  AND DATE(end_date_formatted) <= CURRENT_DATE()\n  AND DATE(end_date_formatted) >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY\n  week_of_expiration\nORDER BY\n  week_of_expiration\nLIMIT 1000"
+  },
+  {
+    "id": "MT-010",
+    "query": "일별 `ad_type`이 'official'인 광고의 시작 건수 추이를 보여주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 62.6,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-011",
+    "query": "가장 많은 광고를 집행한 `country_name` TOP 3는 어디인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 30.9,
+    "answer_len": 2610,
+    "answer_preview": "### 📊 가장 많은 광고를 집행한 국가 TOP 3 분석  #### 요약  가장 많은 광고를 집행한 상위 3개 국가는 인도네시아, 말레이시아, 그리고 대한민국입니다. 특히 인도네시아는 **418,663회**의 광고 집행으로 압도적인 1위를 차지했습니다.  #### 상세 데이터  | 순위 | 국가명       | 광고 집행 횟수 | |-----:|:-------------|---------------:| | 1    | Indonesia    | 418,663        | | 2    | Malaysia     | 288,887        | | 3    | South Korea  | 207,255        | | **합계** |              | **914,805**    |  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"Indonesia\", \"Malaysia\", \"South Korea\"], \"d",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nGROUP BY\n  country_name\nORDER BY\n  ad_count DESC\nLIMIT 3"
+  },
+  {
+    "id": "MT-012",
+    "query": "가장 많은 광고를 집행한 `page_name` TOP 5는 무엇인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 36.4,
+    "answer_len": 3307,
+    "answer_preview": "### 📊 가장 많은 광고를 집행한 `page_name` TOP 5 분석  #### 요약  가장 많은 광고를 집행한 상위 5개 `page_name` 중 **'Skintific Co'**가 총 **171,228건**의 광고 집행으로 1위를 차지했습니다. 2위는 'Glad 2 Glow Indonesia'로 142,266건, 3위는 'Skintific -Malaysia'로 133,071건을 기록하며, Skintific 관련 페이지들이 상위권을 장악하고 있는 것으로 나타났습니다.  #### 상세 데이터 | 순위 | page_name            | ad_count | | :--- | :------------------- | -------: | | 1    | Skintific Co         | 171,228  | | 2    | Glad 2 Glow Indonesia| 142,266  | | 3    | Skintific -Malaysia  | 133,071  | | 4    ",
+    "used_sql": "SELECT\n  page_name,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE page_name IS NOT NULL AND page_name != ''\nGROUP BY page_name\nORDER BY ad_count DESC\nLIMIT 5"
+  },
+  {
+    "id": "MT-013",
+    "query": "`start_date_formatted` 기준으로 가장 많은 광고가 시작된 날짜 TOP 10을 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.7,
+    "answer_len": 1548,
+    "answer_preview": "### 📊 광고 시작일별 광고 수 TOP 10 분석  #### 요약  `start_date_formatted` 기준으로 가장 많은 광고가 시작된 날짜 TOP 10을 분석한 결과, **2026년 2월 28일**에 **35,342개**의 광고가 시작되어 가장 높은 수치를 기록했습니다. 상위 10개 날짜는 2025년 12월부터 2026년 2월 사이에 분포하며, 최소 19,981개에서 최대 35,342개의 광고가 시작된 것으로 나타났습니다.  #### 상세 데이터 | 시작일 | 광고 수 | |:---|---:| | 2026-02-28 | 35342 | | 2025-12-31 | 33663 | | 2026-02-01 | 30622 | | 2025-12-02 | 27175 | | 2026-01-31 | 26242 | | 2025-12-23 | 25958 | | 2025-12-30 | 25537 | | 2026-02-27 | 22079 | | 2026-01-13 | 20199 | | 2025-1",
+    "used_sql": "SELECT\n  DATE(start_date_formatted) AS start_date,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE start_date_formatted IS NOT NULL\nGROUP BY start_date\nORDER BY ad_count DESC\nLIMIT 10"
+  },
+  {
+    "id": "MT-014",
+    "query": "가장 적은 수의 광고를 집행한 `brand`는 무엇인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 28.9,
+    "answer_len": 872,
+    "answer_preview": "### 📊 가장 적은 광고를 집행한 브랜드 분석  #### 요약  가장 적은 수의 광고를 집행한 브랜드는 **heavenskin**으로 확인되었습니다. 해당 브랜드는 총 **132개**의 광고를 집행하여 현재 데이터셋 내에서 가장 낮은 광고 활동을 보였습니다.  #### 분석 및 인사이트  *   `heavenskin` 브랜드는 현재 분석된 데이터셋 내에서 가장 적은 수의 광고를 집행한 것으로 확인되었습니다. *   총 **132개**의 광고 집행 수는 다른 브랜드들에 비해 마케팅 활동 규모가 상대적으로 작음을 나타냅니다. *   이는 신규 브랜드이거나, 특정 니치 시장에 집중하거나, 다른 마케팅 전략을 사용하고 있을 가능성을 시사합니다.  > `heavenskin`의 낮은 광고 집행 수는 해당 브랜드의 마케팅 전략 또는 시장 접근 방식에 대한 추가적인 탐색이 필요함을 보여줍니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 메타 광고 라이브러리*  > 💡 **이런 것",
+    "used_sql": "SELECT\n  brand,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  brand IS NOT NULL AND brand != 'unknown'\nGROUP BY\n  brand\nORDER BY\n  ad_count ASC\nLIMIT 1"
+  },
+  {
+    "id": "MT-015",
+    "query": "모든 광고의 활성 기간(일)의 중간값은 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 36.0,
+    "answer_len": 399,
+    "answer_preview": "안녕하세요. 요청하신 **모든 광고의 활성 기간(일) 중간값** 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 결과를 안내해 드릴 수 있습니다. 예를 들어 **기간, 광고 채널, 국가, 캠페인 유형** 등을 함께 알려주시면 도움이 됩니다.  아래와 같이 질문을 다시 작성해 보시는 건 어떨까요?  > 1. **\"2024년 한국 Meta(페이스북/인스타그램) 광고의 활성 기간(일) 중간값은 얼마인가요?\"**  > 2. **\"2024년 하반기 아마존 US 스폰서드 광고 캠페인의 활성 기간 중간값을 알려주세요.\"**  > 3. **\"마다가스카르 센텔라 라인 관련 광고만 필터링했을 때, 활성 기간(일) 중간값은 얼마인가요?\"**  구체적인 조건을 알려주시면 다시 조회해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-016",
+    "query": "지난달 대비 이번 달의 신규 광고 시작 건수 증감률은 어떻게 되나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 48.2,
+    "answer_len": 531,
+    "answer_preview": "안녕하세요. 요청하신 **신규 광고 시작 건수 증감률** 관련 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  > ### 💡 이렇게 질문을 바꿔 보시면 좋습니다 > **구체화할 수 있는 항목:** 기간(월/주 단위), 광고 채널, 국가/마켓, 광고 유형, 브랜드/제품 등  ### 질문 예시  1. **\"2025년 5월 대비 6월, Amazon US에서 새로 시작된 Sponsored Products 광고 건수는 몇 건인가요?\"** 2. **\"2025년 6월 한 달간 Qoo10 Japan에서 신규로 집행된 광고 캠페인 수와 전월 대비 증감률을 알려주세요.\"** 3. **\"이번 달(2025년 6월) 전체 채널 기준, 마다가스카르 센텔라 라인 관련 신규 광고 시작 건수를 지난달과 비교해 주세요.\"**  ---  위 예시처럼 **채널·국가·기간·제품(또는 캠페인 유형)** 을 함께 알려주",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-017",
+    "query": "작년 동기 대비 올해 `is_active` 상태인 광고의 총 개수는 어떻게 변화했나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 42.7,
+    "answer_len": 680,
+    "answer_preview": "안녕하세요. 요청하신 **작년 동기 대비 `is_active` 상태 광고 총 개수 변화** 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ### 💡 구체화하면 좋은 항목 | 항목 | 예시 | |------|------| | **비교 기간** | 2024년 1~6월 vs 2025년 1~6월 등 | | **광고 채널** | Amazon Sponsored Ads, Meta, Google Ads 등 | | **국가/마켓** | 미국, 일본, 한국 등 | | **제품(라인)** | 마다가스카르 센텔라 라인, 히알루 시카 라인 등 |  ---  ### 📝 질문 예시  1. **\"2024년 상반기 대비 2025년 상반기, Amazon US 채널에서 `is_active` 상태인 광고 캠페인 수는 어떻게 변화했나요?\"**  2. **\"2024년 Q2 vs 2025년 Q2 기준, 국가별로 현재 ",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-018",
+    "query": "'KR'과 'US' 두 국가 간의 `ad_type` 'partnership' 광고 건수를 비교해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 32.8,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-019",
+    "query": "`publisher_platform`별로 `is_active` 광고의 평균 지속 기간을 비교해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.7,
+    "answer_len": 513,
+    "answer_preview": "안녕하세요. 요청하신 **`publisher_platform`별 활성(`is_active`) 광고의 평균 지속 기간** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  > ### 💡 질문 예시 1. **기간 지정**  > \"2024년 하반기 기준, `publisher_platform`별로 활성 광고의 평균 지속 기간을 비교해주세요.\"  2. **국가/채널 지정**  > \"미국 시장에서 Facebook과 Instagram 플랫폼별로 현재 활성 광고의 평균 운영 일수를 알려주세요.\"  3. **특정 제품/캠페인 지정**  > \"마다가스카르 센텔라 라인 캠페인 중 `is_active` 상태인 광고의 플랫폼별 평균 지속 기간을 비교해주세요.\"  ---  이처럼 **조회 기간, 국가, 특정 캠페인/제품명, 플랫폼 범위** 등을 함께 알려주시면 보다 정확한 데이터",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-020",
+    "query": "'brand_a'와 'brand_b' 두 브랜드의 `official` 광고 시작 건수를 비교해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.5,
+    "answer_len": 537,
+    "answer_preview": "안녕하세요. 요청하신 **'brand_a'와 'brand_b'의 official 광고 시작 건수 비교** 데이터를 현재 조회하지 못했습니다.  보다 정확한 결과를 위해 **조건을 좀 더 구체적으로** 지정해 주시면 다시 조회를 시도해 보겠습니다. 아래 항목들을 포함해 주시면 도움이 됩니다.  > **구체화하면 좋은 항목:** 조회 기간, 국가/지역, 채널(플랫폼), 제품명 또는 제품 카테고리 등  ---  > ### 💡 질문 예시 1. **\"2024년 1월~6월 기간 동안 brand_a와 brand_b의 official 광고 시작 건수를 비교해 주세요.\"**  2. **\"미국 시장에서 brand_a와 brand_b의 official 채널별(Amazon, TikTok Shop 등) 광고 시작 건수를 비교해 주세요.\"**  3. **\"2024년 brand_a와 brand_b의 official 광고 시작 건수를 월별 추이로 비교해 주세요.\"**  ---  위와 같이 기간이나 국가 등을 명",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-021",
+    "query": "전체 광고 중 `ad_type`이 'official'인 광고의 비중은 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 30.3,
+    "answer_len": 436,
+    "answer_preview": "안녕하세요. 요청하신 **`ad_type`이 'official'인 광고의 비중** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  > **💡 질문 예시** 1. **기간 지정** — \"2024년 1분기 전체 광고 중 `ad_type`이 'official'인 광고의 비중은 얼마인가요?\" 2. **국가/채널 지정** — \"일본 아마존 채널에서 `ad_type`이 'official'인 광고가 차지하는 비중을 알려주세요.\" 3. **제품 지정** — \"마다가스카르 센텔라 라인 제품 광고 중 'official' 타입의 비중은 어떻게 되나요?\"  ---  기간, 국가, 채널, 제품명 등 조건을 추가해 다시 질문해 주시면 데이터를 재조회해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-022",
+    "query": "`country_name`별로 현재 활성 상태인 광고의 비율을 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 24.9,
+    "answer_len": 453,
+    "answer_preview": "안녕하세요. 요청하신 **국가별 활성 광고 비율** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 조건을 구체적으로 지정해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  **질문 예시**  1. **\"2025년 6월 기준, 미국과 일본에서 현재 활성 상태인 광고의 비율을 알려주세요.\"**    → 기간과 특정 국가를 명시  2. **\"Amazon 채널에서 country_name별로 활성(active) 상태인 광고 수와 전체 광고 수 대비 비율을 알려주세요.\"**    → 채널(플랫폼)을 함께 지정  3. **\"마다가스카르 센텔라 라인 제품 광고 중, 국가별로 현재 운영 중인 광고 비율을 보여주세요.\"**    → 특정 제품/라인 조건 추가  ---  기간, 국가, 광고 채널, 제품명 등 조건을 추가해 다시 질문해 주시면 데이터를 재조회하겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-023",
+    "query": "`publisher_platform`별 전체 광고 건수 점유율을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 33.9,
+    "answer_len": 493,
+    "answer_preview": "안녕하세요. 요청하신 **`publisher_platform`별 전체 광고 건수 점유율** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다. 아래 항목들을 포함해 주시면 도움이 됩니다:  > **구체화할 수 있는 항목:** 기간, 국가/마켓, 캠페인 유형, 특정 제품명 등  ---  > ### 💡 질문 예시 1. **\"2024년 하반기 기준, publisher_platform별 광고 건수 점유율을 보여주세요.\"** 2. **\"미국 시장에서 publisher_platform별 광고 집행 건수 비중을 월별로 보여주세요.\"** 3. **\"2025년 1분기, Facebook과 Instagram 등 publisher_platform별 마다가스카르 로즈 라인 광고 건수 점유율을 비교해 주세요.\"**  ---  위와 같이 기간이나 대상 범위를 지정해 주시면 보다 정확한 데이터를 안내해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-024",
+    "query": "특정 월에 시작된 광고 중 `brand`별 구성비는 어떻게 되나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.7,
+    "answer_len": 500,
+    "answer_preview": "안녕하세요. 요청하신 **특정 월에 시작된 광고의 brand별 구성비** 데이터를 조회하지 못했습니다.  조금 더 구체적인 조건을 포함해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 명시해 주시면 좋겠습니다.  - **기간** (예: 2024년 몇 월?) - **국가/마켓** (예: 한국, 미국, 일본 등) - **광고 채널/플랫폼** (예: Meta, Google Ads, 네이버 등) - **구성비 기준** (예: 광고비 기준, 노출 수 기준, 매출 기준 등)  ---  > ### 💡 질문 예시 1. **\"2024년 10월에 시작된 Meta 광고의 brand별 광고비 구성비를 알려줘.\"** 2. **\"2024년 9월 한국 마켓에서 시작된 광고 캠페인의 brand별 매출 구성비는?\"** 3. **\"2024년 11월에 신규 집행된 Google Ads 광고를 brand별로 비교해 줘.\"**  위와 같이 조건을 구체화하여 다시 질문해 주시면 데이터를 조회해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-025",
+    "query": "각 `page_name`이 전체 `is_active` 광고 건수에 기여하는 정도는 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.5,
+    "answer_len": 565,
+    "answer_preview": "안녕하세요. 요청하신 **각 `page_name`별 `is_active` 광고 건수 기여도** 데이터를 현재 조회하지 못했습니다.  ---  > ### 💡 좀 더 구체적으로 질문해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래와 같은 조건을 추가해 주시면 좋습니다: - **기간** (예: 2024년 1분기, 최근 30일 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **광고 채널/플랫폼** (예: Meta, Google Ads, 네이버 등) - **특정 캠페인 또는 제품명**  ---  ### 📝 질문 예시  1. **\"2024년 하반기 기준, Meta 광고에서 각 `page_name`별 활성(`is_active`) 광고 건수 비중은 어떻게 되나요?\"**  2. **\"미국 마켓에서 현재 활성 상태인 광고를 `page_name`별로 분류하면 각각 몇 건인가요?\"**  3. **\"마다가스카르 센텔라 라인 관련 광고 중, `page_name`별 활성 광고 건수와 전",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-026",
+    "query": "'JP' 국가에서 지난 3개월 동안 시작된 광고 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 31.5,
+    "answer_len": 939,
+    "answer_preview": "### 📊 일본(JP) 국가의 지난 3개월간 광고 시작 건수  #### 요약  일본(JP) 국가에서 지난 3개월 동안 새로 시작된 광고 건수는 총 **33,113건**입니다. 이는 해당 기간 동안 일본 시장에서 활발한 광고 활동이 이루어졌음을 보여줍니다.  #### 분석 및 인사이트  *   **활발한 광고 활동:** 지난 3개월간 3만 건이 넘는 광고가 일본 시장에서 새로 시작되었다는 점은 해당 국가에서 마케팅 활동이 매우 활발하게 전개되고 있음을 시사합니다. *   **시장 중요도:** 이 수치는 일본 시장이 전체 광고 전략에서 중요한 비중을 차지하고 있거나, 특정 캠페인 및 프로모션이 집중적으로 진행되었을 가능성을 나타냅니다.  > 일본 시장에서 지난 3개월간 3만 건 이상의 광고가 시작된 것은 해당 시장에 대한 높은 투자와 적극적인 마케팅 노력을 반영하는 중요한 지표입니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 메타 광고 라이브러리*  > 💡 **이런 것",
+    "used_sql": "SELECT\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE country_code = 'JP'\n  AND DATE(start_date_formatted) >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\nLIMIT 200"
+  },
+  {
+    "id": "MT-027",
+    "query": "'skin1004' 브랜드의 광고 중 'Facebook' `publisher_platform`에서 집행된 광고의 총 건수를 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 48.8,
+    "answer_len": 489,
+    "answer_preview": "안녕하세요. 요청하신 **SKIN1004 브랜드의 Facebook 플랫폼 광고 총 건수** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다. 아래 예시를 참고해 주세요.  ---  > ### 💡 질문 예시 1. **기간 지정**  > \"2024년 1월~6월 동안 SKIN1004 브랜드의 Facebook 플랫폼에서 집행된 광고 총 건수를 알려주세요.\"  2. **국가/지역 추가**  > \"미국(US) 대상으로 SKIN1004가 Facebook에서 집행한 광고 건수와 총 지출 금액을 알려주세요.\"  3. **캠페인 목적 또는 제품 지정**  > \"SKIN1004 마다가스카르 센텔라 앰플 관련 Facebook 광고의 2024년 집행 건수와 성과(노출수, 클릭수)를 알려주세요.\"  ---  기간, 국가, 캠페인명, 제품명 등 추가 조건을 알려주시면 보다 정확한 데이터를 찾아드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-028",
+    "query": "특정 `page_name`에서 지난 6개월간 `is_active` 상태였던 광고의 목록을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 43.8,
+    "answer_len": 905,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **특정 `page_name`에서 지난 6개월간 `is_active` 상태였던 광고 목록**에 대해 내부 데이터베이스에서 데이터를 조회하지 못했습니다.  ---  ## 📌 조회 실패 사유 및 제안  요청하신 조건이 다소 넓어 정확한 데이터를 특정하기 어려웠을 수 있습니다. 아래 항목들을 **좀 더 구체적으로 명시**해 주시면 정확한 결과를 안내드릴 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **page_name** | 정확한 페이지명 (예: `SKIN1004_KR_Main`, `Madagascar_Centella` 등) | | **기간** | 정확한 시작일 ~ 종료일 (예: 2024-12-01 ~ 2025-05-31) | | **광고 채널/플랫폼** | Meta Ads, Google Ads, 네이버 광고 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **광고 유형** | 브",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-029",
+    "query": "`country_code`가 'DE'이고 `ad_type`이 'partnership'이며 `is_active` 상태인 광고의 `ad_archive_id`를 모두 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 33.0,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-030",
+    "query": "`start_date_formatted`가 2023년 이후이고 `publisher_platform`에 'Instagram'이 포함된 광고 중 `brand`가 'skin1004'인 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 31.7,
+    "answer_len": 1263,
+    "answer_preview": "### 📊 2024년 이후 Instagram 플랫폼에서 'skin1004' 브랜드 광고 총 건수  #### 요약  ⚠️ 사용자 질문에서는 '2023년 이후'를 요청하셨으나, 실행된 쿼리는 '2024년 01월 01일 이후' 데이터를 기준으로 조회되었습니다. 2024년 01월 01일 이후 Instagram 플랫폼에서 'skin1004' 브랜드 광고의 총 건수는 **134,478건**으로 집계되었습니다.  #### 분석 및 인사이트  *   **활발한 Instagram 마케팅:** 2024년 1월 1일 이후 'skin1004' 브랜드가 Instagram 플랫폼에서 **13만 건 이상**의 광고를 집행하여 매우 활발한 마케팅 활동을 펼치고 있음을 알 수 있습니다. *   **광고 집행 규모:** 이 수치는 특정 기간 동안의 광고 집행 규모를 나타내며, 브랜드가 Instagram 채널을 중요한 마케팅 수단으로 활용하고 있음을 시사합니다. *   **성과 분석의 필요성:** 광고 건수 자체는 ",
+    "used_sql": "SELECT\n  COUNT(*) AS total_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE DATE(start_date_formatted) >= '2024-01-01'\n  AND LOWER(publisher_platform) LIKE '%instagram%'\n  AND brand = 'skin1004'\nLIMIT 1000"
+  },
+  {
+    "id": "MT-031",
+    "query": "`country_name`별 광고 건수를 막대 그래프로 보여주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 62.6,
+    "answer_len": 2547,
+    "answer_preview": "### 📊 국가별 광고 건수 분석 보고서  #### 요약  제공된 데이터(상위 15개 국가)에 따르면, 총 **1,583,401건**의 광고가 집행되었습니다. 이 중 인도네시아가 **418,663건**으로 가장 많은 광고 건수를 기록하며 전체의 약 **26.4%**를 차지했습니다. 말레이시아와 대한민국이 그 뒤를 이어 각각 **288,887건** (18.2%), **207,255건** (13.1%)을 기록하며 상위 3개 국가가 전체 광고 건수의 절반 이상을 차지하는 높은 집중도를 보였습니다.  #### 상세 데이터  제공된 상위 15개 국가의 광고 건수는 다음과 같습니다.  | 국가명 (country_name) | 광고 건수 (ad_count) | 비중 (%) | | :-------------------- | --------------------: | --------: | | Indonesia             | 418,663               | 26.4      | ",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE country_name IS NOT NULL\nGROUP BY\n  country_name\nORDER BY\n  ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-032",
+    "query": "`ad_type`별 `is_active` 광고와 비활성 광고의 비율을 파이 차트로 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.9,
+    "answer_len": 2038,
+    "answer_preview": "### 📊 `ad_type`별 광고 활성/비활성 비율 분석  #### 요약  `ad_type`별 광고 활성/비활성 비율 분석 결과, 전체 광고 중 **99.99%**가 활성 상태이며, 비활성 광고는 **0.01%**로 매우 낮은 비중을 차지하고 있습니다. 특히 `Official_Ad`는 **100.0%**에 가까운 활성률을 보이며, `Partnership_Ad` 또한 **98.7%**의 높은 활성률을 유지하고 있습니다.  #### 상세 데이터  | ad_type        | 활성 광고 수 | 비활성 광고 수 | 활성 비율 (%) | 비활성 비율 (%) | | :------------- | -----------: | -----------: | ------------: | ------------: | | Official_Ad    | 1,014,663    | 41           | 100.0         | 0.0           | | Partnership_Ad | 502",
+    "used_sql": "SELECT\n  ad_type,\n  COUNTIF(is_active = TRUE) AS active_ads,\n  COUNTIF(is_active = FALSE) AS inactive_ads,\n  SAFE_DIVIDE(COUNTIF(is_active = TRUE), COUNT(*)) AS active_ratio,\n  SAFE_DIVIDE(COUNTIF(is_active = FALSE), COUNT(*)) AS inactive_ratio\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE ad_type IS NOT NULL AND ad_type != ''\nGROUP BY ad_type\nORDER BY ad_type\nLIMIT 1000"
+  },
+  {
+    "id": "MT-033",
+    "query": "지난 1년간 `publisher_platform` 'YouTube'에서 시작된 광고 건수 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 39.2,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-034",
+    "query": "전체 광고 중 `brand`별 점유율을 파이 차트로 시각화해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 51.6,
+    "answer_len": 2348,
+    "answer_preview": "### 📊 전체 광고 중 브랜드별 점유율 분석 (상위 15개 브랜드 프리뷰 기준)  #### 요약  제공된 상위 15개 브랜드 프리뷰 데이터에 따르면, **skintific** 브랜드가 **432,033건**의 광고로 가장 높은 점유율인 **30.9%**를 차지했습니다. 상위 3개 브랜드(skintific, glad2glow, medicube)가 제공된 15개 브랜드 광고 수의 **63.4%**를 차지하며 광고 활동이 특정 브랜드에 집중되어 있음을 보여줍니다.  #### 상세 데이터  아래 표는 제공된 상위 15개 브랜드의 광고 수 및 점유율을 보여줍니다. 전체 26개 브랜드 중 상위 15개 브랜드의 프리뷰 데이터이므로, 전체 광고 시장 점유율과는 차이가 있을 수 있습니다.  | 브랜드           | 광고 수 (건) | 점유율 (%) | | :--------------- | -----------: | ---------: | | skintific        | 432,033 ",
+    "used_sql": "SELECT\n  brand,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE brand IS NOT NULL AND brand != 'unknown'\nGROUP BY brand\nORDER BY ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-035",
+    "query": "각 `country_code`별 `official` 광고와 `partnership` 광고의 수를 비교하는 바 차트를 생성해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 50.3,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-036",
+    "query": "'US' 국가를 제외한 모든 국가에서 `is_active` 상태인 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 31.9,
+    "answer_len": 1024,
+    "answer_preview": "### 📊 'US' 제외 국가별 활성 광고 현황  #### 요약  2026년 03월 19일 기준으로 'US' 국가를 제외한 모든 국가에서 현재 활성 상태인 광고의 총 건수는 **1,390,553건**입니다. 이는 US 외 글로벌 시장에서 활발하게 운영 중인 광고 캠페인의 규모를 보여줍니다.  #### 분석 및 인사이트  *   **광범위한 글로벌 마케팅 활동:** 'US'를 제외한 국가에서 139만 건 이상의 활성 광고가 운영되고 있다는 것은 SKIN1004가 다양한 해외 시장에서 광범위한 마케팅 활동을 전개하고 있음을 시사합니다. *   **글로벌 시장의 중요성:** 이 수치는 US 외 국가들이 전체 광고 전략에서 중요한 비중을 차지하고 있으며, 해당 시장에 대한 지속적인 투자가 이루어지고 있음을 나타냅니다. *   **향후 분석의 필요성:** 특정 국가 또는 지역별 활성 광고 건수를 세분화하여 분석하면, 어떤 시장에 마케팅 노력이 집중되고 있는지 파악하고 효율적인 자원 배분 전략",
+    "used_sql": "SELECT\n  COUNT(*) AS total_active_ads\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE is_active = TRUE\n  AND country_code != 'US'\nLIMIT 200"
+  },
+  {
+    "id": "MT-037",
+    "query": "`ad_type`이 'official'이 아닌 광고 중 `end_date_formatted`가 NULL이 아닌 광고의 목록을 보여주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 63.3,
+    "answer_len": 1806,
+    "answer_preview": "## 📊 'official'이 아닌 광고 유형 중 종료일이 명시된 광고 목록 분석  #### 요약  사용자님의 요청에 따라 `ad_type`이 'official'이 아니면서 `end_date_formatted`가 명시된 광고 **200개**가 조회되었습니다. 이 광고들은 모두 'dermorepubliq' 브랜드의 필리핀 광고이며, `ad_type`은 'Official_Ad'로 확인되었습니다. 조회된 광고들은 2025년 6월에 시작하여 2026년 2월에 종료된 광고들로, 오늘 날짜(2026년 3월 19일) 기준으로 **대부분 이미 종료된 광고**입니다.  #### 상세 데이터  조회된 총 200개의 광고 중 상위 5개 광고의 주요 정보는 다음과 같습니다.  | 광고 ID (ad_archive_id) | 브랜드 (brand) | 국가 (country_name) | 광고 유형 (ad_type) | 시작일 (start_date_formatted) | 종료일 (end_date_formatte",
+    "used_sql": "SELECT *\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE ad_type != 'official'\n  AND end_date_formatted IS NOT NULL\n  AND brand IS NOT NULL AND brand != 'unknown'\nLIMIT 200"
+  },
+  {
+    "id": "MT-038",
+    "query": "'skin1004' 브랜드를 제외한 다른 브랜드들의 `start_date_formatted` 평균은 언제인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 33.1,
+    "answer_len": 468,
+    "answer_preview": "### 🧴 CS 데이터베이스 정보 확인 안내  #### 답변  고객님, 문의하신 'skin1004' 브랜드를 제외한 다른 브랜드들의 `start_date_formatted` 평균에 대한 정보는 현재 제공된 **CS 데이터베이스에서 찾을 수 없습니다.**  #### 상세 정보  저희 CS 데이터베이스는 주로 **SKIN1004** 브랜드의 제품 관련 Q&A로 구성되어 있으며, 제품의 출시일(`start_date_formatted`)이나 다른 브랜드에 대한 정보는 포함하고 있지 않습니다. 따라서 요청하신 평균값을 계산할 수 없습니다.  --- *출처: CS 제품 Q&A 데이터베이스*  > 💡 **이런 것도 물어보세요** > - SKIN1004 제품의 특정 성분 유래에 대해 궁금합니다. > - SKIN1004 제품의 사용법이나 권장 라인에 대해 알고 싶습니다. > - SKIN1004 제품 중 특허받은 성분이 있는 제품은 무엇인가요?",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-039",
+    "query": "`publisher_platform`에 'Facebook'이 없는 광고들의 `country_name`별 건수를 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 35.2,
+    "answer_len": 4202,
+    "answer_preview": "### 📊 Facebook 외 플랫폼 광고의 국가별 건수 분석 보고서  #### 요약  `publisher_platform`에 'Facebook'이 포함되지 않은 광고는 총 **206,324건**으로 집계되었습니다. 이 중 **인도네시아**가 **151,131건**으로 전체의 약 73.2%를 차지하며 압도적으로 높은 비중을 보였습니다. 다음으로는 대한민국(19,717건, 9.6%), 일본(17,651건, 8.6%) 순으로 나타나, 상위 3개 국가가 전체의 91.4%를 차지하는 높은 집중도를 보였습니다.  #### 상세 데이터  | 국가명              | 광고 건수 | | :------------------ | --------: | | Indonesia           | 151,131   | | South Korea         | 19,717    | | Japan               | 17,651    | | Malaysia            | 7,752",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE NOT LOWER(publisher_platform) LIKE '%facebook%'\nGROUP BY\n  country_name\nORDER BY\n  ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-040",
+    "query": "`country_code`가 'KR' 또는 'JP'가 아닌 `ad_archive_id`의 총 개수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.4,
+    "answer_len": 1068,
+    "answer_preview": "### 📊 KR 및 JP를 제외한 국가의 ad_archive_id 총 개수  #### 요약  `country_code`가 'KR' 또는 'JP'가 아닌 `ad_archive_id`의 총 개수는 **1,252,657개**입니다. 이는 한국과 일본을 제외한 다른 모든 국가에서 집계된 광고 아카이브 ID의 총합을 나타냅니다.  #### 분석 및 인사이트  *   **글로벌 광고 활동 규모**: 한국과 일본을 제외한 글로벌 시장에서 **125만 건 이상**의 광고 아카이브 ID가 집계되어, 이들 시장에서의 활발한 광고 캠페인 또는 소재 운영을 시사합니다. *   **시장 비중 분석의 기초**: 이 수치는 전체 `ad_archive_id` 중 한국 및 일본 외 국가가 차지하는 비중을 파악하는 데 중요한 기초 자료로 활용될 수 있습니다. *   **전략적 활용**: 특정 국가에 대한 광고 활동의 집중도를 분석하거나, 글로벌 시장 확장을 위한 전략 수립 시 참고하여 마케팅 자원 배분 의사결정에 ",
+    "used_sql": "SELECT\n  COUNT(ad_archive_id) AS total_ad_archive_ids\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  country_code NOT IN ('KR', 'JP')\nLIMIT 200"
+  },
+  {
+    "id": "MT-041",
+    "query": "2024년에 시작된 `official` 광고 데이터가 있나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 33.5,
+    "answer_len": 1028,
+    "answer_preview": "### 📊 2024년 공식(official) 광고 데이터 현황  #### 요약  2024년에 시작된 `official` 타입의 광고 데이터는 **존재하지 않습니다**. SQL 쿼리 결과, 해당 조건에 부합하는 광고는 **0건**으로 확인되었습니다.  #### 분석 및 인사이트  *   **데이터 부재 확인**: 2024년도에 `ad_type`이 'official'로 분류된 광고는 집행되지 않았거나, 현재 조회된 데이터셋에는 해당 조건의 광고가 기록되어 있지 않습니다. *   **전략적 시사점**: 이는 2024년 광고 캠페인 전략에서 'official' 타입의 광고 집행이 없었음을 의미할 수 있습니다. *   **데이터 검토 필요성**: 만약 'official' 광고가 2024년에 집행되었다고 예상된다면, `ad_type` 분류 기준 또는 `start_date_formatted` 컬럼의 데이터 정합성에 대한 추가적인 검토가 필요할 수 있습니다.  --- *조회 기준: 2026-03-",
+    "used_sql": "SELECT\n  COUNT(*) AS official_ads_count_2024\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE ad_type = 'official'\n  AND EXTRACT(YEAR FROM DATE(start_date_formatted)) = 2024\n  AND brand IS NOT NULL AND brand != 'unknown'\nLIMIT 1000"
+  },
+  {
+    "id": "MT-042",
+    "query": "`publisher_platform`에 'TikTok'이 포함된 광고 데이터가 현재 존재하나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 35.3,
+    "answer_len": 883,
+    "answer_preview": "### 📊 'TikTok' 광고 데이터 현황  #### 요약  `publisher_platform`에 'TikTok'이 포함된 광고 데이터는 현재 **0건**으로 확인되었습니다. 이는 조회된 데이터 내에서는 TikTok 관련 광고 활동이 집계되지 않았음을 의미합니다.  #### 분석 및 인사이트  *   현재 `ad_data.meta data_test` 테이블에서 `publisher_platform` 필드에 'TikTok'이라는 문자열(대소문자 구분 없음)을 포함하는 광고 데이터는 존재하지 않습니다. *   이는 해당 데이터 소스에서 TikTok 플랫폼을 통한 광고 집행 내역이 없거나, 데이터가 다른 방식으로 기록되어 있을 가능성을 시사합니다.  > 현재 조회된 데이터에 따르면, TikTok 플랫폼과 관련된 광고 데이터는 **전혀 존재하지 않습니다.**  --- *조회 기준: 2026-03-19 | 데이터소스: 메타 광고 라이브러리*  > 💡 **이런 것도 물어보세요** > - 다른",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE LOWER(publisher_platform) LIKE '%tiktok%'\nLIMIT 1000"
+  },
+  {
+    "id": "MT-043",
+    "query": "특정 `ad_archive_id` '123456789'에 대한 상세 정보를 조회할 수 있나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 28.6,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-044",
+    "query": "`snapshot` JSON 데이터에 'display_format' 필드가 없는 광고가 있나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.7,
+    "answer_len": 1263,
+    "answer_preview": "### 📊 `snapshot` JSON 데이터 내 'display_format' 필드 누락 광고 현황  #### 요약  `snapshot` JSON 데이터 분석 결과, 'display_format' 필드가 누락된 광고는 총 **376,798개**로 확인되었습니다. 이는 전체 광고 데이터 중 상당수의 광고가 표시 형식에 대한 특정 메타데이터 없이 운영되고 있음을 나타냅니다.  #### 분석 및 인사이트  *   **대규모 필드 누락**: 총 **376,798개**의 광고에서 'display_format' 필드가 누락되어 있습니다. 이는 광고 데이터 수집 또는 관리 과정에서 일관성 문제가 있거나, 특정 유형의 광고는 해당 필드가 필요 없는 경우일 수 있습니다. *   **데이터 일관성 및 활용성 저하**: 'display_format' 필드는 광고가 사용자에게 어떻게 보여지는지에 대한 중요한 정보를 담고 있을 가능성이 높습니다. 이 필드의 누락은 광고 성과 분석 시 특정 표시 형식에 따",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE JSON_VALUE(snapshot, '$.display_format') IS NULL\nLIMIT 1000"
+  },
+  {
+    "id": "MT-045",
+    "query": "`end_date_formatted`가 현재보다 미래인 `is_active` 광고가 있나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.9,
+    "answer_len": 1098,
+    "answer_preview": "### 📊 미래 종료 예정 활성 광고 현황  #### 요약  현재 날짜(2026년 03월 19일)보다 미래에 종료될 예정인 활성 광고는 **총 0개**입니다. 이는 현재 운영 중인 모든 광고가 오늘 날짜 이전에 종료되었거나 오늘 중으로 종료될 예정임을 의미합니다.  #### 분석 및 인사이트  *   **미래 종료 예정 활성 광고 없음**: 현재 시점(2026년 03월 19일)을 기준으로, `is_active` 상태이며 `end_date_formatted`가 미래인 광고는 **전혀 존재하지 않습니다.** *   **광고 운영 관리 시사점**: 이 결과는 모든 활성 광고 캠페인이 현재 날짜 이전에 종료되었거나, 오늘 날짜에 맞춰 종료되도록 설정 및 관리되고 있음을 시사합니다. 미래에 종료될 활성 광고가 없다는 것은 현재 시점 이후로 예정된 장기 활성 캠페인이 없거나, 광고 종료일이 도래하기 전에 `is_active` 상태가 `FALSE`로 변경되었을 가능성을 나타냅니다.  > 현재 운",
+    "used_sql": "SELECT\n  COUNT(*) AS future_active_ads_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE is_active = TRUE\n  AND end_date_formatted > CURRENT_TIMESTAMP()\nLIMIT 1000"
+  },
+  {
+    "id": "MT-046",
+    "query": "`end_date_formatted`와 `start_date_formatted`가 동일하여 활성 기간이 0일인 광고의 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.0,
+    "answer_len": 1085,
+    "answer_preview": "### 📊 활성 기간 0일 광고 건수 분석  #### 요약  `start_date_formatted`와 `end_date_formatted`가 동일하여 활성 기간이 0일인 광고는 총 **122,362건**으로 확인되었습니다. 이는 광고가 시작된 당일에 종료되었음을 의미합니다.  #### 분석 및 인사이트  *   **상당한 규모의 0일 활성 광고:** 전체 광고 중 활성 기간이 0일인 광고가 12만 건 이상 존재한다는 점은 주목할 만합니다. 이는 데이터 입력 오류, 테스트 광고, 또는 특정 전략에 따라 즉시 종료된 광고 등 다양한 원인을 가질 수 있습니다. *   **데이터 품질 및 운영 효율성 검토 필요:** 활성 기간이 0일인 광고가 많다면, 광고 데이터의 정확성이나 광고 운영 프로세스에 대한 검토가 필요할 수 있습니다. 이러한 광고들이 실제 성과에 어떤 영향을 미치는지 파악하는 것이 중요합니다. *   **추가 분석을 통한 원인 파악:** 이 광고들이 특정 캠페인, 광고 계정,",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE start_date_formatted = end_date_formatted\nLIMIT 10000"
+  },
+  {
+    "id": "MT-047",
+    "query": "가장 최근에 수집된 `collect_date`의 광고 1건에 대한 모든 정보를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 48.1,
+    "answer_len": 1735,
+    "answer_preview": "### 📊 가장 최근 수집된 광고 상세 정보  #### 요약  2026년 03월 19일 가장 최근에 수집된 광고 데이터는 필리핀에서 'dermorepubliq' 브랜드가 집행한 공식 광고입니다. 이 광고는 **2025년 10월 30일부터 2026년 03월 18일까지** 페이스북, 인스타그램 등 주요 플랫폼에서 운영되었으며, 총액은 **97.0**, 관련 광고 개수는 **2건**으로 확인됩니다.  #### 상세 데이터  가장 최근에 수집된 광고 1건에 대한 상세 정보는 다음과 같습니다.  | 항목 | 내용 | |:---|:---| | **수집일** | 2026-03-19 | | **국가 (코드)** | 필리핀 (PH) | | **브랜드** | dermorepubliq | | **페이지 이름** | Dermorepubliq | | **광고 유형** | Official_Ad | | **광고 아카이브 ID** | 1865974774299527 | | **활성 상태** | True | | *",
+    "used_sql": "SELECT\n  *\nFROM `skin1004-319714.ad_data.meta data_test`\nORDER BY\n  collect_date DESC\nLIMIT 1"
+  },
+  {
+    "id": "MT-048",
+    "query": "가장 오래전에 시작된 `official` 광고의 `ad_archive_id`는 무엇인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.0,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-049",
+    "query": "`end_date_formatted`가 NULL인 광고는 총 몇 건인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.4,
+    "answer_len": 932,
+    "answer_preview": "### 📊 종료일 미지정 광고 현황  #### 요약  현재 종료일(`end_date_formatted`)이 지정되지 않은 광고는 총 **6,441건**입니다. 이는 광고 캠페인 관리 시 지속적인 모니터링이 필요하거나, 상시 운영되는 캠페인일 가능성이 있는 광고들입니다.  #### 분석 및 인사이트  *   종료일이 지정되지 않은 광고는 **6,441건**으로, 이는 메타 광고 라이브러리 내에서 종료 시점이 명확히 설정되지 않은 광고 캠페인 수를 나타냅니다. *   이러한 광고들은 주로 상시 운영되는 '에버그린(evergreen)' 캠페인이거나, 수동으로 종료 시점을 관리해야 하는 광고일 가능성이 높습니다. 따라서 예산 소진 및 광고 효율성 관점에서 지속적인 모니터링이 중요합니다. *   종료일 미지정 광고의 규모를 파악함으로써, 전체 광고 운영 전략에서 상시 캠페인이 차지하는 비중과 그 중요성을 가늠할 수 있습니다.  > 종료일 미지정 광고는 장기적인 브랜드 노출 및 상시 캠페인 운",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  end_date_formatted IS NULL\nLIMIT 1000"
+  },
+  {
+    "id": "MT-050",
+    "query": "`page_name`이 빈 문자열인 광고가 있나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 23.3,
+    "answer_len": 991,
+    "answer_preview": "### 📊 `page_name`이 빈 문자열인 광고 존재 여부 분석  #### 요약  `page_name`이 빈 문자열(`''`)인 광고는 **총 0개**로 확인되었습니다. 이는 현재 데이터에서 `page_name` 필드가 빈 문자열로 기록된 광고가 없음을 의미합니다.  #### 분석 및 인사이트  *   **데이터 품질 양호**: `page_name` 필드에 빈 문자열 값이 없다는 것은 해당 필드의 데이터 입력 및 관리 측면에서 특정 유형의 데이터 누락이 발생하지 않았음을 시사합니다. 이는 광고 데이터의 기본적인 품질이 양호함을 나타냅니다. *   **추가 검증 필요**: 빈 문자열은 아니지만 `NULL` 값이나 \"미지정\", \"N/A\"와 같은 의미 없는 플레이스홀더 값이 존재하는지 추가로 확인하여 `page_name` 필드의 완전성을 더욱 높일 수 있습니다. *   **데이터 활용성**: `page_name` 필드가 비어있지 않으므로, 이 데이터를 활용하여 광고 성과 분석, 캠페인",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE page_name = ''\nLIMIT 200"
+  },
+  {
+    "id": "MT-051",
+    "query": "`country_name`별 `ad_archive_id`의 고유 개수를 집계해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.6,
+    "answer_len": 3287,
+    "answer_preview": "### 📊 국가별 고유 광고 ID 집계 현황  #### 요약  사용자 질문에 따라 `country_name`별 `ad_archive_id`의 고유 개수를 집계한 결과, 총 16개 국가 중 상위 15개 국가의 현황을 분석했습니다. **인도네시아**가 **46,854개**로 가장 많은 고유 광고 ID를 보유하며 압도적인 1위를 차지했습니다. 그 뒤를 **말레이시아(30,430개)**와 **대한민국(23,657개)**이 이으며, 동남아시아 시장과 주요 아시아 시장에서 활발한 광고 활동이 관찰됩니다.  #### 상세 데이터  다음은 국가별 고유 광고 ID 개수 상위 15개 현황입니다.  | 국가명 | 고유 광고 ID 개수 | |:---|---:| | Indonesia | 46854 | | Malaysia | 30430 | | South Korea | 23657 | | Thailand | 19937 | | United States | 13035 | | Singapore | 7134 | | J",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(DISTINCT ad_archive_id) AS unique_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nGROUP BY country_name\nORDER BY unique_ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-052",
+    "query": "`brand`별 `is_active` 상태인 광고의 총 건수를 집계해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 40.3,
+    "answer_len": 2419,
+    "answer_preview": "### 📊 브랜드별 활성 광고 현황 분석  #### 요약  총 26개 브랜드 중 상위 15개 브랜드의 활성 광고 수는 **1,396,197건**으로 집계되었습니다. 이 중 **skintific** 브랜드가 **431,930건**으로 가장 많은 활성 광고를 운영하며, 상위 15개 브랜드 활성 광고의 약 **30.9%**를 차지합니다. 상위 3개 브랜드(skintific, glad2glow, medicube)가 상위 15개 브랜드 활성 광고의 **63.4%** 이상을 차지하며 높은 집중도를 보였습니다.  #### 상세 데이터  `brand`별 `is_active` 상태인 광고의 총 건수는 다음과 같습니다 (상위 15개 브랜드):  | brand            | total_active_ads | | :--------------- | ---------------: | | skintific        |          431,930 | | glad2glow        |     ",
+    "used_sql": "SELECT\n  brand,\n  COUNT(*) AS total_active_ads\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE is_active = TRUE\n  AND brand IS NOT NULL\n  AND brand != 'unknown'\nGROUP BY\n  brand\nORDER BY\n  total_active_ads DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-053",
+    "query": "`ad_type`별 `start_date_formatted`의 평균 날짜를 집계해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 35.8,
+    "answer_len": 657,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **`ad_type`별 `start_date_formatted`의 평균 날짜 집계** 데이터를 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조회 조건을 좀 더 명확하게 지정해 주시면 원하시는 결과를 얻으실 가능성이 높아집니다. 아래 항목들을 포함해 보세요.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 2024년 6월 | | **국가/마켓** | 한국, 미국, 일본 등 | | **채널/플랫폼** | 네이버, 쿠팡, 아마존, Meta Ads 등 | | **특정 ad_type** | SA, DA, 브랜드 광고 등 |  ---  ## 📝 질문 예시  1. **\"2024년 상반기 기준, Meta Ads의 ad_type별 캠페인 평균 시작일을 알려주세요.\"**  2. **\"한국 채널에서 SA와 DA 광고 유형별로 start_date_formatted의 ",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-054",
+    "query": "`publisher_platform`별로 `end_date_formatted`가 만료되지 않은 광고의 건수를 집계해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 45.2,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-055",
+    "query": "`is_active` 여부에 따라 `ad_archive_id`의 총 개수를 집계해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 39.7,
+    "answer_len": 1485,
+    "answer_preview": "### 📊 광고 아카이브 ID 활성 상태별 총 개수 분석  #### 요약  현재 집계된 광고 아카이브 ID는 총 **1,517,335개**이며, 이 중 **1,517,224개(99.99%)**가 활성 상태이고 **111개(0.01%)**는 비활성 상태인 것으로 확인되었습니다. 이는 대부분의 광고가 현재 활발하게 운영 중임을 시사합니다.  #### 상세 데이터 | 광고 상태 | 총 광고 아카이브 ID 수 | 비중 (%) | | :-------- | --------------------: | -------: | | Active    | 1,517,224            | 99.99%   | | Inactive  | 111                  | 0.01%    | | **합계**  | **1,517,335**        | **100.00%** |  #### 분석 및 인사이트  *   **압도적인 활성 광고 비중**: 전체 광고 아카이브 ID 중 활성 상태의 광고가 약",
+    "used_sql": "SELECT\n  CASE WHEN is_active = TRUE THEN 'Active' ELSE 'Inactive' END AS ad_status,\n  COUNT(ad_archive_id) AS total_ad_archive_ids\nFROM `skin1004-319714.ad_data.meta data_test`\nGROUP BY ad_status\nORDER BY ad_status\nLIMIT 1000"
+  },
+  {
+    "id": "MT-056",
+    "query": "`collect_date` 기준으로 최근 3개월 동안 수집된 광고의 `country_name`별 건수를 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 45.9,
+    "answer_len": 3401,
+    "answer_preview": "### 📊 최근 3개월간 국가별 광고 수집 현황  #### 요약  `collect_date` 기준으로 최근 3개월(2025년 12월 19일 ~ 2026년 03월 19일) 동안 수집된 광고 데이터를 분석한 결과, **인도네시아**가 **333,748**건으로 가장 많은 광고가 수집되었습니다. 이어서 **말레이시아(231,653건)**, **대한민국(170,115건)** 순으로 나타났으며, 상위 3개국이 프리뷰된 전체 광고 수집 건수의 약 60%를 차지하며 특정 국가에 광고 수집이 집중되는 경향을 보였습니다.  #### 상세 데이터  최근 3개월간(`2025-12-19` ~ `2026-03-19`) `country_name`별 광고 수집 건수는 다음과 같습니다 (상위 15개국).  | 국가명 | 광고 건수 | |:---|---:| | Indonesia | 333,748 | | Malaysia | 231,653 | | South Korea | 170,115 | | Thailand | 11",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  collect_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\nGROUP BY\n  country_name\nORDER BY\n  ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-057",
+    "query": "2023년 하반기(7월~12월)에 `start_date_formatted`된 광고의 `brand`별 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 34.5,
+    "answer_len": 1344,
+    "answer_preview": "📊 2023년 하반기 브랜드별 광고 총 건수 분석  #### 요약  2023년 하반기(7월~12월) 동안 `start_date_formatted`된 광고는 총 **2,622건**입니다. 이 중 **medicube** 브랜드가 **2,556건**으로 전체의 약 97.5%를 차지하며 압도적인 비중으로 1위를 기록했습니다.  #### 상세 데이터  | 브랜드   | 총 광고 건수 | | :------- | -----------: | | medicube | 2,556        | | cosrx    | 66           | | **합계** | **2,622**    |  #### 분석 및 인사이트  *   **medicube 브랜드의 압도적 비중**: 2023년 하반기 광고 건수에서 medicube 브랜드가 전체의 약 97.5%를 차지하며, 다른 브랜드 대비 매우 높은 광고 활동을 보였습니다. *   **광고 집행 브랜드의 집중도**: 분석된 기간 동안 광고를 집행한 브랜드는 me",
+    "used_sql": "SELECT\n  brand,\n  COUNT(*) AS total_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE DATE(start_date_formatted) >= '2023-07-01'\n  AND DATE(start_date_formatted) <= '2023-12-31'\n  AND brand IS NOT NULL\n  AND brand != 'unknown'\nGROUP BY\n  brand\nORDER BY\n  total_ad_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "MT-058",
+    "query": "2022년 1분기부터 3분기까지(`start_date_formatted` 기준) `official` 광고의 총 건수는 몇 건인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 28.1,
+    "answer_len": 1059,
+    "answer_preview": "### 📊 2022년 1분기-3분기 공식 광고(official) 총 건수 분석  #### 요약  2022년 1분기부터 3분기까지(`start_date_formatted` 기준) `official` 광고의 총 건수는 **0건**으로 확인되었습니다. 이는 해당 기간 동안 `official` 유형의 광고 활동이 없었음을 의미합니다.  #### 분석 및 인사이트  *   2022년 1월 1일부터 9월 30일까지의 기간 동안 `ad_type`이 'official'로 분류된 광고는 집계되지 않았습니다. *   이는 해당 기간에 `official` 광고가 실제로 집행되지 않았거나, 데이터에 'official'로 분류된 광고가 존재하지 않음을 시사합니다. *   광고 집행 여부 확인을 위해 다른 `ad_type`으로 집행된 광고가 있는지 확인하거나, `ad_type` 필드의 다른 값들을 탐색해 볼 필요가 있습니다.  > 2022년 1분기부터 3분기까지 `official` 광고 유형에 대한 데이터가",
+    "used_sql": "SELECT\n  COUNT(*) AS total_official_ads\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE DATE(start_date_formatted) BETWEEN '2022-01-01' AND '2022-09-30'\n  AND ad_type = 'official'\nLIMIT 1000"
+  },
+  {
+    "id": "MT-059",
+    "query": "2023년 40주차에 `end_date_formatted`가 종료된 광고들의 목록을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.9,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-060",
+    "query": "2023년 5월 1일부터 5월 31일까지 `collect_date`된 광고 중 `ad_type`이 'partnership'인 광고의 `ad_archive_id`를 모두 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 51.0,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-061",
+    "query": "지난 분기 대비 이번 분기 `official` 광고 시작 건수의 성장률은 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.2,
+    "answer_len": 1487,
+    "answer_preview": "📊 `official` 광고 시작 건수 분기별 성장률 분석  #### 요약  지난 분기(2025년 4분기) 대비 이번 분기(2026년 1분기) `official` 광고 시작 건수의 성장률은 **계산할 수 없습니다.** 시스템은 `null` 값을 반환했으며, 이는 지난 분기 또는 이번 분기 중 적어도 한 기간에 `official` 광고 시작 건수가 **0건**이었음을 의미합니다.  #### 분석 및 인사이트  *   **성장률 계산 불가**: `official` 광고 시작 건수의 분기별 성장률이 `null`로 반환된 것은, 성장률 계산에 필요한 지난 분기(2025년 10월 1일 ~ 2025년 12월 31일) 또는 이번 분기(2026년 1월 1일 ~ 2026년 3월 31일) 중 최소 한 기간에 `official` 광고 시작 건수가 **0건**이었기 때문입니다. *   **원인 파악의 중요성**: 이 결과는 `official` 광고 유형의 집행이 해당 기간 동안 없었거나, 데이터 집계에 ",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    (SELECT COUNT(*) FROM `skin1004-319714.ad_data.meta data_test` WHERE DATE(start_date_formatted) BETWEEN '2026-01-01' AND '2026-03-31' AND ad_type = 'official'),\n    (SELECT COUNT(*) FROM `skin1004-319714.ad_data.meta data_test` WHERE DATE(start_date_formatted) BETWEEN '2025-10-01' AND '2025-12-31' AND ad_type = 'official')\n  ) - 1 AS growth_rate_official_ad_starts\nLIMIT 1000"
+  },
+  {
+    "id": "MT-062",
+    "query": "전년 대비 `is_active` 상태가 해제된 광고의 감소율을 계산해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 40.0,
+    "answer_len": 775,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **전년 대비 `is_active` 상태 해제 광고의 감소율** 데이터를 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 주시면 정확한 데이터를 찾는 데 도움이 됩니다 현재 질문에 **기간, 광고 채널, 국가/마켓, 광고 유형** 등의 조건이 명시되어 있지 않아 정확한 범위를 특정하기 어렵습니다. 아래 항목들을 포함하여 다시 질문해 주시면 감사하겠습니다.  > - **비교 기간** — 예: 2023년 vs 2024년, 특정 분기 등  > - **광고 채널/플랫폼** — 예: Amazon Sponsored Ads, Meta, Google Ads 등  > - **국가/마켓** — 예: 미국, 일본, 한국 등  > - **제품 또는 캠페인 범위** — 예: 마다가스카르 센텔라 라인, 특정 캠페인명 등  ---  ## 📝 질문 예시  1. **\"2023년 대비 2024년, Amazon US 채널에서 `is_active`가 해제된",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-063",
+    "query": "월별 `publisher_platform` 'Instagram' 광고 건수의 증감 추이를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 46.7,
+    "answer_len": 2849,
+    "answer_preview": "### 📊 월별 Instagram 광고 건수 증감 추이 분석  #### 요약  Instagram 광고 건수는 2022년 9월부터 2026년 3월까지 전반적으로 **급격한 증가 추세**를 보였습니다. 특히 **2025년 하반기부터 폭발적인 성장**을 기록하여, **2025년 12월에 404,299건으로 최고점**을 달성했습니다. 2026년 3월 데이터는 현재 **109,084건**으로, 월 중순(2026년 03월 19일 기준)까지의 부분적인 수치입니다.  #### 상세 데이터  | 월      | 광고 건수 | | :------ | --------: | | 2022-09 | 328       | | 2022-10 | 109       | | 2022-12 | 331       | | 2023-01 | 777       | | 2023-02 | 781       | | 2023-03 | 325       | | 2023-04 | 110       | | 2023-06 | 2,455   ",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', start_date_formatted) AS month,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE LOWER(publisher_platform) LIKE '%instagram%'\n  AND start_date_formatted IS NOT NULL\nGROUP BY month\nORDER BY month\nLIMIT 200"
+  },
+  {
+    "id": "MT-064",
+    "query": "`country_name` 'KR'의 월별 신규 광고 시작 건수의 최대 변동폭은 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 43.1,
+    "answer_len": 512,
+    "answer_preview": "안녕하세요. 요청하신 **KR(한국) 지역의 월별 신규 광고 시작 건수 및 최대 변동폭** 데이터를 조회하지 못했습니다.  조금 더 구체적인 조건을 추가해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 참고하여 질문을 다시 작성해 보시겠어요?  > **구체화하면 좋은 항목:** 조회 기간, 광고 채널(플랫폼), 제품명/라인, 광고 유형 등  ---  > ### 💡 질문 예시 1. **\"2024년 1월~12월 기준, KR에서 Meta(페이스북/인스타그램) 채널의 월별 신규 광고 시작 건수와 최대 변동폭은 얼마인가요?\"**  2. **\"2023년 대비 2024년, KR 마켓에서 마다가스카르 센텔라 라인 관련 신규 광고 캠페인 시작 건수의 월별 추이를 알 수 있을까요?\"**  3. **\"최근 6개월간 KR 지역의 광고 플랫폼별(Google Ads, Meta, 네이버 등) 신규 광고 시작 건수 변동 현황을 보여주세요.\"**  ---  기간이나 채널 등 조건을 알려주시면 다시",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-065",
+    "query": "특정 `page_name`의 `is_active` 상태 변화가 감지된 광고 목록을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 44.9,
+    "answer_len": 833,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **특정 `page_name`의 `is_active` 상태 변화가 감지된 광고 목록**에 대해 데이터를 조회하지 못했습니다.  ---  ## 📌 조회 실패 사유  질문에 필요한 조건이 충분히 특정되지 않아 데이터베이스에서 결과를 가져오지 못한 것으로 보입니다. 아래 정보를 추가로 명시해 주시면 보다 정확한 조회가 가능합니다.  > - **`page_name`** — 조회 대상 페이지명 (예: 특정 브랜드 페이지, 캠페인 페이지 등)  > - **기간** — 상태 변화를 확인할 날짜 범위  > - **광고 채널/플랫폼** — Meta, Google Ads, Amazon Ads 등  > - **국가/마켓** — 한국, 미국, 일본 등  > - **상태 변화 방향** — `active → inactive`, `inactive → active`, 또는 양방향 모두  ---  > ## 💡 이렇게 질문을 바꿔보시면 좋습니다 1. **\"2025년",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-066",
+    "query": "`ad_type`별 광고의 평균 활성 기간(일)은 얼마인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 39.9,
+    "answer_len": 2698,
+    "answer_preview": "### 📊 ad_type별 광고의 평균 활성 기간 분석  #### 요약  `ad_type`별 광고의 평균 활성 기간을 분석한 결과, **Official_Ad**가 **약 40.2일**로 **Partnership_Ad**의 **약 22.6일**보다 약 1.78배 더 긴 기간 동안 활성화되는 것으로 나타났습니다.  #### 상세 데이터 | ad_type        | 평균 활성 기간 (일) | | :------------- | ------------------: | | Official_Ad    | 40.2                | | Partnership_Ad | 22.6                |  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"Official_Ad\", \"Partnership_Ad\"], \"datasets\": [{\"label\": \"평균 활성 기간 (일)\", \"data\": [40.2286203",
+    "used_sql": "SELECT\n  ad_type,\n  AVG(TIMESTAMP_DIFF(end_date_formatted, start_date_formatted, DAY)) AS average_active_days\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  start_date_formatted IS NOT NULL\n  AND end_date_formatted IS NOT NULL\n  AND ad_type IS NOT NULL\n  AND ad_type != ''\nGROUP BY\n  ad_type\nORDER BY\n  average_active_days DESC\nLIMIT 1000"
+  },
+  {
+    "id": "MT-067",
+    "query": "`ad_archive_id`별로 광고가 집행된 `publisher_platform`의 평균 개수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 40.6,
+    "answer_len": 524,
+    "answer_preview": "안녕하세요. 요청하신 **`ad_archive_id`별 광고 집행 `publisher_platform` 평균 개수** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 얻기 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  > ### 💡 질문 예시 1. **기간 지정** \"2024년 1월~6월 동안 `ad_archive_id`별로 광고가 집행된 `publisher_platform`의 평균 개수는 몇 개인가요?\"  2. **국가/지역 지정** \"한국 대상 광고 중 `ad_archive_id`별 `publisher_platform` 평균 개수를 알려주세요.\"  3. **특정 플랫폼 필터링** \"Facebook과 Instagram에 한정하여, `ad_archive_id`별로 집행된 `publisher_platform` 수의 평균을 알고 싶습니다.\"  ---  기간, 국가, 플랫폼, 캠페인명 등 **추가 조건*",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-068",
+    "query": "주별 신규 광고 시작 건수의 4주 이동평균을 계산해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 51.8,
+    "answer_len": 3476,
+    "answer_preview": "### 📊 주별 신규 광고 시작 건수 4주 이동평균 분석  #### 요약  제공된 데이터(총 170행 중 상위 15행 프리뷰)를 바탕으로 2022년 9월 25일부터 2023년 6월 18일까지의 주별 신규 광고 시작 건수와 4주 이동평균을 분석했습니다. 이 기간 동안 신규 광고 시작 건수는 주차별로 큰 변동성을 보였으며, 특히 **2023년 6월 4일 주차에 1,676건으로 가장 높은 신규 광고 시작**이 기록되었습니다. 이에 따라 **2023년 6월 18일 주차의 4주 이동평균은 557.75로 최고치**를 기록하며 최근 광고 활동이 활발했음을 보여줍니다.  #### 상세 데이터  아래 표는 주별 신규 광고 시작 건수와 4주 이동평균의 상위 15개 프리뷰 데이터입니다. 전체 데이터는 170행입니다.  | 주 시작일 | 연도-주차 | 신규 광고 시작 건수 | 4주 이동평균 | | :--------- | :-------- | ------------------: | -----------: ",
+    "used_sql": "SELECT\n  week_start_date,\n  week_of_year,\n  new_ad_starts_count,\n  AVG(new_ad_starts_count) OVER (ORDER BY week_start_date ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS four_week_moving_average\nFROM (\n  SELECT\n    DATE_TRUNC(DATE(start_date_formatted), WEEK) AS week_start_date,\n    FORMAT_DATE('%Y-%W', DATE(start_date_formatted)) AS week_of_year,\n    COUNT(ad_archive_id) AS new_ad_starts_count\n  FROM `skin1004-319714.ad_data.meta data_test`\n  WHERE DATE(start_date_formatted) >= '2019-01-01'\n    AND start_date_formatted IS NOT NULL\n    AND brand IS NOT NULL AND brand != 'unknown'\n  GROUP BY week_start_date, week_of_year\n)\nORDER BY week_start_date\nLIMIT 1000"
+  },
+  {
+    "id": "MT-069",
+    "query": "각 `brand`별로, `publisher_platform` 개수를 가중치로 하여 `is_active` 광고의 평균 `collect_date`를 계산해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 43.6,
+    "answer_len": 782,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **브랜드별 `publisher_platform` 개수를 가중치로 한 활성 광고(`is_active`)의 평균 `collect_date`** 데이터를 조회하지 못했습니다.  ---  > ## 💡 질문을 더 구체적으로 수정해 보시겠어요? 요청하신 질문에 아래와 같은 조건을 추가해 주시면 보다 정확한 데이터를 찾는 데 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 2024년 6월 | | **국가/지역** | 한국, 미국, 일본 등 | | **광고 플랫폼** | Facebook, Instagram, TikTok 등 | | **브랜드 범위** | SKIN1004 단일 브랜드 또는 경쟁 브랜드 포함 여부 | | **활성 상태 기준** | 특정 시점 기준 활성 여부 |  ---  ## 📝 이렇게 질문해 보시면 어떨까요?  1. **\"2024년 상반기 기준, SKIN1",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-070",
+    "query": "`ad_archive_id`별로 `collect_date`의 평균 수집 주기는 며칠인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 40.5,
+    "answer_len": 3114,
+    "answer_preview": "### 📊 `ad_archive_id`별 평균 수집 주기 분석 보고서  #### 요약  총 200개의 데이터 중 **199개**의 고유한 `ad_archive_id`에 대한 평균 수집 주기를 분석했습니다 (1개는 `null` 값). 대부분의 `ad_archive_id`는 **약 1.07일에서 1.17일 사이**의 평균 수집 주기를 보여, 데이터가 거의 매일 수집되고 있음을 나타냅니다. 특이하게 `ad_archive_id`가 `null`인 경우 **0.018일**로 매우 짧은 수집 주기를 보였으며, 전반적으로 평균 수집 주기는 **최소 0.018일에서 최대 1.17일**까지 다양하게 나타났습니다.  #### 상세 데이터  다음은 `ad_archive_id`별 평균 수집 주기를 보여주는 상위 15개 샘플 데이터입니다. 전체 200개 데이터 중 가장 짧은 수집 주기는 0.018일, 가장 긴 수집 주기는 1.17일입니다.  | ad_archive_id | average_collection_",
+    "used_sql": "SELECT\n  ad_archive_id,\n  AVG(date_diff_days) AS average_collection_cycle_days\nFROM (\n  SELECT\n    ad_archive_id,\n    collect_date,\n    DATE_DIFF(collect_date, LAG(collect_date) OVER (PARTITION BY ad_archive_id ORDER BY collect_date), DAY) AS date_diff_days\n  FROM `skin1004-319714.ad_data.meta data_test`\n  WHERE collect_date IS NOT NULL\n)\nWHERE date_diff_days IS NOT NULL\nGROUP BY ad_archive_id\nORDER BY ad_archive_id\nLIMIT 200"
+  },
+  {
+    "id": "MT-071",
+    "query": "2023년 월별 `official` 광고 시작 건수의 누적 합계를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 46.1,
+    "answer_len": 605,
+    "answer_preview": "안녕하세요. 요청하신 **2023년 월별 `official` 광고 시작 건수의 누적 합계** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ### 🔍 구체화하면 좋은 항목 - **국가/마켓** (예: 한국, 미국, 일본 등) - **채널** (예: 아마존, 쿠팡, 자사몰 등) - **광고 유형 또는 캠페인 종류** (예: 디스플레이 광고, 검색 광고, 인플루언서 캠페인 등) - **`official`의 정확한 의미** (예: 공식 채널, 특정 광고 상태값 등)  ---  > ### 💡 질문 예시 1. > **\"2023년 한국 공식몰 기준, 월별 신규 광고 캠페인 시작 건수와 누적 합계를 보여주세요.\"**  2. > **\"2023년 아마존 US 채널에서 `official` 상태의 Sponsored 광고 시작 건수를 월별 누적으로 알려주세요.\"**  3. > **\"2023년 ",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-072",
+    "query": "올해(`collect_date` 기준) 현재까지 `is_active` 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 35.1,
+    "answer_len": 1069,
+    "answer_preview": "### 📊 2026년 현재까지 활성 광고 총 건수  #### 요약  2026년 3월 19일 현재까지 `is_active` 상태인 광고는 총 **1,071,151건**으로 집계되었습니다. 이는 올해 초부터 현재까지 SKIN1004의 광범위한 광고 운영 규모를 보여줍니다.  #### 분석 및 인사이트  *   **대규모 광고 운영:** 2026년 1분기(3월 19일 기준)에만 100만 건 이상의 활성 광고가 운영되고 있다는 점은 SKIN1004의 광범위한 마케팅 활동과 광고 집행 규모를 시사합니다. *   **적극적인 시장 공략:** 연초부터 이처럼 많은 수의 광고를 활성 상태로 유지하는 것은 다양한 캠페인 및 채널을 통해 고객 접점을 확대하고 시장 내 존재감을 강화하려는 적극적인 전략을 반영하는 것으로 보입니다. *   **성과 분석의 필요성:** 현재 수치는 총량을 나타내며, 향후 월별 추이 또는 전년 동기 대비 비교를 통해 광고 운영의 효율성 및 성과(예: 전환율, ROAS)를 더",
+    "used_sql": "SELECT\n  COUNT(*) AS total_active_ads_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE EXTRACT(YEAR FROM collect_date) = 2026\n  AND is_active = TRUE\nLIMIT 1000"
+  },
+  {
+    "id": "MT-073",
+    "query": "이번 달(`collect_date` 기준) 현재까지 `partnership` 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 30.3,
+    "answer_len": 1072,
+    "answer_preview": "### 📊 2026년 3월 현재까지 Partnership 광고 총 건수  #### 요약  2026년 3월 19일 현재까지 `collect_date` 기준으로 집계된 `partnership` 광고의 총 건수는 **0건**입니다. 이는 이번 달에 `partnership` 유형의 광고가 아직 집행되지 않았거나 데이터에 기록되지 않았음을 의미합니다.  #### 분석 및 인사이트  *   2026년 3월 19일 현재까지 `partnership` 유형의 광고 집행 건수가 없는 것으로 확인되었습니다. *   이는 이번 달에 `partnership` 광고가 실제로 집행되지 않았거나, 광고가 집행되었음에도 불구하고 `ad_type`이 다르게 분류되었거나 데이터 수집 과정에서 누락되었을 가능성을 시사합니다. *   향후 `partnership` 광고 집행 계획이 있다면, 해당 유형의 광고 데이터가 정상적으로 수집되고 있는지 확인하는 것이 중요합니다.  > 2026년 3월 현재까지 `partnershi",
+    "used_sql": "SELECT\n  COUNT(*) AS total_partnership_ads\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE EXTRACT(YEAR FROM collect_date) = 2026\n  AND EXTRACT(MONTH FROM collect_date) = 3\n  AND ad_type = 'partnership'\nLIMIT 200"
+  },
+  {
+    "id": "MT-074",
+    "query": "2022년 한 해 동안 `start_date_formatted` 기준으로 시작된 전체 광고의 총 건수를 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.3,
+    "answer_len": 881,
+    "answer_preview": "### 📊 2022년 연간 광고 시작 건수 분석  #### 요약  2022년 한 해 동안 `start_date_formatted` 기준으로 시작된 전체 광고의 총 건수는 **768건**입니다.  #### 분석 및 인사이트  *   2022년 한 해 동안 총 **768건**의 광고가 시작되어, 해당 기간 동안 활발한 광고 캠페인 운영이 있었음을 알 수 있습니다. *   이 수치는 연간 광고 활동의 기본적인 규모를 파악하는 데 중요한 지표로 활용될 수 있습니다. *   향후 광고 전략 수립 시, 이 데이터를 기준으로 과거 또는 미래 기간과의 비교 분석을 통해 광고 운영의 효율성 및 변화 추이를 평가할 수 있습니다.  > 💡 2022년 한 해 동안 **768건**의 광고가 시작되었으며, 이는 연간 광고 운영의 기본 활동량을 나타내는 중요한 지표입니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 메타 광고 라이브러리*  > 💡 **이런 것도 물어보세요** > - 2021년 ",
+    "used_sql": "SELECT\n  COUNT(*) AS total_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE DATE(start_date_formatted) >= '2022-01-01' AND DATE(start_date_formatted) < '2023-01-01'\nLIMIT 200"
+  },
+  {
+    "id": "MT-075",
+    "query": "각 분기별 `country_name` 'KR'의 신규 광고 시작 건수 누적치를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 49.3,
+    "answer_len": 670,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **각 분기별 'KR' 국가의 신규 광고 시작 건수 누적치** 데이터를 조회하지 못했습니다.  ---  > ## 💡 더 정확한 결과를 위해 질문을 구체화해 주시면 도움이 됩니다 아래 항목들을 추가로 명시해 주시면 데이터를 보다 원활하게 조회할 수 있습니다:  | 구체화 항목 | 예시 | |------------|------| | **조회 기간** | 2024년, 2023년 Q1~Q4 등 | | **광고 채널/플랫폼** | Amazon Ads, Meta, Google Ads 등 | | **광고 유형** | Sponsored Products, Display 등 | | **특정 제품/캠페인** | 마다가스카르 센텔라 라인 등 |  ---  ## 📝 질문 예시  1. > **\"2024년 각 분기별 KR 국가의 Amazon 신규 광고 캠페인 시작 건수 누적치를 보여주세요.\"**  2. > **\"2023년 Q1~Q4 KR 국가에서 Meta(Faceb",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-076",
+    "query": "`publisher_platform`에 'Facebook'과 'Instagram'이 모두 포함된 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 29.8,
+    "answer_len": 1345,
+    "answer_preview": "### 📊 Facebook 및 Instagram 동시 게재 광고 총 건수 분석  #### 요약  `publisher_platform`에 'Facebook'과 'Instagram'이 모두 포함된 광고의 총 건수는 **1,308,412건**으로 집계되었습니다. 이는 두 메타 플랫폼에 동시에 노출되는 통합 광고 캠페인의 규모를 보여줍니다.  #### 분석 및 인사이트  *   **통합 마케팅 전략의 규모**: 130만 건이 넘는 광고가 Facebook과 Instagram에 동시에 게재되고 있다는 것은, 광고주들이 두 플랫폼의 시너지를 활용하여 광범위한 사용자에게 도달하려는 통합 마케팅 전략을 적극적으로 펼치고 있음을 시사합니다. *   **교차 플랫폼 도달**: Facebook과 Instagram은 서로 다른 사용자층과 콘텐츠 소비 패턴을 가지고 있으므로, 두 플랫폼에 동시에 광고를 게재함으로써 더 넓은 잠재 고객에게 도달하고 브랜드 메시지의 일관성을 유지할 수 있습니다. *   **성과",
+    "used_sql": "SELECT\n  COUNT(*) AS total_ads_on_facebook_and_instagram\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  LOWER(publisher_platform) LIKE '%facebook%'\n  AND LOWER(publisher_platform) LIKE '%instagram%'\nLIMIT 200"
+  },
+  {
+    "id": "MT-077",
+    "query": "활성 기간이 30일 이상인 광고 중 `ad_type`이 'official'인 광고의 `ad_archive_id` 목록을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.7,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-078",
+    "query": "`collect_date`가 2023년 6월 30일 이하인 광고 중 `is_active`가 TRUE인 광고의 `brand`별 건수는?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 34.8,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-079",
+    "query": "`snapshot` JSON에서 'display_format'이 'video'인 광고의 `country_name`별 건수를 집계해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.8,
+    "answer_len": 3688,
+    "answer_preview": "### 📊 'video' 형식 광고의 국가별 건수 분석  #### 요약  제공된 데이터에 따르면, 'video' 형식의 광고는 상위 15개국에서 총 **678,832건** 집계되었습니다. 이 중 인도네시아가 **213,143건**으로 가장 많은 비디오 광고를 집행했으며, 말레이시아(**117,286건**)와 한국(**98,717건**)이 그 뒤를 이었습니다. 상위 3개국(인도네시아, 말레이시아, 한국)이 상위 15개국 비디오 광고의 약 **63.2%**를 차지하며 높은 집중도를 보였습니다.  #### 상세 데이터  `display_format`이 'video'인 광고의 `country_name`별 건수는 다음과 같습니다. (총 16행 중 상위 15행)  | country_name         | ad_count | | :------------------- | -------: | | Indonesia            | 213,143  | | Malaysia            ",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE JSON_VALUE(snapshot, '$.display_format') = 'VIDEO'\nGROUP BY\n  country_name\nORDER BY\n  ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-080",
+    "query": "`start_date_formatted`가 2023년이고 `end_date_formatted`가 2024년인 광고의 총 건수는 몇 개인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 34.0,
+    "answer_len": 1007,
+    "answer_preview": "### 📊 2023년 시작, 2024년 종료 광고 현황  #### 요약  요청하신 조건(시작일 2023년, 종료일 2024년)에 해당하는 광고는 **총 0건**입니다. 이는 해당 조건의 광고가 현재 데이터에 존재하지 않음을 의미합니다.  #### 분석 및 인사이트  *   **데이터 부재 확인:** 2023년에 시작하여 2024년에 종료된 광고 캠페인은 현재 조회된 데이터셋에서 **전혀 존재하지 않습니다.** *   **캠페인 운영 전략 또는 데이터 누락 가능성:** 이 결과는 특정 연도 조합의 캠페인 운영 전략이 없었거나, 해당 조건의 광고 데이터가 수집되지 않았을 가능성을 시사합니다. *   **추가 검토 필요:** 향후 분석 시, 시작 연도와 종료 연도가 다른 광고 캠페인의 운영 전략 또는 데이터 누락 여부를 추가로 확인할 필요가 있습니다.  > 2023년 시작, 2024년 종료 조건의 광고가 존재하지 않는다는 점은 특정 연도 조합의 캠페인 운영 전략 부재 또는 데이터 누락 가",
+    "used_sql": "SELECT\n  COUNT(*) AS total_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  EXTRACT(YEAR FROM DATE(start_date_formatted)) = 2023\n  AND EXTRACT(YEAR FROM DATE(end_date_formatted)) = 2024\nLIMIT 1000"
+  },
+  {
+    "id": "MT-081",
+    "query": "`ad_archive_id` '987654321'에 대한 `collect_date`, `country_name`, `brand`, `ad_type`, `url` 정보를 상세하게 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 22.9,
+    "answer_len": 614,
+    "answer_preview": "아래 쿼리를 실행하여 `ad_archive_id = '987654321'`에 해당하는 상세 정보를 조회하겠습니다.  ```sql SELECT   collect_date,   country_name,   brand,   ad_type,   url FROM `globaldb.meta_ad_library` WHERE ad_archive_id = '987654321' ORDER BY collect_date DESC ```  ---  현재 BigQuery 직접 실행 권한이 이 대화에서 연결되어 있지 않아 **실제 조회 결과를 바로 보여드리기 어렵습니다.**  위 쿼리를 BigQuery 콘솔이나 연동된 환경에서 실행하시면 해당 광고의 수집일, 국가, 브랜드, 광고 유형, URL 정보를 확인하실 수 있습니다.  혹시 **다른 테이블명이나 데이터셋 경로**가 다르다면 알려주시면 쿼리를 수정해 드리겠습니다.  > 💡 **이런 것도 물어보세요** > - 특정 브랜드의 최근 광고 리스트를 조회할 수 있",
+    "used_sql": "SELECT\n  collect_date,\n  country_name,\n  brand,\n  ad_type,\n  url\nFROM `globaldb.meta_ad_library`\nWHERE ad_archive_id = '987654321'\nORDER BY collect_date DESC"
+  },
+  {
+    "id": "MT-082",
+    "query": "`page_name`이 'SKIN1004 Official Page'인 `is_active` 광고들의 `snapshot` JSON 데이터를 모두 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 34.4,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-083",
+    "query": "특정 `url` 'https://example.com/ad_campaign_x'을 가진 광고의 모든 컬럼 값을 조회해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 49.9,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-084",
+    "query": "'skin1004' 브랜드의 모든 `official` 광고의 `start_date_formatted`와 `end_date_formatted`를 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 38.2,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-085",
+    "query": "`publisher_platform`이 'Google Ads'인 광고의 `ad_archive_id`와 `page_name` 목록을 상세하게 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 44.9,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-086",
+    "query": "`country_name`과 `ad_type`별로 `is_active` 광고의 총 건수를 교차 분석하여 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 56.6,
+    "answer_len": 3239,
+    "answer_preview": "### 📊 국가 및 광고 유형별 활성 광고 현황 분석  #### 요약  2026년 03월 19일 기준, 제공된 데이터 프리뷰에 따르면 `country_name`과 `ad_type`별로 집계된 총 활성 광고 수는 **889,017건**입니다. 이 중 인도네시아가 **418,355건**으로 전체의 약 47.1%를 차지하며 가장 많은 활성 광고를 보유하고 있습니다. 광고 유형별로는 Official_Ad가 Partnership_Ad보다 더 많은 비중을 차지하지만, 인도네시아의 경우 Partnership_Ad의 비중이 더 높은 특징을 보였습니다.  #### 상세 데이터  다음은 `country_name`과 `ad_type`별 활성 광고 수에 대한 상세 데이터입니다. 본 데이터는 전체 31행 중 상위 15행 프리뷰를 기반으로 분석되었습니다.  | 국가명      | 광고 유형       | 활성 광고 수 | | :---------- | :-------------- | -----------: |",
+    "used_sql": "SELECT\n  country_name,\n  ad_type,\n  COUNT(*) AS total_active_ads\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE\n  is_active = TRUE\n  AND country_name IS NOT NULL\n  AND ad_type IS NOT NULL\nGROUP BY\n  country_name,\n  ad_type\nORDER BY\n  country_name,\n  ad_type\nLIMIT 200"
+  },
+  {
+    "id": "MT-087",
+    "query": "`publisher_platform`별로 2023년 월별 신규 광고 시작 건수를 교차 분석해주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 64.8,
+    "answer_len": 5442,
+    "answer_preview": "### 📊 2023년 `publisher_platform`별 월별 신규 광고 시작 건수 교차 분석  #### 요약  2023년 동안 `AUDIENCE_NETWORK`, `FACEBOOK`, `INSTAGRAM`, `MESSENGER` 4개 플랫폼에서 총 **192건**의 신규 광고가 시작되었습니다. 각 플랫폼별로는 **48건**의 신규 광고가 시작되었으며, 모든 플랫폼에서 월별 신규 광고 시작 건수가 동일하게 나타났습니다. **7월**에 **14건**으로 가장 많은 신규 광고가 시작되었고, **4월과 12월**에는 **1건**으로 가장 적었습니다. 2023년 5월, 9월, 11월 데이터는 집계 결과에 포함되지 않았습니다.  #### 상세 데이터  2023년 `publisher_platform`별 월별 신규 광고 시작 건수는 다음과 같습니다.  | 월      | AUDIENCE_NETWORK (건) | FACEBOOK (건) | INSTAGRAM (건) | MESSENGER (건) ",
+    "used_sql": "SELECT\n  platform,\n  FORMAT_DATE('%Y-%m', DATE(start_date_formatted)) AS month,\n  COUNT(DISTINCT ad_archive_id) AS new_ad_starts_count\nFROM `skin1004-319714.ad_data.meta data_test`,\nUNNEST(JSON_EXTRACT_ARRAY(publisher_platform)) AS platform\nWHERE EXTRACT(YEAR FROM DATE(start_date_formatted)) = 2023\nGROUP BY platform, month\nORDER BY platform, month\nLIMIT 200"
+  },
+  {
+    "id": "MT-088",
+    "query": "`brand`별 `is_active` 여부에 따른 광고 건수를 교차 분석 테이블로 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 53.5,
+    "answer_len": 2954,
+    "answer_preview": "### 📊 브랜드별 광고 활성 상태 교차 분석  #### 요약  ⚠️ 28행의 전체 결과 중 제공된 상위 15행의 프리뷰 데이터를 기반으로 분석되었습니다.  제공된 데이터를 기준으로 총 **507,144건**의 광고 중 **99.99%**에 해당하는 **507,138건**이 활성 상태인 것으로 나타났습니다. 특히 `glad2glow` 브랜드가 **273,092건**의 광고로 전체 광고 건수의 **53.8%**를 차지하며 가장 많은 광고를 집행하고 있습니다. `beauty_of_joseon` 브랜드만이 6건의 비활성 광고를 보유하고 있습니다.  #### 상세 데이터  | brand              | Active 광고 건수 | Inactive 광고 건수 | 총 광고 건수 | |:-------------------|-----------------:|-------------------:|-------------:| | abib               | 34,372        ",
+    "used_sql": "SELECT\n  brand,\n  CASE WHEN is_active = TRUE THEN 'Active' ELSE 'Inactive' END AS ad_status,\n  COUNT(*) AS ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE brand IS NOT NULL AND brand != 'unknown'\nGROUP BY brand, ad_status\nORDER BY brand, ad_status\nLIMIT 200"
+  },
+  {
+    "id": "MT-089",
+    "query": "`collect_date` (월별)와 `country_name`별로 `partnership` 광고의 수를 교차 분석해주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 62.3,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-090",
+    "query": "`page_name`별 `publisher_platform` (각 플랫폼)에 따른 `start_date_formatted`의 평균을 교차 분석해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 57.7,
+    "answer_len": 818,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **`page_name`별 `publisher_platform`에 따른 `start_date_formatted`의 평균 교차 분석** 데이터를 조회하지 못했습니다.  ---  > ## 💡 질문을 더 구체적으로 수정해 보시겠어요? `start_date_formatted`는 **날짜 형식의 필드**로, 이 값의 \"평균\"을 구하는 것은 분석 의도와 맞지 않을 수 있습니다. 혹시 아래와 같은 분석을 원하셨는지 확인 부탁드립니다.  > - 특정 **기간** 내 플랫폼별 성과(지출, 노출, 클릭 등)의 평균을 보고 싶으신 건지  > - **날짜별** 플랫폼 간 특정 지표의 추이를 비교하고 싶으신 건지  > - 분석 대상 **국가, 캠페인, 제품** 등 범위를 한정할 수 있는지  ---  ## ✅ 이렇게 질문해 보시면 더 정확한 결과를 받으실 수 있습니다  1. **\"2024년 하반기 기준, `page_name`별 `publisher_platform`",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-091",
+    "query": "최근 한 달간 우리 광고 캠페인 현황은 전반적으로 어떤가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 49.1,
+    "answer_len": 445,
+    "answer_preview": "안녕하세요! 😊  요청하신 **광고 캠페인 현황 데이터를 현재 조회하지 못했습니다.**  보다 정확한 데이터를 찾아드리기 위해, 질문을 조금 더 구체적으로 해주시면 도움이 됩니다. 아래 항목들을 포함해 주시면 좋습니다:  > **기간 / 국가(채널) / 캠페인 유형 / 제품명 / 확인하고 싶은 지표** 등  ---  > ### 💡 이렇게 질문해 보시면 어떨까요? 1. **\"2025년 5월 한국 네이버 브랜드검색 캠페인의 ROAS와 전환율은 어떻게 되나요?\"**  2. **\"최근 30일간 마다가스카르 센텔라 라인 제품의 Meta(인스타그램) 광고 캠페인별 지출 및 클릭 수를 알려주세요.\"**  3. **\"2025년 5월 아마존 US 스폰서드 프로덕트 광고의 주요 성과 지표(노출, CPC, ACoS)를 확인하고 싶습니다.\"**  ---  구체적인 조건을 알려주시면 다시 조회해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-092",
+    "query": "현재 `is_active` 상태인 광고 중 `publisher_platform`이 가장 다양한 `ad_archive_id`는 무엇인가요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 44.2,
+    "answer_len": 1236,
+    "answer_preview": "### 📊 가장 다양한 광고 플랫폼을 활용하는 광고 ID 분석  #### 요약  현재 활성 상태인 광고 중 가장 다양한 `publisher_platform`을 활용하는 `ad_archive_id`는 **2077560162816093**으로 확인되었습니다. 이 광고는 현재 가장 많은 수의 게시자 플랫폼을 통해 노출되고 있습니다.  #### 분석 및 인사이트  *   **광범위한 도달 전략:** `ad_archive_id` **2077560162816093**은 현재 활성 광고 중 가장 넓은 범위의 게시자 플랫폼에 노출되고 있어, 잠재적으로 광범위한 도달률을 목표로 하거나 다양한 채널에서의 성과를 테스트하는 전략을 시사합니다. *   **플랫폼 다변화의 중요성:** 단일 광고 ID가 여러 플랫폼을 활용하는 것은 특정 플랫폼에 대한 의존도를 줄이고, 잠재 고객에게 더 효과적으로 도달하기 위한 중요한 전략적 선택으로 해석될 수 있습니다.  > 이 광고 ID는 현재 활성 광고 중 가장 넓은 ",
+    "used_sql": "SELECT\n  ad_archive_id\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE is_active = TRUE\n  AND publisher_platform IS NOT NULL\n  AND publisher_platform != ''\nGROUP BY\n  ad_archive_id, publisher_platform\nORDER BY\n  ARRAY_LENGTH(SPLIT(publisher_platform, ',')) DESC\nLIMIT 1"
+  },
+  {
+    "id": "MT-093",
+    "query": "'KR' 국가에서 `official` 광고의 주요 특징들을 요약해서 알려주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 50.5,
+    "answer_len": 614,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **KR 국가의 `official` 광고 관련 데이터를 조회하지 못했습니다.**  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조회 조건을 좀 더 세분화하시면 원하시는 데이터를 찾는 데 도움이 될 수 있습니다. 아래 항목들을 포함해 보세요:  - **기간** (예: 2024년 1분기, 최근 3개월 등) - **채널** (예: 네이버, 쿠팡, 자사몰 등) - **제품명** (예: 마다가스카르 센텔라 앰플 등) - **광고 유형 또는 캠페인명** - **확인하고 싶은 지표** (예: 클릭률, 전환율, 광고비, ROAS 등)  ---  ## 📝 질문 예시  > 1. **\"2024년 상반기 KR 국가에서 `official` 채널의 광고 캠페인별 ROAS를 알려주세요.\"**  > 2. **\"KR 국가 `official` 광고 중 '마다가스카르 센텔라 앰플' 제품의 최근 6개월 클릭률과 전환율을 보여주세요.\"**  > 3. **\"2024년",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-094",
+    "query": "활성 기간이 길고 여러 `publisher_platform`에서 집행된 `ad_archive_id` 몇 개를 추천해줄 수 있나요?",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 26.4,
+    "answer_len": 4547,
+    "answer_preview": "### 📊 활성 기간이 길고 여러 플랫폼에서 집행된 광고 ID 추천  #### 요약  사용자님의 요청에 따라 활성 기간이 길고 여러 `publisher_platform`에서 집행된 광고 ID를 분석한 결과, **Medicube 브랜드의 2개 광고 ID**가 가장 높은 순위로 추천되었습니다. 이 광고들은 모두 미국에서 집행되었으며, 최장 **1,268일**의 활성 기간 동안 **4개 플랫폼** (FACEBOOK, INSTAGRAM, AUDIENCE_NETWORK, MESSENGER)에서 운영되었습니다.  #### 상세 데이터  활성 기간이 길고 여러 플랫폼에서 집행된 상위 10개 광고 데이터는 다음과 같습니다. 이 결과는 `active_duration_days`와 `num_platforms` 기준으로 정렬되었습니다.  | ad_archive_id     | brand    | page_name | country_name  | start_date | end_date   | publish",
+    "used_sql": "SELECT\n  ad_archive_id,\n  brand,\n  page_name,\n  country_name,\n  DATE(start_date_formatted) AS start_date,\n  DATE(end_date_formatted) AS end_date,\n  publisher_platform,\n  DATE_DIFF(COALESCE(DATE(end_date_formatted), DATE(collect_date)), DATE(start_date_formatted), DAY) AS active_duration_days,\n  ARRAY_LENGTH(SPLIT(publisher_platform, ',')) AS num_platforms\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE brand IS NOT NULL AND brand != 'unknown'\n  AND start_date_formatted IS NOT NULL\n  AND publisher_platform IS NOT NULL AND publisher_platform != ''\n  AND ARRAY_LENGTH(SPLIT(publisher_platform, ',')) > 1\nORDER BY\n  active_duration_days DESC,\n  num_platforms DESC\nLIMIT 10"
+  },
+  {
+    "id": "MT-095",
+    "query": "`snapshot` JSON 데이터에서 'display_format'이 'image'인 광고는 주로 어떤 `country_name`에서 많이 집행되나요?",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 75.0,
+    "answer_len": 4681,
+    "answer_preview": "### 📊 이미지 광고 집행 주요 국가 분석 보고서 (최근 1년)  #### 요약  최근 1년간(2025년 3월 19일 ~ 2026년 3월 19일) 'image' 형식의 광고는 **말레이시아**에서 가장 많이 집행되었으며, 총 **76,787건**을 기록했습니다. 이는 제공된 상위 15개 국가 전체 이미지 광고 집행 건수(287,982건)의 약 **26.7%**에 해당하는 수치입니다. 인도네시아(48,284건, 16.8%), 태국(42,003건, 14.6%), 한국(38,836건, 13.5%)이 그 뒤를 이으며, 상위 4개 국가가 전체의 70% 이상을 차지하는 높은 집중도를 보였습니다.  #### 상세 데이터  제공된 상위 15개 국가의 'image' 형식 광고 집행 건수는 다음과 같습니다.  | 국가명 (country_name) | 이미지 광고 집행 건수 (image_ad_count) | 비중 (%) | | :-------------------- | -----------------",
+    "used_sql": "SELECT\n  country_name,\n  COUNT(*) AS image_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE JSON_VALUE(snapshot, '$.display_format') = 'IMAGE'\n  AND country_name IS NOT NULL\n  AND brand IS NOT NULL AND brand != 'unknown'\n  AND collect_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY\n  country_name\nORDER BY\n  image_ad_count DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-096",
+    "query": "특정 `brand`가 100개 이상의 `is_active` 광고를 보유한 `country_name` 목록을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 40.3,
+    "answer_len": 2231,
+    "answer_preview": "### 📊 100개 이상 활성 광고를 보유한 브랜드별 국가 현황  #### 요약  100개 이상의 활성 광고를 보유한 브랜드-국가 조합은 총 **149개**로 확인되었습니다. 이 중 가장 많은 활성 광고를 운영하는 조합은 인도네시아의 `skintific` 브랜드로 **168,554개**의 광고를 보유하고 있습니다. 전체적으로 **16개** 국가에서 **26개** 브랜드가 이 기준을 충족합니다.  #### 상세 데이터  아래는 활성 광고 수가 100개를 초과하는 브랜드-국가 조합 중 상위 15개 목록입니다.  | 순위 | 국가명 | 브랜드 | 활성 광고 수 | | ---: | :--- | :--- | ---: | | 1 | Indonesia | skintific | 168,554 | | 2 | Indonesia | glad2glow | 142,258 | | 3 | Malaysia | skintific | 133,071 | | 4 | South Korea | medicube | 72,9",
+    "used_sql": "SELECT\n  country_name,\n  brand,\n  COUNT(*) AS active_ad_count\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE is_active = TRUE\n  AND brand IS NOT NULL\n  AND brand != 'unknown'\nGROUP BY\n  country_name,\n  brand\nHAVING\n  COUNT(*) > 100\nORDER BY\n  active_ad_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "MT-097",
+    "query": "각 `country_name`별로 월별 신규 광고 시작 건수의 전월 대비 증가율을 구하고, 이를 누적 순위로 정렬해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 48.7,
+    "answer_len": 836,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **국가별 월별 신규 광고 시작 건수의 전월 대비 증가율 및 누적 순위** 데이터를 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주시면 도움이 됩니다  요청하신 질문에 아래와 같은 항목들이 명확히 지정되면 데이터를 보다 정확하게 조회할 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **조회 기간** | 2024년 1월 ~ 2024년 12월 | | **국가 범위** | 전체 국가 / 특정 국가 (미국, 일본, 태국 등) | | **광고 채널** | Amazon Ads, Meta Ads, Google Ads 등 | | **광고 유형** | Sponsored Products, Display 광고 등 | | **\"신규 광고 시작\"의 정의** | 신규 캠페인 생성 기준 / 신규 광고 그룹 기준 등 |  ---  ## 📝 질문 예시를 참고해 보세요  > **예시 1**",
+    "used_sql": ""
+  },
+  {
+    "id": "MT-098",
+    "query": "전체 광고의 평균 활성 기간보다 긴 활성 기간을 가진 `ad_archive_id`와 그 기간을 보여주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 45.4,
+    "answer_len": 2643,
+    "answer_preview": "### 📊 평균보다 긴 활성 기간을 가진 광고 목록 및 기간 분석  #### 요약  전체 광고의 평균 활성 기간보다 긴 활성 기간을 가진 광고는 총 **200개**가 확인되었습니다. 이 광고들은 최소 1일(86,400초)에 가까운 매우 긴 활성 기간을 보이며, 이는 일반적인 광고보다 훨씬 오랫동안 노출되었음을 의미합니다. 가장 긴 활성 기간을 보인 광고는 `ad_archive_id` 870025952273613으로, **86,400초 (정확히 1일)** 동안 활성화되었습니다.  #### 상세 데이터  전체 광고의 평균 활성 기간보다 긴 활성 기간을 가진 상위 15개 광고의 `ad_archive_id`와 활성 기간은 다음과 같습니다. `total_active_time`은 초(second) 단위입니다.  | ad_archive_id      | total_active_time (초) | | :----------------- | ---------------------: | | 870025",
+    "used_sql": "SELECT\n  ad_archive_id,\n  total_active_time\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE total_active_time > (\n    SELECT AVG(total_active_time)\n    FROM `skin1004-319714.ad_data.meta data_test`\n    WHERE total_active_time IS NOT NULL\n  )\n  AND total_active_time IS NOT NULL\nORDER BY total_active_time DESC\nLIMIT 200"
+  },
+  {
+    "id": "MT-099",
+    "query": "`country_name`을 행으로, `ad_type`을 열로 하여 각 교차점의 `is_active` 광고 건수를 집계하는 피벗 테이블을 생성해주세요.",
+    "table": "meta_ads",
+    "status": "OK",
+    "time": 41.5,
+    "answer_len": 4160,
+    "answer_preview": "### 📊 국가 및 광고 유형별 활성/비활성 광고 건수 분석  #### 요약  요청하신 `country_name`을 행으로, `ad_type`을 열로 하는 피벗 테이블 분석 결과, 현재 조회된 모든 국가에서 **활성 및 비활성 광고 건수가 모두 0건**으로 집계되었습니다. 이는 현재 데이터셋에 공식(official) 또는 파트너십(partnership) 유형의 광고 데이터가 없거나, 필터링 조건에 해당하는 광고가 없음을 시사합니다.  #### 상세 데이터  요청하신 국가 및 광고 유형별 활성/비활성 광고 건수 집계 결과는 다음과 같습니다.  | country_name         | official_active_ads | official_inactive_ads | partnership_active_ads | partnership_inactive_ads | | :------------------- | ------------------: | --------------------: | ",
+    "used_sql": "SELECT\n  country_name,\n  COUNTIF(ad_type = 'official' AND is_active = TRUE) AS official_active_ads,\n  COUNTIF(ad_type = 'official' AND is_active = FALSE) AS official_inactive_ads,\n  COUNTIF(ad_type = 'partnership' AND is_active = TRUE) AS partnership_active_ads,\n  COUNTIF(ad_type = 'partnership' AND is_active = FALSE) AS partnership_inactive_ads\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE country_name IS NOT NULL AND country_name != ''\n  AND ad_type IS NOT NULL AND ad_type != ''\nGROUP BY country_name\nORDER BY country_name\nLIMIT 200"
+  },
+  {
+    "id": "MT-100",
+    "query": "`brand`별, `ad_type`별로 `start_date_formatted`가 가장 빠른 광고의 `ad_archive_id`를 각 그룹 내에서 순위를 매겨 보여주세요.",
+    "table": "meta_ads",
+    "status": "WARN",
+    "time": 62.1,
+    "answer_len": 3012,
+    "answer_preview": "### 📊 브랜드 및 광고 유형별 가장 빠른 광고 시작일 순위 분석  #### 요약  요청하신 `brand` 및 `ad_type` 그룹별 가장 빠른 `start_date_formatted`를 기준으로 `ad_archive_id`의 순위를 분석한 결과, 현재 데이터는 **'abib' 브랜드의 'Official_Ad' 광고 유형에 대한 정보만 포함**하고 있습니다. 해당 그룹 내에서 가장 빠른 광고 시작일은 **2025년 07월 28일**이며, 이 날짜에 시작된 광고 아카이브 ID는 **1957409668328834**입니다. `ROW_NUMBER()` 함수를 사용하여 순위를 매겼기 때문에, 동일한 시작일을 가진 광고라도 각각 고유한 순위를 가집니다.  #### 상세 데이터  'abib' 브랜드의 'Official_Ad' 광고 유형에 대해 `start_date_formatted`가 가장 빠른 순서대로 정렬된 상위 10개 광고의 상세 정보는 다음과 같습니다. (전체 200개 결과 중 상위",
+    "used_sql": "SELECT\n  brand,\n  ad_type,\n  ad_archive_id,\n  start_date_formatted,\n  ROW_NUMBER() OVER (PARTITION BY brand, ad_type ORDER BY start_date_formatted ASC) AS rank_within_group\nFROM `skin1004-319714.ad_data.meta data_test`\nWHERE brand IS NOT NULL AND brand != 'unknown'\nORDER BY brand, ad_type, start_date_formatted ASC\nLIMIT 200"
+  }
+]

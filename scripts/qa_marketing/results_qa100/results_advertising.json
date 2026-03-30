@@ -1,0 +1,1002 @@
+[
+  {
+    "id": "AD-001",
+    "query": "전체 기간 동안의 총 광고비(Cost)는 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.5,
+    "answer_len": 1173,
+    "answer_preview": "### 📊 전체 기간 총 광고비 현황  #### 요약  전체 기간 동안의 총 광고비는 **522억 7,406만 원**으로 집계되었습니다. 이는 통합 광고 데이터에 기록된 모든 광고 채널의 비용을 합산한 금액입니다.  #### 분석 및 인사이트  *   **대규모 광고 투자:** 총 광고비가 500억 원을 초과하는 상당한 규모로, SKIN1004가 마케팅 활동에 적극적으로 투자하고 있음을 보여줍니다. *   **통합 채널 관리:** TikTok, Facebook, Shopee, Google, Naver, SingleONE, KakaoMoments, Amazon Ads 등 다양한 채널을 통해 광고가 집행되었으며, 이를 통합 관리하여 전체 비용을 파악하고 있습니다. *   **성과 분석의 필요성:** 이 금액은 전체 광고비의 총합이므로, 향후 각 채널별, 기간별 광고비 분석을 통해 효율적인 예산 집행 및 광고 성과 최적화 방안을 모색할 필요가 있습니다.  > 이처럼 대규모의 광고비 지출은",
+    "used_sql": "SELECT\n  SUM(TikTok_Cost) +\n  SUM(Facebook_Cost) +\n  SUM(Shopee_Expense_KRW) +\n  SUM(Google_Cost) +\n  SUM(NaverSearch_Cost) +\n  SUM(NaverGFA_Cost) +\n  SUM(SingleONE_Cost_KRW) +\n  SUM(KakaoMoments_Cost) +\n  SUM(AmazonAds_Cost) AS total_advertising_cost\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nLIMIT 1000"
+  },
+  {
+    "id": "AD-002",
+    "query": "전체 캠페인의 평균 ROAS는 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 31.1,
+    "answer_len": 1109,
+    "answer_preview": "### 📊 전체 캠페인 평균 ROAS 분석  #### 요약  2019년 1월 1일부터 현재까지의 데이터를 기준으로, 전체 캠페인의 평균 ROAS(광고 투자 수익률)는 **2.60**입니다. 이는 마케팅 비용 1원당 약 2.60원의 매출이 발생했음을 의미하며, 전반적으로 마케팅 투자가 효과적으로 매출을 견인하고 있음을 시사합니다.  #### 분석 및 인사이트  *   **효율적인 마케팅 성과**: 전체 캠페인의 평균 ROAS가 2.60이라는 것은 투자된 마케팅 비용 대비 260%의 매출 회수율을 보인다는 의미입니다. 이는 마케팅 활동이 전반적으로 효율적인 성과를 내고 있음을 나타냅니다. *   **심층 분석의 필요성**: 평균 ROAS는 전체적인 성과를 보여주지만, 특정 캠페인, 채널, 제품 또는 기간별로 ROAS를 세분화하여 분석하면 더 구체적인 강점과 개선이 필요한 영역을 파악할 수 있습니다. 예를 들어, 일부 캠페인은 평균보다 훨씬 높은 ROAS를 기록하여 전체 평균을 높였을 수",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(SUM(Revenue), SUM(Cost)) AS average_roas\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-003",
+    "query": "데이터에 기록된 일일 최대 전환 수(Conversions)는 몇 건인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 42.2,
+    "answer_len": 1571,
+    "answer_preview": "### 📊 일일 최대 전환 수 분석 보고서  #### 요약  데이터에 기록된 일일 최대 전환 수는 **248,678건**입니다. 이는 통합 광고 데이터에서 하루 동안 발생한 모든 전환을 합산했을 때 가장 높은 수치입니다.  #### 분석 및 인사이트  *   **최고 성과 기록**: 이 수치는 통합 광고 데이터가 기록된 기간 동안 특정 하루에 발생한 전환 수가 가장 많았던 날의 기록입니다. 이는 특정 시점에 매우 성공적인 마케팅 활동이나 외부 요인이 있었음을 시사합니다. *   **통합 전환**: 이 전환 수는 TikTok, Facebook, Shopee, Google, NaverSearch, SingleONE, KakaoMoments, AmazonAds 등 다양한 광고 채널에서 발생한 모든 전환을 합산한 결과입니다. *   **심층 분석 필요**: 이러한 최대 전환이 발생한 날의 구체적인 마케팅 캠페인, 프로모션, 외부 이벤트(예: 특정 기념일, 할인 행사 등)를 분석하면 향후 고",
+    "used_sql": "SELECT\n  MAX(daily_conversions) AS max_daily_conversions\nFROM (\n  SELECT\n    Date,\n    SUM(COALESCE(TikTok_Complete_payment_events, 0) +\n        COALESCE(Facebook_Website_purchases, 0) +\n        COALESCE(Facebook_Omni_purchase_shared_item, 0) +\n        COALESCE(Shopee_Conversions, 0) +\n        COALESCE(Google_Conversions, 0) +\n        COALESCE(NaverSearch_Conversions, 0) +\n        COALESCE(SingleONE_Conversions, 0) +\n        COALESCE(KakaoMoments_Purchases, 0) +\n        COALESCE(AmazonAds_Purchases, 0)) AS daily_conversions\n  FROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\n  GROUP BY Date\n)\nLIMIT 1000"
+  },
+  {
+    "id": "AD-004",
+    "query": "전체 데이터에서 가장 낮은 CTR은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.2,
+    "answer_len": 981,
+    "answer_preview": "### 📊 전체 데이터 최저 CTR 분석  #### 요약  전체 데이터에서 기록된 가장 낮은 클릭률(CTR)은 **0.0%**입니다. 이는 특정 광고 또는 상품 노출에서 클릭이 전혀 발생하지 않았음을 의미합니다.  #### 분석 및 인사이트  *   **최저 CTR 0.0%의 의미:** CTR이 0.0%라는 것은 해당 노출(impression)에 대해 클릭(click)이 전혀 발생하지 않았음을 나타냅니다. 이는 광고 소재의 매력도 부족, 타겟팅 오류, 경쟁 심화, 또는 기술적 문제 등 다양한 원인으로 발생할 수 있습니다. *   **개선 필요성:** CTR 0.0%는 광고 효율성 측면에서 개선이 시급한 지점입니다. 이러한 항목들을 식별하고 광고 문구, 이미지, 타겟 고객 설정, 입찰 전략 등을 재검토하여 클릭률을 높이는 노력이 필요합니다.  > CTR 0.0%는 광고 성과 개선을 위한 중요한 출발점이며, 해당 노출의 상세 원인 분석을 통해 효율성을 극대화할 수 있는 기회를 제공합니다",
+    "used_sql": "SELECT\n  MIN(Clicks_Click_Rate_CTR) AS lowest_ctr\nFROM `skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance`\nWHERE Week_Start_Date_Sunday >= '2019-01-01'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-005",
+    "query": "이 데이터셋에 포함된 고유한 캠페인(Campaign) 수는 몇 개인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 23.5,
+    "answer_len": 749,
+    "answer_preview": "### 📊 고유 캠페인 수 분석  #### 요약  제공된 데이터셋에는 총 **375개**의 고유한 캠페인이 포함되어 있습니다. 이는 SKIN1004의 인플루언서 마케팅 활동이 다양한 캠페인을 통해 다각적으로 진행되었음을 시사합니다.  #### 분석 및 인사이트  *   데이터셋 내에 **375개**의 고유한 캠페인이 존재한다는 것은 SKIN1004가 인플루언서 마케팅을 매우 다각적으로 운영하고 있음을 보여줍니다. *   이러한 캠페인 다양성은 특정 제품, 타겟 고객층, 또는 마케팅 목표에 따라 세분화된 전략을 구사하고 있을 가능성을 시사합니다. *   > 향후 각 캠페인의 성과를 분석하여 어떤 유형의 캠페인이 가장 효과적이었는지 파악하는 것이 중요합니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 인플루언서 마케팅*  > 💡 **이런 것도 물어보세요** > - 각 캠페인별로 참여한 인플루언서 수는 어떻게 되나요? > - 가장 많은 캠페인을 진행한 팀은 어디인가요? >",
+    "used_sql": "SELECT\n  COUNT(DISTINCT Campaign) AS unique_campaign_count\nFROM `skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS`\nLIMIT 100"
+  },
+  {
+    "id": "AD-006",
+    "query": "월별 총 Revenue 추이를 보여주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 78.4,
+    "answer_len": 840,
+    "answer_preview": "### 📊 월별 총 매출 추이 분석 (2019년 1월 ~ 2023년 12월)  #### 요약  2019년 1월부터 2023년 12월까지의 월별 총 매출 데이터를 분석한 결과, 전체적으로 **매우 가파른 성장 추세**를 보였습니다. 분석 기간 동안 총 매출은 **약 1,434.95억원**을 기록했으며, 월별 매출은 **최저 5,091만원 (2019년 3월)**에서 **최고 약 97.6억원 (2023년 11월)**까지 크게 변동했습니다. 특히 2021년 이후 매출 규모가 급격히 증가하며 연간 매출액이 2019년 대비 2023년에 **약 26배** 이상 성장했습니다.  #### 상세 데이터  제공된 2019년 1월부터 2023년 12월까지의 월별 총 매출 데이터는 다음과 같습니다. (단위: 원)  | 월      | 총 매출 (원)          | | :------ | ---------------------: | | 2019-01 | 167,022,414.60         | | 2",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "AD-007",
+    "query": "분기별 Cost와 Conversions의 변화 추이를 알려주세요.",
+    "table": "advertising",
+    "status": "FAIL",
+    "time": 105.1,
+    "answer_len": 3185,
+    "answer_preview": "📊 분기별 Cost 및 Conversions 변화 추이 분석  #### 요약  2019년 2분기부터 2026년 1분기까지 Cost와 Conversions는 전반적으로 **매우 가파른 성장 추이**를 보였습니다. 특히 2023년부터 성장이 가속화되어 2025년 4분기에는 Cost가 **약 179.27억원**, Conversions가 **약 305만 건**으로 역대 최고치를 기록했습니다. 2026년은 현재 1분기 데이터만 존재하며, 직전 분기 대비 소폭 감소했으나 여전히 높은 수준을 유지하고 있습니다. (⚠️ 2026년은 현재 1분기 데이터만 존재합니다. 오늘 날짜: 2026년 03월 19일)  #### 상세 데이터  | 연도 | 분기 | 총 Cost (원) | 총 Conversions (건) | | :--- | :--- | :--- | :--- | | 2019 | 2 | 41,908 | null | | 2019 | 3 | 1억 2,692만원 | 14,185 | | 2019 | 4 | ",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  EXTRACT(QUARTER FROM Date) AS quarter,\n  SUM(Cost) AS total_cost,\n  SUM(Purchases) AS total_conversions\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\nGROUP BY year, quarter\nORDER BY year, quarter\nLIMIT 1000"
+  },
+  {
+    "id": "AD-008",
+    "query": "연도별 평균 ROAS는 어떻게 변화했나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.9,
+    "answer_len": 3045,
+    "answer_preview": "### 📊 연도별 평균 ROAS 변화 추이 분석  #### 요약  지난 8년간의 평균 ROAS(광고수익률) 분석 결과, **2019년 6.80**으로 가장 높았던 ROAS는 2021년 **0.69**로 급락한 후 회복세를 보였습니다. 2024년에는 3.50으로 다시 상승했으나, 2025년 소폭 하락 후 2026년(3월 19일 기준)에는 **2.68**을 기록하며 다시 상승하는 추세입니다.  #### 상세 데이터 | 연도 | 평균 ROAS | |-----:|----------:| | 2019 | 6.797 | | 2020 | 3.372 | | 2021 | 0.693 | | 2022 | 2.000 | | 2023 | 3.037 | | 2024 | 3.505 | | 2025 | 2.449 | | 2026 | 2.676 |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2019\", \"2020\", \"2021\", \"2022",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  SAFE_DIVIDE(SUM(Revenue), SUM(Cost)) AS average_roas\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\nGROUP BY year\nORDER BY year\nLIMIT 1000"
+  },
+  {
+    "id": "AD-009",
+    "query": "주별 Clicks의 총합을 그래프로 보여주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 60.8,
+    "answer_len": 472,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **주별 Clicks 총합** 데이터를 조회하지 못했습니다.  좀 더 구체적인 조건을 추가해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 포함해 보세요:  > **기간** · **국가/마켓** · **채널(광고 플랫폼)** · **제품명 또는 캠페인명**  ---  > ## 💡 이렇게 질문해 보시면 어떨까요? 1. **\"2025년 1월~3월, 미국 Amazon Sponsored Ads의 주별 Clicks 총합을 그래프로 보여주세요.\"**  2. **\"2025년 상반기, 일본 마켓 기준 마다가스카르 센텔라 라인 제품의 주별 Clicks 추이를 알려주세요.\"**  3. **\"최근 4주간 Meta 광고 채널의 주별 Clicks 총합을 국가별로 비교해 주세요.\"**  ---  위와 같이 조건을 구체화하여 다시 질문해 주시면, 내부 데이터를 기반으로 정확한 결과를 안내드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-010",
+    "query": "특정 플랫폼(예: 'Google Ads')의 일별 Impressions 추이를 조회해 주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 86.1,
+    "answer_len": 2287,
+    "answer_preview": "### 📊 Google Ads 일별 Impressions 추이 분석 (2019-01-01 ~ 2021-09-27)  #### 요약  Google Ads의 일별 Impressions 데이터를 2019년 1월 1일부터 2021년 9월 27일까지 조회했습니다. 총 **1,000일치**의 데이터가 확인되었으며, 초기 기간인 2019년 1월 1일부터 1월 15일까지는 Impressions가 **0**으로 나타났습니다. 이후 기간에는 0이 아닌 다양한 Impressions 수치가 기록된 것으로 분석됩니다.  #### 상세 데이터  Google Ads의 일별 Impressions 추이 데이터는 2019년 1월 1일부터 2021년 9월 27일까지 총 1,000일치입니다. 초기 15일간의 데이터는 다음과 같습니다.  | Date       | total_impressions | | :--------- | -----------------: | | 2019-01-01 |                 0",
+    "used_sql": "SELECT\n  Date,\n  SUM(Google_Impressions) AS total_impressions\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\nGROUP BY Date\nORDER BY Date\nLIMIT 1000"
+  },
+  {
+    "id": "AD-011",
+    "query": "총 Revenue 기준으로 가장 성과가 좋은 상위 3개 Campaign은 무엇인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 27.5,
+    "answer_len": 509,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **총 Revenue 기준 상위 3개 Campaign** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조건을 좀 더 명확히 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 포함해 보세요.  > **기간** · **국가/지역** · **판매 채널** · **제품명/라인** · **캠페인 유형**  ---  ## 📌 질문 예시  1. **\"2024년 하반기(7~12월) 기준, 미국 Amazon에서 총 Revenue가 가장 높았던 상위 3개 Campaign은 무엇인가요?\"**  2. **\"2025년 1분기, 마다가스카르 센텔라 라인 관련 캠페인 중 매출 성과 상위 3개를 알려주세요.\"**  3. **\"최근 6개월간 국내 자사몰 채널에서 진행한 프로모션 캠페인의 Revenue 순위를 보여주세요.\"**  ---  위와 같이 조건을 추가하여 다시 질문해 주시면, 해당 데이터를 조회",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-012",
+    "query": "ROAS가 가장 높은 상위 5개 Ad_Group을 플랫폼과 함께 나열해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.4,
+    "answer_len": 609,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **ROAS 상위 5개 Ad_Group** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 💡 이런 정보를 추가해 주시면 도움이 됩니다  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월, 최근 30일 등 | | **플랫폼** | Meta, Google Ads, TikTok 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **캠페인 유형** | 브랜드 캠페인, 리타겟팅 등 |  ---  ## 📝 질문 예시  1. **\"2024년 12월 Meta 광고에서 ROAS가 가장 높은 상위 5개 Ad_Group을 알려주세요.\"**  2. **\"최근 3개월간 Google Ads 미국 마켓 기준으로 ROAS 상위 5개 Ad_Group과 해당 플랫폼을 나열해 주세요.\"**  3. **\"",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-013",
+    "query": "전체 기간 동안 Cost가 가장 높았던 상위 10개 Country를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.1,
+    "answer_len": 1031,
+    "answer_preview": "아래 쿼리로 전체 기간 동안 Cost가 가장 높았던 상위 10개 국가를 조회하겠습니다.  <br>  | 순위 | Country | Total Cost | |---:|:---|---:| | 1 | **United States** | — | | 2 | **Japan** | — | | 3 | **South Korea** | — | | ... | ... | ... |  잠깐, 실제 데이터를 조회해야 정확한 답변을 드릴 수 있습니다. BigQuery에서 데이터를 가져오겠습니다.  <tool_call> {\"name\": \"query_bigquery\", \"arguments\": {\"query\": \"SELECT country, SUM(cost) AS total_cost FROM `skin1004_data.ad_performance` GROUP BY country ORDER BY total_cost DESC LIMIT 10\"}} </tool_call>  ---  죄송합니다. 정확한 테이블명과 스키마를 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-014",
+    "query": "CVR이 가장 낮은 하위 3개 Ad_Group은 무엇인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 25.1,
+    "answer_len": 712,
+    "answer_preview": "아래 쿼리를 실행하여 CVR(전환율)이 가장 낮은 하위 3개 Ad Group을 조회하겠습니다.  먼저 사용 가능한 테이블과 컬럼 구조를 확인해야 합니다.  데이터를 조회할 수 있는 광고 관련 테이블 정보가 현재 제 환경에 직접 연결되어 있지 않아, 정확한 테이블명과 컬럼명을 확인한 후 쿼리를 실행해야 합니다.  **확인이 필요한 사항이 있습니다:**  1. **어떤 광고 플랫폼** 데이터를 기준으로 조회할까요?    - Meta (Facebook/Instagram) 광고    - Google Ads    - Amazon Ads    - 기타  2. **기간 범위**는 어떻게 설정할까요?    - 최근 7일 / 30일 / 특정 기간    - 전체 기간  3. **CVR 계산 기준**은 다음 중 어떤 것인가요?    - 구매 전환수 ÷ 클릭수 × 100    - 구매 전환수 ÷ 노출수 × 100  4. **최소 클릭수/노출수 기준**이 있나요?    - 예: 클릭수 100 이상인 Ad ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-015",
+    "query": "전체 Campaign의 CPC 중간값은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 30.1,
+    "answer_len": 616,
+    "answer_preview": "아쉽게도 현재 연동된 BigQuery 데이터셋에 **광고 캠페인(Campaign) 관련 테이블**이 포함되어 있는지 확인이 필요합니다.  제가 조회할 수 있는 데이터는 주로 **매출/주문 데이터** 중심이며, CPC(Cost Per Click), 노출수, 클릭수 등 **광고 퍼포먼스 데이터**는 별도의 광고 플랫폼(Meta Ads, Google Ads 등) 연동 여부에 따라 달라집니다.  ## 확인을 위해 알려주시면 좋을 정보  1. **어떤 광고 플랫폼**의 CPC를 확인하고 싶으신가요? (예: Meta/Facebook Ads, Google Ads, Amazon Ads 등) 2. **특정 기간**이 있으신가요? 3. 혹시 **사내에서 별도로 정리한 리포트**를 찾으시는 건가요? (Notion 문서 등)  BigQuery에 광고 캠페인 테이블이 있다면 바로 조회해 드리겠습니다. 플랫폼이나 추가 정보를 알려주시면 정확하게 안내드릴 수 있습니다.  --- *AI 생성 답변 · 2026-",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-016",
+    "query": "지난달 대비 이번 달의 총 Revenue 성장률은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.6,
+    "answer_len": 879,
+    "answer_preview": "지난달 대비 이번 달의 총 Revenue 성장률을 확인하기 위해 BigQuery에서 데이터를 조회해 보겠습니다.  잠시만 기다려 주세요. 현재 시점 기준으로 아래 두 기간의 매출 데이터가 필요합니다:  - **이번 달**: 2026년 3월 (3월 1일 ~ 3월 19일, 현재까지) - **지난달**: 2026년 2월 (2월 1일 ~ 2월 28일)  ---  현재 제가 BigQuery 조회 도구를 직접 실행할 수 있는 상태가 아니어서, 실제 수치를 바로 가져오지 못하고 있습니다. 😅  대신 **두 가지 방법**으로 도움드릴 수 있습니다:  ### 1️⃣ 직접 확인 요청  아래 정보를 알려주시면 바로 성장률을 계산해 드리겠습니다: - 2월 총 Revenue - 3월 총 Revenue (현재까지)  ### 2️⃣ 계산 공식  $$\\text{Revenue 성장률 (\\%)} = \\frac{\\text{3월 총 Revenue} - \\text{2월 총 Revenue}}{\\text{2월 총 Reven",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-017",
+    "query": "작년 동기 대비 올해 같은 기간의 총 Cost 변화는 어떻게 되나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.3,
+    "answer_len": 617,
+    "answer_preview": "작년 동기 대비 올해 같은 기간의 총 Cost 변화를 확인하려면 BigQuery에서 데이터를 조회해야 합니다.  정확한 조회를 위해 몇 가지 확인이 필요합니다:  1. **비교 기간**: \"같은 기간\"이 구체적으로 어떤 범위인가요?    - 올해 1월~3월 vs 작년 1월~3월 (YTD 비교)    - 올해 3월 vs 작년 3월 (월간 비교)    - 다른 특정 기간  2. **Cost의 범위**: 어떤 Cost를 의미하시나요?    - 광고비 (Ad Spend)    - 제품 원가 (COGS)    - 물류비    - 전체 운영 비용 합산  3. **분석 단위**: 전체 합산만 필요한지, 아래 기준으로 나눠서 볼지도 알려주세요.    - 국가별    - 채널별    - 제품별  --- *AI 생성 답변 · 2026-03-19*  > 💡 예시: *\"올해 1~3월 vs 작년 1~3월 광고비를 국가별로 비교해줘\"* 처럼 구체적으로 말씀해 주시면 바로 BigQuery에서 조회해 드리겠습니",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-018",
+    "query": "'US'와 'KR' 국가 간의 평균 ROAS를 비교해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.8,
+    "answer_len": 514,
+    "answer_preview": "안녕하세요! 요청하신 **US와 KR 국가 간 평균 ROAS 비교** 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회해 드리겠습니다. 아래 항목들을 포함해 주시면 도움이 됩니다:  > **📌 구체화하면 좋은 항목**  > - **기간** (예: 특정 월, 분기, 연도)  > - **광고 채널** (예: Meta, Google Ads, Amazon Ads 등)  > - **제품 또는 캠페인** (예: 마다가스카르 센텔라 라인 등)  ---  > **💡 질문 예시** 1. *\"2024년 Q4 기준, US와 KR의 Meta 광고 평균 ROAS를 비교해 주세요.\"* 2. *\"2025년 1월~3월, US와 KR의 Google Ads 채널별 평균 ROAS는 어떻게 되나요?\"* 3. *\"2024년 연간 기준, US Amazon Ads와 KR 네이버 광고의 ROAS를 비교해 주세요.\"*  ---  조건을 추가하여 다시 질문해 주시면 바로",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-019",
+    "query": "각 Platform별 평균 CTR을 비교 분석해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 43.6,
+    "answer_len": 702,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **각 Platform별 평균 CTR 비교 분석** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주시면 도움이 됩니다  아래와 같은 항목을 추가로 명시해 주시면 원하시는 데이터를 찾을 가능성이 높아집니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1분기, 최근 30일 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **플랫폼 범위** | Meta Ads, Google Ads, TikTok Ads 등 | | **캠페인 유형** | 브랜드 캠페인, 리타겟팅, 프로모션 등 | | **제품명** | 마다가스카르 센텔라 앰플 등 |  ---  ## 📝 질문 예시  > **1.** \"2024년 상반기 기준, Meta Ads와 Google Ads의 평균 CTR을 비교해 주세요.\"  > **2.** \"한국 시장에서 TikTok Ad",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-020",
+    "query": "특정 기간 동안 'Brand A' 캠페인과 'Brand B' 캠페인의 CVR을 비교해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 43.5,
+    "answer_len": 704,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'Brand A' 캠페인과 'Brand B' 캠페인의 CVR 비교 데이터**를 현재 조회하지 못했습니다.  조회 조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다.  ---  ## 📌 다음 정보를 추가로 알려주시면 좋습니다  | 항목 | 예시 | |------|------| | **기간** | 2024년 1월 1일 ~ 3월 31일 | | **국가/마켓** | 한국, 미국, 일본 등 | | **판매 채널** | 자사몰, 아마존, 쿠팡, 올리브영 등 | | **캠페인 정확한 명칭** | 캠페인 ID 또는 정식 캠페인명 | | **제품명** | 마다가스카르 센텔라 라인 등 |  ---  > ## 💡 질문 예시 > **1.** \"2024년 1분기 한국 자사몰에서 진행한 'Brand A' 캠페인과 'Brand B' 캠페인의 CVR을 비교해 주세요.\"  > **2.** \"2024년 3월 아마존 US 채널 기준, 'Br",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-021",
+    "query": "전체 Cost에서 'Facebook Ads' 플랫폼이 차지하는 비중은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.1,
+    "answer_len": 1269,
+    "answer_preview": "### 📊 Facebook Ads 플랫폼의 전체 광고비 비중 분석  #### 요약  전체 광고비에서 Facebook Ads 플랫폼이 차지하는 비중은 **33.3%**입니다. 이는 분석에 포함된 광고 플랫폼 중 가장 높은 비중으로, 전체 광고비의 약 3분의 1에 해당하는 수준입니다.  #### 분석 및 인사이트  *   Facebook Ads는 현재 분석에 포함된 광고 플랫폼들 중에서 **가장 높은 비용 비중**을 차지하고 있습니다. 이는 Facebook Ads가 마케팅 전략에서 핵심적인 역할을 하고 있음을 시사합니다. *   전체 광고비의 3분의 1을 Facebook Ads에 집행하고 있으므로, 이 플랫폼의 성과가 전체 마케팅 효율 및 ROI에 미치는 영향이 매우 클 것으로 예상됩니다. *   > Facebook Ads에 대한 높은 비용 집중도는 해당 플랫폼의 효율적인 관리와 성과 최적화가 필수적임을 강조합니다. 동시에, 특정 플랫폼에 대한 높은 의존도를 완화하기 위해 다른 플랫폼들",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(Facebook_Cost),\n    (\n      SUM(TikTok_Cost) +\n      SUM(Facebook_Cost) +\n      SUM(Shopee_Expense_KRW) +\n      SUM(Google_Cost) +\n      SUM(NaverSearch_Cost) +\n      SUM(NaverGFA_Cost) +\n      SUM(SingleONE_Cost_KRW) +\n      SUM(KakaoMoments_Cost) +\n      SUM(AmazonAds_Cost)\n    )\n  ) AS facebook_ads_cost_proportion\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nLIMIT 1000"
+  },
+  {
+    "id": "AD-022",
+    "query": "총 Impressions 대비 총 Clicks의 비율(CTR)을 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 49.2,
+    "answer_len": 1492,
+    "answer_preview": "### 📊 통합 광고 채널 총 CTR 분석  #### 요약  2019년 1월 1일 이후 통합 광고 데이터 분석 결과, 총 Impressions 대비 총 Clicks의 비율(CTR)은 **1.3%**로 나타났습니다. 이는 전체 광고 노출 수 대비 클릭으로 이어진 비율을 의미합니다.  #### 분석 및 인사이트  *   **통합 CTR 수준**: 전체 광고 채널을 통합하여 측정한 CTR은 **1.3%**로, 이는 광고 노출 100회당 약 1.3회의 클릭이 발생했음을 의미합니다. 이 수치는 광고 효율성을 평가하는 중요한 지표입니다. *   **광범위한 데이터 기간**: 본 CTR은 2019년 1월 1일부터 현재까지의 모든 통합 광고 데이터를 기반으로 계산되었습니다. 이는 장기간에 걸친 전반적인 광고 성과를 보여줍니다. *   **채널별 성과 분석의 필요성**: 현재 CTR은 모든 광고 채널(TikTok, Facebook, Shopee, Google, NaverSearch, NaverGFA",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(TikTok_Clicks + Facebook_Link_clicks + Shopee_Clicks + Google_Clicks + NaverSearch_Clicks + NaverGFA_Clicks + SingleONE_Clicks + KakaoMoments_Clicks + AmazonAds_Clicks),\n    SUM(TikTok_Impressions + Facebook_Impressions + Shopee_Impressions + Google_Impressions + NaverSearch_Impressions + NaverGFA_Impressions + SingleONE_Impressions + KakaoMoments_Impressions + AmazonAds_Impressions)\n  ) AS total_ctr\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-023",
+    "query": "각 Country별 전체 Revenue에 대한 점유율을 파이 차트로 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 53.1,
+    "answer_len": 2383,
+    "answer_preview": "### 📊 각 Country별 전체 Revenue 점유율 분석  #### 요약  2019년 1월 1일부터 2026년 3월 19일까지의 누적 데이터를 기준으로, 전체 매출 약 **1조 4,050억원** 중 미국이 **14.5%**로 가장 높은 매출 점유율을 보였습니다. 이어서 글로벌_플랫폼이 **13.0%**, 인도네시아가 **10.4%**를 차지하며, 상위 3개 국가/플랫폼이 전체 매출의 **약 37.9%**를 기여했습니다.  #### 상세 데이터  다음은 2019년 1월 1일부터 2026년 3월 19일까지의 Country별 매출 및 점유율 상위 10개 국가와 기타 국가를 합산한 결과입니다.  | 순위 | Country        | 총 매출 (원)       | 점유율 (%) | | :--- | :------------- | ---------------: | ---------: | | 1    | 미국           | 2,038억 2,561만원 | 14.51      | |",
+    "used_sql": "SELECT\n  Country,\n  SUM(Sales1_R) AS total_revenue,\n  SAFE_DIVIDE(SUM(Sales1_R), (SELECT SUM(Sales1_R) FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date >= '2019-01-01' AND Brand != 'ETC')) * 100 AS revenue_share_percentage\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nGROUP BY Country\nORDER BY total_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "AD-024",
+    "query": "특정 Campaign의 총 Conversions 중 각 Ad_Group이 차지하는 구성비를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 44.2,
+    "answer_len": 695,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Campaign별 Ad Group 구성비** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 좀 더 구체적으로 질문해 주시면 정확한 데이터를 찾는 데 도움이 됩니다 아래 항목들을 함께 명시해 주시면 보다 원활한 조회가 가능합니다:  - **캠페인명** (정확한 캠페인 이름 또는 캠페인 ID) - **조회 기간** (예: 2024년 1월 ~ 3월) - **광고 채널** (예: Meta, Google Ads, Amazon Ads 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **전환(Conversions) 기준** (예: 구매 전환, 장바구니 추가 등)  ---  ## 📝 질문 예시  > **1.** \"2024년 Q1 기간 동안 Meta 채널의 **'마다가스카르 센텔라 앰플 프로모션'** 캠페인에서 각 Ad Group이 차지하는 Conversions 구성비를 알려주세요.\"  > **2.** \"2024년 5월 미국",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-025",
+    "query": "가장 높은 Revenue를 기록한 Campaign이 전체 Revenue에 몇 % 기여했나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 50.8,
+    "answer_len": 425,
+    "answer_preview": "안녕하세요! 요청하신 캠페인별 Revenue 기여도 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  > **💡 질문 예시** 1. **\"2024년 Q4 기준, 가장 높은 Revenue를 기록한 캠페인은 무엇이고 전체 Revenue 대비 기여율은 몇 %인가요?\"** 2. **\"미국 Amazon 채널에서 진행한 캠페인 중 Revenue 기여도가 가장 높은 캠페인은 무엇인가요?\"** 3. **\"2025년 상반기, Madagascar Centella 라인 관련 캠페인별 Revenue 비중을 알려주세요.\"**  ---  기간, 국가/채널, 제품 라인, 캠페인 유형 등을 함께 알려주시면 보다 정확한 데이터를 조회해 드리겠습니다! 😊",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-026",
+    "query": "'JP' 국가에서 지난 3개월 동안의 총 Conversions는 몇 건인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 32.1,
+    "answer_len": 728,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'JP(일본)' 국가의 지난 3개월간 총 Conversions** 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  > ## 💡 이렇게 질문을 바꿔보시면 좋습니다 아래 항목을 포함해 주시면 조회 성공률이 높아집니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2025년 1월 1일 ~ 2025년 3월 31일 | | **채널** | Amazon Japan, Qoo10, 자사몰 등 | | **제품명** | Madagascar Centella Ampoule 등 | | **지표 정의** | 주문 건수, 결제 완료 건수 등 |  ---  ## 📝 질문 예시  1. > **\"2025년 1월~3월 동안 Amazon Japan 채널에서 발생한 총 Conversions(주문 전환 건수)는 몇 건인가요?\"**  2. >",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-027",
+    "query": "'Summer Sale' 캠페인이 'Google Ads' 플랫폼에서 발생시킨 총 Revenue를 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 30.8,
+    "answer_len": 674,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **'Summer Sale' 캠페인의 Google Ads 플랫폼 총 Revenue** 데이터를 조회하지 못했습니다.  ---  ## 💡 더 정확한 조회를 위한 제안  질문에 아래 조건을 추가해 주시면 데이터를 보다 정확하게 찾을 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 6월, 2025년 Q2 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **캠페인 정확한 명칭** | Summer Sale 2024, SS_Google_KR 등 | | **제품명** | 마다가스카르 센텔라 라인 등 |  ---  ## 📝 질문 예시  아래와 같이 다시 질문해 보시는 것을 권장드립니다.  1. **\"2024년 6월~8월 기간 동안 Google Ads에서 진행한 'Summer Sale' 캠페인의 총 Revenue를 조회해 주세요.\"**  2. **\"미국 시장 대상 Goo",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-028",
+    "query": "특정 'Product X' Ad_Group의 지난주 Cost와 Clicks를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 47.6,
+    "answer_len": 819,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'Product X' Ad Group의 지난주 Cost 및 Clicks 데이터**를 현재 조회하지 못했습니다.  보다 정확한 결과를 위해 **조건을 좀 더 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 📌 구체적으로 명시해 주시면 좋은 항목  | 항목 | 예시 | |------|------| | **광고 채널** | Amazon Ads, Meta Ads, Google Ads 등 | | **국가/마켓** | 미국(US), 일본(JP), 한국(KR) 등 | | **정확한 기간** | 2025.06.02 ~ 2025.06.08 등 | | **정확한 제품명 / Ad Group명** | 마다가스카르 센텔라 앰플 등 | | **캠페인명** | 특정 캠페인이 있다면 함께 기재 |  ---  > ## 💡 질문 예시 > **1.** \"미국 Amazon Ads에서 'Madagascar Centella Ampoule' Ad ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-029",
+    "query": "2023년 10월 한 달 동안, Cost가 1000 이상이고 ROAS가 300% 이상인 Campaign들의 목록을 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 22.7,
+    "answer_len": 822,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 10월 Cost 1,000 이상 & ROAS 300% 이상 Campaign 목록**에 대해 내부 데이터를 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조건을 좀 더 세분화하면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 추가로 지정해 주시면 좋습니다.  | 구체화 항목 | 예시 | |------------|------| | **광고 채널** | Meta, Google Ads, TikTok 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **Cost 통화 단위** | KRW, USD 등 | | **제품 라인** | 마다가스카르 센텔라 라인, 히알루 시카 라인 등 | | **캠페인 유형** | 브랜딩, 퍼포먼스, 리타겟팅 등 |  ---  ## 📝 질문 예시  > **1.** \"2023년 10월 한 달 동안, **Meta(페이스북/인스타그램) 채널**에서 Cost **U",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-030",
+    "query": "'US' 또는 'CA' 국가에서 'Instagram Ads' 플랫폼을 통해 발생한 총 Revenue와 Conversions를 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 39.8,
+    "answer_len": 740,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **'US' 및 'CA' 국가의 Instagram Ads 플랫폼 총 Revenue 및 Conversions** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 아래 정보를 추가해 주시면 도움이 됩니다  | 구체화 항목 | 예시 | |------------|------| | **조회 기간** | 2024년 1월 ~ 2024년 12월, 최근 30일 등 | | **특정 제품/라인** | 마다가스카르 센텔라 라인, 특정 SKU 등 | | **캠페인명** | 특정 Instagram 캠페인 이름 | | **세분화 기준** | 국가별 분리 조회, 월별 추이 등 |  ---  ## 📝 이렇게 질문을 바꿔 보시면 어떨까요?  1. > **\"2024년 하반기(7월~12월) 기준, US와 CA에서 Instagram Ads를 통해 발생한 월별 Revenue와 Conversions 추이를 조회해 주세요.\"**  2. > **\"",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-031",
+    "query": "각 Platform별 총 Cost를 막대 그래프로 시각화해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 22.9,
+    "answer_len": 1883,
+    "answer_preview": "### 📊 플랫폼별 총 마케팅 비용 분석  #### 요약  2019년 1월 1일 이후 현재까지의 통합 마케팅 비용은 총 **약 8조 2,578억원**으로 집계되었습니다. 이 중 **TikTok**이 약 **3조 7,887억원**으로 전체의 **45.9%**를 차지하며 압도적인 1위를 기록했습니다. 2위인 **Meta(Facebook/Instagram)**는 약 **2조 5,099억원**으로 30.4%의 비중을 보였으며, 상위 두 플랫폼이 전체 마케팅 비용의 76% 이상을 차지하고 있습니다.  #### 상세 데이터  | 플랫폼 | 총 비용 | 비중 (%) | | :------------------ | -----------: | --------: | | TikTok | 약 3조 7,887억원 | 45.9% | | Meta(Facebook/Instagram) | 약 2조 5,099억원 | 30.4% | | Shopee | 약 6,567억원 | 8.0% | | YouTube(Google) ",
+    "used_sql": "SELECT\n  Media,\n  SUM(Cost) AS total_cost\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\nGROUP BY Media\nORDER BY total_cost DESC\nLIMIT 1000"
+  },
+  {
+    "id": "AD-032",
+    "query": "월별 평균 CPC 변화를 라인 차트로 보여주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 74.9,
+    "answer_len": 2938,
+    "answer_preview": "### 📊 월별 평균 CPC 변화 추이 분석  #### 요약  제공된 데이터는 2019년 1월부터 2020년 8월까지의 월별 평균 CPC(Cost Per Click)를 포함합니다. 실제 CPC 데이터는 **2019년 7월부터 2020년 3월까지** 확인되며, 그 이전 6개월(2019년 1월~6월)과 이후 5개월(2020년 4월~8월)은 데이터가 `null` 또는 부재합니다. 데이터가 있는 기간 동안 평균 CPC는 **최저 741원(2019년 8월)**에서 **최고 1,320원(2019년 10월)** 사이에서 변동했으며, 2019년 하반기에 큰 변동성을 보이다가 2020년 초에는 1,000원대 초반을 유지하는 경향을 보였습니다.  #### 상세 데이터  다음은 2019년 1월부터 2020년 8월까지의 월별 평균 CPC 변화 추이입니다.  | 월      | 평균 CPC (원) | | :------ | -------------: | | 2019-01 | 데이터 없음    | | 2019",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', Date) AS month,\n  SAFE_DIVIDE(\n    SUM(COALESCE(TikTok_Cost, 0) + COALESCE(Facebook_Cost, 0) + COALESCE(Shopee_Expense_KRW, 0) + COALESCE(Google_Cost, 0) + COALESCE(NaverSearch_Cost, 0) + COALESCE(NaverGFA_Cost, 0) + COALESCE(SingleONE_Cost_KRW, 0) + COALESCE(KakaoMoments_Cost, 0) + COALESCE(AmazonAds_Cost, 0)),\n    SUM(COALESCE(TikTok_Clicks, 0) + COALESCE(Facebook_Link_clicks, 0) + COALESCE(Shopee_Clicks, 0) + COALESCE(Google_Clicks, 0) + COALESCE(NaverSearch_Clicks, 0) + COALESCE(NaverGFA_Clicks, 0) + COALESCE(SingleONE_Clicks, 0) + COALESCE(KakaoMoments_Clicks, 0) + COALESCE(AmazonAds_Clicks, 0))\n  ) AS average_cpc\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "AD-033",
+    "query": "특정 Campaign의 일별 ROAS 추이를 시계열 차트로 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.7,
+    "answer_len": 702,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **특정 Campaign의 일별 ROAS 추이** 데이터를 현재 조회하지 못했습니다.  ---  ## 🔍 좀 더 구체적으로 질문해 주시면 정확한 데이터를 찾는 데 도움이 됩니다  아래 항목들을 포함하여 다시 질문해 주시겠어요?  | 구체화 항목 | 예시 | |------------|------| | **캠페인명** | 캠페인 이름 또는 캠페인 ID | | **광고 채널** | Meta, Google Ads, 네이버 SA 등 | | **기간** | 2025년 1월 1일 ~ 1월 31일 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **제품명** | 마다가스카르 센텔라 앰플 등 |  ---  > ## 💡 질문 예시 > **1.** \"2025년 5월 한 달간 Meta에서 집행한 **센텔라 앰플 프로모션 캠페인**의 일별 ROAS 추이를 시계열 차트로 보여주세요.\"  > **2.** \"Google Ads **[캠페인 ID: XXX",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-034",
+    "query": "전체 Clicks에서 각 Country가 차지하는 비중을 파이 차트로 그려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 45.6,
+    "answer_len": 3494,
+    "answer_preview": "### 📊 전체 클릭수 국가별 비중 분석 보고서  #### 요약  전체 클릭수는 총 **263,587,427회**로 집계되었으며, 이 중 **인도네시아**가 **151,255,167회(57.4%)**로 압도적인 1위를 차지했습니다. 다음으로 **필리핀**이 **70,444,662회(26.7%)**를 기록하며 전체 클릭수의 대부분(상위 2개국이 약 84.1%)이 동남아시아 시장에 집중되어 있음을 보여줍니다.  #### 상세 데이터  | 국가       | 총 클릭수      | 비중 (%) | | :--------- | -------------: | -------: | | 인도네시아 | 151,255,167    | 57.4     | | 필리핀     | 70,444,662     | 26.7     | | 말레이시아 | 11,383,395     | 4.3      | | 미국       | 9,735,231      | 3.7      | | 일본       | 9,299,639",
+    "used_sql": "SELECT\n  Country,\n  SUM(COALESCE(TikTok_Clicks, 0) + COALESCE(Facebook_Link_clicks, 0) + COALESCE(Shopee_Clicks, 0) + COALESCE(Google_Clicks, 0) + COALESCE(NaverSearch_Clicks, 0) + COALESCE(NaverGFA_Clicks, 0) + COALESCE(SingleONE_Clicks, 0) + COALESCE(KakaoMoments_Clicks, 0) + COALESCE(AmazonAds_Clicks, 0)) AS total_clicks\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nGROUP BY Country\nORDER BY total_clicks DESC\nLIMIT 1000"
+  },
+  {
+    "id": "AD-035",
+    "query": "특정 플랫폼(예: 'TikTok Ads')에서 가장 많은 Revenue를 기록한 상위 5개 Ad_Group을 바 차트로 비교해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.2,
+    "answer_len": 3663,
+    "answer_preview": "### 📊 TikTok Ads 플랫폼 상위 5개 Ad_Group별 매출 비교  #### 요약  TikTok Ads 플랫폼에서 가장 많은 매출을 기록한 상위 5개 Ad_Group은 총 **약 667.3억원**의 매출을 달성했습니다. 이 중 '[IDN] SKIN1004_Shop' Ad_Group이 **약 374.2억원**의 매출로 압도적인 1위를 차지하며, 상위 5개 Ad_Group 매출의 **56.1%**를 기여했습니다.  #### 상세 데이터  TikTok Ads 플랫폼에서 가장 많은 매출을 기록한 상위 5개 Ad_Group의 상세 내역은 다음과 같습니다.  | Ad_Group                 | 총 매출 (원)         | | :----------------------- | -------------------: | | [IDN] SKIN1004_Shop      | 37,417,637,896.898384 | | [PH] SKIN1004_Shop       | 15",
+    "used_sql": "SELECT\n  TikTok_Advertiser_name AS ad_group,\n  SUM(TikTok_Total_complete_payment_value) AS total_revenue\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\n  AND TikTok_Advertiser_name IS NOT NULL\n  AND TikTok_Total_complete_payment_value IS NOT NULL\n  AND TikTok_Total_complete_payment_value > 0\nGROUP BY ad_group\nORDER BY total_revenue DESC\nLIMIT 5"
+  },
+  {
+    "id": "AD-036",
+    "query": "'US' 국가를 제외한 모든 국가의 총 Revenue 합계를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.3,
+    "answer_len": 1146,
+    "answer_preview": "### 📊 미국 제외 국가들의 총 매출 현황  #### 요약  2019년 1월 1일부터 현재까지 미국을 제외한 모든 국가의 총 매출은 **약 1조 2,011.7억원**으로 집계되었습니다. 이는 SKIN1004의 광범위한 글로벌 시장에서의 견고한 성과를 보여줍니다.  #### 분석 및 인사이트  *   **글로벌 시장 다변화**: 미국을 제외한 국가들에서 1조원이 넘는 매출이 발생했다는 점은 특정 시장에 대한 의존도를 낮추고 다양한 글로벌 시장에서 성공적으로 사업을 확장하고 있음을 시사합니다. *   **미국 시장의 잠재적 영향**: 본 매출은 미국 시장을 제외한 결과이므로, 미국 시장의 매출 규모와 성장률을 추가로 분석하여 전체 글로벌 매출에서 차지하는 비중과 기여도를 파악하는 것이 중요합니다. *   **세부 시장 분석 필요**: 현재 합산된 '미국 제외 모든 국가' 매출을 바탕으로, 개별 국가 또는 지역별 매출 비중, 성장 추이 및 주요 성장 동력을 심층 분석하여 향후 전략적 우",
+    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Country != '미국'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-037",
+    "query": "'Google Ads' 플랫폼이 아닌 다른 모든 플랫폼의 평균 CVR은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.0,
+    "answer_len": 1669,
+    "answer_preview": "### 📊 Google Ads 제외 플랫폼 평균 CVR 분석  #### 요약  Google Ads 플랫폼을 제외한 모든 플랫폼의 평균 CVR(전환율)은 **4.5%**로 분석되었습니다. 이 수치는 2019년 1월 1일부터 현재(2026년 3월 19일)까지의 통합 광고 데이터를 기반으로 합니다.  #### 분석 및 인사이트  *   **통합 전환 효율:** Google Ads를 제외한 TikTok, Facebook, Shopee, NaverSearch, NaverGFA, SingleONE, KakaoMoments, AmazonAds 등 다양한 플랫폼의 통합적인 전환 효율을 보여주는 지표입니다. *   **성과 평가 기준:** 해당 플랫폼들의 평균 CVR인 4.5%는 개별 플랫폼의 성과를 평가하거나, 향후 마케팅 캠페인의 목표 CVR을 설정하는 데 중요한 기준점으로 활용될 수 있습니다. *   **플랫폼별 심층 분석 필요:** 전체 평균 CVR은 양호한 수준으로 보이나, 특정 플랫폼의 ",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(TikTok_Complete_payment_events) +\n    SUM(Facebook_Website_purchases) +\n    SUM(Shopee_Conversions) +\n    SUM(NaverSearch_Conversions) +\n    SUM(NaverGFA_Purchases) +\n    SUM(SingleONE_Conversions) +\n    SUM(KakaoMoments_Purchases) +\n    SUM(AmazonAds_Purchases),\n    SUM(TikTok_Clicks) +\n    SUM(Facebook_Link_clicks) +\n    SUM(Shopee_Clicks) +\n    SUM(NaverSearch_Clicks) +\n    SUM(NaverGFA_Clicks) +\n    SUM(SingleONE_Clicks) +\n    SUM(KakaoMoments_Clicks) +\n    SUM(AmazonAds_Clicks)\n  ) AS average_cvr_excluding_google\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-038",
+    "query": "특정 Campaign(예: 'Holiday Sale') 외의 모든 Campaign들의 총 Cost를 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 36.0,
+    "answer_len": 620,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **'Holiday Sale' 외 모든 Campaign의 총 Cost** 데이터를 조회하지 못했습니다.  ---  > ## 💡 더 정확한 결과를 위해 질문을 구체화해 주세요 조회 조건을 좀 더 세부적으로 지정해 주시면 원하시는 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 포함해 보시는 것을 권장드립니다.  > **기간** · **국가/지역** · **광고 채널(플랫폼)** · **제품명/라인** · **비용 통화 단위** 등  ---  ## 📝 질문 예시  1. **\"2024년 1월~6월 동안 'Holiday Sale'을 제외한 모든 Meta(Facebook/Instagram) Campaign의 총 Cost를 USD 기준으로 알려 주세요.\"**  2. **\"2024년 한국 시장에서 'Holiday Sale' Campaign을 제외한 나머지 Campaign별 총 Cost와 ROAS를 조회해 주세요.\"**  3. **\"2024년 하반",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-039",
+    "query": "ROAS가 0인 데이터를 제외하고, 전체 Campaign의 평균 ROAS를 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 31.0,
+    "answer_len": 1142,
+    "answer_preview": "### 📊 전체 캠페인 평균 ROAS 분석  #### 요약  2019년 1월 1일 이후의 데이터를 기준으로 ROAS가 0인 경우를 제외하고 계산된 전체 캠페인의 평균 ROAS는 **4.41**입니다. 이는 마케팅 비용 1원당 약 4.41원의 매출이 발생했음을 의미합니다.  #### 분석 및 인사이트  *   **효율적인 마케팅 성과**: 전체 캠페인의 평균 ROAS가 4.41이라는 것은 마케팅 투자 대비 비교적 높은 수익률을 기록하고 있음을 시사합니다. 이는 마케팅 활동이 효과적으로 매출 증대에 기여하고 있음을 나타냅니다. *   **데이터 필터링의 중요성**: ROAS가 0인 데이터를 제외함으로써, 실제 매출이 발생한 캠페인 활동에 대한 순수한 성과 지표를 파악할 수 있었습니다. 이는 비효율적인 캠페인이나 데이터 오류로 인한 왜곡을 방지하는 데 도움이 됩니다. *   **향후 전략 수립의 기반**: 이 평균 ROAS는 향후 캠페인 목표 설정 및 예산 배분 시 중요한 기준점이 될 수",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(SUM(Revenue), SUM(Cost)) AS average_roas\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\n  AND Cost > 0\n  AND Revenue > 0\nLIMIT 1"
+  },
+  {
+    "id": "AD-040",
+    "query": "특정 Ad_Group(예: 'Retargeting')이 아닌 Ad_Group들의 총 Conversions를 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 41.3,
+    "answer_len": 627,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'Retargeting' 외 Ad Group들의 총 Conversions** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 아래 정보를 추가해 주시면 도움이 됩니다  - **조회 기간** (예: 2024년 1월 ~ 3월) - **광고 채널/플랫폼** (예: Meta, Google Ads, TikTok 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **캠페인명** (예: 특정 캠페인 하위의 Ad Group만 조회)  ---  ## 📝 질문 예시  1. **\"2024년 Q1 기간 동안 Meta 광고에서 'Retargeting'을 제외한 Ad Group별 총 Conversions를 보여주세요.\"**  2. **\"Google Ads 미국 캠페인 중 'Retargeting' Ad Group을 제외한 나머지 Ad Group들의 월별 Conversions 추이를 알려주세요.\"**  3. **\"2024",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-041",
+    "query": "2024년 1월 데이터가 현재 테이블에 포함되어 있나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.7,
+    "answer_len": 387,
+    "answer_preview": "현재 제가 직접 테이블 데이터를 조회하여 확인해 보겠습니다.  다만, 어떤 테이블을 말씀하시는지 조금 더 구체적으로 알려주시면 정확한 확인이 가능합니다. 예를 들어:  - **매출 데이터** (국가별/제품별 매출) - **주문 데이터** (주문 건수, 수량 등) - **특정 플랫폼 데이터** (Amazon, 쿠팡, 자사몰 등)  > 어떤 데이터 테이블의 2024년 1월 포함 여부를 확인하고 싶으신지 알려주시면, BigQuery에서 바로 조회해 드리겠습니다.  --- *AI 생성 답변 · 2026-03-19*  > 💡 **이런 것도 물어보세요** > - 2024년 1월 전체 매출 현황을 알려줘 > - 2024년 월별 매출 추이를 보여줘 > - 현재 조회 가능한 데이터 기간이 어떻게 돼?",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-042",
+    "query": "'Vietnam' 국가의 광고 성과 데이터가 기록되어 있나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.2,
+    "answer_len": 837,
+    "answer_preview": "### 📊 베트남 국가 광고 성과 데이터 존재 여부 분석  #### 요약  현재 통합 광고 데이터셋에는 'Vietnam' 국가에 대한 광고 성과 데이터가 **존재하지 않습니다**. SQL 쿼리 결과, 'Vietnam'으로 기록된 광고 데이터는 **0건**으로 확인되었습니다.  #### 분석 및 인사이트  *   'Vietnam' 국가에 대한 광고 데이터는 현재 **0건**으로 확인되었습니다. *   이는 통합 광고 데이터셋에 'Vietnam'으로 명시된 광고 성과 기록이 없음을 의미합니다. *   따라서 현재 데이터로는 'Vietnam' 국가의 광고 성과를 분석하거나 확인할 수 없습니다.  > 현재 통합 광고 데이터셋에는 'Vietnam' 국가에 대한 광고 성과 데이터가 기록되어 있지 않아, 해당 국가의 광고 활동 분석이 불가능합니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 광고 데이터*  > 💡 **이런 것도 물어보세요** > - 'Singapore' 등 ",
+    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Country = 'Vietnam'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-043",
+    "query": "특정 Campaign(예: 'New Product Launch')의 CPC 데이터를 조회할 수 있나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.3,
+    "answer_len": 714,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'New Product Launch' 캠페인의 CPC 데이터**를 현재 조회하지 못했습니다.  ---  > ## 💡 더 정확한 결과를 위해 질문을 구체화해 주세요 아래 항목을 포함하여 다시 질문해 주시면 데이터를 찾는 데 도움이 됩니다:  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월 | | **국가/마켓** | 미국, 일본, 한국 등 | | **광고 채널** | Meta Ads, Google Ads, Amazon Ads 등 | | **제품명** | 마다가스카르 센텔라 앰플 등 | | **캠페인 정확한 명칭** | 정확한 캠페인 ID 또는 전체 이름 |  ---  ## 📝 질문 예시  > **1.** \"2024년 1분기, **미국 Amazon Ads**에서 진행한 'New Product Launch' 캠페인의 CPC 데이터를 알려주세요.\"  > **2.** \"2024년 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-044",
+    "query": "ROAS가 500%를 초과하는 Campaign이 존재하나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 28.9,
+    "answer_len": 458,
+    "answer_preview": "안녕하세요. 요청하신 ROAS 500% 초과 Campaign 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다. 아래 항목들을 포함해 주시면 도움이 됩니다.  > **구체화하면 좋은 항목:** 기간, 국가/마켓, 광고 채널(Meta·Google·Amazon Ads 등), 제품 라인 등  ---  > ### 💡 질문 예시 1. **\"2024년 하반기(7~12월) Meta Ads 캠페인 중 ROAS가 500%를 초과한 캠페인이 있나요?\"** 2. **\"미국 Amazon Ads에서 마다가스카르 센텔라 라인 관련 캠페인 중 ROAS 상위 5개를 알려주세요.\"** 3. **\"2025년 1분기, 일본 시장 Google Ads 캠페인별 ROAS를 비교해 주세요.\"**  ---  위와 같이 조건을 좁혀서 다시 질문해 주시면 재조회하겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-045",
+    "query": "특정 Platform에서 Clicks가 0인 기록이 있나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.3,
+    "answer_len": 489,
+    "answer_preview": "안녕하세요. 요청하신 **특정 Platform에서 Clicks가 0인 기록** 관련 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  > ### 💡 질문 예시 1. **\"2024년 1월에 Amazon US에서 Clicks가 0인 광고 기록이 있나요?\"**    — 기간 + 플랫폼 + 국가를 특정  2. **\"Shopee Thailand 채널에서 최근 3개월간 Clicks가 0인 캠페인 목록을 알려주세요.\"**    — 채널 + 국가 + 기간을 특정  3. **\"Qoo10 Japan에서 Madagascar Centella 제품의 Clicks가 0인 날짜별 기록을 조회해 주세요.\"**    — 플랫폼 + 국가 + 제품명을 특정  ---  **기간, 국가, 플랫폼(채널), 제품명, 캠페인명** 등을 함께 알려주시면 보다 정확한 데이터를 찾아드릴 수 있습니다. 😊",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-046",
+    "query": "Conversions가 0인 Ad_Group들의 목록과 해당 Cost를 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 34.5,
+    "answer_len": 684,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Conversions가 0인 Ad Group 목록 및 해당 Cost 데이터**를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주시면 도움이 됩니다  아래와 같은 항목을 추가로 명시해 주시면 데이터를 보다 정확하게 조회할 수 있습니다:  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 5월, 최근 30일 등 | | **광고 채널** | Meta Ads, Google Ads, Amazon Ads 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **캠페인명** | 특정 캠페인 이름 또는 캠페인 유형 |  ---  ## 📝 질문 예시  1. > **\"2024년 5월 Google Ads에서 Conversions가 0인 Ad Group 목록과 각 Cost를 보여주세요.\"**  2. > **\"최근 30일간 Meta Ads 미국 캠페인 중 Con",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-047",
+    "query": "가장 최근 날짜의 전체 광고 성과 데이터를 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 29.6,
+    "answer_len": 459,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **전체 광고 성과 데이터**를 현재 조회하지 못했습니다.  보다 정확한 데이터를 찾기 위해 **조건을 좀 더 구체적으로** 지정해 주시면 도움이 됩니다. 예를 들어 아래와 같은 항목을 포함해 주세요:  > **기간** · **국가/마켓** · **광고 채널** · **제품명** · **성과 지표(ROAS, CTR 등)**  ---  > ### 💡 질문 예시 1. **\"2025년 6월 Meta(페이스북) 광고의 국가별 ROAS 데이터를 조회해 주세요.\"** 2. **\"최근 7일간 일본 아마존 스폰서드 광고 성과(클릭수, 전환율)를 알려 주세요.\"** 3. **\"2025년 6월 마다가스카르 센텔라 라인 Google Ads 캠페인별 매출 성과를 조회해 주세요.\"**  ---  위와 같이 조건을 추가하여 다시 질문해 주시면, 내부 데이터에서 정확한 결과를 찾아드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-048",
+    "query": "데이터셋에서 가장 오래된 Date는 언제인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 29.1,
+    "answer_len": 1008,
+    "answer_preview": "### 📊 데이터셋 내 가장 오래된 날짜 분석  #### 요약  통합 매출 데이터셋(`Sales_Integration.SALES_ALL_Backup`)에서 조회된 가장 오래된 날짜는 **1900년 01월 01일**입니다. 이 날짜는 실제 매출 발생일이라기보다는 데이터 입력 오류 또는 초기값으로 설정되었을 가능성이 높습니다.  #### 분석 및 인사이트  *   **가장 오래된 날짜 확인:** 데이터셋 내에서 가장 오래된 날짜는 **1900년 01월 01일**로 확인되었습니다. *   **데이터 유효성 검토 필요:** 1900년 01월 01일은 현대 비즈니스 데이터로서는 매우 이례적인 날짜입니다. 이는 누락된 날짜 값에 대한 기본값 설정, 데이터 입력 오류, 또는 시스템 초기화 시의 더미 데이터일 가능성이 큽니다. *   **데이터 품질 관리 권고:** 해당 날짜를 가진 데이터의 비중과 내용을 확인하여 데이터 품질을 개선하고, 실제 유효한 매출 데이터의 시작 시점을 명확히 파악하는 것",
+    "used_sql": "SELECT\n  MIN(Date) AS oldest_date\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nLIMIT 1000"
+  },
+  {
+    "id": "AD-049",
+    "query": "CVR 값이 NULL인 데이터가 있는지 확인해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 36.7,
+    "answer_len": 296,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-050",
+    "query": "CPC가 0.01 미만이거나 5 이상인 데이터 건수는 몇 건인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 31.7,
+    "answer_len": 468,
+    "answer_preview": "안녕하세요. 요청하신 **CPC가 0.01 미만이거나 5 이상인 데이터 건수**를 확인하려 했으나, 해당 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 결과를 안내드릴 수 있습니다. 예를 들어 **기간, 국가, 광고 채널, 캠페인명** 등을 함께 알려주시면 도움이 됩니다.  ---  > **💡 이렇게 질문해 보시면 좋습니다:** 1. **\"2024년 1분기 아마존 US 광고 캠페인 중 CPC가 0.01 미만이거나 5 이상인 데이터는 몇 건인가요?\"** 2. **\"최근 30일간 메타(Facebook) 광고에서 CPC가 비정상 범위(0.01 미만 또는 5 이상)인 캠페인 목록을 알려주세요.\"** 3. **\"2024년 마다가스카르 센텔라 라인 관련 Google Ads 캠페인 중 CPC 이상치 건수를 국가별로 보여주세요.\"**  ---  조건을 추가해서 다시 질문해 주시면 바로 조회해 드리겠습니다! 😊",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-051",
+    "query": "각 Platform별 총 Cost, Clicks, Conversions를 집계해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 30.6,
+    "answer_len": 729,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **각 Platform별 총 Cost, Clicks, Conversions 집계 데이터**를 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조회 조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 포함해 보세요:  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월, 최근 30일 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **플랫폼 범위** | Meta, Google Ads, TikTok 등 특정 플랫폼 | | **캠페인/제품** | 마다가스카르 센텔라 라인, 특정 캠페인명 등 |  ---  ## 📝 질문 예시  > **1.** \"2024년 1분기(1~3월) 기준, Meta와 Google Ads의 플랫폼별 총 Cost, Clicks, Conversions를 알려주세요.\"  > **2.*",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-052",
+    "query": "Campaign 유형별 평균 ROAS를 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.5,
+    "answer_len": 669,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Campaign 유형별 평균 ROAS** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 💡 이런 정보를 추가해 주시면 좋습니다  | 구분 | 예시 | |------|------| | **기간** | 2024년 1분기, 최근 6개월 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **광고 채널** | Meta Ads, Google Ads, 네이버 검색광고 등 | | **캠페인 유형** | 브랜딩, 퍼포먼스, 리타겟팅 등 | | **제품군** | 마다가스카르 센텔라 라인, 톤업 선크림 등 |  ---  ## 📝 질문 예시  1. **\"2024년 하반기 Meta Ads 기준, 캠페인 유형별(브랜딩/퍼포먼스/리타겟팅) 평균 ROAS를 알려 주세요.\"**  2. **\"한국 시장에서 2025년 1분기 Google A",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-053",
+    "query": "Ad_Group 카테고리별 총 Revenue를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 39.5,
+    "answer_len": 2511,
+    "answer_preview": "### 📊 Media 카테고리별 총 Revenue 분석  #### 요약  2019년 1월 1일부터 현재(2026년 3월 19일)까지의 데이터 분석 결과, 전체 Media 카테고리에서 발생한 총 Revenue는 **약 2,144.63억원**입니다. 이 중 **TikTok**이 약 682.33억원으로 가장 높은 Revenue를 기록하며 전체의 약 31.8%를 차지했습니다. Meta(Facebook/Instagram)와 Shopee가 그 뒤를 이어 상위 3개 Media 카테고리가 전체 Revenue의 80% 이상을 차지하는 높은 집중도를 보였습니다.  #### 상세 데이터  다음은 Media 카테고리별 총 Revenue 상세 내역입니다.  | Media                 | 총 Revenue (원)      | 총 Revenue (억원/만원) | | :-------------------- | --------------------: | --------------------: | ",
+    "used_sql": "SELECT\n  Media,\n  SUM(Revenue) AS total_revenue\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\nGROUP BY Media\nORDER BY total_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "AD-054",
+    "query": "Country별로 Campaign의 수를 세어주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 39.8,
+    "answer_len": 567,
+    "answer_preview": "데이터를 조회하겠습니다. BigQuery에서 Country별 Campaign 수를 집계하겠습니다.  잠시만요, 먼저 사용 가능한 테이블 구조를 확인해야 합니다.  현재 BigQuery에 연결된 테이블 정보를 확인할 수 없어 정확한 쿼리를 실행하기 어렵습니다.  정확한 조회를 위해 몇 가지 확인이 필요합니다:  1. **어떤 데이터 소스**를 기준으로 조회할까요?    - 광고 캠페인 (예: Meta Ads, Google Ads 등)    - 마케팅 캠페인 관리 테이블    - 매출 데이터에 포함된 캠페인 정보  2. **기간 범위**가 있나요?    - 전체 기간    - 특정 연도/월 (예: 2025년, 2026년 1분기 등)  3. **Country**는 캠페인이 집행된 국가인지, 타겟 국가인지도 알려주시면 더 정확하게 조회할 수 있습니다.  --- *AI 생성 답변 · 2026-03-19*  > 💡 **이런 것도 물어보세요** > - 특정 국가의 캠페인 상세 목록을 볼 수 있나",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-055",
+    "query": "각 Date별로 Platform당 발생한 총 Impressions를 집계해 주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 64.1,
+    "answer_len": 5097,
+    "answer_preview": "### 📊 각 Date별 플랫폼 총 Impressions 집계 보고서  #### 요약  사용자 요청에 따라 각 날짜(Date)별로 플랫폼당 발생한 총 Impressions를 집계했습니다. 조회된 데이터는 **2019년 1월 1일부터 시작하는 1,000일간의 기록** 중 일부이며, 제공된 **초기 8일간(2019년 1월 1일 ~ 2019년 1월 8일)의 프리뷰 데이터에서는 모든 플랫폼에서 임프레션이 0**으로 나타났습니다.  #### 상세 데이터  다음은 2019년 1월 1일부터 2019년 1월 8일까지의 플랫폼별 총 Impressions 집계 결과입니다.  | Date       | TikTok_Total_Impressions | Facebook_Total_Impressions | Shopee_Total_Impressions | Google_Total_Impressions | NaverSearch_Total_Impressions | NaverGFA_Total_Impressions |",
+    "used_sql": "SELECT\n  Date,\n  SUM(TikTok_Impressions) AS TikTok_Total_Impressions,\n  SUM(Facebook_Impressions) AS Facebook_Total_Impressions,\n  SUM(Shopee_Impressions) AS Shopee_Total_Impressions,\n  SUM(Google_Impressions) AS Google_Total_Impressions,\n  SUM(NaverSearch_Impressions) AS NaverSearch_Total_Impressions,\n  SUM(NaverGFA_Impressions) AS NaverGFA_Total_Impressions,\n  SUM(SingleONE_Impressions) AS SingleONE_Total_Impressions,\n  SUM(KakaoMoments_Impressions) AS KakaoMoments_Total_Impressions,\n  SUM(AmazonAds_Impressions) AS AmazonAds_Total_Impressions\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nGROUP BY Date\nORDER BY Date\nLIMIT 1000"
+  },
+  {
+    "id": "AD-056",
+    "query": "최근 3개월 동안의 총 Revenue와 총 Cost를 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 46.7,
+    "answer_len": 993,
+    "answer_preview": "최근 3개월(2025년 12월 ~ 2026년 2월) 동안의 총 Revenue와 총 Cost를 BigQuery에서 조회해 보겠습니다.  다만, 현재 세션에서 BigQuery SQL 실행 도구에 직접 접근할 수 없는 상태입니다. 정확한 데이터를 조회하려면 아래 정보를 확인해야 합니다:  ---  ## 확인이 필요한 사항  조회를 진행하기 위해 몇 가지 여쭤볼게요:  1. **기간 범위**: 최근 3개월이 **2025년 12월 ~ 2026년 2월** 기준이 맞으신가요? 아니면 **2026년 1월 ~ 3월** (3월은 진행 중)을 원하시나요? 2. **데이터 범위**: 전체 글로벌 매출인지, 특정 채널/국가 기준인지 알려주시면 더 정확하게 조회할 수 있습니다. 3. **Revenue/Cost 기준**:    - Revenue = 순매출(Net Sales)? 총매출(Gross Sales)?    - Cost = 매출원가(COGS)? 광고비 포함 총비용?  ---  ## 일반적으로 조회하는 쿼",
+    "used_sql": "SELECT\n  SUM(revenue) AS total_revenue,\n  SUM(cost) AS total_cost,\n  SUM(revenue) - SUM(cost) AS total_profit\nFROM `project.dataset.sales_table`\nWHERE date BETWEEN '2025-12-01' AND '2026-02-28'"
+  },
+  {
+    "id": "AD-057",
+    "query": "작년 하반기(7월~12월)의 평균 ROAS는 얼마였나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 41.7,
+    "answer_len": 1000,
+    "answer_preview": "### 📊 작년 하반기(2025년 7월~12월) 평균 ROAS 분석  #### 요약  2025년 하반기(7월~12월) 동안의 평균 ROAS는 **2.29**로 집계되었습니다. 이는 해당 기간 동안 마케팅 비용 1원당 약 2.29원의 매출이 발생했음을 의미합니다.  #### 분석 및 인사이트  *   2025년 하반기 평균 ROAS는 2.29로, 투자된 마케팅 비용 대비 2배 이상의 매출 성과를 달성했습니다. 이는 마케팅 활동이 매출 증대에 긍정적인 기여를 했음을 시사합니다. *   이 수치는 전년 동기 또는 상반기 ROAS와 비교하여 마케팅 효율성의 변화 추이를 파악하는 데 중요한 기준점이 될 수 있습니다. *   향후 마케팅 전략 수립 시, 이 평균 ROAS를 기준으로 특정 캠페인이나 채널의 효율성을 평가하고 개선 방안을 모색하는 데 활용할 수 있습니다.  > 2025년 하반기 마케팅 투자는 비용 대비 2배 이상의 매출을 창출하며 효율적인 성과를 보였습니다.  --- *조회 기준:",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(SUM(Revenue), SUM(Cost)) AS average_roas\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2025\n  AND EXTRACT(MONTH FROM Date) BETWEEN 7 AND 12\nLIMIT 1000"
+  },
+  {
+    "id": "AD-058",
+    "query": "2023년 Q1부터 Q3까지의 누적 Conversions 수를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 37.2,
+    "answer_len": 1405,
+    "answer_preview": "### 📊 2023년 Q1-Q3 누적 전환(Conversions) 분석  #### 요약  2023년 1분기부터 3분기까지의 누적 전환(Conversions) 수는 **235,901건**으로 집계되었습니다. 이는 9개월간 다양한 광고 채널을 통해 발생한 총 전환 성과입니다.  #### 분석 및 인사이트  *   **총 전환 성과**: 2023년 1월 1일부터 9월 30일까지의 기간 동안 총 235,901건의 전환이 발생했습니다. 이는 Shopee, Google, NaverSearch, SingleONE, KakaoMoments, AmazonAds, Facebook 등 통합된 광고 채널의 성과를 합산한 결과입니다. *   **광고 효율성 지표**: 전환 수는 광고 캠페인의 직접적인 성과를 나타내는 중요한 지표입니다. 해당 기간 동안 23만 건 이상의 전환이 발생했다는 것은 마케팅 활동이 일정 수준 이상의 고객 행동을 유도했음을 의미합니다. *   **추가 분석 필요**: 현재 데이터는 ",
+    "used_sql": "SELECT\n  SUM(Shopee_Conversions) +\n  SUM(Google_Conversions) +\n  SUM(NaverSearch_Conversions) +\n  SUM(SingleONE_Conversions) +\n  SUM(KakaoMoments_Purchases) +\n  SUM(AmazonAds_Purchases) +\n  SUM(Facebook_Website_purchases) +\n  SUM(Facebook_Omni_purchase_shared_item) AS total_conversions\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE\n  Date >= '2023-01-01' AND Date <= '2023-09-30'\nLIMIT 1000"
+  },
+  {
+    "id": "AD-059",
+    "query": "2023년 30번째 주의 총 Cost와 Impressions는 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 39.5,
+    "answer_len": 655,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 30번째 주의 총 Cost와 Impressions** 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 💡 이런 정보를 추가해 주시면 좋습니다  | 구분 | 예시 | |------|------| | **국가/마켓** | 미국, 일본, 한국 등 | | **광고 채널** | Meta, Google Ads, Amazon Ads 등 | | **제품명** | 마다가스카르 센텔라 톤크림, 히알루 시카 세럼 등 | | **캠페인 유형** | Sponsored Products, Display 등 |  ---  ## 📝 질문 예시  1. > **\"2023년 30주차에 미국 Amazon Ads에서 발생한 총 Cost와 Impressions는 얼마인가요?\"**  2. > **\"2023년 30주차 Meta 광고 채널의 국가별 Cost와 I",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-060",
+    "query": "2023년 1월 1일부터 2023년 6월 30일까지의 평균 CVR을 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 36.3,
+    "answer_len": 503,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 1월 1일~6월 30일 평균 CVR** 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 함께 명시해 주세요.  > **채널** (예: 자사몰, 아마존, 쿠팡, Shopee 등)  > **국가/마켓** (예: 한국, 미국, 일본 등)  > **제품명 또는 제품 카테고리** (예: 마다가스카르 센텔라 라인 등)  ---  > ### 💡 질문 예시 1. **\"2023년 상반기(1~6월) 아마존 US 채널의 월별 평균 CVR을 알려 주세요.\"** 2. **\"2023년 1월~6월, 자사몰에서 마다가스카르 센텔라 톤업 선크림의 CVR 추이를 보여 주세요.\"** 3. **\"2023년 상반기 쿠팡 채널 전체 제품 기준 평균 CVR과 전년 동기 대비 변화를 알려 주세요.\"**  ---  위와 같이 조건을 추가하여 다시 질문해 주시면, 해당 데이터를 조회해 드리겠습",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-061",
+    "query": "전년 대비 올해의 평균 CTR 성장률은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 42.8,
+    "answer_len": 525,
+    "answer_preview": "안녕하세요. 요청하신 **전년 대비 평균 CTR 성장률** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회해 드리겠습니다. 예를 들어 아래와 같은 항목을 포함해 주시면 도움이 됩니다.  - **기간** (예: 2023년 vs 2024년, 특정 분기 등) - **광고 채널** (예: Meta, Google Ads, Amazon Ads 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **캠페인 또는 제품** (예: 마다가스카르 센텔라 라인 등)  ---  > ### 💡 질문 예시 1. **\"2023년 대비 2024년 Meta 광고의 한국 시장 평균 CTR 성장률은 얼마인가요?\"** 2. **\"2024년 상반기 vs 하반기 Amazon US 스폰서드 광고의 CTR 변화를 알려주세요.\"** 3. **\"마다가스카르 센텔라 앰플 관련 Google Ads 캠페인의 전년 대비 CTR 추이를 보여주세요.\"**  조건을 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-062",
+    "query": "지난 분기 대비 이번 분기의 총 Cost 감소율은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.0,
+    "answer_len": 656,
+    "answer_preview": "지난 분기 대비 이번 분기의 총 Cost 감소율을 확인하려면 BigQuery에서 데이터를 조회해야 합니다. 현재 조회를 시도해 보겠습니다.  ---  잠시만요, 확인해 보니 **현재 BigQuery 데이터 조회 요청을 직접 실행할 수 있는 상태가 아닙니다.** 정확한 수치를 드리기 위해 몇 가지 확인이 필요합니다.  ## 확인이 필요한 사항  | 항목 | 설명 | |------|------| | **기준 분기** | \"이번 분기\"가 **2026년 Q1 (1~3월)**을 의미하시나요? | | **Cost 범위** | 광고비(Ad Spend), 물류비(COGS), 전체 운영비 중 어떤 Cost를 말씀하시나요? | | **채널/국가** | 전체 합산인지, 특정 채널(Amazon, 자사몰 등)이나 국가 기준인지 |  > 위 기준을 알려주시면 BigQuery에서 **2025년 Q4 vs 2026년 Q1** 총 Cost를 조회하여 감소율(%)을 정확히 계산해 드리겠습니다.  ---  > 💡 *",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-063",
+    "query": "특정 Campaign의 월별 Revenue 증감액을 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 44.1,
+    "answer_len": 684,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **특정 Campaign의 월별 Revenue 증감액** 데이터를 현재 조회하지 못했습니다.  보다 정확한 데이터를 찾기 위해 **조건을 좀 더 구체적으로** 지정해 주시면 도움이 됩니다.  ---  ## 🔍 다음 정보를 추가해 주세요  | 구분 | 예시 | |------|------| | **캠페인명** | 구체적인 캠페인 이름 또는 캠페인 ID | | **기간** | 2024년 1월 ~ 6월, 최근 3개월 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **판매 채널** | 자사몰, Amazon, Shopee, 올리브영 등 | | **제품명** | 마다가스카르 센텔라 라인 등 |  ---  > ## 💡 질문 예시 > **1.** \"2024년 상반기(1~6월) Amazon US에서 진행한 **Summer Glow 캠페인**의 월별 Revenue 증감액을 보여주세요.\"  > **2.** \"2024년 올리브영 채널 **센텔라 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-064",
+    "query": "가장 높은 ROAS와 가장 낮은 ROAS 간의 변동폭은 얼마인가요?",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 68.8,
+    "answer_len": 1248,
+    "answer_preview": "### 📊 ROAS 변동폭 분석 보고서  #### 요약  통합 마케팅 비용 데이터를 분석한 결과, 가장 높은 ROAS와 가장 낮은 ROAS 간의 변동폭은 **8.91**로 나타났습니다. 이는 마케팅 채널별 수익성 효율에 상당한 차이가 있음을 의미합니다.  #### 분석 및 인사이트  *   **높은 ROAS 변동폭**: ROAS 변동폭이 **8.91**이라는 것은 각 마케팅 채널(Media)의 투자 대비 수익 효율이 매우 다양하다는 것을 시사합니다. 이는 일부 채널의 성과가 매우 뛰어나거나, 반대로 일부 채널의 성과가 매우 저조하여 전체적인 편차가 크게 나타났음을 의미합니다. *   **성과 편차 관리의 중요성**: 이러한 큰 변동폭은 마케팅 예산 배분 및 전략 수립에 있어 중요한 고려사항입니다. 높은 ROAS를 기록하는 채널의 성공 요인을 분석하여 다른 채널에 적용하거나, 효율성이 낮은 채널의 개선 방안을 모색하는 것이 필요합니다. *   **최적화 기회**: 각 채널의 ROAS를",
+    "used_sql": "SELECT\n  MAX(roas_value) - MIN(roas_value) AS roas_range_fluctuation\nFROM (\n  SELECT\n    Media,\n    SAFE_DIVIDE(SUM(Revenue), SUM(Cost)) AS roas_value\n  FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\n  WHERE Date >= '2019-01-01'\n  GROUP BY Media\n  HAVING SUM(Cost) > 0 AND SUM(Revenue) IS NOT NULL\n)\nLIMIT 1000"
+  },
+  {
+    "id": "AD-065",
+    "query": "특정 Ad_Group의 지난 6개월간 평균 CPC 변화 추이를 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.1,
+    "answer_len": 730,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **특정 Ad Group의 지난 6개월간 평균 CPC 변화 추이** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 조회를 위해 아래 정보를 구체적으로 알려주시면 도움이 됩니다  | 구체화 항목 | 예시 | |------------|------| | **Ad Group명** | 정확한 Ad Group 이름 또는 ID | | **광고 채널** | Amazon Ads, Google Ads, Meta Ads 등 | | **국가/마켓** | 미국, 일본, 한국 등 | | **기간** | 2024년 7월 ~ 2024년 12월 등 정확한 기간 | | **캠페인명** | 해당 Ad Group이 속한 캠페인명 |  ---  ## 📝 이렇게 질문해 보시면 좋습니다  1. > **\"Amazon US의 'Madagascar Centella Tone Brightening' 캠페인 내 Ad Group별 2024년 7월~12월 평균 CPC 변화 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-066",
+    "query": "전체 데이터의 평균 CPC(클릭당 비용)는 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 41.8,
+    "answer_len": 1549,
+    "answer_preview": "### 📊 전체 평균 CPC 분석 결과  #### 요약  전체 통합 광고 데이터를 기준으로 한 평균 CPC(클릭당 비용)는 **198.73원**으로 집계되었습니다. 이는 모든 광고 플랫폼에서 발생한 총 비용을 총 클릭수로 나눈 값입니다.  #### 분석 및 인사이트  *   **통합 광고 효율성 지표**: 평균 CPC 198.73원은 TikTok, Facebook, Shopee, Google, NaverSearch, NaverGFA, SingleONE, KakaoMoments, AmazonAds 등 모든 통합 광고 플랫폼의 클릭당 평균 비용을 나타냅니다. *   **비용 효율성 평가**: 이 수치는 전반적인 광고 캠페인의 비용 효율성을 평가하는 데 중요한 기준이 됩니다. 일반적으로 낮은 CPC는 더 많은 클릭을 유도하여 잠재 고객에게 도달하는 데 효율적임을 의미합니다. *   **향후 분석의 기준점**: 이 평균 CPC는 개별 플랫폼별 CPC, 특정 캠페인 또는 기간별 CPC와 비교",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(TikTok_Cost) + SUM(Facebook_Cost) + SUM(Shopee_Expense_KRW) + SUM(Google_Cost) + SUM(NaverSearch_Cost) + SUM(NaverGFA_Cost) + SUM(SingleONE_Cost_KRW) + SUM(KakaoMoments_Cost) + SUM(AmazonAds_Cost),\n    SUM(TikTok_Clicks) + SUM(Facebook_Link_clicks) + SUM(Shopee_Clicks) + SUM(Google_Clicks) + SUM(NaverSearch_Clicks) + SUM(NaverGFA_Clicks) + SUM(SingleONE_Clicks) + SUM(KakaoMoments_Clicks) + SUM(AmazonAds_Clicks)\n  ) AS average_cpc\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nLIMIT 1"
+  },
+  {
+    "id": "AD-067",
+    "query": "일별 평균 Conversions 수는 몇 건인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 48.8,
+    "answer_len": 1839,
+    "answer_preview": "### 📊 일별 평균 전환 수 분석  #### 요약  통합 광고 데이터를 분석한 결과, **일별 평균 전환 수**는 **3,101.3건**으로 집계되었습니다. 이는 TikTok, Facebook, Shopee, Google, NaverSearch, NaverGFA, SingleONE, KakaoMoments, AmazonAds 등 다양한 광고 채널에서 발생한 전환 이벤트를 합산하여 일자별로 평균한 수치입니다.  #### 분석 및 인사이트  *   **전반적인 전환 성과**: 일별 평균 3,101.3건의 전환은 통합 광고 채널에서 발생하는 일상적인 전환 활동의 기준점을 제공합니다. 이 수치는 전반적인 마케팅 활동의 효율성을 가늠하는 중요한 지표로 활용될 수 있습니다. *   **통합적인 데이터 활용**: 여러 광고 플랫폼(TikTok, Facebook, Shopee, Google, NaverSearch, NaverGFA, SingleONE, KakaoMoments, AmazonAds)",
+    "used_sql": "SELECT\n  AVG(daily_conversions) AS average_daily_conversions\nFROM (\n  SELECT\n    Date,\n    SUM(\n      COALESCE(TikTok_Complete_payment_events, 0) +\n      COALESCE(Facebook_Website_purchases, 0) +\n      COALESCE(Facebook_Omni_purchase_shared_item, 0) +\n      COALESCE(Shopee_Conversions, 0) +\n      COALESCE(Google_Conversions, 0) +\n      COALESCE(NaverSearch_Conversions, 0) +\n      COALESCE(NaverGFA_Purchases, 0) +\n      COALESCE(SingleONE_Conversions, 0) +\n      COALESCE(KakaoMoments_Purchases, 0) +\n      COALESCE(AmazonAds_Purchases, 0)\n    ) AS daily_conversions\n  FROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\n  GROUP BY Date\n)\nLIMIT 1000"
+  },
+  {
+    "id": "AD-068",
+    "query": "특정 Campaign의 7일 이동평균 ROAS를 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.2,
+    "answer_len": 660,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Campaign의 7일 이동평균 ROAS** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래 정보를 구체적으로 명시해 주시면 다시 조회를 시도하겠습니다.  ---  ## 🔍 구체적으로 알려주시면 좋은 항목  | 항목 | 예시 | |------|------| | **캠페인명** | 특정 캠페인 이름 또는 캠페인 ID | | **광고 채널** | Meta(Facebook/Instagram), Google Ads, TikTok 등 | | **조회 기간** | 2024년 1월 1일 ~ 2024년 3월 31일 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **제품명** | 마다가스카르 센텔라 앰플 등 |  ---  > ## 💡 질문 예시 1. **\"2024년 11월 Meta 채널의 '센텔라 앰플 프로모션' 캠페인 7일 이동평균 ROAS를 알려주세요.\"**  2. **\"미국 시장 Google Ads에서 202",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-069",
+    "query": "각 Campaign의 Cost를 기준으로 가중평균 ROAS를 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 40.2,
+    "answer_len": 597,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **각 Campaign의 Cost 기준 가중평균 ROAS** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 좀 더 구체적으로 질문해 주시면 정확한 데이터를 찾는 데 도움이 됩니다 아래와 같은 조건을 추가로 명시해 주시면 원활한 조회가 가능합니다:  - **기간** (예: 2024년 1분기, 2025년 5월 등) - **광고 채널** (예: Meta, Google Ads, 네이버 검색광고 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **특정 캠페인 그룹 또는 제품군** (예: 마다가스카르 센텔라 라인, 톤업 선크림 등)  ---  ## 📝 질문 예시  1. **\"2025년 1~5월 Meta 광고 캠페인별 Cost 기준 가중평균 ROAS를 알려줘\"**  2. **\"2024년 하반기 미국 마켓 Google Ads 캠페인의 가중평균 ROAS를 계산해 줘\"**  3. **\"2025년 5월 한국 네이버 검색광고에서 센텔",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-070",
+    "query": "각 Country별 평균 Cost와 평균 Revenue를 나란히 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 47.1,
+    "answer_len": 2203,
+    "answer_preview": "### 📊 각 국가별 평균 마케팅 비용 및 평균 매출 분석  #### 요약  총 **109개** 국가의 평균 마케팅 비용 및 평균 매출을 분석한 결과, **인도네시아**가 평균 비용 **236.9만원**과 평균 매출 **1,105.6만원**으로 모두 가장 높은 수치를 기록했습니다. 상위 15개 국가 중 **콜롬비아, 레바논, 대한민국, 태국, 아랍에미리트** 등 5개 국가에서는 상당한 평균 비용(최대 **339.4만원**)이 발생했음에도 불구하고 평균 매출이 **0원**으로 나타나, 해당 국가들의 마케팅 효율성 검토가 시급합니다.  #### 상세 데이터  다음은 총 109개 국가 중 평균 비용 상위 15개 국가의 평균 마케팅 비용과 평균 매출 현황입니다.  | Country | 평균 비용 (만원) | 평균 매출 (만원) | |:------------|-----------------:|-----------------:| | 인도네시아 | 236.9 | 1,105.6 | | 미국 | 3",
+    "used_sql": "SELECT\n  Country,\n  AVG(Cost) AS average_cost,\n  AVG(Revenue) AS average_revenue\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nGROUP BY Country\nORDER BY average_cost DESC\nLIMIT 1000"
+  },
+  {
+    "id": "AD-071",
+    "query": "2023년 1월 1일부터 현재까지의 누적 Revenue는 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 37.3,
+    "answer_len": 608,
+    "answer_preview": "SKIN1004의 2023년 1월 1일부터 현재(2026년 3월 19일)까지의 누적 Revenue를 조회하겠습니다.  잠시만 기다려 주세요. BigQuery에서 데이터를 확인해 보겠습니다.  ---  현재 제가 BigQuery 데이터에 직접 접근하여 조회한 결과가 없는 상태입니다. 정확한 누적 Revenue를 확인하려면 아래 정보를 좀 더 구체적으로 알려주시면 도움이 됩니다:  | 확인 사항 | 예시 | |---|---| | **채널 범위** | 전체 / Amazon / 자사몰 / 오프라인 등 | | **지역 범위** | 글로벌 전체 / 한국 / 미국 / 일본 등 | | **통화 기준** | KRW / USD / 현지 통화 | | **Revenue 정의** | 총매출(Gross) / 순매출(Net) / 정산 기준 |  > 💡 범위를 지정해 주시면 BigQuery에서 정확한 데이터를 조회하여 차트와 함께 제공해 드릴 수 있습니다.  ---  > 💡 **이런 것도 물어보세요** > - ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-072",
+    "query": "올해 YTD(Year-To-Date) 총 Cost를 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 39.0,
+    "answer_len": 651,
+    "answer_preview": "올해 YTD(2026년 1월 1일 ~ 3월 19일) 총 Cost를 조회해 보겠습니다.  BigQuery에서 데이터를 확인하겠습니다.  ---  현재 검색 결과만으로는 정확한 금액을 제공하기 어렵습니다. BigQuery 데이터베이스에 Cost 관련 테이블이 연동되어 있다면 직접 조회가 가능한데, 몇 가지 확인이 필요합니다.  ## 확인 사항  1. **\"Cost\"의 범위** — 어떤 비용을 말씀하시는 건가요?    - **광고비(Ad Spend)** — 마케팅/퍼포먼스 광고 집행 비용    - **매출원가(COGS)** — 제품 제조·조달 원가    - **물류비(Logistics Cost)** — 배송·풀필먼트 비용    - **운영비 전체(OPEX)** — 위 항목 모두 포함한 총 비용  2. **채널/국가 범위** — 전체 글로벌 합산인지, 특정 채널(Amazon, 자사몰 등)이나 국가 기준인지  > 💬 범위를 알려주시면 BigQuery에서 정확한 YTD 수치를 바로 조회해 드리",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-073",
+    "query": "이번 달 MTD(Month-To-Date) 총 Conversions는 몇 건인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 37.0,
+    "answer_len": 710,
+    "answer_preview": "현재 이번 달 MTD 총 Conversions 데이터를 조회하려면 **BigQuery 매출/광고 데이터** 또는 **광고 플랫폼 대시보드**에서 직접 확인이 필요합니다.  제가 확인할 수 있는 범위를 좁혀주시면 더 정확하게 도와드릴 수 있습니다:  1. **어떤 플랫폼의 Conversions**인지 알려주세요    - Google Ads / Meta Ads / TikTok Ads 등 광고 플랫폼    - 자사몰(Shopify, Cafe24 등) 주문 전환    - Amazon, Qoo10 등 마켓플레이스 판매 건수  2. **어떤 지역/채널 기준**인지도 함께 알려주시면 좋습니다    - 글로벌 전체 / 한국 / 미국 / 일본 등    - D2C / B2B / 마켓플레이스 등  3. **Conversions의 정의**도 확인이 필요합니다    - 구매 완료(Purchase) 기준    - 장바구니 담기(Add to Cart) 포함 여부    - 리드(Lead) 포함 여부  --- *",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-074",
+    "query": "각 연도별 총 Impressions 합산을 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 47.3,
+    "answer_len": 3389,
+    "answer_preview": "### 📊 연도별 총 Impressions 분석  #### 요약  2019년부터 Impressions가 크게 증가하기 시작하여, **2025년에는 약 94.30억원**으로 최고치를 기록했습니다. 2026년 데이터는 현재 3월 19일까지의 부분적인 수치임에도 불구하고 약 47.87억원을 기록하며 전년 대비 높은 성장세를 보일 것으로 예상됩니다. 전체 조회 기간 동안 총 약 **201.09억원**의 Impressions가 발생했습니다.  #### 상세 데이터 | 연도 | 총 Impressions | | :--- | ---: | | 2010 | 0 | | 2014 | 0 | | 2019 | 34,127,442 | | 2020 | 737,613,931 | | 2021 | 2,040,236,360 | | 2022 | 313,642,418 | | 2023 | 681,885,120 | | 2024 | 2,083,837,364 | | 2025 | 9,430,102,493 | | 2026 | 4,7",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  SUM(Impressions) AS total_impressions\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nGROUP BY year\nORDER BY year\nLIMIT 1000"
+  },
+  {
+    "id": "AD-075",
+    "query": "특정 Campaign의 일별 누적 ROAS를 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 38.4,
+    "answer_len": 655,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **특정 Campaign의 일별 누적 ROAS** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 드리기 위해, 아래 항목들을 구체적으로 명시해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 🔍 구체적으로 알려주시면 좋은 정보  | 항목 | 예시 | |------|------| | **캠페인명** | 정확한 캠페인 이름 또는 캠페인 ID | | **광고 채널** | Meta, Google Ads, 네이버 SA 등 | | **조회 기간** | 2025년 1월 1일 ~ 1월 31일 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **제품명** | 마다가스카르 센텔라 앰플 등 |  ---  > ## 💡 질문 예시 > **1.** \"2025년 5월 Meta에서 집행한 '센텔라 앰플 프로모션' 캠페인의 일별 누적 ROAS를 보여주세요.\"  > **2.** \"Google Ads 미국 마켓에서 2025년 Q1에 진행한",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-076",
+    "query": "ROAS가 200% 이상인 Campaign들의 총 Revenue 합계를 조회해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 36.1,
+    "answer_len": 716,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **ROAS 200% 이상 Campaign들의 총 Revenue 합계** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 주시면 정확한 데이터를 찾는 데 도움이 됩니다 아래와 같은 조건을 추가로 명시해 주시면 보다 원활한 조회가 가능합니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1분기, 2025년 5월 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **광고 채널** | Meta Ads, Google Ads, 네이버 SA 등 | | **제품/브랜드 라인** | 마다가스카르 센텔라 라인, 히알루 시카 라인 등 | | **캠페인 유형** | 브랜딩, 퍼포먼스, 리타겟팅 등 |  ---  ## 📝 질문 예시  > **1.** \"2025년 1분기 Meta Ads 캠페인 중 ROAS 200% 이상인 캠페인들의 총 Revenue 합계를 알려 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-077",
+    "query": "CPC가 1.5 이상인 Ad_Group들의 평균 CTR은 얼마인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 33.6,
+    "answer_len": 637,
+    "answer_preview": "안녕하세요. 요청하신 **CPC 1.5 이상인 Ad Group들의 평균 CTR** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래와 같은 조건을 추가하여 질문을 구체화해 주시면 다시 조회를 시도해 보겠습니다.  ---  **구체화하면 좋은 항목:** - **기간** (예: 2024년 1월, 최근 30일 등) - **광고 채널/플랫폼** (예: Meta, Google Ads, Amazon Ads 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **캠페인명 또는 제품군** (예: 마다가스카르 센텔라 라인 등) - **CPC 통화 단위** (예: USD, KRW 등)  ---  **질문 예시:**  1. **\"2024년 하반기 Meta 광고에서 CPC가 1.5 USD 이상인 Ad Group들의 평균 CTR은 얼마인가요?\"**  2. **\"미국 Amazon Ads 기준, 최근 90일간 CPC 1.5 이상인 Ad Group의 평균 CTR과 ROAS를 알려주",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-078",
+    "query": "Cost가 100 이하인 데이터 중에서 가장 높은 CVR을 기록한 날짜는 언제인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 36.0,
+    "answer_len": 1167,
+    "answer_preview": "### 📊 Cost 100 이하 데이터 중 최고 CVR 기록 날짜 분석  #### 요약  Cost가 100 이하인 데이터 중에서 가장 높은 전환율(CVR)을 기록한 날짜는 **2025년 9월 15일**로 확인되었습니다. 해당 날짜의 전환율은 **105.6%**에 달했습니다.  #### 분석 및 인사이트  *   **최고 CVR 달성:** Cost 100 이하 조건에서 2025년 9월 15일은 **105.6%**라는 매우 높은 전환율을 기록하며 가장 효율적인 성과를 보였습니다. 이는 해당 날짜에 클릭 대비 구매가 매우 활발하게 이루어졌음을 의미합니다. *   **비정상적인 CVR 수치:** 전환율이 100%를 초과하는 것은 일반적인 마케팅 데이터에서는 드문 경우입니다. 이는 단일 클릭으로 여러 번의 구매가 발생했거나, 특정 프로모션으로 인한 일시적인 현상, 또는 데이터 집계 방식에 대한 추가적인 확인이 필요할 수 있습니다.  > 2025년 9월 15일의 **105.6% CVR**은 C",
+    "used_sql": "SELECT\n  Date,\n  SAFE_DIVIDE(SUM(Purchases), SUM(Clicks)) AS conversion_rate\nFROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost`\nWHERE Date >= '2019-01-01'\n  AND Cost <= 100\n  AND Clicks > 0\nGROUP BY Date\nORDER BY conversion_rate DESC\nLIMIT 1"
+  },
+  {
+    "id": "AD-079",
+    "query": "Clicks가 Impressions의 10% 미만인 Campaign들을 찾아주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 25.0,
+    "answer_len": 685,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Clicks가 Impressions의 10% 미만인 Campaign** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 💡 이런 정보를 추가해 주시면 좋습니다  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월, 최근 30일 등 | | **광고 채널** | Meta Ads, Google Ads, Amazon Ads 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **제품 또는 브랜드 라인** | 마다가스카르 센텔라 라인 등 |  ---  ## 📝 질문 예시  1. > **\"2024년 상반기 Meta Ads에서 Clicks가 Impressions의 10% 미만인 Campaign 목록을 알려주세요.\"**  2. > **\"미국 Amazon Ads 기준으로 최근 3",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-080",
+    "query": "Conversions가 50 이상이고 Cost가 500 이하인 데이터의 평균 ROAS를 계산해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 37.9,
+    "answer_len": 767,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Conversions ≥ 50 & Cost ≤ 500 조건의 평균 ROAS** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 보다 정확한 결과를 위해 조건을 구체화해 주시면 도움이 됩니다  아래 항목들을 추가로 지정해 주시면 데이터를 더 정확하게 찾을 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월, 최근 30일 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **광고 채널** | Meta Ads, Google Ads, Amazon Ads 등 | | **제품/캠페인** | 마다가스카르 센텔라 라인, 특정 캠페인명 등 |  ---  ## 📝 질문 예시  > **1.** \"2024년 1분기 **Meta Ads** 캠페인 중 Conversions가 50 이상이고 Cost가 500달러 이하인 데이터의 평균 ROAS를 알려 주세요.\"  > *",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-081",
+    "query": "'Winter Collection' Campaign의 일별 Cost, Revenue, ROAS 상세 데이터를 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 30.4,
+    "answer_len": 731,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'Winter Collection' 캠페인의 일별 Cost, Revenue, ROAS 상세 데이터**를 현재 조회하지 못했습니다.  좀 더 정확한 데이터를 찾기 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  > ## 💡 이렇게 질문을 바꿔보시면 좋습니다 아래 항목들을 포함해 주시면 검색 정확도가 높아집니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 12월 1일 ~ 12월 31일 | | **광고 채널** | Meta, Google Ads, TikTok 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **정확한 캠페인명** | 캠페인 ID 또는 전체 캠페인명 |  ---  ## 📝 질문 예시  1. > **\"2024년 12월 한 달간 Meta에서 집행한 'Winter Collection' 캠페인의 일별 Cost, Revenue",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-082",
+    "query": "'Lipstick_Matte' Ad_Group의 전체 기간 동안의 평균 CPC와 CVR을 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 36.8,
+    "answer_len": 718,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **'Lipstick_Matte' Ad Group의 평균 CPC 및 CVR** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  > ## 💡 이렇게 질문을 바꿔보시면 좋습니다 아래 항목들을 포함해 주시면 데이터를 찾을 가능성이 높아집니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월, 최근 30일 등 | | **국가/마켓** | 미국, 일본, 한국 등 | | **광고 채널** | Meta Ads, Google Ads, Amazon Ads 등 | | **캠페인명** | 특정 캠페인 이름 |  ---  ## 📝 질문 예시  1. > **\"2024년 1~6월 동안 Meta Ads에서 'Lipstick_Matte' Ad Group의 평균 CPC와 CVR을 알려주세요.\"**  2. >",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-083",
+    "query": "특정 Date(예: '2023-11-15')의 모든 Platform별 광고 성과 지표를 상세히 조회해 주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 63.3,
+    "answer_len": 735,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **2023년 11월 15일의 전체 Platform별 광고 성과 지표**를 현재 데이터베이스에서 조회하지 못했습니다.  ---  ## 💡 더 정확한 조회를 위한 제안  조건을 좀 더 구체적으로 지정해 주시면 원하시는 데이터를 찾을 가능성이 높아집니다. 아래 항목들을 함께 명시해 주세요.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 특정 일자, 주간, 월간 등 | | **플랫폼** | Meta, Google Ads, Naver, TikTok 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **캠페인 유형** | 브랜드 캠페인, 퍼포먼스 캠페인 등 | | **성과 지표** | ROAS, CPC, CTR, 전환수, 노출수 등 |  ---  ## 📝 질문 예시  > **1.** \"2023년 11월 한 달간 **Meta(페이스북/인스타그램)** 플랫폼의 한국 시장 광고 성과(노출수, ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-084",
+    "query": "ROAS가 가장 높았던 날의 Campaign, Ad_Group, Platform 정보를 상세히 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 37.0,
+    "answer_len": 838,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **ROAS가 가장 높았던 날의 Campaign, Ad_Group, Platform 상세 정보**를 현재 데이터베이스에서 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주세요  ROAS 관련 데이터는 기간, 플랫폼, 국가 등 조건에 따라 범위가 매우 넓을 수 있습니다. 아래 항목을 추가로 지정해 주시면 원하시는 데이터를 찾는 데 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 5월, 최근 30일, 2024년 Q2 등 | | **광고 플랫폼** | Meta Ads, Google Ads, TikTok Ads 등 | | **국가/마켓** | 한국, 미국, 일본, 글로벌 전체 등 | | **제품/브랜드 라인** | 마다가스카르 센텔라 라인, 특정 SKU 등 | | **캠페인 유형** | 브랜딩, 퍼포먼스, 리타겟팅 등 |  ---  ## ✏️ 질",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-085",
+    "query": "특정 Country(예: 'DE')의 모든 Campaign 목록과 각 Campaign의 총 Revenue를 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 55.0,
+    "answer_len": 719,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **국가 'DE'(독일)의 캠페인 목록 및 캠페인별 총 Revenue** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 더 정확한 결과를 위해 질문을 구체화해 주세요 조회 조건을 좀 더 세분화하면 원하시는 데이터를 찾을 가능성이 높아집니다. 아래 항목들을 포함해 보세요.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 2024년 6월 | | **국가** | DE, US, KR 등 | | **판매 채널** | Amazon, Shopify, 자사몰 등 | | **제품명/라인** | Madagascar Centella 라인 등 | | **캠페인 유형** | 프로모션, 광고 캠페인, 시즌 할인 등 |  ---  ## 📝 질문 예시  1. > **\"2024년 상반기(1~6월) 독일(DE) Amazon 채널에서 진행된 캠페인 목록과 각 캠페인별 총 Revenue를 알려주세요.\"",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-086",
+    "query": "각 Country별, Platform별 총 Revenue를 교차 분석하여 테이블 형태로 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 42.8,
+    "answer_len": 2815,
+    "answer_preview": "### 📊 국가별, 플랫폼별 총 매출 교차 분석 보고서  #### 요약  2019년 1월 1일 이후 현재까지의 데이터를 기준으로, 전체 총 매출은 **약 1조 4,054억원**으로 집계되었습니다. 이 중 '글로벌_플랫폼'의 'SK_B2B_Domestic' 채널이 약 **1,510억원**으로 가장 높은 매출을 기록했으며, 인도네시아, 미국, 일본 등 주요 국가들이 다양한 플랫폼을 통해 높은 매출을 보였습니다.  #### 상세 데이터  다음은 국가별, 플랫폼별 총 매출 상위 15건에 대한 상세 데이터입니다. 전체 568건의 데이터 중 상위 항목을 기준으로 작성되었습니다.  | Country (국가) | Mall_Classification (플랫폼) | total_revenue (총 매출) | |:---------------|:-----------------------------|-----------------------:| | 글로벌_플랫폼  | SK_B2B_Domestic       ",
+    "used_sql": "SELECT\n  Country,\n  Mall_Classification,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Sales1_R IS NOT NULL\nGROUP BY\n  Country,\n  Mall_Classification\nORDER BY\n  Country,\n  total_revenue DESC\nLIMIT 1000"
+  },
+  {
+    "id": "AD-087",
+    "query": "Platform별 월별 평균 CTR을 보여주는 피벗 테이블을 생성해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 34.8,
+    "answer_len": 685,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Platform별 월별 평균 CTR 피벗 테이블**에 대한 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 제공해 드리기 위해, 아래와 같이 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  ## 🔍 구체적으로 지정해 주시면 좋은 항목  | 항목 | 예시 | |------|------| | **기간** | 2024년 1월 ~ 2024년 12월 | | **플랫폼** | Meta, Google Ads, TikTok, Amazon Ads 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **캠페인 유형** | 브랜드 캠페인, 퍼포먼스 캠페인 등 | | **제품군** | 마다가스카르 센텔라 라인 등 |  ---  > ## 💡 질문 예시 1. > **\"2024년 하반기 Meta·Google Ads·TikTok 플랫폼별 월별 평균 CTR을 피벗 테이블로 보여주세요.\"**  2. > **\"미국",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-088",
+    "query": "특정 Country에서 Campaign별 Ad_Group의 총 Cost를 분석해 주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 44.1,
+    "answer_len": 692,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Country별 Campaign/Ad_Group의 총 Cost 데이터**를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 아래 항목들을 구체적으로 지정해 주시면 다시 조회를 시도하겠습니다.  ---  ## 🔍 구체적으로 명시해 주시면 좋은 항목  | 항목 | 예시 | |------|------| | **국가 (Country)** | 미국, 일본, 한국 등 | | **조회 기간** | 2024년 1월 ~ 2024년 3월 등 | | **광고 채널/플랫폼** | Amazon Ads, Meta Ads, Google Ads 등 | | **특정 Campaign명** | 캠페인명 또는 캠페인 키워드 |  ---  > ## 💡 질문 예시 > **1.** \"2024년 1분기에 **미국(US)**에서 진행된 Campaign별 Ad_Group의 총 Cost를 알려주세요.\"  > **2.** \"**일본** Amazon Ads에서 2024년 3월 기",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-089",
+    "query": "각 날짜별로 Platform마다 발생한 Conversions 수를 비교 분석해 주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 66.2,
+    "answer_len": 4589,
+    "answer_preview": "### 📊 날짜별 플랫폼 전환수 비교 분석 (2019년 1월 1일 ~ 1월 8일)  #### 요약  제공된 데이터는 2019년 1월 1일부터 1월 20일까지의 기간을 포함하며, 이 중 프리뷰로 제공된 2019년 1월 1일부터 1월 8일까지의 분석 결과, 모든 플랫폼(TikTok, Facebook, Shopee, Google, Naver Search, Naver GFA, SingleONE, Kakao Moments, Amazon Ads)에서 **0건**의 전환이 발생한 것으로 나타났습니다. 이는 해당 기간 동안 전환 활동이 없었거나, 데이터 수집에 대한 추가 확인이 필요함을 시사합니다. 전체 1,000행의 데이터 중 일부만 확인 가능하여, 이후 기간의 전환 추이는 추가 분석이 필요합니다.  #### 상세 데이터  2019년 1월 1일부터 1월 8일까지의 각 날짜별 플랫폼 전환수는 다음과 같습니다.  | Date       | tiktok_conversions | facebook_con",
+    "used_sql": "SELECT\n  Date,\n  SUM(TikTok_Complete_payment_events) AS tiktok_conversions,\n  SUM(Facebook_Website_purchases) AS facebook_conversions,\n  SUM(Shopee_Conversions) AS shopee_conversions,\n  SUM(Google_Conversions) AS google_conversions,\n  SUM(NaverSearch_Conversions) AS naver_search_conversions,\n  SUM(NaverGFA_Purchases) AS naver_gfa_purchases,\n  SUM(SingleONE_Conversions) AS singleone_conversions,\n  SUM(KakaoMoments_Purchases) AS kakao_moments_purchases,\n  SUM(AmazonAds_Purchases) AS amazon_ads_purchases\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\nGROUP BY Date\nORDER BY Date\nLIMIT 1000"
+  },
+  {
+    "id": "AD-090",
+    "query": "각 Country별로 가장 높은 ROAS를 기록한 Campaign은 무엇인가요?",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 65.4,
+    "answer_len": 679,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **각 Country별 최고 ROAS Campaign** 데이터를 현재 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 보겠습니다.  ---  > ## 💡 이런 식으로 질문을 구체화해 보세요 아래 항목들을 포함해 주시면 도움이 됩니다:  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 Q4, 2025년 1월 등 | | **국가** | 미국, 일본, 한국 등 특정 국가 | | **광고 채널** | Meta, Google Ads, TikTok 등 | | **제품/브랜드 라인** | 마다가스카르 센텔라 라인 등 |  ---  ## 📝 질문 예시  1. > **\"2025년 1분기에 미국(US)에서 Meta 광고 기준으로 가장 높은 ROAS를 기록한 Campaign은 무엇인가요?\"**  2. > **\"2024년 하반기 일본 시장에서 Goo",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-091",
+    "query": "최근 한 달간 전체 광고 성과가 전반적으로 어떤가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 56.3,
+    "answer_len": 3706,
+    "answer_preview": "### 📊 2026년 2월 전체 광고 성과 분석  #### 요약  2026년 2월 한 달간 전체 광고 집행 결과, 총 **약 48.0억원의 광고 비용**을 투자하여 **약 158.1억원의 매출**을 달성했습니다. 이는 **329.2%의 ROAS**를 기록하며 효율적인 광고 운영이 이루어졌음을 보여줍니다. 총 21.2억 회의 노출과 1,759만 회의 클릭을 통해 103만 건 이상의 전환을 이끌어냈습니다.  #### 상세 데이터  | 지표           | 값                   | | :------------- | :------------------- | | 총 광고 비용   | 약 48.0억원          | | 총 노출 수     | 2,121,517,624회      | | 총 클릭 수     | 17,594,825회         | | 총 전환 수     | 1,033,774건          | | 총 매출        | 약 158.1억원        ",
+    "used_sql": "SELECT\n  SUM(TikTok_Cost + Facebook_Cost + Shopee_Expense_KRW + Google_Cost + NaverSearch_Cost + NaverGFA_Cost + SingleONE_Cost_KRW + KakaoMoments_Cost + AmazonAds_Cost) AS total_ad_cost,\n  SUM(TikTok_Impressions + Facebook_Impressions + Shopee_Impressions + Google_Impressions + NaverSearch_Impressions + NaverGFA_Impressions + SingleONE_Impressions + KakaoMoments_Impressions + AmazonAds_Impressions) AS total_impressions,\n  SUM(TikTok_Clicks + Facebook_Link_clicks + Shopee_Clicks + Google_Clicks + NaverSearch_Clicks + NaverGFA_Clicks + SingleONE_Clicks + KakaoMoments_Clicks + AmazonAds_Clicks) AS total_clicks,\n  SUM(TikTok_Complete_payment_events + Facebook_Website_purchases + Facebook_Omni_purchase_shared_item + Shopee_Conversions + Google_Conversions + NaverSearch_Conversions + NaverGFA_Purchases + SingleONE_Conversions + KakaoMoments_Purchases + AmazonAds_Purchases) AS total_conversions,\n  SUM(TikTok_Total_complete_payment_value + Facebook_Omni_purchase_conversion_value_shared_item + Facebook_Website_purchases_conversion_value + Shopee_GMV_KRW + Google_Total_conversion_value + NaverSearch_Conversion_value + NaverGFA_Purchases_conversion_sales + SingleONE_Sales_KRW + KakaoMoments_Purchases_amount + AmazonAds_Purchases_amount) AS total_revenue,\n  SAFE_DIVIDE(SUM(TikTok_Total_complete_payment_value + Facebook_Omni_purchase_conversion_value_shared_item + Facebook_Website_purchases_conversion_value + Shopee_GMV_KRW + Google_Total_conversion_value + NaverSearch_Conversion_value + NaverGFA_Purchases_conversion_sales + SingleONE_Sales_KRW + KakaoMoments_Purchases_amount + AmazonAds_Purchases_amount), SUM(TikTok_Cost + Facebook_Cost + Shopee_Expense_KRW + Google_Cost + NaverSearch_Cost + NaverGFA_Cost + SingleONE_Cost_KRW + KakaoMoments_Cost + AmazonAds_Cost)) AS total_roas,\n  SAFE_DIVIDE(SUM(TikTok_Clicks + Facebook_Link_clicks + Shopee_Clicks + Google_Clicks + NaverSearch_Clicks + NaverGFA_Clicks + SingleONE_Clicks + KakaoMoments_Clicks + AmazonAds_Clicks), SUM(TikTok_Impressions + Facebook_Impressions + Shopee_Impressions + Google_Impressions + NaverSearch_Impressions + NaverGFA_Impressions + SingleONE_Impressions + KakaoMoments_Impressions + AmazonAds_Impressions)) AS total_ctr\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE EXTRACT(YEAR FROM Date) = 2026\n  AND EXTRACT(MONTH FROM Date) = 2\nLIMIT 1000"
+  },
+  {
+    "id": "AD-092",
+    "query": "어떤 Campaign이 요즘 가장 좋은 성과를 내고 있나요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 19.2,
+    "answer_len": 406,
+    "answer_preview": "안녕하세요! 😊  요청하신 캠페인 성과 데이터를 현재 **조회하지 못했습니다.**  질문을 조금 더 구체적으로 해주시면 정확한 데이터를 찾는 데 도움이 됩니다. 예를 들어, **기간, 국가/채널, 성과 지표** 등을 함께 알려주시면 좋겠습니다.  ---  > **💡 이렇게 질문해 보시는 건 어떨까요?** 1. **\"2025년 5월 아마존 US에서 ROAS가 가장 높은 캠페인은 무엇인가요?\"** 2. **\"최근 30일간 Shopee 동남아 채널에서 매출 기여가 가장 큰 프로모션 캠페인은?\"** 3. **\"2025년 2분기 마다가스카르 센텔라 라인 관련 캠페인별 전환율을 비교해 주세요.\"**  ---  기간, 국가, 채널, 제품명, 성과 지표(매출·ROAS·전환율 등) 중 하나라도 추가해 주시면 다시 조회해 드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-093",
+    "query": "광고비 대비 수익률(ROAS)이 가장 높은 Platform은 어디인지 알려주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 32.1,
+    "answer_len": 538,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **광고비 대비 수익률(ROAS)이 가장 높은 Platform** 관련 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 더 정확한 결과를 위해 질문을 구체화해 주세요 ROAS 데이터는 **기간, 국가, 광고 채널** 등 조건에 따라 결과가 크게 달라질 수 있습니다. 아래 항목을 포함하여 다시 질문해 주시면 보다 정확한 데이터를 안내드릴 수 있습니다.  > **구체화 요소 예시:** 조회 기간 / 국가(시장) / 광고 플랫폼 / 제품(라인) 등  ---  ## 📝 질문 예시  1. **\"2024년 하반기 기준, 국가별로 ROAS가 가장 높은 광고 플랫폼은 어디인가요?\"**  2. **\"2025년 1분기 Meta vs Google Ads의 ROAS를 비교해 주세요.\"**  3. **\"마다가스카르 센텔라 라인 제품 기준, 2024년 연간 플랫폼별 ROAS 순위를 알려주세요.\"**  ---  위와 같이 **기간·국가·채널·제품명** 등",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-094",
+    "query": "CTR은 높은데 CVR이 낮은 Campaign이 있다면 알려주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 64.5,
+    "answer_len": 571,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **CTR 대비 CVR이 낮은 Campaign 데이터**를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 아래 정보를 추가해 주시면 도움이 됩니다  - **기간** (예: 2024년 1분기, 최근 30일 등) - **광고 채널** (예: Meta, Google Ads, Amazon Ads 등) - **국가/마켓** (예: 한국, 미국, 일본 등) - **캠페인 유형** (예: 브랜드 캠페인, 프로모션 캠페인, 리타겟팅 등) - **특정 제품** (예: 마다가스카르 센텔라 시리즈 등)  ---  ## 📝 질문 예시  1. **\"2024년 4분기 Meta 광고 캠페인 중 CTR은 높은데 CVR이 낮은 캠페인을 알려주세요.\"**  2. **\"미국 Amazon Ads에서 최근 3개월간 CTR 상위 10개 캠페인의 CVR 현황을 보여주세요.\"**  3. **\"2025년 1분기 일본 마켓 Google Ads 캠페인별 CTR과 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-095",
+    "query": "특정 Campaign의 CPC가 다른 Campaign들에 비해 효율적인 수준인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 31.2,
+    "answer_len": 1009,
+    "answer_preview": "# Campaign별 CPC 효율성 분석  좋은 질문입니다. 다만, 정확한 분석을 위해 몇 가지 확인이 필요합니다.  ## 필요한 정보  현재 질문에서 **특정 Campaign이 어떤 것인지** 명시되지 않았고, CPC 데이터가 어디에 있는지도 확인이 필요합니다.  아래 정보를 알려주시면 바로 분석해 드리겠습니다:  | 필요 항목 | 설명 | |-----------|------| | **Campaign 이름** | 효율성을 확인하고 싶은 특정 캠페인명 | | **데이터 소스** | BigQuery에 광고 데이터가 적재되어 있는지, 또는 별도 플랫폼(Meta Ads, Google Ads 등)인지 | | **분석 기간** | 특정 기간 기준인지, 전체 기간인지 | | **비교 범위** | 같은 채널 내 캠페인 간 비교인지, 채널 간 비교인지 |  ## 일반적인 CPC 효율성 판단 기준  참고로, CPC 효율성은 단순 금액 비교 외에도 다음을 함께 봐야 합니다:  1. **CPC 절대값*",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-096",
+    "query": "전체 평균 ROAS보다 높은 ROAS를 기록한 Campaign들의 목록과 그 ROAS 값을 보여주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 41.9,
+    "answer_len": 656,
+    "answer_preview": "안녕하세요. 요청하신 **전체 평균 ROAS 대비 높은 ROAS를 기록한 Campaign 목록** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 보다 정확한 조회를 위해 아래 조건을 구체적으로 지정해 주시면 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1분기, 최근 30일 등 | | **광고 채널** | Meta Ads, Google Ads, 네이버 검색광고 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **제품 라인** | 마다가스카르 센텔라 라인, 히아루 시카 라인 등 | | **캠페인 유형** | 브랜딩, 퍼포먼스, 리타겟팅 등 |  ---  ## 📝 질문 예시를 참고해 보세요  1. **\"2024년 상반기 Meta Ads 기준, 전체 평균 ROAS보다 높은 ROAS를 기록한 캠페인 목록과 ROAS 값을 보여주세요.\"**  2. **\"한국 시장 Google Ads에서 최근 3개월간 ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-097",
+    "query": "총 Cost가 10000 이상인 Platform들 중에서 평균 CVR이 가장 높은 Platform은 어디인가요?",
+    "table": "advertising",
+    "status": "OK",
+    "time": 57.6,
+    "answer_len": 698,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **총 Cost가 10,000 이상인 Platform별 평균 CVR** 데이터를 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주시면 도움이 됩니다  아래와 같은 항목을 추가로 지정해 주시면 데이터를 보다 정확하게 조회할 수 있습니다:  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1분기, 최근 30일 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **Cost 단위/통화** | USD, KRW 등 | | **광고 채널 범위** | Meta, Google, TikTok 등 | | **제품 라인** | 마다가스카르 센텔라 라인 등 |  ---  ## 📝 질문 예시  1. > **\"2024년 1~6월 기준, 한국 시장에서 총 광고 Cost가 10,000 USD 이상인 Platform 중 평균 CVR이 가장 높은 곳은 어디인가요?\"**  2. ",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-098",
+    "query": "각 Campaign 내에서 Ad_Group별 Revenue 순위를 매겨주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 51.3,
+    "answer_len": 684,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **Campaign별 Ad_Group Revenue 순위** 데이터를 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 조건을 구체화해 주세요  아래와 같은 항목을 추가로 지정해 주시면 데이터를 찾는 데 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월, 최근 30일 등 | | **광고 채널** | Meta Ads, Google Ads, Amazon Ads 등 | | **국가/마켓** | 한국, 미국, 일본 등 | | **특정 캠페인명** | 정확한 Campaign 이름 또는 키워드 |  ---  ## 📝 질문 예시  > **1.** \"2024년 Q1 기준, **Meta Ads**에서 각 Campaign 내 Ad_Group별 Revenue 순위를 알려주세요.\"  > **2.** \"**미국 Amazon Ads** 캠페인 중 최근 3개월간 Ad",
+    "used_sql": ""
+  },
+  {
+    "id": "AD-099",
+    "query": "각 Platform의 월별 Cost를 컬럼으로 하는 테이블을 생성해 주세요.",
+    "table": "advertising",
+    "status": "WARN",
+    "time": 71.5,
+    "answer_len": 3916,
+    "answer_preview": "### 📊 각 Platform의 월별 Cost 분석 보고서  #### 요약  2019년 1월부터 2020년 8월까지의 통합 광고 데이터 중, 제공된 프리뷰 데이터(2019년 1월 ~ 2019년 8월)를 분석한 결과, 해당 기간 동안 **Facebook**과 **Amazon Ads**에서만 광고 비용이 발생한 것으로 나타났습니다. 특히 **Facebook 비용이 약 9,969만원**으로 가장 큰 비중을 차지했으며, **Amazon Ads 비용은 약 216만원**으로 뒤를 이었습니다. 다른 플랫폼들(TikTok, Shopee, Google, Naver Search, Naver GFA, SingleONE, Kakao Moments)은 프리뷰 기간 동안 비용이 발생하지 않았습니다. 전체 프리뷰 기간 동안 발생한 총 광고 비용은 **약 1억 185만원**입니다.  #### 상세 데이터  아래 표는 2019년 1월부터 2019년 8월까지 각 플랫폼별 월별 광고 비용을 나타냅니다. (총 144행",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', Date) AS month,\n  SUM(TikTok_Cost) AS tiktok_cost,\n  SUM(Facebook_Cost) AS facebook_cost,\n  SUM(Shopee_Expense_KRW) AS shopee_cost,\n  SUM(Google_Cost) AS google_cost,\n  SUM(NaverSearch_Cost) AS naver_search_cost,\n  SUM(NaverGFA_Cost) AS naver_gfa_cost,\n  SUM(SingleONE_Cost_KRW) AS singleone_cost,\n  SUM(KakaoMoments_Cost) AS kakao_moments_cost,\n  SUM(AmazonAds_Cost) AS amazon_ads_cost\nFROM `skin1004-319714.marketing_analysis.integrated_advertising_data`\nWHERE Date >= '2019-01-01'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "AD-100",
+    "query": "2023년 데이터에서, 전월 대비 Cost는 증가했지만 Revenue는 감소한 Campaign들을 찾아주세요.",
+    "table": "advertising",
+    "status": "OK",
+    "time": 51.6,
+    "answer_len": 850,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 전월 대비 Cost 증가 & Revenue 감소 Campaign** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조회 범위를 좁혀주시면 원하시는 데이터를 찾을 가능성이 높아집니다. 아래 항목들을 함께 명시해 주시면 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2023년 상반기, 2023년 Q3, 2023년 7→8월 등 | | **국가/지역** | 한국, 미국, 일본, 동남아 등 | | **채널/플랫폼** | Meta Ads, Google Ads, Amazon Ads, 네이버 등 | | **제품/라인** | 마다가스카르 센텔라 라인, 히알루 시카 라인 등 | | **지표 기준** | Ad Spend vs. GMV, Media Cost vs. Net Revenue 등 |  ---  ## 📝 질문 예시  > **1.** \"",
+    "used_sql": ""
+  }
+]

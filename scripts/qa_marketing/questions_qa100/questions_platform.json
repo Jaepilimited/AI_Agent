@@ -1,0 +1,502 @@
+[
+  {
+    "id": "PL-001",
+    "query": "전체 기간 동안의 총 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-002",
+    "query": "모든 제품의 평균 평점은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-003",
+    "query": "가장 높은 할인 가격을 기록한 제품의 할인 가격은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-004",
+    "query": "가장 낮은 리뷰 수를 기록한 제품의 리뷰 수는 몇 개인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-005",
+    "query": "데이터에 포함된 고유한 제품의 총 개수는 몇 개인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-006",
+    "query": "각 월별 총 판매량 추이를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-007",
+    "query": "2023년 각 분기별 평균 평점 추이는 어떻게 되나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-008",
+    "query": "데이터에 포함된 연도별 총 리뷰 수의 변화 추이를 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-009",
+    "query": "최근 1년간 주별 평균 제품 순위 변동 추이를 분석해 주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-010",
+    "query": "특정 채널(예: Shopee)의 일별 총 판매량 변화를 그래프로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-011",
+    "query": "전체 기간 동안 판매량 기준으로 TOP 3 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-012",
+    "query": "각 국가별로 평점이 가장 높은 TOP 5 제품을 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-013",
+    "query": "아마존 채널에서 리뷰 수가 가장 많은 TOP 10 제품 리스트를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-014",
+    "query": "전체 채널에서 평균 판매량이 가장 낮은 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-015",
+    "query": "모든 제품의 판매 가격(Price) 중간값은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-016",
+    "query": "지난달 대비 이번 달 전체 판매량 성장률은 어떻게 되나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-017",
+    "query": "2022년 대비 2023년 아마존 채널의 평균 판매량 증감률은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-018",
+    "query": "미국과 일본 채널의 평균 제품 순위(Rank)를 비교해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-019",
+    "query": "Shopee와 Lazada 채널의 평균 할인 가격(Discount_Price)을 비교해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-020",
+    "query": "Product_Name에 'SKIN1004'가 포함된 제품들과 다른 제품들(경쟁사 제품으로 가정)의 평균 평점을 비교해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-021",
+    "query": "전체 판매량 중 Shopee 채널이 차지하는 비중은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-022",
+    "query": "할인된 가격으로 판매된 제품의 전체 제품 대비 비율은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-023",
+    "query": "각 국가별 전체 판매량 점유율을 파이 차트로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-024",
+    "query": "전체 리뷰 수 중 평점 4점 이상인 리뷰의 구성비는 어떻게 되나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-025",
+    "query": "가장 많이 팔린 제품이 전체 판매량에 기여하는 정도는 어느 정도인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-026",
+    "query": "2023년 하반기 동안 인도네시아에서 가장 많이 팔린 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-027",
+    "query": "'SKIN1004 Madagascar Centella Ampoule' 제품의 Lazada 채널 판매량 추이를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-028",
+    "query": "'SKIN1004 Hyalu-Cica Water-Fit Sun Serum' 제품의 2024년 1분기 평균 순위(Rank)는 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-029",
+    "query": "미국 아마존에서 평점 4.5 이상이고 리뷰 수 1000개 이상인 제품들의 평균 할인율은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-030",
+    "query": "특정 기간 동안 특정 국가의 특정 채널에서 판매된 제품 중 할인 가격이 원가 대비 30% 이상 할인된 제품 목록을 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-031",
+    "query": "각 채널별 판매량 합계를 막대 그래프로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-032",
+    "query": "국가별 평균 평점을 비교하는 차트를 생성해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-033",
+    "query": "특정 제품의 월별 판매량 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-034",
+    "query": "전체 판매량에서 각 국가가 차지하는 비중을 파이 차트로 시각화해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-035",
+    "query": "채널별 평균 할인 가격을 비교하는 바 차트를 그려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-036",
+    "query": "Shopee 채널을 제외한 나머지 채널들의 총 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-037",
+    "query": "평점 3점 미만이 아닌 제품들의 평균 리뷰 수는 몇 개인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-038",
+    "query": "대한민국 외의 모든 국가에서 판매된 제품들의 평균 순위는 어떻게 되나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-039",
+    "query": "특정 제품(예: 'SKIN1004 Centella Ampoule')을 빼고 가장 많이 팔린 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-040",
+    "query": "2023년 데이터가 아니면서, 아마존 채널이 아닌 제품들의 평균 판매 가격은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-041",
+    "query": "2024년 1월 1일 이후 데이터가 있나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-042",
+    "query": "특정 제품(예: 'SKIN1004 Hyalu-Cica Sun Serum')의 리뷰 데이터가 존재하나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-043",
+    "query": "특정 국가(예: 베트남)의 판매량 정보를 조회할 수 있나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-044",
+    "query": "평점 5점 만점이고 리뷰 수가 10000개 이상인 제품이 있나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-045",
+    "query": "TikTok 채널의 제품 순위 데이터가 현재 데이터셋에 포함되어 있나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-046",
+    "query": "판매량이 0인 제품들의 목록을 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-047",
+    "query": "가장 최근에 기록된 판매 데이터 1건의 상세 정보를 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-048",
+    "query": "데이터셋에서 가장 오래된 날짜는 언제인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-049",
+    "query": "할인 가격(Discount_Price)이 NULL인 제품이 있나요? 있다면 그 제품들의 이름은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-050",
+    "query": "각 채널별로 가장 높은 순위(Rank가 1)를 기록한 제품들을 찾아주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-051",
+    "query": "각 채널별 평균 판매량과 평균 평점을 함께 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-052",
+    "query": "국가별 총 리뷰 수 합계를 계산해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-053",
+    "query": "각 제품별 평균 할인 가격은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-054",
+    "query": "평점 구간(예: 1-2점, 2-3점, 3-4점, 4-5점)별 제품 수를 집계해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-055",
+    "query": "할인율 구간(예: 0-10%, 10-20%, ...)별 제품 판매량을 분석해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-056",
+    "query": "최근 3개월간 가장 많이 팔린 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-057",
+    "query": "2023년 하반기(7월~12월) 동안의 총 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-058",
+    "query": "2022년 1분기부터 3분기까지의 평균 제품 순위는 어떻게 되나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-059",
+    "query": "2023년 40번째 주의 총 판매량과 평균 평점을 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-060",
+    "query": "2023년 5월 15일부터 6월 30일까지의 Shopee 채널 총 판매량을 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-061",
+    "query": "지난 분기 대비 이번 분기 전체 판매량 성장률은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-062",
+    "query": "특정 제품의 지난달 대비 이번 달 판매량 감소율은 어떻게 되나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-063",
+    "query": "각 채널별 월별 평균 평점의 증감 추이를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-064",
+    "query": "지난 6개월간 특정 제품의 가격(Price) 변동폭은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-065",
+    "query": "전년 대비 각 국가별 총 리뷰 수의 변화를 분석해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-066",
+    "query": "전체 제품의 평균 할인 가격(Discount_Price)은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-067",
+    "query": "각 제품별 일일 평균 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-068",
+    "query": "특정 제품의 7일 이동평균 판매량 추이를 그래프로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-069",
+    "query": "판매량을 가중치로 적용한 제품별 평균 평점은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-070",
+    "query": "판매량을 가중치로 적용한 채널별 평균 할인율은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-071",
+    "query": "각 제품별 월별 누적 판매량을 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-072",
+    "query": "현재까지(YTD)의 총 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-073",
+    "query": "이번 달 현재까지(MTD)의 아마존 채널 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-074",
+    "query": "2023년 연간 총 판매량 합산은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-075",
+    "query": "각 국가별로 시간 경과에 따른 누적 리뷰 수 추이를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-076",
+    "query": "평점 4.8 이상인 제품들의 총 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-077",
+    "query": "리뷰 수가 5000개 이상인 제품들의 평균 가격(Price)은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-078",
+    "query": "할인 가격이 10달러 이하인 제품 중 가장 많이 팔린 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-079",
+    "query": "2023년에 Shopee 채널에서 판매된 제품 중 순위가 10위 이하인 제품들의 평균 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-080",
+    "query": "최근 6개월 동안 평점 4.0 미만인 제품들의 총 판매량은 얼마인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-081",
+    "query": "'SKIN1004 Centella Ampoule' 제품의 모든 채널별, 국가별 판매량, 순위, 평점 상세 정보를 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-082",
+    "query": "Lazada 채널의 최근 7일간 판매된 제품들의 상세 리스트를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-083",
+    "query": "2023년 10월 26일의 모든 판매 데이터를 상세히 조회해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-084",
+    "query": "미국에서 가장 많이 팔린 제품의 가격, 할인 가격, 평점, 리뷰 수 상세 정보를 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-085",
+    "query": "각 채널별 1위 제품들의 상세 정보를 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-086",
+    "query": "각 국가별, 채널별 총 판매량을 매트릭스 형태로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-087",
+    "query": "각 채널별 월별 평균 평점 변화를 교차 분석 해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-088",
+    "query": "특정 제품(예: 'SKIN1004 Centella Ampoule')의 국가별 판매량 비교를 해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-089",
+    "query": "각 채널에서 '선크림' 키워드가 포함된 제품들의 판매량을 교차 분석 해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-090",
+    "query": "월별 평균 평점과 판매량의 상관관계를 교차 분석 해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-091",
+    "query": "최근 우리 제품들의 전반적인 판매 실적은 어떤가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-092",
+    "query": "지금 가장 잘 팔리는 제품은 뭔가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-093",
+    "query": "2023년 가장 인기 있었던 제품 5가지에 대해 좀 알려주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-094",
+    "query": "어떤 채널이 판매량 대비 평균 순위가 가장 좋은가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-095",
+    "query": "평점이 낮거나 리뷰 수가 적은 제품들 중 판매량이 높은 특이 케이스가 있나요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-096",
+    "query": "전체 평균 판매량보다 높은 판매량을 기록한 제품들 중 가장 낮은 평점을 가진 제품은 무엇인가요?",
+    "table": "platform"
+  },
+  {
+    "id": "PL-097",
+    "query": "국가별 총 판매량이 10000개 이상인 국가만 필터링하여 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-098",
+    "query": "각 제품별 전날 대비 판매량 증감률을 계산해주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-099",
+    "query": "각 채널별로 국가별 평균 평점을 피벗 테이블 형태로 보여주세요.",
+    "table": "platform"
+  },
+  {
+    "id": "PL-100",
+    "query": "각 채널에서 월별 판매량 순위가 TOP 3 안에 드는 제품들의 리스트를 보여주세요.",
+    "table": "platform"
+  }
+]
