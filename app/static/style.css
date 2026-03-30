@@ -864,7 +864,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
   z-index: 5;
   position: relative;
 }
@@ -969,6 +969,27 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   animation: msg-enter 0.25s ease-out;
 }
 
+/* Message avatars */
+.msg-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+.msg-avatar img { border-radius: 50%; }
+.msg-avatar-user {
+  background: var(--accent);
+  color: #000;
+  font-size: 13px;
+  font-weight: 700;
+  margin-left: auto;
+}
+
 /* Message timestamp (hover to reveal) */
 .msg-timestamp {
   position: absolute;
@@ -1002,8 +1023,8 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg-msg-ai);
   border-radius: 18px 18px 18px 4px;
   padding: 16px 20px;
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 15px;
+  line-height: 1.75;
   max-width: 100%;
   overflow: hidden;
 }
@@ -1136,6 +1157,57 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   from { opacity: 1; }
   to { opacity: 0; transform: translateY(-8px); }
 }
+
+/* Confirm delete dialog */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fade-in 0.15s ease;
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.confirm-dialog {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  min-width: 300px;
+  max-width: 400px;
+  text-align: center;
+}
+.confirm-dialog p {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.confirm-cancel, .confirm-delete {
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+.confirm-cancel {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.confirm-cancel:hover { background: var(--border); }
+.confirm-delete {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+.confirm-delete:hover { background: #dc2626; }
 
 .message-assistant .message-content p { margin-bottom: 10px; }
 .message-assistant .message-content p:last-child { margin-bottom: 0; }

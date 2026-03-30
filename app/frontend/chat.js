@@ -104,6 +104,26 @@
     }, "image/png");
   }
 
+  // ===== Confirm Delete Dialog =====
+  function _confirmDelete(id, title) {
+    var overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.innerHTML =
+      '<div class="confirm-dialog">' +
+      '<p>"' + (title.length > 30 ? title.slice(0, 30) + "..." : title) + '" 대화를 삭제하시겠습니까?</p>' +
+      '<div class="confirm-actions">' +
+      '<button class="confirm-cancel">취소</button>' +
+      '<button class="confirm-delete">삭제</button>' +
+      '</div></div>';
+    document.body.appendChild(overlay);
+    overlay.querySelector(".confirm-cancel").addEventListener("click", function() { overlay.remove(); });
+    overlay.querySelector(".confirm-delete").addEventListener("click", function() {
+      overlay.remove();
+      deleteConversation(id);
+    });
+    overlay.addEventListener("click", function(e) { if (e.target === overlay) overlay.remove(); });
+  }
+
   // ===== State =====
   var currentUser = null;
   var conversations = [];
@@ -301,7 +321,8 @@
   function setupEventListeners() {
     btnSend.addEventListener("click", sendMessage);
     chatInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && !e.shiftKey) {
+      // Enter (no shift) OR Ctrl/Cmd+Enter → send
+      if ((e.key === "Enter" && !e.shiftKey) || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) {
         e.preventDefault();
         sendMessage();
       }
@@ -567,7 +588,7 @@
         delBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
         delBtn.addEventListener("click", function (e) {
           e.stopPropagation();
-          deleteConversation(c.id);
+          _confirmDelete(c.id, c.title || "이 대화");
         });
         actions.appendChild(delBtn);
 
@@ -1295,6 +1316,13 @@
     var div = document.createElement("div");
     div.className = "message message-user";
 
+    // User Avatar
+    var avatar = document.createElement("div");
+    avatar.className = "msg-avatar msg-avatar-user";
+    var initial = (currentUser && currentUser.name) ? currentUser.name.charAt(0).toUpperCase() : "U";
+    avatar.textContent = initial;
+    div.appendChild(avatar);
+
     var ts = document.createElement("span");
     ts.className = "msg-timestamp";
     ts.textContent = _formatTimestamp();
@@ -1343,6 +1371,12 @@
 
     var div = document.createElement("div");
     div.className = "message message-" + role;
+
+    // AI Avatar
+    var avatar = document.createElement("div");
+    avatar.className = "msg-avatar";
+    avatar.innerHTML = '<img src="/static/favicon.png" alt="AI" width="28" height="28">';
+    div.appendChild(avatar);
 
     // Timestamp (visible on hover)
     var ts = document.createElement("span");
