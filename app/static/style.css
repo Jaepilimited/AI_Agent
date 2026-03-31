@@ -2031,7 +2031,6 @@ pre:hover .code-copy-btn { opacity: 1; }
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  text-transform: uppercase;
   color: var(--text-muted);
 }
 
@@ -2453,7 +2452,6 @@ pre:hover .code-copy-btn { opacity: 1; }
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  text-transform: uppercase;
   color: var(--text-muted);
 }
 
