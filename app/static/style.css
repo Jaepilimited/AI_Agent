@@ -1583,10 +1583,15 @@ pre:hover .code-copy-btn { opacity: 1; }
 
 /* Chart container */
 .chart-container {
-  margin: 16px 0;
-  border-radius: 12px;
+  position: relative;
+  width: 100%;
+  max-width: 720px;
+  margin: 16px auto;
   padding: 16px;
-  transition: box-shadow 0.2s ease;
+  border-radius: var(--radius-md);
+  background: var(--bg-msg-ai);
+  border: 1px solid var(--border);
+  transition: box-shadow var(--duration-normal) ease;
 }
 
 .chart-container:hover {

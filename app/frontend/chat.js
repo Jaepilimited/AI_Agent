@@ -28,7 +28,7 @@
     function _done() {
       if (btn) {
         var orig = btn.innerHTML;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>';
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--success)"><polyline points="20 6 9 17 4 12"/></svg>';
         setTimeout(function() { btn.innerHTML = orig; }, 1500);
       }
       showToast("복사되었습니다", "success");
@@ -1600,9 +1600,10 @@
       var config = JSON.parse(chartMatch[1]);
       var isDark = document.documentElement.classList.contains("dark");
 
-      // Theme-aware colors
-      var textColor = isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.75)";
-      var gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
+      // Theme-aware colors (read from CSS variables)
+      var rootStyles = getComputedStyle(document.documentElement);
+      var textColor = rootStyles.getPropertyValue("--text").trim() || (isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.75)");
+      var gridColor = rootStyles.getPropertyValue("--border").trim() || (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)");
       var tooltipBg = isDark ? "rgba(30,30,30,0.95)" : "rgba(0,0,0,0.85)";
 
       // Apply theme to config
@@ -1685,7 +1686,6 @@
       // Create chart container with modern styling
       var chartDiv = document.createElement("div");
       chartDiv.className = "chart-container";
-      chartDiv.style.cssText = "position:relative;width:100%;max-width:720px;margin:16px auto;padding:16px;border-radius:12px;background:" + (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.02)") + ";border:1px solid " + (isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)") + ";";
 
       // Canvas with responsive height
       var canvas = document.createElement("canvas");
