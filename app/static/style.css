@@ -1,9 +1,9 @@
 /* ============================================================
    SKIN1004 AI — Custom Frontend Stylesheet
-   Craver Corp design system: glassmorphism, orange accent, Montserrat
+   Design System: DESIGN.md — Figtree + DM Sans + Geist Mono, warm gray, orange accent
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,700;1,900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ============================================================
    0. CSS Variables
@@ -12,50 +12,75 @@
   --accent: #e89200;
   --accent-hover: #f0a020;
   --accent-glow: rgba(232, 146, 0, 0.25);
-  --font-main: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-korean: 'AppleSDGothic', 'Pretendard', 'Malgun Gothic', sans-serif;
-  --radius-lg: 24px;
-  --radius-md: 16px;
-  --radius-sm: 10px;
+  --accent-dim: rgba(232, 146, 0, 0.15);
+  --font-display: 'Figtree', 'Pretendard', -apple-system, sans-serif;
+  --font-main: 'DM Sans', 'Pretendard', -apple-system, sans-serif;
+  --font-data: 'Geist Mono', 'SF Mono', monospace;
+  --font-code: 'JetBrains Mono', monospace;
+  --font-korean: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 6px;
   --transition: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Semantic colors */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+
+  /* Spacing scale (4px base) */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
 }
 
-/* Dark theme (default) */
+/* Dark theme (default) — warm gray */
 html.dark {
-  --bg: #0a0a0a;
-  --bg-surface: rgba(10, 10, 10, 0.72);
-  --bg-sidebar: #0e0e0e;
-  --bg-input: rgba(255,255,255,0.04);
-  --bg-hover: rgba(255,255,255,0.06);
-  --bg-msg-user: rgba(232,146,0,0.12);
-  --bg-msg-ai: rgba(255,255,255,0.04);
-  --border: rgba(255,255,255,0.06);
+  --bg: #111111;
+  --bg-surface: #1a1a1a;
+  --bg-sidebar: #141414;
+  --bg-elevated: #222222;
+  --bg-input: rgba(255,255,255,0.05);
+  --bg-hover: rgba(255,255,255,0.07);
+  --bg-msg-user: rgba(232,146,0,0.10);
+  --bg-msg-ai: rgba(255,255,255,0.03);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.14);
   --border-focus: var(--accent);
-  --text: #e8e8e8;
-  --text-secondary: rgba(255,255,255,0.5);
-  --text-muted: rgba(255,255,255,0.25);
+  --text: #ebebeb;
+  --text-secondary: rgba(255,255,255,0.55);
+  --text-muted: rgba(255,255,255,0.30);
   --scrollbar-thumb: rgba(255,255,255,0.08);
   --code-bg: rgba(255,255,255,0.06);
-  --shadow-card: 0 32px 64px rgba(0,0,0,0.55);
+  --shadow-card: 0 8px 32px rgba(0,0,0,0.4);
 }
 
-/* Light theme */
+/* Light theme — warm white */
 html.light {
-  --bg: #ffffff;
-  --bg-surface: rgba(255, 255, 255, 0.78);
-  --bg-sidebar: #f5f5f5;
-  --bg-input: rgba(0,0,0,0.03);
-  --bg-hover: rgba(0,0,0,0.04);
-  --bg-msg-user: rgba(232,146,0,0.08);
+  --bg: #fafaf9;
+  --bg-surface: #ffffff;
+  --bg-sidebar: #f5f4f2;
+  --bg-elevated: #eeedeb;
+  --bg-input: rgba(0,0,0,0.04);
+  --bg-hover: rgba(0,0,0,0.05);
+  --bg-msg-user: rgba(232,146,0,0.07);
   --bg-msg-ai: rgba(0,0,0,0.02);
   --border: rgba(0,0,0,0.08);
+  --border-strong: rgba(0,0,0,0.14);
   --border-focus: var(--accent);
   --text: #1a1a1a;
-  --text-secondary: rgba(0,0,0,0.5);
-  --text-muted: rgba(0,0,0,0.25);
+  --text-secondary: rgba(0,0,0,0.55);
+  --text-muted: rgba(0,0,0,0.30);
   --scrollbar-thumb: rgba(0,0,0,0.12);
   --code-bg: rgba(0,0,0,0.04);
-  --shadow-card: 0 32px 64px rgba(0,0,0,0.12);
+  --shadow-card: 0 8px 32px rgba(0,0,0,0.08);
 }
 
 /* ============================================================
@@ -104,7 +129,7 @@ html, body {
   font-size: clamp(60px, 14vw, 220px);
   font-weight: 900;
   font-style: italic;
-  font-family: var(--font-main);
+  font-family: var(--font-display);
   position: relative;
   line-height: 0.95;
   margin: 0;
@@ -158,7 +183,7 @@ html.light .craver-l3 { animation: craver-slide-r-light 0.8s cubic-bezier(0.42,0
   font-size: clamp(40px, 10vw, 160px);
   font-weight: 700;
   font-style: italic;
-  font-family: var(--font-main);
+  font-family: var(--font-display);
   line-height: 1;
   will-change: transform;
 }
@@ -267,7 +292,7 @@ html.dark .login-card .logo { mix-blend-mode: screen; }
 html.light .login-card .logo { mix-blend-mode: multiply; }
 
 .login-card h1 {
-  font-family: var(--font-main);
+  font-family: var(--font-display);
   font-weight: 900;
   font-style: italic;
   font-size: 28px;
@@ -475,21 +500,23 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 
 .sidebar-header {
-  padding: 16px;
+  padding: var(--space-md);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .sidebar-header .logo {
-  width: 32px; height: 32px;
+  width: 28px; height: 28px;
   object-fit: contain;
+  border-radius: var(--radius-sm);
 }
 
 /* Gemini-style gradient brand text */
 .brand-gradient {
+  font-family: var(--font-display);
   font-weight: 800;
   font-style: italic;
   font-size: 15px;
@@ -554,10 +581,10 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .sidebar-search {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 8px 12px;
-  padding: 8px 12px;
-  border-radius: 8px;
+  gap: var(--space-sm);
+  margin: var(--space-sm) var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
   background: var(--bg-input);
   border: 1px solid var(--border);
   transition: border-color 0.2s ease;
@@ -597,28 +624,31 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Date group headers (오늘, 어제, 지난 7일, etc.) */
 .convo-group-header {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  padding: 12px 12px 4px;
+  padding: var(--space-md) var(--space-sm) var(--space-xs);
   text-transform: uppercase;
 }
 
 .convo-item {
   display: flex;
   align-items: center;
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--duration-short) var(--transition);
   margin-bottom: 1px;
   position: relative;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .convo-item:hover { background: var(--bg-hover); }
-.convo-item.active { background: var(--bg-hover); }
+.convo-item.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
 
 /* Chat icon in conversation item */
 .convo-icon {
@@ -634,9 +664,12 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
+  color: var(--text-secondary);
   line-height: 1.3;
+  transition: color var(--duration-short) ease;
 }
+.convo-item:hover .convo-title { color: var(--text); }
+.convo-item.active .convo-title { color: var(--accent); }
 
 /* Action buttons container (edit + delete) */
 .convo-actions {
@@ -684,11 +717,11 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Sidebar footer */
 .sidebar-footer {
-  padding: 12px 16px;
+  padding: var(--space-md);
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
   flex-shrink: 0;
 }
 
@@ -903,7 +936,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 
 .chat-welcome .welcome-hello {
-  font-family: var(--font-main);
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: clamp(26px, 4.5vw, 40px);
   line-height: 1.2;
@@ -914,7 +947,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 
 .chat-welcome .welcome-sub {
-  font-family: var(--font-main);
+  font-family: var(--font-display);
   font-weight: 700;
   font-size: clamp(26px, 4.5vw, 40px);
   line-height: 1.2;
@@ -1263,7 +1296,9 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .message-assistant .message-content h1,
 .message-assistant .message-content h2,
 .message-assistant .message-content h3 {
+  font-family: var(--font-display);
   font-weight: 700;
+  letter-spacing: -0.02em;
   margin: 16px 0 8px;
 }
 
@@ -1284,7 +1319,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 
 .message-assistant .message-content code {
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--font-code);
   font-size: 13px;
 }
 
@@ -1348,8 +1383,9 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border-collapse: collapse;
   margin: 0;
   font-size: 13px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
+  font-variant-numeric: tabular-nums;
 }
 
 .message-assistant .message-content th,
@@ -1917,10 +1953,10 @@ pre:hover .code-copy-btn { opacity: 1; }
 .sidebar-dashboard-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-sm);
   width: 100%;
-  padding: 10px 14px;
-  border-radius: 10px;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-input);
   color: var(--text-secondary);
@@ -1928,13 +1964,13 @@ pre:hover .code-copy-btn { opacity: 1; }
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--duration-short) ease;
 }
 
 .sidebar-dashboard-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: var(--bg-hover);
+  background: var(--accent-dim);
 }
 
 .sidebar-dashboard-btn svg {

@@ -125,3 +125,4 @@ custom_frontend/
 # Misc temp
 logo_datauri.txt
 관리자/
+.gstack/
