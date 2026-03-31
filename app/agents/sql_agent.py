@@ -528,40 +528,44 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     _ts_keywords = ("월별", "주차별", "주별", "일별", "분기별", "추이", "트렌드", "변동")
     _is_timeseries = any(kw in query for kw in _ts_keywords)
 
-    # Truncate long text fields (review content etc.) to reduce prompt size
-    def _truncate_row(row, max_text_len=80):
-        truncated = {}
+    # Product name columns — convert underscores to spaces for readability
+    _PRODUCT_NAME_COLS = {"Product_Name", "SET", "product_name", "set", "Item_Name", "item_name"}
+
+    def _humanize_row(row, max_text_len=80):
+        humanized = {}
         for k, v in row.items():
+            if isinstance(v, str) and k in _PRODUCT_NAME_COLS:
+                v = v.replace("_", " ")
             if isinstance(v, str) and len(v) > max_text_len:
-                truncated[k] = v[:max_text_len] + "..."
+                humanized[k] = v[:max_text_len] + "..."
             else:
-                truncated[k] = v
-        return truncated
+                humanized[k] = v
+        return humanized
 
     if len(results) > 100:
         try:
             result_preview = _build_smart_preview(results, query)
         except Exception as e:
             logger.warning("smart_preview_failed_fallback", error=str(e))
-            preview_rows = [_truncate_row(r) for r in results[:15]]
+            preview_rows = [_humanize_row(r) for r in results[:15]]
             result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     elif _is_timeseries and len(results) <= 60:
         # Time-series: send ALL rows so LLM can show full table & chart (cap at 60)
-        preview_rows = [_truncate_row(r) for r in results]
+        preview_rows = [_humanize_row(r) for r in results]
         result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     elif _is_timeseries and len(results) <= 100:
         # Grouped time-series (e.g. 월별 몰별): pivot to compact table
         result_preview = _try_pivot_timeseries(results, query)
         if not result_preview:
-            preview_rows = [_truncate_row(r) for r in results[:60]]
+            preview_rows = [_humanize_row(r) for r in results[:60]]
             result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
     else:
-        preview_rows = [_truncate_row(r) for r in results[:15]]
+        preview_rows = [_humanize_row(r) for r in results[:15]]
         result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
 
     # Hard cap on preview size to keep LLM prompt manageable (max ~5KB)
     if len(result_preview) > 5000:
-        preview_rows = [_truncate_row(r) for r in results[:8]]
+        preview_rows = [_humanize_row(r) for r in results[:8]]
         result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
 
     today = datetime.now().strftime("%Y-%m-%d")
@@ -642,7 +646,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 - SQL 결과 데이터만 사용 (외부 정보 절대 금지)
 - 금액: 1억 이상 → "약 OO.O억원", 1억 미만 → 천 단위 쉼표. 퍼센트 소수점 1자리
 - 3행 이상 비교 → 마크다운 표 필수. 시계열은 전체 행 표시 (생략 금지)
-- 제품명(SET) 영어 원본 그대로 (한국어 번역 금지)
+- 제품명(SET) 영어 원본 그대로 공백 포함 (한국어 번역 금지, 언더스코어 사용 금지)
 - 단순 수치 1개만 → "상세 데이터" 생략, 요약만
 - 기간 부족 시 첫 줄에 ⚠️ 표시. 질문 범위와 데이터 범위 불일치 시 명시
 - 비즈니스 인사이트 필수: 비중, 변화율, 추세, 집중도, 비교 관점
