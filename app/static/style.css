@@ -2024,9 +2024,10 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 
 #skin-status-drawer .drawer-title {
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -2445,9 +2446,10 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 
 #skin-admin-drawer .drawer-title {
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 1.5px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--text-muted);
 }
