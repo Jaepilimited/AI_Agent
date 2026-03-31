@@ -29,6 +29,8 @@
   --text-sm: 0.875rem;   /* 14px — UI labels */
   --text-xs: 0.75rem;    /* 12px — captions */
   --text-2xs: 0.625rem;  /* 10px — badges, timestamps */
+  --text-ui: 0.8125rem;  /* 13px — UI labels, controls */
+  --text-caption: 0.6875rem; /* 11px — small captions, metadata */
   --radius-xl: 24px;
   --radius-lg: 16px;
   --radius-md: 12px;
@@ -324,19 +326,19 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   font-size: 28px;
   letter-spacing: -0.5px;
   text-align: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 
 .login-card .subtitle {
   text-align: center;
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--text-secondary);
   margin-bottom: 28px;
 }
 
 .login-card label {
   display: block;
-  font-size: 11px;
+  font-size: var(--text-caption);
   letter-spacing: 1.5px;
   text-transform: uppercase;
   color: var(--text-secondary);
@@ -436,7 +438,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg, #1a1a1a);
   color: var(--text);
   font-family: var(--font-main);
-  padding: 8px;
+  padding: var(--space-sm);
 }
 
 .login-card input:focus {
@@ -459,7 +461,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border-radius: var(--radius-full);
   border: none;
   padding: 15px 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   letter-spacing: 2.5px;
   text-transform: uppercase;
   cursor: pointer;
@@ -487,7 +489,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   display: block;
   text-align: center;
   margin-top: 18px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--text-secondary);
   cursor: pointer;
   transition: color 0.3s ease;
@@ -497,7 +499,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 .login-card .error-msg {
   color: var(--error);
-  font-size: 13px;
+  font-size: var(--text-ui);
   text-align: center;
   margin-top: 12px;
   min-height: 20px;
@@ -581,7 +583,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .sidebar-header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
   flex-shrink: 0;
 }
 
@@ -624,7 +626,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   outline: none;
   color: var(--text);
   font-family: var(--font-main);
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 .sidebar-search input::placeholder { color: var(--text-muted); }
 
@@ -642,9 +644,9 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   justify-content: center;
   padding: 40px 16px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--text-ui);
   text-align: center;
-  gap: 4px;
+  gap: var(--space-xs);
 }
 .convo-empty-icon { font-size: 24px; display: block; margin-bottom: 4px; }
 
@@ -686,7 +688,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 .convo-item .convo-title {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--text-ui);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -712,7 +714,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
+  padding: var(--space-xs);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -761,14 +763,14 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 700;
   flex-shrink: 0;
 }
 
 .sidebar-footer .user-name {
   flex: 1;
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -801,7 +803,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: 1px solid var(--border);
   color: var(--text-secondary);
   cursor: pointer;
-  padding: 8px;
+  padding: var(--space-sm);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -841,7 +843,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   align-items: center;
   padding: 0 20px;
   border-bottom: 1px solid var(--border);
-  gap: 12px;
+  gap: var(--space-sm);
   z-index: 10;
   background: var(--bg);
 }
@@ -853,7 +855,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   color: var(--text);
   cursor: pointer;
   font-size: 20px;
-  padding: 4px;
+  padding: var(--space-xs);
 }
 
 /* When sidebar is collapsed, add padding for expand button */
@@ -864,7 +866,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: 1px solid var(--border);
   color: var(--text);
   font-family: var(--font-main);
-  font-size: 13px;
+  font-size: var(--text-ui);
   padding: 6px 12px;
   border-radius: 8px;
   outline: none;
@@ -884,7 +886,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .topbar-gws-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-xs);
   padding: 5px 12px;
   border-radius: 20px;
   border: 1px solid var(--border);
@@ -923,7 +925,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--space-lg);
   z-index: 5;
   position: relative;
 }
@@ -935,7 +937,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 32px;
+  gap: var(--space-xl);
   z-index: 5;
   padding: 40px 20px;
 }
@@ -984,7 +986,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .chat-welcome .suggestions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-sm);
   max-width: 640px;
   width: 100%;
   justify-content: flex-start;
@@ -995,7 +997,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-family: var(--font-main);
-  font-size: 13px;
+  font-size: var(--text-ui);
   padding: 10px 16px;
   border-radius: var(--radius-full);
   cursor: pointer;
@@ -1044,7 +1046,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .msg-avatar-user {
   background: var(--accent);
   color: #000;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 700;
   margin-left: auto;
 }
@@ -1082,7 +1084,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg-msg-ai);
   border-radius: 18px 18px 18px 4px;
   padding: 16px 20px;
-  font-size: 15.5px;
+  font-size: var(--text-md);
   line-height: 1.75;
   max-width: 100%;
   overflow: hidden;
@@ -1107,7 +1109,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Route-specific loading text */
 .typing-indicator .loading-text {
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--text-secondary);
   animation: pulse-text 1.5s ease-in-out infinite;
 }
@@ -1139,7 +1141,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 /* Message action buttons */
 .msg-actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-xs);
   margin-top: 6px;
   opacity: 0;
   transition: opacity 0.2s;
@@ -1164,7 +1166,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg-hover);
   border: 1px solid var(--error);
   border-radius: 12px;
-  padding: 16px;
+  padding: var(--space-md);
   color: var(--text-primary);
 }
 .error-retry-btn {
@@ -1175,7 +1177,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 .error-retry-btn:hover { opacity: 0.9; }
 
@@ -1187,7 +1189,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-sm);
   pointer-events: none;
 }
 .toast {
@@ -1196,14 +1198,14 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   color: var(--text);
   box-shadow: 0 4px 16px rgba(0,0,0,0.2);
   animation: toast-in 0.3s ease, toast-out 0.3s ease 3.7s forwards;
   max-width: 360px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .toast.toast-error { border-left: 3px solid var(--error); }
 .toast.toast-success { border-left: 3px solid var(--success); }
@@ -1233,7 +1235,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg-sidebar);
   border: 1px solid var(--border);
   border-radius: 14px;
-  padding: 24px;
+  padding: var(--space-lg);
   min-width: 300px;
   max-width: 400px;
   text-align: center;
@@ -1252,7 +1254,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .confirm-cancel, .confirm-delete {
   padding: 8px 20px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   cursor: pointer;
   border: 1px solid var(--border);
 }
@@ -1266,7 +1268,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   color: #fff;
   border-color: var(--error);
 }
-.confirm-delete:hover { background: #dc2626; }
+.confirm-delete:hover { background: var(--error); }
 .rename-input {
   width: 100%;
   padding: 8px 12px;
@@ -1295,14 +1297,14 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 .shortcuts-table td {
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   border-bottom: 1px solid var(--border);
 }
 .shortcuts-table td:first-child { white-space: nowrap; text-align: right; padding-right: 16px; }
 .shortcuts-table kbd {
   display: inline-block;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-family: var(--font-main);
   background: var(--bg-hover);
   border: 1px solid var(--border);
@@ -1339,14 +1341,14 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   padding: 14px;
   overflow-x: auto;
   margin: 10px 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1.5;
   border: 1px solid var(--border);
 }
 
 .message-assistant .message-content code {
   font-family: var(--font-code);
-  font-size: 13px;
+  font-size: var(--text-ui);
 }
 
 .message-assistant .message-content p code {
@@ -1357,13 +1359,13 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Blockquotes (insight callouts) */
 .message-assistant .message-content blockquote {
-  margin: 12px 0;
+  margin: var(--space-sm) 0;
   padding: 10px 16px;
   border-left: 3px solid var(--accent);
   background: var(--bg-hover);
   border-radius: 0 6px 6px 0;
   color: var(--text);
-  font-size: 13.5px;
+  font-size: var(--text-ui);
   line-height: 1.6;
 }
 .message-assistant .message-content blockquote p {
@@ -1373,7 +1375,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 /* Tables — responsive scroll wrapper */
 .message-assistant .message-content .table-wrapper {
   overflow-x: auto;
-  margin: 12px 0;
+  margin: var(--space-sm) 0;
   border-radius: 6px;
   border: 1px solid var(--border);
   position: relative;
@@ -1386,7 +1388,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   right: 6px;
   z-index: 5;
   padding: 3px 10px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   background: var(--bg-sidebar);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -1408,7 +1410,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   width: 100%;
   border-collapse: collapse;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   border-radius: var(--radius-sm);
   overflow: hidden;
   font-variant-numeric: tabular-nums;
@@ -1424,7 +1426,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .message-assistant .message-content th {
   background: var(--bg-hover);
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   text-transform: none;
 }
 
@@ -1469,7 +1471,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 /* Source footer (AI 생성 답변 / 조회 기준) */
 .message-assistant .message-content em:last-of-type {
   display: block;
-  font-size: 11.5px;
+  font-size: var(--text-caption);
   color: var(--text-tertiary, var(--text-secondary));
   opacity: 0.7;
   margin-top: 4px;
@@ -1479,7 +1481,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .message-assistant .message-content hr {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 16px 0;
+  margin: var(--space-md) 0;
   opacity: 0.5;
 }
 
@@ -1495,7 +1497,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border-bottom: 1px solid var(--border);
 }
 .code-lang {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   font-family: var(--font-main);
   text-transform: uppercase;
@@ -1504,7 +1506,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .code-copy-btn {
   position: static;
   padding: 2px 10px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-family: var(--font-main);
   background: transparent;
   border: 1px solid var(--border);
@@ -1523,12 +1525,12 @@ pre:hover .code-copy-btn { opacity: 1; }
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
   font-family: var(--font-main);
   padding: 4px 10px;
   border-radius: var(--radius-full);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
   background: var(--bg-hover);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -1572,7 +1574,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 /* Typing indicator */
 .typing-indicator {
   display: flex;
-  gap: 4px;
+  gap: var(--space-xs);
   padding: 8px 0;
 }
 
@@ -1597,7 +1599,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   width: 100%;
   max-width: 720px;
   margin: 16px auto;
-  padding: 16px;
+  padding: var(--space-md);
   border-radius: var(--radius-md);
   background: var(--bg-msg-ai);
   border: 1px solid var(--border);
@@ -1631,7 +1633,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   margin: 4px auto 10px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-sm);
   justify-content: center;
   animation: followup-enter 0.35s ease both;
 }
@@ -1646,7 +1648,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-family: var(--font-main);
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   padding: 8px 16px;
   border-radius: var(--radius-full);
   cursor: pointer;
@@ -1661,7 +1663,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 .followup-chip::before {
   content: "💡";
   margin-right: 5px;
-  font-size: 11px;
+  font-size: var(--text-caption);
 }
 
 .followup-chip:hover {
@@ -1803,7 +1805,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   max-width: 800px;
   margin: 0 auto 8px;
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   overflow-x: auto;
   padding: 4px 0;
 }
@@ -1846,8 +1848,8 @@ pre:hover .code-copy-btn { opacity: 1; }
 .user-image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
 }
 .user-image-grid.single {
   grid-template-columns: 1fr;
@@ -1992,7 +1994,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: var(--bg-input);
   color: var(--text-secondary);
   font-family: var(--font-main);
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 500;
   cursor: pointer;
   transition: background-color var(--duration-short) ease, color var(--duration-short) ease, border-color var(--duration-short) ease;
@@ -2053,7 +2055,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 
 #skin-status-drawer .drawer-title {
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 700;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -2106,7 +2108,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--success);
   white-space: nowrap;
@@ -2114,7 +2116,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 
 .status-inline-thumb {
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1;
 }
 
@@ -2157,12 +2159,12 @@ pre:hover .code-copy-btn { opacity: 1; }
   display: flex;
   flex-direction: column;
   gap: 0;
-  font-size: 13px;
+  font-size: var(--text-ui);
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-input);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
   transition: border-color 0.2s ease;
   overflow: hidden;
 }
@@ -2194,7 +2196,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 
 .status-msg-ticker span {
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 500;
   color: var(--accent);
   animation: status-ticker 12s linear infinite;
@@ -2236,19 +2238,19 @@ pre:hover .code-copy-btn { opacity: 1; }
 .status-name {
   flex: 1;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 500;
 }
 
 .status-detail {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   margin-left: auto;
   flex-shrink: 0;
 }
 
 .status-label {
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--success);
   flex-shrink: 0;
@@ -2277,7 +2279,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 .source-filter-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-xs);
   padding: 5px 12px;
   background: var(--bg-input);
   border: 1px solid var(--accent);
@@ -2306,10 +2308,10 @@ pre:hover .code-copy-btn { opacity: 1; }
   border-radius: 12px;
   box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
   z-index: 100;
-  padding: 8px;
+  padding: var(--space-sm);
 }
 .slash-dd-title {
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--text-muted);
   padding: 4px 8px 6px;
@@ -2320,7 +2322,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 .slash-presets-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-xs);
   padding: 4px 4px 8px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 6px;
@@ -2330,7 +2332,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text);
   cursor: pointer;
   transition: background-color var(--duration-short), color var(--duration-short), border-color var(--duration-short);
@@ -2356,11 +2358,11 @@ pre:hover .code-copy-btn { opacity: 1; }
 .slash-source-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
   padding: 5px 8px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   color: var(--text);
   transition: background 0.12s;
 }
@@ -2374,7 +2376,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 /* Confirm / Cancel footer */
 .slash-dd-footer {
   display: flex;
-  gap: 6px;
+  gap: var(--space-xs);
   padding: 8px 4px 2px;
   border-top: 1px solid var(--border);
   margin-top: 6px;
@@ -2385,8 +2387,8 @@ pre:hover .code-copy-btn { opacity: 1; }
   color: #fff;
   border: none;
   border-radius: 8px;
-  padding: 8px;
-  font-size: 13px;
+  padding: var(--space-sm);
+  font-size: var(--text-ui);
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
@@ -2398,7 +2400,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 14px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   cursor: pointer;
 }
 .slash-cancel-btn:hover { color: var(--text); }
@@ -2407,17 +2409,17 @@ pre:hover .code-copy-btn { opacity: 1; }
 .source-select-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-xs);
   padding: 6px 8px 10px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .source-btn-all, .source-btn-none {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 12px;
-  font-size: 11px;
+  font-size: var(--text-caption);
   cursor: pointer;
   color: var(--text);
   transition: background-color var(--duration-short), color var(--duration-short), border-color var(--duration-short);
@@ -2429,7 +2431,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 .source-count-label {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   font-weight: 600;
 }
@@ -2474,7 +2476,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 
 #skin-admin-drawer .drawer-title {
   font-family: var(--font-display);
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 700;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -2527,7 +2529,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -2538,13 +2540,13 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 
 .admin-user-name {
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 600;
   color: var(--text);
 }
 
 .admin-user-email {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2572,14 +2574,14 @@ pre:hover .code-copy-btn { opacity: 1; }
 /* Model toggle buttons */
 .admin-model-toggles {
   display: flex;
-  gap: 6px;
+  gap: var(--space-xs);
   flex-wrap: wrap;
 }
 
 .admin-model-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-xs);
   padding: 6px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -2642,7 +2644,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font-family: var(--font-main);
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 600;
   cursor: pointer;
   transition: color var(--duration-normal), border-color var(--duration-normal);
@@ -2667,7 +2669,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 /* Admin toolbar */
 .admin-toolbar {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
@@ -2722,7 +2724,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .admin-group-name {
   font-size: var(--text-sm);
@@ -2734,7 +2736,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 .brand-filter-badge {
   display: inline-block;
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--accent);
   background: rgba(232, 146, 0, 0.1);
@@ -2751,23 +2753,23 @@ pre:hover .code-copy-btn { opacity: 1; }
   color: var(--fg);
 }
 .admin-group-desc {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .admin-group-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 .admin-group-count {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--accent);
   font-weight: 600;
 }
 .admin-group-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-xs);
 }
 .admin-group-actions button {
   padding: 4px 10px;
@@ -2776,7 +2778,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-main);
-  font-size: 11px;
+  font-size: var(--text-caption);
   cursor: pointer;
 }
 .admin-group-actions button:hover { border-color: var(--accent); color: var(--accent); }
@@ -2808,12 +2810,12 @@ pre:hover .code-copy-btn { opacity: 1; }
   min-width: 0;
 }
 .admin-ad-name {
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 600;
   color: var(--text);
 }
 .admin-ad-email {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2843,7 +2845,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: transparent;
   color: var(--text-muted);
   font-family: var(--font-main);
-  font-size: 11px;
+  font-size: var(--text-caption);
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -2863,7 +2865,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: var(--bg-sidebar);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 24px;
+  padding: var(--space-lg);
   width: 360px;
   max-width: 90vw;
 }
@@ -2880,14 +2882,14 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: var(--bg-input);
   color: var(--text);
   font-family: var(--font-main);
-  font-size: 13px;
+  font-size: var(--text-ui);
   margin-bottom: 12px;
   box-sizing: border-box;
 }
 .admin-modal textarea { resize: vertical; min-height: 60px; }
 .admin-modal-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-sm);
   justify-content: flex-end;
 }
 
@@ -2899,7 +2901,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   justify-content: space-between;
   align-items: center;
   padding: 8px 4px;
-  font-size: 13px;
+  font-size: var(--text-ui);
   font-weight: 600;
   color: var(--fg);
   border-bottom: 1px solid var(--border);
@@ -2928,7 +2930,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   padding: 7px 12px;
   border-radius: 0;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--text-ui);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -2950,7 +2952,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   text-overflow: ellipsis;
 }
 .dept-user-dept {
-  font-size: 11px;
+  font-size: var(--text-caption);
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -2967,7 +2969,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 /* Member view dept grouping */
 .member-dept-group { margin-bottom: 4px; }
 .member-dept-header {
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--accent);
   padding: 6px 8px 2px;
@@ -2978,10 +2980,10 @@ pre:hover .code-copy-btn { opacity: 1; }
   z-index: 1;
 }
 .admin-btn-primary.danger {
-  background: #e53e3e;
-  border-color: #e53e3e;
+  background: var(--error);
+  border-color: var(--error);
 }
-.admin-btn-primary.danger:hover { background: #c53030; }
+.admin-btn-primary.danger:hover { background: color-mix(in srgb, var(--error) 85%, #000); }
 
 /* Password change modal */
 .pw-label {
@@ -2994,7 +2996,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   font-size: var(--text-xs);
   color: var(--error);
   min-height: 18px;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-sm);
 }
 .pw-success {
   font-size: var(--text-sm);
@@ -3053,7 +3055,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   .craver-solid small { font-size: var(--text-2xs); top: -15px; }
 
   .followup-suggestions { padding: 0 8px; }
-  .followup-chip { font-size: 11px; padding: 6px 10px; }
+  .followup-chip { font-size: var(--text-caption); padding: 6px 10px; }
 }
 
 @media (max-width: 480px) {
