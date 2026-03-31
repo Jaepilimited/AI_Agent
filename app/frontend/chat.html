@@ -29,7 +29,7 @@
     <div class="mobile-overlay" id="mobile-overlay"></div>
 
     <!-- Sidebar -->
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="대화 목록">
       <!-- Header: logo (clickable → home), brand, new-chat + collapse -->
       <div class="sidebar-header">
         <a href="#" class="sidebar-home-link" id="sidebar-home-link" title="홈으로">
@@ -37,10 +37,10 @@
           <span class="brand-gradient">SKIN1004 AI</span>
         </a>
         <div class="sidebar-header-actions">
-          <button class="sidebar-icon-btn" id="btn-new-chat" title="새 대화">
+          <button class="sidebar-icon-btn" id="btn-new-chat" title="새 대화" aria-label="새 대화">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           </button>
-          <button class="sidebar-icon-btn" id="btn-collapse-sidebar" title="사이드바 접기">
+          <button class="sidebar-icon-btn" id="btn-collapse-sidebar" title="사이드바 접기" aria-label="사이드바 접기">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
           </button>
         </div>
@@ -49,11 +49,11 @@
       <!-- Search -->
       <div class="sidebar-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="convo-search" placeholder="대화 검색...">
+        <input type="text" id="convo-search" placeholder="대화 검색..." aria-label="대화 검색">
       </div>
 
       <!-- Conversation list (grouped by date) -->
-      <div class="sidebar-conversations" id="convo-list"></div>
+      <div class="sidebar-conversations" id="convo-list" role="list" aria-label="대화 목록"></div>
 
       <!-- Dashboard button -->
       <div class="sidebar-dashboard sidebar-bottom-btn">
@@ -167,7 +167,7 @@
 
   <!-- Dashboard Drawer -->
   <div id="skin-dashboard-overlay" class="closed"></div>
-  <div id="skin-dashboard-drawer" class="closed">
+  <div id="skin-dashboard-drawer" class="closed" role="dialog" aria-label="Dashboard">
     <div class="drawer-header">
       <button class="drawer-close" id="drawer-close">&times;</button>
     </div>
@@ -176,7 +176,7 @@
 
   <!-- System Status Drawer -->
   <div id="skin-status-overlay" class="closed"></div>
-  <div id="skin-status-drawer" class="closed">
+  <div id="skin-status-drawer" class="closed" role="dialog" aria-label="System Status">
     <div class="drawer-header">
       <span class="drawer-title">System Status</span>
       <button class="drawer-close" id="status-drawer-close">&times;</button>
@@ -186,7 +186,7 @@
 
   <!-- Admin Drawer -->
   <div id="skin-admin-overlay" class="closed"></div>
-  <div id="skin-admin-drawer" class="closed">
+  <div id="skin-admin-drawer" class="closed" role="dialog" aria-label="User Management">
     <div class="drawer-header">
       <span class="drawer-title">User Management</span>
       <button class="drawer-close" id="admin-drawer-close">&times;</button>
