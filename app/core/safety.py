@@ -229,9 +229,8 @@ def get_safety_status() -> dict:
 
     # Team Resources (DB HUB) — all teams with individual resource names
     _ALL_TEAMS = [
-        "Craver", "DB", "KBT", "JBT", "[GM]EAST", "[GM]WEST",
-        "OP", "BCM", "FI", "PEOPLE", "LOG", "IT", "CS",
-        "B2B1", "B2B2", "SCM",
+        "Craver", "DB", "KBT", "JBT", "GM EAST", "GM WEST",
+        "BCM", "PEOPLE", "IT", "CS",
     ]
     try:
         from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync

@@ -169,6 +169,8 @@ def crawl_all_teams() -> List[Dict]:
         if block["type"] != "toggle":
             continue
         team_name = _extract_text(block["toggle"].get("rich_text", []))
+        # Normalize team names: [GM]EAST → GM EAST
+        team_name = team_name.replace("[GM]", "GM ").replace("  ", " ").strip()
         if team_name in SKIP_TEAMS or "노션x" in team_name.lower() or "노션 x" in team_name.lower():
             logger.info("team_skipped", team=team_name)
             continue

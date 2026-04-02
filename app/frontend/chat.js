@@ -202,9 +202,8 @@
              "인플루언서", "아마존검색", "메타광고",
              "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { id: "team", label: "팀별 자료", emoji: "\uD83C\uDFE2",
-      keys: ["Craver", "DB", "KBT", "JBT", "[GM]EAST", "[GM]WEST",
-             "OP", "BCM", "FI", "PEOPLE", "LOG", "IT", "CS",
-             "B2B1", "B2B2", "SCM", "BP"] },
+      keys: ["Craver", "DB", "KBT", "JBT", "GM EAST", "GM WEST",
+             "BCM", "PEOPLE", "IT", "CS", "BP"] },
     { id: "system", label: "시스템", emoji: "\u2699",
       keys: ["Gemini API", "Claude API", "GWS Token", "Notion", "Google Workspace"] },
   ];
@@ -221,9 +220,8 @@
     "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
     "Notion": "notion", "CS Q&A": "cs", "BP": "cs",
     "Craver": "team", "DB": "team", "KBT": "team", "JBT": "team",
-    "[GM]EAST": "team", "[GM]WEST": "team", "OP": "team", "BCM": "team",
-    "FI": "team", "PEOPLE": "team", "LOG": "team", "IT": "team",
-    "CS": "team", "B2B1": "team", "B2B2": "team", "SCM": "team",
+    "GM EAST": "team", "GM WEST": "team", "BCM": "team",
+    "PEOPLE": "team", "IT": "team", "CS": "team",
     "Google Workspace": "gws"
   };
   var enabledSources = loadEnabledSources();
@@ -2008,18 +2006,12 @@
     "DB":             { label: "DB", svg: _svgBar },
     "KBT":            { label: "KBT (한국사업)", svg: _svgGlobe },
     "JBT":            { label: "JBT (일본사업)", svg: _svgGlobe },
-    "[GM]EAST":       { label: "GM EAST (동남아)", svg: _svgGlobe },
-    "[GM]WEST":       { label: "GM WEST", svg: _svgGlobe },
-    "OP":             { label: "OP (운영)", svg: _svgBox },
+    "GM EAST":        { label: "GM EAST (동남아)", svg: _svgGlobe },
+    "GM WEST":        { label: "GM WEST", svg: _svgGlobe },
     "BCM":            { label: "BCM (브커)", svg: _svgBar },
-    "FI":             { label: "FI (재무)", svg: _svgDollar },
     "PEOPLE":         { label: "PEOPLE (인사)", svg: _svgUsers },
-    "LOG":            { label: "LOG (물류)", svg: _svgBox },
     "IT":             { label: "IT", svg: _svgMonitor },
     "CS":             { label: "CS (고객지원)", svg: _svgChat },
-    "B2B1":           { label: "B2B1", svg: _svgBag },
-    "B2B2":           { label: "B2B2", svg: _svgBag },
-    "SCM":            { label: "SCM (공급망)", svg: _svgBox },
     "BP":             { label: "BP (제품 Q&A)", svg: _svgChat },
     // 업무 도구
     "Notion":         { label: "Notion", svg: _svgFile },
@@ -2042,7 +2034,7 @@
     { cmd: "리뷰", label: "리뷰 전체", keys: ["아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
-    { cmd: "팀", label: "팀별 자료", keys: ["Craver","DB","KBT","JBT","[GM]EAST","[GM]WEST","OP","BCM","FI","PEOPLE","LOG","IT","CS","B2B1","B2B2","SCM","BP"] },
+    { cmd: "팀", label: "팀별 자료", keys: ["Craver","DB","KBT","JBT","GM EAST","GM WEST","BCM","PEOPLE","IT","CS","BP"] },
     { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
   ];
 

@@ -55,9 +55,9 @@ def _word_overlap_score(query_tokens: set, target_text: str) -> float:
 _TEAM_ALIASES = {
     "일본": "JBT", "일본사업": "JBT", "jbt": "JBT",
     "bcm": "BCM", "브랜드커뮤니케이션": "BCM", "브커": "BCM",
-    "이스트": "[GM]EAST", "east": "[GM]EAST", "동남아": "[GM]EAST",
-    "east1": "[GM]EAST", "east2": "[GM]EAST",
-    "웨스트": "[GM]WEST", "west": "[GM]WEST",
+    "이스트": "GM EAST", "east": "GM EAST", "동남아": "GM EAST",
+    "east1": "GM EAST", "east2": "GM EAST", "gm east": "GM EAST",
+    "웨스트": "GM WEST", "west": "GM WEST", "gm west": "GM WEST",
     "it": "IT", "아이티": "IT",
     "크레이버": "Craver", "craver": "Craver",
 }

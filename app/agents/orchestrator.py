@@ -112,9 +112,8 @@ class OrchestratorAgent:
         "Notion": "notion",
         "CS Q&A": "cs", "BP": "cs",
         "Craver": "team", "DB": "team", "KBT": "team", "JBT": "team",
-        "[GM]EAST": "team", "[GM]WEST": "team", "OP": "team", "BCM": "team",
-        "FI": "team", "PEOPLE": "team", "LOG": "team", "IT": "team",
-        "CS": "team", "B2B1": "team", "B2B2": "team", "SCM": "team",
+        "GM EAST": "team", "GM WEST": "team", "BCM": "team",
+        "PEOPLE": "team", "IT": "team", "CS": "team",
         "Google Workspace": "gws",
     }
 
