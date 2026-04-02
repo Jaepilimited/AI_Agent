@@ -111,10 +111,8 @@ class OrchestratorAgent:
         "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
         "Notion": "notion",
         "CS Q&A": "cs", "BP": "cs",
-        "Craver": "team", "DB": "team", "KBT": "team", "JBT": "team",
-        "GM EAST": "team", "GM WEST": "team", "BCM": "team",
-        "PEOPLE": "team", "IT": "team", "CS": "team",
         "Google Workspace": "gws",
+        # Team keys are matched dynamically by _allowed_routes
     }
 
     def _allowed_routes(self, enabled_sources: Optional[List[str]]) -> Optional[set]:

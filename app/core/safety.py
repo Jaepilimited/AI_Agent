@@ -228,35 +228,30 @@ def get_safety_status() -> dict:
     services["BP"] = {"status": cs_status, "detail": cs_detail}
 
     # Team Resources (DB HUB) — all teams with individual resource names
-    _ALL_TEAMS = [
-        "Craver", "DB", "KBT", "JBT", "GM EAST", "GM WEST",
-        "BCM", "PEOPLE", "IT", "CS",
-    ]
     try:
         from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync
         if _cache_loaded:
-            # Group resources by team → list of {category, name}
-            _team_items: Dict[str, list] = {t: [] for t in _ALL_TEAMS}
+            # Build from actual data — all teams that have resources
+            _team_items: Dict[str, list] = {}
             for r in _resource_cache:
                 t = r.get("team", "")
-                if t in _team_items:
-                    _team_items[t].append({
-                        "cat": r.get("category", "") or "",
-                        "name": r.get("name", ""),
-                    })
-            for team in _ALL_TEAMS:
+                if not t:
+                    continue
+                _team_items.setdefault(t, []).append({
+                    "cat": r.get("category", "") or "",
+                    "name": r.get("name", ""),
+                })
+            for team in sorted(_team_items.keys()):
                 items = _team_items[team]
                 services[team] = {
-                    "status": "ok" if items else "ok",
-                    "detail": f"{len(items)}건" if items else "비어있음",
+                    "status": "ok",
+                    "detail": f"{len(items)}건",
                     "resources": items,
                 }
         else:
-            for team in _ALL_TEAMS:
-                services[team] = {"status": "error", "detail": "loading"}
+            services["팀자료"] = {"status": "error", "detail": "loading"}
     except Exception:
-        for team in _ALL_TEAMS:
-            services[team] = {"status": "ok", "detail": "not loaded"}
+        services["팀자료"] = {"status": "ok", "detail": "not loaded"}
 
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}

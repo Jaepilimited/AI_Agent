@@ -202,8 +202,8 @@
              "인플루언서", "아마존검색", "메타광고",
              "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { id: "team", label: "팀별 자료", emoji: "\uD83C\uDFE2",
-      keys: ["Craver", "DB", "KBT", "JBT", "GM EAST", "GM WEST",
-             "BCM", "PEOPLE", "IT", "CS", "BP"] },
+      keys: ["BP"],  // Team keys are dynamically added from API
+      _dynamic: true },
     { id: "system", label: "시스템", emoji: "\u2699",
       keys: ["Gemini API", "Claude API", "GWS Token", "Notion", "Google Workspace"] },
   ];
@@ -2071,7 +2071,7 @@
     { cmd: "리뷰", label: "리뷰 전체", keys: ["아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
-    { cmd: "팀", label: "팀별 자료", keys: ["Craver","DB","KBT","JBT","GM EAST","GM WEST","BCM","PEOPLE","IT","CS","BP"] },
+    { cmd: "팀", label: "팀별 자료", _useGroup: "team" },
     { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
   ];
 
@@ -2147,9 +2147,15 @@
         var cmd = this.getAttribute("data-cmd");
         var preset = SLASH_PRESETS.find(function(p) { return p.cmd === cmd; });
         if (preset) {
+          // Resolve dynamic group keys
+          var pkeys = preset.keys;
+          if (preset._useGroup) {
+            var grp = SOURCE_GROUPS.find(function(g) { return g.id === preset._useGroup; });
+            if (grp) pkeys = grp.keys;
+          }
           // Toggle preset keys
-          var allOn = preset.keys.every(function(k) { return _slashTempSelection.indexOf(k) >= 0; });
-          preset.keys.forEach(function(k) {
+          var allOn = pkeys.every(function(k) { return _slashTempSelection.indexOf(k) >= 0; });
+          pkeys.forEach(function(k) {
             var idx = _slashTempSelection.indexOf(k);
             if (allOn) { if (idx >= 0) _slashTempSelection.splice(idx, 1); }
             else { if (idx < 0) _slashTempSelection.push(k); }
@@ -2299,6 +2305,30 @@
           h += '</div>';
           return h;
         }
+
+        // Dynamic team keys: inject team names from API into SOURCE_GROUPS
+        SOURCE_GROUPS.forEach(function(grp) {
+          if (!grp._dynamic) return;
+          var staticKeys = grp.keys.slice();  // Keep BP etc.
+          var teamKeys = [];
+          for (var svcName in data.services) {
+            var svc = data.services[svcName];
+            if (svc.resources !== undefined && staticKeys.indexOf(svcName) < 0) {
+              teamKeys.push(svcName);
+              // Register in route map and icons if missing
+              if (!SOURCE_ROUTE_MAP[svcName]) SOURCE_ROUTE_MAP[svcName] = "team";
+              if (!SERVICE_ICONS[svcName]) SERVICE_ICONS[svcName] = { label: svcName, svg: _svgGlobe };
+            }
+          }
+          grp.keys = teamKeys.concat(staticKeys);
+          // Rebuild DATA_SOURCE_KEYS
+          DATA_SOURCE_KEYS = [];
+          SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
+          // Auto-enable new keys
+          teamKeys.forEach(function(k) {
+            if (enabledSources.indexOf(k) < 0) enabledSources.push(k);
+          });
+        });
 
         // Toolbar
         var html = '<div class="source-select-toolbar">' +
