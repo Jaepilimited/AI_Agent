@@ -715,6 +715,12 @@ class OrchestratorAgent:
             if not has_data:
                 return "notion"
 
+        # Team resource check (specific team+시트 patterns) — before GWS to avoid "시트 찾아" overlap
+        _TEAM_SPECIFIC = ["jbt ", "bcm ", "east ", "west ", "bea ", "bxm ", "플래그십",
+                          "팀 자료", "팀별 자료", "db hub", "데이터 허브"]
+        if any(kw in q for kw in _TEAM_SPECIFIC):
+            return "team"
+
         # GWS check — highest priority for personal workspace queries
         if any(kw in q for kw in self._GWS_KEYWORDS):
             return "gws"
