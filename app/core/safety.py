@@ -175,86 +175,84 @@ def get_safety_status() -> dict:
     """
     mm = get_maintenance_manager()
 
-    # Build services map
+    # Build services map — clean names (no BQ/BigQuery prefix)
     services: Dict[str, dict] = {}
 
-    # BigQuery Sales
+    # Sales tables
     bq_circuit = get_circuit("bigquery")
-    if mm.active:
-        services["BigQuery \ub9e4\ucd9c"] = {"status": "updating", "detail": "SALES_ALL_Backup"}
-    elif bq_circuit.state != CBState.CLOSED:
-        services["BigQuery \ub9e4\ucd9c"] = {"status": "error", "detail": bq_circuit.state.value}
-    else:
-        services["BigQuery \ub9e4\ucd9c"] = {"status": "ok", "detail": "SALES_ALL_Backup"}
+    _bq_status = "updating" if mm.active else ("error" if bq_circuit.state != CBState.CLOSED else "ok")
+    services["매출"] = {"status": _bq_status, "detail": "SALES_ALL_Backup"}
+    services["제품"] = {"status": _bq_status, "detail": "Product"}
 
-    # BigQuery Product (shares circuit with bigquery)
-    if bq_circuit.state != CBState.CLOSED and not mm.active:
-        services["BigQuery \uc81c\ud488"] = {"status": "error", "detail": "Product"}
-    else:
-        services["BigQuery \uc81c\ud488"] = {"status": "ok", "detail": "Product"}
-
-    # Marketing DB tables (share bigquery circuit)
-    _marketing_tables = {
-        "BQ \uad11\uace0\ub370\uc774\ud130": ("marketing_analysis", "integrated_advertising_data"),
-        "BQ \ub9c8\ucf00\ud305\ube44\uc6a9": ("marketing_analysis", "Integrated_marketing_cost"),
-        "BQ Shopify": ("marketing_analysis", "shopify_analysis_sales"),
-        "BQ \ud50c\ub7ab\ud3fc": ("Platform_Data", "raw_data"),
-        "BQ \uc778\ud50c\ub8e8\uc5b8\uc11c": ("marketing_analysis", "influencer_input_ALL_TEAMS"),
-        "BQ \uc544\ub9c8\uc874\uac80\uc0c9": ("marketing_analysis", "amazon_search_analytics_catalog_performance"),
-        "BQ \uba54\ud0c0\uad11\uace0": ("ad_data", "meta data_test"),
+    # Marketing + Review tables (share bigquery circuit)
+    _mkt_tables = {
+        "광고데이터": "marketing_analysis.integrated_advertising_data",
+        "마케팅비용": "marketing_analysis.Integrated_marketing_cost",
+        "Shopify": "marketing_analysis.shopify_analysis_sales",
+        "플랫폼": "Platform_Data.raw_data",
+        "인플루언서": "marketing_analysis.influencer_input_ALL_TEAMS",
+        "아마존검색": "marketing_analysis.amazon_search_analytics_catalog_performance",
+        "메타광고": "ad_data.meta data_test",
+        "아마존 리뷰": "Review_Data.New_Amazon_Review",
+        "큐텐 리뷰": "Review_Data.New_Qoo10_Review",
+        "쇼피 리뷰": "Review_Data.New_Shopee_Review",
+        "스마트스토어 리뷰": "Review_Data.New_Smartstore_Review",
     }
-    for label, (dataset, table) in _marketing_tables.items():
-        if bq_circuit.state != CBState.CLOSED:
-            services[label] = {"status": "error", "detail": bq_circuit.state.value}
-        elif mm.active:
-            services[label] = {"status": "updating", "detail": mm.reason}
-        else:
-            services[label] = {"status": "ok", "detail": f"{dataset}.{table}"}
+    for label, detail in _mkt_tables.items():
+        services[label] = {"status": _bq_status, "detail": detail}
 
     # Notion
     notion_circuit = get_circuit("notion")
     try:
         from app.agents.notion_agent import _page_titles
         notion_count = len(_page_titles)
-        if notion_circuit.state != CBState.CLOSED:
-            services["Notion \ubb38\uc11c"] = {"status": "error", "detail": f"{notion_count} pages"}
-        else:
-            services["Notion \ubb38\uc11c"] = {"status": "ok", "detail": f"{notion_count} pages"}
+        n_st = "error" if notion_circuit.state != CBState.CLOSED else "ok"
+        services["Notion"] = {"status": n_st, "detail": f"{notion_count} pages"}
     except Exception:
-        services["Notion \ubb38\uc11c"] = {"status": "ok", "detail": "10 pages"}
+        services["Notion"] = {"status": "ok", "detail": "10 pages"}
 
-    # CS Q&A
+    # CS Q&A (internal, not shown in UI but used as base for BP)
+    cs_detail = "737 entries"
+    cs_status = "ok"
     try:
         from app.agents.cs_agent import _qa_cache, _cache_loaded
         if _cache_loaded:
-            services["CS Q&A"] = {"status": "ok", "detail": f"{len(_qa_cache)} entries"}
+            cs_detail = f"{len(_qa_cache)}건"
+            cs_status = "ok"
         else:
-            services["CS Q&A"] = {"status": "error", "detail": "loading"}
+            cs_detail = "loading"
+            cs_status = "error"
     except Exception:
-        services["CS Q&A"] = {"status": "ok", "detail": "737 entries"}
+        pass
+    services["CS Q&A"] = {"status": cs_status, "detail": cs_detail}
 
-    # BP (CS Q&A) — mirrors CS Q&A status
-    services["BP (CS Q&A)"] = dict(services.get("CS Q&A", {"status": "ok", "detail": ""}))
+    # BP — mirrors CS Q&A
+    services["BP"] = {"status": cs_status, "detail": cs_detail}
 
-    # Team Resources (DB HUB) — per-team breakdown
-    _TEAM_LABELS = {"JBT": "JBT (일본사업)", "BCM": "BCM (브랜드커뮤니케이션)", "IT": "IT"}
+    # Team Resources (DB HUB) — per-team with category breakdown
     try:
         from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync
         if _cache_loaded:
-            # Count per team
-            _team_counts: Dict[str, int] = {}
+            _team_data: Dict[str, Dict[str, int]] = {}
             for r in _resource_cache:
                 t = r.get("team", "")
-                _team_counts[t] = _team_counts.get(t, 0) + 1
-            for team, cnt in sorted(_team_counts.items()):
-                label = _TEAM_LABELS.get(team, team)
-                services[f"팀자료:{team}"] = {"status": "ok", "detail": f"{label} {cnt}건"}
-            if not _team_counts:
-                services["팀자료:없음"] = {"status": "error", "detail": "0 entries"}
+                c = r.get("category", "") or "기타"
+                _team_data.setdefault(t, {})
+                _team_data[t][c] = _team_data[t].get(c, 0) + 1
+            for team in sorted(_team_data.keys()):
+                cats = _team_data[team]
+                total = sum(cats.values())
+                top_cats = sorted(cats.items(), key=lambda x: -x[1])[:3]
+                cat_str = ", ".join(f"{c} {n}건" for c, n in top_cats)
+                if len(cats) > 3:
+                    cat_str += f" 외 {len(cats)-3}개"
+                services[team] = {"status": "ok", "detail": f"{total}건 — {cat_str}"}
+            if not _team_data:
+                services["팀자료"] = {"status": "error", "detail": "0건"}
         else:
-            services["팀자료:loading"] = {"status": "error", "detail": "loading"}
+            services["팀자료"] = {"status": "error", "detail": "loading"}
     except Exception:
-        services["팀자료:unknown"] = {"status": "ok", "detail": "not loaded"}
+        services["팀자료"] = {"status": "ok", "detail": "not loaded"}
 
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}

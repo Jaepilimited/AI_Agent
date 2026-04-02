@@ -196,26 +196,29 @@
   // ===== Data Source Filter (Grouped) =====
   var SOURCE_GROUPS = [
     { id: "sales", label: "매출 데이터", emoji: "\uD83D\uDCCA",
-      keys: ["BigQuery 매출", "BigQuery 제품"] },
+      keys: ["매출", "제품"] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
-      keys: ["BQ 광고데이터", "BQ 마케팅비용", "BQ Shopify", "BQ 플랫폼",
-             "BQ 인플루언서", "BQ 아마존검색", "BQ 메타광고"] },
+      keys: ["광고데이터", "마케팅비용", "Shopify", "플랫폼",
+             "인플루언서", "아마존검색", "메타광고",
+             "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { id: "team", label: "팀별 자료", emoji: "\uD83C\uDFE2",
-      keys: ["팀자료:JBT", "팀자료:BCM", "팀자료:IT", "BP (CS Q&A)"] },
+      keys: ["JBT", "BCM", "IT", "BP"] },
     { id: "tools", label: "업무 도구", emoji: "\uD83D\uDCE7",
-      keys: ["Notion 문서", "Google Workspace"] },
+      keys: ["Notion", "Google Workspace"] },
   ];
   var DATA_SOURCE_KEYS = [];
   SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
   // Source key → route mapping for orchestrator
   var SOURCE_ROUTE_MAP = {
-    "BigQuery 매출": "bigquery", "BigQuery 제품": "bigquery",
-    "BQ 광고데이터": "bigquery", "BQ 마케팅비용": "bigquery",
-    "BQ Shopify": "bigquery", "BQ 플랫폼": "bigquery",
-    "BQ 인플루언서": "bigquery", "BQ 아마존검색": "bigquery",
-    "BQ 메타광고": "bigquery",
-    "Notion 문서": "notion", "CS Q&A": "cs", "BP (CS Q&A)": "cs",
-    "팀자료:JBT": "team", "팀자료:BCM": "team", "팀자료:IT": "team",
+    "매출": "bigquery", "제품": "bigquery",
+    "광고데이터": "bigquery", "마케팅비용": "bigquery",
+    "Shopify": "bigquery", "플랫폼": "bigquery",
+    "인플루언서": "bigquery", "아마존검색": "bigquery",
+    "메타광고": "bigquery",
+    "아마존 리뷰": "bigquery", "큐텐 리뷰": "bigquery",
+    "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
+    "Notion": "notion", "CS Q&A": "cs", "BP": "cs",
+    "JBT": "team", "BCM": "team", "IT": "team",
     "Google Workspace": "gws"
   };
   var enabledSources = loadEnabledSources();
@@ -223,7 +226,13 @@
   function loadEnabledSources() {
     try {
       var saved = localStorage.getItem("skin1004_enabled_sources");
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        var parsed = JSON.parse(saved);
+        // Migrate: if any saved key not in current set, reset to all
+        var hasOld = parsed.some(function(k) { return DATA_SOURCE_KEYS.indexOf(k) < 0; });
+        if (!hasOld && parsed.length > 0) return parsed;
+        localStorage.removeItem("skin1004_enabled_sources");
+      }
     } catch (e) {}
     // Default: all enabled
     return DATA_SOURCE_KEYS.slice();
@@ -1958,81 +1967,50 @@
     document.getElementById("skin-status-drawer").className = "closed";
   }
 
-  // ===== System Status (SVG icons) =====
+  // ===== System Status (SVG icons) — clean names, no BQ prefix =====
+  var _svgBar = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>';
+  var _svgBox = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>';
+  var _svgDollar = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+  var _svgSearch = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
+  var _svgUsers = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+  var _svgStar = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+  var _svgChat = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  var _svgGlobe = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+  var _svgMonitor = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+  var _svgTarget = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>';
+  var _svgBag = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
+  var _svgUpload = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+  var _svgFile = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+  var _svgFolder = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
   var SERVICE_ICONS = {
-    "BigQuery 매출": {
-      label: "BQ 매출",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
-    },
-    "BigQuery 제품": {
-      label: "BQ 제품",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>'
-    },
-    // Marketing DB tables
-    "BQ 광고데이터": {
-        label: "광고",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
-    },
-    "BQ 마케팅비용": {
-        label: "마케팅",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
-    },
-    "BQ Shopify": {
-        label: "Shopify",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>'
-    },
-    "BQ 플랫폼": {
-        label: "플랫폼",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>'
-    },
-    "BQ 인플루언서": {
-        label: "인플루언서",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
-    },
-    "BQ 아마존검색": {
-        label: "AZ검색",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
-    },
-    "BQ 메타광고": {
-        label: "메타광고",
-        svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>'
-    },
-    "Notion 문서": {
-      label: "Notion",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>'
-    },
-    "CS Q&A": {
-      label: "CS Q&A",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
-    },
-    "팀자료:JBT": {
-      label: "JBT",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
-    },
-    "팀자료:BCM": {
-      label: "BCM",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>'
-    },
-    "팀자료:IT": {
-      label: "IT",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>'
-    },
-    "BP (CS Q&A)": {
-      label: "BP Q&A",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
-    },
-    "Google Workspace": {
-      label: "GWS",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
-    },
-    "Gemini API": {
-      label: "Gemini",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
-    },
-    "GWS Token": {
-      label: "Token",
-      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'
-    },
+    // 매출
+    "매출":           { label: "매출", svg: _svgBar },
+    "제품":           { label: "제품", svg: _svgBox },
+    // 마케팅
+    "광고데이터":      { label: "광고데이터", svg: _svgUpload },
+    "마케팅비용":      { label: "마케팅비용", svg: _svgDollar },
+    "Shopify":        { label: "Shopify", svg: _svgBag },
+    "플랫폼":         { label: "플랫폼", svg: _svgMonitor },
+    "인플루언서":      { label: "인플루언서", svg: _svgUsers },
+    "아마존검색":      { label: "아마존검색", svg: _svgSearch },
+    "메타광고":        { label: "메타광고", svg: _svgTarget },
+    "아마존 리뷰":     { label: "아마존 리뷰", svg: _svgStar },
+    "큐텐 리뷰":       { label: "큐텐 리뷰", svg: _svgStar },
+    "쇼피 리뷰":       { label: "쇼피 리뷰", svg: _svgStar },
+    "스마트스토어 리뷰": { label: "스마트스토어 리뷰", svg: _svgStar },
+    // 팀별 자료
+    "JBT":            { label: "JBT (일본사업)", svg: _svgGlobe },
+    "BCM":            { label: "BCM (브커)", svg: _svgBar },
+    "IT":             { label: "IT", svg: _svgMonitor },
+    "BP":             { label: "BP (제품 Q&A)", svg: _svgChat },
+    // 업무 도구
+    "Notion":         { label: "Notion", svg: _svgFile },
+    "CS Q&A":         { label: "CS Q&A", svg: _svgChat },
+    "Google Workspace": { label: "GWS", svg: _svgFolder },
+    // 시스템
+    "Gemini API":     { label: "Gemini", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' },
+    "Claude API":     { label: "Claude", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' },
+    "GWS Token":      { label: "Token", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' },
   };
 
   // ===== // Slash Command & Source Filter =====
@@ -2041,12 +2019,12 @@
 
   // Quick-select presets for // command
   var SLASH_PRESETS = [
-    { cmd: "매출", label: "매출 데이터", keys: ["BigQuery 매출"] },
-    { cmd: "제품", label: "제품 데이터", keys: ["BigQuery 제품"] },
-    { cmd: "광고", label: "광고 데이터", keys: ["BQ 광고데이터", "BQ 메타광고"] },
-    { cmd: "notion", label: "Notion 문서", keys: ["Notion 문서"] },
+    { cmd: "매출", label: "매출 데이터", keys: ["매출", "제품"] },
+    { cmd: "광고", label: "광고 데이터", keys: ["광고데이터", "메타광고"] },
+    { cmd: "리뷰", label: "리뷰 전체", keys: ["아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
+    { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
-    { cmd: "팀", label: "팀별 자료", keys: ["팀자료:JBT", "팀자료:BCM", "팀자료:IT", "BP (CS Q&A)"] },
+    { cmd: "팀", label: "팀별 자료", keys: ["JBT", "BCM", "IT", "BP"] },
     { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
   ];
 
@@ -2243,11 +2221,13 @@
             ? '<label class="status-checkbox-label"><input type="checkbox" class="status-source-cb" data-source="' + name + '"' + (isChecked ? ' checked' : '') + '></label>'
             : '';
 
+          var detailText = (st === "ok" && detail && detail !== "loading") ? detail : "";
           var h = '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + '">' +
             '<div class="status-item-row">' + checkboxHtml +
             '<span class="status-dot' + (st !== "ok" ? " error" : "") + '"></span>' +
             '<span class="status-icon">' + info.svg + '</span>' +
             '<span class="status-name">' + info.label + '</span>' +
+            (detailText ? '<span class="status-detail-text">' + detailText + '</span>' : '') +
             '<span class="status-label' + labelClass + '">' + (labels[st] || st) + '</span>' +
             '</div>';
           if (alertMsg) {

@@ -182,19 +182,19 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
 
     # enabled_sources → allowed table paths mapping
     _SOURCE_TABLE_MAP = {
-        "BigQuery 매출": [settings.sales_table_full_path],
-        "BigQuery 제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
-        "BQ 광고데이터": ["skin1004-319714.marketing_analysis.integrated_advertising_data"],
-        "BQ 마케팅비용": ["skin1004-319714.marketing_analysis.Integrated_marketing_cost"],
-        "BQ Shopify": ["skin1004-319714.marketing_analysis.shopify_analysis_sales"],
-        "BQ 플랫폼": ["skin1004-319714.Platform_Data.raw_data"],
-        "BQ 인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
-        "BQ 아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
-        "BQ 아마존리뷰": ["skin1004-319714.Review_Data.New_Amazon_Review"],
-        "BQ 큐텐리뷰": ["skin1004-319714.Review_Data.New_Qoo10_Review"],
-        "BQ 쇼피리뷰": ["skin1004-319714.Review_Data.New_Shopee_Review"],
-        "BQ 스마트스토어": ["skin1004-319714.Review_Data.New_Smartstore_Review"],
-        "BQ 메타광고": ["skin1004-319714.ad_data.meta data_test"],
+        "매출": [settings.sales_table_full_path],
+        "제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
+        "광고데이터": ["skin1004-319714.marketing_analysis.integrated_advertising_data"],
+        "마케팅비용": ["skin1004-319714.marketing_analysis.Integrated_marketing_cost"],
+        "Shopify": ["skin1004-319714.marketing_analysis.shopify_analysis_sales"],
+        "플랫폼": ["skin1004-319714.Platform_Data.raw_data"],
+        "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
+        "아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
+        "아마존 리뷰": ["skin1004-319714.Review_Data.New_Amazon_Review"],
+        "큐텐 리뷰": ["skin1004-319714.Review_Data.New_Qoo10_Review"],
+        "쇼피 리뷰": ["skin1004-319714.Review_Data.New_Shopee_Review"],
+        "스마트스토어 리뷰": ["skin1004-319714.Review_Data.New_Smartstore_Review"],
+        "메타광고": ["skin1004-319714.ad_data.meta data_test"],
     }
 
     # Build allowed_tables set from enabled_sources

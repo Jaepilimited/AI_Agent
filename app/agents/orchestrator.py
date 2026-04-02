@@ -100,17 +100,18 @@ class OrchestratorAgent:
             self._gws_agent = GWSAgent()
         return self._gws_agent
 
-    # Source name → route mapping (matches frontend DATA_SOURCE_KEYS)
+    # Source name → route mapping (matches frontend DATA_SOURCE_KEYS, clean names)
     _SOURCE_ROUTE_MAP = {
-        "BigQuery 매출": "bigquery", "BigQuery 제품": "bigquery",
-        "BQ 광고데이터": "bigquery", "BQ 마케팅비용": "bigquery",
-        "BQ Shopify": "bigquery", "BQ 플랫폼": "bigquery",
-        "BQ 인플루언서": "bigquery", "BQ 아마존검색": "bigquery",
-        "BQ 메타광고": "bigquery",
-        "Notion 문서": "notion",
-        "CS Q&A": "cs",
-        "BP (CS Q&A)": "cs",
-        "팀자료:JBT": "team", "팀자료:BCM": "team", "팀자료:IT": "team",
+        "매출": "bigquery", "제품": "bigquery",
+        "광고데이터": "bigquery", "마케팅비용": "bigquery",
+        "Shopify": "bigquery", "플랫폼": "bigquery",
+        "인플루언서": "bigquery", "아마존검색": "bigquery",
+        "메타광고": "bigquery",
+        "아마존 리뷰": "bigquery", "큐텐 리뷰": "bigquery",
+        "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
+        "Notion": "notion",
+        "CS Q&A": "cs", "BP": "cs",
+        "JBT": "team", "BCM": "team", "IT": "team",
         "Google Workspace": "gws",
     }
 
