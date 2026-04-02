@@ -203,11 +203,21 @@ def _crawl_block_recursive(block_id: str, team: str, category: str, depth: int =
                 resources.append(_make_resource(team, category, url[:80], url))
             continue
 
-        # --- All other text blocks: paragraph, bulleted_list_item, numbered_list_item, heading_* ---
+        # --- Heading blocks: update category for subsequent blocks ---
+        if btype in ("heading_1", "heading_2", "heading_3"):
+            text = _extract_text(child[btype].get("rich_text", []))
+            if text:
+                category = text  # Update category for following blocks
+            continue
+
+        # --- All other text blocks: paragraph, bulleted_list_item, numbered_list_item ---
         text, href = _extract_block_content(child)
         if href:
             name_part = text.split("http")[0].strip() if "http" in text else text
             resources.append(_make_resource(team, category, name_part or href[:80], href))
+        elif text and len(text) >= 5:
+            # Text-only content (no URL) → store as knowledge resource
+            resources.append(_make_resource(team, category, text[:120], "", text))
 
         # Recurse into children if present (bulleted lists, numbered lists, etc.)
         if has_ch:
