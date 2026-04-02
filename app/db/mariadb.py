@@ -381,15 +381,21 @@ def get_maria_conn():
 _TEAM_RESOURCES_DDL = """
 CREATE TABLE IF NOT EXISTS team_resources (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    team VARCHAR(50) NOT NULL COMMENT '팀명 (JBT, BCM, GM_EAST 등)',
-    category VARCHAR(100) DEFAULT '' COMMENT '하위 카테고리 (MKT, BEA, BXM, 이커머스 등)',
-    name VARCHAR(255) NOT NULL COMMENT '시트/페이지 이름',
-    resource_type ENUM('google_sheet', 'notion', 'google_drive', 'other') NOT NULL DEFAULT 'other',
-    url TEXT COMMENT '링크 URL',
-    description TEXT DEFAULT '' COMMENT '비고/설명',
-    synced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '마지막 동기화 시각',
+    parent_id INT DEFAULT NULL COMMENT '부모 노드 ID (NULL=팀 루트)',
+    team VARCHAR(50) NOT NULL COMMENT '팀명',
+    node_type ENUM('team','folder','sheet','page','database','text') NOT NULL DEFAULT 'folder' COMMENT '노드 유형',
+    name VARCHAR(500) NOT NULL COMMENT '노드 이름',
+    url TEXT DEFAULT NULL COMMENT '링크 URL (리프 노드)',
+    description TEXT DEFAULT '' COMMENT '페이지 본문 / 비고',
+    resource_type ENUM('google_sheet','notion','google_drive','other') DEFAULT 'other',
+    depth INT NOT NULL DEFAULT 0 COMMENT '트리 깊이 (0=팀 루트)',
+    sort_order INT DEFAULT 0 COMMENT '같은 parent 내 정렬',
+    notion_block_id VARCHAR(36) DEFAULT NULL COMMENT 'Notion 블록 ID',
+    synced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '마지막 동기화',
+    CONSTRAINT fk_parent FOREIGN KEY (parent_id) REFERENCES team_resources(id) ON DELETE CASCADE,
     INDEX idx_team (team),
-    INDEX idx_team_cat (team, category)
+    INDEX idx_parent (parent_id),
+    INDEX idx_team_depth (team, depth)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 """
 
