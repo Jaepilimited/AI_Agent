@@ -75,6 +75,24 @@ def _extract_text(rich_text_list: list) -> str:
     return "".join(t.get("plain_text", "") for t in rich_text_list).strip()
 
 
+def _extract_href(rich_text_list: list) -> str:
+    """Extract first URL from rich_text href or mention."""
+    for t in rich_text_list:
+        href = t.get("href")
+        if href:
+            return href
+        # Notion mention (page/database link)
+        mention = t.get("mention", {})
+        mtype = mention.get("type", "")
+        if mtype == "page":
+            pid = mention["page"]["id"]
+            return f"https://www.notion.so/{pid.replace('-', '')}"
+        if mtype == "database":
+            did = mention["database"]["id"]
+            return f"https://www.notion.so/{did.replace('-', '')}"
+    return ""
+
+
 def _parse_table_rows(table_block_id: str) -> List[Dict[str, str]]:
     rows = _get_block_children(table_block_id)
     if not rows:
@@ -96,15 +114,41 @@ def _parse_table_rows(table_block_id: str) -> List[Dict[str, str]]:
     return parsed
 
 
+def _make_resource(team: str, category: str, name: str, url: str, desc: str = "") -> Dict:
+    return {
+        "team": team, "category": category,
+        "name": name.strip(), "resource_type": _detect_type(url),
+        "url": url.strip(), "description": desc.strip(),
+    }
+
+
+def _extract_block_content(block: dict) -> tuple:
+    """Extract (text, href) from any block's rich_text + href/mention."""
+    btype = block["type"]
+    rt = []
+    if btype in block and isinstance(block[btype], dict):
+        rt = block[btype].get("rich_text", [])
+    text = _extract_text(rt)
+    href = _extract_href(rt)
+    # Fallback: check inline URLs in text
+    if not href:
+        urls = _URL_RE.findall(text)
+        if urls:
+            href = urls[0]
+    return text, href
+
+
 def _crawl_block_recursive(block_id: str, team: str, category: str, depth: int = 0) -> List[Dict]:
-    if depth > 5:
+    if depth > 8:
         return []
     resources = []
     children = _get_block_children(block_id)
     for child in children:
         btype = child["type"]
         bid = child["id"]
+        has_ch = child.get("has_children", False)
 
+        # --- Table: parse rows ---
         if btype == "table":
             rows = _parse_table_rows(bid)
             for row in rows:
@@ -119,46 +163,57 @@ def _crawl_block_recursive(block_id: str, team: str, category: str, depth: int =
                 if not url:
                     urls = _URL_RE.findall(" ".join(row.values()))
                     url = urls[0] if urls else ""
-                resources.append({
-                    "team": team, "category": sub_cat or category,
-                    "name": name, "resource_type": _detect_type(url),
-                    "url": url, "description": desc,
-                })
+                resources.append(_make_resource(team, sub_cat or category, name, url, desc))
+            continue
 
-        elif btype == "toggle":
-            toggle_title = _extract_text(child["toggle"].get("rich_text", []))
-            if toggle_title:
-                resources.extend(_crawl_block_recursive(bid, team, toggle_title, depth + 1))
+        # --- Toggle: title becomes category, recurse ---
+        if btype == "toggle":
+            title = _extract_text(child["toggle"].get("rich_text", []))
+            resources.extend(_crawl_block_recursive(bid, team, title or category, depth + 1))
+            continue
 
-        elif btype == "bulleted_list_item":
-            bullet_text = _extract_text(child["bulleted_list_item"].get("rich_text", []))
-            if not bullet_text:
-                continue
-            sub_children = _get_block_children(bid)
-            if sub_children:
-                resources.extend(_crawl_block_recursive(bid, team, bullet_text, depth + 1))
-            else:
-                urls = _URL_RE.findall(bullet_text)
-                if urls:
-                    resources.append({
-                        "team": team, "category": category,
-                        "name": bullet_text.split("http")[0].strip(),
-                        "resource_type": _detect_type(urls[0]),
-                        "url": urls[0], "description": "",
-                    })
+        # --- Child page: title as name, Notion link ---
+        if btype == "child_page":
+            title = child.get("child_page", {}).get("title", "")
+            page_url = f"https://www.notion.so/{bid.replace('-', '')}"
+            if title:
+                resources.append(_make_resource(team, category, title, page_url))
+            if has_ch:
+                resources.extend(_crawl_block_recursive(bid, team, title or category, depth + 1))
+            continue
 
-        elif btype == "paragraph":
-            para_text = _extract_text(child["paragraph"].get("rich_text", []))
-            if not para_text:
-                continue
-            urls = _URL_RE.findall(para_text)
-            if urls:
-                name_part = para_text.split("http")[0].strip() or para_text[:80]
-                resources.append({
-                    "team": team, "category": category,
-                    "name": name_part, "resource_type": _detect_type(urls[0]),
-                    "url": urls[0], "description": "",
-                })
+        # --- Child database ---
+        if btype == "child_database":
+            title = child.get("child_database", {}).get("title", "")
+            db_url = f"https://www.notion.so/{bid.replace('-', '')}"
+            if title:
+                resources.append(_make_resource(team, category, title, db_url))
+            continue
+
+        # --- Bookmark / Embed: direct URL ---
+        if btype == "bookmark":
+            url = child.get("bookmark", {}).get("url", "")
+            caption = _extract_text(child.get("bookmark", {}).get("caption", []))
+            if url:
+                resources.append(_make_resource(team, category, caption or url[:80], url))
+            continue
+        if btype == "embed":
+            url = child.get("embed", {}).get("url", "")
+            if url:
+                resources.append(_make_resource(team, category, url[:80], url))
+            continue
+
+        # --- All other text blocks: paragraph, bulleted_list_item, numbered_list_item, heading_* ---
+        text, href = _extract_block_content(child)
+        if href:
+            name_part = text.split("http")[0].strip() if "http" in text else text
+            resources.append(_make_resource(team, category, name_part or href[:80], href))
+
+        # Recurse into children if present (bulleted lists, numbered lists, etc.)
+        if has_ch:
+            sub_cat = text if (btype in ("bulleted_list_item", "numbered_list_item") and text and not href) else category
+            resources.extend(_crawl_block_recursive(bid, team, sub_cat, depth + 1))
+
     return resources
 
 
