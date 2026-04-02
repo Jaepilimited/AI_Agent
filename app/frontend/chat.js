@@ -203,8 +203,8 @@
              "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { id: "team", label: "팀별 자료", emoji: "\uD83C\uDFE2",
       keys: ["JBT", "BCM", "IT", "BP"] },
-    { id: "tools", label: "업무 도구", emoji: "\uD83D\uDCE7",
-      keys: ["Notion", "Google Workspace"] },
+    { id: "system", label: "시스템", emoji: "\u2699",
+      keys: ["Gemini API", "Claude API", "GWS Token", "Notion", "Google Workspace"] },
   ];
   var DATA_SOURCE_KEYS = [];
   SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
@@ -2222,16 +2222,26 @@
             : '';
 
           var detailText = (st === "ok" && detail && detail !== "loading") ? detail : "";
-          var h = '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + '">' +
+          var cats = svc.categories || null;
+          var hasCats = cats && Object.keys(cats).length > 0;
+          var h = '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + (hasCats ? " has-expand" : "") + '">' +
             '<div class="status-item-row">' + checkboxHtml +
             '<span class="status-dot' + (st !== "ok" ? " error" : "") + '"></span>' +
             '<span class="status-icon">' + info.svg + '</span>' +
             '<span class="status-name">' + info.label + '</span>' +
             (detailText ? '<span class="status-detail-text">' + detailText + '</span>' : '') +
             '<span class="status-label' + labelClass + '">' + (labels[st] || st) + '</span>' +
+            (hasCats ? '<span class="status-expand-btn">&#9654;</span>' : '') +
             '</div>';
           if (alertMsg) {
             h += '<div class="status-msg-wrap"><div class="status-msg-ticker"><span>' + alertMsg + '</span></div></div>';
+          }
+          if (hasCats) {
+            h += '<div class="status-sub-items">';
+            for (var cat in cats) {
+              h += '<div class="status-sub-item"><span class="sub-cat-name">' + cat + '</span><span class="sub-cat-count">' + cats[cat] + '건</span></div>';
+            }
+            h += '</div>';
           }
           h += '</div>';
           return h;
@@ -2267,23 +2277,6 @@
           html += '</div></div>';
         });
 
-        // Ungrouped services (Gemini API, GWS Token, etc.)
-        var ungroupedHtml = '';
-        for (var name in data.services) {
-          if (!renderedKeys[name] && DATA_SOURCE_KEYS.indexOf(name) < 0) {
-            ungroupedHtml += renderItem(name, data.services[name]);
-          }
-        }
-        if (ungroupedHtml) {
-          html += '<div class="status-group" data-group="system">' +
-            '<div class="status-group-header">' +
-            '<span class="status-group-emoji">&#9881;</span>' +
-            '<span class="status-group-label">시스템</span>' +
-            '<span class="status-group-toggle">&#9660;</span>' +
-            '</div>' +
-            '<div class="status-group-items">' + ungroupedHtml + '</div></div>';
-        }
-
         container.innerHTML = html;
 
         // Set indeterminate state on group checkboxes
@@ -2294,9 +2287,17 @@
         // Group header click → toggle collapse
         container.querySelectorAll(".status-group-header").forEach(function(hdr) {
           hdr.addEventListener("click", function(e) {
-            if (e.target.tagName === "INPUT") return;  // Don't toggle on checkbox click
+            if (e.target.tagName === "INPUT") return;
             var grpEl = hdr.parentElement;
             grpEl.classList.toggle("collapsed");
+          });
+        });
+
+        // Expandable team items — click row or arrow to expand sub-items
+        container.querySelectorAll(".status-item.has-expand").forEach(function(item) {
+          item.querySelector(".status-item-row").addEventListener("click", function(e) {
+            if (e.target.tagName === "INPUT") return;
+            item.classList.toggle("expanded");
           });
         });
 

@@ -224,12 +224,10 @@ def get_safety_status() -> dict:
             cs_status = "error"
     except Exception:
         pass
-    services["CS Q&A"] = {"status": cs_status, "detail": cs_detail}
-
-    # BP — mirrors CS Q&A
+    # BP — mirrors CS Q&A (CS Q&A not shown in UI separately)
     services["BP"] = {"status": cs_status, "detail": cs_detail}
 
-    # Team Resources (DB HUB) — per-team with category breakdown
+    # Team Resources (DB HUB) — per-team with categories for expandable UI
     try:
         from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync
         if _cache_loaded:
@@ -242,11 +240,12 @@ def get_safety_status() -> dict:
             for team in sorted(_team_data.keys()):
                 cats = _team_data[team]
                 total = sum(cats.values())
-                top_cats = sorted(cats.items(), key=lambda x: -x[1])[:3]
-                cat_str = ", ".join(f"{c} {n}건" for c, n in top_cats)
-                if len(cats) > 3:
-                    cat_str += f" 외 {len(cats)-3}개"
-                services[team] = {"status": "ok", "detail": f"{total}건 — {cat_str}"}
+                # Include full categories dict for frontend expandable view
+                services[team] = {
+                    "status": "ok",
+                    "detail": f"{total}건",
+                    "categories": dict(sorted(cats.items(), key=lambda x: -x[1])),
+                }
             if not _team_data:
                 services["팀자료"] = {"status": "error", "detail": "0건"}
         else:
