@@ -92,7 +92,8 @@ class ChatCompletionRequest(BaseModel):
     stream: Optional[bool] = False
     user: Optional[str] = None
     brand_filter: Optional[str] = None  # e.g. "SK,CL,CBT" or "UM"
-    enabled_sources: Optional[List[str]] = None  # e.g. ["BigQuery 매출", "CS Q&A"]
+    enabled_sources: Optional[List[str]] = None  # e.g. ["매출", "CS Q&A"]
+    enabled_team_resources: Optional[Dict[str, List[str]]] = None  # {"JBT": ["name1", ...], "BCM": [...] }
 
 
 # --- OpenAI-compatible Response Models ---

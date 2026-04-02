@@ -258,9 +258,45 @@
     return Object.keys(routes);
   }
   function getEnabledTableKeys() {
-    // Return BQ table keys only (for SQL agent table filtering)
     return enabledSources.filter(function(k) { return SOURCE_ROUTE_MAP[k] === "bigquery"; });
   }
+
+  // ===== Team Resource Filter (per-resource checkboxes) =====
+  var enabledTeamRes = loadTeamRes();  // { "JBT": ["name1",...], "BCM": [...] } or null=all
+  function loadTeamRes() {
+    try {
+      var s = localStorage.getItem("skin1004_team_resources");
+      if (s) return JSON.parse(s);
+    } catch(e) {}
+    return null;  // null = all enabled (default)
+  }
+  function saveTeamRes() {
+    if (enabledTeamRes === null) localStorage.removeItem("skin1004_team_resources");
+    else localStorage.setItem("skin1004_team_resources", JSON.stringify(enabledTeamRes));
+  }
+  function isTeamResEnabled(team, name) {
+    if (!enabledTeamRes) return true;  // null = all
+    var list = enabledTeamRes[team];
+    if (!list) return true;  // team not filtered
+    return list.indexOf(name) >= 0;
+  }
+  function toggleTeamRes(team, name) {
+    if (!enabledTeamRes) enabledTeamRes = {};
+    if (!enabledTeamRes[team]) {
+      // First uncheck in this team → start with all names, then remove this one
+      enabledTeamRes[team] = _allTeamResNames[team] ? _allTeamResNames[team].filter(function(n) { return n !== name; }) : [];
+    } else {
+      var idx = enabledTeamRes[team].indexOf(name);
+      if (idx >= 0) enabledTeamRes[team].splice(idx, 1);
+      else enabledTeamRes[team].push(name);
+    }
+    saveTeamRes();
+  }
+  function getEnabledTeamResPayload() {
+    if (!enabledTeamRes) return null;
+    return enabledTeamRes;
+  }
+  var _allTeamResNames = {};  // Populated from safety/status response
 
   // ===== Image Upload State =====
   var pendingImages = [];  // Array of { file: File, dataUrl: string }
@@ -1160,7 +1196,8 @@
           messages: messages,
           stream: true,
           brand_filter: (currentUser && currentUser.my_brand_filter) || null,
-          enabled_sources: _sendSources
+          enabled_sources: _sendSources,
+          enabled_team_resources: getEnabledTeamResPayload()
         }),
         signal: currentAbortController.signal,
       });
@@ -2249,10 +2286,15 @@
           if (hasRes) {
             h += '<div class="status-sub-items">';
             res.forEach(function(r) {
+              var resChecked = isTeamResEnabled(name, r.name) ? ' checked' : '';
               var catLabel = r.cat ? '<span class="sub-cat-tag">' + r.cat + '</span>' : '';
-              h += '<div class="status-sub-item">' + catLabel + '<span class="sub-cat-name">' + r.name + '</span></div>';
+              h += '<div class="status-sub-item">' +
+                '<input type="checkbox" class="sub-res-cb" data-team="' + name + '" data-name="' + r.name.replace(/"/g, '&quot;') + '"' + resChecked + '>' +
+                catLabel + '<span class="sub-cat-name">' + r.name + '</span></div>';
             });
             h += '</div>';
+            // Track all names for this team
+            _allTeamResNames[name] = res.map(function(r) { return r.name; });
           }
           h += '</div>';
           return h;
@@ -2309,6 +2351,14 @@
           item.querySelector(".status-item-row").addEventListener("click", function(e) {
             if (e.target.tagName === "INPUT") return;
             item.classList.toggle("expanded");
+          });
+        });
+
+        // Sub-resource checkboxes
+        container.querySelectorAll(".sub-res-cb").forEach(function(cb) {
+          cb.addEventListener("change", function(e) {
+            e.stopPropagation();
+            toggleTeamRes(this.getAttribute("data-team"), this.getAttribute("data-name"));
           });
         });
 

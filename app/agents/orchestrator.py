@@ -144,6 +144,7 @@ class OrchestratorAgent:
         images: Optional[List[dict]] = None,
         brand_filter: Optional[str] = None,
         enabled_sources: Optional[List[str]] = None,
+        enabled_team_resources: Optional[Dict[str, list]] = None,
         stream_callback=None,
     ) -> dict:
         """Main entry point: analyze query -> delegate to Sub Agent -> return result.
@@ -244,6 +245,7 @@ class OrchestratorAgent:
         images=None,
         brand_filter=None,
         enabled_sources=None,
+        enabled_team_resources=None,
     ):
         """Async generator: yields (type, data) tuples for real-time streaming.
 
@@ -406,6 +408,11 @@ class OrchestratorAgent:
                     result = await asyncio.wait_for(
                         handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
                         timeout=30.0,
+                    )
+                elif route == "team":
+                    result = await asyncio.wait_for(
+                        handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources),
+                        timeout=15.0,
                     )
                 else:
                     result = await asyncio.wait_for(
@@ -1045,6 +1052,7 @@ class OrchestratorAgent:
         conversation_context: str,
         model_type: str,
         user_email: str = "",
+        enabled_team_resources: Optional[Dict[str, list]] = None,
     ) -> dict:
         """Team Resource Agent — 팀별 자료 검색."""
         from app.agents.team_agent import run as run_team_agent
@@ -1053,7 +1061,7 @@ class OrchestratorAgent:
         if conversation_context:
             contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
         try:
-            result = await run_team_agent(contextualized_query, model_type=model_type)
+            result = await run_team_agent(contextualized_query, model_type=model_type, allowed_resources=enabled_team_resources)
             return {"source": "team", "answer": result}
         except Exception as e:
             logger.error("orchestrator_team_failed", error=str(e))

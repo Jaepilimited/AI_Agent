@@ -163,10 +163,11 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
             messages_for_context.append({"role": m.role, "content": content})
 
     enabled_sources = request.enabled_sources
+    enabled_team_resources = request.enabled_team_resources
 
     if request.stream:
         return StreamingResponse(
-            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources),
+            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources, enabled_team_resources=enabled_team_resources),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
         )
@@ -174,7 +175,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     # Non-streaming response (v3.0: Orchestrator)
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources
+            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources, enabled_team_resources=enabled_team_resources
         )
         answer = result.get("answer", "")
     except Exception as e:
@@ -209,6 +210,7 @@ async def _stream_response(
     images: list = None,
     brand_filter: str = None,
     enabled_sources: list = None,
+    enabled_team_resources: dict = None,
 ) -> AsyncGenerator[str, None]:
     """Stream response chunks in SSE format.
 
@@ -250,6 +252,7 @@ async def _stream_response(
         async for msg_type, content in _get_orchestrator().route_and_stream(
             query, messages, model_type, user_email=user_email, images=images or [],
             brand_filter=brand_filter, enabled_sources=enabled_sources,
+            enabled_team_resources=enabled_team_resources,
         ):
             if msg_type == "source":
                 _detected_route = content

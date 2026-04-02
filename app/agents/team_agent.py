@@ -4,7 +4,7 @@ DB HUB에서 동기화된 팀별 자료(Google Sheets, Notion 등)를
 키워드 매칭으로 검색하여 링크와 설명을 반환.
 """
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import structlog
 
@@ -63,7 +63,7 @@ _TEAM_ALIASES = {
 }
 
 
-def search_resources(query: str, top_k: int = 10) -> List[Dict]:
+def search_resources(query: str, top_k: int = 10, allowed_resources: Optional[Dict[str, list]] = None) -> List[Dict]:
     if not _cache_loaded or not _resource_cache:
         return []
 
@@ -72,6 +72,14 @@ def search_resources(query: str, top_k: int = 10) -> List[Dict]:
 
     scored = []
     for r in _resource_cache:
+        # Filter by allowed_resources if provided
+        if allowed_resources is not None:
+            team = r.get("team", "")
+            if team not in allowed_resources:
+                continue
+            allowed_names = allowed_resources[team]
+            if allowed_names and r.get("name", "") not in allowed_names:
+                continue
         score = 0.0
         team_lower = r["team"].lower()
         if team_lower in q_lower:
@@ -107,11 +115,11 @@ def _format_resource_context(matched: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-async def run(query: str, model_type: str = "gemini") -> str:
+async def run(query: str, model_type: str = "gemini", allowed_resources: Optional[Dict[str, list]] = None) -> str:
     if not _cache_loaded:
         await warmup()
 
-    matched = search_resources(query, top_k=8)
+    matched = search_resources(query, top_k=8, allowed_resources=allowed_resources)
     context = _format_resource_context(matched)
 
     llm = get_flash_client()
