@@ -66,8 +66,15 @@ def create_app() -> FastAPI:
         asyncio.create_task(_warmup_notion_titles())
         asyncio.create_task(_warmup_bq_schema())
         asyncio.create_task(_warmup_cs_db())
+        asyncio.create_task(_warmup_team_resources())
         # Safety: auto-detect table updates via __TABLES__ metadata polling
         asyncio.create_task(_start_maintenance_monitor())
+        # APScheduler: daily 01:00 team resources sync
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        _scheduler = AsyncIOScheduler()
+        _scheduler.add_job(_sync_team_resources_job, "cron", hour=1, minute=0, id="team_sync_daily")
+        _scheduler.start()
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00"])
         yield
         logger.info("application_shutdown")
 
@@ -264,6 +271,29 @@ async def _warmup_cs_db():
             logger.warning("cs_db_warmup_failed", error=str(e), attempt=attempt + 1)
             if attempt < 2:
                 await asyncio.sleep(5)
+
+
+async def _warmup_team_resources():
+    """Pre-load team resources from MariaDB at startup."""
+    try:
+        from app.agents.team_agent import warmup
+        count = await warmup()
+        logger.info("team_resources_warmup_done", count=count)
+    except Exception as e:
+        logger.warning("team_resources_warmup_failed", error=str(e))
+
+
+async def _sync_team_resources_job():
+    """Daily 01:00 cron job: Notion → MariaDB sync."""
+    try:
+        import asyncio
+        from scripts.sync_team_resources import sync
+        count = await asyncio.to_thread(sync, dry_run=False)
+        from app.agents.team_agent import warmup
+        await warmup()
+        logger.info("team_resources_daily_sync_done", count=count)
+    except Exception as e:
+        logger.error("team_resources_daily_sync_failed", error=str(e))
 
 
 async def _start_maintenance_monitor():

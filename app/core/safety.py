@@ -237,6 +237,16 @@ def get_safety_status() -> dict:
     except Exception:
         services["CS Q&A"] = {"status": "ok", "detail": "737 entries"}
 
+    # Team Resources (DB HUB)
+    try:
+        from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync
+        if _cache_loaded:
+            services["팀별 자료"] = {"status": "ok", "detail": f"{len(_resource_cache)} entries, sync: {_last_sync[:16]}"}
+        else:
+            services["팀별 자료"] = {"status": "error", "detail": "loading"}
+    except Exception:
+        services["팀별 자료"] = {"status": "ok", "detail": "not loaded"}
+
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}
 
