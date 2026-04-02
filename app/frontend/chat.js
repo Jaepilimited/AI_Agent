@@ -193,15 +193,20 @@
     return "direct";
   }
 
-  // ===== Data Source Filter =====
-  // Queryable data sources — shown with checkboxes in System Status
-  var DATA_SOURCE_KEYS = [
-    "BigQuery 매출", "BigQuery 제품",
-    "BQ 광고데이터", "BQ 마케팅비용", "BQ Shopify", "BQ 플랫폼",
-    "BQ 인플루언서", "BQ 아마존검색",
-    "BQ 아마존리뷰", "BQ 큐텐리뷰", "BQ 쇼피리뷰", "BQ 스마트스토어", "BQ 메타광고",
-    "Notion 문서", "CS Q&A", "Google Workspace"
+  // ===== Data Source Filter (Grouped) =====
+  var SOURCE_GROUPS = [
+    { id: "sales", label: "매출 데이터", emoji: "\uD83D\uDCCA",
+      keys: ["BigQuery 매출", "BigQuery 제품", "BQ Shopify", "BQ 플랫폼"] },
+    { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
+      keys: ["BQ 광고데이터", "BQ 마케팅비용", "BQ 인플루언서", "BQ 아마존검색",
+             "BQ 아마존리뷰", "BQ 큐텐리뷰", "BQ 쇼피리뷰", "BQ 스마트스토어", "BQ 메타광고"] },
+    { id: "team", label: "팀별 자료", emoji: "\uD83C\uDFE2",
+      keys: ["팀별 자료", "BP (CS Q&A)"] },
+    { id: "tools", label: "업무 도구", emoji: "\uD83D\uDCE7",
+      keys: ["Notion 문서", "Google Workspace"] },
   ];
+  var DATA_SOURCE_KEYS = [];
+  SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
   // Source key → route mapping for orchestrator
   var SOURCE_ROUTE_MAP = {
     "BigQuery 매출": "bigquery", "BigQuery 제품": "bigquery",
@@ -211,7 +216,8 @@
     "BQ 아마존리뷰": "bigquery", "BQ 큐텐리뷰": "bigquery",
     "BQ 쇼피리뷰": "bigquery", "BQ 스마트스토어": "bigquery",
     "BQ 메타광고": "bigquery",
-    "Notion 문서": "notion", "CS Q&A": "cs", "Google Workspace": "gws"
+    "Notion 문서": "notion", "CS Q&A": "cs", "BP (CS Q&A)": "cs",
+    "팀별 자료": "team", "Google Workspace": "gws"
   };
   var enabledSources = loadEnabledSources();
 
@@ -2016,6 +2022,14 @@
       label: "CS Q&A",
       svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
     },
+    "팀별 자료": {
+      label: "팀자료",
+      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+    },
+    "BP (CS Q&A)": {
+      label: "BP Q&A",
+      svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+    },
     "Google Workspace": {
       label: "GWS",
       svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
@@ -2042,6 +2056,7 @@
     { cmd: "리뷰", label: "리뷰 전체", keys: ["BQ 아마존리뷰", "BQ 큐텐리뷰", "BQ 쇼피리뷰", "BQ 스마트스토어"] },
     { cmd: "notion", label: "Notion 문서", keys: ["Notion 문서"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
+    { cmd: "팀", label: "팀별 자료", keys: ["팀별 자료", "BP (CS Q&A)"] },
     { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
   ];
 
@@ -2217,11 +2232,10 @@
         var container = document.getElementById("status-items");
         var inlineEl = document.getElementById("sidebar-status-inline");
         var maintenanceReason = (data.maintenance && data.maintenance.reason) || "";
-        var html = "";
-        var issues = [];  // Collect issues for inline indicator
+        var issues = [];
 
-        for (var name in data.services) {
-          var svc = data.services[name];
+        // Helper: render a single service row
+        function renderItem(name, svc) {
           var st = svc.status || "ok";
           var labels = { ok: "정상", updating: "업데이트 중", error: "오류" };
           var labelClass = st === "updating" ? " updating" : (st !== "ok" ? " error" : "");
@@ -2230,47 +2244,112 @@
           var alertMsg = "";
           if (st === "updating") alertMsg = maintenanceReason;
           else if (st === "error") alertMsg = detail;
+          if (st === "updating") issues.push(info.label + ": 업데이트 중");
+          else if (st === "error") issues.push(info.label + ": 오류");
 
-          // Collect issues for inline sidebar indicator
-          if (st === "updating") {
-            issues.push(info.label + ": 업데이트 중");
-          } else if (st === "error") {
-            issues.push(info.label + ": 오류");
-          }
-
-          // Checkbox for queryable data sources
           var isQueryable = DATA_SOURCE_KEYS.indexOf(name) >= 0;
           var isChecked = enabledSources.indexOf(name) >= 0;
           var checkboxHtml = isQueryable
             ? '<label class="status-checkbox-label"><input type="checkbox" class="status-source-cb" data-source="' + name + '"' + (isChecked ? ' checked' : '') + '></label>'
             : '';
 
-          html +=
-            '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + '">' +
-            '<div class="status-item-row">' +
-            checkboxHtml +
+          var h = '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + '">' +
+            '<div class="status-item-row">' + checkboxHtml +
             '<span class="status-dot' + (st !== "ok" ? " error" : "") + '"></span>' +
             '<span class="status-icon">' + info.svg + '</span>' +
             '<span class="status-name">' + info.label + '</span>' +
             '<span class="status-label' + labelClass + '">' + (labels[st] || st) + '</span>' +
             '</div>';
           if (alertMsg) {
-            html +=
-              '<div class="status-msg-wrap">' +
-              '<div class="status-msg-ticker"><span>' + alertMsg + '</span></div>' +
-              '</div>';
+            h += '<div class="status-msg-wrap"><div class="status-msg-ticker"><span>' + alertMsg + '</span></div></div>';
           }
-          html += '</div>';
+          h += '</div>';
+          return h;
         }
-        // Add select-all / deselect-all toolbar before items
-        var toolbar = '<div class="source-select-toolbar">' +
+
+        // Toolbar
+        var html = '<div class="source-select-toolbar">' +
           '<button class="source-btn-all" id="source-select-all">전체 선택</button>' +
           '<button class="source-btn-none" id="source-deselect-all">전체 해제</button>' +
           '<span class="source-count-label" id="source-count-label">' + enabledSources.length + '/' + DATA_SOURCE_KEYS.length + '</span>' +
           '</div>';
-        container.innerHTML = toolbar + html;
 
-        // Attach select-all / deselect-all listeners
+        // Grouped rendering
+        var renderedKeys = {};
+        SOURCE_GROUPS.forEach(function(grp) {
+          var groupEnabled = grp.keys.filter(function(k) { return enabledSources.indexOf(k) >= 0; }).length;
+          var groupTotal = grp.keys.length;
+          var allOn = groupEnabled === groupTotal;
+          html += '<div class="status-group" data-group="' + grp.id + '">' +
+            '<div class="status-group-header">' +
+            '<label class="status-checkbox-label"><input type="checkbox" class="status-group-cb" data-group="' + grp.id + '"' + (allOn ? ' checked' : '') + (groupEnabled > 0 && !allOn ? ' data-indeterminate="1"' : '') + '></label>' +
+            '<span class="status-group-emoji">' + grp.emoji + '</span>' +
+            '<span class="status-group-label">' + grp.label + '</span>' +
+            '<span class="status-group-count">' + groupEnabled + '/' + groupTotal + '</span>' +
+            '<span class="status-group-toggle">&#9660;</span>' +
+            '</div>' +
+            '<div class="status-group-items">';
+          grp.keys.forEach(function(key) {
+            var svc = data.services[key];
+            if (svc) {
+              html += renderItem(key, svc);
+              renderedKeys[key] = true;
+            }
+          });
+          html += '</div></div>';
+        });
+
+        // Ungrouped services (Gemini API, GWS Token, etc.)
+        var ungroupedHtml = '';
+        for (var name in data.services) {
+          if (!renderedKeys[name] && DATA_SOURCE_KEYS.indexOf(name) < 0) {
+            ungroupedHtml += renderItem(name, data.services[name]);
+          }
+        }
+        if (ungroupedHtml) {
+          html += '<div class="status-group" data-group="system">' +
+            '<div class="status-group-header">' +
+            '<span class="status-group-emoji">&#9881;</span>' +
+            '<span class="status-group-label">시스템</span>' +
+            '<span class="status-group-toggle">&#9660;</span>' +
+            '</div>' +
+            '<div class="status-group-items">' + ungroupedHtml + '</div></div>';
+        }
+
+        container.innerHTML = html;
+
+        // Set indeterminate state on group checkboxes
+        container.querySelectorAll('.status-group-cb[data-indeterminate="1"]').forEach(function(cb) {
+          cb.indeterminate = true;
+        });
+
+        // Group header click → toggle collapse
+        container.querySelectorAll(".status-group-header").forEach(function(hdr) {
+          hdr.addEventListener("click", function(e) {
+            if (e.target.tagName === "INPUT") return;  // Don't toggle on checkbox click
+            var grpEl = hdr.parentElement;
+            grpEl.classList.toggle("collapsed");
+          });
+        });
+
+        // Group checkbox → toggle all keys in group
+        container.querySelectorAll(".status-group-cb").forEach(function(cb) {
+          cb.addEventListener("change", function() {
+            var gid = this.getAttribute("data-group");
+            var grp = SOURCE_GROUPS.find(function(g) { return g.id === gid; });
+            if (!grp) return;
+            grp.keys.forEach(function(k) {
+              var idx = enabledSources.indexOf(k);
+              if (cb.checked) { if (idx < 0) enabledSources.push(k); }
+              else { if (idx >= 0) enabledSources.splice(idx, 1); }
+            });
+            saveEnabledSources();
+            pollSystemStatus();
+            updateSourceFilterBadge();
+          });
+        });
+
+        // Select-all / deselect-all
         document.getElementById("source-select-all").addEventListener("click", function() {
           enabledSources = DATA_SOURCE_KEYS.slice();
           saveEnabledSources();
@@ -2284,7 +2363,7 @@
           updateSourceFilterBadge();
         });
 
-        // Attach checkbox listeners (event delegation)
+        // Individual checkbox listeners
         container.querySelectorAll(".status-source-cb").forEach(function(cb) {
           cb.addEventListener("change", function() {
             toggleSource(this.getAttribute("data-source"));
@@ -2293,7 +2372,7 @@
           });
         });
 
-        // Update inline sidebar status indicator
+        // Inline sidebar indicator
         if (inlineEl) {
           if (issues.length === 0) {
             inlineEl.innerHTML = '<div class="status-inline-ok">All OK</div>';

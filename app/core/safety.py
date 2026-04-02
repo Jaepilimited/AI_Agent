@@ -237,6 +237,9 @@ def get_safety_status() -> dict:
     except Exception:
         services["CS Q&A"] = {"status": "ok", "detail": "737 entries"}
 
+    # BP (CS Q&A) — mirrors CS Q&A status
+    services["BP (CS Q&A)"] = dict(services.get("CS Q&A", {"status": "ok", "detail": ""}))
+
     # Team Resources (DB HUB)
     try:
         from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync
