@@ -31,6 +31,19 @@ async def warmup() -> int:
         )
 
     rows = await asyncio.to_thread(_load)
+    # Build ancestor path text for each node (improves search relevance)
+    id_map = {r["id"]: r for r in rows}
+    for r in rows:
+        parts = []
+        pid = r.get("parent_id")
+        depth = 0
+        while pid and pid in id_map and depth < 10:
+            parent = id_map[pid]
+            if parent.get("node_type") not in ("team",):
+                parts.append(parent["name"])
+            pid = parent.get("parent_id")
+            depth += 1
+        r["_ancestor_text"] = " ".join(reversed(parts))
     _resource_cache = rows
     _cache_loaded = True
     if rows:
@@ -96,6 +109,9 @@ def search_resources(query: str, top_k: int = 10, allowed_resources: Optional[Di
                 score += 3.0
                 break
         score += _word_overlap_score(q_tokens, r["name"]) * 2.0
+        # Ancestor path boosts relevance (e.g., KPIs → 10월 KPI)
+        ancestor = r.get("_ancestor_text") or ""
+        score += _word_overlap_score(q_tokens, ancestor) * 1.5
         desc = r.get("description") or ""
         score += _word_overlap_score(q_tokens, desc) * 0.5
         if score > 0:
