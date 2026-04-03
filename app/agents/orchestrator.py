@@ -610,6 +610,12 @@ class OrchestratorAgent:
         "bea", "bxm", "플래그십",
         "예산 시트", "pr 시트", "운영 시트", "대시보드 링크",
         "팀 자료", "팀별 자료", "db hub", "데이터 허브",
+        # PEOPLE/HR keywords
+        "연차", "휴가", "퇴사", "퇴직금", "경조", "경조휴가",
+        "회의실 예약", "명함", "법인서류", "증명서",
+        "채용", "면접", "인수인계", "성과급", "보상",
+        "vpn", "프린터", "잔디", "다우오피스",
+        "복지", "사내근로복지", "피플팀",
     ]
 
     # How-to / guide keywords — when combined with platform/tool names, route to Notion
@@ -697,14 +703,18 @@ class OrchestratorAgent:
         if any(kw in q for kw in self._FULLDATA_KEYWORDS):
             return "bigquery"
 
+        # Team/HR resource check — BEFORE howto/notion to catch HR queries
+        _TEAM_SPECIFIC = ["jbt ", "bcm ", "east ", "west ", "bea ", "bxm ", "플래그십",
+                          "팀 자료", "팀별 자료", "db hub", "데이터 허브",
+                          "연차", "휴가", "퇴사", "퇴직금", "경조", "성과급",
+                          "회의실 예약", "명함", "법인서류", "채용", "면접",
+                          "vpn", "프린터", "피플팀", "복지"]
+        if any(kw in q for kw in _TEAM_SPECIFIC):
+            return "team"
+
         # How-to / guide questions about platforms → Notion (not BigQuery)
-        # "틱톡샵 접속 방법 알려줘" = how to access TikTok Shop (documented in Notion)
-        # vs "틱톡 2월 매출" = sales data query (BigQuery)
-        # Narrow how-to keywords (접속방법, 로그인방법 etc.) → always Notion
         if any(kw in q for kw in self._HOWTO_KEYWORDS):
             return "notion"
-        # Broad how-to keywords (사용법, 가이드 etc.) → Notion only with platform/tool names
-        # This avoids stealing CS queries like "센텔라 사용법" (skincare product)
         if any(kw in q for kw in self._HOWTO_BROAD_KEYWORDS):
             if any(p in q for p in self._PLATFORM_TOOL_NAMES):
                 return "notion"
@@ -714,18 +724,10 @@ class OrchestratorAgent:
 
         # Notion check — but defer to bigquery when strong data keywords present
         if any(kw in q for kw in self._NOTION_KEYWORDS):
-            # Compound notion keywords (e.g. "반품 정책") take priority over data exclusion
             if any(kw in q for kw in self._COMPOUND_NOTION):
                 return "notion"
-            # Don't steal data queries: "Shopify 반품 추이" → bigquery, not notion
             if not has_data:
                 return "notion"
-
-        # Team resource check (specific team+시트 patterns) — before GWS to avoid "시트 찾아" overlap
-        _TEAM_SPECIFIC = ["jbt ", "bcm ", "east ", "west ", "bea ", "bxm ", "플래그십",
-                          "팀 자료", "팀별 자료", "db hub", "데이터 허브"]
-        if any(kw in q for kw in _TEAM_SPECIFIC):
-            return "team"
 
         # GWS check — highest priority for personal workspace queries
         if any(kw in q for kw in self._GWS_KEYWORDS):
