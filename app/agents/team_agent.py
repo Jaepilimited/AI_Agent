@@ -125,14 +125,20 @@ def _format_resource_context(matched: List[Dict]) -> str:
     if not matched:
         return "검색 결과가 없습니다."
     lines = []
+    total_chars = 0
+    max_total = 6000  # LLM context budget for resource content
     for i, r in enumerate(matched, 1):
         meta = f"[{r['team']}]"
         rtype = {"google_sheet": "📊 Google Sheet", "notion": "📋 Notion",
                  "google_drive": "📁 Google Drive", "other": "🔗 기타"}.get(r.get("resource_type", "other"), "🔗")
         lines.append(f"{i}. {meta} | {rtype}\n   이름: {r['name']}\n   링크: {r.get('url') or 'N/A'}")
         desc = r.get("description", "")
-        if desc:
-            lines.append(f"   비고: {desc[:200]}")
+        if desc and total_chars < max_total:
+            # Include full description content (page text from Playwright crawl)
+            budget = max_total - total_chars
+            content = desc[:budget]
+            lines.append(f"   내용:\n{content}")
+            total_chars += len(content)
     return "\n".join(lines)
 
 
@@ -156,8 +162,9 @@ async def run(query: str, model_type: str = "gemini", allowed_resources: Optiona
 {context}
 
 ## 답변 규칙
-- 매칭된 자료의 이름과 링크를 보기 쉽게 정리하세요
-- 링크는 클릭 가능하도록 마크다운 형식으로: [시트명](URL)
+- **자료에 '내용' 필드가 있으면 그 내용을 직접 요약하여 답변하세요** (링크만 달지 마세요!)
+- 링크가 있으면 출처로 함께 제공: [자료명](URL)
+- 내용이 없고 링크만 있는 자료는 링크를 안내하세요
 - 팀/카테고리별로 그룹화하여 보여주세요
 - 매칭 결과가 없으면 "해당 자료를 찾을 수 없습니다" 안내
 - 답변 마지막에 출처 표시:
