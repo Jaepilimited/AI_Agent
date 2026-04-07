@@ -1,0 +1,131 @@
+"""
+Notion RAG 챗봇
+- notion_rag.py --reload 로 데이터 저장 후 사용
+"""
+
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+from qdrant_client import QdrantClient
+
+load_dotenv()
+
+# 설정
+COLLECTION_NAME = "notion_team_v2"
+LLM_MODEL = "gpt-4o-mini"
+
+# 클라이언트 초기화
+qdrant = QdrantClient(host="localhost", port=6333)
+openai_client = OpenAI()
+
+# 시스템 프롬프트
+SYSTEM_PROMPT = """당신은 Notion에 저장된 정보를 기반으로 답변하는 AI 비서입니다.
+
+규칙:
+1. 제공된 컨텍스트 정보만을 바탕으로 답변하세요.
+2. 컨텍스트에 없는 정보는 "해당 정보를 찾을 수 없습니다"라고 답하세요.
+3. 답변은 명확하고 간결하게 작성하세요.
+4. 가능하면 출처(페이지 제목)를 언급하세요."""
+
+
+def get_embedding(text: str) -> list:
+    """OpenAI 임베딩 생성"""
+    response = openai_client.embeddings.create(
+        model="text-embedding-3-small",
+        input=text
+    )
+    return response.data[0].embedding
+
+
+def search(query: str, top_k: int = 1):
+    """벡터 검색"""
+    query_vector = get_embedding(query)
+
+    results = qdrant.query_points(
+        collection_name=COLLECTION_NAME,
+        query=query_vector,
+        with_payload=True,
+        limit=top_k
+    ).points
+
+    return results
+
+
+def build_context(results) -> str:
+    """검색 결과를 컨텍스트 문자열로 변환"""
+    context_parts = []
+
+    for i, result in enumerate(results, 1):
+        payload = result.payload
+        title = payload.get('title', 'Untitled')
+        text = payload.get('full_text') or payload.get('text', '')
+
+        context_parts.append(f"[문서 {i}] {title}\n{text}")
+
+    return "\n\n---\n\n".join(context_parts)
+
+
+def generate_answer(query: str, context: str) -> str:
+    """GPT-4o-mini로 답변 생성"""
+    response = openai_client.chat.completions.create(
+        model=LLM_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"컨텍스트:\n{context}\n\n질문: {query}"}
+        ],
+        temperature=0.7,
+        max_tokens=1000
+    )
+
+    return response.choices[0].message.content
+
+
+def main():
+    print("=" * 50)
+    print("Notion RAG 챗봇 (GPT-4o-mini)")
+    print("종료: quit / q / exit")
+    print("=" * 50)
+    print()
+
+    while True:
+        query = input("질문: ").strip()
+
+        if query.lower() in ["quit", "exit", "q"]:
+            print("종료합니다.")
+            break
+
+        if not query:
+            continue
+
+        # 1. 벡터 검색
+        results = search(query)
+
+        if not results:
+            print("\n관련 문서를 찾지 못했습니다.\n")
+            continue
+
+        # 2. 컨텍스트 구성
+        context = build_context(results)
+
+        # 3. LLM 답변 생성
+        print("\n답변 생성 중...")
+        answer = generate_answer(query, context)
+
+        print(f"\n{'='*50}")
+        print(f"답변:\n{answer}")
+        print(f"{'='*50}")
+
+        # 참고 문서 출력
+        print("\n참고 문서:")
+        for i, result in enumerate(results[:3], 1):
+            payload = result.payload
+            title = payload.get('title', 'Untitled')
+            url = payload.get('url', '')
+            print(f"  [{i}] {title}")
+            if url:
+                print(f"      {url}")
+        print()
+
+
+if __name__ == "__main__":
+    main()

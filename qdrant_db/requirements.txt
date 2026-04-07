@@ -1,0 +1,22 @@
+# Notion API
+notion-client>=2.0.0
+
+# OpenAI
+openai>=1.0.0
+
+# Qdrant
+qdrant-client>=1.7.0
+
+# 공개 Notion 페이지 스크래핑
+playwright>=1.40.0
+
+# Chunking
+langchain-text-splitters>=0.0.1
+
+# FastAPI
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# 설정 관리
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
