@@ -1,0 +1,52 @@
+[
+  {
+    "test": "login",
+    "status": "pass",
+    "detail": "JWT cookie auth successful"
+  },
+  {
+    "test": "send_message",
+    "status": "pass",
+    "detail": "Response: 테스트 확인 완료! 무엇을 도와드릴까요? 😊\n..."
+  },
+  {
+    "test": "auto_scroll",
+    "status": "pass",
+    "detail": "6/6 checks at bottom during streaming"
+  },
+  {
+    "test": "tab_switch",
+    "status": "warn",
+    "detail": "Only 0 conv items"
+  },
+  {
+    "test": "message_edit_btn_hover",
+    "status": "pass",
+    "detail": "Edit button visible on hover"
+  },
+  {
+    "test": "message_edit_textarea",
+    "status": "pass",
+    "detail": "Textarea appeared"
+  },
+  {
+    "test": "message_edit_content",
+    "status": "pass",
+    "detail": "Original text preserved"
+  },
+  {
+    "test": "message_edit_apply",
+    "status": "pass",
+    "detail": "Edit applied, message updated"
+  },
+  {
+    "test": "message_edit_response",
+    "status": "pass",
+    "detail": "New AI response received after edit"
+  },
+  {
+    "test": "escape_cancel",
+    "status": "pass",
+    "detail": "Escape restores original message"
+  }
+]

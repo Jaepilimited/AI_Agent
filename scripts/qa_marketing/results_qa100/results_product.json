@@ -4,9 +4,9 @@
     "query": "전체 제품의 총 판매 수량은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 38.5,
-    "answer_len": 1148,
-    "answer_preview": "### 📊 특정 브랜드(SK, CL) 핵심 제품군의 총 판매 수량 분석  #### 요약  2019년 1월 1일부터 현재까지 SK 및 CL 브랜드의 특정 제품군(Sachet, Others 제외)에 대한 총 판매 수량은 **126,916,034개**입니다. 이 수치는 전체 제품이 아닌, 명시된 조건에 해당하는 제품들의 누적 판매량을 나타냅니다.  #### 분석 및 인사이트  *   **특정 브랜드 및 제품군 집중:** 분석된 판매 수량은 SK 및 CL 두 가지 브랜드에 한정되며, 'Sachet' 및 'Others'로 분류되는 제품은 제외된 핵심 제품군의 성과입니다. 이는 특정 브랜드 및 주력 제품에 대한 판매 집중도를 보여줍니다. *   **장기간 누적 판매량:** 2019년 1월 1일부터 현재(2026년 3월 19일)까지 약 7년 2개월간 누적된 판매량으로, 해당 기간 동안 꾸준히 상당한 규모의 제품이 판매되었음을 알 수 있습니다. *   **핵심 제품군 기여도:** 이 수치는 전체 ",
+    "time": 19.9,
+    "answer_len": 1041,
+    "answer_preview": "### 📊 전체 제품 총 판매 수량 분석  #### 요약  2019년 1월 1일부터 현재까지 특정 브랜드(SK, CL)의 일부 제품(Sachet, Others 제외)에 대한 총 판매 수량은 **115,803,258개**입니다.  #### 분석 및 인사이트  *   총 판매 수량이 1억 개를 넘어선 것은 해당 브랜드(SK, CL)의 주력 제품들이 시장에서 매우 큰 규모로 유통되고 있으며, 상당한 시장 점유율을 확보하고 있음을 시사합니다. *   'Sachet' 및 'Others'와 같은 특정 제품군을 제외한 수치임에도 불구하고 높은 판매량을 기록한 것은, 핵심 제품군에 대한 고객 수요와 판매 집중도가 높다는 것을 의미합니다. *   2019년 1월 1일부터의 누적 판매량임을 고려할 때, 장기간에 걸쳐 꾸준히 높은 판매량을 유지하며 안정적인 성장을 이어왔을 것으로 예상됩니다.  --- *조회 기준: 2026-04-01 | 데이터소스: 제품 마스터 (2019-01-01 이후, SK/CL ",
     "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
   },
   {
@@ -14,989 +14,489 @@
     "query": "모든 제품의 평균 판매 수량은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 43.9,
-    "answer_len": 1523,
-    "answer_preview": "### 📊 SK 및 CL 브랜드 제품별 평균 판매 수량 분석  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드의 특정 제품군(‘Others’, ‘Sachet’ 제외)에 대한 제품별 평균 판매 수량은 **약 601,498개**로 집계되었습니다. 이 수치는 전체 제품이 아닌 특정 브랜드 및 필터링된 제품군에 대한 평균을 나타냅니다.  #### 분석 및 인사이트  *   **특정 브랜드 및 기간 한정 분석:** 본 분석은 2019년 1월 1일 이후 SK 및 CL 브랜드에 속하며, 'Others', 'Sachet' 등 특정 제품군을 제외한 제품들을 대상으로 합니다. 따라서 이 평균 수량은 전체 제품 포트폴리오의 평균 판매 수량을 대표하지 않으며, 특정 조건 하에서의 성과를 보여줍니다. *   **제품당 높은 판매량 시사:** 대상 제품군 내에서 개별 제품당 평균 판매 수량이 60만 개를 넘는다는 것은 해당 브랜드의 주력 제품들이 상당한 판매량을 기록하고 있음을 시사합니다. ",
-    "used_sql": "SELECT\n  AVG(total_product_qty) AS average_sales_quantity_per_product\nFROM (\n  SELECT\n    Product,\n    SUM(Total_Qty) AS total_product_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n  GROUP BY Product\n)\nLIMIT 1000"
+    "time": 21.7,
+    "answer_len": 1139,
+    "answer_preview": "### 📊 제품별 평균 판매 수량 분석  #### 요약  지정된 조건(브랜드 'SK', 'CL', 2019년 1월 1일 이후 데이터)에 해당하는 모든 제품의 평균 판매 수량은 **122.1개**입니다.  #### 분석 및 인사이트  *   **기준점 제공**: 평균 판매 수량 122.1개는 특정 브랜드(SK, CL)의 핵심 제품군에 대한 판매 성과를 가늠하는 중요한 기준점이 됩니다. 이는 개별 제품 또는 카테고리별 성과를 평가할 때 비교 지표로 활용될 수 있습니다. *   **데이터 범위의 이해**: 이 평균은 'Sachet', 'Others'와 같이 특정 목적을 가진 제품이나 유효하지 않은 제품을 제외하고, 2019년 1월 1일 이후의 데이터만을 기반으로 산출되었습니다. 따라서 핵심 판매 제품의 순수한 평균 판매 성과를 나타냅니다. *   **심층 분석의 필요성**: 전체 평균은 유용하지만, 제품별 또는 카테고리별로 판매 수량에 큰 차이가 있을 수 있습니다. 이 평균을 바탕으로 판",
+    "used_sql": "SELECT\n  AVG(Total_Qty) AS average_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
   },
   {
     "id": "PR-003",
-    "query": "단일 제품이 기록한 최대 판매 수량은 얼마인가요?",
+    "query": "가장 많이 팔린 단일 제품의 수량은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 36.9,
-    "answer_len": 1351,
-    "answer_preview": "### 📊 단일 제품 최대 판매 수량 분석  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드 제품 중, **SK_Hyalucica_Waterfit_Sun_Serum_50ml** 제품이 **10,750,857개**로 단일 제품 기준 가장 많은 판매 수량을 기록했습니다.  #### 분석 및 인사이트  *   **압도적인 판매량**: SK_Hyalucica_Waterfit_Sun_Serum_50ml 제품은 1천만 개가 넘는 판매 수량을 기록하며, 분석 대상 기간 및 브랜드 내에서 독보적인 판매 성과를 보여주었습니다. 이는 해당 제품이 소비자들에게 매우 높은 인기를 얻고 있음을 시사합니다. *   **핵심 제품으로서의 위상**: 이 제품의 엄청난 판매량은 전체 브랜드 매출 및 시장 점유율에 상당한 기여를 했을 것으로 예상됩니다. 이는 브랜드의 핵심 캐시카우(Cash Cow) 제품으로서의 역할을 하고 있음을 나타냅니다. *   **데이터 범위**: 본 분석은 2019년",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\nGROUP BY\n  Product\nORDER BY\n  total_quantity DESC\nLIMIT 1"
+    "time": 43.0,
+    "answer_len": 1141,
+    "answer_preview": "### 📊 최다 판매 단일 제품 분석  #### 요약  2026년 1월 1일부터 2026년 3월 31일까지의 데이터 기준, SK 및 CL 브랜드 제품 중 가장 많이 팔린 단일 제품은 **SK_Centella_Light_Cleansing_Oil_200ml**이며, 총 **483,907개**가 판매되었습니다.  #### 분석 및 인사이트  *   SK 및 CL 브랜드 제품 중 **SK_Centella_Light_Cleansing_Oil_200ml**는 최근 3개월간 약 48만 개에 달하는 압도적인 판매량을 기록하며 강력한 시장 수요를 입증했습니다. *   클렌징 오일 제품이 최다 판매 제품으로 나타난 점은 스킨케어 루틴에서 클렌징 단계의 중요성 또는 해당 제품의 뛰어난 제품력을 시사합니다. *   이 단일 제품의 성공 요인을 심층 분석하여 다른 제품군에도 적용하거나, 이 제품을 활용한 마케팅 전략을 강화할 필요가 있습니다.  --- *조회 기준: 2026-04-01 | 데이터소스: 제품",
+    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Others'\n  AND Product != 'Sachet'\nGROUP BY Product\nORDER BY total_quantity DESC\nLIMIT 1"
   },
   {
     "id": "PR-004",
-    "query": "단일 제품이 기록한 최소 판매 수량은 얼마인가요?",
+    "query": "가장 적게 팔린 단일 제품의 수량은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 44.2,
-    "answer_len": 1251,
-    "answer_preview": "### 📊 단일 제품 최소 판매 수량 분석  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드 제품 중, 단일 제품이 기록한 최소 판매 수량은 **0.0개**입니다. 해당 제품은 **SK_Influencer_Gift_Box**로 확인되었습니다.  #### 분석 및 인사이트  *   **최소 판매 수량 제품 확인**: 분석 기간(2019년 1월 1일 이후) 동안 SK 및 CL 브랜드 제품 중 가장 적은 판매 수량을 기록한 제품은 'SK_Influencer_Gift_Box'이며, 총 판매 수량은 0.0개입니다. *   **판매 수량 0의 의미**: 판매 수량이 0이라는 것은 해당 제품이 분석 기간 동안 판매되지 않았거나, 프로모션/증정용으로 분류되어 판매 수량 집계에서 제외되었을 가능성을 시사합니다. *   **제품 상태 추가 확인 필요**: 'SK_Influencer_Gift_Box'가 현재도 활성 제품인지, 단종되었는지, 혹은 특정 목적(예: 인플루언서 증정용)으로만 ",
+    "time": 32.1,
+    "answer_len": 1181,
+    "answer_preview": "### 📊 가장 적게 팔린 단일 제품 분석  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드 제품 중 가장 적게 팔린 단일 제품은 'CL_Box_for_Seeding'으로, 총 판매 수량은 **0개**입니다.  #### 분석 및 인사이트  *   **판매 수량 0개 확인:** 'CL_Box_for_Seeding' 제품의 판매 수량이 0개로 집계되어, 분석 대상 기간(2019년 1월 1일 이후) 동안 해당 제품의 정식 판매가 없었음을 시사합니다. *   **제품명 추정:** 제품명 'CL_Box_for_Seeding'은 일반적인 판매용 제품보다는 홍보, 샘플링 또는 시딩(Seeding) 목적으로 사용되는 패키지일 가능성이 높습니다. 이러한 제품은 판매 채널을 통해 직접 판매되지 않아 판매 수량이 0으로 기록될 수 있습니다. *   **데이터 필터링 영향:** 'Sachet' 및 'Others'와 같은 특정 제품 유형이 분석에서 제외되었으므로, 이들 제품군에 0개",
     "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Product\nORDER BY total_quantity ASC\nLIMIT 1"
   },
   {
     "id": "PR-005",
-    "query": "데이터에 기록된 고유 SKU의 총 개수는 몇 개인가요?",
+    "query": "총 몇 개의 고유한 SKU가 판매되었나요?",
     "table": "product",
     "status": "OK",
-    "time": 37.6,
-    "answer_len": 1038,
-    "answer_preview": "### 📊 고유 SKU 총 개수 분석  #### 요약  2019년 1월 1일 이후 기록된 통합 매출 데이터에서 **8,668개**의 고유 SKU가 확인되었습니다. 이는 해당 기간 동안 SKIN1004에서 취급하거나 판매한 제품의 다양성을 나타냅니다.  #### 분석 및 인사이트  *   **제품 다양성 지표**: 총 8,668개의 고유 SKU는 2019년 1월 1일부터 현재까지 SKIN1004가 운영해 온 제품 라인업의 규모와 다양성을 보여줍니다. 이는 고객에게 제공되는 선택의 폭을 가늠하는 중요한 지표가 됩니다. *   **재고 및 카탈로그 관리의 기초**: 이 수치는 재고 관리 시스템, 상품 카탈로그 구성 및 신제품 개발 전략 수립에 있어 기초 자료로 활용될 수 있습니다. *   **추이 분석의 필요성**: 현재 시점의 고유 SKU 개수는 확인되었으나, 이 수치가 시간이 지남에 따라 어떻게 변화해왔는지(예: 신제품 출시, 단종 등) 추이를 분석하면 더욱 심층적인 인사이트를 얻을 ",
-    "used_sql": "SELECT\n  COUNT(DISTINCT SKU) AS total_unique_skus\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nLIMIT 1000"
+    "time": 47.7,
+    "answer_len": 1173,
+    "answer_preview": "### 📊 판매된 고유 SKU 분석 보고서  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드에서 판매된 고유한 SKU(재고 관리 코드)는 총 **3,900개**입니다. 이는 해당 브랜드들의 다양한 제품 라인업과 시장 내 제품 다양성을 보여줍니다.  #### 분석 및 인사이트  *   **제품 다양성**: 'SK' 및 'CL' 브랜드가 2019년 이후 **3,900개**에 달하는 고유한 SKU를 판매했다는 것은 해당 브랜드들이 매우 폭넓은 제품 포트폴리오를 보유하고 있음을 시사합니다. 이는 고객에게 다양한 선택지를 제공하고, 여러 시장 세그먼트에 걸쳐 비즈니스를 확장하는 데 기여할 수 있습니다. *   **재고 및 포트폴리오 관리의 중요성**: 많은 수의 고유 SKU는 재고 관리의 복잡성을 증가시킬 수 있습니다. 효율적인 재고 관리 시스템과 제품 포트폴리오 전략이 중요하며, 비효율적인 SKU를 식별하고 최적화하는 데 이 데이터가 활용될 수 있습니다. *   **",
+    "used_sql": "SELECT\n  COUNT(DISTINCT SKU) AS total_unique_skus_sold\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND SKU IS NOT NULL\n  AND SKU != ''\nLIMIT 10000"
   },
   {
     "id": "PR-006",
     "query": "각 월별 총 판매 수량 추이를 알려주세요.",
     "table": "product",
     "status": "OK",
-    "time": 51.6,
-    "answer_len": 3888,
-    "answer_preview": "### 📊 월별 총 판매 수량 추이 분석 보고서  #### 요약  2019년 1월부터 2023년 12월까지의 월별 총 판매 수량 추이를 분석한 결과, 전반적으로 **지속적인 성장세**를 보였습니다. 분석 기간 동안 월별 총 판매 수량은 **최소 2019년 3월 7,252개**에서 **최대 2023년 11월 1,009,445개**로 크게 증가했습니다. 특히 2023년에는 월별 판매량이 100만 개를 돌파하며 가장 높은 실적을 기록했습니다. ⚠️ **참고**: 현재 데이터는 2023년 12월까지 집계되었으며, 오늘 날짜(2026년 03월 19일) 기준으로 최신 데이터가 아닙니다.  #### 상세 데이터  다음은 2019년 1월부터 2023년 12월까지의 월별 총 판매 수량 데이터입니다.  | 월      | 총 판매 수량 (개) | | :------ | -----------------: | | 2019-01 |             24,687 | | 2019-02 |          ",
-    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+    "time": 32.5,
+    "answer_len": 2780,
+    "answer_preview": "### 📊 월별 총 판매 수량 추이 분석  #### 요약  ⚠️ 2026년 4월 데이터는 월초 기준이므로 현재까지의 집계입니다. 2026년 1월부터 4월까지의 총 판매 수량 추이를 분석한 결과, **2월에 2,501,540개로 가장 높은 판매량**을 기록했습니다. 3월에는 소폭 감소했으나 여전히 높은 수준을 유지했으며, 4월은 현재까지 **200,230개**로 집계되어 월초임을 감안할 때 추가적인 판매량 증가가 예상됩니다.  #### 상세 데이터 | 월      | 총 판매 수량 (개) | | :------ | ---------------: | | 2026-01 | 1,617,725        | | 2026-02 | 2,501,540        | | 2026-03 | 2,324,543        | | 2026-04 | 200,230          |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"20",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Date >= DATE_SUB(CURRENT_DATETIME(), INTERVAL 3 MONTH)\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
   },
   {
     "id": "PR-007",
-    "query": "분기별로 Brand 'SK' 제품의 총 판매 수량은 어떻게 변동했나요?",
+    "query": "분기별로 Brand 'SK' 제품의 판매 수량 변화를 보여주세요.",
     "table": "product",
     "status": "OK",
-    "time": 40.5,
-    "answer_len": 4632,
-    "answer_preview": "### 📊 Brand 'SK' 제품의 분기별 총 판매 수량 변동 추이  #### 요약  Brand 'SK' 제품의 총 판매 수량은 2019년 1분기부터 2026년 1분기까지 **매우 가파른 성장세**를 보였습니다. 특히 2023년 이후 성장세가 더욱 두드러져, 2025년 연간 총 판매 수량은 약 **6,055만 개**를 기록했습니다. 가장 높은 판매 수량을 기록한 분기는 **2026년 1분기**로 **18,712,484개**에 달합니다. 다만, 2026년 2분기 데이터는 오늘(2026년 03월 19일) 기준 현재까지의 부분 데이터이므로, 이전 분기들과 직접적인 비교는 어렵습니다.  #### 상세 데이터  Brand 'SK' 제품의 분기별 총 판매 수량은 다음과 같습니다.  | 분기     | 총 판매 수량 (개) | | :------- | ---------------: | | 2019-Q1  |           36,166 | | 2019-Q2  |           76,721 ",
-    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-Q%Q', Date) AS quarter,\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\nGROUP BY quarter\nORDER BY quarter\nLIMIT 1000"
+    "time": 55.5,
+    "answer_len": 2345,
+    "answer_preview": "### 📊 SK 브랜드 제품의 분기별 판매 수량 변화 분석  #### 요약  SK 브랜드 제품의 분기별 판매 수량은 2019년 1분기부터 2025년 2분기까지 **지속적이고 폭발적인 성장 추세**를 보였습니다. 특히 2025년 2분기에 **17,466,131개**로 최고 판매량을 기록했으며, 2026년 2분기 데이터는 현재 진행 중인 분기의 부분 데이터이므로 전체 판매량을 대표하지 않습니다.  #### 상세 데이터 | 연도 | 분기 | 총 판매 수량 | |-----|-----|-------------:| | 2019 | 1   | 36,166      | | 2019 | 2   | 76,721      | | 2019 | 3   | 109,353     | | 2019 | 4   | 139,545     | | 2020 | 1   | 127,879     | | 2020 | 2   | 158,026     | | 2020 | 3   | 311,555     | | 2020 | 4  ",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  EXTRACT(QUARTER FROM Date) AS quarter,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\nGROUP BY year, quarter\nORDER BY year, quarter\nLIMIT 1000"
   },
   {
     "id": "PR-008",
-    "query": "연도별로 'Centella' 라인의 제품 판매 수량 합계를 보여주세요.",
+    "query": "연도별로 'Centella' 라인 제품의 총 판매 수량은 어떻게 변했나요?",
     "table": "product",
     "status": "OK",
-    "time": 39.1,
-    "answer_len": 666,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **연도별 'Centella' 라인 제품 판매 수량 합계** 데이터를 현재 조회하지 못했습니다.  ---  > ## 💡 더 정확한 결과를 위해 질문을 구체화해 보세요 아래와 같은 조건을 추가해 주시면 데이터를 보다 정확하게 찾을 수 있습니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2022년, 2023년 1분기 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 도매 등 | | **국가/지역** | 국내, 미국, 일본 등 | | **특정 제품명** | Centella Ampoule, Centella Cream 등 |  ---  ## 📝 질문 예시  > **1.** \"2023년~2024년 국내 자사몰 기준 Centella Ampoule의 월별 판매 수량을 알려주세요.\"  > **2.** \"2024년 아마존(미국) 채널에서 Centella 라인 전체 제품의 분기별 판매 수량 합계를 보",
-    "used_sql": ""
+    "time": 23.4,
+    "answer_len": 2956,
+    "answer_preview": "### 📊 연도별 'Centella' 라인 제품 총 판매 수량 변화 분석  #### 요약  'Centella' 라인 제품의 총 판매 수량은 2019년부터 2025년까지 **지속적으로 성장**했으며, 특히 2024년과 2025년에 **급격한 판매량 증가**를 기록했습니다. 2025년에는 **25,706,296개**로 최고 판매량을 달성했습니다. 2026년 데이터는 현재까지 **2,721,349개**로 집계되었으며, 이는 부분 연도 데이터임을 감안해야 합니다.  #### 상세 데이터 | 연도 | 총 판매 수량 | | :--- | -----------: | | 2019 | 271,778 | | 2020 | 801,138 | | 2021 | 2,646,652 | | 2022 | 2,865,408 | | 2023 | 3,987,012 | | 2024 | 15,567,379 | | 2025 | 25,706,296 | | 2026 | 2,721,349 |  #### 시각화   ```chart-c",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Centella'\n  AND Product != 'Sachet'\nGROUP BY year\nORDER BY year\nLIMIT 1000"
   },
   {
     "id": "PR-009",
-    "query": "주별로 Country '미국'의 'Ampoule' 카테고리 제품 판매 수량 추이를 알고 싶습니다.",
+    "query": "특정 연도의 주차별 'Toner' 카테고리 제품 판매 수량 추이를 알려주세요.",
     "table": "product",
     "status": "OK",
-    "time": 54.7,
-    "answer_len": 1587,
-    "answer_preview": "### 📊 주별 미국 'Ampoule' 카테고리 제품 판매 수량 추이 분석  #### 요약  미국 내 'Ampoule' 카테고리 제품(SK, CL 브랜드, Sachet 제외)은 2019년 1주차부터 2026년 8주차까지 총 **3,890,635개**가 판매되었습니다. 전체 289개 주차 중, **2023년 35주차에 178,345개**로 가장 높은 주간 판매량을 기록했습니다. 2026년 데이터는 현재 8주차까지만 집계되어 있습니다.  #### 상세 데이터  전체 데이터는 2019년 1주차부터 2026년 8주차까지 총 289개 주차에 걸쳐 집계되었으며, 총 판매 수량은 **3,890,635개**입니다. 아래 표는 전체 289개 주차 중 판매량이 높은 상위 15개 주차의 판매 수량 프리뷰입니다.  | 주차     | 총 판매 수량 | | :------- | -----------: | | 2023-35  | 178345       | | 2024-45  | 127051       | | ",
-    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%W', Date) AS week,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Country = '미국'\n  AND Category = 'Ampoule'\n  AND Product != 'Sachet'\nGROUP BY week\nORDER BY week\nLIMIT 1000"
+    "time": 50.4,
+    "answer_len": 642,
+    "answer_preview": "📊 'Toner' 카테고리 제품 주차별 판매 수량 추이 분석 (2019년 ~ 2025년)  #### 요약  2019년 1주차부터 2025년 49주차까지 'Toner' 카테고리 제품(SK, CL 브랜드, Sachet/Others 제외)의 총 판매 수량은 **8,214,145개**입니다. 주차별 판매 추이를 보면, 2025년에 가장 높은 판매량을 기록한 주차들이 집중되어 있으며, 특히 **2025년 47주차에 134,377개**로 가장 높은 판매량을 달성했습니다.  #### 상세  <details><summary>실행된 쿼리</summary>  ```sql SELECT   FORMAT_DATE('%Y-%W', Date) AS year_week,   SUM(Total_Qty) AS total_quantity FROM `skin1004-319714.Sales_Integration.Product` WHERE Date >= '2019-01-01'   AND Brand IN ('SK', 'CL'",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%W', Date) AS year_week,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Toner'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY year_week\nORDER BY year_week\nLIMIT 1000"
   },
   {
     "id": "PR-010",
-    "query": "특정 날짜(예: 2023-10-26)의 일별 총 판매 수량은 얼마였나요?",
+    "query": "지난 한 달간 일별 전체 제품 판매 수량 추이를 그래프로 보여주세요.",
     "table": "product",
     "status": "OK",
-    "time": 43.9,
-    "answer_len": 932,
-    "answer_preview": "📊 2023년 10월 26일 일별 총 판매 수량  #### 요약  2023년 10월 26일 하루 동안의 총 판매 수량은 **124,471개**였습니다. 이는 해당 일자의 판매 활동이 매우 활발했음을 보여주는 수치입니다.  #### 분석 및 인사이트  *   2023년 10월 26일 단일 일자에 총 **124,471개**의 제품이 판매되었습니다. *   이 수량은 해당 일자에 높은 판매 활동이 이루어졌음을 나타내며, 특정 프로모션, 마케팅 캠페인, 또는 계절적 요인 등 비즈니스 이벤트의 영향을 받았을 가능성이 있습니다. *   일별 판매량은 비즈니스 이벤트에 민감하게 반응하므로, 이 날짜의 판매량을 전후 날짜 또는 주간/월간 평균 판매량과 비교하여 의미 있는 인사이트를 도출할 수 있습니다.  > 2023년 10월 26일의 **124,471개** 판매 수량은 단일 일자로서 높은 수준이며, 이 날짜에 특별한 판매 촉진 활동이 있었을 가능성을 시사합니다.  --- *조회 기준: 2026-0",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND DATE(Date) = '2023-10-26'\nLIMIT 100"
+    "time": 42.0,
+    "answer_len": 4323,
+    "answer_preview": "## 📊 2026년 3월 일별 전체 제품 판매 수량 추이  #### 요약  2026년 3월 한 달간 전체 제품의 총 판매 수량은 **2,422,355개**를 기록했습니다. 일별 판매량은 최소 **29,100개**에서 최대 **298,931개**까지 큰 변동성을 보였으며, 특히 3월 19일에 가장 높은 판매량을 달성했습니다.  #### 상세 데이터  | sales_date | total_quantity | | :--------- | -------------: | | 2026-03-01 | 81,280         | | 2026-03-02 | 66,477         | | 2026-03-03 | 127,617        | | 2026-03-04 | 86,165         | | 2026-03-05 | 60,699         | | 2026-03-06 | 45,623         | | 2026-03-07 | 71,285         | | 2026-03-08 | 7",
+    "used_sql": "SELECT\n  DATE(Date) AS sales_date,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND EXTRACT(MONTH FROM Date) = 3\nGROUP BY sales_date\nORDER BY sales_date\nLIMIT 1000"
   },
   {
     "id": "PR-011",
-    "query": "전체 기간 동안 가장 많이 팔린 TOP 3 제품(SET)은 무엇인가요?",
+    "query": "전체 기간 동안 가장 많이 팔린 TOP 3 'SET'(제품명)은 무엇인가요?",
     "table": "product",
-    "status": "WARN",
-    "time": 64.1,
-    "answer_len": 3347,
-    "answer_preview": "### 📊 전체 기간 TOP 3 제품(SET) 매출 분석  #### 요약  2019년 1월 1일부터 현재까지의 전체 기간 동안 SK 및 CL 브랜드 제품 중 가장 많이 팔린 TOP 3 제품(SET)은 다음과 같습니다. 1위는 'SK_Hyalucica_Waterfit_Sun_Serum_50ml'로 약 **865.8억원**의 매출을 기록했으며, 2위 'SK_Centella_Light_Cleansing_Oil_200ml'는 약 **746.3억원**, 3위 'SK_Centella_Ampoule_100ml'는 약 **679.3억원**의 매출을 달성했습니다. 이들 TOP 3 제품의 총 매출액은 약 **2,291.3억원**에 달합니다.  #### 상세 데이터  | 순위 | 제품명 | 총 매출액 | 총 판매량 | | :--- | :---------------------------------- | ---------: | ---------: | | 1    | SK_Hyalucica_Waterfit_",
-    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_revenue,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` != 'Sachet'\nGROUP BY `SET`\nORDER BY total_revenue DESC\nLIMIT 3"
+    "status": "OK",
+    "time": 47.6,
+    "answer_len": 719,
+    "answer_preview": "# 역대 가장 많이 팔린 레고 세트 TOP 3  레고 그룹은 공식적으로 전체 기간 판매량 데이터를 공개하지 않기 때문에, 업계 데이터와 수집가 커뮤니티 통계를 기반으로 가장 많이 언급되는 상위 3개 세트는 다음과 같습니다.  | 순위 | 제품명 | 세트 번호 | 주요 특징 | |:---:|------|:---:|------| | **1** | **레고 마인드스톰 RIS 2.0** | 9797 | 전 세계 100만 개 이상 RCX 브릭 판매, 2001년 출시된 교육용 플랫폼으로 성인 사용자에게도 큰 인기 | | **2** | **레고 스타워즈 UCS 밀레니엄 팔콘** | 75192 | 7,541개 브릭 구성, 2017년 출시 당시 최대 규모 스타워즈 세트. 출시 때마다 빠르게 매진 | | **3** | **레고 시티 경찰서** | 다양한 버전 | 레고 시티 테마의 핵심 인기 제품으로, 수년에 걸쳐 여러 버전이 출시되며 지속적으로 높은 판매량 기록 |  > 📌 레고는 공식 판매량 순위를",
+    "used_sql": ""
   },
   {
     "id": "PR-012",
-    "query": "Country '일본'에서 가장 많이 팔린 TOP 5 Line은 무엇인가요?",
+    "query": "각 국가별로 판매 수량이 가장 많은 TOP 5 'Category'를 알려주세요.",
     "table": "product",
     "status": "OK",
-    "time": 43.5,
-    "answer_len": 3666,
-    "answer_preview": "### 📊 일본 시장 TOP 5 매출 Line 분석 (2019년 1월 1일 이후 누적)  #### 요약  일본 시장에서 가장 많이 팔린 TOP 5 Line은 **SET**으로, 총 **약 261.5억원**의 매출을 기록하며 압도적인 1위를 차지했습니다. Centella Line이 약 187.4억원으로 그 뒤를 이었으며, 상위 2개 Line(SET, Centella)이 전체 TOP 5 매출의 **약 86.3%**를 차지하는 높은 집중도를 보였습니다.  #### 상세 데이터  일본 시장에서 가장 많이 팔린 TOP 5 Line의 상세 매출액은 다음과 같습니다.  | Line          | 매출액 (원)           | 매출액 (억원) | 비중 (%) | | :------------ | --------------------- | ------------- | -------- | | SET           | 26,148,492,623        | 261.5         | ",
-    "used_sql": "SELECT\n  Line,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Country = '일본'\n  AND Line IS NOT NULL AND Line != ''\nGROUP BY Line\nORDER BY total_revenue DESC\nLIMIT 5"
+    "time": 49.0,
+    "answer_len": 2449,
+    "answer_preview": "### 📊 각 국가별 판매 수량 TOP 5 카테고리 분석  #### 요약  2019년 1월 1일 이후 'SK', 'CL' 브랜드 제품 중 'Sachet'을 제외한 데이터를 분석한 결과, 총 132개 국가에서 **9,924만 9,540개**의 제품이 판매되었습니다. 대부분의 국가에서 **앰플(Ampoule)**, **선케어(Suncare)**, **크림(Cream)** 카테고리가 판매 수량 TOP 5에 꾸준히 포함되며 높은 인기를 보였습니다. 특히 '글로벌_플랫폼'과 '인도네시아'는 각각 Suncare와 Ampoule 카테고리에서 가장 높은 판매 수량을 기록했습니다.  #### 상세 데이터  제공된 데이터 프리뷰를 바탕으로, 전체 판매 수량이 가장 높은 '글로벌_플랫폼'과 '인도네시아'의 TOP 5 카테고리 상세 현황은 다음과 같습니다.  **글로벌_플랫폼** | 순위 | Category | 판매 수량 | |-----:|:---------|----------:| | 1 | Suncar",
+    "used_sql": "WITH CountryCategoryQty AS (\n  SELECT\n    Country,\n    Category,\n    SUM(Total_Qty) AS total_quantity\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product != 'Sachet'\n    AND Category IS NOT NULL AND Category != ''\n  GROUP BY\n    Country,\n    Category\n)\nSELECT\n  Country,\n  Category,\n  total_quantity\nFROM (\n  SELECT\n    Country,\n    Category,\n    total_quantity,\n    ROW_NUMBER() OVER (PARTITION BY Country ORDER BY total_quantity DESC) AS rn\n  FROM CountryCategoryQty\n)\nWHERE rn <= 5\nORDER BY\n  Country,\n  total_quantity DESC\nLIMIT 1000"
   },
   {
     "id": "PR-013",
-    "query": "전체 국가에서 SKU별 총 판매 수량 기준으로 TOP 10 SKU를 알려주세요.",
+    "query": "'Centella' 라인 중 판매 수량이 가장 높은 TOP 10 'SKU'는 무엇인가요?",
     "table": "product",
     "status": "OK",
-    "time": 33.5,
-    "answer_len": 4385,
-    "answer_preview": "### 📊 SK 및 CL 브랜드의 SKU별 총 판매 수량 TOP 10 분석  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드의 전체 판매 데이터를 기준으로 SKU별 총 판매 수량 TOP 10을 분석한 결과, 'SK_Hyalucica_Waterfit_Sun_Serum_50ml'이 **10,750,857개**로 가장 많이 판매되었습니다. 상위 3개 SKU가 전체 TOP 10 판매량의 **약 45.6%**를 차지하며 판매 집중도를 보였습니다.  #### 상세 데이터 | 순위 | SKU | 총 판매 수량 (개) | | :-- | :-------------------------------------- | ---------------: | | 1 | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 10,750,857 | | 2 | SK_Centella_Light_Cleansing_Oil_200ml | 8,609,894 | | 3 | SK_Centella_A",
-    "used_sql": "SELECT\n  Product AS SKU,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\nGROUP BY Product\nORDER BY total_quantity DESC\nLIMIT 10"
+    "time": 47.9,
+    "answer_len": 4439,
+    "answer_preview": "### 📊 Centella 라인 판매 수량 TOP 10 SKU 분석  #### 요약  'Centella' 라인에서 가장 많이 판매된 SKU는 'SK_Centella_Ampoule_55ml'로, 총 **4,161,821개**가 판매되었습니다. 상위 10개 SKU 중 앰플 제품이 다수를 차지하며 높은 판매량을 보였으며, 특히 1위와 2위 모두 앰플 제품이었습니다.  #### 상세 데이터 | 순위 | SKU | product_name | total_qty | |---:|:---|:---|---:| | 1 | BL01AMP00480009000 | SK_Centella_Ampoule_55ml | 4,161,821 | | 2 | BL01AMP00480007000 | SK_Centella_Ampoule_100ml | 3,801,463 | | 3 | BL01SNC00480002000 | SK_Centella_Airfit_Suncream_Plus_50ml | 3,264,341 | | 4 | BL01",
+    "used_sql": "SELECT\n  SKU,\n  `SET` AS product_name,\n  SUM(Total_Qty) AS total_qty\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Centella'\n  AND SKU IS NOT NULL AND SKU != ''\n  AND `SET` IS NOT NULL AND `SET` != '' AND `SET` != 'Sachet' AND `SET` NOT LIKE '% + %'\nGROUP BY SKU, `SET`\nORDER BY total_qty DESC\nLIMIT 10"
   },
   {
     "id": "PR-014",
-    "query": "가장 적게 팔린 Category는 무엇인가요? (카테고리별 합계 기준)",
+    "query": "가장 적게 팔린 'Line'은 무엇인가요?",
     "table": "product",
     "status": "OK",
-    "time": 18.1,
-    "answer_len": 1216,
-    "answer_preview": "### 📊 브랜드 SK, CL의 가장 적게 팔린 카테고리 분석  #### 요약  2019년 1월 1일 이후 브랜드 SK와 CL의 통합 매출 데이터를 기준으로, 가장 적게 팔린 카테고리는 **Others**로 확인되었습니다. 해당 카테고리의 총 매출은 약 **47.96억원**입니다.  #### 분석 및 인사이트  *   **최저 매출 카테고리 확인:** 분석 기간 동안 'Others' 카테고리가 가장 낮은 매출을 기록했습니다. 이는 특정 주력 제품군 외의 기타 상품들이 상대적으로 낮은 판매 비중을 차지하고 있음을 시사합니다. *   **'Others' 카테고리 관리의 중요성:** 'Others' 카테고리는 매출 기여도가 낮아 보일 수 있지만, 다양한 소규모 제품들을 포함하고 있을 가능성이 높습니다. 이 카테고리 내에서 잠재력 있는 제품을 발굴하거나, 비효율적인 제품을 정리하는 전략적 접근이 필요합니다. *   **브랜드 및 기간 한정:** 본 분석은 2019년 1월 1일 이후의 SK ",
-    "used_sql": "SELECT\n  Category,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category IS NOT NULL\n  AND Category != ''\nGROUP BY Category\nORDER BY total_revenue ASC\nLIMIT 1"
+    "time": 27.5,
+    "answer_len": 374,
+    "answer_preview": "아래는 판매 수량이 가장 적은 **Line**을 조회하는 SQL입니다.  ```sql SELECT   Line,   SUM(Quantity) AS total_quantity FROM `ga4_raw.aggregated_orders` WHERE Line IS NOT NULL   AND Line != '' GROUP BY Line ORDER BY total_quantity ASC LIMIT 10 ```  > 위 쿼리를 실행하면 **Line별 총 판매 수량**을 오름차순으로 정렬하여, 가장 적게 팔린 Line을 확인할 수 있습니다.  데이터 조회 결과가 나오면 구체적인 분석도 도와드리겠습니다. 잠시만 기다려 주세요!  --- *AI 생성 답변 · 2026-04-01*",
+    "used_sql": "SELECT\n  Line,\n  SUM(Quantity) AS total_quantity\nFROM `ga4_raw.aggregated_orders`\nWHERE Line IS NOT NULL\n  AND Line != ''\nGROUP BY Line\nORDER BY total_quantity ASC\nLIMIT 10"
   },
   {
     "id": "PR-015",
-    "query": "SKU별 총 판매 수량의 중간값은 얼마인가요?",
+    "query": "모든 'SKU'의 판매 수량 중간값은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 44.7,
-    "answer_len": 1477,
-    "answer_preview": "### 📊 SKU별 총 판매 수량 중간값 분석  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드의 특정 제품(Sachet 제외)을 기준으로 분석한 결과, SKU별 총 판매 수량의 중간값은 **52,229.5개**로 나타났습니다. 이는 해당 조건의 SKU 중 절반은 52,229.5개 미만, 나머지 절반은 52,229.5개 초과 판매되었음을 의미합니다.  #### 분석 및 인사이트  *   **중심 경향 파악:** 52,229.5개라는 중간값은 'SK' 및 'CL' 브랜드 내에서 개별 SKU의 총 판매 수량 분포가 어느 정도 수준에 집중되어 있는지를 보여주는 지표입니다. 이는 판매량이 극단적으로 높거나 낮은 일부 SKU에 의해 평균값이 왜곡될 수 있는 상황에서, 보다 안정적인 중심 경향을 파악하는 데 유용합니다. *   **성과 평가 기준:** 이 중간값은 각 SKU의 판매 성과를 상대적으로 평가하는 중요한 기준점으로 활용될 수 있습니다.     > 특정 SKU의",
-    "used_sql": "SELECT\n  PERCENTILE_CONT(t.total_sales_quantity, 0.5) OVER() AS median_total_sales_quantity\nFROM (\n  SELECT\n    Product,\n    SUM(Total_Qty) AS total_sales_quantity\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet'\n  GROUP BY Product\n) AS t\nLIMIT 1"
+    "time": 50.5,
+    "answer_len": 1311,
+    "answer_preview": "### 📊 SKU별 총 판매 수량 중간값 분석  #### 요약  2019년 1월 1일부터 현재까지 'SK' 및 'CL' 브랜드의 모든 SKU를 대상으로 분석한 결과, SKU별 총 판매 수량의 중간값은 **464개**입니다. 이는 전체 SKU의 절반이 464개 미만을 판매했고, 나머지 절반은 464개 이상을 판매했음을 의미합니다.  #### 분석 및 인사이트  *   **중간값의 의미**: 분석 대상 SKU 중 절반은 총 판매 수량이 464개 미만이며, 나머지 절반은 464개 이상을 판매했습니다. 이는 특정 SKU의 판매 성과를 평가할 때 벤치마크로 활용될 수 있습니다. *   **성과 평가 기준**: 464개라는 중간값은 SKU의 판매 성과를 판단하는 하나의 기준으로 사용될 수 있습니다. 이 수치보다 판매량이 낮은 SKU는 개선이 필요할 수 있으며, 높은 SKU는 성공적인 제품으로 간주될 수 있습니다. *   **후속 분석 필요성**: 중간값은 전체 분포의 중심 경향을 보여주지만, ",
+    "used_sql": "WITH SkuTotalQuantities AS (\n  SELECT\n    SKU,\n    SUM(Total_Qty) AS total_quantity_for_sku\n  FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND SKU IS NOT NULL AND SKU != ''\n    AND Total_Qty IS NOT NULL AND Total_Qty > 0\n  GROUP BY SKU\n)\nSELECT\n  PERCENTILE_CONT(total_quantity_for_sku, 0.5) OVER() AS median_sales_quantity_across_all_skus\nFROM SkuTotalQuantities\nLIMIT 1"
   },
   {
     "id": "PR-016",
-    "query": "지난달 대비 이번 달 총 판매 수량 성장률은 어떻게 되나요?",
+    "query": "지난달 대비 이번 달 전체 판매 수량의 증감률은 어떻게 되나요?",
     "table": "product",
     "status": "OK",
-    "time": 50.7,
-    "answer_len": 414,
-    "answer_preview": "안녕하세요. 요청하신 **지난달 대비 이번 달 총 판매 수량 성장률** 데이터를 조회하지 못했습니다.  좀 더 정확한 결과를 위해 **조건을 구체적으로 지정**해 주시면 다시 조회를 시도해 볼 수 있습니다. 아래 예시를 참고해 주세요.  ---  **질문 예시**  1. **\"2025년 5월 대비 6월, 한국 자사몰 총 판매 수량 성장률은 어떻게 되나요?\"** 2. **\"마다가스카르 센텔라 라인 제품의 2025년 5월 vs 6월 글로벌 판매 수량 비교를 알려주세요.\"** 3. **\"2025년 6월 아마존 US 채널 전체 제품 판매 수량이 전월 대비 얼마나 증가했나요?\"**  ---  이처럼 **기간(월/연도)**, **국가 또는 채널**, **제품명 또는 제품 라인** 등을 함께 알려주시면 보다 정확한 데이터를 안내해 드리겠습니다.",
-    "used_sql": ""
+    "time": 59.9,
+    "answer_len": 1938,
+    "answer_preview": "### 📊 지난달 대비 이번 달 전체 판매 수량 증감률 분석  #### 요약  2026년 4월 전체 판매 수량은 **200,230개**로 집계되었습니다. 이는 지난 3월 판매 수량(2,324,543개) 대비 **91.4% 감소**한 수치로, 판매량이 크게 줄어든 것으로 분석됩니다.  #### 상세 데이터  | 구분         | 판매 수량 (개) | 증감률 (%) | | :----------- | -------------: | ---------: | | 2026년 4월   |        200,230 |            | | 2026년 3월   |      2,324,543 |            | | 지난달 대비 증감률 |              |      -91.4 |  #### 분석 및 인사이트  *   **급격한 판매량 감소**: 2026년 4월 판매 수량은 200,230개로, 지난 3월의 2,324,543개에 비해 2,124,313개 감소하여 91.4%라는 매",
+    "used_sql": "WITH this_month_data AS (\n  SELECT\n    SUM(Total_Qty) AS current_month_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product != 'Sachet'\n    AND Product != 'Others'\n    AND EXTRACT(YEAR FROM Date) = 2026\n    AND EXTRACT(MONTH FROM Date) = 4\n),\nlast_month_data AS (\n  SELECT\n    SUM(Total_Qty) AS previous_month_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product != 'Sachet'\n    AND Product != 'Others'\n    AND EXTRACT(YEAR FROM Date) = 2026\n    AND EXTRACT(MONTH FROM Date) = 3\n)\nSELECT\n  tmd.current_month_qty,\n  lmd.previous_month_qty,\n  ROUND(SAFE_DIVIDE(tmd.current_month_qty - lmd.previous_month_qty, lmd.previous_month_qty) * 100, 2) AS mom_growth_rate_pct\nFROM this_month_data tmd, last_month_data lmd\nLIMIT 1000"
   },
   {
     "id": "PR-017",
-    "query": "2022년 대비 2023년 'Hyalucica' 라인의 판매 수량 증감률은 얼마인가요?",
+    "query": "작년 동월 대비 올해 'Ampoule' 카테고리 제품의 판매 수량 변화는 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 37.5,
-    "answer_len": 1737,
-    "answer_preview": "📊 2022년 대비 2023년 'Hyalucica' 라인 판매 수량 증감률 분석  #### 요약  2023년 'Hyalucica' 라인의 판매 수량은 2022년 대비 **494.4% 증가**하며, 총 **1,953,503개**를 기록했습니다. 이는 2022년 판매 수량 328,650개와 비교했을 때 매우 높은 성장률을 보여줍니다.  #### 상세 데이터 | 연도 | 판매 수량 (개) | | :--- | ---: | | 2022 | 328,650 | | 2023 | 1,953,503 | | **증감률** | **+494.4%** |  #### 분석 및 인사이트  *   'Hyalucica' 라인은 2023년에 2022년 대비 약 5배에 가까운 **494.4%**라는 폭발적인 판매 수량 성장률을 기록했습니다. *   이는 2022년 328,650개에서 2023년 1,953,503개로 판매량이 크게 증가했음을 의미하며, 해당 라인의 시장 수요가 급격히 확대되었거나 마케팅 및 유통 전략이 ",
-    "used_sql": "SELECT\n  SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2023 THEN Total_Qty ELSE 0 END) AS quantity_2023,\n  SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2022 THEN Total_Qty ELSE 0 END) AS quantity_2022,\n  SAFE_DIVIDE(\n    (SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2023 THEN Total_Qty ELSE 0 END) - SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2022 THEN Total_Qty ELSE 0 END)),\n    SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2022 THEN Total_Qty ELSE 0 END)\n  ) AS growth_rate\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Line = 'Hyalucica'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND (EXTRACT(YEAR FROM Date) = 2022 OR EXTRACT(YEAR FROM Date) = 2023)\nLIMIT 1000"
+    "time": 38.8,
+    "answer_len": 1964,
+    "answer_preview": "## 📊 'Ampoule' 카테고리 제품 판매 수량 변화 (2026년 4월 vs 2025년 4월)  #### 요약  2026년 4월 'Ampoule' 카테고리 제품의 판매 수량은 전년 동월 대비 **97.36% 감소**했습니다. 2025년 4월 2,059,427개에서 2026년 4월 54,358개로 크게 줄어들었습니다.  #### 상세 데이터  | 기간       | 판매 수량 (개) | |:-----------|---------------:| | 2026년 4월 | 54,358         | | 2025년 4월 | 2,059,427      | | **증감률** | **-97.36%**    |  #### 분석 및 인사이트  *   **급격한 판매량 감소:** 'Ampoule' 카테고리 제품의 2026년 4월 판매 수량은 전년 동월 대비 97.36%라는 매우 큰 폭으로 감소했습니다. 이는 단순한 판매 부진을 넘어선 심각한 변화를 시사합니다. *   **규모의 변화:** 2025",
+    "used_sql": "WITH this_month_data AS (\n  SELECT\n    SUM(Total_Qty) AS current_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Category = 'Ampoule'\n    AND Product != 'Sachet'\n    AND EXTRACT(YEAR FROM Date) = 2026\n    AND EXTRACT(MONTH FROM Date) = 4\n),\nlast_month_data AS (\n  SELECT\n    SUM(Total_Qty) AS last_year_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Category = 'Ampoule'\n    AND Product != 'Sachet'\n    AND EXTRACT(YEAR FROM Date) = 2025\n    AND EXTRACT(MONTH FROM Date) = 4\n)\nSELECT\n  COALESCE(tmd.current_qty, 0) AS current_year_ampoule_qty,\n  COALESCE(lmd.last_year_qty, 0) AS last_year_ampoule_qty,\n  ROUND(SAFE_DIVIDE(COALESCE(tmd.current_qty, 0) - COALESCE(lmd.last_year_qty, 0), COALESCE(lmd.last_year_qty, 0)) * 100, 2) AS yoy_growth_percentage\nFROM this_month_data tmd, last_month_data lmd\nLIMIT 1000"
   },
   {
     "id": "PR-018",
-    "query": "Country '한국'과 '베트남'의 'Cream' 카테고리 제품 판매 수량을 비교해주세요.",
+    "query": "'SK' 브랜드 제품의 판매 수량을 국가별로 비교 분석해주세요.",
     "table": "product",
     "status": "OK",
-    "time": 32.7,
-    "answer_len": 2633,
-    "answer_preview": "### 📊 '한국'과 '베트남'의 'Cream' 카테고리 제품 판매 수량 비교 분석  #### 요약  'Cream' 카테고리 제품의 총 판매 수량을 비교한 결과, **베트남**이 **561,076개**를 판매하여 '한국'의 **173,137개**보다 약 3.2배 높은 판매량을 기록했습니다. 베트남은 전체 판매량의 약 76.4%를 차지하며 압도적인 우위를 보였습니다.  #### 상세 데이터 | Country | total_quantity | |:--------|---------------:| | 베트남  | 561,076        | | 한국    | 173,137        | | **합계**| **734,213**    |  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"베트남\", \"한국\"], \"datasets\": [{\"label\": \"총 판매 수량\", \"data\": [561076.0, 173137.0], \"",
-    "used_sql": "SELECT\n  Country,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Country IN ('한국', '베트남')\n  AND Category = 'Cream'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY Country\nORDER BY total_quantity DESC\nLIMIT 1000"
+    "time": 47.7,
+    "answer_len": 1628,
+    "answer_preview": "### 📊 'SK' 브랜드 제품 국가별 판매 수량 비교 분석  #### 요약  'SK' 브랜드 제품은 2019년 1월 1일 이후 총 **115,062,733개**가 판매되었으며, **글로벌_플랫폼이 21,223,883개**로 가장 높은 판매 수량을 기록했습니다. 인도네시아와 미국이 그 뒤를 이어 상위 3개 시장이 전체 판매량의 약 42.3%를 차지하며, 판매가 특정 시장에 집중되어 있음을 보여줍니다.  #### 상세 데이터  'SK' 브랜드 제품의 국가별 판매 수량 상위 10개는 다음과 같습니다.  | 국가/플랫폼 | 총 판매 수량 | |:------------|-------------:| | 글로벌_플랫폼 | 21,223,883 | | 인도네시아 | 16,498,063 | | 미국 | 10,989,546 | | 베트남 | 5,430,023 | | 필리핀 | 3,960,383 | | 일본 | 3,578,518 | | 한국 | 3,269,288 | | 라오스 | 3,060,950 | ",
+    "used_sql": "SELECT\n  Country,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Country\nORDER BY total_quantity DESC\nLIMIT 1000"
   },
   {
     "id": "PR-019",
-    "query": "Brand 'SK'와 'CL'의 전체 판매 수량을 비교해주세요.",
+    "query": "'Category'별로 'Brand(SK/CL)' 간의 판매 수량 차이를 비교해주세요.",
     "table": "product",
     "status": "OK",
-    "time": 36.7,
-    "answer_len": 2562,
-    "answer_preview": "### 📊 'SK' 및 'CL' 브랜드 판매 수량 비교 분석  #### 요약  Brand 'SK'와 'CL'의 전체 판매 수량을 비교한 결과, 'SK' 브랜드가 **126,175,189개**를 기록하며 'CL' 브랜드의 **740,845개**보다 압도적으로 높은 판매량을 보였습니다. 'SK'는 'CL' 대비 약 **170배** 더 많은 판매 수량을 달성했습니다.  #### 상세 데이터  | Brand | 총 판매 수량 (개) | | :---- | ---------------: | | SK    | 126,175,189      | | CL    | 740,845          | | **합계** | **126,916,034**  |  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"SK\", \"CL\"], \"datasets\": [{\"label\": \"총 판매 수량\", \"data\": [126175189.0, 740845.0",
-    "used_sql": "SELECT\n  Brand,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Brand\nORDER BY total_quantity DESC\nLIMIT 1000"
+    "time": 47.1,
+    "answer_len": 2215,
+    "answer_preview": "## 📊 Category별 Brand(SK/CL) 판매 수량 비교 분석  #### 요약  제공된 데이터에 따르면, 'SK' 브랜드는 분석된 모든 카테고리에서 'CL' 브랜드 대비 **압도적으로 높은 판매 수량**을 기록했습니다. 특히 **Ampoule** 카테고리에서 SK 브랜드가 CL 브랜드보다 **3,575만 개 이상** 더 많이 판매되어 가장 큰 수량 차이를 보였습니다. CL 브랜드는 모든 카테고리에서 SK 브랜드 판매량의 2% 미만을 차지하며 매우 낮은 비중을 나타냈습니다.  #### 상세 데이터 | Category | SK 판매 수량 | CL 판매 수량 | 판매 수량 차이 (SK - CL) | SK 판매량/CL 판매량  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"Ampoule\", \"Cleanser\", \"Cream\", \"Oil\", \"Others\", \"Pack\", \"SET\", \"Suncare\", \"Toner",
+    "used_sql": "SELECT\n  Category,\n  Brand,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Category IS NOT NULL AND Category != ''\nGROUP BY Category, Brand\nORDER BY Category, total_quantity DESC\nLIMIT 1000"
   },
   {
     "id": "PR-020",
-    "query": "'Centella' 라인과 'LabinNature' 라인 중 어느 라인의 총 판매 수량이 더 많은가요?",
+    "query": "'SK'와 'CL' 브랜드 간의 전체 판매 수량 차이는 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 34.4,
-    "answer_len": 1429,
-    "answer_preview": "### 📊 Centella 및 LabinNature 라인별 총 판매 수량 비교  #### 요약  'Centella' 라인이 'LabinNature' 라인보다 총 판매 수량이 압도적으로 많습니다. 'Centella' 라인은 총 **59,497,754개**의 판매 수량을 기록하여, 'LabinNature' 라인의 **904,917개**보다 약 65.7배 높은 판매량을 보였습니다.  #### 상세 데이터  | 라인        | 총 판매 수량 (개) | | :---------- | ---------------: | | Centella    | 59,497,754       | | LabinNature | 904,917          | | **합계**    | **60,402,671**   |  #### 분석 및 인사이트  *   **압도적인 Centella 라인의 판매량**: Centella 라인은 LabinNature 라인 대비 약 65.7배 높은 판매 수량을 기록하며, 브랜드 내",
-    "used_sql": "SELECT\n  Line,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line IN ('Centella', 'LabinNature')\n  AND Product != 'Sachet'\nGROUP BY Line\nORDER BY total_quantity DESC\nLIMIT 1000"
+    "time": 32.2,
+    "answer_len": 1224,
+    "answer_preview": "### 📊 SK와 CL 브랜드 판매 수량 차이 분석  #### 요약  'SK' 브랜드의 전체 판매 수량이 'CL' 브랜드보다 **114,322,208개** 더 많습니다. 이는 두 브랜드 간 상당한 판매량 격차를 보여줍니다.  #### 분석 및 인사이트  *   **압도적인 SK 브랜드의 우위:** 'SK' 브랜드가 'CL' 브랜드 대비 1억 개 이상의 판매 수량 우위를 보이며 시장에서 훨씬 더 강력한 입지를 가지고 있음을 시사합니다. *   **전략적 검토 필요성:** 'CL' 브랜드는 'SK' 브랜드와의 판매량 격차가 매우 크므로, 제품 포트폴리오, 마케팅 전략, 유통 채널 등에 대한 심층적인 분석을 통해 경쟁력 강화 방안을 모색할 필요가 있습니다. *   **추가 분석의 중요성:** 단순 판매 수량 차이 외에 각 브랜드의 판매액, 수익성, 시장 점유율 등을 함께 분석하면 보다 종합적인 비즈니스 인사이트를 얻을 수 있습니다.  --- *조회 기준: 2026-04-01 | 데이터소스",
+    "used_sql": "WITH BrandQuantities AS (\n  SELECT\n    Brand,\n    SUM(Total_Qty) AS total_quantity\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n  GROUP BY Brand\n)\nSELECT\n  (SELECT total_quantity FROM BrandQuantities WHERE Brand = 'SK') - (SELECT total_quantity FROM BrandQuantities WHERE Brand = 'CL') AS quantity_difference\nLIMIT 10000"
   },
   {
     "id": "PR-021",
-    "query": "전체 판매 수량 중 'Sun' 카테고리 제품이 차지하는 비중은 얼마인가요?",
+    "query": "'Centella' 라인이 전체 판매 수량에서 차지하는 비중은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 32.8,
-    "answer_len": 1256,
-    "answer_preview": "### 📊 전체 판매 수량 대비 'Suncare' 카테고리 제품 비중 분석  #### 요약  2019년 1월 1일 이후 SK, CL 브랜드의 전체 판매 수량(Sachet 제품 제외) 중 'Suncare' 카테고리 제품이 차지하는 비중은 **18.8%**입니다. 이는 해당 브랜드의 전체 판매에서 'Suncare' 제품이 상당한 부분을 차지하고 있음을 보여줍니다.  #### 분석 및 인사이트  *   **주요 카테고리로서의 'Suncare'**: SK 및 CL 브랜드의 전체 판매 수량 중 'Suncare' 카테고리가 약 18.8%의 비중을 차지하고 있어, 해당 카테고리가 브랜드의 핵심 제품군 중 하나임을 시사합니다. *   **전략적 중요성**: 이 비중은 'Suncare' 제품이 매출 볼륨에 기여하는 바가 크다는 것을 의미하며, 마케팅 및 재고 관리 전략 수립 시 중요한 고려 요소가 될 수 있습니다. *   **데이터 범위**: 본 분석은 2019년 1월 1일 이후의 데이터에 기반하며",
-    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN Category = 'Suncare' THEN Total_Qty ELSE 0 END),\n    SUM(Total_Qty)\n  ) AS sun_category_proportion\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
+    "time": 23.3,
+    "answer_len": 1149,
+    "answer_preview": "### 📊 센텔라 라인 판매 수량 비중 분석  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드의 전체 판매 수량 중 'Centella' 라인이 차지하는 비중은 **47.1%**입니다. 이는 해당 기간 동안 판매된 제품의 거의 절반에 가까운 수량입니다.  #### 분석 및 인사이트  *   'Centella' 라인은 특정 브랜드('SK', 'CL')의 전체 판매 수량에서 **47.1%**라는 매우 높은 비중을 차지하고 있어, 해당 라인이 비즈니스 성과에 핵심적인 역할을 하고 있음을 알 수 있습니다. *   거의 절반에 가까운 판매 수량 비중은 'Centella' 라인이 고객들에게 매우 인기 있거나, 주요 마케팅 및 판매 전략의 중심에 있음을 시사합니다. *   이러한 높은 집중도는 'Centella' 라인의 성공에 크게 의존하고 있음을 의미하며, 향후 판매 전략 수립 시 해당 라인의 지속적인 성장과 더불어 다른 라인의 균형적인 성장을 고려할 필요가 있습니다.  ",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN Line = 'Centella' THEN Total_Qty ELSE 0 END),\n    SUM(Total_Qty)\n  ) * 100 AS centella_line_quantity_share_pct\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
   },
   {
     "id": "PR-022",
-    "query": "Country '미국'의 'Toner' 제품 판매 수량이 해당 국가 전체 판매 수량에서 차지하는 비율은?",
+    "query": "'Ampoule' 카테고리 제품 중 'SK' 브랜드가 판매된 비율은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 35.9,
-    "answer_len": 1305,
-    "answer_preview": "### 📊 미국 내 토너 제품 판매 수량 비중 분석  #### 요약  미국 내 'SK' 및 'CL' 브랜드 제품 중 'Sachet'을 제외한 전체 판매 수량에서 'Toner' 제품이 차지하는 비중은 **5.59%**입니다. 이 수치는 2019년 1월 1일 이후의 데이터를 기준으로 산출되었습니다.  #### 분석 및 인사이트  *   'Toner' 제품은 미국 시장에서 'SK' 및 'CL' 브랜드의 2019년 1월 1일 이후 전체 판매 수량 중 약 5.59%의 비중을 차지하고 있습니다. *   이는 해당 브랜드 및 기간 내에서 'Toner' 제품이 전체 판매량에서 차지하는 비중이 특정 카테고리에 집중되어 있지 않음을 시사하며, 다른 주요 제품 카테고리(예: 세럼, 크림 등)와 비교하여 상대적인 판매 기여도를 파악할 필요가 있습니다. *   'Toner' 제품의 판매 전략 수립 시, 현재 비중을 고려하여 마케팅 및 프로모션 강화를 통해 점유율을 높이거나, 다른 고비중 제품군에 집중하는 ",
-    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN Category = 'Toner' THEN Total_Qty ELSE 0 END),\n    SUM(Total_Qty)\n  ) * 100 AS toner_quantity_percentage_in_usa\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Country = '미국'\n  AND Product != 'Sachet'\nLIMIT 1000"
+    "time": 27.4,
+    "answer_len": 1068,
+    "answer_preview": "### 📊 'Ampoule' 카테고리 내 'SK' 브랜드 판매 비중 분석  #### 요약  'Ampoule' 카테고리 제품 중 'SK' 브랜드와 'CL' 브랜드를 비교했을 때, 'SK' 브랜드의 판매 비중은 **99.5%**로 압도적인 우위를 차지하고 있습니다.  #### 분석 및 인사이트  *   **압도적인 시장 점유율**: 'Ampoule' 카테고리 내에서 'SK' 브랜드는 'CL' 브랜드 대비 거의 모든 판매를 차지하며 독점적인 위치를 확보하고 있습니다. *   **'CL' 브랜드의 미미한 존재감**: 동일 카테고리에서 'CL' 브랜드의 판매 기여도는 매우 낮아, 해당 카테고리에서 'CL' 브랜드의 전략 또는 성과에 대한 추가적인 분석이 필요할 수 있습니다. *   **비교 대상의 한계**: 이 비율은 'SK'와 'CL' 두 브랜드만을 대상으로 한 결과이므로, 전체 'Ampoule' 시장 내 'SK' 브랜드의 실제 점유율은 다른 브랜드들을 포함할 경우 달라질 수 있습니다.  ",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN Brand = 'SK' THEN Sales1_R ELSE 0 END),\n    SUM(Sales1_R)\n  ) * 100 AS sk_brand_ampoule_sales_ratio\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Ampoule'\nLIMIT 1000"
   },
   {
     "id": "PR-023",
-    "query": "'Centella' 라인 제품이 전체 'Line' 카테고리 판매 수량에서 차지하는 점유율은 얼마인가요?",
+    "query": "각 국가별 전체 판매 수량에 대한 'Sun' 카테고리 제품의 점유율은 어떻게 되나요?",
     "table": "product",
     "status": "OK",
-    "time": 39.4,
-    "answer_len": 1431,
-    "answer_preview": "### 📊 Centella 라인 제품의 전체 Line 카테고리 판매 수량 점유율 분석  #### 요약  2019년 1월 1일 이후 특정 브랜드(SK, CL) 및 제품군(Sachet, Others 제외)을 기준으로 분석한 결과, 'Centella' 라인 제품은 전체 'Line' 카테고리 판매 수량의 **47.0%**를 차지하고 있습니다. 이는 Centella 라인이 해당 제품군 내에서 매우 높은 판매 비중을 가지고 있음을 나타냅니다.  #### 분석 및 인사이트  *   **높은 시장 점유율:** 'Centella' 라인 제품은 특정 브랜드 및 제품군 내에서 전체 'Line' 카테고리 판매 수량의 약 절반에 가까운 **47.0%**의 점유율을 기록하며 핵심적인 판매 동력임을 입증했습니다. *   **전략적 중요성:** 이처럼 높은 점유율은 Centella 라인이 전체 제품 포트폴리오에서 매우 중요한 위치를 차지하고 있으며, 매출 및 고객 확보에 상당한 기여를 하고 있음을 시사합니다. ",
-    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    SUM(CASE WHEN Line = 'Centella' THEN Total_Qty ELSE 0 END),\n    SUM(CASE WHEN Line IS NOT NULL AND Line != '' AND Line != 'Others' THEN Total_Qty ELSE 0 END)\n  ) * 100 AS centella_line_share_percentage\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
+    "time": 42.9,
+    "answer_len": 2091,
+    "answer_preview": "### 📊 각 국가별 'Sun' 카테고리 제품 판매 점유율 분석  #### 요약  각 국가별 전체 판매 수량 대비 'Sun' 카테고리 제품의 점유율을 분석한 결과, **아프가니스탄이 45.5%**로 가장 높은 점유율을 보였으며, **베트남이 43.7%**로 그 뒤를 이었습니다. 전체 판매 수량은 **115,832,528개**였고, 이 중 'Sun' 카테고리 제품은 **22,128,813개**를 차지했습니다.  #### 상세 데이터  다음은 'Sun' 카테고리 제품 점유율이 높은 상위 7개 국가의 상세 데이터입니다. 전체 데이터는 132개 국가를 포함합니다.  | 국가 | Sun 카테고리 판매 수량 | 전체 판매 수량 | Sun 카테고리 점유율 (%) | | :---------- | -----------: | -----------: | -----------: | | 아프가니스탄 | 285,912 | 629,070 | 45.5 | | 베트남 | 2,381,856 | 5,450,533 |",
+    "used_sql": "WITH SunCategoryQty AS (\n  SELECT\n    Country,\n    SUM(Total_Qty) AS sun_category_total_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product != 'Sachet'\n    AND Category = 'Suncare'\n  GROUP BY Country\n),\nTotalQty AS (\n  SELECT\n    Country,\n    SUM(Total_Qty) AS overall_total_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product != 'Sachet'\n  GROUP BY Country\n)\nSELECT\n  t.Country,\n  COALESCE(s.sun_category_total_qty, 0) AS sun_category_qty,\n  t.overall_total_qty,\n  ROUND(SAFE_DIVIDE(COALESCE(s.sun_category_total_qty, 0), t.overall_total_qty) * 100, 2) AS sun_category_share_pct\nFROM TotalQty AS t\nLEFT JOIN SunCategoryQty AS s\n  ON t.Country = s.Country\nWHERE t.overall_total_qty > 0\nORDER BY sun_category_share_pct DESC\nLIMIT 1000"
   },
   {
     "id": "PR-024",
-    "query": "각 Brand별 총 판매 수량의 구성비를 파이 차트로 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 41.6,
-    "answer_len": 2793,
-    "answer_preview": "### 📊 브랜드별 총 판매 수량 구성비 분석  #### 요약  총 판매 수량 기준으로 **CBT**와 **SK** 두 브랜드가 전체 시장의 **약 99.2%**를 차지하며 압도적인 양강 체제를 구축하고 있습니다. CBT는 **49.98%**의 구성비로 가장 높은 판매 수량을 기록했으며, SK는 **49.22%**로 근소한 차이로 뒤를 이었습니다. 나머지 DD와 CL 브랜드는 매우 미미한 비중을 차지하고 있습니다.  #### 상세 데이터 | Brand | 총 판매 수량 | 구성비 (%) | |:---|---:|---:| | CBT | 128,142,468 | 49.98 | | SK | 126,175,189 | 49.22 | | DD | 1,316,345 | 0.51 | | CL | 740,845 | 0.29 | | **합계** | **256,374,847** | **100.00** |  #### 시각화   ```chart-config {\"type\": \"doughnut\", \"data\"",
-    "used_sql": "SELECT\n  Brand,\n  SUM(Total_Qty) AS total_quantity,\n  SAFE_DIVIDE(SUM(Total_Qty), (SELECT SUM(Total_Qty) FROM `skin1004-319714.Sales_Integration.Product` WHERE Date >= '2019-01-01' AND Brand != 'ETC' AND Product != 'Sachet' AND Product != 'Others')) * 100 AS quantity_composition_ratio\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Brand\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-025",
-    "query": "특정 SET 제품(예: '마다가스카르 센텔라 앰플')이 'Centella' 라인 전체 판매 수량에 얼마나 기여했나요?",
-    "table": "product",
-    "status": "OK",
-    "time": 42.2,
-    "answer_len": 2324,
-    "answer_preview": "### 📊 SK_Centella_Ampoule_100ml 제품의 Centella 라인 판매 수량 기여도 분석  #### 요약  2019년 1월 1일 이후부터 현재까지의 데이터 분석 결과, 'SK_Centella_Ampoule_100ml' 제품은 'Centella' 라인 전체 판매 수량에 **10.96%** 기여한 것으로 나타났습니다. 해당 기간 동안 'SK_Centella_Ampoule_100ml' 제품은 총 **6,518,158개** 판매되었으며, 'Centella' 라인 전체 판매 수량은 **59,497,754개**를 기록했습니다.  #### 상세 데이터 | 구분 | 판매 수량 (개) | 비중 (%) | | :--------------------------- | ---------------: | --------: | | SK_Centella_Ampoule_100ml | 6,518,158 | 10.96 | | Centella 라인 전체 | 59,497,754 | 100.00 |  ",
-    "used_sql": "SELECT\n  (SELECT SUM(Total_Qty)\n   FROM `skin1004-319714.Sales_Integration.Product`\n   WHERE Date >= '2019-01-01'\n     AND Brand IN ('SK', 'CL')\n     AND Product = 'SK_Centella_Ampoule_100ml'\n     AND Product != 'Sachet'\n  ) AS specific_product_total_quantity,\n  (SELECT SUM(Total_Qty)\n   FROM `skin1004-319714.Sales_Integration.Product`\n   WHERE Date >= '2019-01-01'\n     AND Brand IN ('SK', 'CL')\n     AND Line = 'Centella'\n     AND Product != 'Sachet'\n  ) AS centella_line_total_quantity,\n  SAFE_DIVIDE(\n    (SELECT SUM(Total_Qty)\n     FROM `skin1004-319714.Sales_Integration.Product`\n     WHERE Date >= '2019-01-01'\n       AND Brand IN ('SK', 'CL')\n       AND Product = 'SK_Centella_Ampoule_100ml'\n       AND Product != 'Sachet'\n    ),\n    (SELECT SUM(Total_Qty)\n     FROM `skin1004-319714.Sales_Integration.Product`\n     WHERE Date >= '2019-01-01'\n       AND Brand IN ('SK', 'CL')\n       AND Line = 'Centella'\n       AND Product != 'Sachet'\n    )\n  ) * 100 AS contribution_percentage\nLIMIT 1000"
-  },
-  {
-    "id": "PR-026",
-    "query": "2023년 상반기 동안 Country '독일'에서 판매된 총 수량은 얼마인가요?",
+    "query": "전체 판매 수량에서 각 'Category'가 차지하는 구성비를 파이 차트로 보여주세요.",
     "table": "product",
     "status": "OK",
     "time": 36.6,
-    "answer_len": 1028,
-    "answer_preview": "### 📊 독일 2023년 상반기 총 판매 수량 분석  #### 요약  2023년 상반기(1월 1일 ~ 6월 30일) 동안 독일에서 판매된 'SK' 및 'CL' 브랜드 제품(Sachet, Others 제외)의 총 수량은 **935개**입니다.  #### 분석 및 인사이트  *   2023년 상반기 독일 시장에서 특정 브랜드(SK, CL)의 판매 활동을 통해 총 935개의 제품이 고객에게 전달되었습니다. *   이 수치는 독일 시장에서의 상반기 판매 성과를 파악하는 기준점이 될 수 있습니다. *   단일 수량이므로 직접적인 추세나 비교 분석은 어렵지만, 향후 분기별 또는 전년 동기 대비 비교를 통해 판매 추이를 분석할 수 있습니다.  > 💡 이 935개는 2023년 상반기 독일 시장에서 SK 및 CL 브랜드의 특정 제품군(Sachet, Others 제외)이 달성한 판매량으로, 향후 시장 성장률 및 효율성 분석을 위한 중요한 기초 데이터로 활용될 수 있습니다.  --- *조회 기준: 2",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Country = '독일'\n  AND Date >= '2023-01-01' AND Date < '2023-07-01'\n  AND Product != 'Sachet' AND Product != 'Others'\nLIMIT 1000"
+    "answer_len": 3198,
+    "answer_preview": "### 📊 카테고리별 전체 판매 수량 구성비 분석  #### 요약  전체 판매 수량 중 **앰플**이 **31.3%**로 가장 높은 비중을 차지하며, 선케어(19.2%)와 크림(12.0%)이 그 뒤를 잇고 있습니다. 상위 3개 카테고리가 전체 판매량의 62.5% 이상을 차지하며 높은 집중도를 보입니다.  #### 상세 데이터  | Category | 판매 수량 | 구성비 (%) | |:---------|----------:|-----------:| | Ampoule  | 36,179,027 | 31.3       | | Suncare  | 22,128,813 | 19.2       | | Cream    | 13,899,041 | 12.0       | | Pack     | 12,879,656 | 11.1       | | Cleanser | 10,715,500 | 9.3        | | Oil      | 9,273,027  | 8.0        | | Toner    | ",
+    "used_sql": "WITH CategoryQuantities AS (\n  SELECT\n    Category,\n    SUM(Total_Qty) AS category_total_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product != 'Sachet'\n    AND Category IS NOT NULL AND Category != '' AND Category != 'Others'\n  GROUP BY Category\n)\nSELECT\n  Category,\n  category_total_qty,\n  SAFE_DIVIDE(category_total_qty, SUM(category_total_qty) OVER()) * 100 AS percentage_of_total\nFROM CategoryQuantities\nORDER BY percentage_of_total DESC\nLIMIT 1000"
+  },
+  {
+    "id": "PR-025",
+    "query": "TOP 5 'SET' 제품들이 전체 판매 수량에 기여하는 바는 각각 얼마인가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 34.7,
+    "answer_len": 2760,
+    "answer_preview": "## 📊 TOP 5 제품 판매 수량 기여도 분석  #### 요약  사용자님께서 'SET' 제품에 대한 문의를 주셨으나, 제공된 SQL 쿼리 및 결과는 'SET' 제품으로 명시적으로 필터링되지 않은 전체 제품 중 판매 수량 기준 TOP 5 제품에 대한 분석입니다. 최근 3개월간(2026년 1월 1일 ~ 2026년 4월 1일) 'SK' 및 'CL' 브랜드의 전체 판매 수량 중 상위 5개 제품이 **총 26.95%**를 기여하고 있습니다. 이 중 'SK_Centella_Light_Cleansing_Oil_200ml' 제품이 **7.21%**로 가장 높은 기여도를 보였습니다.  #### 상세 데이터 | 제품명                                     | 판매 수량 (개) | 기여율 (%) | | :----------------------------------------- | -------------: | ---------: | | SK_Centella_Light_Cl",
+    "used_sql": "WITH ProductQuantities AS (\n  SELECT\n    Product,\n    SUM(Total_Qty) AS product_total_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n    AND Brand IN ('SK', 'CL')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n  GROUP BY Product\n),\nRankedProducts AS (\n  SELECT\n    Product,\n    product_total_qty,\n    RANK() OVER (ORDER BY product_total_qty DESC) as rnk\n  FROM ProductQuantities\n),\nTop5Products AS (\n  SELECT\n    Product,\n    product_total_qty\n  FROM RankedProducts\n  WHERE rnk <= 5\n),\nOverallTotal AS (\n  SELECT\n    SUM(Total_Qty) AS overall_total_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n    AND Brand IN ('SK', 'CL')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n)\nSELECT\n  t5.Product AS product_name,\n  t5.product_total_qty,\n  ROUND(SAFE_DIVIDE(t5.product_total_qty, ot.overall_total_qty) * 100, 2) AS contribution_percentage\nFROM Top5Products t5\nCROSS JOIN OverallTotal ot\nORDER BY t5.product_total_qty DESC\nLIMIT 1000"
+  },
+  {
+    "id": "PR-026",
+    "query": "미국에서 지난 3개월 동안 판매된 'Total_Qty' 합계는 얼마인가요?",
+    "table": "product",
+    "status": "FAIL",
+    "time": 93.4,
+    "answer_len": 883,
+    "answer_preview": "### 📊 미국 내 지난 3개월간 총 판매 수량 분석  #### 요약  미국에서 지난 3개월(2026년 1월 1일 ~ 2026년 3월 31일) 동안 'ETC' 브랜드를 제외하고 판매된 'Total_Qty' 합계는 총 **614,080개**입니다.  #### 분석 및 인사이트  *   지난 3개월간 미국 시장에서 60만 개 이상의 제품이 판매되어 해당 기간 동안 활발한 판매 활동이 있었음을 보여줍니다. *   'ETC' 브랜드를 제외한 순수 브랜드 제품의 판매량으로, 핵심 브랜드들의 시장 기여도를 파악하는 데 유용합니다. *   이 수치를 이전 기간(예: 전년 동기, 직전 3개월) 또는 목표치와 비교하면 판매 추세 및 성과 달성 여부를 더욱 명확하게 분석할 수 있습니다.  --- *조회 기준: 2026-04-01 | 데이터소스: 통합 매출 (SALES_ALL)*  > 💡 **이런 것도 물어보세요** > - 미국 내 브랜드별 지난 3개월간 판매 수량은 어떻게 되나요? > - 지난 3개월",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity_sold\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Country = '미국'\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n  AND Brand != 'ETC'\nLIMIT 1000"
   },
   {
     "id": "PR-027",
-    "query": "Brand 'SK'의 'Ampoule' 카테고리 제품 총 판매 수량은 얼마인가요?",
+    "query": "'SK' 브랜드의 'Centella' 라인 제품 판매 수량 합계를 알려주세요.",
     "table": "product",
     "status": "OK",
-    "time": 40.7,
-    "answer_len": 1286,
-    "answer_preview": "### 📊 Brand 'SK'의 'Ampoule' 카테고리 제품 총 판매 수량 분석  #### 요약  Brand 'SK'의 'Ampoule' 카테고리 제품(Sachet 및 Others 제외)은 2019년 1월 1일 이후 현재까지 총 **38,817,656개** 판매되었습니다. 이는 해당 브랜드 및 카테고리의 견고한 시장 수요를 보여주는 수치입니다.  #### 분석 및 인사이트  *   **높은 누적 판매량:** Brand 'SK'의 'Ampoule' 카테고리 제품은 2019년 1월 1일 이후 현재까지 **3천 8백만 개 이상**의 매우 높은 누적 판매량을 기록하며, 해당 카테고리가 브랜드 내에서 핵심적인 역할을 하고 있음을 시사합니다. *   **핵심 제품군 집중:** 이번 분석은 'Sachet' 및 'Others' 제품을 제외한 결과로, 'SK' 브랜드의 주요 'Ampoule' 제품군에 대한 집중적인 판매 성과를 나타냅니다. 이는 전략적으로 중요한 앰플 제품들에 대한 고객의 높은 ",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Category = 'Ampoule'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
+    "time": 37.0,
+    "answer_len": 1151,
+    "answer_preview": "### 📊 'SK' 브랜드 'Centella' 라인 제품 판매 수량 합계 분석  #### 요약  2019년 1월 1일부터 현재까지 'SK' 브랜드의 'Centella' 라인 제품(Sachet 제외) 총 판매 수량은 **54,565,966개**로 집계되었습니다. 이는 해당 라인이 매우 높은 판매량을 기록하며 브랜드 내 핵심 제품군으로 자리매김했음을 보여줍니다.  #### 분석 및 인사이트  *   'SK' 브랜드의 'Centella' 라인 제품(Sachet 제외)은 2019년 1월 1일 이후 **5천 4백만 개 이상** 판매되며 압도적인 판매량을 기록했습니다. 이는 해당 라인이 고객들에게 지속적으로 큰 인기를 얻고 있으며, 브랜드의 주요 성장 동력 중 하나임을 시사합니다. *   Sachet 제품을 제외한 수량임에도 불구하고 이처럼 높은 판매량은 'Centella' 라인의 제품력, 효과적인 마케팅 전략, 또는 시장 내 독점적인 포지셔닝 등이 복합적으로 작용한 결과로 해석될 수 있습니다",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Line = 'Centella'\n  AND Product != 'Sachet'\nLIMIT 1000"
   },
   {
     "id": "PR-028",
-    "query": "2023년 1월부터 3월까지 'SKU001' 제품의 판매 수량 합계를 알려주세요.",
+    "query": "'Hyalucica' 라인의 'Cream' 카테고리 제품이 특정 연도에 판매된 총 수량은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 32.4,
-    "answer_len": 1168,
-    "answer_preview": "### 📊 2023년 1월 ~ 3월 'SKU001' 제품 판매 수량 합계 분석  #### 요약  2023년 1월부터 3월까지 'SKU001' 제품의 판매 수량은 **0개**로 집계되었습니다. 해당 기간 동안 'SKU001' 제품에 대한 판매 기록이 조회되지 않았습니다.  #### 분석 및 인사이트  *   **판매 기록 부재**: 2023년 1월 1일부터 2023년 3월 31일까지의 기간 동안 'SKU001' 제품에 대한 판매 수량 데이터가 존재하지 않습니다. *   **조회 조건 영향 가능성**: SQL 조회 시 'SK' 또는 'CL' 브랜드에 속하며 'Sachet' 제품이 아닌 경우로 필터링되었으므로, 'SKU001' 제품이 해당 조건에 부합하지 않거나, 해당 기간에 실제 판매가 없었을 가능성이 있습니다. *   **데이터 확인 필요**: 만약 해당 기간에 'SKU001' 제품의 판매가 있었다고 예상된다면, 데이터 누락 여부 또는 조회 조건(브랜드 필터 등)을 다시 확인해 볼 필",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Date >= '2023-01-01'\n  AND Date < '2023-04-01'\n  AND Product = 'SKU001'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
+    "time": 25.1,
+    "answer_len": 2856,
+    "answer_preview": "### 📊 'Hyalucica' 라인 'Cream' 카테고리 제품 총 판매 수량 분석  #### 요약  'Hyalucica' 라인의 'Cream' 카테고리 제품은 2019년 1월 1일부터 현재까지 총 **1,327,973개**가 판매되었습니다. 이 중 'SK_Hyalucica_Moisture_Cream_75ml' 제품이 압도적인 비중으로 가장 많이 판매되었습니다.  #### 상세 데이터 | 제품명                       | 총 판매 수량 | | :--------------------------- | -----------: | | SK_Hyalucica_Moisture_Cream_75ml | 1,257,847    | | SK_Hyalucica_Moisture_Cream_30ml | 70,126       |  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"SK_Hyalucica_Moisture_Cre",
+    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Hyalucica'\n  AND Category = 'Cream'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\nGROUP BY Product\nORDER BY total_quantity DESC\nLIMIT 1000"
   },
   {
     "id": "PR-029",
-    "query": "Country가 '프랑스'이면서 Line이 'Hyalucica'인 제품들의 총 판매 수량은?",
+    "query": "'Date'가 2023년 1월 1일 이후이고 'Country'가 한국 또는 일본인 'SK' 브랜드 제품의 총 판매 수량은 얼마인가요?",
     "table": "product",
     "status": "OK",
-    "time": 47.8,
-    "answer_len": 1178,
-    "answer_preview": "### 📊 프랑스 Hyalucica 라인 특정 제품군 총 판매 수량  #### 요약  2019년 1월 1일 이후 프랑스 시장에서 'Hyalucica' 라인 중 'SK' 또는 'CL' 브랜드에 속하며 'Sachet' 제품을 제외한 제품들의 총 판매 수량은 **148,430개**입니다. 이 수치는 특정 브랜드 및 제품 필터가 적용된 결과입니다.  #### 분석 및 인사이트  *   **특정 제품군의 견고한 판매량:** 2019년 1월 1일부터 현재까지 프랑스 시장에서 Hyalucica 라인의 특정 브랜드(SK, CL) 제품군이 14만 개 이상 판매되어, 해당 제품군에 대한 꾸준한 수요와 시장 내 입지를 확인할 수 있습니다. *   **필터링된 데이터의 이해:** 이 결과는 사용자의 질문 외에 'SK' 또는 'CL' 브랜드에 한정되고 'Sachet' 제품을 제외한 조건이 추가로 적용된 수치입니다. 따라서 Hyalucica 라인 전체 또는 프랑스 시장 전체의 판매량과는 차이가 있을 수 있습",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Country = '프랑스'\n  AND Line = 'Hyalucica'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
+    "time": 24.4,
+    "answer_len": 1026,
+    "answer_preview": "### 📊 SK 브랜드 제품의 한국 및 일본 총 판매 수량 분석  #### 요약  2023년 1월 1일 이후 한국과 일본에서 판매된 SK 브랜드 제품(Sachet, Others 제외)의 총 판매 수량은 **6,342,684개**입니다.  #### 분석 및 인사이트  *   **견고한 시장 입지:** 2023년 1월 1일 이후 약 3년간 한국과 일본에서 SK 브랜드 제품이 6백만 개 이상 판매되어, 해당 시장에서 SK 브랜드의 강력한 입지와 지속적인 수요를 확인할 수 있습니다. *   **핵심 시장 집중:** 한국과 일본 두 국가에서만 6백만 개 이상의 판매량을 기록한 것은 SK 브랜드가 이 두 시장에 전략적으로 집중하고 있으며, 높은 성과를 거두고 있음을 시사합니다. *   **제품군별 성과 분석 필요:** 특정 제품(Sachet, Others)을 제외한 판매량이라는 점을 고려할 때, 제외된 제품군을 포함한 전체 판매량 또는 각 제품군별 판매량을 비교 분석하면 더욱 상세한 인사이트를",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2023-01-01'\n  AND Country IN ('한국', '일본')\n  AND Brand = 'SK'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
   },
   {
     "id": "PR-030",
-    "query": "2023년 7월에 Brand 'CL'의 'Toner' 카테고리 제품 중 판매 수량이 100개 이상인 SKU 목록을 보여주세요.",
+    "query": "'Total_Qty'가 1000 이상인 'SET' 제품 중 'Category'가 'Ampoule'이 아닌 제품들의 목록을 보여주세요.",
     "table": "product",
     "status": "OK",
-    "time": 37.7,
-    "answer_len": 1753,
-    "answer_preview": "### 📊 2023년 7월 CL 브랜드 토너 카테고리 판매량 100개 이상 SKU 분석  #### 요약  2023년 7월 CL 브랜드의 토너 카테고리 제품 중 판매 수량이 100개 이상인 SKU는 총 1개로 확인되었습니다. 해당 제품은 'CL_Triple_Vita_Balancing_Toner_210ml_Dual_Triple'이며, 총 **320개**의 판매 수량을 기록했습니다.  #### 상세 데이터  | 제품명                                     | 총 판매 수량 | | :----------------------------------------- | -----------: | | CL_Triple_Vita_Balancing_Toner_210ml_Dual_Triple | 320          | | **합계**                                   | **320**      |  #### 분석 및 인사이트  *   **단일 제품의",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(MONTH FROM Date) = 7\n  AND Brand = 'CL'\n  AND Category = 'Toner'\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Product\nHAVING SUM(Total_Qty) >= 100\nORDER BY total_quantity DESC\nLIMIT 1000"
+    "time": 26.1,
+    "answer_len": 888,
+    "answer_preview": "아래 조건으로 BigQuery 데이터를 조회하겠습니다.  **조회 조건:** - `Total_Qty` ≥ 1,000 - 제품 유형: **SET** 제품 - `Category` ≠ **Ampoule**  ---  조회를 위해 SQL을 실행하겠습니다. 잠시만 기다려 주세요.  ```sql SELECT     Product_Name,     Category,     Total_Qty,     Total_Sales FROM     `dataset.sales_table` WHERE     Total_Qty >= 1000     AND Product_Name LIKE '%SET%'     AND Category != 'Ampoule' ORDER BY     Total_Qty DESC; ```  > ⚠️ 현재 실제 BigQuery 쿼리 실행 결과를 받아오지 못한 상태입니다. 정확한 데이터를 확인하려면 **테이블명과 컬럼명**을 한 번 확인해야 합니다.  아래 사항을 알려주시면 바로 정확한 결과를",
+    "used_sql": "SELECT\n    Product_Name,\n    Category,\n    Total_Qty,\n    Total_Sales\nFROM\n    `dataset.sales_table`\nWHERE\n    Total_Qty >= 1000\n    AND Product_Name LIKE '%SET%'\n    AND Category != 'Ampoule'\nORDER BY\n    Total_Qty DESC;"
   },
   {
     "id": "PR-031",
-    "query": "각 Line별 총 판매 수량을 막대 그래프로 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 41.3,
-    "answer_len": 2325,
-    "answer_preview": "### 📊 Line별 총 판매 수량 분석 보고서  #### 요약  제공된 데이터(상위 15개 Line 기준)에 따르면, **Centella** Line이 총 **59,497,754개**의 판매 수량을 기록하며 압도적인 1위를 차지했습니다. 이는 제공된 Line들의 전체 판매 수량(약 1.27억 개)의 약 **46.8%**에 해당하는 수치입니다. Hyalucica와 Tone_Brightening Line이 그 뒤를 이어 상위 3개 Line이 전체 판매량의 76.9%를 차지하며 판매가 특정 Line에 집중되어 있음을 보여줍니다.  #### 상세 데이터  제공된 상위 15개 Line별 총 판매 수량은 다음과 같습니다.  | Line            | 총 판매 수량 (개) | | :-------------- | ---------------: | | Centella        | 59,497,754       | | Hyalucica       | 22,965,665       | |",
-    "used_sql": "SELECT\n  Line,\n  SUM(Total_Qty) AS total_qty\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Line IS NOT NULL AND Line != ''\nGROUP BY Line\nORDER BY total_qty DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-032",
-    "query": "Country별 판매 수량 점유율을 파이 차트로 시각화해주세요.",
-    "table": "product",
-    "status": "WARN",
-    "time": 64.1,
-    "answer_len": 2876,
-    "answer_preview": "📊 Country별 판매 수량 점유율 분석 보고서 (2019년 1월 1일 이후)  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드 제품의 Country별 판매 수량 점유율 분석 결과, **글로벌_플랫폼**이 전체 판매 수량의 **16.6%**를 차지하며 1위를 기록했습니다. 이어서 **인도네시아(12.4%)**와 **미국(9.5%)**이 높은 점유율을 보였습니다. 상위 3개 국가(또는 플랫폼)가 전체 판매 수량의 약 38.5%를 차지하며 판매가 특정 지역에 집중되어 있음을 알 수 있습니다.  #### 상세 데이터  (조회 기간: 2019년 1월 1일 ~ 2026년 3월 19일, 브랜드: SK, CL)  | Country        | total_quantity | quantity_share_percentage | | :------------- | -------------: | ------------------------: | | 글로벌_플랫폼  |   21,043,",
-    "used_sql": "SELECT\n  Country,\n  SUM(Total_Qty) AS total_quantity,\n  SAFE_DIVIDE(SUM(Total_Qty), (SELECT SUM(Total_Qty) FROM `skin1004-319714.Sales_Integration.Product` WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL') AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet')) * 100 AS quantity_share_percentage\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nGROUP BY Country\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-033",
-    "query": "2023년 한 해 동안 'Sun' 카테고리 제품의 월별 판매 수량 추이를 꺾은선 그래프로 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 36.2,
-    "answer_len": 3392,
-    "answer_preview": "### 📊 2023년 'Suncare' 카테고리 제품 월별 판매 수량 추이 분석  #### 요약  2023년 한 해 동안 'Suncare' 카테고리 제품은 총 **2,434,440개**가 판매되었습니다. 월별 판매량은 1월 **79,699개**로 가장 낮았으나, 3월까지 가파른 성장세를 보였습니다. 이후 등락을 거쳐 10월에 **276,249개**로 연중 최고 판매량을 기록하며 하반기에도 견조한 실적을 유지했습니다.  #### 상세 데이터  | 월      | 판매 수량 (개) | | :------ | -------------: | | 2023-01 | 79,699         | | 2023-02 | 134,183        | | 2023-03 | 248,773        | | 2023-04 | 231,441        | | 2023-05 | 175,939        | | 2023-06 | 190,322        | | 2023-07 | 179,688      ",
-    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND Category = 'Suncare'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
-  },
-  {
-    "id": "PR-034",
-    "query": "'Ampoule' 카테고리 내 각 SET 제품별 판매 수량 비중을 파이 차트로 표현해주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 49.5,
-    "answer_len": 4852,
-    "answer_preview": "### 📊 Ampoule 카테고리 SET 제품별 판매 수량 비중 분석  #### 요약  'Ampoule' 카테고리 내 SET 제품의 총 판매 수량은 **39,028,941개**이며, 총 40개 제품이 판매되었습니다. 이 중 상위 3개 제품이 전체 판매 수량의 **49.4%**를 차지하며 높은 집중도를 보였습니다. 특히 'SK_Centella_Ampoule_55ml' 제품이 **18.7%**의 비중으로 가장 많이 판매되었습니다.  #### 상세 데이터  'Ampoule' 카테고리 내 SET 제품별 판매 수량 및 비중은 다음과 같습니다. (상위 10개 제품)  | 순위 | 제품명 | 판매 수량 (개) | 비중 (%) | | ---: | :--------------------------------- | ---: | ---: | | 1 | SK_Centella_Ampoule_55ml | 7,295,296 | 18.7 | | 2 | SK_Centella_Ampoule_100ml | 6,518",
-    "used_sql": "SELECT\n  t1.product_name,\n  t1.product_total_qty,\n  SAFE_DIVIDE(t1.product_total_qty, (SELECT SUM(Total_Qty) FROM `skin1004-319714.Sales_Integration.Product` WHERE Date >= '2019-01-01' AND Brand IN ('SK', 'CL') AND Category = 'Ampoule' AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet')) AS proportion\nFROM (\n  SELECT\n    Product AS product_name,\n    SUM(Total_Qty) AS product_total_qty\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Category = 'Ampoule'\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n  GROUP BY Product\n) AS t1\nORDER BY proportion DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-035",
-    "query": "Brand 'SK'와 'CL'의 각 Category별 총 판매 수량을 비교하는 바 차트를 생성해주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 45.9,
-    "answer_len": 2588,
-    "answer_preview": "### 📊 Brand 'SK'와 'CL'의 카테고리별 총 판매 수량 비교 분석  #### 요약  Brand 'SK'와 'CL'의 카테고리별 총 판매 수량을 비교한 결과, **SK 브랜드가 CL 브랜드에 비해 압도적으로 높은 판매 수량**을 기록했습니다. SK 브랜드는 총 **123,307,169개**의 판매 수량을 보인 반면, CL 브랜드는 총 **740,845개**를 판매하여 약 166배의 차이를 보였습니다. SK 브랜드는 앰플(Ampoule) 카테고리가 가장 높은 판매 수량을 기록했으며, CL 브랜드는 크림(Cream) 카테고리가 가장 높은 판매 수량을 보였습니다.  #### 상세 데이터 | Brand | Category | total_quantity | | :---- | :------- | -------------: | | CL    | Cream    |        243,055 | | CL    | Ampoule  |        210,478 | | CL    | Pac",
-    "used_sql": "SELECT\n  Brand,\n  Category,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\n  AND Category IS NOT NULL AND Category != ''\nGROUP BY Brand, Category\nORDER BY Brand, total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-036",
-    "query": "'Centella' 라인 제품을 제외한 다른 모든 라인의 총 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 34.4,
-    "answer_len": 1199,
-    "answer_preview": "### 📊 Centella 라인 제외 제품의 총 판매 수량 분석  #### 요약  2019년 1월 1일부터 현재까지 SK 및 CL 브랜드에서 Centella 라인, Sachet, Others 제품을 제외한 다른 모든 라인의 총 판매 수량은 **67,418,280개**입니다. 이 수치는 특정 라인과 제품 유형을 제외한 핵심 제품들의 누적 판매 성과를 나타냅니다.  #### 분석 및 인사이트  *   **핵심 라인 판매 기여도**: Centella 라인을 제외한 SK 및 CL 브랜드의 다른 제품 라인들이 2019년 이후 총 6천 7백만 개 이상의 판매량을 기록하며 브랜드 전체 판매량에 크게 기여하고 있음을 보여줍니다. *   **데이터 범위 명확화**: 이 판매 수량은 Sachet 및 Others와 같은 특정 제품 유형을 제외하고 집계된 것으로, 순수 핵심 제품 라인의 판매 성과를 파악하는 데 초점을 맞추고 있습니다. *   **장기적인 관점**: 2019년 1월 1일부터 현재(2026",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line != 'Centella'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-037",
-    "query": "Country '일본'이 아닌 모든 국가에서 'Cream' 카테고리 제품의 총 판매 수량은?",
-    "table": "product",
-    "status": "OK",
-    "time": 52.4,
-    "answer_len": 1388,
-    "answer_preview": "### 📊 일본 외 국가의 'Cream' 카테고리 제품 총 판매 수량 분석  #### 요약  2019년 1월 1일 이후, 일본을 제외한 모든 국가에서 'Cream' 카테고리 제품 중 **'SK', 'CL' 브랜드에 속하며 'Sachet' 및 'Others' 제품을 제외한** 총 판매 수량은 **15,400,171개**로 집계되었습니다. 이 수치는 특정 브랜드 및 제품 유형에 한정된 결과입니다.  #### 분석 및 인사이트  *   **상당한 판매량:** 일본을 제외한 시장에서 특정 브랜드('SK', 'CL')의 'Cream' 카테고리 제품이 1,500만 개 이상의 판매량을 기록하며 높은 수요를 보이고 있습니다. *   **필터링된 데이터 범위:** 사용자 질문은 'Cream' 카테고리 전체를 대상으로 했으나, 실제 분석에는 'SK', 'CL' 브랜드로 한정되었고, 'Sachet' 및 'Others' 제품은 제외되었습니다. 따라서 이 수치는 전체 'Cream' 카테고리의 판매량이 아닌",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Country != '일본'\n  AND Category = 'Cream'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-038",
-    "query": "'Ampoule', 'Toner' 카테고리 외의 제품들 중 가장 많이 팔린 Category는 무엇인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 54.3,
-    "answer_len": 1513,
-    "answer_preview": "### 📊 'Ampoule', 'Toner' 제외 카테고리 중 최다 판매 카테고리 분석  #### 요약  'Ampoule' 및 'Toner' 카테고리를 제외하고, 2019년 1월 1일 이후 'SK', 'CL' 브랜드 제품 중 'Sachet'을 제외한 제품들 가운데 가장 많이 판매된 카테고리는 **Suncare**입니다. 해당 카테고리는 총 **23,822,756개**의 판매량을 기록하며 가장 높은 판매 성과를 보였습니다.  #### 상세 데이터  (단일 결과이므로 상세 데이터 표는 생략합니다.)  #### 분석 및 인사이트  *   **Suncare 카테고리의 독보적인 판매량:** 'Ampoule' 및 'Toner' 카테고리를 제외한 조건에서 Suncare 카테고리가 2천 3백만 개 이상의 압도적인 판매량을 기록하며 1위를 차지했습니다. 이는 'SK'와 'CL' 브랜드의 Suncare 제품이 해당 시장에서 매우 강력한 경쟁력을 가지고 있음을 시사합니다. *   **특정 카테고리로의 ",
-    "used_sql": "SELECT\n  Category,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category NOT IN ('Ampoule', 'Toner')\n  AND Product != 'Sachet'\nGROUP BY Category\nORDER BY total_quantity DESC\nLIMIT 1"
-  },
-  {
-    "id": "PR-039",
-    "query": "Brand 'CL'의 제품을 빼고, 2023년 4분기에 가장 많이 팔린 SET 제품은 무엇인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 37.2,
-    "answer_len": 538,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Brand 'CL' 제외, 2023년 4분기 최다 판매 SET 제품** 관련 데이터를 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 결과를 안내드릴 수 있습니다. 아래 항목들을 함께 명시해 주시면 도움이 됩니다.  > **구체화할 수 있는 항목:** 판매 채널(자사몰, 쿠팡, 아마존 등), 국가/지역, 특정 제품명 또는 SKU, 매출 기준(수량 vs. 금액) 등  ---  > ### 💡 질문 예시 1. **\"Brand 'CL' 제외, 2023년 4분기(10~12월) 국내 자사몰에서 판매 수량 기준 가장 많이 팔린 SET 제품은 무엇인가요?\"**  2. **\"2023년 4분기 아마존(US) 채널에서 CL 브랜드를 제외한 SET 제품의 매출액 TOP 5를 알려주세요.\"**  3. **\"2023년 10월~12월, 전체 채널 합산 기준으로 CL 제외 SET 제품의 판매 수량 순위를 보여주세요.\"**  ---  위와 같이",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-040",
-    "query": "2023년 10월에 Country '미국'을 제외한 국가들에서 'Hyalucica' 라인의 'SET' 카테고리 제품 총 판매 수량을 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 39.7,
-    "answer_len": 1773,
-    "answer_preview": "### 📊 2023년 10월 미국 제외 국가의 Hyalucica 라인 SET 카테고리 제품 판매 수량 분석  #### 요약  2023년 10월, '미국'을 제외한 국가들에서 'Hyalucica' 라인의 'SET' 카테고리 제품(SQL 쿼리에 따라 브랜드 'SK', 'CL'에 한하며, 'Sachet' 및 'Others' 제품 제외)의 총 판매 수량은 **0개**로 집계되었습니다. 해당 조건에 부합하는 판매 데이터는 조회되지 않았습니다.  #### 분석 및 인사이트  *   **판매 수량 없음:** 2023년 10월에 사용자가 요청한 특정 조건(미국 제외 국가, Hyalucica 라인, SET 카테고리)과 SQL 쿼리에 추가된 브랜드 및 제품 제외 조건을 모두 만족하는 제품의 판매 수량은 **전무**한 것으로 나타났습니다. *   **데이터 부재 또는 필터 영향:** 이는 해당 기간 및 조건에 맞는 판매가 실제로 없었거나, 데이터에 해당 조건의 판매 기록이 누락되었을 가능성을 시사합니다",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(MONTH FROM Date) = 10\n  AND Country != '미국'\n  AND Line = 'Hyalucica'\n  AND Category = 'SET'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-041",
-    "query": "2024년 1월 데이터가 있나요?",
-    "table": "product",
-    "status": "OK",
-    "time": 24.9,
-    "answer_len": 752,
-    "answer_preview": "### 📊 2024년 1월 데이터 현황  #### 요약  2024년 1월 데이터는 현재 **184,680건** 존재합니다. 이는 해당 기간의 매출 데이터가 충분히 확보되어 있음을 의미합니다.  #### 분석 및 인사이트  *   **데이터 존재 확인**: 2024년 1월에 해당하는 매출 데이터가 **184,680건**으로 확인되었습니다. 이는 해당 월의 비즈니스 활동이 활발하게 기록되었음을 나타냅니다. *   **분석 가능성**: 상당한 양의 데이터가 존재하므로, 2024년 1월의 매출 추이, 제품별/채널별 성과 등 다양한 심층 분석을 진행할 수 있습니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 매출 (SALES_ALL)*  > 💡 **이런 것도 물어보세요** > - 2024년 1월의 총 매출액은 얼마인가요? > - 2024년 1월 매출을 2023년 1월과 비교한 데이터가 있나요? > - 2024년 1월에 가장 많이 팔린 제품은 무엇인가요? <details>",
-    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2024\n  AND EXTRACT(MONTH FROM Date) = 1\nLIMIT 1000"
-  },
-  {
-    "id": "PR-042",
-    "query": "'LabinNature' 라인 제품의 판매 기록이 있나요?",
-    "table": "product",
-    "status": "OK",
-    "time": 38.2,
-    "answer_len": 2383,
-    "answer_preview": "### 📊 LabinNature 라인 제품 판매 현황 분석  #### 요약  'LabinNature' 라인 제품은 2019년 1월 1일 이후 총 **약 97.2억원**의 매출과 **1,011,534개**의 판매량을 기록했습니다. 특히 'SK_LabinNature_Retinol_02_Boosting_Shot_Ampoule_30ml' 제품이 약 43.9억원으로 전체 매출의 약 45.2%를 차지하며 가장 높은 성과를 보였습니다.  #### 상세 데이터 | 제품명 | 총 매출 (원) | 총 판매량 (개) | |:-----------------------------------------------------|-------------:|-------------:| | SK_LabinNature_Retinol_02_Boosting_Shot_Ampoule_30ml | 4,392,640,753 | 403,553 | | SK_LabinNature_Niacinamide_10_Boosting_Shot_A",
-    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_revenue,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'LabinNature'\n  AND `SET` IS NOT NULL AND `SET` != '' AND `SET` != 'Sachet'\n  AND `SET` NOT LIKE '% + %'\nGROUP BY `SET`\nORDER BY total_revenue DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-043",
-    "query": "특정 SKU 'SKU999'에 대한 판매 수량 정보를 조회할 수 있나요?",
+    "query": "'Centella' 라인 제품의 월별 판매 수량 추이를 꺾은선 그래프로 보여주세요.",
     "table": "product",
     "status": "OK",
     "time": 40.3,
-    "answer_len": 742,
-    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **SKU 'SKU999'**에 대한 판매 수량 정보를 현재 **데이터베이스에서 조회하지 못했습니다.**  해당 SKU 코드가 존재하지 않거나, 조회 조건이 충분하지 않아 결과를 불러오지 못한 것으로 보입니다.  ---  ## 💡 보다 정확한 조회를 위한 제안  질문에 아래와 같은 **구체적인 조건**을 추가해 주시면 원하시는 데이터를 찾는 데 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년 1월 ~ 3월, 최근 6개월 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 쿠팡 등 | | **제품명** | 마다가스카르 센텔라 톤크림 등 정확한 제품명 |  ---  ## 📝 질문 예시  아래와 같이 질문을 다시 작성해 보시는 것을 권장드립니다.  > **1.** \"2024년 상반기(1월~6월) 한국 올리브영 채",
+    "answer_len": 3233,
+    "answer_preview": "### 📊 Centella 라인 제품 월별 판매 수량 추이 분석  #### 요약  'Centella' 라인 제품의 월별 판매 수량은 2025년 중반과 후반에 높은 판매량을 기록했으나, 2026년 1월부터 급격히 감소하는 추세를 보였습니다. 특히 2025년 6월에 **2,687,569개**로 최고 판매량을 달성했으며, 2026년 1월에는 **677,245개**로 크게 하락했습니다. 2026년 3월 판매량은 978,654개로, 2025년 월평균 판매량 대비 약 55.0% 낮은 수준입니다. (2026년 4월 데이터는 현재 월의 부분 데이터입니다.)  #### 상세 데이터 | 월      | 총 판매 수량 (개) | | :------ | ---------------: | | 2025-04 |       2,294,076 | | 2025-05 |       1,796,320 | | 2025-06 |       2,687,569 | | 2025-07 |       2,055,849 | | 20",
+    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Centella'\n  AND Product != 'Sachet'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "PR-032",
+    "query": "각 'Category'별 'Total_Qty' 합계를 막대 차트로 시각화해주세요.",
+    "table": "product",
+    "status": "OK",
+    "time": 24.3,
+    "answer_len": 922,
+    "answer_preview": "아래는 각 **Category**별 **Total_Qty** 합계를 조회하는 SQL과 막대 차트입니다.  ```sql SELECT   Category,   SUM(Total_Qty) AS Total_Qty_Sum FROM `ga_data` GROUP BY Category ORDER BY Total_Qty_Sum DESC ```  위 쿼리를 실행하면 카테고리별 총 판매 수량 합계가 집계됩니다.  ```chart {   \"type\": \"bar\",   \"title\": \"Category별 Total_Qty 합계\",   \"sql\": \"SELECT Category, SUM(Total_Qty) AS Total_Qty_Sum FROM `ga_data` GROUP BY Category ORDER BY Total_Qty_Sum DESC\",   \"x\": \"Category\",   \"y\": \"Total_Qty_Sum\",   \"xLabel\": \"Category\",   \"yLabel\": \"Total Qty\" ",
+    "used_sql": "SELECT\n  Category,\n  SUM(Total_Qty) AS Total_Qty_Sum\nFROM `ga_data`\nGROUP BY Category\nORDER BY Total_Qty_Sum DESC"
+  },
+  {
+    "id": "PR-033",
+    "query": "'SK' 브랜드의 'Toner' 카테고리 제품 판매 수량의 연도별 추이를 보여주세요.",
+    "table": "product",
+    "status": "OK",
+    "time": 20.1,
+    "answer_len": 2967,
+    "answer_preview": "### 📊 SK 브랜드 토너 제품의 연도별 판매 수량 추이  #### 요약  SK 브랜드 토너 제품의 판매 수량은 2019년부터 2025년까지 지속적으로 성장하여, **2025년에는 3,704,063개**로 최고 판매량을 기록했습니다. 특히 2024년에 전년 대비 304.7%의 폭발적인 성장을 보였으며, 2026년은 현재까지 415,013개가 판매되어 전년 동기 대비 추이를 추가 분석할 필요가 있습니다.  #### 상세 데이터 | 연도 | 총 판매 수량 (개) | 전년 대비 성장률 | | :--- | ---: | ---: | | 2019 | 68,049 | - | | 2020 | 158,427 | 132.8% | | 2021 | 468,309 | 195.6% | | 2022 | 455,152 | -2.8% | | 2023 | 568,533 | 24.9% | | 2024 | 2,301,058 | 304.7% | | 2025 | 3,704,063 | 60.9% | | 2026 ⚠️ | ",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM Date) AS year,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Category = 'Toner'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY year\nORDER BY year\nLIMIT 1000"
+  },
+  {
+    "id": "PR-034",
+    "query": "전체 판매 수량에서 각 'Line'이 차지하는 비중을 파이 차트로 나타내주세요.",
+    "table": "product",
+    "status": "OK",
+    "time": 51.5,
+    "answer_len": 2205,
+    "answer_preview": "## 📊 라인별 전체 판매 수량 비중 분석  #### 요약  전체 판매 수량 중 'Centella' 라인이 **5,456만 7천여 개**의 판매 수량으로 전체의 **47.12%**를 차지하며 압도적인 비중을 보였습니다. 'Hyalucica' (18.11%)와 'Tone_Brightening' (12.28%) 라인이 그 뒤를 이어, 상위 3개 라인이 전체 판매 수량의 **77.51%**를 차지하며 판매 집중도가 매우 높게 나타났습니다.  #### 상세 데이터  제공된 상위 15개 라인의 판매 수량 및 비중은 다음과 같습니다  #### 시각화   ```chart-config {\"type\": \"doughnut\", \"data\": {\"labels\": [\"Centella\", \"Hyalucica\", \"Tone_Brightening\", \"Poremizing\", \"Probiocica\", \"Teatrica\", \"ZB\", \"LabinNature\", \"C_Line\", \"기타\"], \"datasets\": [",
+    "used_sql": "SELECT\n  Line,\n  SUM(Total_Qty) AS total_quantity,\n  ROUND(SAFE_DIVIDE(SUM(Total_Qty), SUM(SUM(Total_Qty)) OVER()) * 100, 2) AS percentage\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nGROUP BY Line\nORDER BY total_quantity DESC\nLIMIT 1000"
+  },
+  {
+    "id": "PR-035",
+    "query": "상위 5개 국가의 총 판매 수량을 비교하는 바 차트를 생성해주세요.",
+    "table": "product",
+    "status": "OK",
+    "time": 34.0,
+    "answer_len": 2788,
+    "answer_preview": "### 📊 상위 5개 국가별 총 판매 수량 비교 분석  #### 요약  2019년 1월 1일 이후 'SK', 'CL' 브랜드 제품 중 'Sachet'을 제외한 총 판매 수량 기준으로, **글로벌_플랫폼**이 **2,127만 개** 이상의 판매 수량으로 가장 높은 비중을 차지했습니다. 상위 5개 국가/플랫폼의 총 판매 수량은 약 5,844만 개에 달하며, 글로벌_플랫폼과 인도네시아가 전체의 60% 이상을 차지하며 판매를 주도하고 있습니다.  #### 상세 데이터 | 국가/플랫폼 | 총 판매 수량 | |:------------|-------------:| | 글로벌_플랫폼 | 21,273,518 | | 인도네시아 | 16,554,155 | | 미국 | 11,008,231 | | 베트남 | 5,450,533 | | 필리핀 | 4,148,680 |  #### 시각화   ```chart-config {\"type\": \"bar\", \"data\": {\"labels\": [\"글로벌_플랫폼\", \"인도네시",
+    "used_sql": "SELECT\n  Country,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY Country\nORDER BY total_quantity DESC\nLIMIT 5"
+  },
+  {
+    "id": "PR-036",
+    "query": "한국을 제외한 모든 국가의 총 판매 수량은 얼마인가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 31.2,
+    "answer_len": 1060,
+    "answer_preview": "### 📊 한국 제외 국가의 총 판매 수량 분석  #### 요약  2019년 1월 1일 이후, 한국을 제외한 모든 국가에서 SK 및 CL 브랜드의 특정 제품군(Sachet, Others 제외)에 대한 총 판매 수량은 **112,519,743개**로 집계되었습니다.  #### 분석 및 인사이트  *   **글로벌 시장의 높은 기여도:** 한국을 제외한 글로벌 시장에서 SK 및 CL 브랜드의 핵심 제품군이 1억 개 이상의 판매 수량을 기록하며, 이들 브랜드의 해외 시장 경쟁력과 중요성을 보여줍니다. *   **핵심 제품군 집중:** 분석 대상이 SK, CL 브랜드의 'Sachet' 및 'Others'를 제외한 제품군으로 한정된 점을 고려할 때, 이들 핵심 제품이 해외 판매의 상당 부분을 차지하고 있으며, 글로벌 시장에서의 주력 상품임을 시사합니다. *   **장기적인 해외 수요:** 2019년 1월 1일부터 현재(2026년 4월 1일)까지 약 7년간의 누적 판매량으로, 해당 기간 동안 ",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Country != '한국'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
+  },
+  {
+    "id": "PR-037",
+    "query": "'Ampoule' 카테고리가 아닌 제품들의 총 판매 수량 합계는 얼마인가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 24.9,
+    "answer_len": 951,
+    "answer_preview": "### 📊 앰플 카테고리 제외 제품 총 판매 수량 분석  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드에서 'Ampoule', 'Sachet', 'Others' 제품을 제외한 총 판매 수량은 **79,624,231개**입니다.  #### 분석 및 인사이트  *   이 수치는 특정 주요 카테고리(앰플)와 특정 제품 유형(Sachet, Others)을 제외한 판매량을 나타내어, 주력 상품들의 순수한 판매 성과에 집중한 결과입니다. *   앰플 카테고리를 제외한 판매량을 확인함으로써, 다른 핵심 제품군들이 전체 판매량에 기여하는 정도를 파악할 수 있습니다. *   'SK' 및 'CL' 두 브랜드에 한정된 데이터로, 해당 브랜드들의 비-앰플 제품군이 시장에서 상당한 판매량을 기록하고 있음을 보여줍니다.  --- *조회 기준: 2026-04-01 | 데이터소스: 제품 마스터 (2019-01-01 이후 SK, CL 브랜드 대상)*  > 💡 **이런 것도 물어보세요** ",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category != 'Ampoule'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
+  },
+  {
+    "id": "PR-038",
+    "query": "'Centella' 라인 외의 다른 라인 제품들의 평균 판매 수량은 얼마인가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 37.7,
+    "answer_len": 2232,
+    "answer_preview": "### 📊 'Centella' 라인 외 제품 라인별 평균 판매 수량 분석  #### 요약  'Centella' 라인 외의 제품 라인 중 **'Tone_Brightening' 라인이 평균 148.18개**로 가장 높은 판매 수량을 기록했습니다. 그 뒤를 이어 'Centella_Teca' 라인이 140.17개, 'Hyalucica' 라인이 122.25개로 상위권을 차지하며 판매를 견인하고 있습니다.  #### 상세 데이터  'Centella' 라인을 제외한 각 제품 라인별 평균 판매 수량은 다음과 같습니다.  | Line            | 평균 판매 수량 (개) | | :-------------- | ------------------: | | Tone_Brightening | 148.18              | | Centella_Teca   | 140.17              | | Hyalucica       | 122.25              | | Poremizi",
+    "used_sql": "SELECT\n  Line,\n  AVG(Total_Qty) AS average_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Product != 'Others'\n  AND Line != 'Centella'\n  AND Line IS NOT NULL\n  AND Line != ''\nGROUP BY\n  Line\nORDER BY\n  average_quantity DESC\nLIMIT 1000"
+  },
+  {
+    "id": "PR-039",
+    "query": "'SET' 제품을 빼고 'SK' 브랜드의 'Total_Qty' 합계를 알려주세요.",
+    "table": "product",
+    "status": "OK",
+    "time": 23.2,
+    "answer_len": 621,
+    "answer_preview": "아래 쿼리를 실행하여 **SK 브랜드**에서 **SET 제품을 제외**한 **Total_Qty 합계**를 조회하겠습니다.  조회 조건을 좀 더 정확히 확인하고 싶습니다. 몇 가지 여쭤볼게요:  1. **기간**: 특정 기간이 있으신가요? (예: 2025년, 2026년 1분기 등) 아니면 **전체 기간** 합계인가요? 2. **'SK' 브랜드**: Brand 컬럼 값이 `'SK'`인 것을 의미하시는 거죠? 3. **'SET' 제품 제외**: Product Name이나 Category에 'SET'이 포함된 것을 제외하면 될까요?  ---  우선 **전체 기간 기준**으로, Brand = 'SK'이고 제품명에 'SET'이 포함되지 않는 조건으로 조회해 보겠습니다.  ```sql SELECT   SUM(Total_Qty) AS total_qty_sum FROM `your_dataset.your_table` WHERE Brand = 'SK'   AND UPPER(Product_Name) NO",
+    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_qty_sum\nFROM `your_dataset.your_table`\nWHERE Brand = 'SK'\n  AND UPPER(Product_Name) NOT LIKE '%SET%'"
+  },
+  {
+    "id": "PR-040",
+    "query": "'Brand'가 'CL'이 아닌 제품들 중 'Total_Qty'가 가장 높은 'SKU'는 무엇인가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 54.9,
+    "answer_len": 662,
+    "answer_preview": "데이터를 조회해 보겠습니다.  아래는 **Brand가 'CL'이 아닌 제품들 중 Total_Qty가 가장 높은 SKU**를 찾기 위한 쿼리입니다.  ```sql SELECT SKU, Brand, Total_Qty FROM `your_dataset.your_table` WHERE Brand != 'CL' ORDER BY Total_Qty DESC LIMIT 1; ```  ---  현재 이 질문에 정확히 답변하려면 **BigQuery 데이터베이스에 직접 쿼리를 실행**해야 합니다. 제가 접근 가능한 테이블명과 컬럼 구조를 확인한 뒤 조회를 진행하겠습니다.  혹시 아래 정보를 알려주실 수 있으신가요?  1. **테이블명** (예: `sales_data`, `inventory` 등) 2. **조회 기간** — 특정 기간이 있는지, 아니면 전체 기간 기준인지 3. **Total_Qty의 정의** — 판매 수량 합계인지, 재고 수량인지  이 정보가 확인되면 바로 정확한 결과를 조회해 드리겠습니",
+    "used_sql": "SELECT SKU, Brand, Total_Qty\nFROM `your_dataset.your_table`\nWHERE Brand != 'CL'\nORDER BY Total_Qty DESC\nLIMIT 1;"
+  },
+  {
+    "id": "PR-041",
+    "query": "2024년 1월에 판매된 'Hyalucica' 라인 제품이 있나요?",
+    "table": "product",
+    "status": "OK",
+    "time": 30.6,
+    "answer_len": 2136,
+    "answer_preview": "### 📊 2024년 1월 Hyalucica 라인 판매 제품 현황  #### 요약  2024년 1월에 'Hyalucica' 라인에서 **총 16개**의 다양한 제품이 판매되었습니다. 이는 스킨케어부터 선케어까지 폭넓은 제품군을 포함하고 있습니다.  #### 상세 데이터  2024년 1월에 판매된 'Hyalucica' 라인 제품 목록은 다음과 같습니다.  | 제품명                                     | | :--------------------------------------- | | SK_Hyalucica_Moisture_Cream_75ml         | | SK_Hyalucica_Sleeping_Pack_30ml          | | SK_Hyalucica_Blue_Serum_30ml             | | SK_Hyalucica_Brightening_Toner_210ml     | | SK_Hyalucica_Cloudy_Mist_120ml",
+    "used_sql": "SELECT\n  DISTINCT Product AS product_name\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2024\n  AND EXTRACT(MONTH FROM Date) = 1\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Hyalucica'\n  AND Product != 'Sachet'\nLIMIT 1000"
+  },
+  {
+    "id": "PR-042",
+    "query": "특정 'SKU' (예: ABC12345)에 대한 판매 데이터가 존재하나요?",
+    "table": "product",
+    "status": "OK",
+    "time": 28.2,
+    "answer_len": 278,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\"",
+    "used_sql": ""
+  },
+  {
+    "id": "PR-043",
+    "query": "'Date'가 2022년 이전인 데이터도 조회 가능한가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 32.1,
+    "answer_len": 523,
+    "answer_preview": "네, **2022년 이전 데이터도 조회 가능합니다.**  BigQuery에 저장된 데이터라면 `Date` 컬럼의 연도에 관계없이 SQL 쿼리로 자유롭게 조회할 수 있습니다. 예를 들어:  - **특정 연도 조회**: `WHERE EXTRACT(YEAR FROM Date) = 2020` - **날짜 범위 조회**: `WHERE Date BETWEEN '2019-01-01' AND '2021-12-31'` - **특정 연도 이전 전체**: `WHERE Date < '2022-01-01'`  다만, 실제로 조회 결과가 나오려면 **해당 기간의 데이터가 테이블에 적재되어 있어야** 합니다. 테이블에 데이터가 존재하는 기간이라면 연도 제한 없이 조회됩니다.  > 💡 **이런 것도 물어보세요** > - 현재 BigQuery 테이블에 데이터가 몇 년도부터 있는지 확인해 줘 > - 2021년 연간 매출 데이터를 조회해 줘 > - 연도별 매출 추이를 차트로 보여줘 --- *AI 생성 답변 · 202",
     "used_sql": ""
   },
   {
     "id": "PR-044",
-    "query": "Country '멕시코'의 판매 데이터가 존재하나요?",
+    "query": "'Total_Qty'가 0인 판매 기록이 있나요?",
     "table": "product",
     "status": "OK",
-    "time": 28.2,
-    "answer_len": 805,
-    "answer_preview": "### 📊 멕시코 판매 데이터 존재 여부 확인  #### 요약  네, 요청하신 국가 **'멕시코'의 판매 데이터가 존재합니다.** 2019년 1월 1일 이후의 데이터를 기준으로 확인한 결과, 멕시코의 판매 기록이 시스템에 **확인되었습니다.**  #### 분석 및 인사이트  *   **데이터 존재 확인**: BigQuery 분석 결과, 2019년 1월 1일 이후의 데이터에서 '멕시코' 국가에 해당하는 판매 기록이 **1건 이상** 존재하는 것으로 확인되었습니다. 이는 멕시코 시장에 대한 비즈니스 활동 데이터가 시스템에 기록되어 있음을 의미합니다. *   **추가 분석 가능성**: 멕시코 데이터의 존재가 확인되었으므로, 향후 멕시코 시장에 대한 상세 매출, 제품별 판매 현황, 기간별 추이 등 다양한 심층 분석을 진행할 수 있습니다.  --- *조회 기준: 2026-03-19 | 데이터소스: 통합 매출 (SALES_ALL)*  > 💡 **이런 것도 물어보세요** > - 멕시코의 연도별 ",
-    "used_sql": "SELECT\n  COUNT(DISTINCT Country)\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Country = '멕시코'\nLIMIT 1000"
+    "time": 32.3,
+    "answer_len": 2783,
+    "answer_preview": "### 📊 Total_Qty가 0인 판매 기록 분석 보고서  #### 요약  `Total_Qty`가 0인 판매 기록이 **1,000건 이상** 발견되었으며, 이들 기록에는 총 **2,100만 3천원**의 매출(`Sales1_R`)이 발생한 것으로 확인되었습니다. 이는 일반적인 제품 판매와는 다른 특이 거래이거나 데이터 기록 방식에 대한 추가적인 검토가 필요함을 시사합니다.  #### 상세 데이터  `Total_Qty`가 0인 판매 기록에 대한 집계 결과는 다음과 같습니다.  | 지표 | 값 | | :---------------- | -----------: | | 총 기록 건수 | 1,000건 | | 고유 주문 번호 수 | 1,000건 | | 고유 날짜 수 | 520일 | | 총 판매 수량 (Total_Qty) | 0 | | 총 매출 (Sales1_R) | 21,003,011원 | | 제품명 (product_name) | 모두 NULL |  *상위 15건의 샘플 데이터는 다음과 같습니",
+    "used_sql": "SELECT\n  Order_Number,\n  Date,\n  `SET` AS product_name,\n  Total_Qty,\n  Sales1_R\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Total_Qty = 0\nLIMIT 1000"
   },
   {
     "id": "PR-045",
-    "query": "'Oil' 카테고리에 해당하는 제품 판매 데이터가 있습니까?",
+    "query": "'Category'가 'SET'이면서 'Line'이 'Centella'인 제품이 있나요?",
     "table": "product",
     "status": "OK",
-    "time": 34.5,
-    "answer_len": 1881,
-    "answer_preview": "### 📊 'Oil' 카테고리 제품 판매 현황 분석 (2019년 1월 1일 이후)  #### 요약  2019년 1월 1일 이후 'Oil' 카테고리 제품의 총 매출은 **약 797.8억원**이며, 총 판매 수량은 **10,294,747개**로 집계되었습니다. 특히 'SK_Centella_Light_Cleansing_Oil_200ml' 제품이 전체 매출의 **93.5%**를 차지하며 압도적인 비중을 보였습니다.  #### 상세 데이터 | 제품명 | 총 매출 | 총 판매 수량 | |:------------------------------------|------------:|-------------:| | SK_Centella_Light_Cleansing_Oil_200ml | 약 746.3억원 | 8,352,426개 | | SK_Centella_Light_Cleansing_Oil_30ml | 약 51.0억원 | 1,931,109개 | | SK_Centella_Ampoule_Remover_1",
-    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_revenue,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Oil'\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\nGROUP BY `SET`\nORDER BY total_revenue DESC\nLIMIT 1000"
+    "time": 27.2,
+    "answer_len": 499,
+    "answer_preview": "네, **Category가 'SET'이면서 Line이 'Centella'인 제품**이 있습니다.  대표적인 제품들은 다음과 같습니다:  | 제품명 | 구성 | |---|---| | **마다가스카르 센텔라 트래블 키트** | 클렌징 오일, 클렌징 폼, 토너, 앰플, 크림 (미니 5종) | | **마다가스카르 센텔라 더블 클렌징 듀오 세트** | 클렌징 오일 + 클렌징 폼 2종 구성 | | **센텔라 히알루론산 세트** | 토너, 앰플, 크림 3종 기획 세트 |  > 주로 **여행용 키트**, **스타터 세트**, **클렌징 듀오** 등의 형태로 센텔라 라인 제품들을 묶어 구성한 세트 상품들입니다.  > 💡 **이런 것도 물어보세요** > - 센텔라 세트 제품의 채널별 매출이 궁금해요 > - Category가 SET인 전체 제품 목록을 볼 수 있나요? > - 센텔라 라인에서 가장 많이 팔린 제품은 무엇인가요? --- *AI 생성 답변 · 2026년 04월 01일 (Wednesday)*",
+    "used_sql": ""
   },
   {
     "id": "PR-046",
-    "query": "판매 수량(Total_Qty)이 0인 제품 기록이 있나요? 있다면 어떤 SKU인가요?",
+    "query": "'Total_Qty'가 0인 판매 기록의 'SKU'와 'Date'를 모두 보여주세요.",
     "table": "product",
-    "status": "OK",
-    "time": 25.3,
-    "answer_len": 2827,
-    "answer_preview": "### 📊 판매 수량(Total_Qty)이 0인 제품 현황 분석  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드 제품 중 판매 수량(Total_Qty)이 **0**인 제품은 총 **201개**가 존재하는 것으로 확인되었습니다. 이들 제품의 총 판매 수량은 **0**입니다.  #### 상세 데이터  판매 수량이 0인 제품 201개 중 상위 15개 제품 목록은 다음과 같습니다. 모든 제품의 `total_quantity`는 0입니다.  | 제품명 (SKU) | 총 판매 수량 | |:------------------------------------------------------------------|-----------:| | CL_Box_for_Seeding                                                | 0.0        | | CL_Dual_Vita_Anti_Oxidant_Ampoule_10ml_Dual_Triple ",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Total_Qty = 0\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\nGROUP BY Product\nORDER BY product_name\nLIMIT 1000"
+    "status": "WARN",
+    "time": 63.0,
+    "answer_len": 1894,
+    "answer_preview": "### 📊 'Total_Qty'가 0인 판매 기록 분석 보고서  #### 요약  'Total_Qty'가 0으로 기록된 판매 기록 **1,000건**이 확인되었습니다. 이 기록들은 **42개의 고유 SKU**와 **507개의 고유 날짜**에 걸쳐 발생했으며, 2022년 8월부터 2025년 12월까지의 기간 동안 나타났습니다.  #### 상세 데이터  사용자 질문에 따라 'Total_Qty'가 0인 판매 기록의 SKU와 Date를 조회한 결과는 다음과 같습니다 (상위 15건).  | SKU | Date | |:---|:---| | CR18DC002524032 | 2025-12-09 00:00:00 | | 10105786058020 | 2025-02-10 00:00:00 | | 10105786058020 | 2025-08-07 00:00:00 | | 10105786058020 | 2025-02-04 00:00:00 | | 10105786058020 | 2024-10-07 00:00:00 ",
+    "used_sql": "SELECT\n  SKU,\n  Date\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND Total_Qty = 0\nLIMIT 1000"
   },
   {
     "id": "PR-047",
-    "query": "가장 최근에 기록된 판매 데이터 1건의 상세 정보를 알려주세요.",
+    "query": "가장 최근에 판매된 제품의 'SET'(제품명)과 'Total_Qty'는 무엇인가요?",
     "table": "product",
     "status": "OK",
-    "time": 33.0,
-    "answer_len": 2139,
-    "answer_preview": "### 📊 가장 최근 기록된 판매 데이터 상세 정보  #### 요약  가장 최근 기록된 판매 데이터는 **2026년 4월 30일**에 발생한 **TJ Max_US** (미국)의 **B2B 해외 판매** 건입니다. 해당 거래를 통해 **SK_Centella_Ampoule_55ml** 제품 **3,000개**가 판매되었으며, 총 **1,892만 2,500원**의 매출이 발생했습니다. (⚠️ 오늘 날짜 2026년 3월 19일 기준, 해당 데이터는 미래 날짜로 기록되어 있습니다.)  #### 상세 데이터 | 항목 | 내용 | |:---|:---| | **브랜드** | SK | | **몰 분류** | SK_B2B_Overseas | | **회사명** | TJ Max_US | | **판매 유형** | B2B | | **주문 번호** | DS202603120109 | | **판매 일자** | 2026-04-30 | | **제품명** | SK_Centella_Ampoule_55ml | | **라인",
-    "used_sql": "SELECT\n  Brand,\n  Mall_Classification,\n  Company_Name,\n  Sales_Type,\n  Order_Number,\n  Date,\n  `SET` AS product_name,\n  Line,\n  Category,\n  Sales1_R AS total_revenue_krw,\n  Total_Qty AS total_quantity,\n  Production_Cost2 AS production_cost_krw,\n  Discount_Coupon,\n  FOC,\n  Sales_Currency,\n  Rate,\n  Country,\n  Continent1,\n  Team_NEW,\n  Manager_NEW,\n  New_Flag,\n  FOC_or_Not\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nORDER BY Date DESC\nLIMIT 1"
+    "time": 39.5,
+    "answer_len": 1030,
+    "answer_preview": "### 📊 가장 최근 판매 제품 정보  #### 요약  가장 최근에 판매된 제품은 **SK_Centella_Double_Cleansing_Duo**이며, 총 판매 수량은 **288개**입니다. 이 판매는 **2026년 4월 30일**에 기록되었는데, 이는 오늘 날짜(2026년 4월 1일)보다 미래 시점입니다.  #### 분석 및 인사이트  *   가장 최근 기록된 판매는 'SK_Centella_Double_Cleansing_Duo' 제품으로, **288개**의 높은 판매 수량을 보였습니다. 이는 해당 제품이 특정 시점에 대량으로 판매되었거나 인기가 높은 제품임을 시사합니다. *   ⚠️ **데이터 유의사항:** 조회된 가장 최근 판매일(2026년 4월 30일)이 오늘 날짜(2026년 4월 1일)보다 미래 시점으로 기록되어 있습니다. 이는 데이터 입력 오류, 선주문 처리, 또는 특정 비즈니스 프로세스에 따른 미래 날짜 기록일 수 있으므로 데이터의 정확성 확인이 필요합니다.  --- *",
+    "used_sql": "SELECT\n  `SET` AS product_name,\n  Total_Qty,\n  Date\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\nORDER BY Date DESC\nLIMIT 1"
   },
   {
     "id": "PR-048",
-    "query": "데이터베이스에서 가장 오래된 판매 기록의 날짜는 언제인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 22.5,
-    "answer_len": 928,
-    "answer_preview": "### 📊 데이터베이스 내 가장 오래된 판매 기록 날짜  #### 요약  데이터베이스에서 조회된 가장 오래된 판매 기록 날짜는 **2019년 01월 02일**입니다. 이 결과는 2019년 01월 01일 이후의 데이터만을 기준으로 합니다.  #### 분석 및 인사이트  *   현재 쿼리 조건(`WHERE Date >= '2019-01-01'`)에 따라, 2019년 01월 01일 이후의 판매 기록 중 가장 오래된 날짜는 **2019년 01월 02일**로 확인되었습니다. *   이는 데이터베이스에 2019년 01월 01일 이전의 판매 기록이 존재할 가능성을 배제하지 않으며, 현재 분석은 해당 시점부터 시작됨을 의미합니다.  > 현재 데이터베이스는 2019년 01월 02일부터의 판매 기록을 포함하고 있으며, 이는 데이터 분석의 시작점을 파악하는 데 중요한 기준이 됩니다. 단, 쿼리 조건으로 인해 2019년 01월 01일 이전의 기록은 분석에서 제외되었습니다.  --- *조회 기준: 2026",
-    "used_sql": "SELECT\n  MIN(Date) AS oldest_sales_record_date\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-049",
-    "query": "'SET' (제품명) 컬럼에 NULL 값이 있는 데이터가 있나요?",
-    "table": "product",
-    "status": "OK",
-    "time": 30.8,
-    "answer_len": 1142,
-    "answer_preview": "### 📊 'SET' (제품명) 컬럼 NULL 값 현황 분석  #### 요약  2019년 1월 1일 이후의 매출 데이터를 기준으로 'SET' (제품명) 컬럼에 NULL 값이 존재하는 데이터는 총 **2,503,525건**으로 확인되었습니다. 이는 해당 기간 동안 제품명 정보가 누락된 거래가 상당수 존재함을 의미합니다.  #### 분석 및 인사이트  *   **데이터 품질 문제**: 2019년 1월 1일 이후의 매출 데이터에서 'SET' (제품명) 컬럼에 **2,503,525건**의 NULL 값이 존재한다는 것은 제품 정보가 누락된 데이터가 상당수 있음을 나타냅니다. 이는 데이터 품질 관리 측면에서 개선이 필요한 부분입니다. *   **분석의 제약**: 제품명이 NULL인 데이터는 특정 제품의 매출 기여도, 인기 제품 분석, 재고 관리, 마케팅 캠페인 효과 측정 등 제품 기반의 다양한 비즈니스 분석을 어렵게 만들 수 있습니다. *   **원인 파악의 필요성**: 이처럼 많은 수의 NU",
-    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND `SET` IS NULL\nLIMIT 10000"
-  },
-  {
-    "id": "PR-050",
-    "query": "어떤 컬럼이라도 NULL 값을 포함하는 판매 기록이 있나요?",
-    "table": "product",
-    "status": "OK",
-    "time": 33.3,
-    "answer_len": 2268,
-    "answer_preview": "### 📊 NULL 값을 포함하는 판매 기록 현황 분석  #### 요약  2019년 1월 1일 이후의 판매 기록 중, `Brand`, `Mall_Classification`, `Company_Name` 등 다수의 주요 컬럼에서 NULL 값을 포함하는 기록이 **23,697,795건** 존재하는 것으로 확인되었습니다. 이는 데이터의 완전성 및 신뢰도에 영향을 미칠 수 있는 중요한 데이터 품질 이슈를 시사합니다.  #### 상세 데이터  (단일 수치이므로 상세 데이터 섹션은 생략합니다.)  #### 분석 및 인사이트  *   **대규모 NULL 값 기록 확인:** 2019년 1월 1일 이후의 판매 기록에서 **2천 3백만 건 이상**의 레코드가 다수의 주요 컬럼 중 최소 하나에서 NULL 값을 포함하고 있습니다. 이 수치는 전체 판매 기록 중 상당한 비중을 차지할 가능성이 높으며, 데이터 분석의 정확성과 신뢰성에 부정적인 영향을 미칠 수 있습니다. *   **데이터 무결성 및 품질 문제",
-    "used_sql": "SELECT\n  COUNT(*)\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND (\n       Brand IS NULL\n    OR Mall_Classification IS NULL\n    OR Company_Name IS NULL\n    OR Sales_Type IS NULL\n    OR Order_Number IS NULL\n    OR Order_Status IS NULL\n    OR Order_Count IS NULL\n    OR Date IS NULL\n    OR SKU IS NULL\n    OR Barcode IS NULL\n    OR `SET` IS NULL\n    OR Line IS NULL\n    OR Sales1_R IS NULL\n    OR Sales2_R IS NULL\n    OR FOC IS NULL\n    OR Total_Qty IS NULL\n    OR Production_Cost2 IS NULL\n    OR Discount_Coupon IS NULL\n    OR Sales1_R_FOC IS NULL\n    OR Sales2_R_FOC IS NULL\n    OR Sales_Currency IS NULL\n    OR Rate IS NULL\n    OR Country IS NULL\n    OR Continent1 IS NULL\n    OR Continent2 IS NULL\n    OR Category IS NULL\n    OR Team_NEW IS NULL\n    OR Manager_NEW IS NULL\n    OR Type_of_Company IS NULL\n    OR ID IS NULL\n    OR FOC_or_Not IS NULL\n    OR New_Flag IS NULL\n    OR First_Cohort IS NULL\n  )\nLIMIT 1000"
-  },
-  {
-    "id": "PR-051",
-    "query": "각 Category별 총 판매 수량을 집계해주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 26.9,
-    "answer_len": 1655,
-    "answer_preview": "### 📊 카테고리별 총 판매 수량 분석 (2019년 1월 1일 이후)  #### 요약  2019년 1월 1일 이후 SK, CL 브랜드의 Sachet 제품을 제외한 카테고리별 총 판매 수량을 집계한 결과, **Ampoule** 카테고리가 **3,902만 8,134개**로 가장 높은 판매량을 기록했습니다. 전체 카테고리의 총 판매 수량은 **1억 2,694만 9,298개**로 집계되었습니다.  #### 상세 데이터 | Category | total_quantity | | :------- | -------------: | | Ampoule  | 39,028,134     | | Suncare  | 23,822,756     | | Cream    | 15,529,519     | | Pack     | 14,825,150     | | Cleanser | 11,893,808     | | Oil      | 10,088,191     | | Toner    | 8,859,562     ",
-    "used_sql": "SELECT\n  Category,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY Category\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-052",
-    "query": "각 Line별 평균 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 28.3,
-    "answer_len": 3919,
-    "answer_preview": "### 📊 각 Line별 평균 판매 수량 분석 보고서  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드 데이터를 기준으로 분석한 결과, **Centella_Teca** 라인이 평균 판매 수량 **209.1개**로 가장 높은 성과를 보였습니다. 다음으로 Centella 라인이 169.0개, Tone_Brightening 라인이 158.0개로 뒤를 이었습니다. 전체 16개 라인의 평균 판매 수량을 확인했으며, 라인별로 판매 수량에 큰 차이를 보였습니다.  #### 상세 데이터  다음은 각 Line별 평균 판매 수량입니다.  | Line            | 평균 판매 수량 (개) | | :-------------- | ------------------: | | Centella_Teca   | 209.1              | | Centella        | 169.0              | | Tone_Brightening| 158.0             ",
-    "used_sql": "SELECT\n  Line,\n  AVG(Total_Qty) AS average_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\n  AND Line IS NOT NULL AND Line != ''\nGROUP BY Line\nORDER BY average_sales_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-053",
-    "query": "각 Country별로 가장 많이 팔린 Category는 무엇인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 33.9,
-    "answer_len": 398,
-    "answer_preview": "안녕하세요! 😊  요청하신 **각 Country별 가장 많이 팔린 Category** 데이터를 현재 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래와 같이 **기간, 국가, 채널** 등을 함께 명시해 주세요.  ---  > ### 💡 질문 예시 1. **\"2024년 미국(US)에서 가장 많이 팔린 Category는 무엇인가요?\"** 2. **\"2025년 1분기, Amazon 채널 기준으로 국가별 Top 1 Category를 알려주세요.\"** 3. **\"일본(JP)에서 최근 6개월간 카테고리별 매출 순위를 보여주세요.\"**  ---  이처럼 **기간 · 특정 국가 · 판매 채널** 등을 함께 알려주시면 보다 정확한 결과를 안내해 드리겠습니다! 🙏",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-054",
-    "query": "Brand 'SK'의 각 Line별 판매 수량 합계를 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 27.6,
-    "answer_len": 4061,
-    "answer_preview": "### 📊 Brand 'SK' Line별 판매 수량 합계 분석 (2019년 1월 1일 이후)  #### 요약  Brand 'SK'의 2019년 1월 1일 이후 Line별 판매 수량 합계를 분석한 결과, 'Centella' 라인이 **59,496,708개**로 압도적인 1위를 차지하며 전체 판매량의 약 47.1%를 기여했습니다. 'Hyalucica' 라인이 **22,965,595개**로 2위, 'Tone_Brightening' 라인이 **15,311,589개**로 3위를 기록하며 상위 3개 라인이 전체 판매량의 대부분을 차지하고 있습니다.  #### 상세 데이터  제공된 데이터(총 16행 중 상위 15개 라인)를 기준으로 Brand 'SK'의 Line별 판매 수량 합계는 다음과 같습니다.  | Line            | 판매 수량 합계 (개) | 비중 (%) | | :-------------- | ------------------: | -------: | | Centella   ",
-    "used_sql": "SELECT\n  Line,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Product != 'Sachet'\nGROUP BY Line\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-055",
-    "query": "각 SET(제품명)별 총 판매 수량을 내림차순으로 정렬하여 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 31.0,
-    "answer_len": 2477,
-    "answer_preview": "### 📊 제품별 총 판매 수량 분석 보고서  #### 요약  2019년 1월 1일부터 현재까지 'SK' 및 'CL' 브랜드 제품의 총 판매 수량은 **126,916,034**개로 집계되었습니다. 이 중 'SK_Hyalucica_Waterfit_Sun_Serum_50ml' 제품이 **10,750,857**개로 가장 높은 판매량을 기록하며 전체 판매량의 약 **8.5%**를 차지했습니다. 상위 5개 제품이 전체 판매량의 약 **30.8%**를 차지하며 판매 집중도가 높은 것으로 나타났습니다.  #### 상세 데이터  다음은 총 판매 수량 기준 상위 15개 제품의 상세 데이터입니다. 전체 211개 제품 중 상위 제품들이 판매량을 견인하고 있습니다.  | 제품명 | 총 판매 수량 | | :------------------------------------------ | -----------: | | SK_Hyalucica_Waterfit_Sun_Serum_50ml | 10,750,857 |",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY Product\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-056",
-    "query": "최근 3개월 동안의 총 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 29.0,
-    "answer_len": 1020,
-    "answer_preview": "### 📊 최근 3개월 총 판매 수량 분석  #### 요약  최근 3개월(2025년 12월 19일 ~ 2026년 3월 19일) 동안 SK 및 CL 브랜드의 Sachet을 제외한 총 판매 수량은 **20,784,071개**로 집계되었습니다.  #### 분석 및 인사이트  *   최근 3개월간 SK 및 CL 브랜드 제품(Sachet 제외)의 판매 수량이 2천만 개를 넘어섰다는 점은 해당 브랜드들의 견고한 시장 수요를 보여줍니다. *   이번 집계는 특정 브랜드(SK, CL)와 특정 제품(Sachet)을 제외한 결과이므로, 전체 판매 현황을 파악하기 위해서는 다른 브랜드 및 제품군에 대한 추가 분석이 필요합니다. *   단일 총량 데이터만으로는 판매 추세나 특정 제품/브랜드의 기여도를 파악하기 어렵습니다.  > 해당 기간 동안 2천만 개 이상의 판매 수량은 상당한 규모이지만, 이 수치를 통해 비즈니스 전략을 수립하기 위해서는 월별 추이, 브랜드별/제품별 상세 판매량 등 추가적인 분석이 필",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-057",
-    "query": "2023년 하반기(7월~12월) 동안 Country '미국'의 총 판매 수량은?",
-    "table": "product",
-    "status": "OK",
-    "time": 42.6,
-    "answer_len": 1195,
-    "answer_preview": "📊 2023년 하반기 미국 총 판매 수량 분석  #### 요약  2023년 하반기(7월~12월) 동안 미국 시장에서 SK 및 CL 브랜드 제품(Sachet 제외)의 총 판매 수량은 **350,780개**를 기록했습니다.  #### 상세 데이터  (단일 합계 수치이므로 상세 데이터 표는 생략합니다.)  #### 분석 및 인사이트  *   2023년 하반기 미국 시장에서 SK 및 CL 브랜드의 Sachet을 제외한 제품들이 총 350,780개의 판매 수량을 달성했습니다. 이는 특정 브랜드 및 제품군에 대한 미국 시장의 수요를 보여줍니다. *   해당 수치는 SK 및 CL 브랜드에 한정되며, Sachet 제품은 제외된 결과입니다. 따라서 전체 미국 시장의 총 판매 수량과는 차이가 있을 수 있습니다. *   이러한 판매량은 2023년 하반기 동안 미국 시장에서 해당 브랜드 및 제품군이 견고한 실적을 유지했음을 시사합니다.  > 2023년 하반기 미국 시장에서 SK 및 CL 브랜드의 Sach",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(MONTH FROM Date) BETWEEN 7 AND 12\n  AND Country = '미국'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-058",
-    "query": "2023년 1분기부터 3분기까지의 'Centella' 라인 제품 누적 판매 수량은?",
-    "table": "product",
-    "status": "OK",
-    "time": 58.4,
-    "answer_len": 2812,
-    "answer_preview": "### 📊 2023년 1분기~3분기 Centella 라인 제품별 누적 판매 수량 (상위 15개 제품)  #### 요약  2023년 1분기부터 3분기까지 'Centella' 라인 제품의 누적 판매 수량 분석 결과, 제공된 상위 15개 제품의 총 판매 수량은 **2,295,994개**로 집계되었습니다. 이 중 'SK_Centella_Airfit_Suncream_Plus_50ml' 제품이 **761,226개**로 가장 높은 판매량을 기록하며 전체 상위 15개 제품 판매량의 약 33.2%를 차지했습니다. 전체 'Centella' 라인 제품은 총 28개이며, 본 보고서는 상위 15개 제품에 대한 분석입니다.  #### 상세 데이터  2023년 1분기부터 3분기까지 'Centella' 라인 상위 15개 제품의 누적 판매 수량은 다음과 같습니다.  | 제품명 | 누적 판매 수량 | | :-------------------------------------- | -----------: | | SK_",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS cumulative_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Centella'\n  AND Product != 'Sachet'\n  AND Date >= '2023-01-01' AND Date <= '2023-09-30'\nGROUP BY\n  Product\nORDER BY\n  cumulative_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-059",
-    "query": "2023년 35번째 주에 판매된 총 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 30.3,
-    "answer_len": 1227,
-    "answer_preview": "### 📊 2023년 35번째 주 판매 수량 분석  #### 요약  2023년 35번째 주(주차)에 SK 및 CL 브랜드 제품(Sachet 제외)의 총 판매 수량은 **386,188개**로 집계되었습니다. 이 수치는 해당 주차의 특정 브랜드 및 제품군에 대한 판매 성과를 나타냅니다.  #### 분석 및 인사이트  *   **특정 브랜드 및 제품군 집중:** 2023년 35번째 주에 SK 및 CL 브랜드의 제품(Sachet 제외)에서 **386,188개**의 판매 수량을 기록했습니다. 이는 해당 브랜드 및 제품군이 해당 주차의 판매 활동에서 중요한 비중을 차지했음을 시사합니다. *   **주간 판매 성과 지표:** 이 수량은 2023년 35번째 주에 대한 판매 성과를 측정하는 핵심 지표로 활용될 수 있습니다. 향후 주차별 판매 추이 분석 또는 특정 프로모션 효과 분석의 기준점으로 활용 가능합니다. *   **전략적 판매 활동의 결과:** 해당 주차의 판매 수량은 특정 브랜드에 대한 마",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND EXTRACT(WEEK FROM Date) = 35\nLIMIT 1000"
-  },
-  {
-    "id": "PR-060",
-    "query": "2023년 5월부터 8월까지 Brand 'CL'의 'Toner' 카테고리 제품 총 판매 수량을 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 41.7,
-    "answer_len": 1147,
-    "answer_preview": "### 📊 2023년 5월~8월 'CL' 브랜드 'Toner' 카테고리 제품 총 판매 수량 분석  #### 요약  2023년 5월 1일부터 8월 31일까지 Brand 'CL'의 'Toner' 카테고리 제품(단, 'Sachet' 및 'Others' 제외)의 총 판매 수량은 **505개**입니다.  #### 분석 및 인사이트  *   해당 기간 동안 'CL' 브랜드의 'Toner' 카테고리 제품이 총 505개 판매되었습니다. 이는 4개월(5월, 6월, 7월, 8월)간의 누적 판매량입니다. *   이 수치는 특정 브랜드 및 카테고리에 대한 해당 기간의 수요를 보여줍니다. *   보다 심층적인 분석을 위해서는 월별 판매 추이, 다른 카테고리 또는 다른 브랜드와의 비교, 전년 동기 대비 성장률 등의 추가 데이터가 필요합니다.  > 2023년 5월부터 8월까지 'CL' 브랜드의 'Toner' 카테고리 제품은 총 505개가 판매되었으며, 이는 해당 기간 동안의 특정 제품군에 대한 안정적인 수요를",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'CL'\n  AND Category = 'Toner'\n  AND Date >= '2023-05-01' AND Date < '2023-09-01'\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-061",
-    "query": "2023년 1월 대비 2월 'Ampoule' 카테고리 제품의 판매 수량 성장률은?",
-    "table": "product",
-    "status": "OK",
-    "time": 39.7,
-    "answer_len": 1537,
-    "answer_preview": "### 📊 2023년 1월 대비 2월 'Ampoule' 카테고리 제품 판매 수량 성장률 분석  #### 요약  2023년 1월 대비 2월 'Ampoule' 카테고리 제품의 판매 수량은 **-4.5% 감소**했습니다. 이는 SK 및 CL 브랜드 제품에 한하며, Sachet 제품은 제외된 결과입니다.  #### 분석 및 인사이트  *   **판매 수량 감소:** 2023년 2월의 'Ampoule' 카테고리 제품 판매 수량은 1월 대비 **4.5% 감소**했습니다. 이는 해당 기간 동안 판매량이 줄어들었음을 의미합니다. *   **특정 범위 한정:** 본 분석은 'Ampoule' 카테고리 내에서도 'SK', 'CL' 브랜드 제품에 한정되며, 'Sachet' 제품은 제외된 결과입니다. 따라서 전체 'Ampoule' 카테고리 또는 다른 브랜드의 추세와는 다를 수 있습니다. *   **추가 분석 필요:** 1월 대비 2월의 판매량 감소는 계절적 요인, 프로모션 부재, 경쟁 심화 등 다양한 원인",
-    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    (SUM(CASE WHEN EXTRACT(MONTH FROM Date) = 2 THEN Total_Qty ELSE 0 END) -\n     SUM(CASE WHEN EXTRACT(MONTH FROM Date) = 1 THEN Total_Qty ELSE 0 END)),\n    SUM(CASE WHEN EXTRACT(MONTH FROM Date) = 1 THEN Total_Qty ELSE 0 END)\n  ) * 100 AS growth_rate_percentage\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND Category = 'Ampoule'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-062",
-    "query": "지난 분기 대비 이번 분기 Brand 'SK'의 총 판매 수량 감소율은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 36.8,
-    "answer_len": 1619,
-    "answer_preview": "### 📊 Brand 'SK' 총 판매 수량 변화율 분석 (지난 분기 대비 이번 분기)  #### 요약  Brand 'SK'의 이번 분기(2026년 1분기: 2026-01-01 ~ 2026-03-31) 총 판매 수량은 지난 분기(2025년 4분기: 2025-10-01 ~ 2025-12-31) 대비 **14.46% 증가**했습니다. 이는 지난 분기 대비 긍정적인 성장세를 나타냅니다.  #### 분석 및 인사이트  *   **긍정적인 성장세**: Brand 'SK'의 총 판매 수량은 지난 분기 대비 14.46% 증가하여 견조한 성장세를 보였습니다. 이는 브랜드의 시장 경쟁력 강화 또는 마케팅 활동의 성공적인 결과로 해석될 수 있습니다. *   **분기별 성과**: 2026년 1분기 데이터는 2025년 4분기 대비 높은 판매량을 기록하며, 새로운 분기의 시작을 긍정적으로 알리고 있습니다. *   **데이터 해석**: 감소율이 음수(-14.46%)로 나타난 것은 실제로는 판매 수량이 증가했",
-    "used_sql": "SELECT\n  SAFE_DIVIDE(\n    (SUM(CASE WHEN DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31' THEN Total_Qty ELSE 0 END) -\n     SUM(CASE WHEN DATE(Date) BETWEEN '2026-01-01' AND '2026-03-31' THEN Total_Qty ELSE 0 END)),\n    SUM(CASE WHEN DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31' THEN Total_Qty ELSE 0 END)\n  ) * 100 AS decrease_rate_percentage\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Product != 'Sachet'\n  AND (\n    (DATE(Date) BETWEEN '2025-10-01' AND '2025-12-31') OR\n    (DATE(Date) BETWEEN '2026-01-01' AND '2026-03-31')\n  )\nLIMIT 1000"
-  },
-  {
-    "id": "PR-063",
-    "query": "Country '일본'의 'Sun' 카테고리 제품 판매 수량이 월별로 어떻게 증감했는지 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 51.2,
-    "answer_len": 4341,
-    "answer_preview": "📊 일본 'Sun' 카테고리 제품 월별 판매 수량 추이 (2020년 8월 ~ 2025년 11월)  #### 요약  일본에서 'SK', 'CL' 브랜드의 'Sun' 카테고리(Suncare) 제품 판매 수량은 2020년 8월부터 2025년 11월까지 전반적으로 큰 폭의 성장세를 보였습니다. 특히 **2024년과 2025년에 판매량이 급증**하여, 2025년 11월까지의 누적 판매량은 **176,712개**를 기록했습니다. 월별 최고 판매량은 **2025년 6월 48,011개**였습니다. ⚠️ 2026년 데이터는 현재 조회되지 않으며, 분석은 2025년 11월까지의 데이터를 기반으로 합니다.  #### 상세 데이터  일본 'SK', 'CL' 브랜드의 'Sun' 카테고리 제품(Sachet 제외) 월별 판매 수량은 다음과 같습니다.  | 월           | 판매 수량 (개) | | :----------- | -------------: | | 2020-08      | 2         ",
-    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Country = '일본'\n  AND Category = 'Suncare'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
-  },
-  {
-    "id": "PR-064",
-    "query": "2023년 한 해 동안 'Hyalucica' 라인의 월별 판매 수량 변동폭은 얼마였나요?",
-    "table": "product",
-    "status": "OK",
-    "time": 35.4,
-    "answer_len": 2615,
-    "answer_preview": "📊 2023년 'Hyalucica' 라인 월별 판매 수량 변동폭 분석  #### 요약  2023년 한 해 동안 'Hyalucica' 라인의 총 판매 수량은 **1,951,503개**를 기록했습니다. 월별 판매 수량은 **최소 48,773개(2월)**에서 **최대 358,060개(8월)**로 큰 변동을 보였습니다. 전월 대비 판매 수량 변동폭은 최대 **227,997개 증가(8월)**, 최대 **192,143개 감소(9월)**로 나타나, 특히 8월에 판매량이 급증한 후 9월에 크게 감소하는 패턴이 두드러졌습니다.  #### 상세 데이터  | 월      | 월별 판매 수량 (개) | 전월 대비 변동폭 (개) | | :------ | ------------------: | --------------------: | | 2023-01 | 52,330              | 52,330                | | 2023-02 | 48,773              | -3,55",
-    "used_sql": "SELECT\n  month,\n  monthly_quantity,\n  monthly_quantity - LAG(monthly_quantity, 1, 0) OVER (ORDER BY month) AS fluctuation_from_previous_month\nFROM (\n  SELECT\n    FORMAT_DATETIME('%Y-%m', Date) AS month,\n    SUM(Total_Qty) AS monthly_quantity\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Line = 'Hyalucica'\n    AND EXTRACT(YEAR FROM Date) = 2023\n    AND Product != 'Sachet'\n  GROUP BY month\n)\nORDER BY month\nLIMIT 1000"
-  },
-  {
-    "id": "PR-065",
-    "query": "2022년과 2023년 사이 'LabinNature' 라인의 총 판매 수량 변화를 수치로 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 31.4,
-    "answer_len": 1388,
-    "answer_preview": "### 📊 2022년과 2023년 'LabinNature' 라인 총 판매 수량 변화 분석  #### 요약  2022년과 2023년 사이 'LabinNature' 라인의 총 판매 수량 변화를 분석한 결과, 해당 기간 동안의 판매 수량 데이터가 없어 **변화를 수치로 확인할 수 없습니다.** 이는 2022년 또는 2023년, 혹은 두 해 모두 'LabinNature' 라인의 판매가 없었거나 데이터가 기록되지 않았음을 시사합니다.  #### 분석 및 인사이트  *   제공된 데이터에 따르면, 2022년과 2023년 중 'LabinNature' 라인의 판매 수량 합계가 존재하지 않아 전년 대비 변화를 계산할 수 없습니다. *   이는 해당 기간 동안 'LabinNature' 라인의 제품 판매 활동이 없었거나, 판매되었더라도 데이터베이스에 기록되지 않았을 가능성을 나타냅니다. *   정확한 원인 파악을 위해 'LabinNature' 라인의 2022년 및 2023년 개별 판매 실적 유무를 추가",
-    "used_sql": "SELECT\n  SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2023 THEN Total_Qty ELSE 0 END) -\n  SUM(CASE WHEN EXTRACT(YEAR FROM Date) = 2022 THEN Total_Qty ELSE 0 END) AS quantity_change\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'LabinNature'\n  AND Product != 'Sachet'\n  AND (EXTRACT(YEAR FROM Date) = 2022 OR EXTRACT(YEAR FROM Date) = 2023)\nLIMIT 1000"
-  },
-  {
-    "id": "PR-066",
-    "query": "각 SKU별 평균 일별 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 32.5,
-    "answer_len": 399,
-    "answer_preview": "안녕하세요. 요청하신 **각 SKU별 평균 일별 판매 수량** 데이터를 현재 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 예를 들어 **기간, 국가/지역, 판매 채널, 특정 제품명** 등을 함께 알려주세요.  아래와 같이 질문을 다시 해보시는 건 어떨까요?  > 1. **\"2024년 하반기 기준, 마다가스카르 센텔라 라인 SKU별 평균 일별 판매 수량을 알려줘.\"**  > 2. **\"아마존 US 채널에서 최근 3개월간 SKU별 일평균 판매량은 얼마야?\"**  > 3. **\"2025년 1분기, 국내 자사몰 기준 상위 10개 SKU의 일별 평균 판매 수량을 보여줘.\"**  기간이나 조건을 추가하여 다시 질문해 주시면 데이터를 다시 조회해 드리겠습니다.",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-067",
-    "query": "'Cream' 카테고리의 월별 평균 판매 수량은?",
-    "table": "product",
-    "status": "OK",
-    "time": 52.3,
-    "answer_len": 3569,
-    "answer_preview": "### 📊 'Cream' 카테고리 월별 평균 판매 수량 분석 (2019년 1월 ~ 2023년 12월)  #### 요약  'SK' 및 'CL' 브랜드의 'Cream' 카테고리(Sachet 제품 제외) 월별 평균 판매 수량은 2019년 1월부터 2023년 12월까지 분석되었습니다. 분석 결과, **2019년 8월에 평균 판매 수량 3,047.00개로 최고치**를 기록했으며, **2020년 10월에는 8.21개로 최저치**를 보였습니다. 전반적으로 2019년과 2020년 초반에 높은 판매량을 보이다가 2020년 하반기부터 급격히 감소하여 2021년~2022년에는 낮은 수준을 유지했으며, 2023년에는 소폭 회복하는 추세를 보였습니다.  #### 상세 데이터  다음은 2019년 1월부터 2023년 12월까지 'Cream' 카테고리의 월별 평균 판매 수량입니다. (브랜드: SK, CL / 제품: Sachet 제외) ⚠️ 2024년 이후 데이터는 현재 분석에 포함되어 있지 않습니다. (오늘: ",
-    "used_sql": "SELECT\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  AVG(Total_Qty) AS average_monthly_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Cream'\n  AND Product != 'Sachet'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
-  },
-  {
-    "id": "PR-068",
-    "query": "Country '한국'의 'Toner' 카테고리 제품 3개월 이동평균 판매 수량을 계산해주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 41.9,
-    "answer_len": 631,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **한국 내 'Toner' 카테고리 제품의 3개월 이동평균 판매 수량** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위해 아래 정보를 구체적으로 지정해 주시면 도움이 됩니다  | 구체화 항목 | 예시 | |------------|------| | **조회 기간** | 2024년 1월 ~ 2024년 12월 등 | | **판매 채널** | 자사몰, 올리브영, 쿠팡, 아마존 등 | | **구체적 제품명** | 마다가스카르 센텔라 토닝 토너 등 | | **집계 단위** | 월별, 주별 등 |  ---  ## 📝 질문 예시  1. > **\"2024년 1월~12월 기간, 한국 올리브영 채널에서 '마다가스카르 센텔라 토닝 토너'의 월별 3개월 이동평균 판매 수량을 알려주세요.\"**  2. > **\"2024년 하반기 한국 자사몰 기준, Toner 카테고리 전체 제품의 월별 판매 수량 추이를 보여주세요.\"**  3. > **",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-069",
-    "query": "'Ampoule' 카테고리 제품 중, 판매 수량이 높은 SKU에 더 큰 가중치를 부여한 평균 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 39.4,
-    "answer_len": 1446,
-    "answer_preview": "### 📊 Ampoule 카테고리 제품의 판매 수량 가중 평균 분석  #### 요약  'Ampoule' 카테고리 제품 중, 'SK' 및 'CL' 브랜드에 대해 2019년 1월 1일 이후 데이터를 기준으로 판매 수량이 높은 SKU에 더 큰 가중치를 부여한 평균 판매 수량은 **6,995.75개**입니다. 이는 판매량이 많은 제품의 영향력을 반영한 평균값입니다.  #### 분석 및 인사이트  *   **판매량 집중도 반영:** 이 가중 평균 판매 수량은 단순 평균과 달리, 판매량이 높은 특정 SKU들이 전체 평균에 미치는 영향이 크다는 것을 의미합니다. 즉, 'Ampoule' 카테고리 내에서 소수의 인기 제품이 전체 판매량을 견인하고 있을 가능성이 높습니다. *   **재고 및 생산 계획 시 고려:** 6,995.75개라는 수치는 해당 카테고리 및 브랜드 내에서 판매량이 높은 제품들의 평균적인 판매 규모를 보여줍니다. 재고 관리 및 생산 계획 수립 시, 이 수치를 기준으로 인기 SKU에",
-    "used_sql": "SELECT\n  SAFE_DIVIDE(SUM(POWER(Total_Qty, 2)), SUM(Total_Qty)) AS weighted_avg_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Ampoule'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-070",
-    "query": "각 Country에서 가장 많이 팔린 Line의 평균 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 58.8,
-    "answer_len": 532,
-    "answer_preview": "안녕하세요. 요청하신 **각 Country별 최다 판매 Line의 평균 판매 수량** 데이터를 조회하지 못했습니다.  질문의 범위가 넓어 정확한 데이터를 불러오기 어려웠을 수 있습니다. 아래와 같이 **조건을 좀 더 구체적으로** 지정해 주시면 원활한 조회가 가능합니다.  ---  > ### 💡 이렇게 질문을 바꿔보시면 좋습니다 1. **기간 + 국가 특정**  > *\"2024년 1월~12월 기준, 미국(US)에서 가장 많이 팔린 Line은 무엇이고, 월 평균 판매 수량은 얼마인가요?\"*  2. **채널 조건 추가**  > *\"2024년 Amazon 채널 기준, 국가별로 가장 많이 팔린 Line과 해당 Line의 평균 판매 수량을 알려주세요.\"*  3. **특정 Line 지정**  > *\"2024년 상반기 기준, 주요 5개국(US, JP, KR, TH, VN)에서 마다가스카르 센텔라 라인의 평균 판매 수량을 비교해 주세요.\"*  ---  **기간, 국가, 채널, 제품 라인** 등을 ",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-071",
-    "query": "2023년 1월 1일부터 현재까지 'Centella' 라인의 누적 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 33.9,
-    "answer_len": 1224,
-    "answer_preview": "### 📊 Centella 라인 누적 판매 수량 분석 (2023년 1월 1일 ~ 2026년 3월 19일)  #### 요약  2023년 1월 1일부터 2026년 3월 19일까지 'Centella' 라인의 누적 판매 수량은 **51,035,828개**로 집계되었습니다. 이 수량은 'SK' 및 'CL' 브랜드에 속하며 'Sachet' 제품을 제외한 'Centella' 라인 제품의 판매량을 기준으로 합니다.  #### 분석 및 인사이트  *   **견고한 판매량:** 약 3년 3개월 동안 5천만 개가 넘는 'Centella' 라인 제품이 판매되어 해당 라인의 시장 내 강력한 입지와 소비자 선호도를 확인할 수 있습니다. *   **필터 조건 고려:** 본 데이터는 'SK', 'CL' 브랜드에 한정되며, 'Sachet' 제품은 제외된 수치입니다. 따라서 전체 'Centella' 라인의 총 판매량은 이보다 더 높을 수 있습니다. *   **장기적인 인기:** 2023년 초부터 현재까지 꾸준히 높",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS cumulative_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2023-01-01'\n  AND Date <= '2026-03-19'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Centella'\n  AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-072",
-    "query": "2023년 현재까지(Year-To-Date)의 총 판매 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 34.7,
-    "answer_len": 1189,
-    "answer_preview": "### 📊 2023년 SK 및 CL 브랜드의 총 판매 수량 분석  #### 요약  2023년 한 해 동안 SK 및 CL 브랜드의 'Sachet' 제품을 제외한 총 판매 수량은 **7,526,276개**로 집계되었습니다. 이는 특정 브랜드와 제품군에 대한 판매 성과를 나타냅니다.  #### 분석 및 인사이트  *   **특정 브랜드 및 제품군에 집중된 판매량:** 이번 분석은 SK 및 CL 두 가지 브랜드에 한정되었으며, 'Sachet' 제품은 제외된 판매 수량입니다. 이는 특정 핵심 브랜드의 주력 제품 판매 성과를 파악하는 데 유용합니다. *   **'Sachet' 제품 제외의 영향:** 'Sachet' 제품은 일반적으로 샘플이나 저가형 제품으로 판매량이 높을 수 있습니다. 해당 제품군을 제외함으로써, 고가 또는 주력 제품의 순수한 판매 성과를 더욱 명확하게 확인할 수 있습니다. *   **추가 분석의 필요성:** 이 수량은 2023년 전체 기간의 총합이므로, 판매 추이(월별, 분기",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-073",
-    "query": "이번 달 현재까지(Month-To-Date) Brand 'SK'의 'Toner' 카테고리 제품 판매 수량은?",
-    "table": "product",
-    "status": "OK",
-    "time": 39.0,
-    "answer_len": 4522,
-    "answer_preview": "### 📊 2026년 3월 Brand 'SK' 토너 카테고리 제품별 판매 수량 (MTD)  #### 요약  2026년 3월 현재까지(Month-To-Date, 3월 19일 기준) Brand 'SK'의 'Toner' 카테고리 제품 총 판매 수량은 **525,848개**입니다. 이 중 'SK_Centella_Toning_Toner_210ml' 제품이 **217,881개** 판매되어 전체 토너 판매량의 약 **41.4%**를 차지하며 가장 높은 판매량을 기록했습니다.  #### 상세 데이터  2026년 3월 19일 기준 Brand 'SK' 토너 카테고리 제품별 판매 수량은 다음과 같습니다.  | 제품명 | 판매 수량 (개) | | :-------------------------------- | -------------: | | SK_Centella_Toning_Toner_210ml    | 217,881        | | SK_Probiocica_Essence_Toner_210ml | ",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Category = 'Toner'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND EXTRACT(MONTH FROM Date) = 3\n  AND Product != 'Sachet'\nGROUP BY\n  Product\nORDER BY\n  total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-074",
-    "query": "2022년 Brand 'CL'의 전체 연간 판매 수량 합계는?",
-    "table": "product",
-    "status": "OK",
-    "time": 28.5,
-    "answer_len": 1041,
-    "answer_preview": "### 📊 2022년 CL 브랜드 연간 판매 수량 분석  #### 요약  2022년 CL 브랜드의 Sachet 제품을 제외한 연간 총 판매 수량은 **207,104개**로 집계되었습니다.  #### 분석 및 인사이트  *   **견고한 판매 실적**: 2022년 한 해 동안 CL 브랜드는 Sachet 제품을 제외하고 20만 개 이상의 판매 수량을 기록하며 핵심 제품군에서 견고한 판매 실적을 보였습니다. *   **핵심 제품군 수요**: 이 수치는 CL 브랜드의 주력 제품들에 대한 시장 수요가 꾸준히 유지되고 있음을 시사합니다. *   **추가 분석 필요**: Sachet 제품을 제외한 수치이므로, CL 브랜드의 전체적인 판매 현황을 파악하기 위해서는 Sachet 제품의 판매 수량을 함께 고려하거나, 다른 브랜드와의 비교 분석을 통해 시장 내 CL 브랜드의 위치를 더욱 명확히 파악할 수 있을 것입니다.  > 💡 2022년 CL 브랜드는 Sachet 제품을 제외한 판매에서 20만 개 이",
-    "used_sql": "SELECT\n  SUM(Total_Qty) AS total_sales_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2022\n  AND Brand = 'CL'\n  AND Product != 'Sachet'\nLIMIT 1000"
-  },
-  {
-    "id": "PR-075",
-    "query": "각 Country별로 시간이 지남에 따른 누적 판매 수량 추이를 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 49.3,
-    "answer_len": 608,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **각 Country별 누적 판매 수량 추이** 데이터를 조회하지 못했습니다.  조회 범위가 넓어 결과를 가져오기 어려웠을 수 있습니다. 아래와 같이 **조건을 좀 더 구체적으로** 지정해 주시면 정확한 데이터를 안내드릴 수 있습니다.  ---  > ## 💡 이렇게 질문을 바꿔보시면 좋습니다 > **구체화할 수 있는 항목**  > - **기간** : 특정 연도, 분기, 월 등  > - **국가** : 특정 국가 또는 상위 N개 국가  > - **채널** : Amazon, Shopee, 자사몰 등  > - **제품** : 특정 제품명 또는 제품 라인  ---  ## 📝 질문 예시  1. **\"2024년 1월~12월 기준, 미국·일본·태국의 월별 누적 판매 수량 추이를 보여주세요.\"**  2. **\"2025년 상반기 Amazon 채널에서 상위 5개 국가의 누적 판매 수량 추이를 알려주세요.\"**  3. **\"마다가스카르 센텔라 라인 제품에 대",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-076",
-    "query": "판매 수량이 500개 이상인 'SET' 제품들의 목록과 총 판매 수량을 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 29.8,
-    "answer_len": 2708,
-    "answer_preview": "### 📊 판매 수량 500개 이상 'SET' 제품 목록 및 총 판매 수량 분석  #### 요약  판매 수량이 500개 이상인 'SET' 카테고리 제품은 총 **32개**가 확인되었습니다. 이 중 **SK_Centella_Travel_Kit**이 **2,019,694개**로 압도적인 판매 수량을 기록하며 1위를 차지했습니다. 상위 15개 제품의 총 판매 수량은 **2,538,469개**입니다.  #### 상세 데이터  판매 수량 500개 이상인 'SET' 제품 중 상위 15개 제품의 목록과 총 판매 수량은 다음과 같습니다.  | 제품명 | 총 판매 수량 (개) | | :------------------------------ | ---------------: | | SK_Centella_Travel_Kit          | 2,019,694        | | SK_Glow_1004_Duo                | 98,541           | | SK_Teatrica_Tr",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n  AND Category = 'SET'\nGROUP BY Product\nHAVING SUM(Total_Qty) >= 500\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-077",
-    "query": "2023년에 판매 수량이 100개 이하인 'SKU' 목록은 무엇인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 40.6,
-    "answer_len": 2400,
-    "answer_preview": "### 📊 2023년 판매 수량 100개 이하 SKU 목록 분석 보고서  #### 요약  2023년 한 해 동안 판매 수량이 100개 이하인 SKU는 총 **13개**로 확인되었습니다. 이 중 가장 판매 수량이 높은 SKU는 'SK_Pouch'로 100개를 기록했으며, 'SK_Centella_Airfit_Suncream_Plus_20ml'와 'CL_Triple_Vita_Balancing_Mask_1ea_Dual_Triple' 2개 SKU는 판매 수량이 0개로 나타났습니다.  #### 상세 데이터  2023년 판매 수량이 100개 이하인 SKU 목록은 다음과 같습니다.  | SKU | 총 판매 수량 | |:----------------------------------------------------|-------------:| | SK_Pouch | 100.0 | | CL_Ggultamin_E_Real_Gel_Mask_1ea_E_Line | 70.0 | | CL_Vitamin_C_Br",
-    "used_sql": "SELECT\n  Product AS SKU,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2023\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL\n  AND Product != ''\n  AND Product != 'Sachet'\n  AND Product != 'Others'\nGROUP BY\n  Product\nHAVING\n  SUM(Total_Qty) <= 100\nORDER BY\n  total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-078",
-    "query": "Country '독일'에서 Brand 'SK'의 'Ampoule' 카테고리 제품 중 총 판매 수량이 200개 이상인 제품들의 상세 정보를 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 41.9,
-    "answer_len": 2798,
-    "answer_preview": "### 📊 독일 SK 브랜드 앰플 카테고리 제품별 총 판매 수량 현황  #### 요약  독일에서 Brand 'SK'의 'Ampoule' 카테고리 제품 중 총 판매 수량이 200개 이상인 제품은 총 **23개**로 확인되었습니다. 이 중 제공된 상위 15개 제품의 누적 총 판매 수량은 **568,334개**입니다. 가장 많이 판매된 제품은 'SK_Centella_Ampoule_55ml'로 **106,918개**의 판매량을 기록하며 압도적인 1위를 차지했습니다.  #### 상세 데이터  제공된 상위 15개 제품의 총 판매 수량은 다음과 같습니다.  | 제품명                                     | 총 판매 수량 (개) | | :----------------------------------------- | ----------------: | | SK_Centella_Ampoule_55ml                   | 106,918           | ",
-    "used_sql": "SELECT\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Country = '독일'\n  AND Brand = 'SK'\n  AND Category = 'Ampoule'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nGROUP BY Product\nHAVING SUM(Total_Qty) >= 200\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-079",
-    "query": "2023년 1분기 동안 판매 수량이 300개 미만이었던 'Line'별 총 판매 수량은?",
-    "table": "product",
-    "status": "OK",
-    "time": 33.0,
-    "answer_len": 296,
-    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-080",
-    "query": "'Centella' 라인 제품 중, Country가 '한국' 또는 '일본'이면서 판매 수량이 1000개 이상인 제품들의 총 수량은 얼마인가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 35.4,
-    "answer_len": 1515,
-    "answer_preview": "### 📊 'Centella' 라인 한국 및 일본 주력 제품의 총 판매 수량 분석  #### 요약  'Centella' 라인 제품 중 한국 또는 일본에서 개별 판매 수량이 1,000개 이상인 제품들의 총 수량은 **3,674,499개**로 집계되었습니다. 이 수치는 2019년 1월 1일 이후의 데이터를 기준으로 하며, 특정 브랜드(SK, CL)의 제품만을 포함합니다.  #### 분석 및 인사이트  *   **견고한 시장 입지 확인**: 'Centella' 라인 제품 중 한국과 일본 시장에서 개별 제품당 1,000개 이상의 판매고를 올린 제품들이 총 367만 개 이상의 판매 수량을 기록하며, 해당 라인의 두 주요 시장에서의 견고한 입지를 보여줍니다. *   **주력 제품의 성공**: 개별 제품의 최소 판매 수량 기준(1,000개)을 적용했음에도 불구하고 높은 총 수량을 달성한 것은 'Centella' 라인의 주력 제품들이 한국과 일본 시장에서 성공적으로 판매되고 있음을 시사합니다. *",
-    "used_sql": "SELECT\n  SUM(total_qty_per_product) AS total_quantity\nFROM (\n  SELECT\n    Product,\n    SUM(Total_Qty) AS total_qty_per_product\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Line = 'Centella'\n    AND Country IN ('한국', '일본')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n  GROUP BY Product\n  HAVING SUM(Total_Qty) >= 1000\n)\nLIMIT 1000"
-  },
-  {
-    "id": "PR-081",
-    "query": "SKU 'SKU12345'의 전체 판매 기록 상세 정보를 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 39.8,
-    "answer_len": 296,
-    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\" <!-- ROUTE:BQ -->",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-082",
-    "query": "'마다가스카르 센텔라 앰플'이라는 제품(SET)의 Country별 판매 수량 상세를 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 54.2,
-    "answer_len": 2891,
-    "answer_preview": "### 📊 '마다가스카르 센텔라 앰플' 제품군 Country별 판매 수량 상세 분석  #### 요약  사용자님께서 요청하신 '마다가스카르 센텔라 앰플' 제품군의 Country별 판매 수량 상세 분석 결과입니다. 2019년 1월 1일부터 현재(2026년 3월 19일)까지의 데이터를 기준으로, 총 **23,855,445개**의 판매 수량이 집계되었으며, 이는 **140개**의 고유 국가 및 플랫폼에서 발생했습니다. 가장 많이 판매된 조합은 '글로벌_플랫폼'의 'SK_Centella_Ampoule_100ml'로 **1,158,118개**를 기록했습니다.  #### 상세 데이터  '마다가스카르 센텔라 앰플' 제품군 중 판매 수량이 높은 상위 15개 (국가, 제품) 조합은 다음과 같습니다.  | Country | product_name | total_quantity | |:---|:---|---:| | 글로벌_플랫폼 | SK_Centella_Ampoule_100ml | 1,158,118 | ",
-    "used_sql": "SELECT\n  Country,\n  Product AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product LIKE '%Centella%Ampoule%'\n  AND Product != 'Sachet'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others'\nGROUP BY\n  Country,\n  Product\nORDER BY\n  total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-083",
-    "query": "2023년 11월 15일의 모든 판매 기록을 상세하게 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 40.8,
-    "answer_len": 569,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 11월 15일의 판매 기록**을 현재 데이터베이스에서 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위한 제안  조건을 좀 더 구체적으로 지정해 주시면 원하시는 데이터를 찾는 데 도움이 됩니다. 아래 항목들을 포함해 보세요.  | 구체화 항목 | 예시 | |------------|------| | **판매 채널** | 아마존, 쿠팡, 자사몰, 올리브영 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **제품명** | 마다가스카르 센텔라 토닝 토너 등 | | **데이터 유형** | 매출액, 판매 수량, 주문 건수 등 |  ---  ## 📝 질문 예시  > 1. **\"2023년 11월 15일 아마존 미국 채널의 매출액을 보여주세요.\"**  > 2. **\"2023년 11월 15일 센텔라 앰플의 국가별 판매 수량을 알려주세요.\"**  > 3. **\"2023년 11월 한 달간 쿠팡 채널의 일별 매출 추이를 ",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-084",
-    "query": "Brand 'CL'의 'LabinNature' 라인에 속하는 모든 제품(SET)의 목록을 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 40.1,
-    "answer_len": 687,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **Brand 'CL'의 'LabinNature' 라인에 속하는 제품(SET) 목록**을 현재 데이터베이스에서 조회하지 못했습니다.  ---  ## 💡 더 정확한 조회를 위한 제안  질문에 아래와 같은 조건을 추가해 주시면 원하시는 데이터를 찾는 데 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2024년, 2025년 1분기 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 쿠팡 등 | | **국가/지역** | 국내, 미국, 일본 등 | | **제품 유형** | 세트(SET) 구성 상세, 단품 포함 여부 등 | | **필요 정보** | 제품명 목록, SKU, 판매 수량, 매출액 등 |  ---  ## 📝 질문 예시  > **1.** \"2024년 기준 Brand 'CL' LabinNature 라인의 SET 제품 SKU 목록과 구성 내역을 알려주세요.\"  > **2.** \"",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-085",
-    "query": "'Sun' 카테고리 제품들의 SKU, SET, Line, Total_Qty를 모두 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 46.3,
-    "answer_len": 3447,
-    "answer_preview": "### 📊 'Sun' 카테고리 제품별 SKU, SET, Line, 총 판매 수량 분석  #### 요약  'Sun' 카테고리(Suncare) 제품들의 총 판매 수량은 **26,134,217**개로 집계되었습니다. 이 중 가장 많이 판매된 제품은 `SK_Hyalucica_Waterfit_Sun_Serum_50ml`으로, 총 **10,080,193**개 판매되어 전체 선케어 판매량의 약 **38.6%**를 차지하며 압도적인 비중을 보였습니다. 특히 'Hyalucica' Line 제품들이 판매량 상위권을 대부분 차지하며 선케어 카테고리를 주도하고 있습니다.  #### 상세 데이터  2019년 1월 1일부터 현재까지의 'Sun' 카테고리 제품 중 판매 수량 상위 10개 SKU 및 전체 합계는 다음과 같습니다.  | SKU                 | product_name                             | Line              | total_quantity ",
-    "used_sql": "SELECT\n  SKU,\n  `SET` AS product_name,\n  Line,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Suncare'\nGROUP BY\n  SKU,\n  `SET`,\n  Line\nORDER BY\n  total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-086",
-    "query": "각 Country별, 각 Category별 총 판매 수량을 교차 분석 테이블 형태로 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 45.0,
-    "answer_len": 2384,
-    "answer_preview": "### 📊 국가 및 카테고리별 총 판매 수량 교차 분석 보고서  #### 요약  2019년 1월 1일 이후 SK 및 CL 브랜드 제품(Sachet 제외)의 국가 및 카테고리별 총 판매 수량 분석 결과, 전체 판매 수량은 **106,495,732개**로 집계되었습니다. 특히 '글로벌_플랫폼'의 Suncare 카테고리가 **6,328,294개**로 가장 높은 판매량을 기록했으며, '글로벌_플랫폼'과 '인도네시아', '미국'이 주요 판매 국가로 나타났습니다. **⚠️ 조회 결과가 1,000행 제한에 도달하여 일부 데이터만 표시되었습니다. 전체 데이터가 반영되지 않았을 수 있습니다.**  #### 상세 데이터  다음은 국가 및 카테고리별 총 판매 수량 상위 15개 조합입니다.  | Country      | Category | total_quantity | | :----------- | :------- | -------------: | | 글로벌_플랫폼 | Suncare  | 6,328,2",
-    "used_sql": "SELECT\n  Country,\n  Category,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY Country, Category\nORDER BY Country, Category\nLIMIT 1000"
-  },
-  {
-    "id": "PR-087",
-    "query": "각 Brand별, 월별 총 판매 수량을 교차 분석하여 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 57.2,
-    "answer_len": 2380,
-    "answer_preview": "### 📊 Brand별, 월별 총 판매 수량 교차 분석 보고서  #### 요약  2019년 1월부터 2026년 3월(부분 데이터)까지 'SK'와 'CL' 두 브랜드의 총 판매 수량은 **126,949,298**개로 집계되었습니다. 데이터는 총 88개의 고유 월에 걸쳐 있으며, 2026년 3월의 데이터는 현재 일부만 반영된 상태입니다. 제공된 상위 샘플 데이터에서는 'SK' 브랜드가 높은 판매량을 기록하며 전체 판매를 주도하는 경향을 보였습니다.  #### 상세 데이터  아래 표는 각 Brand별, 월별 총 판매 수량 데이터 중 상위 15건을 프리뷰로 보여줍니다. 전체 데이터는 172행으로 구성되어 있으며, 2019년 1월부터 2026년 3월까지의 'SK' 및 'CL' 브랜드 판매량을 포함합니다.  | Brand | month   | total_quantity | | :---- | :------ | -------------: | | SK    | 2026-03 | 8,166,237  ",
-    "used_sql": "SELECT\n  Brand,\n  FORMAT_DATETIME('%Y-%m', Date) AS month,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY\n  Brand,\n  month\nORDER BY\n  Brand,\n  month\nLIMIT 1000"
-  },
-  {
-    "id": "PR-088",
-    "query": "각 Brand별, 각 Line별 총 판매 수량을 비교하는 매트릭스를 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 58.0,
-    "answer_len": 2366,
-    "answer_preview": "### 📊 Brand 및 Line별 총 판매 수량 분석 보고서  #### 요약  제공된 데이터(2019년 1월 1일 이후, SK 및 CL 브랜드 대상)에 따르면, 총 판매 수량은 **1억 2,425만 개**로 집계되었습니다. 이 중 **SK 브랜드**가 **1억 2,351만 개**로 전체의 **약 99.4%**를 차지하며 압도적인 판매량을 보였습니다. SK 브랜드 내에서는 'Centella' 라인이 **5,949만 개**로 가장 높은 판매량을 기록했으며, CL 브랜드 내에서는 'C_Line'이 **34만 개**로 가장 높은 판매량을 보였습니다.  #### 상세 데이터  제공된 프리뷰 데이터(총 25행 중 상위 15행)를 기준으로 Brand 및 Line별 총 판매 수량은 다음과 같습니다.  | Brand | Line | 총 판매 수량 | | :---- | :---------- | -----------: | | CL | C_Line | 340,627 | | CL | E_Line | 19",
-    "used_sql": "SELECT\n  Brand,\n  Line,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet'\nGROUP BY\n  Brand,\n  Line\nORDER BY\n  Brand,\n  total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-089",
-    "query": "'Centella' 라인 내에서 각 Category별 판매 수량이 어떻게 분포되어 있는지 교차 분석해주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 51.3,
-    "answer_len": 2024,
-    "answer_preview": "### 📊 센텔라 라인 카테고리별 판매 수량 교차 분석  #### 요약  'Centella' 라인의 총 판매 수량은 **59,497,754개**이며, 이 중 **앰플(Ampoule)이 17,133,919개로 전체의 28.8%**를 차지하며 가장 높은 판매 비중을 보였습니다. 오일(Oil)과 클렌저(Cleanser)가 그 뒤를 이어 각각 10,088,191개(17.0%), 7,782,952개(13.1%)의 비중을 나타내며 상위 3개 카테고리가 전체 판매를 견인하고 있습니다.  #### 상세 데이터  | Line     | Category | 판매 수량 (개) | 비중 (%) | | :------- | :------- | -------------: | -------: | | Centella | Ampoule  |     17,133,919 |     28.8 | | Centella | Oil      |     10,088,191 |     17.0 | | Centella | Clean",
-    "used_sql": "SELECT\n  Line,\n  Category,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Centella'\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet'\nGROUP BY\n  Line,\n  Category\nORDER BY\n  total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-090",
-    "query": "2023년 각 월별로 TOP 5 SKU의 판매 수량을 나란히 비교하는 표를 만들어주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 29.6,
-    "answer_len": 682,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 월별 TOP 5 SKU 판매 수량 비교** 데이터를 조회하지 못했습니다.  조회 범위가 넓어 결과를 가져오기 어려웠을 수 있습니다. 아래와 같이 **조건을 좀 더 구체적으로** 지정해 주시면 정확한 데이터를 안내드리기 수월합니다.  ---  ## 구체화하면 좋은 항목  | 항목 | 예시 | |------|------| | **기간** | 2023년 상반기, 2023년 Q3 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 쿠팡 등 | | **제품 라인** | 마다가스카르 센텔라 라인, 히아루 시카 라인 등 | | **기준 지표** | 판매 수량, 매출액 등 |  ---  ## 질문 예시  > 1️⃣ **\"2023년 상반기(1~6월) 아마존 미국 채널에서 TOP 5 SKU의 월별 판매 수량을 비교해 주세요.\"**  > 2️⃣ **\"2023년 올리브영 채널 기준, 센",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-091",
-    "query": "요즘 'Hyalucica' 라인 제품 판매는 어떤가요?",
-    "table": "product",
-    "status": "WARN",
-    "time": 83.7,
-    "answer_len": 4133,
-    "answer_preview": "### 📊 2026년 'Hyalucica' 라인 제품 판매 현황 (1월 1일 ~ 3월 18일 기준)  #### 요약  2026년 1월 1일부터 3월 18일까지 'Hyalucica' 라인 제품은 총 **약 302.69억원**의 매출과 **약 300.8만개**의 판매량을 기록했습니다. 특히 'SK_Hyalucica_Waterfit_Sun_Serum_50ml' 제품이 약 **126.51억원**의 매출로 전체 라인 매출의 41.8%를 차지하며 판매를 견인하고 있습니다.  #### 상세 데이터  2026년 1월 1일부터 3월 18일까지 'Hyalucica' 라인 제품별 매출 및 판매량은 다음과 같습니다.  | 제품명                                       | 총 매출액 (억원) | 총 판매량 (개) | | :------------------------------------------- | ---------------: | -------------: | | SK_H",
-    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_revenue,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND Brand IN ('SK', 'CL')\n  AND Line = 'Hyalucica'\n  AND `SET` IS NOT NULL\n  AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` != 'Sachet'\nGROUP BY `SET`\nORDER BY total_revenue DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-092",
-    "query": "가장 잘 팔리는 'Ampoule' 카테고리 제품은 뭔가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 40.6,
-    "answer_len": 1551,
-    "answer_preview": "### 📊 Ampoule 카테고리 최고 매출 제품 분석 (SK 및 CL 브랜드 기준)  #### 요약  2019년 1월 1일부터 현재까지 SK 및 CL 브랜드의 Ampoule 카테고리에서 가장 높은 매출을 기록한 제품은 **SK_Centella_Ampoule_100ml**이며, 총 매출은 **약 679.3억원**입니다. 이 제품은 해당 기간 동안 Ampoule 카테고리 매출을 견인하는 핵심 제품으로 분석됩니다.  #### 분석 및 인사이트  *   **압도적인 매출 성과:** SK_Centella_Ampoule_100ml 제품은 2019년 1월 1일 이후 SK 및 CL 브랜드의 Ampoule 카테고리 내에서 약 679.3억원의 매출을 기록하며 압도적인 1위를 차지했습니다. 이는 해당 제품이 브랜드 내에서 매우 중요한 위치를 차지하고 있음을 보여줍니다. *   **브랜드 핵심 제품:** 이 제품의 높은 매출은 SK 브랜드의 센텔라 라인이 시장에서 강력한 경쟁력을 가지고 있음을 시사합니",
-    "used_sql": "SELECT\n  `SET` AS product_name,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Category = 'Ampoule'\n  AND `SET` IS NOT NULL AND `SET` != ''\n  AND `SET` NOT LIKE '% + %'\n  AND `SET` NOT LIKE '%Sachet%'\nGROUP BY `SET`\nORDER BY total_revenue DESC\nLIMIT 1"
-  },
-  {
-    "id": "PR-093",
-    "query": "전체적으로 우리 제품 판매 현황 좀 간략히 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 49.6,
-    "answer_len": 1089,
-    "answer_preview": "### 📊 SK 및 CL 브랜드 판매 현황 보고서 (2019년 1월 1일 이후)  #### 요약  2019년 1월 1일 이후 SK 및 CL 두 브랜드의 총 매출은 약 **1조 1,082억원**을 기록했으며, 총 판매 수량은 약 **1억 9,368만 개**에 달합니다. 이는 지난 약 7년간 두 핵심 브랜드가 달성한 누적 실적입니다.  #### 분석 및 인사이트  *   **견고한 매출 규모**: SK 및 CL 두 브랜드만으로 1조원이 넘는 누적 매출을 달성하여, 해당 브랜드들이 회사 전체 매출에서 차지하는 비중과 기여도가 매우 높음을 시사합니다. *   **대규모 판매 수량**: 약 1억 9천만 개 이상의 제품이 판매되었다는 것은 시장에서의 높은 인지도와 소비자들의 꾸준한 구매가 있었음을 나타냅니다. *   **핵심 브랜드 집중**: 이번 분석은 SK와 CL 브랜드에 한정된 결과로, 이 두 브랜드가 회사의 성장을 견인하는 핵심 동력임을 확인할 수 있습니다.  > SK 및 CL 두 핵심",
-    "used_sql": "SELECT\n  SUM(Sales1_R) AS total_revenue,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\nLIMIT 1000"
-  },
-  {
-    "id": "PR-094",
-    "query": "최근 Country '일본'에서 어떤 Line의 제품이 인기가 많은가요?",
-    "table": "product",
-    "status": "OK",
-    "time": 49.2,
-    "answer_len": 697,
-    "answer_preview": "# 일본에서 인기 있는 SKIN1004 제품 라인 조회  일본 시장의 SKIN1004 제품별 판매 데이터를 확인해 보겠습니다. BigQuery에서 최근 일본 매출 데이터를 조회하겠습니다.  잠시만 기다려 주세요. 데이터를 조회하고 있습니다.  ---  현재 BigQuery 조회가 바로 실행되지 않아, 확인 가능한 범위 내에서 안내드리겠습니다.  ## 확인이 필요한 사항  \"Line\"이 아래 중 어떤 의미인지 확인 부탁드립니다:  | 해석 | 예시 | |------|------| | **SKIN1004 제품 라인** | 센텔라 라인, 히알루 시카 라인, 포레 라인 등 | | **판매 채널(LINE 쇼핑 등)** | LINE 쇼핑, Qoo10, Amazon Japan 등 채널별 매출 |  --- *AI 생성 답변 · 2026-03-19*  > 💡 질문의 맥락상 **SKIN1004의 제품 라인(Product Line)별 일본 매출 순위**를 확인하고 싶으신 것으로 이해했는데, 맞으실까요?",
-    "used_sql": ""
-  },
-  {
-    "id": "PR-095",
-    "query": "Brand 'SK' 제품 중 'Centella' 라인과 'LabinNature' 라인 중 어느 것이 더 잘 나가는지 궁금합니다.",
-    "table": "product",
-    "status": "OK",
-    "time": 16.6,
-    "answer_len": 2876,
-    "answer_preview": "### 📊 Brand 'SK'의 'Centella' 및 'LabinNature' 라인별 매출 분석  #### 요약  Brand 'SK'의 제품 라인 중 'Centella' 라인이 'LabinNature' 라인 대비 압도적으로 높은 매출을 기록하며 훨씬 더 잘 나가고 있는 것으로 분석되었습니다. 'Centella' 라인은 총 **약 4,616억원**의 매출을 달성한 반면, 'LabinNature' 라인은 총 **약 97억원**의 매출을 기록했습니다.  #### 상세 데이터  | 라인        | 총 매출 (원)         | | :---------- | --------------------: | | Centella    | 461,597,011,529.98    | | LabinNature | 9,724,094,567.69      | | **합계**    | **471,321,106,097.67** |  #### 시각화   ```chart-config {\"type\": \"bar",
-    "used_sql": "SELECT\n  Line,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand = 'SK'\n  AND Line IN ('Centella', 'LabinNature')\nGROUP BY Line\nORDER BY total_revenue DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-096",
-    "query": "전체 평균 판매 수량보다 높은 판매 수량을 기록한 SKU들의 목록과 그 수량을 알려주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 45.9,
-    "answer_len": 3125,
-    "answer_preview": "### 📊 전체 평균 판매 수량 초과 SKU 분석 보고서  #### 요약  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드 제품 중, 전체 평균 판매 수량보다 높은 실적을 기록한 SKU는 총 **203개**입니다. 이 SKU들의 총 판매 수량은 **126,915,868개**에 달하며, 특히 'SK_Hyalucica_Waterfit_Sun_Serum_50ml' 제품이 **10,750,857개**로 가장 높은 판매 수량을 기록했습니다. 상위 15개 SKU가 전체 평균 초과 SKU 판매 수량의 약 63%를 차지하며 판매 집중도가 높은 것으로 나타났습니다.  #### 상세 데이터  2019년 1월 1일 이후 'SK' 및 'CL' 브랜드 제품 중 전체 평균 판매 수량을 초과한 상위 15개 SKU 목록과 판매 수량은 다음과 같습니다. 총 203개의 SKU가 해당 기준을 충족했습니다.  | SKU                                       | 총 판매 수량 | |",
-    "used_sql": "SELECT\n  Product AS sku,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\nGROUP BY Product\nHAVING SUM(Total_Qty) > (\n  SELECT\n    AVG(Total_Qty)\n  FROM `skin1004-319714.Sales_Integration.Product`\n  WHERE Date >= '2019-01-01'\n    AND Brand IN ('SK', 'CL')\n    AND Product IS NOT NULL AND Product != '' AND Product != 'Others' AND Product != 'Sachet'\n)\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-097",
-    "query": "각 Country별로 총 판매 수량이 10,000개 이상인 Country와 해당 총 수량을 보여주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 52.3,
-    "answer_len": 2085,
-    "answer_preview": "### 📊 각 Country별 총 판매 수량 10,000개 이상 국가 현황  #### 요약  2019년 1월 1일부터 현재까지(2026년 3월 19일 기준) 'SK', 'CL' 브랜드 제품 중 'Sachet'을 제외하고 총 판매 수량이 10,000개 이상인 국가는 **총 112개**로 확인되었습니다. 이들 국가의 총 판매 수량은 **126,861,116개**에 달합니다. 가장 높은 판매 수량을 기록한 국가는 **글로벌_플랫폼**으로 **21,043,796개**를 판매했으며, 이는 전체의 약 **16.6%**를 차지합니다.  #### 상세 데이터  총 판매 수량 10,000개 이상을 달성한 112개 국가 중 상위 15개 국가의 현황은 다음과 같습니다.  | Country | 총 판매 수량 (개) | | :---------------- | ---------------: | | 글로벌_플랫폼 | 21,043,796 | | 인도네시아 | 15,797,116 | | 미국 | 12,087,51",
-    "used_sql": "SELECT\n  Country,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\nGROUP BY Country\nHAVING SUM(Total_Qty) >= 10000\nORDER BY total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-098",
-    "query": "각 Country 내에서 Category별 판매 수량 순위를 매겨주세요.",
-    "table": "product",
-    "status": "OK",
-    "time": 54.4,
-    "answer_len": 2860,
-    "answer_preview": "### 📊 국가별 카테고리 판매 수량 순위 분석  #### 요약  2019년 1월 1일부터 현재까지의 누적 데이터를 기준으로, 각 국가 내에서 카테고리별 판매 수량 순위를 분석한 결과, 총 **106,477,965개**의 판매 수량이 집계되었습니다. 특히, **'글로벌_플랫폼'**에서는 Suncare 카테고리가 **6,328,294개**로 1위를 차지했으며, **'인도네시아'**와 **'미국'**에서는 Ampoule 카테고리가 각각 **4,713,334개**와 **3,890,635개**로 가장 높은 판매량을 기록하며 해당 국가 내 1위를 차지했습니다.  #### 상세 데이터  다음은 각 국가 내 카테고리별 판매 수량 순위 중 상위 15건에 대한 프리뷰입니다.  | Country      | Category | total_quantity | quantity_rank | | :----------- | :------- | -------------: | ------------: | | 글로",
-    "used_sql": "SELECT\n  Country,\n  Category,\n  SUM(Total_Qty) AS total_quantity,\n  ROW_NUMBER() OVER (PARTITION BY Country ORDER BY SUM(Total_Qty) DESC) AS quantity_rank\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product IS NOT NULL AND Product != '' AND Product != 'Sachet' AND Product != 'Others'\n  AND Category IS NOT NULL AND Category != ''\nGROUP BY Country, Category\nORDER BY Country, total_quantity DESC\nLIMIT 1000"
-  },
-  {
-    "id": "PR-099",
-    "query": "각 Line별로 Category별 판매 수량을 가로로 펼쳐서 보여주는 피벗 테이블을 생성해주세요.",
-    "table": "product",
-    "status": "WARN",
-    "time": 76.6,
-    "answer_len": 5737,
-    "answer_preview": "### 📊 Line별 Category 판매 수량 피벗 테이블 분석  #### 요약  제공된 데이터에 따르면, 분석 대상 Line들의 총 판매 수량은 **125,685,898**개로 집계되었습니다 (상위 15개 Line 기준). 이 중 **'Centella' Line이 59,497,754개**로 압도적인 판매량을 기록하며 전체의 약 47.3%를 차지했습니다. 'Centella' Line 내에서는 'Ampoule', 'Oil', 'Cleanser' 카테고리의 판매가 두드러졌습니다. 'Hyalucica' Line은 'Suncare' 카테고리를 중심으로 두 번째로 높은 판매량을 보였습니다.  #### 상세 데이터  각 Line별 Category 판매 수량은 다음과 같습니다 (단위: 개). *본 표는 전체 16행 중 상위 15건 프리뷰 데이터를 기반으로 작성되었습니다. 전체 데이터와는 차이가 있을 수 있습니다.*  | Line              | Ampoule_Qty | Suncare",
-    "used_sql": "SELECT\n  Line,\n  SUM(CASE WHEN Category = 'Ampoule' THEN Total_Qty ELSE 0 END) AS Ampoule_Qty,\n  SUM(CASE WHEN Category = 'Suncare' THEN Total_Qty ELSE 0 END) AS Suncare_Qty,\n  SUM(CASE WHEN Category = 'SET' THEN Total_Qty ELSE 0 END) AS SET_Qty,\n  SUM(CASE WHEN Category = 'Cream' THEN Total_Qty ELSE 0 END) AS Cream_Qty,\n  SUM(CASE WHEN Category = 'Pack' THEN Total_Qty ELSE 0 END) AS Pack_Qty,\n  SUM(CASE WHEN Category = 'Cleanser' THEN Total_Qty ELSE 0 END) AS Cleanser_Qty,\n  SUM(CASE WHEN Category = 'Oil' THEN Total_Qty ELSE 0 END) AS Oil_Qty,\n  SUM(CASE WHEN Category = 'Toner' THEN Total_Qty ELSE 0 END) AS Toner_Qty,\n  SUM(CASE WHEN Category = 'Others' THEN Total_Qty ELSE 0 END) AS Others_Qty,\n  SUM(Total_Qty) AS Total_Line_Qty\nFROM `skin1004-319714.Sales_Integration.Product`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Product != 'Sachet'\n  AND Line IS NOT NULL AND Line != ''\nGROUP BY Line\nORDER BY Line\nLIMIT 1000"
-  },
-  {
-    "id": "PR-100",
-    "query": "2023년 전체 판매 수량의 상위 10%를 차지하는 SKU들의 2023년 월별 판매 수량 추이를 보여주세요.",
+    "query": "가장 오래된 판매 기록의 'Date'와 'Country'는 무엇인가요?",
     "table": "product",
     "status": "OK",
     "time": 34.8,
-    "answer_len": 709,
-    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **2023년 전체 판매 수량 상위 10% SKU의 월별 판매 추이** 데이터를 조회하지 못했습니다.  ---  > ## 💡 더 구체적으로 질문해 보시겠어요? 조건을 좀 더 세분화하시면 정확한 데이터를 조회할 수 있을 가능성이 높습니다. 아래 항목들을 포함해 주시면 도움이 됩니다.  | 구체화 항목 | 예시 | |------------|------| | **기간** | 2023년 상반기, 2023년 Q3 등 | | **국가/지역** | 한국, 미국, 일본 등 | | **판매 채널** | 자사몰, 아마존, 올리브영, 쿠팡 등 | | **제품 라인/제품명** | 마다가스카르 센텔라 라인, 특정 SKU명 등 | | **기준 지표** | 판매 수량, 매출액 등 |  ---  ## 📝 질문 예시  > **1.** \"2023년 **한국 올리브영 채널**에서 판매 수량 상위 10% SKU의 월별 판매 추이를 보여주세요.\"  > **2.** \"2023년",
-    "used_sql": ""
+    "answer_len": 816,
+    "answer_preview": "### 📊 가장 오래된 판매 기록 정보  #### 요약  조회된 데이터 중 가장 오래된 판매 기록은 **2019년 01월 02일**에 **미국**에서 발생했습니다.  #### 분석 및 인사이트  *   **데이터 시작점 확인**: 이 기록은 2019년 1월 1일 이후의 판매 데이터 중 가장 초기에 발생한 것으로, 현재 시스템에 기록된 매출 데이터의 시작점을 명확히 보여줍니다. *   **초기 시장 파악**: 미국이 가장 먼저 판매 기록을 남긴 국가 중 하나라는 점은 초기 비즈니스 전략에서 미국 시장이 중요한 역할을 했음을 시사합니다. *   **데이터 필터링 조건**: 'ETC' 브랜드를 제외하고 2019년 1월 1일 이후의 데이터만을 기준으로 했으므로, 이 날짜와 국가는 특정 조건 하에서의 가장 오래된 기록입니다.  --- *조회 기준: 2026-04-01 | 데이터소스: 통합 매출 (SALES_ALL)*  > 💡 **이런 것도 물어보세요** > - 2019년 1분기 동안 가장 많",
+    "used_sql": "SELECT\n  Date,\n  Country\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\nORDER BY Date ASC\nLIMIT 1"
+  },
+  {
+    "id": "PR-049",
+    "query": "'SET'(제품명)이 NULL인 판매 기록이 존재하나요?",
+    "table": "product",
+    "status": "OK",
+    "time": 32.9,
+    "answer_len": 2015,
+    "answer_preview": "### 📊 'SET' 제품명이 NULL인 판매 기록 분석 보고서  #### 요약  'SET' 제품명이 NULL인 판매 기록이 **최소 1,000건** 존재하는 것으로 확인되었습니다. 이 기록들은 2022년 8월부터 2025년 10월까지의 기간에 걸쳐 발생했으며, 모든 해당 기록에서 'Company_Name' 필드는 비어있는 특징을 보였습니다.  #### 상세 데이터  'SET' 제품명이 NULL인 판매 기록 중 상위 5건의 샘플은 다음과 같습니다.  | 주문 번호 (Order_Number) | 날짜 (Date)         | 회사명 (Company_Name) | 제품명 (product_name) | | :----------------------- | :------------------ | :-------------------- | :-------------------- | | 307209201675             | 2024-12-16 00:00:00 |          ",
+    "used_sql": "SELECT\n  Order_Number,\n  Date,\n  Company_Name,\n  `SET` AS product_name\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand != 'ETC'\n  AND `SET` IS NULL\nLIMIT 1000"
+  },
+  {
+    "id": "PR-050",
+    "query": "특정 국가에서 판매된 'Total_Qty'가 가장 높은 'SKU'는 무엇인가요?",
+    "table": "product",
+    "status": "OK",
+    "time": 34.9,
+    "answer_len": 1081,
+    "answer_preview": "### 📊 미국 내 최다 판매 SKU 분석  #### 요약  미국에서 2019년 1월 1일 이후 SK 및 CL 브랜드 중 가장 많이 판매된 SKU는 'SK_Centella_Ampoule_100ml'이며, 총 **339,752개**가 판매되었습니다.  #### 분석 및 인사이트  *   'SK_Centella_Ampoule_100ml' 제품은 미국 시장에서 SK 및 CL 브랜드의 주력 상품으로, 압도적인 판매량을 기록하며 높은 시장 수요와 인기를 입증했습니다. *   단일 SKU로 30만 개 이상의 판매량은 해당 제품이 미국 소비자들에게 강력한 선호도를 얻고 있음을 시사합니다. *   이 제품의 성공 요인(예: 마케팅 전략, 제품력, 유통 채널)을 분석하여 다른 국가 또는 신규 제품군에도 적용할 수 있는 전략적 인사이트를 도출할 수 있습니다. (조회 기간: 2019년 1월 1일 이후, 브랜드: SK, CL)  --- *조회 기준: 2026-04-01 | 데이터소스: 통합 매출 (SAL",
+    "used_sql": "SELECT\n  SKU,\n  `SET` AS product_name,\n  SUM(Total_Qty) AS total_quantity\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND Brand IN ('SK', 'CL')\n  AND Country = '미국'\n  AND SKU IS NOT NULL\n  AND SKU != ''\n  AND SKU != 'Sachet'\n  AND SKU != 'Others'\nGROUP BY\n  SKU,\n  `SET`\nORDER BY\n  total_quantity DESC\nLIMIT 1"
   }
 ]

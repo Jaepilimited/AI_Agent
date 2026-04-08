@@ -1,0 +1,502 @@
+[
+  {
+    "id": "RS-001",
+    "query": "전체 리뷰의 총 감성 점수 합계는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-002",
+    "query": "모든 제품 리뷰의 평균 수분 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-003",
+    "query": "가장 높은 진정/자극 점수를 받은 리뷰는 몇 점인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-004",
+    "query": "가장 낮은 트러블/피지/모공 점수를 받은 리뷰는 몇 점인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-005",
+    "query": "총 몇 건의 리뷰가 수집되었나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-006",
+    "query": "월별 평균 감성 점수 추이를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-007",
+    "query": "분기별 총 리뷰 수의 변화를 알려주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-008",
+    "query": "연도별 평균 향 점수 추이는 어떻게 되나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-009",
+    "query": "주별 평균 텍스처 점수의 변동을 확인해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-010",
+    "query": "일별 수집된 리뷰 수의 변화를 그래프로 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-011",
+    "query": "감성 점수가 가장 높은 상위 3개 제품은 무엇인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-012",
+    "query": "수분 점수가 가장 높은 상위 5개 제품과 그 점수를 알려주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-013",
+    "query": "리뷰 수가 가장 많은 상위 10개 제품 목록을 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-014",
+    "query": "진정/자극 점수가 가장 낮은 제품은 무엇이며, 점수는 몇 점인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-015",
+    "query": "모든 리뷰의 톤/미백 점수 중간값은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-016",
+    "query": "지난달 대비 이번 달의 평균 감성 점수 변화율은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-017",
+    "query": "작년 같은 기간 대비 올해의 총 리뷰 수 증감은 어떠한가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-018",
+    "query": "'Shopee MY' 채널과 'Shopee SG' 채널 간의 평균 수분 점수를 비교해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-019",
+    "query": "각 채널별 평균 텍스처 점수를 비교하여 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-020",
+    "query": "'SKIN1004' 브랜드와 (가상의) 'Brand B'의 평균 트러블/피지/모공 점수를 비교해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-021",
+    "query": "전체 리뷰 중 긍정적인 감성(감성 점수 > 0)을 가진 리뷰의 비중은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-022",
+    "query": "특정 제품이 전체 수분 점수 합계에 기여하는 비율은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-023",
+    "query": "가장 많은 리뷰를 받은 제품이 전체 리뷰 수에서 차지하는 점유율은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-024",
+    "query": "각 제품별 리뷰 수의 전체 대비 구성비를 파이 차트로 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-025",
+    "query": "상위 5개 제품이 전체 감성 점수에 기여하는 정도는 어느 정도인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-026",
+    "query": "'Shopee PH' 채널에서 2023년 3분기 동안 수집된 리뷰의 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-027",
+    "query": "'SKIN1004' 브랜드의 'Shopee SG' 채널에서 받은 리뷰의 총 개수는 몇 개인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-028",
+    "query": "'Madagascar Centella Ampoule' 제품에 대해 지난 6개월간의 평균 진정/자극 점수를 알려주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-029",
+    "query": "감성 점수가 0.5 이상이고, 수분 점수가 0.7 이상인 리뷰들의 총 개수는 몇 개인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-030",
+    "query": "2023년에 'texture_score'가 0.8 미만인 'Madagascar Centella Toning Toner' 제품 리뷰의 평균 트러블/피지/모공 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-031",
+    "query": "월별 평균 감성 점수 추이를 라인 그래프로 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-032",
+    "query": "각 제품별 총 리뷰 수를 막대 차트로 시각화해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-033",
+    "query": "지난 1년간의 평균 수분 점수 변화 추이를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-034",
+    "query": "전체 리뷰 중 긍정(>0), 중립(=0), 부정(<0) 감성 리뷰의 비율을 파이 차트로 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-035",
+    "query": "각 카테고리별(수분, 진정, 트러블 등) 평균 점수를 비교하는 막대 차트를 생성해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-036",
+    "query": "'Madagascar Centella Ampoule' 제품을 제외한 모든 제품의 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-037",
+    "query": "'SKIN1004' 브랜드가 아닌 다른 브랜드의 리뷰 중 가장 높은 진정/자극 점수는 몇 점인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-038",
+    "query": "2023년 1월을 제외한 모든 월의 평균 텍스처 점수는 어떻게 되나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-039",
+    "query": "감성 점수가 0인 중립 리뷰를 빼고, 나머지 리뷰들의 평균 톤/미백 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-040",
+    "query": "'Madagascar Centella Ampoule'와 'Madagascar Centella Toning Toner'를 제외한 제품들의 총 리뷰 수는 몇 건인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-041",
+    "query": "2024년에 수집된 리뷰 데이터가 있나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-042",
+    "query": "'Madagascar Centella Cream' 제품에 대한 리뷰 데이터가 현재 존재하나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-043",
+    "query": "특정 채널('Shopee VN')의 리뷰 감성 점수를 조회할 수 있나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-044",
+    "query": "가장 최근에 수집된 리뷰의 review_date는 언제인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-045",
+    "query": "수분 점수가 1.0인 리뷰가 존재하나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-046",
+    "query": "감성 점수가 정확히 0인 리뷰는 총 몇 건인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-047",
+    "query": "가장 최근에 수집된 리뷰의 상세 내용을 알려주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-048",
+    "query": "가장 오래된 리뷰의 review_date는 언제이며, 어떤 제품에 대한 리뷰였나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-049",
+    "query": "product_name_eng 컬럼에 NULL 값이 있는 리뷰가 있나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-050",
+    "query": "수분 점수에서 최고점을 기록한 리뷰의 review_original 내용은 무엇인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-051",
+    "query": "각 채널별 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-052",
+    "query": "각 제품별 평균 수분 점수와 평균 진정/자극 점수를 함께 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-053",
+    "query": "각 브랜드별 총 리뷰 수를 집계해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-054",
+    "query": "수분, 진정/자극, 트러블/피지/모공, 텍스처, 향, 톤/미백 각 카테고리 점수의 전체 평균을 비교해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-055",
+    "query": "리뷰 날짜의 연도별로 평균 감성 점수를 집계해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-056",
+    "query": "최근 3개월간의 월별 평균 트러블/피지/모공 점수는 어떻게 되나요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-057",
+    "query": "2023년 하반기(7월~12월) 동안의 총 리뷰 수는 몇 건인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-058",
+    "query": "2022년 1분기부터 3분기까지의 평균 향 점수를 알려주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-059",
+    "query": "2023년 10월 첫째 주(예: 10/1~10/7)에 수집된 리뷰의 평균 톤/미백 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-060",
+    "query": "지난 12개월 동안의 제품별 리뷰 수 변화를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-061",
+    "query": "지난 분기 대비 이번 분기의 총 리뷰 수 성장률은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-062",
+    "query": "특정 제품의 월별 평균 감성 점수가 가장 크게 감소한 달은 언제이며, 감소율은 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-063",
+    "query": "2023년 대비 2024년의 평균 수분 점수 증감은 어떠한가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-064",
+    "query": "'Madagascar Centella Ampoule' 제품의 월별 평균 텍스처 점수 변동폭이 가장 큰 기간은 언제인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-065",
+    "query": "지난 6개월간 collected_date 기준 수집된 리뷰 수의 월별 변화를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-066",
+    "query": "전체 리뷰의 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-067",
+    "query": "각 제품별로 모든 카테고리 점수(수분, 진정 등)의 평균을 계산해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-068",
+    "query": "지난 3개월 이동평균 감성 점수를 월별로 계산해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-069",
+    "query": "리뷰 수에 따라 가중치를 부여한 제품별 평균 감성 점수를 계산해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-070",
+    "query": "review_original 컬럼의 평균 문자 길이는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-071",
+    "query": "2023년 1월부터 월별 누적 리뷰 수를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-072",
+    "query": "2023년 YTD(Year-To-Date) 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-073",
+    "query": "이번 달 MTD(Month-To-Date) 총 리뷰 수는 몇 건인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-074",
+    "query": "2023년 연간 총 진정/자극 점수 합계는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-075",
+    "query": "특정 제품의 월별 누적 수분 점수 추이를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-076",
+    "query": "감성 점수가 0.8 이상인 리뷰들의 평균 수분 점수는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-077",
+    "query": "트러블/피지/모공 점수가 0.2 이하인 리뷰들의 총 개수는 몇 개인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-078",
+    "query": "'Madagascar Centella Ampoule' 제품에 대한 리뷰 중, 'texture_score'가 0.5보다 높은 리뷰들의 평균 'scent_score'는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-079",
+    "query": "감성 점수가 0.3에서 0.7 사이인 리뷰들의 총 톤/미백 점수 합계는 얼마인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-080",
+    "query": "2023년 1월 1일 이후에 작성된 리뷰 중, 'moisture_score'가 가장 높은 제품은 무엇인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-081",
+    "query": "'Madagascar Centella Ampoule' 제품의 모든 리뷰에 대한 감성 점수 분포를 상세히 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-082",
+    "query": "특정 review_date (예: 2023-01-15)에 작성된 모든 리뷰의 review_original과 sentiment_score를 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-083",
+    "query": "가장 많은 리뷰를 받은 제품의 모든 카테고리별 평균 점수를 상세히 알려주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-084",
+    "query": "감성 점수가 -0.5 이하인 리뷰들의 product_name_eng, review_ko, sentiment_score를 상세히 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-085",
+    "query": "'Shopee ID' 채널의 모든 리뷰에 대한 월별 평균 수분 점수와 평균 진정/자극 점수 추이를 상세히 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-086",
+    "query": "각 채널별로 제품별 평균 감성 점수를 교차 분석하여 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-087",
+    "query": "제품별로 분기별 평균 텍스처 점수를 교차 분석하여 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-088",
+    "query": "연도별로 각 카테고리 점수(수분, 진정 등)의 평균을 교차 분석하여 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-089",
+    "query": "각 채널별로 긍정, 중립, 부정 감성 리뷰의 비율을 교차 분석하여 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-090",
+    "query": "각 제품별로 감성 점수와 수분 점수 간의 상관관계를 교차 분석해주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-091",
+    "query": "요즘(최근 1개월) SKIN1004 제품들의 전반적인 감성 점수 추이는 어떤가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-092",
+    "query": "가장 인기 있는 제품은 무엇인가요? (리뷰 수 기준)",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-093",
+    "query": "'Madagascar Centella Ampoule'에 대한 소비자들의 전반적인 의견(감성 점수)이 어떤지 좀 알려줘.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-094",
+    "query": "어떤 제품이 현재 문제가 있는 것으로 보이나요? (평균 감성 점수 낮은 제품)",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-095",
+    "query": "SKIN1004 제품들의 전반적인 강점(높은 점수)과 약점(낮은 점수) 카테고리는 무엇인가요?",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-096",
+    "query": "전체 평균 감성 점수보다 낮은 평균 감성 점수를 가진 제품들의 목록을 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-097",
+    "query": "2023년에 100건 이상의 리뷰를 받은 제품들 중에서 평균 수분 점수가 0.7 이상인 제품들을 찾아주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-098",
+    "query": "각 채널별로 제품의 평균 감성 점수를 기준으로 순위를 매겨주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-099",
+    "query": "월별로 각 제품의 평균 감성 점수를 피벗 테이블 형태로 보여주세요.",
+    "table": "shopee_review"
+  },
+  {
+    "id": "RS-100",
+    "query": "2023년 이후, 각 제품의 월별 평균 감성 점수와 전월 대비 감성 점수 변화율을 함께 보여주세요.",
+    "table": "shopee_review"
+  }
+]

@@ -1943,17 +1943,50 @@ pre:hover .code-copy-btn { opacity: 1; }
 .db-autocomplete-dropdown {
   position: absolute;
   bottom: 100%;
-  left: 0;
-  right: 0;
-  max-height: 340px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 50%;
+  min-width: 280px;
+  max-height: 380px;
   overflow-y: auto;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 -4px 16px rgba(0,0,0,0.12);
+  background: rgba(var(--bg-secondary-rgb, 255,255,255), 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(var(--border-rgb, 200,200,200), 0.5);
+  border-radius: 12px;
+  box-shadow: 0 -6px 24px rgba(0,0,0,0.15);
   z-index: 100;
   margin-bottom: 4px;
   padding: 8px;
+}
+html.dark .db-autocomplete-dropdown {
+  background: rgba(30,30,30,0.92);
+  border-color: rgba(255,255,255,0.1);
+}
+.db-ac-item.active, .db-ac-chip.active {
+  background: var(--accent-glow, rgba(232,146,0,0.12));
+  border-color: var(--accent, #e89200);
+  outline: none;
+}
+.db-ac-item.selected {
+  background: var(--accent-glow, rgba(232,146,0,0.1));
+  border-color: var(--accent, #e89200);
+  opacity: 0.7;
+}
+.db-ac-item.selected::after {
+  content: "✓";
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: var(--accent, #e89200);
+}
+.db-ac-hint {
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  padding: 4px 0 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
 }
 .db-ac-special {
   display: flex;
@@ -1991,7 +2024,7 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 .db-ac-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 4px;
   margin-bottom: 2px;
 }

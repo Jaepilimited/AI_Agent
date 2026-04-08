@@ -1,0 +1,502 @@
+[
+  {
+    "id": "RT-001",
+    "query": "전체 리뷰의 sentiment_score 합계는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-002",
+    "query": "모든 리뷰의 평균 sentiment_score는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-003",
+    "query": "가장 높은 moisture_score를 기록한 리뷰는 몇 점인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-004",
+    "query": "가장 낮은 sentiment_score는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-005",
+    "query": "전체 수집된 리뷰 수는 총 몇 건인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-006",
+    "query": "2023년 월별로 수집된 리뷰 건수 추이를 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-007",
+    "query": "2023년 분기별 평균 sentiment_score 변화 추이는 어떤가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-008",
+    "query": "연도별로 skin_concern 유형별 리뷰 건수 변화를 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-009",
+    "query": "최근 3개월간 주별 soothing_irritation_score의 평균 추이를 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-010",
+    "query": "특정 제품의 일별 review_date 기준 리뷰 등록 추이를 시각화해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-011",
+    "query": "평균 sentiment_score가 가장 높은 TOP 3 product_name_eng는 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-012",
+    "query": "skin_concern별로 가장 많이 언급된 TOP 5 product_name은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-013",
+    "query": "전체 channel에서 review_date 기준으로 리뷰 수가 많은 TOP 10 제품을 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-014",
+    "query": "texture_score가 가장 낮은 product_name_eng는 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-015",
+    "query": "sentiment_score의 전체 중간값은 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-016",
+    "query": "2023년 10월 대비 11월의 전체 리뷰 건수 증감률은 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-017",
+    "query": "2022년과 2023년 동일 분기(Q3)의 moisture_score 평균을 비교해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-018",
+    "query": "각 brand별 평균 sentiment_score를 비교하여 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-019",
+    "query": "channel별로 soothing_irritation_score의 평균을 비교해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-020",
+    "query": "brand별로 review_date 기준 리뷰 등록 활동성을 비교해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-021",
+    "query": "전체 리뷰 중 '피부 진정' 관련 skin_concern이 차지하는 비중은 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-022",
+    "query": "특정 product_name에 대한 긍정적(sentiment_score > 0) 리뷰의 비율은 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-023",
+    "query": "각 channel이 전체 리뷰 건수에서 차지하는 점유율은 어떻게 되나요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-024",
+    "query": "skin_concern 유형별 전체 리뷰 건수 구성비를 파이 차트로 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-025",
+    "query": "product_name별로 전체 sentiment_score 합계에 대한 기여도를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-026",
+    "query": "특정 brand의 2023년 하반기 channel별 리뷰 건수를 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-027",
+    "query": "'SKIN1004' 브랜드의 '네이버 스마트스토어' 채널에서 수집된 리뷰는 총 몇 건인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-028",
+    "query": "'마다가스카르 센텔라 앰플' 제품에 대한 2023년 1월부터 3월까지의 평균 sentiment_score는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-029",
+    "query": "sentiment_score가 0.8 이상이면서 moisture_score가 4점 이상인 리뷰 중, '트러블' skin_concern을 가진 리뷰의 review_original 텍스트를 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-030",
+    "query": "'톤업' 관련 skin_concern을 가진 리뷰 중, tone_brightening_score가 평균보다 높은 product_name 목록을 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-031",
+    "query": "월별 sentiment_score 평균 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-032",
+    "query": "skin_concern 유형별 리뷰 건수를 막대 차트로 시각화해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-033",
+    "query": "'진정' 관련 skin_concern을 가진 리뷰의 soothing_irritation_score 평균 추이를 review_date 기준으로 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-034",
+    "query": "channel별 리뷰 건수 비중을 파이 차트로 그려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-035",
+    "query": "brand별 moisture_score 평균을 비교하는 바 차트를 생성해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-036",
+    "query": "'마다가스카르 센텔라 앰플' 제품을 제외한 나머지 제품들의 평균 sentiment_score는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-037",
+    "query": "'트러블' skin_concern이 아닌 리뷰들의 trouble_sebum_pore_score 평균을 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-038",
+    "query": "'네이버 스마트스토어' 채널 외의 다른 channel에서 수집된 리뷰들의 review_ko를 5개만 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-039",
+    "query": "collected_date가 2023년 1월 1일 이전인 리뷰를 빼고, 각 brand별 총 리뷰 건수를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-040",
+    "query": "scent_score가 0점인 리뷰를 제외하고, 전체 product_name별 평균 scent_score를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-041",
+    "query": "2024년에 수집된 리뷰 데이터가 있나요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-042",
+    "query": "특정 product_name_eng에 대한 review_original 데이터가 존재하는지 확인해줄 수 있나요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-043",
+    "query": "skin_concern이 '모공'으로 분류된 리뷰를 조회할 수 있나요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-044",
+    "query": "sentiment_score가 -0.5 이하인 부정적인 리뷰가 존재하는지 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-045",
+    "query": "texture_score가 1점 미만인 리뷰 데이터가 있나요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-046",
+    "query": "sentiment_score가 정확히 0점인 리뷰는 총 몇 건인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-047",
+    "query": "가장 최근에 수집된 리뷰의 review_original 내용은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-048",
+    "query": "review_date 기준으로 가장 오래된 리뷰의 product_name은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-049",
+    "query": "skin_concern 컬럼이 NULL인 리뷰는 몇 건인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-050",
+    "query": "product_name_eng가 NULL인 리뷰 데이터가 있는지 확인해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-051",
+    "query": "각 brand별로 moisture_score의 평균을 집계해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-052",
+    "query": "skin_concern 카테고리별로 sentiment_score의 평균을 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-053",
+    "query": "product_name_eng의 첫 단어(예: Madagascar, Hyalu-Cica)를 기준으로 제품 라인별 soothing_irritation_score 평균을 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-054",
+    "query": "channel별로 수집된 리뷰의 총 건수를 집계해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-055",
+    "query": "skin_concern 유형별로 texture_score의 평균과 표준편차를 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-056",
+    "query": "collected_date 기준으로 최근 3개월간 가장 많이 리뷰된 product_name은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-057",
+    "query": "2023년 하반기(collected_date 기준)에 '미백' 관련 skin_concern을 가진 리뷰의 tone_brightening_score 평균은 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-058",
+    "query": "2023년 Q1부터 Q3까지의 전체 sentiment_score 평균은 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-059",
+    "query": "2023년 5월 첫째 주에 수집된 리뷰들의 review_original을 모두 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-060",
+    "query": "review_date가 2022년 10월부터 2023년 3월 사이에 해당하는 product_name별 평균 scent_score를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-061",
+    "query": "2023년 10월 대비 11월의 product_name별 리뷰 건수 성장률을 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-062",
+    "query": "특정 channel에서 2023년 상반기 대비 하반기 리뷰 건수 감소율이 가장 큰 brand는 어디인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-063",
+    "query": "월별 sentiment_score 평균의 전월 대비 증감 현황을 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-064",
+    "query": "product_name별 moisture_score의 최대-최소 변동폭이 가장 큰 제품은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-065",
+    "query": "2022년과 2023년 사이 skin_concern '진정' 관련 리뷰의 soothing_irritation_score 평균 변화를 분석해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-066",
+    "query": "product_name별 평균 sentiment_score를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-067",
+    "query": "각 brand별 평균 리뷰 건수를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-068",
+    "query": "주간 sentiment_score 평균의 4주 이동평균 추이를 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-069",
+    "query": "review_date가 최근일수록 가중치를 더하여 product_name별 sentiment_score의 가중평균을 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-070",
+    "query": "channel별로 texture_score와 scent_score의 평균을 각각 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-071",
+    "query": "2023년 월별 누적 리뷰 건수를 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-072",
+    "query": "2023년 collected_date 기준 YTD sentiment_score 합계는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-073",
+    "query": "이번 달 collected_date 기준 MTD review_count는 몇 건인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-074",
+    "query": "2023년 한 해 동안 product_name별로 moisture_score의 합산 점수는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-075",
+    "query": "각 brand의 review_date 기준 연도별 누적 trouble_sebum_pore_score 평균을 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-076",
+    "query": "skin_concern이 '보습'인 리뷰들 중에서 moisture_score가 4점 이상인 리뷰의 review_ko를 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-077",
+    "query": "sentiment_score가 0.7 이상인 리뷰의 product_name_eng 목록과 해당 리뷰 건수를 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-078",
+    "query": "soothing_irritation_score가 2점 이하인 리뷰들이 가장 많이 언급한 skin_concern은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-079",
+    "query": "texture_score가 3점 이상이고 scent_score가 3점 미만인 리뷰들의 평균 sentiment_score는 얼마인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-080",
+    "query": "'마다가스카르'로 시작하는 product_name_eng를 가진 제품에 대한 리뷰 중, review_date가 2023년 이후인 리뷰의 총 건수는 몇 건인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-081",
+    "query": "'마다가스카르 센텔라 앰플' 제품에 대한 모든 review_original과 sentiment_score를 상세 조회해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-082",
+    "query": "product_name_eng가 'Hyalu-Cica Water-Fit Sun Serum'인 제품의 skin_concern 분포를 상세히 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-083",
+    "query": "2023년 10월 한 달간 channel '올리브영'에서 수집된 리뷰들의 review_ko와 sentiment_score를 상세히 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-084",
+    "query": "review_date가 2023년 11월 15일인 리뷰들의 product_name, channel, review_ko를 상세히 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-085",
+    "query": "sentiment_score가 가장 낮은 5개 리뷰의 product_name, review_ko, sentiment_score를 상세히 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-086",
+    "query": "brand별 skin_concern 유형에 따른 평균 sentiment_score를 교차 분석해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-087",
+    "query": "channel별 2023년 분기별 리뷰 건수 변화를 교차 분석하여 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-088",
+    "query": "brand와 product_name_eng (제품 라인) 조합별 moisture_score와 soothing_irritation_score의 평균을 교차 분석해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-089",
+    "query": "skin_concern과 channel 간의 sentiment_score 분포를 교차 분석하여 어떤 skin_concern이 특정 channel에서 더 긍정적인지 파악해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-090",
+    "query": "collected_date의 연도와 월별로 brand별 리뷰 건수를 교차 집계하여 표로 보여주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-091",
+    "query": "요즘 우리 제품들에 대한 리뷰 감성 점수는 어떤가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-092",
+    "query": "최근 가장 인기 있는 제품은 무엇인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-093",
+    "query": "'피부결'에 대한 리뷰들이 주로 어떤 내용을 담고 있는지 좀 알려줄 수 있을까요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-094",
+    "query": "최근 moisture_score와 soothing_irritation_score는 어떤 추세인가요?",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-095",
+    "query": "'트러블' 관련 skin_concern을 가진 리뷰에서 주로 어떤 product_name이 언급되는지 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-096",
+    "query": "전체 평균 sentiment_score보다 높은 점수를 받은 product_name들의 목록과 해당 제품의 평균 sentiment_score를 알려주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-097",
+    "query": "channel별로 총 리뷰 건수가 100건 이상인 channel만 대상으로 평균 texture_score를 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-098",
+    "query": "각 product_name별로 review_date 순으로 sentiment_score의 3개 리뷰 이동평균을 계산해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-099",
+    "query": "skin_concern을 행으로, channel을 열로 하여 각 교차점에 해당하는 평균 sentiment_score를 보여주는 피벗 테이블을 생성해주세요.",
+    "table": "smartstore_review"
+  },
+  {
+    "id": "RT-100",
+    "query": "각 brand 내에서 review_date 기준으로 가장 많은 리뷰를 받은 product_name TOP 5를 선정하고, 이 제품들의 최근 6개월간 sentiment_score 평균을 함께 보여주세요.",
+    "table": "smartstore_review"
+  }
+]

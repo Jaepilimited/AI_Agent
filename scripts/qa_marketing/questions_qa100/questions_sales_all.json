@@ -6,497 +6,247 @@
   },
   {
     "id": "SA-002",
-    "query": "전체 거래의 평균 단가는 얼마인가요?",
+    "query": "전체 판매된 제품의 평균 단가는 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-003",
-    "query": "가장 높은 단일 매출액을 기록한 거래는 얼마였나요?",
+    "query": "가장 높은 단일 거래 매출액은 얼마였나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-004",
-    "query": "가장 적은 수량이 판매된 단일 거래의 수량은 몇 개였나요?",
+    "query": "가장 낮은 단일 거래 매출액은 얼마였나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-005",
-    "query": "전체 데이터에 기록된 거래 건수는 몇 건인가요?",
+    "query": "총 판매 건수는 몇 건인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-006",
-    "query": "월별 총 매출액 추이를 시계열 그래프로 보여주세요.",
+    "query": "월별 총 매출액 추이를 보여주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-007",
-    "query": "분기별 총 수량 판매량 변화 추세는 어떻게 되나요?",
+    "query": "분기별 총 판매 수량 변화를 알려주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-008",
-    "query": "연도별 Brand(SK/CL/CBT/DD/UM/ETC)별 매출액 추이를 알려주세요.",
+    "query": "연도별 브랜드별 매출액 추이를 보고 싶습니다.",
     "table": "sales_all"
   },
   {
     "id": "SA-009",
-    "query": "주별 평균 Unit_Price 변동을 확인하고 싶습니다.",
+    "query": "지난 3개월간 주별 평균 단가 추이를 보여주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-010",
-    "query": "일별 전체 매출액의 변화를 상세히 보여주세요.",
+    "query": "특정 국가의 일별 매출액 변동을 그래프로 보여주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-011",
-    "query": "가장 매출이 높은 상위 3개 제품(SET)은 무엇인가요?",
+    "query": "매출액 기준으로 TOP 3 브랜드는 무엇인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-012",
-    "query": "가장 많은 수량이 판매된 상위 5개 국가는 어디인가요?",
+    "query": "판매 수량 기준으로 TOP 5 제품(SET)을 알려주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-013",
-    "query": "매출액 기준으로 TOP 10 SKU 리스트를 알려주세요.",
+    "query": "국가별 매출액 TOP 10을 조회하고 싶습니다.",
     "table": "sales_all"
   },
   {
     "id": "SA-014",
-    "query": "가장 낮은 평균 단가를 가진 Category는 무엇인가요?",
+    "query": "가장 낮은 매출을 기록한 카테고리는 무엇인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-015",
-    "query": "전체 제품의 중간값(Median) 매출액은 얼마인가요?",
+    "query": "전체 거래의 중간값(Median) 매출액은 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-016",
-    "query": "전월 대비 전체 매출 성장률은 어떻게 되나요?",
+    "query": "전월 대비 전체 매출액 성장률은 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-017",
-    "query": "전년 동기 대비 국가별 총 수량 증감률을 비교해주세요.",
+    "query": "작년 동월 대비 특정 라인의 매출액 변화는 어떤가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-018",
-    "query": "한국과 일본의 Mall_Classification별 매출액을 비교해주세요.",
+    "query": "한국과 일본의 국가별 총 매출액을 비교해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-019",
-    "query": "B2B와 B2C 판매 유형별 평균 Unit_Price를 비교 분석해주세요.",
+    "query": "B2B와 B2C 판매 유형별 매출액을 비교하고 싶습니다.",
     "table": "sales_all"
   },
   {
     "id": "SA-020",
-    "query": "SK 브랜드와 CL 브랜드의 총 매출액을 비교해 주세요.",
+    "query": "'SK' 브랜드와 'CL' 브랜드의 평균 단가를 비교해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-021",
-    "query": "전체 매출에서 Centella 라인의 매출 비중은 얼마나 되나요?",
+    "query": "전체 매출에서 'Centella' 라인이 차지하는 비중은 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-022",
-    "query": "총 수량 대비 총 매출액의 비율은 어떻게 되나요?",
+    "query": "특정 국가의 전체 판매 수량 대비 'Ampoule' 카테고리의 비율을 알려주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-023",
-    "query": "전체 국가 매출 중 미국이 차지하는 매출 점유율은 몇 퍼센트인가요?",
+    "query": "'SK' 브랜드의 글로벌 시장 점유율(매출액 기준)은 몇 %인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-024",
-    "query": "Mall_Classification별 매출 구성비를 파이 차트로 보여주세요.",
+    "query": "'Cream' 카테고리의 전체 매출 구성비는 어떻게 되나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-025",
-    "query": "가장 매출 기여도가 높은 Team_NEW는 어디인가요?",
+    "query": "특정 팀(Team_NEW)이 전체 매출에 기여하는 정도를 알고 싶습니다.",
     "table": "sales_all"
   },
   {
     "id": "SA-026",
-    "query": "2023년 1월, 미국에서의 총 매출액은 얼마인가요?",
+    "query": "2023년 3월 한국의 총 매출액은 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-027",
-    "query": "SK 브랜드의 B2C 판매 유형에서 가장 많이 팔린 제품(SET)은 무엇인가요?",
+    "query": "'SK' 브랜드의 B2C 판매 유형에서 가장 많이 팔린 카테고리는 무엇인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-028",
-    "query": "Centella 라인의 2022년 3분기 총 수량은 얼마인가요?",
+    "query": "'Centella Ampoule' 제품의 지난 6개월간 월별 판매 수량 추이를 보여주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-029",
-    "query": "한국에서 판매된 Centella 라인 중, B2C 판매 유형의 크림 카테고리 매출액은 얼마인가요?",
+    "query": "'Mall_Classification'이 'Online'이고 'Sales_Type'이 'B2C'인 거래의 총 매출액은 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-030",
-    "query": "Brand가 'SK' 또는 'CL'이고 Country가 '한국' 또는 '일본'인 거래의 총 매출액을 알려주세요.",
+    "query": "'Country'가 'USA'이면서 'Line'이 'Hyalucica'인 제품 중 'Category'가 'Toner'인 제품의 평균 단가는 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-031",
-    "query": "월별 매출 추이를 꺾은선 그래프로 시각화해주세요.",
+    "query": "지난 1년간 월별 총 매출액 추이를 꺾은선 그래프로 보여주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-032",
-    "query": "국가별 총 수량 판매량을 막대 차트로 시각화해주세요.",
+    "query": "국가별 매출액을 막대 차트로 시각화해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-033",
-    "query": "주요 Line별 매출 추이를 한 눈에 볼 수 있게 보여주세요.",
+    "query": "주요 브랜드별 매출액 변화 추이를 보여줄 수 있나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-034",
-    "query": "Category별 매출 점유율을 파이 차트로 나타내 주세요.",
+    "query": "전체 매출액 대비 각 카테고리의 비중을 파이 차트로 나타내주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-035",
-    "query": "Team_NEW별 평균 단가를 바 차트로 비교해 주세요.",
+    "query": "팀별 판매 수량을 비교하는 바 차트를 생성해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-036",
-    "query": "Brand가 'ETC'를 제외한 총 매출액은 얼마인가요?",
+    "query": "'ETC' 브랜드를 제외한 총 매출액은 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-037",
-    "query": "Sales_Type이 'B2B'가 아닌 거래의 평균 단가는 얼마인가요?",
+    "query": "'B2B' 판매 유형이 아닌 거래의 평균 단가를 알려주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-038",
-    "query": "한국 외의 국가에서 가장 많이 팔린 Category는 무엇인가요?",
+    "query": "'Centella' 라인 외의 모든 라인의 판매 수량 합계는 얼마인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-039",
-    "query": "Centella 라인을 제외하고, 가장 매출액이 높은 Line은 무엇인가요?",
+    "query": "특정 국가를 빼고 다른 모든 국가의 매출액을 합산해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-040",
-    "query": "2023년 데이터를 제외한 모든 기간의 총 수량 판매량은 얼마인가요?",
+    "query": "특정 SKU가 아닌 모든 SKU의 총 매출액을 계산해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-041",
-    "query": "2024년 1월 데이터가 현재 시스템에 존재하나요?",
+    "query": "'LabinNature' 라인 제품의 판매 데이터가 있나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-042",
-    "query": "특정 SKU 'SKU0001'에 대한 판매 데이터가 있나요?",
+    "query": "2024년 1월 매출 데이터가 현재 시스템에 있나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-043",
-    "query": "LabinNature 라인의 판매 실적을 조회할 수 있나요?",
+    "query": "특정 'SKU'에 대한 상세 판매 기록 조회가 가능한가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-044",
-    "query": "Mall_Classification이 'Online'인 데이터가 하나라도 기록되어 있나요?",
+    "query": "'DD' 브랜드의 'Sun' 카테고리 제품이 판매된 적이 있나요?",
     "table": "sales_all"
   },
   {
     "id": "SA-045",
-    "query": "미국에서의 B2B 매출 기록이 있는지 확인해 주세요.",
+    "query": "'Team_NEW' 컬럼에 'Global Sales'라는 팀명이 존재하는지 확인해주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-046",
-    "query": "매출액(Sales1_R)이 0인 거래 건수는 몇 건인가요?",
+    "query": "매출액(Sales1_R)이 0인 거래는 총 몇 건인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-047",
-    "query": "가장 최근 데이터의 총 매출액은 얼마인가요?",
+    "query": "가장 최근에 기록된 판매 거래 1건의 상세 정보를 알려주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-048",
-    "query": "가장 오래된 데이터의 판매 국가와 브랜드는 무엇인가요?",
+    "query": "가장 오래된 판매 데이터의 날짜는 언제인가요?",
     "table": "sales_all"
   },
   {
     "id": "SA-049",
-    "query": "Unit_Price가 NULL인 데이터가 있는지 확인해주세요.",
+    "query": "`Unit_Price`가 NULL인 거래가 있는지 확인하고, 있다면 몇 건인지 알려주세요.",
     "table": "sales_all"
   },
   {
     "id": "SA-050",
-    "query": "가장 최근에 기록된 단일 거래의 모든 정보를 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-051",
-    "query": "Team_NEW별 총 매출액을 집계해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-052",
-    "query": "Category별 평균 단가는 어떻게 되나요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-053",
-    "query": "Line별 총 수량 판매량을 계산해 주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-054",
-    "query": "Mall_Classification별 매출액 합계를 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-055",
-    "query": "Sales_Type(B2B/B2C)별 총 매출액과 총 수량을 알려주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-056",
-    "query": "최근 3개월간의 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-057",
-    "query": "하반기(7월~12월) 동안의 국가별 매출액을 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-058",
-    "query": "올해 1분기부터 3분기까지의 누적 총 수량은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-059",
-    "query": "2023년 5월 첫째 주(월요일 시작)의 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-060",
-    "query": "2022년 4월부터 6월까지의 Brand별 매출액을 확인하고 싶습니다.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-061",
-    "query": "전체 매출의 연간 성장률은 어떻게 되나요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-062",
-    "query": "지난 분기 대비 가장 매출 감소율이 큰 브랜드는 무엇인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-063",
-    "query": "Centella 라인의 월별 매출 증감 추이를 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-064",
-    "query": "지난 6개월간 평균 Unit_Price의 변동폭은 얼마였나요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-065",
-    "query": "전년 대비 Category별 수량 변화를 분석해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-066",
-    "query": "전체 제품의 평균 단가는 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-067",
-    "query": "거래당 평균 수량은 몇 개인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-068",
-    "query": "월별 매출액의 3개월 이동평균을 계산해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-069",
-    "query": "제품 수량으로 가중치를 부여한 평균 단가는 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-070",
-    "query": "일별 평균 매출액을 계산해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-071",
-    "query": "일별 누적 매출액 추이를 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-072",
-    "query": "올해 YTD(Year-to-Date) 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-073",
-    "query": "이번 달 MTD(Month-to-Date) 총 수량은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-074",
-    "query": "2023년 연간 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-075",
-    "query": "Brand별 월별 누적 매출액을 계산해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-076",
-    "query": "Sales1_R이 1000 이상인 거래의 총 수량은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-077",
-    "query": "Unit_Price가 50000원 이상인 제품의 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-078",
-    "query": "Total_Qty가 10개 이하인 거래의 평균 단가를 알려주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-079",
-    "query": "Brand가 'SK'이고 Country가 '한국'이며 Sales_Type이 'B2C'인 거래의 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-080",
-    "query": "Centella 라인 중 매출액이 100000원 이상인 제품들의 총 매출액을 합산해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-081",
-    "query": "SKU 'CEN001'의 지난 6개월간 판매 기록을 상세히 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-082",
-    "query": "SET '마다가스카르 센텔라 앰플'의 모든 판매 데이터를 조회해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-083",
-    "query": "Hyalucica 라인 제품 중 '크림' 카테고리의 2023년 10월 상세 매출 내역을 알려주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-084",
-    "query": "가장 매출액이 높았던 단일 거래의 모든 상세 정보를 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-085",
-    "query": "SK 브랜드의 모든 제품 라인별 상세 매출액 리스트를 주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-086",
-    "query": "국가별 Category(Ampoule, Cream 등) 매출액 교차 분석 결과를 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-087",
-    "query": "Mall_Classification별 월간 매출액 추이를 교차 분석해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-088",
-    "query": "Brand별 Line(Centella, Hyalucica 등) 매출액을 교차하여 분석해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-089",
-    "query": "Team_NEW별 B2B/B2C 판매 유형의 매출액을 교차 집계해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-090",
-    "query": "가장 많이 팔린 상위 5개 Category에 대해 국가별 수량 판매량을 교차 분석해주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-091",
-    "query": "요즘 전체 매출 실적은 어떤가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-092",
-    "query": "가장 잘 팔리는 제품은 무엇인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-093",
-    "query": "SK 브랜드의 최근 판매 동향에 대해 좀 알려주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-094",
-    "query": "현재 매출에서 특이사항이나 급격한 변화가 있나요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-095",
-    "query": "전체 매출 데이터를 바탕으로 성장 가능성이 높은 국가를 추천해 주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-096",
-    "query": "전체 평균 단가보다 높은 단가를 가진 제품들의 총 매출액은 얼마인가요?",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-097",
-    "query": "총 매출액이 100만 원을 초과하는 국가들의 목록을 알려주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-098",
-    "query": "각 국가별, 월별 매출액 순위를 매겨주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-099",
-    "query": "월별 Category 매출액을 PIVOT 형태로 보여주세요.",
-    "table": "sales_all"
-  },
-  {
-    "id": "SA-100",
-    "query": "지난 1년간, 전월 대비 매출액이 20% 이상 성장한 기록이 3회 이상 있는 Brand는 무엇인가요?",
+    "query": "`SET` 컬럼이 비어있는(NULL 또는 빈 문자열) 판매 건수는 몇 건인가요?",
     "table": "sales_all"
   }
 ]

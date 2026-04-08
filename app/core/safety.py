@@ -150,6 +150,8 @@ class CircuitBreaker:
 
 _maintenance_manager: Optional[MaintenanceManager] = None
 _circuits: Dict[str, CircuitBreaker] = {}
+_qdrant_cache: dict = {}
+_qdrant_cache_time: float = 0
 
 
 def get_maintenance_manager() -> MaintenanceManager:
@@ -201,102 +203,75 @@ def get_safety_status() -> dict:
     for label, detail in _mkt_tables.items():
         services[label] = {"status": _bq_status, "detail": detail}
 
-    # Notion
-    notion_circuit = get_circuit("notion")
+    # Notion (Qdrant) — 팀별 분리 (5분 캐시)
+    import time as _time
+    _QDRANT_TEAM_LABELS = {
+        "B2B1": "B2B1", "[GM]WEST": "GM WEST", "CS": "CS",
+        "DB": "DB", "B2B2": "B2B2", "PEOPLE": "PEOPLE",
+        "BCM": "BCM", "[GM]EAST": "GM EAST", "Craver": "Craver",
+        "KBT": "KBT", "JBT": "JBT",
+    }
     try:
-        from app.agents.notion_agent import _page_titles
-        notion_count = len(_page_titles)
-        n_st = "error" if notion_circuit.state != CBState.CLOSED else "ok"
-        services["Notion"] = {"status": n_st, "detail": f"{notion_count} pages"}
-    except Exception:
-        services["Notion"] = {"status": "ok", "detail": "10 pages"}
+        import httpx as _httpx
+        _qdrant_url = "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333"
+        _qdrant_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OTFkOGVkZWYtNTFkNi00ODNhLTg0MDItZTdjNjI0ZjA2NThmIn0.K0zdMdpnbIMl_yfXV8EJfcClpPnkoPa_SS_XbDI1kv4"
+        _qheaders = {"api-key": _qdrant_key, "Content-Type": "application/json"}
 
-    # CS Q&A (internal, not shown in UI but used as base for BP)
+        # Use cached counts if fresh (< 5 min)
+        global _qdrant_cache, _qdrant_cache_time
+        _now = _time.time()
+        if not _qdrant_cache or _now - _qdrant_cache_time > 300:
+            _team_counts: dict[str, int] = {}
+            _offset = None
+            for _ in range(50):
+                _body: dict = {"limit": 100, "with_payload": {"include": ["team"]}}
+                if _offset is not None:
+                    _body["offset"] = _offset
+                _qr = _httpx.post(f"{_qdrant_url}/collections/notion_hub_gemini/points/scroll",
+                                  headers=_qheaders, json=_body, timeout=10)
+                if _qr.status_code != 200:
+                    break
+                _qdata = _qr.json().get("result", {})
+                _pts = _qdata.get("points", [])
+                if not _pts:
+                    break
+                for _p in _pts:
+                    _t = _p.get("payload", {}).get("team", "UNKNOWN")
+                    _team_counts[_t] = _team_counts.get(_t, 0) + 1
+                _offset = _qdata.get("next_page_offset")
+                if _offset is None:
+                    break
+            _qdrant_cache = _team_counts
+            _qdrant_cache_time = _now
+        else:
+            _team_counts = _qdrant_cache
+
+        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "UNKNOWN"}
+        for _qt, _qc in sorted(_team_counts.items(), key=lambda x: _QDRANT_TEAM_LABELS.get(x[0], x[0])):
+            if _qt in _SKIP_TEAMS:
+                continue
+            _label = _QDRANT_TEAM_LABELS.get(_qt, _qt)
+            services[_label] = {"status": "ok", "detail": f"{_qc} chunks"}
+
+    except Exception as e:
+        services["Notion"] = {"status": "error", "detail": str(e)[:30]}
+
+    # BP / CS
     cs_detail = "737 entries"
     cs_status = "ok"
     try:
         from app.agents.cs_agent import _qa_cache, _cache_loaded
         if _cache_loaded:
             cs_detail = f"{len(_qa_cache)}건"
-            cs_status = "ok"
         else:
-            cs_detail = "loading"
-            cs_status = "error"
-    except Exception:
-        pass
-    # BP — mirrors CS Q&A (CS Q&A not shown in UI separately)
+            cs_detail = "loading"; cs_status = "error"
+    except: pass
     services["BP"] = {"status": cs_status, "detail": cs_detail}
-
-    # Team Resources (DB HUB) — tree structure per team
-    try:
-        from app.agents.team_agent import _resource_cache, _cache_loaded, _last_sync
-        if _cache_loaded and _resource_cache:
-            # Build tree: id → node, children map
-            node_map: Dict[int, dict] = {}
-            children_map: Dict[int, list] = {}
-            team_roots: Dict[str, int] = {}
-            for r in _resource_cache:
-                nid = r.get("id")
-                pid = r.get("parent_id")
-                node_map[nid] = {
-                    "id": nid, "name": r["name"],
-                    "type": r.get("node_type", "text"),
-                    "url": r.get("url", ""),
-                    "children": [],
-                }
-                children_map.setdefault(pid, []).append(nid)
-                if r.get("node_type") == "team":
-                    team_roots[r["team"]] = nid
-
-            def _build_tree(node_id: int, max_depth: int = 8) -> dict:
-                node = dict(node_map.get(node_id, {}))
-                if max_depth <= 0:
-                    return node
-                child_ids = children_map.get(node_id, [])
-                node["children"] = [_build_tree(cid, max_depth - 1) for cid in child_ids]
-                return node
-
-            def _count_leaves(node_id: int) -> int:
-                kids = children_map.get(node_id, [])
-                if not kids:
-                    return 1 if node_map.get(node_id, {}).get("type") not in ("team", "folder") else 0
-                return sum(_count_leaves(cid) for cid in kids)
-
-            for team in sorted(team_roots.keys()):
-                root_id = team_roots[team]
-                tree = _build_tree(root_id)
-                leaves = _count_leaves(root_id)
-                services[team] = {
-                    "status": "ok",
-                    "detail": f"{leaves}건",
-                    "tree": tree.get("children", []),
-                }
-        else:
-            services["팀자료"] = {"status": "error", "detail": "loading"}
-    except Exception as e:
-        logger.error("safety_team_tree_error", error=str(e))
-        services["팀자료"] = {"status": "ok", "detail": "not loaded"}
 
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}
 
-    # Gemini API
-    try:
-        from app.core.llm import get_flash_client
-        client = get_flash_client()
-        services["Gemini API"] = {"status": "ok", "detail": client.model_name if hasattr(client, 'model_name') else "Flash"}
-    except Exception as e:
-        services["Gemini API"] = {"status": "error", "detail": str(e)[:30]}
-
-    # Claude API
-    try:
-        settings = get_settings()
-        if settings.anthropic_api_key:
-            services["Claude API"] = {"status": "ok", "detail": "Sonnet"}
-        else:
-            services["Claude API"] = {"status": "error", "detail": "no key"}
-    except Exception:
-        services["Claude API"] = {"status": "error", "detail": "unavailable"}
+    # Gemini / Claude API — 내부 전용 (System Status에 노출하지 않음)
 
     # GWS Token (per-user OAuth)
     try:

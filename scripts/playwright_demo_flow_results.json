@@ -1,0 +1,134 @@
+[
+  {
+    "flow": "매출 드릴다운",
+    "q_idx": 1,
+    "query": "이번 달 국가별 매출 TOP 10 알려줘",
+    "status": "PASS",
+    "time": 12.2,
+    "chars": 1405,
+    "has_table": true,
+    "has_chart": false,
+    "is_followup": false
+  },
+  {
+    "flow": "매출 드릴다운",
+    "q_idx": 2,
+    "query": "여기서 인도네시아만 플랫폼별로 상세하게 보여줘",
+    "status": "PASS",
+    "time": 20.3,
+    "chars": 3191,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": true
+  },
+  {
+    "flow": "매출 드릴다운",
+    "q_idx": 3,
+    "query": "인도네시아 최근 3개월 월별 매출 추이도 보여줘",
+    "status": "PASS",
+    "time": 17.2,
+    "chars": 2572,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": true
+  },
+  {
+    "flow": "마케팅 효율 분석",
+    "q_idx": 1,
+    "query": "국가별 Facebook ROAS 분석해줘",
+    "status": "PASS",
+    "time": 20.3,
+    "chars": 4052,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": false
+  },
+  {
+    "flow": "마케팅 효율 분석",
+    "q_idx": 2,
+    "query": "미국의 월별 Facebook 광고비와 전환 가치 추이 보여줘",
+    "status": "PASS",
+    "time": 21.3,
+    "chars": 1805,
+    "has_table": true,
+    "has_chart": false,
+    "is_followup": true
+  },
+  {
+    "flow": "마케팅 효율 분석",
+    "q_idx": 3,
+    "query": "@@인플루언서 이번 달 팀별 인플루언서 비용과 조회수 비교해줘",
+    "status": "PASS",
+    "time": 14.2,
+    "chars": 1884,
+    "has_table": true,
+    "has_chart": false,
+    "is_followup": true
+  },
+  {
+    "flow": "제품/리뷰/CS",
+    "q_idx": 1,
+    "query": "이번 달 제품별 판매 수량 순위 TOP 5 보여줘",
+    "status": "PASS",
+    "time": 12.1,
+    "chars": 3268,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": false
+  },
+  {
+    "flow": "제품/리뷰/CS",
+    "q_idx": 2,
+    "query": "@@리뷰 아마존 제품별 평균 감성 점수 TOP 5 알려줘",
+    "status": "PASS",
+    "time": 14.2,
+    "chars": 2883,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": true
+  },
+  {
+    "flow": "제품/리뷰/CS",
+    "q_idx": 3,
+    "query": "센텔라 앰플의 주요 성분과 피부 효능을 상세히 알려줘",
+    "status": "PASS",
+    "time": 11.2,
+    "chars": 648,
+    "has_table": false,
+    "has_chart": false,
+    "is_followup": true
+  },
+  {
+    "flow": "종합 전략",
+    "q_idx": 1,
+    "query": "쇼피 vs 아마존 vs 틱톡샵 이번 달 매출 비교해줘",
+    "status": "PASS",
+    "time": 10.1,
+    "chars": 2977,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": false
+  },
+  {
+    "flow": "종합 전략",
+    "q_idx": 2,
+    "query": "B2B와 B2C 매출 비중도 비교해줘",
+    "status": "PASS",
+    "time": 17.2,
+    "chars": 2299,
+    "has_table": true,
+    "has_chart": true,
+    "is_followup": true
+  },
+  {
+    "flow": "종합 전략",
+    "q_idx": 3,
+    "query": "동남아시아 시장 매출 현황과 성장 전략 분석해줘",
+    "status": "PASS",
+    "time": 24.4,
+    "chars": 677,
+    "has_table": false,
+    "has_chart": false,
+    "is_followup": true
+  }
+]

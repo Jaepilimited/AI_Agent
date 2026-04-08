@@ -1,227 +1,227 @@
 [
   {
     "id": "IF-001",
-    "query": "전체 인플루언서 마케팅 캠페인에 사용된 총 비용은 얼마인가요?",
+    "query": "전체 인플루언서 마케팅에 지출된 총 비용(Cost)은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-002",
-    "query": "모든 캠페인의 평균 참여율(Engagement_Rate)은 얼마인가요?",
+    "query": "모든 인플루언서 캠페인의 평균 참여율(Engagement_Rate)은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-003",
-    "query": "가장 높은 조회수를 기록한 캠페인의 조회수는 얼마인가요?",
+    "query": "기록된 인플루언서 캠페인 중 가장 높은 조회수(Views)를 기록한 건은 몇 회인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-004",
-    "query": "가장 낮은 CPV를 기록한 캠페인의 CPV는 얼마인가요?",
+    "query": "기록된 인플루언서 캠페인 중 가장 낮은 CPV는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-005",
-    "query": "총 몇 건의 인플루언서 캠페인이 진행되었나요?",
+    "query": "총 몇 건의 인플루언서 마케팅 캠페인 데이터가 기록되어 있나요?",
     "table": "influencer"
   },
   {
     "id": "IF-006",
-    "query": "월별 총 캠페인 비용 추이를 보여주세요.",
+    "query": "월별 총 비용(Cost)의 추이를 보여주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-007",
-    "query": "분기별 평균 CPV는 어떻게 변동했나요?",
+    "query": "분기별 평균 참여율(Engagement_Rate)은 어떻게 변동되었나요?",
     "table": "influencer"
   },
   {
     "id": "IF-008",
-    "query": "연도별 총 팔로워 증가량은 어떻게 되나요?",
+    "query": "연도별 총 조회수(Views)의 합계는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-009",
-    "query": "주별 총 좋아요 수의 변화를 보여주세요.",
+    "query": "주별 인플루언서 캠페인 건수의 변화를 알고 싶습니다.",
     "table": "influencer"
   },
   {
     "id": "IF-010",
-    "query": "일별 평균 참여율은 어떻게 변화했는지 알려주세요.",
+    "query": "일별 평균 CPV 추이를 그래프로 보여주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-011",
-    "query": "가장 많은 비용이 지출된 TOP 3 인플루언서의 이름과 각 비용을 알려주세요.",
+    "query": "총 비용(Cost)이 가장 많이 지출된 상위 3개 국가는 어디인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-012",
-    "query": "조회수 기준 TOP 5 플랫폼은 무엇이며, 각 플랫폼의 총 조회수는 얼마인가요?",
+    "query": "평균 Engagement_Rate이 가장 높은 상위 5개 인플루언서 이름은 무엇인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-013",
-    "query": "참여율이 가장 높은 TOP 10 캠페인(인플루언서_이름)을 나열해주세요.",
+    "query": "가장 많은 팔로워(Followers)를 보유한 상위 10명의 인플루언서 목록을 알려주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-014",
-    "query": "CPE가 가장 낮은 인플루언서는 누구인가요?",
+    "query": "CPE가 가장 높은(효율이 가장 낮은) 하위 3개 플랫폼은 무엇인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-015",
-    "query": "모든 인플루언서 캠페인의 팔로워 수 중간값은 얼마인가요?",
+    "query": "모든 캠페인의 Views 중간값은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-016",
-    "query": "지난달 대비 이번 달 총 비용의 증감률은 어떻게 되나요?",
+    "query": "지난달 대비 이번 달 총 비용(Cost_krw)의 증감률은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-017",
-    "query": "작년 동기 대비 올해 총 조회수의 변화는 어떤가요?",
+    "query": "작년 동기 대비 올해 총 조회수(Views)의 변화는 어떻게 되나요?",
     "table": "influencer"
   },
   {
     "id": "IF-018",
-    "query": "한국과 미국의 평균 참여율을 비교해주세요.",
+    "query": "미국과 한국의 평균 Engagement_Rate을 비교해 주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-019",
-    "query": "인스타그램과 유튜브 플랫폼의 평균 CPV를 비교해주세요.",
+    "query": "Instagram과 YouTube 플랫폼의 평균 CPV를 비교 분석해 주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-020",
-    "query": "'Team A'와 'Team B'의 총 캠페인 비용을 비교해주세요.",
+    "query": "각 팀별 총 Likes 수를 비교해 주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-021",
-    "query": "전체 캠페인 비용 중 각 플랫폼(Instagram, YouTube, TikTok)이 차지하는 비중은 얼마인가요?",
+    "query": "전체 비용(Cost)에서 각 플랫폼이 차지하는 비중은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-022",
-    "query": "전체 인플루언서 중 Mega Tier 인플루언서가 차지하는 비율은 얼마인가요?",
+    "query": "총 Views 중 TikTok 플랫폼이 차지하는 비율은 몇 %인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-023",
-    "query": "전체 조회수 중 각 국가(Country)가 차지하는 점유율을 파이 차트로 보여주세요.",
+    "query": "전체 인플루언서 캠페인 건수 중 Mega Tier 인플루언서가 차지하는 점유율은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-024",
-    "query": "각 Tier(Mega, Macro 등)가 총 비용에서 차지하는 구성비는 어떻게 되나요?",
+    "query": "각 국가별 총 Comments의 구성비를 파이 차트로 보여주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-025",
-    "query": "전체 좋아요 수에 가장 많이 기여한 인플루언서 TOP 5와 그 기여율을 알려주세요.",
+    "query": "가장 높은 Engagement_Rate을 보인 인플루언서가 전체 Likes에 기여한 정도는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-026",
-    "query": "2023년 상반기 동안 한국에서 진행된 캠페인의 총 비용은 얼마인가요?",
+    "query": "2023년 하반기 동안 한국에서 발생한 총 비용(Cost)은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-027",
-    "query": "'Team Alpha'가 인스타그램에서 진행한 캠페인의 평균 참여율은 얼마인가요?",
+    "query": "Instagram 플랫폼에서 Macro Tier 인플루언서들의 평균 CPE는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-028",
-    "query": "지난 3개월 동안 Macro Tier 인플루언서 캠페인의 총 조회수는 얼마인가요?",
+    "query": "'Marketing A' 팀의 2024년 1분기 총 Likes는 몇 회인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-029",
-    "query": "미국에서 TikTok을 통해 Mega Tier 인플루언서와 진행된 캠페인의 평균 CPV를 알려주세요.",
+    "query": "Views가 100만 이상이고 Likes가 5만 이상인 캠페인의 평균 Engagement_Rate은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-030",
-    "query": "2023년에 Cost가 1000 이상인 캠페인의 총 좋아요 수는 얼마인가요?",
+    "query": "미국에서 YouTube 플랫폼을 사용한 Micro Tier 인플루언서들의 총 Cost는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-031",
-    "query": "월별 총 비용의 변화를 꺾은선 그래프로 보여주세요.",
+    "query": "월별 평균 Engagement_Rate의 추이를 선 그래프로 보여주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-032",
-    "query": "각 국가별 평균 CPV를 비교하는 막대 차트를 생성해주세요.",
+    "query": "각 Tier별 총 Views를 비교하는 바 차트를 생성해 주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-033",
-    "query": "지난 6개월간 평균 참여율 추이를 시각화하여 보여주세요.",
+    "query": "지난 6개월간 총 Comments의 추이를 보여주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-034",
-    "query": "전체 캠페인 조회수 중 각 Tier(Mega, Macro 등)가 차지하는 비율을 파이차트로 나타내주세요.",
+    "query": "전체 캠페인 건수 대비 각 Tier의 비율을 파이차트로 시각화해 주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-035",
-    "query": "가장 많은 댓글을 받은 TOP 5 인플루언서를 막대 차트로 보여주세요.",
+    "query": "각 Media(플랫폼)별 평균 조회수(Num_views)를 막대 차트로 비교해 주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-036",
-    "query": "한국을 제외한 모든 국가의 총 캠페인 비용은 얼마인가요?",
+    "query": "Instagram을 제외한 모든 플랫폼의 총 비용(Cost)은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-037",
-    "query": "인스타그램이 아닌 플랫폼들의 평균 Engagement_Rate는 얼마인가요?",
+    "query": "Tier가 Mega가 아닌 인플루언서들의 평균 CPV는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-038",
-    "query": "Mega Tier 외의 인플루언서들이 기록한 총 조회수는 얼마인가요?",
+    "query": "한국과 미국 외의 국가에서 발생한 총 Likes는 몇 회인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-039",
-    "query": "'Team Z'를 제외한 모든 팀의 평균 CPV를 계산해주세요.",
+    "query": "팔로워(Followers)가 1000명 미만인 인플루언서를 제외한 전체 인플루언서의 평균 Engagement_Rate은 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-040",
-    "query": "2023년이 아니고, YouTube 플랫폼도 아닌 캠페인들의 총 좋아요 수는 얼마인가요?",
+    "query": "2023년 데이터를 제외하고, YouTube 플랫폼이 아닌 캠페인들의 총 Cost는 얼마인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-041",
-    "query": "'Kim Min-jun'이라는 인플루언서의 데이터가 있나요?",
+    "query": "2024년 1월 1일 이후 데이터가 있나요?",
     "table": "influencer"
   },
   {
     "id": "IF-042",
-    "query": "멕시코(Mexico) 관련 캠페인 데이터가 테이블에 존재하나요?",
+    "query": "'Influencer X'라는 이름의 인플루언서 데이터가 시스템에 있나요?",
     "table": "influencer"
   },
   {
     "id": "IF-043",
-    "query": "2024년 1월 1일 이후의 데이터가 조회 가능한가요?",
+    "query": "2023년 5월에 TikTok에서 활동한 'Jane Doe' 인플루언서의 데이터가 있나요?",
     "table": "influencer"
   },
   {
     "id": "IF-044",
-    "query": "CPE가 0보다 큰 캠페인이 있나요?",
+    "query": "Cost가 NULL인 데이터가 존재하나요?",
     "table": "influencer"
   },
   {
     "id": "IF-045",
-    "query": "Nano Tier 인플루언서 데이터가 있나요?",
+    "query": "Engagement_Rate이 10%를 초과하는 캠페인이 있나요?",
     "table": "influencer"
   },
   {
@@ -231,272 +231,22 @@
   },
   {
     "id": "IF-047",
-    "query": "가장 최근에 기록된 캠페인의 상세 정보(인플루언서, 플랫폼, 비용 등)를 알려주세요.",
+    "query": "가장 최근에 기록된 캠페인의 상세 정보를 알려주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-048",
-    "query": "가장 오래된 캠페인 데이터의 날짜는 언제인가요?",
+    "query": "가장 오래된 캠페인의 날짜는 언제인가요?",
     "table": "influencer"
   },
   {
     "id": "IF-049",
-    "query": "Engagement_Rate 컬럼에 NULL 값이 있는 행이 있나요?",
+    "query": "Comments 컬럼에 NULL 값이 있는 인플루언서 목록을 알려주세요.",
     "table": "influencer"
   },
   {
     "id": "IF-050",
-    "query": "어떤 컬럼이든 NULL 값을 포함하는 행이 총 몇 건인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-051",
-    "query": "각 팀(Team)별 총 캠페인 비용을 계산해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-052",
-    "query": "Tier별 평균 팔로워 수는 어떻게 되나요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-053",
-    "query": "각 플랫폼(Platform)별 총 좋아요 수와 댓글 수를 비교해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-054",
-    "query": "국가(Country)별 평균 CPV와 CPE를 보여주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-055",
-    "query": "각 인플루언서(Influencer_Name)별 총 캠페인 비용과 총 조회수를 나열해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-056",
-    "query": "최근 3개월간의 총 캠페인 비용은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-057",
-    "query": "2023년 하반기(7월~12월)의 평균 참여율은 얼마였나요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-058",
-    "query": "2022년 Q1부터 Q3까지의 총 조회수는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-059",
-    "query": "2023년 10월 첫째 주(예: 10/1~10/7)에 진행된 캠페인의 총 비용은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-060",
-    "query": "2023년 1월부터 3월까지의 평균 CPE는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-061",
-    "query": "지난달 대비 이번 달 총 조회수의 성장률은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-062",
-    "query": "지난 분기 대비 이번 분기 총 캠페인 비용의 감소율은 어떻게 되나요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-063",
-    "query": "작년 대비 올해 평균 Engagement_Rate의 증감 폭은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-064",
-    "query": "일별 CPV의 최대 변동폭은 얼마였나요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-065",
-    "query": "주별 평균 Likes의 변화 추세를 설명해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-066",
-    "query": "모든 캠페인의 평균 CPV는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-067",
-    "query": "모든 캠페인의 평균 CPE는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-068",
-    "query": "지난 3개월 이동평균 총 조회수를 계산해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-069",
-    "query": "캠페인 비용을 가중치로 한 CPV의 가중평균은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-070",
-    "query": "팔로워 수를 가중치로 한 Engagement_Rate의 가중평균은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-071",
-    "query": "전체 기간 동안의 총 누적 캠페인 비용은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-072",
-    "query": "2023년 YTD(Year-To-Date) 총 조회수는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-073",
-    "query": "이번 달 MTD(Month-To-Date) 총 좋아요 수는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-074",
-    "query": "2022년 한 해 동안의 총 댓글 수는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-075",
-    "query": "월별 누적 평균 Engagement_Rate를 보여주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-076",
-    "query": "조회수가 100만 이상인 캠페인들의 총 비용은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-077",
-    "query": "CPV가 0.1 이하인 캠페인의 평균 참여율은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-078",
-    "query": "Mega Tier 인플루언서 중 좋아요 수가 5만 이상인 캠페인의 총 수는 몇 건인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-079",
-    "query": "비용이 5000 이상 10000 이하인 캠페인들의 총 조회수는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-080",
-    "query": "팔로워 수가 10만 이상인 인플루언서 캠페인의 평균 Engagement_Rate는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-081",
-    "query": "'Lee Ji-eun' 인플루언서가 진행한 모든 캠페인의 상세 정보(날짜, 플랫폼, 비용, 성과 지표)를 알려주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-082",
-    "query": "2023년 11월 15일에 진행된 모든 캠페인의 인플루언서 이름과 성과 지표를 보여주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-083",
-    "query": "YouTube 플랫폼에서 진행된 캠페인 중 가장 높은 조회수를 기록한 캠페인의 상세 정보를 알려주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-084",
-    "query": "Micro Tier 인플루언서들의 평균 팔로워 수와 평균 Engagement_Rate는 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-085",
-    "query": "비용이 가장 많이 지출된 TOP 5 캠페인의 상세 정보를 모두 알려주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-086",
-    "query": "각 국가별로 플랫폼(Instagram, YouTube, TikTok)의 평균 Engagement_Rate를 교차 분석하여 보여주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-087",
-    "query": "각 플랫폼별로 Tier(Mega, Macro 등)에 따른 총 비용을 교차 분석해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-088",
-    "query": "2023년 각 분기별로 국가(Country)별 총 조회수를 교차 분석하여 표 형태로 보여주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-089",
-    "query": "각 팀(Team)별로 플랫폼(Platform)에 따른 평균 CPV를 분석해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-090",
-    "query": "Tier별로 Engagement_Rate를 구간(예: 0~3%, 3~6%, 6% 이상)으로 나누어 각 구간에 속하는 캠페인 수를 교차 분석해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-091",
-    "query": "최근 한 달간 인플루언서 마케팅 캠페인의 전반적인 성과 동향은 어떤가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-092",
-    "query": "현재 가장 효과적인 플랫폼(조회수, 참여율 기준)은 어디인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-093",
-    "query": "비용 대비 가장 효율적인 인플루언서(CPV 또는 CPE 기준) TOP 3를 알려줄 수 있을까요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-094",
-    "query": "참여율이 평균보다 현저히 낮은 캠페인들이 있나요? 있다면 어떤 캠페인들인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-095",
-    "query": "다음 캠페인에서 어떤 Tier의 인플루언서에게 집중하면 좋을지 추천해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-096",
-    "query": "전체 평균 Engagement_Rate보다 높은 참여율을 기록한 캠페인들의 총 비용은 얼마인가요?",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-097",
-    "query": "평균 CPV가 0.5 이상인 국가들의 목록과 해당 국가의 총 캠페인 수를 알려주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-098",
-    "query": "각 캠페인별로 전체 비용에서 차지하는 누적 비율을 날짜 순으로 계산해주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-099",
-    "query": "각 국가별로 Instagram, YouTube, TikTok 플랫폼의 총 조회수를 PIVOT 테이블 형태로 보여주세요.",
-    "table": "influencer"
-  },
-  {
-    "id": "IF-100",
-    "query": "전체 캠페인 중 상위 10%의 조회수를 기록한 캠페인들의 평균 CPE는 얼마인가요?",
+    "query": "Cost가 1000 이상인 캠페인 중 가장 낮은 Engagement_Rate은 얼마인가요?",
     "table": "influencer"
   }
 ]

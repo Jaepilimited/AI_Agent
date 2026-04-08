@@ -200,12 +200,13 @@
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
       keys: ["광고데이터", "마케팅비용", "Shopify", "플랫폼",
              "인플루언서", "아마존검색", "메타광고",
+             "리뷰",
              "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
-    { id: "team", label: "팀별자료(노션)", emoji: "\uD83C\uDFE2",
-      keys: ["BP"],  // Team keys are dynamically added from API
+    { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
+      keys: ["BP"],
       _dynamic: true },
     { id: "system", label: "시스템", emoji: "\u2699",
-      keys: ["Gemini API", "Claude API", "GWS Token", "Notion", "Google Workspace"] },
+      keys: ["GWS Token", "Google Workspace"] },
   ];
   var DATA_SOURCE_KEYS = [];
   SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
@@ -218,10 +219,11 @@
     "메타광고": "bigquery",
     "아마존 리뷰": "bigquery", "큐텐 리뷰": "bigquery",
     "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
-    "Notion": "notion", "CS Q&A": "cs", "BP": "cs",
-    "Craver": "team", "DB": "team", "KBT": "team", "JBT": "team",
-    "GM EAST": "team", "GM WEST": "team", "BCM": "team",
-    "PEOPLE": "team", "IT": "team", "CS": "team",
+    "BP": "cs",
+    "B2B1": "notion", "GM WEST": "notion", "CS": "notion",
+    "DB": "notion", "B2B2": "notion", "PEOPLE": "notion",
+    "BCM": "notion", "GM EAST": "notion", "Craver": "notion",
+    "KBT": "notion", "JBT": "notion",
     "Google Workspace": "gws"
   };
   var enabledSources = loadEnabledSources();
@@ -475,10 +477,14 @@
       _dbDropdown = document.createElement("div");
       _dbDropdown.className = "db-autocomplete-dropdown";
       _dbDropdown.style.display = "none";
-      chatInputArea.style.position = "relative";
-      chatInputArea.appendChild(_dbDropdown);
+      var inputWrapper = chatInputArea.querySelector(".chat-input-wrapper");
+      inputWrapper.style.position = "relative";
+      inputWrapper.appendChild(_dbDropdown);
     }
     _createDbDropdown();
+
+    // Grid column count for left/right navigation
+    var _dbGridCols = 3;
 
     function _showDbDropdown(filter) {
       if (!_dbDropdown || !_dbSources.length) return;
@@ -488,6 +494,10 @@
             || s.aliases.some(function(a) { return a.toLowerCase().indexOf(f) === 0; })
             || s.label.toLowerCase().indexOf(f) >= 0;
       });
+
+      // Already selected keys (multi-select)
+      var val = chatInput.value;
+      var selectedKeys = (val.match(/@@(\S+)/g) || []).map(function(m) { return m.substring(2); });
 
       // Build grouped HTML
       var html = '<div class="db-ac-special">';
@@ -507,12 +517,19 @@
         html += '<div class="db-ac-grid">';
         groups[gName].forEach(function(s) {
           var icon = _DB_ICONS[s.icon] || _DB_ICONS.doc;
-          html += '<div class="db-ac-item" data-key="' + s.key + '" title="' + s.desc + '">'
+          var sel = selectedKeys.indexOf(s.key) >= 0 ? " selected" : "";
+          html += '<div class="db-ac-item' + sel + '" data-key="' + s.key + '" title="' + s.desc + '">'
                + '<span class="db-ac-icon">' + icon + '</span>'
                + '<span class="db-ac-name">' + s.label + '</span></div>';
         });
         html += '</div>';
       });
+
+      if (selectedKeys.length > 0) {
+        html += '<div class="db-ac-hint">Tab: 추가 선택 · Enter: 확정</div>';
+      } else {
+        html += '<div class="db-ac-hint">Tab: 선택 · ↑↓←→: 이동</div>';
+      }
 
       _dbDropdown.innerHTML = html;
       _dbDropdown.style.display = "block";
@@ -520,30 +537,103 @@
       _dbDropdown.querySelectorAll(".db-ac-item, .db-ac-chip").forEach(function(el) {
         el.addEventListener("mousedown", function(e) {
           e.preventDefault();
-          var key = el.dataset.key;
-          chatInput.value = "@@" + key + " ";
-          chatInput.focus();
-          _dbDropdown.style.display = "none";
+          _tabSelectDbItem(el.dataset.key);
         });
       });
+      _dbActiveIdx = -1;
+    }
+
+    // Tab select: append @@key and keep popup open for more
+    function _tabSelectDbItem(key) {
+      var val = chatInput.value;
+      // Remove the current incomplete @@ token being typed
+      var lastAt = val.lastIndexOf("@@");
+      var base = lastAt >= 0 ? val.substring(0, lastAt) : val;
+      chatInput.value = base + "@@" + key + " ";
+      chatInput.focus();
+      _dbActiveIdx = -1;
+      // Re-show dropdown for next selection
+      setTimeout(function() { _showDbDropdown(""); }, 50);
+    }
+
+    // Enter: close popup, keep all selections
+    function _confirmDbSelection() {
+      _dbDropdown.style.display = "none";
+      _dbActiveIdx = -1;
+      chatInput.focus();
+    }
+
+    var _dbActiveIdx = -1;
+
+    function _getDbItems() {
+      if (!_dbDropdown) return [];
+      return Array.from(_dbDropdown.querySelectorAll(".db-ac-item, .db-ac-chip"));
+    }
+
+    function _highlightDbItem(idx) {
+      var items = _getDbItems();
+      items.forEach(function(el) { el.classList.remove("active"); });
+      if (idx >= 0 && idx < items.length) {
+        items[idx].classList.add("active");
+        items[idx].scrollIntoView({ block: "nearest" });
+      }
     }
 
     chatInput.addEventListener("input", function() {
       var val = this.value;
-      if (val.startsWith("@@")) {
-        var prefix = val.substring(2).split(/\s/)[0];
-        if (!val.includes(" ") || val === "@@") {
-          _showDbDropdown(prefix);
+      // Check if there's an incomplete @@ token at the end
+      var lastAt = val.lastIndexOf("@@");
+      if (lastAt >= 0) {
+        var after = val.substring(lastAt + 2);
+        // If no space after last @@, show dropdown with filter
+        if (after.indexOf(" ") < 0) {
+          _showDbDropdown(after);
         } else {
-          _dbDropdown.style.display = "none";
+          if (_dbDropdown) _dbDropdown.style.display = "none";
         }
       } else {
         if (_dbDropdown) _dbDropdown.style.display = "none";
       }
     });
 
+    chatInput.addEventListener("keydown", function(e) {
+      if (!_dbDropdown || _dbDropdown.style.display === "none") return;
+      var items = _getDbItems();
+      if (!items.length) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        _dbActiveIdx = Math.min(_dbActiveIdx + _dbGridCols, items.length - 1);
+        _highlightDbItem(_dbActiveIdx);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        _dbActiveIdx = Math.max(_dbActiveIdx - _dbGridCols, 0);
+        _highlightDbItem(_dbActiveIdx);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        _dbActiveIdx = Math.min(_dbActiveIdx + 1, items.length - 1);
+        _highlightDbItem(_dbActiveIdx);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        _dbActiveIdx = Math.max(_dbActiveIdx - 1, 0);
+        _highlightDbItem(_dbActiveIdx);
+      } else if (e.key === "Tab" && _dbActiveIdx >= 0) {
+        e.preventDefault();
+        _tabSelectDbItem(items[_dbActiveIdx].dataset.key);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        if (_dbActiveIdx >= 0) {
+          _tabSelectDbItem(items[_dbActiveIdx].dataset.key);
+        }
+        _confirmDbSelection();
+      } else if (e.key === "Escape") {
+        _dbDropdown.style.display = "none";
+        _dbActiveIdx = -1;
+      }
+    });
+
     chatInput.addEventListener("blur", function() {
-      setTimeout(function() { if (_dbDropdown) _dbDropdown.style.display = "none"; }, 200);
+      setTimeout(function() { if (_dbDropdown) { _dbDropdown.style.display = "none"; _dbActiveIdx = -1; } }, 200);
     });
 
     // Paste image from clipboard
@@ -1280,11 +1370,13 @@
     currentAbortController = new AbortController();
     _S.text = "";  // Reset stream text for new message
     var detectedSource = "";
+    var detectedSourceLabel = "";
     var aiMsgEl = appendMessage("assistant", "", true);
     var contentEl = aiMsgEl.querySelector(".message-content");
 
     // Add streaming class for cursor animation
     aiMsgEl.classList.add("streaming");
+    scrollToBottom();
 
     // Wave 1: Client-side pre-routing — show skeleton UI immediately
     var _preRoute = _clientPreRoute(text);
@@ -1347,9 +1439,11 @@
             var parsed = JSON.parse(data);
             var delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
             if (delta && delta.content) {
-              var srcMatch = delta.content.match(/<!-- source:(\w+) -->/);
+              var srcMatch = delta.content.match(/<!-- source:([\w:+\s\u0080-\uFFFF]+?) -->/);
               if (srcMatch) {
-                detectedSource = srcMatch[1];
+                var srcParts = srcMatch[1].split(":");
+                detectedSource = srcParts[0];
+                if (srcParts[1]) detectedSourceLabel = srcParts[1];
                 // Route-specific loading message
                 var loadingMsgs = {
                   bigquery: "📊 데이터 조회 중...",
@@ -1362,7 +1456,7 @@
                 if (typingEl && loadingMsgs[detectedSource]) {
                   typingEl.innerHTML = '<span class="loading-text">' + loadingMsgs[detectedSource] + '</span>';
                 }
-                var stripped = delta.content.replace(/<!-- source:\w+ -->/, "");
+                var stripped = delta.content.replace(/<!-- source:[\w:+\s\u0080-\uFFFF]+? -->/, "");
                 if (stripped) _S.queue.push(stripped);
               } else {
                 // Filter out thinking/reasoning patterns from Claude
@@ -1445,7 +1539,7 @@
     aiMsgEl.appendChild(actionsDiv);
 
     if (detectedSource && detectedSource !== "direct") {
-      addSourceBadge(aiMsgEl, detectedSource);
+      addSourceBadge(aiMsgEl, detectedSource, detectedSourceLabel);
     }
 
     currentMessages.push({ role: "assistant", content: cleanContent });
@@ -1546,12 +1640,16 @@
   // ===== Source Badge (SVG icons matching system status) =====
   var SOURCE_BADGES = {
     bigquery: {
-      label: "BQ 매출",
+      label: "BigQuery",
       svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
     },
     bigquery_fallback: {
-      label: "BQ 매출",
+      label: "BigQuery",
       svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
+    },
+    team: {
+      label: "Team",
+      svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
     },
     notion: {
       label: "Notion",
@@ -1575,11 +1673,11 @@
     },
   };
 
-  function addSourceBadge(msgEl, source) {
+  function addSourceBadge(msgEl, source, customLabel) {
     var info = SOURCE_BADGES[source] || { label: source, svg: '' };
     var badge = document.createElement("div");
     badge.className = "source-badge";
-    badge.innerHTML = info.svg + '<span>' + info.label + '</span>';
+    badge.innerHTML = info.svg + '<span>' + (customLabel || info.label) + '</span>';
     var contentEl = msgEl.querySelector(".message-content");
     if (contentEl) contentEl.insertBefore(badge, contentEl.firstChild);
   }
@@ -1947,7 +2045,11 @@
               } else {
                 val = ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed.x;
               }
-              var formatted = typeof val === "number" ? Math.round(val).toLocaleString() : val;
+              var formatted;
+              if (typeof val !== "number") { formatted = val; }
+              else if (Math.abs(val) < 10) { formatted = parseFloat(val.toFixed(2)); }
+              else if (Math.abs(val) < 1000) { formatted = parseFloat(val.toFixed(1)); }
+              else { formatted = Math.round(val).toLocaleString(); }
               return label ? label + ": " + formatted : formatted;
             }
           };
@@ -1964,15 +2066,18 @@
               // For regular bar/line, X is the category axis
               var isCategoryAxis = (isHorizontalBar && axis === "y") || (!isHorizontalBar && axis === "x");
               if (isCategoryAxis) {
-                config.options.scales[axis].ticks.callback = function(value, index) {
+                config.options.scales[axis].ticks.callback = function(value) {
                   var labels = config.data && config.data.labels;
-                  if (labels && labels[index] != null) return labels[index];
+                  if (labels && labels[value] != null) return labels[value];
                   return value;
                 };
               } else {
-                // Numeric value axis: no decimals, comma-formatted
+                // Numeric value axis: preserve decimals for small values
                 config.options.scales[axis].ticks.callback = function(value) {
-                  return typeof value === "number" ? Math.round(value).toLocaleString() : value;
+                  if (typeof value !== "number") return value;
+                  if (Math.abs(value) < 10) return parseFloat(value.toFixed(2));
+                  if (Math.abs(value) < 1000) return parseFloat(value.toFixed(1));
+                  return Math.round(value).toLocaleString();
                 };
               }
               if (config.options.scales[axis].grid) {
@@ -2194,7 +2299,7 @@
     { cmd: "리뷰", label: "리뷰 전체", keys: ["아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
-    { cmd: "팀", label: "팀별 자료", _useGroup: "team" },
+    { cmd: "팀", label: "팀별 자료", _useGroup: "notion" },
     { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
   ];
 
@@ -2480,12 +2585,14 @@
           var teamKeys = [];
           for (var svcName in data.services) {
             var svc = data.services[svcName];
-            if (svc.tree !== undefined && staticKeys.indexOf(svcName) < 0) {
+            var isNotionTeam = (svc.tree !== undefined) || (typeof svc.detail === "string" && svc.detail.indexOf("chunks") >= 0);
+            if (isNotionTeam && staticKeys.indexOf(svcName) < 0) {
               teamKeys.push(svcName);
-              if (!SOURCE_ROUTE_MAP[svcName]) SOURCE_ROUTE_MAP[svcName] = "team";
+              if (!SOURCE_ROUTE_MAP[svcName]) SOURCE_ROUTE_MAP[svcName] = "notion";
               if (!SERVICE_ICONS[svcName]) SERVICE_ICONS[svcName] = { label: svcName, svg: _svgGlobe };
             }
           }
+          teamKeys.sort();
           grp.keys = teamKeys.concat(staticKeys);
           DATA_SOURCE_KEYS = [];
           SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });

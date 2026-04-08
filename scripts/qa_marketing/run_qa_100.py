@@ -30,8 +30,8 @@ RESULTS_DIR = BASE_DIR / "results_qa100"
 QUESTIONS_DIR = BASE_DIR / "questions_qa100"
 
 # ── API ──
-API_URL = "http://localhost:3001/v1/chat/completions"
-HEALTH_URL = "http://localhost:3001/health"
+API_URL = "http://localhost:3000/v1/chat/completions"
+HEALTH_URL = "http://localhost:3000/health"
 MODEL = "gemini"
 
 # ── Threading ──
@@ -55,7 +55,7 @@ TABLE_SCHEMAS = {
         "label": "통합매출",
         "schema": (
             "테이블: SALES_ALL_Backup\n"
-            "컬럼: Date(DATETIME), Brand(SK/CL/CBT/DD/UM/ETC), Country, Mall_Classification, "
+            "컬럼: Date(DATETIME), Brand(SK/CL/CBT/DD/UM), Country, Mall_Classification, "
             "Team_NEW, Sales_Type(B2B/B2C), Line(Centella/Hyalucica/LabinNature/...), "
             "Category(Ampoule/Cream/Toner/Sun/...), SET(제품명), SKU, "
             "Sales1_R(매출액), Total_Qty(수량), Unit_Price\n"
@@ -150,6 +150,54 @@ TABLE_SCHEMAS = {
             "Net_Sales, Quantity, Order_Count, Country, "
             "Discount_Amount, Refund_Amount\n"
             "특징: Shopify 자사몰 판매 데이터"
+        ),
+    },
+    "amazon_review": {
+        "prefix": "RA",
+        "label": "아마존리뷰",
+        "schema": (
+            "테이블: New_Amazon_Review\n"
+            "컬럼: collected_date(DATE), channel, brand, review_date(DATE), "
+            "product_name, product_name_eng, review_original, review_ko, "
+            "sentiment_score(FLOAT64 -1~1), moisture_score, soothing_irritation_score, "
+            "trouble_sebum_pore_score, texture_score, scent_score, tone_brightening_score\n"
+            "특징: 아마존 리뷰 감성분석, 카테고리별 스코어"
+        ),
+    },
+    "qoo10_review": {
+        "prefix": "RQ",
+        "label": "큐텐리뷰",
+        "schema": (
+            "테이블: New_Qoo10_Review\n"
+            "컬럼: collected_date(DATE), channel, brand, review_date(DATE), "
+            "product_name, product_name_eng, review_original, review_ko, "
+            "sentiment_score(FLOAT64 -1~1), moisture_score, soothing_irritation_score, "
+            "trouble_sebum_pore_score, texture_score, scent_score, tone_brightening_score\n"
+            "특징: 큐텐 리뷰 감성분석, 카테고리별 스코어"
+        ),
+    },
+    "shopee_review": {
+        "prefix": "RS",
+        "label": "쇼피리뷰",
+        "schema": (
+            "테이블: New_Shopee_Review\n"
+            "컬럼: collected_date(DATE), channel, brand, review_date(DATE), "
+            "product_name, product_name_eng, review_original, review_ko, "
+            "sentiment_score(FLOAT64 -1~1), moisture_score, soothing_irritation_score, "
+            "trouble_sebum_pore_score, texture_score, scent_score, tone_brightening_score\n"
+            "특징: 쇼피 리뷰 감성분석, 카테고리별 스코어"
+        ),
+    },
+    "smartstore_review": {
+        "prefix": "RT",
+        "label": "스마트스토어리뷰",
+        "schema": (
+            "테이블: New_Smartstore_Review\n"
+            "컬럼: collected_date(DATE), channel, brand, review_date(DATE), "
+            "product_name, product_name_eng, skin_concern, review_original, review_ko, "
+            "sentiment_score(FLOAT64 -1~1), moisture_score, soothing_irritation_score, "
+            "trouble_sebum_pore_score, texture_score, scent_score, tone_brightening_score\n"
+            "특징: 스마트스토어 리뷰 감성분석, skin_concern 컬럼 추가"
         ),
     },
 }

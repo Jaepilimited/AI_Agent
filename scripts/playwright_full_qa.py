@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 import requests
 
 BASE_URL = "http://127.0.0.1:3002"
-LOGIN_DEPT = "Craver_Accounts > Users > Brand > DB > 데이터분석"
+LOGIN_DEPT = "Craver_Accounts > Users > Brand Division > Operations Dept > Data Business > 데이터분석"
 LOGIN_NAME = "임재필"
 LOGIN_PW = "1234"
 results = []

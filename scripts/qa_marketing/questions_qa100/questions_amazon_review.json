@@ -1,0 +1,502 @@
+[
+  {
+    "id": "RA-001",
+    "query": "전체 제품 리뷰의 총 감성 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-002",
+    "query": "모든 리뷰의 평균 '수분' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-003",
+    "query": "기록된 리뷰 중 가장 높은 '진정/자극' 점수는 몇 점인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-004",
+    "query": "기록된 리뷰 중 가장 낮은 '향' 점수는 몇 점인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-005",
+    "query": "전체 수집된 리뷰 데이터의 총 건수는 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-006",
+    "query": "2023년 월별 평균 감성 점수 추이를 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-007",
+    "query": "2022년 각 분기별 '텍스처' 점수의 합계 추이는 어떻게 되나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-008",
+    "query": "지난 3년간 연도별 총 리뷰 수의 변화를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-009",
+    "query": "2024년 1월의 주별 '트러블/피지/모공' 점수 평균 추이를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-010",
+    "query": "특정 제품에 대해 지난 한 달간 일별 감성 점수 변화를 그래프로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-011",
+    "query": "평균 감성 점수가 가장 높은 상위 3개 제품은 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-012",
+    "query": "'수분' 점수가 높은 상위 5개 제품의 이름을 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-013",
+    "query": "리뷰 수가 가장 많은 상위 10개 제품 리스트를 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-014",
+    "query": "평균 '향' 점수가 가장 낮은 제품은 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-015",
+    "query": "모든 제품의 '진정/자극' 점수 중간값은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-016",
+    "query": "지난달 대비 이번 달 전체 평균 감성 점수 변화율은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-017",
+    "query": "작년 동월 대비 올해 동월 특정 제품의 리뷰 수가 얼마나 증가했나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-018",
+    "query": "'Centella Ampoule' 제품과 'Hyalu-Cica Water-Fit Sun Serum' 제품의 평균 '톤/브라이트닝' 점수를 비교해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-019",
+    "query": "각 채널별 평균 감성 점수를 비교하여 어떤 채널이 가장 긍정적인 평가를 받는지 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-020",
+    "query": "만약 여러 브랜드의 데이터가 있다면, 브랜드별 평균 '수분' 점수를 비교해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-021",
+    "query": "전체 리뷰 중 감성 점수가 0점 이상인 긍정 리뷰의 비중은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-022",
+    "query": "특정 제품의 '텍스처' 점수가 4점 이상인 리뷰의 전체 리뷰 대비 비율은 몇 %인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-023",
+    "query": "TOP 5 제품이 전체 리뷰 수에서 차지하는 점유율은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-024",
+    "query": "각 제품별 '수분' 점수 합계가 전체 '수분' 점수 합계에서 차지하는 구성비를 파이 차트로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-025",
+    "query": "특정 제품이 전체 평균 감성 점수 개선에 얼마나 기여했는지 분석해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-026",
+    "query": "2023년 하반기 'Centella Ampoule' 제품의 평균 감성 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-027",
+    "query": "'SKIN1004' 브랜드의 'Amazon' 채널에서 'Hyalu-Cica Water-Fit Sun Serum' 제품에 대한 총 리뷰 수를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-028",
+    "query": "'Madagascar Centella Toning Toner' 제품에 대해 2024년 1분기 동안의 평균 '톤/브라이트닝' 점수를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-029",
+    "query": "감성 점수가 0.5 이상이고 '수분' 점수도 0.8 이상인 리뷰의 총 건수는 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-030",
+    "query": "2023년 10월에 등록된 리뷰 중 'Centella'가 포함된 제품 이름의 평균 '진정/자극' 점수를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-031",
+    "query": "월별 평균 감성 점수 추이를 라인 그래프로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-032",
+    "query": "제품별 평균 '텍스처' 점수를 막대 차트로 비교해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-033",
+    "query": "'Hyalu-Cica' 라인 제품들의 주간 평균 '수분' 점수 추이를 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-034",
+    "query": "전체 리뷰 수 대비 각 제품별 리뷰 수 비중을 파이 차트로 시각화해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-035",
+    "query": "긍정(0.5 초과), 중립(0.5 이하 0 이상), 부정(0 미만) 감성 점수 구간별 리뷰 건수를 바차트로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-036",
+    "query": "'Centella Ampoule' 제품을 제외한 나머지 제품들의 평균 '트러블/피지/모공' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-037",
+    "query": "감성 점수가 0이 아닌 리뷰들 중에서 '향' 점수의 평균은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-038",
+    "query": "'Hyalu-Cica' 라인 제품들을 제외한 나머지 제품들의 평균 '톤/브라이트닝' 점수를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-039",
+    "query": "2023년 12월 데이터를 빼고, 2023년 전체 평균 '수분' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-040",
+    "query": "감성 점수가 0.3 미만이거나 '텍스처' 점수가 0.5 미만인 리뷰들을 제외한 나머지 리뷰들의 평균 '진정/자극' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-041",
+    "query": "2024년 3월에 수집된 리뷰 데이터가 있나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-042",
+    "query": "'SKIN1004' 브랜드의 'Amazon' 채널에 대한 리뷰 데이터가 현재 시스템에 존재하나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-043",
+    "query": "특정 제품의 '향' 점수 데이터를 조회할 수 있나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-044",
+    "query": "감성 점수가 -0.5 이하인 매우 부정적인 리뷰가 존재하는가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-045",
+    "query": "최근 7일 이내에 새로운 리뷰 데이터가 수집된 적이 있나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-046",
+    "query": "'향' 점수가 정확히 0점인 리뷰는 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-047",
+    "query": "가장 최근에 수집된 리뷰의 원문 내용은 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-048",
+    "query": "가장 오래된 리뷰가 작성된 날짜는 언제인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-049",
+    "query": "'sentiment_score' 컬럼에 NULL 값이 있는 리뷰가 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-050",
+    "query": "감성 점수 1.0점과 -1.0점을 받은 리뷰는 각각 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-051",
+    "query": "각 제품별 평균 '수분' 점수와 리뷰 수를 함께 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-052",
+    "query": "제품 이름에 'Ampoule'이 들어가는 제품군과 'Sun Serum'이 들어가는 제품군의 평균 감성 점수를 비교해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-053",
+    "query": "'Hyalu-Cica' 라인 제품들의 평균 '진정/자극' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-054",
+    "query": "'Amazon' 채널의 전체 평균 '텍스처' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-055",
+    "query": "긍정(sentiment_score > 0), 중립(sentiment_score = 0), 부정(sentiment_score < 0) 리뷰 유형별 평균 '수분' 점수를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-056",
+    "query": "최근 3개월간 수집된 리뷰 데이터의 총 건수는 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-057",
+    "query": "2023년 하반기(7월~12월) 동안의 평균 감성 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-058",
+    "query": "2022년 1분기부터 3분기까지의 '톤/브라이트닝' 점수 합계를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-059",
+    "query": "2024년 5월 첫째 주에 작성된 리뷰들의 평균 '텍스처' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-060",
+    "query": "2023년 1월 1일부터 2023년 6월 30일까지 'Centella Ampoule' 제품의 월별 리뷰 수 변화를 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-061",
+    "query": "2023년 대비 2024년 1분기 평균 감성 점수의 성장률은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-062",
+    "query": "특정 제품의 월별 리뷰 수가 지난 3개월간 얼마나 감소했는지 감소율로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-063",
+    "query": "지난 분기 대비 이번 분기 '수분' 점수 총합의 증감액은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-064",
+    "query": "특정 제품의 일별 감성 점수 변동폭이 가장 컸던 날은 언제인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-065",
+    "query": "2023년과 2024년 사이 '진정/자극' 점수 평균이 가장 크게 변화한 제품은 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-066",
+    "query": "각 제품별 리뷰 1건당 평균 '수분' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-067",
+    "query": "특정 기간 동안 수집된 리뷰 1건당 평균 '텍스처' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-068",
+    "query": "지난 30일간의 'Centella Ampoule' 제품에 대한 감성 점수 7일 이동평균을 계산해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-069",
+    "query": "리뷰 수에 따라 가중치를 부여하여 각 제품의 가중평균 감성 점수를 계산해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-070",
+    "query": "평균 감성 점수가 전체 평균보다 높은 제품들의 평균 '톤/브라이트닝' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-071",
+    "query": "2023년 1월부터 현재까지의 전체 누적 리뷰 수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-072",
+    "query": "현재까지(Year-To-Date)의 평균 감성 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-073",
+    "query": "이번 달(Month-To-Date)의 'Hyalu-Cica Water-Fit Sun Serum' 제품에 대한 누적 '수분' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-074",
+    "query": "2023년 한 해 동안의 '트러블/피지/모공' 점수 총합은 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-075",
+    "query": "2023년 각 월별 'Centella Ampoule' 제품의 누적 평균 '진정/자극' 점수 추이를 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-076",
+    "query": "'moisture_score'가 0.7 이상인 리뷰들만 대상으로 평균 'sentiment_score'를 계산해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-077",
+    "query": "감성 점수가 0.8 이상인 리뷰의 제품명과 해당 리뷰 수를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-078",
+    "query": "'텍스처' 점수가 0.3 이하인 리뷰들의 평균 '향' 점수는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-079",
+    "query": "2023년에 작성된 리뷰 중 '톤/브라이트닝' 점수가 0.5 이상인 리뷰의 총 건수는 몇 건인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-080",
+    "query": "'Centella' 제품 중 'soothing_irritation_score'가 0.9 이상인 리뷰들의 평균 'sentiment_score'는 얼마인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-081",
+    "query": "'Hyalu-Cica Water-Fit Sun Serum' 제품의 모든 리뷰 원문과 감성 점수를 상세히 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-082",
+    "query": "가장 최근에 수집된 리뷰의 한국어 번역 내용과 각 카테고리별 점수를 상세히 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-083",
+    "query": "2023년 11월에 수집된 모든 리뷰의 제품명과 감성 점수를 리스트업해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-084",
+    "query": "'moisture_score'가 0.9 이상인 리뷰들을 작성일자 순으로 정렬하여 제품명과 리뷰 원문을 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-085",
+    "query": "'Centella Ampoule' 제품 출시 초기 3개월간의 리뷰들을 상세하게 분석하여 주요 키워드와 감성 변화를 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-086",
+    "query": "각 제품별 월별 평균 감성 점수를 교차 분석하여 표로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-087",
+    "query": "'수분' 점수와 '텍스처' 점수를 기준으로 각 제품별 리뷰 분포를 교차 분석해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-088",
+    "query": "각 채널별로 제품당 평균 '진정/자극' 점수가 어떻게 다른지 교차 분석해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-089",
+    "query": "2023년 분기별로 긍정, 중립, 부정 감성 리뷰의 비율이 어떻게 변화했는지 교차 분석해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-090",
+    "query": "'Centella Ampoule' 제품에 대해 'moisture_score'와 'soothing_irritation_score' 간의 상관관계를 분석해 주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-091",
+    "query": "요즘 우리 제품들에 대한 아마존 리뷰 분위기는 어떤가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-092",
+    "query": "고객 반응이 가장 좋은 제품이 무엇인지 알려줄 수 있나요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-093",
+    "query": "'SKIN1004' 제품의 전반적인 아마존 리뷰 현황에 대해 요약해서 알려주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-094",
+    "query": "고객들이 '향'에 대해 부정적으로 평가하는 제품이 있나요? 있다면 어떤 제품인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-095",
+    "query": "'수분' 점수가 특히 높은 제품은 무엇이며, 그 제품의 리뷰에서 주로 언급되는 긍정적인 키워드는 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-096",
+    "query": "전체 평균 감성 점수보다 높은 평균 감성 점수를 가진 제품들 중에서, '수분' 점수가 가장 높은 제품은 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-097",
+    "query": "각 월별로 감성 점수가 가장 높았던 제품을 순위와 함께 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-098",
+    "query": "각 제품별로 '수분', '진정/자극', '텍스처' 점수의 평균을 피벗 테이블 형태로 보여주세요.",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-099",
+    "query": "지난 6개월간 'soothing_irritation_score'가 0.8 이상인 리뷰들의 평균 'sentiment_score'가 가장 많이 개선된 제품은 무엇인가요?",
+    "table": "amazon_review"
+  },
+  {
+    "id": "RA-100",
+    "query": "2023년 한 해 동안, 월별 평균 감성 점수가 전월 대비 10% 이상 하락한 제품들에 대해, 해당 월의 가장 부정적인 리뷰 3건의 원문과 감성 점수를 함께 보여주세요.",
+    "table": "amazon_review"
+  }
+]

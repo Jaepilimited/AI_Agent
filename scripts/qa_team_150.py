@@ -241,7 +241,7 @@ def run_team(base_url, questions, team_label, concurrency=3):
     session = requests.Session()
     # Login
     session.post(f"{base_url}/api/auth/signin", json={
-        "department": "Craver_Accounts > Users > Brand > DB > 데이터분석",
+        "department": "Craver_Accounts > Users > Brand Division > Operations Dept > Data Business > 데이터분석",
         "name": "임재필", "password": "1234"
     })
 

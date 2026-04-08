@@ -1,0 +1,1002 @@
+[
+  {
+    "id": "RS-001",
+    "query": "전체 리뷰의 총 감성 점수 합계는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 17.6,
+    "answer_len": 1651,
+    "answer_preview": "### 📊 지난 1년간 전체 리뷰의 총 감성 점수 합계 분석  #### 요약  지난 1년간 Amazon, Qoo10, Shopee, Smartstore 등 모든 플랫폼에서 수집된 전체 리뷰의 총 감성 점수 합계는 약 **93,473.65점**입니다. 이는 전반적으로 고객 리뷰가 긍정적인 경향을 보였음을 시사합니다.  #### 분석 및 인사이트  *   **긍정적 감성 우세:** 총 감성 점수가 양수(93,473.65점)라는 것은 지난 1년간 수집된 리뷰들이 대체로 긍정적인 감성을 담고 있음을 나타냅니다. 이는 고객 만족도가 비교적 높다는 긍정적인 신호로 해석될 수 있습니다. *   **통합 데이터 분석:** 이 점수는 여러 주요 이커머스 플랫폼(Amazon, Qoo10, Shopee, Smartstore)의 데이터를 통합하여 산출된 결과로, 광범위한 고객 의견을 반영하고 있습니다. *   **추가 분석의 필요성:** 총 감성 점수 합계는 전반적인 추세를 파악하는 데 유용하지만, 이 ",
+    "used_sql": "SELECT SUM(sentiment_score) AS total_sentiment_score\nFROM (\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-002",
+    "query": "모든 제품 리뷰의 평균 수분 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 17.3,
+    "answer_len": 999,
+    "answer_preview": "### 📊 제품 리뷰 평균 수분 점수 분석  #### 요약  최근 1년간 수집된 제품 리뷰 중 상위 1,000개의 평균 수분 점수는 **0.29점**으로 집계되었습니다. 이 수치는 전체 제품 리뷰의 평균을 대표하지 않을 수 있습니다.  #### 분석 및 인사이트  *   제공된 평균 수분 점수 **0.29점**은 2025년 4월 6일부터 2026년 4월 6일까지 최근 1년간 수집된 리뷰 데이터 중 상위 1,000개에 대해서만 집계된 값입니다. 따라서 전체 제품 리뷰의 평균을 정확히 반영한다고 보기는 어렵습니다. *   수분 점수의 구체적인 평가 척도(예: 1~5점 척도, 0~1점 척도 등)에 대한 정보가 없어 0.29점의 절대적인 의미를 해석하기 어렵습니다. 만약 1에 가까울수록 높은 점수라면, 0.29점은 상대적으로 낮은 수준일 수 있습니다. *   이 평균 점수는 특정 기간(최근 1년) 동안의 리뷰를 기반으로 하므로, 기간별 변화 추이나 특정 제품군과의 비교를 통해 더 심층적인 ",
+    "used_sql": "SELECT\n  ROUND(AVG(moisture_score), 2) AS average_moisture_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-003",
+    "query": "가장 높은 진정/자극 점수를 받은 리뷰는 몇 점인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 17.8,
+    "answer_len": 1628,
+    "answer_preview": "### 📊 가장 높은 진정/자극 점수 분석  #### 요약  지난 1년간 수집된 리뷰 데이터에서 가장 높은 진정/자극 점수는 **1.0점**으로 확인되었습니다. 이는 진정 또는 자극 완화 효과에 대해 가장 긍정적인 평가를 받은 리뷰가 존재함을 의미합니다.  #### 분석 및 인사이트  *   **최고 점수 달성:** 진정/자극 점수의 최댓값이 **1.0점**이라는 것은, 해당 평가 척도에서 가장 높은 수준의 긍정적인 피드백이 있었다는 것을 나타냅니다. 이는 특정 제품이나 서비스가 진정 또는 자극 완화 측면에서 고객에게 매우 만족스러운 경험을 제공했음을 시사합니다. *   **긍정적 효과 입증:** 최고 점수 1.0점은 제품의 진정/자극 완화 기능이 소비자에게 효과적으로 작용했음을 강력하게 뒷받침하는 지표입니다. 이러한 긍정적인 평가는 제품의 강점으로 활용될 수 있습니다. *   **추가 분석 필요성:** 이 최고 점수를 받은 리뷰가 어떤 제품에 대한 것인지, 어떤 구체적인 내용으로 ",
+    "used_sql": "SELECT\n  MAX(soothing_irritation_score) AS max_soothing_irritation_score\nFROM (\n  SELECT soothing_irritation_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT soothing_irritation_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT soothing_irritation_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT soothing_irritation_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-004",
+    "query": "가장 낮은 트러블/피지/모공 점수를 받은 리뷰는 몇 점인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 20.2,
+    "answer_len": 1700,
+    "answer_preview": "### 📊 트러블/피지/모공 점수 최저치 분석  #### 요약  지난 1년간(2025년 4월 6일 ~ 2026년 4월 6일) 수집된 모든 리뷰 데이터를 종합한 결과, 트러블/피지/모공 점수의 최저치는 **-1.0점**으로 확인되었습니다.  #### 분석 및 인사이트  *   **최저 점수 확인**: 분석 기간 동안 트러블/피지/모공 점수 중 가장 낮은 값은 -1.0점으로 나타났습니다. 이는 해당 점수 체계 내에서 가장 부정적이거나 낮은 수준의 평가가 존재함을 의미합니다. *   **점수 체계 이해의 중요성**: -1.0점이라는 수치 자체만으로는 해당 점수가 '매우 나쁨'을 의미하는지, 혹은 특정 기준점 이하의 평가를 나타내는지 명확히 알기 어렵습니다. 점수 체계(예: 점수 범위, 높을수록 좋음/나쁨)에 대한 추가 정보가 있다면 더욱 정확한 해석이 가능합니다. *   **심층 분석 필요**: 이 최저 점수를 받은 리뷰의 구체적인 내용과 해당 리뷰가 어떤 제품에 대한 것인지 파악하여, ",
+    "used_sql": "SELECT\n  MIN(trouble_sebum_pore_score) AS lowest_trouble_sebum_pore_score\nFROM (\n  SELECT trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-005",
+    "query": "총 몇 건의 리뷰가 수집되었나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 19.7,
+    "answer_len": 1524,
+    "answer_preview": "### 📊 총 리뷰 수집 현황  #### 요약  지난 1년간 (2025년 4월 6일 ~ 2026년 4월 6일) 아마존, 큐텐, 쇼피, 스마트스토어 등 다양한 플랫폼에서 총 **127,960건**의 리뷰가 성공적으로 수집되었습니다.  #### 분석 및 인사이트  *   **활발한 고객 참여**: 지난 1년간 총 127,960건의 리뷰가 수집된 것은 고객들이 제품에 대해 매우 활발하게 피드백하고 있음을 나타냅니다. 이는 제품에 대한 높은 관심과 참여도를 반영합니다. *   **다양한 채널에서의 데이터 통합**: 아마존, 큐텐, 쇼피, 스마트스토어 등 여러 주요 플랫폼에서 리뷰가 통합 수집되어, 전반적인 시장에서의 고객 반응을 한눈에 파악할 수 있는 기반을 제공합니다. *   **성과 측정의 기준점**: 이 총 리뷰 수는 향후 리뷰 수집 목표 설정, 마케팅 캠페인 효과 측정, 또는 특정 기간 동안의 고객 반응 변화를 추적하는 데 중요한 기준점으로 활용될 수 있습니다.  --- *조회 기준",
+    "used_sql": "SELECT\n  SUM(review_count) AS total_review_count\nFROM (\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-006",
+    "query": "월별 평균 감성 점수 추이를 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 21.9,
+    "answer_len": 3351,
+    "answer_preview": "### 📊 월별 평균 감성 점수 추이 분석  #### 요약  최근 5개월간의 월별 평균 감성 점수는 **0.72점**에서 **0.75점** 사이를 기록하며 전반적으로 긍정적인 추세를 보였습니다. 특히 2026년 3월과 4월에 가장 높은 점수를 유지하며 긍정적인 감성이 강화되는 모습을 보였습니다.  #### 상세 데이터  ⚠️ 제공된 데이터는 2025년 12월부터 2026년 4월까지의 5개월치 정보입니다. | 월 | 평균 감성 점수 | |:-----|---------------:| | 2025-12 | 0.72 | | 2026-01 | 0.73 | | 2026-02 | 0.73 | | 2026-03 | 0.75 | | 2026-04 | 0.75 ⚠️ | ⚠️ 2026-04월 데이터는 2026-04-06까지의 부분 집계입니다.  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2025-12\", \"2026-01\", \"20",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', collected_date) AS month,\n  ROUND(AVG(sentiment_score), 2) AS average_sentiment_score\nFROM (\n  SELECT collected_date, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n\n  UNION ALL\n\n  SELECT collected_date, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n\n  UNION ALL\n\n  SELECT collected_date, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n\n  UNION ALL\n\n  SELECT collected_date, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n)\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-007",
+    "query": "분기별 총 리뷰 수의 변화를 알려주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 28.4,
+    "answer_len": 3443,
+    "answer_preview": "### 📊 분기별 총 리뷰 수 변화 분석  #### 요약  최근 두 분기 동안의 총 리뷰 수를 분석한 결과, 2026년 1분기에 리뷰 수가 **116,912건**으로 크게 증가하며 전 분기 대비 약 **1020%**의 폭발적인 성장률을 기록했습니다. 이는 2025년 4분기의 10,441건에 비해 매우 큰 폭의 증가입니다.  #### 상세 데이터 | 분기      | 총 리뷰 수 | | :-------- | ---------: | | 2025-Q4   |     10,441 | | 2026-Q1   |    116,912 |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2025-Q4\", \"2026-Q1\"], \"datasets\": [{\"label\": \"총 리뷰 수\", \"data\": [10441.0, 116912.0], \"backgroundColor\": \"rgba(99, 102, 241, 0.15)\", \"border",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-Q%Q', collected_date) AS quarter,\n  COUNT(*) AS total_reviews\nFROM (\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR), QUARTER)\n    AND collected_date < DATE_TRUNC(CURRENT_DATE(), QUARTER)\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR), QUARTER)\n    AND collected_date < DATE_TRUNC(CURRENT_DATE(), QUARTER)\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR), QUARTER)\n    AND collected_date < DATE_TRUNC(CURRENT_DATE(), QUARTER)\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR), QUARTER)\n    AND collected_date < DATE_TRUNC(CURRENT_DATE(), QUARTER)\n) AS all_reviews\nGROUP BY quarter\nORDER BY quarter\nLIMIT 1000"
+  },
+  {
+    "id": "RS-008",
+    "query": "연도별 평균 향 점수 추이는 어떻게 되나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 13.7,
+    "answer_len": 710,
+    "answer_preview": "지금 연도별 평균 향 점수 추이를 조회해 보겠습니다.  ---  현재 시스템에 연결된 BigQuery 데이터베이스에서 **\"향 점수\"**에 해당하는 데이터를 직접 조회할 수 있는 테이블 정보가 확인되지 않습니다.  좀 더 정확하게 도와드리기 위해 몇 가지 확인이 필요합니다:  ### 확인 사항  1. **데이터 출처**: 어떤 플랫폼의 리뷰 데이터를 말씀하시는 건가요?    - 올리브영 리뷰    - 아마존 리뷰    - 자사몰(skin1004.com) 리뷰    - 기타 플랫폼  2. **향 점수의 정의**: 아래 중 어떤 형태인가요?    - 리뷰에서 **\"향\" 항목에 별도 평점**이 있는 경우 (예: 5점 만점)    - 리뷰 텍스트에서 **향 관련 감성 분석 점수**    - 내부에서 별도로 관리하는 **제품 향 평가 데이터**  3. **제품 범위**: 전 제품 기준인지, 특정 제품(예: 센텔라 앰플, 선크림 등)인지도 알려주시면 좋겠습니다.  > 💡 해당 데이터가 어떤 테",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-009",
+    "query": "주별 평균 텍스처 점수의 변동을 확인해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 22.1,
+    "answer_len": 592,
+    "answer_preview": "주별 평균 텍스처 점수 변동을 확인하기 위해 데이터를 조회하겠습니다.  지금 조회할 수 있는 데이터 소스를 확인해 보겠습니다. \"텍스처 점수\"라는 항목이 어떤 데이터셋에 해당하는지 좀 더 구체적인 정보가 필요합니다.  몇 가지 확인 사항이 있습니다:  ## 📋 확인이 필요한 사항  1. **텍스처 점수의 출처**    - 제품 리뷰에서의 텍스처(질감) 평가 점수인가요?    - QC(품질관리) 검사에서의 텍스처 측정 점수인가요?    - 특정 플랫폼(아마존, 올리브영 등)의 리뷰 분석 데이터인가요?  2. **기간 범위**    - 최근 몇 주간의 데이터를 원하시나요? (예: 최근 12주, 올해 전체 등)  3. **제품 범위**    - 전체 제품 기준인가요, 특정 제품(예: 센텔라 앰플)에 대한 데이터인가요?  해당 정보를 알려주시면 정확한 데이터를 조회하여 차트와 함께 분석 결과를 제공해 드리겠습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-010",
+    "query": "일별 수집된 리뷰 수의 변화를 그래프로 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 36.7,
+    "answer_len": 4588,
+    "answer_preview": "### 📊 일별 수집된 SKIN1004 브랜드 리뷰 수 변화 분석  #### 요약  SKIN1004 브랜드의 일별 수집 리뷰 수는 2025년 12월 8일부터 2026년 4월 6일까지 총 **129,031건**으로 집계되었습니다. 이 기간 동안 일별 수집량은 큰 변동성을 보였으며, 특히 **2026년 1월 28일 52,774건**으로 가장 많은 리뷰가 수집되었습니다. ⚠️ 2026년 4월 데이터는 2026년 4월 6일까지의 부분 집계이므로, 전체 월 데이터와 직접 비교하기에는 불완전합니다.  #### 상세 데이터 | 수집일자   | 일별 리뷰 수 | | :--------- | -----------: | | 2025-12-08 | 2,583        | | 2025-12-10 | 5,855        | | 2025-12-11 | 1,945        | | 2025-12-12 | 58           | | 2026-01-15 | 2,341        | | 2026-01-",
+    "used_sql": "SELECT\n  collected_date,\n  COUNT(*) AS daily_review_count\nFROM (\n  SELECT collected_date, brand FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  UNION ALL\n  SELECT collected_date, brand FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  UNION ALL\n  SELECT collected_date, brand FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  UNION ALL\n  SELECT collected_date, brand FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n) AS all_reviews\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND brand LIKE '%SKIN1004%'\nGROUP BY collected_date\nORDER BY collected_date\nLIMIT 1000"
+  },
+  {
+    "id": "RS-011",
+    "query": "감성 점수가 가장 높은 상위 3개 제품은 무엇인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 11.8,
+    "answer_len": 644,
+    "answer_preview": "아쉽게도 현재 시스템에 **\"감성 점수\"**에 해당하는 데이터가 연동되어 있지 않습니다.  현재 조회 가능한 데이터는 다음과 같습니다:  | 데이터 유형 | 조회 가능 여부 | |---|---| | 매출/수량 데이터 (국가별, 제품별, 채널별) | ✅ | | 사내 문서 (Notion) | ✅ | | CS 제품 Q&A (성분, 사용법 등) | ✅ | | Gmail / Calendar / Drive | ✅ | | 리뷰 감성 점수 (Sentiment Score) | ❌ 미연동 |  **\"감성 점수\"**가 어떤 맥락의 데이터인지 조금 더 알려주시면 도움을 드릴 수 있습니다:  1. **고객 리뷰 감성 분석** (아마존, 올리브영 등 리뷰 기반) → 현재 BigQuery에 해당 테이블이 있는지 확인이 필요합니다. 2. **사내에서 별도로 관리하는 지표** → Notion 문서에 관련 자료가 있을 수 있습니다. 3. **SNS/소셜 미디어 감성 분석** → 현재 연동되지 않은 영역입니다.  >",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-012",
+    "query": "수분 점수가 가장 높은 상위 5개 제품과 그 점수를 알려주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 11.2,
+    "answer_len": 501,
+    "answer_preview": "아쉽게도 현재 시스템에서 **\"수분 점수\"**라는 데이터 항목을 직접 조회할 수 있는 데이터베이스 테이블이 확인되지 않습니다.  정확한 답변을 드리기 위해 몇 가지 확인이 필요합니다:  ## 어떤 데이터를 찾고 계신가요?  1. **CS 제품 Q&A 기반** — 제품별 수분 관련 성분/효능 정보 2. **BigQuery 매출 데이터** — 수분 카테고리 제품의 매출 순위 3. **외부 리뷰/평가 데이터** — 뷰티 플랫폼(올리브영, 화해 등)에서의 수분 점수 평가 4. **사내 R&D/품질 테스트 데이터** — 자체 수분 측정 실험 결과  어떤 맥락의 수분 점수인지 알려주시면, 해당 소스에서 정확히 조회해 드리겠습니다! 😊  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - SKIN1004 수분 관련 제품(크림, 토너 등) 매출 순위가 궁금해요 > - 센텔라 앰플의 보습 성분과 사용법을 알려주세요 > - 제품 카테고리별 매출 비교를 해주세",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-013",
+    "query": "리뷰 수가 가장 많은 상위 10개 제품 목록을 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.5,
+    "answer_len": 4084,
+    "answer_preview": "### 📊 지난 1년간 리뷰 수가 가장 많은 상위 10개 제품 분석  #### 요약  지난 1년간(2025년 04월 06일 ~ 2026년 04월 06일) 수집된 데이터를 기준으로, '센텔라 앰플'이 **33,304개**의 리뷰로 압도적인 1위를 차지했습니다. 상위 10개 제품의 총 리뷰 수는 **83,855개**에 달하며, 특히 '센텔라 앰플'은 2위 제품보다 약 2.4배 많은 리뷰를 기록하며 독보적인 인기를 보였습니다.  #### 상세 데이터 | 제품명 | 리뷰 수 | | :----------------------- | --------: | | 센텔라 앰플 | 33304 | | 히알루시카 워터핏 선 세럼 | 13717 | | 센텔라 퀵 카밍 패드 | 10750 | | 센텔라 라이트 클렌징 오일 | 8347 | | 센텔라 앰플 폼 | 4825 | | 프로바이오시카 인텐시브 앰플 | 4073 | | 톤브라이트닝 캡슐 앰플 | 3377 | | 센텔라 토닝 토너 | 3005 | | 센텔라",
+    "used_sql": "SELECT\n  product_name,\n  COUNT(*) AS review_count\nFROM\n  (\n    SELECT product_name, collected_date\n    FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    UNION ALL\n    SELECT product_name, collected_date\n    FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    UNION ALL\n    SELECT product_name, collected_date\n    FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    UNION ALL\n    SELECT product_name, collected_date\n    FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  ) AS all_reviews\nWHERE product_name IS NOT NULL AND product_name != ''\nGROUP BY product_name\nORDER BY review_count DESC\nLIMIT 10"
+  },
+  {
+    "id": "RS-014",
+    "query": "진정/자극 점수가 가장 낮은 제품은 무엇이며, 점수는 몇 점인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 25.6,
+    "answer_len": 1328,
+    "answer_preview": "### 🧴 제품별 진정/자극 점수에 대한 안내  #### 답변  고객님, 문의하신 제품별 **'진정/자극 점수'에 대한 구체적인 수치 정보는 현재 CS 데이터베이스에서 확인되지 않습니다.** 다만, SKIN1004의 모든 제품은 **저자극을 기반으로 한 포뮬라로 설계되었으며 피부 자극 테스트를 완료**하여 안심하고 사용하실 수 있습니다.  #### 상세 정보  CS 데이터베이스 내에서 진정 및 자극 완화에 강점이 있거나 민감성 피부에 적합하다고 언급된 제품 및 라인은 다음과 같습니다.  *   **랩인네이처 레티놀 0.2 부스팅샷 앰플**:     *   **특징**: 일반 스피큘이 아닌 **'센텔라 스피큘'**을 사용하여 스피큘 자체에 진정 성분(마다가스카르산 병풀추출물, 판테놀)을 함유하여 자극을 줄였습니다.     *   **자극도**: **레티놀 입문자에게 더 적합**하며, 스쿠알란 0.5%와 센텔라 스피큘 내 진정 성분이 자극감을 완화해줍니다. 민감성 피부 자극 테스트를 완",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-015",
+    "query": "모든 리뷰의 톤/미백 점수 중간값은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 25.7,
+    "answer_len": 469,
+    "answer_preview": "안녕하세요. 요청하신 **모든 리뷰의 톤/미백 점수 중간값** 데이터를 조회하지 못했습니다.  조건 범위가 넓어 데이터를 가져오는 데 어려움이 있었을 수 있습니다. 아래와 같이 **조건을 좀 더 구체적으로** 지정해 주시면 정확한 결과를 안내해 드릴 수 있습니다.  ---  > ### 💡 이렇게 질문을 바꿔 보시면 좋습니다 1. **기간 + 제품 특정**  → *\"2024년 하반기 마다가스카르 센텔라 톤 브라이트닝 크림 리뷰의 톤/미백 점수 중간값은 얼마인가요?\"*  2. **채널 특정**  → *\"아마존(Amazon) 채널에 등록된 리뷰의 톤/미백 점수 중간값을 알려주세요.\"*  3. **국가 + 기간 특정**  → *\"2025년 1분기 미국 시장 전체 제품 리뷰의 톤/미백 점수 중간값은 어떻게 되나요?\"*  ---  **기간, 국가, 판매 채널, 제품명** 중 하나 이상을 포함하여 다시 질문해 주시면 빠르게 도와드리겠습니다!",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-016",
+    "query": "지난달 대비 이번 달의 평균 감성 점수 변화율은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 29.5,
+    "answer_len": 804,
+    "answer_preview": "현재 시점(2026년 4월 6일) 기준으로 **이번 달(4월) 평균 감성 점수 관련 공식 통계가 아직 발표되지 않아**, 지난달 대비 변화율을 산출할 수 없습니다.  ## 참고 가능한 최신 지표  | 지표 | 3월 수치 | 2월 대비 변화 | |------|----------|---------------| | **한국 소비자심리지수 (CCSI)** | 107.0 | **▼ 5.1p 하락** (약 1년 3개월 만에 최대 낙폭) | | **미국 미시간대 소비자심리지수** | 53.3 | **▼ 3.3p 하락** (2월 56.6 대비) |  > 3월 기준으로는 한국·미국 모두 소비자 심리가 **하락 추세**를 보이고 있으며, 중동 분쟁에 따른 물가 상승과 경기 둔화 우려가 주요 원인으로 분석됩니다.  ## 확인이 필요한 사항  혹시 질문하신 **\"감성 점수\"**가 아래 중 하나를 의미하시는 건지 확인 부탁드립니다:  1. **사내 고객 리뷰 감성 분석 점수** (BigQuery 데이터) ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-017",
+    "query": "작년 같은 기간 대비 올해의 총 리뷰 수 증감은 어떠한가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 35.5,
+    "answer_len": 2495,
+    "answer_preview": "### 📊 작년 동기 대비 총 리뷰 수 증감 분석  #### 요약  올해(2026년 1월 1일 ~ 4월 6일) 총 리뷰 수는 **762**건으로 집계되었습니다. 작년 동기(2025년 1월 1일 ~ 4월 6일)에는 리뷰 데이터가 **0**건이어서, 올해 리뷰 수는 작년 대비 762건 증가했습니다. 작년 동기 리뷰 수가 0이므로 증감률은 계산할 수 없습니다.  #### 상세 데이터 | 기간                 | 총 리뷰 수 | 증감 | 증감률 | | :------------------- | ---------: | ---: | -----: | | 2026년 (1/1~4/6)     |        762 |  762 |    N/A | | 2025년 (1/1~4/6)     |          0 |    - |      - |  #### 분석 및 인사이트  *   **작년 동기 리뷰 부재:** 2025년 1월 1일부터 4월 6일까지의 기간에는 리뷰 데이터가 전혀 없는 것으로 ",
+    "used_sql": "WITH all_reviews AS (\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n),\nthis_year_period_reviews AS (\n  SELECT COUNT(*) AS total_reviews\n  FROM all_reviews\n  WHERE EXTRACT(YEAR FROM collected_date) = EXTRACT(YEAR FROM CURRENT_DATE())\n    AND EXTRACT(MONTH FROM collected_date) <= EXTRACT(MONTH FROM CURRENT_DATE())\n    AND EXTRACT(DAY FROM collected_date) <= EXTRACT(DAY FROM CURRENT_DATE())\n),\nlast_year_period_reviews AS (\n  SELECT COUNT(*) AS total_reviews\n  FROM all_reviews\n  WHERE EXTRACT(YEAR FROM collected_date) = EXTRACT(YEAR FROM CURRENT_DATE()) - 1\n    AND EXTRACT(MONTH FROM collected_date) <= EXTRACT(MONTH FROM CURRENT_DATE())\n    AND EXTRACT(DAY FROM collected_date) <= EXTRACT(DAY FROM CURRENT_DATE())\n)\nSELECT\n  ty.total_reviews AS this_year_total_reviews,\n  ly.total_reviews AS last_year_total_reviews,\n  ty.total_reviews - ly.total_reviews AS review_change,\n  ROUND(SAFE_DIVIDE(ty.total_reviews - ly.total_reviews, ly.total_reviews) * 100, 2) AS percentage_change\nFROM this_year_period_reviews ty, last_year_period_reviews ly\nLIMIT 1000"
+  },
+  {
+    "id": "RS-018",
+    "query": "'Shopee MY' 채널과 'Shopee SG' 채널 간의 평균 수분 점수를 비교해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 11.0,
+    "answer_len": 503,
+    "answer_preview": "아쉽게도 현재 보유하고 있는 데이터에는 **\"수분 점수(moisture score)\"**에 해당하는 필드가 없습니다.  혹시 아래 중 의도하신 내용이 있으실까요?  1. **평균 매출(revenue)** 비교 — Shopee MY vs Shopee SG 2. **평균 판매 수량(quantity)** 비교 3. **평균 리뷰 평점(rating)** 비교 4. **제품별 수분 관련 제품 매출** 비교 (예: Hyalu-Cica 라인 등 수분 제품군) 5. 사내 CS Q&A 데이터에서 **수분 관련 제품 문의** 비교  \"수분 점수\"가 특정 리포트나 Notion 문서에서 사용하는 지표명이라면, 해당 문서명이나 맥락을 알려주시면 검색해 드리겠습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - Shopee MY와 Shopee SG의 월별 매출 비교해줘 > - Shopee 채널별 베스트셀러 제품 순위 알려줘 > - 동남아 채널별 매출 현황 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-019",
+    "query": "각 채널별 평균 텍스처 점수를 비교하여 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 21.4,
+    "answer_len": 2461,
+    "answer_preview": "### 📊 채널별 평균 텍스처 점수 비교 분석  #### 요약  지난 1년간의 데이터를 분석한 결과, **Shopee** 채널이 **0.59**로 가장 높은 평균 텍스처 점수를 기록했습니다. 반면, **Smartstore** 채널은 **0.13**으로 가장 낮은 점수를 보였습니다. Amazon과 Qoo10은 0.30으로 중간 수준의 점수를 나타냈습니다.  #### 상세 데이터 | 채널       | 평균 텍스처 점수 | 리뷰 수    | | :--------- | ---------------: | ---------: | | Shopee     |             0.59 |      2,003 | | Amazon     |             0.30 |      2,901 | | Qoo10      |             0.30 |     64,684 | | Q10        |             0.29 |      2,583 | | shopee     |    ",
+    "used_sql": "SELECT\n  channel,\n  ROUND(AVG(texture_score), 2) AS avg_texture_score,\n  COUNT(*) AS review_count\nFROM\n  (\n    SELECT\n      channel,\n      texture_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    UNION ALL\n    SELECT\n      channel,\n      texture_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    UNION ALL\n    SELECT\n      channel,\n      texture_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    UNION ALL\n    SELECT\n      channel,\n      texture_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n    WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  ) AS all_reviews\nWHERE texture_score IS NOT NULL\nGROUP BY channel\nORDER BY avg_texture_score DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-020",
+    "query": "'SKIN1004' 브랜드와 (가상의) 'Brand B'의 평균 트러블/피지/모공 점수를 비교해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 27.9,
+    "answer_len": 1343,
+    "answer_preview": "### 📊 SKIN1004 브랜드의 평균 트러블/피지/모공 점수 분석  #### 요약  제공된 데이터에 따르면 'SKIN1004' 브랜드의 평균 트러블/피지/모공 점수는 **0.06점**으로 나타났습니다. 요청하신 'Brand B'에 대한 데이터는 현재 실행 결과에 포함되어 있지 않아 두 브랜드 간의 직접적인 비교는 어렵습니다.  #### 상세 데이터 | 브랜드     | 평균 트러블/피지/모공 점수 | |:-----------|---------------------------:| | SKIN1004   | 0.06                      |  #### 분석 및 인사이트  *   **SKIN1004 점수 현황**: 'SKIN1004' 브랜드의 평균 트러블/피지/모공 점수는 0.06점으로, 매우 낮은 수준을 보입니다. 이는 해당 브랜드 제품 사용 후 트러블, 피지, 모공 관련 문제가 적게 발생했음을 시사할 수 있습니다. *   **비교 분석의 한계**: 요청하신 'Bra",
+    "used_sql": "SELECT\n  brand,\n  ROUND(AVG(trouble_sebum_pore_score), 2) AS avg_trouble_sebum_pore_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND (LOWER(brand) LIKE '%skin1004%' OR LOWER(brand) LIKE '%brand b%')\nGROUP BY brand\nORDER BY avg_trouble_sebum_pore_score DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-021",
+    "query": "전체 리뷰 중 긍정적인 감성(감성 점수 > 0)을 가진 리뷰의 비중은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 18.3,
+    "answer_len": 1570,
+    "answer_preview": "### 📊 전체 리뷰 긍정 감성 비중 분석  #### 요약  최근 1년간 수집된 전체 리뷰 중 긍정적인 감성(감성 점수 > 0)을 가진 리뷰의 비중은 **92.4%**로 매우 높은 수준을 보였습니다. 이는 고객들이 제품 및 서비스에 대해 전반적으로 매우 만족하고 있음을 시사합니다.  #### 분석 및 인사이트  *   **높은 고객 만족도:** 전체 리뷰의 90% 이상이 긍정적인 감성을 나타내고 있어, 고객들이 제품에 대해 매우 만족하고 있음을 명확히 보여줍니다. 이는 브랜드의 강력한 경쟁력과 긍정적인 시장 반응을 반영합니다. *   **긍정적 이미지 유지:** 이처럼 높은 긍정 감성 비중은 브랜드의 긍정적인 이미지를 유지하고 신규 고객 유치에 긍정적인 영향을 미칠 수 있습니다. *   **개선점 발굴의 중요성:** 비록 긍정적인 비중이 높지만, 나머지 약 7.6%의 비긍정적 리뷰에 대한 심층 분석을 통해 잠재적인 개선점이나 고객 불만 요소를 파악하고 선제적으로 대응하는 것이 중요합",
+    "used_sql": "SELECT\n  SAFE_DIVIDE(COUNTIF(sentiment_score > 0), COUNT(*)) AS positive_sentiment_ratio\nFROM (\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n) AS all_reviews\nLIMIT 1000"
+  },
+  {
+    "id": "RS-022",
+    "query": "특정 제품이 전체 수분 점수 합계에 기여하는 비율은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 39.6,
+    "answer_len": 864,
+    "answer_preview": "# 수분 점수 기여 비율에 대한 답변  **'수분 점수'는 표준화된 측정 단위가 아니기 때문에**, 특정 제품이 전체 수분 점수 합계에 기여하는 비율을 산출하는 보편적인 공식은 존재하지 않습니다.  ---  ## 분야별 수분 측정 방식  | 분야 | 측정 방식 | 단위 | |------|-----------|------| | **식품** | 전체 무게 대비 수분 함량 | % (백분율) | | **화장품/피부** | 코니오미터(Corneometer) 등 기기 측정 | A.U. (임의 단위) | | **전자제품** | 방수 보호 수준 | IP 등급 |  ## 왜 계산이 어려운가?  1. **정의 부재** — '전체 수분 점수 합계'라는 개념 자체가 표준화되어 있지 않습니다. 2. **측정 기준 상이** — 분야마다 수분을 측정하는 방식과 단위가 모두 다릅니다. 3. **기관별 차이** — 특정 기관이나 회사가 자체 기준으로 수분 점수를 산출하는 경우, 그 계산 방식은 해당 기관의 내부 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-023",
+    "query": "가장 많은 리뷰를 받은 제품이 전체 리뷰 수에서 차지하는 점유율은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 24.9,
+    "answer_len": 2476,
+    "answer_preview": "### 📊 최다 리뷰 제품의 전체 리뷰 점유율 분석  #### 요약  전체 리뷰 중 **'Centella Ampoule'** 제품이 가장 많은 리뷰를 받았으며, 총 **33,304개**의 리뷰를 기록하여 전체 **127,960개** 리뷰의 **26.03%**를 차지하는 것으로 나타났습니다. 이는 특정 제품에 대한 고객의 높은 관심과 활발한 참여를 보여줍니다.  #### 상세 데이터 | 항목 | 내용 | |:---|---:| | 최다 리뷰 제품명 | Centella Ampoule | | 최다 리뷰 제품 리뷰 수 | 33,304 | | 전체 리뷰 수 | 127,960 | | 점유율 | 26.03% |  #### 분석 및 인사이트  *   **높은 집중도**: 'Centella Ampoule' 제품이 전체 리뷰의 1/4 이상을 차지하며, 고객 리뷰 활동이 특정 제품에 매우 집중되어 있음을 시사합니다. 이는 해당 제품이 브랜드의 핵심 또는 대표 제품으로서 강력한 시장 입지를 가지고 있음을 ",
+    "used_sql": "WITH AllReviews AS (\n    SELECT product_name_eng\n    FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n    WHERE product_name_eng IS NOT NULL AND product_name_eng != ''\n    UNION ALL\n    SELECT product_name_eng\n    FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n    WHERE product_name_eng IS NOT NULL AND product_name_eng != ''\n    UNION ALL\n    SELECT product_name_eng\n    FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n    WHERE product_name_eng IS NOT NULL AND product_name_eng != ''\n    UNION ALL\n    SELECT product_name_eng\n    FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n    WHERE product_name_eng IS NOT NULL AND product_name_eng != ''\n),\nProductReviewCounts AS (\n    SELECT\n        product_name_eng,\n        COUNT(*) AS review_count\n    FROM AllReviews\n    GROUP BY product_name_eng\n),\nTotalReviewCount AS (\n    SELECT SUM(review_count) AS total_reviews\n    FROM ProductReviewCounts\n),\nTopProduct AS (\n    SELECT\n        product_name_eng,\n        review_count\n    FROM ProductReviewCounts\n    ORDER BY review_count DESC\n    LIMIT 1\n)\nSELECT\n    tp.product_name_eng AS top_product_name,\n    tp.review_count AS top_product_review_count,\n    trc.total_reviews AS overall_total_reviews,\n    ROUND(SAFE_DIVIDE(tp.review_count, trc.total_reviews) * 100, 2) AS share_percentage\nFROM TopProduct tp, TotalReviewCount trc\nLIMIT 1000"
+  },
+  {
+    "id": "RS-024",
+    "query": "각 제품별 리뷰 수의 전체 대비 구성비를 파이 차트로 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 35.8,
+    "answer_len": 3407,
+    "answer_preview": "### 📊 SKIN1004 제품별 리뷰 수 구성비 분석  #### 요약  지난 1년간 SKIN1004 브랜드 제품 리뷰를 분석한 결과, 총 **2,899개**의 리뷰 중 '센텔라 에어핏 선크림 라이트'가 **7.45%**로 가장 높은 비중을 차지했습니다. 상위 10개 제품이 전체 리뷰의 약 절반(49.59%)을 차지하며, 나머지 13개 제품이 나머지 절반(50.41%)을 구성하는 분포를 보였습니다.  #### 상세 데이터  | 제품명                       | 리뷰 수 | 구성비 (%) | | :--------------------------- | ------: | ---------: | | 센텔라 에어핏 선크림 라이트  |     216 |       7.45 | | 센텔라 라이트 클렌징 오일    |     154 |       5.31 | | 포어마이징 퀵 클레이 스틱 마스크 |     145 |       5.00 | | 포어마이징 프레쉬 앰플       | ",
+    "used_sql": "SELECT\n  product_name,\n  COUNT(*) AS review_count,\n  ROUND(SAFE_DIVIDE(COUNT(*), SUM(COUNT(*)) OVER()) * 100, 2) AS percentage\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND brand LIKE '%SKIN1004%'\nGROUP BY product_name\nORDER BY percentage DESC\nLIMIT 30"
+  },
+  {
+    "id": "RS-025",
+    "query": "상위 5개 제품이 전체 감성 점수에 기여하는 정도는 어느 정도인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 26.9,
+    "answer_len": 944,
+    "answer_preview": "# 상위 5개 제품의 전체 감성 점수 기여도  상위 5개 제품이 전체 감성 점수에 기여하는 정도는 **데이터에 따라 가변적**이며, 일반화된 고정 수치는 존재하지 않습니다. 특정 비즈니스, 기간, 데이터셋에 따라 기여도가 크게 달라질 수 있습니다.  ---  ## 기여도를 파악하려면?  다음과 같은 분석 절차가 필요합니다:  | 단계 | 내용 | 설명 | |:---:|------|------| | **1** | 개별 제품 감성 점수 계산 | 각 제품의 고객 리뷰·피드백을 바탕으로 긍정/부정/중립 감성 점수 산출 | | **2** | 전체 감성 점수 집계 | 모든 제품의 감성 점수를 합산하여 전체 점수 도출 | | **3** | 상위 5개 제품 선정 | 판매량, 리뷰 수 등 기준에 따라 상위 5개 제품 식별 | | **4** | 기여도 산출 | 상위 5개 제품의 감성 점수 합 ÷ 전체 감성 점수 = **기여 비율(%)** |  ---  ## 분석의 핵심 포인트  - **소수 인기 제품",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-026",
+    "query": "'Shopee PH' 채널에서 2023년 3분기 동안 수집된 리뷰의 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "WARN",
+    "time": 83.1,
+    "answer_len": 1119,
+    "answer_preview": "### 📊 2023년 3분기 Shopee 채널 리뷰 평균 감성 점수 분석  #### 요약  2023년 3분기(7월 1일 ~ 9월 30일) 동안 'Shopee' 채널에서 수집된 리뷰의 평균 감성 점수는 **집계되지 않았습니다**. 이는 해당 기간 및 채널에 해당하는 리뷰 데이터가 없거나, 감성 점수가 기록되지 않은 것으로 보입니다.  #### 분석 및 인사이트  *   **데이터 부재 확인**: 2023년 3분기 동안 'Shopee' 채널에서 감성 점수를 계산할 수 있는 리뷰 데이터가 존재하지 않습니다. 이는 해당 기간에 리뷰가 전혀 수집되지 않았거나, 수집된 리뷰에 감성 점수가 부여되지 않았을 가능성을 시사합니다. *   **데이터 유효성 검토 필요**: 정확한 감성 분석을 위해서는 먼저 'Shopee' 채널의 2023년 3분기 리뷰 수집 여부 및 감성 점수 필드의 유효성을 확인해야 합니다. 데이터 누락 또는 처리 오류 가능성을 검토하는 것이 중요합니다. *   **분석 한계**: ",
+    "used_sql": "SELECT\n  AVG(sentiment_score) AS average_sentiment_score\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nWHERE channel = 'Shopee'\n  AND collected_date BETWEEN '2023-07-01' AND '2023-09-30'\nLIMIT 1000"
+  },
+  {
+    "id": "RS-027",
+    "query": "'SKIN1004' 브랜드의 'Shopee SG' 채널에서 받은 리뷰의 총 개수는 몇 개인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 29.3,
+    "answer_len": 993,
+    "answer_preview": "### 📊 SKIN1004 브랜드의 Shopee 채널 리뷰 현황  #### 요약  지난 1년간 'SKIN1004' 브랜드가 'Shopee' 채널에서 받은 총 리뷰 개수는 **2,003개**입니다.  #### 분석 및 인사이트  *   **활발한 고객 참여**: 지난 1년간 2,000개가 넘는 리뷰가 수집된 것은 'SKIN1004' 브랜드가 'Shopee' 채널에서 고객들과 활발하게 소통하고 있으며, 제품에 대한 관심도가 높음을 시사합니다. *   **데이터 활용 가능성**: 이 리뷰 데이터를 통해 고객 만족도, 제품별 선호도, 개선이 필요한 부분 등을 파악하여 마케팅 전략 및 제품 개발에 활용할 수 있습니다. *   **추가 분석 필요**: 이 수치를 다른 브랜드, 다른 채널 또는 이전 기간과 비교하여 상대적인 성과를 평가하고, 리뷰의 내용(긍정/부정)을 분석하여 구체적인 인사이트를 도출할 수 있습니다.  --- *조회 기준: 2026-04-06 (지난 1년 데이터) | 데이터소스:",
+    "used_sql": "SELECT\n  COUNT(*) AS total_reviews\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nWHERE LOWER(brand) = 'skin1004'\n  AND channel = 'Shopee'\n  AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-028",
+    "query": "'Madagascar Centella Ampoule' 제품에 대해 지난 6개월간의 평균 진정/자극 점수를 알려주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 8.9,
+    "answer_len": 649,
+    "answer_preview": "### 🧴 Madagascar Centella Ampoule 진정/자극 점수 문의  #### 답변  고객님께서 문의하신 **Madagascar Centella Ampoule** 제품의 지난 6개월간 평균 진정/자극 점수에 대한 정보는 현재 저희 CS 데이터베이스에서 확인되지 않습니다.  #### 상세 정보  저희 **SKIN1004**의 모든 제품은 **피부 자극 테스트를 완료**하여 민감한 피부도 안심하고 사용하실 수 있도록 저자극 성분으로 구성되어 있습니다. 하지만, 특정 기간 동안의 평균 진정/자극 점수에 대한 구체적인 수치 정보는 제공이 어렵습니다.  #### 참고 사항  피부 자극에 대한 우려가 있으실 경우, 제품 사용 전 팔 안쪽 등 국소 부위에 **패치 테스트**를 진행하여 피부 반응을 확인해 보시는 것을 권장드립니다.  --- *출처: CS 제품 Q&A 데이터베이스*  > 💡 **이런 것도 물어보세요** > - **Madagascar Centella Ampoule**의",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-029",
+    "query": "감성 점수가 0.5 이상이고, 수분 점수가 0.7 이상인 리뷰들의 총 개수는 몇 개인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 19.9,
+    "answer_len": 1075,
+    "answer_preview": "### 📊 긍정적 감성 및 최고 수분 점수 리뷰 현황  #### 요약  2025년 1월 1일 이후 수집된 리뷰 중 감성 점수가 0.5 이상이고 수분 점수가 1.0인 리뷰는 총 **8,384개**로 집계되었습니다. (⚠️ 사용자 질문의 수분 점수 조건(0.7 이상)과 실행된 SQL의 조건(1.0)이 다릅니다. 현재 결과는 수분 점수 1.0을 기준으로 합니다.)  #### 분석 및 인사이트  *   **높은 만족도 리뷰 규모**: 2025년 1월 1일 이후 수집된 리뷰 중 감성 점수가 0.5 이상(긍정적)이면서 수분 점수가 최고치(1.0)인 리뷰가 8,384개에 달하여, 해당 제품 또는 서비스에 대한 고객들의 높은 만족도를 보여줍니다. *   **SQL 조건과 사용자 질문 불일치**: 현재 집계는 수분 점수 1.0을 기준으로 한 결과입니다. 만약 사용자의 원래 질문대로 수분 점수 0.7 이상인 리뷰를 포함하여 집계한다면, 총 리뷰 개수는 현재 8,384개보다 더 많을 것으로 예상됩니다.",
+    "used_sql": "SELECT\n  COUNT(*) AS total_reviews\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= '2025-01-01'\n  AND sentiment_score >= 0.5\n  AND moisture_score = 1.0\nLIMIT 1000"
+  },
+  {
+    "id": "RS-030",
+    "query": "2023년에 'texture_score'가 0.8 미만인 'Madagascar Centella Toning Toner' 제품 리뷰의 평균 트러블/피지/모공 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 20.4,
+    "answer_len": 1383,
+    "answer_preview": "### 📊 2023년 특정 조건 만족하는 'Madagascar Centella Toning Toner' 리뷰의 평균 트러블/피지/모공 점수  #### 요약  2023년에 'texture_score'가 0.8 미만인 'Madagascar Centella Toning Toner' 제품 리뷰에 대한 평균 트러블/피지/모공 점수는 **데이터가 존재하지 않아 계산할 수 없습니다.**  #### 분석 및 인사이트  *   **데이터 부재:** 요청하신 조건(2023년, 'Madagascar Centella Toning Toner' 제품, 'texture_score' 0.8 미만)을 모두 만족하는 리뷰 데이터가 없거나, 해당 리뷰들에 'trouble_sebum_pore_score' 값이 기록되어 있지 않아 평균 점수를 산출할 수 없습니다. *   **원인 분석 필요:** 해당 조건에 부합하는 리뷰가 실제로 없는 것인지, 아니면 데이터 수집 또는 입력 과정에서 'trouble_sebum_pore_",
+    "used_sql": "SELECT\n  ROUND(AVG(trouble_sebum_pore_score), 2) AS avg_trouble_sebum_pore_score\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nWHERE\n  EXTRACT(YEAR FROM collected_date) = 2023\n  AND product_name_eng = 'Madagascar Centella Toning Toner'\n  AND texture_score < 0.8\n  AND brand LIKE '%SKIN1004%'\nLIMIT 1000"
+  },
+  {
+    "id": "RS-031",
+    "query": "월별 평균 감성 점수 추이를 라인 그래프로 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.3,
+    "answer_len": 3304,
+    "answer_preview": "### 📊 월별 평균 감성 점수 추이 분석  #### 요약  ⚠️ 지난 5개월간의 월별 평균 감성 점수 추이를 분석한 결과, 전반적으로 **0.72에서 0.75 사이**의 높은 긍정적 감성을 유지하고 있습니다. 특히 **2026년 3월에 0.752**로 가장 높은 점수를 기록했으며, 2026년 4월 데이터는 부분 집계임에도 불구하고 **0.746**의 높은 수준을 보이고 있습니다.  #### 상세 데이터 | 월 | 평균 감성 점수 | |:---|---:| | 2025-12 | 0.724 | | 2026-01 | 0.729 | | 2026-02 | 0.727 | | 2026-03 | 0.752 | | ⚠️ 2026-04 | 0.746 | *⚠️ 2026-04월 데이터는 2026-04-06까지의 부분 집계입니다.*  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2025-12\", \"2026-01\", \"2026-02\",",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', collected_date) AS month,\n  AVG(sentiment_score) AS average_sentiment_score\nFROM (\n  SELECT collected_date, sentiment_score FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  UNION ALL\n  SELECT collected_date, sentiment_score FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  UNION ALL\n  SELECT collected_date, sentiment_score FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  UNION ALL\n  SELECT collected_date, sentiment_score FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n)\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-032",
+    "query": "각 제품별 총 리뷰 수를 막대 차트로 시각화해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 32.6,
+    "answer_len": 1445,
+    "answer_preview": "### 📊 SKIN1004 제품별 총 리뷰 수 분석 보고서  #### 요약  지난 1년간(2025년 4월 6일 ~ 2026년 4월 6일) SKIN1004 제품 중 'Centella Ampoule'이 **25,089건**의 리뷰를 기록하며 압도적인 1위를 차지했습니다. 이는 상위 10개 제품 전체 리뷰 수의 약 38.7%에 해당하는 수치로, 해당 제품의 높은 인기를 명확히 보여줍니다.  #### 상세 데이터  (상위 10개 제품 기준)  | 제품명                                     | 총 리뷰 수 | 비중 (%) | | :----------------------------------------- |  <details><summary>실행된 쿼리</summary>  ```sql SELECT   product_name_eng,   COUNT(*) AS total_review_count FROM (   SELECT product_name_eng, brand, ",
+    "used_sql": "SELECT\n  product_name_eng,\n  COUNT(*) AS total_review_count\nFROM (\n  SELECT product_name_eng, brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand = 'SKIN1004'\n  UNION ALL\n  SELECT product_name_eng, brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand = 'SKIN1004'\n  UNION ALL\n  SELECT product_name_eng, brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand = 'SKIN1004'\n  UNION ALL\n  SELECT product_name_eng, brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand = '스킨1004'\n)\nWHERE product_name_eng IS NOT NULL AND product_name_eng != ''\nGROUP BY product_name_eng\nORDER BY total_review_count DESC\nLIMIT 30"
+  },
+  {
+    "id": "RS-033",
+    "query": "지난 1년간의 평균 수분 점수 변화 추이를 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 11.2,
+    "answer_len": 543,
+    "answer_preview": "죄송합니다. 현재 시스템에서 **\"수분 점수\"**에 해당하는 데이터를 조회할 수 있는 데이터베이스나 테이블이 확인되지 않습니다.  혹시 아래 중 어떤 데이터를 의미하신 건지 좀 더 알려주시면 정확히 도와드리겠습니다:  | 가능성 | 설명 | |--------|------| | **제품 리뷰 내 수분 관련 평점** | 고객 리뷰에서 수분감/보습력 관련 평가 점수 | | **제품 테스트 수분 측정값** | R&D/품질관리 단계의 피부 수분 측정 데이터 | | **마케팅 캠페인 지표** | 특정 캠페인의 성과 스코어 | | **기타** | 다른 시스템이나 문서에 있는 데이터 |  또한, 해당 데이터가 **Notion 사내 문서**나 **특정 BigQuery 테이블**에 있다면 테이블명이나 문서명을 알려주시면 바로 조회해 드리겠습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - 지난 1년간 월별 매출 추이를 보여줘 > - 제품별 고객 리",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-034",
+    "query": "전체 리뷰 중 긍정(>0), 중립(=0), 부정(<0) 감성 리뷰의 비율을 파이 차트로 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 20.7,
+    "answer_len": 3251,
+    "answer_preview": "### 📊 전체 리뷰 감성 분석 현황  #### 요약  지난 1년간 수집된 총 127,960건의 리뷰 중 **긍정 리뷰가 전체의 92.38%**를 차지하며 압도적으로 높은 비중을 보였습니다. 중립 리뷰는 5.43%, 부정 리뷰는 2.18%로 나타나, 전반적으로 고객 만족도가 매우 높은 것으로 분석됩니다.  #### 상세 데이터 | 감성 카테고리 | 리뷰 수 | 비율 (%) | |:-------------|--------:|---------:| | Positive     | 118,215 | 92.38    | | Neutral      | 6,951   | 5.43     | | Negative     | 2,794   | 2.18     |  #### 시각화   ```chart-config {\"type\": \"doughnut\", \"data\": {\"labels\": [\"Positive\", \"Neutral\", \"Negative\"], \"datasets\": [{\"data\": [92.38, 5",
+    "used_sql": "WITH AllReviews AS (\n  SELECT\n    collected_date,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT\n    collected_date,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT\n    collected_date,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT\n    collected_date,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n),\nSentimentCounts AS (\n  SELECT\n    CASE\n      WHEN sentiment_score > 0 THEN 'Positive'\n      WHEN sentiment_score < 0 THEN 'Negative'\n      ELSE 'Neutral'\n    END AS sentiment_category,\n    COUNT(*) AS review_count\n  FROM AllReviews\n  GROUP BY sentiment_category\n)\nSELECT\n  sentiment_category,\n  review_count,\n  ROUND(SAFE_DIVIDE(review_count, SUM(review_count) OVER()) * 100, 2) AS percentage\nFROM SentimentCounts\nORDER BY review_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-035",
+    "query": "각 카테고리별(수분, 진정, 트러블 등) 평균 점수를 비교하는 막대 차트를 생성해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 13.1,
+    "answer_len": 741,
+    "answer_preview": "제가 현재 접근할 수 있는 데이터 소스를 확인해 보겠습니다.  ## 안내  카테고리별 평균 점수를 차트로 생성하려면, **어떤 데이터 기반**인지 명확히 해주셔야 합니다. 몇 가지 확인이 필요합니다:  ### 📋 확인 사항  | 항목 | 예시 | |------|------| | **데이터 소스** | 고객 리뷰 평점? 제품 성분 평가? 내부 QA 점수? | | **점수 기준** | 5점 만점? 10점 만점? 100점 만점? | | **카테고리 구분** | 수분, 진정, 트러블, 미백, 안티에이징 등 어떤 카테고리들? | | **기간** | 전체 기간? 특정 연도/분기? | | **제품 범위** | SKIN1004 전 제품? 특정 라인(센텔라 등)? |  --- *AI 생성 답변 · 2026-04-06*  ### 💡 가능한 방향  1. **BigQuery에 해당 데이터가 있는 경우** → SQL로 조회 후 자동 차트 생성 2. **Notion 사내 문서에 정리된 경우** → 문서 검색",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-036",
+    "query": "'Madagascar Centella Ampoule' 제품을 제외한 모든 제품의 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 19.4,
+    "answer_len": 590,
+    "answer_preview": "해당 질문에 대해 정확한 답변을 드리기 위해 데이터베이스에서 직접 조회해 보겠습니다.  현재 제공된 정보만으로는 **'Madagascar Centella Ampoule'을 제외한 모든 제품의 평균 감성 점수**를 확인할 수 없습니다. 이 수치를 정확히 산출하려면 BigQuery 데이터베이스에서 감성 점수(sentiment score) 데이터를 직접 조회해야 합니다.  혹시 아래 중 해당하는 상황이 있으시면 알려주세요:  1. **특정 채널/플랫폼** 기준의 감성 점수인지 (예: 아마존 리뷰, 올리브영 리뷰, 틱톡 등) 2. **특정 기간** 범위가 있는지 (예: 2025년, 최근 6개월 등) 3. **감성 점수의 정의** — 어떤 테이블/컬럼을 기준으로 하는지  조건을 알려주시면 BigQuery에서 SQL을 실행하여 정확한 수치를 조회해 드리겠습니다.  > 💡 **이런 것도 물어보세요** > - Madagascar Centella Ampoule의 감성 점수는 얼마인가요? > - 제품",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-037",
+    "query": "'SKIN1004' 브랜드가 아닌 다른 브랜드의 리뷰 중 가장 높은 진정/자극 점수는 몇 점인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.3,
+    "answer_len": 2013,
+    "answer_preview": "### 📊 SKIN1004 외 브랜드 리뷰의 최고 진정/자극 점수 분석 결과  #### 요약  SKIN1004 브랜드를 제외한 다른 브랜드의 지난 1년간(2025년 04월 06일 ~ 2026년 04월 06일) 리뷰 중 가장 높은 진정/자극 점수를 조회한 결과, 해당 조건에 부합하는 점수가 **발견되지 않았습니다.** 이는 조회 기간 내에 'SKIN1004' 외 브랜드의 리뷰 데이터가 없거나, 해당 리뷰들의 진정/자극 점수가 모두 누락되었기 때문일 수 있습니다.  #### 분석 및 인사이트  *   **경쟁사 데이터 부재:** 현재 데이터로는 'SKIN1004' 브랜드를 제외한 경쟁 브랜드의 진정/자극 점수에 대한 직접적인 비교 분석이 불가능합니다. 이는 경쟁사 제품의 강점 또는 약점을 파악하는 데 제약이 됩니다. *   **데이터 원인 분석 필요:** 이러한 결과는 다음 중 하나를 의미할 수 있습니다: 1) 지난 1년간 해당 플랫폼에서 'SKIN1004' 외 브랜드의 리뷰가 없었거나",
+    "used_sql": "SELECT\n  MAX(max_soothing_score)\nFROM (\n  SELECT\n    MAX(soothing_irritation_score) AS max_soothing_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand NOT LIKE '%SKIN1004%'\n  UNION ALL\n  SELECT\n    MAX(soothing_irritation_score) AS max_soothing_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand NOT LIKE '%SKIN1004%'\n  UNION ALL\n  SELECT\n    MAX(soothing_irritation_score) AS max_soothing_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand NOT LIKE '%SKIN1004%'\n  UNION ALL\n  SELECT\n    MAX(soothing_irritation_score) AS max_soothing_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand NOT LIKE '%SKIN1004%'\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-038",
+    "query": "2023년 1월을 제외한 모든 월의 평균 텍스처 점수는 어떻게 되나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 36.8,
+    "answer_len": 705,
+    "answer_preview": "죄송합니다. **\"2023년 월별 평균 텍스처 점수\"**에 대한 데이터를 확인할 수 없습니다.  ## 확인 결과  - **\"텍스처 점수(Texture Score)\"**는 보편적으로 공개·집계되는 표준 지표가 아닙니다. - 특정 기관, 플랫폼, 또는 내부 시스템에서 자체적으로 사용하는 지표일 가능성이 높습니다. - 공개된 데이터베이스나 검색 결과에서도 해당 수치를 찾을 수 없었습니다.  ## 혹시 이런 의미이신가요?  | 가능성 | 설명 | |---|---| | **사내 리뷰 분석 지표** | SKIN1004 제품 리뷰의 텍스처 관련 감성 점수 → BigQuery 데이터 조회 가능 여부 확인 필요 | | **게임/그래픽 품질 점수** | 3D 렌더링·게임 벤치마크의 텍스처 품질 점수 | | **식품/화장품 관능 평가** | 제품 텍스처(질감)에 대한 관능 평가 점수 | | **특정 앱/플랫폼 내부 지표** | 특정 서비스에서 자체 정의한 메트릭 |  > 어떤 맥락의 \"텍스처 점수\"인지",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-039",
+    "query": "감성 점수가 0인 중립 리뷰를 빼고, 나머지 리뷰들의 평균 톤/미백 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 42.0,
+    "answer_len": 2008,
+    "answer_preview": "### 📊 중립 리뷰 제외, 최근 1년간 평균 톤/미백 점수 분석  #### 요약  중립 리뷰(감성 점수 0)를 제외하고 최근 1년간(2025년 4월 6일 ~ 2026년 4월 6일) 수집된 모든 리뷰 데이터를 분석한 결과, 제품의 평균 톤/미백 점수는 **0.051점**으로 나타났습니다. 이는 중립적이지 않은 리뷰들 사이에서 톤/미백 기능에 대한 평가가 전반적으로 약한 긍정 수준임을 시사합니다.  #### 분석 및 인사이트  *   **약한 긍정 평가**: 감성 점수가 0이 아닌(즉, 긍정 또는 부정 감성을 가진) 리뷰들만을 대상으로 했음에도 불구하고, 평균 톤/미백 점수가 0.051점으로 0에 매우 가깝게 나타났습니다. 이는 고객들이 제품에 대해 감성적인 평가를 할 때, 톤/미백 기능이 주요한 긍정적 또는 부정적 요인으로 크게 작용하지 않음을 의미합니다. *   **다른 요소의 영향 가능성**: 고객들은 톤/미백 기능보다는 보습, 진정, 사용감 등 다른 제품 속성에 더 강한 감성적",
+    "used_sql": "SELECT\n  AVG(tone_brightening_score) AS average_tone_brightening_score\nFROM (\n  SELECT\n    tone_brightening_score,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB('2026-04-06', INTERVAL 1 YEAR)\n    AND sentiment_score != 0\n\n  UNION ALL\n\n  SELECT\n    tone_brightening_score,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB('2026-04-06', INTERVAL 1 YEAR)\n    AND sentiment_score != 0\n\n  UNION ALL\n\n  SELECT\n    tone_brightening_score,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB('2026-04-06', INTERVAL 1 YEAR)\n    AND sentiment_score != 0\n\n  UNION ALL\n\n  SELECT\n    tone_brightening_score,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB('2026-04-06', INTERVAL 1 YEAR)\n    AND sentiment_score != 0\n) AS combined_reviews\nLIMIT 1000"
+  },
+  {
+    "id": "RS-040",
+    "query": "'Madagascar Centella Ampoule'와 'Madagascar Centella Toning Toner'를 제외한 제품들의 총 리뷰 수는 몇 건인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 27.3,
+    "answer_len": 2469,
+    "answer_preview": "### 📊 특정 제품을 제외한 SKIN1004 제품군의 총 리뷰 수 분석  #### 요약  지난 1년간 'Madagascar Centella Ampoule'와 'Madagascar Centella Toning Toner'를 제외한 SKIN1004 제품들의 총 리뷰 수는 **127,960건**으로 집계되었습니다. 이는 두 핵심 제품을 제외하고도 상당한 고객 활동이 있음을 보여줍니다.  #### 분석 및 인사이트  *   **높은 고객 참여도:** 두 가지 주요 제품을 제외하고도 12만 건이 넘는 리뷰가 발생했다는 것은 SKIN1004 브랜드의 다른 제품군에 대한 고객들의 관심과 참여도가 매우 높음을 시사합니다. *   **제품 포트폴리오의 다양성:** 특정 베스트셀러에 대한 의존도를 넘어, 다양한 제품들이 고르게 시장에서 인기를 얻고 있으며 고객 리뷰를 통해 활발하게 소통하고 있음을 알 수 있습니다. *   **잠재적 성장 동력:** 제외된 두 제품 외의 다른 제품들이 견고한 리뷰 수",
+    "used_sql": "SELECT\n  SUM(review_count) AS total_review_count\nFROM (\n  SELECT COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name NOT LIKE '%Madagascar Centella Ampoule%'\n    AND product_name NOT LIKE '%Madagascar Centella Toning Toner%'\n  UNION ALL\n  SELECT COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name NOT LIKE '%Madagascar Centella Ampoule%'\n    AND product_name NOT LIKE '%Madagascar Centella Toning Toner%'\n  UNION ALL\n  SELECT COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name NOT LIKE '%Madagascar Centella Ampoule%'\n    AND product_name NOT LIKE '%Madagascar Centella Toning Toner%'\n  UNION ALL\n  SELECT COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name NOT LIKE '%Madagascar Centella Ampoule%'\n    AND product_name NOT LIKE '%Madagascar Centella Toning Toner%'\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-041",
+    "query": "2024년에 수집된 리뷰 데이터가 있나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 18.0,
+    "answer_len": 278,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\"",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-042",
+    "query": "'Madagascar Centella Cream' 제품에 대한 리뷰 데이터가 현재 존재하나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 31.4,
+    "answer_len": 3738,
+    "answer_preview": "### 📊 'Madagascar Centella Cream' 제품 리뷰 현황  #### 요약  'Madagascar Centella Cream' 제품에 대한 지난 1년간(2025년 04월 06일 ~ 2026년 04월 06일)의 리뷰 데이터는 **총 7,964건** 존재합니다. 이 중 Shopee 채널에서 **3,842건**으로 가장 많은 리뷰가 수집되었으며, Smartstore 채널이 **3,009건**으로 그 뒤를 이어 두 채널이 전체 리뷰의 86% 이상을 차지했습니다.  #### 상세 데이터  'Madagascar Centella Cream' 제품의 채널별 리뷰 현황은 다음과 같습니다.  | 채널       | 리뷰 수 | 비중 (%) | | :--------- | ------: | -------: | | Shopee     |   3,842 |     48.2 | | Smartstore |   3,009 |     37.9 | | Qoo10      |     687 |    ",
+    "used_sql": "SELECT\n  'Amazon' AS channel,\n  COUNT(*) AS review_count\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND LOWER(product_name_eng) LIKE '%centella%cream%'\nUNION ALL\nSELECT\n  'Qoo10' AS channel,\n  COUNT(*) AS review_count\nFROM `skin1004-319714.Review_Data.New_Qoo10_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND LOWER(product_name_eng) LIKE '%centella%cream%'\nUNION ALL\nSELECT\n  'Shopee' AS channel,\n  COUNT(*) AS review_count\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND LOWER(product_name_eng) LIKE '%centella%cream%'\nUNION ALL\nSELECT\n  'Smartstore' AS channel,\n  COUNT(*) AS review_count\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND LOWER(product_name_eng) LIKE '%centella%cream%'\nLIMIT 1000"
+  },
+  {
+    "id": "RS-043",
+    "query": "특정 채널('Shopee VN')의 리뷰 감성 점수를 조회할 수 있나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 29.2,
+    "answer_len": 2450,
+    "answer_preview": "### 📊 Shopee 채널 제품별 리뷰 감성 점수 분석 보고서  #### 요약  사용자님께서 요청하신 'Shopee VN' 채널이 아닌, 'Shopee' 채널의 지난 1년간 리뷰 데이터를 분석한 결과, **총 43개 제품**에 대한 감성 점수를 확인할 수 있었습니다. 이 중 '히알루시카 워터핏 선 세럼'이 **0.99점**으로 가장 높은 평균 감성 점수를 기록하며 고객 만족도가 매우 높음을 보였습니다. 리뷰 수가 가장 많은 제품은 '센텔라 에어핏 선크림 라이트'와 '매트릭실 부스팅 샷 앰플'로 각각 **51건**의 리뷰를 기록했습니다.  #### 상세 데이터  지난 1년간 Shopee 채널에서 가장 많은 리뷰를 받은 상위 10개 제품의 감성 점수는 다음과 같습니다.  | product_name                 | review_count | avg_sentiment_score | | :--------------------------- | -----------: | ---",
+    "used_sql": "SELECT\n  product_name,\n  COUNT(*) AS review_count,\n  ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nWHERE channel = 'Shopee'\n  AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY product_name\nORDER BY review_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-044",
+    "query": "가장 최근에 수집된 리뷰의 review_date는 언제인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 20.1,
+    "answer_len": 425,
+    "answer_preview": "안녕하세요. 요청하신 **가장 최근 수집된 리뷰의 review_date** 데이터를 현재 조회하지 못했습니다.  좀 더 구체적인 조건을 추가해 주시면 정확한 결과를 안내드릴 수 있습니다. 아래 예시를 참고하여 질문을 다시 작성해 보시겠어요?  ---  **질문 예시**  1. **\"아마존 US 채널에서 가장 최근에 수집된 리뷰의 review_date는 언제인가요?\"** (채널/국가 지정) 2. **\"마다가스카르 센텔라 라인 제품 리뷰 중 가장 최근 review_date를 알려주세요.\"** (제품 라인 지정) 3. **\"2025년 5월 기준, 올리브영 채널에서 수집된 리뷰 중 최신 review_date는 언제인가요?\"** (기간 + 채널 지정)  ---  채널, 국가, 제품명, 기간 등을 함께 알려주시면 더 빠르고 정확하게 데이터를 조회해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-045",
+    "query": "수분 점수가 1.0인 리뷰가 존재하나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 21.4,
+    "answer_len": 1331,
+    "answer_preview": "### 📊 수분 점수 1.0 리뷰 현황 분석  #### 요약  네, 수분 점수가 1.0인 리뷰가 **총 30건** 존재합니다. 이 리뷰들은 모두 '센텔라 앰플' 제품에 대한 것이며, 최근 1년 이내(2025-04-06 ~ 2026-04-06)에 수집된 데이터에서 확인되었습니다. 특히, 조회된 모든 리뷰는 2026년 4월 6일에 작성된 것으로 나타났습니다.  #### 상세 데이터  수분 점수 1.0을 받은 리뷰는 모두 '센텔라 앰플' 제품에 집중되어 있습니다.  | 제품명       | 수분 점수 1.0 리뷰 수 | | :----------- | --------------------: | | 센텔라 앰플  | 30건                  |  #### 분석 및 인사이트  *   **긍정적인 수분 평가 집중:** 수분 점수 1.0은 해당 제품에 대한 사용자의 매우 긍정적인 수분 관련 평가를 의미합니다. 모든 리뷰가 '센텔라 앰플'에 집중되어 있어, 이 제품이 수분 기능 측면에서",
+    "used_sql": "SELECT\n  product_name,\n  review_ko,\n  moisture_score,\n  collected_date\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE moisture_score = 1.0\n  AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nLIMIT 30"
+  },
+  {
+    "id": "RS-046",
+    "query": "감성 점수가 정확히 0인 리뷰는 총 몇 건인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.4,
+    "answer_len": 1814,
+    "answer_preview": "### 📊 감성 점수가 0인 리뷰 현황  #### 요약  지난 1년간(2025년 4월 7일부터 2026년 4월 6일까지) 수집된 리뷰 중 감성 점수가 정확히 0인 리뷰는 총 **6,951건**입니다. 이는 긍정적이지도 부정적이지도 않은 중립적인 감성을 나타내는 리뷰의 총합입니다.  #### 분석 및 인사이트  *   **중립 감성의 의미:** 감성 점수 0은 해당 리뷰가 긍정적이지도 부정적이지도 않은 '중립' 감성을 가짐을 나타냅니다. 이러한 리뷰는 제품에 대한 사실 전달, 사용 경험 공유, 혹은 AI가 특정 감성으로 분류하기 어려운 복합적인 내용일 수 있습니다. *   **전체 감성 분포 이해:** 전체 리뷰 수 대비 중립 리뷰의 비중을 파악하면 고객 피드백의 전반적인 감성 분포를 더욱 깊이 이해할 수 있습니다. 중립 리뷰의 비중이 높다면, 고객들이 제품에 대해 강한 호불호 없이 객관적인 정보를 제공하는 경향이 있거나, 감성 분석 모델의 개선이 필요할 수 있습니다. *   **추가",
+    "used_sql": "SELECT\n  SUM(review_count) AS total_reviews_with_zero_sentiment\nFROM (\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE sentiment_score = 0\n    AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE sentiment_score = 0\n    AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE sentiment_score = 0\n    AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE sentiment_score = 0\n    AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-047",
+    "query": "가장 최근에 수집된 리뷰의 상세 내용을 알려주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 38.7,
+    "answer_len": 2777,
+    "answer_preview": "📊 **가장 최근 수집된 리뷰 상세 분석 (2026년 04월 06일 기준)**  #### 요약  오늘(2026년 04월 06일) 수집된 최신 리뷰 20건 중 상위 8건을 분석한 결과, 모든 리뷰는 Amazon 채널에서 수집되었으며, 전반적으로 긍정적인 평가가 많았습니다. 상위 8건의 평균 감성 점수는 **약 0.54점**으로 나타났습니다. 특히 '포어마이징 클리어 토너'와 '포어마이징 퀵 클레이 스틱 마스크'는 높은 만족도를 보인 반면, '센텔라 라이트  <details><summary>실행된 쿼리</summary>  ```sql SELECT   collected_date,   channel,   product_name,   CAST(review_date AS STRING) AS review_date,   review_original,   review_ko,   sentiment_score,   moisture_score,   soothing_irritation_score,   tr",
+    "used_sql": "SELECT\n  collected_date,\n  channel,\n  product_name,\n  CAST(review_date AS STRING) AS review_date,\n  review_original,\n  review_ko,\n  sentiment_score,\n  moisture_score,\n  soothing_irritation_score,\n  trouble_sebum_pore_score,\n  texture_score,\n  absorption_layering_score,\n  makeup_compatibility_score,\n  scent_score,\n  tone_brightening_score,\n  price_perception_score,\n  skin_type_compatibility_score,\n  lasting_effect_score,\n  packaging_usability_score,\n  shipping_delivery_score\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nUNION ALL\nSELECT\n  collected_date,\n  channel,\n  product_name,\n  CAST(review_date AS STRING) AS review_date,\n  review_original,\n  review_ko,\n  sentiment_score,\n  moisture_score,\n  soothing_irritation_score,\n  trouble_sebum_pore_score,\n  texture_score,\n  absorption_layering_score,\n  makeup_compatibility_score,\n  scent_score,\n  tone_brightening_score,\n  price_perception_score,\n  skin_type_compatibility_score,\n  lasting_effect_score,\n  packaging_usability_score,\n  shipping_delivery_score\nFROM `skin1004-319714.Review_Data.New_Qoo10_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nUNION ALL\nSELECT\n  collected_date,\n  channel,\n  product_name,\n  CAST(review_date AS STRING) AS review_date,\n  review_original,\n  review_ko,\n  sentiment_score,\n  moisture_score,\n  soothing_irritation_score,\n  trouble_sebum_pore_score,\n  texture_score,\n  absorption_layering_score,\n  makeup_compatibility_score,\n  scent_score,\n  tone_brightening_score,\n  price_perception_score,\n  skin_type_compatibility_score,\n  lasting_effect_score,\n  packaging_usability_score,\n  shipping_delivery_score\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nUNION ALL\nSELECT\n  collected_date,\n  channel,\n  product_name,\n  CAST(review_date AS STRING) AS review_date,\n  review_original,\n  review_ko,\n  sentiment_score,\n  moisture_score,\n  soothing_irritation_score,\n  trouble_sebum_pore_score,\n  texture_score,\n  absorption_layering_score,\n  makeup_compatibility_score,\n  scent_score,\n  tone_brightening_score,\n  price_perception_score,\n  skin_type_compatibility_score,\n  lasting_effect_score,\n  packaging_usability_score,\n  shipping_delivery_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nORDER BY collected_date DESC\nLIMIT 20"
+  },
+  {
+    "id": "RS-048",
+    "query": "가장 오래된 리뷰의 review_date는 언제이며, 어떤 제품에 대한 리뷰였나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 19.3,
+    "answer_len": 387,
+    "answer_preview": "안녕하세요. 요청하신 **가장 오래된 리뷰 정보**를 데이터베이스에서 조회하지 못했습니다.  조건을 좀 더 구체적으로 지정해 주시면 정확한 데이터를 찾는 데 도움이 됩니다. 아래 예시를 참고하여 질문을 다시 작성해 보시겠어요?  ---  **질문 예시**  1. **\"아마존 US 채널에서 가장 오래된 리뷰의 날짜와 해당 제품명을 알려줘.\"** 2. **\"마다가스카르 센텔라 라인 제품 중 가장 오래된 리뷰는 언제 작성되었나요?\"** 3. **\"2020년 이전에 등록된 리뷰가 있는지, 있다면 어떤 제품·채널인지 확인해 줘.\"**  ---  이처럼 **채널**(아마존, 올리브영, 자사몰 등), **제품명/라인**, **기간** 등을 함께 알려주시면 보다 빠르고 정확하게 조회해 드리겠습니다.",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-049",
+    "query": "product_name_eng 컬럼에 NULL 값이 있는 리뷰가 있나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 17.4,
+    "answer_len": 1973,
+    "answer_preview": "### 📊 `product_name_eng` 컬럼 NULL 값 현황 분석  #### 요약  `New_Amazon_Review`, `New_Qoo10_Review`, `New_Shopee_Review`, `New_Smartstore_Review` 등 모든 리뷰 데이터셋에서 `product_name_eng` 컬럼에 **NULL 값이 없는** 것으로 확인되었습니다. 이는 모든 리뷰에 제품 영문명이 정확히 기재되어 있음을 의미합니다.  #### 상세 데이터 | 데이터셋 명 | `product_name_eng` NULL 값 수 | |:----------------------|-------------------------------:| | New_Amazon_Review     | 0                              | | New_Qoo10_Review      | 0                              | | New_Shopee_Review     | 0 ",
+    "used_sql": "SELECT\n  'New_Amazon_Review' AS table_name,\n  COUNTIF(product_name_eng IS NULL) AS null_product_name_eng_count\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nUNION ALL\nSELECT\n  'New_Qoo10_Review' AS table_name,\n  COUNTIF(product_name_eng IS NULL) AS null_product_name_eng_count\nFROM `skin1004-319714.Review_Data.New_Qoo10_Review`\nUNION ALL\nSELECT\n  'New_Shopee_Review' AS table_name,\n  COUNTIF(product_name_eng IS NULL) AS null_product_name_eng_count\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nUNION ALL\nSELECT\n  'New_Smartstore_Review' AS table_name,\n  COUNTIF(product_name_eng IS NULL) AS null_product_name_eng_count\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nLIMIT 1000"
+  },
+  {
+    "id": "RS-050",
+    "query": "수분 점수에서 최고점을 기록한 리뷰의 review_original 내용은 무엇인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 15.0,
+    "answer_len": 1158,
+    "answer_preview": "### 📊 최고 수분 점수 리뷰 내용 분석  #### 요약  수분 점수에서 최고점을 기록한 리뷰의 원문 내용은 **'Absolutely amazing face wash. It is easy to use. It’s good for sensitive skin. I...'** 입니다. 이 리뷰는 제품의 뛰어난 사용감과 민감성 피부에 적합하다는 점을 강조하며 높은 만족도를 표현하고 있습니다.  #### 분석 및 인사이트  *   **제품의 탁월한 효과 강조:** 리뷰어는 제품을 'Absolutely amazing face wash'라고 표현하며, 제품의 효과에 대해 매우 높은 만족도를 보였습니다. 이는 수분 점수 외에도 전반적인 제품 성능에 대한 긍정적인 인식을 나타냅니다. *   **사용 편의성 및 적합성 언급:** 'It is easy to use'라는 언급을 통해 제품의 사용 편의성이 높다는 점을 알 수 있습니다. 또한, 'It’s good for sensitive skin'이라는 점",
+    "used_sql": "SELECT\n  review_original\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nORDER BY moisture_score DESC\nLIMIT 1"
+  },
+  {
+    "id": "RS-051",
+    "query": "각 채널별 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 25.2,
+    "answer_len": 2477,
+    "answer_preview": "### 📊 채널별 평균 감성 점수 분석  #### 요약  지난 1년간 수집된 리뷰 데이터를 분석한 결과, **Shopee 채널이 평균 감성 점수 0.86으로 가장 높은 긍정적인 평가**를 받았습니다. 반면, Amazon 채널은 0.64로 가장 낮은 평균 감성 점수를 기록했습니다. 전체 리뷰 수의 대부분은 Qoo10 채널에서 발생했습니다.  #### 상세 데이터 | 채널       | 평균 감성 점수 | 리뷰 수     | | :--------- | -------------: | ----------: | | Shopee     | 0.86           | 2,003       | | Qoo10      | 0.74           | 64,684      | | shopee     | 0.73           | 27,613      | | Smartstore | 0.73           | 28,176      | | Q10        | 0.68           | ",
+    "used_sql": "SELECT\n  channel,\n  ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score,\n  COUNT(*) AS review_count\nFROM (\n  SELECT\n    channel,\n    sentiment_score,\n    collected_date\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    channel,\n    sentiment_score,\n    collected_date\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    channel,\n    sentiment_score,\n    collected_date\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    channel,\n    sentiment_score,\n    collected_date\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n) AS all_reviews\nWHERE sentiment_score IS NOT NULL\nGROUP BY channel\nORDER BY avg_sentiment_score DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-052",
+    "query": "각 제품별 평균 수분 점수와 평균 진정/자극 점수를 함께 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 21.3,
+    "answer_len": 1939,
+    "answer_preview": "### 🧴 제품별 수분 및 진정/자극 점수 문의  #### 답변  고객님께서 문의하신 각 제품별 **평균 수분 점수** 및 **평균 진정/자극 점수**에 대한 정보는 현재 CS 데이터베이스에 명시된 형태로 제공되지 않습니다. 다만, 일부 제품에 대한 **수분 개선율** 및 **저자극/진정 관련 정보**는 확인됩니다.  #### 상세 정보  CS 데이터베이스에서 확인된 관련 정보는 다음과 같습니다.  *   **[스킨1004] 랩인네이처 매트릭실 10 부스팅샷 앰플**     *   **즉각적인 피부 속 10층 수분 개선율** 임상 결과가 있습니다.         *   피부 (0층): 100.91% 개선         *   피부 (1층): 79.81% 개선         *   피부 (5층): 52.98% 개선         *   피부 (10층): 34.93% 개선     *   해당 제품은 **초저분자 히알루론산**을 함유하여 피부 속 수분 케어에 도움을 줍니다.  *   **",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-053",
+    "query": "각 브랜드별 총 리뷰 수를 집계해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 38.0,
+    "answer_len": 1843,
+    "answer_preview": "### 📊 각 브랜드별 총 리뷰 수 집계 결과  #### 요약  지난 1년간 수집된 데이터를 기준으로 집계한 결과, **'skin1004' 브랜드가 총 127,960건**의 리뷰를 기록하며 유일하게 집계되었습니다.  #### 분석 및 인사이트  *   **단일 브랜드 집중:** 분석된 데이터셋(Amazon, Qoo10, Shopee, Smartstore)에서 지난 1년간 'skin1004' 브랜드만이 리뷰를 보유하고 있는 것으로 나타났습니다. 이는 해당 데이터가 'skin1004' 브랜드에 집중되어 있거나, 다른 브랜드의 리뷰가 조건에 맞지 않아 포함되지 않았음을 시사합니다. *   **높은 고객 참여도:** 'skin1004' 브랜드는 지난 1년간 127,960건이라는 매우 높은 리뷰 수를 기록했습니다. 이는 해당 브랜드 제품에 대한 고객들의 활발한 구매 및 피드백 활동을 나타내며, 시장에서의 높은 인지도와 고객 참여도를 짐작하게 합니다. *   **데이터 범위 확인 필요:** 다",
+    "used_sql": "SELECT\n  LOWER(brand) AS brand_name,\n  COUNT(*) AS total_review_count\nFROM (\n  SELECT brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT brand, collected_date\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n) AS all_reviews\nWHERE brand IS NOT NULL AND brand != ''\nGROUP BY brand_name\nORDER BY total_review_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-054",
+    "query": "수분, 진정/자극, 트러블/피지/모공, 텍스처, 향, 톤/미백 각 카테고리 점수의 전체 평균을 비교해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 11.6,
+    "answer_len": 584,
+    "answer_preview": "데이터를 조회하기 위해 BigQuery에서 리뷰 카테고리별 평균 점수를 확인하겠습니다.  리뷰 데이터에서 각 카테고리(수분, 진정/자극, 트러블/피지/모공, 텍스처, 향, 톤/미백)의 전체 평균 점수를 조회하겠습니다.  아래는 조회된 카테고리별 전체 평균 점수 비교입니다.  ---  ## 📊 리뷰 카테고리별 전체 평균 점수 비교  현재 해당 데이터를 조회할 수 있는 정확한 테이블 구조를 확인해야 합니다. 몇 가지 확인이 필요합니다:  1. **데이터 범위**: 특정 기간(예: 최근 1년, 전체 기간)이나 특정 채널(올리브영, 아마존 등)을 기준으로 할까요? 2. **제품 범위**: 전 제품 대상인지, 특정 제품/라인 기준인지요? 3. **데이터 출처**: 어떤 플랫폼의 리뷰 데이터를 기준으로 보고 싶으신가요?  조건을 알려주시면 정확한 데이터를 조회해서 **차트와 함께** 비교 결과를 보여드리겠습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-055",
+    "query": "리뷰 날짜의 연도별로 평균 감성 점수를 집계해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 22.0,
+    "answer_len": 2585,
+    "answer_preview": "📊 연도별 평균 감성 점수 분석  #### 요약  최근 1년간의 리뷰 데이터를 분석한 결과, 2025년과 2026년 모두 긍정적인 감성 점수를 유지하고 있습니다. 특히 **2026년의 평균 감성 점수는 0.73**으로, 2025년(0.70) 대비 소폭 상승했습니다.  #### 상세 데이터  ⚠️ 2025년 데이터는 2025년 4월 6일부터 12월 31일까지, 2026년 데이터는 2026년 1월 1일부터 4월 6일까지의 부분 집계입니다.  | 리뷰 연도 | 평균 감성 점수 | |:----------|---------------:| | 2025      | 0.70           | | 2026      | 0.73           |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2025\", \"2026\"], \"datasets\": [{\"label\": \"평균 감성 점수\", \"data\": [0.7, 0.73], \"",
+    "used_sql": "SELECT\n  EXTRACT(YEAR FROM collected_date) AS review_year,\n  ROUND(AVG(sentiment_score), 2) AS average_sentiment_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY review_year\nORDER BY review_year\nLIMIT 1000"
+  },
+  {
+    "id": "RS-056",
+    "query": "최근 3개월간의 월별 평균 트러블/피지/모공 점수는 어떻게 되나요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.2,
+    "answer_len": 698,
+    "answer_preview": "안녕하세요! 해당 데이터를 확인해 보겠습니다.  아쉽게도 **최근 3개월간의 월별 평균 트러블/피지/모공 점수**에 대한 데이터를 현재 확인할 수 없습니다.  ## 확인 결과  - **사내 BigQuery 데이터베이스**: 해당 피부 진단 점수 관련 테이블이 연동되어 있지 않습니다. - **공개 자료**: 이러한 피부 분석 점수는 일반적으로 피부 분석 앱, 뷰티 디바이스 제조사, 또는 연구 기관에서 내부적으로 수집하는 데이터로, 대외적으로 공표되는 경우가 드뭅니다.  ## 추가 확인이 필요합니다  해당 데이터의 **출처나 맥락**을 알려주시면 더 정확하게 도와드릴 수 있습니다:  1. **사내 피부 진단 서비스**의 데이터인가요? (예: 자사몰 피부 테스트, 특정 앱 연동 데이터) 2. **특정 제품 리뷰**에서 추출한 피부 상태 점수인가요? 3. **외부 플랫폼**(예: 피부 분석 앱, 뷰티 디바이스)의 데이터인가요?  출처를 알려주시면 해당 데이터에 접근할 수 있는 방법을 안내드",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-057",
+    "query": "2023년 하반기(7월~12월) 동안의 총 리뷰 수는 몇 건인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 17.7,
+    "answer_len": 1644,
+    "answer_preview": "### 📊 2023년 하반기(7월~12월) 총 리뷰 수 분석  #### 요약  2023년 하반기(7월~12월) 동안 Amazon, Qoo10, Shopee, Smartstore 플랫폼에서 수집된 총 리뷰 수는 **0건**으로 확인되었습니다. 이는 해당 기간 동안 데이터베이스에 리뷰 데이터가 존재하지 않음을 의미합니다.  #### 분석 및 인사이트  *   **데이터 부재 확인:** 2023년 하반기(7월~12월) 기간 동안 지정된 4개 플랫폼(Amazon, Qoo10, Shopee, Smartstore)에서 수집된 리뷰 데이터가 전혀 없는 것으로 확인되었습니다. *   **원인 분석 필요:** 이 결과는 해당 기간에 리뷰가 실제로 발생하지 않았거나, 데이터 수집 시스템에 문제가 있었거나, 또는 데이터베이스에 해당 기간의 데이터가 누락되었을 가능성을 시사합니다. 정확한 원인 파악을 위한 추가 조사가 필요합니다. *   **데이터 유효성 검증:** 향후 분석의 정확성을 위해, 해당 기간",
+    "used_sql": "SELECT\n  SUM(review_count) AS total_review_count\nFROM (\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date BETWEEN '2023-07-01' AND '2023-12-31'\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date BETWEEN '2023-07-01' AND '2023-12-31'\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date BETWEEN '2023-07-01' AND '2023-12-31'\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date BETWEEN '2023-07-01' AND '2023-12-31'\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-058",
+    "query": "2022년 1분기부터 3분기까지의 평균 향 점수를 알려주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 11.0,
+    "answer_len": 488,
+    "answer_preview": "죄송합니다. 현재 시스템에서 **\"향 점수\"**에 해당하는 데이터를 조회할 수 있는 데이터베이스 테이블이 확인되지 않습니다.  좀 더 정확하게 도와드리기 위해 몇 가지 확인이 필요합니다:  1. **어떤 데이터 소스**를 기반으로 한 향 점수인가요?    - 예: 고객 리뷰 평점, 내부 품질 평가 점수, 특정 플랫폼(올리브영, 아마존 등)의 리뷰 데이터 등  2. **어떤 제품**의 향 점수를 확인하고 싶으신가요?    - 예: 센텔라 앰플, 특정 라인 전체, 전 제품 등  3. 혹시 **사내 문서(Notion 등)**에 정리된 데이터가 있다면, 해당 문서를 검색해볼 수도 있습니다.  > 💡 **이런 것도 물어보세요** > - 특정 제품의 2022년 분기별 매출 데이터를 조회해 줘 > - 사내 문서에서 제품 품질 평가 관련 자료를 검색해 줘 > - 아마존 리뷰 관련 데이터가 있는지 확인해 줘 --- *AI 생성 답변 · 2026년 04월 06일 (Monday)*",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-059",
+    "query": "2023년 10월 첫째 주(예: 10/1~10/7)에 수집된 리뷰의 평균 톤/미백 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 20.6,
+    "answer_len": 1863,
+    "answer_preview": "### 📊 2023년 10월 첫째 주 리뷰의 평균 톤/미백 점수 분석  #### 요약  2023년 10월 첫째 주(10월 1일 ~ 10월 7일)에 Amazon, Qoo10, Shopee, Smartstore 플랫폼에서 수집된 리뷰 중 **톤/미백 점수를 확인할 수 있는 데이터가 없어, 평균 톤/미백 점수를 계산할 수 없습니다.**  #### 분석 및 인사이트  *   해당 기간(2023년 10월 1일 ~ 10월 7일) 동안 조회된 4개 플랫폼(Amazon, Qoo10, Shopee, Smartstore)의 리뷰 데이터에서 유효한 톤/미백 점수(`tone_brightening_score`)를 가진 리뷰가 발견되지 않았습니다. *   이는 해당 기간에 톤/미백 점수가 기록된 리뷰가 없었거나, 수집된 리뷰 자체의 수가 매우 적어 점수 산출이 불가능했음을 의미합니다. *   정확한 원인 파악을 위해 해당 기간의 전체 리뷰 수 및 톤/미백 점수 필드의 데이터 입력 여부를 추가로 확인해 볼 필",
+    "used_sql": "SELECT\n  AVG(tone_brightening_score) AS average_tone_brightening_score\nFROM (\n  SELECT\n    collected_date,\n    tone_brightening_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date BETWEEN '2023-10-01' AND '2023-10-07'\n    AND tone_brightening_score IS NOT NULL\n\n  UNION ALL\n\n  SELECT\n    collected_date,\n    tone_brightening_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date BETWEEN '2023-10-01' AND '2023-10-07'\n    AND tone_brightening_score IS NOT NULL\n\n  UNION ALL\n\n  SELECT\n    collected_date,\n    tone_brightening_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date BETWEEN '2023-10-01' AND '2023-10-07'\n    AND tone_brightening_score IS NOT NULL\n\n  UNION ALL\n\n  SELECT\n    collected_date,\n    tone_brightening_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date BETWEEN '2023-10-01' AND '2023-10-07'\n    AND tone_brightening_score IS NOT NULL\n) AS combined_reviews\nLIMIT 1000"
+  },
+  {
+    "id": "RS-060",
+    "query": "지난 12개월 동안의 제품별 리뷰 수 변화를 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 36.1,
+    "answer_len": 1963,
+    "answer_preview": "### 📊 지난 12개월간 제품별 리뷰 수 변화 분석  #### 요약  사용자 질문은 지난 12개월(2025년 4월 ~ 2026년 4월) 동안의 제품별 리뷰 수 변화를 요청했으나, 실제 데이터는 **2025년 12월부터 2026년 4월**까지 총 5개월간의 리뷰만 집계되었습니다. 이 기간 동안 **57개**의 고유 제품에 대한 리뷰가 있었으며, 제공된 프리뷰 데이터에 따르면 **2025년 12월**에는 '히알루시카 실키핏 선 스틱'이 **336개**로 가장 많은 리뷰를 기록했습니다. ⚠️ 2026년 4월 데이터는 현재 월의 부분 집계이므로, 다른 완료된 월과 직접적인 비교는 어렵습니다.  #### 상세 데이터  제공된 데이터 프리뷰는 2025년 12월의 제품별 리뷰 수 상위 목록을 보여줍니다. 전체 237개 행에는 2026년 1월부터 4월까지의 데이터도 포함되어 있으나, 본 보고서에서는 프리뷰에 나타난 2025년 12월 데이터를 중심으로 분석합니다. 월별 제품 리뷰 수 변화를 상세히",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', collected_date) AS month,\n  product_name,\n  COUNT(*) AS review_count\nFROM (\n  SELECT collected_date, product_name FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  UNION ALL\n  SELECT collected_date, product_name FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  UNION ALL\n  SELECT collected_date, product_name FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  UNION ALL\n  SELECT collected_date, product_name FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n) AS all_reviews\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\nGROUP BY month, product_name\nORDER BY month, review_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-061",
+    "query": "지난 분기 대비 이번 분기의 총 리뷰 수 성장률은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 60.0,
+    "answer_len": 2544,
+    "answer_preview": "### 📊 이번 분기 총 리뷰 수 성장률 분석  #### 요약  이번 분기(2026년 4월 1일 ~ 4월 6일)의 총 리뷰 수는 **607개**로 집계되었습니다. 이는 지난 분기(2026년 1월 1일 ~ 3월 31일)의 **116,912개** 대비 **-99.48%** 감소한 수치입니다. 이 급격한 감소는 이번 분기 데이터가 현재까지 6일치만 집계된 **불완전한 데이터**이기 때문입니다.  #### 상세 데이터 | 구분 | 리뷰 수 (개) | |:---|---:| | 이번 분기 (2026년 4월 1일 ~ 4월 6일) | 607 | | 지난 분기 (2026년 1월 1일 ~ 3월 31일) | 116,912 | | **성장률** | **-99.48%** |  #### 분석 및 인사이트  *   **⚠️ 불완전한 이번 분기 데이터**: 현재 날짜가 2026년 4월 6일이므로, 이번 분기(2026년 4월 1일 시작)의 데이터는 6일치만 집계된 부분 데이터입니다. 따라서 6일간의 리뷰 수(60",
+    "used_sql": "WITH all_reviews AS (\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Amazon_Review` WHERE collected_date >= '2019-01-01'\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Qoo10_Review` WHERE collected_date >= '2019-01-01'\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Shopee_Review` WHERE collected_date >= '2019-01-01'\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Smartstore_Review` WHERE collected_date >= '2019-01-01'\n),\ncurrent_quarter_data AS (\n  SELECT COUNT(*) AS review_count\n  FROM all_reviews\n  WHERE collected_date >= DATE_TRUNC(CURRENT_DATE(), QUARTER)\n    AND collected_date <= DATE_SUB(DATE_TRUNC(DATE_ADD(CURRENT_DATE(), INTERVAL 1 QUARTER), QUARTER), INTERVAL 1 DAY)\n),\nlast_quarter_data AS (\n  SELECT COUNT(*) AS review_count\n  FROM all_reviews\n  WHERE collected_date >= DATE_TRUNC(DATE_SUB(CURRENT_DATE(), INTERVAL 1 QUARTER), QUARTER)\n    AND collected_date <= DATE_SUB(DATE_TRUNC(CURRENT_DATE(), QUARTER), INTERVAL 1 DAY)\n)\nSELECT\n  (SELECT review_count FROM current_quarter_data) AS current_quarter_review_count,\n  (SELECT review_count FROM last_quarter_data) AS last_quarter_review_count,\n  ROUND(SAFE_DIVIDE(\n    (SELECT review_count FROM current_quarter_data) - (SELECT review_count FROM last_quarter_data),\n    (SELECT review_count FROM last_quarter_data)\n  ) * 100, 2) AS growth_rate_percent\nLIMIT 1000"
+  },
+  {
+    "id": "RS-062",
+    "query": "특정 제품의 월별 평균 감성 점수가 가장 크게 감소한 달은 언제이며, 감소율은 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 30.2,
+    "answer_len": 636,
+    "answer_preview": "# 데이터 조회 안내  안녕하세요. 요청하신 **특정 제품의 월별 평균 감성 점수 변화 데이터**를 현재 조회하지 못했습니다.  보다 정확한 결과를 위해 아래 항목을 구체적으로 지정해 주시면 다시 조회를 시도하겠습니다.  > **구체화하면 좋은 항목**  > - **제품명** (예: 마다가스카르 센텔라 앰플 등)  > - **기간** (예: 2024년 1월~12월)  > - **채널** (예: Amazon, Olive Young, Qoo10 등)  > - **국가/마켓** (예: 미국, 일본, 한국 등)  > - **감성 분석 기준** (예: 리뷰 기반, SNS 멘션 기반 등)  ---  > ### 💡 질문 예시 1. **\"2024년 1월~12월 기간, Amazon US에서 '마다가스카르 센텔라 앰플'의 월별 평균 감성 점수가 가장 크게 감소한 달과 감소율을 알려주세요.\"**  2. **\"2024년 하반기 올리브영 채널에서 '센텔라 클렌징 오일' 리뷰 기반 감성 점수의 월별 추이를 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-063",
+    "query": "2023년 대비 2024년의 평균 수분 점수 증감은 어떠한가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 16.3,
+    "answer_len": 546,
+    "answer_preview": "해당 질문에 정확히 답변드리기 위해 몇 가지 확인이 필요합니다.  ## 추가 정보가 필요합니다  **\"평균 수분 점수\"**가 어떤 맥락의 데이터인지에 따라 조회 방법이 달라집니다.  - **SKIN1004 제품 관련 수분 점수** (예: 제품 테스트, 임상 시험, 고객 리뷰 기반 수분 평가)를 말씀하시는 건가요? - **사내 BigQuery에 적재된 특정 데이터셋**의 수분 점수를 의미하시나요? - 혹시 **다른 출처**(논문, 기관 보고서 등)의 데이터를 찾고 계신 건가요?  현재 공개된 검색 결과에서는 \"2023년 대비 2024년 평균 수분 점수 증감\"에 대한 직접적인 통계를 확인할 수 없었습니다.  > 데이터의 **출처나 맥락**을 알려주시면, 사내 DB 조회 또는 적절한 경로로 정확한 답변을 드리겠습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - 특정 제품의 임상 테스트 결과가 궁금해요 > - 사내 DB에서 조회 가능한 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-064",
+    "query": "'Madagascar Centella Ampoule' 제품의 월별 평균 텍스처 점수 변동폭이 가장 큰 기간은 언제인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 31.6,
+    "answer_len": 278,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\"",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-065",
+    "query": "지난 6개월간 collected_date 기준 수집된 리뷰 수의 월별 변화를 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 35.7,
+    "answer_len": 3314,
+    "answer_preview": "📊 지난 6개월간 월별 리뷰 수 변화 분석  #### 요약  지난 6개월간 수집된 리뷰 수는 총 **128,960건**입니다. 특히 **2026년 01월에 74,831건**으로 가장 많은 리뷰가 수집되었으며, 이는 전체의 약 58.0%를 차지합니다. 이후 2026년 02월과 03월에는 리뷰 수가 감소하는 추세를 보였으며, 2026년 04월은 현재 진행 중인 월로 데이터가 부분 집계되었습니다.  #### 상세 데이터 | 월 | 리뷰 수 | |:---|---:| | 2025-12 | 10,441 | | 2026-01 | 74,831 | | 2026-02 | 29,037 | | 2026-03 | 13,044 | | 2026-04 | 607 |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2025-12\", \"2026-01\", \"2026-02\", \"2026-03\", \"2026-04\"], \"datasets\": [{\"lab",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', collected_date) AS month,\n  COUNT(*) AS review_count\nFROM (\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  UNION ALL\n  SELECT collected_date FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n) AS all_reviews\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-066",
+    "query": "전체 리뷰의 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 18.0,
+    "answer_len": 1515,
+    "answer_preview": "### 📊 전체 리뷰 평균 감성 점수 분석  #### 요약  지난 1년간 수집된 전체 리뷰의 평균 감성 점수는 **0.73점**으로 나타났습니다. 이는 전반적으로 고객들이 제품에 대해 긍정적인 감성을 가지고 있음을 시사합니다.  #### 분석 및 인사이트  *   **긍정적 감성 우세:** 평균 감성 점수 0.73은 긍정적인 감성이 부정적인 감성보다 훨씬 우세함을 나타냅니다. 일반적으로 감성 점수가 0.5 이상이면 긍정적인 평가로 해석될 수 있습니다. *   **고객 만족도 지표:** 이 점수는 전반적인 고객 만족도와 브랜드 평판을 가늠하는 중요한 지표로 활용될 수 있습니다. 높은 감성 점수는 고객들이 제품에 만족하고 있음을 의미합니다. *   **추가 분석 필요성:** 현재 점수는 통합된 평균이므로, 특정 플랫폼(Amazon, Qoo10 등)이나 제품별로 감성 점수를 세분화하여 분석하면 개선이 필요한 영역이나 강점을 더욱 명확하게 파악할 수 있을 것입니다.  --- *조회 기준: ",
+    "used_sql": "SELECT\n  AVG(sentiment_score) AS average_sentiment_score\nFROM (\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  UNION ALL\n  SELECT sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-067",
+    "query": "각 제품별로 모든 카테고리 점수(수분, 진정 등)의 평균을 계산해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 39.1,
+    "answer_len": 1527,
+    "answer_preview": "### 📊 제품별 카테고리 점수 평균 분석 보고서  #### 요약  지난 1년간 수집된 리뷰 데이터를 기반으로 각 제품의 카테고리별 평균 점수를 분석한 결과, 전반적으로 **0.72~0.76**의 높은 긍정 감성 점수를 기록했습니다. 특히 **'센텔라 앰플'**은 **8,215건**의 가장 많은 리뷰를 보유하며 수분(0.29) 및 진정(0.31) 카테고리에서 높은 평가를 받았습니다. 카테고리별 최고 점수를 살펴보면, **'프로바이오시카 인텐시브 앰플'**이 수분 점수에서 **0  <details><summary>실행된 쿼리</summary>  ```sql SELECT   product_name,   COUNT(*) AS review_count,   ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score,   ROUND(AVG(moisture_score), 2) AS avg_moisture_score,   ROUND(AVG(soothing_ir",
+    "used_sql": "SELECT\n  product_name,\n  COUNT(*) AS review_count,\n  ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score,\n  ROUND(AVG(moisture_score), 2) AS avg_moisture_score,\n  ROUND(AVG(soothing_irritation_score), 2) AS avg_soothing_irritation_score,\n  ROUND(AVG(trouble_sebum_pore_score), 2) AS avg_trouble_sebum_pore_score,\n  ROUND(AVG(texture_score), 2) AS avg_texture_score,\n  ROUND(AVG(absorption_layering_score), 2) AS avg_absorption_layering_score,\n  ROUND(AVG(makeup_compatibility_score), 2) AS avg_makeup_compatibility_score,\n  ROUND(AVG(scent_score), 2) AS avg_scent_score,\n  ROUND(AVG(tone_brightening_score), 2) AS avg_tone_brightening_score,\n  ROUND(AVG(price_perception_score), 2) AS avg_price_perception_score,\n  ROUND(AVG(skin_type_compatibility_score), 2) AS avg_skin_type_compatibility_score,\n  ROUND(AVG(lasting_effect_score), 2) AS avg_lasting_effect_score,\n  ROUND(AVG(packaging_usability_score), 2) AS avg_packaging_usability_score,\n  ROUND(AVG(shipping_delivery_score), 2) AS avg_shipping_delivery_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY product_name\nORDER BY review_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-068",
+    "query": "지난 3개월 이동평균 감성 점수를 월별로 계산해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 28.8,
+    "answer_len": 3516,
+    "answer_preview": "### 📊 월별 감성 점수 및 3개월 이동평균 분석 보고서  #### 요약  최근 3개월간의 월별 감성 점수 이동평균은 전반적으로 상승 추세를 보였습니다. 특히, 2026년 3월의 3개월 이동평균 감성 점수는 **0.7402**를 기록했으며, 2026년 4월(부분 집계)에는 **0.7626**으로 더욱 상승했습니다. 이는 고객 만족도 및 긍정적인 리뷰가 지속적으로 증가하고 있음을 시사합니다.  #### 상세 데이터 | 월 | 월별 감성 점수 | 3개월 이동평균 감성 점수 | |:---|---:|---:| | 2026-01 | 0.7323 | 0.7323 | | 2026-02 | 0.7156 | 0.7239 | | 2026-03 | 0.7727 | 0.7402 | | 2026-04 | 0.7995 | 0.7626 |  #### 시각화   ```chart-config {\"type\": \"line\", \"data\": {\"labels\": [\"2026-01\", \"2026-02\", \"2026-03",
+    "used_sql": "WITH MonthlySentiment AS (\n  SELECT\n    FORMAT_DATE('%Y-%m', collected_date) AS month,\n    AVG(sentiment_score) AS avg_sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  GROUP BY month\n)\nSELECT\n  month,\n  avg_sentiment_score,\n  AVG(avg_sentiment_score) OVER (ORDER BY month ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS moving_avg_sentiment_score\nFROM MonthlySentiment\nWHERE month >= FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH))\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-069",
+    "query": "리뷰 수에 따라 가중치를 부여한 제품별 평균 감성 점수를 계산해주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 33.1,
+    "answer_len": 663,
+    "answer_preview": "### 📊 제품별 리뷰 수 가중 평균 감성 점수 분석  #### 요약  지난 1년간의 데이터를 분석한 결과, 총 35개 제품 중 **센텔라 앰플**이 **8,215개**의 압도적인 리뷰 수와 **0.74**의 높은 평균 감성 점수를 기록하며 가장 주목할 만한 성과를 보였습니다. 전반적으로 제품들의 평균 감성 점수는 **0.54에서 0.76 사이**에 분포하며, 리뷰 수가 많은 주요 제품들은 대부분 긍정적인 감성 점수를 유지하고 있습니다.  #### 상세 데이터  리뷰 수 상위 10개 제품의 평균 감성 점수는 다음과 같습니다.  | 제품명 | 리뷰 수  <details><summary>실행된 쿼리</summary>  ```sql SELECT   product_name,   COUNT(*) AS review_count,   ROUND(AVG(sentiment_score), 2) AS average_sentiment_score FROM `skin1004-319714.Review_Data.",
+    "used_sql": "SELECT\n  product_name,\n  COUNT(*) AS review_count,\n  ROUND(AVG(sentiment_score), 2) AS average_sentiment_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\nGROUP BY product_name\nORDER BY review_count DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-070",
+    "query": "review_original 컬럼의 평균 문자 길이는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 15.8,
+    "answer_len": 432,
+    "answer_preview": "질문에 정확히 답변하려면 **어떤 데이터셋(테이블)**의 `review_original` 컬럼을 말씀하시는지 알아야 합니다.  현재 BigQuery에 연결된 테이블 중 `review_original` 컬럼이 포함된 테이블이 여러 개 있을 수 있기 때문에, 아래 정보를 알려주시면 바로 조회해 드리겠습니다.  **확인이 필요한 사항:** 1. **테이블명** 또는 **데이터셋명** (예: 아마존 리뷰, 올리브영 리뷰, Shopee 리뷰 등) 2. **특정 기간**이나 **채널/국가** 필터가 필요한지  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - \"아마존 리뷰 데이터에서 review_original 평균 문자 길이 알려줘\" > - \"BigQuery에 어떤 테이블들이 있어?\" > - \"리뷰 데이터 테이블 구조를 보여줘\"",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-071",
+    "query": "2023년 1월부터 월별 누적 리뷰 수를 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 24.2,
+    "answer_len": 3026,
+    "answer_preview": "### 📊 2025년 12월부터 2026년 4월까지의 월별 누적 리뷰 현황  #### 요약  사용자님께서 요청하신 2023년 1월부터의 월별 누적 리뷰 수 중, 현재 조회된 데이터는 2025년 12월부터 2026년 4월까지의 현황입니다. 이 기간 동안 총 누적 리뷰 수는 **28,176건**을 기록했습니다. 특히 2026년 1월에 19,716건의 리뷰가 추가되며 누적 리뷰 수가 크게 증가했습니다. ⚠️ 2026년 4월 데이터는 2026년 4월 6일까지의 부분 집계입니다.  #### 상세 데이터  | 월      | 월별 리뷰 수 | 누적 리뷰 수 | | :------ | -----------: | -----------: | | 2025-12 |        5,855 |        5,855 | | 2026-01 |       19,716 |       25,571 | | 2026-02 |        1,015 |       26,586 | | 2026-03 |        1,",
+    "used_sql": "WITH MonthlyReviews AS (\n  SELECT\n    FORMAT_DATE('%Y-%m', collected_date) AS month,\n    COUNT(*) AS monthly_review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= '2023-01-01'\n  GROUP BY month\n)\nSELECT\n  month,\n  monthly_review_count,\n  SUM(monthly_review_count) OVER (ORDER BY month) AS cumulative_review_count\nFROM MonthlyReviews\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-072",
+    "query": "2023년 YTD(Year-To-Date) 평균 감성 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 32.8,
+    "answer_len": 952,
+    "answer_preview": "# 2023년 YTD 평균 감성 점수  단일화된 공식 \"감성 점수(Sentiment Score)\"는 존재하지 않습니다. 감성 점수는 **분석 대상**(뉴스, 소셜 미디어, 소비자, 시장 등)과 **분석 방법론**에 따라 다양하게 측정되기 때문입니다.  다만, 2023년 주요 부문별 심리 지수 동향을 정리하면 다음과 같습니다:  ---  ## 주요 부문별 2023년 심리 지수 동향  | 부문 | 지표명 | 주요 수치 | 비고 | |------|--------|-----------|------| | **소비자 심리** | 소비자심리지수(CCSI) | 4월 **95.1** → 10월 **98.1** → 12월 **99.5** | 기준값 100 기준, 100 이상 = 낙관적 | | **부동산 시장** | 부동산시장 소비심리지수 | 9월 **108.6** → 10월 **103.2** → 12월 **95.3** | 연말로 갈수록 하락 추세 | | **주식 시장** | VIX·공포탐욕지수 등 |",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-073",
+    "query": "이번 달 MTD(Month-To-Date) 총 리뷰 수는 몇 건인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 41.1,
+    "answer_len": 1652,
+    "answer_preview": "### 📊 이번 달 MTD 총 리뷰 수 현황  #### 요약  2026년 04월 06일 기준으로 이번 달(MTD: Month-To-Date) 총 리뷰 수는 **607건**입니다. 이는 4월 1일부터 오늘까지 집계된 모든 플랫폼의 리뷰를 합산한 결과입니다.  #### 분석 및 인사이트  *   ⚠️ 2026-04월 데이터는 2026-04-06까지의 부분 집계입니다. 현재까지 607건의 리뷰가 수집되었으며, 월말까지 남은 기간 동안 추가적인 리뷰가 발생할 예정입니다. *   이 수치는 월초 6일간의 실적을 나타내므로, 전체 월간 성과를 판단하기 위해서는 월말까지의 추이를 지속적으로 모니터링해야 합니다. *   과거 동기간(예: 지난달 1일부터 6일까지)의 리뷰 수와 비교하여 현재 월의 리뷰 수 추이가 어떤지 파악하면 더욱 유의미한 인사이트를 얻을 수 있습니다.  --- *조회 기준: 2026-04-06 | 데이터소스: New_Amazon_Review + New_Qoo10_Review +",
+    "used_sql": "SELECT\n  SUM(review_count) AS total_review_count\nFROM (\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_TRUNC(CURRENT_DATE(), MONTH)\n    AND collected_date <= CURRENT_DATE()\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_TRUNC(CURRENT_DATE(), MONTH)\n    AND collected_date <= CURRENT_DATE()\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_TRUNC(CURRENT_DATE(), MONTH)\n    AND collected_date <= CURRENT_DATE()\n\n  UNION ALL\n\n  SELECT\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_TRUNC(CURRENT_DATE(), MONTH)\n    AND collected_date <= CURRENT_DATE()\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-074",
+    "query": "2023년 연간 총 진정/자극 점수 합계는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 12.5,
+    "answer_len": 483,
+    "answer_preview": "질문을 정확히 이해하기 위해 확인이 필요합니다.  \"진정/자극 점수\"가 어떤 데이터를 의미하는지 조금 더 구체적으로 알려주시겠어요? 예를 들어:  1. **제품 리뷰/CS 데이터** — 고객 리뷰에서 \"진정\", \"자극\" 관련 키워드 점수나 평점 2. **성분 평가 데이터** — 제품 성분의 진정/자극 관련 평가 점수 3. **특정 내부 리포트** — 사내에서 관리하는 특정 KPI나 스코어링 시스템 4. **BigQuery에 적재된 특정 테이블** — 테이블명이나 컬럼명을 알고 계시면 알려주세요  해당 데이터가 어디에 있는지(BigQuery 테이블명, Notion 문서 등) 힌트를 주시면 바로 조회해 드리겠습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - 2023년 연간 매출 데이터를 조회해 줘 > - BigQuery에 어떤 테이블들이 있는지 확인해 줘 > - CS 제품 리뷰 관련 데이터를 검색해 줘",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-075",
+    "query": "특정 제품의 월별 누적 수분 점수 추이를 보여주세요.",
+    "table": "shopee_review",
+    "status": "WARN",
+    "time": 79.8,
+    "answer_len": 4215,
+    "answer_preview": "### 📊 주요 제품별 월별 누적 수분 점수 추이 분석  #### 요약  지난 5개월간 주요 3개 제품의 월별 누적 수분 점수를 분석한 결과, '센텔라 앰플'이 2026년 4월 기준 **0.393**으로 가장 높은 최종 누적 수분 점수를 기록하며 꾸준한 상승세를 보였습니다. '히알루시카 워터핏 선 세럼'은 **0.380**으로 그 뒤를 이었으며, '센텔라 앰플 폼'은 **0.310**으로 가장 낮은 최종 누적 점수를 나타냈습니다. ⚠️ 2026년 4월 데이터는 2026년 4월 6일까지의 부분 집계입니다.  #### 상세 데이터  **1. 센텔라 앰플 월별 누적 수분 점수 추이**  | 월 | 월별 평균 수분 점수 | 누적 평균 수분 점수 | |:---|---:|---:| | 2025-12 | 0.294 | 0.294 | | 2026-01 | 0.261 | 0.278 | | 2026-02 | 0.389 | 0.315 | | 2026-03 | 0.536 | 0.370 | | 2026-0",
+    "used_sql": "WITH MonthlyMoisture AS (\n  SELECT\n    product_name,\n    FORMAT_DATE('%Y-%m', collected_date) AS month,\n    AVG(moisture_score) AS monthly_avg_moisture_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n    AND moisture_score IS NOT NULL\n    AND product_name IS NOT NULL AND product_name != ''\n  GROUP BY product_name, month\n),\nRankedProducts AS (\n  SELECT\n    product_name,\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n    AND moisture_score IS NOT NULL\n    AND product_name IS NOT NULL AND product_name != ''\n  GROUP BY product_name\n  ORDER BY review_count DESC\n  LIMIT 3\n)\nSELECT\n  mm.product_name,\n  mm.month,\n  mm.monthly_avg_moisture_score,\n  AVG(mm.monthly_avg_moisture_score) OVER (PARTITION BY mm.product_name ORDER BY mm.month ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_avg_moisture_score\nFROM MonthlyMoisture mm\nJOIN RankedProducts rp ON mm.product_name = rp.product_name\nORDER BY mm.product_name, mm.month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-076",
+    "query": "감성 점수가 0.8 이상인 리뷰들의 평균 수분 점수는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 27.5,
+    "answer_len": 1139,
+    "answer_preview": "### 📊 감성 점수 0.8 이상 리뷰의 평균 수분 점수 분석  #### 요약  감성 점수가 0.8 이상인 긍정적인 리뷰들의 평균 수분 점수는 **0.38점**으로 나타났습니다. 이는 전반적인 만족도가 높은 리뷰에서도 수분감은 상대적으로 크게 부각되지 않음을 시사합니다.  #### 분석 및 인사이트  *   **상대적으로 낮은 수분 점수**: 감성 점수가 0.8 이상으로 매우 긍정적인 평가를 받은 리뷰들임에도 불구하고, 평균 수분 점수는 0.38점으로 상대적으로 낮은 수준을 보였습니다. 이는 제품의 전반적인 만족도가 수분감 외 다른 요인(예: 진정 효과, 발림성, 성분 등)에 의해 더 크게 좌우될 수 있음을 시사합니다. *   **제품의 핵심 가치 재고**: 고객들이 제품에 대해 높은 만족도를 느끼는 주된 이유가 수분감이 아닐 수 있습니다. 따라서 제품의 마케팅 메시지나 개선 방향을 설정할 때, 고객들이 실제로 높게 평가하는 다른 핵심 가치를 파악하고 강조하는 것이 중요합니다. * ",
+    "used_sql": "SELECT\n  ROUND(AVG(moisture_score), 2) AS avg_moisture_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= '2025-01-01'\n  AND sentiment_score >= 0.8\nLIMIT 1000"
+  },
+  {
+    "id": "RS-077",
+    "query": "트러블/피지/모공 점수가 0.2 이하인 리뷰들의 총 개수는 몇 개인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 19.2,
+    "answer_len": 1943,
+    "answer_preview": "### 📊 트러블/피지/모공 점수 0.2 이하 리뷰 총 개수 분석  #### 요약  지난 1년간 수집된 리뷰 중 트러블/피지/모공 점수가 0.2 이하인 리뷰는 총 **116,745개**로 집계되었습니다. 이는 해당 제품이 트러블, 피지, 모공 관리에 긍정적인 영향을 주었다고 평가하는 고객이 상당함을 보여줍니다.  #### 분석 및 인사이트  *   **긍정적 평가 규모 확인:** 지난 1년간 11만 6천 개 이상의 리뷰가 트러블/피지/모공 항목에서 0.2 이하의 낮은 점수(긍정적 의미)를 기록했습니다. 이는 제품이 해당 피부 고민 해결에 효과적이라는 고객 인식이 광범위하게 형성되어 있음을 시사합니다. *   **제품 효능 지표 활용:** 이 수치는 제품의 핵심 효능(트러블/피지/모공 개선)에 대한 고객 만족도를 나타내는 중요한 지표로 활용될 수 있습니다. 특히, 특정 피부 고민을 가진 고객층에게 제품의 강점을 어필하는 데 효과적입니다. *   **마케팅 및 커뮤니케이션 강화:** 높",
+    "used_sql": "SELECT\n  COUNT(*) AS total_review_count\nFROM (\n  SELECT\n    trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND trouble_sebum_pore_score <= 0.2\n\n  UNION ALL\n\n  SELECT\n    trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND trouble_sebum_pore_score <= 0.2\n\n  UNION ALL\n\n  SELECT\n    trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND trouble_sebum_pore_score <= 0.2\n\n  UNION ALL\n\n  SELECT\n    trouble_sebum_pore_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n    AND trouble_sebum_pore_score <= 0.2\n)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-078",
+    "query": "'Madagascar Centella Ampoule' 제품에 대한 리뷰 중, 'texture_score'가 0.5보다 높은 리뷰들의 평균 'scent_score'는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 26.7,
+    "answer_len": 1471,
+    "answer_preview": "### 📊 'Madagascar Centella Ampoule' 제품의 특정 리뷰 향 점수 분석 결과  #### 요약  최근 1년간 'Madagascar Centella Ampoule' 제품의 리뷰 중 'texture_score'가 0.5보다 높은 리뷰들의 평균 'scent_score'를 분석한 결과, 해당 조건을 만족하는 리뷰가 없거나, 해당 리뷰들에 'scent_score' 데이터가 존재하지 않아 **평균 향 점수를 계산할 수 없었습니다.**  #### 분석 및 인사이트  *   **데이터 부재 확인**: 요청하신 조건(제품명: 'Madagascar Centella Ampoule', texture_score > 0.5)을 만족하는 리뷰가 최근 1년간(2025-04-06 ~ 2026-04-06) 존재하지 않거나, 존재하더라도 'scent_score' 데이터가 누락되어 평균을 산출할 수 없었습니다. *   **데이터 수집 및 관리 개선 필요성**: 이는 특정 조건의 리뷰 데이터가 부",
+    "used_sql": "SELECT\n  AVG(scent_score) AS average_scent_score\nFROM `skin1004-319714.Review_Data.New_Amazon_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND product_name_eng = 'Madagascar Centella Ampoule'\n  AND texture_score > 0.5\nLIMIT 1000"
+  },
+  {
+    "id": "RS-079",
+    "query": "감성 점수가 0.3에서 0.7 사이인 리뷰들의 총 톤/미백 점수 합계는 얼마인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 20.2,
+    "answer_len": 1295,
+    "answer_preview": "### 📊 감성 점수 0.3~0.7 리뷰의 총 톤/미백 점수 합계 분석  #### 요약  지난 1년간(2025-04-06 ~ 2026-04-06) 수집된 리뷰 중 감성 점수가 0.3에서 0.7 사이인 리뷰들의 총 톤/미백 점수 합계는 **180.0점**입니다. 이는 중립적인 감성을 가진 고객들이 제품의 톤/미백 기능에 부여한 총 점수를 나타냅니다.  #### 분석 및 인사이트  *   **중립적 감성 고객의 관심사 파악:** 감성 점수 0.3~0.7은 긍정적이지도 부정적이지도 않은 중립적인 감성을 나타냅니다. 이 고객군에서 톤/미백 점수의 합계가 180.0점이라는 것은, 해당 고객들이 제품의 톤/미백 기능에 대해 특정 수준의 평가를 내렸음을 의미합니다. *   **추가적인 비교 분석의 필요성:** 이 점수만으로는 톤/미백 기능에 대한 만족도나 중요도를 직접적으로 판단하기 어렵습니다. 전체 리뷰 중 해당 감성 점수 범위에 속하는 리뷰의 비중, 그리고 다른 감성 점수 범위(예: 긍정적,",
+    "used_sql": "SELECT\n  SUM(tone_brightening_score) AS total_tone_brightening_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND sentiment_score >= 0.3\n  AND sentiment_score <= 0.7\nLIMIT 10000"
+  },
+  {
+    "id": "RS-080",
+    "query": "2023년 1월 1일 이후에 작성된 리뷰 중, 'moisture_score'가 가장 높은 제품은 무엇인가요?",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 22.5,
+    "answer_len": 1938,
+    "answer_preview": "### 📊 2023년 1월 1일 이후 최고 수분 점수 제품 분석  #### 요약  2023년 1월 1일 이후 작성된 리뷰 데이터를 분석한 결과, '히알루시카 모이스쳐 크림'이 평균 수분 점수 **0.432**로 가장 높은 제품으로 확인되었습니다.  #### 분석 및 인사이트  *   **최고 수분 만족도 제품**: '히알루시카 모이스쳐 크림'은 2023년 1월 1일 이후 수집된 리뷰에서 수분 관련 만족도가 가장 높은 제품으로 나타났습니다. 이는 고객들이 해당 제품의 보습 효과에 대해 매우 긍정적으로 평가하고 있음을 시사합니다. *   **마케팅 및 제품 개발 활용**: 이 제품의 높은 수분 점수는 마케팅 캠페인에서 '수분' 키워드를 강조하거나, 신제품 개발 시 보습력 개선을 위한 벤치마킹 대상으로 활용될 수 있는 중요한 지표입니다. *   **고객 경험 강화**: 해당 제품의 수분 관련 강점을 지속적으로 유지하고 홍보함으로써, 고객 만족도를 높이고 브랜드 충성도를 강화할 수 있습니다",
+    "used_sql": "SELECT\n  product_name,\n  AVG(moisture_score) AS avg_moisture_score\nFROM (\n  SELECT\n    product_name,\n    moisture_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= '2023-01-01'\n    AND product_name IS NOT NULL AND product_name != ''\n    AND moisture_score IS NOT NULL\n  UNION ALL\n  SELECT\n    product_name,\n    moisture_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= '2023-01-01'\n    AND product_name IS NOT NULL AND product_name != ''\n    AND moisture_score IS NOT NULL\n  UNION ALL\n  SELECT\n    product_name,\n    moisture_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= '2023-01-01'\n    AND product_name IS NOT NULL AND product_name != ''\n    AND moisture_score IS NOT NULL\n  UNION ALL\n  SELECT\n    product_name,\n    moisture_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= '2023-01-01'\n    AND product_name IS NOT NULL AND product_name != ''\n    AND moisture_score IS NOT NULL\n) AS all_reviews\nGROUP BY product_name\nORDER BY avg_moisture_score DESC\nLIMIT 1"
+  },
+  {
+    "id": "RS-081",
+    "query": "'Madagascar Centella Ampoule' 제품의 모든 리뷰에 대한 감성 점수 분포를 상세히 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 24.1,
+    "answer_len": 278,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\"",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-082",
+    "query": "특정 review_date (예: 2023-01-15)에 작성된 모든 리뷰의 review_original과 sentiment_score를 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.7,
+    "answer_len": 777,
+    "answer_preview": "# 데이터 조회 결과 안내  안녕하세요. 요청하신 **2023-01-15에 작성된 리뷰의 review_original 및 sentiment_score** 데이터를 현재 조회하지 못했습니다.  ---  ## 💡 더 정확한 결과를 위한 제안  질문에 아래와 같은 **구체적인 조건**을 추가해 주시면 데이터를 보다 원활하게 조회할 수 있습니다.  | 추가 가능한 조건 | 예시 | |---|---| | **기간 (범위)** | 2023-01-01 ~ 2023-01-31 | | **국가/마켓** | 한국, 미국, 일본 등 | | **판매 채널** | Amazon, Olive Young, Qoo10 등 | | **제품명** | 마다가스카르 센텔라 토닝 토너 등 | | **감성 점수 범위** | sentiment_score ≥ 0.8 (긍정) 등 |  ---  ## 📝 수정 질문 예시  > **예시 1**  > \"2023년 1월 한 달간 **Amazon** 채널에서 작성된 리뷰의 review_o",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-083",
+    "query": "가장 많은 리뷰를 받은 제품의 모든 카테고리별 평균 점수를 상세히 알려주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 31.3,
+    "answer_len": 5402,
+    "answer_preview": "### 📊 가장 많은 리뷰를 받은 '센텔라 앰플'의 카테고리별 평균 점수 분석  #### 요약  지난 12개월간 가장 많은 리뷰를 받은 제품은 **센텔라 앰플**이며, 전반적인 긍정적 감성 점수는 **0.75점**으로 매우 높게 나타났습니다. 특히 '진정/자극 완화'(**0.26점**)와 '텍스처'(**0.21점**) 부문에서 높은 평가를 받았으나, '향'(**0.02점**)과 '톤업/미백'(**0.02점**)은 상대적으로 낮은 점수를 기록했습니다.  #### 상세 데이터  가장 많은 리뷰를 받은 '센텔라 앰플'의 각 카테고리별 평균 점수는 다음과 같습니다.  | 카테고리                | 평균 점수 | | :---------------------- | --------: | | 감성 점수               |      0.75 | | 진정/자극 완화 점수     |      0.26 | | 텍스처 점수             |      0.21 | | 수분감 점수",
+    "used_sql": "WITH AllReviews AS (\n  SELECT\n    product_name,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n  UNION ALL\n  SELECT\n    product_name,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n  UNION ALL\n  SELECT\n    product_name,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n  UNION ALL\n  SELECT\n    product_name,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n),\nMostReviewedProduct AS (\n  SELECT\n    product_name\n  FROM AllReviews\n  WHERE product_name IS NOT NULL AND product_name != ''\n  GROUP BY product_name\n  ORDER BY COUNT(*) DESC\n  LIMIT 1\n)\nSELECT\n  (SELECT product_name FROM MostReviewedProduct) AS most_reviewed_product,\n  ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score,\n  ROUND(AVG(moisture_score), 2) AS avg_moisture_score,\n  ROUND(AVG(soothing_irritation_score), 2) AS avg_soothing_irritation_score,\n  ROUND(AVG(trouble_sebum_pore_score), 2) AS avg_trouble_sebum_pore_score,\n  ROUND(AVG(texture_score), 2) AS avg_texture_score,\n  ROUND(AVG(absorption_layering_score), 2) AS avg_absorption_layering_score,\n  ROUND(AVG(makeup_compatibility_score), 2) AS avg_makeup_compatibility_score,\n  ROUND(AVG(scent_score), 2) AS avg_scent_score,\n  ROUND(AVG(tone_brightening_score), 2) AS avg_tone_brightening_score,\n  ROUND(AVG(price_perception_score), 2) AS avg_price_perception_score,\n  ROUND(AVG(skin_type_compatibility_score), 2) AS avg_skin_type_compatibility_score,\n  ROUND(AVG(lasting_effect_score), 2) AS avg_lasting_effect_score,\n  ROUND(AVG(packaging_usability_score), 2) AS avg_packaging_usability_score,\n  ROUND(AVG(shipping_delivery_score), 2) AS avg_shipping_delivery_score\nFROM AllReviews\nWHERE product_name = (SELECT product_name FROM MostReviewedProduct)\nLIMIT 1000"
+  },
+  {
+    "id": "RS-084",
+    "query": "감성 점수가 -0.5 이하인 리뷰들의 product_name_eng, review_ko, sentiment_score를 상세히 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 25.9,
+    "answer_len": 596,
+    "answer_preview": "### 📊 감성 점수 -0.5 이하 리뷰 상세 분석 (최근 1년간)  #### 요약  최근 1년간 수집된 리뷰 중 감성 점수가 **-0.5 이하**인 부정적인 리뷰는 총 **50건**이 조회되었습니다. 이 중 제공된 상위 15건의 프리뷰 분석 결과, 주로 **피부 트러블 및 자극(따가움, 뒤집어짐, 여드름)**, **제품 사용감 불만(효과 미미, 눈시림, 화장 무너짐)**, 그리고 **배송/패키징 문제**가 주요 부정 요인으로 나타났습니다. 특히 'Retinol 0.2 Boosting Shot Ampoule'과  <details><summary>실행된 쿼리</summary>  ```sql SELECT   product_name_eng,   review_ko,   sentiment_score FROM `skin1004-319714.Review_Data.New_Smartstore_Review` WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INT",
+    "used_sql": "SELECT\n  product_name_eng,\n  review_ko,\n  sentiment_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND sentiment_score <= -0.5\nORDER BY collected_date DESC\nLIMIT 50"
+  },
+  {
+    "id": "RS-085",
+    "query": "'Shopee ID' 채널의 모든 리뷰에 대한 월별 평균 수분 점수와 평균 진정/자극 점수 추이를 상세히 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 22.2,
+    "answer_len": 1423,
+    "answer_preview": "### 📊 Shopee ID 채널 월별 리뷰 점수 추이 분석 (데이터 부족)  #### 요약  'Shopee ID' 채널의 월별 평균 수분 점수와 평균 진정/자극 점수 추이를 분석하기에는 **데이터가 부족**합니다. 현재 제공된 데이터는 2025년 12월 한 달치에 불과하며, 해당 월의 평균 수분 점수는 **0.29점**, 평균 진정/자극 점수는 **0.37점**으로 나타났습니다.  #### 분석 및 인사이트  *   **데이터 부족으로 인한 추이 분석 불가**: 사용자의 질문은 월별 추이를 요청하였으나, 제공된 데이터는 2025년 12월 한 달치에 불과하여 월별 변화 추이를 파악할 수 없습니다. SQL 쿼리는 지난 1년간(2025년 4월 ~ 2026년 4월)의 데이터를 조회하도록 설정되었음에도 불구하고, 결과에는 2025년 12월 데이터만 포함되어 있습니다. *   **2025년 12월 점수 현황**: 2025년 12월의 평균 수분 점수는 0.29점, 평균 진정/자극 점수는 0.3",
+    "used_sql": "SELECT\n  FORMAT_DATE('%Y-%m', collected_date) AS month,\n  ROUND(AVG(moisture_score), 2) AS avg_moisture_score,\n  ROUND(AVG(soothing_irritation_score), 2) AS avg_soothing_irritation_score\nFROM `skin1004-319714.Review_Data.New_Shopee_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND channel = 'Shopee'\nGROUP BY month\nORDER BY month\nLIMIT 1000"
+  },
+  {
+    "id": "RS-086",
+    "query": "각 채널별로 제품별 평균 감성 점수를 교차 분석하여 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 26.1,
+    "answer_len": 3367,
+    "answer_preview": "### 📊 각 채널별 제품 평균 감성 점수 교차 분석 결과  #### 요약  지난 1년간(2025-04-06 ~ 2026-04-06) Qoo10 채널의 '센텔라 앰플'이 **24,875건**으로 가장 많은 리뷰 수를 기록했으며, 평균 감성 점수는 0.75로 높은 긍정적 평가를 받았습니다. 전반적으로 분석된 제품들은 0.67에서 **0.91** 사이의 평균 감성 점수를 보이며 긍정적인 사용자 반응을 나타냈습니다.  #### 상세 데이터 | 채널       | 제품명                     | 리뷰 수  | 평균 감성 점수 | | :--------- | :------------------------- | -------: | -------------: | | Qoo10      | 센텔라 앰플                | 24,875   | 0.75           | | Qoo10      | 히알루시카 워터핏 선 세럼  | 10,737   | 0.75          ",
+    "used_sql": "SELECT\n  channel,\n  product_name,\n  COUNT(*) AS review_count,\n  ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score\nFROM\n  (\n    SELECT\n      channel,\n      product_name,\n      sentiment_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n    WHERE collected_date >= '2025-04-06'\n    UNION ALL\n    SELECT\n      channel,\n      product_name,\n      sentiment_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n    WHERE collected_date >= '2025-04-06'\n    UNION ALL\n    SELECT\n      channel,\n      product_name,\n      sentiment_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n    WHERE collected_date >= '2025-04-06'\n    UNION ALL\n    SELECT\n      channel,\n      product_name,\n      sentiment_score,\n      collected_date\n    FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n    WHERE collected_date >= '2025-04-06'\n  )\nWHERE product_name IS NOT NULL AND product_name != ''\nGROUP BY\n  channel,\n  product_name\nORDER BY\n  review_count DESC, avg_sentiment_score DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-087",
+    "query": "제품별로 분기별 평균 텍스처 점수를 교차 분석하여 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 34.3,
+    "answer_len": 1069,
+    "answer_preview": "### 📊 제품별 분기별 데이터 존재 여부 교차 분석 (평균 텍스처 점수 데이터는 미포함)  #### 요약  사용자께서 요청하신 '제품별 분기별 평균 텍스처 점수'는 제공된 실행 결과 데이터에 포함되어 있지 않습니다. 대신, 본 보고서는 각 제품에 대해 **데이터가 존재하는 분기의 수**를 분석했습니다. 분석 결과, 총 **20개**의 제품 모두 2025년에는 **4개 분기** 전체에 걸쳐 데이터가 존재했으며, 2026년에는 **2개 분기**의 데이터가 확인되었습니다. ⚠️ 2026년 2분기 데이터는 현재 진행 중인 분기로, 2026년 04월 06일까지의 부분 집계입니다.  #### 상세 데이터  제공된 데이터에 따르면, 분석 대상인 모든 20개 제품은 2025년의 모든 4개 분기에 걸쳐 리뷰 데이터가 존재하며, 2026년에는 2개 분기의 데이터가 확인됩니다. 아래 표는 상위 제품들의 분기별 데이터 존재 여부를 보여  <details><summary>실행된 쿼리</summary>  ",
+    "used_sql": "SELECT\n  product_name,\n  EXTRACT(YEAR FROM collected_date) AS review_year,\n  EXTRACT(QUARTER FROM collected_date) AS review_quarter,\n  ROUND(AVG(texture_score), 2) AS avg_texture_score\nFROM `skin1004-319714.Review_Data.New_Smartstore_Review`\nWHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n  AND (brand LIKE '%SKIN1004%' OR brand LIKE '%CommonLabs%')\n  AND product_name IS NOT NULL AND product_name != ''\nGROUP BY\n  product_name,\n  review_year,\n  review_quarter\nORDER BY\n  product_name,\n  review_year,\n  review_quarter\nLIMIT 1000"
+  },
+  {
+    "id": "RS-088",
+    "query": "연도별로 각 카테고리 점수(수분, 진정 등)의 평균을 교차 분석하여 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 49.8,
+    "answer_len": 8494,
+    "answer_preview": "I need to first understand the database schema to find tables related to category scores (moisture, soothing, etc.) and then create a cross-analysis by year.  Let me start by exploring the available tables and their structures.  ```sql SELECT table_name, column_name, data_type FROM `gcp-wow-rwds-ai-mle-b-4269.SKIN1004.INFORMATION_SCHEMA.COLUMNS` WHERE LOWER(table_name) LIKE '%review%' OR LOWER(table_name) LIKE '%score%' OR LOWER(table_name) LIKE '%category%' ORDER BY table_name, ordinal_position",
+    "used_sql": "SELECT table_name, column_name, data_type\nFROM `gcp-wow-rwds-ai-mle-b-4269.SKIN1004.INFORMATION_SCHEMA.COLUMNS`\nWHERE LOWER(table_name) LIKE '%review%' OR LOWER(table_name) LIKE '%score%' OR LOWER(table_name) LIKE '%category%'\nORDER BY table_name, ordinal_position"
+  },
+  {
+    "id": "RS-089",
+    "query": "각 채널별로 긍정, 중립, 부정 감성 리뷰의 비율을 교차 분석하여 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 27.0,
+    "answer_len": 5006,
+    "answer_preview": "### 📊 채널별 감성 리뷰 비율 교차 분석  #### 요약  지난 1년간의 리뷰 데이터를 분석한 결과, 모든 채널에서 긍정 리뷰 비율이 높게 나타나 전반적인 고객 만족도가 우수함을 보여줍니다. 특히 **Shopee(대문자) 채널은 96%**로 가장 높은 긍정 리뷰 비율을 기록했습니다. 반면, **Amazon 채널은 13%**로 다른 채널에 비해 부정 리뷰 비율이 현저히 높게 나타나 개선의 여지가 있음을 시사합니다. Qoo10과 Smartstore는 압도적인 리뷰 볼륨을 기록하면서도 높은 긍정 감성을 유지하고 있습니다.  #### 상세 데이터 | channel    | positive_reviews | neutral_reviews | negative_reviews | positive_ratio | neutral_ratio | negative_ratio | | :--------- | ---------------: | --------------: | ---------------: | -",
+    "used_sql": "WITH AllReviews AS (\n  SELECT\n    channel,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    channel,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    channel,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n\n  UNION ALL\n\n  SELECT\n    channel,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR)\n)\nSELECT\n  channel,\n  COUNTIF(sentiment_score > 0) AS positive_reviews,\n  COUNTIF(sentiment_score = 0) AS neutral_reviews,\n  COUNTIF(sentiment_score < 0) AS negative_reviews,\n  ROUND(SAFE_DIVIDE(COUNTIF(sentiment_score > 0), COUNT(*)), 2) AS positive_ratio,\n  ROUND(SAFE_DIVIDE(COUNTIF(sentiment_score = 0), COUNT(*)), 2) AS neutral_ratio,\n  ROUND(SAFE_DIVIDE(COUNTIF(sentiment_score < 0), COUNT(*)), 2) AS negative_ratio\nFROM AllReviews\nGROUP BY channel\nORDER BY channel\nLIMIT 1000"
+  },
+  {
+    "id": "RS-090",
+    "query": "각 제품별로 감성 점수와 수분 점수 간의 상관관계를 교차 분석해주세요.",
+    "table": "shopee_review",
+    "status": "WARN",
+    "time": 64.2,
+    "answer_len": 3101,
+    "answer_preview": "### 📈 각 제품별 감성 점수와 수분 점수 간의 상관관계 교차 분석  #### 요약  제공된 내부 데이터에는 각 제품별 '감성 점수'와 '수분 점수'가 포함되어 있지 않아 직접적인 상관관계 교차 분석은 어렵습니다. 하지만 외부 시장 동향 분석 결과, 제품의 기능적 효능(수분 점수)과 소비자에게 주는 정서적 만족감(감성 점수)은 밀접하게 연결되어 있으며, 이 두 요소가 모두 높을 때 **강력한 시장 경쟁력과 소비자 충성도**를 확보할 수 있는 것으로 나타났습니다. 특히, SK_Hyalucica_Waterfit_Sun_Serum_50ml 제품이 **약 907.4억원**의 압도적인 매출을 기록한 것은 기능적 우수성(Hyalucica, Waterfit)과 긍정적인 감성적 경험이 결합된 결과로 추정됩니다.  #### 내부 데이터 분석  제공된 BigQuery 매출/주문 데이터에는 각 제품별 '감성 점수' 및 '수분 점수'에 대한 정보가 포함되어 있지 않습니다. 따라서, 현재 데이터만으로는 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-091",
+    "query": "요즘(최근 1개월) SKIN1004 제품들의 전반적인 감성 점수 추이는 어떤가요?",
+    "table": "shopee_review",
+    "status": "WARN",
+    "time": 69.6,
+    "answer_len": 3514,
+    "answer_preview": "### 📊 SKIN1004 제품 최근 1개월 감성 점수 추이 분석  #### 요약  최근 1개월간(2026년 3월 9일 ~ 4월 6일) SKIN1004 제품의 평균 감성 점수는 **0.505점부터 0.808점 사이**로 변동했습니다. 분석 기간 초반에는 높은 점수를 유지했으나, 3월 23일에 **0.505점**으로 크게 하락한 후 다시 회복하는 추세를 보였습니다. 현재(4월 6일 기준) 감성 점수는 **0.746점**입니다.  #### 상세 데이터  ⚠️ 2026-04월 데이터는 2026-04-06까지의 부분 집계입니다.  | 수집일자   | 평균 감성 점수 | | :--------- | -------------: | | 2026-03-09 |          0.808 | | 2026-03-16 |          0.800 | | 2026-03-23 |          0.505 | | 2026-03-30 |          0.753 | | 2026-03-31 |        ",
+    "used_sql": "SELECT\n  collected_date,\n  AVG(sentiment_score) AS average_sentiment_score\nFROM (\n  SELECT collected_date, brand, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  UNION ALL\n  SELECT collected_date, brand, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  UNION ALL\n  SELECT collected_date, brand, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  UNION ALL\n  SELECT collected_date, brand, sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n) AS all_reviews\nWHERE LOWER(brand) = 'skin1004'\n  AND collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 MONTH)\nGROUP BY collected_date\nORDER BY collected_date\nLIMIT 1000"
+  },
+  {
+    "id": "RS-092",
+    "query": "가장 인기 있는 제품은 무엇인가요? (리뷰 수 기준)",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 46.4,
+    "answer_len": 5298,
+    "answer_preview": "### 📊 지난 3개월간 가장 인기 있는 제품 분석 (리뷰 수 기준)  #### 요약  지난 3개월간(2026년 1월 6일 ~ 2026년 4월 6일) SKIN1004 브랜드 제품 중 **'Centella Ampoule'**이 총 **33,030개**의 리뷰를 기록하며 압도적으로 가장 인기 있는 제품으로 나타났습니다. 이는 2위 제품인 'Hyalu-Cica Water-Fit Sun Serum SPF50 PA++++'의 리뷰 수(13,388개)보다 약 2.5배 높은 수치입니다.  #### 상세 데이터  지난 3개월간 리뷰 수 기준 상위 10개 제품은 다음과 같습니다.  | 제품명                                       | 총 리뷰 수 | | :------------------------------------------- | ---------: | | Centella Ampoule                             |      33030 | |",
+    "used_sql": "SELECT\n  product_name_eng AS product_name,\n  SUM(review_count) AS total_review_count\nFROM (\n  SELECT\n    product_name_eng,\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name_eng IS NOT NULL AND product_name_eng != ''\n  GROUP BY product_name_eng\n\n  UNION ALL\n\n  SELECT\n    product_name_eng,\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name_eng IS NOT NULL AND product_name_eng != ''\n  GROUP BY product_name_eng\n\n  UNION ALL\n\n  SELECT\n    product_name_eng,\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name_eng IS NOT NULL AND product_name_eng != ''\n  GROUP BY product_name_eng\n\n  UNION ALL\n\n  SELECT\n    product_name_eng,\n    COUNT(*) AS review_count\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 MONTH)\n    AND brand LIKE '%SKIN1004%'\n    AND product_name_eng IS NOT NULL AND product_name_eng != ''\n  GROUP BY product_name_eng\n)\nGROUP BY product_name\nORDER BY total_review_count DESC\nLIMIT 10"
+  },
+  {
+    "id": "RS-093",
+    "query": "'Madagascar Centella Ampoule'에 대한 소비자들의 전반적인 의견(감성 점수)이 어떤지 좀 알려줘.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 23.6,
+    "answer_len": 1313,
+    "answer_preview": "# Madagascar Centella Ampoule — 소비자 감성 분석  현재 시스템에 연동된 **CS 제품 Q&A 데이터베이스**와 **BigQuery 데이터**를 기반으로 확인할 수 있는 범위 내에서 안내드리겠습니다.  ---  ## 📊 일반적으로 알려진 소비자 평가 요약  Madagascar Centella Ampoule은 SKIN1004의 **시그니처 베스트셀러**로, 글로벌 주요 플랫폼에서 꾸준히 높은 평점을 유지하고 있는 제품입니다.  ### ✅ 긍정 의견 (주요 키워드)  | 카테고리 | 소비자 반응 | |---|---| | **진정 효과** | \"민감한 피부가 금방 진정된다\", \"붉은기가 줄었다\" | | **성분 신뢰** | \"클린 뷰티·비건 인증이라 안심\", \"성분이 단순해서 좋다\" | | **텍스처** | \"가볍고 흡수가 빠르다\", \"끈적이지 않는다\" | | **가성비** | \"용량 대비 가격이 합리적이다\" | | **범용성** | \"어떤 스킨케어 루틴에도 잘 ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-094",
+    "query": "어떤 제품이 현재 문제가 있는 것으로 보이나요? (평균 감성 점수 낮은 제품)",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 34.6,
+    "answer_len": 1168,
+    "answer_preview": "# 현재 문제가 있는 것으로 보이는 제품들  여러 분야에서 문제가 보고되고 있는 제품들을 정리해 드리겠습니다.  ---  ## 🔴 가전제품  | 제품 | 문제 내용 | |------|-----------| | **삼성 비스포크 세탁기/건조기** | 소프트웨어 업데이트 후 세탁 기능 미작동, 세탁 옵션 사라짐 | | **폴더블 스마트폰** (삼성·화웨이) | 수년간 액정 파손 문제 지속 → 소비자 이탈 |  ## 🔴 자동차  | 제품 | 문제 내용 | |------|-----------| | **2026년형 닛산 리프** | 배터리 팩 제조 공정 결함 → **주차 중 화재 위험**으로 리콜 |  ## 🔴 해외 직구 상품 (알리익스프레스·테무)  | 제품 | 문제 내용 | |------|-----------| | **어린이용 물놀이 튜브** | 불임·암 유발 물질 기준치 **33배 초과** 검출 | | **어린이용 캐릭터 연필** | 발암물질 기준치 **35배** 검출 | | **가죽가",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-095",
+    "query": "SKIN1004 제품들의 전반적인 강점(높은 점수)과 약점(낮은 점수) 카테고리는 무엇인가요?",
+    "table": "shopee_review",
+    "status": "FAIL",
+    "time": 94.6,
+    "answer_len": 5974,
+    "answer_preview": "### 📊 SKIN1004 제품의 전반적인 강점 및 약점 분석 보고서  #### 요약  SKIN1004 제품은 전반적으로 **긍정적인 고객 정서(Sentiment, 0.73점)**를 형성하고 있으며, 특히 **텍스처(0.24점)**, **진정/자극 완화(0.20점)**, **보습(0.19점)** 측면에서 상대적으로 높은 평가를 받고 있습니다. 반면, **지속 효과(0.02점)**, **향(0.03점)**, **메이크업 궁합(0.05점)** 카테고리는 개선이 필요한 약점으로 파악됩니다.  #### 상세 데이터 | 카테고리                | 평균 점수 | |:------------------------|----------:| | Sentiment               | 0.73      | | Texture                 | 0.24      | | Soothing_Irritation     | 0.20      | | Moisture           ",
+    "used_sql": "WITH CombinedReviews AS (\n  SELECT\n    collected_date,\n    brand,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR) AND brand LIKE '%SKIN1004%'\n  UNION ALL\n  SELECT\n    collected_date,\n    brand,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR) AND brand LIKE '%SKIN1004%'\n  UNION ALL\n  SELECT\n    collected_date,\n    brand,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR) AND brand LIKE '%SKIN1004%'\n  UNION ALL\n  SELECT\n    collected_date,\n    brand,\n    sentiment_score,\n    moisture_score,\n    soothing_irritation_score,\n    trouble_sebum_pore_score,\n    texture_score,\n    absorption_layering_score,\n    makeup_compatibility_score,\n    scent_score,\n    tone_brightening_score,\n    price_perception_score,\n    skin_type_compatibility_score,\n    lasting_effect_score,\n    packaging_usability_score,\n    shipping_delivery_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 1 YEAR) AND brand LIKE '%SKIN1004%'\n)\nSELECT\n  'Sentiment' AS category, ROUND(AVG(sentiment_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Moisture' AS category, ROUND(AVG(moisture_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Soothing_Irritation' AS category, ROUND(AVG(soothing_irritation_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Trouble_Sebum_Pore' AS category, ROUND(AVG(trouble_sebum_pore_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Texture' AS category, ROUND(AVG(texture_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Absorption_Layering' AS category, ROUND(AVG(absorption_layering_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Makeup_Compatibility' AS category, ROUND(AVG(makeup_compatibility_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Scent' AS category, ROUND(AVG(scent_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Tone_Brightening' AS category, ROUND(AVG(tone_brightening_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Price_Perception' AS category, ROUND(AVG(price_perception_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Skin_Type_Compatibility' AS category, ROUND(AVG(skin_type_compatibility_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Lasting_Effect' AS category, ROUND(AVG(lasting_effect_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Packaging_Usability' AS category, ROUND(AVG(packaging_usability_score), 2) AS avg_score FROM CombinedReviews\nUNION ALL\nSELECT 'Shipping_Delivery' AS category, ROUND(AVG(shipping_delivery_score), 2) AS avg_score FROM CombinedReviews\nORDER BY avg_score DESC\nLIMIT 1000"
+  },
+  {
+    "id": "RS-096",
+    "query": "전체 평균 감성 점수보다 낮은 평균 감성 점수를 가진 제품들의 목록을 보여주세요.",
+    "table": "shopee_review",
+    "status": "WARN",
+    "time": 63.7,
+    "answer_len": 566,
+    "answer_preview": "저는 BigQuery에서 제품별 감성 점수 데이터를 조회하겠습니다.  아래는 **전체 평균 감성 점수보다 낮은 평균 감성 점수를 가진 제품 목록**입니다.  ---  현재 제가 접근 가능한 BigQuery 테이블 스키마를 확인하여 정확한 쿼리를 실행해야 합니다. 감성 점수(sentiment score) 관련 데이터가 어떤 테이블에 있는지 확인이 필요합니다.  혹시 아래 중 어떤 데이터를 기반으로 조회하면 될까요?  1. **리뷰 감성 분석 데이터** — 고객 리뷰에서 추출한 감성 점수 2. **SNS/소셜 감성 분석 데이터** — 소셜 미디어 멘션 기반 감성 점수 3. **특정 플랫폼 데이터** — 아마존, 올리브영 등 특정 채널의 리뷰 감성 점수  또한, 조회 기간(예: 최근 1개월, 최근 1년, 전체 기간)도 알려주시면 더 정확한 결과를 드릴 수 있습니다.  --- *AI 생성 답변 · 2026-04-06*  > 💡 **이런 것도 물어보세요** > - 감성 점수가 가장 낮은 제품",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-097",
+    "query": "2023년에 100건 이상의 리뷰를 받은 제품들 중에서 평균 수분 점수가 0.7 이상인 제품들을 찾아주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 40.1,
+    "answer_len": 278,
+    "answer_preview": "### 📊 데이터 조회 결과  해당 조건의 데이터가 조회되지 않았습니다.  #### 확인 사항 - 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요 - 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음) - 조회 기간을 넓혀서 다시 질문해 보세요  ---  > 💡 **이런 식으로 질문해 보세요** > - \"2024년 미국 아마존 월별 매출 알려줘\" > - \"베트남 쇼피 2025년 매출 알려줘\" > - \"태국 라자다 분기별 매출 추이\"",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-098",
+    "query": "각 채널별로 제품의 평균 감성 점수를 기준으로 순위를 매겨주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 54.9,
+    "answer_len": 1114,
+    "answer_preview": "# 채널별 제품 평균 감성 점수 순위  현재 모든 채널을 동일한 기준으로 비교한 **공식적인 감성 점수 순위 데이터는 존재하지 않습니다.** 다만, 연구 및 소비자 만족도 조사 결과를 종합하면 아래와 같은 경향성을 도출할 수 있습니다.  ## 예상 순위 (긍정적 감성 점수 높은 순)  | 순위 | 채널 | 감성 점수 경향 | 주요 특징 | |:---:|------|:---:|------| | **1** | **자사몰 (자사 홈페이지)** | ⭐ 가장 높음 | 브랜드 충성도 높은 고객 중심, 상세하고 긍정적인 리뷰 비율 높음 | | **2** | **전문몰** (올리브영, YesStyle 등) | ⭐ 높음 | 특정 카테고리 관심 고객 집중, 충성 고객 기반의 긍정적 평가 우세 | | **3** | **오픈마켓/종합몰** (쿠팡, 네이버쇼핑 등) | ⭐ 보통 | 이용자 규모 최대, 긍정·부정 리뷰가 다양하게 혼재 | | **4** | **소셜미디어** (인스타그램, 유튜브, 틱톡 등) ",
+    "used_sql": ""
+  },
+  {
+    "id": "RS-099",
+    "query": "월별로 각 제품의 평균 감성 점수를 피벗 테이블 형태로 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 39.3,
+    "answer_len": 4023,
+    "answer_preview": "### 📊 월별 제품별 평균 감성 점수 분석 보고서  #### 요약  지난 6개월간(2025년 11월 ~ 2026년 4월) 제품별 평균 감성 점수를 분석한 결과, **센텔라 수딩 크림**이 **0.76에서 0.82 사이**의 높은 감성 점수를 꾸준히 유지하며 가장 긍정적인 평가를 받고 있습니다. 반면, **레티놀 부스팅 샷 앰플**은 **0.55에서 0.57 사이**로 상대적으로 낮은 감성 점수를 보였습니다. ⚠️ 2026년 4월 데이터는 2026-04-06까지의 부분 집계이므로, 해당 월의 점수는 최종 수치와 다를 수 있습니다.  #### 상세 데이터  다음은 지난 6개월간 각 제품의 월별 평균 감성 점수(상위 8개 제품 프리뷰)입니다.  | product_name | 2025-11 | 2025-12 | 2026-01 | 2026-02 | 2026-03 | 2026-04 | | :------------------------------- | -------: | -------: | -",
+    "used_sql": "WITH CombinedReviews AS (\n  SELECT\n    product_name,\n    FORMAT_DATE('%Y-%m', collected_date) AS review_month,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Amazon_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  UNION ALL\n  SELECT\n    product_name,\n    FORMAT_DATE('%Y-%m', collected_date) AS review_month,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Qoo10_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  UNION ALL\n  SELECT\n    product_name,\n    FORMAT_DATE('%Y-%m', collected_date) AS review_month,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Shopee_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n  UNION ALL\n  SELECT\n    product_name,\n    FORMAT_DATE('%Y-%m', collected_date) AS review_month,\n    sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)\n),\nMonthlyAvgSentiment AS (\n  SELECT\n    product_name,\n    review_month,\n    ROUND(AVG(sentiment_score), 2) AS avg_sentiment\n  FROM CombinedReviews\n  WHERE product_name IS NOT NULL AND product_name != ''\n  GROUP BY product_name, review_month\n)\nSELECT\n  product_name,\n  MAX(CASE WHEN review_month = '2025-11' THEN avg_sentiment ELSE NULL END) AS `2025-11`,\n  MAX(CASE WHEN review_month = '2025-12' THEN avg_sentiment ELSE NULL END) AS `2025-12`,\n  MAX(CASE WHEN review_month = '2026-01' THEN avg_sentiment ELSE NULL END) AS `2026-01`,\n  MAX(CASE WHEN review_month = '2026-02' THEN avg_sentiment ELSE NULL END) AS `2026-02`,\n  MAX(CASE WHEN review_month = '2026-03' THEN avg_sentiment ELSE NULL END) AS `2026-03`,\n  MAX(CASE WHEN review_month = '2026-04' THEN avg_sentiment ELSE NULL END) AS `2026-04`\nFROM MonthlyAvgSentiment\nGROUP BY product_name\nORDER BY product_name\nLIMIT 1000"
+  },
+  {
+    "id": "RS-100",
+    "query": "2023년 이후, 각 제품의 월별 평균 감성 점수와 전월 대비 감성 점수 변화율을 함께 보여주세요.",
+    "table": "shopee_review",
+    "status": "OK",
+    "time": 31.6,
+    "answer_len": 1193,
+    "answer_preview": "📊 2023년 이후 SKIN1004 제품별 월별 감성 점수 및 전월 대비 변화율 분석  #### 요약  2023년 이후 SKIN1004 브랜드 제품의 감성 점수 분석 결과, 실제 데이터는 **2025년 12월부터 2026년 4월까지 5개월간 35개 제품**에 대해 집계되었습니다. 전반적으로 제품별 감성 점수는 월별로 **큰 변동성**을 보였으며, 특히 일부 제품은 전월 대비 **40% 이상**의 급격한 변화율을 기록했습니다. ⚠️ 2026-04월 데이터는 2026-04-06  <details><summary>실행된 쿼리</summary>  ```sql WITH MonthlySentiment AS (   SELECT     FORMAT_DATE('%Y-%m', collected_date) AS month,     product_name,     ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score   FROM `skin1004-319714.R",
+    "used_sql": "WITH MonthlySentiment AS (\n  SELECT\n    FORMAT_DATE('%Y-%m', collected_date) AS month,\n    product_name,\n    ROUND(AVG(sentiment_score), 2) AS avg_sentiment_score\n  FROM `skin1004-319714.Review_Data.New_Smartstore_Review`\n  WHERE collected_date >= '2023-01-01'\n    AND LOWER(brand) LIKE '%skin1004%'\n    AND product_name IS NOT NULL AND product_name != ''\n  GROUP BY 1, 2\n),\nLaggedSentiment AS (\n  SELECT\n    month,\n    product_name,\n    avg_sentiment_score,\n    LAG(avg_sentiment_score, 1) OVER (PARTITION BY product_name ORDER BY month) AS prev_month_sentiment_score\n  FROM MonthlySentiment\n)\nSELECT\n  month,\n  product_name,\n  avg_sentiment_score,\n  prev_month_sentiment_score,\n  ROUND(SAFE_DIVIDE(avg_sentiment_score - prev_month_sentiment_score, prev_month_sentiment_score) * 100, 2) AS mom_change_pct\nFROM LaggedSentiment\nORDER BY product_name, month\nLIMIT 1000"
+  }
+]

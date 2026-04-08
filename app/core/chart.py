@@ -167,7 +167,13 @@ def build_chartjs_config(
             others_val = sum(float(r.get(_pie_y, 0) or 0) for r in data_sorted[9:])
             data = top_items + [{x_col: "기타", _pie_y: others_val}]
         elif len(data) > limit:
-            return None
+            # Fallback: bar with too many items → switch to horizontal_bar (up to 25)
+            if chart_type == "bar" and len(data) <= 25:
+                chart_type = "horizontal_bar"
+            elif len(data) <= 25:
+                pass  # Allow up to 25 items for most chart types
+            else:
+                return None
 
         # --- Build Chart.js config ---
         labels = [str(row.get(x_col, "")) for row in data]
@@ -332,6 +338,22 @@ def build_chartjs_config(
 
         # Axis config (not for pie/doughnut)
         if cjs_type != "doughnut":
+            _all_vals = []
+            for _ds in datasets:
+                _all_vals.extend([v for v in _ds.get("data", []) if isinstance(v, (int, float)) and v != 0])
+            _max_val = max(_all_vals) if _all_vals else 100
+            _has_decimals = _max_val < 10 and any(v != int(v) for v in _all_vals if isinstance(v, (int, float)))
+            y_ticks = {"font": {"size": 11}}
+            if _has_decimals:
+                y_ticks["precision"] = 2
+                # Force decimal step size for small value ranges
+                if _max_val <= 1:
+                    y_ticks["stepSize"] = 0.2
+                elif _max_val <= 5:
+                    y_ticks["stepSize"] = 0.5
+                elif _max_val < 10:
+                    y_ticks["stepSize"] = 1
+
             x_axis = {
                 "title": {"display": bool(x_label), "text": x_label, "font": {"size": 13}},
                 "grid": {"display": False},
@@ -340,7 +362,7 @@ def build_chartjs_config(
             y_axis = {
                 "title": {"display": bool(y_label), "text": y_label, "font": {"size": 13}},
                 "grid": {"color": "rgba(0,0,0,0.06)"},
-                "ticks": {"font": {"size": 11}},
+                "ticks": y_ticks,
                 "beginAtZero": True,
             }
 
@@ -404,7 +426,7 @@ def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_coun
   - 단일 시계열이면 영역(fill) 라인 차트
 - bar: 카테고리별 비교 — **카테고리 5개 이하 + 이름이 짧을 때만** (시계열 아닐 때만)
 - **horizontal_bar**: 제품명, 브랜드명, SKU명 등 긴 텍스트 라벨이면 **반드시 사용**
-- pie: 비율/구성 (전체 대비 비중). 항목 6개 이하
+- pie: 비율/구성 (전체 대비 비중). 항목 수 상관없음 (시스템이 Top 9 + 기타 자동 집계)
 - grouped_bar: 여러 지표를 카테고리별로 비교 (시계열 아닐 때만)
 - stacked_bar: 누적 비교
 

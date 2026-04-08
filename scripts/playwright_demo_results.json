@@ -1,0 +1,110 @@
+[
+  {
+    "label": "매출 TOP10",
+    "query": "이번 달 국가별 매출 TOP 10 알려줘",
+    "status": "PASS",
+    "time": 15.221468448638916,
+    "chars": 1621,
+    "has_table": true,
+    "has_chart": false
+  },
+  {
+    "label": "매출 추이",
+    "query": "최근 3개월 월별 매출 추이 보여줘",
+    "status": "PASS",
+    "time": 19.29098129272461,
+    "chars": 1887,
+    "has_table": false,
+    "has_chart": true
+  },
+  {
+    "label": "B2B/B2C",
+    "query": "B2B와 B2C 매출 비중 비교해줘",
+    "status": "PASS",
+    "time": 14.191928625106812,
+    "chars": 1617,
+    "has_table": true,
+    "has_chart": false
+  },
+  {
+    "label": "플랫폼 비교",
+    "query": "쇼피 vs 아마존 vs 틱톡샵 이번 달 매출 비교해줘",
+    "status": "PASS",
+    "time": 9.108866930007935,
+    "chars": 2876,
+    "has_table": true,
+    "has_chart": true
+  },
+  {
+    "label": "제품 TOP5",
+    "query": "이번 달 제품별 판매 수량 순위 TOP 5 보여줘",
+    "status": "PASS",
+    "time": 11.16602611541748,
+    "chars": 3056,
+    "has_table": true,
+    "has_chart": true
+  },
+  {
+    "label": "인플루언서",
+    "query": "@@인플루언서 이번 달 팀별 인플루언서 비용과 조회수 비교해줘",
+    "status": "PASS",
+    "time": 17.295362949371338,
+    "chars": 1997,
+    "has_table": true,
+    "has_chart": false
+  },
+  {
+    "label": "FB ROAS",
+    "query": "국가별 Facebook ROAS 분석해줘",
+    "status": "PASS",
+    "time": 16.375020027160645,
+    "chars": 2144,
+    "has_table": true,
+    "has_chart": false
+  },
+  {
+    "label": "마케팅 ROAS",
+    "query": "@@마케팅비용 Media별 ROAS 비교해줘",
+    "status": "PASS",
+    "time": 18.479228019714355,
+    "chars": 2814,
+    "has_table": false,
+    "has_chart": true
+  },
+  {
+    "label": "리뷰 감성",
+    "query": "@@리뷰 아마존 제품별 평균 감성 점수 TOP 5 알려줘",
+    "status": "PASS",
+    "time": 12.337377786636353,
+    "chars": 1590,
+    "has_table": true,
+    "has_chart": false
+  },
+  {
+    "label": "CS 성분",
+    "query": "센텔라 앰플의 주요 성분과 피부 효능을 상세히 알려줘",
+    "status": "PASS",
+    "time": 15.404207229614258,
+    "chars": 966,
+    "has_table": false,
+    "has_chart": false
+  },
+  {
+    "label": "Shopify",
+    "query": "@@쇼피파이 이번 달 Shopify 국가별 매출 현황 알려줘",
+    "status": "PASS",
+    "time": 9.24778151512146,
+    "chars": 1939,
+    "has_table": true,
+    "has_chart": false
+  },
+  {
+    "label": "종합분석",
+    "query": "동남아시아 시장 매출 현황과 성장 전략 분석해줘",
+    "status": "PASS",
+    "time": 19.526179552078247,
+    "chars": 4789,
+    "has_table": false,
+    "has_chart": true
+  }
+]

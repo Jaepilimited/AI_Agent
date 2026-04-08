@@ -1,0 +1,27 @@
+[
+  {
+    "test": "tab_switch_setup",
+    "status": "pass",
+    "detail": "232 conversations ready"
+  },
+  {
+    "test": "tab_switch_no_freeze",
+    "status": "pass",
+    "detail": "UI responsive after mid-stream tab switch"
+  },
+  {
+    "test": "tab_switch_new_msg",
+    "status": "pass",
+    "detail": "New message works after switch: 분기별 매출 추이를 분석하기 위해 BigQuery에서 2024년과 2025년 데이터를 조회하겠습니다.\n현재 ..."
+  },
+  {
+    "test": "tab_switch_return",
+    "status": "pass",
+    "detail": "Interrupted conversation has 2 messages"
+  },
+  {
+    "test": "console_errors",
+    "status": "pass",
+    "detail": "No console errors during tab switching"
+  }
+]

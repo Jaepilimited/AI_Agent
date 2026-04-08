@@ -23,7 +23,6 @@ BLOCKED_KEYWORDS = {
 # Patterns that indicate potential SQL injection
 INJECTION_PATTERNS = [
     r";\s*(DROP|DELETE|UPDATE|INSERT|ALTER|CREATE|TRUNCATE)",  # stacked queries
-    r"--\s",          # SQL comments
     r"/\*.*?\*/",     # block comments
     r"xp_\w+",        # extended procedures
     r"INFORMATION_SCHEMA",
@@ -122,6 +121,9 @@ def sanitize_sql(sql: str) -> str:
     # Remove markdown code blocks if present
     sql = re.sub(r'```sql\s*', '', sql)
     sql = re.sub(r'```\s*', '', sql)
+
+    # Remove SQL single-line comments (LLM often adds -- 설명)
+    sql = re.sub(r'--[^\n]*', '', sql)
 
     # Strip whitespace
     sql = sql.strip()

@@ -130,14 +130,20 @@ class OrchestratorAgent:
         {"key": "플랫폼", "aliases": ["platform", "플랫폼데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "store", "label": "플랫폼", "desc": "플랫폼별 순위/가격"},
         {"key": "아마존검색", "aliases": ["amazon", "아마존"], "route": "bigquery", "group": "마케팅 데이터", "icon": "search", "label": "아마존검색", "desc": "아마존 검색 분석 퍼널"},
         {"key": "메타광고", "aliases": ["meta", "메타"], "route": "bigquery", "group": "마케팅 데이터", "icon": "phone", "label": "메타광고", "desc": "메타 광고 라이브러리"},
-        # ── BigQuery 리뷰 ──
-        {"key": "리뷰", "aliases": ["review", "리뷰데이터"], "route": "bigquery", "group": "리뷰 데이터", "icon": "star", "label": "리뷰", "desc": "아마존/큐텐/쇼피/스마트스토어"},
-        # ── 팀별자료 (노션) ──
-        {"key": "피플", "aliases": ["people", "인사", "hr", "피플팀"], "route": "team", "group": "팀별자료(노션)", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지, IT"},
-        {"key": "노션", "aliases": ["notion"], "route": "notion", "group": "팀별자료(노션)", "icon": "doc", "label": "Notion", "desc": "사내 문서 검색"},
-        # ── CS / BP ──
-        {"key": "bp", "aliases": ["뷰티파트너", "제품qa", "제품문의"], "route": "cs", "group": "CS", "icon": "flask", "label": "BP", "desc": "제품 성분/사용법/교환반품"},
-        {"key": "cs", "aliases": ["고객상담", "고객서비스"], "route": "cs", "group": "CS", "icon": "headset", "label": "CS", "desc": "고객 서비스"},
+        {"key": "리뷰", "aliases": ["review", "리뷰데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "리뷰", "desc": "아마존/큐텐/쇼피/스마트스토어"},
+        # ── Notion (팀별자료 — Qdrant 벡터 검색, 알파벳순) ──
+        {"key": "b2b1", "aliases": ["국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 실행 (매출/거래처/재고)"},
+        {"key": "b2b2", "aliases": ["b2b", "해외영업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B2", "desc": "B2B 프로세스/온보딩 위키"},
+        {"key": "bcm", "aliases": ["브랜드커뮤니케이션"], "route": "notion", "group": "Notion", "icon": "doc", "label": "BCM", "desc": "브랜드커뮤니케이션팀"},
+        {"key": "craver", "aliases": ["크레이버", "경영기획"], "route": "notion", "group": "Notion", "icon": "doc", "label": "Craver", "desc": "경영기획"},
+        {"key": "notion_cs", "aliases": ["cs문서", "cs자료", "cs"], "route": "notion", "group": "Notion", "icon": "doc", "label": "CS", "desc": "CS팀 Notion 문서"},
+        {"key": "db", "aliases": ["데이터분석", "데이터팀"], "route": "notion", "group": "Notion", "icon": "doc", "label": "DB", "desc": "데이터분석팀"},
+        {"key": "gm_east", "aliases": ["east", "동부", "gm동부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM EAST", "desc": "글로벌마케팅 동부"},
+        {"key": "gm_west", "aliases": ["west", "서부", "gm서부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM WEST", "desc": "글로벌마케팅 서부"},
+        {"key": "jbt", "aliases": ["일본사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "JBT", "desc": "일본사업팀"},
+        {"key": "kbt", "aliases": ["국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
+        {"key": "bp", "aliases": ["뷰티파트너", "제품qa", "제품문의", "고객상담", "고객서비스"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법/교환반품)"},
+        {"key": "피플", "aliases": ["people", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지, IT"},
         # ── 시스템 ──
         {"key": "gws", "aliases": ["google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
         # ── 확장 ──
@@ -157,36 +163,50 @@ class OrchestratorAgent:
 
     @classmethod
     def parse_db_prefix(cls, query: str):
-        """Parse @@prefix from query.
+        """Parse @@prefix(es) from query. Supports multiple: @@a @@b 질문
 
         Returns:
-            (db_entry_or_special, clean_query)
-            - db_entry dict → route to specific source
+            (db_entry_or_special_or_list, clean_query)
+            - db_entry dict → single source
+            - list[dict] → multiple sources
             - "select_all"/"deselect_all"/"list" string → special command
             - None → no @@ prefix
         """
+        import re
         q = query.strip()
-        if not q.startswith("@@"):
+        if "@@" not in q:
             return None, query
 
-        parts = q[2:].split(None, 1)
-        if not parts:
-            # Just "@@" → show list
+        # Extract all @@tokens
+        tokens = re.findall(r'@@(\S+)', q)
+        if not tokens:
             return "list", ""
-        prefix = parts[0].lower().rstrip(":")
-        clean_query = parts[1] if len(parts) > 1 else ""
 
-        # Check special commands first
-        special = cls._DB_SPECIAL.get(prefix)
-        if special:
-            return special, clean_query.strip()
+        # Remove all @@tokens from query to get clean text
+        clean = re.sub(r'@@\S+\s*', '', q).strip()
 
-        # Match against registry
-        for entry in cls._DB_REGISTRY:
-            if prefix == entry["key"].lower() or prefix in [a.lower() for a in entry["aliases"]]:
-                return entry, clean_query.strip()
+        # Check special commands (only first token)
+        if len(tokens) == 1:
+            prefix = tokens[0].lower().rstrip(":")
+            special = cls._DB_SPECIAL.get(prefix)
+            if special:
+                return special, clean
 
-        return None, query  # Unknown prefix → pass through
+        # Match each token against registry
+        entries = []
+        for tok in tokens:
+            prefix = tok.lower().rstrip(":")
+            for entry in cls._DB_REGISTRY:
+                if prefix == entry["key"].lower() or prefix in [a.lower() for a in entry["aliases"]]:
+                    if entry not in entries:
+                        entries.append(entry)
+                    break
+
+        if not entries:
+            return None, query
+        if len(entries) == 1:
+            return entries[0], clean
+        return entries, clean
 
     def _allowed_routes(self, enabled_sources: Optional[List[str]]) -> Optional[set]:
         """Derive the set of allowed routes from enabled_sources.
@@ -196,7 +216,7 @@ class OrchestratorAgent:
         """
         if enabled_sources is None:
             return None
-        routes = {"direct", "team"}  # direct + team은 항상 허용
+        routes = {"direct", "notion"}  # direct + notion은 항상 허용
         for src in enabled_sources:
             route = self._SOURCE_ROUTE_MAP.get(src)
             if route:
@@ -273,37 +293,74 @@ class OrchestratorAgent:
         if isinstance(db_entry, str):
             return {"source": "direct", "answer": self._build_db_command_response(db_entry)}
 
+        # Normalize to list for uniform handling
+        if db_entry and not isinstance(db_entry, list):
+            db_entry = [db_entry]
+
         if db_entry:
-            route = db_entry["route"]
             query = clean_query or query
-            logger.info("db_prefix_routed", prefix=db_entry["key"], route=route, query=query[:80])
-
             if not query.strip():
-                help_text = f"**{db_entry['label']}** 데이터소스가 선택되었습니다.\n\n{db_entry['desc']}\n\n질문을 입력해주세요. 예: `@@{db_entry['key']} 이번달 현황 알려줘`"
-                return {"source": route, "answer": help_text}
+                labels = ", ".join(e["label"] for e in db_entry)
+                return {"source": "direct", "answer": f"**{labels}** 데이터소스가 선택되었습니다.\n\n질문을 입력해주세요."}
 
-            # Route directly to the handler
-            handlers = {
-                "bigquery": self._handle_bigquery,
-                "notion": self._handle_notion,
-                "gws": self._handle_gws,
-                "cs": self._handle_cs,
-                "team": self._handle_team,
-                "multi": self._handle_multi,
-            }
-            handler = handlers.get(route, self._handle_direct)
-            if route in ("bigquery", "multi"):
-                result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
-            elif route == "team":
-                result = await self._handle_team(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources)
-            elif route == "direct":
-                result = await self._handle_direct(query, messages, conversation_context, model_type, user_email)
-            else:
-                result = await handler(query, messages, conversation_context, model_type, user_email)
+            # Single source → direct route (fast path)
+            if len(db_entry) == 1:
+                entry = db_entry[0]
+                route = entry["route"]
+                logger.info("db_prefix_routed", prefix=entry["key"], route=route, query=query[:80])
+                handlers = {
+                    "bigquery": self._handle_bigquery,
+                    "notion": self._handle_notion,
+                    "gws": self._handle_gws,
+                    "cs": self._handle_cs,
+                    "team": self._handle_team,
+                    "multi": self._handle_multi,
+                }
+                handler = handlers.get(route, self._handle_direct)
+                if route in ("bigquery", "multi"):
+                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
+                elif route == "notion":
+                    result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])
+                elif route == "team":
+                    result = await self._handle_team(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources)
+                elif route == "direct":
+                    result = await self._handle_direct(query, messages, conversation_context, model_type, user_email)
+                else:
+                    result = await handler(query, messages, conversation_context, model_type, user_email)
+                if "answer" in result:
+                    result["answer"] = ensure_formatting(result["answer"], domain=route)
+                return result
 
-            if "answer" in result:
-                result["answer"] = ensure_formatting(result["answer"], domain=route)
-            return result
+            # Multiple sources → parallel execute and merge
+            logger.info("db_multi_prefix", sources=[e["key"] for e in db_entry], query=query[:80])
+            import asyncio as _aio
+            tasks = []
+            for entry in db_entry:
+                route = entry["route"]
+                if route in ("bigquery", "multi"):
+                    tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)))
+                elif route == "notion":
+                    tasks.append(("notion", entry, self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])))
+                elif route == "cs":
+                    tasks.append(("cs", entry, self._handle_cs(query, messages, conversation_context, model_type, user_email)))
+                elif route == "gws":
+                    tasks.append(("gws", entry, self._handle_gws(query, messages, conversation_context, model_type, user_email)))
+                else:
+                    tasks.append(("direct", entry, self._handle_direct(query, messages, conversation_context, model_type, user_email)))
+
+            results = await _aio.gather(*[t[2] for t in tasks], return_exceptions=True)
+            combined_parts = []
+            for i, res in enumerate(results):
+                label = tasks[i][1]["label"]
+                if isinstance(res, Exception):
+                    combined_parts.append(f"### {label}\n⚠️ 오류: {res}")
+                elif isinstance(res, dict) and "answer" in res:
+                    combined_parts.append(f"### {label}\n{res['answer']}")
+                elif isinstance(res, str):
+                    combined_parts.append(f"### {label}\n{res}")
+
+            combined = "\n\n---\n\n".join(combined_parts)
+            return {"source": "multi", "answer": ensure_formatting(combined, domain="multi")}
 
         # Image present → force direct route (vision LLM)
         if images:
@@ -315,21 +372,32 @@ class OrchestratorAgent:
                 result["answer"] = ensure_formatting(result["answer"], domain="direct")
             return result
 
-        # Step 1: Classify query intent
-        # Fast path: keyword match first, LLM fallback only for short ambiguous queries
-        route = self._keyword_classify(query)
-        is_system_task = query.strip().startswith("### Task:")
-        _DIRECT_LOCK_KW = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi", "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직", "항공", "비행기", "호텔", "숙소", "맛집"]
-        _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
-        if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-            if len(query.strip()) <= 30:
-                flash = get_flash_client()
-                route = await self._classify_with_llm(query, conversation_context, flash)
-        # Apply enabled_sources filter — redirect to direct if route is disabled
+        # Fast path: if enabled_sources maps to a single route, skip classification entirely (like @@)
         allowed = self._allowed_routes(enabled_sources)
-        if allowed is not None and route not in allowed:
-            logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
-            route = "direct"
+        _single_route = None
+        if allowed is not None:
+            _data_routes = allowed - {"direct"}
+            if len(_data_routes) == 1:
+                _single_route = next(iter(_data_routes))
+                logger.info("single_source_fast_path", route=_single_route, enabled_sources=enabled_sources)
+
+        if _single_route:
+            route = _single_route
+        else:
+            # Step 1: Classify query intent
+            # Fast path: keyword match first, LLM fallback only for short ambiguous queries
+            route = self._keyword_classify(query)
+            is_system_task = query.strip().startswith("### Task:")
+            _DIRECT_LOCK_KW = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi", "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직", "항공", "비행기", "호텔", "숙소", "맛집"]
+            _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
+            if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
+                if len(query.strip()) <= 30:
+                    flash = get_flash_client()
+                    route = await self._classify_with_llm(query, conversation_context, flash)
+            # Apply enabled_sources filter — redirect to direct if route is disabled
+            if allowed is not None and route not in allowed:
+                logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
+                route = "direct"
 
         logger.info(
             "orchestrator_routed",
@@ -352,8 +420,8 @@ class OrchestratorAgent:
         handler = handlers.get(route, self._handle_direct)
         if route in ("bigquery", "multi"):
             result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
-        elif route == "team":
-            result = await self._handle_team(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources)
+        elif route == "notion":
+            result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email)
         elif route == "direct" or handler == self._handle_direct:
             result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback)
         else:
@@ -411,50 +479,87 @@ class OrchestratorAgent:
             yield ("done", self._build_db_command_response(db_entry))
             return
 
+        # Normalize to list
+        if db_entry and not isinstance(db_entry, list):
+            db_entry = [db_entry]
+
         if db_entry:
-            route = db_entry["route"]
             query = clean_query or query
-            logger.info("db_prefix_routed_stream", prefix=db_entry["key"], route=route)
-            yield ("source", route)
 
             if not query.strip():
-                yield ("done", f"**{db_entry['label']}** 데이터소스가 선택되었습니다.\n\n{db_entry['desc']}\n\n질문을 입력해주세요.")
+                labels = ", ".join(e["label"] for e in db_entry)
+                yield ("source", "direct")
+                yield ("done", f"**{labels}** 데이터소스가 선택되었습니다.\n\n질문을 입력해주세요.")
                 return
 
-            # For BQ → streaming SQL
-            if route == "bigquery":
-                import asyncio as _aio
-                from app.agents.sql_agent import run_sql_agent_stream
-                _q = asyncio.Queue()
-                _loop = asyncio.get_running_loop()
-                def _bq():
-                    try:
-                        for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=enabled_sources):
-                            _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
-                    except Exception as e:
-                        _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
-                    _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
-                _loop.run_in_executor(None, _bq)
-                while True:
-                    mt, data = await _q.get()
-                    if mt == "end":
-                        break
-                    yield ("chunk", data)
-                yield ("done", "")
-                return
+            # Single source → existing fast path
+            if len(db_entry) == 1:
+                entry = db_entry[0]
+                route = entry["route"]
+                logger.info("db_prefix_routed_stream", prefix=entry["key"], route=route)
+                yield ("source", route + ":" + entry["label"])
 
-            # Non-streaming routes (team, cs, notion, etc.)
-            from app.core.safety import get_circuit
-            circuit = get_circuit(route)
-            handlers = {"notion": self._handle_notion, "gws": self._handle_gws, "cs": self._handle_cs, "team": self._handle_team, "multi": self._handle_multi}
-            handler = handlers.get(route, self._handle_direct)
-            try:
-                if route == "team":
-                    result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources), timeout=15.0)
-                else:
-                    result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=15.0)
-            except asyncio.TimeoutError:
-                result = {"answer": f"⚠️ 분석이 예상보다 오래 걸리고 있습니다.", "source": route}
+                if route == "bigquery":
+                    from app.agents.sql_agent import run_sql_agent_stream
+                    _q = asyncio.Queue()
+                    _loop = asyncio.get_running_loop()
+                    def _bq():
+                        try:
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=enabled_sources):
+                                _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
+                        except Exception as e:
+                            _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
+                        _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
+                    _loop.run_in_executor(None, _bq)
+                    while True:
+                        mt, data = await _q.get()
+                        if mt == "end":
+                            break
+                        yield ("chunk", data)
+                    yield ("done", "")
+                    return
+
+                from app.core.safety import get_circuit
+                circuit = get_circuit(route)
+                handlers = {"gws": self._handle_gws, "cs": self._handle_cs, "team": self._handle_team, "multi": self._handle_multi}
+                handler = handlers.get(route, self._handle_direct)
+                try:
+                    if route == "notion":
+                        result = await asyncio.wait_for(self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"]), timeout=30.0)
+                    elif route == "team":
+                        result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources), timeout=30.0)
+                    else:
+                        result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=30.0)
+                except asyncio.TimeoutError:
+                    result = {"answer": f"⚠️ 분석이 예상보다 오래 걸리고 있습니다.", "source": route}
+            else:
+                # Multiple sources → parallel, merge results
+                logger.info("db_multi_prefix_stream", sources=[e["key"] for e in db_entry])
+                yield ("source", "multi:" + "+".join(e["label"] for e in db_entry))
+
+                tasks = []
+                for entry in db_entry:
+                    r = entry["route"]
+                    if r in ("bigquery", "multi"):
+                        tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)))
+                    elif r == "notion":
+                        tasks.append(("notion", entry, self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])))
+                    elif r == "cs":
+                        tasks.append(("cs", entry, self._handle_cs(query, messages, conversation_context, model_type, user_email)))
+                    else:
+                        tasks.append(("direct", entry, self._handle_direct(query, messages, conversation_context, model_type, user_email)))
+
+                results = await asyncio.gather(*[t[2] for t in tasks], return_exceptions=True)
+                parts = []
+                for i, res in enumerate(results):
+                    label = tasks[i][1]["label"]
+                    if isinstance(res, Exception):
+                        parts.append(f"### {label}\n⚠️ 오류: {res}")
+                    elif isinstance(res, dict) and "answer" in res:
+                        parts.append(f"### {label}\n{res['answer']}")
+                    elif isinstance(res, str):
+                        parts.append(f"### {label}\n{res}")
+                result = {"answer": "\n\n---\n\n".join(parts)}
             if "answer" in result:
                 result["answer"] = ensure_formatting(result["answer"], domain=route)
             answer = result.get("answer", "")
@@ -480,31 +585,43 @@ class OrchestratorAgent:
             yield ("done", ensure_formatting(result.get("answer", ""), domain="direct"))
             return
 
-        route = self._keyword_classify(query)
         is_system_task = query.strip().startswith("### Task:")
 
-        # Wave 1: Emit source hint IMMEDIATELY after keyword classification
-        # This lets the frontend show skeleton UI within ~100ms of request
+        # Fast path: single route from enabled_sources → skip classification (like @@)
+        allowed = self._allowed_routes(enabled_sources)
+        _single_route = None
+        if allowed is not None:
+            _data_routes = allowed - {"direct"}
+            if len(_data_routes) == 1:
+                _single_route = next(iter(_data_routes))
+                logger.info("stream_single_source_fast_path", route=_single_route)
+
+        if _single_route:
+            route = _single_route
+        else:
+            route = self._keyword_classify(query)
+
+        # Wave 1: Emit source hint IMMEDIATELY
         yield ("source", route)
 
-        # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
-        _DIRECT_LOCK = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi"]
-        _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK)
-        if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-            if len(query.strip()) <= 30:
-                flash = get_flash_client()
-                new_route = await self._classify_with_llm(query, conversation_context, flash)
-                if new_route != route:
-                    route = new_route
-                    yield ("source", route)  # Update source if LLM changed the route
+        if not _single_route:
+            # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
+            _DIRECT_LOCK = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi"]
+            _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK)
+            if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
+                if len(query.strip()) <= 30:
+                    flash = get_flash_client()
+                    new_route = await self._classify_with_llm(query, conversation_context, flash)
+                    if new_route != route:
+                        route = new_route
+                        yield ("source", route)
 
-        # Apply enabled_sources filter
-        allowed = self._allowed_routes(enabled_sources)
-        if allowed is not None and route not in allowed:
-            logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
-            if route != "direct":
-                route = "direct"
-                yield ("source", route)
+            # Apply enabled_sources filter
+            if allowed is not None and route not in allowed:
+                logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
+                if route != "direct":
+                    route = "direct"
+                    yield ("source", route)
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:
@@ -604,17 +721,17 @@ class OrchestratorAgent:
             return
 
         # Non-streaming routes (CS, Notion, GWS, Multi) → simulate streaming
-        # Wave 2: Timeout (15s) + CircuitBreaker
+        # Wave 2: Timeout (15s, 30s for gws) + CircuitBreaker
         from app.core.safety import get_circuit
 
         handlers = {
-            "notion": self._handle_notion,
             "gws": self._handle_gws,
             "cs": self._handle_cs,
             "team": self._handle_team,
             "multi": self._handle_multi,
         }
         handler = handlers.get(route, self._handle_direct)
+        _route_timeout = 30.0
 
         # Check circuit breaker before calling
         circuit = get_circuit(route)
@@ -628,15 +745,20 @@ class OrchestratorAgent:
                         handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
                         timeout=30.0,
                     )
+                elif route == "notion":
+                    result = await asyncio.wait_for(
+                        self._handle_qdrant(query, messages, conversation_context, model_type, user_email),
+                        timeout=20.0,
+                    )
                 elif route == "team":
                     result = await asyncio.wait_for(
                         handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources),
-                        timeout=15.0,
+                        timeout=_route_timeout,
                     )
                 else:
                     result = await asyncio.wait_for(
                         handler(query, messages, conversation_context, model_type, user_email),
-                        timeout=15.0,
+                        timeout=_route_timeout,
                     )
                 circuit.record_success()
             except asyncio.TimeoutError:
@@ -941,7 +1063,7 @@ class OrchestratorAgent:
         has_team = any(kw in q for kw in _TEAM_SPECIFIC)
         has_data = any(kw in q for kw in _DATA_OVERRIDE)
         if has_team and not has_data:
-            return "team"
+            return "notion"
 
         # How-to / guide questions about platforms → Notion (not BigQuery)
         if any(kw in q for kw in self._HOWTO_KEYWORDS):
@@ -1003,7 +1125,7 @@ class OrchestratorAgent:
         ]
         # Team resource check — team data lookups (before CS to avoid overlap)
         if any(kw in q for kw in self._TEAM_KEYWORDS):
-            return "team"
+            return "notion"
 
         has_strong_data = any(kw in q for kw in _STRONG_DATA)
         if any(kw in q for kw in self._CS_KEYWORDS) and not has_strong_data:
@@ -1033,6 +1155,9 @@ class OrchestratorAgent:
                 "인플루언서", "반품", "환불", "b2b", "b2c", "거래처", "업체",
                 "리뷰", "평점", "별점", "스마트스토어", "네이버스토어",
                 "국가별", "월별", "팀별", "채널별", "제품별", "브랜드별", "사업부",
+                "데이터", "테이블", "컬럼", "있나요", "존재", "포함",
+                "revenue", "platform", "campaign", "google ads", "cost",
+                "impression", "conversion", "cpc", "cpv", "cpe",
             ]
             if any(t in q for t in _BIZ_CONTEXT):
                 return "bigquery"
@@ -1239,6 +1364,17 @@ class OrchestratorAgent:
             contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
         result = await self.notion_agent.run(contextualized_query, model_type=model_type)
         return {"source": "notion", "answer": result}
+
+    async def _handle_qdrant(self, query, messages, conversation_context, model_type, user_email="", team_key=None):
+        from app.agents.qdrant_agent import run as run_qdrant
+        contextualized_query = query
+        if conversation_context:
+            contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
+        try:
+            result = await run_qdrant(contextualized_query, team_key=team_key, model_type=model_type)
+            return {"source": "notion", "answer": result}
+        except Exception as e:
+            return {"source": "notion", "answer": f"사내 문서 검색 중 오류: {str(e)}"}
 
     async def _handle_gws(
         self,

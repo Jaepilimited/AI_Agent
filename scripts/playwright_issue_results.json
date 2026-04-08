@@ -1,0 +1,32 @@
+[
+  {
+    "id": "7",
+    "title": "Tab switch freeze",
+    "status": "PASS",
+    "detail": "Page responsive after tab switch during streaming"
+  },
+  {
+    "id": "8",
+    "title": "Amount format placeholder",
+    "status": "PASS",
+    "detail": "Response has actual numbers (648 chars)"
+  },
+  {
+    "id": "9",
+    "title": "Quarter comparison context",
+    "status": "WARN",
+    "detail": "Unclear: quarter=0, month=0, len=19"
+  },
+  {
+    "id": "AUTO",
+    "title": "Auto-scroll during streaming",
+    "status": "FAIL",
+    "detail": "Scroll didn't move: before=0, during=0, after=0, height=661"
+  },
+  {
+    "id": "EDIT",
+    "title": "Message edit feature",
+    "status": "PASS",
+    "detail": "Edit worked: new response (93 chars)"
+  }
+]

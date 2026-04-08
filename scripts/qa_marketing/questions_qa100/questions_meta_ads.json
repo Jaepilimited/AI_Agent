@@ -1,502 +1,252 @@
 [
   {
     "id": "MT-001",
-    "query": "전체 광고의 총 건수는 몇 개인가요?",
+    "query": "수집된 전체 광고 건수는 총 몇 개인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-002",
-    "query": "가장 최근 `start_date_formatted`는 언제인가요?",
+    "query": "전체 광고의 평균 활성 기간은 며칠인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-003",
-    "query": "가장 오래된 `end_date_formatted`는 언제인가요?",
+    "query": "가장 긴 활성 기간을 가진 광고의 ad_archive_id와 기간은 얼마인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-004",
-    "query": "모든 광고의 평균 활성 기간(일)은 얼마인가요?",
+    "query": "가장 짧은 활성 기간을 가진 광고의 ad_archive_id와 기간은 얼마인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-005",
-    "query": "고유한 `ad_archive_id`의 총 개수는 몇 개인가요?",
+    "query": "현재 is_active 상태인 광고는 총 몇 건인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-006",
-    "query": "월별 신규 광고 시작 건수 추이를 보여주세요.",
+    "query": "월별로 수집된 광고 건수의 추이를 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-007",
-    "query": "분기별 활성 상태인 광고의 평균 개수 추이를 보여주세요.",
+    "query": "분기별로 ad_type이 'official'인 광고의 시작 건수 추이는 어떻게 되나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-008",
-    "query": "연도별 `country_name`의 고유 개수 변화 추이를 보여주세요.",
+    "query": "연도별 (start_date_formatted 기준) 각 brand의 광고 캠페인 수는 어떻게 변화했나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-009",
-    "query": "주별로 `end_date_formatted`가 만료된 광고의 건수 추이를 보여주세요.",
+    "query": "주별 (collect_date 기준) ad_type이 'partnership'인 광고 중 is_active 상태인 광고의 건수 추이를 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-010",
-    "query": "일별 `ad_type`이 'official'인 광고의 시작 건수 추이를 보여주세요.",
+    "query": "일별 (collect_date 기준) 고유 publisher_platform 수의 변화 추이를 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-011",
-    "query": "가장 많은 광고를 집행한 `country_name` TOP 3는 어디인가요?",
+    "query": "전체 광고 건수 기준으로 상위 3개 country_name은 어디인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-012",
-    "query": "가장 많은 광고를 집행한 `page_name` TOP 5는 무엇인가요?",
+    "query": "가장 많은 종류의 publisher_platform을 사용한 상위 5개 brand는 무엇인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-013",
-    "query": "`start_date_formatted` 기준으로 가장 많은 광고가 시작된 날짜 TOP 10을 알려주세요.",
+    "query": "ad_type이 'official'인 광고 중, page_name별 광고 건수가 가장 많은 상위 10개는 무엇인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-014",
-    "query": "가장 적은 수의 광고를 집행한 `brand`는 무엇인가요?",
+    "query": "가장 적은 수의 광고가 수집된 country_code는 무엇인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-015",
-    "query": "모든 광고의 활성 기간(일)의 중간값은 얼마인가요?",
+    "query": "광고 활성 기간 (end_date_formatted - start_date_formatted)의 중간값은 얼마인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-016",
-    "query": "지난달 대비 이번 달의 신규 광고 시작 건수 증감률은 어떻게 되나요?",
+    "query": "collect_date 기준, 이번 달 전체 광고 건수가 지난달 대비 얼마나 증감했는지 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-017",
-    "query": "작년 동기 대비 올해 `is_active` 상태인 광고의 총 개수는 어떻게 변화했나요?",
+    "query": "작년 동기 (collect_date 기준) 대비 올해 brand 'skin1004'의 is_active 광고 건수 변화는 어떻게 되나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-018",
-    "query": "'KR'과 'US' 두 국가 간의 `ad_type` 'partnership' 광고 건수를 비교해주세요.",
+    "query": "'US'와 'KR' 국가 간 ad_type이 'official'인 광고의 건수를 비교해주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-019",
-    "query": "`publisher_platform`별로 `is_active` 광고의 평균 지속 기간을 비교해주세요.",
+    "query": "publisher_platform 'Facebook'과 'Instagram'을 사용하는 ad_type 'partnership' 광고 중 is_active인 광고의 비율을 비교해주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-020",
-    "query": "'brand_a'와 'brand_b' 두 브랜드의 `official` 광고 시작 건수를 비교해주세요.",
+    "query": "brand 'skin1004'와 다른 brand (예: 'cosmetics') 간 end_date_formatted가 NULL인 광고의 비율을 비교해주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-021",
-    "query": "전체 광고 중 `ad_type`이 'official'인 광고의 비중은 얼마인가요?",
+    "query": "전체 광고 중 ad_type이 'official'인 광고가 차지하는 비중은 얼마인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-022",
-    "query": "`country_name`별로 현재 활성 상태인 광고의 비율을 알려주세요.",
+    "query": "is_active 상태인 광고들 중에서 publisher_platform에 'Facebook'이 포함된 광고의 비율은 얼마인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-023",
-    "query": "`publisher_platform`별 전체 광고 건수 점유율을 보여주세요.",
+    "query": "각 country_name별로 전체 광고 건수에서 차지하는 점유율을 계산해주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-024",
-    "query": "특정 월에 시작된 광고 중 `brand`별 구성비는 어떻게 되나요?",
+    "query": "ad_type이 'partnership'인 광고에 대해, 각 brand별 page_name의 구성비를 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-025",
-    "query": "각 `page_name`이 전체 `is_active` 광고 건수에 기여하는 정도는 얼마인가요?",
+    "query": "page_name 'Centella Ampoule'이 전체 'official' ad_type 광고 수집 건수에 기여하는 정도는 얼마인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-026",
-    "query": "'JP' 국가에서 지난 3개월 동안 시작된 광고 건수는 몇 개인가요?",
+    "query": "country_code 'JP'에서 2023년 1월부터 6월까지 (collect_date 기준) 수집된 광고 건수는 총 몇 건인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-027",
-    "query": "'skin1004' 브랜드의 광고 중 'Facebook' `publisher_platform`에서 집행된 광고의 총 건수를 알려주세요.",
+    "query": "brand가 'skin1004'이고 publisher_platform에 'TikTok'이 포함된 광고의 ad_archive_id와 page_name 목록을 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-028",
-    "query": "특정 `page_name`에서 지난 6개월간 `is_active` 상태였던 광고의 목록을 보여주세요.",
+    "query": "page_name에 'Centella Ampoule'이 포함되고 start_date_formatted가 2022년인 광고들의 ad_type 분포는 어떻게 되나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-029",
-    "query": "`country_code`가 'DE'이고 `ad_type`이 'partnership'이며 `is_active` 상태인 광고의 `ad_archive_id`를 모두 알려주세요.",
+    "query": "country_code가 'DE' 또는 'FR'이고 ad_type이 'partnership'이며 현재 is_active인 광고들의 고유 page_name 리스트는 무엇인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-030",
-    "query": "`start_date_formatted`가 2023년 이후이고 `publisher_platform`에 'Instagram'이 포함된 광고 중 `brand`가 'skin1004'인 광고의 총 건수는 몇 개인가요?",
+    "query": "start_date_formatted가 2023년 1월 1일 이후이고 end_date_formatted가 존재하는 광고들 중, brand별 ad_type별 광고 건수를 집계해주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-031",
-    "query": "`country_name`별 광고 건수를 막대 그래프로 보여주세요.",
+    "query": "country_name별 is_active 상태인 광고 건수를 막대 그래프로 시각화해 주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-032",
-    "query": "`ad_type`별 `is_active` 광고와 비활성 광고의 비율을 파이 차트로 보여주세요.",
+    "query": "collect_date 기준 월별로 brand 'skin1004'의 'official' ad_type 광고 건수 추이를 라인 차트로 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-033",
-    "query": "지난 1년간 `publisher_platform` 'YouTube'에서 시작된 광고 건수 추이를 꺾은선 그래프로 보여주세요.",
+    "query": "publisher_platform별 collect_date에 따른 광고 수집 건수 추이를 시각적으로 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-034",
-    "query": "전체 광고 중 `brand`별 점유율을 파이 차트로 시각화해주세요.",
+    "query": "전체 광고 건수에서 각 ad_type이 차지하는 비중을 파이 차트로 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-035",
-    "query": "각 `country_code`별 `official` 광고와 `partnership` 광고의 수를 비교하는 바 차트를 생성해주세요.",
+    "query": "2023년에 start_date_formatted가 시작된 is_active 광고 중 country_code별 publisher_platform 분포를 스택 바 차트로 시각화해 주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-036",
-    "query": "'US' 국가를 제외한 모든 국가에서 `is_active` 상태인 광고의 총 건수는 몇 개인가요?",
+    "query": "country_code가 'US'가 아닌 모든 국가에서 ad_type이 'official'인 광고의 총 건수는 몇 건인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-037",
-    "query": "`ad_type`이 'official'이 아닌 광고 중 `end_date_formatted`가 NULL이 아닌 광고의 목록을 보여주세요.",
+    "query": "publisher_platform에 'Facebook'이 포함되지 않는 광고들의 brand별 is_active 상태별 건수를 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-038",
-    "query": "'skin1004' 브랜드를 제외한 다른 브랜드들의 `start_date_formatted` 평균은 언제인가요?",
+    "query": "ad_type이 'official' 또는 'partnership'이 아닌 다른 유형이 존재한다면 어떤 것들이 있나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-039",
-    "query": "`publisher_platform`에 'Facebook'이 없는 광고들의 `country_name`별 건수를 알려주세요.",
+    "query": "end_date_formatted가 NULL인 광고를 제외하고, start_date_formatted가 가장 이른 5개 광고의 ad_archive_id와 start_date_formatted는 무엇인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-040",
-    "query": "`country_code`가 'KR' 또는 'JP'가 아닌 `ad_archive_id`의 총 개수는 몇 개인가요?",
+    "query": "특정 ad_archive_id (예: '12345')를 제외한 모든 광고 데이터의 collect_date 범위 (최소/최대)는 어떻게 되나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-041",
-    "query": "2024년에 시작된 `official` 광고 데이터가 있나요?",
+    "query": "start_date_formatted가 2024년인 광고 데이터가 존재하나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-042",
-    "query": "`publisher_platform`에 'TikTok'이 포함된 광고 데이터가 현재 존재하나요?",
+    "query": "brand 'skin1004'의 ad_type이 'partnership'인 광고 데이터가 있나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-043",
-    "query": "특정 `ad_archive_id` '123456789'에 대한 상세 정보를 조회할 수 있나요?",
+    "query": "country_code 'KR'에서 publisher_platform에 'Instagram'이 포함되고 ad_type이 'official'인 광고 정보를 조회할 수 있나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-044",
-    "query": "`snapshot` JSON 데이터에 'display_format' 필드가 없는 광고가 있나요?",
+    "query": "snapshot JSON 필드 내 'display_format' 값에 'VIDEO'가 포함된 광고가 존재하나요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-045",
-    "query": "`end_date_formatted`가 현재보다 미래인 `is_active` 광고가 있나요?",
+    "query": "url 필드 값이 NULL이 아니거나 비어있지 않은 광고 데이터가 존재하는지 확인해 주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-046",
-    "query": "`end_date_formatted`와 `start_date_formatted`가 동일하여 활성 기간이 0일인 광고의 건수는 몇 개인가요?",
+    "query": "start_date_formatted와 end_date_formatted가 동일하여 활성 기간이 0인 광고가 있나요? 있다면 몇 건인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-047",
-    "query": "가장 최근에 수집된 `collect_date`의 광고 1건에 대한 모든 정보를 보여주세요.",
+    "query": "collect_date 기준으로 가장 최근에 수집된 광고 데이터 1건의 모든 상세 정보를 보여주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-048",
-    "query": "가장 오래전에 시작된 `official` 광고의 `ad_archive_id`는 무엇인가요?",
+    "query": "가장 오래된 start_date_formatted를 가진 광고의 brand, country_name, page_name은 무엇인가요?",
     "table": "meta_ads"
   },
   {
     "id": "MT-049",
-    "query": "`end_date_formatted`가 NULL인 광고는 총 몇 건인가요?",
+    "query": "end_date_formatted가 NULL인 광고들을 ad_type별로 분류하여 건수를 집계해주세요.",
     "table": "meta_ads"
   },
   {
     "id": "MT-050",
-    "query": "`page_name`이 빈 문자열인 광고가 있나요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-051",
-    "query": "`country_name`별 `ad_archive_id`의 고유 개수를 집계해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-052",
-    "query": "`brand`별 `is_active` 상태인 광고의 총 건수를 집계해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-053",
-    "query": "`ad_type`별 `start_date_formatted`의 평균 날짜를 집계해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-054",
-    "query": "`publisher_platform`별로 `end_date_formatted`가 만료되지 않은 광고의 건수를 집계해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-055",
-    "query": "`is_active` 여부에 따라 `ad_archive_id`의 총 개수를 집계해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-056",
-    "query": "`collect_date` 기준으로 최근 3개월 동안 수집된 광고의 `country_name`별 건수를 알려주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-057",
-    "query": "2023년 하반기(7월~12월)에 `start_date_formatted`된 광고의 `brand`별 총 건수는 몇 개인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-058",
-    "query": "2022년 1분기부터 3분기까지(`start_date_formatted` 기준) `official` 광고의 총 건수는 몇 건인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-059",
-    "query": "2023년 40주차에 `end_date_formatted`가 종료된 광고들의 목록을 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-060",
-    "query": "2023년 5월 1일부터 5월 31일까지 `collect_date`된 광고 중 `ad_type`이 'partnership'인 광고의 `ad_archive_id`를 모두 알려주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-061",
-    "query": "지난 분기 대비 이번 분기 `official` 광고 시작 건수의 성장률은 얼마인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-062",
-    "query": "전년 대비 `is_active` 상태가 해제된 광고의 감소율을 계산해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-063",
-    "query": "월별 `publisher_platform` 'Instagram' 광고 건수의 증감 추이를 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-064",
-    "query": "`country_name` 'KR'의 월별 신규 광고 시작 건수의 최대 변동폭은 얼마인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-065",
-    "query": "특정 `page_name`의 `is_active` 상태 변화가 감지된 광고 목록을 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-066",
-    "query": "`ad_type`별 광고의 평균 활성 기간(일)은 얼마인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-067",
-    "query": "`ad_archive_id`별로 광고가 집행된 `publisher_platform`의 평균 개수는 몇 개인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-068",
-    "query": "주별 신규 광고 시작 건수의 4주 이동평균을 계산해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-069",
-    "query": "각 `brand`별로, `publisher_platform` 개수를 가중치로 하여 `is_active` 광고의 평균 `collect_date`를 계산해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-070",
-    "query": "`ad_archive_id`별로 `collect_date`의 평균 수집 주기는 며칠인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-071",
-    "query": "2023년 월별 `official` 광고 시작 건수의 누적 합계를 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-072",
-    "query": "올해(`collect_date` 기준) 현재까지 `is_active` 광고의 총 건수는 몇 개인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-073",
-    "query": "이번 달(`collect_date` 기준) 현재까지 `partnership` 광고의 총 건수는 몇 개인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-074",
-    "query": "2022년 한 해 동안 `start_date_formatted` 기준으로 시작된 전체 광고의 총 건수를 알려주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-075",
-    "query": "각 분기별 `country_name` 'KR'의 신규 광고 시작 건수 누적치를 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-076",
-    "query": "`publisher_platform`에 'Facebook'과 'Instagram'이 모두 포함된 광고의 총 건수는 몇 개인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-077",
-    "query": "활성 기간이 30일 이상인 광고 중 `ad_type`이 'official'인 광고의 `ad_archive_id` 목록을 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-078",
-    "query": "`collect_date`가 2023년 6월 30일 이하인 광고 중 `is_active`가 TRUE인 광고의 `brand`별 건수는?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-079",
-    "query": "`snapshot` JSON에서 'display_format'이 'video'인 광고의 `country_name`별 건수를 집계해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-080",
-    "query": "`start_date_formatted`가 2023년이고 `end_date_formatted`가 2024년인 광고의 총 건수는 몇 개인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-081",
-    "query": "`ad_archive_id` '987654321'에 대한 `collect_date`, `country_name`, `brand`, `ad_type`, `url` 정보를 상세하게 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-082",
-    "query": "`page_name`이 'SKIN1004 Official Page'인 `is_active` 광고들의 `snapshot` JSON 데이터를 모두 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-083",
-    "query": "특정 `url` 'https://example.com/ad_campaign_x'을 가진 광고의 모든 컬럼 값을 조회해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-084",
-    "query": "'skin1004' 브랜드의 모든 `official` 광고의 `start_date_formatted`와 `end_date_formatted`를 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-085",
-    "query": "`publisher_platform`이 'Google Ads'인 광고의 `ad_archive_id`와 `page_name` 목록을 상세하게 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-086",
-    "query": "`country_name`과 `ad_type`별로 `is_active` 광고의 총 건수를 교차 분석하여 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-087",
-    "query": "`publisher_platform`별로 2023년 월별 신규 광고 시작 건수를 교차 분석해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-088",
-    "query": "`brand`별 `is_active` 여부에 따른 광고 건수를 교차 분석 테이블로 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-089",
-    "query": "`collect_date` (월별)와 `country_name`별로 `partnership` 광고의 수를 교차 분석해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-090",
-    "query": "`page_name`별 `publisher_platform` (각 플랫폼)에 따른 `start_date_formatted`의 평균을 교차 분석해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-091",
-    "query": "최근 한 달간 우리 광고 캠페인 현황은 전반적으로 어떤가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-092",
-    "query": "현재 `is_active` 상태인 광고 중 `publisher_platform`이 가장 다양한 `ad_archive_id`는 무엇인가요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-093",
-    "query": "'KR' 국가에서 `official` 광고의 주요 특징들을 요약해서 알려주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-094",
-    "query": "활성 기간이 길고 여러 `publisher_platform`에서 집행된 `ad_archive_id` 몇 개를 추천해줄 수 있나요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-095",
-    "query": "`snapshot` JSON 데이터에서 'display_format'이 'image'인 광고는 주로 어떤 `country_name`에서 많이 집행되나요?",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-096",
-    "query": "특정 `brand`가 100개 이상의 `is_active` 광고를 보유한 `country_name` 목록을 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-097",
-    "query": "각 `country_name`별로 월별 신규 광고 시작 건수의 전월 대비 증가율을 구하고, 이를 누적 순위로 정렬해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-098",
-    "query": "전체 광고의 평균 활성 기간보다 긴 활성 기간을 가진 `ad_archive_id`와 그 기간을 보여주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-099",
-    "query": "`country_name`을 행으로, `ad_type`을 열로 하여 각 교차점의 `is_active` 광고 건수를 집계하는 피벗 테이블을 생성해주세요.",
-    "table": "meta_ads"
-  },
-  {
-    "id": "MT-100",
-    "query": "`brand`별, `ad_type`별로 `start_date_formatted`가 가장 빠른 광고의 `ad_archive_id`를 각 그룹 내에서 순위를 매겨 보여주세요.",
+    "query": "publisher_platform 필드가 NULL이거나 빈 리스트인 광고 데이터가 있다면 그 ad_archive_id 목록을 보여주세요.",
     "table": "meta_ads"
   }
 ]

@@ -125,7 +125,9 @@ MARKETING_TABLES = [
     ("skin1004-319714.Platform_Data.raw_data", "플랫폼 메트릭스",
      ["플랫폼", "platform", "순위", "rank", "가격", "할인", "채널별 제품", "채널별 가격"]),
     ("skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS", "인플루언서 마케팅",
-     ["인플루언서", "influencer", "팔로워", "캠페인", "kol"]),
+     ["인플루언서", "influencer", "팔로워", "캠페인", "kol",
+      "cpv", "조회수", "좋아요", "댓글수", "저장수", "공유수", "시딩",
+      "유가 협업", "무가 협업", "에이전시", "티어", "마케팅 성과"]),
     ("skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance", "아마존 검색 분석",
      ["아마존 검색", "amazon search", "장바구니", "cart", "ctr", "전환율", "asin"]),
     ("skin1004-319714.Review_Data.New_Amazon_Review", "아마존 리뷰",
@@ -283,7 +285,18 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     logger.info("schema_context_built", total_tables=1 + len(matched_entries), query_matched=len(matched_entries))
 
     today = datetime.now().strftime("%Y-%m-%d")
-    date_context = f"\n\n## 오늘 날짜\n{today} (사용자가 '이번 달', '지난 달', '올해' 등 상대적 날짜를 사용하면 이 날짜를 기준으로 계산하세요)"
+    this_year = datetime.now().year
+    this_month = datetime.now().month
+    last_month = this_month - 1 if this_month > 1 else 12
+    last_month_year = this_year if this_month > 1 else this_year - 1
+    date_context = (
+        f"\n\n## ⚠️ 오늘 날짜 (최우선 적용)\n"
+        f"오늘: {today}\n"
+        f"- **이번 달** = {this_year}년 {this_month}월 → `EXTRACT(YEAR FROM Date) = {this_year} AND EXTRACT(MONTH FROM Date) = {this_month}`\n"
+        f"- **지난 달** = {last_month_year}년 {last_month}월 → `EXTRACT(YEAR FROM Date) = {last_month_year} AND EXTRACT(MONTH FROM Date) = {last_month}`\n"
+        f"- **올해** = {this_year}년 → `EXTRACT(YEAR FROM Date) = {this_year}`\n"
+        f"- ⛔ '이번 달'이라고 하면 반드시 {this_month}월! 다른 월로 바꾸지 마세요. 데이터가 적어도 {this_month}월이 맞습니다."
+    )
 
     # Include conversation context if available
     conv_context = state.get("conversation_context", "")
@@ -301,10 +314,16 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             f"\n\n## ⚠️ 브랜드 필터 (최우선 적용)\n"
             f"매출/제품 관련 SQL에 반드시 `WHERE Brand IN ({brand_in})` 조건을 추가하세요.\n"
         )
-    # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름 (ETC 제외 등)
+    # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름
 
     sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성."
-    full_prompt = f"{system_prompt}{schema_context}{date_context}{conv_section}{brand_section}\n\n## 사용자 질문\n{query}{sql_only_reminder}"
+    # Inject current month into ambiguous date references in the query itself
+    _month_keywords = {"이번 달": f"{this_year}년 {this_month}월(이번 달)", "이번달": f"{this_year}년 {this_month}월(이번달)", "지난 달": f"{last_month_year}년 {last_month}월(지난 달)", "지난달": f"{last_month_year}년 {last_month}월(지난달)"}
+    _resolved_query = query
+    for _mk, _mv in _month_keywords.items():
+        if _mk in _resolved_query:
+            _resolved_query = _resolved_query.replace(_mk, _mv)
+    full_prompt = f"{system_prompt}{schema_context}{conv_section}{brand_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
 
     try:
         sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=4096)
@@ -684,7 +703,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             answer = answer_future.result()
             # Give chart up to 3s after answer is ready; skip if slow
             try:
-                chart_markdown = chart_future.result(timeout=1.5)
+                chart_markdown = chart_future.result(timeout=8.0)
             except concurrent.futures.TimeoutError:
                 chart_markdown = None
                 logger.info("chart_generation_skipped_timeout")
@@ -882,9 +901,16 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
         logger.info("chart_config_raw", config_json=config_json[:500])
         config = json.loads(config_json)
 
+        # Force chart when user explicitly requested visualization
+        _CHART_REQUEST = ("차트", "그래프", "시각화", "그려", "그려줘", "chart", "graph", "시각화해", "도표", "플롯")
+        user_requested_chart = any(kw in query.lower() for kw in _CHART_REQUEST)
         if not config.get("needs_chart"):
-            logger.info("chart_not_needed", config=config)
-            return ""
+            if user_requested_chart:
+                logger.info("chart_forced_by_user_request", config=config)
+                config["needs_chart"] = True
+            else:
+                logger.info("chart_not_needed", config=config)
+                return ""
 
         # Force line chart for monthly/time-series queries
         _TREND_HINTS = ("월별", "월간", "추이", "트렌드", "trend", "monthly")
@@ -1110,8 +1136,9 @@ async def run_sql_agent(
         "enabled_sources": enabled_sources,
     }
 
+    import asyncio
     logger.info("sql_agent_started", query=query)
-    result = sql_agent.invoke(initial_state)
+    result = await asyncio.to_thread(sql_agent.invoke, initial_state)
     logger.info("sql_agent_completed", answer_length=len(result.get("answer", "")))
     return result["answer"]
 
@@ -1201,7 +1228,7 @@ def run_sql_agent_stream(
 
     # Chart should be done by now (ran in parallel with answer streaming)
     try:
-        chart_markdown = chart_future.result(timeout=2.0)
+        chart_markdown = chart_future.result(timeout=8.0)
         if chart_markdown:
             yield f"\n\n#### 시각화\n{chart_markdown}"
     except (concurrent.futures.TimeoutError, Exception):

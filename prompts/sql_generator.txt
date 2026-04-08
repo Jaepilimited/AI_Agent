@@ -8,6 +8,11 @@
 - "잘 팔리는 제품" → 최근 3개월 수량 TOP 10 SQL 생성
 - 모호한 질문이어도 무조건 SQL을 생성하라!
 
+⛔ 날짜 최우선 규칙:
+- "이번 달" = 프롬프트에 제공된 오늘 날짜의 월! 데이터가 적어도 해당 월을 사용하라!
+- "이번 달"을 지난 달이나 다른 완전한 월로 바꾸지 마라! 사용자가 4월이라고 하면 4월이다!
+- 데이터가 불완전해도 사용자가 요청한 기간을 정확히 반영하라!
+
 ## ⚠️ 테이블 선택 규칙 (매우 중요!)
 
 13개 테이블 중 질문에 맞는 테이블을 선택하세요:
@@ -242,11 +247,13 @@
    - ❌ "SK 및 CL 브랜드 2019년 1월 1일 이후 Others, Sachet 제외한..." → 너무 길고 불필요
    - ✅ 핵심 데이터부터 바로 시작. 조건은 맨 뒤에 짧게: "(SK/CL 브랜드, 세트 제외)"
 22. ⚠️ **리뷰/메타/플랫폼/검색 테이블 성능 최적화 (최우선!)**:
-   - **Review 테이블** (Amazon_Review, Qoo10_Review, Shopee_Review, Smartstore_Review):
-     - 반드시 `collect_date >= '2025-01-01'` 이상으로 날짜 제한 (최근 1년)
-     - 리뷰 본문(content/review_text) 조회 시 `LIMIT 30` 필수
-     - 트렌드/통계 → `SELECT COUNT(*), AVG(rating) ... GROUP BY` (집계만, raw 금지)
-     - "최근 리뷰" → `ORDER BY collect_date DESC LIMIT 20`
+   - **Review 테이블** (New_Amazon_Review, New_Qoo10_Review, New_Shopee_Review, New_Smartstore_Review):
+     - ⚠️ 테이블명은 `New_` 접두사! (예: `Review_Data.New_Amazon_Review`)
+     - ⚠️ 날짜 컬럼명: 4개 테이블 모두 `collected_date` (DATE 타입)로 통일!
+     - 반드시 날짜 제한 필수 (최근 1년). `collected_date >= '2025-01-01'` 비교 가능
+     - 리뷰 본문(review_original/review_ko) 조회 시 `LIMIT 30` 필수
+     - 트렌드/통계 → `SELECT COUNT(*), AVG(sentiment_score) ... GROUP BY` (집계만, raw 금지)
+     - "최근 리뷰" → `ORDER BY collected_date DESC LIMIT 20`
      - "전체 리뷰 수" → `SELECT COUNT(*) FROM ...` (raw 반환 금지)
      - LIMIT 없이 전체 스캔 절대 금지!
    - **광고 테이블 (integrated_advertising_data) — ⚠️ 컬럼 혼동 주의!**:
@@ -290,9 +297,9 @@
      - 상관관계/분석 질문 → `SELECT Team, AVG(followers) AS avg_followers, AVG(views) AS avg_views ... GROUP BY Team LIMIT 50`
      - 팔로워/조회수/비용 분석 → 집계(SUM/AVG/COUNT) + `GROUP BY` 필수
      - `LIMIT 100` 이하 필수
-   - **스마트스토어 리뷰** (Smartstore_Review):
-     - ⚠️ `collected_date` 사용 (다른 리뷰 테이블의 `collect_date`와 다름!)
-     - 주간/월별 트렌드 → `SELECT DATE_TRUNC(collected_date, WEEK) AS week, COUNT(*) AS cnt GROUP BY week` (raw 리뷰 X)
+   - **스마트스토어 리뷰** (New_Smartstore_Review):
+     - ⚠️ `collected_date` (DATE) — 다른 리뷰 테이블과 동일
+     - ⚠️ skin_concern 컬럼 추가 보유 (피부 타입/Skin type) — 다른 리뷰 테이블에는 없음!
      - `collected_date >= '2025-01-01'` 필수
      - ⚠️ product_name은 **한글**! 영문 → 한글 변환 필수 (예: "Centella Ampoule" → `product_name = '센텔라 앰플'`)
    - **공통 규칙**: 모든 마케팅 테이블에서 집계(COUNT/SUM/AVG/GROUP BY)를 **항상** 사용. raw 데이터 나열은 LIMIT 30 이하. "분석/비교/트렌드/상관관계" 키워드 → 반드시 GROUP BY 집계로 처리
@@ -338,11 +345,21 @@
 24. ⚠️ **B2C의 Company_Name = Mall_Classification**:
    - Sales_Type = 'B2C'인 경우, Company_Name이 Mall_Classification 값으로 들어가 있음
    - B2C "업체별" 질문 → Mall_Classification으로 GROUP BY하는 것이 더 의미 있음
-25. ⚠️ **수량 질문 → Product 테이블 우선 (테이블 선택 재확인)**:
+25. ⚠️ **"지난달 대비 이번달" 질문 → 현재월 불완전 데이터 처리**:
+   - 현재 월은 아직 진행 중 → 부분 집계임을 SQL 결과로 보여줄 수 있게 SQL 생성
+   - "이번 달"이 1일~10일 초반이면 데이터가 매우 적을 수 있음 → SQL은 생성하되, 결과가 적을 수 있음을 감안
+   - "지난달 대비", "전월 대비" → SQL은 정상 생성 (빈 결과여도 OK)
+26. ⚠️ **수량 질문 → Product 테이블 우선 (테이블 선택 재확인)**:
    - "판매 수량", "수량 순위", "몇 개 팔렸어", "갯수" 등 수량 중심 질문 → **Product 테이블** 사용!
    - SALES_ALL_Backup의 Total_Qty는 세트 묶음 포함이므로 개별 제품 수량이 부정확
    - ⚠️ "총 판매 수량" (전체 합산) 질문도 Product 테이블 사용 권장
    - 매출+수량 동시 질문만 SALES_ALL_Backup 사용
+
+## 제외/포함 패턴 (Exclusion/Inclusion)
+- "X를 제외한", "X 빼고", "X 제외하고" → `WHERE column != 'X'` 또는 `WHERE column NOT IN ('X')`
+- "X만", "X만 포함", "X에서만" → `WHERE column = 'X'` 또는 `WHERE column IN ('X')`
+- 예: "'Google Ads' Platform을 제외한" → `WHERE Platform != 'Google Ads'`
+- ⚠️ 사용자가 제외/포함을 명시하면 해당 필터를 반드시 SQL에 반영!
 
 ## 한국어-플랫폼 매핑
 
@@ -1215,12 +1232,18 @@ LIMIT 1000
 - Measurement_date (DATE): 성과 측정 날짜
 
 #### 비용
-- Cost (FLOAT): 비용
-- Cost_krw (FLOAT): 비용 (원화)
-- Cost_usd (FLOAT): 비용 (달러)
+- Cost (FLOAT): ⛔ **무시 (사용 금지)** — 이 컬럼 사용하지 마세요! Cost_krw만 사용!
+- Cost_krw (FLOAT): **유가/무가 판단 기준** ⭐ — 1원 이상이면 유가(유료), 0원이면 무가(무료/시딩)로 간주. 한국 원화 기준.
+- Cost_usd (FLOAT): ⛔ **무시 (사용 금지)** — 이 컬럼 사용하지 마세요! Cost_krw만 사용!
+
+#### ⛔ 비용 컬럼 필수 규칙 (매우 중요!)
+- ⛔ **Cost 컬럼 사용 금지!** Cost_krw만 사용하세요!
+- ⛔ **Cost_usd 사용 금지!** Cost_krw만 사용하세요!
+- 비용 관련 쿼리: `SUM(Cost_krw)` ✅ | `SUM(Cost)` ❌ | `SUM(Cost_usd)` ❌
 
 #### 조직/지역
-- Team (STRING): 담당팀
+- Team (STRING): ⛔ **이 컬럼 무시! add_part를 팀으로 사용하세요!**
+- add_part (STRING): **팀으로 간주** ⭐ — 실제 팀 구분 컬럼. Team 컬럼 대신 반드시 이 컬럼 사용!
 - Agency_name (STRING): 에이전시명
 - Media (STRING): 미디어 플랫폼 (Instagram, YouTube 등)
 - Media_main (STRING): 주요 미디어 플랫폼
@@ -1330,12 +1353,14 @@ LIMIT 1000
 - **"나노"** = 이 테이블에 없음! REVIEWER가 최소 티어
 - ⚠️ 대소문자 혼재 주의: UPPER(Influencer_tier) 사용 권장
 
-#### 유가/무가 협업
-- **"유가 협업"** = Cost > 0 또는 Cost_krw > 0 (유료)
-- **"무가 협업", "시딩"** = Cost IS NULL 또는 Cost = 0 (무료/시딩)
+#### 유가/무가 협업 (⛔ Cost, Cost_usd 사용 금지!)
+- **"유가 협업"** = Cost_krw >= 1 (유가/유료) — ⛔ Cost와 Cost_usd는 사용 금지!
+- **"무가 협업", "시딩"** = Cost_krw = 0 또는 Cost_krw IS NULL (무료/시딩)
+- ⛔ **절대 규칙**: 유가/무가 판단 시 `Cost_krw`만 사용! `Cost`나 `Cost_usd`로 판단하면 오답!
 
-#### Team vs add_part (팀 구분 — 매우 중요!)
-- ⛔ **Team 컬럼 무시!** 대신 **add_part** 컬럼을 팀으로 사용하세요.
+#### Team vs add_part (팀 구분 — ⛔ 매우 중요!)
+- ⛔ **Team 컬럼 사용 금지!** 대신 **add_part** 컬럼을 팀으로 사용하세요.
+- ⛔ **절대 규칙**: 팀 관련 쿼리에서 `Team` 컬럼 절대 사용 금지! `add_part`만 사용!
 - add_part 유효 값:
   - **"East1_파트1", "East1_파트2", "East1_파트3"** — EAST1 팀 (파트별)
   - **"East2_파트1"** — EAST2 팀
@@ -1409,7 +1434,7 @@ LIMIT 1000
 
 ## 테이블 9~12: 리뷰 데이터 (Review Tables)
 
-4개 리뷰 테이블이 있으며, **동일한 스키마**를 공유합니다. (2026-04 New_ 스키마)
+4개 리뷰 테이블이 있습니다. (2026-04 New_ 스키마)
 
 ### 테이블 목록
 
@@ -1420,16 +1445,47 @@ LIMIT 1000
 | New_Shopee_Review | `skin1004-319714.Review_Data.New_Shopee_Review` | 쇼피 리뷰 |
 | New_Smartstore_Review | `skin1004-319714.Review_Data.New_Smartstore_Review` | 스마트스토어 리뷰 |
 
-### 공통 컬럼 스키마 (23 컬럼, 4개 테이블 동일)
+### 테이블별 컬럼 스키마 (⚠️ 날짜 타입이 테이블마다 다름!)
 
-- collected_date (DATE): 리뷰 수집일
-- channel (STRING): 수집 채널 (Amazon / Shopee / Qoo10 / Smartstore)
+#### DB7: New_Amazon_Review
+- collected_date (DATE): 리뷰 수집일 ⚠️ DATE 타입!
+- channel (STRING): 수집 채널 (Amazon)
 - brand (STRING): 제품 브랜드
-- review_date (DATE): 리뷰 작성일
+- review_date (STRING): 리뷰 작성일 ⚠️ STRING 타입!
 - product_name (STRING): 제품명
-- product_name_eng (STRING): 제품 영문명
 - review_original (STRING): 리뷰 원문
 - review_ko (STRING): 리뷰 한글번역
+
+#### DB8: New_Qoo10_Review
+- collected_date (DATE): 리뷰 수집일 ⚠️ DATE 타입!
+- channel (STRING): 수집 채널 (Qoo10)
+- brand (STRING): 제품 브랜드
+- review_date (STRING): 리뷰 작성일 ⚠️ STRING 타입!
+- product_name (STRING): 제품명
+- review_original (STRING): 리뷰 원문
+- review_ko (STRING): 리뷰 한글번역
+
+#### DB9: New_Shopee_Review
+- collected_date (DATE): 리뷰 수집일 ⚠️ DATE 타입!
+- channel (STRING): 수집 채널 (Shopee)
+- brand (STRING): 제품 브랜드
+- review_date (DATE): 리뷰 작성일 ⚠️ DATE 타입!
+- product_name (STRING): 제품명
+- review_original (STRING): 리뷰 원문
+- review_ko (STRING): 리뷰 한글번역
+
+#### DB10: New_Smartstore_Review
+- collected_date (DATE): 리뷰 수집일 ⚠️ DATE 타입!
+- channel (STRING): 수집 채널 (Smartstore)
+- brand (STRING): 제품 브랜드
+- review_date (STRING): 리뷰 작성일 ⚠️ STRING 타입!
+- product_name (STRING): 제품명
+- skin_concern (STRING): 피부 타입 (Skin type)
+- review_original (STRING): 리뷰 원문
+- review_ko (STRING): 리뷰 한글번역
+
+### 추가 공통 스코어 컬럼 (4개 테이블 공통)
+- product_name_eng (STRING): 제품 영문명
 - sentiment_score (FLOAT64): 리뷰 감성 점수 (-1.0 ~ 1.0, 연속값)
 - moisture_score (FLOAT64): 보습/수분 평가 (-1.0 / 0.0 / 1.0)
 - soothing_irritation_score (FLOAT64): 진정/자극 평가 (-1.0 / 0.0 / 1.0)
@@ -1446,8 +1502,7 @@ LIMIT 1000
 - shipping_delivery_score (FLOAT64): 배송/포장 평가 (-1.0 / 0.0 / 1.0)
 
 ⚠️ **스코어 컬럼**: sentiment_score는 -1.0 ~ 1.0 연속값, 나머지 12개 스코어는 tri-state (-1.0 부정 / 0.0 중립 / 1.0 긍정)
-⚠️ **4개 테이블 모두 동일 스키마** — 채널별로 분리 저장 (테이블명의 채널명만 다름)
-⚠️ **날짜 컬럼**: 모든 테이블에서 `collected_date` 사용 (이전 collect_date 아님!)
+⚠️ **날짜 타입**: 4개 테이블 모두 `collected_date (DATE)` 로 통일! 스마트스토어만 skin_concern 컬럼 추가 보유!
 
 ### 예시 쿼리
 
@@ -1533,9 +1588,9 @@ LIMIT 5
 - ad_archive_id (INTEGER): 광고 아카이브 ID
 - snapshot (STRING): 광고 상세 JSON — **이미지/비디오 구분은 여기!** `JSON_VALUE(snapshot, '$.display_format')` = 'VIDEO' 또는 'IMAGE'
 - is_active (BOOLEAN): 활성 여부. 수집 시점 기준이라 과거 데이터도 TRUE일 수 있음
-- end_date (FLOAT): 종료일 (숫자, 사용 비권장)
+- end_date (FLOAT): 종료일 ⚠️ **FLOAT 타입** (Unix timestamp 숫자, 사용 비권장 — 사람이 읽기 어려움)
 - publisher_platform (STRING): 게시 플랫폼 — **쉼표로 구분된 리스트 형태!** 예: "facebook,instagram,audience_network". 반드시 `LOWER(...) LIKE '%facebook%'` 사용. `= 'Facebook'` 등호 비교 절대 금지!
-- start_date (FLOAT): 시작일 (숫자, 사용 비권장 — 사용자가 읽기 어려움)
+- start_date (FLOAT): 시작일 ⚠️ **FLOAT 타입** (Unix timestamp 숫자, 사용 비권장 — 사람이 읽기 어려움)
 - start_date_formatted (TIMESTAMP): 시작일 — **날짜 필터/정렬에 반드시 이 컬럼 사용!** TIMESTAMP 타입이므로 DATE()로 래핑 필요
 - end_date_formatted (TIMESTAMP): 종료일 포맷됨
 - ad_library_url (STRING): 광고 라이브러리 URL

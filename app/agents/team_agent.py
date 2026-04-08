@@ -3,6 +3,7 @@
 DB HUB에서 동기화된 팀별 자료(Google Sheets, Notion 등)를
 키워드 매칭으로 검색하여 링크와 설명을 반환.
 """
+import asyncio
 import re
 from typing import Dict, List, Optional
 
@@ -222,7 +223,7 @@ async def run(query: str, model_type: str = "gemini", allowed_resources: Optiona
 """
 
     try:
-        answer = llm.generate(prompt, temperature=0.3, max_output_tokens=2048)
+        answer = await asyncio.to_thread(llm.generate, prompt, temperature=0.3, max_output_tokens=2048)
         return answer
     except Exception as e:
         logger.error("team_agent_failed", error=str(e))

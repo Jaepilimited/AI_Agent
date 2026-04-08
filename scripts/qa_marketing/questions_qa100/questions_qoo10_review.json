@@ -1,0 +1,502 @@
+[
+  {
+    "id": "RQ-001",
+    "query": "1. 전체 리뷰의 총 개수는 몇 건인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-002",
+    "query": "2. 전체 리뷰의 평균 감성 점수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-003",
+    "query": "3. 가장 높은 '수분' 점수를 받은 리뷰의 점수는 몇 점인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-004",
+    "query": "4. 가장 낮은 '진정/자극' 점수를 받은 리뷰의 점수는 몇 점인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-005",
+    "query": "5. 모든 리뷰의 '텍스처' 점수 합계는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-006",
+    "query": "6. 월별 평균 감성 점수 추이를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-007",
+    "query": "7. 분기별 총 리뷰 수는 어떻게 변했나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-008",
+    "query": "8. 연도별 제품별 '트러블/피지/모공' 점수 평균 추이는 어떤가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-009",
+    "query": "9. 주별 '수분' 점수의 평균 변화를 알려주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-010",
+    "query": "10. 일별 '향' 점수 평균 추이를 그래프로 보여줄 수 있나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-011",
+    "query": "11. 평균 감성 점수가 가장 높은 TOP 3 제품은 무엇인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-012",
+    "query": "12. '톤/미백' 점수가 가장 낮은 제품은 무엇인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-013",
+    "query": "13. 리뷰 수가 가장 많은 TOP 5 제품과 그 리뷰 수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-014",
+    "query": "14. 평균 '텍스처' 점수가 높은 TOP 10 제품 리스트를 알려주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-015",
+    "query": "15. 전체 제품 중 평균 '수분' 점수의 중간값에 해당하는 제품은 무엇인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-016",
+    "query": "16. 전월 대비 전체 리뷰의 평균 감성 점수 변화율은 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-017",
+    "query": "17. 특정 제품(예: '센텔라 앰플')의 전년 동기 대비 리뷰 수 증감은 어떤가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-018",
+    "query": "18. 채널별(가정: Qoo10 내 서브 채널 또는 지역 구분) 평균 '진정/자극' 점수를 비교해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-019",
+    "query": "19. 브랜드별(가정: SKIN1004 내 서브 브랜드) 평균 '수분' 점수를 비교해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-020",
+    "query": "20. 가장 많이 리뷰된 제품과 두 번째로 많이 리뷰된 제품의 평균 감성 점수를 비교해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-021",
+    "query": "21. 전체 리뷰 중 '센텔라 앰플' 제품이 차지하는 리뷰 수 비중은 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-022",
+    "query": "22. 전체 리뷰 중 긍정 감성(sentiment_score > 0) 리뷰의 비율은 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-023",
+    "query": "23. 각 감성 점수 카테고리(수분, 진정 등)의 평균 점수가 전체 카테고리 평균 점수 합계에서 차지하는 비율은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-024",
+    "query": "24. 월별 총 리뷰 수의 전체 리뷰 수 대비 점유율 추이는 어떤가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-025",
+    "query": "25. 특정 기간 동안, '트러블/피지/모공' 점수가 가장 높은 제품이 전체 '트러블/피지/모공' 점수 합계에 기여하는 정도는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-026",
+    "query": "26. 2023년 3분기 동안 '센텔라 앰플' 제품의 평균 '수분' 점수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-027",
+    "query": "27. 감성 점수가 0.7 이상인 리뷰 중, '진정/자극' 점수가 가장 높은 제품은 무엇인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-028",
+    "query": "28. 'Qoo10' 채널에서 'SKIN1004' 브랜드 제품 중 가장 최근에 수집된 리뷰의 제품명은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-029",
+    "query": "29. 2023년 1월부터 6월까지, '텍스처' 점수가 평균 이상인 제품들의 총 리뷰 수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-030",
+    "query": "30. '향' 점수가 0.5 미만이면서 '톤/미백' 점수가 0.8 이상인 제품들의 평균 감성 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-031",
+    "query": "31. 지난 1년간 월별 평균 감성 점수 추이를 꺾은선 그래프로 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-032",
+    "query": "32. 제품별 평균 '수분' 점수를 막대 차트로 시각화해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-033",
+    "query": "33. 분기별 총 리뷰 수 변화를 차트로 보여줄 수 있나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-034",
+    "query": "34. 각 감성 점수 카테고리(수분, 진정, 트러블 등)의 리뷰 비중을 파이 차트로 나타내 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-035",
+    "query": "35. TOP 5 제품의 평균 '텍스처' 점수를 비교하는 바 차트를 그려주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-036",
+    "query": "36. '센텔라 앰플'을 제외한 모든 제품의 평균 감성 점수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-037",
+    "query": "37. 감성 점수가 0이 아닌 리뷰들만을 대상으로 한 평균 '수분' 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-038",
+    "query": "38. 2023년이 아닌 연도에 수집된 리뷰들의 총 개수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-039",
+    "query": "39. '향' 점수가 NULL이 아닌 리뷰들 중에서 가장 낮은 '텍스처' 점수를 받은 제품은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-040",
+    "query": "40. 특정 제품(예: '히알루론산 세럼')을 제외한 제품들의 '진정/자극' 점수 평균은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-041",
+    "query": "41. 2024년 2월에 수집된 리뷰 데이터가 현재 시스템에 존재하나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-042",
+    "query": "42. '톤/미백' 점수가 1.0인 리뷰가 데이터베이스에 있나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-043",
+    "query": "43. 'review_original' 컬럼에 특정 키워드(예: \"트러블 개선\")를 포함하는 리뷰가 조회 가능한가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-044",
+    "query": "44. 'sentiment_score'가 NULL인 리뷰가 있는지 확인해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-045",
+    "query": "45. 특정 `product_name_eng` (예: 'Centella Ampoule')에 대한 리뷰 데이터가 있습니까?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-046",
+    "query": "46. 감성 점수가 정확히 0인 리뷰들의 제품별 분포는 어떻게 되나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-047",
+    "query": "47. 가장 최근 `collected_date`에 수집된 리뷰 1건의 제품명과 감성 점수는 무엇인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-048",
+    "query": "48. 가장 오래된 `review_date`를 가진 리뷰의 `product_name_eng`과 '수분' 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-049",
+    "query": "49. 'soothing_irritation_score'가 NULL인 리뷰의 총 개수는 몇 개인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-050",
+    "query": "50. 감성 점수가 -1.0인 (가장 부정적인) 리뷰들의 `review_original` 텍스트를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-051",
+    "query": "51. 제품별 평균 '텍스처' 점수는 어떻게 되나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-052",
+    "query": "52. 채널별(가정: Qoo10 내 서브 채널 또는 지역 구분) 평균 감성 점수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-053",
+    "query": "53. 리뷰 작성 연도별 총 리뷰 수는 몇 건인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-054",
+    "query": "54. 감성 유형(긍정/중립/부정)별 평균 '톤/미백' 점수는 어떻게 되나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-055",
+    "query": "55. 각 감성 점수 카테고리(moisture, soothing, trouble, texture, scent, tone)별 전체 평균 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-056",
+    "query": "56. 최근 3개월간의 평균 '수분' 점수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-057",
+    "query": "57. 2023년 하반기(7월~12월) 동안의 '진정/자극' 점수 평균은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-058",
+    "query": "58. 2022년 1분기부터 3분기까지의 제품별 평균 감성 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-059",
+    "query": "59. 지난 4주간의 총 리뷰 수는 몇 건인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-060",
+    "query": "60. 2023년 전체 기간 동안 가장 많은 리뷰를 받은 제품은 무엇인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-061",
+    "query": "61. 전월 대비 총 리뷰 수 성장률은 어떻게 되나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-062",
+    "query": "62. 특정 제품의 전년 동기 대비 평균 '수분' 점수 감소율은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-063",
+    "query": "63. 지난 분기 대비 이번 분기의 평균 '텍스처' 점수 증감은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-064",
+    "query": "64. 월별 평균 '향' 점수의 가장 큰 변화폭을 보인 달은 언제인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-065",
+    "query": "65. 전체 리뷰의 평균 '톤/미백' 점수 변화 추이를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-066",
+    "query": "66. 지난 6개월간 월별 이동 평균 감성 점수는 어떻게 되나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-067",
+    "query": "67. 각 제품별로, 리뷰 수에 가중치를 부여한 평균 감성 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-068",
+    "query": "68. '수분' 점수와 '진정/자극' 점수 간의 상관 계수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-069",
+    "query": "69. 월별 평균 '트러블/피지/모공' 점수의 표준 편차는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-070",
+    "query": "70. 특정 제품의 평균 '텍스처' 점수와 전체 제품의 평균 '텍스처' 점수 간의 차이는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-071",
+    "query": "71. 2023년 YTD(Year-To-Date) 누적 총 리뷰 수는 얼마인가요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-072",
+    "query": "72. 2023년 MTD(Month-To-Date) 평균 감성 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-073",
+    "query": "73. 전체 기간 동안의 누적 평균 '수분' 점수 추이를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-074",
+    "query": "74. 특정 제품의 연간 합산 평균 '진정/자극' 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-075",
+    "query": "75. 모든 감성 점수 카테고리(moisture, soothing, trouble, texture, scent, tone)의 전체 기간 동안의 총합은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-076",
+    "query": "76. 감성 점수가 0.6 이상인 리뷰들 중에서 '수분' 점수 평균이 가장 높은 제품은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-077",
+    "query": "77. '진정/자극' 점수가 0.9 이상인 리뷰들의 총 개수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-078",
+    "query": "78. '향' 점수가 0.3 이하인 리뷰들 중 가장 많이 언급된 제품은?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-079",
+    "query": "79. '트러블/피지/모공' 점수가 0.8 이상인 제품들의 평균 감성 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-080",
+    "query": "80. 'review_date'가 'collected_date'보다 이전인 리뷰들의 평균 '텍스처' 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-081",
+    "query": "81. '센텔라 앰플' 제품의 모든 리뷰에 대한 'review_ko'와 'sentiment_score' 상세 정보를 알려주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-082",
+    "query": "82. 2023년 10월 26일에 작성된 모든 리뷰의 제품명과 각 카테고리 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-083",
+    "query": "83. '톤/미백' 점수가 가장 높은 리뷰의 `review_original`과 `review_ko`를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-084",
+    "query": "84. 특정 `collected_date` (예: 2024-01-15)에 수집된 리뷰 중 가장 낮은 감성 점수를 받은 리뷰의 상세 정보를 알려주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-085",
+    "query": "85. 가장 긴 `review_ko`를 가진 리뷰의 제품명과 모든 카테고리 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-086",
+    "query": "86. 제품별 월별 평균 '수분' 점수 변화를 교차 분석하여 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-087",
+    "query": "87. 채널별(가정: Qoo10 내 서브 채널 또는 지역 구분) 리뷰 작성 연도별 평균 감성 점수는?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-088",
+    "query": "88. 감성 점수 구간(긍정/중립/부정)별로 '진정/자극' 점수의 평균을 교차 분석해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-089",
+    "query": "89. '수분' 점수가 높은 제품들이 '텍스처' 점수에도 영향을 미치는지 교차 분석해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-090",
+    "query": "90. `review_date`의 요일별, 제품별 평균 '향' 점수는 어떻게 되나요?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-091",
+    "query": "91. 요즘 SKIN1004 제품들 중에서 어떤 게 인기가 많아?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-092",
+    "query": "92. 고객들이 '수분감'에 대해 보통 어떻게 평가하는지 요약해 줘.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-093",
+    "query": "93. 큐텐에서 피부 트러블에 좋다고 평가받는 제품은 뭐였어?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-094",
+    "query": "94. 특정 제품(예: '히알루론산 세럼')에 대한 고객들의 전반적인 반응은 어때?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-095",
+    "query": "95. 최근 한 달간 감성 점수가 가장 높은 제품은 뭐야?",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-096",
+    "query": "96. 각 제품별로 해당 제품의 평균 감성 점수가 전체 제품 평균 감성 점수보다 높은 제품들을 찾고, 그 차이를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-097",
+    "query": "97. 월별로 각 제품의 평균 '수분' 점수 순위를 매기고, 가장 높은 순위를 유지한 제품의 월별 변화를 보여주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-098",
+    "query": "98. `product_name`을 행으로, `moisture_score`, `soothing_irritation_score`, `trouble_sebum_pore_score`를 열로 하여 평균 점수를 PIVOT 테이블 형태로 생성해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-099",
+    "query": "99. 각 리뷰에 대해, 해당 리뷰의 감성 점수가 이전 리뷰(동일 제품 기준, 날짜 순) 대비 얼마나 변화했는지 계산해 주세요.",
+    "table": "qoo10_review"
+  },
+  {
+    "id": "RQ-100",
+    "query": "100. 각 제품별로, 해당 제품의 월별 평균 '텍스처' 점수가 지난 3개월 평균 '텍스처' 점수보다 높은 월의 개수를 계산해 주세요.",
+    "table": "qoo10_review"
+  }
+]
