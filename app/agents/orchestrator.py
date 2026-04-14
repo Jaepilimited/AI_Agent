@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 import structlog
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
-from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
+from app.core.prompt_fragments import FOLLOWUP_INSTRUCTION, LANGUAGE_DETECTION_RULE
 from app.core.response_formatter import ensure_formatting
 
 # Existing agent
@@ -44,27 +44,38 @@ def _content_to_text(content) -> str:
 
 
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
-    """Build conversation context from all previous messages — no truncation.
-
-    Gemini 2.5 Flash supports 1M token context, so we keep everything.
-    """
+    """Build conversation context — keep last 5 turns, summarize older."""
     if not messages or len(messages) <= 1:
         return ""
 
     history = messages[:-1]
-    if not history:
-        return ""
-
     lines = []
+
+    if len(history) > 10:
+        lines.append(f"[이전 대화 {len(history) - 10}개 메시지 생략 — 최근 5턴만 표시]")
+        history = history[-10:]
+
     for msg in history:
         role = msg.get("role", "user")
         content = _content_to_text(msg.get("content", ""))
+        if not content:
+            continue
+        if len(content) > 500:
+            content = content[:500] + "..."
         if role == "user":
             lines.append(f"사용자: {content}")
         elif role in ("assistant", "model"):
             lines.append(f"AI: {content}")
 
     return "\n".join(lines)
+
+
+# Direct-lock keywords — queries containing these skip LLM reclassification
+_DIRECT_LOCK_KW = frozenset([
+    "회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이",
+    "hello", "hi", "부동산", "주식", "투자", "아파트", "전세", "월세",
+    "대출", "연봉", "이직", "항공", "비행기", "호텔", "숙소", "맛집",
+])
 
 
 class OrchestratorAgent:
@@ -76,6 +87,13 @@ class OrchestratorAgent:
 
     def __init__(self):
         logger.info("orchestrator_initialized")
+
+        # Build _SOURCE_ROUTE_MAP from _DB_REGISTRY (key + aliases → route)
+        if not self._SOURCE_ROUTE_MAP:
+            for entry in self._DB_REGISTRY:
+                self._SOURCE_ROUTE_MAP[entry["key"]] = entry["route"]
+                for alias in entry.get("aliases", []):
+                    self._SOURCE_ROUTE_MAP[alias] = entry["route"]
 
         # v3.0 new agents (lazy init)
         self._query_verifier = None
@@ -101,19 +119,8 @@ class OrchestratorAgent:
         return self._gws_agent
 
     # Source name → route mapping (matches frontend DATA_SOURCE_KEYS, clean names)
-    _SOURCE_ROUTE_MAP = {
-        "매출": "bigquery", "제품": "bigquery",
-        "광고데이터": "bigquery", "마케팅비용": "bigquery",
-        "Shopify": "bigquery", "플랫폼": "bigquery",
-        "인플루언서": "bigquery", "아마존검색": "bigquery",
-        "메타광고": "bigquery",
-        "아마존 리뷰": "bigquery", "큐텐 리뷰": "bigquery",
-        "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
-        "Notion": "notion",
-        "CS Q&A": "cs", "BP": "cs",
-        "Google Workspace": "gws",
-        # Team keys are matched dynamically by _allowed_routes
-    }
+    # Auto-built from _DB_REGISTRY: key → route
+    _SOURCE_ROUTE_MAP = {}  # populated in __init__
 
     # ═══ @@ 데이터소스 선택 시스템 ═══
     # 사용자가 "@@매출 이번달 합계" 형태로 데이터소스를 직접 지정
@@ -123,27 +130,30 @@ class OrchestratorAgent:
         {"key": "매출", "aliases": ["sales", "매출데이터", "세일즈"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "매출", "desc": "통합 매출 — 글로벌 전 플랫폼"},
         {"key": "제품", "aliases": ["product", "제품데이터"], "route": "bigquery", "group": "매출 데이터", "icon": "box", "label": "제품", "desc": "제품별 판매 수량"},
         # ── BigQuery 마케팅 ──
-        {"key": "광고", "aliases": ["ad", "ads", "광고데이터", "광고비"], "route": "bigquery", "group": "마케팅 데이터", "icon": "megaphone", "label": "광고", "desc": "TikTok, Facebook, Google 등"},
-        {"key": "마케팅비용", "aliases": ["marketing", "마케팅"], "route": "bigquery", "group": "마케팅 데이터", "icon": "dollar", "label": "마케팅비용", "desc": "광고+인플루언서 비용 통합"},
-        {"key": "인플루언서", "aliases": ["influencer", "인플"], "route": "bigquery", "group": "마케팅 데이터", "icon": "users", "label": "인플루언서", "desc": "팀별 인플루언서 마케팅"},
-        {"key": "쇼피파이", "aliases": ["shopify"], "route": "bigquery", "group": "마케팅 데이터", "icon": "cart", "label": "Shopify", "desc": "자사몰 판매"},
-        {"key": "플랫폼", "aliases": ["platform", "플랫폼데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "store", "label": "플랫폼", "desc": "플랫폼별 순위/가격"},
-        {"key": "아마존검색", "aliases": ["amazon", "아마존"], "route": "bigquery", "group": "마케팅 데이터", "icon": "search", "label": "아마존검색", "desc": "아마존 검색 분석 퍼널"},
+        {"key": "광고", "aliases": ["ad", "ads", "광고데이터", "광고비"], "route": "bigquery", "group": "마케팅 데이터", "icon": "megaphone", "label": "광고", "desc": "통합 광고 데이터"},
+        {"key": "마케팅", "aliases": ["marketing", "마케팅비용"], "route": "bigquery", "group": "마케팅 데이터", "icon": "dollar", "label": "마케팅", "desc": "통합 마케팅 비용"},
+        {"key": "인플루언서", "aliases": ["influencer", "인플"], "route": "bigquery", "group": "마케팅 데이터", "icon": "users", "label": "인플루언서", "desc": "인플루언서 마케팅"},
+        {"key": "Shopify", "aliases": ["shopify", "쇼피파이"], "route": "bigquery", "group": "마케팅 데이터", "icon": "cart", "label": "Shopify", "desc": "글로벌 자사몰 판매"},
+        {"key": "플랫폼", "aliases": ["platform", "플랫폼데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "store", "label": "플랫폼", "desc": "플랫폼 순위/가격"},
+        {"key": "아마존검색", "aliases": ["amazon", "아마존"], "route": "bigquery", "group": "마케팅 데이터", "icon": "search", "label": "아마존검색", "desc": "아마존 검색 분석"},
         {"key": "메타광고", "aliases": ["meta", "메타"], "route": "bigquery", "group": "마케팅 데이터", "icon": "phone", "label": "메타광고", "desc": "메타 광고 라이브러리"},
-        {"key": "리뷰", "aliases": ["review", "리뷰데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "리뷰", "desc": "아마존/큐텐/쇼피/스마트스토어"},
-        # ── Notion (팀별자료 — Qdrant 벡터 검색, 알파벳순) ──
-        {"key": "b2b1", "aliases": ["국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 실행 (매출/거래처/재고)"},
-        {"key": "b2b2", "aliases": ["b2b", "해외영업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B2", "desc": "B2B 프로세스/온보딩 위키"},
-        {"key": "bcm", "aliases": ["브랜드커뮤니케이션"], "route": "notion", "group": "Notion", "icon": "doc", "label": "BCM", "desc": "브랜드커뮤니케이션팀"},
-        {"key": "craver", "aliases": ["크레이버", "경영기획"], "route": "notion", "group": "Notion", "icon": "doc", "label": "Craver", "desc": "경영기획"},
-        {"key": "notion_cs", "aliases": ["cs문서", "cs자료", "cs"], "route": "notion", "group": "Notion", "icon": "doc", "label": "CS", "desc": "CS팀 Notion 문서"},
-        {"key": "db", "aliases": ["데이터분석", "데이터팀"], "route": "notion", "group": "Notion", "icon": "doc", "label": "DB", "desc": "데이터분석팀"},
-        {"key": "gm_east", "aliases": ["east", "동부", "gm동부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM EAST", "desc": "글로벌마케팅 동부"},
-        {"key": "gm_west", "aliases": ["west", "서부", "gm서부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM WEST", "desc": "글로벌마케팅 서부"},
-        {"key": "jbt", "aliases": ["일본사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "JBT", "desc": "일본사업팀"},
-        {"key": "kbt", "aliases": ["국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
-        {"key": "bp", "aliases": ["뷰티파트너", "제품qa", "제품문의", "고객상담", "고객서비스"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법/교환반품)"},
-        {"key": "피플", "aliases": ["people", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지, IT"},
+        {"key": "아마존 리뷰", "aliases": ["amazon review"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "아마존 리뷰", "desc": "아마존 리뷰"},
+        {"key": "큐텐 리뷰", "aliases": ["qoo10 review", "쿠텐 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "큐텐 리뷰", "desc": "큐텐 리뷰"},
+        {"key": "쇼피 리뷰", "aliases": ["shopee review"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "쇼피 리뷰", "desc": "쇼피 리뷰"},
+        {"key": "스마트스토어 리뷰", "aliases": ["smartstore review", "네이버 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "스마트스토어 리뷰", "desc": "스마트스토어 리뷰"},
+        # ── Notion (팀별자료 — 벡터 검색, 알파벳순) ──
+        {"key": "B2B1", "aliases": ["b2b1", "국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 (매출/거래처/재고)"},
+        {"key": "B2B2", "aliases": ["b2b2", "b2b", "해외영업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B2", "desc": "B2B 프로세스/온보딩"},
+        {"key": "BCM", "aliases": ["bcm", "브랜드커뮤니케이션"], "route": "notion", "group": "Notion", "icon": "doc", "label": "BCM", "desc": "브랜드커뮤니케이션팀"},
+        {"key": "Craver", "aliases": ["craver", "크레이버", "경영기획"], "route": "notion", "group": "Notion", "icon": "doc", "label": "Craver", "desc": "경영기획"},
+        {"key": "CS", "aliases": ["cs", "cs문서", "cs자료", "notion_cs"], "route": "notion", "group": "Notion", "icon": "doc", "label": "CS", "desc": "CS팀 Notion 문서"},
+        {"key": "DB", "aliases": ["db", "데이터분석", "데이터팀"], "route": "notion", "group": "Notion", "icon": "doc", "label": "DB", "desc": "데이터분석팀"},
+        {"key": "GM EAST", "aliases": ["gm_east", "east", "동부", "gm동부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM EAST", "desc": "글로벌마케팅 동부"},
+        {"key": "GM WEST", "aliases": ["gm_west", "west", "서부", "gm서부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM WEST", "desc": "글로벌마케팅 서부"},
+        {"key": "JBT", "aliases": ["jbt", "일본사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "JBT", "desc": "일본사업팀"},
+        {"key": "KBT", "aliases": ["kbt", "국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
+        {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법)"},
+        {"key": "PEOPLE", "aliases": ["people", "피플", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지"},
         # ── 시스템 ──
         {"key": "gws", "aliases": ["google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
         # ── 확장 ──
@@ -211,12 +221,13 @@ class OrchestratorAgent:
     def _allowed_routes(self, enabled_sources: Optional[List[str]]) -> Optional[set]:
         """Derive the set of allowed routes from enabled_sources.
 
-        Returns None if no filtering should be applied (param not provided).
+        Default (None): BigQuery + GWS + Direct only. CS/Notion/Team은 @@ 선택 시에만.
         Returns {"direct"} if explicitly empty list (all sources disabled).
         """
         if enabled_sources is None:
-            return None
-        routes = {"direct", "notion"}  # direct + notion은 항상 허용
+            # 기본: 데이터(BQ) + GWS + Direct만. CS/Notion/Team은 @@ 명시 시에만 활성화
+            return {"direct", "bigquery", "multi", "gws"}
+        routes = {"direct"}  # direct만 기본 허용
         for src in enabled_sources:
             route = self._SOURCE_ROUTE_MAP.get(src)
             if route:
@@ -388,16 +399,20 @@ class OrchestratorAgent:
             # Fast path: keyword match first, LLM fallback only for short ambiguous queries
             route = self._keyword_classify(query)
             is_system_task = query.strip().startswith("### Task:")
-            _DIRECT_LOCK_KW = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi", "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직", "항공", "비행기", "호텔", "숙소", "맛집"]
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
             if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-                if len(query.strip()) <= 30:
+                if len(query.strip()) <= 50:
                     flash = get_flash_client()
                     route = await self._classify_with_llm(query, conversation_context, flash)
             # Apply enabled_sources filter — redirect to direct if route is disabled
+            # Exception: keyword-classified notion/cs/team routes bypass the default filter
+            # (these are confidently classified by specific keywords, not ambiguous)
             if allowed is not None and route not in allowed:
-                logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
-                route = "direct"
+                if enabled_sources is None and route in ("notion", "cs", "team"):
+                    logger.info("route_keyword_override", route=route, reason="keyword-classified, bypassing default filter")
+                else:
+                    logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
+                    route = "direct"
 
         logger.info(
             "orchestrator_routed",
@@ -430,15 +445,10 @@ class OrchestratorAgent:
         # Step 3: Coherence check — fire-and-forget background (was blocking 2-3s)
         # Only log mismatches; don't delay the response
         if "answer" in result and route not in ("direct", "multi", "cs"):
-            import threading
-            _q, _a, _r = query, result["answer"], route
-            def _bg_coherence():
-                try:
-                    import asyncio as _aio
-                    _aio.run(self._verify_coherence(_q, _a, _r))
-                except Exception:
-                    pass
-            threading.Thread(target=_bg_coherence, daemon=True).start()
+            try:
+                asyncio.create_task(self._verify_coherence(query, result["answer"], route))
+            except Exception:
+                pass
 
         # Step 4: Post-process response for consistent markdown formatting
         if "answer" in result:
@@ -531,7 +541,7 @@ class OrchestratorAgent:
                     else:
                         result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=30.0)
                 except asyncio.TimeoutError:
-                    result = {"answer": f"⚠️ 분석이 예상보다 오래 걸리고 있습니다.", "source": route}
+                    result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 더 짧은 기간이나 구체적인 조건으로 다시 질문해 보세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"2025년 1분기 일본 매출 알려줘\" (기간+국가 한정)\n> - \"이번 달 아마존 매출 현황\" (채널 지정)\n> - \"센텔라 앰플 최근 3개월 매출 추이\" (제품 지정)", "source": route}
             else:
                 # Multiple sources → parallel, merge results
                 logger.info("db_multi_prefix_stream", sources=[e["key"] for e in db_entry])
@@ -606,10 +616,9 @@ class OrchestratorAgent:
 
         if not _single_route:
             # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
-            _DIRECT_LOCK = ["회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이", "hello", "hi"]
-            _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK)
+            _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
             if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-                if len(query.strip()) <= 30:
+                if len(query.strip()) <= 50:
                     flash = get_flash_client()
                     new_route = await self._classify_with_llm(query, conversation_context, flash)
                     if new_route != route:
@@ -617,11 +626,15 @@ class OrchestratorAgent:
                         yield ("source", route)
 
             # Apply enabled_sources filter
+            # Exception: keyword-classified notion/cs/team bypass default filter
             if allowed is not None and route not in allowed:
-                logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
-                if route != "direct":
-                    route = "direct"
-                    yield ("source", route)
+                if enabled_sources is None and route in ("notion", "cs", "team"):
+                    logger.info("stream_route_keyword_override", route=route)
+                else:
+                    logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
+                    if route != "direct":
+                        route = "direct"
+                        yield ("source", route)
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:
@@ -637,10 +650,11 @@ class OrchestratorAgent:
             today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
             system = self._build_direct_system_prompt(today, model_type)
 
-            _needs_search = self._needs_web_search(query)
+            # Run web search in thread pool to avoid blocking event loop
             final_system = system
-            if _needs_search:
-                search_context = self._gather_search_context(query)
+            if self._needs_web_search(query):
+                _loop_s = asyncio.get_running_loop()
+                search_context = await _loop_s.run_in_executor(None, self._gather_search_context, query)
                 if search_context:
                     final_system = system + f"\n\n## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}"
 
@@ -709,8 +723,8 @@ class OrchestratorAgent:
                     msg_type, data = await asyncio.wait_for(_q.get(), timeout=5.0)
                 except asyncio.TimeoutError:
                     elapsed = asyncio.get_event_loop().time() - _bq_start
-                    if elapsed > 300.0:
-                        yield ("chunk", "\n\n⚠️ 데이터 분석이 5분을 초과했습니다. 더 구체적인 조건으로 다시 질문해주세요.")
+                    if elapsed > 90.0:
+                        yield ("chunk", "\n\n⚠️ 데이터 분석이 90초를 초과했습니다. 더 구체적인 조건(기간, 국가, 제품 등)으로 다시 질문해주세요.")
                         break
                     continue
                 if msg_type == "end":
@@ -721,7 +735,7 @@ class OrchestratorAgent:
             return
 
         # Non-streaming routes (CS, Notion, GWS, Multi) → simulate streaming
-        # Wave 2: Timeout (15s, 30s for gws) + CircuitBreaker
+        # Timeout: GWS 45s (inner agent 30s + buffer), others 30s
         from app.core.safety import get_circuit
 
         handlers = {
@@ -731,7 +745,7 @@ class OrchestratorAgent:
             "multi": self._handle_multi,
         }
         handler = handlers.get(route, self._handle_direct)
-        _route_timeout = 30.0
+        _route_timeout = 45.0 if route == "gws" else 30.0
 
         # Check circuit breaker before calling
         circuit = get_circuit(route)
@@ -762,13 +776,13 @@ class OrchestratorAgent:
                     )
                 circuit.record_success()
             except asyncio.TimeoutError:
-                logger.warning("route_timeout", route=route, timeout_s=15)
+                logger.warning("route_timeout", route=route, timeout_s=_route_timeout)
                 circuit.record_failure()
-                result = {"answer": f"⚠️ 분석이 예상보다 오래 걸리고 있습니다. 더 구체적인 조건으로 다시 질문해주세요.", "source": route}
+                result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 조회 범위를 좁혀서 다시 시도해 주세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - 기간을 한정: \"2025년 1분기\" 대신 \"2025년 3월\"\n> - 국가/채널 지정: \"일본 큐텐 매출\"\n> - 제품 지정: \"센텔라 앰플 매출 추이\"", "source": route}
             except Exception as e:
                 logger.error("route_execution_failed", route=route, error=str(e))
                 circuit.record_failure()
-                result = {"answer": f"⚠️ 처리 중 오류가 발생했습니다: {str(e)}", "source": route}
+                result = {"answer": "⚠️ 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n다른 방식으로 질문하시면 도움이 될 수 있습니다:\n- 질문을 더 구체적으로 (기간, 국가, 제품 등 조건 추가)\n- 복잡한 질문은 나누어서 하나씩 질문", "source": route}
 
         if "answer" in result:
             result["answer"] = ensure_formatting(result["answer"], domain=route)
@@ -881,6 +895,11 @@ class OrchestratorAgent:
         "shopify", "쇼피파이", "자사몰 매출", "반품", "환불",
         # Platform metrics
         "플랫폼 순위", "제품 순위", "랭킹 데이터", "할인가",
+        "예스스타일", "yesstyle", "스타일코리안", "스타일바나", "올리브영",
+        "졸스", "소시올라", "pureseoul", "barecare",
+        "순위 상승", "순위 변동", "순위 추이", "경쟁사 순위",
+        # Repurchase
+        "재구매", "재구매율", "리텐션", "코호트",
         # Region / Continent / Team / Account
         "cis", "동남아", "유럽", "북미", "남미", "중동", "대륙",
         "신규", "업체", "거래처", "바이어", "b2b", "b2c",
@@ -960,6 +979,9 @@ class OrchestratorAgent:
         "채용", "면접", "인수인계", "성과급", "성과금", "보상", "인센티브",
         "vpn", "프린터", "잔디", "다우오피스",
         "복지", "사내근로복지", "피플팀", "교육 신청",
+        # Company info
+        "사업자", "등록번호", "법인번호", "법인등록", "대표자", "대표이사",
+        "조직도", "회사 정보", "회사정보", "기업 정보", "기업정보",
     ]
 
     # How-to / guide keywords — when combined with platform/tool names, route to Notion
@@ -1097,6 +1119,9 @@ class OrchestratorAgent:
                 "광고비", "광고", "메타", "roas", "ctr", "마케팅비", "노출수", "클릭수",
                 "인플루언서", "리뷰", "반품", "환불",
                 "b2b", "b2c", "거래처", "바이어", "업체",
+                "예스스타일", "스타일코리안", "졸스", "소시올라", "올리브영",
+                "순위", "랭킹", "플랫폼", "카테고리", "노출",
+                "재구매", "코호트",
             ]
             if not any(t in q for t in _SKIN1004_TERMS):
                 return "direct"
@@ -1122,6 +1147,8 @@ class OrchestratorAgent:
             # Meta ads — override CS even when "skin1004" present
             "광고", "메타 광고", "메타광고", "활성 광고", "비활성 광고",
             "분포", "현황", "건수",
+            # Repurchase
+            "재구매", "재구매율", "리텐션", "코호트", "재방문",
         ]
         # Team resource check — team data lookups (before CS to avoid overlap)
         if any(kw in q for kw in self._TEAM_KEYWORDS):
@@ -1155,6 +1182,8 @@ class OrchestratorAgent:
                 "퍼포먼스", "시딩", "총액", "얼마", "메가와리",
                 "인플루언서", "반품", "환불", "b2b", "b2c", "거래처", "업체",
                 "리뷰", "평점", "별점", "스마트스토어", "네이버스토어",
+                "예스스타일", "yesstyle", "스타일코리안", "졸스", "소시올라",
+                "재구매", "재구매율", "순위 상승", "순위 변동",
                 "국가별", "월별", "팀별", "채널별", "제품별", "브랜드별", "사업부",
                 "데이터", "테이블", "컬럼", "있나요", "존재", "포함",
                 "revenue", "platform", "campaign", "google ads", "cost",
@@ -1348,7 +1377,7 @@ class OrchestratorAgent:
             logger.error("fulldata_request_failed", error=str(e))
             return {
                 "source": "bigquery",
-                "answer": f"죄송합니다. 데이터 조회 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+                "answer": "죄송합니다. 전체 데이터 조회 중 일시적인 문제가 발생했습니다.\n\n**해결 방법:**\n- 잠시 후 동일한 질문을 다시 시도해 주세요\n- 조회 범위를 좁혀보세요 (예: 특정 국가나 짧은 기간)\n- 원래 질문을 다시 입력하면 요약 결과를 먼저 확인할 수 있습니다",
             }
 
     async def _handle_notion(
@@ -1411,7 +1440,8 @@ class OrchestratorAgent:
             return {"source": "cs", "answer": result}
         except Exception as e:
             logger.error("orchestrator_cs_failed", error=str(e))
-            return {"source": "cs", "answer": f"죄송합니다. CS 데이터 조회 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."}
+            return {"source": "cs", "answer": "죄송합니다. CS 데이터 조회 중 일시적인 문제가 발생했습니다.\n\n**다시 시도해 주세요.** 제품명이나 성분명을 포함하면 더 정확한 결과를 얻을 수 있습니다.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"센텔라 앰플 사용법 알려줘\"\n> - \"마다가스카르 센텔라 성분이 뭐야?\"\n> - \"히알루 시카 수분크림 특징\""}
+
 
     async def _handle_team(
         self,
@@ -1433,7 +1463,7 @@ class OrchestratorAgent:
             return {"source": "team", "answer": result}
         except Exception as e:
             logger.error("orchestrator_team_failed", error=str(e))
-            return {"source": "team", "answer": f"팀별 자료 검색 중 오류가 발생했습니다: {str(e)}"}
+            return {"source": "team", "answer": "팀별 자료 검색 중 일시적인 문제가 발생했습니다.\n\n**다시 시도해 주세요.** 검색 키워드를 바꾸거나 더 구체적으로 질문하면 도움이 됩니다.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"HR 연차 규정 알려줘\"\n> - \"마케팅팀 브랜드 가이드라인\"\n> - \"영업팀 거래처 목록\""}
 
     async def _handle_multi(
         self,
@@ -1730,15 +1760,50 @@ JSON만 반환:
 - Google 실시간 웹검색
 - 이미지 분석, 차트 생성
 
+## 사내 대시보드 카탈로그
+대시보드 관련 질문에는 아래 목록에서 찾아 링크와 함께 답변하세요.
+
+**인플루언서 시딩**
+- [통합] 인플루언서 마케팅 대시보드 (Looker): https://lookerstudio.google.com/reporting/34ac7165-6f4c-42ba-9fe6-f54e5373f50f/page/cwFHF
+- 틱톡 해시태그 콘텐츠 대시보드 (Looker): https://lookerstudio.google.com/reporting/a099c5fd-e316-455c-8686-a54b807b5b4c/page/MMeaE
+- 인스타그램 계정 멘션 콘텐츠 대시보드 (Looker): https://lookerstudio.google.com/reporting/0ada621f-2504-432c-bc87-f75003526fe4/page/TuqPF
+- 팀별 업로드 컨텐츠 성과 지표 (Sheets): 양승민
+
+**매출 및 제품순위**
+- 데일리 메트릭스 2024~ (Looker): https://lookerstudio.google.com/reporting/c021c6c6-ac73-4753-a36b-cc95a889811b/page/p_mde0034oqd
+- 프로덕트 매트릭스 (Looker): https://lookerstudio.google.com/reporting/41182756-3fce-4c48-9c76-429ba9d99aaf/page/p_mde0034oqd
+- 플랫폼 대시보드 (Looker): https://lookerstudio.google.com/reporting/93148b10-d6a8-42f5-acdb-8192e5e79612/page/p_9an4m8l4wd
+- 제품 순위 트렌드 (Web): https://skin1004official.github.io/platform-metrics/
+- GM EAST 제품 대시보드 (Looker): https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/p_jhinbd29sd
+- 리뷰 대시보드 (Looker): https://lookerstudio.google.com/reporting/bd0bd4fa-fb97-472a-82a4-cfa1a42f27a2/page/p_jauu8i71yd
+- 아마존 대시보드 (Looker): https://lookerstudio.google.com/reporting/0932b147-5a33-4734-9895-7ede8bd99074/page/R2inF
+- Shopify 대시보드 (Looker): https://lookerstudio.google.com/reporting/afe86a46-018a-4918-ae64-4219ccf5b029/page/gK5fF
+- KBT 전용 대시보드 (Looker): https://lookerstudio.google.com/reporting/dd6a2a6c-5654-47ab-b29a-f279e602e5cf/page/bfsiE
+
+**퍼포먼스마케팅**
+- 통합 마케팅 대시보드 (Looker): https://lookerstudio.google.com/reporting/a1a1a9d1-be92-4d66-8d6f-acd12859dd2e/page/bfsiE
+- 틱톡 광고 대시보드 (Looker): https://lookerstudio.google.com/reporting/09154ceb-118d-4eea-9637-953516517860/page/kw8cE
+- 메타 광고 대시보드 (Looker): https://lookerstudio.google.com/reporting/a56e222e-48c2-43d2-844e-1cb536489bc6/page/MMeaE
+- TeamMint 대시보드 (Looker): https://lookerstudio.google.com/reporting/d5ab4952-0dda-4881-aa52-8b20f97edcf9/page/wpRLF
+- 통합 ROI 마케팅 대시보드 (Looker): https://lookerstudio.google.com/u/0/reporting/2214aeda-dfa0-4321-ae7c-79ceef01a6c9/page/bfsiE
+
+**기타**
+- 유럽 판매채널 모니터링 (Looker): https://lookerstudio.google.com/reporting/db521aea-53b0-49fd-8352-c6142a097fe3/page/ji3HF/edit
+- 메가와리 대시보드 (Looker): https://lookerstudio.google.com/reporting/3ada86c9-85a4-4191-bdf0-1fb879d6a2ac/page/d51NF
+- 메타 광고 진행현황 분석 (Looker): https://lookerstudio.google.com/u/0/reporting/533e0388-3905-4a39-93ca-0516ed8167cb/page/p_577xmorfyd
+
+**솔루션**
+- 이메일 및 틱톡 자동발송 시스템 (Notion): https://www.notion.so/skin1004/DM-Mail-2e82b4283b0080968d39f19678257d23
+
 ## 핵심 원칙
 - 전문적이면서 친근한 톤. 바로 답변 시작. 서론/인사 없이 핵심부터.
 - 질문한 내용만 답변. 모르면 솔직하게. 추측하지 않기.
 - 짧은 질문에는 짧게 (1-3문장), 복잡한 주제는 헤더/표/bullet으로 구조화.
 - 핵심 수치는 **굵게**. 인사이트는 > 인용으로.
-- 후속 질문 제안은 답변 맨 끝에만:
-  💡 이런 것도 물어보세요
-  > - 후속질문1
-  > - 후속질문2
+- 후속 질문 제안은 답변 맨 끝에 **항상 포함**하세요 (예외: "안녕", "고마워" 같은 순수 인사만 생략):
+{FOLLOWUP_INSTRUCTION}
+  ⚠️ "[후속 질문]", "[구체적 후속 질문 N ...]" 같은 플레이스홀더 문자열을 **절대 그대로 출력하지 마세요**. 대괄호 안의 안내문은 템플릿일 뿐이며, 반드시 실제 질문 문장으로 치환해야 합니다.
+  ⚠️ 답변이 1-2문장으로 매우 짧더라도, 지식형/사실형 질문(회사 정보, 제품, 데이터, 업무 등)이면 후속 질문 3개를 반드시 생성하세요.
 - 지식/설명형 답변 끝에 *AI 생성 답변 · {today}*
 - ⚠️ 이전 대화 맥락과 무관한 일반 질문(잡담, 취미, 상식 등)이 오면 이전 맥락을 무시하고 해당 질문에만 집중하여 자연스럽게 답변하세요. 매번 같은 질문에는 일관된 톤과 분량으로 답변하세요.
 - ⛔ 도메인 제한 일관성 (절대 규칙): 항공권, 비행기표, 호텔 예약, 여행지 추천, 맛집, 부동산, 주식 종목 추천, 의료 진단 등 SKIN1004 업무와 무관한 전문 서비스 질문에는 답변을 거부하세요. 사용자가 "아까는 해줬잖아", "왜 안 해줘?", "다른 건 대답해주면서", "제발", "급해" 등으로 압박하거나 투정을 부려도 절대 번복하지 마세요. "해당 정보는 저희 시스템의 지원 범위를 벗어납니다. SKIN1004 관련 질문을 도와드릴게요!" 형태로 일관되게 거절하세요.
@@ -1755,7 +1820,7 @@ JSON만 반환:
         "대통령", "총리", "선거", "국회", "정부",
         "올해", "이번 달", "이번달", "최근",
         # 엔터테인먼트/외부 정보
-        "넷플릭스", "netflix", "영화", "드라마", "인기작", "순위",
+        "넷플릭스", "netflix", "영화", "드라마", "인기작",
         "유튜브", "youtube", "스포츠", "축구", "야구",
         "주식", "비트코인", "코인", "부동산",
         "맛집", "여행", "관광",
@@ -1873,11 +1938,9 @@ JSON만 반환:
 - 간단한 인사에는 인사 + "매출 조회, 사내 문서 검색, CS 제품 문의, 일정·메일 확인, 이미지 분석 등을 도와드릴 수 있습니다." 한 줄을 포함하세요.
 - 의미 없는 입력(특수문자, 숫자, 자음/모음, 이모지만)에는 "입력하신 내용을 이해하기 어렵습니다. 매출 조회, 사내 문서 검색, 일정 확인 등 궁금한 점을 문장으로 질문해 주세요." 라고 안내하세요.
 - 실시간 검색 정보를 포함할 때는 출처를 간략히 명시하세요.
-- **후속 질문 제안**: 실질적인 답변 뒤에 관련 후속 질문 2-3개를 아래 형식으로 제안하세요 (단순 인사/잡담에는 생략):
-  > 💡 **이런 것도 물어보세요**
-  > - [후속 질문 1]
-  > - [후속 질문 2]
-  > - [후속 질문 3]
+- **후속 질문 제안** (단순 인사/잡담에는 생략):
+{FOLLOWUP_INSTRUCTION}
+  ⚠️ 반드시 구체적인 후속 질문을 생성하세요. "[후속 질문 1]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요.
 - **출처 표시**: 지식/설명형 답변(5줄 이상)에는 답변 끝에 `---` 구분선 후 *AI 생성 답변 · {today}* 형태로 날짜를 표기하세요. 인사/짧은 답변에는 생략."""
 
         try:
@@ -1892,11 +1955,11 @@ JSON만 반환:
                 )
                 return {"source": "direct", "answer": answer}
 
-            # Search grounding: use Tavily/Google search if needed
-            _needs_search = self._needs_web_search(query)
+            # Search grounding: run in thread pool to avoid blocking event loop
             final_system = system
-            if _needs_search:
-                search_context = self._gather_search_context(query)
+            if self._needs_web_search(query):
+                _loop_s = asyncio.get_running_loop()
+                search_context = await _loop_s.run_in_executor(None, self._gather_search_context, query)
                 if search_context:
                     final_system = system + f"\n\n## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}"
 
@@ -1932,7 +1995,7 @@ JSON만 반환:
 
                     def _stream_worker():
                         for chunk in llm.generate_stream(
-                            query, system_instruction=final_system, temperature=0.5,
+                            query, system_instruction=final_system, temperature=0.3,
                         ):
                             _loop.call_soon_threadsafe(_q.put_nowait, chunk)
                         _loop.call_soon_threadsafe(_q.put_nowait, None)
@@ -1959,7 +2022,7 @@ JSON만 반환:
             return {"source": "direct", "answer": answer}
         except Exception as e:
             logger.error("direct_llm_failed", error=str(e))
-            return {"source": "direct", "answer": f"죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n> 기술 참고: {str(e)[:100]}"}
+            return {"source": "direct", "answer": f"죄송합니다. 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n같은 문제가 반복되면 질문을 다른 방식으로 바꿔보세요.\n\n> 기술 참고: {str(e)[:100]}"}
 
     async def _verify_coherence(self, query: str, answer: str, route: str) -> str:
         """Verify the answer actually addresses the user's question.

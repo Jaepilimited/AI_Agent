@@ -91,7 +91,7 @@ class GWSAgent:
 
         tool_hint = ""
         if tool_type != "all":
-            tool_hint = f"\n7. 이 질문은 {tool_type} 관련입니다. {tools[0].name} 도구만 사용하세요. 다른 도구는 호출하지 마세요."
+            tool_hint = f"\n8. 이 질문은 {tool_type} 관련입니다. {tools[0].name} 도구만 사용하세요. 다른 도구는 호출하지 마세요."
 
         try:
             agent = create_react_agent(self.llm, tools)
@@ -111,7 +111,10 @@ class GWSAgent:
                 "3. 검색 결과가 없으면 '검색 결과가 없습니다'라고 간결하게 답변하세요.\n"
                 "4. 날짜/시간은 한국어 형식으로 (예: 2026년 2월 12일 오후 3시)\n"
                 "5. 핵심 항목은 **굵게** 강조하세요.\n"
-                "6. 도구는 **1번만** 호출하세요. 결과가 없어도 다른 도구로 재시도하지 마세요. 바로 '검색 결과가 없습니다'로 답하세요."
+                "6. 도구는 **1번만** 호출하세요. 결과가 없어도 다른 도구로 재시도하지 마세요. 바로 '검색 결과가 없습니다'로 답하세요.\n"
+                "7. **캘린더 시간 필터링 규칙**: calendar_search의 query 파라미터는 이벤트 제목/설명 텍스트 검색입니다. "
+                "시간 기반 질문('오전 일정', '11시 일정', '오후 3시 미팅')은 query를 비워서(\"\") 전체 일정을 가져온 뒤, "
+                "결과에서 해당 시간대 일정만 골라서 답변하세요. 절대로 '오전', '11시', '오후' 같은 시간 표현을 query에 넣지 마세요."
                 + tool_hint
             )
             result = await asyncio.wait_for(
@@ -124,14 +127,13 @@ class GWSAgent:
                     },
                     config={"recursion_limit": 6},
                 ),
-                timeout=120.0,
+                timeout=30.0,
             )
             return result["messages"][-1].content
         except asyncio.TimeoutError:
             logger.warning("gws_agent_timeout", query=query[:100], user_email=user_email)
             return (
-                "Google Workspace 검색이 시간 초과되었습니다 (120초).\n\n"
-                "**원인**: 검색 범위가 넓거나 결과가 많아 처리 시간이 초과되었습니다.\n\n"
+                "Google Workspace 검색이 시간 초과되었습니다 (30초).\n\n"
                 "**해결 방법**:\n"
                 "- 더 구체적인 검색어를 사용해주세요 (예: 발신자, 제목, 날짜 범위)\n"
                 "- 검색 범위를 좁혀주세요 (예: '오늘 메일' 대신 '오늘 SKIN1004 메일')"
@@ -216,7 +218,14 @@ class GWSAgent:
 
         @tool
         def calendar_search(query: str = "", days_ahead: int = 7) -> str:
-            """Google Calendar 일정을 조회합니다. query에 검색어(선택), days_ahead에 며칠 후까지 조회할지 입력하세요."""
+            """Google Calendar 일정을 조회합니다.
+
+            query: 이벤트 제목/설명에서 텍스트를 검색합니다. 시간 필터링이 아닙니다!
+                   "오전", "11시", "오후 3시" 같은 시간 표현을 query에 넣지 마세요 — 결과가 없습니다.
+                   시간대별 일정을 찾으려면 query를 비우고("") 전체 일정을 가져온 뒤 시간으로 필터링하세요.
+                   제목 검색 예시: query="틱톡", query="타운홀"
+            days_ahead: 며칠 후까지 조회할지 (기본 7일)
+            """
             try:
                 results = list_calendar_events(creds, query=query or None, days_ahead=days_ahead)
                 if not results:

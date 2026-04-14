@@ -4,6 +4,7 @@ Stateless functions that accept credentials and call Gmail/Drive/Calendar APIs.
 """
 
 import base64
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -129,7 +130,17 @@ def list_calendar_events(
         "orderBy": "startTime",
     }
     if query:
-        kwargs["q"] = query
+        # Google Calendar API q= searches event text (title/description), NOT time.
+        # Strip time-only queries that would return 0 results.
+        _is_time_only = bool(re.fullmatch(
+            r'(?:오전|오후|아침|저녁|점심|새벽)\s*\d{0,2}\s*시?\s*(?:일정|미팅|회의)*'
+            r'|\d{1,2}\s*시\s*(?:일정|미팅|회의)*',
+            query.strip(),
+        ))
+        if not _is_time_only:
+            kwargs["q"] = query
+        else:
+            logger.info("calendar_query_time_filter_stripped", original_query=query)
 
     results = service.events().list(**kwargs).execute()
     events = results.get("items", [])

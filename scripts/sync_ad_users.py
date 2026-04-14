@@ -51,7 +51,7 @@ def fetch_ad_users() -> list[dict]:
             "(&(objectClass=user)(objectCategory=person)"
             "(!(userAccountControl:1.2.840.113556.1.4.803:=2)))"
         )
-        attributes = ["sAMAccountName", "name", "mail", "department"]
+        attributes = ["sAMAccountName", "name", "displayName", "mail", "department"]
 
         conn.search(
             search_base=search_base,
@@ -71,9 +71,11 @@ def fetch_ad_users() -> list[dict]:
             ]
             ou_path = " > ".join(reversed(ou_parts)) if ou_parts else "Root"
 
+            # Prefer displayName (usually Korean) over name (CN, often English)
+            display = str(entry.displayName) if hasattr(entry, 'displayName') and entry.displayName else str(entry.name)
             users.append({
                 "username": str(entry.sAMAccountName),
-                "display_name": str(entry.name),
+                "display_name": display,
                 "email": str(entry.mail) if entry.mail else None,
                 "department": ou_path,
                 "full_dn": dn,

@@ -198,13 +198,35 @@ body {
 .badge-tableau { background: #e8710a33; color: #ffb74d; }
 .badge-tool    { background: #6d28d933; color: #b39ddb; }
 .badge-web     { background: #37415133; color: #9ca3af; }
+.badge-notion  { background: #9b59b633; color: #bb86fc; }
 
 /* Icon bg colors */
-.ibg-looker  { background: #1a237e22; }
-.ibg-sheets  { background: #0d652d22; }
-.ibg-tableau { background: #e8710a22; }
-.ibg-tool    { background: #6d28d922; }
-.ibg-web     { background: #37415133; }
+.ibg-looker  { background: #1a237e22; color: #7986cb; }
+.ibg-sheets  { background: #0d652d22; color: #66bb6a; }
+.ibg-tableau { background: #e8710a22; color: #ffb74d; }
+.ibg-tool    { background: #6d28d922; color: #b39ddb; }
+.ibg-web     { background: #37415133; color: #9ca3af; }
+.ibg-notion  { background: #9b59b622; color: #bb86fc; }
+.item-icon svg { width: 20px; height: 20px; }
+
+/* Loading spinner for preview */
+.preview-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--db-preview-bg);
+  z-index: 2;
+}
+.preview-spinner {
+  width: 32px; height: 32px;
+  border: 3px solid var(--db-border);
+  border-top-color: #e89200;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ===== Preview Area ===== */
 .preview {
@@ -316,9 +338,11 @@ body {
         &#x2197; &#xC0C8; &#xD0ED;&#xC5D0;&#xC11C; &#xC5F4;&#xAE30;
       </button>
     </div>
-    <iframe class="preview-frame" id="previewFrame" style="display:none" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-top-navigation"></iframe>
+    <div style="position:relative;flex:1;display:flex;flex-direction:column" id="previewContainer">
+      <div class="preview-loading" id="previewLoading" style="display:none"><div class="preview-spinner"></div></div>
+    </div>
     <div class="preview-empty" id="previewEmpty">
-      <div class="preview-empty-icon">&#x1F4CA;</div>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
       <div class="preview-empty-text">&#xB300;&#xC2DC;&#xBCF4;&#xB4DC;&#xB97C; &#xC120;&#xD0DD;&#xD558;&#xC138;&#xC694;</div>
       <div class="preview-empty-sub">&#xC88C;&#xCE21; &#xBA54;&#xB274;&#xC5D0;&#xC11C; &#xD56D;&#xBAA9;&#xC744; &#xD074;&#xB9AD;&#xD558;&#xBA74; &#xBBF8;&#xB9AC;&#xBCF4;&#xAE30;&#xAC00; &#xD45C;&#xC2DC;&#xB429;&#xB2C8;&#xB2E4;</div>
     </div>
@@ -352,6 +376,7 @@ var DATA = {
       { t: "\uD50C\uB7AB\uD3FC \uB300\uC2DC\uBCF4\uB4DC", d: "\uD50C\uB7AB\uD3FC\uBCC4 \uB9E4\uCD9C \uD604\uD669", u: "https://lookerstudio.google.com/reporting/93148b10-d6a8-42f5-acdb-8192e5e79612/page/p_9an4m8l4wd", icon: "\uD83C\uDFEA", type: "looker" },
       { t: "\uC81C\uD488 \uC21C\uC704 \uD2B8\uB80C\uB4DC \uB300\uC2DC\uBCF4\uB4DC(\uC6F9)", d: "\uD50C\uB7AB\uD3FC\uBA54\uD2B8\uB9AD\uC2A4 \uC6F9 \uBC84\uC804", u: "https://skin1004official.github.io/platform-metrics/", icon: "\uD83C\uDFC6", type: "web" },
       { t: "EAST \uD504\uB85C\uB355\uD2B8 \uB300\uC2DC\uBCF4\uB4DC", d: "EAST \uC81C\uD488\uBCC4 \uB300\uC2DC\uBCF4\uB4DC", u: "https://lookerstudio.google.com/u/0/reporting/4334059b-adea-436f-9b6b-154aa15727c3/page/p_jhinbd29sd", icon: "\uD83C\uDF0F", type: "looker" },
+      { t: "GM EAST \uC81C\uD488 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC81C\uD488\uBCC4 \uD310\uB9E4\uB7C9, \uACBD\uC7C1\uC0AC \uC81C\uD488 \uB7AD\uD0B9", u: "https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/p_jhinbd29sd", icon: "\uD83D\uDCE6", type: "looker" },
       { t: "\uD2F1\uD1A1\uC0F5 Affiliate \uB300\uC2DC\uBCF4\uB4DC", d: "\uD2F1\uD1A1\uC0F5 \uC5B4\uD544\uB9AC\uC5D0\uC774\uD2B8 \uD604\uD669", u: "https://lookerstudio.google.com/reporting/be8c9c17-5a1e-450c-85d7-3a2f36550c70/page/mgUfF", icon: "\uD83D\uDED2", type: "looker" },
       { t: "Shopify \uB300\uC2DC\uBCF4\uB4DC", d: "Shopify \uB9E4\uCD9C \uD604\uD669", u: "https://lookerstudio.google.com/reporting/afe86a46-018a-4918-ae64-4219ccf5b029/page/gK5fF", icon: "\uD83D\uDECD\uFE0F", type: "looker" },
       { t: "KBT \uC804\uC6A9 \uB300\uC2DC\uBCF4\uB4DC (Sales, Paid, CRM)", d: "KBT \uC885\uD569 \uB300\uC2DC\uBCF4\uB4DC", u: "https://lookerstudio.google.com/reporting/dd6a2a6c-5654-47ab-b29a-f279e602e5cf/page/bfsiE", icon: "\uD83C\uDFAF", type: "looker" },
@@ -434,9 +459,85 @@ var DATA = {
       { t: "QR Code Generator", d: "qr-code-generator.com", u: "https://www.qr-code-generator.com/", icon: "\uD83D\uDCF1", type: "tool" },
       { t: "Linktree", d: "linktr.ee", u: "https://linktr.ee/", icon: "\uD83C\uDF33", type: "tool" },
       { t: "GitHub Copilot", d: "github.com", u: "https://github.com/features/copilot/plans", icon: "\uD83E\uDD16", type: "tool" }
+    ],
+    "\uC0AC\uB0B4 \uD234": [
+      { t: "\uC774\uBA54\uC77C \uBC0F \uD2F1\uD1A1 \uC790\uB3D9\uBC1C\uC1A1 \uC2DC\uC2A4\uD15C", d: "\uC774\uBA54\uC77C parameter\uBCC4 \uB300\uB7C9\uBC1C\uC1A1, \uD2F1\uD1A1 DM \uB300\uB7C9 \uC790\uB3D9\uBC1C\uC1A1 \uC2DC\uC2A4\uD15C \uAC00\uC774\uB4DC", u: "https://www.notion.so/skin1004/DM-Mail-2e82b4283b0080968d39f19678257d23", icon: "\u2709\uFE0F", type: "notion" }
     ]
   }
 };
+
+// ===== SVG Icons — semantic per-icon mapping =====
+var ICON_SVGS = {
+  // Charts & Analytics
+  "chart-bar": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>',
+  "chart-line": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12l4-4 4 6 4-8 6 6"/><path d="M3 20h18"/></svg>',
+  "chart-pie": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 118 2.83"/><path d="M22 12A10 10 0 0012 2v10z"/></svg>',
+  "chart-up": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+  "chart-down": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>',
+  // Products & Sales
+  "product": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  "cart": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>',
+  "store": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  "dollar": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
+  "tag": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>',
+  // Marketing & Ads
+  "megaphone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 13v-2z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg>',
+  "target": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  "zap": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+  // People & Teams
+  "users": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>',
+  "user": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+  // Social & Content
+  "tiktok": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12a4 4 0 104 4V4a5 5 0 005 5"/></svg>',
+  "instagram": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="5"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>',
+  "video": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
+  // Review & Star
+  "star": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  // Shipping & Logistics
+  "package": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  // Globe & Regions
+  "globe": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>',
+  "flag": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>',
+  // Data & Spreadsheet
+  "table": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg>',
+  "clipboard": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>',
+  "upload": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg>',
+  // Search & Tools
+  "search": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  "tool": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+  "link": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>',
+  "fire": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c-4.97 0-9-2.69-9-6s4.03-6 9-10c4.97 4 9 6.69 9 10s-4.03 6-9 6z"/></svg>',
+  "key": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>',
+  "lock": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>',
+  "mail": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>',
+  "rocket": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/></svg>',
+  "trophy": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 22V12M14 22V12"/><path d="M8 7a4 4 0 108 0V4H8v3z"/></svg>',
+  "doc": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  "phone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>',
+  "brain": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 014 4v1a4 4 0 01-8 0V6a4 4 0 014-4zM6.5 10A4.5 4.5 0 002 14.5 4.5 4.5 0 006.5 19h11a4.5 4.5 0 000-9h-11z"/></svg>',
+  "qr": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v3h-3M14 20h3M20 20h0"/></svg>',
+  "palette": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r="0.5" fill="currentColor"/><circle cx="17.5" cy="10.5" r="0.5" fill="currentColor"/><circle cx="8.5" cy="7.5" r="0.5" fill="currentColor"/><circle cx="6.5" cy="12.5" r="0.5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z"/></svg>',
+};
+
+// Map icon field values to SVG keys
+var ICON_MAP = {
+  "chart": "chart-bar", "chart-bar": "chart-bar",
+  "chart-line": "chart-line", "dollar": "dollar", "users": "users",
+  "cart": "cart", "store": "store", "search": "search", "phone": "phone",
+  "star": "star", "people": "user", "doc": "doc", "flask": "product",
+  "headset": "megaphone", "link": "link", "box": "package", "megaphone": "megaphone",
+  "globe": "globe", "all": "target",
+};
+
+function getIconSvg(item) {
+  // 1. Try icon field as SVG key
+  if (ICON_SVGS[item.icon]) return ICON_SVGS[item.icon];
+  // 2. Try mapped icon
+  if (ICON_MAP[item.icon] && ICON_SVGS[ICON_MAP[item.icon]]) return ICON_SVGS[ICON_MAP[item.icon]];
+  // 3. Fallback by type
+  var typeFallback = { looker: "chart-bar", sheets: "table", tool: "tool", web: "globe", notion: "doc" };
+  return ICON_SVGS[typeFallback[item.type]] || ICON_SVGS["chart-bar"];
+}
 
 // ===== State =====
 var activeCat = 0;
@@ -482,11 +583,13 @@ function renderItems() {
       var key = catName + "|" + secName + "|" + item.t;
       var row = document.createElement("div");
       row.className = "item" + (activeItemKey === key ? " active" : "");
-      row.onclick = function() { selectItem(key, item); };
+      row.onclick = function() { cancelPreload(); selectItem(key, item); };
+      row.onmouseenter = function() { preloadItem(key, item); };
+      row.onmouseleave = function() { cancelPreload(); };
 
       var iconDiv = document.createElement("div");
       iconDiv.className = "item-icon ibg-" + item.type;
-      iconDiv.textContent = item.icon;
+      iconDiv.innerHTML = getIconSvg(item);
 
       var textDiv = document.createElement("div");
       textDiv.className = "item-text";
@@ -505,7 +608,7 @@ function renderItems() {
 
       var badge = document.createElement("span");
       badge.className = "item-badge badge-" + item.type;
-      var typeLabels = { looker: "Looker", sheets: "Sheets", tableau: "Tableau", tool: "Tool", web: "Web" };
+      var typeLabels = { looker: "Looker", sheets: "Sheets", tableau: "Tableau", tool: "Tool", web: "Web", notion: "Notion" };
       badge.textContent = typeLabels[item.type] || item.type;
 
       row.appendChild(iconDiv);
@@ -518,27 +621,96 @@ function renderItems() {
   document.getElementById("itemCount").textContent = totalCount + " items";
 }
 
+// ===== Iframe Cache Pool =====
+var _iframeCache = {};  // key → {iframe, loaded}
+var _activeIframeKey = null;
+var MAX_CACHED = 8;     // Max cached iframes (prevent memory bloat)
+
+function _getOrCreateIframe(key, url) {
+  if (_iframeCache[key]) return _iframeCache[key];
+
+  // Evict oldest if at capacity
+  var keys = Object.keys(_iframeCache);
+  if (keys.length >= MAX_CACHED) {
+    var oldest = keys[0];
+    _iframeCache[oldest].iframe.remove();
+    delete _iframeCache[oldest];
+  }
+
+  var iframe = document.createElement("iframe");
+  iframe.className = "preview-frame";
+  iframe.style.cssText = "display:none;flex:1;border:none;width:100%;background:var(--db-preview-bg)";
+  iframe.sandbox = "allow-same-origin allow-scripts allow-popups allow-forms allow-top-navigation";
+  var entry = { iframe: iframe, loaded: false };
+  iframe.onload = function() {
+    entry.loaded = true;
+    if (_activeIframeKey === key) {
+      document.getElementById("previewLoading").style.display = "none";
+    }
+  };
+  iframe.src = toEmbedUrl(url);
+  document.getElementById("previewContainer").appendChild(iframe);
+  _iframeCache[key] = entry;
+  return entry;
+}
+
 // ===== Select Item → Show Preview =====
 function selectItem(key, item) {
   activeItemKey = key;
 
-  // Update active state in sidebar
   document.querySelectorAll(".item").forEach(function(el) {
     el.classList.remove("active");
   });
   event.currentTarget.classList.add("active");
 
   var previewHeader = document.getElementById("previewHeader");
-  var previewFrame = document.getElementById("previewFrame");
   var previewEmpty = document.getElementById("previewEmpty");
+  var previewLoading = document.getElementById("previewLoading");
 
   previewHeader.style.display = "flex";
-  previewFrame.style.display = "block";
   previewEmpty.style.display = "none";
-
-  document.getElementById("previewTitle").textContent = item.icon + "  " + item.t;
+  document.getElementById("previewTitle").textContent = item.t;
   document.getElementById("btnNewTab").dataset.url = item.u;
-  previewFrame.src = toEmbedUrl(item.u);
+
+  // Hide all cached iframes
+  Object.keys(_iframeCache).forEach(function(k) {
+    _iframeCache[k].iframe.style.display = "none";
+  });
+
+  if (item.type === "notion") {
+    _activeIframeKey = null;
+    previewLoading.style.display = "none";
+    previewEmpty.style.display = "flex";
+    previewEmpty.innerHTML =
+      '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h5M8 16h8"/></svg>' +
+      '<div class="preview-empty-text">Notion \uD398\uC774\uC9C0\uB294 \uBBF8\uB9AC\uBCF4\uAE30\uAC00 \uC9C0\uC6D0\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4</div>' +
+      '<div class="preview-empty-sub" style="margin-top:12px">' +
+      '<button class="preview-btn btn-newtab" onclick="window.open(\'' + item.u + '\',\'_blank\')" style="font-size:13px;padding:8px 16px">' +
+      '\u2197 Notion\uC5D0\uC11C \uC5F4\uAE30</button></div>';
+  } else {
+    _activeIframeKey = key;
+    var entry = _getOrCreateIframe(key, item.u);
+    entry.iframe.style.display = "block";
+
+    // Show spinner only if not yet loaded
+    if (entry.loaded) {
+      previewLoading.style.display = "none";
+    } else {
+      previewLoading.style.display = "flex";
+    }
+  }
+}
+
+// ===== Hover preload (start loading before click) =====
+var _hoverTimer = null;
+function preloadItem(key, item) {
+  if (item.type === "notion" || _iframeCache[key]) return;
+  _hoverTimer = setTimeout(function() {
+    _getOrCreateIframe(key, item.u);  // Silent preload
+  }, 300);  // 300ms hover delay
+}
+function cancelPreload() {
+  clearTimeout(_hoverTimer);
 }
 
 // Convert Looker Studio URLs to embed format for iframe
@@ -554,7 +726,7 @@ function toEmbedUrl(url) {
 // ===== Init =====
 renderItems();
 
-// Auto-select first item
+// Auto-select first item + preload top dashboards
 var firstCat = catNames[0];
 var firstSec = Object.keys(DATA[firstCat])[0];
 var firstItem = DATA[firstCat][firstSec][0];
@@ -562,15 +734,30 @@ if (firstItem) {
   var firstKey = firstCat + "|" + firstSec + "|" + firstItem.t;
   activeItemKey = firstKey;
   renderItems();
-
-  // Load first preview
-  document.getElementById("previewHeader").style.display = "flex";
-  document.getElementById("previewFrame").style.display = "block";
-  document.getElementById("previewEmpty").style.display = "none";
-  document.getElementById("previewTitle").textContent = firstItem.icon + "  " + firstItem.t;
-  document.getElementById("btnNewTab").dataset.url = firstItem.u;
-  document.getElementById("previewFrame").src = toEmbedUrl(firstItem.u);
+  selectItem(firstKey, firstItem);
 }
+
+// Background preload: first dashboard of each category (staggered to avoid network congestion)
+setTimeout(function() {
+  var preloadCount = 0;
+  catNames.forEach(function(cat, idx) {
+    var secs = Object.keys(DATA[cat]);
+    for (var s = 0; s < secs.length && preloadCount < 5; s++) {
+      var items = DATA[cat][secs[s]];
+      for (var i = 0; i < items.length && preloadCount < 5; i++) {
+        var it = items[i];
+        if (it.type === "notion") continue;
+        var k = cat + "|" + secs[s] + "|" + it.t;
+        if (!_iframeCache[k]) {
+          (function(key, url) {
+            setTimeout(function() { _getOrCreateIframe(key, url); }, preloadCount * 2000);
+          })(k, it.u);
+          preloadCount++;
+        }
+      }
+    }
+  });
+}, 1000);
 </script>
 </body>
 </html>

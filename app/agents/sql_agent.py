@@ -133,7 +133,7 @@ MARKETING_TABLES = [
     ("skin1004-319714.Review_Data.New_Amazon_Review", "아마존 리뷰",
      ["아마존 리뷰", "amazon review"]),
     ("skin1004-319714.Review_Data.New_Qoo10_Review", "큐텐 리뷰",
-     ["큐텐 리뷰", "qoo10 review", "큐텐리뷰"]),
+     ["큐텐 리뷰", "큐텐 리뷰", "qoo10 review", "큐텐리뷰"]),
     ("skin1004-319714.Review_Data.New_Shopee_Review", "쇼피 리뷰",
      ["쇼피 리뷰", "shopee review", "쇼피리뷰"]),
     ("skin1004-319714.Review_Data.New_Smartstore_Review", "스마트스토어 리뷰",
@@ -186,8 +186,8 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     _SOURCE_TABLE_MAP = {
         "매출": [settings.sales_table_full_path],
         "제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
-        "광고데이터": ["skin1004-319714.marketing_analysis.integrated_advertising_data"],
-        "마케팅비용": ["skin1004-319714.marketing_analysis.Integrated_marketing_cost"],
+        "광고": ["skin1004-319714.marketing_analysis.integrated_advertising_data"],
+        "마케팅": ["skin1004-319714.marketing_analysis.Integrated_marketing_cost"],
         "Shopify": ["skin1004-319714.marketing_analysis.shopify_analysis_sales"],
         "플랫폼": ["skin1004-319714.Platform_Data.raw_data"],
         "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
@@ -339,7 +339,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     full_prompt = f"{system_prompt}{schema_context}{conv_section}{brand_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
 
     try:
-        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=4096)
+        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=10000)
         sql = sanitize_sql(sql)
 
         # Retry once if LLM returned text/truncated SQL instead of valid SQL
@@ -353,7 +353,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
                 "UNION ALL 사용 금지! CASE WHEN 패턴만 사용! "
                 "반드시 괄호가 모두 닫힌 완전한 SQL을 출력하세요."
             )
-            sql = llm.generate(retry_prompt, temperature=0.1, max_output_tokens=4096)
+            sql = llm.generate(retry_prompt, temperature=0.1, max_output_tokens=10000)
             sql = sanitize_sql(sql)
             if sql:
                 logger.info("sql_generation_retry_success", sql=sql[:200])
@@ -471,7 +471,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                     + "\n3. 모든 괄호를 반드시 닫을 것! CTE 사용 시 WITH ... AS (...) SELECT ... 완전한 형태"
                     + "\n4. 짧고 간결한 SQL만! 20줄 이내!"
                 )
-                retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=4096)
+                retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
                 from app.core.security import sanitize_sql
                 retry_sql = sanitize_sql(retry_sql)
                 if retry_sql:
@@ -724,7 +724,10 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
 ⚠️ **분량 제한 (최우선)**:
-- 전체 답변은 **800자 이내**로 작성! 표는 글자수에 포함하지 않음
+- 전체 답변 8000자 이내 (표 포함). 8000자 초과 시 **요약 모드**로 전환:
+  - 상위 10건만 표시하고 나머지는 "외 N건" 으로 생략
+  - 상세 데이터 대신 집계/요약 통계만 제공
+  - "전체 데이터가 필요하시면 말씀해주세요" 안내
 - 요약은 2문장 이내, 인사이트는 bullet 3개 이내 (각 1줄)
 - 장황한 해석/배경설명/가정 금지. 숫자와 팩트만!
 - SQL FORMAT 이슈 설명 금지 — 데이터 그대로 보여주기만 하면 됨
@@ -745,7 +748,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # Answer generation: foreground. Chart: parallel with short timeout.
         # User sees answer immediately; chart appended only if ready fast enough.
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            answer_future = executor.submit(llm.generate, prompt, None, 0.05, 3072)
+            answer_future = executor.submit(llm.generate, prompt, None, 0.05, 65536)
             chart_llm = get_flash_client()
             chart_future = executor.submit(
                 _try_generate_chart, chart_llm, query, sql, result_preview, results
@@ -1281,7 +1284,7 @@ def run_sql_agent_stream(
     chart_future = _chart_executor.submit(_try_generate_chart, chart_llm, query, sql, result_preview, results)
 
     # Stream answer (chart generates in parallel)
-    for chunk in llm.generate_stream(prompt, temperature=0.05, max_output_tokens=4096):
+    for chunk in llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000):
         yield chunk
 
     # Chart should be done by now (ran in parallel with answer streaming)

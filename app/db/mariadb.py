@@ -42,9 +42,9 @@ def _get_pool() -> PooledDB:
         s = get_settings()
         _pool = PooledDB(
             creator=pymysql,
-            maxconnections=10,
-            mincached=2,
-            maxcached=5,
+            maxconnections=25,
+            mincached=3,
+            maxcached=10,
             blocking=True,
             host=s.mariadb_host,
             port=int(s.mariadb_port),
@@ -55,7 +55,7 @@ def _get_pool() -> PooledDB:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=False,
         )
-        logger.info("mariadb_pool_initialized", max=10, cached=2)
+        logger.info("mariadb_pool_initialized", max=25, cached=3)
     return _pool
 
 

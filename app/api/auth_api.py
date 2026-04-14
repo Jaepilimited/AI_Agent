@@ -169,10 +169,16 @@ async def _get_ad_cache() -> list[dict]:
     if _ad_cache and (now - _ad_cache_ts) < _AD_CACHE_TTL:
         return _ad_cache
     rows = await _db_fetch_all("""
-        SELECT ad.id, ad.display_name, ad.email, ad.department
+        SELECT ad.id,
+               COALESCE(u.display_name, ad.display_name) AS display_name,
+               ad.display_name AS ad_name,
+               ad.username,
+               COALESCE(ad.email, u.email) AS email,
+               ad.department
         FROM ad_users ad
+        LEFT JOIN users u ON ad.id = u.ad_user_id COLLATE utf8mb4_unicode_ci
         WHERE ad.is_active = 1 AND ad.department IS NOT NULL AND ad.department != ''
-        ORDER BY ad.display_name, ad.department
+        ORDER BY COALESCE(u.display_name, ad.display_name), ad.department
     """)
     _ad_cache = rows
     _ad_cache_ts = now
@@ -184,12 +190,15 @@ async def _get_ad_cache() -> list[dict]:
 async def search_by_name(
     name: str = Query(..., min_length=1, description="Name to search")
 ):
-    """Find AD users by display_name (in-memory search, no DB hit)."""
+    """Find AD users by name (searches display_name, ad_name, username)."""
     cache = await _get_ad_cache()
     q = name.lower()
     results = []
     for u in cache:
-        if q in (u.get("display_name") or "").lower():
+        display = (u.get("display_name") or "").lower()
+        ad_name = (u.get("ad_name") or "").lower()
+        uname = (u.get("username") or "").lower()
+        if q in display or q in ad_name or q in uname:
             results.append(u)
             if len(results) >= 20:
                 break

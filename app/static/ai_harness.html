@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Knowledge Base — SKIN1004</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface2:#1c2128;--border:#30363d;
+  --text:#e6edf3;--text2:#8b949e;--accent:#e89200;
+  --ok:#3fb950;--warn:#d29922;--err:#f85149;
+  --blue:#58a6ff;--purple:#bc8cff;--cyan:#79c0ff;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;height:100vh;overflow:hidden}
+
+/* ── Header ── */
+.header{display:flex;align-items:center;justify-content:space-between;padding:0 20px;
+  background:var(--surface);border-bottom:1px solid var(--border);height:48px;flex-shrink:0}
+.header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.header h1 svg{color:var(--accent)}
+.header-right{display:flex;align-items:center;gap:8px}
+.hbtn{background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;
+  padding:5px 12px;cursor:pointer;font-size:12px;transition:all .2s}
+.hbtn:hover{border-color:var(--accent);color:var(--accent)}
+.hbtn.primary{background:var(--accent);color:#000;border-color:var(--accent);font-weight:600}
+.hbtn.primary:hover{opacity:.9}
+.hbtn.active{background:var(--accent);color:#000;border-color:var(--accent)}
+.tab-group{display:flex;gap:2px;background:var(--bg);border-radius:6px;padding:2px}
+.tab-btn{background:none;border:none;color:var(--text2);padding:4px 12px;border-radius:4px;
+  cursor:pointer;font-size:12px;transition:all .2s}
+.tab-btn.active{background:var(--surface2);color:var(--text)}
+
+/* ── Layout ── */
+.main{display:flex;height:calc(100vh - 48px)}
+
+/* ── File sidebar ── */
+.sidebar{width:240px;background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);
+  padding:12px 16px 8px;font-weight:600}
+.file-list{flex:1;overflow-y:auto;padding:0 8px 8px}
+.file-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;
+  cursor:pointer;font-size:13px;transition:all .15s;margin-bottom:2px}
+.file-item:hover{background:var(--surface2)}
+.file-item.active{background:var(--accent);color:#000}
+.file-item.active .file-meta{color:rgba(0,0,0,.6)}
+.file-icon{width:16px;height:16px;flex-shrink:0;opacity:.7}
+.file-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.file-meta{font-size:10px;color:var(--text2);flex-shrink:0}
+.file-type{font-size:9px;padding:1px 5px;border-radius:3px;background:var(--bg);color:var(--text2);margin-right:4px}
+.new-file-btn{margin:8px;padding:6px;border:1px dashed var(--border);border-radius:6px;
+  background:none;color:var(--text2);cursor:pointer;font-size:12px;text-align:center;transition:all .2s}
+.new-file-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── Editor area ── */
+.editor-area{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+#editorContent{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.editor-tabs{display:flex;align-items:center;padding:6px 12px;background:var(--surface);
+  border-bottom:1px solid var(--border);gap:8px;flex-shrink:0}
+.editor-tab-name{font-size:13px;font-weight:500;flex:1}
+.unsaved-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);display:none}
+
+.editor-body{flex:1;display:flex;overflow:hidden}
+.edit-pane{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.edit-pane textarea{flex:1;background:var(--bg);color:var(--text);border:none;padding:16px 20px;
+  font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:13px;line-height:1.7;
+  resize:none;outline:none;tab-size:2}
+.preview-pane{flex:1;overflow-y:auto;padding:20px 24px;background:var(--surface2);
+  border-left:1px solid var(--border);display:none}
+.preview-pane.show{display:block}
+
+/* ── Markdown preview styles ── */
+.preview-pane h1{font-size:22px;border-bottom:1px solid var(--border);padding-bottom:8px;margin:16px 0 8px}
+.preview-pane h2{font-size:18px;border-bottom:1px solid var(--border);padding-bottom:6px;margin:14px 0 6px;color:var(--accent)}
+.preview-pane h3{font-size:15px;margin:12px 0 4px}
+.preview-pane p{margin:6px 0;line-height:1.7;font-size:14px}
+.preview-pane ul,.preview-pane ol{margin:6px 0 6px 20px;font-size:14px}
+.preview-pane li{margin:3px 0;line-height:1.6}
+.preview-pane code{background:var(--bg);padding:2px 5px;border-radius:3px;font-size:12px;font-family:'Cascadia Code',monospace}
+.preview-pane pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin:8px 0;overflow-x:auto}
+.preview-pane pre code{padding:0;background:none}
+.preview-pane strong{color:var(--accent)}
+.preview-pane a{color:var(--blue);text-decoration:none}
+.preview-pane a:hover{text-decoration:underline}
+.preview-pane blockquote{border-left:3px solid var(--accent);padding:4px 12px;margin:8px 0;
+  background:rgba(232,146,0,.05);color:var(--text2)}
+.preview-pane table{border-collapse:collapse;margin:8px 0;width:100%;font-size:13px}
+.preview-pane th,.preview-pane td{border:1px solid var(--border);padding:6px 10px;text-align:left}
+.preview-pane th{background:var(--surface);font-weight:600}
+.preview-pane hr{border:none;border-top:1px solid var(--border);margin:16px 0}
+
+/* ── Graph view ── */
+.graph-view{flex:1;display:none;position:relative;overflow:hidden}
+.graph-view.show{display:flex}
+.graph-view svg{width:100%;height:100%;cursor:grab}
+.graph-view svg:active{cursor:grabbing}
+.gnode{cursor:pointer;transition:filter .2s}
+.gnode:hover{filter:brightness(1.3)}
+.gnode-label{font-size:10px;fill:var(--text);pointer-events:none;text-anchor:middle;font-weight:500}
+.gedge{stroke:var(--border);stroke-width:1;opacity:.4}
+.graph-legend{position:absolute;bottom:12px;left:12px;background:var(--surface);
+  border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:11px;z-index:5}
+.graph-legend div{display:flex;align-items:center;gap:6px;margin:3px 0}
+.gleg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.graph-zoom-info{position:absolute;top:12px;right:12px;background:var(--surface);
+  border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--text2);z-index:5}
+
+/* ── Node detail panel (graph) ── */
+.node-panel{position:absolute;top:0;right:0;width:380px;height:100%;background:var(--surface);
+  border-left:1px solid var(--border);z-index:10;display:none;flex-direction:column;
+  box-shadow:-4px 0 20px rgba(0,0,0,.4)}
+.node-panel.show{display:flex}
+.node-panel-header{display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);gap:8px;flex-shrink:0}
+.node-panel-header h3{flex:1;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node-panel-header .np-type{font-size:10px;padding:2px 8px;border-radius:10px;flex-shrink:0}
+.node-panel-close{background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;padding:0 4px}
+.node-panel-body{flex:1;overflow-y:auto;padding:16px}
+.node-panel-body h1{font-size:20px;border-bottom:1px solid var(--border);padding-bottom:6px;margin:12px 0 6px}
+.node-panel-body h2{font-size:16px;border-bottom:1px solid var(--border);padding-bottom:4px;margin:10px 0 4px;color:var(--accent)}
+.node-panel-body h3{font-size:14px;margin:8px 0 4px}
+.node-panel-body p{margin:4px 0;line-height:1.6;font-size:13px}
+.node-panel-body ul,.node-panel-body ol{margin:4px 0 4px 16px;font-size:13px}
+.node-panel-body li{margin:2px 0;line-height:1.5}
+.node-panel-body code{background:var(--bg);padding:1px 4px;border-radius:3px;font-size:11px}
+.node-panel-body pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;margin:6px 0;overflow-x:auto;font-size:11px}
+.node-panel-body pre code{padding:0;background:none}
+.node-panel-body strong{color:var(--accent)}
+.node-panel-body a{color:var(--blue)}
+.node-panel-body blockquote{border-left:3px solid var(--accent);padding:4px 10px;margin:6px 0;background:rgba(232,146,0,.05);color:var(--text2)}
+.node-panel-body table{border-collapse:collapse;margin:6px 0;width:100%;font-size:12px}
+.node-panel-body th,.node-panel-body td{border:1px solid var(--border);padding:4px 8px;text-align:left}
+.node-panel-body th{background:var(--surface);font-weight:600}
+.node-panel-edit{display:block;margin:0 16px 12px;padding:8px;border:1px solid var(--accent);
+  border-radius:6px;background:none;color:var(--accent);cursor:pointer;font-size:12px;text-align:center;transition:all .2s;flex-shrink:0}
+.node-panel-edit:hover{background:var(--accent);color:#000}
+
+/* ── Welcome ── */
+.welcome{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;padding:40px}
+.welcome h2{font-size:20px;margin-bottom:8px;color:var(--text2)}
+.welcome p{font-size:14px;color:var(--text2);max-width:400px;line-height:1.6}
+
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;display:none;
+  align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:24px;width:400px;max-width:90vw}
+.modal h3{margin-bottom:16px;font-size:16px}
+.modal label{display:block;font-size:12px;color:var(--text2);margin:10px 0 4px}
+.modal input,.modal select,.modal textarea{width:100%;background:var(--bg);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:13px;outline:none}
+.modal input:focus,.modal textarea:focus{border-color:var(--accent)}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--ok);color:#000;
+  padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:200;
+  transform:translateY(80px);opacity:0;transition:all .3s}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.error{background:var(--err);color:#fff}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    </svg>
+    AI Knowledge Base
+  </h1>
+  <div class="header-right">
+    <div class="tab-group">
+      <button class="tab-btn active" id="tabEdit" onclick="switchView('edit')">Edit</button>
+      <button class="tab-btn" id="tabSplit" onclick="switchView('split')">Split</button>
+      <button class="tab-btn" id="tabGraph" onclick="switchView('graph')">Graph</button>
+    </div>
+    <button class="hbtn primary" id="saveBtn" onclick="saveFile()" style="display:none">Save</button>
+    <a class="hbtn" href="/">Chat</a>
+  </div>
+</div>
+
+<div class="main">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-title">AI Knowledge Files</div>
+    <div class="file-list" id="fileList"></div>
+    <button class="new-file-btn" onclick="showNewFileModal()">+ New Memory</button>
+  </div>
+
+  <!-- Editor -->
+  <div class="editor-area" id="editorArea">
+    <div class="welcome" id="welcomeScreen">
+      <div>
+        <h2>AI Knowledge Base</h2>
+        <p>AI가 이 프로젝트를 이해하는 기반이 되는 MD 파일들입니다.
+        CLAUDE.md는 프로젝트 규칙, Memory 파일들은 학습된 피드백과 컨텍스트입니다.
+        파일을 선택하여 편집하세요.</p>
+      </div>
+    </div>
+
+    <!-- Graph view (always available, not tied to file open) -->
+    <div class="graph-view" id="graphView">
+      <svg id="graphSvg"></svg>
+      <div class="graph-legend">
+        <div><div class="gleg-dot" style="background:var(--accent)"></div>CLAUDE.md</div>
+        <div><div class="gleg-dot" style="background:var(--blue)"></div>MEMORY.md</div>
+        <div><div class="gleg-dot" style="background:var(--ok)"></div>Memory</div>
+        <div><div class="gleg-dot" style="background:var(--warn)"></div>Commands</div>
+        <div><div class="gleg-dot" style="background:var(--purple)"></div>Skills / Sections</div>
+      </div>
+      <div class="graph-zoom-info" id="zoomInfo">100%  |  Scroll: Zoom  |  Drag: Pan</div>
+      <div class="node-panel" id="nodePanel">
+        <div class="node-panel-header">
+          <h3 id="npTitle"></h3>
+          <span class="np-type" id="npType"></span>
+          <button class="node-panel-close" onclick="closeNodePanel()">&times;</button>
+        </div>
+        <div class="node-panel-body" id="npBody"></div>
+        <button class="node-panel-edit" id="npEditBtn" onclick="editFromPanel()">Edit this file</button>
+      </div>
+    </div>
+
+    <!-- Editor (shown when file is opened) -->
+    <div id="editorContent" style="display:none">
+      <div class="editor-tabs">
+        <span class="editor-tab-name" id="editorFileName"></span>
+        <span class="unsaved-dot" id="unsavedDot"></span>
+        <button class="hbtn" id="deleteBtn" onclick="deleteFile()" style="display:none">Delete</button>
+      </div>
+      <div class="editor-body">
+        <div class="edit-pane" id="editPane">
+          <textarea id="editor" spellcheck="false"></textarea>
+        </div>
+        <div class="preview-pane" id="previewPane"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New file modal -->
+<div class="modal-overlay" id="newFileModal">
+  <div class="modal">
+    <h3>New Memory File</h3>
+    <label>Name</label>
+    <input id="newFileName" placeholder="feedback_example">
+    <label>Type</label>
+    <select id="newFileType">
+      <option value="feedback">feedback</option>
+      <option value="user">user</option>
+      <option value="project">project</option>
+      <option value="reference">reference</option>
+    </select>
+    <label>Description</label>
+    <input id="newFileDesc" placeholder="One-line description">
+    <label>Content</label>
+    <textarea id="newFileContent" rows="4" placeholder="Memory content..."></textarea>
+    <div class="modal-actions">
+      <button class="hbtn" onclick="closeModal()">Cancel</button>
+      <button class="hbtn primary" onclick="createFile()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  // ── State ──
+  var files = [];
+  var currentFile = null;
+  var originalContent = "";
+  var currentView = "edit";
+  var graphData = null;
+  var simNodes = [], simEdges = [];
+  var animFrame = null;
+  var dragNode = null;
+
+  var GROUP_COLORS = {
+    project:"#e89200", index:"#58a6ff", memory:"#3fb950", section:"#bc8cff",
+    command:"#d29922", skill:"#bc8cff", feedback:"#3fb950"
+  };
+
+  // ── Init ──
+  marked.setOptions({
+    highlight:function(code,lang){
+      if(lang && hljs.getLanguage(lang)) return hljs.highlight(code,{language:lang}).value;
+      return hljs.highlightAuto(code).value;
+    },
+    breaks:true
+  });
+
+  loadFiles();
+  loadGraph();
+
+  // ── Load file list ──
+  function loadFiles(){
+    fetch("/api/harness/files").then(function(r){return r.json()}).then(function(data){
+      files = data;
+      renderFileList();
+    });
+  }
+  window.loadFiles = loadFiles;
+
+  function renderFileList(){
+    var html = "";
+    var typeIcons = {
+      project:'<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="#e89200" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+      index:'<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>',
+      memory:'<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
+      feedback:'<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>',
+      command:'<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="#d29922" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>',
+      skill:'<svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="#bc8cff" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+    };
+    files.forEach(function(f){
+      var isActive = currentFile && currentFile.path === f.path;
+      html += '<div class="file-item' + (isActive?" active":"") + '" onclick="openFile(\'' + escAttr(f.path) + '\')">';
+      html += (typeIcons[f.type] || typeIcons.memory);
+      html += '<span class="file-name">' + esc(f.name) + '</span>';
+      html += '<span class="file-meta">' + f.sections + 'sec</span>';
+      html += '</div>';
+    });
+    document.getElementById("fileList").innerHTML = html;
+  }
+
+  // ── Open file ──
+  window.openFile = function(path){
+    // Check unsaved
+    if(currentFile && hasChanges()){
+      if(!confirm("저장하지 않은 변경사항이 있습니다. 계속하시겠습니까?")) return;
+    }
+    fetch("/api/harness/file?path=" + encodeURIComponent(path))
+      .then(function(r){return r.json()})
+      .then(function(data){
+        currentFile = data;
+        originalContent = data.content;
+        document.getElementById("welcomeScreen").style.display = "none";
+        var ec = document.getElementById("editorContent");
+        ec.style.display = "flex";
+        document.getElementById("editorFileName").textContent = data.name;
+        document.getElementById("editor").value = data.content;
+        document.getElementById("saveBtn").style.display = "inline-block";
+        // Show delete for memory files (not CLAUDE.md, MEMORY.md)
+        var canDelete = data.name !== "CLAUDE.md" && data.name !== "MEMORY.md";
+        document.getElementById("deleteBtn").style.display = canDelete ? "inline-block" : "none";
+        updatePreview();
+        updateUnsaved();
+        renderFileList();
+      });
+  };
+
+  // ── Save ──
+  window.saveFile = function(){
+    if(!currentFile) return;
+    var content = document.getElementById("editor").value;
+    fetch("/api/harness/file", {
+      method:"PUT",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({path:currentFile.path, content:content})
+    }).then(function(r){return r.json()}).then(function(data){
+      if(data.ok){
+        originalContent = content;
+        updateUnsaved();
+        toast("Saved: " + currentFile.name);
+        loadFiles();
+        loadGraph();
+      }
+    }).catch(function(){ toast("Save failed", true); });
+  };
+
+  // ── Delete ──
+  window.deleteFile = function(){
+    if(!currentFile) return;
+    if(!confirm(currentFile.name + " 을(를) 삭제하시겠습니까?")) return;
+    fetch("/api/harness/file?path=" + encodeURIComponent(currentFile.path), {method:"DELETE"})
+      .then(function(r){return r.json()})
+      .then(function(data){
+        if(data.ok){
+          toast("Deleted: " + currentFile.name);
+          currentFile = null;
+          document.getElementById("editorContent").style.display = "none";
+          document.getElementById("welcomeScreen").style.display = "flex";
+          document.getElementById("saveBtn").style.display = "none";
+          loadFiles();
+          loadGraph();
+        }
+      });
+  };
+
+  // ── New file ──
+  window.showNewFileModal = function(){
+    document.getElementById("newFileModal").classList.add("show");
+    document.getElementById("newFileName").focus();
+  };
+  window.closeModal = function(){
+    document.getElementById("newFileModal").classList.remove("show");
+  };
+  window.createFile = function(){
+    var name = document.getElementById("newFileName").value.trim();
+    if(!name){ toast("Name required", true); return; }
+    fetch("/api/harness/file", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        name:name,
+        type:document.getElementById("newFileType").value,
+        description:document.getElementById("newFileDesc").value,
+        content:document.getElementById("newFileContent").value
+      })
+    }).then(function(r){return r.json()}).then(function(data){
+      if(data.ok){
+        closeModal();
+        toast("Created: " + data.name);
+        loadFiles();
+        loadGraph();
+        openFile(data.path);
+      } else {
+        toast(data.detail || "Error", true);
+      }
+    }).catch(function(e){ toast("Failed: " + e.message, true); });
+  };
+
+  // ── Preview ──
+  function updatePreview(){
+    if(!currentFile) return;
+    var content = document.getElementById("editor").value;
+    document.getElementById("previewPane").innerHTML = marked.parse(content);
+  }
+
+  // ── Unsaved indicator ──
+  function hasChanges(){
+    return currentFile && document.getElementById("editor").value !== originalContent;
+  }
+  function updateUnsaved(){
+    var dot = document.getElementById("unsavedDot");
+    dot.style.display = hasChanges() ? "inline-block" : "none";
+  }
+
+  // ── Editor events ──
+  document.getElementById("editor").addEventListener("input", function(){
+    updatePreview();
+    updateUnsaved();
+  });
+  // Ctrl+S save
+  document.addEventListener("keydown", function(e){
+    if((e.ctrlKey || e.metaKey) && e.key === "s"){
+      e.preventDefault();
+      saveFile();
+    }
+  });
+
+  // ── View switching ──
+  window.switchView = function(view){
+    currentView = view;
+    ["tabEdit","tabSplit","tabGraph"].forEach(function(id){
+      document.getElementById(id).classList.remove("active");
+    });
+    var editorContent = document.getElementById("editorContent");
+    var welcomeScreen = document.getElementById("welcomeScreen");
+    var editPane = document.getElementById("editPane");
+    var previewPane = document.getElementById("previewPane");
+    var graphView = document.getElementById("graphView");
+
+    if(view === "graph"){
+      document.getElementById("tabGraph").classList.add("active");
+      editorContent.style.display = "none";
+      welcomeScreen.style.display = "none";
+      graphView.classList.add("show");
+      renderGraph();
+    } else {
+      graphView.classList.remove("show");
+      closeNodePanel();
+      if(currentFile){
+        editorContent.style.display = "flex";
+        welcomeScreen.style.display = "none";
+      } else {
+        editorContent.style.display = "none";
+        welcomeScreen.style.display = "flex";
+      }
+      if(view === "edit"){
+        document.getElementById("tabEdit").classList.add("active");
+        editPane.style.display = "flex";
+        previewPane.classList.remove("show");
+      } else if(view === "split"){
+        document.getElementById("tabSplit").classList.add("active");
+        editPane.style.display = "flex";
+        previewPane.classList.add("show");
+        updatePreview();
+      }
+    }
+  };
+
+  // ── Graph ──
+  var zoom = 1, panX = 0, panY = 0;
+  var isPanning = false, panStartX = 0, panStartY = 0, panStartPX = 0, panStartPY = 0;
+  var graphW = 0, graphH = 0;
+  var graphWorld = null;
+  var nodeContentCache = {};
+  var selectedNodeFile = null;
+
+  function loadGraph(){
+    fetch("/api/harness/graph").then(function(r){return r.json()}).then(function(data){
+      graphData = data;
+      if(currentView === "graph") renderGraph();
+    });
+  }
+
+  // Cache file contents for node panel
+  function preloadFileContents(){
+    files.forEach(function(f){
+      if(!nodeContentCache[f.name]){
+        fetch("/api/harness/file?path=" + encodeURIComponent(f.path))
+          .then(function(r){return r.json()})
+          .then(function(data){ nodeContentCache[data.name] = data; });
+      }
+    });
+  }
+
+  window.closeNodePanel = function(){
+    document.getElementById("nodePanel").classList.remove("show");
+  };
+  window.editFromPanel = function(){
+    if(selectedNodeFile){
+      var f = files.find(function(ff){ return ff.name === selectedNodeFile; });
+      if(f){
+        switchView("edit");
+        openFile(f.path);
+      }
+    }
+  };
+
+  function showNodePanel(n){
+    var panel = document.getElementById("nodePanel");
+    var title = document.getElementById("npTitle");
+    var type = document.getElementById("npType");
+    var body = document.getElementById("npBody");
+    var editBtn = document.getElementById("npEditBtn");
+
+    title.textContent = n.label;
+    var typeColors = {project:"var(--accent)", index:"var(--blue)", memory:"var(--ok)", section:"var(--purple)"};
+    type.textContent = n.group;
+    type.style.background = typeColors[n.group] || "var(--border)";
+    type.style.color = n.group === "section" ? "#fff" : "#000";
+
+    selectedNodeFile = n.file || null;
+
+    if(n.file && nodeContentCache[n.file]){
+      var content = nodeContentCache[n.file].content;
+      // If it's a section node, extract just that section
+      if(n.group === "section"){
+        var sectionContent = extractSection(content, n.label);
+        body.innerHTML = marked.parse(sectionContent || "*Section not found*");
+      } else {
+        body.innerHTML = marked.parse(content);
+      }
+      editBtn.style.display = "block";
+    } else if(n.file){
+      body.innerHTML = "<p style='color:var(--text2)'>Loading...</p>";
+      editBtn.style.display = "block";
+      fetch("/api/harness/file?path=" + encodeURIComponent(
+        files.find(function(f){return f.name === n.file;})?.path || ""
+      )).then(function(r){return r.json()}).then(function(data){
+        nodeContentCache[data.name] = data;
+        if(n.group === "section"){
+          body.innerHTML = marked.parse(extractSection(data.content, n.label) || "*Section not found*");
+        } else {
+          body.innerHTML = marked.parse(data.content);
+        }
+      });
+    } else {
+      body.innerHTML = "<p style='color:var(--text2)'>No content</p>";
+      editBtn.style.display = "none";
+    }
+
+    panel.classList.add("show");
+    body.scrollTop = 0;
+  }
+
+  function extractSection(content, heading){
+    var lines = content.split("\n");
+    var capturing = false;
+    var result = [];
+    var headingLevel = 0;
+    for(var i = 0; i < lines.length; i++){
+      var line = lines[i];
+      var m = line.match(/^(#{1,3})\s+(.+)/);
+      if(m){
+        if(capturing){
+          // Stop if we hit same or higher level heading
+          if(m[1].length <= headingLevel) break;
+        }
+        if(m[2].trim() === heading.trim()){
+          capturing = true;
+          headingLevel = m[1].length;
+          result.push(line);
+          continue;
+        }
+      }
+      if(capturing) result.push(line);
+    }
+    return result.join("\n");
+  }
+
+  function renderGraph(){
+    if(!graphData) return;
+    var svg = document.getElementById("graphSvg");
+    var container = document.getElementById("graphView");
+    graphW = container.clientWidth;
+    graphH = container.clientHeight;
+    zoom = 1; panX = 0; panY = 0;
+    svg.setAttribute("viewBox", "0 0 " + graphW + " " + graphH);
+    svg.innerHTML = "";
+
+    // Defs
+    var defs = svgNS("defs");
+    var filter = svgNS("filter"); filter.id = "glow";
+    var blur = svgNS("feGaussianBlur"); blur.setAttribute("stdDeviation","2.5"); blur.setAttribute("result","g");
+    var merge = svgNS("feMerge");
+    var m1 = svgNS("feMergeNode"); m1.setAttribute("in","g");
+    var m2 = svgNS("feMergeNode"); m2.setAttribute("in","SourceGraphic");
+    merge.appendChild(m1); merge.appendChild(m2);
+    filter.appendChild(blur); filter.appendChild(merge);
+    defs.appendChild(filter);
+    svg.appendChild(defs);
+
+    // World group (zoom + pan target)
+    graphWorld = svgNS("g");
+    graphWorld.id = "graphWorld";
+    svg.appendChild(graphWorld);
+
+    var gE = svgNS("g"); graphWorld.appendChild(gE);
+    var gN = svgNS("g"); graphWorld.appendChild(gN);
+
+    // Spread out initial positions more
+    var cx = graphW/2, cy = graphH/2;
+    var groupPos = {
+      project:{x:cx-200,y:120}, index:{x:cx+200,y:120},
+      memory:{x:cx,y:350}, section:{x:cx,y:cy+50}
+    };
+
+    simNodes = graphData.nodes.map(function(n){
+      var gp = groupPos[n.group] || {x:cx,y:cy};
+      return {
+        id:n.id, label:n.label, group:n.group, size:n.size||20, file:n.file, level:n.level||0,
+        x: gp.x + (Math.random()-0.5)*280,
+        y: gp.y + (Math.random()-0.5)*200,
+        vx:0, vy:0, fx:null, fy:null
+      };
+    });
+
+    var idx = {};
+    simNodes.forEach(function(n,i){ idx[n.id] = i; });
+
+    simEdges = graphData.edges.map(function(e){
+      return {source:idx[e.from], target:idx[e.to]};
+    }).filter(function(e){ return e.source !== undefined && e.target !== undefined; });
+
+    // Create SVG elements
+    simEdges.forEach(function(e){
+      var line = svgNS("line");
+      line.setAttribute("class","gedge");
+      gE.appendChild(line);
+      e.el = line;
+    });
+
+    simNodes.forEach(function(n){
+      var g = svgNS("g");
+      g.setAttribute("class","gnode");
+
+      var circle = svgNS("circle");
+      circle.setAttribute("r", n.size/2);
+      circle.setAttribute("fill", GROUP_COLORS[n.group] || "#666");
+      circle.setAttribute("opacity","0.85");
+      circle.setAttribute("filter","url(#glow)");
+
+      var text = svgNS("text");
+      text.setAttribute("class","gnode-label");
+      text.setAttribute("dy", n.size/2 + 13);
+      var lbl = n.label.length > 22 ? n.label.substring(0,20) + ".." : n.label;
+      text.textContent = lbl;
+
+      g.appendChild(circle);
+      g.appendChild(text);
+      gN.appendChild(g);
+      n.el = g;
+
+      // Click → show content panel
+      g.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        showNodePanel(n);
+      });
+      // Drag node
+      g.addEventListener("mousedown", function(ev){
+        ev.preventDefault();
+        ev.stopPropagation();
+        dragNode = n;
+        n.fx = n.x; n.fy = n.y;
+      });
+    });
+
+    // Pan: drag on empty SVG space
+    svg.addEventListener("mousedown", function(ev){
+      if(dragNode) return;
+      isPanning = true;
+      panStartX = ev.clientX;
+      panStartY = ev.clientY;
+      panStartPX = panX;
+      panStartPY = panY;
+    });
+    svg.addEventListener("mousemove", function(ev){
+      if(dragNode){
+        var rect = svg.getBoundingClientRect();
+        var mx = (ev.clientX - rect.left) * (graphW / rect.width);
+        var my = (ev.clientY - rect.top) * (graphH / rect.height);
+        // Convert screen coords to world coords
+        dragNode.fx = (mx - panX) / zoom;
+        dragNode.fy = (my - panY) / zoom;
+        dragNode.x = dragNode.fx;
+        dragNode.y = dragNode.fy;
+        return;
+      }
+      if(!isPanning) return;
+      var dx = ev.clientX - panStartX;
+      var dy = ev.clientY - panStartY;
+      panX = panStartPX + dx;
+      panY = panStartPY + dy;
+      updateTransform();
+    });
+    svg.addEventListener("mouseup", function(){
+      if(dragNode){dragNode.fx=null;dragNode.fy=null;dragNode=null;}
+      isPanning = false;
+    });
+    svg.addEventListener("mouseleave", function(){
+      if(dragNode){dragNode.fx=null;dragNode.fy=null;dragNode=null;}
+      isPanning = false;
+    });
+
+    // Zoom: mouse wheel
+    svg.addEventListener("wheel", function(ev){
+      ev.preventDefault();
+      var rect = svg.getBoundingClientRect();
+      var mx = (ev.clientX - rect.left) * (graphW / rect.width);
+      var my = (ev.clientY - rect.top) * (graphH / rect.height);
+
+      var oldZoom = zoom;
+      var delta = ev.deltaY > 0 ? 0.9 : 1.1;
+      zoom = Math.max(0.2, Math.min(5, zoom * delta));
+
+      // Zoom toward mouse position
+      panX = mx - (mx - panX) * (zoom / oldZoom);
+      panY = my - (my - panY) * (zoom / oldZoom);
+
+      updateTransform();
+      document.getElementById("zoomInfo").textContent = Math.round(zoom*100) + "%  |  Scroll: Zoom  |  Drag: Pan";
+    }, {passive:false});
+
+    // Close panel on SVG click
+    svg.addEventListener("click", function(){ closeNodePanel(); });
+
+    preloadFileContents();
+
+    if(animFrame) cancelAnimationFrame(animFrame);
+    graphTick();
+  }
+
+  function updateTransform(){
+    if(graphWorld) graphWorld.setAttribute("transform","translate("+panX+","+panY+") scale("+zoom+")");
+  }
+
+  function graphTick(){
+    var alpha = 0.25, repulsion = 1200, attraction = 0.005, gravity = 0.006, damping = 0.88;
+    var cxW = graphW/2, cyH = graphH/2;
+
+    for(var i=0;i<simNodes.length;i++){
+      for(var j=i+1;j<simNodes.length;j++){
+        var a=simNodes[i], b=simNodes[j];
+        var dx=b.x-a.x, dy=b.y-a.y;
+        var dist=Math.sqrt(dx*dx+dy*dy)||1;
+        var f=repulsion/(dist*dist);
+        var fx=dx/dist*f*alpha, fy=dy/dist*f*alpha;
+        if(!a.fx){a.vx-=fx;a.vy-=fy;}
+        if(!b.fx){b.vx+=fx;b.vy+=fy;}
+      }
+    }
+    simEdges.forEach(function(e){
+      var a=simNodes[e.source], b=simNodes[e.target];
+      var dx=b.x-a.x, dy=b.y-a.y;
+      var dist=Math.sqrt(dx*dx+dy*dy)||1;
+      var f=(dist-100)*attraction*alpha;
+      var fx=dx/dist*f, fy=dy/dist*f;
+      if(!a.fx){a.vx+=fx;a.vy+=fy;}
+      if(!b.fx){b.vx-=fx;b.vy-=fy;}
+    });
+    simNodes.forEach(function(n){
+      if(n.fx!==null){n.x=n.fx;n.y=n.fy;return;}
+      n.vx+=(cxW-n.x)*gravity*alpha;
+      n.vy+=(cyH-n.y)*gravity*alpha;
+      n.vx*=damping; n.vy*=damping;
+      n.x+=n.vx; n.y+=n.vy;
+    });
+
+    simEdges.forEach(function(e){
+      var a=simNodes[e.source], b=simNodes[e.target];
+      e.el.setAttribute("x1",a.x);e.el.setAttribute("y1",a.y);
+      e.el.setAttribute("x2",b.x);e.el.setAttribute("y2",b.y);
+    });
+    simNodes.forEach(function(n){
+      n.el.setAttribute("transform","translate("+n.x+","+n.y+")");
+    });
+
+    updateTransform();
+    animFrame = requestAnimationFrame(graphTick);
+  }
+
+  // ── Helpers ──
+  function svgNS(tag){return document.createElementNS("http://www.w3.org/2000/svg",tag);}
+  function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+  function escAttr(s){return s.replace(/'/g,"\\'").replace(/\\/g,"\\\\");}
+  function toast(msg,isErr){
+    var t=document.getElementById("toast");
+    t.textContent=msg;
+    t.className="toast"+(isErr?" error":"")+" show";
+    setTimeout(function(){t.classList.remove("show");},2500);
+  }
+})();
+</script>
+</body>
+</html>

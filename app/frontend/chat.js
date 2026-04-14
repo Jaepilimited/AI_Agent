@@ -53,6 +53,71 @@
     document.body.removeChild(ta);
   }
 
+  // ── Feedback buttons (thumbs up/down) ──
+  var _feedbackCache = {};  // {messageId: 1|-1}
+
+  function _addFeedbackButtons(actionsDiv, messageId) {
+    var thumbUp = document.createElement("button");
+    thumbUp.className = "msg-action-btn feedback-btn";
+    thumbUp.title = "좋아요";
+    thumbUp.dataset.msgId = messageId;
+    thumbUp.dataset.rating = "1";
+    thumbUp.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/><path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>';
+
+    var thumbDown = document.createElement("button");
+    thumbDown.className = "msg-action-btn feedback-btn";
+    thumbDown.title = "별로예요";
+    thumbDown.dataset.msgId = messageId;
+    thumbDown.dataset.rating = "-1";
+    thumbDown.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z"/><path d="M17 2h3a2 2 0 012 2v7a2 2 0 01-2 2h-3"/></svg>';
+
+    // Restore cached state
+    var cached = _feedbackCache[messageId];
+    if (cached === 1) thumbUp.classList.add("feedback-active");
+    if (cached === -1) thumbDown.classList.add("feedback-active");
+
+    function handleFeedback(btn, rating) {
+      btn.addEventListener("click", function() {
+        var isActive = btn.classList.contains("feedback-active");
+        var newRating = isActive ? 0 : rating;
+
+        // Toggle visual state
+        thumbUp.classList.remove("feedback-active");
+        thumbDown.classList.remove("feedback-active");
+        if (!isActive) btn.classList.add("feedback-active");
+
+        if (newRating === 0) {
+          delete _feedbackCache[messageId];
+        } else {
+          _feedbackCache[messageId] = newRating;
+        }
+
+        // Send to server
+        if (currentConvoId && newRating !== 0) {
+          fetch("/api/conversations/" + currentConvoId + "/feedback", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({message_id: messageId, rating: newRating}),
+          }).catch(function(e) { console.error("Feedback failed:", e); });
+        }
+      });
+    }
+
+    handleFeedback(thumbUp, 1);
+    handleFeedback(thumbDown, -1);
+    actionsDiv.appendChild(thumbUp);
+    actionsDiv.appendChild(thumbDown);
+  }
+
+  async function _loadFeedbackForConversation(convoId) {
+    try {
+      var resp = await fetch("/api/conversations/" + convoId + "/feedback");
+      if (resp.ok) {
+        _feedbackCache = await resp.json();
+      }
+    } catch (e) {}
+  }
+
   // Copy table as TSV (paste-able into Excel/Google Sheets)
   function _copyTable(table, btn) {
     var rows = table.querySelectorAll("tr");
@@ -198,15 +263,16 @@
     { id: "sales", label: "매출 데이터", emoji: "\uD83D\uDCCA",
       keys: ["매출", "제품"] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
-      keys: ["광고데이터", "마케팅비용", "Shopify", "플랫폼",
+      keys: ["광고", "마케팅", "Shopify", "플랫폼",
              "인플루언서", "아마존검색", "메타광고",
-             "리뷰",
              "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
-      keys: ["BP"],
-      _dynamic: true },
+      keys: ["B2B1", "B2B2", "BCM", "CS", "Craver", "DB",
+             "GM EAST", "GM WEST", "JBT", "KBT", "PEOPLE", "BP"],
+      _dynamic: true,
+      link: "https://www.notion.so/skin1004/DB-HUB-2e12b4283b008011ae32e39bf73b7f7b" },
     { id: "system", label: "시스템", emoji: "\u2699",
-      keys: ["GWS Token", "Google Workspace"] },
+      keys: ["Google Workspace"] },
   ];
   var DATA_SOURCE_KEYS = [];
   SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
@@ -248,8 +314,8 @@
       var color = colorMap[route] || "#666";
       var chip = document.createElement("span");
       chip.className = "source-chip";
-      chip.style.cssText = "background:" + color + "22;color:" + color + ";border:1px solid " + color + "44;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:4px;";
-      chip.innerHTML = "@@" + k + ' <span class="chip-x" style="cursor:pointer;opacity:0.6;font-size:14px;">&times;</span>';
+      chip.style.cssText = "background:" + color + "22;color:" + color + ";border:1px solid " + color + "44;";
+      chip.innerHTML = "@@" + k + ' <span class="chip-x">&times;</span>';
       chip.querySelector(".chip-x").addEventListener("click", function() {
         chip.remove();
         if (container.children.length === 0) container.style.display = "none";
@@ -372,10 +438,12 @@
       "틱톡샵 국가별 매출 순위 알려줘",
     ],
     cs: [
+      "센텔라 토너 사용법 알려줘",
       "SKIN1004 반품 절차 알려줘",
-      "배송 지연 시 고객 응대 방법은?",
-      "COMMONLABS 제품 성분 문의 답변",
+      "마다가스카르 센텔라 앰플 주요 성분 알려줘",
+      "지성 피부에 맞는 SKIN1004 루틴 추천해줘",
       "교환/환불 정책 안내해줘",
+      "민감성 피부용 크림 추천해줘",
     ],
     general: [
       "이번 달 전체 매출 요약해줘",
@@ -1069,18 +1137,28 @@
 
       chatMessages.innerHTML = "";
       chatWelcome.style.display = "none";
+
+      // Load feedback data for this conversation
+      await _loadFeedbackForConversation(id);
+
       data.messages.forEach(function (m) {
-        appendMessage(m.role, m.content, false);
+        var msgEl = appendMessage(m.role, m.content, false, m.created_at);
         currentMessages.push({ role: m.role, content: m.content });
+        // Add feedback buttons to existing assistant messages
+        if (m.role === "assistant" && m.id && msgEl) {
+          var actions = msgEl.querySelector(".msg-actions");
+          if (!actions) {
+            actions = document.createElement("div");
+            actions.className = "msg-actions";
+            msgEl.appendChild(actions);
+          }
+          _addFeedbackButtons(actions, m.id);
+        }
       });
 
       // Show follow-ups for last assistant message
       if (data.messages.length > 0) {
         var lastMsg = data.messages[data.messages.length - 1];
-        var lastUserMsg = "";
-        for (var i = data.messages.length - 1; i >= 0; i--) {
-          if (data.messages[i].role === "user") { lastUserMsg = data.messages[i].content; break; }
-        }
         if (lastMsg.role === "assistant") {
           // Follow-up chips removed
         }
@@ -1169,14 +1247,16 @@
   }
 
   async function saveMessage(role, content) {
-    if (!currentConvoId) return;
+    if (!currentConvoId) return null;
     try {
-      await fetch("/api/conversations/" + currentConvoId + "/messages", {
+      var resp = await fetch("/api/conversations/" + currentConvoId + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: role, content: content }),
       });
+      var data = await resp.json();
       await loadConversations();
+      return data.id || null;
     } catch (e) {
       console.error("Failed to save message:", e);
     }
@@ -1623,7 +1703,7 @@
       highlightCodeBlocks(contentEl);
     });
 
-    // Add message action buttons (copy)
+    // Add message action buttons (copy + feedback)
     var actionsDiv = document.createElement("div");
     actionsDiv.className = "msg-actions";
     var copyBtn = document.createElement("button");
@@ -1644,7 +1724,12 @@
     }
 
     currentMessages.push({ role: "assistant", content: cleanContent });
-    await saveMessage("assistant", cleanContent);
+    var savedMsgId = await saveMessage("assistant", cleanContent);
+
+    // Add feedback buttons after message is saved (need message ID)
+    if (savedMsgId) {
+      _addFeedbackButtons(actionsDiv, savedMsgId);
+    }
 
     isStreaming = false;
     currentAbortController = null;
@@ -1694,8 +1779,8 @@
     if (/쇼피|shopee/.test(q)) pool = FOLLOWUP_POOLS.shopee;
     else if (/아마존|amazon/.test(q)) pool = FOLLOWUP_POOLS.amazon;
     else if (/틱톡|tiktok/.test(q)) pool = FOLLOWUP_POOLS.tiktok;
-    else if (/cs|고객|반품|배송|교환|환불|성분|문의/.test(q)) pool = FOLLOWUP_POOLS.cs;
-    else if (/매출|수량|제품|순위|비교|추이|증감|국가|플랫폼/.test(q)) pool = FOLLOWUP_POOLS.sales;
+    else if (/@@cs|cs |고객|반품|배송|교환|환불|성분|문의|사용법|앰플|크림|토너|루틴|피부|제품.*(효능|성분|사용)/.test(q)) pool = FOLLOWUP_POOLS.cs;
+    else if (/매출|수량|순위|비교|추이|증감|국가|플랫폼|광고|ROAS|마케팅/.test(q)) pool = FOLLOWUP_POOLS.sales;
     else pool = FOLLOWUP_POOLS.general;
 
     pool = pool.filter(function (s) { return s !== query; });
@@ -1714,14 +1799,23 @@
     if (!answer) return [];
     var suggestions = [];
 
-    // Find the follow-up block (after 💡)
-    var blockStart = answer.indexOf("💡");
-    if (blockStart === -1) return [];
+    // Find the follow-up block header. Agents may emit multiple 💡 callouts
+    // (e.g. tip/insight lines), so we must target the LAST 💡 line that looks
+    // like a "이런 것도 물어보세요 / 질문 제안" header — not the first 💡 we see.
+    var lines = answer.split("\n");
+    var headerIdx = -1;
+    for (var h = lines.length - 1; h >= 0; h--) {
+      var ltrim = lines[h].trim();
+      if (ltrim.indexOf("💡") === -1) continue;
+      // Header must mention 물어보세요 / 질문 / followup — not a plain tip
+      if (/물어보세요|질문|follow[- ]?up|try asking|ask these/i.test(ltrim)) {
+        headerIdx = h;
+        break;
+      }
+    }
+    if (headerIdx === -1) return [];
 
-    var blockText = answer.substring(blockStart);
-    // Match lines starting with > - or just - after the 💡 marker
-    var lines = blockText.split("\n");
-    for (var i = 1; i < lines.length; i++) {
+    for (var i = headerIdx + 1; i < lines.length; i++) {
       var line = lines[i].trim();
       // Stop at empty line or new section (heading, horizontal rule)
       if (!line || line.startsWith("#") || line === "---") break;
@@ -1731,7 +1825,10 @@
         var text = match[1].trim();
         // Remove trailing quotes and markdown artifacts
         text = text.replace(/^["""]|["""]$/g, "").trim();
-        if (text.length > 5 && text.length < 100) {
+        // Drop placeholder leakage like "[구체적 후속 질문 1 — ...]"
+        if (/^\[.*\]$/.test(text)) continue;
+        if (/후속 질문|followup/i.test(text) && text.indexOf("[") !== -1) continue;
+        if (text.length > 5 && text.length < 120) {
           suggestions.push(text);
         }
       }
@@ -1785,7 +1882,7 @@
   }
 
   // ===== Message Rendering =====
-  function appendUserMessage(text, images) {
+  function appendUserMessage(text, images, createdAt) {
     var div = document.createElement("div");
     div.className = "message message-user";
     div.setAttribute("role", "article");
@@ -1800,7 +1897,7 @@
 
     var ts = document.createElement("span");
     ts.className = "msg-timestamp";
-    ts.textContent = _formatTimestamp();
+    ts.textContent = _formatTimestamp(createdAt);
     div.appendChild(ts);
 
     var bubble = document.createElement("div");
@@ -1954,16 +2051,17 @@
     sendMessage();
   }
 
-  function _formatTimestamp() {
-    var now = new Date();
-    var hh = String(now.getHours()).padStart(2, "0");
-    var mm = String(now.getMinutes()).padStart(2, "0");
+  function _formatTimestamp(dateStr) {
+    var d = dateStr ? new Date(dateStr) : new Date();
+    if (isNaN(d.getTime())) d = new Date();
+    var hh = String(d.getHours()).padStart(2, "0");
+    var mm = String(d.getMinutes()).padStart(2, "0");
     return hh + ":" + mm;
   }
 
-  function appendMessage(role, content, streaming) {
+  function appendMessage(role, content, streaming, createdAt) {
     if (role === "user") {
-      return appendUserMessage(content, null);
+      return appendUserMessage(content, null, createdAt);
     }
 
     var div = document.createElement("div");
@@ -1980,7 +2078,7 @@
     // Timestamp (visible on hover)
     var ts = document.createElement("span");
     ts.className = "msg-timestamp";
-    ts.textContent = _formatTimestamp();
+    ts.textContent = _formatTimestamp(createdAt);
     div.appendChild(ts);
 
     var bubble = document.createElement("div");
@@ -2733,6 +2831,7 @@
             '<label class="status-checkbox-label"><input type="checkbox" class="status-group-cb" data-group="' + grp.id + '"' + (allOn ? ' checked' : '') + (groupEnabled > 0 && !allOn ? ' data-indeterminate="1"' : '') + '></label>' +
             '<span class="status-group-emoji">' + grp.emoji + '</span>' +
             '<span class="status-group-label">' + grp.label + '</span>' +
+            (grp.link ? '<a href="' + grp.link + '" target="_blank" class="status-group-link" onclick="event.stopPropagation()" title="Notion DB HUB 열기"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg> DB HUB</a>' : '') +
             '<span class="status-group-count">' + groupEnabled + '/' + groupTotal + '</span>' +
             '<span class="status-group-toggle">&#9660;</span>' +
             '</div>' +

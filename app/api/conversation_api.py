@@ -223,3 +223,57 @@ async def add_message(
 
     msg = await _db_fetch_one("SELECT id, role, content, created_at FROM messages WHERE id = %s", (msg_id,))
     return MessageOut(id=msg["id"], role=msg["role"], content=msg["content"], created_at=_fmt_dt(msg["created_at"]))
+
+
+# ── Feedback ──
+
+class FeedbackRequest(BaseModel):
+    message_id: int
+    rating: int  # 1 = 👍, -1 = 👎
+
+
+@conversation_router.post("/{convo_id}/feedback")
+async def submit_feedback(
+    convo_id: str,
+    req: FeedbackRequest,
+    user: User = Depends(get_current_user),
+):
+    """Submit thumbs up/down feedback for a message."""
+    if req.rating not in (1, -1):
+        raise HTTPException(status_code=400, detail="rating must be 1 or -1")
+
+    convo = await _db_fetch_one(
+        "SELECT id FROM conversations WHERE id = %s AND user_id = %s",
+        (convo_id, user.id),
+    )
+    if not convo:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    msg = await _db_fetch_one(
+        "SELECT id FROM messages WHERE id = %s AND conversation_id = %s",
+        (req.message_id, convo_id),
+    )
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    await _db_execute(
+        """INSERT INTO message_feedback (message_id, conversation_id, user_id, rating)
+           VALUES (%s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE rating = VALUES(rating), created_at = NOW()""",
+        (req.message_id, convo_id, user.id, req.rating),
+    )
+    logger.info("feedback_submitted", message_id=req.message_id, rating=req.rating, user=user.display_name)
+    return {"ok": True, "rating": req.rating}
+
+
+@conversation_router.get("/{convo_id}/feedback")
+async def get_feedback(
+    convo_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Get all feedback for a conversation."""
+    rows = await _db_fetch_all(
+        "SELECT message_id, rating FROM message_feedback WHERE conversation_id = %s AND user_id = %s",
+        (convo_id, user.id),
+    )
+    return {str(r["message_id"]): r["rating"] for r in rows}

@@ -188,17 +188,17 @@ def get_safety_status() -> dict:
 
     # Marketing + Review tables (share bigquery circuit)
     _mkt_tables = {
-        "광고데이터": "marketing_analysis.integrated_advertising_data",
-        "마케팅비용": "marketing_analysis.Integrated_marketing_cost",
-        "Shopify": "marketing_analysis.shopify_analysis_sales",
-        "플랫폼": "Platform_Data.raw_data",
-        "인플루언서": "marketing_analysis.influencer_input_ALL_TEAMS",
-        "아마존검색": "marketing_analysis.amazon_search_analytics_catalog_performance",
-        "메타광고": "ad_data.meta data_test",
-        "아마존 리뷰": "Review_Data.New_Amazon_Review",
-        "큐텐 리뷰": "Review_Data.New_Qoo10_Review",
-        "쇼피 리뷰": "Review_Data.New_Shopee_Review",
-        "스마트스토어 리뷰": "Review_Data.New_Smartstore_Review",
+        "광고": "통합 광고 데이터",
+        "마케팅": "통합 마케팅 비용",
+        "Shopify": "글로벌 자사몰 판매",
+        "플랫폼": "플랫폼 순위/가격",
+        "인플루언서": "인플루언서 마케팅",
+        "아마존검색": "아마존 검색 분석",
+        "메타광고": "메타 광고 라이브러리",
+        "아마존 리뷰": "아마존 리뷰",
+        "큐텐 리뷰": "큐텐 리뷰",
+        "쇼피 리뷰": "쇼피 리뷰",
+        "스마트스토어 리뷰": "스마트스토어 리뷰",
     }
     for label, detail in _mkt_tables.items():
         services[label] = {"status": _bq_status, "detail": detail}
@@ -212,41 +212,27 @@ def get_safety_status() -> dict:
         "KBT": "KBT", "JBT": "JBT",
     }
     try:
-        import httpx as _httpx
-        _qdrant_url = "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333"
-        _qdrant_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OTFkOGVkZWYtNTFkNi00ODNhLTg0MDItZTdjNjI0ZjA2NThmIn0.K0zdMdpnbIMl_yfXV8EJfcClpPnkoPa_SS_XbDI1kv4"
-        _qheaders = {"api-key": _qdrant_key, "Content-Type": "application/json"}
+        import json as _json
+        from pathlib import Path as _Path
 
-        # Use cached counts if fresh (< 5 min)
+        # Read from local vector store (data/notion_vectors_gemini.json)
         global _qdrant_cache, _qdrant_cache_time
         _now = _time.time()
         if not _qdrant_cache or _now - _qdrant_cache_time > 300:
             _team_counts: dict[str, int] = {}
-            _offset = None
-            for _ in range(50):
-                _body: dict = {"limit": 100, "with_payload": {"include": ["team"]}}
-                if _offset is not None:
-                    _body["offset"] = _offset
-                _qr = _httpx.post(f"{_qdrant_url}/collections/notion_hub_gemini/points/scroll",
-                                  headers=_qheaders, json=_body, timeout=10)
-                if _qr.status_code != 200:
-                    break
-                _qdata = _qr.json().get("result", {})
-                _pts = _qdata.get("points", [])
-                if not _pts:
-                    break
-                for _p in _pts:
+            _vpath = _Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
+            if _vpath.exists():
+                with open(_vpath, "r", encoding="utf-8") as _f:
+                    _store = _json.load(_f)
+                for _p in _store:
                     _t = _p.get("payload", {}).get("team", "UNKNOWN")
                     _team_counts[_t] = _team_counts.get(_t, 0) + 1
-                _offset = _qdata.get("next_page_offset")
-                if _offset is None:
-                    break
             _qdrant_cache = _team_counts
             _qdrant_cache_time = _now
         else:
             _team_counts = _qdrant_cache
 
-        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "UNKNOWN"}
+        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "UNKNOWN", "?"}
         for _qt, _qc in sorted(_team_counts.items(), key=lambda x: _QDRANT_TEAM_LABELS.get(x[0], x[0])):
             if _qt in _SKIP_TEAMS:
                 continue

@@ -293,6 +293,7 @@ html.light .craver-chat-mode .craver-track img { opacity: 0.06 !important; }
   background: var(--bg-surface);
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
+  contain: layout style;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 2.8rem 2.4rem;
@@ -550,14 +551,16 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   font-size: 15px;
   letter-spacing: -0.3px;
   background: linear-gradient(135deg, #e89200 0%, #f0a020 35%, #d4a574 65%, #e89200 100%);
-  background-size: 200% 200%;
+  background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: brand-shimmer 4s ease-in-out infinite;
   flex: 1;
   min-width: 0;
   line-height: 1;
+}
+.brand-gradient:hover {
+  animation: brand-shimmer 4s ease-in-out infinite;
 }
 
 @keyframes brand-shimmer {
@@ -818,6 +821,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Sidebar collapsed state */
 .sidebar.collapsed {
+  transform: translateX(-100%);
   width: 0 !important;
   min-width: 0 !important;
   overflow: hidden;
@@ -1148,6 +1152,10 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   max-width: 100%;
   overflow: hidden;
 }
+/* Streaming performance: promote layer + contain reflows */
+.message.streaming .message-content {
+  contain: layout paint;
+}
 /* Streaming cursor — ChatGPT-style blinking caret on last paragraph */
 .message-assistant.streaming .message-content > *:last-child::after,
 .message-assistant.streaming .message-content:not(:has(*))::after {
@@ -1219,6 +1227,12 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.feedback-btn.feedback-active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(232, 146, 0, 0.1);
+}
+.feedback-btn.feedback-active svg { stroke: var(--accent); }
 
 /* Error card */
 .error-card {
@@ -1745,6 +1759,35 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: var(--bg);
 }
 
+/* Active @@ source chips */
+.active-source-chips {
+  display: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 800px;
+  margin: 0 auto 6px;
+  padding: 0 4px;
+}
+.source-chip {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  animation: chipIn 0.2s ease-out;
+}
+.source-chip .chip-x {
+  cursor: pointer;
+  opacity: 0.6;
+  font-size: 14px;
+}
+@keyframes chipIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .chat-input-wrapper {
   max-width: 800px;
   margin: 0 auto;
@@ -1952,6 +1995,7 @@ pre:hover .code-copy-btn { opacity: 1; }
   background: rgba(var(--bg-secondary-rgb, 255,255,255), 0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  contain: layout style;
   border: 1px solid rgba(var(--border-rgb, 200,200,200), 0.5);
   border-radius: 12px;
   box-shadow: 0 -6px 24px rgba(0,0,0,0.15);
@@ -2078,6 +2122,7 @@ html.dark .db-autocomplete-dropdown {
   justify-content: center;
   transition: background-color var(--duration-long) ease, color var(--duration-long) ease, opacity var(--duration-long) ease;
   backdrop-filter: blur(12px);
+  contain: layout style;
   box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
 
@@ -2091,12 +2136,16 @@ html.dark .db-autocomplete-dropdown {
 /* ============================================================
    E. DASHBOARD DRAWER
    ============================================================ */
-#skin-dashboard-overlay {
+/* Shared overlay base */
+#skin-dashboard-overlay,
+#skin-status-overlay,
+#skin-admin-overlay {
   position: fixed;
   inset: 0;
   z-index: 10000;
   background: rgba(0,0,0,0.5);
   backdrop-filter: blur(2px);
+  contain: layout style;
   transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
@@ -2197,14 +2246,7 @@ html.dark .db-autocomplete-dropdown {
 /* ============================================================
    G. SYSTEM STATUS DRAWER
    ============================================================ */
-#skin-status-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(2px);
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-}
+/* status overlay — base styles shared above */
 #skin-status-overlay.open { opacity: 1; visibility: visible; }
 #skin-status-overlay.closed { opacity: 0; visibility: hidden; pointer-events: none; }
 
@@ -2352,6 +2394,15 @@ html.dark .db-autocomplete-dropdown {
   display: flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.status-item-row .status-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-item-row .status-detail-text {
+  flex-shrink: 0;
 }
 
 /* Alert state (updating/error) — accent border */
@@ -2489,6 +2540,21 @@ html.dark .db-autocomplete-dropdown {
   font-size: var(--text-ui);
   color: var(--text);
 }
+.status-group-link {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(232, 146, 0, 0.1);
+  border: 1px solid rgba(232, 146, 0, 0.3);
+  transition: all 0.15s;
+}
+.status-group-link:hover { background: rgba(232, 146, 0, 0.2); border-color: var(--accent); }
 .status-group-count {
   font-size: var(--text-caption);
   font-weight: 500;
@@ -2789,16 +2855,8 @@ html.dark .db-autocomplete-dropdown {
 }
 
 /* ============================================================
-   G-2. ADMIN DRAWER
+   G-2. ADMIN DRAWER (base styles in shared overlay rule above)
    ============================================================ */
-#skin-admin-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-  background: rgba(0,0,0,0.5);
-  backdrop-filter: blur(2px);
-  transition: opacity 0.3s ease, visibility 0.3s ease;
-}
 #skin-admin-overlay.open { opacity: 1; visibility: visible; }
 #skin-admin-overlay.closed { opacity: 0; visibility: hidden; pointer-events: none; }
 
