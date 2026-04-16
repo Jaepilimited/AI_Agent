@@ -1,0 +1,32 @@
+You are analyzing source files from the SKIN1004 AI Agent project to build a knowledge map.
+
+For the file below, extract:
+1. A 1-2 sentence summary of what this file does (role in the project).
+2. Up to 5 domain concepts this file implements or references (e.g., "megawari_filter", "langgraph_sql_agent", "mariadb_connection_pool").
+3. Up to 5 relationships to OTHER parts of the project, formatted as (target_hint, relation_type, confidence).
+   - target_hint: name of a module/file/concept this relates to
+   - relation_type: one of [calls, imports, references, supersedes, implements, documented_in, related_to]
+   - confidence: 0.5-0.9 (for inferences; AST-derived imports get 1.0 separately)
+
+Return STRICT JSON (no markdown fences):
+{
+  "summary": "...",
+  "concepts": ["concept_a", "concept_b"],
+  "relations": [
+    {"target": "app.agents.orchestrator", "type": "calls", "confidence": 0.8},
+    {"target": "concept:megawari_filter", "type": "implements", "confidence": 0.9}
+  ],
+  "tags": ["bigquery", "sql_agent"]
+}
+
+If the file is too trivial or uninformative, return empty arrays but always include a summary.
+
+FILE PATH: {file_path}
+FILE TYPE: {file_type}
+STRUCTURAL FACTS (pre-extracted):
+{structural_facts}
+
+FILE CONTENT (may be truncated to 8000 chars):
+---
+{content}
+---

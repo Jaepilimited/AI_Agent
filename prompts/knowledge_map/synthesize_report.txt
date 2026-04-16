@@ -1,0 +1,32 @@
+You are writing GRAPH_REPORT.md — the ONE page Claude Code reads first in every session.
+
+Given the statistics and top nodes below, produce a Markdown report with this exact structure:
+
+# SKIN1004 AI Agent — Knowledge Map
+**Generated**: {generated_at} · **Files**: {file_count} · **Nodes**: {node_count} · **Commit**: {commit}
+
+## What this project is
+(2-3 sentence synthesis from top_level_summary input)
+
+## Top-level Clusters
+(Numbered list from clusters input — one line each: name, file count, one-sentence role)
+
+## God Nodes (highest edge count — most central)
+(Top 8 from god_nodes input — format: `- \`node_id\` ({edge_count} edges) — one-line role`)
+
+## Suggested Questions This Map Can Answer Instantly
+(Generate 8-10 realistic questions that a developer on this project would ask, based on clusters and concepts. Include file paths in parentheses.)
+
+## Recent Changes
+(Bullet list from recent_changes input — one line per entry: `- YYYY-MM-DD · topic`)
+
+## How to navigate
+Read this file first. Then open graph.json and find the 2-3 nodes most relevant to your question. Read only those nodes' wiki_page values (`knowledge_map/wiki/**/*.md`). Only read original source files if the wiki page doesn't answer. Never Grep without consulting this map first.
+
+Rules:
+- Be concrete. Use real file paths, real cluster names, real node ids.
+- Korean for domain context, English for code identifiers.
+- Total length 400-800 words.
+
+INPUTS:
+{inputs_json}

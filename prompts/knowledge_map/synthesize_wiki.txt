@@ -1,0 +1,37 @@
+You are writing a single wiki page for a cluster of related files in the SKIN1004 AI Agent project.
+
+Given the cluster name and the list of file summaries below, produce a concise Markdown wiki page (300-600 words) with this structure:
+
+# {cluster_title}
+
+> Auto-generated {date} · Files: {file_count}
+
+## Purpose
+(2-3 sentences)
+
+## Key Files
+- `path/to/file.py` — short role
+- ...
+
+## Key Concepts
+- concept_a — what it is in this project
+- ...
+
+## How It Fits In
+(How this cluster connects to other clusters — use the relation hints provided.)
+
+## Common Questions This Page Answers
+- ...
+- ...
+
+Rules:
+- Write in Korean when referring to domain concepts from CLAUDE.md (megawari, skin1004, etc.), English for code identifiers.
+- Cite exact file paths so Claude Code can Read them if needed.
+- Never invent facts not present in the inputs.
+- Keep under 600 words.
+
+CLUSTER NAME: {cluster_name}
+FILE SUMMARIES:
+{file_summaries}
+RELATIONS TO OTHER CLUSTERS:
+{cross_cluster_relations}
