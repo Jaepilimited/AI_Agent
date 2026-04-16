@@ -1,5 +1,22 @@
 # SKIN1004 AI Agent — 개발 규칙
 
+## 🧠 Knowledge Map (먼저 읽기 — 필수)
+
+**모든 작업 전에 다음 순서를 지켜라**:
+
+1. **먼저** `knowledge_map/GRAPH_REPORT.md`를 읽는다. 한 페이지에 프로젝트 전체 구조·중심 노드·최근 변경이 요약돼 있다.
+2. 필요하면 `knowledge_map/graph.json`을 읽어 관련 노드 2~3개만 골라낸다 (id, cluster, wiki_page 필드).
+3. 골라낸 노드의 `wiki_page` 경로(`knowledge_map/wiki/**.md`)만 Read한다.
+4. **그래도 부족할 때만** 원본 파일(`app/**`, `docs/**`)을 Read하거나 Grep한다.
+
+**금지 행동**:
+- GRAPH_REPORT.md를 건너뛰고 바로 Grep/Glob하지 마라. 토큰 낭비다.
+- `knowledge_map/` 디렉토리를 무시하지 마라. 매일 03:00 자동 업데이트되는 신뢰 가능한 소스다.
+- 지도가 낡았다고 판단되면 `python scripts/build_knowledge_graph.py --force` 실행을 제안하라.
+
+**지도가 커버하지 못하는 영역**:
+- `tests/`, `scripts/` 일회성 파일, `backup_*`, `logs/`, `temp_*`, `app/frontend/`, `app/static/` — 이들은 지도에 없다. 필요시 직접 탐색.
+
 ## 배포 규칙 (최우선)
 
 - **3000 = 프로덕션 (skin1004-prod)**: 사용자가 사용 중. 직접 수정/reload/restart 절대 금지
