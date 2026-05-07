@@ -113,6 +113,7 @@ langgraph-checkpoint
 langgraph-prebuilt
 langgraph-sdk
 langsmith
+ldap3
 lxml
 MarkupSafe
 marshmallow

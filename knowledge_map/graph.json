@@ -1,7 +1,7 @@
 {
   "version": "1.0",
-  "generated_at": "2026-05-05T18:00:02.349054+00:00",
-  "source_commit": "58894dc",
+  "generated_at": "2026-05-06T18:00:03.931553+00:00",
+  "source_commit": "c76c9a1",
   "stats": {
     "files": 119,
     "nodes": 498,
@@ -9,7 +9,7 @@
     "clusters": 74,
     "flash_calls": 0,
     "cache_hits": 119,
-    "build_duration_sec": 0.35
+    "build_duration_sec": 0.94
   },
   "nodes": [
     {
