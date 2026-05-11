@@ -7,10 +7,10 @@ Qdrant Craver에서 가져온 데이터를 Gemini embedding-001로 재임베딩�
 
 import asyncio
 import json
-import math
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import structlog
 
 from app.config import get_settings
@@ -39,32 +39,45 @@ TEAM_MAP = {
     "op": "OP", "운영": "OP",
 }
 
-# ── Local vector store ──
-_store: list[dict] = []
+# ── Local vector store (numpy-backed, pre-normalized for fast cosine) ──
+_vecs: Optional[np.ndarray] = None        # shape (N, D), float32, L2-normalized
+_payloads: list[dict] = []                # parallel array, len N
+_teams: Optional[np.ndarray] = None       # shape (N,), dtype=object (team strings)
 _loaded = False
 
 
 def _load_store():
-    global _store, _loaded
+    global _vecs, _payloads, _teams, _loaded
     if _loaded:
         return
-    data_dir = Path(__file__).resolve().parent.parent.parent / "data"
-    path = data_dir / "notion_vectors_gemini.json"
+    path = Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
     if not path.exists():
         logger.warning("notion_vectors_not_found", path=str(path))
         _loaded = True
         return
     with open(path, "r", encoding="utf-8") as f:
-        _store = json.load(f)
+        raw = json.load(f)
+
+    payloads: list[dict] = []
+    vec_rows: list[list[float]] = []
+    teams_list: list[str] = []
+    for pt in raw:
+        v = pt.get("vector")
+        if not v:
+            continue
+        p = pt.get("payload", {})
+        payloads.append(p)
+        vec_rows.append(v)
+        teams_list.append(p.get("team", ""))
+
+    arr = np.asarray(vec_rows, dtype=np.float32)
+    norms = np.linalg.norm(arr, axis=1, keepdims=True)
+    norms[norms == 0] = 1.0
+    _vecs = arr / norms                              # pre-normalize once
+    _payloads = payloads
+    _teams = np.asarray(teams_list, dtype=object)
     _loaded = True
-    logger.info("notion_vectors_loaded", count=len(_store))
-
-
-def _cosine_sim(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(x * x for x in b))
-    return dot / (na * nb) if na and nb else 0.0
+    logger.info("notion_vectors_loaded", count=len(_payloads), dim=arr.shape[1] if arr.size else 0)
 
 
 async def _embed_query(query: str) -> list[float]:
@@ -81,19 +94,31 @@ async def _embed_query(query: str) -> list[float]:
 
 def _search(vector, team_filter=None, top_k=TOP_K):
     _load_store()
-    scored = []
-    for pt in _store:
-        p = pt.get("payload", {})
-        if team_filter and p.get("team") != team_filter:
-            continue
-        v = pt.get("vector", [])
-        if not v:
-            continue
-        score = _cosine_sim(vector, v)
-        if score >= SCORE_THRESHOLD:
-            scored.append({"score": score, "payload": p})
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:top_k]
+    if _vecs is None or _vecs.size == 0:
+        return []
+
+    q = np.asarray(vector, dtype=np.float32)
+    qn = np.linalg.norm(q)
+    if qn == 0:
+        return []
+    q = q / qn
+
+    sims = _vecs @ q                                 # cosine: both sides normalized
+    if team_filter is not None and _teams is not None:
+        sims = np.where(_teams == team_filter, sims, -1.0)
+
+    above = np.where(sims >= SCORE_THRESHOLD)[0]
+    if above.size == 0:
+        return []
+
+    if above.size > top_k:
+        scores_above = sims[above]
+        part = np.argpartition(-scores_above, top_k)[:top_k]
+        selected = above[part[np.argsort(-scores_above[part])]]
+    else:
+        selected = above[np.argsort(-sims[above])]
+
+    return [{"score": float(sims[i]), "payload": _payloads[i]} for i in selected]
 
 
 def _format_results(results):

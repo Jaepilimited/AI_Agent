@@ -1,28 +1,28 @@
 # SKIN1004 AI Agent — Knowledge Map
-**Generated**: 2026-05-06T18:00:03.951299+00:00 · **Files**: 119 · **Nodes**: 498 · **Edges**: 953 · **Commit**: c76c9a1
+**Generated**: 2026-05-11T18:00:13.477921+09:00 · **Files**: 121 · **Nodes**: 534 · **Edges**: 1028 · **Commit**: 7c427ab
 
 ## Clusters
 - **cluster_00** — 1 nodes
 - **cluster_01** — 1 nodes
 - **cluster_02** — 20 nodes
-- **cluster_03** — 23 nodes
-- **cluster_04** — 47 nodes
-- **cluster_05** — 37 nodes
-- **cluster_06** — 40 nodes
-- **cluster_07** — 38 nodes
-- **cluster_08** — 15 nodes
-- **cluster_09** — 47 nodes
-- **cluster_10** — 1 nodes
-- **cluster_11** — 1 nodes
-- **cluster_12** — 30 nodes
-- **cluster_13** — 28 nodes
-- **cluster_14** — 21 nodes
+- **cluster_03** — 38 nodes
+- **cluster_04** — 49 nodes
+- **cluster_05** — 27 nodes
+- **cluster_06** — 39 nodes
+- **cluster_07** — 26 nodes
+- **cluster_08** — 52 nodes
+- **cluster_09** — 14 nodes
+- **cluster_10** — 30 nodes
+- **cluster_11** — 15 nodes
+- **cluster_12** — 1 nodes
+- **cluster_13** — 58 nodes
+- **cluster_14** — 34 nodes
 - **cluster_15** — 30 nodes
 - **cluster_16** — 14 nodes
 - **cluster_17** — 1 nodes
 - **cluster_18** — 1 nodes
 - **cluster_19** — 1 nodes
-- **cluster_20** — 20 nodes
+- **cluster_20** — 1 nodes
 - **cluster_21** — 1 nodes
 - **cluster_22** — 1 nodes
 - **cluster_23** — 17 nodes
@@ -81,17 +81,19 @@
 - `/home/skin1004/AI_Agent/app/api/auth_api.py` (file) — Authentication endpoints: signup, signin, me, logout.
 
 Uses MariaDB for user sto
+- `/home/skin1004/AI_Agent/app/agents/face_clip_agent.py` (file) — 얼굴/제품 사진 검색 — Drive 인덱스 기반 CLIP + InsightFace.
+
+data/face_clip_index.npy + face_
 - `/home/skin1004/AI_Agent/app/agents/sql_agent.py` (file) — Text-to-SQL Agent using LangGraph.
 
 Workflow: generate_sql → validate_sql → exec
 - `/home/skin1004/AI_Agent/app/api/routes.py` (file) — OpenAI-compatible API endpoints for Open WebUI integration.
 - `/home/skin1004/AI_Agent/app/knowledge_map/builder.py` (file) — Knowledge Map build orchestrator — discover → cache → parse → flash → graph → ex
-- `/home/skin1004/AI_Agent/app/api/admin_group_api.py` (file) — Admin endpoints: AD user & group management (MariaDB).
-- `/home/skin1004/AI_Agent/app/api/conversation_api.py` (file) — Conversation CRUD API for chat history (MariaDB).
 - `/home/skin1004/AI_Agent/app/main.py` (file) — SKIN1004 Enterprise AI - FastAPI application entry point.
 
 Single server on port
-- `/home/skin1004/AI_Agent/app/models/schemas.py` (file) — Pydantic request/response models for OpenAI-compatible API.
+- `/home/skin1004/AI_Agent/app/api/admin_group_api.py` (file) — Admin endpoints: AD user & group management (MariaDB).
+- `/home/skin1004/AI_Agent/app/api/conversation_api.py` (file) — Conversation CRUD API for chat history (MariaDB).
 
 ## How to navigate
 Read this file first, then open graph.json and follow wiki_page fields. Never Grep without consulting this map.

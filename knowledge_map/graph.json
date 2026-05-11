@@ -1,15 +1,15 @@
 {
   "version": "1.0",
-  "generated_at": "2026-05-06T18:00:03.931553+00:00",
-  "source_commit": "c76c9a1",
+  "generated_at": "2026-05-11T18:00:13.319579+09:00",
+  "source_commit": "7c427ab",
   "stats": {
-    "files": 119,
-    "nodes": 498,
-    "edges": 953,
+    "files": 121,
+    "nodes": 534,
+    "edges": 1028,
     "clusters": 74,
-    "flash_calls": 0,
+    "flash_calls": 2,
     "cache_hits": 119,
-    "build_duration_sec": 0.94
+    "build_duration_sec": 10.48
   },
   "nodes": [
     {
@@ -215,11 +215,223 @@
       "confidence": 1.0
     },
     {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "type": "file",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "summary": "얼굴/제품 사진 검색 — Drive 인덱스 기반 CLIP + InsightFace.\n\ndata/face_clip_index.npy + face_clip_meta.json (CLIP 768 또는 512차원)\ndata/face_index.npy + face_meta.json (InsightFace 512차원)",
+      "tags": [
+        "face_recognition",
+        "computer_vision",
+        "clip",
+        "nlp",
+        "vector_database",
+        "image_search",
+        "embedding"
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_extract_product_line",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        337,
+        342
+      ],
+      "summary": "폴더 경로에서 SKIN1004 제품 라인 이름 추출.",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_folder_of",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        345,
+        353
+      ],
+      "summary": "결과 항목에서 폴더 경로 도출 — clip_meta는 'folder' 키, face_meta는 'path'만 가짐.",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_get_clip",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        74,
+        86
+      ],
+      "summary": "Returns (model, processor) — SigLIP supports both text and image in one model.",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_get_face_app",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        98,
+        108
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_l2_normalize",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        111,
+        113
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_load_index_once",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        45,
+        62
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_normalize_meta_strings",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        65,
+        71
+      ],
+      "summary": "폴더/경로/라벨을 NFC로 통일 — Drive 메타가 macOS 업로드라 NFD인 경우 한글 검색 매칭 실패.",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_pool_features",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        89,
+        95
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_strip_num",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        206,
+        208
+      ],
+      "summary": "'07. 백송민 (May)' -> '백송민 (May)'.",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::derive_answer",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        356,
+        455
+      ],
+      "summary": "Top-K 결과에서 score-weighted vote로 답변 도출 + 자연어 문장 생성.\n\n개선점 (Phase 2):\n  1) 라벨 추출 실패한 항목은 분모에서 제외 (이전엔 len(top) 그대로라 confidence 부당하게 낮음)\n  2) score-weighted voting (top1=0.99도 1점 취급하던 단순 count 대신)\n  3) strong top1 boost: top1 score가 매우 높으면 거의 확실로 간주\n  4) score < min_score 항목은 vote 제외 (노이즈 컷)\n\nReturns:\n    {type, label, confidence, avg_score, match_count, considered, sentence, related_lines}\n    또는 None (결과 없음)",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::embed_face_bytes",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        143,
+        156
+      ],
+      "summary": "returns face embedding of largest face (already L2-normalized) or None.",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::embed_image_bytes",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        128,
+        140
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::embed_text",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        118,
+        125
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::extract_label",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        211,
+        327
+      ],
+      "summary": "폴더 경로에서 의미 있는 라벨 추출.\n\nReturns: (label_type, label_text)\n  label_type: 'person' | 'product' | 'event' | 'other'",
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::index_stats",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        188,
+        194
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::search_clip",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        161,
+        174
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::search_face",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "lines": [
+        177,
+        185
+      ],
+      "cluster": "cluster_07",
+      "confidence": 1.0
+    },
+    {
       "id": "/home/skin1004/AI_Agent/app/agents/gws_agent.py",
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/agents/gws_agent.py",
       "summary": "Google Workspace Sub Agent (v4.2 — per-user OAuth2 + timeout + recursion limit).\n\nReplaces MCP-based single-user approach with individual OAuth2 authentication.\nEach user authenticates with their own Google account to access Gmail/Drive/Calendar.\nUses Claude Sonnet as ReAct agent with bound API tools.\n\nv4.1: Added 120s timeout for ReAct agent to prevent 300s+ hangs on complex searches.\nv4.2: Added recursion_limit=10 to cap tool call iterations (~4-5 tool calls max).",
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -231,7 +443,7 @@
         246
       ],
       "summary": "Google Workspace agent with per-user OAuth2 authentication.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -242,7 +454,7 @@
         35,
         39
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -325,18 +537,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "summary": "Notion 사내 문서 검색 — 로컬 벡터 검색.\n\nQdrant Craver에서 가져온 데이터를 Gemini embedding-001로 재임베딩하여 로컬 저장.\n검색: Gemini embedding → 로컬 코사인 유사도 → Gemini Flash 답변 생성.\n데이터 업데이트: Qdrant Craver에서 재다운로드 + 재임베딩.",
-      "cluster": "cluster_03",
-      "confidence": 1.0
-    },
-    {
-      "id": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py::_cosine_sim",
-      "type": "function",
-      "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
-      "lines": [
-        63,
-        67
-      ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_06",
       "confidence": 1.0
     },
     {
@@ -344,10 +545,10 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "lines": [
-        70,
-        79
+        83,
+        92
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_06",
       "confidence": 1.0
     },
     {
@@ -355,10 +556,10 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "lines": [
-        99,
-        115
+        124,
+        140
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_06",
       "confidence": 1.0
     },
     {
@@ -366,10 +567,10 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "lines": [
-        47,
-        60
+        49,
+        80
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_06",
       "confidence": 1.0
     },
     {
@@ -377,10 +578,10 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "lines": [
-        82,
-        96
+        95,
+        121
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_06",
       "confidence": 1.0
     },
     {
@@ -388,10 +589,10 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "lines": [
-        118,
-        181
+        143,
+        206
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_06",
       "confidence": 1.0
     },
     {
@@ -399,7 +600,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/agents/query_verifier.py",
       "summary": "Query Verifier Agent (v3.0).\n\nAdditional LLM-based verification layer on top of existing\nsql_agent.py validate_sql(). Separate agent because SQL accuracy\nis critical - wrong queries have high risk.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -410,7 +611,7 @@
         20,
         86
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -722,7 +923,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/agents/team_agent.py",
       "summary": "Team Resource Agent — 팀별 자료 검색 (CS Agent 패턴).\n\nDB HUB에서 동기화된 팀별 자료(Google Sheets, Notion 등)를\n키워드 매칭으로 검색하여 링크와 설명을 반환.",
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -733,7 +934,7 @@
         169,
         187
       ],
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -744,7 +945,7 @@
         56,
         57
       ],
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -755,7 +956,7 @@
         60,
         67
       ],
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -766,7 +967,7 @@
         190,
         230
       ],
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -777,7 +978,7 @@
         99,
         166
       ],
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -788,14 +989,14 @@
         23,
         53
       ],
-      "cluster": "cluster_06",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
       "id": "/home/skin1004/AI_Agent/app/api/__init__.py",
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/__init__.py",
-      "cluster": "cluster_11",
+      "cluster": "cluster_12",
       "confidence": 1.0
     },
     {
@@ -803,7 +1004,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/admin_api.py",
       "summary": "Admin endpoints: user management, model access control (MariaDB).",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -814,7 +1015,7 @@
         44,
         45
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -825,7 +1026,7 @@
         35,
         41
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -836,7 +1037,7 @@
         268,
         269
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -847,7 +1048,7 @@
         25,
         26
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -858,7 +1059,7 @@
         22,
         23
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -869,7 +1070,7 @@
         29,
         32
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -881,7 +1082,7 @@
         217
       ],
       "summary": "Operational metrics: latency p50/p95, concurrency gates, DB pool, recent activity.\n\nDriven by the audit_logs table and live semaphore/pool state. Admin only.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -893,7 +1094,7 @@
         450
       ],
       "summary": "Return the compiled entity page + raw fact list.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -905,7 +1106,7 @@
         534
       ],
       "summary": "Return the top-N heaviest edges from the knowledge graph.\n\nWhen ``full=true`` the response also includes community colouring data\nfor vis.js — each node gets a community_id and each edge gets an\nedge_type + confidence.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -916,7 +1117,7 @@
         454,
         476
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -928,7 +1129,7 @@
         592
       ],
       "summary": "Hierarchical map of what the wiki knows.\n\nReturned as: domain → entity → {periods, metrics, fact_count, last_seen}\n\nThis is the \"지도\" — the discovery surface the orchestrator will consult\nbefore routing a question (Week 2). For now it's admin-only, read-only.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -940,7 +1141,7 @@
         409
       ],
       "summary": "Flagged facts — split into needs-review and resolved buckets.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -952,7 +1153,7 @@
         265
       ],
       "summary": "Knowledge wiki adoption dashboard — counts, freshness, samples.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -964,7 +1165,7 @@
         77
       ],
       "summary": "List all users with their model permissions.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -976,7 +1177,7 @@
         107
       ],
       "summary": "Update allowed models for a user.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -988,7 +1189,7 @@
         360
       ],
       "summary": "Permanently delete a wiki fact.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -1000,7 +1201,7 @@
         341
       ],
       "summary": "Adjust confidence, auto-archive on repeated downvotes, or resolve/restore.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -1247,7 +1448,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/auth_api.py",
       "summary": "Authentication endpoints: signup, signin, me, logout.\n\nUses MariaDB for user storage with AD-linked department+name login.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1258,7 +1459,7 @@
         375,
         377
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1269,7 +1470,7 @@
         71,
         75
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1280,7 +1481,7 @@
         64,
         68
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1291,7 +1492,7 @@
         78,
         84
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1302,7 +1503,7 @@
         109,
         118
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1313,7 +1514,7 @@
         54,
         55
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1324,7 +1525,7 @@
         58,
         59
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1335,7 +1536,7 @@
         46,
         47
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1346,7 +1547,7 @@
         50,
         51
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1358,7 +1559,7 @@
         197
       ],
       "summary": "Return cached AD user list, refresh if stale.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1370,7 +1571,7 @@
         130
       ],
       "summary": "Look up brand_filter from user's group membership.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1381,7 +1582,7 @@
         89,
         94
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1392,7 +1593,7 @@
         133,
         143
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1404,7 +1605,7 @@
         106
       ],
       "summary": "Build UserResponse dict from a joined users+ad_users row.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1416,7 +1617,7 @@
         405
       ],
       "summary": "Change password for current user.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1427,7 +1628,7 @@
         421,
         426
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1439,7 +1640,7 @@
         157
       ],
       "summary": "List all departments with user counts (from cache).",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1451,7 +1652,7 @@
         173
       ],
       "summary": "List AD users in a department (for login form name selector).",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1463,7 +1664,7 @@
         412
       ],
       "summary": "Clear auth cookie.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1475,7 +1676,7 @@
         372
       ],
       "summary": "Get current authenticated user. Refreshes cookie (sliding session).",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1487,7 +1688,7 @@
         216
       ],
       "summary": "Find AD users by name (searches display_name, ad_name, username).",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1499,7 +1700,7 @@
         324
       ],
       "summary": "Sign in with department + name + password.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1511,7 +1712,7 @@
         274
       ],
       "summary": "Create a new user account linked to an AD user.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1519,7 +1720,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/auth_middleware.py",
       "summary": "JWT cookie-based authentication dependency for FastAPI (MariaDB).",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1531,7 +1732,7 @@
         38
       ],
       "summary": "Extract user_id from JWT cookie. Raises 401 on failure.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1543,7 +1744,7 @@
         69
       ],
       "summary": "Extract and validate JWT from httpOnly cookie, return User from MariaDB.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1555,7 +1756,7 @@
         77
       ],
       "summary": "Like get_current_user but returns None instead of 401.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1563,7 +1764,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/auth_routes.py",
       "summary": "OAuth2 authentication endpoints for Google Workspace.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1574,7 +1775,7 @@
         16,
         20
       ],
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1586,7 +1787,7 @@
         39
       ],
       "summary": "Build redirect URI dynamically from the request's Host header.\n\nGoogle rejects raw IP addresses as redirect URIs (except localhost).\nFor LAN IPs, we append .nip.io (wildcard DNS that resolves IP.nip.io → IP).\nThe resulting URI must be registered in Google Cloud Console.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1598,7 +1799,7 @@
         154
       ],
       "summary": "Check if user has valid Google OAuth credentials.\n\nReturns authenticated status and the connected Google account email.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1610,7 +1811,7 @@
         133
       ],
       "summary": "Handle Google OAuth callback, exchange code for tokens.\n\nArgs:\n    code: Authorization code from Google.\n    state: User email passed via state parameter.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1622,7 +1823,7 @@
         57
       ],
       "summary": "Redirect user to Google OAuth consent screen.\n\nArgs:\n    user_email: User's email address.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1634,7 +1835,7 @@
         172
       ],
       "summary": "Revoke (delete) stored Google OAuth credentials for a user.\n\nArgs:\n    user_email: User's email address.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -1948,11 +2149,83 @@
       "confidence": 1.0
     },
     {
+      "id": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "type": "file",
+      "file": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "summary": "Drive 사진 인덱스 검색 — 텍스트/이미지 쿼리.\n\nEndpoints:\n  GET  /face-search                 → HTML UI\n  POST /face-search/query           → text or image query → JSON results\n  GET  /face-search/thumb/{drive_id}→ proxy Drive thumbnail (auth via service account)\n  GET  /face-search/stats           → index counts",
+      "tags": [
+        "clip",
+        "api_endpoint",
+        "insightface",
+        "fastapi",
+        "image_search",
+        "google_drive"
+      ],
+      "cluster": "cluster_09",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::_get_drive",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "lines": [
+        32,
+        40
+      ],
+      "cluster": "cluster_09",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_page",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "lines": [
+        44,
+        45
+      ],
+      "cluster": "cluster_09",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_query",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "lines": [
+        55,
+        118
+      ],
+      "cluster": "cluster_09",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_stats",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "lines": [
+        49,
+        51
+      ],
+      "cluster": "cluster_09",
+      "confidence": 1.0
+    },
+    {
+      "id": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_thumb",
+      "type": "function",
+      "file": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "lines": [
+        122,
+        168
+      ],
+      "summary": "Proxy Drive thumbnail (small image) via service account auth.",
+      "cluster": "cluster_09",
+      "confidence": 1.0
+    },
+    {
       "id": "/home/skin1004/AI_Agent/app/api/harness_api.py",
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/harness_api.py",
       "summary": "AI Knowledge Base Editor — CLAUDE.md + Memory 파일 시각화/편집 API.\n\nAI가 이 프로젝트를 이해하는 기반이 되는 MD 파일들을 읽고, 편집하고,\n섹션 간 연결 그래프를 생성합니다.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -1963,7 +2236,7 @@
         136,
         140
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -1974,7 +2247,7 @@
         120,
         122
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -1986,7 +2259,7 @@
         38
       ],
       "summary": "Whitelist of MD files the user can edit.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -1997,7 +2270,7 @@
         40,
         47
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2009,7 +2282,7 @@
         161
       ],
       "summary": "Create a new memory file.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2021,7 +2294,7 @@
         177
       ],
       "summary": "Delete a memory file (not CLAUDE.md or MEMORY.md).",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2033,7 +2306,7 @@
         227
       ],
       "summary": "Build a graph from MD headings and cross-references.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2044,7 +2317,7 @@
         52,
         53
       ],
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2056,7 +2329,7 @@
         105
       ],
       "summary": "List all AI knowledge MD files with metadata.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2068,7 +2341,7 @@
         116
       ],
       "summary": "Read a specific MD file.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2080,7 +2353,7 @@
         132
       ],
       "summary": "Save changes to an MD file.",
-      "cluster": "cluster_12",
+      "cluster": "cluster_13",
       "confidence": 1.0
     },
     {
@@ -2088,7 +2361,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/api/middleware.py",
       "summary": "Middleware for CORS, authentication, and request logging.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -2100,7 +2373,7 @@
         87
       ],
       "summary": "Middleware that logs request/response details and extracts user from JWT cookie.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -2112,7 +2385,7 @@
         28
       ],
       "summary": "Configure all middleware for the FastAPI app.",
-      "cluster": "cluster_07",
+      "cluster": "cluster_03",
       "confidence": 1.0
     },
     {
@@ -2283,7 +2556,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/config.py",
       "summary": "SKIN1004 Enterprise AI - Configuration Management.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -2295,7 +2568,7 @@
         148
       ],
       "summary": "Application settings loaded from environment variables.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -2307,7 +2580,7 @@
         154
       ],
       "summary": "Get cached application settings.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -2322,7 +2595,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/anonymization.py",
       "summary": "Pseudonymization helper for conversation / feedback ownership.\n\n``anon_id = hmac_sha256(salt, str(user_id))[:16]`` — deterministic per-user so\nthe sidebar still groups a user's own conversations, yet irreversible without\nthe server-side salt.\n\nThe salt comes from ``Settings.anon_salt`` (env var ``ANON_SALT``). Minimum\n32 chars is enforced here, not at config load, so the server boots in dev\nwithout forcing a secret to be set — the guard fires the first time identity\nactually needs to be hashed.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -2334,7 +2607,7 @@
         45
       ],
       "summary": "Cached variant keyed on user_id. Safe because the salt is process-stable.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -2346,7 +2619,7 @@
         39
       ],
       "summary": "Return a 16-char hex anon id for ``user_id``.\n\nRaises ValueError if ``salt`` (or ``Settings.anon_salt``) is shorter than\n32 chars — this is a hard stop, not a warning: a missing salt would\ncollapse every user to a predictable hash.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -2354,7 +2627,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/bigquery.py",
       "summary": "BigQuery client for query execution.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2366,7 +2639,7 @@
         146
       ],
       "summary": "BigQuery client wrapper with safety controls.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2378,7 +2651,7 @@
         158
       ],
       "summary": "Get or create the BigQuery client singleton.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2386,7 +2659,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/chart.py",
       "summary": "Chart generation module — outputs Chart.js config JSON.\n\nInstead of rendering server-side PNGs (slow, static), this module builds\nChart.js configuration objects that the frontend renders interactively\nwith animations, tooltips, responsive sizing, and theme-aware colors.\n\nFlow: LLM decides chart config → build_chartjs_config() → JSON in markdown\n      → frontend detectAndRenderCharts() → Chart.js canvas",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2398,7 +2671,7 @@
         65
       ],
       "summary": "Find a numeric column in the data, excluding specified columns.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2410,7 +2683,7 @@
         49
       ],
       "summary": "Short format for data labels.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2422,7 +2695,7 @@
         86
       ],
       "summary": "Pivot long-format grouped data into {group: [values]} for multi-series.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2434,7 +2707,7 @@
         395
       ],
       "summary": "Build a Chart.js configuration JSON string.\n\nReturns:\n    JSON string for Chart.js, or None if generation fails.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2446,7 +2719,7 @@
         447
       ],
       "summary": "Build a prompt for the LLM to decide chart configuration.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2454,7 +2727,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/embeddings.py",
       "summary": "BGE-M3 embedding model for vector search.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2466,7 +2739,7 @@
         116
       ],
       "summary": "BGE-M3 embedding model wrapper.\n\nUses FlagEmbedding for high-quality multilingual embeddings.\nFalls back to sentence-transformers if FlagEmbedding is unavailable.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2478,7 +2751,7 @@
         128
       ],
       "summary": "Get or create the embedding model singleton.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2486,7 +2759,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/google_auth.py",
       "summary": "Google OAuth2 manager for per-user GWS authentication.\n\nHandles OAuth flow, token storage/refresh, and credential management.\nSupports two token sources:\n1. Local token files in data/gws_tokens/{email}.json (legacy separate auth)\n2. Open WebUI's SQLite DB (single Google login for everything)",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -2498,7 +2771,7 @@
         341
       ],
       "summary": "Manages per-user Google OAuth2 credentials.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -2550,7 +2823,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/google_workspace.py",
       "summary": "Google Workspace API wrapper functions.\n\nStateless functions that accept credentials and call Gmail/Drive/Calendar APIs.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -2562,7 +2835,7 @@
         158
       ],
       "summary": "List Google Calendar events.\n\nArgs:\n    creds: Valid Google OAuth2 credentials.\n    query: Optional text search query for events.\n    days_ahead: Number of days to look ahead.\n    days_back: Number of days to look back.\n\nReturns:\n    List of event dicts with summary, start, end, location, htmlLink.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -2574,7 +2847,7 @@
         98
       ],
       "summary": "Search Google Drive files.\n\nArgs:\n    creds: Valid Google OAuth2 credentials.\n    query: Drive search query (e.g. \"name contains 'report'\").\n    max_results: Maximum number of files to return.\n\nReturns:\n    List of file dicts with name, mimeType, modifiedTime, webViewLink.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -2586,7 +2859,7 @@
         58
       ],
       "summary": "Search Gmail messages.\n\nArgs:\n    creds: Valid Google OAuth2 credentials.\n    query: Gmail search query (e.g. \"from:boss subject:report\").\n    max_results: Maximum number of messages to return.\n\nReturns:\n    List of message dicts with subject, from, date, snippet.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -2594,7 +2867,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/llm.py",
       "summary": "Dual LLM client: Gemini 3 Pro + Claude (Opus 4.6 / Sonnet 4.6).\n\nProvides a unified interface for both models.\nOpen WebUI model selection determines which LLM is used.\n\nGemini side:  3 Pro (conversation) / 3 Flash (internal tasks)\nClaude side:  Opus 4.6 (complex reasoning) / Sonnet 4.6 (light tasks)",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2606,7 +2879,7 @@
         753
       ],
       "summary": "Wrapper for Claude API calls via Anthropic SDK.\n\nSupports both Opus (complex reasoning) and Sonnet (lighter tasks).\nThe model is set at init time via the `model` attribute.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2618,7 +2891,7 @@
         432
       ],
       "summary": "Wrapper for Gemini 3 Pro API calls via google-genai SDK.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2630,7 +2903,7 @@
         119
       ],
       "summary": "Common interface for LLM clients.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2642,7 +2915,7 @@
         89
       ],
       "summary": "Retry wrapper that holds a Claude concurrency slot.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2654,7 +2927,7 @@
         83
       ],
       "summary": "Retry wrapper that holds a Gemini concurrency slot.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2666,7 +2939,7 @@
         49
       ],
       "summary": "Check if error is retryable (rate limit, server error, network).",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2678,7 +2951,7 @@
         77
       ],
       "summary": "Execute func with retry on transient failures.\n\nRetries up to _MAX_RETRIES times with exponential backoff\nfor retryable errors (429, 500, 503, network, timeout).\nClient errors (400, 401, 403) are raised immediately.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2690,7 +2963,7 @@
         800
       ],
       "summary": "Get Gemini Flash client for fast, lightweight tasks (routing, grading).\n\nUses gemini-2.5-flash which is much faster than Pro for simple tasks.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2702,7 +2975,7 @@
         786
       ],
       "summary": "Get or create the appropriate LLM client.\n\nArgs:\n    model_type: \"gemini\" for Gemini 3 Pro, \"claude\" for Claude Opus.\n\nReturns:\n    LLM client instance (GeminiClient or ClaudeClient).",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2714,7 +2987,7 @@
         813
       ],
       "summary": "Resolve Open WebUI model ID to internal model type.\n\nArgs:\n    model_id: Model ID from request (e.g., \"skin1004-Search\", \"skin1004-Analysis\").\n\nReturns:\n    MODEL_GEMINI or MODEL_CLAUDE.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -2722,7 +2995,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/log_scrub.py",
       "summary": "structlog processor that strips identity from log events.\n\nEvery emitted log event passes through ``scrub_identity_processor`` before it\nhits the renderer. The processor:\n\n- Replaces ``user_id`` with ``anon_id`` (via ``compute_anon_id``)\n- Drops ``email``, ``name``, ``display_name`` from the event dict\n- Leaves ``audit`` / ``security`` loggers untouched so incident response\n  still has real attribution\n\nIf ``user_id`` is not int-coercible, it's dropped silently rather than crashing\nthe log call.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -2734,7 +3007,7 @@
         53
       ],
       "summary": "Return the event dict with identity fields replaced by anon_id.\n\n``_logger_name`` is a test-only hook; in production the caller pulls it\nfrom the bound logger via ``event_dict.get(\"logger\")`` which structlog\ninjects via ``add_logger_name``.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -2742,7 +3015,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/core/notify.py",
       "summary": "Windows desktop notification utility.\n\nUsage:\n    from app.core.notify import notify\n    notify(\"테스트 완료\", \"55/55 OK, 0 WARN, 0 FAIL\")",
-      "cluster": "cluster_05",
+      "cluster": "cluster_09",
       "confidence": 1.0
     },
     {
@@ -2754,7 +3027,7 @@
         46
       ],
       "summary": "Play a notification sound.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_09",
       "confidence": 1.0
     },
     {
@@ -2766,7 +3039,7 @@
         38
       ],
       "summary": "Send a Windows 10 toast notification with optional sound.\n\nArgs:\n    title: Notification title.\n    message: Notification body text.\n    sound: Whether to play a notification sound.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_09",
       "confidence": 1.0
     },
     {
@@ -2981,7 +3254,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/db/mariadb.py",
       "summary": "DB layer — MariaDB backend for all environments.\n\nBoth production (3000) and development (3001) use MariaDB.\n\nInterface: fetch_all, fetch_one, execute, execute_lastid.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -2993,7 +3266,7 @@
         48
       ],
       "summary": "Get or create MariaDB connection pool (singleton).",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3004,7 +3277,7 @@
         71,
         79
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3015,7 +3288,7 @@
         82,
         90
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3026,7 +3299,7 @@
         51,
         58
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3037,7 +3310,7 @@
         61,
         68
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3049,7 +3322,7 @@
         398
       ],
       "summary": "Add anon_id columns + indexes to conversations and message_feedback.\n\nIdempotent: checks INFORMATION_SCHEMA before ALTERing so repeated startups\nare no-ops. Follows the same pattern as ensure_knowledge_wiki_table().",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3061,7 +3334,7 @@
         368
       ],
       "summary": "Create eval_runs + eval_qa if not present.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3073,7 +3346,7 @@
         197
       ],
       "summary": "Create knowledge_wiki table if not exists. Also adds optional columns\non existing tables (canonical_entity, embedding).",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3085,7 +3358,7 @@
         138
       ],
       "summary": "Create team_resources table if not exists.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3096,7 +3369,7 @@
         309,
         313
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3107,7 +3380,7 @@
         229,
         233
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3118,7 +3391,7 @@
         290,
         294
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3130,7 +3403,7 @@
         215
       ],
       "summary": "Create wiki_extraction_log table — prevents re-processing same pair.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3141,7 +3414,7 @@
         253,
         268
       ],
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3153,7 +3426,7 @@
         105
       ],
       "summary": "Get a pooled MariaDB connection.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -3161,7 +3434,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/db/models.py",
       "summary": "Data models: User (simple dataclass, backed by MariaDB).",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3173,7 +3446,7 @@
         17
       ],
       "summary": "User model populated from MariaDB users + ad_users tables.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3189,7 +3462,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/entity_pages.py",
       "summary": "Entity page compiler — Karpathy's \"LLM wiki\" applied to SKIN1004 facts.\n\nEach entity gets one compiled markdown \"page\" aggregating every fact we know\nabout it, grouped by period and metric. The compiled page replaces scattered\nfact rows as the primary retrieval unit for orchestrator context injection —\ninstead of pasting 10 disconnected lines, we paste one coherent summary.\n\nDesign:\n\n- Input: all ``knowledge_wiki`` rows for a given canonical entity (status !=\n  archived).\n- Output: a markdown body stored in ``wiki_entity_pages.markdown``, plus\n  metadata (fact_count, period_span, last_fact_at).\n- Idempotent: compiling the same entity twice produces the same page; we\n  overwrite on each compile.\n- Incremental: ``ensure_entity_pages`` only touches entities whose facts\n  were modified since the last compile.\n\nCompilation steps for one entity:\n\n1. Pull all facts. Split into ``permanent`` (period is NULL/\"permanent\")\n   and ``timeline`` (period has a value).\n2. Timeline: group by (year, metric) → bullet lines sorted chronologically.\n3. Permanent: bullet the summary verbatim.\n4. Prepend a 2-3 line TL;DR synthesized from the top-confidence facts.\n   TL;DR is keyword-based, not LLM-generated, so the hot path stays cheap.\n5. Append a source footer: total fact count, earliest/latest period, last\n   updated timestamp.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3200,7 +3473,7 @@
         52,
         53
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3211,7 +3484,7 @@
         87,
         190
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3222,7 +3495,7 @@
         72,
         80
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3234,7 +3507,7 @@
         69
       ],
       "summary": "Sort key that roughly chronologizes Korean period strings.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3245,7 +3518,7 @@
         56,
         60
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3257,7 +3530,7 @@
         242
       ],
       "summary": "Pull facts for one entity, compile markdown, upsert into wiki_entity_pages.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3269,7 +3542,7 @@
         291
       ],
       "summary": "Compile pages for entities whose facts were updated after the page.\n\nArgs:\n    limit: safety cap — number of entities to process per call.\n    only_stale: if True, skip entities whose page is fresher than any fact.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3280,7 +3553,7 @@
         294,
         304
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3292,7 +3565,7 @@
         328
       ],
       "summary": "Simple LIKE-based entity lookup. Used by wiki_search to find candidate\npages when the query mentions specific entity names.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3300,7 +3573,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_communities.py",
       "summary": "Community detection for the wiki knowledge graph.\n\nBuilds a NetworkX graph from ``wiki_graph_edges`` and runs Louvain community\ndetection (the stable algorithm NetworkX ships with — no extra deps). Each\nentity lands in exactly one community; the community row captures size and\ntop entities. ``wiki_graph_edges.community_id`` is updated in place so the\nfrontend can colour nodes by community.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3311,7 +3584,7 @@
         23,
         39
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3323,7 +3596,7 @@
         118
       ],
       "summary": "Run Louvain on the wiki graph and write community assignments.\n\nReturns a dict of {entity: community_id}.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3334,7 +3607,7 @@
         121,
         125
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3342,7 +3615,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_embed.py",
       "summary": "Gemini-based embedder for knowledge_wiki rows.\n\nUses ``text-embedding-004`` (768-dim) via google-genai — same vendor that\nproduces the Notion vector store, so we stay inside one model family. The\nvectors are small enough that we can load them all into a process-local\ncache on demand instead of standing up a separate vector database.\n\nPublic surface:\n\n- ``embed_text(text)``               → single-shot query embedding\n- ``ensure_wiki_embeddings(limit)``  → batch-fill missing rows\n- ``load_wiki_embeddings()``          → {row_id: vector} cache for search\n- ``cosine(a, b)``                    → similarity helper",
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3353,7 +3626,7 @@
         72,
         74
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3364,7 +3637,7 @@
         60,
         69
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3375,7 +3648,7 @@
         215,
         228
       ],
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3387,7 +3660,7 @@
         130
       ],
       "summary": "Embed several strings. Splits internally to respect the provider's\n100-request-per-call batch cap.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3399,7 +3672,7 @@
         269
       ],
       "summary": "Async wrapper for request-path embedding.\n\nFast path:\n1. Check the LRU cache keyed by the trimmed query.\n2. Run Gemini in a worker thread with a hard timeout so a slow or\n   unavailable API doesn't stall the orchestrator.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3411,7 +3684,7 @@
         96
       ],
       "summary": "Embed a single string. Raises on provider failure.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3423,7 +3696,7 @@
         177
       ],
       "summary": "Embed wiki rows that still have NULL embedding.\n\nReturns counts. Idempotent — safe to run repeatedly. Designed for an\noffline script or a low-frequency cron, not the request path.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3435,7 +3708,7 @@
         212
       ],
       "summary": "Load every active embedding into a process-local dict.\n\nRefreshes after ``_CACHE_TTL`` seconds or when ``force`` is True.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3443,7 +3716,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_extractor.py",
       "summary": "Knowledge wiki extractor — turns past conversation answers into reusable facts.\n\nWeek 1 scope: shadow-mode extraction only. Reads user Q + assistant A from the\n`messages` table, asks Gemini Flash to pull structured atomic facts, writes to\n`knowledge_wiki`. No retrieval integration yet — that lands in Week 2.\n\nOnly conversations whose answers were rooted in hard data sources are mined,\nto avoid extracting opinions/chat from general-knowledge routes:\n    ALLOWED_ROUTES = {\"bigquery\", \"notion\", \"multi\"}\n\nThe extraction prompt demands strict JSON so we can round-trip without\npost-processing. On JSON failure the batch is logged and skipped.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3454,7 +3727,7 @@
         73,
         89
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3466,7 +3739,7 @@
         106
       ],
       "summary": "Return the existing canonical entity name (case-insensitive lookup).\n\nIf knowledge_wiki already has an entry whose name differs only in case,\nreuse that stored form so we never create a new case-variant entity.\nFalls back to the original string when no match exists.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3478,7 +3751,7 @@
         120
       ],
       "summary": "Strip accidental markdown fences from LLM output.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3490,7 +3763,7 @@
         196
       ],
       "summary": "Blocking LLM call. Use via asyncio.to_thread from async contexts.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3502,7 +3775,7 @@
         371
       ],
       "summary": "Find user+assistant message pairs that haven't been wiki-extracted yet.\n\nA pair is \"processed\" when a row exists in wiki_extraction_log keyed by\nthe assistant message_id — regardless of whether facts were actually\nextracted. Tracking skipped pairs is essential; otherwise the backfill\nloops forever on the same direct/cs-route messages.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3514,7 +3787,7 @@
         296
       ],
       "summary": "If a sibling row exists with different value, flag both.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3526,7 +3799,7 @@
         464
       ],
       "summary": "Look up the route of the nearest audit_log entry for this message.\n\naudit_logs doesn't store message_id so we correlate by conversation and\ntimestamp proximity. Returns None when nothing is found, which makes the\ncaller fall through without filtering — safer than guessing wrong.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3538,7 +3811,7 @@
         251
       ],
       "summary": "Write extracted facts to knowledge_wiki, flagging contradictions.\n\nContradiction rule: if a row already exists with the same\n(entity, period, metric) but a different ``value``, the new row and\nthe existing row both get ``review_status='needs_review'`` and a\n``conflict_reason`` note pointing at each other's id.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3550,7 +3823,7 @@
         385
       ],
       "summary": "Record that we've looked at this message so we don't re-fetch it.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3562,7 +3835,7 @@
         144
       ],
       "summary": "Best-effort recovery when Flash output is truncated mid-array.\n\nIf the JSON array got cut off while emitting an element, peel the\nbroken tail and close the array so we still capture the complete\nelements that came before.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3574,7 +3847,7 @@
         439
       ],
       "summary": "Pull recent unprocessed Q/A pairs and extract facts from each.\n\nArgs:\n    since_minutes: time window (None = all history — used by backfill).\n    limit: safety cap on number of pairs per invocation.\n    max_concurrent: how many Flash calls to run in parallel.\n\nReturns:\n    Dict with counts: {pairs_seen, pairs_skipped, facts_written}",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3586,7 +3859,7 @@
         330
       ],
       "summary": "Extract facts from a single Q/A pair and persist them.\n\nReturns ``(inserted_count, skip_reason)``. ``skip_reason`` is ``None`` on\nsuccess. The caller is expected to record the outcome in\n``wiki_extraction_log`` regardless of result — the extractor only owns\nknowledge_wiki writes.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_14",
       "confidence": 1.0
     },
     {
@@ -3594,7 +3867,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_graph.py",
       "summary": "Knowledge graph — entity relationships mined from wiki facts.\n\nReads accumulated wiki rows, asks Gemini Flash to extract (src, relation, dst)\ntriples per domain, and upserts them into ``wiki_graph_edges``. Separate from\nlive request handling — this runs from a script or a low-frequency cron.\n\nRelation vocabulary is intentionally small so the graph stays navigable:\n\n- ``owns``         team/company owns a product, channel, or customer\n- ``belongs_to``   fact/entity belongs to a larger scope (product to line, etc.)\n- ``compares_to``  two entities share a comparison metric (rankings)\n- ``sells_in``     product is sold through a market/channel/region\n- ``linked``       generic co-occurrence when nothing stronger fits",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3606,7 +3879,7 @@
         66
       ],
       "summary": "Peel markdown code fences, tolerant of truncated output missing the\nclosing ```. Also handles plain ```json...``` and bare ```...```.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3617,7 +3890,7 @@
         69,
         122
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3628,7 +3901,7 @@
         125,
         140
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3640,7 +3913,7 @@
         167
       ],
       "summary": "Walk recent wiki facts and upsert edges. Returns counts.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3648,7 +3921,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_insights.py",
       "summary": "Insights layer — Graphify-style \"GRAPH_REPORT\" for the wiki graph.\n\nComputes:\n- God nodes: entities with the most connections (degree centrality).\n- Orphan entities: entities with very few facts, suggesting unused or\n  one-off mentions that may need cleanup.\n- Surprising connections: high-weight edges whose endpoints live in\n  different domains — often the most actionable cross-cutting insights.\n- Stale facts: time-sensitive rows (route=bigquery with a recent period)\n  that haven't been refreshed in a while.\n- Contradictions: facts currently flagged as conflicting.\n- Top communities: largest clusters detected by Louvain.\n\nAll numbers come from plain SQL — no LLM calls — so this runs fast and\ncheap on every drawer open.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3660,7 +3933,7 @@
         130
       ],
       "summary": "Currently flagged conflicting facts, paired with their sibling.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3672,7 +3945,7 @@
         173
       ],
       "summary": "Everything the insights tab needs in one payload.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3684,7 +3957,7 @@
         50
       ],
       "summary": "Top N entities by total incident edge weight.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3696,7 +3969,7 @@
         71
       ],
       "summary": "Entities that appear in only a handful of facts and no edges.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3708,7 +3981,7 @@
         111
       ],
       "summary": "Time-sensitive BQ facts whose extraction is older than the threshold.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3720,7 +3993,7 @@
         160
       ],
       "summary": "Synthesize a few exploratory questions from the god nodes.\n\nDeterministic — no LLM. Uses high-degree entities as seed targets.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3732,7 +4005,7 @@
         92
       ],
       "summary": "Edges where src and dst live in different primary domains.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3743,7 +4016,7 @@
         133,
         138
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3751,7 +4024,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_normalize.py",
       "summary": "Entity normalization — map messy entity strings to canonical names.\n\nThree layers, cheapest first:\n\n1. **Trivial normalization**: lowercase / whitespace collapse / drop obvious\n   wrapper words like \"팀\", \"라인\", \"제품군\".\n2. **Alias table lookup** (``wiki_entity_aliases``): manual or LLM-seeded\n   mappings (e.g., \"마다가스카 센텔라 앰플\" ↔ \"Madagascar Centella Ampoule\").\n3. **Cluster merge pass** (script-driven): Gemini Flash clusters near-duplicate\n   entities and writes back to the alias table. Runs offline, not on each call.\n\nThe search layer should call :func:`canonicalize` before matching so a single\ncanonical form absorbs user/language variants.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3762,7 +4035,7 @@
         38,
         43
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3774,7 +4047,7 @@
         73
       ],
       "summary": "Trivial normalize → alias table lookup → canonical form.\n\nFalls back to the normalized input when no alias is registered.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3786,7 +4059,7 @@
         198
       ],
       "summary": "Pull the most-mentioned entities and let Flash cluster near-duplicates.\n\nReturns the number of new alias rows written. Designed to be invoked from\na dedicated script so we don't add LLM calls to the hot path.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3798,7 +4071,7 @@
         53
       ],
       "summary": "Trivial normalization — no DB. Safe to call anywhere.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3810,7 +4083,7 @@
         88
       ],
       "summary": "Insert (or overwrite) a single alias → canonical mapping.",
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3821,7 +4094,7 @@
         91,
         96
       ],
-      "cluster": "cluster_04",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -3829,7 +4102,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge/wiki_search.py",
       "summary": "Wiki search — find stored facts relevant to a user query.\n\nWeek 2 v1: SQL-only search over `knowledge_wiki`. No vector embedding, no LLM\nrerank. Good enough for the first cut — we can layer embeddings on once we\nhave enough rows to see what's actually missing.\n\nTwo public entry points:\n\n- ``search_facts(query, limit)``: best-effort relevance search used by the\n  orchestrator to inject context before routing.\n- ``extract_keywords(query)``: exposed for debugging and unit tests.\n\nRanking is a simple weighted score:\n    score = 2 * entity_matches + 1 * summary_matches\n          + 0.5 * confidence\n          - 0.1 * log10(age_days + 1)\n\nPending / active rows both participate. Archived rows are excluded.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3841,7 +4114,7 @@
         94
       ],
       "summary": "Build a UNION-free OR-search against entity and summary.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3852,7 +4125,7 @@
         97,
         120
       ],
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3863,7 +4136,7 @@
         123,
         139
       ],
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3875,7 +4148,7 @@
         71
       ],
       "summary": "Pull meaningful tokens out of a query for LIKE matching.\n\nHandles Korean, alphanumerics and slash/dash-joined terms. Drops short\ntokens and Korean/English stopwords.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3887,7 +4160,7 @@
         218
       ],
       "summary": "Render fact rows as a Markdown bullet list suitable for injection.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3899,7 +4172,7 @@
         202
       ],
       "summary": "Return the most relevant wiki facts for ``query`` (async wrapper).\n\nHybrid keyword + embedding score. Keyword SQL and the Gemini query\nembedding run in parallel so total wait ≈ max(sql, embed) instead of\nsum. Embedding is best-effort and its timeout is enforced by\n``embed_query_async`` itself.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3911,7 +4184,7 @@
         259
       ],
       "summary": "Richer context builder: prefer compiled entity pages, fall back to\nindividual facts. Returns ready-to-inject markdown or ``\"\"``.\n\nShort-circuits on trivial queries (greetings, one-word chit-chat) so\nthe orchestrator doesn't pay wiki overhead on every tiny message.\nEntity-page search and fact search run in parallel.",
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3922,7 +4195,7 @@
         154,
         163
       ],
-      "cluster": "cluster_08",
+      "cluster": "cluster_11",
       "confidence": 1.0
     },
     {
@@ -3938,7 +4211,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge_map/ast_parser.py",
       "summary": "Python AST parser — extracts classes, functions, imports (confidence 1.0).",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3949,7 +4222,7 @@
         21,
         27
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3960,7 +4233,7 @@
         11,
         17
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3972,7 +4245,7 @@
         38
       ],
       "summary": "All AST-extracted facts for a single .py file.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3983,7 +4256,7 @@
         41,
         49
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -3994,7 +4267,7 @@
         52,
         57
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4006,7 +4279,7 @@
         91
       ],
       "summary": "Parse a .py file and return structured AST facts. None on fatal error.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4102,7 +4375,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge_map/cache.py",
       "summary": "SHA256 + mtime file fingerprint cache for incremental builds.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -4114,7 +4387,7 @@
         55
       ],
       "summary": "Persistent cache of file fingerprints for incremental rebuilds.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -4126,7 +4399,7 @@
         17
       ],
       "summary": "Return {sha256, mtime, size} for a file. Reads the whole file once.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_08",
       "confidence": 1.0
     },
     {
@@ -4134,7 +4407,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge_map/config.py",
       "summary": "Paths, exclude patterns, and build constants for Knowledge Map.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4241,7 +4514,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge_map/graph.py",
       "summary": "NetworkX graph wrapper + Louvain community detection for Knowledge Map.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4252,7 +4525,7 @@
         25,
         29
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4264,7 +4537,7 @@
         91
       ],
       "summary": "Thin wrapper over networkx.MultiDiGraph with Louvain clustering.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4275,7 +4548,7 @@
         11,
         21
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4283,7 +4556,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge_map/md_parser.py",
       "summary": "Markdown structural parser — H1-H6 headings, links, date from filename.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4294,7 +4567,7 @@
         16,
         19
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4305,7 +4578,7 @@
         23,
         25
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4316,7 +4589,7 @@
         29,
         35
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4328,7 +4601,7 @@
         66
       ],
       "summary": "Parse a .md file. Never raises — returns an empty node on error.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4336,7 +4609,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/knowledge_map/semantic.py",
       "summary": "Gemini Flash semantic pass — pulls concepts/relations/summary per file.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4347,7 +4620,7 @@
         23,
         28
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4358,7 +4631,7 @@
         35,
         44
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4370,7 +4643,7 @@
         51
       ],
       "summary": "Call Gemini Flash and return raw text. Isolated for test mocking.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4381,7 +4654,7 @@
         31,
         32
       ],
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4393,7 +4666,7 @@
         71
       ],
       "summary": "Tolerant JSON parse — strips code fences, returns error node on failure.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4405,7 +4678,7 @@
         95
       ],
       "summary": "Run the Flash semantic pass for a single file with retries.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4417,7 +4690,7 @@
         108
       ],
       "summary": "Parallel batch with FLASH_PARALLEL fanout via asyncio.Semaphore.",
-      "cluster": "cluster_09",
+      "cluster": "cluster_10",
       "confidence": 1.0
     },
     {
@@ -4433,8 +4706,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        183,
-        211
+        185,
+        213
       ],
       "summary": "Ensure jeffrey@skin1004korea.com is admin with all models in MariaDB.",
       "cluster": "cluster_24",
@@ -4445,8 +4718,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        214,
-        245
+        216,
+        247
       ],
       "summary": "Create audit_logs table if it doesn't exist (MariaDB or SQLite).",
       "cluster": "cluster_24",
@@ -4457,8 +4730,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        389,
-        401
+        391,
+        403
       ],
       "summary": "Hourly cron: mine new Q/A pairs from the last 75 minutes into knowledge_wiki.\n\n75 min window gives a 15-minute safety overlap with the previous run so no\npair is missed if a batch runs long. The extractor already skips pairs\nthat already have wiki rows.",
       "cluster": "cluster_24",
@@ -4469,8 +4742,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        404,
-        410
+        406,
+        412
       ],
       "summary": "Start the auto-detect maintenance loop (polls __TABLES__ every 60s).",
       "cluster": "cluster_24",
@@ -4481,8 +4754,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        376,
-        386
+        378,
+        388
       ],
       "summary": "Daily 01:00 cron job: Notion → MariaDB sync.",
       "cluster": "cluster_24",
@@ -4493,8 +4766,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        260,
-        305
+        262,
+        307
       ],
       "summary": "Pre-load BigQuery schemas (sales + all marketing tables) into per-table cache at startup.",
       "cluster": "cluster_24",
@@ -4505,8 +4778,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        308,
-        319
+        310,
+        321
       ],
       "summary": "Pre-load CS Q&A data from Google Spreadsheet at startup.",
       "cluster": "cluster_24",
@@ -4517,8 +4790,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        343,
-        373
+        345,
+        375
       ],
       "summary": "Pre-establish TLS/HTTP connections to Gemini + Claude.\n\nWithout this, the first real chat request after worker startup pays\n~20-30s in SDK init + TLS handshake + connection pool setup, making\nthe unlucky first user experience terrible.",
       "cluster": "cluster_24",
@@ -4529,8 +4802,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        248,
-        257
+        250,
+        259
       ],
       "summary": "Pre-fetch Notion allowlist titles at startup so first query is fast.",
       "cluster": "cluster_24",
@@ -4541,8 +4814,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        332,
-        340
+        334,
+        342
       ],
       "summary": "Pre-load Qdrant team chunk counts at startup.",
       "cluster": "cluster_24",
@@ -4553,8 +4826,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        322,
-        329
+        324,
+        331
       ],
       "summary": "Pre-load team resources from MariaDB at startup.",
       "cluster": "cluster_24",
@@ -4565,8 +4838,8 @@
       "type": "function",
       "file": "/home/skin1004/AI_Agent/app/main.py",
       "lines": [
-        52,
-        180
+        53,
+        182
       ],
       "summary": "Create and configure the FastAPI application.",
       "cluster": "cluster_24",
@@ -4584,7 +4857,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/mcp/bigquery_mcp.py",
       "summary": "BigQuery MCP Server connection.\n\nExisting sql_agent.py direct BigQuery calls are preserved.\nThis module adds MCP-based connection as a new alternative.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -4596,7 +4869,7 @@
         27
       ],
       "summary": "Return BigQuery MCP tools.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -4604,7 +4877,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/mcp/gws_mcp.py",
       "summary": "Google Workspace MCP Server connection.\n\nWARNING: Community version - review security before production use.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -4616,7 +4889,7 @@
         25
       ],
       "summary": "Return Google Workspace MCP tools.",
-      "cluster": "cluster_20",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -4624,7 +4897,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/mcp/notion_mcp.py",
       "summary": "Notion MCP Server connection.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -4636,7 +4909,7 @@
         32
       ],
       "summary": "Return Notion MCP tools.",
-      "cluster": "cluster_03",
+      "cluster": "cluster_05",
       "confidence": 1.0
     },
     {
@@ -4894,7 +5167,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/models/state.py",
       "summary": "LangGraph state definitions for the agent workflow.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4906,7 +5179,7 @@
         59
       ],
       "summary": "Main state schema for the LangGraph workflow.\n\nAttributes:\n    query: Original user question.\n    route_type: Classified intent type.\n    generated_sql: SQL generated by the Text-to-SQL agent.\n    sql_valid: Whether the SQL passed security validation.\n    sql_result: Query execution results.\n    retrieved_docs: Documents retrieved by RAG.\n    doc_relevance: Whether retrieved docs are relevant.\n    web_search_results: Results from Tavily web search (CRAG fallback).\n    answer: Final generated answer.\n    needs_retry: Whether the answer needs regeneration.\n    retry_count: Number of retries performed.\n    error: Error message if something went wrong.\n    messages: Conversation history for multi-turn.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4921,7 +5194,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/rag/chunker.py",
       "summary": "Hybrid chunking: Semantic + Hierarchical chunking for RAG.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4933,7 +5206,7 @@
         218
       ],
       "summary": "Hybrid document chunker combining semantic and hierarchical approaches.\n\n- Semantic Chunking: Splits by meaning boundaries using embedding similarity.\n- Hierarchical Chunking: Maintains parent-child relationships (sections → paragraphs).",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4945,7 +5218,7 @@
         226
       ],
       "summary": "Create a new chunker instance.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4953,7 +5226,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/rag/indexer.py",
       "summary": "BigQuery vector indexing for RAG embeddings.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4965,7 +5238,7 @@
         134
       ],
       "summary": "Index document chunks into BigQuery as vector embeddings.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4977,7 +5250,7 @@
         139
       ],
       "summary": "Create a new vector indexer instance.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4985,7 +5258,7 @@
       "type": "file",
       "file": "/home/skin1004/AI_Agent/app/rag/parser.py",
       "summary": "Document parser using Docling for PDF, HWP, PPT → markdown conversion.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -4997,7 +5270,7 @@
         104
       ],
       "summary": "Parse documents into markdown using Docling.\n\nSupports: PDF, DOCX, PPTX, HWP, HTML, Markdown, and more.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -5009,7 +5282,7 @@
         116
       ],
       "summary": "Get or create the document parser singleton.",
-      "cluster": "cluster_05",
+      "cluster": "cluster_04",
       "confidence": 1.0
     },
     {
@@ -5493,8 +5766,99 @@
       "tags": [
         "2026-04-17"
       ],
-      "cluster": "cluster_10",
+      "cluster": "cluster_20",
       "confidence": 1.0
+    },
+    {
+      "id": "concept:CLIP (Contrastive Language-Image Pre-training)",
+      "type": "concept",
+      "summary": "CLIP (Contrastive Language-Image Pre-training)",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:CLIP image/text embedding",
+      "type": "concept",
+      "summary": "CLIP image/text embedding",
+      "cluster": "cluster_09",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:FastAPI routing",
+      "type": "concept",
+      "summary": "FastAPI routing",
+      "cluster": "cluster_09",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:Google Drive API integration",
+      "type": "concept",
+      "summary": "Google Drive API integration",
+      "cluster": "cluster_09",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:Image indexing",
+      "type": "concept",
+      "summary": "Image indexing",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:InsightFace",
+      "type": "concept",
+      "summary": "InsightFace",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:InsightFace face embedding",
+      "type": "concept",
+      "summary": "InsightFace face embedding",
+      "cluster": "cluster_09",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:L2 normalization",
+      "type": "concept",
+      "summary": "L2 normalization",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:Lazy loading",
+      "type": "concept",
+      "summary": "Lazy loading",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:Service Account Authentication",
+      "type": "concept",
+      "summary": "Service Account Authentication",
+      "cluster": "cluster_09",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:SigLIP model",
+      "type": "concept",
+      "summary": "SigLIP model",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:Similarity search",
+      "type": "concept",
+      "summary": "Similarity search",
+      "cluster": "cluster_07",
+      "confidence": 0.8
+    },
+    {
+      "id": "concept:Vector embeddings",
+      "type": "concept",
+      "summary": "Vector embeddings",
+      "cluster": "cluster_07",
+      "confidence": 0.8
     }
   ],
   "edges": [
@@ -5651,6 +6015,276 @@
     {
       "from": "/home/skin1004/AI_Agent/app/agents/cs_agent.py",
       "to": "typing.Optional",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_extract_product_line",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_folder_of",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_get_clip",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_get_face_app",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_l2_normalize",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_load_index_once",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_normalize_meta_strings",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_pool_features",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::_strip_num",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::derive_answer",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::embed_face_bytes",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::embed_image_bytes",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::embed_text",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::extract_label",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::index_stats",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::search_clip",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py::search_face",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "PIL.Image",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "__future__.annotations",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "asyncio",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:CLIP (Contrastive Language-Image Pre-training)",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:Image indexing",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:InsightFace",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:L2 normalization",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:Lazy loading",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:SigLIP model",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:Similarity search",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "concept:Vector embeddings",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "data/face_clip_index.npy",
+      "type": "references",
+      "confidence": 0.9
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "data/face_clip_meta.json",
+      "type": "references",
+      "confidence": 0.9
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "data/face_index.npy",
+      "type": "references",
+      "confidence": 0.9
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "data/face_meta.json",
+      "type": "references",
+      "confidence": 0.9
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "insightface",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "io",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "json",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "numpy",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "numpy",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "pathlib.Path",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "re",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "structlog",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "structlog",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "threading",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "transformers",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "typing.Optional",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/agents/face_clip_agent.py",
+      "to": "unicodedata",
       "type": "imports",
       "confidence": 1.0
     },
@@ -5920,12 +6554,6 @@
     },
     {
       "from": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
-      "to": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py::_cosine_sim",
-      "type": "documented_in",
-      "confidence": 1.0
-    },
-    {
-      "from": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
       "to": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py::_embed_query",
       "type": "documented_in",
       "confidence": 1.0
@@ -5986,7 +6614,7 @@
     },
     {
       "from": "/home/skin1004/AI_Agent/app/agents/qdrant_agent.py",
-      "to": "math",
+      "to": "numpy",
       "type": "imports",
       "confidence": 1.0
     },
@@ -7594,6 +8222,186 @@
     },
     {
       "from": "/home/skin1004/AI_Agent/app/api/eval_api.py",
+      "to": "typing.Optional",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::_get_drive",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_page",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_query",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_stats",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "/home/skin1004/AI_Agent/app/api/face_search_routes.py::face_search_thumb",
+      "type": "documented_in",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "FastAPI",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "PIL",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "__future__.annotations",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "app.agents.face_clip_agent",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "asyncio",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "concept:CLIP image/text embedding",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "concept:FastAPI routing",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "concept:Google Drive API integration",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "concept:InsightFace face embedding",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "concept:Service Account Authentication",
+      "type": "implements",
+      "confidence": 0.8
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.APIRouter",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.File",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.Form",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.HTTPException",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.UploadFile",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.responses.HTMLResponse",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.responses.JSONResponse",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "fastapi.responses.Response",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "google.oauth2.service_account",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "googleapiclient.discovery",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "io",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "structlog",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "threading",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
+      "to": "time",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/api/face_search_routes.py",
       "to": "typing.Optional",
       "type": "imports",
       "confidence": 1.0
@@ -10529,6 +11337,12 @@
     {
       "from": "/home/skin1004/AI_Agent/app/main.py",
       "to": "app.api.eval_api.eval_router",
+      "type": "imports",
+      "confidence": 1.0
+    },
+    {
+      "from": "/home/skin1004/AI_Agent/app/main.py",
+      "to": "app.api.face_search_routes.router",
       "type": "imports",
       "confidence": 1.0
     },

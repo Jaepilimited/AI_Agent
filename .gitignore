@@ -38,6 +38,22 @@ app/static/charts/*.html
 data/gws_tokens/
 data/*.log
 
+# Face-search 인덱스/메타 — 큰 binary + 매일 sync로 변경됨, git에 부담
+data/face_clip_index.npy
+data/face_clip_meta.json
+data/face_index.npy
+data/face_meta.json
+data/face_drive_manifest.json
+data/*.bak_*
+data/clip_v1_backup/
+
+# Coredumps
+core
+core.*
+
+# Face-search 평가 thumb 캐시
+/tmp/face_eval_cache/
+
 # Dev SQLite database (local only)
 data/dev.db
 
@@ -88,8 +104,11 @@ CUsersDB_PC*
 .webui_secret_key
 
 # Logs
-logs/
+logs/*
 *.log
+# 예외: face-search 평가 리포트는 결과물로 보존
+!logs/face_eval/
+!logs/face_eval/*.json
 
 # Backup directories
 backup_before_custom_frontend/
