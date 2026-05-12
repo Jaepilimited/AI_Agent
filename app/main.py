@@ -99,6 +99,9 @@ def create_app() -> FastAPI:
         asyncio.create_task(_warmup_team_resources())
         asyncio.create_task(_warmup_qdrant_cache())
         asyncio.create_task(_warmup_llm_clients())
+        # face-search 워밍업은 OOM 위험으로 비활성화 (SigLIP+InsightFace+OCR 동시 로드 시 메모리 폭주).
+        # 첫 query에 lazy load (30초) → 이후는 빠름. 인스턴스 메모리 늘리면 재활성 가능.
+        # asyncio.create_task(_warmup_face_search())
         # Safety: auto-detect table updates via __TABLES__ metadata polling
         asyncio.create_task(_start_maintenance_monitor())
         # APScheduler: daily 01:00 team resources sync + hourly wiki extraction
@@ -401,6 +404,15 @@ async def _extract_wiki_hourly():
         logger.info("wiki_hourly_extract_done", **result)
     except Exception as e:
         logger.error("wiki_hourly_extract_failed", error=str(e))
+
+
+async def _warmup_face_search():
+    """SigLIP + InsightFace 모델 미리 로드. 첫 /face-search/query 30초 → ~1초."""
+    try:
+        from app.agents import face_clip_agent
+        await asyncio.to_thread(face_clip_agent.warmup)
+    except Exception as e:
+        logger.warning("face_search_warmup_failed", error=str(e)[:200])
 
 
 async def _start_maintenance_monitor():

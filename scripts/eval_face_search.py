@@ -43,15 +43,20 @@ _DATE_PREFIX = re.compile(r"^\d{6}_")
 
 _NUM_PREFIX_RE = re.compile(r"^\d+\.\s*")
 _PRODUCT_NOISE_SEGS = {
-    "Mini", "Together", "Etc", "etc", "etc.", "Texture", "Box",
-    "old", "Old", "사용X", "단종", "구버전", "기본", "저해상", "고해상",
+    "Mini", "Together", "Etc", "Etc.", "etc", "etc.", "ETC", "ETC.",
+    "Texture", "Box",
+    "old", "Old", "OLD", "사용X", "단종", "구버전", "기본", "저해상", "고해상",
     "정방형", "가로형", "세로형", "JPG", "PSD",
-    "Real Product : Fake Product", "Image",
+    "Real Product : Fake Product", "Image", "기타",
+    "리뉴얼 전 누끼", "리뉴얼 전", "누끼", "단체 구성 이미지",
 }
+# 순수 숫자 + 단위 (사이즈)
+_SIZE_NUM_RE = re.compile(r"^\d+\s*(ml|g|kg|kit|개|매|set|p|pcs)?$", re.IGNORECASE)
 _PRODUCT_LINE_SEGS = {
     "Centella", "Hyalu-Cica", "Hyalu-Teca", "Centella Teca",
     "Tone Brightening", "Tea-Trica", "Probio-Cica", "Poremizing", "Zombie Beauty",
     "Niacinamide", "Matrixyl", "Retinol", "Azelaic acid",
+    "JBT",
 }
 
 
@@ -61,11 +66,17 @@ def _strip_num_prefix(s: str) -> str:
 
 
 def _is_product_noise(s: str) -> bool:
-    """잡음 segment(라벨로 부적합) 판정 — line 단독, prefix 떼면 빈 문자, 잡음 키워드."""
+    """잡음 segment(라벨로 부적합) 판정 — 잡음 키워드, 사이즈 숫자.
+    LINE_SEGS는 잡음이 아님(폴더 끝이 line 단독인 케이스도 그 line 자체가 product 라벨).
+    """
     s_clean = _strip_num_prefix(s)
-    if not s_clean or s_clean in _PRODUCT_NOISE_SEGS or s_clean in _PRODUCT_LINE_SEGS:
+    if not s_clean or s_clean in _PRODUCT_NOISE_SEGS:
         return True
     if "Transparent" in s_clean or s_clean.endswith(" Product"):
+        return True
+    if _SIZE_NUM_RE.match(s_clean):
+        return True
+    if "리뉴얼" in s_clean or "사용X" in s_clean or "단종" in s_clean:
         return True
     return False
 

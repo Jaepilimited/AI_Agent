@@ -72,23 +72,31 @@ async def face_search_query(
     def _do_query():
         clip_results: list[dict] = []
         face_results: list[dict] = []
+        ocr_text = ""
 
         if img_bytes is not None:
             qvec = face_clip_agent.embed_image_bytes(img_bytes)
-            clip_results = face_clip_agent.search_clip(qvec, top_k=top_k, folder_filter=folder)
+            clip_results = face_clip_agent.search_clip(qvec, top_k=top_k * 3, folder_filter=folder)
             try:
                 fvec = face_clip_agent.embed_face_bytes(img_bytes)
                 if fvec is not None:
                     face_results = face_clip_agent.search_face(fvec, top_k=top_k)
             except Exception as e:
                 logger.warning("face_embed_failed", error=str(e)[:120])
+
+            # OCR 보정 — 제품 패키지 텍스트가 매칭에 결정적. 얼굴이 약하면(인물 사진 아님)만.
+            if not face_results or (face_results and face_results[0].get("score", 0) < 0.5):
+                ocr_text = face_clip_agent.extract_text_from_image(img_bytes)
+                if ocr_text:
+                    clip_results = face_clip_agent.rerank_with_ocr(clip_results, ocr_text)
+            clip_results = clip_results[:top_k]
         else:
             qvec = face_clip_agent.embed_text(text or "")
             clip_results = face_clip_agent.search_clip(qvec, top_k=top_k, folder_filter=folder)
 
-        return clip_results, face_results
+        return clip_results, face_results, ocr_text
 
-    clip_results, face_results = await asyncio.to_thread(_do_query)
+    clip_results, face_results, ocr_text = await asyncio.to_thread(_do_query)
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
     # face_results는 face_meta 인덱스 기반인데, 모델이 등장하는 제품/이벤트 사진까지 들어있음.
@@ -118,6 +126,7 @@ async def face_search_query(
         "query": text if text else f"<image:{image.filename}>" if image else "",
         "elapsed_ms": round(elapsed_ms, 1),
         "answer": answer,
+        "ocr_text": ocr_text[:300] if ocr_text else "",
         "clip_results": clip_results,
         "face_results": face_results,
     })

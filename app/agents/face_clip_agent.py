@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import re
 import threading
 import unicodedata
 from pathlib import Path
@@ -194,6 +195,68 @@ def index_stats() -> dict:
     }
 
 
+def extract_text_from_image(img_bytes: bytes, max_dim: int = 1200) -> str:
+    """이미지에 적힌 텍스트(제품명 등)를 OCR로 추출. 영문+한글.
+    제품 사진의 라벨/패키지 텍스트가 같은 라인 다른 제품 혼동을 해소하는 결정적 신호.
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(io.BytesIO(img_bytes))
+        img.load()
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        if max(w, h) > max_dim:
+            ratio = max_dim / max(w, h)
+            img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+        text = pytesseract.image_to_string(img, lang="eng+kor", timeout=8)
+        return text.strip()
+    except Exception as e:
+        logger.warning("ocr_failed", error=str(e)[:120])
+        return ""
+
+
+_TOKEN_RE = re.compile(r"[A-Za-z]{4,}")
+
+
+def rerank_with_ocr(results: list[dict], ocr_text: str, boost_per_match: float = 0.04) -> list[dict]:
+    """OCR로 추출된 영문 단어(4글자 이상)가 폴더 라벨에 들어있으면 score 부스트.
+    제품 패키지의 영문(예: CENTELLA, TECA, AMPOULE)이 폴더명과 매칭되면 정답 후보가 위로.
+    """
+    if not ocr_text or not results:
+        return results
+    ocr_tokens = {t.lower() for t in _TOKEN_RE.findall(ocr_text)}
+    # 제품 패키지에 흔히 들어가는 generic 단어 제외 (혼동 유발)
+    generic = {"madagascar", "from", "with", "made", "pure", "skin"}
+    ocr_tokens -= generic
+    if not ocr_tokens:
+        return results
+
+    out = []
+    for r in results:
+        folder_text = _folder_of(r).lower()
+        folder_tokens = {t.lower() for t in _TOKEN_RE.findall(folder_text)}
+        overlap = len(folder_tokens & ocr_tokens)
+        new_r = {**r, "score": r.get("score", 0.0) + boost_per_match * overlap, "ocr_overlap": overlap}
+        out.append(new_r)
+    out.sort(key=lambda r: -r.get("score", 0.0))
+    return out
+
+
+def warmup() -> None:
+    """서버 startup 시 인덱스 + 모델 미리 로드. 첫 사용자 쿼리 30초 대기 제거."""
+    try:
+        _load_index_once()
+        # 더미 임베딩 한 번씩 — 모든 lazy 초기화 완료
+        embed_text("warmup")
+        # InsightFace는 모델 로드만 트리거 (검출 호출은 빈 이미지에 실패 가능)
+        _get_face_app()
+        logger.info("face_clip_warmup_complete")
+    except Exception as e:
+        logger.warning("face_clip_warmup_failed", error=str(e)[:200])
+
+
 # ─── Answer derivation (label extraction + majority voting) ──────────────
 
 import re
@@ -205,15 +268,21 @@ _NOISE_SEGMENTS = {
     "old", "Old", "OLD", "old(사용X)", "old (사용X)",
     "사용X", "사용 X", "단종", "구버전",
     "단체 구성 이미지", "단체구성이미지",
+    "기타", "etc.", "etc", "Etc", "Etc.", "ETC", "ETC.",
+    "리뉴얼 전 누끼", "리뉴얼 전", "누끼", "리뉴얼전누끼",
 }
 # 부분 일치로 거를 잡음 키워드 (예: "old (사용X)" 같은 변형)
-_NOISE_KEYWORDS = ("사용X", "단종", "구버전", "단체 구성", "단체구성")
+_NOISE_KEYWORDS = ("사용X", "단종", "구버전", "단체 구성", "단체구성", "리뉴얼")
+# 사이즈/숫자 단독 segment 패턴 (예: "55", "100ml", "4kit", "30g")
+_SIZE_NUM_RE = re.compile(r"^\d+\s*(ml|g|kg|kit|개|매|set|p|pcs)?$", re.IGNORECASE)
 
 
 def _is_noise(seg: str) -> bool:
-    """잡음 segment 판정 — set 매칭 + 키워드 부분 일치."""
+    """잡음 segment 판정 — set 매칭 + 키워드 부분 일치 + 숫자/사이즈."""
     s = _strip_num(seg)
     if not s or s in _NOISE_SEGMENTS or seg in _NOISE_SEGMENTS:
+        return True
+    if _SIZE_NUM_RE.match(s):
         return True
     return any(kw in s for kw in _NOISE_KEYWORDS)
 
@@ -294,29 +363,14 @@ def extract_label(folder_path: str) -> tuple[str, str]:
                 return True
             return False
 
+        # 가장 깊은 비-잡음 segment를 product_name으로 (sub-folder 우선)
+        # 깊은 쪽이 더 구체적 (예: Keyring, Spot Cream). 잡음은 _skip이 거름.
         product_name = None
-        # 2a) 우선 forward: Product/Transparent anchor 다음 첫 의미 있는 segment
-        for i, p in enumerate(parts):
-            is_anchor = (
-                re.match(r"^\d*\.?\s*Product$", p, re.IGNORECASE)
-                or "Transparent Background" in p
-            )
-            if is_anchor:
-                for j in range(i + 1, len(parts)):
-                    if _skip(parts[j]):
-                        continue
-                    product_name = _strip_num(parts[j])
-                    break
-                if product_name:
-                    break
-
-        # 2b) fallback: reversed (가장 깊은 비-잡음 segment) — 위가 못 잡으면
-        if not product_name:
-            for p in reversed(parts):
-                if _skip(p):
-                    continue
-                product_name = _strip_num(p)
-                break
+        for p in reversed(parts):
+            if _skip(p):
+                continue
+            product_name = _strip_num(p)
+            break
 
         # 라벨 결합 — line과 product_name의 단어 겹침을 제거해 "Centella Teca Teca Cream" 같은 중복 방지
         final = None
@@ -358,7 +412,7 @@ def extract_label(folder_path: str) -> tuple[str, str]:
 
     # 4) 기본: 가장 깊은 비-잡음 세그먼트
     for p in reversed(parts):
-        if p in _NOISE_SEGMENTS:
+        if _is_noise(p):
             continue
         stripped = _strip_num(p)
         if stripped:
@@ -371,6 +425,7 @@ _PRODUCT_LINES = [
     "Centella", "Hyalu-Cica", "Hyalu-Teca", "Centella Teca", "Tone Brightening",
     "Tea-Trica", "Probio-Cica", "Poremizing", "Zombie Beauty",
     "Niacinamide", "Matrixyl", "Retinol", "Azelaic acid",
+    "JBT",
 ]
 
 
