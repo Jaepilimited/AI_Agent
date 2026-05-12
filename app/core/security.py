@@ -90,9 +90,8 @@ def _validate_tables(sql: str, allowed_tables: List[str]) -> Tuple[bool, str]:
     """
     # Extract table references from FROM and JOIN clauses
     # Matches backtick-quoted GCP table paths: `project.dataset.table`
-    # Uses [a-zA-Z0-9_\-]+ to avoid spanning across unrelated backtick pairs
-    # (e.g. `SET` column references followed by the actual table backtick)
-    table_pattern = r'`([a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+)`'
+    # Matches project.dataset.table paths — allows spaces in table name (e.g. `ad_data.meta data_test`)
+    table_pattern = r'`(skin1004-319714\.[^`]+)`'
     referenced_tables = re.findall(table_pattern, sql)
 
     if not referenced_tables:
