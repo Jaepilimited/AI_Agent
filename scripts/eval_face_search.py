@@ -41,40 +41,86 @@ _DATE_PREFIX = re.compile(r"^\d{6}_")
 
 # ─────────────────────────── ground-truth 추출 ───────────────────────────
 
+_NUM_PREFIX_RE = re.compile(r"^\d+\.\s*")
+_PRODUCT_NOISE_SEGS = {
+    "Mini", "Together", "Etc", "etc", "etc.", "Texture", "Box",
+    "old", "Old", "사용X", "단종", "구버전", "기본", "저해상", "고해상",
+    "정방형", "가로형", "세로형", "JPG", "PSD",
+    "Real Product : Fake Product", "Image",
+}
+_PRODUCT_LINE_SEGS = {
+    "Centella", "Hyalu-Cica", "Hyalu-Teca", "Centella Teca",
+    "Tone Brightening", "Tea-Trica", "Probio-Cica", "Poremizing", "Zombie Beauty",
+    "Niacinamide", "Matrixyl", "Retinol", "Azelaic acid",
+}
+
+
+def _strip_num_prefix(s: str) -> str:
+    """'08. Soothing Cream' → 'Soothing Cream'."""
+    return _NUM_PREFIX_RE.sub("", s).strip()
+
+
+def _is_product_noise(s: str) -> bool:
+    """잡음 segment(라벨로 부적합) 판정 — line 단독, prefix 떼면 빈 문자, 잡음 키워드."""
+    s_clean = _strip_num_prefix(s)
+    if not s_clean or s_clean in _PRODUCT_NOISE_SEGS or s_clean in _PRODUCT_LINE_SEGS:
+        return True
+    if "Transparent" in s_clean or s_clean.endswith(" Product"):
+        return True
+    return False
+
+
 def gt_for_item(item: dict) -> tuple[str, str] | None:
-    """clip_meta 한 항목 → (type, expected_label) 또는 None."""
+    """clip_meta 한 항목 → (type, expected_label) 또는 None.
+
+    Product 라벨은 'NN.' prefix 제거 + 잡음 sub-folder 제외 + line 보강.
+    """
     folder = nfc(item.get("folder", ""))
     parts = [p for p in folder.split("/") if p]
     if not parts:
         return None
 
-    # person: Model 다음 NN. 이름 (Together 같은 sub-folder 제외)
     person = extract_person_label(folder)
     has_model_anchor = any(re.match(r"^\d*\.?\s*Model$", p, re.IGNORECASE) for p in parts)
     if has_model_anchor and person and re.match(r"^\d+\.\s+\S", person) and item.get("has_face"):
-        # Together 등의 sub-folder가 있으면 마지막이 인물명이 아닐 수 있음 — Model 다음 segment만 신뢰
-        return ("person", person)
+        return ("person", _strip_num_prefix(person))
 
-    # event: Flagship Store / 매장 / NNNNNN_이벤트
     if any("Flagship" in p for p in parts):
         for p in parts:
             if _DATE_PREFIX.match(p):
                 return ("event", p)
 
-    # product: Transparent Background 또는 Product anchor → 가장 깊은 제품명
     is_product = any(
         "Transparent Background" in p
         or re.match(r"^\d*\.?\s*Product$", p, re.IGNORECASE)
         for p in parts
     )
     if is_product:
-        # 마지막 의미 있는 segment를 정답으로
+        # 잡음 폴더면 평가 셋에서 아예 제외 (라벨로 부적합)
+        if parts and _strip_num_prefix(parts[-1]) in _PRODUCT_NOISE_SEGS:
+            return None
+        # 가장 깊은 의미 있는 segment + line 보강
+        product_name = None
         for p in reversed(parts):
-            if p in {"Mini", "Together", "Etc", "etc", "etc.", "Texture", "Box"}:
+            if _is_product_noise(p):
                 continue
-            if "Transparent" in p or "Product" in p:
-                continue
-            return ("product", p)
+            product_name = _strip_num_prefix(p)
+            break
+        if not product_name:
+            return None
+        line = next((seg for seg in parts if _strip_num_prefix(seg) in _PRODUCT_LINE_SEGS), None)
+        if line:
+            line_clean = _strip_num_prefix(line)
+            if line_clean not in product_name:
+                # word-merge로 "Centella Teca Teca Soothing Toner" 같은 중복 방지
+                lw, pw = line_clean.split(), product_name.split()
+                overlap = 0
+                for k in range(min(len(lw), len(pw)), 0, -1):
+                    if lw[-k:] == pw[:k]:
+                        overlap = k
+                        break
+                product_name = " ".join(lw + pw[overlap:])
+        return ("product", product_name)
 
     return None
 

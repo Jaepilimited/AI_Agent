@@ -91,16 +91,21 @@ async def face_search_query(
     clip_results, face_results = await asyncio.to_thread(_do_query)
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
+    # face_results는 face_meta 인덱스 기반인데, 모델이 등장하는 제품/이벤트 사진까지 들어있음.
+    # 진짜 인물 라벨이 있는 face_meta 항목(Model anchor 폴더)만 vote에 사용 — 폴더 sub-segment가
+    # 잡음 라벨(예: '2025 Pore Care Set')로 잡히는 것 방지.
+    face_for_vote = [f for f in face_results if f.get("person_label")]
+
     # Derive answer — face와 clip 둘 다 계산 후 신뢰도 더 높은 쪽 선택.
     # 단, face 매칭이 강하면(top1 score >= 0.5) 인물 식별로는 face가 항상 더 정확하므로 우선.
-    face_ans = face_clip_agent.derive_answer(face_results, consider_top=5) if face_results else None
+    face_ans = face_clip_agent.derive_answer(face_for_vote, consider_top=5) if face_for_vote else None
     clip_ans = face_clip_agent.derive_answer(clip_results, consider_top=5)
     if face_ans:
         face_ans["source"] = "face"
     if clip_ans:
         clip_ans["source"] = "clip"
 
-    face_top1 = (face_results[0].get("score", 0.0) if face_results else 0.0)
+    face_top1 = (face_for_vote[0].get("score", 0.0) if face_for_vote else 0.0)
     if face_ans and face_top1 >= 0.5:
         answer = face_ans
     elif face_ans and clip_ans:

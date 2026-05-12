@@ -63,14 +63,18 @@ _MODEL_SEG = re.compile(r"^\d*\.?\s*Model$", re.IGNORECASE)
 
 
 def extract_person_label(folder: str) -> str:
-    """폴더 경로에서 인물 이름 추출. 'XX. Model/NN. 이름/...' 구조에서 'NN. 이름' 우선,
-    Model anchor가 없으면 마지막 segment (예: 매장/이벤트 폴더).
+    """폴더 경로에서 인물 이름 추출. 'XX. Model/NN. 이름/...' 구조에서 'NN. 이름' 우선.
+
+    Model anchor가 없으면 빈 값 — 인물 폴더가 아닌 곳(제품/이벤트 폴더에 모델 등장)에서
+    face_meta의 person_label이 제품명으로 잘못 저장되는 것을 방지.
     """
     parts = [p for p in folder.split("/") if p]
     for i, p in enumerate(parts):
-        if _MODEL_SEG.match(p) and i + 1 < len(parts):
-            return parts[i + 1]
-    return parts[-1] if parts else ""
+        if _MODEL_SEG.match(p):
+            if i + 1 < len(parts):
+                return parts[i + 1]
+            return ""
+    return ""
 
 
 def nfc(s: str) -> str:

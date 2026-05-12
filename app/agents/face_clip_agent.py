@@ -200,7 +200,22 @@ import re
 
 _NUM_PREFIX = re.compile(r"^\s*\d+\.\s*")
 _DATE_PREFIX = re.compile(r"^\d{6}_")
-_NOISE_SEGMENTS = {"기본", "저해상", "고해상", "JPG", "PSD", "old", ""}
+_NOISE_SEGMENTS = {
+    "기본", "저해상", "고해상", "JPG", "PSD", "",
+    "old", "Old", "OLD", "old(사용X)", "old (사용X)",
+    "사용X", "사용 X", "단종", "구버전",
+    "단체 구성 이미지", "단체구성이미지",
+}
+# 부분 일치로 거를 잡음 키워드 (예: "old (사용X)" 같은 변형)
+_NOISE_KEYWORDS = ("사용X", "단종", "구버전", "단체 구성", "단체구성")
+
+
+def _is_noise(seg: str) -> bool:
+    """잡음 segment 판정 — set 매칭 + 키워드 부분 일치."""
+    s = _strip_num(seg)
+    if not s or s in _NOISE_SEGMENTS or seg in _NOISE_SEGMENTS:
+        return True
+    return any(kw in s for kw in _NOISE_KEYWORDS)
 
 
 def _strip_num(s: str) -> str:
@@ -217,6 +232,11 @@ def extract_label(folder_path: str) -> tuple[str, str]:
     if not folder_path:
         return ("other", "")
     parts = [p for p in folder_path.split("/") if p]
+
+    # 라인 대표 썸네일/정리용 폴더 — 라벨이 line 단독이라 vote에 들어가면 정확한 제품 라벨을 죽임.
+    # 라벨 추출 대상에서 제외 (derive_answer가 vote에서 빠뜨림).
+    if any("썸네일용" in p or p.lower() in ("thumbnail", "thumbnails", "illust") for p in parts):
+        return ("other", "")
 
     # 1) Model 다음 의미 있는 세그먼트 = 인물명 (noise/잡음 폴더 스킵)
     for i, p in enumerate(parts):
@@ -260,23 +280,43 @@ def extract_label(folder_path: str) -> tuple[str, str]:
 
         # 제품 폴더명 찾기 — 카테고리/노이즈/라인 단독은 제외
         category_segs = {"Lab in nature", "The Untouched Nature", "Teca", "Flagship Store", "Image"}
-        skip_segs = _NOISE_SEGMENTS | category_segs | {
-            "Together", "Mini", "etc.", "Etc", "etc",
-            "Texture", "Box", "정방형", "가로형", "세로형",
-        }
-        product_name = None
-        for p in reversed(parts):
-            if p in skip_segs:
-                continue
-            stripped = _strip_num(p)
-            if not stripped or stripped in skip_segs:
-                continue
+        extra_skip = {"Together", "Mini", "etc.", "Etc", "etc", "Texture", "Box", "정방형", "가로형", "세로형"}
+
+        def _skip(seg: str) -> bool:
+            if _is_noise(seg):
+                return True
+            stripped = _strip_num(seg)
+            if not stripped or stripped in category_segs or stripped in extra_skip:
+                return True
             if "Product" in stripped or "Transparent" in stripped or "Texture" in stripped:
-                continue
+                return True
             if line and stripped == line:
-                continue
-            product_name = stripped
-            break
+                return True
+            return False
+
+        product_name = None
+        # 2a) 우선 forward: Product/Transparent anchor 다음 첫 의미 있는 segment
+        for i, p in enumerate(parts):
+            is_anchor = (
+                re.match(r"^\d*\.?\s*Product$", p, re.IGNORECASE)
+                or "Transparent Background" in p
+            )
+            if is_anchor:
+                for j in range(i + 1, len(parts)):
+                    if _skip(parts[j]):
+                        continue
+                    product_name = _strip_num(parts[j])
+                    break
+                if product_name:
+                    break
+
+        # 2b) fallback: reversed (가장 깊은 비-잡음 segment) — 위가 못 잡으면
+        if not product_name:
+            for p in reversed(parts):
+                if _skip(p):
+                    continue
+                product_name = _strip_num(p)
+                break
 
         # 라벨 결합 — line과 product_name의 단어 겹침을 제거해 "Centella Teca Teca Cream" 같은 중복 방지
         final = None
@@ -392,17 +432,23 @@ def derive_answer(results: list[dict], consider_top: int = 5, min_score: float =
         weights[key] = weights.get(key, 0.0) + score
         score_sums[key] = score_sums.get(key, 0.0) + score
 
-    # weight 1순위, count 2순위 tiebreak
-    best = max(counts.keys(), key=lambda k: (weights[k], counts[k]))
-    ltype, label = best
+    top1_r, top1_type, top1_label, top1_score = labeled[0]
+    top1_key = (top1_type, top1_label)
 
-    # confidence = best 라벨의 weight 점유율
+    # 1차 결정: weight 1순위, count 2순위 tiebreak
+    best = max(counts.keys(), key=lambda k: (weights[k], counts[k]))
+
+    # Top1 강제 override — top1 score가 매우 높으면(거의 동일 매칭) 다른 라벨이 vote에서 weight로 이겨도
+    # top1이 정답. (인덱스에 있는 사진이든, 외부 사진이든 top1 cos≥0.95는 거의 확실 매칭)
+    if top1_score >= 0.95 and top1_key in counts:
+        best = top1_key
+
+    ltype, label = best
     total_weight = sum(weights.values()) or 1.0
     confidence = weights[best] / total_weight
 
-    # Strong top1 boost: top1이 best와 같은 라벨이면 top1 score를 confidence에 반영
-    top1_r, top1_type, top1_label, top1_score = labeled[0]
-    if (top1_type, top1_label) == best:
+    # Strong top1 confidence boost (best에 top1이 일치할 때만)
+    if top1_key == best:
         if top1_score >= 0.95:
             confidence = max(confidence, 0.95)
         elif top1_score >= 0.85:

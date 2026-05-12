@@ -73,10 +73,10 @@ def main():
                 if nv != v:
                     m[k] = nv
                     stats["face_nfc_changed"] += 1
-        # path에서 폴더를 떼어 Model 다음 segment 추출
+        # path에서 폴더를 떼어 Model 다음 segment 추출 (Model anchor 없으면 빈 값)
         folder = folder_of(m)
         new_label = extract_person_label(folder)
-        if new_label and new_label != m.get("person_label"):
+        if new_label != m.get("person_label", ""):
             stats["face_label_changed"] += 1
             m["person_label"] = new_label
 
