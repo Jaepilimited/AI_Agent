@@ -56,6 +56,88 @@
   // ── Feedback buttons (thumbs up/down) ──
   var _feedbackCache = {};  // {messageId: 1|-1}
 
+  // Thumbs-down detail modal (created once, reused)
+  var _fbModal = null;
+  function _getFbModal() {
+    if (_fbModal) return _fbModal;
+    var overlay = document.createElement("div");
+    overlay.id = "feedback-modal-overlay";
+    overlay.style.cssText = [
+      "display:none;position:fixed;inset:0;z-index:9999",
+      "background:rgba(0,0,0,.55);backdrop-filter:blur(4px)",
+      "align-items:center;justify-content:center"
+    ].join(";");
+    overlay.innerHTML = [
+      '<div id="feedback-modal-box" style="',
+        'background:var(--panel,#1e1e1e);border:1px solid var(--border,#333);',
+        'border-radius:16px;padding:24px 28px;width:420px;max-width:90vw;',
+        'box-shadow:0 8px 32px rgba(0,0,0,.5)">',
+      '<div style="font-size:15px;font-weight:600;margin-bottom:6px">어떤 점이 부족했나요?</div>',
+      '<div style="font-size:12px;color:var(--text-muted,#888);margin-bottom:14px">',
+        '상세 내용을 남겨주시면 서비스 개선에 반영합니다. (선택)</div>',
+      '<textarea id="feedback-modal-text" rows="4" placeholder="예: 매출 수치가 다른 것 같아요 / 답변이 너무 짧아요 ..." ',
+        'style="width:100%;box-sizing:border-box;resize:vertical;',
+        'background:var(--input-bg,#111);border:1px solid var(--border,#333);',
+        'border-radius:8px;color:var(--text,#e8e8e8);padding:10px 12px;',
+        'font-size:13px;font-family:inherit;outline:none"></textarea>',
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">',
+        '<button id="feedback-modal-cancel" style="',
+          'padding:7px 16px;border:1px solid var(--border,#333);border-radius:8px;',
+          'background:transparent;color:var(--text,#e8e8e8);cursor:pointer;font-size:13px">',
+          '취소</button>',
+        '<button id="feedback-modal-submit" style="',
+          'padding:7px 18px;border:none;border-radius:8px;',
+          'background:#e89200;color:#fff;cursor:pointer;font-size:13px;font-weight:600">',
+          '보내기</button>',
+      '</div>',
+      '</div>'
+    ].join("");
+    document.body.appendChild(overlay);
+    // Close on overlay click
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) overlay.style.display = "none";
+    });
+    _fbModal = overlay;
+    return overlay;
+  }
+
+  function _showFeedbackModal(messageId, thumbDown, onSubmit) {
+    var modal = _getFbModal();
+    var textarea = modal.querySelector("#feedback-modal-text");
+    var btnSubmit = modal.querySelector("#feedback-modal-submit");
+    var btnCancel = modal.querySelector("#feedback-modal-cancel");
+    textarea.value = "";
+    modal.style.display = "flex";
+    textarea.focus();
+
+    var submitted = false;
+    function doSubmit() {
+      if (submitted) return;
+      submitted = true;
+      modal.style.display = "none";
+      onSubmit(textarea.value.trim());
+    }
+    function doCancel() {
+      modal.style.display = "none";
+      // Deactivate thumbDown visual if user cancels
+      thumbDown.classList.remove("feedback-active");
+      delete _feedbackCache[messageId];
+    }
+
+    // Replace listeners each time
+    var newSubmit = btnSubmit.cloneNode(true);
+    var newCancel = btnCancel.cloneNode(true);
+    btnSubmit.parentNode.replaceChild(newSubmit, btnSubmit);
+    btnCancel.parentNode.replaceChild(newCancel, btnCancel);
+    newSubmit.addEventListener("click", doSubmit);
+    newCancel.addEventListener("click", doCancel);
+    // Enter = submit, Escape = cancel
+    textarea.onkeydown = function(e) {
+      if (e.key === "Escape") doCancel();
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) doSubmit();
+    };
+  }
+
   function _addFeedbackButtons(actionsDiv, messageId) {
     var thumbUp = document.createElement("button");
     thumbUp.className = "msg-action-btn feedback-btn";
@@ -76,35 +158,42 @@
     if (cached === 1) thumbUp.classList.add("feedback-active");
     if (cached === -1) thumbDown.classList.add("feedback-active");
 
-    function handleFeedback(btn, rating) {
-      btn.addEventListener("click", function() {
-        var isActive = btn.classList.contains("feedback-active");
-        var newRating = isActive ? 0 : rating;
-
-        // Toggle visual state
-        thumbUp.classList.remove("feedback-active");
-        thumbDown.classList.remove("feedback-active");
-        if (!isActive) btn.classList.add("feedback-active");
-
-        if (newRating === 0) {
-          delete _feedbackCache[messageId];
-        } else {
-          _feedbackCache[messageId] = newRating;
-        }
-
-        // Send to server
-        if (currentConvoId && newRating !== 0) {
-          fetch("/api/conversations/" + currentConvoId + "/feedback", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({message_id: messageId, rating: newRating}),
-          }).catch(function(e) { console.error("Feedback failed:", e); });
-        }
-      });
+    function _sendFeedback(rating, comment) {
+      if (!currentConvoId) return;
+      fetch("/api/conversations/" + currentConvoId + "/feedback", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({message_id: messageId, rating: rating, comment: comment || ""}),
+      }).catch(function(e) { console.error("Feedback failed:", e); });
     }
 
-    handleFeedback(thumbUp, 1);
-    handleFeedback(thumbDown, -1);
+    thumbUp.addEventListener("click", function() {
+      var isActive = thumbUp.classList.contains("feedback-active");
+      var newRating = isActive ? 0 : 1;
+      thumbUp.classList.remove("feedback-active");
+      thumbDown.classList.remove("feedback-active");
+      if (!isActive) thumbUp.classList.add("feedback-active");
+      if (newRating === 0) { delete _feedbackCache[messageId]; }
+      else { _feedbackCache[messageId] = newRating; _sendFeedback(1, ""); }
+    });
+
+    thumbDown.addEventListener("click", function() {
+      var isActive = thumbDown.classList.contains("feedback-active");
+      if (isActive) {
+        // Toggle off
+        thumbDown.classList.remove("feedback-active");
+        delete _feedbackCache[messageId];
+        return;
+      }
+      // Activate immediately visually, then open modal for details
+      thumbUp.classList.remove("feedback-active");
+      thumbDown.classList.add("feedback-active");
+      _feedbackCache[messageId] = -1;
+      _showFeedbackModal(messageId, thumbDown, function(comment) {
+        _sendFeedback(-1, comment);
+      });
+    });
+
     actionsDiv.appendChild(thumbUp);
     actionsDiv.appendChild(thumbDown);
   }

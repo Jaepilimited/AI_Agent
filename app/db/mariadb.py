@@ -319,6 +319,7 @@ def ensure_wiki_communities_table():
 _ANON_COLUMN_TARGETS = (
     ("conversations", "anon_id", "VARCHAR(32) NOT NULL DEFAULT ''"),
     ("message_feedback", "anon_id", "VARCHAR(32) NOT NULL DEFAULT ''"),
+    ("message_feedback", "comment", "TEXT NULL"),
 )
 
 

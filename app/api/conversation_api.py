@@ -233,6 +233,7 @@ async def add_message(
 class FeedbackRequest(BaseModel):
     message_id: int
     rating: int  # 1 = 👍, -1 = 👎
+    comment: str = ""  # optional detail from thumbs-down modal
 
 
 @conversation_router.post("/{convo_id}/feedback")
@@ -260,13 +261,13 @@ async def submit_feedback(
         raise HTTPException(status_code=404, detail="Message not found")
 
     await _db_execute(
-        """INSERT INTO message_feedback (message_id, conversation_id, user_id, anon_id, rating)
-           VALUES (%s, %s, %s, %s, %s)
-           ON DUPLICATE KEY UPDATE rating = VALUES(rating), created_at = NOW()""",
-        (req.message_id, convo_id, user.id, anon_id_for(user.id), req.rating),
+        """INSERT INTO message_feedback (message_id, conversation_id, user_id, anon_id, rating, comment)
+           VALUES (%s, %s, %s, %s, %s, %s)
+           ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), created_at = NOW()""",
+        (req.message_id, convo_id, user.id, anon_id_for(user.id), req.rating, req.comment or None),
     )
     logger.info("feedback_submitted", message_id=req.message_id, rating=req.rating,
-                anon_id=anon_id_for(user.id))
+                has_comment=bool(req.comment), anon_id=anon_id_for(user.id))
     return {"ok": True, "rating": req.rating}
 
 
