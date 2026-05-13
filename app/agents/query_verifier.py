@@ -24,7 +24,6 @@ class QueryVerifierAgent:
             return
         self.llm = ChatAnthropic(
             model=AgentModel.QUERY_VERIFIER.value,
-            temperature=0,
             max_tokens=2048,
             api_key=get_settings().anthropic_api_key,
         )

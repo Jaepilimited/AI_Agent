@@ -450,7 +450,16 @@ class ClaudeClient:
             timeout=60.0,
         )
         self.model = model or self.settings.anthropic_opus_model
+        # Claude 4.x+ deprecated temperature parameter
+        self._use_temperature = not any(
+            x in self.model for x in ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4"]
+        )
         logger.info("claude_client_initialized", model=self.model)
+
+    def _apply_temperature(self, kwargs: Dict[str, Any], temperature: float) -> None:
+        """Add temperature to kwargs only if model supports it."""
+        if self._use_temperature:
+            kwargs["temperature"] = temperature
 
     def generate(
         self,
@@ -465,7 +474,7 @@ class ClaudeClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_output_tokens,
-            "temperature": temperature,
+            **({} if not self._use_temperature else {"temperature": temperature}),
             "messages": [{"role": "user", "content": prompt}],
         }
         if system_instruction:
@@ -513,7 +522,7 @@ class ClaudeClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_output_tokens,
-            "temperature": temperature,
+            **({} if not self._use_temperature else {"temperature": temperature}),
             "messages": [{"role": "user", "content": content_blocks}],
         }
         if system_instruction:
@@ -581,7 +590,7 @@ class ClaudeClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_output_tokens,
-            "temperature": temperature,
+            **({} if not self._use_temperature else {"temperature": temperature}),
             "messages": api_messages,
         }
         if system_instruction:
@@ -605,7 +614,7 @@ class ClaudeClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_output_tokens,
-            "temperature": temperature,
+            **({} if not self._use_temperature else {"temperature": temperature}),
             "messages": [{"role": "user", "content": prompt}],
         }
         if system_instruction:
@@ -662,7 +671,7 @@ class ClaudeClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_output_tokens,
-            "temperature": temperature,
+            **({} if not self._use_temperature else {"temperature": temperature}),
             "messages": api_messages,
         }
         if system_instruction:
@@ -688,7 +697,7 @@ class ClaudeClient:
         kwargs: Dict[str, Any] = {
             "model": self.model,
             "max_tokens": 4096,
-            "temperature": temperature,
+            **({} if not self._use_temperature else {"temperature": temperature}),
             "system": json_system.strip(),
             "messages": [{"role": "user", "content": prompt}],
         }

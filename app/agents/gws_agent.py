@@ -47,7 +47,6 @@ class GWSAgent:
         self.llm = ChatAnthropic(
             model=AgentModel.GWS_AGENT.value,
             anthropic_api_key=settings.anthropic_api_key,
-            temperature=0,
             max_tokens=4096,
         )
 
