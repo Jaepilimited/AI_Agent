@@ -13,8 +13,10 @@ CircuitBreaker (per-service):
 """
 
 import asyncio
+import json
 import time
 from enum import Enum
+from pathlib import Path
 from typing import Dict, Optional
 
 import structlog
@@ -145,10 +147,57 @@ class CircuitBreaker:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# AnnouncementManager
+# ---------------------------------------------------------------------------
+
+class AnnouncementManager:
+    """Stores a site-wide announcement banner message (file-backed, survives restart)."""
+
+    _PATH = Path(__file__).resolve().parent.parent.parent / "data" / "announcement.json"
+
+    def __init__(self) -> None:
+        self.message: str = self._load()
+
+    def _load(self) -> str:
+        try:
+            if self._PATH.exists():
+                data = json.loads(self._PATH.read_text(encoding="utf-8"))
+                return data.get("message", "")
+        except Exception:
+            pass
+        return ""
+
+    def _save(self) -> None:
+        try:
+            self._PATH.parent.mkdir(parents=True, exist_ok=True)
+            self._PATH.write_text(
+                json.dumps({"message": self.message}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning("announcement_save_failed", error=str(e))
+
+    def set(self, message: str) -> None:
+        self.message = message.strip()
+        self._save()
+        logger.info("announcement_set", message=self.message[:80])
+
+    def clear(self) -> None:
+        self.message = ""
+        self._save()
+        logger.info("announcement_cleared")
+
+    @property
+    def active(self) -> bool:
+        return bool(self.message)
+
+
 # Module-level singletons
 # ---------------------------------------------------------------------------
 
 _maintenance_manager: Optional[MaintenanceManager] = None
+_announcement_manager: Optional[AnnouncementManager] = None
 _circuits: Dict[str, CircuitBreaker] = {}
 _qdrant_cache: dict = {}
 _qdrant_cache_time: float = 0
@@ -160,6 +209,14 @@ def get_maintenance_manager() -> MaintenanceManager:
     if _maintenance_manager is None:
         _maintenance_manager = MaintenanceManager()
     return _maintenance_manager
+
+
+def get_announcement_manager() -> AnnouncementManager:
+    """Get or create the AnnouncementManager singleton."""
+    global _announcement_manager
+    if _announcement_manager is None:
+        _announcement_manager = AnnouncementManager()
+    return _announcement_manager
 
 
 def get_circuit(name: str) -> CircuitBreaker:

@@ -47,8 +47,8 @@ data/face_drive_manifest.json
 data/*.bak_*
 data/clip_v1_backup/
 
-# Coredumps
-core
+# Coredumps (루트 레벨만, app/core/ 디렉토리는 제외)
+/core
 core.*
 
 # Face-search 평가 thumb 캐시

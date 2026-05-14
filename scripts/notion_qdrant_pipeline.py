@@ -138,22 +138,110 @@ def fetch_page_meta(page_id: str, client: httpx.Client) -> dict | None:
     }
 
 
-def fetch_page_text(page_id: str, client: httpx.Client) -> str:
-    """Notion 페이지 블록 텍스트 추출."""
+def fetch_page_text(page_id: str, client: httpx.Client, _depth: int = 0) -> str:
+    """Notion 페이지 블록 텍스트 추출 (페이지네이션 + child_database + table_row + 재귀)."""
+    if _depth > 3:
+        return ""
+    texts: list[str] = []
+    url = f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100"
+    while url:
+        resp = client.get(url, headers=notion_headers())
+        if resp.status_code != 200:
+            break
+        data = resp.json()
+        for b in data.get("results", []):
+            btype = b.get("type", "")
+            bid = b.get("id", "")
+
+            if btype == "child_database":
+                # 인라인 DB: 항목 제목+속성 텍스트 추출
+                _extract_database_text(bid, client, texts)
+                continue
+
+            if btype == "table":
+                # 테이블: 행 셀 내용 추출
+                _extract_table_text(bid, client, texts)
+                continue
+
+            # 일반 블록: rich_text 추출
+            rt = b.get(btype, {}).get("rich_text", [])
+            text = "".join(t.get("plain_text", "") for t in rt)
+            if text.strip():
+                texts.append(text.strip())
+
+            # has_children인 블록(toggle, callout 등) 재귀
+            if b.get("has_children") and btype not in ("child_page", "child_database", "table"):
+                sub = fetch_page_text(bid, client, _depth + 1)
+                if sub:
+                    texts.append(sub)
+
+        # 페이지네이션
+        if data.get("has_more") and data.get("next_cursor"):
+            cursor = data["next_cursor"]
+            url = f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100&start_cursor={cursor}"
+        else:
+            url = None
+
+    return "\n".join(texts)
+
+
+def _extract_database_text(db_id: str, client: httpx.Client, texts: list[str]) -> None:
+    """child_database 내 항목 텍스트를 texts에 추가."""
+    cursor = None
+    while True:
+        body: dict = {"page_size": 100}
+        if cursor:
+            body["start_cursor"] = cursor
+        resp = client.post(
+            f"https://api.notion.com/v1/databases/{db_id}/query",
+            headers=notion_headers(), json=body,
+        )
+        if resp.status_code != 200:
+            break
+        data = resp.json()
+        for item in data.get("results", []):
+            parts: list[str] = []
+            for prop_name, prop in item.get("properties", {}).items():
+                ptype = prop.get("type", "")
+                val = ""
+                if ptype == "title":
+                    val = "".join(t.get("plain_text", "") for t in prop.get("title", []))
+                elif ptype == "rich_text":
+                    val = "".join(t.get("plain_text", "") for t in prop.get("rich_text", []))
+                elif ptype in ("select", "status"):
+                    val = (prop.get(ptype) or {}).get("name", "")
+                elif ptype == "number":
+                    v = prop.get("number")
+                    val = str(v) if v is not None else ""
+                elif ptype == "url":
+                    val = prop.get("url") or ""
+                if val:
+                    parts.append(f"{prop_name}: {val}")
+            if parts:
+                texts.append(" | ".join(parts))
+        if data.get("has_more") and data.get("next_cursor"):
+            cursor = data["next_cursor"]
+        else:
+            break
+
+
+def _extract_table_text(table_id: str, client: httpx.Client, texts: list[str]) -> None:
+    """table 블록의 행 셀 텍스트를 texts에 추가."""
     resp = client.get(
-        f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100",
+        f"https://api.notion.com/v1/blocks/{table_id}/children?page_size=100",
         headers=notion_headers(),
     )
     if resp.status_code != 200:
-        return ""
-    texts = []
-    for b in resp.json().get("results", []):
-        btype = b.get("type", "")
-        rt = b.get(btype, {}).get("rich_text", [])
-        text = "".join(t.get("plain_text", "") for t in rt)
-        if text.strip():
-            texts.append(text.strip())
-    return "\n".join(texts)
+        return
+    for row in resp.json().get("results", []):
+        cells = row.get("table_row", {}).get("cells", [])
+        cell_texts = []
+        for cell in cells:
+            cell_text = "".join(t.get("plain_text", "") for t in cell)
+            if cell_text.strip():
+                cell_texts.append(cell_text.strip())
+        if cell_texts:
+            texts.append(" | ".join(cell_texts))
 
 
 # ── 청킹 · 임베딩 ──
