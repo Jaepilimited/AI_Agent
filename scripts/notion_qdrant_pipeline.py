@@ -1,0 +1,415 @@
+"""Notion → Local JSON 증분 동기화 파이프라인 (v3.0).
+
+DB-HUB를 단일 진입점으로 사용:
+  - DB-HUB(2e12b4283b008011ae32e39bf73b7f7b) 팀 토글 재귀 탐색
+  - 로컬 JSON(notion_vectors_gemini.json)과 last_edited_time 비교
+  - 변경/신규 페이지만 Gemini 임베딩 → 로컬 JSON 직접 업데이트
+  - qdrant_agent 인메모리 hot-reload
+
+Usage:
+  python -X utf8 scripts/notion_qdrant_pipeline.py            # 증분 sync
+  python -X utf8 scripts/notion_qdrant_pipeline.py --full     # 전체 재동기화
+  python -X utf8 scripts/notion_qdrant_pipeline.py --status   # 현황 출력
+  python -X utf8 scripts/notion_qdrant_pipeline.py --upload-cloud  # Qdrant Cloud 백업
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+import time
+import uuid
+from pathlib import Path
+
+import httpx
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+from dotenv import load_dotenv
+load_dotenv(_ROOT / ".env")
+
+NOTION_TOKEN = os.getenv("NOTION_MCP_TOKEN", "")
+NOTION_VERSION = "2022-06-28"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+DB_HUB_ID = "2e12b4283b008011ae32e39bf73b7f7b"
+EMBEDDING_MODEL = "gemini-embedding-001"
+EMBEDDING_DIM = 1536
+LOCAL_JSON = _ROOT / "data" / "notion_vectors_gemini.json"
+
+QDRANT_URL = "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333"
+QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OTFkOGVkZWYtNTFkNi00ODNhLTg0MDItZTdjNjI0ZjA2NThmIn0.K0zdMdpnbIMl_yfXV8EJfcClpPnkoPa_SS_XbDI1kv4"
+COLLECTION = "notion_hub_gemini"
+
+
+# ── Headers ──
+
+def notion_headers() -> dict:
+    return {"Authorization": f"Bearer {NOTION_TOKEN}", "Notion-Version": NOTION_VERSION}
+
+
+def qdrant_headers() -> dict:
+    return {"api-key": QDRANT_API_KEY, "Content-Type": "application/json"}
+
+
+# ── DB-HUB 재귀 탐색 ──
+
+def crawl_hub(client: httpx.Client) -> list[dict]:
+    """DB-HUB 팀 토글을 재귀 탐색해 {page_id, title, team} 목록 반환."""
+    hub_blocks = _get_block_children(DB_HUB_ID, client)
+    pages = []
+    for block in hub_blocks:
+        if block.get("type") == "toggle":
+            team = _rich_text(block["toggle"])
+            _collect_from_block(block["id"], team, client, pages)
+    return pages
+
+
+def _get_block_children(block_id: str, client: httpx.Client) -> list[dict]:
+    resp = client.get(
+        f"https://api.notion.com/v1/blocks/{block_id}/children?page_size=100",
+        headers=notion_headers(),
+    )
+    if resp.status_code != 200:
+        return []
+    return resp.json().get("results", [])
+
+
+def _rich_text(content: dict) -> str:
+    return "".join(t.get("plain_text", "") for t in content.get("rich_text", []))
+
+
+def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: list):
+    """토글/paragraph 블록에서 child_page, child_database, mention_page 수집."""
+    children = _get_block_children(block_id, client)
+    for b in children:
+        btype = b.get("type", "")
+        bid = b.get("id", "")
+
+        if btype == "child_page":
+            title = b.get("child_page", {}).get("title", "")
+            pages.append({"page_id": bid, "title": title, "team": team})
+
+        elif btype == "child_database":
+            title = b.get("child_database", {}).get("title", "")
+            pages.append({"page_id": bid, "title": title, "team": team})
+
+        elif btype == "toggle":
+            sub_team = _rich_text(b["toggle"]) or team
+            _collect_from_block(bid, sub_team, client, pages)
+
+        elif btype == "paragraph":
+            for chunk in b.get("paragraph", {}).get("rich_text", []):
+                if chunk.get("type") == "mention":
+                    m = chunk.get("mention", {})
+                    if m.get("type") == "page":
+                        pid = m["page"]["id"]
+                        text = chunk.get("plain_text", "")
+                        pages.append({"page_id": pid, "title": text, "team": team})
+
+
+# ── Notion 페이지 조회 ──
+
+def fetch_page_meta(page_id: str, client: httpx.Client) -> dict | None:
+    """Notion 페이지 메타 조회. 404면 None 반환."""
+    resp = client.get(
+        f"https://api.notion.com/v1/pages/{page_id}",
+        headers=notion_headers(),
+    )
+    if resp.status_code != 200:
+        return None
+    pdata = resp.json()
+    title = ""
+    for prop in pdata.get("properties", {}).values():
+        if prop.get("type") == "title":
+            title = "".join(t.get("plain_text", "") for t in prop.get("title", []))
+            break
+    return {
+        "page_id": page_id,
+        "title": title or pdata.get("url", "")[-8:],
+        "url": pdata.get("url", ""),
+        "last_edited_time": pdata.get("last_edited_time", ""),
+    }
+
+
+def fetch_page_text(page_id: str, client: httpx.Client) -> str:
+    """Notion 페이지 블록 텍스트 추출."""
+    resp = client.get(
+        f"https://api.notion.com/v1/blocks/{page_id}/children?page_size=100",
+        headers=notion_headers(),
+    )
+    if resp.status_code != 200:
+        return ""
+    texts = []
+    for b in resp.json().get("results", []):
+        btype = b.get("type", "")
+        rt = b.get(btype, {}).get("rich_text", [])
+        text = "".join(t.get("plain_text", "") for t in rt)
+        if text.strip():
+            texts.append(text.strip())
+    return "\n".join(texts)
+
+
+# ── 청킹 · 임베딩 ──
+
+def chunk_text(text: str, max_size: int = 800, overlap: int = 100) -> list[str]:
+    if len(text) <= max_size:
+        return [text] if text.strip() else []
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + max_size
+        if end < len(text):
+            for sep in ["\n\n", "\n", ". ", "。", "! ", "? "]:
+                idx = text.rfind(sep, start + max_size // 2, end)
+                if idx > start:
+                    end = idx + len(sep)
+                    break
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = end - overlap
+    return chunks
+
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    from google import genai
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    all_embeddings = []
+    for i in range(0, len(texts), 50):
+        batch = [t[:8000] for t in texts[i:i + 50]]
+        result = client.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=batch,
+            config={"output_dimensionality": EMBEDDING_DIM},
+        )
+        all_embeddings.extend([e.values for e in result.embeddings])
+        time.sleep(0.3)
+    return all_embeddings
+
+
+# ── 로컬 JSON 관리 ──
+
+def get_local_page_map() -> dict[str, str]:
+    """로컬 JSON → {page_id: last_edited_time}"""
+    if not LOCAL_JSON.exists():
+        return {}
+    with open(LOCAL_JSON, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    page_map: dict[str, str] = {}
+    for pt in raw:
+        payload = pt.get("payload", {})
+        pid = payload.get("page_id")
+        edited = payload.get("last_edited_time", "")
+        if pid and pid not in page_map:
+            page_map[pid] = edited
+    print(f"  로컬 JSON: {len(raw)} 포인트, {len(page_map)} 페이지")
+    return page_map
+
+
+def update_local_json(new_page_vectors: dict[str, list[dict]], removed_page_ids: set[str]) -> int:
+    existing: list[dict] = []
+    if LOCAL_JSON.exists():
+        with open(LOCAL_JSON, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+    affected = set(new_page_vectors.keys()) | removed_page_ids
+    kept = [pt for pt in existing if pt.get("payload", {}).get("page_id") not in affected]
+    added = [pt for pts in new_page_vectors.values() for pt in pts]
+    result = kept + added
+    LOCAL_JSON.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCAL_JSON, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False)
+    size_mb = LOCAL_JSON.stat().st_size / 1024 / 1024
+    print(f"  로컬 JSON 저장: {len(result)} 포인트 ({size_mb:.1f} MB)")
+    return len(result)
+
+
+# ── 핵심 파이프라인 ──
+
+def run_incremental_sync(full: bool = False) -> dict:
+    print(f"\n=== Notion → Local JSON {'전체' if full else '증분'} 동기화 (DB-HUB 기준) ===")
+    t0 = time.time()
+    stats = {"new": 0, "updated": 0, "deleted": 0, "unchanged": 0, "errors": 0, "skipped_404": 0}
+
+    local_page_map: dict[str, str] = {} if full else get_local_page_map()
+
+    with httpx.Client(timeout=20) as client:
+        print(f"\n  DB-HUB 탐색 중...")
+        hub_pages = crawl_hub(client)
+
+        # page_id 중복 제거
+        seen_ids: set[str] = set()
+        unique_pages = []
+        for p in hub_pages:
+            pid = p["page_id"]
+            if pid not in seen_ids:
+                seen_ids.add(pid)
+                unique_pages.append(p)
+        print(f"  HUB 등록 페이지: {len(unique_pages)}개 (중복 제거 후)")
+
+        notion_page_ids: set[str] = set()
+        new_page_vectors: dict[str, list[dict]] = {}
+
+        for entry in unique_pages:
+            page_id = entry["page_id"]
+            team = entry["team"]
+
+            meta = fetch_page_meta(page_id, client)
+            if meta is None:
+                print(f"  SKIP(404): [{team}] {entry['title'][:50]}")
+                stats["skipped_404"] += 1
+                continue
+
+            notion_page_ids.add(page_id)
+            local_edited = local_page_map.get(page_id)
+            is_new = local_edited is None
+
+            if not full and not is_new and meta["last_edited_time"] == local_edited:
+                stats["unchanged"] += 1
+                continue
+
+            try:
+                text = fetch_page_text(page_id, client)
+                if not text.strip():
+                    print(f"  EMPTY: [{team}] {meta['title'][:50]}")
+                    continue
+
+                raw_chunks = chunk_text(text)
+                if not raw_chunks:
+                    continue
+
+                chunk_objs = [
+                    {"idx": i, "text": c, "sha256": hashlib.sha256(c.encode()).hexdigest()}
+                    for i, c in enumerate(raw_chunks)
+                ]
+                embeddings = embed_texts([c["text"] for c in chunk_objs])
+                points = []
+                for c, emb in zip(chunk_objs, embeddings):
+                    chunk_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{page_id}:{c['idx']}"))
+                    points.append({
+                        "id": chunk_id,
+                        "vector": emb,
+                        "payload": {
+                            "source": f"{team}-hub",
+                            "team": team,
+                            "page_id": page_id,
+                            "page_title": meta["title"],
+                            "page_url": meta["url"],
+                            "breadcrumb": f"{team} > {meta['title']}",
+                            "chunk_index": c["idx"],
+                            "last_edited_time": meta["last_edited_time"],
+                            "content_sha256": c["sha256"],
+                            "text": c["text"],
+                        },
+                    })
+                new_page_vectors[page_id] = points
+                label = "NEW" if is_new else "UPDATED"
+                print(f"  {label}: [{team}] {meta['title'][:50]} ({len(points)} chunks)")
+                if is_new:
+                    stats["new"] += 1
+                else:
+                    stats["updated"] += 1
+
+            except Exception as e:
+                print(f"  ERROR: [{team}] {entry['title'][:40]}: {e}")
+                stats["errors"] += 1
+
+    # 로컬에만 있고 HUB에서 사라진 페이지 제거
+    if not full:
+        removed = set(local_page_map.keys()) - notion_page_ids
+        stats["deleted"] = len(removed)
+        for pid in removed:
+            print(f"  DELETED: {pid}")
+    else:
+        removed = set()
+
+    if new_page_vectors or removed:
+        update_local_json(new_page_vectors, removed)
+    else:
+        print("\n  변경 없음 — 로컬 JSON 유지")
+
+    elapsed = time.time() - t0
+    print(f"\n  동기화 완료: {elapsed:.0f}초")
+    print(f"  신규={stats['new']}, 업데이트={stats['updated']}, 삭제={stats['deleted']}, "
+          f"변동없음={stats['unchanged']}, 404스킵={stats['skipped_404']}, 오류={stats['errors']}")
+    return stats
+
+
+def run_pipeline(full: bool = False) -> dict:
+    """전체 파이프라인: 증분 sync + hot-reload."""
+    stats = run_incremental_sync(full=full)
+    try:
+        from app.agents.qdrant_agent import reload_vectors
+        reload_vectors()
+        print("  인메모리 벡터 스토어 hot-reload 완료")
+        stats["reloaded"] = True
+    except Exception:
+        stats["reloaded"] = False
+    return stats
+
+
+# ── Qdrant Cloud 백업 (선택) ──
+
+def upload_to_qdrant_cloud() -> int:
+    """로컬 JSON → Qdrant Cloud 전체 업로드 (백업용)."""
+    if not LOCAL_JSON.exists():
+        print("  [ERROR] 로컬 JSON 없음")
+        return 0
+    with open(LOCAL_JSON, "r", encoding="utf-8") as f:
+        all_points = json.load(f)
+    print(f"  Qdrant Cloud 업로드: {len(all_points)} 포인트...")
+    with httpx.Client(timeout=30) as client:
+        client.delete(f"{QDRANT_URL}/collections/{COLLECTION}", headers=qdrant_headers())
+        client.put(
+            f"{QDRANT_URL}/collections/{COLLECTION}",
+            headers=qdrant_headers(),
+            json={"vectors": {"size": EMBEDDING_DIM, "distance": "Cosine"}},
+        )
+    with httpx.Client(timeout=60) as client:
+        for i in range(0, len(all_points), 100):
+            batch = all_points[i:i + 100]
+            resp = client.put(
+                f"{QDRANT_URL}/collections/{COLLECTION}/points",
+                headers=qdrant_headers(),
+                json={"points": batch},
+            )
+            if resp.status_code != 200:
+                print(f"  [ERROR] 업로드 {i}: {resp.status_code}")
+    print(f"  Qdrant Cloud 업로드 완료: {len(all_points)} 포인트")
+    return len(all_points)
+
+
+# ── CLI ──
+
+def main():
+    parser = argparse.ArgumentParser(description="Notion DB-HUB → Local JSON 증분 동기화")
+    parser.add_argument("--full",         action="store_true", help="전체 재동기화 (로컬 JSON 기준 무시)")
+    parser.add_argument("--upload-cloud", action="store_true", help="로컬 JSON → Qdrant Cloud 업로드")
+    parser.add_argument("--status",       action="store_true", help="현황 출력")
+    args = parser.parse_args()
+
+    if args.status:
+        print(f"\n  로컬 JSON: ", end="")
+        if LOCAL_JSON.exists():
+            size_mb = LOCAL_JSON.stat().st_size / 1024 / 1024
+            page_map = get_local_page_map()
+            print(f"{size_mb:.1f} MB, {len(page_map)} 페이지")
+        else:
+            print("없음")
+        return
+
+    if args.upload_cloud:
+        upload_to_qdrant_cloud()
+        return
+
+    run_pipeline(full=args.full)
+
+
+if __name__ == "__main__":
+    main()
