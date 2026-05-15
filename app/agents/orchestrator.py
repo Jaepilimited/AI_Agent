@@ -1421,11 +1421,9 @@ class OrchestratorAgent:
 
     async def _handle_qdrant(self, query, messages, conversation_context, model_type, user_email="", team_key=None):
         from app.agents.qdrant_agent import run as run_qdrant
-        contextualized_query = query
-        if conversation_context:
-            contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
+        # 벡터 임베딩에는 순수 query만 사용 — 대화 히스토리를 넣으면 검색 정확도 하락
         try:
-            result = await run_qdrant(contextualized_query, team_key=team_key, model_type=model_type)
+            result = await run_qdrant(query, team_key=team_key, model_type=model_type)
             return {"source": "notion", "answer": result}
         except Exception as e:
             return {"source": "notion", "answer": f"사내 문서 검색 중 오류: {str(e)}"}
