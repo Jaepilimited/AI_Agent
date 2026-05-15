@@ -1,16 +1,18 @@
-"""Notion 사내 문서 검색 — 로컬 벡터 검색.
+"""Notion 사내 문서 검색 — Qdrant Cloud 벡터 검색.
 
-Qdrant Craver에서 가져온 데이터를 Gemini embedding-001로 재임베딩하여 로컬 저장.
-검색: Gemini embedding → 로컬 코사인 유사도 → Gemini Flash 답변 생성.
-데이터 업데이트: Qdrant Craver에서 재다운로드 + 재임베딩.
+로컬 JSON(notion_vectors_gemini.json)을 소스 오브 트루스로 유지하고,
+Qdrant Cloud를 실제 벡터 검색 백엔드로 사용한다.
+
+- 검색: Gemini embedding → Qdrant Cloud query → Gemini Flash 답변
+- 업데이트: 파이프라인 실행 후 reload_vectors() → Cloud 전체 재업로드
 """
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import structlog
 
 from app.config import get_settings
@@ -20,9 +22,12 @@ from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
 logger = structlog.get_logger(__name__)
 
 EMBEDDING_MODEL = "gemini-embedding-001"
-EMBEDDING_DIM = 1536
-TOP_K = 8
+EMBEDDING_DIM   = 1536
+TOP_K           = 8
 SCORE_THRESHOLD = 0.3
+COLLECTION      = "Craver"
+
+_LOCAL_JSON = Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
 
 TEAM_MAP = {
     "west": "[GM]WEST", "gm_west": "[GM]WEST", "서부": "[GM]WEST",
@@ -39,46 +44,81 @@ TEAM_MAP = {
     "op": "OP", "운영": "OP",
 }
 
-# ── Local vector store (numpy-backed, pre-normalized for fast cosine) ──
-_vecs: Optional[np.ndarray] = None        # shape (N, D), float32, L2-normalized
-_payloads: list[dict] = []                # parallel array, len N
-_teams: Optional[np.ndarray] = None       # shape (N,), dtype=object (team strings)
-_loaded = False
+# ── Qdrant Cloud 설정 (env 우선, 없으면 .env 파일 참조) ──────────────────────
+def _qdrant_url() -> str:
+    return os.getenv("QDRANT_URL", "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333")
+
+def _qdrant_api_key() -> str:
+    return os.getenv("QDRANT_API_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OTFkOGVkZWYtNTFkNi00ODNhLTg0MDItZTdjNjI0ZjA2NThmIn0.K0zdMdpnbIMl_yfXV8EJfcClpPnkoPa_SS_XbDI1kv4")
 
 
-def _load_store():
-    global _vecs, _payloads, _teams, _loaded
-    if _loaded:
-        return
-    path = Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
-    if not path.exists():
-        logger.warning("notion_vectors_not_found", path=str(path))
-        _loaded = True
-        return
-    with open(path, "r", encoding="utf-8") as f:
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        from qdrant_client import QdrantClient
+        _client = QdrantClient(url=_qdrant_url(), api_key=_qdrant_api_key(), timeout=15)
+        logger.info("qdrant_client_connected", url=_qdrant_url())
+    return _client
+
+
+# ── 로컬 JSON → Qdrant Cloud 전체 업로드 ────────────────────────────────────
+
+def _upload_local_to_cloud() -> int:
+    """로컬 JSON → Qdrant Cloud upsert (기존 데이터 보존)."""
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import Distance, VectorParams, PointStruct
+
+    if not _LOCAL_JSON.exists():
+        logger.warning("local_json_not_found")
+        return 0
+
+    with open(_LOCAL_JSON, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
-    payloads: list[dict] = []
-    vec_rows: list[list[float]] = []
-    teams_list: list[str] = []
+    points = []
     for pt in raw:
         v = pt.get("vector")
         if not v:
             continue
-        p = pt.get("payload", {})
-        payloads.append(p)
-        vec_rows.append(v)
-        teams_list.append(p.get("team", ""))
+        points.append(PointStruct(
+            id=pt.get("id") or str(len(points)),
+            vector=v,
+            payload=pt.get("payload", {}),
+        ))
 
-    arr = np.asarray(vec_rows, dtype=np.float32)
-    norms = np.linalg.norm(arr, axis=1, keepdims=True)
-    norms[norms == 0] = 1.0
-    _vecs = arr / norms                              # pre-normalize once
-    _payloads = payloads
-    _teams = np.asarray(teams_list, dtype=object)
-    _loaded = True
-    logger.info("notion_vectors_loaded", count=len(_payloads), dim=arr.shape[1] if arr.size else 0)
+    if not points:
+        return 0
 
+    client = _get_client()
+
+    # 컬렉션 없으면 생성, 있으면 기존 데이터 유지 후 upsert
+    existing = [c.name for c in client.get_collections().collections]
+    if COLLECTION not in existing:
+        client.create_collection(
+            collection_name=COLLECTION,
+            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
+        )
+
+    # 배치 upsert (100개씩) — 기존 포인트는 덮어쓰기, 신규는 추가
+    batch_size = 100
+    for i in range(0, len(points), batch_size):
+        client.upsert(collection_name=COLLECTION, points=points[i:i + batch_size])
+
+    logger.info("qdrant_cloud_upserted", count=len(points), collection=COLLECTION)
+    return len(points)
+
+
+def reload_vectors():
+    """로컬 JSON 갱신 후 Qdrant Cloud 재업로드 (파이프라인 실행 후 호출)."""
+    global _client
+    _client = None  # 클라이언트 재초기화
+    count = _upload_local_to_cloud()
+    logger.info("notion_vectors_reloaded", count=count)
+
+
+# ── 검색 ──────────────────────────────────────────────────────────────────────
 
 async def _embed_query(query: str) -> list[float]:
     from google import genai
@@ -92,47 +132,38 @@ async def _embed_query(query: str) -> list[float]:
     return result.embeddings[0].values
 
 
-def _search(vector, team_filter=None, top_k=TOP_K):
-    _load_store()
-    if _vecs is None or _vecs.size == 0:
-        return []
+def _search(vector: list[float], team_filter: Optional[str] = None, top_k: int = TOP_K) -> list[dict]:
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-    q = np.asarray(vector, dtype=np.float32)
-    qn = np.linalg.norm(q)
-    if qn == 0:
-        return []
-    q = q / qn
+    client = _get_client()
+    query_filter = None
+    if team_filter:
+        query_filter = Filter(
+            must=[FieldCondition(key="team", match=MatchValue(value=team_filter))]
+        )
 
-    sims = _vecs @ q                                 # cosine: both sides normalized
-    if team_filter is not None and _teams is not None:
-        sims = np.where(_teams == team_filter, sims, -1.0)
-
-    above = np.where(sims >= SCORE_THRESHOLD)[0]
-    if above.size == 0:
-        return []
-
-    if above.size > top_k:
-        scores_above = sims[above]
-        part = np.argpartition(-scores_above, top_k)[:top_k]
-        selected = above[part[np.argsort(-scores_above[part])]]
-    else:
-        selected = above[np.argsort(-sims[above])]
-
-    return [{"score": float(sims[i]), "payload": _payloads[i]} for i in selected]
+    results = client.query_points(
+        collection_name=COLLECTION,
+        query=vector,
+        query_filter=query_filter,
+        limit=top_k,
+        score_threshold=SCORE_THRESHOLD,
+    )
+    return [{"score": r.score, "payload": r.payload} for r in results.points]
 
 
-def _format_results(results):
+def _format_results(results: list[dict]) -> str:
     if not results:
         return "검색 결과 없음"
     chunks = []
     for i, r in enumerate(results, 1):
         p = r["payload"]
         score = r["score"]
-        team = p.get("team", "?")
+        team  = p.get("team", "?")
         title = p.get("page_title", "?")
         section = p.get("section_path", "")
-        text = p.get("text", "")[:2000]
-        url = p.get("page_url", "")
+        text  = p.get("text", "")[:2000]
+        url   = p.get("page_url", "")
         header = f"[{i}] ({score:.2f}) {team} > {title}"
         if section:
             header += f" > {section}"
@@ -156,7 +187,8 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
         logger.error("qdrant_search_failed", error=str(e))
         return f"벡터 검색 실패: {e}"
 
-    logger.info("qdrant_search_done", result_count=len(results), top_score=results[0]["score"] if results else 0)
+    logger.info("qdrant_search_done", result_count=len(results),
+                top_score=results[0]["score"] if results else 0)
 
     if not results:
         label = team_filter or "전체"

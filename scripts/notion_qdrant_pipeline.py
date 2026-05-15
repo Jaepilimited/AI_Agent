@@ -45,7 +45,7 @@ LOCAL_JSON = _ROOT / "data" / "notion_vectors_gemini.json"
 
 QDRANT_URL = "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333"
 QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6OTFkOGVkZWYtNTFkNi00ODNhLTg0MDItZTdjNjI0ZjA2NThmIn0.K0zdMdpnbIMl_yfXV8EJfcClpPnkoPa_SS_XbDI1kv4"
-COLLECTION = "notion_hub_gemini"
+COLLECTION = "Craver"
 
 
 # ── Headers ──
@@ -67,7 +67,15 @@ def crawl_hub(client: httpx.Client) -> list[dict]:
     for block in hub_blocks:
         if block.get("type") == "toggle":
             team = _rich_text(block["toggle"])
+            # 학습 현황 자동 삽입 블록은 수집 제외 (🤖 AI 학습 현황 marker)
+            if team.startswith("🤖 AI 학습 현황"):
+                continue
+            collected_before = len(pages)
             _collect_from_block(block["id"], team, client, pages)
+            # 멘션/child_page가 없고 텍스트만 있는 토글(예: Craver 회사소개)은
+            # 토글 블록 자체를 페이지로 등록해 내용 추출
+            if len(pages) == collected_before:
+                pages.append({"page_id": block["id"], "title": team, "team": team, "is_block": True})
     return pages
 
 
@@ -86,7 +94,7 @@ def _rich_text(content: dict) -> str:
 
 
 def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: list):
-    """토글/paragraph 블록에서 child_page, child_database, mention_page 수집."""
+    """토글/paragraph/bulleted_list_item 블록에서 child_page, child_database, mention_page 수집."""
     children = _get_block_children(block_id, client)
     for b in children:
         btype = b.get("type", "")
@@ -104,8 +112,10 @@ def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: l
             sub_team = _rich_text(b["toggle"]) or team
             _collect_from_block(bid, sub_team, client, pages)
 
-        elif btype == "paragraph":
-            for chunk in b.get("paragraph", {}).get("rich_text", []):
+        elif btype in ("paragraph", "bulleted_list_item", "numbered_list_item"):
+            key = btype.split("_")[0] if "_" in btype else btype  # paragraph / bulleted / numbered
+            rich = b.get(btype, {}).get("rich_text", [])
+            for chunk in rich:
                 if chunk.get("type") == "mention":
                     m = chunk.get("mention", {})
                     if m.get("type") == "page":
@@ -348,19 +358,34 @@ def run_incremental_sync(full: bool = False) -> dict:
             page_id = entry["page_id"]
             team = entry["team"]
 
-            meta = fetch_page_meta(page_id, client)
-            if meta is None:
-                print(f"  SKIP(404): [{team}] {entry['title'][:50]}")
-                stats["skipped_404"] += 1
-                continue
+            # is_block: True → Notion 블록(토글 등)이라 /pages/ 대신 직접 텍스트 추출
+            if entry.get("is_block"):
+                notion_page_ids.add(page_id)
+                local_edited = local_page_map.get(page_id)
+                is_new = local_edited is None
+                meta = {
+                    "page_id": page_id,
+                    "title": entry["title"],
+                    "url": f"https://www.notion.so/skin1004/{DB_HUB_ID.replace('-', '')}",
+                    "last_edited_time": "block",
+                }
+                if not full and not is_new:
+                    stats["unchanged"] += 1
+                    continue
+            else:
+                meta = fetch_page_meta(page_id, client)
+                if meta is None:
+                    print(f"  SKIP(404): [{team}] {entry['title'][:50]}")
+                    stats["skipped_404"] += 1
+                    continue
 
-            notion_page_ids.add(page_id)
-            local_edited = local_page_map.get(page_id)
-            is_new = local_edited is None
+                notion_page_ids.add(page_id)
+                local_edited = local_page_map.get(page_id)
+                is_new = local_edited is None
 
-            if not full and not is_new and meta["last_edited_time"] == local_edited:
-                stats["unchanged"] += 1
-                continue
+                if not full and not is_new and meta["last_edited_time"] == local_edited:
+                    stats["unchanged"] += 1
+                    continue
 
             try:
                 text = fetch_page_text(page_id, client)
@@ -430,15 +455,25 @@ def run_incremental_sync(full: bool = False) -> dict:
 
 
 def run_pipeline(full: bool = False) -> dict:
-    """전체 파이프라인: 증분 sync + hot-reload."""
+    """전체 파이프라인: 증분 sync + hot-reload + Notion 학습 현황 업데이트."""
     stats = run_incremental_sync(full=full)
     try:
         from app.agents.qdrant_agent import reload_vectors
         reload_vectors()
-        print("  인메모리 벡터 스토어 hot-reload 완료")
+        print("  Qdrant Cloud 업로드 및 hot-reload 완료")
         stats["reloaded"] = True
-    except Exception:
+    except Exception as e:
+        print(f"  Qdrant 업로드 실패 (무시): {e}")
         stats["reloaded"] = False
+
+    # Notion DB-HUB 학습 현황 업데이트
+    try:
+        from scripts.update_notion_learning_status import main as update_status
+        print("\n  Notion 학습 현황 업데이트 중...")
+        update_status()
+    except Exception as e:
+        print(f"  학습 현황 업데이트 실패 (무시): {e}")
+
     return stats
 
 
@@ -453,12 +488,14 @@ def upload_to_qdrant_cloud() -> int:
         all_points = json.load(f)
     print(f"  Qdrant Cloud 업로드: {len(all_points)} 포인트...")
     with httpx.Client(timeout=30) as client:
-        client.delete(f"{QDRANT_URL}/collections/{COLLECTION}", headers=qdrant_headers())
-        client.put(
-            f"{QDRANT_URL}/collections/{COLLECTION}",
-            headers=qdrant_headers(),
-            json={"vectors": {"size": EMBEDDING_DIM, "distance": "Cosine"}},
-        )
+        # 컬렉션 없으면 생성, 있으면 기존 데이터 보존
+        chk = client.get(f"{QDRANT_URL}/collections/{COLLECTION}", headers=qdrant_headers())
+        if chk.status_code != 200:
+            client.put(
+                f"{QDRANT_URL}/collections/{COLLECTION}",
+                headers=qdrant_headers(),
+                json={"vectors": {"size": EMBEDDING_DIM, "distance": "Cosine"}},
+            )
     with httpx.Client(timeout=60) as client:
         for i in range(0, len(all_points), 100):
             batch = all_points[i:i + 100]
