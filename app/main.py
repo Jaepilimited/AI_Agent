@@ -44,6 +44,16 @@ structlog.configure(
 
 logger = structlog.get_logger(__name__)
 
+# Module-level scheduler reference (accessible via _get_scheduler())
+_scheduler_instance = None
+
+def _set_scheduler(sched) -> None:
+    global _scheduler_instance
+    _scheduler_instance = sched
+
+def _get_scheduler():
+    return _scheduler_instance
+
 # Directories
 _BASE_DIR = Path(__file__).parent
 _FRONTEND_DIR = _BASE_DIR / "frontend"
@@ -109,10 +119,12 @@ def create_app() -> FastAPI:
         _scheduler = AsyncIOScheduler()
         _scheduler.add_job(_sync_team_resources_job, "cron", hour=1, minute=0, id="team_sync_daily")
         _scheduler.add_job(_extract_wiki_hourly, "cron", minute=15, id="wiki_extract_hourly")
+        _scheduler.add_job(_qdrant_pipeline_job, "cron", hour=5, minute=0, id="qdrant_pipeline_daily")
         # AD sync is handled exclusively by Windows Task Scheduler (SKIN1004-AD-Sync-Daily at 22:00).
         # Removed from APScheduler to prevent concurrent dual-trigger race condition.
         _scheduler.start()
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15"])
+        _set_scheduler(_scheduler)
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00"])
         yield
         logger.info("application_shutdown")
 
@@ -151,12 +163,20 @@ def create_app() -> FastAPI:
             target += f"?{qs}"
         return RedirectResponse(url=target, status_code=302)
 
+    _NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+
     @app.get("/login")
     async def login_page():
-        return FileResponse(str(_FRONTEND_DIR / "login.html"), media_type="text/html")
+        from app.core.safety import get_maintenance_manager
+        if get_maintenance_manager().active:
+            return FileResponse(str(_FRONTEND_DIR / "maintenance.html"), media_type="text/html", headers=_NO_CACHE)
+        return FileResponse(str(_FRONTEND_DIR / "login.html"), media_type="text/html", headers=_NO_CACHE)
 
     @app.get("/")
     async def index(request: Request):
+        from app.core.safety import get_maintenance_manager
+        if get_maintenance_manager().active:
+            return FileResponse(str(_FRONTEND_DIR / "maintenance.html"), media_type="text/html", headers=_NO_CACHE)
         # Check if user is authenticated
         token = request.cookies.get("token")
         if not token:
@@ -389,6 +409,16 @@ async def _sync_team_resources_job():
         logger.info("team_resources_daily_sync_done", count=count)
     except Exception as e:
         logger.error("team_resources_daily_sync_failed", error=str(e))
+
+
+async def _qdrant_pipeline_job():
+    """Daily 05:00: Notion → Qdrant 서버 직접 업로드 (전체 sync)."""
+    try:
+        from scripts.notion_qdrant_pipeline import run_pipeline
+        stats = await asyncio.to_thread(run_pipeline)
+        logger.info("qdrant_pipeline_done", **{k: v for k, v in stats.items() if isinstance(v, (int, bool))})
+    except Exception as e:
+        logger.error("qdrant_pipeline_failed", error=str(e))
 
 
 async def _extract_wiki_hourly():
