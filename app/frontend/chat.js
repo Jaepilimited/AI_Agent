@@ -588,6 +588,8 @@
     updateTheme();
     pollSystemStatus();
     setInterval(pollSystemStatus, 30000);
+    pollAnnouncement();
+    setInterval(pollAnnouncement, 60000);
     updateSourceFilterBadge();
     checkGwsStatus();
   }
@@ -2793,6 +2795,26 @@
     }
   }
 
+  function pollAnnouncement() {
+    fetch("/api/announcement")
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var banner = document.getElementById("announcement-banner");
+        var text = document.getElementById("announcement-text");
+        if (!banner || !text) return;
+        if (data.active && data.message) {
+          text.textContent = data.message;
+          banner.style.display = "";
+          // Push chat content down so banner doesn't overlap
+          document.body.style.paddingTop = banner.offsetHeight + "px";
+        } else {
+          banner.style.display = "none";
+          document.body.style.paddingTop = "";
+        }
+      })
+      .catch(function() {});
+  }
+
   function pollSystemStatus() {
     fetch("/safety/status")
       .then(function (r) { return r.json(); })
@@ -2973,7 +2995,81 @@
           html += '</div></div>';
         });
 
-        container.innerHTML = html;
+        // Notion sync bar — append after main html
+        var syncData = data.notion_sync || {};
+        var syncRunning = !!syncData.running;
+        var syncLastRun = syncData.last_run || null;
+        var syncStats = syncData.last_stats || null;
+        var syncError = syncData.error || null;
+
+        var statsText = "";
+        if (syncStats) {
+          var parts = [];
+          if (syncStats.new)      parts.push("신규 " + syncStats.new);
+          if (syncStats.updated)  parts.push("업데이트 " + syncStats.updated);
+          if (syncStats.deleted)  parts.push("삭제 " + syncStats.deleted);
+          if (syncStats.errors)   parts.push("오류 " + syncStats.errors);
+          if (parts.length === 0) parts.push("변동 없음");
+          statsText = parts.join(" · ");
+        }
+
+        var syncBarHtml =
+          '<div class="notion-sync-bar">' +
+            '<div class="notion-sync-info">' +
+              '<span class="notion-sync-icon">' + _svgFile + '</span>' +
+              '<span class="notion-sync-title">Notion → Qdrant</span>' +
+              (syncLastRun
+                ? '<span class="notion-sync-time">마지막 동기화: ' + syncLastRun + '</span>'
+                : '<span class="notion-sync-time">동기화 기록 없음</span>') +
+              (statsText ? '<span class="notion-sync-stats">' + statsText + '</span>' : '') +
+              (syncError ? '<span class="notion-sync-error">' + syncError + '</span>' : '') +
+            '</div>' +
+            '<button id="btn-notion-sync" class="notion-sync-btn' + (syncRunning ? ' syncing' : '') + '"' +
+              (syncRunning ? ' disabled' : '') + '>' +
+              (syncRunning
+                ? '<span class="notion-sync-spinner"></span>동기화 중...'
+                : '지금 동기화') +
+            '</button>' +
+          '</div>';
+
+        container.innerHTML = html + syncBarHtml;
+
+        // Notion sync button handler
+        var syncBtn = document.getElementById("btn-notion-sync");
+        if (syncBtn && !syncRunning) {
+          syncBtn.addEventListener("click", function() {
+            syncBtn.disabled = true;
+            syncBtn.classList.add("syncing");
+            syncBtn.innerHTML = '<span class="notion-sync-spinner"></span>동기화 중...';
+            fetch("/api/notion-sync", { method: "POST" })
+              .then(function(r) { return r.json(); })
+              .then(function(res) {
+                if (!res.ok) {
+                  syncBtn.disabled = false;
+                  syncBtn.classList.remove("syncing");
+                  syncBtn.innerHTML = "지금 동기화";
+                  alert(res.error || "동기화 실패");
+                } else {
+                  // Poll until done
+                  var pollTimer = setInterval(function() {
+                    fetch("/api/notion-sync/status")
+                      .then(function(r) { return r.json(); })
+                      .then(function(st) {
+                        if (!st.running) {
+                          clearInterval(pollTimer);
+                          pollSystemStatus();
+                        }
+                      });
+                  }, 3000);
+                }
+              })
+              .catch(function() {
+                syncBtn.disabled = false;
+                syncBtn.classList.remove("syncing");
+                syncBtn.innerHTML = "지금 동기화";
+              });
+          });
+        }
 
         // Set indeterminate state on group checkboxes
         container.querySelectorAll('.status-group-cb[data-indeterminate="1"]').forEach(function(cb) {

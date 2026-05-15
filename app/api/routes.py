@@ -32,6 +32,14 @@ logger = structlog.get_logger(__name__)
 # v3.0 Orchestrator singleton (lazy init)
 _orchestrator = None
 
+# Notion sync state (in-process, reset on restart)
+_notion_sync_state: dict = {
+    "running": False,
+    "last_run": None,   # ISO datetime string
+    "last_stats": None, # {new, updated, deleted, unchanged, skipped_404, errors}
+    "error": None,
+}
+
 
 def _estimate_tokens(text: str) -> int:
     """Estimate token count for mixed Korean/English text.
@@ -400,12 +408,107 @@ async def safety_status():
     return get_safety_status()
 
 
+@router.get("/api/announcement")
+async def get_announcement():
+    """Return current site-wide announcement (empty string if none)."""
+    from app.core.safety import get_announcement_manager
+    am = get_announcement_manager()
+    return {"message": am.message, "active": am.active}
+
+
+@router.post("/api/announcement")
+async def set_announcement(message: str = "", clear: bool = False):
+    """Set or clear the site-wide announcement banner (admin only)."""
+    from app.core.safety import get_announcement_manager
+    am = get_announcement_manager()
+    if clear:
+        am.clear()
+    else:
+        am.set(message)
+    return {"ok": True, "message": am.message, "active": am.active}
+
+
+@router.get("/api/scheduler/status")
+async def scheduler_status():
+    """Return APScheduler job list and next run times."""
+    from app.main import _get_scheduler
+    sched = _get_scheduler()
+    if sched is None:
+        return {"running": False, "jobs": []}
+    jobs = []
+    for job in sched.get_jobs():
+        jobs.append({
+            "id": job.id,
+            "next_run": str(job.next_run_time) if job.next_run_time else None,
+        })
+    return {"running": sched.running, "jobs": jobs}
+
+
+@router.post("/api/scheduler/run")
+async def scheduler_run_now(job_id: str):
+    """Immediately trigger a scheduled job by ID (admin/dev only)."""
+    import asyncio
+    from app.main import _get_scheduler
+    sched = _get_scheduler()
+    if sched is None:
+        return {"ok": False, "error": "scheduler not running"}
+    job = sched.get_job(job_id)
+    if job is None:
+        return {"ok": False, "error": f"job '{job_id}' not found"}
+    job.modify(next_run_time=__import__("datetime").datetime.now(job.next_run_time.tzinfo if job.next_run_time else None))
+    return {"ok": True, "triggered": job_id}
+
+
 @router.get("/api/datasources")
 async def list_datasources():
     """Return available @@ data sources for frontend autocomplete."""
     from app.agents.orchestrator import OrchestratorAgent
     registry = OrchestratorAgent.get_db_registry()
     return [{"key": e["key"], "aliases": e["aliases"], "label": e["label"], "desc": e["desc"], "group": e.get("group", ""), "icon": e.get("icon", "")} for e in registry]
+
+
+@router.get("/api/notion-sync/status")
+async def notion_sync_status():
+    """Return current Notion → Qdrant sync state."""
+    return _notion_sync_state
+
+
+async def _run_notion_sync_bg():
+    """Background task: run full Notion → Qdrant pipeline."""
+    global _notion_sync_state
+    import datetime
+    _notion_sync_state["running"] = True
+    _notion_sync_state["error"] = None
+    try:
+        from scripts.notion_qdrant_pipeline import run_pipeline
+        stats = await asyncio.to_thread(run_pipeline)
+        _notion_sync_state["last_stats"] = stats
+        _notion_sync_state["last_run"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Invalidate safety.py qdrant cache so next poll reflects new data
+        try:
+            import app.core.safety as _sf
+            _sf._qdrant_cache = {}
+            _sf._qdrant_cache_time = 0
+        except Exception:
+            pass
+    except Exception as e:
+        _notion_sync_state["error"] = str(e)[:120]
+        logger.error("notion_sync_failed", error=str(e))
+    finally:
+        _notion_sync_state["running"] = False
+
+
+@router.post("/api/notion-sync")
+async def trigger_notion_sync(request: Request):
+    """Trigger Notion → Qdrant sync pipeline (admin only)."""
+    from app.api.auth_middleware import get_current_user
+    user = await get_current_user(request)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    if _notion_sync_state["running"]:
+        return {"ok": False, "error": "이미 동기화 중입니다"}
+    asyncio.create_task(_run_notion_sync_bg())
+    return {"ok": True, "message": "동기화를 시작합니다"}
 
 
 @router.get("/health")

@@ -269,27 +269,33 @@ def get_safety_status() -> dict:
         "KBT": "KBT", "JBT": "JBT",
     }
     try:
-        import json as _json
-        from pathlib import Path as _Path
-
-        # Read from local vector store (data/notion_vectors_gemini.json)
         global _qdrant_cache, _qdrant_cache_time
         _now = _time.time()
         if not _qdrant_cache or _now - _qdrant_cache_time > 300:
+            # Read from Qdrant Cloud Craver collection (5분 캐시)
+            from qdrant_client import QdrantClient
+            from app.agents.qdrant_agent import _qdrant_url, _qdrant_api_key
+            _qclient = QdrantClient(
+                url=_qdrant_url(),
+                api_key=_qdrant_api_key(),
+                timeout=5,
+            )
             _team_counts: dict[str, int] = {}
-            _vpath = _Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
-            if _vpath.exists():
-                with open(_vpath, "r", encoding="utf-8") as _f:
-                    _store = _json.load(_f)
-                for _p in _store:
-                    _t = _p.get("payload", {}).get("team", "UNKNOWN")
+            _offset = None
+            while True:
+                _result = _qclient.scroll("Craver", offset=_offset, limit=100, with_payload=True, with_vectors=False)
+                for _pt in _result[0]:
+                    _t = _pt.payload.get("team", "UNKNOWN")
                     _team_counts[_t] = _team_counts.get(_t, 0) + 1
+                _offset = _result[1]
+                if _offset is None:
+                    break
             _qdrant_cache = _team_counts
             _qdrant_cache_time = _now
         else:
             _team_counts = _qdrant_cache
 
-        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "UNKNOWN", "?"}
+        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "UNKNOWN", "?", "google_sheets", "임베딩 된 구글시트"}
         for _qt, _qc in sorted(_team_counts.items(), key=lambda x: _QDRANT_TEAM_LABELS.get(x[0], x[0])):
             if _qt in _SKIP_TEAMS:
                 continue
@@ -329,10 +335,19 @@ def get_safety_status() -> dict:
     # Circuits
     circuits = {name: cb.status_dict for name, cb in _circuits.items()}
 
+    # Notion sync state (from routes module)
+    notion_sync = {}
+    try:
+        from app.api.routes import _notion_sync_state
+        notion_sync = _notion_sync_state
+    except Exception:
+        pass
+
     return {
         "maintenance": mm.status,
         "services": services,
         "circuits": circuits,
+        "notion_sync": notion_sync,
     }
 
 
