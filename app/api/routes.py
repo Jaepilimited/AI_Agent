@@ -405,7 +405,8 @@ async def maintenance_status():
 async def safety_status():
     """Full safety dashboard: maintenance + services + circuit breakers."""
     from app.core.safety import get_safety_status
-    return get_safety_status()
+    # get_safety_status()는 Qdrant scroll 등 블로킹 I/O 포함 → 스레드 풀에서 실행
+    return await asyncio.to_thread(get_safety_status)
 
 
 @router.get("/api/announcement")
