@@ -474,7 +474,12 @@
   }
   function getEnabledTeamResPayload() {
     if (!enabledTeamRes) return null;
-    return enabledTeamRes;
+    var result = {};
+    Object.keys(enabledTeamRes).forEach(function(team) {
+      var ids = (enabledTeamRes[team] || []).filter(function(id) { return Number.isInteger(id); });
+      if (ids.length > 0) result[team] = ids;
+    });
+    return Object.keys(result).length > 0 ? result : null;
   }
   var _allTeamResNames = {};  // Populated from safety/status response
 
@@ -485,7 +490,8 @@
     if (!item) return;
     var checkedIds = [];
     item.querySelectorAll('.tree-cb:checked').forEach(function(cb) {
-      checkedIds.push(parseInt(cb.getAttribute("data-id")));
+      var id = parseInt(cb.getAttribute("data-id"));
+      if (!isNaN(id)) checkedIds.push(id);
     });
     enabledTeamRes[team] = checkedIds;
     saveTeamRes();
