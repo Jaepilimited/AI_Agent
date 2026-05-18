@@ -10,8 +10,22 @@ Qdrant Cloud를 실제 벡터 검색 백엔드로 사용한다.
 import asyncio
 import json
 import os
+import re
+import uuid
 from pathlib import Path
 from typing import Optional
+
+_UUID_RE = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
+)
+
+def _normalize_id(raw_id, payload: dict) -> str:
+    if isinstance(raw_id, int) and raw_id >= 0:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, str(raw_id)))
+    if isinstance(raw_id, str) and _UUID_RE.match(raw_id):
+        return raw_id
+    seed = (payload.get("page_url") or "") + (payload.get("text") or "")[:80]
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, seed or str(uuid.uuid4())))
 
 import structlog
 
@@ -83,10 +97,11 @@ def _upload_local_to_cloud() -> int:
         v = pt.get("vector")
         if not v:
             continue
+        payload = pt.get("payload", {})
         points.append(PointStruct(
-            id=pt.get("id") or str(len(points)),
+            id=_normalize_id(pt.get("id"), payload),
             vector=v,
-            payload=pt.get("payload", {}),
+            payload=payload,
         ))
 
     if not points:

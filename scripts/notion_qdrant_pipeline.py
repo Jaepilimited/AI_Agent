@@ -106,14 +106,13 @@ def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: l
 
         elif btype == "child_database":
             title = b.get("child_database", {}).get("title", "")
-            pages.append({"page_id": bid, "title": title, "team": team})
+            pages.append({"page_id": bid, "title": title, "team": team, "is_database": True})
 
         elif btype == "toggle":
             sub_team = _rich_text(b["toggle"]) or team
             _collect_from_block(bid, sub_team, client, pages)
 
         elif btype in ("paragraph", "bulleted_list_item", "numbered_list_item"):
-            key = btype.split("_")[0] if "_" in btype else btype  # paragraph / bulleted / numbered
             rich = b.get(btype, {}).get("rich_text", [])
             for chunk in rich:
                 if chunk.get("type") == "mention":
@@ -122,6 +121,13 @@ def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: l
                         pid = m["page"]["id"]
                         text = chunk.get("plain_text", "")
                         pages.append({"page_id": pid, "title": text, "team": team})
+                    elif m.get("type") == "database":
+                        did = m["database"]["id"]
+                        text = chunk.get("plain_text", "")
+                        pages.append({"page_id": did, "title": text, "team": team, "is_database": True})
+            # 중첩 멘션(list item 하위 paragraph 등) 재귀 탐색
+            if b.get("has_children"):
+                _collect_from_block(bid, team, client, pages)
 
 
 # ── Notion 페이지 조회 ──
@@ -145,6 +151,24 @@ def fetch_page_meta(page_id: str, client: httpx.Client) -> dict | None:
         "title": title or pdata.get("url", "")[-8:],
         "url": pdata.get("url", ""),
         "last_edited_time": pdata.get("last_edited_time", ""),
+    }
+
+
+def fetch_database_meta(db_id: str, client: httpx.Client) -> dict | None:
+    """Notion 데이터베이스 메타 조회. 404면 None 반환."""
+    resp = client.get(
+        f"https://api.notion.com/v1/databases/{db_id}",
+        headers=notion_headers(),
+    )
+    if resp.status_code != 200:
+        return None
+    data = resp.json()
+    title = "".join(t.get("plain_text", "") for t in data.get("title", []))
+    return {
+        "page_id": db_id,
+        "title": title or db_id[-8:],
+        "url": data.get("url", ""),
+        "last_edited_time": data.get("last_edited_time", ""),
     }
 
 
@@ -372,6 +396,22 @@ def run_incremental_sync(full: bool = False) -> dict:
                 if not full and not is_new:
                     stats["unchanged"] += 1
                     continue
+
+            elif entry.get("is_database"):
+                meta = fetch_database_meta(page_id, client)
+                if meta is None:
+                    print(f"  SKIP(404): [{team}] {entry['title'][:50]}")
+                    stats["skipped_404"] += 1
+                    continue
+
+                notion_page_ids.add(page_id)
+                local_edited = local_page_map.get(page_id)
+                is_new = local_edited is None
+
+                if not full and not is_new and meta["last_edited_time"] == local_edited:
+                    stats["unchanged"] += 1
+                    continue
+
             else:
                 meta = fetch_page_meta(page_id, client)
                 if meta is None:
@@ -388,7 +428,12 @@ def run_incremental_sync(full: bool = False) -> dict:
                     continue
 
             try:
-                text = fetch_page_text(page_id, client)
+                if entry.get("is_database"):
+                    db_texts: list[str] = []
+                    _extract_database_text(page_id, client, db_texts)
+                    text = "\n".join(db_texts)
+                else:
+                    text = fetch_page_text(page_id, client)
                 if not text.strip():
                     print(f"  EMPTY: [{team}] {meta['title'][:50]}")
                     continue
