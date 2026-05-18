@@ -39,7 +39,7 @@ EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM   = 1536
 TOP_K           = 8
 SCORE_THRESHOLD = 0.45
-QUALITY_GATE    = 0.5   # 최상위 결과가 이 이하면 관련 자료 없음 처리
+QUALITY_GATE    = 0.57  # 최상위 결과가 이 이하면 관련 자료 없음 처리
 COLLECTION      = "Craver"
 
 _LOCAL_JSON = Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
