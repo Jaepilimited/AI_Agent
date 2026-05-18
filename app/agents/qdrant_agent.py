@@ -24,7 +24,8 @@ logger = structlog.get_logger(__name__)
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM   = 1536
 TOP_K           = 8
-SCORE_THRESHOLD = 0.3
+SCORE_THRESHOLD = 0.55
+QUALITY_GATE    = 0.5   # 최상위 결과가 이 이하면 관련 자료 없음 처리
 COLLECTION      = "Craver"
 
 _LOCAL_JSON = Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
@@ -190,7 +191,7 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
     logger.info("qdrant_search_done", result_count=len(results),
                 top_score=results[0]["score"] if results else 0)
 
-    if not results:
+    if not results or results[0]["score"] < QUALITY_GATE:
         label = team_filter or "전체"
         return f"**{label}** 팀 자료에서 '{query}'와 관련된 문서를 찾을 수 없습니다.\n\n다른 키워드로 검색해보세요."
 
@@ -212,14 +213,14 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 ## ⚠️ 최우선 규칙
 - **반드시 위 '검색된 문서' 내용에서만 답변하세요!**
 - 당신의 사전 학습 지식으로 답변하지 마세요. 검색 결과에 있는 정보만 사용하세요.
-- "보유한 정보에 포함되어 있지 않습니다" 같은 거부 답변 금지! 검색 결과에 내용이 있으면 반드시 추출해서 답변하세요.
+- 검색된 문서가 질문과 관련이 없거나 내용이 부족하면, 솔직하게 "관련 자료가 없습니다"라고 안내하세요.
 - 숫자, 번호, 주소, 이름 등 구체적 정보가 문서에 있으면 그대로 인용하세요.
 
 ## 답변 형식
 - 검색된 문서 내용을 직접 요약하여 답변 (링크만 달지 마세요!)
 - 핵심을 구조적으로 정리 (제목, 요약, 상세 내용)
 - 출처 링크 제공: [문서명](URL)
-- 매칭 결과가 부족하면 "관련 자료가 제한적입니다" 안내
+- 검색 문서가 질문과 맞지 않으면 "관련 자료를 찾을 수 없습니다"라고 명확히 안내
 - 답변 마지막 출처:
   ---
   *Notion 사내 문서 검색 · {label} 팀 자료*
