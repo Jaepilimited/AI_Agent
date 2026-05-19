@@ -868,7 +868,10 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 
 ### ⛔ 필수 규칙
 1. **brand 소문자+언더바 필수**: `brand = 'skin1004'` ✅ | `brand = 'dr_melaxin'` ✅ | `brand = 'drmelaxin'` ❌
-2. **publisher_platform LIKE**: `LOWER(publisher_platform) LIKE '%facebook%'` ✅ | `= 'Facebook'` ❌
+2. **publisher_platform LIKE (절대 = 금지!)**: publisher_platform은 'facebook,instagram' 같은 복합 리스트 → 항상 LIKE!
+   - 특정 플랫폼 포함: `LOWER(publisher_platform) LIKE '%instagram%'` ✅ | `= 'instagram'` ❌
+   - **특정 플랫폼만 (only)**: `LIKE '%instagram%' AND LOWER(publisher_platform) NOT LIKE '%facebook%'`
+   - "인스타그램에만", "페이스북만" 같은 단독 조건 → LIKE + NOT LIKE 조합 필수!
 3. **전체 집계에 brand WHERE 금지**: "국가별", "전체 현황" → WHERE brand 없이
 4. **start_date_formatted DATE() 래핑**: `WHERE DATE(start_date_formatted) >= ...` ✅
 5. **간단하게**: "한국 SKIN1004 광고" → `SELECT * WHERE country_name='South Korea' AND brand='skin1004'` 충분
@@ -885,6 +888,7 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 - 국가별: `SELECT country_name, COUNT(*) ... GROUP BY country_name LIMIT 200` (brand WHERE 없이!)
 - 특정 국가+브랜드: `SELECT * WHERE country_name='South Korea' AND brand='skin1004' LIMIT 200`
 - 플랫폼별: `WHERE LOWER(publisher_platform) LIKE '%facebook%'` (= 금지!)
+- 단독 플랫폼: `WHERE LOWER(publisher_platform) LIKE '%instagram%' AND LOWER(publisher_platform) NOT LIKE '%facebook%'`
 - 전체 현황: `COUNT(*), COUNTIF(is_active=TRUE), COUNT(DISTINCT brand/country_name)` (brand GROUP BY X!)
 - 최근 N일: `WHERE DATE(start_date_formatted) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)` (DATE() 래핑!)
 - 비디오: `WHERE JSON_VALUE(snapshot, '$.display_format') = 'VIDEO'`

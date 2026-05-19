@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SKIN1004 AI Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: #000;
+      color: #fff;
+      font-family: 'Montserrat', 'Apple SD Gothic Neo', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wrap {
+      text-align: center;
+      padding: 40px 24px;
+    }
+    .logo {
+      width: 140px;
+      opacity: 0.85;
+      margin-bottom: 48px;
+    }
+    .title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #e89200;
+      margin-bottom: 20px;
+    }
+    .message {
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.6;
+      margin-bottom: 32px;
+      color: #fff;
+    }
+    .new-url {
+      display: inline-block;
+      font-size: 18px;
+      font-weight: 600;
+      color: #e89200;
+      text-decoration: none;
+      border-bottom: 1.5px solid #e89200;
+      padding-bottom: 2px;
+      transition: opacity 0.2s;
+    }
+    .new-url:hover { opacity: 0.75; }
+    .sub {
+      margin-top: 48px;
+      font-size: 12px;
+      color: #444;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <img class="logo" src="/static/splash-dark-new.png" alt="SKIN1004 AI Agent" onerror="this.style.display='none'">
+    <div class="title">공지사항</div>
+    <div class="message">
+      서버가 새 주소로 이전되었습니다.<br>아래 링크를 통해 접속해 주세요.
+    </div>
+    <a class="new-url" href="http://34.64.99.179:3000" target="_blank">
+      http://34.64.99.179:3000
+    </a>
+    <div class="sub">SKIN1004 AI Agent &nbsp;·&nbsp; Craver Enterprise</div>
+  </div>
+</body>
+</html>

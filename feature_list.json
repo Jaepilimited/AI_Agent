@@ -1,0 +1,75 @@
+{
+  "updated": "2026-05-19",
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "MariaDB Full Migration",
+      "description": "SQLite → MariaDB 완전 이관 (users, conversations, messages, ad_users, access_groups, user_groups)",
+      "status": "done",
+      "evidence": "app/db/mariadb.py, 모든 API가 MariaDB 사용"
+    },
+    {
+      "id": "feat-002",
+      "name": "AD 연동 로그인",
+      "description": "부서 선택 → 이름 선택 → 비밀번호 방식, LDAP sync",
+      "status": "done",
+      "evidence": "scripts/sync_ad_users.py, app/api/auth_api.py"
+    },
+    {
+      "id": "feat-003",
+      "name": "LangGraph SQL Agent",
+      "description": "generate_sql → validate_sql → execute_sql → format_answer",
+      "status": "done",
+      "evidence": "app/agents/sql_agent.py"
+    },
+    {
+      "id": "feat-004",
+      "name": "Qdrant 벡터 검색 (Notion 사내 문서)",
+      "description": "Notion → 로컬 JSON → Qdrant Cloud 파이프라인, 매일 05:00 자동 업데이트",
+      "status": "done",
+      "evidence": "app/agents/qdrant_agent.py, scripts/notion_qdrant_pipeline.py"
+    },
+    {
+      "id": "feat-005",
+      "name": "Qdrant — Google Search 폴백",
+      "description": "QUALITY_GATE 미달 시 Google Search 기반 응답",
+      "status": "in-progress",
+      "evidence": "app/agents/qdrant_agent.py (미커밋 변경사항)"
+    },
+    {
+      "id": "feat-006",
+      "name": "Knowledge Map (graphify)",
+      "description": "코드베이스 → 지식 그래프 → wiki, 매일 03:00 자동 빌드",
+      "status": "done",
+      "evidence": "knowledge_map/, app/knowledge_map/builder.py"
+    },
+    {
+      "id": "feat-007",
+      "name": "멀티모달 (Vision)",
+      "description": "이미지 업로드 → base64 인라인 → LLM vision API",
+      "status": "done",
+      "evidence": "app/agents/orchestrator.py"
+    },
+    {
+      "id": "feat-008",
+      "name": "GCP 마이그레이션",
+      "description": "로컬 Windows → GCP e2-standard-4 이전",
+      "status": "done",
+      "evidence": "ecosystem.config.js, GCP SSH 설정"
+    },
+    {
+      "id": "feat-009",
+      "name": "Follow-up 칩 & 코드 Copy 버튼",
+      "description": "LLM 생성 후속 질문 칩, 코드블록 hover Copy 버튼",
+      "status": "done",
+      "evidence": "app/frontend/chat.js (extractFollowupsFromAnswer)"
+    },
+    {
+      "id": "feat-010",
+      "name": "harness 도입 (progress.md + feature_list.json)",
+      "description": "세션 간 작업 연속성을 위한 상태 추적 파일",
+      "status": "done",
+      "evidence": "progress.md, feature_list.json"
+    }
+  ]
+}

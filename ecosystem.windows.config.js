@@ -1,0 +1,46 @@
+module.exports = {
+  apps: [
+    {
+      name: "skin1004-prod",
+      script: "C:\\Users\\DB_PC\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      args: "-m uvicorn app.main:app --host 0.0.0.0 --port 3000",
+      cwd: "C:\\Users\\DB_PC\\Desktop\\python_bcj\\AI_Agent",
+      interpreter: "none",
+      env: {
+        PORT: "3000",
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1",
+      },
+      autorestart: true,
+      max_memory_restart: "2G",
+      restart_delay: 3000,
+      max_restarts: 50,
+      min_uptime: "10s",
+      out_file: "logs/pm2-prod-out.log",
+      error_file: "logs/pm2-prod-error.log",
+      merge_logs: true,
+      time: true,
+    },
+    {
+      name: "skin1004-dev",
+      script: "C:\\Users\\DB_PC\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      args: "-m uvicorn app.main:app --host 0.0.0.0 --port 3001",
+      cwd: "C:\\Users\\DB_PC\\Desktop\\python_bcj\\AI_Agent",
+      interpreter: "none",
+      env: {
+        PORT: "3001",
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1",
+      },
+      autorestart: true,
+      max_memory_restart: "2G",
+      restart_delay: 3000,
+      max_restarts: 50,
+      min_uptime: "10s",
+      out_file: "logs/pm2-dev-out.log",
+      error_file: "logs/pm2-dev-error.log",
+      merge_logs: true,
+      time: true,
+    },
+  ]
+};

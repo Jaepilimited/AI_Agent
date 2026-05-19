@@ -207,8 +207,30 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
                 top_score=results[0]["score"] if results else 0)
 
     if not results or results[0]["score"] < QUALITY_GATE:
-        label = team_filter or "전체"
-        return f"**{label}** 팀 자료에서 '{query}'와 관련된 문서를 찾을 수 없습니다.\n\n다른 키워드로 검색해보세요."
+        # 사내 문서에 없는 질문 → Google Search로 폴백
+        try:
+            flash = get_flash_client()
+            search_prompt = f"""{LANGUAGE_DETECTION_RULE}
+
+사용자의 질문에 Google 검색 결과를 활용해 정확하고 유익하게 답변하세요.
+
+## 질문
+{query}
+
+## 답변 지침
+- 검색 결과에 기반해 명확하고 구체적으로 답변
+- 정보가 있으면 출처(URL) 인용
+- 질문 언어에 맞춰 답변
+- 불필요한 면책 문구 없이 바로 답변 시작
+"""
+            answer = await asyncio.to_thread(
+                flash.generate_with_search, search_prompt, None, 0.3, 2048
+            )
+            return answer + "\n\n---\n*Google 검색 기반 답변 · 사내 문서와 무관*"
+        except Exception as e:
+            logger.warning("qdrant_search_fallback_failed", error=str(e))
+            label = team_filter or "전체"
+            return f"**{label}** 팀 자료에서 '{query}'와 관련된 문서를 찾을 수 없습니다.\n\n다른 키워드로 검색해보세요."
 
     context = _format_results(results)
     llm = get_flash_client()
