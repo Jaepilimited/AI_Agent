@@ -55,17 +55,16 @@
 #### 기본 정보
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
-| Brand | STRING | 'SK'(스킨1004), 'CL'(커먼랩스), 'UM'(우마), 'DD', 'ETC'(무시!) |
+| Brand | STRING | 'SK'(스킨1004), 'CL'(커먼랩스), 'UM'(우마), 'DD' |
 | Mall_Classification | STRING | 몰/채널 분류 코드 (상세 목록 아래) |
 | Company_Name | STRING | 거래처/업체명 |
 | Sales_Type | STRING | 'B2B' / 'B2C' |
 
-- ⛔ **ETC 브랜드는 항상 제외!** `Brand != 'ETC'` 필수
 - **브랜드 필터 규칙**:
-  - **전사/전체 매출 질문** (기간별 총합, 라마단, 메가와리 등) → `Brand != 'ETC'` (CBT, UM, DD 포함)
+  - **전사/전체 매출 질문** (기간별 총합, 라마단, 메가와리 등) → Brand 필터 없이 전체 포함
   - **제품/라인/카테고리 질문** → `Brand IN ('SK', 'CL')` (CBT/UM/DD 미포함)
-- ⚠️ **크레이버코퍼레이션 = 전체 회사** → 전사 매출 질문 시 Brand 제한 없이 (ETC만 제외)
-- **Brand 값 목록**: SK=스킨1004(스킨천사), CL=커먼랩스, CBT=중국사업, UM=우마, DD=DD계열, ETC=무시(항상 제외)
+- ⚠️ **크레이버코퍼레이션 = 전체 회사** → 전사 매출 질문 시 Brand 필터 없이
+- **Brand 값 목록**: SK=스킨1004(스킨천사), CL=커먼랩스, CBT=중국사업, UM=우마, DD=DD계열
 
 #### Mall_Classification 값 목록
 - SK_B2B_Domestic, SK_B2B_Overseas
@@ -81,7 +80,6 @@
 - CL_B2B_Domestic, CL_B2B_Overseas, CL_B2C_CompanyMall, CL_B2C_ExMall, CL_B2C_USA_CompanyMall, CL_B2C_MY_CompanyMall
 - CL_B2C_ID_Shopee, CL_B2C_ID_Lazada, CL_B2C_PH_Shopee, CL_B2C_PH_Lazada, CL_B2C_PH_DPMall, CL_B2C_MY_Shopee, CL_B2C_MY_Lazada, CL_B2C_MY_DPMall, CL_B2C_SG_Shopee, CL_B2C_VN_Shopee, CL_B2C_TW_Shopee, CL_B2C_JP_Q10
 - CBT_B2B, CBT_B2C_Tmall, CBT_B2C_Jingdong, CBT_B2C_Tiktok, CBT_B2C_Xiaohongshu, CBT_B2C_Kwaishou, CBT_B2C_Mogu, CBT_B2B_DutyFreeShop
-- ETC_B2C_Silii_Amazon (⚠️ 무시!)
 
 #### 주문 정보
 | 컬럼 | 타입 | 설명 |
@@ -144,16 +142,16 @@ Line 실제 값: 'Centella', 'Centella_Teca', 'Hyalu_Teca', 'Hyalucica', 'Probio
 | First_Cohort | DATETIME | 업체 최초 거래일 |
 
 Team_NEW 실제 값:
-- 'GM_EAST1' (동남아1팀—인니/필리핀/싱가포르), 'GM_EAST2' (동남아2팀—말레이/베트남/태국), 'GM_Ecomm' (이커머스—미국 아마존/틱톡), 'GM_MKT' (글로벌마케팅)
+- 'EAST1' (동남아1팀—인니/필리핀/싱가포르), 'EAST2' (동남아2팀—말레이/베트남/태국), 'WEST_Ecomm' (이커머스—미국 아마존/틱톡), 'WEST_MKT' (글로벌마케팅)
 - 'CBT' (중국사업), 'JBT' (일본사업), 'KBT' (한국사업), 'BCM' (브랜드커머스/국내온라인)
-- 'B2B1', 'B2B2' (해외 도매), 'DD_DT1', 'DD_DT2' (DD/UM), 'OP' (운영), '기타'
-- ⚠️ 'GM_WEST'는 존재하지 않음!
+- 'B2B1', 'B2B2' (해외 도매), 'DT1', 'DT2' (DD/UM 유통), 'OP' (운영), '기타'
+- ⚠️ GM_EAST1/GM_EAST2/GM_Ecomm/GM_MKT/DD_DT1/DD_DT2 는 구버전 — 현재 DB에 없음!
 
 사업부(Division) 매핑:
 - **B2B 사업부**: Team_NEW IN ('B2B1', 'B2B2')
-- **GM 사업부**: Team_NEW IN ('CBT', 'GM_EAST1', 'GM_EAST2', 'GM_Ecomm', 'GM_MKT', 'JBT', 'KBT')
+- **GM 사업부**: Team_NEW IN ('CBT', 'EAST1', 'EAST2', 'WEST_Ecomm', 'WEST_MKT', 'JBT', 'KBT')
 - **PR 사업부**: Team_NEW IN ('BCM')
-- **DD 사업부**: Team_NEW IN ('DD_DT1', 'DD_DT2')
+- **DD/유통 사업부**: Team_NEW IN ('DT1', 'DT2')
 - "실적" = Sales1_R(매출액). "전사 실적" = 모든 팀 합산. "사업부별" = CASE WHEN 사업부 그룹핑
 
 ---

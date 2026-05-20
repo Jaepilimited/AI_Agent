@@ -1,71 +1,71 @@
 # SKIN1004 AI Agent — Knowledge Map
-**Generated**: 2026-05-19T03:00:21.678073+09:00 · **Files**: 126 · **Nodes**: 558 · **Edges**: 1048 · **Commit**: 1c04c52
+**Generated**: 2026-05-21T03:00:03.012791+09:00 · **Files**: 126 · **Nodes**: 548 · **Edges**: 1028 · **Commit**: 0ad90b0
 
 ## Clusters
 - **cluster_00** — 1 nodes
 - **cluster_01** — 1 nodes
 - **cluster_02** — 20 nodes
-- **cluster_03** — 1 nodes
-- **cluster_04** — 1 nodes
-- **cluster_05** — 1 nodes
-- **cluster_06** — 1 nodes
-- **cluster_07** — 1 nodes
+- **cluster_03** — 21 nodes
+- **cluster_04** — 33 nodes
+- **cluster_05** — 40 nodes
+- **cluster_06** — 35 nodes
+- **cluster_07** — 40 nodes
 - **cluster_08** — 1 nodes
-- **cluster_09** — 1 nodes
-- **cluster_10** — 1 nodes
-- **cluster_11** — 40 nodes
+- **cluster_09** — 44 nodes
+- **cluster_10** — 47 nodes
+- **cluster_11** — 26 nodes
 - **cluster_12** — 1 nodes
-- **cluster_13** — 1 nodes
-- **cluster_14** — 1 nodes
-- **cluster_15** — 21 nodes
-- **cluster_16** — 1 nodes
+- **cluster_13** — 58 nodes
+- **cluster_14** — 21 nodes
+- **cluster_15** — 13 nodes
+- **cluster_16** — 21 nodes
 - **cluster_17** — 1 nodes
 - **cluster_18** — 1 nodes
-- **cluster_19** — 1 nodes
-- **cluster_20** — 37 nodes
+- **cluster_19** — 13 nodes
+- **cluster_20** — 1 nodes
 - **cluster_21** — 1 nodes
 - **cluster_22** — 1 nodes
-- **cluster_23** — 40 nodes
-- **cluster_24** — 42 nodes
+- **cluster_23** — 17 nodes
+- **cluster_24** — 17 nodes
 - **cluster_25** — 1 nodes
 - **cluster_26** — 1 nodes
-- **cluster_27** — 27 nodes
+- **cluster_27** — 19 nodes
 - **cluster_28** — 1 nodes
 - **cluster_29** — 1 nodes
 - **cluster_30** — 1 nodes
 - **cluster_31** — 1 nodes
 - **cluster_32** — 1 nodes
 - **cluster_33** — 1 nodes
-- **cluster_34** — 90 nodes
+- **cluster_34** — 1 nodes
 - **cluster_35** — 1 nodes
-- **cluster_36** — 39 nodes
+- **cluster_36** — 1 nodes
 - **cluster_37** — 1 nodes
 - **cluster_38** — 1 nodes
 - **cluster_39** — 1 nodes
 - **cluster_40** — 1 nodes
-- **cluster_41** — 20 nodes
+- **cluster_41** — 1 nodes
 - **cluster_42** — 1 nodes
 - **cluster_43** — 1 nodes
-- **cluster_44** — 26 nodes
+- **cluster_44** — 1 nodes
 - **cluster_45** — 1 nodes
 - **cluster_46** — 1 nodes
 - **cluster_47** — 1 nodes
 - **cluster_48** — 1 nodes
 - **cluster_49** — 1 nodes
 - **cluster_50** — 1 nodes
-- **cluster_51** — 13 nodes
+- **cluster_51** — 1 nodes
 - **cluster_52** — 1 nodes
-- **cluster_53** — 22 nodes
+- **cluster_53** — 1 nodes
 - **cluster_54** — 1 nodes
 - **cluster_55** — 1 nodes
-- **cluster_56** — 41 nodes
+- **cluster_56** — 1 nodes
 - **cluster_57** — 1 nodes
 - **cluster_58** — 1 nodes
 - **cluster_59** — 1 nodes
 - **cluster_60** — 1 nodes
 - **cluster_61** — 1 nodes
 - **cluster_62** — 1 nodes
-- **cluster_63** — 17 nodes
+- **cluster_63** — 1 nodes
 - **cluster_64** — 1 nodes
 - **cluster_65** — 1 nodes
 - **cluster_66** — 1 nodes
@@ -80,12 +80,14 @@
 - **cluster_75** — 1 nodes
 - **cluster_76** — 1 nodes
 - **cluster_77** — 1 nodes
+- **cluster_78** — 1 nodes
+- **cluster_79** — 1 nodes
 
 ## God Nodes
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/routes.py` (file) — OpenAI-compatible API endpoints for Open WebUI integration.
 - `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/auth_api.py` (file) — Authentication endpoints: signup, signin, me, logout.
 
 Uses MariaDB for user sto
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/routes.py` (file) — OpenAI-compatible API endpoints for Open WebUI integration.
 - `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/agents/sql_agent.py` (file) — Text-to-SQL Agent using LangGraph.
 
 Workflow: generate_sql → validate_sql → exec
