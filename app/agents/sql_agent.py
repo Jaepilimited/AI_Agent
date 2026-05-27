@@ -527,7 +527,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
 
     try:
         bq = get_bigquery_client()
-        results = bq.execute_query(sql, timeout=45.0, max_rows=1000)
+        results = bq.execute_query(sql, timeout=300.0, max_rows=1000)
         logger.info("sql_executed", row_count=len(results))
         return {"sql_result": results, "error": None}
     except Exception as e:
@@ -552,7 +552,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = sanitize_sql(retry_sql)
                 if retry_sql:
                     logger.info("sql_retry_executing", sql=retry_sql[:200])
-                    results = bq.execute_query(retry_sql, timeout=45.0, max_rows=1000)
+                    results = bq.execute_query(retry_sql, timeout=300.0, max_rows=1000)
                     logger.info("sql_retry_success", row_count=len(results))
                     return {"sql_result": results, "error": None, "generated_sql": retry_sql}
             except Exception as retry_e:
@@ -650,7 +650,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 왜 0건인지 가능한 원인 (조건 불일치, 해당 기간 데이터 없음 등) 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
-                answer = f.result(timeout=1.5)
+                answer = f.result(timeout=300.0)
             if answer and len(answer) > 30:
                 return {"answer": answer}
         except (concurrent.futures.TimeoutError, Exception):
@@ -833,7 +833,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             answer = answer_future.result()
             # Give chart up to 3s after answer is ready; skip if slow
             try:
-                chart_markdown = chart_future.result(timeout=8.0)
+                chart_markdown = chart_future.result(timeout=300.0)
             except concurrent.futures.TimeoutError:
                 chart_markdown = None
                 logger.info("chart_generation_skipped_timeout")
@@ -1190,7 +1190,7 @@ async def run_sql_agent_unlimited(
 
     try:
         bq = get_bigquery_client()
-        results = bq.execute_query(unlimited_sql, timeout=60.0, max_rows=100000)
+        results = bq.execute_query(unlimited_sql, timeout=300.0, max_rows=100000)
         total_rows = len(results)
         logger.info("sql_unlimited_executed", row_count=total_rows)
 

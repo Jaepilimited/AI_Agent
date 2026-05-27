@@ -131,7 +131,7 @@ class GWSAgent:
                     },
                     config={"recursion_limit": 6},
                 ),
-                timeout=30.0,
+                timeout=300.0,
             )
             return result["messages"][-1].content
         except asyncio.TimeoutError:

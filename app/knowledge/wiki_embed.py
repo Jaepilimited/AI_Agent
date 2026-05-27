@@ -46,7 +46,7 @@ _query_cache: "OrderedDict[str, list[float]]" = OrderedDict()
 _query_cache_lock = threading.Lock()
 
 # Cap the Gemini embed call so a slow network never blocks the hot path.
-_EMBED_TIMEOUT_SEC = 0.6
+_EMBED_TIMEOUT_SEC = 300.0
 
 # Reuse the genai client — building one per call costs 100-300ms by itself.
 _genai_client_singleton = None

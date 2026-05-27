@@ -28,7 +28,7 @@ class BigQueryClient:
     def execute_query(
         self,
         sql: str,
-        timeout: float = 45.0,
+        timeout: float = 300.0,
         max_rows: int = 10000,
     ) -> List[Dict[str, Any]]:
         """Execute a SQL query with timeout and row limit.
@@ -138,7 +138,7 @@ class BigQueryClient:
         """
         try:
             query = "SELECT 1 AS test"
-            results = self.execute_query(query, timeout=10.0)
+            results = self.execute_query(query, timeout=300.0)
             logger.info("connection_test_passed")
             return len(results) > 0
         except Exception as e:

@@ -28,7 +28,7 @@ _NOTION_BASE = "https://api.notion.com/v1"
 _NOTION_VERSION = "2022-06-28"
 _MAX_BLOCKS = 200  # Max blocks to read per page
 _MAX_CONTENT_CHARS = 15000  # Max chars to read from a single page (prevent timeout)
-_SHEET_READ_TIMEOUT = 30.0  # Max seconds to wait for a single Google Sheet read
+_SHEET_READ_TIMEOUT = 300.0  # Max seconds to wait for a single Google Sheet read
 _SHEET_MAX_ROWS = 50  # Max rows to read from Notion-linked Google Sheets
 
 # Retry constants
@@ -45,7 +45,7 @@ _RETRYABLE_ERRORS = (
 )
 
 # Shared client configuration
-_CLIENT_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
+_CLIENT_TIMEOUT = httpx.Timeout(connect=300.0, read=300.0, write=300.0, pool=300.0)
 _CLIENT_LIMITS = httpx.Limits(max_connections=5, max_keepalive_connections=3)
 
 

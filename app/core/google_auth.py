@@ -177,7 +177,7 @@ except:
 '''
             result = subprocess.run(
                 ["docker", "exec", "skin1004-open-webui", "python3", "-c", script],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True, text=True, timeout=300,
             )
             output = result.stdout.strip()
             if not output or output in ("NO_USER", "NO_SESSION", "DECRYPT_FAIL"):
@@ -296,7 +296,7 @@ except:
             resp = httpx.get(
                 "https://gmail.googleapis.com/gmail/v1/users/me/profile",
                 headers={"Authorization": f"Bearer {creds.token}"},
-                timeout=5,
+                timeout=300,
             )
             if resp.status_code == 200:
                 google_email = resp.json().get("emailAddress", "")
