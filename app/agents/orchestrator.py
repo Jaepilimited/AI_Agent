@@ -1056,8 +1056,8 @@ class OrchestratorAgent:
     _DIRECT_OVERRIDE = [
         # Greetings / short social
         "안녕", "하이", "hello", "hi", "감사", "고마워", "ㅎㅇ", "ㅋㅋ", "ㅎㅎ",
-        # Company identity
-        "회사", "뭐하는", "소개", "누가 만들", "주인",
+        # Company identity (주의: "회사 매출" 같은 데이터 질문과 구분 필요 — _DATA_OVERRIDE_GUARD로 방어)
+        "뭐하는", "소개", "누가 만들", "주인",
         # External topics (never route to BQ/Notion)
         "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직",
         "비트코인", "코인", "암호화폐", "주가", "상장",
@@ -1065,6 +1065,12 @@ class OrchestratorAgent:
         "날씨 알려", "오늘 날씨",
         # Fun / chitchat
         "재밌", "농담", "웃긴", "심심",
+    ]
+
+    # 위 override 키워드가 있어도 데이터 키워드가 있으면 bigquery로 허용
+    _DATA_OVERRIDE_GUARD = [
+        "매출", "판매", "수량", "주문", "광고", "마케팅", "인플루언서",
+        "비용", "실적", "국가별", "월별", "분기별", "채널별", "비율", "차트", "그려",
     ]
 
     def _keyword_classify(self, query: str) -> str:
@@ -1083,8 +1089,10 @@ class OrchestratorAgent:
             return "direct"
 
         # Wave 2: Hard-override to direct (greetings, external topics, chitchat)
+        # 단, 데이터 키워드가 있으면 override 건너뜀 ("회사 1분기 매출" 등)
         if any(kw in q for kw in self._DIRECT_OVERRIDE):
-            return "direct"
+            if not any(kw in q for kw in self._DATA_OVERRIDE_GUARD):
+                return "direct"
 
         # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
         if any(p in q for p in self._CAPABILITY_PATTERNS):
