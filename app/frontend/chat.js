@@ -2433,7 +2433,84 @@
         container.appendChild(chartDiv);
       }
 
-      new Chart(canvas.getContext("2d"), config);
+      // Build inline data-label plugin (always-visible labels, no external dep)
+      var _chartType = config.type;
+      var _isHoriz = isHorizontal;
+      var _inlinePlugin = null;
+
+      if (_chartType === "doughnut" || _chartType === "pie") {
+        _inlinePlugin = {
+          id: "inlineDoughnutLabels",
+          afterDatasetsDraw: function(chart) {
+            var ctx = chart.ctx;
+            chart.data.datasets.forEach(function(dataset, dsIdx) {
+              var meta = chart.getDatasetMeta(dsIdx);
+              if (meta.hidden) return;
+              var total = dataset.data.reduce(function(a, b) { return (a || 0) + (b || 0); }, 0);
+              if (!total) return;
+              meta.data.forEach(function(arc, idx) {
+                var val = dataset.data[idx];
+                var pct = (val / total * 100);
+                if (pct < 3) return; // 너무 작은 조각은 건너뜀
+                var midAngle = arc.startAngle + (arc.endAngle - arc.startAngle) / 2;
+                var midRadius = (arc.innerRadius + arc.outerRadius) / 2;
+                var x = arc.x + midRadius * Math.cos(midAngle);
+                var y = arc.y + midRadius * Math.sin(midAngle);
+                ctx.save();
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.font = "bold 12px Segoe UI, Arial, sans-serif";
+                ctx.fillStyle = "#fff";
+                ctx.shadowColor = "rgba(0,0,0,0.7)";
+                ctx.shadowBlur = 4;
+                ctx.fillText(pct.toFixed(1) + "%", x, y);
+                ctx.restore();
+              });
+            });
+          }
+        };
+      } else if (_chartType === "bar") {
+        _inlinePlugin = {
+          id: "inlineBarLabels",
+          afterDatasetsDraw: function(chart) {
+            var ctx = chart.ctx;
+            var isDarkMode = document.documentElement.classList.contains("dark");
+            var labelColor = isDarkMode ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.72)";
+            chart.data.datasets.forEach(function(dataset, dsIdx) {
+              var meta = chart.getDatasetMeta(dsIdx);
+              if (meta.hidden) return;
+              meta.data.forEach(function(bar, idx) {
+                var val = dataset.data[idx];
+                if (val == null) return;
+                var fmt;
+                var absVal = Math.abs(val);
+                if (absVal >= 1000) fmt = Math.round(val).toLocaleString();
+                else if (absVal < 10) fmt = parseFloat(val.toFixed(2)).toString();
+                else fmt = parseFloat(val.toFixed(1)).toString();
+                var props = bar.getProps(["x", "y", "base", "width", "height"], true);
+                ctx.save();
+                ctx.font = "bold 11px Segoe UI, Arial, sans-serif";
+                ctx.fillStyle = labelColor;
+                if (_isHoriz) {
+                  ctx.textAlign = "left";
+                  ctx.textBaseline = "middle";
+                  ctx.fillText(fmt, props.x + 5, props.y);
+                } else {
+                  ctx.textAlign = "center";
+                  ctx.textBaseline = "bottom";
+                  ctx.fillText(fmt, props.x, props.y - 3);
+                }
+                ctx.restore();
+              });
+            });
+          }
+        };
+      }
+
+      var finalConfig = _inlinePlugin
+        ? Object.assign({}, config, { plugins: [_inlinePlugin] })
+        : config;
+      new Chart(canvas.getContext("2d"), finalConfig);
 
       // Add chart copy button
       var cBtn = document.createElement("button");
