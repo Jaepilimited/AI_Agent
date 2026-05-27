@@ -97,7 +97,7 @@
 | `SET` | STRING | **제품명** ⭐ SQL 예약어! 반드시 백틱: `` `SET` `` |
 | Line | STRING | 제품 라인 (Centella, Hyalucica, Probiocica 등) |
 
-Line 실제 값: 'Centella', 'Centella_Teca', 'Hyalu_Teca', 'Hyalucica', 'Probiocica', 'Teatrica', 'Tone_Brightening', 'Poremizing', 'LabinNature', 'ZB', 'Others', 'B_Line', 'C_Line', 'E_Line', 'Dual_Triple', 'SET' 등
+Line 실제 DISTINCT 값: 'B_Line', 'C_Line', 'Centella', 'Centella_Teca', 'Dual_Triple', 'E_Line', 'Hyalu_Teca', 'Hyalucica', 'LabinNature', 'Others', 'Poremizing', 'Probiocica', 'SET', 'Teatrica', 'Tone_Brightening', 'ZB'
 
 #### 매출 (핵심) ⭐
 | 컬럼 | 타입 | 설명 |
@@ -114,14 +114,18 @@ Line 실제 값: 'Centella', 'Centella_Teca', 'Hyalu_Teca', 'Hyalucica', 'Probio
 #### 통화/지역
 | 컬럼 | 타입 | 설명 |
 |------|------|------|
-| Sales_Currency | STRING | 'KRW', 'USD', 'IDR', 'PHP', 'MYR' 등 |
+| Sales_Currency | STRING | 'KRW', 'USD', 'IDR', 'JPY', 'PHP', 'MYR', 'AUD', 'CAD', 'CNY', 'EUR', 'GBP', 'RUB', 'SGD', 'TWD', 'VND' |
 | Rate | FLOAT | 환율 |
-| Country | STRING | **국가명 (한국어!)** '미국', '인도네시아', '일본' 등 |
+| Country | STRING | **국가명 (한국어!)** ⚠️ CASE WHEN에도 반드시 한국어 사용! |
 | Continent1 | STRING | **대륙 (우선)** ⭐ 'CIS', '글로벌', '기타', '남미', '북미', '아시아', '아프리카', '오세아니아', '유럽', '중동', '중미' |
-| Continent2 | STRING | 대륙 상세 — '동남아시아', '동아시아', '서유럽' 등 |
+| Continent2 | STRING | 'CIS', '글로벌_B2B', '글로벌_플랫폼', '기타', '남아메리카', '동남아시아', '동남유럽', '동아시아', '북미', '북아프리카', '북유럽', '서남아시아', '서유럽', '아프리카', '오세아니아', '중동', '중앙아메리카' |
+
+**Country 실제 값 (DISTINCT — 한국어, 191개)**: 가나, 가봉, 가이아나, 건지섬, 과들루프, 과테말라, 괌, 그레나다, 그리스, 그린란드, 글로벌_B2B, 글로벌_플랫폼, 기니, 기타, 나미비아, 나이지리아, 남아프리카공화국, 네덜란드, 네팔, 노르웨이, 뉴질랜드, 뉴칼레도니아, 니제르, 니카라과, 대만, 덴마크, 도미니카 공화국, 독일, 동티모르, 라오스, 라이베리아, 라트비아, 러시아, 레바논, 레소토, 레위니옹, 루마니아, 룩셈부르크, 르완다, 리비아, 리투아니아, 마다가스카르, 마르티니크, 마카오, 말라위, **말레이시아**, 말리, 멕시코, 모로코, 모리셔스, 모리타니, 모잠비크, 몬테네그로, 몰도바, 몰디브, 몰타, 몽골, **미국**, 미얀마, 바레인, 바베이도스, 바하마, 방글라데시, 버뮤다, 베냉, 베네수엘라, **베트남**, 벨기에, 벨라루스, 벨리즈, 보스니아 헤르체고비나, 보츠와나, 볼리비아, 부룬디, 부르키나파소, 부탄, 북마케도니아, 불가리아, 브라질, 브루나이, 사우디아라비아, 사이프러스, 세네갈, 세르비아, 세이셸, 세인트루시아, 소말리아, 소말릴란드, 수리남, 스리랑카, 스웨덴, 스위스, 스페인, 슬로바키아, 슬로베니아, 시리아, 시에라리온, 신트마르턴, **싱가포르**, 아랍에미리트, 아루바, 아르메니아, 아르헨티나, 아이슬란드, 아이티, 아일랜드, 아제르바이잔, 아프가니스탄, 안도라, 안티가 바부다, 알바니아, 알제리, 앙골라, 에스토니아, 에콰도르, 엘살바도르, **영국**, 예멘, 오만, 오스트리아, 온두라스, 요르단, 우간다, 우루과이, 우즈베키스탄, 우크라이나, 이디오피아, 이라크, 이란, 이스라엘, 이집트, 이탈리아, 인도, **인도네시아**, **일본**, 자메이카, 잠비아, 조지아, **중국**, 지부티, 짐바브웨, 체코, 칠레, 카리브 네덜란드, 카리비안아일랜드, 카메룬, 카보베르데, 카자흐스탄, 카타르, 캄보디아, **캐나다**, 케냐, 케이맨제도, 코소보, 코스타리카, 코트디부아르, 콜롬비아, 콩고 공화국, 콩고민주공화국, 쿠웨이트, 퀴라소, 크로아티아, 키르기스스탄, 탄자니아, **태국**, 태국2, 터키, 토고, 투르크메니스탄, 튀니지, 트리니다드토바고, 파나마, 파라과이, 파키스탄, 파푸아뉴기니, 팔레스타인, 페루, 포르투갈, 폴란드, 푸에르토리코, **프랑스**, 프랑스령 기아나, 프랑스령 폴리네시아, 피지, 핀란드, **필리핀**, **한국**, 헝가리, **호주**, **홍콩**
+- ⚠️ 'United States', 'Japan', 'Korea' 등 영어 국가명은 이 테이블에 없음! 반드시 한국어 사용!
 
 #### 카테고리 ⭐
-- Category (STRING): 'Ampoule', 'Suncare', 'SET', 'Cream', 'Pack', 'Cleanser', 'Oil', 'Toner', 'Others'
+- Category (STRING) **실제 DISTINCT 값**: 'Ampoule', 'Cleanser', 'Cream', 'Oil', 'Others', 'Pack', 'SET', 'Sachet', 'Suncare', 'Toner'
+  - ⚠️ 'Sachet'는 FOC/증정품 — 일반 제품 조회 시 `AND Category != 'Sachet'` 추가 권장
 - 한국어 매핑: 앰플/세럼→'Ampoule', 선크림→'Suncare', 크림→'Cream', 팩/마스크→'Pack', 클렌저→'Cleanser', 오일→'Oil', 토너→'Toner', 세트→'SET'
 - ⚠️ 라인 지정 없이 카테고리만 언급 시 → `Category = 'Cream'` 사용! `SET LIKE '%Cream%'` 금지!
 - 라인+제품 조합(예: "센텔라 크림")은 기존 LIKE 필터 유지
@@ -141,11 +145,14 @@ Line 실제 값: 'Centella', 'Centella_Teca', 'Hyalu_Teca', 'Hyalucica', 'Probio
 | New_Flag | STRING | '신규' / '기존' |
 | First_Cohort | DATETIME | 업체 최초 거래일 |
 
-Team_NEW 실제 값:
-- 'EAST1' (동남아1팀—인니/필리핀/싱가포르), 'EAST2' (동남아2팀—말레이/베트남/태국), 'WEST_Ecomm' (이커머스—미국 아마존/틱톡), 'WEST_MKT' (글로벌마케팅)
-- 'CBT' (중국사업), 'JBT' (일본사업), 'KBT' (한국사업), 'BCM' (브랜드커머스/국내온라인)
-- 'B2B1', 'B2B2' (해외 도매), 'DT1', 'DT2' (DD/UM 유통), 'OP' (운영), '기타'
-- ⚠️ GM_EAST1/GM_EAST2/GM_Ecomm/GM_MKT/DD_DT1/DD_DT2 는 구버전 — 현재 DB에 없음!
+Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
+'B2B1', 'B2B2', 'BCM', 'CBT', 'DT1', 'DT2', 'EAST1', 'EAST2', 'JBT', 'KBT', 'OP', 'WEST_Ecomm', 'WEST_MKT', '기타'
+- EAST1 (동남아1—인니/필리핀/싱가포르), EAST2 (동남아2—말레이/베트남/태국)
+- WEST_Ecomm (이커머스—미국 아마존/틱톡), WEST_MKT (글로벌마케팅)
+- CBT (중국), JBT (일본), KBT (한국), BCM (브랜드커머스/국내온라인)
+- B2B1, B2B2 (해외 도매), DT1, DT2 (DD/UM 유통), OP (운영)
+- ⚠️ GM_EAST1/GM_EAST2/GM_Ecomm/GM_MKT/DD_DT1/DD_DT2 구버전 — 없음!
+- ⚠️ integrated_ad.team 값은 다름: 'EAST1', 'EAST2', 'JBT', 'KBT', 'WEST', '기타' (WEST_Ecomm/WEST_MKT 아님!)
 
 사업부(Division) 매핑:
 - **B2B 사업부**: Team_NEW IN ('B2B1', 'B2B2')
@@ -168,7 +175,10 @@ Team_NEW 실제 값:
 2. **BigQuery 문법**: `EXTRACT(YEAR FROM Date)`, `FORMAT_DATETIME('%Y-%m', Date)`, `SAFE_DIVIDE(a, b)`, `CONTAINS_SUBSTR()`
 3. **테이블명 백틱 필수**: `` `skin1004-319714.Sales_Integration.SALES_ALL_Backup` ``
 4. **LIMIT 1000** (대형 테이블도 충분)
-5. **Country 값은 한국어** — 변환 불필요
+5. **Country 값은 한국어** — 변환 불필요. ⚠️ CASE WHEN Country 매핑도 반드시 한국어!
+   - ✅ `CASE WHEN Country IN ('중국', '대만', '홍콩') THEN '중화권'`
+   - ❌ `CASE WHEN Country IN ('China', 'Taiwan', 'Hong Kong') THEN '중화권'`
+   - 올바른 값: 미국, 인도네시아, 말레이시아, 필리핀, 일본, 중국, 대만, 홍콩, 한국, 태국, 베트남, 싱가포르, 호주, 독일, 영국, 프랑스, 캐나다 등
 6. **Date는 DATETIME** — DATE 함수 또는 EXTRACT 사용
 7. **매출 = Sales1_R** (Sales2_R은 명시적 요청 시만)
 8. **수량 = Total_Qty** (Quantity 사용 금지)
@@ -432,6 +442,18 @@ GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
 ```
 
 ### 추가 패턴 (간략)
+- **국가 그룹핑 (CASE WHEN)**: Country 값은 반드시 한국어!
+  ```sql
+  -- ✅ 올바른 국가 그룹 매핑 (한국어 값)
+  CASE
+    WHEN Country = '일본' THEN '일본'
+    WHEN Country = '미국' THEN '미국'
+    WHEN Country IN ('중국', '대만', '홍콩') THEN '중화권'
+    WHEN Country = '한국' THEN '국내'
+    ELSE '기타'
+  END AS country_group
+  -- ❌ 절대 금지: WHEN Country = 'Japan' / WHEN Country = 'United States'
+  ```
 - **동남아 국가별**: `WHERE Continent2 = '동남아시아' ... GROUP BY Country ORDER BY total_revenue DESC`
 - **월별 추이**: `FORMAT_DATETIME('%Y-%m', Date) AS month ... GROUP BY month ORDER BY month`
 - **팀별**: `GROUP BY Team_NEW ORDER BY total_revenue DESC` (Team_NEW IS NOT NULL)
@@ -498,8 +520,19 @@ GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
 | conversions | INTEGER | 전환 수 |
 | conversion_value_krw | FLOAT | 전환 가치 (KRW) |
 
-### media 값 목록 (정확히 이 값만 사용!)
+### media 값 목록 — 실제 DISTINCT (정확히 이 값만 사용!)
 `Amazon`, `AmazonDSP`, `Google`, `KakaoMoments`, `Meta`, `NaverGFA`, `NaverSearch`, `Qoo10`, `Rakuten`, `Shopee`, `SingleONE`, `Snapchat`, `TikTok`, `Tokopedia`, `X(Twitter)`
+- ⚠️ `Meta(Facebook/Instagram)`, `YouTube(Google)` 형식은 **Integrated_marketing_cost 테이블** 값 — 이 테이블(integrated_ad)에서는 단순 `Meta`, `Google` 사용!
+
+### country 값 주의
+- ⚠️ integrated_ad.country는 **한국어+영어 혼재** (데이터 품질 이슈)
+- 한국어: 미국, 일본, 한국, 인도네시아, 말레이시아, 필리핀, 싱가포르, 베트남, 태국, 대만, 중국, 호주, 영국, 프랑스, 독일 등
+- 영어: United States, Japan, South Korea 등 일부 행 영어로 저장됨
+- 국가 필터링 시: `country IN ('미국', 'United States')` 처럼 양쪽 포함 권장
+
+### team 값 (integrated_ad 전용)
+실제 DISTINCT: 'EAST1', 'EAST2', 'JBT', 'KBT', 'WEST', '기타'
+- ⚠️ 'WEST' (SALES_ALL의 'WEST_Ecomm'/'WEST_MKT'와 다름!)
 
 ### ⚠️ 매체 매핑 규칙 (필수!)
 | 사용자 표현 | media 값 |
@@ -607,11 +640,21 @@ FROM cur LEFT JOIN prev USING(media) ORDER BY yoy_growth DESC;
 | Media | STRING | 매체. ⚠️ 매체별 질문 = 퍼포먼스 마케팅 |
 | Field | STRING | **'광고'=퍼포먼스, '시딩'=인플루언서** ⭐ |
 | Cost | FLOAT | 비용 (KRW) |
-| Country | STRING | 국가 |
+| Country | STRING | 국가 ⚠️ **영어값!** |
 | Revenue | FLOAT | 매출 |
 | Impressions | INTEGER | 노출 |
 | Clicks | INTEGER | 클릭 |
 | Purchases | INTEGER | 구매 |
+
+### ⚠️ 실제 DISTINCT 값 (integrated_ad와 다름!)
+- **Field**: '광고' (퍼포먼스), '시딩' (인플루언서) — 2가지만
+- **Team**: '', 'B2B2', 'B2B3', 'BCM', 'CBT', 'EAST1', 'EAST2', 'GM', 'JBT', 'KBT', 'KM', 'WEST', '기타'
+  - ⚠️ 'WEST' (WEST_Ecomm/WEST_MKT 아님!), 'GM', 'KM', 'B2B3' 포함
+- **Media** (integrated_ad와 **완전히 다른 형식!**):
+  `'Amazon'`, `'KakaoMoments'`, `'Meta(Facebook/Instagram)'`, `'NaverGFA'`, `'NaverSearch'`, `'Qoo10'`, `'Rakuten'`, `'Shopee'`, `'SingleONE'`, `'Snapchat'`, `'TikTok'`, `'Tokopedia'`, `'X(Twitter)'`, `'YouTube(Google)'`, `'기타'`
+  - ⚠️ Meta = 'Meta(Facebook/Instagram)' (integrated_ad의 'Meta'와 다름!)
+  - ⚠️ 유튜브 = 'YouTube(Google)' (integrated_ad의 'Google'과 다름!)
+- **Country**: ⚠️ **영어값** (SALES_ALL의 한국어와 다름!) — 주요 국가별 필터 시 영어로 작성
 
 ### 예시 쿼리
 ```sql
@@ -663,8 +706,9 @@ FROM cur LEFT JOIN prev USING(media) ORDER BY yoy_growth DESC;
 | Review_cnt | INTEGER | 리뷰 수 |
 | Score | INTEGER | 평점 |
 
-### Channel 목록 (정확한 값)
-예스스타일, 스타일코리안, 스타일바나, 졸스, 소시올라, 올리브영kr, Qoo10, Barecare, Pureseoul, LW Cosmetocs, 아마존, 아마존 IT, 아마존 MX, 아마존 FR, 아마존 BR, 아마존 AE, 아마존 SA, 아마존 AU, 아마존 EG
+### Channel 실제 DISTINCT 값 (19개, 정확한 값)
+'Barecare', 'LW Cosmetocs', 'Pureseoul', 'Qoo10', '소시올라', '스타일바나', '스타일코리안', '아마존', '아마존 AE', '아마존 AU', '아마존 BR', '아마존 EG', '아마존 FR', '아마존 IT', '아마존 MX', '아마존 SA', '예스스타일', '올리브영kr', '졸스'
+- ⚠️ '아마존 AU'가 실제 값 ('AU아마존' 아님!), 'LW Cosmetocs'가 실제 값 (오타 포함)
 
 ### 순위 변동 분석 패턴 (핵심!)
 ```sql
@@ -728,6 +772,9 @@ Num_views (조회수), Num_likes, Num_comments, Num_saves, Num_shares, Measureme
 - add_part (STRING): 실제 팀 구분 — "East1_파트1~3", "East2_파트1", "East_퇴사자", "West_파트1~5", "West_파트3-1", "JBT", "KBT", "BCM", "B2B2", "B2B3", "GM", "KM"
 - Agency_name, Media, Media_main, Region, Target_country, Manager
 
+### add_part 실제 DISTINCT 값
+'B2B2', 'B2B3', 'BCM', 'East1_파트1', 'East1_파트2', 'East1_파트3', 'East2_파트1', 'East_퇴사자', 'GM', 'JBT', 'KBT', 'KM', 'West_파트1', 'West_파트2', 'West_파트3', 'West_파트3-1', 'West_파트4', 'West_파트5'
+
 #### 팀 매핑
 - "GM EAST1", "EAST1" → `add_part LIKE "East1%"`
 - "GM EAST" → `add_part LIKE "East%"`
@@ -735,15 +782,23 @@ Num_views (조회수), Num_likes, Num_comments, Num_saves, Num_shares, Measureme
 
 ### 용어 매핑
 
-#### Media — 한국어로 저장됨!
+#### Media 실제 DISTINCT 값 (한국어로 저장!)
+'@cosme', 'LIPS', 'X(트위터)', '네이버 클립', '블로그', '스레드', '유튜브', '유튜브(쇼츠)', '인스타그램(릴스)', '인스타그램(스토리)', '인스타그램(포스트)', '트위터', '틱톡', '페이스북'
+
 - "인스타" → `WHERE Media LIKE "%인스타그램%"` (⛔ "Instagram" 금지!)
+- "릴스" → `WHERE Media = "인스타그램(릴스)"`
+- "스토리" → `WHERE Media = "인스타그램(스토리)"`
+- "피드/포스트" → `WHERE Media = "인스타그램(포스트)"`
 - "틱톡" → `WHERE Media = "틱톡"` (⛔ "TikTok" 금지!)
 - "유튜브" → `WHERE Media LIKE "%유튜브%"` (⛔ "YouTube" 금지!)
+- "쇼츠" → `WHERE Media = "유튜브(쇼츠)"`
 - "트위터/X" → `WHERE Media LIKE "%트위터%" OR Media LIKE "%X(트위터)%"`
 - "페이스북" → `WHERE Media = "페이스북"`
 
-#### Influencer_tier — 대소문자 혼재, UPPER() 권장
-- 메가=MEGA, 매크로=MACRO, 마이크로=MICRO, 리뷰어=REVIEWER
+#### Influencer_tier — 대소문자 혼재! UPPER() 필수!
+실제 DISTINCT: 'MACRO', 'MEGA', 'MICRO', 'MIDDLE', 'Macro', 'Mega', 'Micro', 'REVIEWER', 'Reviewer', 'Rookie'
+- ⚠️ 반드시 `UPPER(Influencer_tier) = 'MEGA'` 사용 (= 'Mega' 하면 일부 누락!)
+- 메가=MEGA, 매크로=MACRO, 마이크로=MICRO, 리뷰어=REVIEWER, 미들=MIDDLE, 루키=Rookie
 - "나노" → 이 테이블에 없음!
 
 #### 유가/무가
@@ -828,6 +883,13 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 | brand | STRING | 브랜드 (**전부 소문자!** 'skin1004' ✅, 'SKIN1004' ❌) |
 | page_name | STRING | 페이지명 |
 | ad_type | STRING | `Official_Ad` 또는 `Partnership_Ad` (**정확한 값 사용!** 'partnership' ❌ → 'Partnership_Ad' ✅) |
+
+**country_name 실제 DISTINCT (16개, 영어)**: 'Australia', 'Cambodia', 'Canada', 'Indonesia', 'Japan', 'Malaysia', 'Mexico', 'Philippines', 'Poland', 'Singapore', 'South Korea', 'Thailand', 'United Arab Emirates', 'United Kingdom', 'United States', 'Vietnam'
+- ⚠️ 한국 = 'South Korea' (한국어 금지!), 미국 = 'United States', 일본 = 'Japan'
+
+**publisher_platform 저장 형식**: JSON 배열 문자열 (예: `"['FACEBOOK', 'INSTAGRAM', 'AUDIENCE_NETWORK']"`)
+- ⚠️ 항상 `LIKE '%FACEBOOK%'` 패턴 사용! `= 'facebook'` 절대 금지!
+- 플랫폼 값: FACEBOOK, INSTAGRAM, AUDIENCE_NETWORK, MESSENGER, WHATSAPP, THREADS
 | ad_archive_id | INTEGER | 아카이브 ID |
 | snapshot | STRING | 광고 JSON — `JSON_VALUE(snapshot, '$.display_format')` = 'VIDEO'/'IMAGE' |
 | is_active | BOOLEAN | 활성 여부 |
@@ -840,7 +902,10 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 | total_active_time | FLOAT | 총 활성 시간 |
 | start_date, end_date | FLOAT | ⛔ FLOAT(Unix timestamp) — 사용 비권장! start_date_formatted 사용 |
 
-### ⛔ brand 한→영 매핑 (언더바 필수!)
+### ⛔ brand 실제 DISTINCT 값 (소문자+언더바, 27개)
+`abib`, `anua`, `arencia`, `beauty_of_joseon`, `celimax`, `cosrx`, `dermorepubliq`, `dr_althea`, `dr_melaxin`, `eqqualberry`, `glad2glow`, `heavenskin`, `k_secret`, `la_roche_posay`, `laneige`, `medicube`, `mediheal`, `meditherapy`, `mixsoon`, `numbuzin`, `roundlab`, `skin1004`, `skintific`, `somebymi`, `stylekorean`, `torriden`, `wardah`
+
+한→영 매핑:
 | 한글 | DB 값 |
 |------|-------|
 | 스킨1004/SKIN1004 | `skin1004` |
@@ -862,6 +927,8 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 | 썸바이미 | `somebymi` |
 | 워다 | `wardah` |
 | 메디힐 | `mediheal` |
+| 믹순 | `mixsoon` |
+| 라운드랩 | `roundlab` |
 ⚠️ 공백이나 대문자 사용 금지! 언더바(_) 포함된 정확한 값 사용!
 
 ### ⛔ 필수 규칙

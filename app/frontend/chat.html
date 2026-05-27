@@ -16,8 +16,8 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" id="hljs-theme">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
-  <!-- Chart.js -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js (로컬 번들 — CDN 차단 환경 대응) -->
+  <script src="/static/chart.umd.min.js"></script>
   <script>
     if (localStorage.theme === "light") {
       document.documentElement.classList.replace("dark", "light");
