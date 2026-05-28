@@ -1014,9 +1014,63 @@ WITH meta_by_country AS (
 SELECT * FROM meta_by_country ORDER BY month, country_name
 ```
 
-팀별(권역별) 분석 요청 시 답변 예시:
-> 메타 광고 라이브러리(`meta data_test`)에는 팀(Team_NEW) 컬럼이 없어 팀별 직접 분류가 불가합니다.
-> 대신 국가별(country_name) 소재수는 보여드릴 수 있습니다.
+### 사용자가 팀-국가 매핑을 명시한 경우 — CASE WHEN으로 팀 분류 가능!
+
+사용자가 "EAST1 - 인도네시아, 필리핀 / EAST2 - 말레이시아, 싱가포르 / WEST - 미국, 호주, 영국, 멕시코, 폴란드 / JBT - 일본 / KBT - 한국" 처럼 팀-국가 매핑을 명시하면 CASE WHEN으로 팀 컬럼 생성 가능.
+
+**주의: 언어 불일치**
+- `meta data_test`.country_name = 영어 ('Indonesia', 'South Korea', 'Japan', 'United States', 'United Kingdom', 'Australia', ...)
+- `SALES_ALL_Backup`.Country = 한국어 ('인도네시아', '한국', '일본', '미국', '영국', '호주', ...)
+- 두 테이블을 JOIN할 때 country 기준 JOIN은 불가. **월별 합산 후 팀별 합계**만 가능.
+
+```sql
+-- 팀별 메타광고 소재수 + 매출 효율 (사용자 명시 팀-국가 매핑 기준)
+WITH meta_team AS (
+  SELECT
+    FORMAT_DATE('%Y-%m', DATE(start_date_formatted)) AS month,
+    CASE
+      WHEN country_name IN ('Indonesia', 'Philippines') THEN 'EAST1'
+      WHEN country_name IN ('Malaysia', 'Singapore') THEN 'EAST2'
+      WHEN country_name IN ('United States', 'Australia', 'United Kingdom', 'Mexico', 'Poland') THEN 'WEST'
+      WHEN country_name = 'Japan' THEN 'JBT'
+      WHEN country_name = 'South Korea' THEN 'KBT'
+      ELSE 'OTHER'
+    END AS team,
+    COUNT(DISTINCT ad_archive_id) AS creative_count
+  FROM `skin1004-319714.ad_data.meta data_test`
+  WHERE brand = 'skin1004'
+    AND DATE(start_date_formatted) >= '2026-01-01'
+  GROUP BY month, team
+),
+sales_team AS (
+  SELECT
+    FORMAT_DATE('%Y-%m', Date) AS month,
+    CASE
+      WHEN Country IN ('인도네시아', '필리핀') THEN 'EAST1'
+      WHEN Country IN ('말레이시아', '싱가포르') THEN 'EAST2'
+      WHEN Country IN ('미국', '호주', '영국', '멕시코', '폴란드') THEN 'WEST'
+      WHEN Country = '일본' THEN 'JBT'
+      WHEN Country = '한국' THEN 'KBT'
+      ELSE 'OTHER'
+    END AS team,
+    SUM(Sales1_R) AS total_sales
+  FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
+  WHERE Brand IN ('SK', 'CL')
+    AND Date >= '2026-01-01'
+  GROUP BY month, team
+)
+SELECT
+  m.month,
+  m.team,
+  m.creative_count,
+  s.total_sales,
+  ROUND(s.total_sales / NULLIF(m.creative_count, 0), 0) AS sales_per_creative
+FROM meta_team m
+LEFT JOIN sales_team s ON m.month = s.month AND m.team = s.team
+WHERE m.team != 'OTHER'
+ORDER BY m.month, m.team
+LIMIT 200
+```
 
 ---
 
