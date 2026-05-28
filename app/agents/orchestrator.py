@@ -938,7 +938,9 @@ class OrchestratorAgent:
         "날씨", "영향", "원인", "이유", "왜",
         "트렌드", "경쟁", "뉴스",
         "환율", "전망", "예측",
-        "연관", "상관",
+        "연관",
+        # NOTE: "상관" removed — "상관관계" is internal data correlation analysis,
+        # not external web context. Routes correctly to bigquery instead of multi.
         "경제", "물가", "인플레이션", "정책변화",
         "소비자", "인구",
         "시즌", "계절", "명절", "할인행사",

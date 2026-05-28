@@ -960,6 +960,64 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 - UNNEST: `UNNEST(JSON_EXTRACT_ARRAY(publisher_platform)) AS platform` → GROUP BY platform
 - 페이지별 최근: `ROW_NUMBER() OVER (PARTITION BY page_name ORDER BY start_date_formatted DESC)`
 
+### 메타 광고 소재수 + 매출 상관관계 패턴
+
+⚠️ `meta data_test` 테이블에는 **팀(Team_NEW) 컬럼이 없음!**
+- "팀별 광고 효율"은 SQL 레벨 불가 → 국가별(country_name) 집계로 대체 후 안내
+- JOIN 기준: 월(YYYY-MM) 또는 국가코드(country_code ↔ Country)
+
+```sql
+-- 월별 메타 광고 소재수 vs 매출 (brand=skin1004, 전국 합산)
+WITH meta_monthly AS (
+  SELECT
+    FORMAT_DATE('%Y-%m', DATE(start_date_formatted)) AS month,
+    COUNT(DISTINCT ad_archive_id) AS creative_count
+  FROM `skin1004-319714.ad_data.meta data_test`
+  WHERE brand = 'skin1004'
+    AND DATE(start_date_formatted) >= '2026-01-01'
+  GROUP BY month
+),
+sales_monthly AS (
+  SELECT
+    FORMAT_DATE('%Y-%m', Date) AS month,
+    SUM(Sales1_R) AS total_sales
+  FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
+  WHERE Brand IN ('SK', 'CL')
+    AND Date >= '2026-01-01'
+  GROUP BY month
+)
+SELECT
+  m.month,
+  m.creative_count,
+  s.total_sales,
+  ROUND(s.total_sales / NULLIF(m.creative_count, 0), 0) AS sales_per_creative
+FROM meta_monthly m
+LEFT JOIN sales_monthly s ON m.month = s.month
+ORDER BY m.month
+```
+
+```sql
+-- 국가별 메타 광고 소재수 vs 해당 국가 매출
+WITH meta_by_country AS (
+  SELECT
+    country_name,
+    FORMAT_DATE('%Y-%m', DATE(start_date_formatted)) AS month,
+    COUNT(DISTINCT ad_archive_id) AS creative_count
+  FROM `skin1004-319714.ad_data.meta data_test`
+  WHERE brand = 'skin1004'
+    AND DATE(start_date_formatted) >= '2026-01-01'
+  GROUP BY country_name, month
+)
+-- 참고: SALES_ALL_Backup의 Country 컬럼은 한국어(예: '한국', '일본')
+-- meta data_test의 country_name은 영어(예: 'South Korea', 'Japan')
+-- → 직접 JOIN 불가. 월별 합산만 가능
+SELECT * FROM meta_by_country ORDER BY month, country_name
+```
+
+팀별(권역별) 분석 요청 시 답변 예시:
+> 메타 광고 라이브러리(`meta data_test`)에는 팀(Team_NEW) 컬럼이 없어 팀별 직접 분류가 불가합니다.
+> 대신 국가별(country_name) 소재수는 보여드릴 수 있습니다.
+
 ---
 
 ## 재구매율 계산 (SALES_ALL_Backup 사용)
