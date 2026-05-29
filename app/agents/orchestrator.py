@@ -10,6 +10,7 @@ v3.4: CS DB route — customer service Q&A from Google Spreadsheet
 
 import asyncio
 import json
+import re
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -43,8 +44,30 @@ def _content_to_text(content) -> str:
     return str(content)
 
 
+_re_chart_block = re.compile(r"```chart-config[\s\S]*?```", re.MULTILINE)
+_re_details_block = re.compile(r"<details[\s\S]*?</details>", re.MULTILINE)
+_re_follow_block = re.compile(r"> 💡 \*\*이런 것도 물어보세요\*\*[\s\S]*$", re.MULTILINE)
+
+
+def _strip_assistant_noise(content: str) -> str:
+    """Remove chart JSON, SQL blocks, and follow-up sections from assistant response.
+
+    These blocks are machine-readable or boilerplate and waste context space.
+    Keeps markdown text (summaries, tables, insights) for SQL generation context.
+    """
+    content = _re_chart_block.sub("[차트 생략]", content)
+    content = _re_details_block.sub("[SQL 생략]", content)
+    content = _re_follow_block.sub("", content)
+    return content.strip()
+
+
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
-    """Build conversation context — keep last 5 turns, summarize older."""
+    """Build conversation context — keep last 5 turns, summarize older.
+
+    Assistant messages are stripped of chart/SQL noise, then capped at 1500 chars
+    (up from 500) so that table rows and specific values survive truncation.
+    User messages are kept as-is (short by nature).
+    """
     if not messages or len(messages) <= 1:
         return ""
 
@@ -60,11 +83,14 @@ def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
         content = _content_to_text(msg.get("content", ""))
         if not content:
             continue
-        if len(content) > 500:
-            content = content[:500] + "..."
         if role == "user":
+            if len(content) > 300:
+                content = content[:300] + "..."
             lines.append(f"사용자: {content}")
         elif role in ("assistant", "model"):
+            content = _strip_assistant_noise(content)
+            if len(content) > 1500:
+                content = content[:1500] + "..."
             lines.append(f"AI: {content}")
 
     return "\n".join(lines)
