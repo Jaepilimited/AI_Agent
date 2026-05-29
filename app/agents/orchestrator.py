@@ -935,7 +935,9 @@ class OrchestratorAgent:
     # External-only keywords (triggers web search when combined with data keywords → multi)
     # These are ONLY external context — "분석", "데이터" etc. belong in _DATA_KEYWORDS
     _EXTERNAL_KEYWORDS = [
-        "날씨", "영향", "원인", "이유", "왜",
+        "날씨", "영향",
+        # NOTE: "원인", "이유", "왜" removed — these with data keywords mean
+        # "analyze our data to find the cause", not "search the web". Same logic as "상관".
         "트렌드", "경쟁", "뉴스",
         "환율", "전망", "예측",
         "연관",
