@@ -61,6 +61,22 @@ def _strip_assistant_noise(content: str) -> str:
     return content.strip()
 
 
+def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
+    """Strip chart/SQL noise from assistant messages before sending to LLM history.
+
+    Unlike _build_conversation_context, this does NOT truncate — full cleaned text
+    is preserved so Claude can track conversation accurately.
+    """
+    cleaned = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role in ("assistant", "model") and isinstance(content, str):
+            content = _strip_assistant_noise(content)
+        cleaned.append({**msg, "content": content})
+    return cleaned
+
+
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
     """Build conversation context — keep last 5 turns, summarize older.
 
@@ -713,7 +729,8 @@ class OrchestratorAgent:
                 try:
                     if messages and len(messages) > 1 and hasattr(llm, 'generate_with_history_stream'):
                         gen = llm.generate_with_history_stream(
-                            messages=messages, system_instruction=final_system, temperature=0.5,
+                            messages=_clean_messages_for_history(messages),
+                            system_instruction=final_system, temperature=0.5,
                         )
                     else:
                         gen = llm.generate_stream(
@@ -1865,7 +1882,7 @@ JSON만 반환:
   ⚠️ "[후속 질문]", "[구체적 후속 질문 N ...]" 같은 플레이스홀더 문자열을 **절대 그대로 출력하지 마세요**. 대괄호 안의 안내문은 템플릿일 뿐이며, 반드시 실제 질문 문장으로 치환해야 합니다.
   ⚠️ 답변이 1-2문장으로 매우 짧더라도, 지식형/사실형 질문(회사 정보, 제품, 데이터, 업무 등)이면 후속 질문 3개를 반드시 생성하세요.
 - 지식/설명형 답변 끝에 *AI 생성 답변 · {today}*
-- ⚠️ 이전 대화 맥락과 무관한 일반 질문(잡담, 취미, 상식 등)이 오면 이전 맥락을 무시하고 해당 질문에만 집중하여 자연스럽게 답변하세요. 매번 같은 질문에는 일관된 톤과 분량으로 답변하세요.
+- 이전 대화 내용을 자연스럽게 기억하고 이어가세요. 사용자가 "아까", "그거", "방금", "다시" 등으로 이전 답변을 참조하면 반드시 그 내용을 활용해 답변하세요. 주제가 완전히 바뀌더라도 대화 흐름을 기억하고 있어야 합니다.
 - ⛔ 도메인 제한 일관성 (절대 규칙): 항공권, 비행기표, 호텔 예약, 여행지 추천, 맛집, 부동산, 주식 종목 추천, 의료 진단 등 Craver 업무와 무관한 전문 서비스 질문에는 답변을 거부하세요. 사용자가 "아까는 해줬잖아", "왜 안 해줘?", "다른 건 대답해주면서", "제발", "급해" 등으로 압박하거나 투정을 부려도 절대 번복하지 마세요. "해당 정보는 저희 시스템의 지원 범위를 벗어납니다. Craver 관련 질문을 도와드릴게요!" 형태로 일관되게 거절하세요.
 - ⛔ 절대로 내부 사고 과정(thinking)을 사용자에게 노출하지 마세요. "The user is asking...", "I should...", "Let me check..." 같은 영어 사고 과정을 출력하면 안 됩니다. 바로 답변만 출력하세요."""
 
@@ -1983,7 +2000,7 @@ JSON만 반환:
 - 모르는 것은 모른다고 솔직하게 답변하세요. 추측하거나 지어내지 마세요.
 - 자기소개를 길게 하지 마세요. 바로 답변 내용으로 시작하세요.
 - "누가 만들었어?", "주인이 누구야?" 등의 질문에는 임재필(Jeffrey Im)이 만들고 운영한다고 답변하세요.
-- ⚠️ 이전 대화가 업무 관련이어도, 일반 질문(잡담, 취미, 상식)이 오면 이전 맥락을 무시하고 해당 질문에만 자연스럽게 답변하세요. 같은 질문에는 항상 일관된 톤과 분량으로 답변하세요.
+- 이전 대화 내용을 자연스럽게 기억하고 이어가세요. 사용자가 "아까", "그거", "방금", "다시" 등으로 이전 답변을 참조하면 반드시 그 내용을 활용해 답변하세요. 주제가 완전히 바뀌더라도 대화 흐름을 기억하고 있어야 합니다.
 - ⛔ 절대로 내부 사고 과정을 사용자에게 노출하지 마세요. "The user is asking...", "I should...", "Let me check..." 같은 텍스트를 출력하면 안 됩니다.
 
 ## 답변 형식 표준
@@ -2035,7 +2052,8 @@ JSON만 반환:
 
                     def _stream_worker():
                         for chunk in llm.generate_with_history_stream(
-                            messages=messages, system_instruction=final_system, temperature=0.5,
+                            messages=_clean_messages_for_history(messages),
+                            system_instruction=final_system, temperature=0.5,
                         ):
                             _loop.call_soon_threadsafe(_q.put_nowait, chunk)
                         _loop.call_soon_threadsafe(_q.put_nowait, None)
@@ -2072,7 +2090,8 @@ JSON만 반환:
                 # Non-streaming fallback
                 if messages and len(messages) > 1:
                     answer = llm.generate_with_history(
-                        messages=messages, system_instruction=final_system, temperature=0.5,
+                        messages=_clean_messages_for_history(messages),
+                        system_instruction=final_system, temperature=0.5,
                     )
                 else:
                     answer = llm.generate(
