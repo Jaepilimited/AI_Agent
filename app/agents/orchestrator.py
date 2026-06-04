@@ -78,10 +78,10 @@ def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
 
 
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
-    """Build conversation context — keep last 5 turns, summarize older.
+    """Build conversation context — keep last 10 turns (20 messages).
 
     Assistant messages are stripped of chart/SQL noise, then capped at 1500 chars
-    (up from 500) so that table rows and specific values survive truncation.
+    so that table rows and specific values survive truncation.
     User messages are kept as-is (short by nature).
     """
     if not messages or len(messages) <= 1:
@@ -90,9 +90,9 @@ def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
     history = messages[:-1]
     lines = []
 
-    if len(history) > 10:
-        lines.append(f"[이전 대화 {len(history) - 10}개 메시지 생략 — 최근 5턴만 표시]")
-        history = history[-10:]
+    if len(history) > 20:
+        lines.append(f"[이전 대화 {len(history) - 20}개 메시지 생략 — 최근 10턴만 표시]")
+        history = history[-20:]
 
     for msg in history:
         role = msg.get("role", "user")
