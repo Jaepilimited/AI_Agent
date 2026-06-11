@@ -2438,6 +2438,16 @@
       var _isHoriz = isHorizontal;
       var _inlinePlugin = null;
 
+      // 라벨 숫자 포맷: 1억 이상 → X.X억, 1만 이상 → X.X만, 그 외 콤마
+      function _fmtLabelVal(val) {
+        var abs = Math.abs(val);
+        if (abs >= 100000000) return (val / 100000000).toFixed(1).replace(/\.0$/, "") + "억";
+        if (abs >= 10000) return (val / 10000).toFixed(1).replace(/\.0$/, "") + "만";
+        if (abs >= 1000) return Math.round(val).toLocaleString();
+        if (abs < 10) return parseFloat(val.toFixed(2)).toString();
+        return parseFloat(val.toFixed(1)).toString();
+      }
+
       if (_chartType === "doughnut" || _chartType === "pie") {
         _inlinePlugin = {
           id: "inlineDoughnutLabels",
@@ -2469,6 +2479,37 @@
             });
           }
         };
+      } else if (_chartType === "line") {
+        _inlinePlugin = {
+          id: "inlineLineLabels",
+          afterDatasetsDraw: function(chart) {
+            var ctx = chart.ctx;
+            var isDarkMode = document.documentElement.classList.contains("dark");
+            var labelColor = isDarkMode ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.72)";
+            chart.data.datasets.forEach(function(dataset, dsIdx) {
+              var meta = chart.getDatasetMeta(dsIdx);
+              if (meta.hidden) return;
+              // 포인트가 많으면 겹침 방지를 위해 일부만 표시 (마지막 포인트는 항상 표시)
+              var step = Math.max(1, Math.ceil(meta.data.length / 16));
+              meta.data.forEach(function(point, idx) {
+                if (idx % step !== 0 && idx !== meta.data.length - 1) return;
+                var val = dataset.data[idx];
+                if (val == null) return;
+                var fmt = _fmtLabelVal(val);
+                ctx.save();
+                ctx.font = "bold 11px Segoe UI, Arial, sans-serif";
+                ctx.fillStyle = labelColor;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
+                // 차트 좌우 경계 밖으로 라벨이 잘리지 않게 보정
+                var halfW = ctx.measureText(fmt).width / 2;
+                var lx = Math.min(Math.max(point.x, chart.chartArea.left + halfW), chart.chartArea.right - halfW);
+                ctx.fillText(fmt, lx, point.y - 6);
+                ctx.restore();
+              });
+            });
+          }
+        };
       } else if (_chartType === "bar") {
         _inlinePlugin = {
           id: "inlineBarLabels",
@@ -2482,11 +2523,7 @@
               meta.data.forEach(function(bar, idx) {
                 var val = dataset.data[idx];
                 if (val == null) return;
-                var fmt;
-                var absVal = Math.abs(val);
-                if (absVal >= 1000) fmt = Math.round(val).toLocaleString();
-                else if (absVal < 10) fmt = parseFloat(val.toFixed(2)).toString();
-                else fmt = parseFloat(val.toFixed(1)).toString();
+                var fmt = _fmtLabelVal(val);
                 var props = bar.getProps(["x", "y", "base", "width", "height"], true);
                 ctx.save();
                 ctx.font = "bold 11px Segoe UI, Arial, sans-serif";

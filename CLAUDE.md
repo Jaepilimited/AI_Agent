@@ -72,7 +72,7 @@
 ## 캐시 버전
 
 - CSS/JS 변경 시 `chat.html`의 `?v=` 번호 증가 필수
-- 현재: style.css?v=139, chat.js?v=212
+- 현재: style.css?v=139, chat.js?v=216
 
 ## AD 동기화 규칙
 
