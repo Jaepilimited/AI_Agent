@@ -584,7 +584,7 @@ class OrchestratorAgent:
                     elif route == "team":
                         result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources), timeout=30.0)
                     else:
-                        result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=30.0)
+                        result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=300.0 if route == "multi" else 30.0)
                 except asyncio.TimeoutError:
                     result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 더 짧은 기간이나 구체적인 조건으로 다시 질문해 보세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"2025년 1분기 일본 매출 알려줘\" (기간+국가 한정)\n> - \"이번 달 아마존 매출 현황\" (채널 지정)\n> - \"센텔라 앰플 최근 3개월 매출 추이\" (제품 지정)", "source": route}
             else:
@@ -800,7 +800,7 @@ class OrchestratorAgent:
             return
 
         # Non-streaming routes (CS, Notion, GWS, Multi) → simulate streaming
-        # Timeout: GWS 45s (inner agent 30s + buffer), others 30s
+        # Timeout: multi 300s (BQ+웹검색+합성), GWS 45s (inner agent 30s + buffer), others 30s
         from app.core.safety import get_circuit
 
         handlers = {
@@ -820,9 +820,10 @@ class OrchestratorAgent:
         else:
             try:
                 if route == "multi":
+                    # multi = BQ 파이프라인 + 웹검색 + 합성 — 30s로는 부족 (2026-06-11, fid 36)
                     result = await asyncio.wait_for(
                         handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
-                        timeout=30.0,
+                        timeout=300.0,
                     )
                 elif route == "notion":
                     result = await asyncio.wait_for(
@@ -1559,6 +1560,10 @@ class OrchestratorAgent:
         today = datetime.now().strftime("%Y-%m-%d")
         sub_results = {}
 
+        # 대화 맥락: 참조형 질문("아까 그 데이터", "위 md처럼") 해석에 필요 (2026-06-11, fid 36)
+        _ctx = (conversation_context or "").strip()
+        ctx_section = f"\n## 이전 대화 맥락\n{_ctx[:3000]}\n" if _ctx else ""
+
         # --- Prepare prompts ---
         search_prompt = f"""질문과 관련된 최신 외부 정보를 검색하여 핵심만 간결히 정리하세요.
 내부 매출 데이터는 제외. 시장 동향, 뉴스, 경쟁 환경 위주.
@@ -1568,7 +1573,7 @@ class OrchestratorAgent:
 
         data_query_prompt = f"""사용자의 복합 질문에서 BigQuery 매출/주문 데이터 조회에 필요한 부분만 추출하세요.
 외부 분석(날씨, 시장, 원인 등)은 제외하고, 순수 데이터 조회 질문으로 변환하세요.
-
+{ctx_section}
 원래 질문: {query}
 
 예시:
@@ -1576,6 +1581,7 @@ class OrchestratorAgent:
 - "경쟁사 대비 태국 쇼피 매출 분석" → "태국 쇼피 매출 데이터 조회"
 - "환율 변동으로 베트남 매출 하락 원인" → "베트남 최근 월별 매출 추이"
 
+질문에 "아까", "그", "위에" 같은 참조가 있으면 위 대화 맥락에서 대상을 찾아 구체적인 질문으로 변환하세요.
 데이터 조회 질문만 한 줄로 작성:"""
 
         # --- Steps 1+2: Google Search + BigQuery in parallel (v6.4) ---
@@ -1652,7 +1658,8 @@ class OrchestratorAgent:
 
 ## 사용자 질문
 {query}
-
+{ctx_section}
+{"사용자 질문이 이전 대화를 참조하면('아까', '그', '위 형식처럼' 등) 위 대화 맥락을 반영해 답변하세요." if _ctx else ""}
 ## 내부 데이터 (BigQuery 매출/주문 데이터)
 {bq_answer if bq_answer else "데이터 조회 결과 없음"}
 
