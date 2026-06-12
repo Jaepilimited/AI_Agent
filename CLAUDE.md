@@ -17,23 +17,26 @@
 **지도가 커버하지 못하는 영역**:
 - `tests/`, `scripts/` 일회성 파일, `backup_*`, `logs/`, `temp_*`, `app/frontend/`, `app/static/` — 이들은 지도에 없다. 필요시 직접 탐색.
 
-## 배포 규칙 (최우선)
+## 배포 규칙 (최우선) — 2026-06-12 로컬 메인 전환
 
-- **프로덕션 = GCP 서버 포트 3000 (skin1004-prod)**: 사용자가 사용 중
-- **배포 흐름**: 코드 수정(로컬) → `git push jaepilimited master` → GCP에서 `git pull origin master` → `pm2 reload skin1004-prod`
+- **프로덕션 = 로컬 Windows 서버 172.16.1.250:3000 (PM2 `skin1004-prod`)**: 사용자가 사용 중
+- **배포 흐름**: 코드 수정(로컬) → `pm2 reload skin1004-prod` (같은 머신이므로 pull 불필요)
 - 코드 변경 후 별도 확인 없이 바로 프로덕션 반영 (2026-06-01 정책 변경)
-- GCP prod에는 `pm2 reload` 사용 (restart 아님 — 무중단 반영)
-- 프로덕션 서버 kill, stop, delete 절대 금지
+- `git push jaepilimited master`는 코드 백업용으로 유지
+- 프로덕션(skin1004-prod) kill, stop, delete 절대 금지
+- **GCP(34.64.99.179)는 2026-06-12부로 AI Agent 서비스 중지** — CRM(skin1004-crm-*)만 운영 중. AI Agent용으로 pull/reload 하지 말 것
 
 ## 서버 관리
 
-- **GCP 프로덕션** (SSH: `ssh -i C:/Users/DB_PC/.ssh/gcp_skin1004 skin1004@34.64.99.179`)
-  - 프로덕션 reload: `pm2 reload skin1004-prod`
+- **로컬 프로덕션** (포트 3000, ecosystem.windows.config.js)
+  - 반영: `pm2 reload skin1004-prod`
   - 로그: `pm2 logs skin1004-prod --lines 30 --nostream`
-- **로컬 Windows 개발** (포트 3001)
+- **로컬 개발** (포트 3001)
   - 개발 restart: `pm2 restart skin1004-dev`
   - 로그: `pm2 logs skin1004-dev --lines 30 --nostream`
-- 상태 확인: `pm2 status`
+- 서버 켜기(재부팅 후): `pm2 start ecosystem.windows.config.js`
+- 상태 확인: `pm2 status` — ↺(재시작 수)가 수십 회 이상이면 포트 점유 고아 프로세스 의심 (delete → 포트 킬 → start)
+- GCP SSH (CRM 확인용): `ssh -i C:/Users/DB_PC/.ssh/gcp_skin1004 skin1004@34.64.99.179`
 
 ## BigQuery 데이터 규칙 (SQL 로직 기준)
 
