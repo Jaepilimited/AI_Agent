@@ -127,10 +127,18 @@ def process_issue(repo_dir: Path, file_path: str, context: str, prompt: str, dry
         return {"file": target_file, "summary": summary, "applied": True,
                 "commit": commit_sha, "health_status": "헬스체크 통과"}
 
-    revert_last_commit(repo_dir)
+    revert_ok = revert_last_commit(repo_dir)
+    if not revert_ok:
+        return {"file": target_file, "summary": summary, "applied": True,
+                "commit": commit_sha, "health_status": "헬스체크 실패 — 롤백(git revert) 자체가 실패함, 수동 개입 필요"}
+
     restart_prod()
+    time.sleep(HEALTH_CHECK_WAIT_SECONDS)
+    if check_health():
+        return {"file": target_file, "summary": summary, "applied": True,
+                "commit": commit_sha, "health_status": "헬스체크 실패 — 자동 롤백 완료, 롤백 후 헬스체크 통과"}
     return {"file": target_file, "summary": summary, "applied": True,
-            "commit": commit_sha, "health_status": "헬스체크 실패 — 자동 롤백됨"}
+            "commit": commit_sha, "health_status": "헬스체크 실패 — 롤백 이후에도 헬스체크 실패, 수동 개입 필요"}
 
 
 def collect_log_issues(repo_dir: Path, log_path: Path, state: dict) -> "tuple[list, int]":
@@ -175,7 +183,11 @@ def main(argv=None) -> int:
 
     applied, reported = [], []
     for issue in all_issues:
-        result = process_issue(REPO_DIR, issue["file"], issue["context"], issue["prompt"], dry_run=skip_auto_apply)
+        try:
+            result = process_issue(REPO_DIR, issue["file"], issue["context"], issue["prompt"], dry_run=skip_auto_apply)
+        except Exception as e:
+            result = {"file": issue["file"], "summary": "처리 중 예외 발생", "applied": False,
+                       "cause": str(e)[:200], "exclusion_reason": f"process_issue 예외: {type(e).__name__}"}
         (applied if result.get("applied") else reported).append(result)
 
     now = datetime.now()
