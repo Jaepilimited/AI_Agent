@@ -409,6 +409,12 @@ class TestRiskGate:
         assert verdict.auto_apply_eligible is False
         assert any("denylist" in r for r in verdict.reasons)
 
+    def test_pre_check_rejects_denylisted_file_with_backslash_path(self):
+        diff_text = "diff --git a/app\\agents\\sql_agent.py b/app\\agents\\sql_agent.py\n--- a/app\\agents\\sql_agent.py\n+++ b/app\\agents\\sql_agent.py\n@@ -1 +1 @@\n-a\n+b\n"
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+        assert any("sql_agent.py" in r for r in verdict.reasons)
+
     def test_pre_check_fails_when_target_file_undeterminable(self):
         verdict = pre_check("no diff header, just prose explanation")
         assert verdict.auto_apply_eligible is False
