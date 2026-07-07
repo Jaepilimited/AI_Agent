@@ -6,6 +6,8 @@ See docs/superpowers/specs/2026-07-07-nightly-debug-system-design.md.
 """
 
 import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -24,3 +26,40 @@ def load_state(state_path: Path) -> dict:
 def save_state(state_path: Path, state: dict) -> None:
     """Persist the nightly-run state as JSON."""
     state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# --- Log error extraction ---
+
+@dataclass
+class LogError:
+    raw: str
+    kind: str  # "structured" | "traceback"
+
+
+_ERROR_LEVEL_RE = re.compile(r'"level"\s*:\s*"(error|critical)"')
+_TRACEBACK_START = "Traceback (most recent call last):"
+
+
+def extract_new_errors(log_text: str, since_offset: int) -> "tuple[list, int]":
+    """Return (errors, new_offset). Offsets are character positions into log_text."""
+    new_text = log_text[since_offset:]
+    errors: list = []
+    lines = new_text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if _TRACEBACK_START in line:
+            block = [line]
+            i += 1
+            while i < len(lines) and (lines[i].startswith(" ") or lines[i].startswith("\t")):
+                block.append(lines[i])
+                i += 1
+            if i < len(lines):
+                block.append(lines[i])  # exception summary line, e.g. "AttributeError: ..."
+                i += 1
+            errors.append(LogError(raw="\n".join(block), kind="traceback"))
+            continue
+        if _ERROR_LEVEL_RE.search(line):
+            errors.append(LogError(raw=line.strip(), kind="structured"))
+        i += 1
+    return errors, len(log_text)
