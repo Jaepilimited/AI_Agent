@@ -9,6 +9,8 @@ import ast
 import json
 import re
 import subprocess
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -329,3 +331,22 @@ def verification_passed(verification_text: str) -> bool:
     if any(marker in upper for marker in _RISK_MARKERS):
         return False
     return any(marker in upper for marker in _SAFE_MARKERS)
+
+
+# --- PM2 restart + health check ---
+
+
+def restart_prod() -> bool:
+    result = subprocess.run(
+        ["pm2", "restart", "skin1004-prod"],
+        capture_output=True, text=True, timeout=60,
+    )
+    return result.returncode == 0
+
+
+def check_health(url: str = "http://127.0.0.1:3000/health", timeout: float = 10.0) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status == 200
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return False

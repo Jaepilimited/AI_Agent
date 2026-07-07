@@ -29,6 +29,8 @@ from scripts.nightly_debug_lib import (
     pre_check,
     post_apply_check,
     verification_passed,
+    check_health,
+    restart_prod,
 )
 
 
@@ -478,3 +480,29 @@ class TestRiskGate:
 
     def test_verification_passed_false_for_unresolved(self):
         assert verification_passed("이전 지적 사항이 UNRESOLVED 상태입니다.") is False
+
+
+class TestPm2Health:
+    def test_restart_prod_calls_pm2_restart(self):
+        with mock.patch("scripts.nightly_debug_lib.subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0)
+            assert restart_prod() is True
+            args, kwargs = mock_run.call_args
+            assert args[0] == ["pm2", "restart", "skin1004-prod"]
+
+    def test_restart_prod_returns_false_on_failure(self):
+        with mock.patch("scripts.nightly_debug_lib.subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=1)
+            assert restart_prod() is False
+
+    def test_check_health_true_on_200(self):
+        fake_response = mock.MagicMock()
+        fake_response.status = 200
+        fake_response.__enter__ = mock.Mock(return_value=fake_response)
+        fake_response.__exit__ = mock.Mock(return_value=False)
+        with mock.patch("urllib.request.urlopen", return_value=fake_response):
+            assert check_health() is True
+
+    def test_check_health_false_on_connection_error(self):
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
+            assert check_health() is False
