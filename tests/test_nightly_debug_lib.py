@@ -463,3 +463,12 @@ class TestRiskGate:
 
     def test_verification_passed_false_when_ambiguous(self):
         assert verification_passed("특별한 판정 없이 설명만 함") is False
+
+    def test_verification_passed_false_for_unsafe(self):
+        assert verification_passed("판정: 이 수정은 UNSAFE합니다.") is False
+
+    def test_verification_passed_false_for_not_safe(self):
+        assert verification_passed("이 수정은 NOT SAFE — 우회 경로가 남아있습니다.") is False
+
+    def test_verification_passed_false_for_unresolved(self):
+        assert verification_passed("이전 지적 사항이 UNRESOLVED 상태입니다.") is False

@@ -316,7 +316,7 @@ def post_apply_check(original_source: str, patched_source: str) -> RiskVerdict:
 
 
 _SAFE_MARKERS = ("SAFE", "RESOLVED")
-_RISK_MARKERS = ("RISK", "INCOMPLETE", "FAIL")
+_RISK_MARKERS = ("RISK", "INCOMPLETE", "FAIL", "UNSAFE", "NOT SAFE", "UNRESOLVED", "NOT RESOLVED")
 
 
 def verification_passed(verification_text: str) -> bool:
