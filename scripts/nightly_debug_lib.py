@@ -159,3 +159,56 @@ def revert_last_commit(repo_dir: Path) -> bool:
         capture_output=True, text=True, encoding="utf-8", timeout=60,
     )
     return result.returncode == 0
+
+
+# --- codex CLI wrapper ---
+
+_TOKENS_USED_MARKER = "tokens used"
+_DIFF_BLOCK_RE = re.compile(r"```diff\n(.*?)```", re.DOTALL)
+
+
+def run_codex(prompt: str, cwd: Path, timeout: int = 300) -> Optional[str]:
+    """Run `codex exec -s read-only -` with prompt piped via stdin.
+
+    Returns the parsed final answer, or None on failure/timeout/non-zero exit.
+    Always read-only — never pass a write-capable sandbox mode here.
+    """
+    try:
+        result = subprocess.run(
+            ["codex", "exec", "-s", "read-only", "-"],
+            input=prompt, cwd=str(cwd), capture_output=True, text=True,
+            timeout=timeout, encoding="utf-8", errors="replace",
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    return parse_codex_output(result.stdout)
+
+
+def parse_codex_output(stdout: str) -> Optional[str]:
+    """Extract the final answer: text between the LAST standalone 'codex' marker
+    line and the following 'tokens used' line (codex exec's own transcript format).
+    """
+    lines = stdout.splitlines()
+    last_marker_idx = None
+    for idx, line in enumerate(lines):
+        if line.strip() == "codex":
+            last_marker_idx = idx
+    if last_marker_idx is None:
+        return None
+    end_idx = len(lines)
+    for idx in range(last_marker_idx + 1, len(lines)):
+        if lines[idx].strip() == _TOKENS_USED_MARKER:
+            end_idx = idx
+            break
+    answer = "\n".join(lines[last_marker_idx + 1:end_idx]).strip()
+    return answer or None
+
+
+def extract_diff_block(proposal_text: str) -> Optional[str]:
+    """Extract and concatenate all fenced ```diff blocks from a codex proposal."""
+    blocks = _DIFF_BLOCK_RE.findall(proposal_text)
+    if not blocks:
+        return None
+    return "\n".join(block.rstrip("\n") for block in blocks) + "\n"

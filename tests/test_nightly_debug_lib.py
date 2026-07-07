@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from unittest import mock
 
 from scripts.nightly_debug_lib import (
     DEFAULT_STATE,
@@ -18,6 +19,9 @@ from scripts.nightly_debug_lib import (
     get_file_diff,
     has_uncommitted_changes,
     revert_last_commit,
+    extract_diff_block,
+    parse_codex_output,
+    run_codex,
 )
 
 
@@ -266,3 +270,73 @@ class TestGitHelpers:
             assert False, "expected RuntimeError"
         except RuntimeError:
             pass
+
+
+class TestCodexOutputParsing:
+    def test_parse_codex_output_extracts_final_answer(self):
+        stdout = (
+            "OpenAI Codex v0.142.5\n"
+            "--------\n"
+            "user\n"
+            "some prompt\n"
+            "codex\n"
+            "이건 중간 사고 과정입니다\n"
+            "codex\n"
+            "## Summary\n"
+            "최종 답변입니다.\n"
+            "tokens used\n"
+            "12,345\n"
+        )
+        answer = parse_codex_output(stdout)
+        assert answer == "## Summary\n최종 답변입니다."
+
+    def test_parse_codex_output_no_marker_returns_none(self):
+        assert parse_codex_output("no codex marker here\ntokens used\n123\n") is None
+
+    def test_parse_codex_output_no_tokens_line_takes_rest(self):
+        stdout = "codex\nfinal answer without tokens footer\n"
+        assert parse_codex_output(stdout) == "final answer without tokens footer"
+
+
+class TestDiffBlockExtraction:
+    def test_extract_single_diff_block(self):
+        proposal = (
+            "원인 설명입니다.\n\n"
+            "```diff\n"
+            "diff --git a/x.py b/x.py\n"
+            "--- a/x.py\n"
+            "+++ b/x.py\n"
+            "@@ -1 +1 @@\n"
+            "-old\n"
+            "+new\n"
+            "```\n\n"
+            "부작용 없음.\n"
+        )
+        diff = extract_diff_block(proposal)
+        assert diff is not None
+        assert "diff --git a/x.py b/x.py" in diff
+        assert "부작용" not in diff
+
+    def test_extract_diff_block_none_when_absent(self):
+        assert extract_diff_block("그냥 설명 텍스트, diff 없음") is None
+
+
+class TestRunCodex:
+    def test_run_codex_returns_parsed_answer_on_success(self, tmp_path):
+        fake_stdout = "codex\nanswer text\ntokens used\n100\n"
+        with mock.patch("scripts.nightly_debug_lib.subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0, stdout=fake_stdout)
+            result = run_codex("some prompt", cwd=tmp_path)
+        assert result == "answer text"
+        args, kwargs = mock_run.call_args
+        assert args[0][:4] == ["codex", "exec", "-s", "read-only"]
+
+    def test_run_codex_returns_none_on_nonzero_exit(self, tmp_path):
+        with mock.patch("scripts.nightly_debug_lib.subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=1, stdout="")
+            assert run_codex("prompt", cwd=tmp_path) is None
+
+    def test_run_codex_returns_none_on_timeout(self, tmp_path):
+        with mock.patch("scripts.nightly_debug_lib.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="codex", timeout=300)
+            assert run_codex("prompt", cwd=tmp_path) is None
