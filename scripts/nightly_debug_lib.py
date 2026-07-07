@@ -5,10 +5,11 @@ or restart prod) lives in scripts/nightly_debug.py, which imports from here.
 See docs/superpowers/specs/2026-07-07-nightly-debug-system-design.md.
 """
 
+import ast
 import json
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -212,3 +213,119 @@ def extract_diff_block(proposal_text: str) -> Optional[str]:
     if not blocks:
         return None
     return "\n".join(block.rstrip("\n") for block in blocks) + "\n"
+
+
+# --- Risk gate ---
+
+DENYLIST_FILES = [
+    "app/agents/sql_agent.py",
+    "app/core/security.py",
+    "app/api/auth_api.py",
+    "app/api/admin_api.py",
+    "app/api/admin_group_api.py",
+    "app/db/mariadb.py",
+    "prompts/sql_generator.txt",
+]
+DENYLIST_SUFFIXES = [".sql"]
+MAX_CHANGED_LINES = 30
+
+
+@dataclass
+class RiskVerdict:
+    auto_apply_eligible: bool
+    reasons: list = field(default_factory=list)
+
+
+def is_denylisted(file_path: str) -> bool:
+    normalized = file_path.replace("\\", "/")
+    if normalized in DENYLIST_FILES:
+        return True
+    return any(normalized.endswith(suf) for suf in DENYLIST_SUFFIXES)
+
+
+def count_changed_lines(diff_text: str) -> int:
+    """Count added+removed lines in a unified diff, excluding +++/--- headers."""
+    count = 0
+    for line in diff_text.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+") or line.startswith("-"):
+            count += 1
+    return count
+
+
+def diff_touches_single_file(diff_text: str) -> bool:
+    files = set(re.findall(r"^diff --git a/(\S+) b/\S+", diff_text, re.MULTILINE))
+    return len(files) == 1
+
+
+def extract_diff_target_file(diff_text: str) -> Optional[str]:
+    """Return the first file path named in a unified diff's 'diff --git a/<path> b/<path>' header."""
+    match = re.search(r"^diff --git a/(\S+) b/\S+", diff_text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def pre_check(diff_text: str) -> RiskVerdict:
+    """Checks possible before actually applying the diff: target file (read from
+    the diff itself, never from a caller-supplied label) + diff size.
+    """
+    reasons = []
+    target_file = extract_diff_target_file(diff_text)
+    if target_file is None:
+        reasons.append("could not determine target file from diff")
+    elif is_denylisted(target_file):
+        reasons.append(f"denylisted file: {target_file}")
+    if not diff_touches_single_file(diff_text):
+        reasons.append("diff touches more than one file")
+    changed = count_changed_lines(diff_text)
+    if changed > MAX_CHANGED_LINES:
+        reasons.append(f"diff too large: {changed} lines > {MAX_CHANGED_LINES}")
+    return RiskVerdict(auto_apply_eligible=(len(reasons) == 0), reasons=reasons)
+
+
+def _top_level_names(source: str) -> "tuple[set, set, set]":
+    tree = ast.parse(source)
+    funcs, classes, imports = set(), set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            funcs.add(node.name)
+        elif isinstance(node, ast.ClassDef):
+            classes.add(node.name)
+        elif isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            imports.add(node.module or "")
+    return funcs, classes, imports
+
+
+def post_apply_check(original_source: str, patched_source: str) -> RiskVerdict:
+    """Checks possible only after applying the diff: syntax validity + no new definitions."""
+    reasons = []
+    try:
+        ast.parse(patched_source)
+    except SyntaxError:
+        reasons.append("patched source is not valid Python (ast.parse failed)")
+        return RiskVerdict(auto_apply_eligible=False, reasons=reasons)
+
+    orig_funcs, orig_classes, orig_imports = _top_level_names(original_source)
+    new_funcs, new_classes, new_imports = _top_level_names(patched_source)
+    if (new_funcs - orig_funcs) or (new_classes - orig_classes) or (new_imports - orig_imports):
+        reasons.append("diff adds new function/class/import — not a pure bug fix")
+
+    return RiskVerdict(auto_apply_eligible=(len(reasons) == 0), reasons=reasons)
+
+
+_SAFE_MARKERS = ("SAFE", "RESOLVED")
+_RISK_MARKERS = ("RISK", "INCOMPLETE", "FAIL")
+
+
+def verification_passed(verification_text: str) -> bool:
+    """Parse codex's adversarial-verification output for a pass/fail signal.
+
+    Fail-closed: any risk marker present -> False. Requires an explicit safe
+    marker to return True (silence/ambiguity is not consent).
+    """
+    upper = verification_text.upper()
+    if any(marker in upper for marker in _RISK_MARKERS):
+        return False
+    return any(marker in upper for marker in _SAFE_MARKERS)

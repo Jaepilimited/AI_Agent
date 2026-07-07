@@ -22,6 +22,13 @@ from scripts.nightly_debug_lib import (
     extract_diff_block,
     parse_codex_output,
     run_codex,
+    is_denylisted,
+    count_changed_lines,
+    diff_touches_single_file,
+    extract_diff_target_file,
+    pre_check,
+    post_apply_check,
+    verification_passed,
 )
 
 
@@ -340,3 +347,119 @@ class TestRunCodex:
         with mock.patch("scripts.nightly_debug_lib.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(cmd="codex", timeout=300)
             assert run_codex("prompt", cwd=tmp_path) is None
+
+
+class TestRiskGate:
+    def test_is_denylisted_exact_match(self):
+        assert is_denylisted("app/agents/sql_agent.py") is True
+        assert is_denylisted("app/core/security.py") is True
+
+    def test_is_denylisted_sql_suffix(self):
+        assert is_denylisted("migrations/2026_add_column.sql") is True
+
+    def test_is_denylisted_false_for_normal_file(self):
+        assert is_denylisted("app/agents/gws_agent.py") is False
+
+    def test_is_denylisted_normalizes_backslashes(self):
+        assert is_denylisted("app\\agents\\sql_agent.py") is True
+
+    def test_count_changed_lines_excludes_headers(self):
+        diff_text = (
+            "diff --git a/x.py b/x.py\n"
+            "--- a/x.py\n"
+            "+++ b/x.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            " unchanged\n"
+            "-old line\n"
+            "+new line\n"
+        )
+        assert count_changed_lines(diff_text) == 2
+
+    def test_diff_touches_single_file_true(self):
+        diff_text = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n"
+        assert diff_touches_single_file(diff_text) is True
+
+    def test_diff_touches_single_file_false_for_multiple(self):
+        diff_text = (
+            "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n"
+            "diff --git a/y.py b/y.py\n--- a/y.py\n+++ b/y.py\n"
+        )
+        assert diff_touches_single_file(diff_text) is False
+
+    def test_extract_diff_target_file_returns_path(self):
+        diff_text = "diff --git a/app/agents/gws_agent.py b/app/agents/gws_agent.py\n--- a/app/agents/gws_agent.py\n+++ b/app/agents/gws_agent.py\n"
+        assert extract_diff_target_file(diff_text) == "app/agents/gws_agent.py"
+
+    def test_extract_diff_target_file_none_when_malformed(self):
+        assert extract_diff_target_file("no diff header here") is None
+
+    def test_pre_check_passes_for_small_single_file_diff(self):
+        diff_text = (
+            "diff --git a/app/agents/gws_agent.py b/app/agents/gws_agent.py\n"
+            "--- a/app/agents/gws_agent.py\n+++ b/app/agents/gws_agent.py\n"
+            "@@ -1,1 +1,1 @@\n-old\n+new\n"
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is True
+        assert verdict.reasons == []
+
+    def test_pre_check_fails_for_denylisted_file(self):
+        diff_text = "diff --git a/app/agents/sql_agent.py b/app/agents/sql_agent.py\n--- a/app/agents/sql_agent.py\n+++ b/app/agents/sql_agent.py\n"
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+        assert any("denylist" in r for r in verdict.reasons)
+
+    def test_pre_check_fails_when_target_file_undeterminable(self):
+        verdict = pre_check("no diff header, just prose explanation")
+        assert verdict.auto_apply_eligible is False
+        assert any("could not determine target file" in r for r in verdict.reasons)
+
+    def test_pre_check_fails_for_oversized_diff(self):
+        big_body = "".join(f"-line{i}\n+line{i}fixed\n" for i in range(20))
+        diff_text = (
+            "diff --git a/app/agents/gws_agent.py b/app/agents/gws_agent.py\n"
+            "--- a/app/agents/gws_agent.py\n+++ b/app/agents/gws_agent.py\n"
+            "@@ -1,20 +1,20 @@\n" + big_body
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+        assert any("too large" in r for r in verdict.reasons)
+
+    def test_pre_check_uses_diff_derived_file_not_caller_label(self):
+        """Regression guard: a log-derived issue has no real file until the diff
+        reveals one — pre_check must never trust a caller-supplied placeholder
+        label like '(server log)' for the denylist check; it must read the
+        actual target file out of the diff itself."""
+        diff_text = "diff --git a/app/agents/sql_agent.py b/app/agents/sql_agent.py\n--- a/app/agents/sql_agent.py\n+++ b/app/agents/sql_agent.py\n@@ -1 +1 @@\n-a\n+b\n"
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+        assert any("sql_agent.py" in r for r in verdict.reasons)
+
+    def test_post_apply_check_passes_for_pure_bugfix(self):
+        original = "def add(a, b):\n    return a - b\n"
+        patched = "def add(a, b):\n    return a + b\n"
+        verdict = post_apply_check(original, patched)
+        assert verdict.auto_apply_eligible is True
+
+    def test_post_apply_check_fails_for_new_function(self):
+        original = "def add(a, b):\n    return a + b\n"
+        patched = "def add(a, b):\n    return a + b\n\ndef subtract(a, b):\n    return a - b\n"
+        verdict = post_apply_check(original, patched)
+        assert verdict.auto_apply_eligible is False
+        assert any("new function/class/import" in r for r in verdict.reasons)
+
+    def test_post_apply_check_fails_for_invalid_syntax(self):
+        original = "def add(a, b):\n    return a + b\n"
+        patched = "def add(a, b)\n    return a + b\n"  # missing colon
+        verdict = post_apply_check(original, patched)
+        assert verdict.auto_apply_eligible is False
+        assert any("not valid Python" in r for r in verdict.reasons)
+
+    def test_verification_passed_true_for_safe(self):
+        assert verification_passed("판정: SAFE. 근거: ...") is True
+
+    def test_verification_passed_false_for_risk(self):
+        assert verification_passed("판정: STILL RISK. 근거: ...") is False
+
+    def test_verification_passed_false_when_ambiguous(self):
+        assert verification_passed("특별한 판정 없이 설명만 함") is False
