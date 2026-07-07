@@ -172,3 +172,97 @@ class TestGitHelpers:
         diff = get_file_diff(repo, first_commit, "sample.py")
         assert "sample.py" in diff
         assert "+1" in diff or "+    return a + b + 1" in diff
+
+    def test_apply_diff_check_and_apply_multiline_hunk(self, tmp_path):
+        """Reproduces Critical #1: CRLF corruption from text=True input breaks
+        `git apply --check -` on multi-line hunks (a trivial single-line hunk
+        happens to survive the corruption and doesn't catch this)."""
+        repo = _init_repo(tmp_path)
+        (repo / "sample.py").write_text(
+            "def add(a, b):\n"
+            "    return a + b\n"
+            "\n"
+            "def sub(a, b):\n"
+            "    return a - b\n"
+            "\n"
+            "def mul(a, b):\n"
+            "    return a * b\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "sample.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "add more functions"], cwd=repo, check=True)
+
+        diff_text = (
+            "diff --git a/sample.py b/sample.py\n"
+            "--- a/sample.py\n"
+            "+++ b/sample.py\n"
+            "@@ -1,8 +1,8 @@\n"
+            " def add(a, b):\n"
+            "-    return a + b\n"
+            "+    return a + b  # fixed\n"
+            "\n"
+            " def sub(a, b):\n"
+            "-    return a - b\n"
+            "+    return a - b  # fixed\n"
+            "\n"
+            " def mul(a, b):\n"
+            "-    return a * b\n"
+            "+    return a * b  # fixed\n"
+        )
+        assert diff_check_applies(repo, diff_text) is True
+        assert apply_diff_to_worktree(repo, diff_text) is True
+        content = (repo / "sample.py").read_text(encoding="utf-8")
+        assert content.count("# fixed") == 3
+
+    def test_diff_check_applies_false_for_non_matching_diff(self, tmp_path):
+        """A diff whose context lines don't exist in the current file should
+        be rejected by `git apply --check -`, not silently accepted."""
+        repo = _init_repo(tmp_path)
+        diff_text = (
+            "diff --git a/sample.py b/sample.py\n"
+            "--- a/sample.py\n"
+            "+++ b/sample.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            " def this_line_does_not_exist_in_the_file():\n"
+            "-    return nonsense\n"
+            "+    return nonsense  # fixed\n"
+        )
+        assert diff_check_applies(repo, diff_text) is False
+
+    def test_get_file_diff_handles_korean_content(self, tmp_path):
+        """Reproduces Critical #2: without explicit encoding='utf-8', git's
+        stdout is decoded with locale.getpreferredencoding() (cp949 on this
+        production machine), which crashes on non-ASCII output."""
+        repo = _init_repo(tmp_path)
+        first_commit = get_current_commit(repo)
+        (repo / "sample.py").write_text(
+            "def add(a, b):\n"
+            "    # 한글 주석\n"
+            "    return a + b\n",
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "add", "sample.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "add korean comment"], cwd=repo, check=True)
+
+        diff = get_file_diff(repo, first_commit, "sample.py")
+        assert isinstance(diff, str)
+        assert "한글 주석" in diff
+
+    def test_has_uncommitted_changes_fails_closed_on_git_error(self, tmp_path):
+        """When the git command itself fails (not a git repo at all), the
+        function must fail closed (return True / 'treat as dirty') rather
+        than returning False as if the repo were legitimately clean."""
+        not_a_repo = tmp_path / "not_a_repo"
+        not_a_repo.mkdir()
+        assert has_uncommitted_changes(not_a_repo) is True
+
+    def test_get_current_commit_raises_on_git_error(self, tmp_path):
+        """When `git rev-parse HEAD` fails (not a git repo), the function
+        must raise RuntimeError rather than silently returning ''."""
+        not_a_repo = tmp_path / "not_a_repo"
+        not_a_repo.mkdir()
+        try:
+            get_current_commit(not_a_repo)
+            assert False, "expected RuntimeError"
+        except RuntimeError:
+            pass
