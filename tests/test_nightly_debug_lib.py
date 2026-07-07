@@ -1,8 +1,24 @@
 """Tests for scripts/nightly_debug_lib.py — pure logic for the nightly debug system."""
 
 import json
+import subprocess
 
-from scripts.nightly_debug_lib import DEFAULT_STATE, load_state, save_state, LogError, extract_new_errors
+from scripts.nightly_debug_lib import (
+    DEFAULT_STATE,
+    load_state,
+    save_state,
+    LogError,
+    extract_new_errors,
+    apply_diff_to_worktree,
+    commit_worktree_changes,
+    diff_check_applies,
+    discard_worktree_changes,
+    get_changed_files,
+    get_current_commit,
+    get_file_diff,
+    has_uncommitted_changes,
+    revert_last_commit,
+)
 
 
 class TestState:
@@ -69,3 +85,90 @@ class TestLogErrorExtraction:
         assert len(errors) == 1
         assert "new_error" in errors[0].raw
         assert new_offset == len(log_text)
+
+
+def _init_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+    (repo / "sample.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+    subprocess.run(["git", "add", "sample.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=repo, check=True)
+    return repo
+
+
+class TestGitHelpers:
+    def test_get_current_commit_returns_sha(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        sha = get_current_commit(repo)
+        assert len(sha) == 40
+        assert all(c in "0123456789abcdef" for c in sha)
+
+    def test_has_uncommitted_changes_false_on_clean_repo(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        assert has_uncommitted_changes(repo) is False
+
+    def test_has_uncommitted_changes_true_after_edit(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b + 0\n", encoding="utf-8")
+        assert has_uncommitted_changes(repo) is True
+
+    def test_get_changed_files_detects_modified_file(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        first_commit = get_current_commit(repo)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b + 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "sample.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "change"], cwd=repo, check=True)
+        changed = get_changed_files(repo, first_commit)
+        assert changed == ["sample.py"]
+
+    def test_get_changed_files_empty_when_no_since_commit(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        assert get_changed_files(repo, None) == []
+
+    def test_apply_diff_check_and_apply_roundtrip(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        diff_text = (
+            "diff --git a/sample.py b/sample.py\n"
+            "--- a/sample.py\n"
+            "+++ b/sample.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            " def add(a, b):\n"
+            "-    return a + b\n"
+            "+    return a + b  # fixed\n"
+        )
+        assert diff_check_applies(repo, diff_text) is True
+        assert apply_diff_to_worktree(repo, diff_text) is True
+        assert "# fixed" in (repo / "sample.py").read_text(encoding="utf-8")
+
+    def test_discard_worktree_changes_restores_original(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        (repo / "sample.py").write_text("garbage", encoding="utf-8")
+        discard_worktree_changes(repo, "sample.py")
+        assert (repo / "sample.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
+
+    def test_commit_worktree_changes_creates_commit(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        before = get_current_commit(repo)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b  # fixed\n", encoding="utf-8")
+        assert commit_worktree_changes(repo, "sample.py", "[nightly-auto-fix] fix add") is True
+        assert get_current_commit(repo) != before
+
+    def test_revert_last_commit_undoes_change(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b  # fixed\n", encoding="utf-8")
+        commit_worktree_changes(repo, "sample.py", "[nightly-auto-fix] fix add")
+        assert revert_last_commit(repo) is True
+        assert (repo / "sample.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
+
+    def test_get_file_diff_returns_diff_for_one_file(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        first_commit = get_current_commit(repo)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b + 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "sample.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "change"], cwd=repo, check=True)
+        diff = get_file_diff(repo, first_commit, "sample.py")
+        assert "sample.py" in diff
+        assert "+1" in diff or "+    return a + b + 1" in diff
