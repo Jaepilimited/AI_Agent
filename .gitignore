@@ -157,3 +157,14 @@ knowledge_map/.cache/
 
 # Eval pipeline credentials
 .env.eval
+
+# Conversation-data exports / DB backups (sensitive, large, regenerable)
+data/gcp_convo_export.json
+data/gcp_feedback_export.json
+data/gcp_misc_export.json
+data/_local_convo_backup_*.json
+data/_local_inventory.json
+
+# Nightly debug/auto-fix system (runtime state + generated reports)
+scripts/_nightly_state.json
+logs/nightly_debug/
