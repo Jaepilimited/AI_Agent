@@ -350,3 +350,69 @@ def check_health(url: str = "http://127.0.0.1:3000/health", timeout: float = 10.
             return resp.status == 200
     except (urllib.error.URLError, OSError, TimeoutError):
         return False
+
+
+# --- Prompt builders ---
+
+def build_log_error_prompt(error: LogError) -> str:
+    return f"""다음은 프로덕션 서버 로그에서 발견된 에러입니다. 읽기전용으로 분석하세요. 파일을 수정하지 마세요.
+
+```
+{error.raw}
+```
+
+이 에러의 원인이 되는 코드를 찾아 설명하고, 수정이 필요하면 unified diff(```diff 코드블록)로 제안하세요.
+확신이 없으면 diff 없이 원인 설명만 하세요."""
+
+
+def build_diff_review_prompt(file_path: str, diff_text: str) -> str:
+    return f"""다음은 최근 변경된 파일 `{file_path}`의 diff입니다. 읽기전용으로 리뷰하세요. 파일을 수정하지 마세요.
+
+```diff
+{diff_text}
+```
+
+이 변경에 버그가 있는지 리뷰하고, 있다면 수정을 unified diff(```diff 코드블록)로 제안하세요.
+버그가 없으면 diff 없이 "이상 없음"이라고만 답하세요."""
+
+
+def build_verification_prompt(proposal: str) -> str:
+    return f"""다음 수정 제안을 adversarial하게 재검증하세요. 실제 코드와 대조하고, 제안자의 주장을 그대로 믿지 마세요.
+
+{proposal}
+
+판정을 반드시 SAFE 또는 RISK 중 하나로 명시하고 근거를 설명하세요."""
+
+
+def summarize(proposal: str, max_len: int = 80) -> str:
+    for line in proposal.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:max_len]
+    return ""
+
+
+# --- Report builder ---
+
+def build_report(date_label: str, applied: list, reported: list) -> Optional[str]:
+    """Return markdown report text, or None if there's nothing to report at all."""
+    if not applied and not reported:
+        return None
+
+    lines = [f"# 야간 점검 리포트 — {date_label}", ""]
+
+    if applied:
+        lines.append(f"## 자동적용됨 ({len(applied)}건)")
+        for item in applied:
+            lines.append(f"- [{item['file']}] {item['summary']} — 커밋 {item['commit']}, {item['health_status']}")
+        lines.append("")
+
+    if reported:
+        lines.append(f"## 보고만 ({len(reported)}건)")
+        for item in reported:
+            lines.append(f"- [{item['file']}] {item['summary']}")
+            lines.append(f"  원인: {item['cause']}")
+            lines.append(f"  자동적용 제외 사유: {item['exclusion_reason']}")
+        lines.append("")
+
+    return "\n".join(lines)

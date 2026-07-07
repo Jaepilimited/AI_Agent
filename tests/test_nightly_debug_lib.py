@@ -31,6 +31,11 @@ from scripts.nightly_debug_lib import (
     verification_passed,
     check_health,
     restart_prod,
+    build_diff_review_prompt,
+    build_log_error_prompt,
+    build_report,
+    build_verification_prompt,
+    summarize,
 )
 
 
@@ -506,3 +511,43 @@ class TestPm2Health:
     def test_check_health_false_on_connection_error(self):
         with mock.patch("urllib.request.urlopen", side_effect=OSError("connection refused")):
             assert check_health() is False
+
+
+class TestPromptsAndSummary:
+    def test_build_log_error_prompt_includes_raw_error(self):
+        error = LogError(raw="AttributeError: boom", kind="traceback")
+        prompt = build_log_error_prompt(error)
+        assert "AttributeError: boom" in prompt
+        assert "읽기전용" in prompt or "read-only" in prompt.lower()
+
+    def test_build_diff_review_prompt_includes_file_and_diff(self):
+        prompt = build_diff_review_prompt("app/agents/gws_agent.py", "diff --git a/x b/x\n")
+        assert "app/agents/gws_agent.py" in prompt
+        assert "diff --git a/x b/x" in prompt
+
+    def test_build_verification_prompt_includes_proposal(self):
+        prompt = build_verification_prompt("## Summary\n원인은 이렇습니다")
+        assert "원인은 이렇습니다" in prompt
+        assert "SAFE" in prompt
+
+    def test_summarize_returns_first_nonempty_line(self):
+        proposal = "\n\n## Summary\n실제 원인은 NoneType 접근입니다.\n\n자세한 설명..."
+        assert summarize(proposal) == "## Summary"
+
+    def test_summarize_truncates_long_line(self):
+        long_line = "가" * 200
+        assert len(summarize(long_line, max_len=80)) <= 80
+
+
+class TestReportBuilder:
+    def test_build_report_none_when_nothing_to_report(self):
+        assert build_report("2026-07-08 22:00", [], []) is None
+
+    def test_build_report_includes_applied_and_reported_sections(self):
+        applied = [{"file": "app/agents/gws_agent.py", "summary": "NoneType 수정", "commit": "abc1234", "health_status": "헬스체크 통과"}]
+        reported = [{"file": "app/agents/sql_agent.py", "summary": "가드 미흡", "cause": "enabled_sources 미검증", "exclusion_reason": "denylisted file"}]
+        report = build_report("2026-07-08 22:00", applied, reported)
+        assert "자동적용됨 (1건)" in report
+        assert "abc1234" in report
+        assert "보고만 (1건)" in report
+        assert "denylisted file" in report
