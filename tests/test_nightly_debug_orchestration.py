@@ -207,7 +207,19 @@ class TestUntrackedFileBypassDefenseInDepth:
         defense-in-depth check must reject this (actual_changed != {target_file})
         and must use the new full-reset cleanup (reset_worktree_fully) rather
         than the old single-file discard_worktree_changes, since an unknown/
-        unbounded set of files may be dirty in the worktree."""
+        unbounded set of files may be dirty in the worktree.
+
+        NOTE: as of the round-3 hardening pass, pre_check itself now rejects
+        ANY diff with more than one '+++ ' body section (see
+        count_diff_plus_sections / test_pre_check_rejects_smuggled_second_body_section
+        in test_nightly_debug_lib.py) — so this exact construction is now
+        caught at the gate, before ever reaching apply_diff_to_worktree. This
+        test's purpose is specifically the *post-apply* defense-in-depth net
+        (get_worktree_changed_files + reset_worktree_fully), so pre_check is
+        mocked to eligible here to isolate and keep exercising that layer on
+        its own merits — a second, independent safety net is only meaningful
+        if it's still verified to work should the earlier gate ever be
+        bypassed by some other diff shape."""
         construction_a_diff = (
             "diff --git a/allowed.py b/allowed.py\n"
             "--- a/allowed.py\n"
@@ -223,6 +235,8 @@ class TestUntrackedFileBypassDefenseInDepth:
         proposal = "## Summary\nfix\n```diff\n" + construction_a_diff + "```\n"
 
         with mock.patch("scripts.nightly_debug.run_codex", return_value=proposal), \
+             mock.patch("scripts.nightly_debug.pre_check",
+                         return_value=mock.MagicMock(auto_apply_eligible=True, reasons=[])), \
              mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
              mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
              mock.patch("scripts.nightly_debug.Path.read_text", return_value="a\n"), \

@@ -27,6 +27,7 @@ from scripts.nightly_debug_lib import (
     diff_touches_single_file,
     extract_diff_target_file,
     extract_diff_body_paths,
+    count_diff_plus_sections,
     get_worktree_changed_files,
     reset_worktree_fully,
     pre_check,
@@ -404,6 +405,15 @@ class TestRiskGate:
     def test_is_denylisted_normalizes_backslashes(self):
         assert is_denylisted("app\\agents\\sql_agent.py") is True
 
+    def test_is_denylisted_case_insensitive_exact_match(self):
+        """Prod runs on Windows (case-insensitive filesystem): a differently
+        cased path resolves to the same file on disk and must be denylisted
+        just the same."""
+        assert is_denylisted("App/Core/Security.py") is True
+
+    def test_is_denylisted_case_insensitive_suffix_match(self):
+        assert is_denylisted("Migrations/Foo.SQL") is True
+
     def test_count_changed_lines_excludes_headers(self):
         diff_text = (
             "diff --git a/x.py b/x.py\n"
@@ -522,6 +532,79 @@ class TestRiskGate:
         )
         verdict = pre_check(diff_text)
         assert verdict.auto_apply_eligible is True
+
+    def test_count_diff_plus_sections_single_file_multi_hunk_is_one(self):
+        """A legitimate single-file diff with multiple @@ hunks repeats the
+        '@@ ' marker per hunk but has exactly ONE '+++ ' header for the whole
+        file — hunks don't get their own +++ line."""
+        diff_text = (
+            "diff --git a/app/utils/foo.py b/app/utils/foo.py\n"
+            "--- a/app/utils/foo.py\n"
+            "+++ b/app/utils/foo.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            "-old top\n"
+            "+new top\n"
+            "@@ -10,2 +10,2 @@\n"
+            "-old bottom\n"
+            "+new bottom\n"
+        )
+        assert count_diff_plus_sections(diff_text) == 1
+
+    def test_count_diff_plus_sections_multi_section_is_two(self):
+        diff_text = (
+            "diff --git a/allowed.py b/allowed.py\n"
+            "--- a/allowed.py\n"
+            "+++ b/allowed.py\n"
+            "@@ -1 +1 @@\n-a\n+b\n"
+            "--- /dev/null\n"
+            "+++ b/some/other/path.py\n"
+            "@@ -0,0 +1 @@\n+smuggled\n"
+        )
+        assert count_diff_plus_sections(diff_text) == 2
+
+    def test_pre_check_passes_for_legitimate_multi_hunk_single_file_diff(self):
+        """A normal single-file diff with 2 @@ hunks must NOT false-positive
+        on the new multi-section-diff check — only distinct '+++ ' body
+        sections count, not '@@ ' hunk markers."""
+        diff_text = (
+            "diff --git a/app/utils/foo.py b/app/utils/foo.py\n"
+            "--- a/app/utils/foo.py\n"
+            "+++ b/app/utils/foo.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            "-old top\n"
+            "+new top\n"
+            "@@ -10,2 +10,2 @@\n"
+            "-old bottom\n"
+            "+new bottom\n"
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is True
+        assert verdict.reasons == []
+
+    def test_pre_check_rejects_smuggled_second_body_section(self):
+        """The exact bypass being closed: a diff whose 'diff --git' header and
+        first --- / +++ pair both name a safe-looking, non-denylisted file
+        (so header/body corroboration alone would pass it), but which smuggles
+        a second, unheadered '--- /dev/null' / '+++ b/<path>' section that
+        `git apply` would apply too — creating an extra file that, if it
+        happens to match this repo's .gitignore, is invisible to both
+        `git status --porcelain` and `git clean -fd`. Must be rejected at the
+        pre_check gate itself, regardless of what the second path is."""
+        diff_text = (
+            "diff --git a/allowed.py b/allowed.py\n"
+            "--- a/allowed.py\n"
+            "+++ b/allowed.py\n"
+            "@@ -1 +1 @@\n"
+            "-a\n"
+            "+b\n"
+            "--- /dev/null\n"
+            "+++ b/some/other/path.py\n"
+            "@@ -0,0 +1 @@\n"
+            "+smuggled content\n"
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+        assert any("body sections" in r for r in verdict.reasons)
 
     def test_extract_diff_body_paths_returns_stripped_paths(self):
         diff_text = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"

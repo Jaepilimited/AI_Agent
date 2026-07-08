@@ -312,6 +312,8 @@ DENYLIST_FILES = [
     "prompts/sql_generator.txt",
 ]
 DENYLIST_SUFFIXES = [".sql"]
+_DENYLIST_FILES_LOWER = {f.lower() for f in DENYLIST_FILES}
+_DENYLIST_SUFFIXES_LOWER = [s.lower() for s in DENYLIST_SUFFIXES]
 MAX_CHANGED_LINES = 30
 
 
@@ -322,10 +324,15 @@ class RiskVerdict:
 
 
 def is_denylisted(file_path: str) -> bool:
-    normalized = file_path.replace("\\", "/")
-    if normalized in DENYLIST_FILES:
+    """Production runs on Windows, where the filesystem is case-insensitive —
+    'App/Core/Security.py' and 'app/core/security.py' are the same file on
+    disk. Compare case-insensitively (lowercasing both the input and the
+    denylist) so a differently-cased path can't slip past the denylist.
+    Over-matching (denying more) is the safe direction here."""
+    normalized = file_path.replace("\\", "/").lower()
+    if normalized in _DENYLIST_FILES_LOWER:
         return True
-    return any(normalized.endswith(suf) for suf in DENYLIST_SUFFIXES)
+    return any(normalized.endswith(suf) for suf in _DENYLIST_SUFFIXES_LOWER)
 
 
 def count_changed_lines(diff_text: str) -> int:
@@ -373,6 +380,22 @@ def extract_diff_body_paths(diff_text: str) -> "tuple[Optional[str], Optional[st
     return minus_path, plus_path
 
 
+def count_diff_plus_sections(diff_text: str) -> int:
+    """Count all '+++ ' body section headers in the diff.
+
+    Structural check: a legitimate single-file unified diff has exactly one
+    '+++ ' line total, no matter how many '@@ ' hunks it contains (hunks
+    don't repeat the '+++ ' header). More than one means a second, unheadered
+    '---'/'+++' section has been smuggled into the diff body — e.g. targeting
+    a path that `git status --porcelain` / `git clean -fd` can't see if it
+    matches this repo's .gitignore, bypassing the post-apply defense-in-depth
+    net entirely. `extract_diff_body_paths` only ever looks at the FIRST
+    '---'/'+++' pair via `re.search`, so it can't detect this on its own —
+    this function exists specifically to catch it.
+    """
+    return len(re.findall(r"^\+\+\+ ", diff_text, re.MULTILINE))
+
+
 def pre_check(diff_text: str) -> RiskVerdict:
     """Checks possible before actually applying the diff: target file (read from
     the diff itself, never from a caller-supplied label) + diff size.
@@ -410,6 +433,12 @@ def pre_check(diff_text: str) -> RiskVerdict:
         reasons.append(f"denylisted file: {target_file}")
     if not diff_touches_single_file(diff_text):
         reasons.append("diff touches more than one file")
+    plus_sections = count_diff_plus_sections(diff_text)
+    if plus_sections != 1:
+        reasons.append(
+            f"diff contains {plus_sections} body sections (+++ lines) — "
+            "multi-section diffs are not auto-apply eligible"
+        )
     changed = count_changed_lines(diff_text)
     if changed > MAX_CHANGED_LINES:
         reasons.append(f"diff too large: {changed} lines > {MAX_CHANGED_LINES}")
