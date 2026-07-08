@@ -28,6 +28,7 @@ from scripts.nightly_debug_lib import (
     extract_diff_target_file,
     extract_diff_body_paths,
     get_worktree_changed_files,
+    reset_worktree_fully,
     pre_check,
     post_apply_check,
     verification_passed,
@@ -285,6 +286,28 @@ class TestGitHelpers:
         repo = _init_repo(tmp_path)
         assert get_worktree_changed_files(repo) == []
 
+    def test_get_worktree_changed_files_detects_new_untracked_file(self, tmp_path):
+        """Regression guard for the original bug: `git diff --name-only` is
+        blind to untracked (newly-created) files entirely — only `git status
+        --porcelain` sees them. A test that only modifies an already-tracked
+        file (like test_get_worktree_changed_files_detects_uncommitted_edit
+        above) would NOT have caught this; a brand-new file is required."""
+        repo = _init_repo(tmp_path)
+        (repo / "backdoor.py").write_text("import os  # attacker code\n", encoding="utf-8")
+        changed = set(get_worktree_changed_files(repo))
+        assert "backdoor.py" in changed
+
+    def test_reset_worktree_fully_restores_tracked_and_removes_untracked(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        (repo / "sample.py").write_text("garbage tracked edit", encoding="utf-8")
+        (repo / "backdoor.py").write_text("import os  # attacker code\n", encoding="utf-8")
+        assert (repo / "backdoor.py").exists()
+
+        reset_worktree_fully(repo)
+
+        assert (repo / "sample.py").read_text(encoding="utf-8") == "def add(a, b):\n    return a + b\n"
+        assert not (repo / "backdoor.py").exists()
+
     def test_get_current_commit_raises_on_git_error(self, tmp_path):
         """When `git rev-parse HEAD` fails (not a git repo), the function
         must raise RuntimeError rather than silently returning ''."""
@@ -472,6 +495,23 @@ class TestRiskGate:
         )
         verdict = pre_check(diff_text)
         assert verdict.auto_apply_eligible is False
+
+    def test_pre_check_rejects_pure_rename_diff_with_no_body_paths(self):
+        """A pure rename diff has 'rename from'/'rename to' headers but no
+        --- / +++ lines at all — extract_diff_body_paths returns (None, None),
+        so body_paths is []. The old `all(body_paths)` check treated an empty
+        list as vacuous agreement (all([]) is True), letting a rename pass
+        pre_check with ZERO body corroboration of the header path. It must be
+        rejected instead."""
+        diff_text = (
+            "diff --git a/old.py b/new.py\n"
+            "similarity index 100%\n"
+            "rename from old.py\n"
+            "rename to new.py\n"
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+        assert any("no --- / +++ body lines" in r for r in verdict.reasons)
 
     def test_pre_check_passes_when_header_and_body_paths_agree(self):
         diff_text = (

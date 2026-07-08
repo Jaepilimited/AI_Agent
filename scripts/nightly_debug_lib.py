@@ -108,18 +108,58 @@ def get_changed_files(repo_dir: Path, since_commit: Optional[str]) -> list:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _strip_porcelain_quotes(path: str) -> str:
+    """git quotes paths containing unusual characters in C-style double quotes.
+    Strip that quoting if present; otherwise return the path unchanged."""
+    path = path.strip()
+    if len(path) >= 2 and path[0] == '"' and path[-1] == '"':
+        return path[1:-1]
+    return path
+
+
 def get_worktree_changed_files(repo_dir: Path) -> list:
-    """Files with uncommitted changes in the working tree (vs. HEAD), tracked-file only.
-    Used as a defense-in-depth check right after `git apply` — verifies the set of
-    files actually modified on disk matches what pre_check believed the target to be.
+    """Files with ANY uncommitted change in the working tree — tracked
+    modifications AND untracked (newly created) files alike. Used as a
+    defense-in-depth check right after `git apply` — verifies the full set of
+    files actually touched on disk matches what pre_check believed the target
+    to be.
+
+    Deliberately uses `git status --porcelain`, NOT `git diff --name-only`:
+    `git diff` only reports changes to already-tracked files, so it is blind
+    to a diff that creates a brand-new file (e.g. a second `--- /dev/null` /
+    `+++ b/<path>` section smuggled into a multi-section diff, or the new
+    path left behind by a rename) — exactly the kind of file this check
+    exists to catch.
     """
     result = subprocess.run(
-        ["git", "diff", "--name-only"], cwd=str(repo_dir),
+        ["git", "status", "--porcelain"], cwd=str(repo_dir),
         capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
     if result.returncode != 0:
         return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    paths: list = []
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        # Porcelain v1 format: "XY PATH" — two status-code chars, a space,
+        # then the path (or "old -> new" for renames/copies). Be liberal in
+        # what we accept: if a line doesn't look like the expected shape,
+        # still extract *something* rather than silently dropping it —
+        # silently dropping a line is exactly the bypass this function exists
+        # to close.
+        if len(line) > 3 and line[2] == " ":
+            path_part = line[3:]
+        elif len(line) > 2:
+            path_part = line[2:].lstrip()
+        else:
+            path_part = line.strip()
+        if " -> " in path_part:
+            old_path, new_path = path_part.split(" -> ", 1)
+            paths.append(_strip_porcelain_quotes(old_path))
+            paths.append(_strip_porcelain_quotes(new_path))
+        else:
+            paths.append(_strip_porcelain_quotes(path_part))
+    return [p for p in paths if p]
 
 
 def get_file_diff(repo_dir: Path, since_commit: str, file_path: str) -> str:
@@ -154,6 +194,35 @@ def discard_worktree_changes(repo_dir: Path, file_path: str) -> None:
         ["git", "checkout", "--", file_path], cwd=str(repo_dir),
         capture_output=True, text=True, encoding="utf-8", timeout=30,
     )
+
+
+def reset_worktree_fully(repo_dir: Path) -> None:
+    """Best-effort full worktree reset: restore all tracked modifications and
+    remove all untracked files/directories.
+
+    Used at the defense-in-depth mismatch site in process_issue, where the
+    set of files a `git apply` actually touched is unknown/unbounded (it may
+    include files smuggled in beyond the believed target) — a single-file
+    `discard_worktree_changes` isn't enough in that case because we don't
+    know the full set of what changed.
+
+    Best-effort: never raises. This is a cleanup path, not one whose success
+    gates anything downstream.
+    """
+    try:
+        subprocess.run(
+            ["git", "checkout", "--", "."], cwd=str(repo_dir),
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+    except Exception:
+        pass
+    try:
+        subprocess.run(
+            ["git", "clean", "-fd"], cwd=str(repo_dir),
+            capture_output=True, text=True, encoding="utf-8", timeout=30,
+        )
+    except Exception:
+        pass
 
 
 def commit_worktree_changes(repo_dir: Path, file_path: str, commit_message: str) -> bool:
@@ -319,10 +388,22 @@ def pre_check(diff_text: str) -> RiskVerdict:
     target_file = extract_diff_target_file(diff_text)
     minus_path, plus_path = extract_diff_body_paths(diff_text)
     body_paths = [p for p in (minus_path, plus_path) if p is not None]
-    paths_agree = target_file is not None and all(p == target_file for p in body_paths)
+    paths_agree = (
+        target_file is not None and bool(body_paths) and all(p == target_file for p in body_paths)
+    )
 
     if target_file is None:
         reasons.append("could not determine target file from diff")
+    elif not body_paths:
+        # A diff with no '--- '/'+++ ' body lines at all (e.g. a pure rename:
+        # 'rename from' / 'rename to' headers only) gives us nothing to
+        # corroborate the header path against. Treating "no body paths" as
+        # vacuous agreement (the old `all([])` behavior) would let the header
+        # be trusted alone — refuse instead.
+        reasons.append(
+            "diff has no --- / +++ body lines to verify against the header — "
+            "refusing to trust header alone"
+        )
     elif not paths_agree:
         reasons.append("diff header path does not match --- / +++ path — refusing to trust either")
     elif is_denylisted(target_file):

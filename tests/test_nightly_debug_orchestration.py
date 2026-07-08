@@ -190,6 +190,56 @@ class TestProcessIssue:
         mock_commit.assert_not_called()
 
 
+class TestUntrackedFileBypassDefenseInDepth:
+    def test_multi_section_diff_smuggling_untracked_file_is_rejected_and_fully_reset(self, tmp_path):
+        """End-to-end reproduction of Construction A: a diff whose 'diff --git'
+        header and first --- / +++ pair both name the safe-looking 'allowed.py'
+        (so real pre_check passes it — this is the same shape a re-reviewer
+        found bypasses the header/body corroboration check), but which
+        contains a second, unheadered '--- /dev/null' / '+++ b/app/core/
+        backdoor.py' section that `git apply` would actually apply too,
+        creating a brand-new UNTRACKED file invisible to `git diff
+        --name-only`.
+
+        get_worktree_changed_files is mocked to return what the FIXED
+        function (git status --porcelain) now correctly reports post-apply:
+        both allowed.py and the smuggled backdoor.py. process_issue's
+        defense-in-depth check must reject this (actual_changed != {target_file})
+        and must use the new full-reset cleanup (reset_worktree_fully) rather
+        than the old single-file discard_worktree_changes, since an unknown/
+        unbounded set of files may be dirty in the worktree."""
+        construction_a_diff = (
+            "diff --git a/allowed.py b/allowed.py\n"
+            "--- a/allowed.py\n"
+            "+++ b/allowed.py\n"
+            "@@ -1 +1 @@\n"
+            "-a\n"
+            "+b\n"
+            "--- /dev/null\n"
+            "+++ b/app/core/backdoor.py\n"
+            "@@ -0,0 +1 @@\n"
+            "+import os  # attacker code\n"
+        )
+        proposal = "## Summary\nfix\n```diff\n" + construction_a_diff + "```\n"
+
+        with mock.patch("scripts.nightly_debug.run_codex", return_value=proposal), \
+             mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
+             mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
+             mock.patch("scripts.nightly_debug.Path.read_text", return_value="a\n"), \
+             mock.patch("scripts.nightly_debug.get_worktree_changed_files",
+                         return_value=["allowed.py", "app/core/backdoor.py"]), \
+             mock.patch("scripts.nightly_debug.reset_worktree_fully") as mock_reset, \
+             mock.patch("scripts.nightly_debug.discard_worktree_changes") as mock_discard, \
+             mock.patch("scripts.nightly_debug.commit_worktree_changes") as mock_commit:
+            result = process_issue(tmp_path, "allowed.py", "context", "prompt", dry_run=False)
+
+        assert result["applied"] is False
+        assert "app/core/backdoor.py" in result["exclusion_reason"] or "allowed.py" in result["exclusion_reason"]
+        mock_reset.assert_called_once_with(tmp_path)
+        mock_discard.assert_not_called()
+        mock_commit.assert_not_called()
+
+
 class TestMainIssueLoopExceptionIsolation:
     """main()'s per-issue loop wraps process_issue in try/except so one crashing
     issue (e.g. get_current_commit raising RuntimeError) doesn't lose the whole

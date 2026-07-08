@@ -39,6 +39,7 @@ from scripts.nightly_debug_lib import (  # noqa: E402
     load_state,
     post_apply_check,
     pre_check,
+    reset_worktree_fully,
     restart_prod,
     revert_last_commit,
     run_codex,
@@ -107,8 +108,12 @@ def process_issue(repo_dir: Path, file_path: str, context: str, prompt: str, dry
     # pre-apply target_file alone for what happened after apply.
     actual_changed = set(get_worktree_changed_files(repo_dir))
     if actual_changed != {target_file}:
-        for changed_file in actual_changed | {target_file}:
-            discard_worktree_changes(repo_dir, changed_file)
+        # The changed set here is unknown/unbounded — it may include files
+        # smuggled in beyond target_file (e.g. a multi-section diff that
+        # creates an extra untracked file). Discarding only the one known
+        # file would leave the rest dirty in the worktree, so fully reset
+        # instead of the single-file discard used elsewhere in this function.
+        reset_worktree_fully(repo_dir)
         return {"file": target_file, "summary": summary, "applied": False,
                 "cause": summary,
                 "exclusion_reason": f"git apply 실제 수정 파일이 예상과 다름: {actual_changed} (예상: {target_file})"}
