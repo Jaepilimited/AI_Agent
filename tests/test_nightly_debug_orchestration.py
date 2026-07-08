@@ -4,9 +4,12 @@ All I/O (codex, git, pm2, health) is mocked; scripts/test_nightly_debug_lib.py
 already covers the real logic of each mocked function.
 """
 
+import subprocess
 from unittest import mock
 
-from scripts.nightly_debug import process_issue
+from scripts.nightly_debug import collect_diff_issues, collect_log_issues, process_issue
+from scripts.nightly_debug_lib import get_current_commit
+from tests.test_nightly_debug_lib import _init_repo
 
 
 def _patch_lib(**overrides):
@@ -55,6 +58,7 @@ class TestProcessIssue:
              mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
              mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
              mock.patch("scripts.nightly_debug.Path.read_text", return_value="def x():\n    return 1\n"), \
+             mock.patch("scripts.nightly_debug.get_worktree_changed_files", return_value=["x.py"]), \
              mock.patch("scripts.nightly_debug.post_apply_check", return_value=mock.MagicMock(auto_apply_eligible=True, reasons=[])), \
              mock.patch("scripts.nightly_debug.verification_passed", return_value=False), \
              mock.patch("scripts.nightly_debug.discard_worktree_changes") as mock_discard, \
@@ -71,6 +75,7 @@ class TestProcessIssue:
              mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
              mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
              mock.patch("scripts.nightly_debug.Path.read_text", return_value="def x():\n    return 1\n"), \
+             mock.patch("scripts.nightly_debug.get_worktree_changed_files", return_value=["x.py"]), \
              mock.patch("scripts.nightly_debug.post_apply_check", return_value=mock.MagicMock(auto_apply_eligible=True, reasons=[])), \
              mock.patch("scripts.nightly_debug.verification_passed", return_value=True), \
              mock.patch("scripts.nightly_debug.commit_worktree_changes", return_value=True), \
@@ -90,6 +95,7 @@ class TestProcessIssue:
              mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
              mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
              mock.patch("scripts.nightly_debug.Path.read_text", return_value="def x():\n    return 1\n"), \
+             mock.patch("scripts.nightly_debug.get_worktree_changed_files", return_value=["x.py"]), \
              mock.patch("scripts.nightly_debug.post_apply_check", return_value=mock.MagicMock(auto_apply_eligible=True, reasons=[])), \
              mock.patch("scripts.nightly_debug.verification_passed", return_value=True), \
              mock.patch("scripts.nightly_debug.commit_worktree_changes", return_value=True), \
@@ -115,6 +121,7 @@ class TestProcessIssue:
              mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
              mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
              mock.patch("scripts.nightly_debug.Path.read_text", return_value="def x():\n    return 1\n"), \
+             mock.patch("scripts.nightly_debug.get_worktree_changed_files", return_value=["x.py"]), \
              mock.patch("scripts.nightly_debug.post_apply_check", return_value=mock.MagicMock(auto_apply_eligible=True, reasons=[])), \
              mock.patch("scripts.nightly_debug.verification_passed", return_value=True), \
              mock.patch("scripts.nightly_debug.commit_worktree_changes", return_value=True), \
@@ -139,6 +146,7 @@ class TestProcessIssue:
              mock.patch("scripts.nightly_debug.diff_check_applies", return_value=True), \
              mock.patch("scripts.nightly_debug.apply_diff_to_worktree", return_value=True), \
              mock.patch("scripts.nightly_debug.Path.read_text", return_value="def x():\n    return 1\n"), \
+             mock.patch("scripts.nightly_debug.get_worktree_changed_files", return_value=["x.py"]), \
              mock.patch("scripts.nightly_debug.post_apply_check", return_value=mock.MagicMock(auto_apply_eligible=True, reasons=[])), \
              mock.patch("scripts.nightly_debug.verification_passed", return_value=True), \
              mock.patch("scripts.nightly_debug.commit_worktree_changes", return_value=True), \
@@ -155,6 +163,31 @@ class TestProcessIssue:
         mock_revert.assert_called_once()
         assert mock_restart.call_count == 2
         assert mock_health.call_count == 2
+
+    def test_header_body_mismatched_diff_is_not_applied_end_to_end(self, tmp_path):
+        """Integration guard for the Critical fix: a diff whose 'diff --git' header
+        names a safe-looking file but whose --- / +++ lines name a denylisted file
+        must be rejected before ever attempting to apply it. Uses the REAL pre_check
+        (not mocked) so the fix itself is exercised, not a stand-in for it."""
+        proposal = (
+            "## Summary\nfix\n"
+            "```diff\n"
+            "diff --git a/allowed.py b/allowed.py\n"
+            "--- a/app/agents/sql_agent.py\n"
+            "+++ b/app/agents/sql_agent.py\n"
+            "@@ -1 +1 @@\n-a\n+b\n"
+            "```\n"
+        )
+        with mock.patch("scripts.nightly_debug.run_codex", return_value=proposal), \
+             mock.patch("scripts.nightly_debug.diff_check_applies") as mock_check, \
+             mock.patch("scripts.nightly_debug.apply_diff_to_worktree") as mock_apply, \
+             mock.patch("scripts.nightly_debug.commit_worktree_changes") as mock_commit:
+            result = process_issue(tmp_path, "allowed.py", "context", "prompt", dry_run=False)
+        assert result["applied"] is False
+        assert "header" in result["exclusion_reason"] or "path" in result["exclusion_reason"]
+        mock_check.assert_not_called()
+        mock_apply.assert_not_called()
+        mock_commit.assert_not_called()
 
 
 class TestMainIssueLoopExceptionIsolation:
@@ -194,3 +227,46 @@ class TestMainIssueLoopExceptionIsolation:
         assert reported[0]["applied"] is False
         assert "예외" in reported[0]["exclusion_reason"]
         assert "boom" in reported[0]["cause"]
+
+
+class TestCollectors:
+    """Real (not stand-in) tests for collect_log_issues / collect_diff_issues —
+    these previously had zero direct test coverage."""
+
+    def test_collect_log_issues_returns_issue_for_new_error_line(self, tmp_path):
+        log_path = tmp_path / "pm2-prod-error.log"
+        log_path.write_text('{"event": "sql_generation_failed", "level": "error"}\n', encoding="utf-8")
+        state = {"last_log_offset": 0}
+
+        issues, new_offset = collect_log_issues(tmp_path, log_path, state)
+
+        assert len(issues) == 1
+        assert issues[0]["file"] == "(server log)"
+        assert "sql_generation_failed" in issues[0]["context"]
+        assert "sql_generation_failed" in issues[0]["prompt"]
+        assert new_offset == len(log_path.read_text(encoding="utf-8"))
+
+    def test_collect_log_issues_missing_log_file_returns_empty(self, tmp_path):
+        log_path = tmp_path / "does_not_exist.log"
+        state = {"last_log_offset": 5}
+
+        issues, new_offset = collect_log_issues(tmp_path, log_path, state)
+
+        assert issues == []
+        assert new_offset == 5
+
+    def test_collect_diff_issues_returns_issue_for_changed_file(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        first_commit = get_current_commit(repo)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b + 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "sample.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "change"], cwd=repo, check=True)
+        state = {"last_git_commit": first_commit}
+
+        issues = collect_diff_issues(repo, state)
+
+        assert len(issues) == 1
+        assert issues[0]["file"] == "sample.py"
+        assert "sample.py" in issues[0]["context"]
+        assert "+    return a + b + 1" in issues[0]["context"]
+        assert "sample.py" in issues[0]["prompt"]

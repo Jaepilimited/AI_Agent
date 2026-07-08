@@ -26,6 +26,8 @@ from scripts.nightly_debug_lib import (
     count_changed_lines,
     diff_touches_single_file,
     extract_diff_target_file,
+    extract_diff_body_paths,
+    get_worktree_changed_files,
     pre_check,
     post_apply_check,
     verification_passed,
@@ -274,6 +276,15 @@ class TestGitHelpers:
         not_a_repo.mkdir()
         assert has_uncommitted_changes(not_a_repo) is True
 
+    def test_get_worktree_changed_files_detects_uncommitted_edit(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        (repo / "sample.py").write_text("def add(a, b):\n    return a + b  # edited\n", encoding="utf-8")
+        assert get_worktree_changed_files(repo) == ["sample.py"]
+
+    def test_get_worktree_changed_files_empty_on_clean_repo(self, tmp_path):
+        repo = _init_repo(tmp_path)
+        assert get_worktree_changed_files(repo) == []
+
     def test_get_current_commit_raises_on_git_error(self, tmp_path):
         """When `git rev-parse HEAD` fails (not a git repo), the function
         must raise RuntimeError rather than silently returning ''."""
@@ -447,6 +458,38 @@ class TestRiskGate:
         verdict = pre_check(diff_text)
         assert verdict.auto_apply_eligible is False
         assert any("sql_agent.py" in r for r in verdict.reasons)
+
+    def test_pre_check_rejects_mismatched_diff_header_and_body_paths(self):
+        """The bug this guards against: diff --git header says one (safe-looking)
+        file, but --- / +++ lines name a different (denylisted) file — git apply
+        resolves the actual patch target from --- / +++, not the header, so
+        trusting the header alone lets a denylisted file slip through."""
+        diff_text = (
+            "diff --git a/allowed.py b/allowed.py\n"
+            "--- a/app/agents/sql_agent.py\n"
+            "+++ b/app/agents/sql_agent.py\n"
+            "@@ -1 +1 @@\n-a\n+b\n"
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is False
+
+    def test_pre_check_passes_when_header_and_body_paths_agree(self):
+        diff_text = (
+            "diff --git a/app/agents/gws_agent.py b/app/agents/gws_agent.py\n"
+            "--- a/app/agents/gws_agent.py\n"
+            "+++ b/app/agents/gws_agent.py\n"
+            "@@ -1,1 +1,1 @@\n-old\n+new\n"
+        )
+        verdict = pre_check(diff_text)
+        assert verdict.auto_apply_eligible is True
+
+    def test_extract_diff_body_paths_returns_stripped_paths(self):
+        diff_text = "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
+        assert extract_diff_body_paths(diff_text) == ("x.py", "x.py")
+
+    def test_extract_diff_body_paths_handles_dev_null(self):
+        diff_text = "diff --git a/new.py b/new.py\n--- /dev/null\n+++ b/new.py\n@@ -0,0 +1 @@\n+a\n"
+        assert extract_diff_body_paths(diff_text) == (None, "new.py")
 
     def test_post_apply_check_passes_for_pure_bugfix(self):
         original = "def add(a, b):\n    return a - b\n"
