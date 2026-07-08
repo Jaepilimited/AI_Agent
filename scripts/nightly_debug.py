@@ -34,6 +34,7 @@ from scripts.nightly_debug_lib import (  # noqa: E402
     get_changed_files,
     get_current_commit,
     get_file_diff,
+    get_worktree_changed_files,
     has_uncommitted_changes,
     load_state,
     post_apply_check,
@@ -99,6 +100,18 @@ def process_issue(repo_dir: Path, file_path: str, context: str, prompt: str, dry
     if not apply_diff_to_worktree(repo_dir, diff_text):
         return {"file": target_file, "summary": summary, "applied": False,
                 "cause": summary, "exclusion_reason": "git apply 실패"}
+
+    # Defense-in-depth: even if pre_check's header/body-path validation has an
+    # edge case it doesn't catch, verify what `git apply` actually touched on
+    # disk matches exactly the file we believe we're patching. Never trust the
+    # pre-apply target_file alone for what happened after apply.
+    actual_changed = set(get_worktree_changed_files(repo_dir))
+    if actual_changed != {target_file}:
+        for changed_file in actual_changed | {target_file}:
+            discard_worktree_changes(repo_dir, changed_file)
+        return {"file": target_file, "summary": summary, "applied": False,
+                "cause": summary,
+                "exclusion_reason": f"git apply 실제 수정 파일이 예상과 다름: {actual_changed} (예상: {target_file})"}
 
     patched_source = (repo_dir / target_file).read_text(encoding="utf-8")
     post_verdict = post_apply_check(original_source, patched_source)

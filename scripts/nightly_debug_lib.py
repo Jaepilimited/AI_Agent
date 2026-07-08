@@ -108,6 +108,20 @@ def get_changed_files(repo_dir: Path, since_commit: Optional[str]) -> list:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def get_worktree_changed_files(repo_dir: Path) -> list:
+    """Files with uncommitted changes in the working tree (vs. HEAD), tracked-file only.
+    Used as a defense-in-depth check right after `git apply` — verifies the set of
+    files actually modified on disk matches what pre_check believed the target to be.
+    """
+    result = subprocess.run(
+        ["git", "diff", "--name-only"], cwd=str(repo_dir),
+        capture_output=True, text=True, encoding="utf-8", timeout=30,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def get_file_diff(repo_dir: Path, since_commit: str, file_path: str) -> str:
     result = subprocess.run(
         ["git", "diff", f"{since_commit}..HEAD", "--", file_path], cwd=str(repo_dir),
@@ -267,14 +281,50 @@ def extract_diff_target_file(diff_text: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def extract_diff_body_paths(diff_text: str) -> "tuple[Optional[str], Optional[str]]":
+    """Return (minus_path, plus_path) from the first '--- a/<path>' / '+++ b/<path>'
+    lines in a unified diff. `git apply` resolves the actual patch target from
+    these lines, NOT from the 'diff --git' header — so the header must never be
+    trusted alone for a security-relevant decision (e.g. the denylist check).
+
+    '--- /dev/null' / '+++ /dev/null' (new/deleted file) yields None for that side.
+    """
+    minus_match = re.search(r"^--- (\S+)", diff_text, re.MULTILINE)
+    plus_match = re.search(r"^\+\+\+ (\S+)", diff_text, re.MULTILINE)
+
+    def _strip(raw: Optional[str]) -> Optional[str]:
+        if raw is None or raw == "/dev/null":
+            return None
+        if raw.startswith("a/") or raw.startswith("b/"):
+            return raw[2:]
+        return raw
+
+    minus_path = _strip(minus_match.group(1) if minus_match else None)
+    plus_path = _strip(plus_match.group(1) if plus_match else None)
+    return minus_path, plus_path
+
+
 def pre_check(diff_text: str) -> RiskVerdict:
     """Checks possible before actually applying the diff: target file (read from
     the diff itself, never from a caller-supplied label) + diff size.
+
+    The target file must be corroborated by the 'diff --git' header AND the
+    '--- ' / '+++ ' body lines agreeing on the same path — `git apply` actually
+    resolves the patch target from the body lines, not the header, so a diff
+    whose header names a safe-looking file while the body lines name a
+    denylisted one must be rejected rather than denylist-checked on the header
+    path alone.
     """
     reasons = []
     target_file = extract_diff_target_file(diff_text)
+    minus_path, plus_path = extract_diff_body_paths(diff_text)
+    body_paths = [p for p in (minus_path, plus_path) if p is not None]
+    paths_agree = target_file is not None and all(p == target_file for p in body_paths)
+
     if target_file is None:
         reasons.append("could not determine target file from diff")
+    elif not paths_agree:
+        reasons.append("diff header path does not match --- / +++ path — refusing to trust either")
     elif is_denylisted(target_file):
         reasons.append(f"denylisted file: {target_file}")
     if not diff_touches_single_file(diff_text):
