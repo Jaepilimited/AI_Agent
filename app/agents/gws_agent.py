@@ -13,21 +13,22 @@ from typing import List
 
 import structlog
 
+logger = structlog.get_logger(__name__)
+
 try:
     from langchain_anthropic import ChatAnthropic
     from langchain_core.tools import tool
     from langgraph.errors import GraphRecursionError
     from langgraph.prebuilt import create_react_agent
     _LANGCHAIN_AVAILABLE = True
-except Exception:
+except Exception as e:
+    logger.warning("gws_agent_langchain_import_failed", error=str(e))
     _LANGCHAIN_AVAILABLE = False
 
 from app.config import get_settings
 from app.core.google_auth import GoogleAuthManager
 from app.core.google_workspace import list_calendar_events, search_drive, search_gmail
 from app.models.agent_models import AgentModel
-
-logger = structlog.get_logger(__name__)
 
 _auth_manager = None
 
@@ -39,10 +40,31 @@ def _get_auth_manager() -> GoogleAuthManager:
     return _auth_manager
 
 
+def _extract_text(content) -> str:
+    """Extract the text block from an Anthropic response.
+
+    Claude Sonnet 5 runs adaptive thinking by default, so ``content`` is a
+    plain string only when the model skipped thinking; on tasks complex
+    enough to trigger it (e.g. synthesizing search results), LangChain
+    returns a list of content blocks (a "thinking" block plus a "text"
+    block) instead.
+    """
+    if isinstance(content, str):
+        return content
+    return "".join(
+        block.get("text", "")
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "text"
+    )
+
+
 class GWSAgent:
     """Google Workspace agent with per-user OAuth2 authentication."""
 
     def __init__(self):
+        if not _LANGCHAIN_AVAILABLE:
+            self.llm = None
+            return
         settings = get_settings()
         self.llm = ChatAnthropic(
             model=AgentModel.GWS_AGENT.value,
@@ -60,6 +82,9 @@ class GWSAgent:
         Returns:
             Answer text, or auth URL if not authenticated.
         """
+        if self.llm is None:
+            return "Google Workspace 기능을 일시적으로 사용할 수 없습니다.\n잠시 후 다시 시도해주세요."
+
         # No user_email → can't authenticate
         if not user_email:
             return (
@@ -133,7 +158,7 @@ class GWSAgent:
                 ),
                 timeout=300.0,
             )
-            return result["messages"][-1].content
+            return _extract_text(result["messages"][-1].content)
         except asyncio.TimeoutError:
             logger.warning("gws_agent_timeout", query=query[:100], user_email=user_email)
             return (

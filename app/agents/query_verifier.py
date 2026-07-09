@@ -7,13 +7,18 @@ is critical - wrong queries have high risk.
 
 import json
 
+import structlog
+
 from app.config import get_settings
 from app.models.agent_models import AgentModel
+
+logger = structlog.get_logger(__name__)
 
 try:
     from langchain_anthropic import ChatAnthropic
     _LANGCHAIN_AVAILABLE = True
-except Exception:
+except Exception as e:
+    logger.warning("query_verifier_langchain_import_failed", error=str(e))
     _LANGCHAIN_AVAILABLE = False
 
 
@@ -38,6 +43,10 @@ class QueryVerifierAgent:
         Returns:
             {"valid": bool, "errors": list, "corrected_sql": str|None}
         """
+        if self.llm is None:
+            logger.debug("query_verifier_skipped_no_llm")
+            return {"valid": True, "errors": [], "corrected_sql": None}
+
         prompt = f"""당신은 BigQuery SQL 검증 전문가입니다.
 아래 SQL을 검증하고 문제가 있으면 수정해주세요.
 
@@ -66,7 +75,23 @@ class QueryVerifierAgent:
 {{"valid": false, "errors": ["에러 설명"], "corrected_sql": "수정된 SQL"}}"""
 
         response = await self.llm.ainvoke(prompt)
-        return self._parse_response(response.content)
+        return self._parse_response(self._extract_text(response.content))
+
+    def _extract_text(self, content) -> str:
+        """Extract the text block from an Anthropic response.
+
+        Claude Sonnet 5 runs adaptive thinking by default, so ``content`` is a
+        plain string only when the model skipped thinking; on tasks complex
+        enough to trigger it (e.g. SQL verification), LangChain returns a list
+        of content blocks (a "thinking" block plus a "text" block) instead.
+        """
+        if isinstance(content, str):
+            return content
+        return "".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
 
     def _parse_response(self, content: str) -> dict:
         """Parse LLM response."""
