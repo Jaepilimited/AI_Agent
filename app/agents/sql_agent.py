@@ -18,7 +18,7 @@ from app.config import get_settings
 from app.core.bigquery import get_bigquery_client
 import concurrent.futures
 
-from app.core.llm import MODEL_GEMINI, get_flash_client, get_llm_client
+from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
 from app.agents.query_verifier import QueryVerifierAgent
 from app.core.security import sanitize_sql, validate_sql
@@ -35,11 +35,40 @@ _sql_cache: OrderedDict = OrderedDict()  # query_hash → {sql, tables} (LRU ord
 _SQL_CACHE_MAX = 500
 
 
+# Queries containing any of these get today's date folded into their cache key
+# (see _cache_key) so "이번 달 매출" doesn't replay June's SQL after the month
+# rolls over to July. Absolute-date queries ("2025년 3월 매출") don't need this.
+_RELATIVE_DATE_KEYWORDS = (
+    "이번 달", "이번달", "지난 달", "지난달", "올해", "작년", "어제", "오늘",
+    "최근", "요즘", "이번 주", "이번주", "지난 주", "지난주", "this month", "last month",
+)
+
+
 def _cache_key(query: str, brand_filter: Optional[str] = None) -> str:
-    """Normalize query and build cache key hash."""
+    """Normalize query and build cache key hash.
+
+    Relative-date queries (오늘 날짜 기준) fold today's date into the key so
+    the cached SQL expires across day/month boundaries; date-free queries
+    keep a stable key so they can be reused indefinitely (subject to TTL).
+    """
     normalized = re.sub(r"\s+", " ", query.strip().lower())
-    raw = f"{normalized}|{brand_filter or ''}"
+    date_component = datetime.now().strftime("%Y-%m-%d") if any(
+        kw in normalized for kw in _RELATIVE_DATE_KEYWORDS
+    ) else ""
+    raw = f"{normalized}|{brand_filter or ''}|{date_component}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _build_brand_section(brand_filter: Optional[str]) -> str:
+    """Prompt fragment enforcing the user's group brand restriction."""
+    if not brand_filter:
+        return ""
+    brands = [b.strip() for b in brand_filter.split(",") if b.strip()]
+    brand_in = ", ".join(f"'{b}'" for b in brands)
+    return (
+        f"\n\n## ⚠️ 브랜드 필터 (최우선 적용)\n"
+        f"매출/제품 관련 SQL에 반드시 `WHERE Brand IN ({brand_in})` 조건을 추가하세요.\n"
+    )
 
 
 def _extract_tables_from_sql(sql: str) -> set:
@@ -101,6 +130,7 @@ def _enforce_partition_filter(
         + "\n반드시 WHERE Date BETWEEN ... AND ... 날짜 조건을 추가하세요."
         + "\n기간 미지정 시 기본값: DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) ~ CURRENT_DATE()"
         + "\nSELECT * 금지 — 필요한 컬럼만 선택하세요."
+        + _build_brand_section(brand_filter)
     )
     try:
         llm = get_flash_client()
@@ -127,12 +157,13 @@ def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Opti
         _sql_cache.move_to_end(query_hash)
         sql = _sql_cache[query_hash]
 
-    # 2. MariaDB persistent cache
+    # 2. MariaDB persistent cache (30-day TTL — stale rows are treated as a miss)
     if sql is None:
         try:
             from app.db.mariadb import fetch_one
             row = fetch_one(
-                "SELECT generated_sql FROM sql_cache WHERE query_hash = %s",
+                "SELECT generated_sql FROM sql_cache "
+                "WHERE query_hash = %s AND last_used_at > NOW() - INTERVAL 30 DAY",
                 (query_hash,),
             )
             if row:
@@ -153,6 +184,19 @@ def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Opti
                         allowed=list(allowed_tables))
             return None  # Cache hit but targets disallowed table → skip
 
+    # Real hit (survived the table-filter check) → bump hit metric, fire-and-forget.
+    # (In-memory OrderedDict entries carry no timestamp, so they aren't TTL-filtered;
+    # a process restart naturally bounds their lifetime.)
+    try:
+        from app.db.mariadb import execute
+        execute(
+            "UPDATE sql_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+            "WHERE query_hash = %s",
+            (query_hash,),
+        )
+    except Exception as e:
+        logger.debug("sql_cache_hit_count_update_failed", error=str(e))
+
     return sql
 
 
@@ -172,11 +216,23 @@ def _cache_store(query_hash: str, query: str, sql: str, brand_filter: Optional[s
             "INSERT INTO sql_cache (query_hash, query_text, generated_sql, brand_filter) "
             "VALUES (%s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE generated_sql = VALUES(generated_sql), "
-            "hit_count = hit_count + 1, last_used_at = NOW()",
+            "last_used_at = NOW()",
             (query_hash, query[:500], sql, brand_filter),
         )
     except Exception as e:
         logger.debug("sql_cache_store_failed", error=str(e))
+
+def invalidate_cache_for_query(query: str, brand_filter: Optional[str] = None) -> None:
+    """👎 피드백 시 해당 쿼리의 SQL 캐시 무효화."""
+    key = _cache_key(query, brand_filter)
+    _sql_cache.pop(key, None)
+    try:
+        from app.db.mariadb import execute
+        execute("DELETE FROM sql_cache WHERE query_hash = %s", (key,))
+        logger.info("sql_cache_invalidated", query=query[:80])
+    except Exception as e:
+        logger.debug("sql_cache_invalidate_failed", error=str(e))
+
 
 # Load prompts
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
@@ -291,7 +347,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         cached_sql = _cache_lookup(cache_key, allowed_tables)
         if cached_sql:
             logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
-            return {"generated_sql": cached_sql, "error": None}
+            return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
 
     # 1) Determine which schemas to include
     include_sales = (allowed_tables is None) or (settings.sales_table_full_path in allowed_tables)
@@ -395,14 +451,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
 
     # Brand filter injection: only if user has a group filter assigned
     brand_filter = state.get("brand_filter")
-    brand_section = ""
-    if brand_filter:
-        brands = [b.strip() for b in brand_filter.split(",") if b.strip()]
-        brand_in = ", ".join(f"'{b}'" for b in brands)
-        brand_section = (
-            f"\n\n## ⚠️ 브랜드 필터 (최우선 적용)\n"
-            f"매출/제품 관련 SQL에 반드시 `WHERE Brand IN ({brand_in})` 조건을 추가하세요.\n"
-        )
+    brand_section = _build_brand_section(brand_filter)
     # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름
 
     sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성."
@@ -412,7 +461,20 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     for _mk, _mv in _month_keywords.items():
         if _mk in _resolved_query:
             _resolved_query = _resolved_query.replace(_mk, _mv)
-    full_prompt = f"{system_prompt}{schema_context}{conv_section}{brand_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
+
+    # 학습된 스킬: 과거 👍 SQL 중 현재 질문과 단어가 겹치는 예시를 few-shot으로 주입.
+    # "톤브 앰플 백" 같은 축약/오타 표현이 반복돼도, 한 번 올바르게 풀린 SET LIKE
+    # 패턴이 있으면 프롬프트에 정적 매핑표를 매번 손으로 안 늘려도 재사용된다.
+    skill_section = ""
+    try:
+        from app.agents.skill_memory import load_skill_context
+        skill_section = load_skill_context("bigquery", query)
+        if skill_section:
+            skill_section = f"\n\n{skill_section}"
+    except Exception:
+        pass
+
+    full_prompt = f"{system_prompt}{schema_context}{conv_section}{brand_section}{skill_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
 
     try:
         sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=10000)
@@ -451,11 +513,8 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
 
         logger.info("sql_generated", sql=sql[:200])
 
-        # Store in cache for future use (only standalone queries)
-        if not conv_context:
-            cache_key = _cache_key(query, brand_filter)
-            _cache_store(cache_key, query, sql, brand_filter)
-
+        # Cache store happens in validate_sql_node, after validate_sql() passes
+        # (Fix D) — avoids persisting SQL that turns out to be broken/unparsable.
         return {"generated_sql": sql, "error": None}
     except Exception as e:
         logger.error("sql_generation_failed", error=str(e))
@@ -483,6 +542,14 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
 
     logger.info("sql_validation_passed", sql=sql[:200])
 
+    # Cache only SQL that has passed validation (Fix D — avoid caching broken
+    # SQL). Skip when it was already served from cache (already stored) or
+    # this is a conversational follow-up (same condition as generate_sql used).
+    if not state.get("_sql_from_cache") and not state.get("conversation_context"):
+        _query = state.get("query", "")
+        _brand_filter = state.get("brand_filter")
+        _cache_store(_cache_key(_query, _brand_filter), _query, sql, _brand_filter)
+
     # QueryVerifier: fire-and-forget (non-blocking, log-only)
     # Previously blocked up to 15s — now runs in background thread
     try:
@@ -490,7 +557,7 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
         import threading
 
         verifier = QueryVerifierAgent()
-        schema_info = _schema_cache or ""
+        schema_info = (_schema_cache_sales or "") + "".join(_schema_cache_tables.values())
         _sql_ref = sql  # capture for closure
 
         def _verify_bg():
@@ -508,6 +575,54 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
         logger.debug("query_verifier_launch_failed", error=str(e))
 
     return {"sql_valid": True, "error": None}
+
+
+def _retry_with_stronger_model(
+    query: str, failed_sql: str, bq, brand_filter: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Escalate a zero-result product-name query from Flash to Claude Opus.
+
+    Flash is used for SQL gen purely for speed; it occasionally misreads an
+    abbreviated/colloquial product name (e.g. "톤브 앰플 백") and produces a SET
+    LIKE pattern that matches nothing real. Rather than slow down every query
+    with a smarter model, only pay that cost when Flash's guess demonstrably
+    failed (0 rows back). Returns None if the escalation itself fails or also
+    returns nothing new — caller falls back to the original (empty) result.
+    """
+    try:
+        llm = get_llm_client(MODEL_CLAUDE)
+        # sql_generator.txt (~70KB, fully static) goes in system_instruction so
+        # ClaudeClient._wrap_system can mark it as a cache breakpoint — see
+        # app/core/llm.py. Only the retry-specific content is the user turn.
+        retry_prompt = (
+            f"## 사용자 질문\n{query}"
+            + f"\n\n⚠️ 이전 시도에서 아래 SQL을 생성했으나 조회 결과가 0건이었습니다:\n```sql\n{failed_sql}\n```"
+            + "\n사용자가 언급한 제품명이 축약어·오타·구어체 표현일 수 있습니다 "
+              "(예: '톤브 앰플 백' = '톤 브라이트닝 앰플 100ml'). "
+              "위 제품 SKU 목록을 참고해 실제로 존재하는 제품과 다시 매칭한 SQL을 생성하세요. "
+              "여전히 확신이 없으면 라인명까지만 필터링한 더 넓은 LIKE 패턴을 사용하세요."
+            + _build_brand_section(brand_filter)
+        )
+        retry_sql = llm.generate(
+            retry_prompt,
+            system_instruction=_load_prompt("sql_generator.txt"),
+            temperature=0.0, max_output_tokens=10000,
+        )
+        retry_sql = sanitize_sql(retry_sql)
+        if not retry_sql:
+            return None
+
+        is_valid, validation_error = validate_sql(retry_sql)
+        if not is_valid:
+            logger.warning("sql_product_escalation_invalid", error=validation_error, sql=retry_sql[:200])
+            return None
+
+        results = bq.execute_query(retry_sql, timeout=300.0, max_rows=1000)
+        logger.info("sql_product_escalation", query=query[:80], row_count=len(results), sql=retry_sql[:200])
+        return {"sql_result": results, "error": None, "generated_sql": retry_sql}
+    except Exception as e:
+        logger.warning("sql_product_escalation_failed", error=str(e)[:200])
+        return None
 
 
 def execute_sql(state: AgentState) -> Dict[str, Any]:
@@ -529,6 +644,17 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
         bq = get_bigquery_client()
         results = bq.execute_query(sql, timeout=300.0, max_rows=1000)
         logger.info("sql_executed", row_count=len(results))
+
+        # Product-filtered query returned nothing → likely an abbreviated/unfamiliar
+        # product name that Flash guessed wrong (e.g. "톤브 앰플 백"). Escalate ONCE
+        # to a stronger model instead of always paying that latency cost up front.
+        if len(results) == 0 and re.search(r"`?SET`?\s+LIKE|\bProduct\s+LIKE", sql, re.IGNORECASE):
+            escalated = _retry_with_stronger_model(
+                state.get("query", ""), sql, bq, brand_filter=state.get("brand_filter")
+            )
+            if escalated is not None:
+                return escalated
+
         return {"sql_result": results, "error": None}
     except Exception as e:
         error_str = str(e)
@@ -546,15 +672,26 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                     + "\n2. UNION ALL 금지! CASE WHEN 패턴만 사용!"
                     + "\n3. 모든 괄호를 반드시 닫을 것! CTE 사용 시 WITH ... AS (...) SELECT ... 완전한 형태"
                     + "\n4. 짧고 간결한 SQL만! 20줄 이내!"
+                    + _build_brand_section(state.get("brand_filter"))
                 )
                 retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
                 from app.core.security import sanitize_sql
                 retry_sql = sanitize_sql(retry_sql)
                 if retry_sql:
-                    logger.info("sql_retry_executing", sql=retry_sql[:200])
-                    results = bq.execute_query(retry_sql, timeout=300.0, max_rows=1000)
-                    logger.info("sql_retry_success", row_count=len(results))
-                    return {"sql_result": results, "error": None, "generated_sql": retry_sql}
+                    is_valid, _verr = validate_sql(retry_sql)
+                    if not is_valid:
+                        logger.error("sql_retry_validation_failed", error=_verr[:200])
+                        # fall through to the existing failure return below (do NOT execute)
+                    else:
+                        logger.info("sql_retry_executing", sql=retry_sql[:200])
+                        results = bq.execute_query(retry_sql, timeout=300.0, max_rows=1000)
+                        logger.info("sql_retry_success", row_count=len(results))
+                        conv_ctx = state.get("conversation_context", "")
+                        retry_brand_filter = state.get("brand_filter")
+                        if not conv_ctx:
+                            _ck = _cache_key(query, retry_brand_filter)
+                            _cache_store(_ck, query, retry_sql, retry_brand_filter)
+                        return {"sql_result": results, "error": None, "generated_sql": retry_sql}
             except Exception as retry_e:
                 logger.error("sql_retry_also_failed", error=str(retry_e)[:200])
         logger.error("sql_execution_failed", error=error_str[:200])
@@ -650,7 +787,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 왜 0건인지 가능한 원인 (조건 불일치, 해당 기간 데이터 없음 등) 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
-                answer = f.result(timeout=300.0)
+                answer = f.result(timeout=8.0)
             if answer and len(answer) > 30:
                 return {"answer": answer}
         except (concurrent.futures.TimeoutError, Exception):
@@ -753,6 +890,32 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             '더 구체적인 조건으로 검색해주세요.\''
         )
 
+    _brand_warning = ""
+    if re.search(r"Brand\s+(IN\s*\(|=\s*')[^)]*\b(CBT|UM|DD)\b", sql, re.IGNORECASE):
+        _brand_warning = (
+            "⚠️ **CBT/UM/DD 표기 (매우 중요!)**: 이번 조회 결과에 CBT/UM/DD 값이 포함됩니다. "
+            "이들은 실제 브랜드명이 아니라 사업부문/채널 코드이며(SK/CL만 실제 스킨케어 브랜드명), "
+            "답변에서 \"SK, CL, CBT 세 브랜드\"처럼 셋을 동등한 브랜드로 나열하지 말고 "
+            "반드시 \"SK, CL, CBT(중국사업 부문)\"처럼 정식 의미를 병기하세요."
+        )
+
+    _ingredient_keywords = ("성분", "나이아신아마이드", "레티놀", "히알루론산", "판테놀", "세라마이드")
+    _ingredient_query = any(kw in query for kw in _ingredient_keywords) and any(
+        kw in query for kw in ("포함", "미포함", "함유", "안 들어", "안들어", "없는")
+    )
+    if _ingredient_query and re.search(r"(NOT\s+)?LIKE\s+'%", sql, re.IGNORECASE):
+        _ingredient_warning = (
+            "⚠️ **성분 데이터 한계 경고 (매우 중요!)**: 이 조회는 제품명(product_name) 텍스트 매칭으로 "
+            "성분 포함/미포함을 판단한 것이며, 실제 배합 성분(포뮬레이션) 테이블을 조회한 것이 아닙니다. "
+            "제품명에 성분명이 없다고 해서 그 제품에 실제로 해당 성분이 들어있지 않은 것은 아닙니다. "
+            "답변 요약 바로 아래에 반드시 다음 경고를 그대로 포함하세요: "
+            "\"⚠️ 본 결과는 제품명 기반 조회이며, 전체 제품의 실제 배합 성분 데이터는 보유하고 있지 않아 "
+            "정확한 성분 포함/미포함 여부와 다를 수 있습니다.\" "
+            "이 결과를 확정적인 '미포함 TOP' 순위처럼 단정적으로 제시하지 마세요."
+        )
+    else:
+        _ingredient_warning = ""
+
     _result_header = f"총 {len(results)}행"
     if len(results) > 15:
         _result_header += f", 아래는 상위 {min(15, len(results))}건 프리뷰"
@@ -791,13 +954,15 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 #### 분석 및 인사이트
 [2-3개 bullet만. 각 1줄 이내. 비중/변화율/추세 중심. 문단형 서술 금지!]
 ---
-*조회 기준: {today} | {table_source}*
+*조회 기준: {today} | 내부 데이터베이스*
 > 💡 **이런 것도 물어보세요**
 > - [구체적 후속 질문 1 — 다른 기간/국가/제품 등 범위 확장]
 > - [구체적 후속 질문 2 — 관련 데이터 심화 분석]
 > - [구체적 후속 질문 3 — 다른 관점의 분석]
 
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
+
+⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
 
 ⚠️ **분량 제한 (최우선)**:
 - 전체 답변 8000자 이내 (표 포함). 8000자 초과 시 **요약 모드**로 전환:
@@ -818,6 +983,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 - 비즈니스 인사이트 필수: 비중, 변화율, 추세, 집중도, 비교 관점
 - 조건 설명(브랜드, 기간)은 답변 끝에 짧게 괄호로
 - ⚠️ 불완전 월 데이터 경고 (매우 중요!): 오늘은 {today_kr}입니다. 월별 추이/비교 데이터에 현재 월({today[:7]})이 포함되어 있다면, 해당 월은 아직 진행 중이므로 데이터가 불완전합니다. 반드시 "⚠️ {today[:7]}월 데이터는 {today}까지의 부분 집계입니다"라고 명시하고, 추세 분석에서 현재 월 수치가 낮은 것은 미완료 때문임을 언급하세요. 절대 불완전한 현재 월 데이터를 완성된 과거 월과 동일 선상에서 비교하지 마세요.
+{_brand_warning}
+{_ingredient_warning}
 """
 
     try:
@@ -831,9 +998,9 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             )
 
             answer = answer_future.result()
-            # Give chart up to 3s after answer is ready; skip if slow
+            # Give chart up to 8s after answer is ready; skip if slow
             try:
-                chart_markdown = chart_future.result(timeout=300.0)
+                chart_markdown = chart_future.result(timeout=8.0)
             except concurrent.futures.TimeoutError:
                 chart_markdown = None
                 logger.info("chart_generation_skipped_timeout")
@@ -1376,14 +1543,15 @@ def run_sql_agent_stream(
 ## 답변 형식
 ### 📊 [제목] → #### 요약 → #### 상세 데이터 (표) → #### 분석 및 인사이트
 ---
-*조회 기준: {today} | {table_source}*
+*조회 기준: {today} | 내부 데이터베이스*
 > 💡 **이런 것도 물어보세요**
 > - [구체적 후속 질문 1 — 다른 기간/국가/제품 등 범위 확장]
 > - [구체적 후속 질문 2 — 관련 데이터 심화 분석]
 > - [구체적 후속 질문 3 — 다른 관점의 분석]
 
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
-⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요."""
+⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
+⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요."""
 
     # Start chart generation in background BEFORE streaming answer
     import concurrent.futures
