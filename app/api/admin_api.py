@@ -47,7 +47,7 @@ class UpdateModelsRequest(BaseModel):
 
 @admin_router.get("/users")
 async def list_users(
-    user: User = Depends(get_current_user),
+    user: User = Depends(_require_admin),
 ) -> list[UserListItem]:
     """List all users with their model permissions."""
     users = await _db_fetch_all("""
@@ -107,6 +107,67 @@ async def update_user_models(
     return {"ok": True, "email": user["email"], "allowed_models": req.allowed_models}
 
 
+@admin_router.get("/quality-flags")
+async def get_quality_flags(_: User = Depends(_require_admin)):
+    """Return yesterday's quality snapshot flags. Admin only."""
+    from datetime import date, timedelta
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    rows = await _db_fetch_all(
+        """SELECT route, flag_accuracy, flag_speed, flag_context,
+                  accuracy_rate, avg_response_ms, avg_context_len, request_count
+           FROM quality_snapshots
+           WHERE snapshot_date = %s
+             AND (flag_accuracy = 1 OR flag_speed = 1 OR flag_context = 1)
+           ORDER BY route""",
+        (yesterday,),
+    )
+    return {"date": yesterday, "flags": rows}
+
+
+@admin_router.get("/knowledge-gaps")
+async def get_knowledge_gaps(_: User = Depends(_require_admin)):
+    """CS 지식 갭 목록. 최근 30일, 미검토 우선. Admin only."""
+    from datetime import date, timedelta
+    since = (date.today() - timedelta(days=30)).isoformat()
+    rows = await _db_fetch_all(
+        """SELECT id, question, created_at, reviewed
+           FROM knowledge_gaps
+           WHERE created_at >= %s
+           ORDER BY reviewed ASC, created_at DESC
+           LIMIT 100""",
+        (since,),
+    )
+    unreviewed = sum(1 for r in rows if not r["reviewed"])
+    return {"since": since, "total": len(rows), "unreviewed": unreviewed, "gaps": rows}
+
+
+@admin_router.patch("/knowledge-gaps/{gap_id}/review")
+async def mark_gap_reviewed(gap_id: int, _: User = Depends(_require_admin)):
+    """CS 지식 갭을 검토 완료로 표시."""
+    await _db_execute(
+        "UPDATE knowledge_gaps SET reviewed = 1 WHERE id = %s", (gap_id,)
+    )
+    return {"ok": True, "id": gap_id}
+
+
+@admin_router.get("/growth-report")
+async def get_growth_report(_: User = Depends(_require_admin)):
+    """최신 주간 성장 리포트. 없으면 즉석 계산. Admin only."""
+    from app.core.growth_report import get_latest_growth_report, compute_weekly_growth
+    report = await asyncio.to_thread(get_latest_growth_report)
+    if not report:
+        report = await asyncio.to_thread(compute_weekly_growth)
+    return report
+
+
+@admin_router.post("/growth-report/refresh")
+async def refresh_growth_report(_: User = Depends(_require_admin)):
+    """주간 성장 리포트 수동 재계산. Admin only."""
+    from app.core.growth_report import compute_weekly_growth
+    report = await asyncio.to_thread(compute_weekly_growth)
+    return report
+
+
 @admin_router.get("/metrics")
 async def get_metrics(admin: User = Depends(_require_admin)) -> dict:
     """Operational metrics: latency p50/p95, concurrency gates, DB pool, recent activity.
@@ -117,31 +178,46 @@ async def get_metrics(admin: User = Depends(_require_admin)) -> dict:
     from app.core.llm import _GEMINI_SEM, _CLAUDE_SEM
     from app.core.bigquery import _BQ_SEM
 
-    # Latency — last 1h and last 24h
-    latency_1h = await _db_fetch_all("""
-        SELECT route,
-               COUNT(*) AS cnt,
-               AVG(total_ms) AS avg_ms,
-               MAX(total_ms) AS max_ms
-        FROM audit_logs
-        WHERE created_at >= NOW() - INTERVAL 1 HOUR
-        GROUP BY route
-        ORDER BY cnt DESC
-    """)
-    latency_24h = await _db_fetch_all("""
-        SELECT COUNT(*) AS cnt,
-               AVG(total_ms) AS avg_ms,
-               MAX(total_ms) AS max_ms
-        FROM audit_logs
-        WHERE created_at >= NOW() - INTERVAL 24 HOUR
-    """)
-
-    # p95 — compute in Python (MariaDB 10.x lacks PERCENTILE_CONT)
-    p95_rows = await _db_fetch_all("""
-        SELECT total_ms FROM audit_logs
-        WHERE created_at >= NOW() - INTERVAL 1 HOUR AND total_ms IS NOT NULL
-        ORDER BY total_ms
-    """)
+    # Latency/p95/slow-query/active-user queries are independent — run concurrently.
+    latency_1h, latency_24h, p95_rows, slow, active_rows = await asyncio.gather(
+        _db_fetch_all("""
+            SELECT route,
+                   COUNT(*) AS cnt,
+                   AVG(total_ms) AS avg_ms,
+                   MAX(total_ms) AS max_ms
+            FROM audit_logs
+            WHERE created_at >= NOW() - INTERVAL 1 HOUR
+            GROUP BY route
+            ORDER BY cnt DESC
+        """),
+        _db_fetch_all("""
+            SELECT COUNT(*) AS cnt,
+                   AVG(total_ms) AS avg_ms,
+                   MAX(total_ms) AS max_ms
+            FROM audit_logs
+            WHERE created_at >= NOW() - INTERVAL 24 HOUR
+        """),
+        # p95 computed in Python (MariaDB 10.x lacks PERCENTILE_CONT)
+        _db_fetch_all("""
+            SELECT total_ms FROM audit_logs
+            WHERE created_at >= NOW() - INTERVAL 1 HOUR AND total_ms IS NOT NULL
+            ORDER BY total_ms
+        """),
+        # Top slow queries (last 1h)
+        _db_fetch_all("""
+            SELECT user_email, route, query, total_ms, created_at
+            FROM audit_logs
+            WHERE created_at >= NOW() - INTERVAL 1 HOUR
+            ORDER BY total_ms DESC
+            LIMIT 10
+        """),
+        # Active users (last 15 min)
+        _db_fetch_all("""
+            SELECT COUNT(DISTINCT user_email) AS cnt
+            FROM audit_logs
+            WHERE created_at >= NOW() - INTERVAL 15 MINUTE
+        """),
+    )
     samples = [int(r["total_ms"]) for r in p95_rows if r["total_ms"] is not None]
     if samples:
         p50 = samples[len(samples) // 2]
@@ -149,15 +225,6 @@ async def get_metrics(admin: User = Depends(_require_admin)) -> dict:
         p99 = samples[int(len(samples) * 0.99)]
     else:
         p50 = p95 = p99 = 0
-
-    # Top slow queries (last 1h)
-    slow = await _db_fetch_all("""
-        SELECT user_email, route, query, total_ms, created_at
-        FROM audit_logs
-        WHERE created_at >= NOW() - INTERVAL 1 HOUR
-        ORDER BY total_ms DESC
-        LIMIT 10
-    """)
 
     # DB pool state (DBUtils PooledDB internal)
     pool = _get_pool()
@@ -177,12 +244,6 @@ async def get_metrics(admin: User = Depends(_require_admin)) -> dict:
         "bigquery_max": 15,
     }
 
-    # Active users (last 15 min)
-    active_rows = await _db_fetch_all("""
-        SELECT COUNT(DISTINCT user_email) AS cnt
-        FROM audit_logs
-        WHERE created_at >= NOW() - INTERVAL 15 MINUTE
-    """)
     active_users = int(active_rows[0]["cnt"]) if active_rows else 0
 
     return {
@@ -296,7 +357,10 @@ async def wiki_feedback(
             "SET thumbs_down = thumbs_down + 1, "
             "    confidence = GREATEST(0.0, confidence - 0.2), "
             "    review_status = 'needs_review', "
-            "    status = CASE WHEN thumbs_down + 1 >= 2 THEN 'archived' ELSE status END, "
+            # MySQL/MariaDB evaluate SET assignments left-to-right, so
+            # `thumbs_down` here already reads the post-increment value set
+            # above — do not add +1 again or this archives on the 1st vote.
+            "    status = CASE WHEN thumbs_down >= 2 THEN 'archived' ELSE status END, "
             "    validated_at = NOW() "
             "WHERE id = %s",
             (wiki_id,),
