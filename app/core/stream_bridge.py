@@ -52,24 +52,30 @@ class StreamTimeout(Exception):
 
 
 async def stream_with_timeout(
-    async_gen: AsyncIterable[str], timeout_s: float, poll_s: float = 5.0
+    async_gen: AsyncIterable[str], timeout_s: float
 ) -> AsyncIterator[str]:
-    """Iterate an async generator, raising StreamTimeout if it runs past timeout_s.
+    """Iterate an async generator, raising StreamTimeout if total time exceeds timeout_s.
 
-    Polls each step with a poll_s timeout (rather than one wait_for(timeout_s)
-    around the whole generator) so a route that's still actively producing
-    chunks isn't killed mid-stream by a single long wait — total elapsed time
-    across all polls is what's checked against timeout_s.
+    IMPORTANT: each __anext__() is awaited with the *remaining* budget, and we
+    never call __anext__() again after a timeout. asyncio.wait_for() cancels
+    the wrapped awaitable when it times out, and cancelling an async
+    generator's __anext__() closes/exhausts it — a second __anext__() call on
+    an already-cancelled generator raises StopAsyncIteration immediately
+    instead of resuming. A poll-and-retry loop (re-calling __anext__() after
+    each short timeout) silently drops the entire stream because of this;
+    that bug shipped once and was caught by scripts/_test_handle_multi.py-style
+    direct testing before it reached production — don't reintroduce polling here.
     """
     it = async_gen.__aiter__()
     start = asyncio.get_event_loop().time()
     while True:
+        remaining = timeout_s - (asyncio.get_event_loop().time() - start)
+        if remaining <= 0:
+            raise StreamTimeout()
         try:
-            chunk = await asyncio.wait_for(it.__anext__(), timeout=poll_s)
+            chunk = await asyncio.wait_for(it.__anext__(), timeout=remaining)
         except asyncio.TimeoutError:
-            if asyncio.get_event_loop().time() - start > timeout_s:
-                raise StreamTimeout()
-            continue
+            raise StreamTimeout()
         except StopAsyncIteration:
             return
         yield chunk
