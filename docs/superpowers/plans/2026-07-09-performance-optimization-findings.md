@@ -110,3 +110,15 @@
 - `scripts/qa_team_150.py`(CS/IT/PEOPLE 위주) 전체 회귀는 생략 — 이번 변경 범위(BigQuery/multi/admin/frontend)와 주제가 겹치지 않아 비용 대비 실익이 낮다고 판단, 사용자 확인 후 스킵.
 
 10~17번(중간 우선순위: `_handle_bigquery` 중복 LLM 재시도, wiki_extractor N+1 재작성, CS/GWS/Multi 가짜 스트리밍, 인증 캐싱 등)은 별도 Phase 3로 필요시 진행.
+
+## Phase 3 진행 (2026-07-09)
+
+- **#17 완료**: `query_verifier` 데드코드 제거 (orchestrator.py의 `self.query_verifier` 프로퍼티도 어디서도 호출되지 않음 확인 — sql_agent.py의 소비처 없는 fire-and-forget 호출 삭제)
+- **#12 완료**: lifespan 부팅 시 동기 DB 호출 `to_thread` 래핑 (순서 보존을 위해 순차 유지)
+- **#15 완료**: `get_current_user` DB 조회에 60초 TTL 캐시 추가 (기존 AD 캐시 300초 컨벤션과 동일 패턴, 사용자 수 362명 규모라 별도 eviction 불필요)
+- **#11 스킵**: LIMIT 추가 시 p95/p99 계산에 필요한 꼬리값이 잘려나가는 정확도 버그를 유발 — 영향도 낮은 항목에 리스크가 더 커서 보류
+- **#14 스킵**: fact 배열이 보통 소량(메시지당 수 개)인 배경 전용 루프. canonicalize→dup-check→INSERT(id 필요)→conflict-check가 서로 의존하는 조건부 체인이라 완전 배치화는 아키텍처 변경 수준 — 리스크 대비 실익 낮음
+- **#13 스킵**: `_handle_bigquery`의 외부 재시도가 실제로 복구율에 얼마나 기여하는지 텔레메트리 없이는 안전하게 변경 판단 불가
+- **#16 (CS/GWS/Multi 가짜 스트리밍)**: Phase 2 Task 3(로딩 인디케이터 버그 수정)로 대기 중 "검색 중..." 표시가 계속 보이게 되면서 체감 문제가 상당 부분 완화됨. 남은 개선(핸들러를 제너레이터로 전환)은 4개 핸들러 시그니처 변경이 필요한 큰 리팩터 — 별도 설계 논의 필요
+
+배포: `pm2 restart skin1004-prod` (restart_time=2, health check 200 OK, 안정적)
