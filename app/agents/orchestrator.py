@@ -61,14 +61,20 @@ def _strip_assistant_noise(content: str) -> str:
     return content.strip()
 
 
+_DIRECT_HISTORY_CAP = 30  # 최근 15턴 — 참조형 질문("아까 그거") 안전 마진
+
+
 def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
     """Strip chart/SQL noise from assistant messages before sending to LLM history.
 
-    Unlike _build_conversation_context, this does NOT truncate — full cleaned text
-    is preserved so Claude can track conversation accurately.
+    Caps to the most recent _DIRECT_HISTORY_CAP messages to bound per-turn
+    token cost on long sessions; full text (no 1500-char truncation) is kept
+    for messages within the cap so Claude can still track conversation
+    accurately within that window.
     """
+    capped = messages[-_DIRECT_HISTORY_CAP:] if len(messages) > _DIRECT_HISTORY_CAP else messages
     cleaned = []
-    for msg in messages:
+    for msg in capped:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role in ("assistant", "model") and isinstance(content, str):
@@ -141,6 +147,9 @@ class OrchestratorAgent:
         self._query_verifier = None
         self._notion_agent = None
         self._gws_agent = None
+
+        # Strong refs for fire-and-forget background tasks (prevents GC mid-flight)
+        self._bg_tasks: set = set()
 
     @property
     def query_verifier(self):
@@ -465,6 +474,15 @@ class OrchestratorAgent:
             enabled_sources=enabled_sources,
         )
 
+        # Load few-shot skill examples for direct route (non-blocking, fire-and-forget on error)
+        _skill_ctx = ""
+        if route == "direct":
+            try:
+                from app.agents.skill_memory import load_skill_context
+                _skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
+            except Exception:
+                pass
+
         # Step 2: Execute via Sub Agent with context
         handlers = {
             "bigquery": self._handle_bigquery,
@@ -480,7 +498,7 @@ class OrchestratorAgent:
         elif route == "notion":
             result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email)
         elif route == "direct" or handler == self._handle_direct:
-            result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback)
+            result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback, skill_context=_skill_ctx)
         else:
             result = await handler(query, messages, conversation_context, model_type, user_email)
 
@@ -488,7 +506,9 @@ class OrchestratorAgent:
         # Only log mismatches; don't delay the response
         if "answer" in result and route not in ("direct", "multi", "cs"):
             try:
-                asyncio.create_task(self._verify_coherence(query, result["answer"], route))
+                task = asyncio.create_task(self._verify_coherence(query, result["answer"], route))
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
             except Exception:
                 pass
 
@@ -555,6 +575,14 @@ class OrchestratorAgent:
                     # @@ single-source path: wiki_context not injected here (by design —
                     # wiki lookup runs after route_and_stream's source yield at line ~618,
                     # but this early-return path exits before that block is reached).
+                    from app.core.safety import get_maintenance_manager as _gmm
+                    _mm2 = _gmm()
+                    if _mm2.active and _mm2.manual:
+                        yield ("chunk", f"**데이터 점검 중입니다** — 관리자가 수동으로 점검을 활성화했습니다. 잠시 후 다시 시도해 주세요.\n\n*사유: {_mm2.reason}*")
+                        yield ("done", "")
+                        return
+                    _sp_maint_warn = ("\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
+                                      if (_mm2.active and not _mm2.manual) else "")
                     from app.agents.sql_agent import run_sql_agent_stream
                     _q = asyncio.Queue()
                     _loop = asyncio.get_running_loop()
@@ -571,6 +599,8 @@ class OrchestratorAgent:
                         if mt == "end":
                             break
                         yield ("chunk", data)
+                    if _sp_maint_warn:
+                        yield ("chunk", _sp_maint_warn)
                     yield ("done", "")
                     return
 
@@ -669,6 +699,15 @@ class OrchestratorAgent:
         except Exception as e:
             logger.warning("wiki_lookup_failed", error=str(e)[:200])
 
+        # Skill memory: few-shot examples from 👍 feedback (direct route only)
+        _stream_skill_ctx = ""
+        if route == "direct":
+            try:
+                from app.agents.skill_memory import load_skill_context
+                _stream_skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
+            except Exception:
+                pass
+
         if not _single_route:
             # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
@@ -693,33 +732,40 @@ class OrchestratorAgent:
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:
-            # Domain guardrail — hard block
-            _BLOCKED_TOPICS = ["항공권", "비행기표", "비행기 표", "호텔 예약", "호텔예약", "호텔 추천", "숙소 추천",
-                               "맛집", "여행지 추천", "의료 진단", "병원 추천", "법률 상담", "변호사"]
-            if any(kw in query.lower() for kw in _BLOCKED_TOPICS):
-                blocked_msg = "해당 정보는 저희 시스템의 지원 범위를 벗어납니다. Craver 관련 질문을 도와드릴게요! 😊\n\n> 💡 **이런 것도 물어보세요**\n> - 이번 달 매출 현황은 어때?\n> - 센텔라 앰플 성분이 뭐야?\n> - 연차 규정 알려줘"
-                yield ("done", blocked_msg)
-                return
-
             llm = get_llm_client(model_type)
             today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
-            system = self._build_direct_system_prompt(today, model_type)
+            system = self._build_direct_system_prompt(model_type)
 
-            # Run web search in thread pool to avoid blocking event loop
-            final_system = system
+            # Static prompt as a cached block; dynamic parts appended as separate,
+            # uncached blocks so they don't invalidate the cached prefix (see
+            # ClaudeClient._wrap_system and _build_direct_system_prompt).
+            # Block-list form only for Claude — Gemini's system_instruction expects
+            # a plain string, not Anthropic cache blocks.
+            date_line = f"오늘 날짜는 {today}입니다."
+            extra_blocks: List[str] = []
             if self._needs_web_search(query):
                 _loop_s = asyncio.get_running_loop()
                 search_context = await _loop_s.run_in_executor(None, self._gather_search_context, query)
                 if search_context:
-                    final_system = system + f"\n\n## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}"
+                    extra_blocks.append(f"## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}")
             if wiki_context:
-                final_system += (
-                    "\n\n## 참고: 지식 위키에 이미 저장된 관련 팩트\n"
+                extra_blocks.append(
+                    "## 참고: 지식 위키에 이미 저장된 관련 팩트\n"
                     f"{wiki_context}\n"
                     "위 팩트는 이전 대화에서 추출된 사내 기관 기억입니다. "
                     "해당 팩트로 사용자 질문에 답변할 수 있다면 활용하고, "
                     "관련 없거나 오래된 것 같으면 무시하세요."
                 )
+            if _stream_skill_ctx:
+                extra_blocks.append(_stream_skill_ctx)
+
+            if model_type == MODEL_CLAUDE:
+                final_system = [
+                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": date_line},
+                ] + [{"type": "text", "text": block} for block in extra_blocks]
+            else:
+                final_system = "\n\n".join([system, date_line] + extra_blocks)
 
             # Stream via thread + queue
             _q: asyncio.Queue = asyncio.Queue()
@@ -761,6 +807,18 @@ class OrchestratorAgent:
             import asyncio as _aio
             from app.agents.sql_agent import run_sql_agent_stream
 
+            # Maintenance check (mirrors non-streaming path)
+            from app.core.safety import get_maintenance_manager
+            _mm = get_maintenance_manager()
+            if _mm.active and _mm.manual:
+                yield ("chunk", f"**데이터 점검 중입니다** — 관리자가 수동으로 점검을 활성화했습니다. 잠시 후 다시 시도해 주세요.\n\n*사유: {_mm.reason}*")
+                yield ("done", "")
+                return
+            _stream_maintenance_warning = (
+                "\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
+                if (_mm.active and not _mm.manual) else ""
+            )
+
             _q: _aio.Queue = _aio.Queue()
             _loop = _aio.get_running_loop()
 
@@ -796,6 +854,8 @@ class OrchestratorAgent:
                     break
                 yield ("chunk", data)
 
+            if _stream_maintenance_warning:
+                yield ("chunk", _stream_maintenance_warning)
             yield ("done", "")
             return
 
@@ -812,6 +872,12 @@ class OrchestratorAgent:
         handler = handlers.get(route, self._handle_direct)
         _route_timeout = 45.0 if route == "gws" else 30.0
 
+        # 지식 회수 루프: cs/multi 라우트에 wiki 팩트 주입 (direct/BQ는 위에서 이미 처리)
+        _handler_ctx = conversation_context
+        if wiki_context and route in ("cs", "multi"):
+            _wiki_block = f"\n\n[참고: 관련 사내 지식]\n{wiki_context}"
+            _handler_ctx = (conversation_context + _wiki_block) if conversation_context else _wiki_block.lstrip()
+
         # Check circuit breaker before calling
         circuit = get_circuit(route)
         if not circuit.is_available():
@@ -822,7 +888,7 @@ class OrchestratorAgent:
                 if route == "multi":
                     # multi = BQ 파이프라인 + 웹검색 + 합성 — 30s로는 부족 (2026-06-11, fid 36)
                     result = await asyncio.wait_for(
-                        handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
+                        handler(query, messages, _handler_ctx, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
                         timeout=300.0,
                     )
                 elif route == "notion":
@@ -837,7 +903,7 @@ class OrchestratorAgent:
                     )
                 else:
                     result = await asyncio.wait_for(
-                        handler(query, messages, conversation_context, model_type, user_email),
+                        handler(query, messages, _handler_ctx, model_type, user_email),
                         timeout=_route_timeout,
                     )
                 circuit.record_success()
@@ -902,6 +968,9 @@ class OrchestratorAgent:
 판단 기준:
 - 데이터 조회만 → bigquery
 - 제품 성분/사용법/CS 문의 → cs
+- ⚠️ 제품명 + 국가/지역(남미, 북미, 동남아, 유럽, 특정 국가 등) + 반응/매출/판매/인기/실적 → bigquery (판매 데이터 조회)
+  예: "포어마이징 벨벳 선크림 남미 반응" → bigquery (CS 아님!)
+  예: "히알루론산 세럼 동남아 얼마나 팔려?" → bigquery
 - SKIN1004 데이터 + 외부맥락(날씨/시장/경쟁/원인/영향/트렌드) → multi
 - 외부 정보만 → direct
 - ⚠️ SKIN1004/매출/제품과 무관한 질문(부동산, 주식, 일반상식, 개인질문 등)은 이전 대화가 BQ였어도 반드시 direct!
@@ -913,7 +982,7 @@ class OrchestratorAgent:
 경로 하나만 답변 (bigquery/notion/gws/cs/multi/direct):"""
 
         try:
-            response = llm.generate(prompt, temperature=0.0)
+            response = await asyncio.to_thread(llm.generate, prompt, temperature=0.0)
             route = response.strip().lower().split()[0] if response.strip() else "direct"
 
             valid_routes = {"bigquery", "notion", "gws", "cs", "multi", "direct"}
@@ -1028,13 +1097,15 @@ class OrchestratorAgent:
         "영유아", "어린이", "아기", "아이 피부", "아이에게", "아이가 써", "아이한테",
         "붉어", "따가", "가려", "피부 반응",
         "예민", "홍조", "건조", "좁쌀", "뾰루지",
-        "불량", "교환", "환불", "이물질",
+        "불량", "교환", "환불", "반품", "이물질",
         "피부과", "시술", "직사광선",
         "병풀", "패치 테스트", "패치테스트",
         "skin1004", "스킨1004",
         "방부제", "향료", "인공색소", "파라벤", "sls", "글루텐",
         "직구", "매장",
         "기름지", "피부 관리", "피부관리",
+        "지속시간", "선물세트", "뚜껑", "함께 써도", "같이 써도",
+        "정품", "적립금", "배송 기간", "배송기간", "배송 얼마나",
     ]
 
     _TEAM_KEYWORDS = [
@@ -1046,11 +1117,16 @@ class OrchestratorAgent:
         "예산 시트", "pr 시트", "운영 시트", "대시보드 링크",
         "팀 자료", "팀별 자료", "db hub", "데이터 허브",
         # PEOPLE/HR keywords
-        "연차", "휴가", "휴일대체", "퇴사", "퇴직금", "경조", "경조휴가", "졸업",
-        "회의실 예약", "명함", "법인서류", "증명서", "급여", "계약서",
+        "연차", "휴가", "휴일대체", "휴직", "육아휴직", "퇴사", "퇴직금", "경조", "경조휴가", "졸업",
+        "회의실 예약", "명함", "법인서류", "법인카드", "증명서", "급여", "계약서",
         "채용", "면접", "인수인계", "성과급", "성과금", "보상", "인센티브",
-        "vpn", "프린터", "잔디", "다우오피스",
+        "vpn", "프린터", "잔디", "다우오피스", "노트북", "비밀번호 초기화", "계정 초기화",
         "복지", "사내근로복지", "피플팀", "교육 신청",
+        "수습", "수습기간", "수습 기간", "야근", "식대", "재택근무", "재택",
+        "4대보험", "연말정산", "워크샵", "동호회", "멘토링", "승진",
+        "출퇴근", "점심시간",
+        "모니터", "키보드", "마우스", "외장하드", "포맷",
+        "장애 신고", "시스템 장애", "보안 프로그램",
         # Company info
         "사업자", "등록번호", "법인번호", "법인등록", "대표자", "대표이사",
         "조직도", "회사 정보", "회사정보", "기업 정보", "기업정보",
@@ -1143,8 +1219,10 @@ class OrchestratorAgent:
                 return "direct"
 
         # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
+        # 단, PEOPLE/HR·팀 키워드가 있으면 건너뜀 ("육아휴직 쓸 수 있어" 등은 팀 자료 질문)
         if any(p in q for p in self._CAPABILITY_PATTERNS):
-            return "direct"
+            if not any(kw in q for kw in self._TEAM_KEYWORDS):
+                return "direct"
 
         # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
         if any(kw in q for kw in self._FULLDATA_KEYWORDS):
@@ -1185,8 +1263,12 @@ class OrchestratorAgent:
                 return "notion"
 
         # GWS check — highest priority for personal workspace queries
+        # 단, "화상회의 프로그램 뭐 써" 같은 툴 식별 질문은 개인 데이터 검색이 아니므로 제외
+        _TOOL_IDENTITY_PATTERNS = ["뭐 써", "뭐써", "뭐 사용해", "뭐사용해", "어떤 프로그램",
+                                     "어떤 툴", "무슨 프로그램", "무슨 툴"]
         if any(kw in q for kw in self._GWS_KEYWORDS):
-            return "gws"
+            if not any(p in q for p in _TOOL_IDENTITY_PATTERNS):
+                return "gws"
 
         # Web search guard: if search keywords match but NO SKIN1004 business context → direct
         # "올해 한국 GDP 성장률" → direct (general knowledge)
@@ -1213,6 +1295,9 @@ class OrchestratorAgent:
             "매출", "수량", "주문", "sales", "revenue",
             "판매량", "판매 수량", "세일즈", "매상", "갯수", "개수",
             "국가별", "월별", "분기별", "대륙별", "플랫폼별", "연도별", "채널별", "카테고리별", "카테고리",
+            # Region keywords — when paired with product names → sales data intent, not CS
+            "남미", "북미", "동남아", "유럽", "중동", "cis", "아시아",
+            "인도네시아", "말레이시아", "태국", "베트남", "필리핀", "미국", "일본", "중국",
             "재고", "집계", "합계", "통계", "데이터", "조회",
             "차트", "그래프", "그려", "시각화", "도표", "플롯", "그래프로", "차트로", "시각화해",
             "막대그래프", "원형그래프", "꺾은선", "파이차트", "바차트", "그려줘",
@@ -1292,6 +1377,48 @@ class OrchestratorAgent:
         has_truncation_context = "10,000행 제한" in conversation_context or "LIMIT에 도달" in conversation_context
         return has_keyword and has_truncation_context
 
+    # ── BQ 의도 확인 (grill-me style) ──────────────────────────────
+    # 기간·채널이 모두 빠진 매우 짧은 BQ 쿼리에서만 활성화.
+    _BQ_PERIOD_KW = [
+        "이번달", "이번 달", "지난달", "지난 달", "저번달", "저번 달",
+        "이번주", "지난주", "이번 분기", "지난 분기",
+        "올해", "작년", "재작년", "올 해", "작 년",
+        "2022", "2023", "2024", "2025", "2026",
+        "1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월",
+        "q1", "q2", "q3", "q4", "분기", "반기", "최근", "최근 3", "최근 6", "최근 1년",
+        "전월", "전년", "전주", "주간", "월간", "연간", "누적",
+    ]
+    _BQ_CHANNEL_KW = [
+        "아마존", "amazon", "쇼피", "shopee", "큐텐", "qoo10", "틱톡", "tiktok",
+        "라자다", "lazada", "shopify", "쇼피파이", "스마트스토어", "네이버",
+        "올리브영", "예스스타일", "전체", "all", "합산", "통합", "b2b", "b2c",
+        "글로벌", "한국", "일본", "미국", "동남아", "유럽", "중동",
+    ]
+
+    def _bq_needs_clarification(self, query: str, conversation_context: str) -> bool:
+        """기간·채널 모두 없는 짧은 BQ 쿼리면 True."""
+        if len(query.strip()) > 40:
+            return False
+        if conversation_context:
+            return False
+        q = query.lower()
+        has_period = any(kw in q for kw in self._BQ_PERIOD_KW)
+        has_channel = any(kw in q for kw in self._BQ_CHANNEL_KW)
+        return not has_period and not has_channel
+
+    async def _ask_bq_clarification(self, query: str, model_type: str) -> str:
+        """Flash로 1~2개 의도 확인 질문 생성."""
+        flash = get_flash_client()
+        prompt = f"""SKIN1004 데이터 분석 AI입니다. 사용자가 "{query}라고 질문했습니다.
+더 정확한 답변을 위해 필요한 정보를 1~2개 질문으로 물어보세요.
+- 기간 (이번달? 올해? 특정 분기?)
+- 채널/플랫폼 (전체? 아마존? 큐텐? 쇼피?)
+중 빠진 것만 물어보세요. 마크다운 없이 자연스럽게 짧게 (2줄 이내)."""
+        try:
+            return await asyncio.to_thread(flash.generate, prompt, temperature=0.3)
+        except Exception:
+            return "어떤 기간과 채널(플랫폼)을 기준으로 보고 싶으신가요? (예: 이번달 아마존, 올해 전체 등)"
+
     async def _handle_bigquery(
         self,
         query: str,
@@ -1307,6 +1434,11 @@ class OrchestratorAgent:
         Falls back to a helpful data-error message if SQL generation fails,
         preserving context that this was a SKIN1004 internal data query.
         """
+        # 의도 확인: 기간·채널 없는 짧은 쿼리 → 먼저 물어보기
+        if self._bq_needs_clarification(query, conversation_context):
+            clarify_q = await self._ask_bq_clarification(query, model_type)
+            return {"source": "bigquery", "answer": clarify_q}
+
         # Check for "full data" follow-up request
         if self._is_fulldata_request(query, conversation_context):
             return await self._handle_fulldata_request(query, messages, conversation_context, model_type)
@@ -1354,12 +1486,24 @@ class OrchestratorAgent:
                     return await self._handle_bigquery_fallback(
                         query, messages, conversation_context, model_type, user_email
                     )
+            # 실시간 팩트 캡처 — 답변에서 재사용 가능한 사실 추출 → knowledge_wiki (fire-and-forget)
+            _bq_task = asyncio.create_task(self._capture_bq_facts(query, answer))
+            self._bg_tasks.add(_bq_task)
+            _bq_task.add_done_callback(self._bg_tasks.discard)
             return {"source": "bigquery", "answer": answer + _maintenance_warning}
         except Exception as e:
             logger.error("orchestrator_bigquery_failed", error=str(e))
             return await self._handle_bigquery_fallback(
                 query, messages, conversation_context, model_type, user_email
             )
+
+    async def _capture_bq_facts(self, query: str, answer: str) -> None:
+        """BQ 답변에서 팩트 추출 → knowledge_wiki 저장 (fire-and-forget)."""
+        try:
+            from app.knowledge.wiki_extractor import extract_and_save_from_qa
+            await asyncio.to_thread(extract_and_save_from_qa, query, answer)
+        except Exception as e:
+            logger.debug("bq_fact_capture_failed", error=str(e)[:100])
 
     async def _handle_bigquery_fallback(
         self,
@@ -1389,7 +1533,7 @@ class OrchestratorAgent:
 6. "오류가 발생" 같은 표현 대신 "데이터를 조회하지 못했습니다" 등 부드러운 표현을 쓰세요."""
 
         try:
-            answer = llm.generate(fallback_prompt, temperature=0.3)
+            answer = await asyncio.to_thread(llm.generate, fallback_prompt, temperature=0.3)
             return {"source": "bigquery_fallback", "answer": answer}
         except Exception:
             return {
@@ -1590,7 +1734,7 @@ class OrchestratorAgent:
             flash = get_flash_client()
             return flash.generate_with_search(search_prompt, temperature=0.2, max_output_tokens=4096)
 
-        def _bq_query_sync():
+        async def _bq_query_async():
             # Maintenance: only hard-block on manual maintenance
             from app.core.safety import get_maintenance_manager
             mm = get_maintenance_manager()
@@ -1598,22 +1742,17 @@ class OrchestratorAgent:
                 return "", "데이터 점검 중으로 매출 데이터 조회가 일시 중단되었습니다."
 
             flash = get_flash_client()
-            data_query = flash.generate(data_query_prompt, temperature=0.0).strip()
+            data_query = await asyncio.to_thread(flash.generate, data_query_prompt, temperature=0.0)
+            data_query = data_query.strip()
             logger.info("multi_data_query_rewritten", original=query[:100], rewritten=data_query[:100])
-            from app.agents.sql_agent import sql_agent as _graph
-            state = {
-                "query": data_query,
-                "route_type": "text_to_sql",
-                "generated_sql": None, "sql_valid": None, "sql_result": None,
-                "retrieved_docs": None, "doc_relevance": None, "web_search_results": None,
-                "answer": "", "needs_retry": False, "retry_count": 0, "error": None,
-                "messages": None,
-                "conversation_context": conversation_context,
-                "model_type": model_type,
-                "brand_filter": brand_filter,
-            }
-            result = _graph.invoke(state)
-            return data_query, result.get("answer", "")
+            from app.agents.sql_agent import run_sql_agent
+            answer = await run_sql_agent(
+                data_query,
+                conversation_context=conversation_context,
+                model_type=model_type,
+                brand_filter=brand_filter,
+            )
+            return data_query, answer
 
         web_context = ""
         bq_answer = ""
@@ -1621,7 +1760,7 @@ class OrchestratorAgent:
         try:
             gathered = await asyncio.gather(
                 asyncio.to_thread(_web_search_sync),
-                asyncio.to_thread(_bq_query_sync),
+                _bq_query_async(),
                 return_exceptions=True,
             )
 
@@ -1703,7 +1842,7 @@ class OrchestratorAgent:
 """
 
         try:
-            answer = flash.generate(synthesis_prompt, temperature=0.3)
+            answer = await asyncio.to_thread(flash.generate, synthesis_prompt, temperature=0.3)
         except Exception as e:
             logger.warning("multi_synthesize_failed", error=str(e))
             # Fallback: just concatenate the parts
@@ -1753,7 +1892,7 @@ class OrchestratorAgent:
 
 ### Chat History:
 {conv_snippet}"""
-            answer = flash.generate(prompt_with_context, temperature=0.3)
+            answer = await asyncio.to_thread(flash.generate, prompt_with_context, temperature=0.3)
             return {"source": "direct", "answer": answer}
         except Exception as e:
             logger.warning("system_task_failed", error=str(e))
@@ -1811,20 +1950,24 @@ JSON만 반환:
 {{"follow_ups": ["질문1", "질문2", "질문3"]}}"""
 
         try:
-            answer = flash.generate(prompt, temperature=0.3)
+            answer = await asyncio.to_thread(flash.generate, prompt, temperature=0.3)
             return {"source": "direct", "answer": answer}
         except Exception as e:
             logger.warning("followup_generation_failed", error=str(e))
             return {"source": "direct", "answer": '{"follow_ups": []}'}
 
-    def _build_direct_system_prompt(self, today: str, model_type: str = MODEL_CLAUDE) -> str:
-        """Build system prompt for direct LLM route (shared by _handle_direct and route_and_stream)."""
+    def _build_direct_system_prompt(self, model_type: str = MODEL_CLAUDE) -> str:
+        """Build system prompt for direct LLM route (shared by _handle_direct and route_and_stream).
+
+        Deliberately excludes the current date — the caller appends it as a
+        separate, uncached block so this (large, static) prompt stays byte-identical
+        across requests and reuses Anthropic's prompt cache. See ClaudeClient._wrap_system.
+        """
         model_name = "Claude Sonnet 4 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
         # Import the full system prompt from _handle_direct inline (it's too long to duplicate)
         # We reference the same structure
         return f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
 이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.
-오늘 날짜는 {today}입니다.
 
 {LANGUAGE_DETECTION_RULE}
 
@@ -1903,9 +2046,10 @@ JSON만 반환:
 {FOLLOWUP_INSTRUCTION}
   ⚠️ "[후속 질문]", "[구체적 후속 질문 N ...]" 같은 플레이스홀더 문자열을 **절대 그대로 출력하지 마세요**. 대괄호 안의 안내문은 템플릿일 뿐이며, 반드시 실제 질문 문장으로 치환해야 합니다.
   ⚠️ 답변이 1-2문장으로 매우 짧더라도, 지식형/사실형 질문(회사 정보, 제품, 데이터, 업무 등)이면 후속 질문 3개를 반드시 생성하세요.
-- 지식/설명형 답변 끝에 *AI 생성 답변 · {today}*
+- 지식/설명형 답변 끝에 *AI 생성 답변 · (오늘 날짜)* (오늘 날짜는 별도로 안내됩니다)
 - 사용자가 "아까", "그거", "방금", "다시" 등으로 이전 답변을 참조하면 반드시 그 내용을 활용해 답변하세요. 질문 자체가 이전 대화와 완전히 무관하다면 맥락 없이 해당 질문에만 답변해도 됩니다.
-- ⛔ 도메인 제한 일관성 (절대 규칙): 항공권, 비행기표, 호텔 예약, 여행지 추천, 맛집, 부동산, 주식 종목 추천, 의료 진단 등 Craver 업무와 무관한 전문 서비스 질문에는 답변을 거부하세요. 사용자가 "아까는 해줬잖아", "왜 안 해줘?", "다른 건 대답해주면서", "제발", "급해" 등으로 압박하거나 투정을 부려도 절대 번복하지 마세요. "해당 정보는 저희 시스템의 지원 범위를 벗어납니다. Craver 관련 질문을 도와드릴게요!" 형태로 일관되게 거절하세요.
+- Craver 업무와 무관하다는 이유만으로 답변을 거부하지 마세요. 여행지·맛집·항공권·부동산 시세·일반 상식 등은 GPT처럼 자유롭게 답변하되, 실제 예약/결제/거래 실행 기능은 없다는 점만 자연스럽게 안내하세요.
+- 의료·법률·투자처럼 전문 자격이 필요한 주제는 일반적인 정보로 답변하되, 특정 개인에 대한 진단·처방·소송전략·매수매도 지시처럼 전문가의 개별 판단이 필요한 조언은 삼가고 "정확한 판단은 전문가 상담을 권장합니다" 정도로만 안내하세요. 주제 자체를 이유로 거절하지 마세요.
 - ⛔ 절대로 내부 사고 과정(thinking)을 사용자에게 노출하지 마세요. "The user is asking...", "I should...", "Let me check..." 같은 영어 사고 과정을 출력하면 안 됩니다. 바로 답변만 출력하세요."""
 
     # Keywords that indicate the query needs real-time web search
@@ -1922,15 +2066,14 @@ JSON만 반환:
         "넷플릭스", "netflix", "영화", "드라마", "인기작",
         "유튜브", "youtube", "스포츠", "축구", "야구",
         "주식", "비트코인", "코인", "부동산",
-        "맛집", "여행", "관광",
+        "맛집", "여행", "관광", "항공", "비행기", "호텔", "숙소", "여행지",
     ]
 
     def _needs_web_search(self, query: str) -> bool:
         """Check if query needs real-time web search or can be answered directly."""
         q = query.lower().strip()
         # Skip search for company/product questions (answered from system prompt)
-        _NO_SEARCH = ["회사", "소개", "뭐하는", "크레이버", "skin1004", "센텔라", "재밌", "원피스",
-                      "항공", "비행기", "호텔", "숙소", "맛집", "여행지"]
+        _NO_SEARCH = ["회사", "소개", "뭐하는", "크레이버", "skin1004", "센텔라", "재밌", "원피스"]
         if any(kw in q for kw in _NO_SEARCH):
             return False
         # Check search keywords FIRST — even short queries like "현재 대통령" need search
@@ -1957,6 +2100,7 @@ JSON만 반환:
         user_email: str = "",
         images: Optional[List[dict]] = None,
         stream_callback=None,
+        skill_context: str = "",
     ) -> dict:
         """General question: uses full conversation history for natural dialogue.
 
@@ -1968,13 +2112,6 @@ JSON만 반환:
         if query.strip().startswith("### Task:"):
             return await self._handle_system_task(query, messages)
 
-        # Domain guardrail — hard block at code level (LLM may ignore prompt rules)
-        _BLOCKED_TOPICS = ["항공권", "비행기표", "비행기 표", "호텔 예약", "호텔예약", "호텔 추천", "숙소 추천",
-                           "맛집", "여행지 추천", "의료 진단", "병원 추천", "법률 상담", "변호사"]
-        q_lower = query.lower()
-        if any(kw in q_lower for kw in _BLOCKED_TOPICS):
-            return {"source": "direct", "answer": "해당 정보는 저희 시스템의 지원 범위를 벗어납니다. Craver 관련 질문을 도와드릴게요! 😊\n\n> 💡 **이런 것도 물어보세요**\n> - 이번 달 매출 현황은 어때?\n> - 센텔라 앰플 성분이 뭐야?\n> - 연차 규정 알려줘"}
-
         images = images or []
         llm = get_llm_client(model_type)
         today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
@@ -1983,7 +2120,6 @@ JSON만 반환:
 
         system = f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
 이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.
-오늘 날짜는 {today}입니다.
 
 {LANGUAGE_DETECTION_RULE}
 
@@ -2040,27 +2176,45 @@ JSON만 반환:
 - **후속 질문 제안** (단순 인사/잡담에는 생략):
 {FOLLOWUP_INSTRUCTION}
   ⚠️ 반드시 구체적인 후속 질문을 생성하세요. "[후속 질문 1]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요.
-- **출처 표시**: 지식/설명형 답변(5줄 이상)에는 답변 끝에 `---` 구분선 후 *AI 생성 답변 · {today}* 형태로 날짜를 표기하세요. 인사/짧은 답변에는 생략."""
+- **출처 표시**: 지식/설명형 답변(5줄 이상)에는 답변 끝에 `---` 구분선 후 *AI 생성 답변 · (오늘 날짜)* 형태로 날짜를 표기하세요 (오늘 날짜는 별도로 안내됩니다). 인사/짧은 답변에는 생략."""
+
+        # Date/time is dynamic per day — keep it out of the cached static block so
+        # the (much larger) instructions above it stay byte-identical across requests
+        # and reuse Anthropic's prompt cache. See app/core/llm.py ClaudeClient._wrap_system.
+        date_line = f"오늘 날짜는 {today}입니다."
 
         try:
             # Vision mode: images present → use generate_with_images
             if images:
                 vision_text = query or "이 이미지에 대해 설명해주세요."
-                answer = llm.generate_with_images(
+                answer = await asyncio.to_thread(
+                    llm.generate_with_images,
                     vision_text,
                     images,
-                    system_instruction=system,
+                    system_instruction=f"{system}\n\n{date_line}",
                     temperature=0.5,
                 )
                 return {"source": "direct", "answer": answer}
 
             # Search grounding: run in thread pool to avoid blocking event loop
-            final_system = system
+            # Block-list form (cacheable prefix) only for Claude — Gemini's
+            # system_instruction expects a plain string, not Anthropic cache blocks.
+            extra_blocks: List[str] = []
+            if skill_context:
+                extra_blocks.append(skill_context)
             if self._needs_web_search(query):
                 _loop_s = asyncio.get_running_loop()
                 search_context = await _loop_s.run_in_executor(None, self._gather_search_context, query)
                 if search_context:
-                    final_system = system + f"\n\n## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}"
+                    extra_blocks.append(f"## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}")
+
+            if model_type == MODEL_CLAUDE:
+                final_system = [
+                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": date_line},
+                ] + [{"type": "text", "text": block} for block in extra_blocks]
+            else:
+                final_system = "\n\n".join([system, date_line] + extra_blocks)
 
             # Claude streaming for all direct queries (TTFB 1.7s vs Gemini 7s)
             import asyncio as _aio
@@ -2073,12 +2227,17 @@ JSON만 반환:
                     _loop = _aio.get_running_loop()
 
                     def _stream_worker():
-                        for chunk in llm.generate_with_history_stream(
-                            messages=_clean_messages_for_history(messages),
-                            system_instruction=final_system, temperature=0.5,
-                        ):
-                            _loop.call_soon_threadsafe(_q.put_nowait, chunk)
-                        _loop.call_soon_threadsafe(_q.put_nowait, None)
+                        try:
+                            for chunk in llm.generate_with_history_stream(
+                                messages=_clean_messages_for_history(messages),
+                                system_instruction=final_system, temperature=0.5,
+                            ):
+                                _loop.call_soon_threadsafe(_q.put_nowait, chunk)
+                        except Exception as e:
+                            logger.error("direct_stream_worker_failed", error=str(e))
+                            _loop.call_soon_threadsafe(_q.put_nowait, f"\n\n오류: {e}")
+                        finally:
+                            _loop.call_soon_threadsafe(_q.put_nowait, None)
 
                     _loop.run_in_executor(None, _stream_worker)
                     answer = ""
@@ -2094,11 +2253,16 @@ JSON만 반환:
                     _loop = _aio.get_running_loop()
 
                     def _stream_worker():
-                        for chunk in llm.generate_stream(
-                            query, system_instruction=final_system, temperature=0.3,
-                        ):
-                            _loop.call_soon_threadsafe(_q.put_nowait, chunk)
-                        _loop.call_soon_threadsafe(_q.put_nowait, None)
+                        try:
+                            for chunk in llm.generate_stream(
+                                query, system_instruction=final_system, temperature=0.3,
+                            ):
+                                _loop.call_soon_threadsafe(_q.put_nowait, chunk)
+                        except Exception as e:
+                            logger.error("direct_stream_worker_failed", error=str(e))
+                            _loop.call_soon_threadsafe(_q.put_nowait, f"\n\n오류: {e}")
+                        finally:
+                            _loop.call_soon_threadsafe(_q.put_nowait, None)
 
                     _loop.run_in_executor(None, _stream_worker)
                     answer = ""
@@ -2111,12 +2275,14 @@ JSON만 반환:
             else:
                 # Non-streaming fallback
                 if messages and len(messages) > 1:
-                    answer = llm.generate_with_history(
+                    answer = await asyncio.to_thread(
+                        llm.generate_with_history,
                         messages=_clean_messages_for_history(messages),
                         system_instruction=final_system, temperature=0.5,
                     )
                 else:
-                    answer = llm.generate(
+                    answer = await asyncio.to_thread(
+                        llm.generate,
                         query, system_instruction=final_system, temperature=0.5,
                     )
 
@@ -2183,7 +2349,7 @@ AI 답변 (앞부분): {answer[:600]}
 JSON만 반환:
 {{"scope_match": true/false, "issue": "불일치 설명 또는 빈문자열"}}"""
 
-            result = flash.generate(check_prompt, temperature=0.0)
+            result = await asyncio.to_thread(flash.generate, check_prompt, temperature=0.0)
             import json as _json
             clean = result.strip()
             if clean.startswith("```"):
