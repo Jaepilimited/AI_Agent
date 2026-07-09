@@ -100,3 +100,13 @@
 | 17 | 에이전트 | `query_verifier.py` / `sql_agent.py:553-575` | 매 SQL 요청마다 결과가 어디에도 쓰이지 않는 LLM 검증 호출 (비용만 발생, 지연 없음) | 하 | 하 | 제거하거나 valid=False 시 캐시 무효화 등 실제 액션에 연결 |
 
 **특이사항 없음으로 확인된 영역**: 커넥션 풀 설정, BigQuery 결과 스트리밍(RowIterator), multi 라우트의 웹검색+BQ 병렬화, format_answer의 답변+차트 병렬화, 조기 SSE source 피드백(이미 구현됨), RequestLoggingMiddleware(DB 조회 없음).
+
+## Phase 2 완료 (2026-07-09)
+
+1~9번 항목 수정 완료, `pm2 restart skin1004-prod`로 배포 완료 (restart_time=1, health check 200 OK, 크래시 없음).
+
+- Task 2(`_handle_multi` 파티션 필터 우회 수정)는 `scripts/_test_handle_multi.py`로 실제 BigQuery+LLM 호출 검증 — 파티션 필터가 적용된 SQL 생성, 컨텍스트 연속성 유지 확인.
+- 나머지 항목은 dev 서버(`skin1004-dev`) 재시작으로 부팅/헬스체크 정상 확인.
+- `scripts/qa_team_150.py`(CS/IT/PEOPLE 위주) 전체 회귀는 생략 — 이번 변경 범위(BigQuery/multi/admin/frontend)와 주제가 겹치지 않아 비용 대비 실익이 낮다고 판단, 사용자 확인 후 스킵.
+
+10~17번(중간 우선순위: `_handle_bigquery` 중복 LLM 재시도, wiki_extractor N+1 재작성, CS/GWS/Multi 가짜 스트리밍, 인증 캐싱 등)은 별도 Phase 3로 필요시 진행.
