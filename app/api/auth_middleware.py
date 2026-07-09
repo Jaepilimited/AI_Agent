@@ -1,6 +1,7 @@
 """JWT cookie-based authentication dependency for FastAPI (MariaDB)."""
 
 import asyncio
+import time
 from typing import Optional
 
 import jwt
@@ -11,6 +12,12 @@ from app.db.mariadb import fetch_one
 from app.db.models import User
 
 _ALGORITHM = "HS256"
+
+# Same TTL convention as the AD user cache — bounds how stale a role/
+# permission change can be for an already-cached user without needing
+# explicit cache invalidation on every users/ad_users write path.
+_USER_CACHE_TTL = 60.0
+_user_cache: dict[int, tuple[User, float]] = {}
 
 
 def _extract_user_id(request: Request) -> int:
@@ -42,26 +49,31 @@ async def get_current_user(request: Request) -> User:
     """Extract and validate JWT from httpOnly cookie, return User from MariaDB."""
     user_id = _extract_user_id(request)
 
-    row = await asyncio.to_thread(
-        fetch_one,
-        "SELECT u.id, u.email, u.display_name, u.role, u.allowed_models, u.ad_user_id, "
-        "a.display_name as ad_name, a.email as ad_email, a.department "
-        "FROM users u LEFT JOIN ad_users a ON u.ad_user_id = a.id "
-        "WHERE u.id = %s",
-        (user_id,),
-    )
-    if not row:
-        raise HTTPException(status_code=401, detail="User not found")
+    cached = _user_cache.get(user_id)
+    if cached and (time.monotonic() - cached[1]) < _USER_CACHE_TTL:
+        user = cached[0]
+    else:
+        row = await asyncio.to_thread(
+            fetch_one,
+            "SELECT u.id, u.email, u.display_name, u.role, u.allowed_models, u.ad_user_id, "
+            "a.display_name as ad_name, a.email as ad_email, a.department "
+            "FROM users u LEFT JOIN ad_users a ON u.ad_user_id = a.id "
+            "WHERE u.id = %s",
+            (user_id,),
+        )
+        if not row:
+            raise HTTPException(status_code=401, detail="User not found")
 
-    user = User(
-        id=row["id"],
-        email=row.get("ad_email") or row.get("email") or "",
-        name=row.get("ad_name") or row.get("display_name") or "",
-        department=row.get("department") or "",
-        role=row["role"],
-        allowed_models=row.get("allowed_models") or "skin1004-Analysis",
-        ad_user_id=row.get("ad_user_id"),
-    )
+        user = User(
+            id=row["id"],
+            email=row.get("ad_email") or row.get("email") or "",
+            name=row.get("ad_name") or row.get("display_name") or "",
+            department=row.get("department") or "",
+            role=row["role"],
+            allowed_models=row.get("allowed_models") or "skin1004-Analysis",
+            ad_user_id=row.get("ad_user_id"),
+        )
+        _user_cache[user_id] = (user, time.monotonic())
 
     # Store on request.state for downstream use
     request.state.user_email = user.email
