@@ -1375,9 +1375,17 @@
   }
 
   async function saveMessage(role, content) {
-    if (!currentConvoId) return null;
+    return saveMessageTo(currentConvoId, role, content);
+  }
+
+  // Same as saveMessage but targets an explicit conversation id instead of
+  // the global currentConvoId. Needed when the user switches conversations
+  // while a save from a previous conversation is still in flight — the save
+  // must land on the conversation it belongs to, not whatever is "current" now.
+  async function saveMessageTo(convoId, role, content) {
+    if (!convoId) return null;
     try {
-      var resp = await fetch("/api/conversations/" + currentConvoId + "/messages", {
+      var resp = await fetch("/api/conversations/" + convoId + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: role, content: content }),
@@ -1549,7 +1557,7 @@
       clearTimeout(_S._mdDebounce);
       _S._mdDebounce = setTimeout(function () {
         try {
-          _S.completedHtml = marked.parse(stripFollowupBlock(completedText), { breaks: true, gfm: true });
+          _S.completedHtml = _sanitizeHtml(marked.parse(stripFollowupBlock(completedText), { breaks: true, gfm: true }));
         } catch (e) {
           _S.completedHtml = "<p>" + completedText.replace(/</g, "&lt;") + "</p>";
         }
@@ -1619,6 +1627,11 @@
       if (!id) return;
       currentMessages = [];
     }
+    // Snapshot which conversation this send belongs to. If the user switches
+    // conversations while the response is still streaming/rendering, the
+    // long async tail below must keep saving to THIS conversation, not
+    // whatever becomes "current" later.
+    var convoIdAtSend = currentConvoId;
 
     chatWelcome.style.display = "none";
     // Render user message with images in chat bubble
@@ -1661,8 +1674,9 @@
 
     // Add user message to in-memory history
     currentMessages.push({ role: "user", content: apiContent });
-    // Save only text to DB (no images in SQLite)
-    await saveMessage("user", text || "[Image]");
+    // Save only text to DB (no images in SQLite). Target convoIdAtSend
+    // explicitly — the user could switch conversations during this await.
+    await saveMessageTo(convoIdAtSend, "user", text || "[Image]");
     scrollToBottom();
 
     // Use in-memory messages for API (reliable, no DOM parsing)
@@ -1745,6 +1759,7 @@
             var parsed = JSON.parse(data);
             var delta = parsed.choices && parsed.choices[0] && parsed.choices[0].delta;
             if (delta && delta.content) {
+              var pushedContent = false;
               var srcMatch = delta.content.match(/<!-- source:([\w:+\s\u0080-\uFFFF]+?) -->/);
               if (srcMatch) {
                 var srcParts = srcMatch[1].split(":");
@@ -1763,7 +1778,7 @@
                   typingEl.innerHTML = '<span class="loading-text">' + loadingMsgs[detectedSource] + '</span>';
                 }
                 var stripped = delta.content.replace(/<!-- source:[\w:+\s\u0080-\uFFFF]+? -->/, "");
-                if (stripped) _S.queue.push(stripped);
+                if (stripped) { _S.queue.push(stripped); pushedContent = true; }
               } else {
                 // Filter out thinking/reasoning patterns from Claude
                 var text = delta.content;
@@ -1774,12 +1789,17 @@
                 // Strip thinking blocks
                 text = text.replace(/<thinking>[\s\S]*?<\/thinking>/g, "");
                 text = text.replace(/\[thinking\][\s\S]*?\[\/thinking\]/g, "");
-                if (text) _S.queue.push(text);
+                if (text) { _S.queue.push(text); pushedContent = true; }
               }
-              // Start token drain animation if not running
-              var typing = aiMsgEl.querySelector(".typing-indicator");
-              if (typing) typing.remove();
-              if (!_S.running) _startTokenDrain(contentEl);
+              // Start token drain animation only once real content arrives —
+              // keeps the route-specific loading indicator visible during the
+              // silent SQL-generation/execution window instead of it being
+              // removed on the same tick it was set.
+              if (pushedContent) {
+                var typing = aiMsgEl.querySelector(".typing-indicator");
+                if (typing) typing.remove();
+                if (!_S.running) _startTokenDrain(contentEl);
+              }
             }
           } catch (e) { /* skip */ }
         }
@@ -1798,7 +1818,20 @@
       }
       _S.text = "오류가 발생했습니다: " + e.message;
       showToast("응답 중 오류가 발생했습니다", "error");
-      contentEl.innerHTML = '<div class="error-card">⚠️ ' + _S.text + '<br><button class="error-retry-btn" onclick="document.querySelector(\'#chat-input\').value=\'' + lastUserQuery.replace(/'/g, "\\'") + '\';document.querySelector(\'#btn-send\').click();">다시 시도</button></div>';
+      contentEl.innerHTML = "";
+      var errCard = document.createElement("div");
+      errCard.className = "error-card";
+      errCard.appendChild(document.createTextNode("⚠️ " + _S.text));
+      errCard.appendChild(document.createElement("br"));
+      var errRetryBtn = document.createElement("button");
+      errRetryBtn.className = "error-retry-btn";
+      errRetryBtn.textContent = "다시 시도";
+      errRetryBtn.addEventListener("click", function () {
+        document.querySelector("#chat-input").value = lastUserQuery;
+        document.querySelector("#btn-send").click();
+      });
+      errCard.appendChild(errRetryBtn);
+      contentEl.appendChild(errCard);
     }
 
     // Flush remaining tokens from queue
@@ -1851,19 +1884,30 @@
       addSourceBadge(aiMsgEl, detectedSource, detectedSourceLabel);
     }
 
-    currentMessages.push({ role: "assistant", content: cleanContent });
-    var savedMsgId = await saveMessage("assistant", cleanContent);
+    if (currentConvoId !== convoIdAtSend) {
+      // User switched away from this conversation while the response was
+      // still streaming/rendering. The answer still belongs to convoIdAtSend
+      // and must be persisted there — but it must NOT be pushed into the
+      // (now different) global currentMessages, nor saved under the new
+      // currentConvoId, nor drive UI state (follow-ups/scroll) for the
+      // conversation the user is currently looking at.
+      await saveMessageTo(convoIdAtSend, "assistant", cleanContent);
+    } else {
+      currentMessages.push({ role: "assistant", content: cleanContent });
+      var savedMsgId = await saveMessage("assistant", cleanContent);
 
-    // Add feedback buttons after message is saved (need message ID)
-    if (savedMsgId) {
-      _addFeedbackButtons(actionsDiv, savedMsgId);
+      // Add feedback buttons after message is saved (need message ID)
+      if (savedMsgId) {
+        _addFeedbackButtons(actionsDiv, savedMsgId);
+      }
+
+      clearActiveSourceChips();  // Clear @@ chips after response complete
+      showFollowups(text, cleanContent);
+      scrollToBottom();
     }
 
     isStreaming = false;
     currentAbortController = null;
-    clearActiveSourceChips();  // Clear @@ chips after response complete
-    showFollowups(text, cleanContent);
-    scrollToBottom();
   }
 
   // ===== Follow-up Suggestions =====
@@ -2212,12 +2256,16 @@
     return div;
   }
 
+  function _sanitizeHtml(html) {
+    return window.DOMPurify ? DOMPurify.sanitize(html, { ADD_ATTR: ["target"] }) : html;
+  }
+
   function renderMarkdown(el, text) {
     if (!text) { el.innerHTML = ""; return; }
     try {
       // Strip follow-up suggestion block from rendered content (shown as chips instead)
       var cleaned = stripFollowupBlock(text);
-      el.innerHTML = marked.parse(cleaned, { breaks: true, gfm: true });
+      el.innerHTML = _sanitizeHtml(marked.parse(cleaned, { breaks: true, gfm: true }));
       // Wave 3: Wrap tables in scroll container + copy button
       var tables = el.querySelectorAll("table");
       for (var t = 0; t < tables.length; t++) {
@@ -3154,6 +3202,29 @@
 
         container.innerHTML = html + syncBarHtml;
 
+        // Quality alert bar — admin only, fetched separately
+        if (currentUser && currentUser.role === "admin") {
+          fetch("/api/admin/quality-flags")
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(qd) {
+              if (!qd || !qd.flags || qd.flags.length === 0) return;
+              var flagRows = qd.flags.map(function(f) {
+                var issues = [];
+                if (f.flag_accuracy) issues.push("정확도 " + (f.accuracy_rate != null ? (f.accuracy_rate * 100).toFixed(0) + "%" : "N/A") + " (기준 65%)");
+                if (f.flag_speed)    issues.push("응답속도 " + (f.avg_response_ms / 1000).toFixed(1) + "s (기준 12s)");
+                if (f.flag_context)  issues.push("컨텍스트 " + f.avg_context_len + "자 (기준 300자)");
+                var routeLabel = f.route === "_all" ? "전체" : f.route;
+                return '<div class="quality-flag-row">' +
+                  '<span class="quality-route">' + routeLabel + '</span>' +
+                  '<span class="quality-issues">' + issues.join(" · ") + '</span>' +
+                  '</div>';
+              }).join("");
+              var bar = '<div class="quality-alert-bar"><div class="quality-alert-title">⚠️ 품질 임계치 초과 (' + qd.date + ')</div>' + flagRows + '</div>';
+              container.innerHTML = html + bar + syncBarHtml;
+            })
+            .catch(function() {});
+        }
+
         // Notion sync button handler
         var syncBtn = document.getElementById("btn-notion-sync");
         if (syncBtn && !syncRunning) {
@@ -3940,8 +4011,105 @@
       tab.classList.add("active");
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
       if (tab.dataset.tab === "users") loadAdminADUsers();
+      if (tab.dataset.tab === "growth") loadGrowthReport();
     });
   });
+
+  // ── Growth Report ──
+  function loadGrowthReport() {
+    document.getElementById("admin-growth-body").innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>로딩 중…</p>";
+    fetch("/api/admin/growth-report")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { renderGrowthReport(d); })
+      .catch(function() {
+        document.getElementById("admin-growth-body").innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>데이터 없음</p>";
+      });
+  }
+
+  function renderGrowthReport(d) {
+    var el = document.getElementById("admin-growth-body");
+    if (!d) { el.innerHTML = "<p style='padding:12px'>데이터 없음</p>"; return; }
+
+    var qt = d.quality_trend || {};
+    var accNow = qt.accuracy_avg != null ? (qt.accuracy_avg * 100).toFixed(1) + "%" : "—";
+    var accDelta = qt.accuracy_delta != null ? (qt.accuracy_delta >= 0 ? "▲" : "▼") + Math.abs((qt.accuracy_delta * 100).toFixed(1)) + "%" : "";
+    var spdNow = qt.speed_avg_ms != null ? (qt.speed_avg_ms / 1000).toFixed(1) + "s" : "—";
+    var spdDelta = qt.speed_delta_ms != null ? (qt.speed_delta_ms <= 0 ? "▲" : "▼") + Math.abs((qt.speed_delta_ms / 1000).toFixed(1)) + "s" : "";
+
+    var html = '<div style="padding:12px">';
+    // 성장 요약 카드
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">';
+    html += _growthCard("SQL 캐시 히트", d.sql_cache_hits || 0, "이번 주 캐시 응답 수", "#27ae60");
+    html += _growthCard("SQL 패턴 학습", d.sql_cache_new || 0, "새로 저장된 SQL 패턴", "#2980b9");
+    html += _growthCard("👍 스킬 학습", d.skill_memory_pos || 0, "긍정 피드백 패턴", "#8e44ad");
+    html += _growthCard("👎 오류 학습", d.skill_memory_neg || 0, "부정 피드백 패턴", "#c0392b");
+    html += _growthCard("지식 갭 감지", d.knowledge_gaps || 0, "CS 누락 질문 수", "#e67e22");
+    html += _growthCard("Wiki 노드", d.wiki_node_count || 0, "지식 그래프 총 노드", "#16a085");
+    html += '</div>';
+
+    // 품질 추이
+    html += '<div style="background:var(--sidebar-bg);border-radius:8px;padding:10px 12px;margin-bottom:12px">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">품질 추이 (이번 주)</div>';
+    html += '<div style="display:flex;gap:24px">';
+    html += '<div><div style="font-size:18px;font-weight:700">' + accNow + '</div><div style="font-size:11px;color:var(--text-secondary)">정확도 ' + (accDelta ? '<span style="color:' + (qt.accuracy_delta >= 0 ? "#27ae60" : "#c0392b") + '">' + accDelta + '</span>' : "") + '</div></div>';
+    html += '<div><div style="font-size:18px;font-weight:700">' + spdNow + '</div><div style="font-size:11px;color:var(--text-secondary)">응답속도 ' + (spdDelta ? '<span style="color:' + (qt.speed_delta_ms <= 0 ? "#27ae60" : "#c0392b") + '">' + spdDelta + '</span>' : "") + '</div></div>';
+    html += '</div></div>';
+
+    // 기간
+    if (d.week_start) {
+      html += '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">' + d.week_start + ' ~ ' + (d.week_end || "") + '</div>';
+    }
+
+    // CS 지식 갭 로드
+    html += '<div id="growth-gaps-section"><button onclick="loadKnowledgeGaps()" style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer">CS 지식 갭 보기</button></div>';
+    html += '</div>';
+    el.innerHTML = html;
+
+    document.getElementById("btn-refresh-growth").onclick = function() {
+      fetch("/api/admin/growth-report/refresh", {method:"POST"})
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderGrowthReport(d); });
+    };
+  }
+
+  function _growthCard(label, value, sub, color) {
+    return '<div style="background:var(--sidebar-bg);border-radius:8px;padding:10px 12px;border-left:3px solid ' + color + '">' +
+      '<div style="font-size:20px;font-weight:700;color:' + color + '">' + value + '</div>' +
+      '<div style="font-size:12px;font-weight:600;margin-top:2px">' + label + '</div>' +
+      '<div style="font-size:11px;color:var(--text-secondary)">' + sub + '</div>' +
+      '</div>';
+  }
+
+  function loadKnowledgeGaps() {
+    document.getElementById("growth-gaps-section").innerHTML = "<p style='font-size:12px;color:var(--text-secondary)'>로딩 중…</p>";
+    fetch("/api/admin/knowledge-gaps")
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var html = '<div style="margin-top:4px"><div style="font-size:12px;font-weight:600;margin-bottom:6px">CS 지식 갭 — 최근 30일 (' + (d.unreviewed || 0) + '건 미검토)</div>';
+        if (!d.gaps || d.gaps.length === 0) {
+          html += '<p style="font-size:12px;color:var(--text-secondary)">갭 없음</p>';
+        } else {
+          d.gaps.forEach(function(g) {
+            var date = (g.created_at || "").slice(0, 10);
+            html += '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">' +
+              '<span style="font-size:11px;color:var(--text-secondary);flex-shrink:0">' + date + '</span>' +
+              '<span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _escape(g.question) + '</span>' +
+              (g.reviewed ? '<span style="font-size:10px;color:#27ae60">✓</span>' :
+                '<button onclick="markGapReviewed(' + g.id + ', this)" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:transparent;cursor:pointer">검토</button>') +
+              '</div>';
+          });
+        }
+        html += '</div>';
+        document.getElementById("growth-gaps-section").innerHTML = html;
+      }).catch(function() {
+        document.getElementById("growth-gaps-section").innerHTML = "<p style='font-size:12px;color:var(--text-secondary)'>로드 실패</p>";
+      });
+  }
+
+  function markGapReviewed(id, btn) {
+    fetch("/api/admin/knowledge-gaps/" + id + "/review", {method:"PATCH"})
+      .then(function(r) { if (r.ok) { btn.parentElement.querySelector("span:last-child, button:last-child").outerHTML = '<span style="font-size:10px;color:#27ae60">✓</span>'; } });
+  }
 
   // Stats
   function loadAdminStats() {

@@ -11,8 +11,9 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=145">
+  <link rel="stylesheet" href="/static/style.css?v=147">
   <!-- Markdown + Code highlighting -->
+  <script src="/static/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" id="hljs-theme">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
@@ -243,6 +244,7 @@
     <div class="admin-tabs">
       <button class="admin-tab active" data-tab="groups">그룹 관리</button>
       <button class="admin-tab" data-tab="users">AD 사용자</button>
+      <button class="admin-tab" data-tab="growth">성장 지표</button>
     </div>
     <!-- Tab: Groups -->
     <div class="admin-tab-content active" id="tab-groups">
@@ -266,11 +268,18 @@
       </div>
       <div class="admin-drawer-body" id="admin-user-list"></div>
     </div>
+    <!-- Tab: Growth -->
+    <div class="admin-tab-content" id="tab-growth">
+      <div class="admin-toolbar">
+        <button class="admin-btn-secondary" id="btn-refresh-growth">새로고침</button>
+      </div>
+      <div class="admin-drawer-body" id="admin-growth-body">로딩 중…</div>
+    </div>
   </div>
 
   <!-- Theme Toggle -->
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
-  <script src="/frontend/chat.js?v=216"></script>
+  <script src="/frontend/chat.js?v=223"></script>
 </body>
 </html>
