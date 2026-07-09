@@ -233,25 +233,3 @@ async def run(query: str, model_type: str = "gemini", allowed_resources: Optiona
     except Exception as e:
         logger.error("team_agent_failed", error=str(e))
         return f"팀별 자료 검색 중 오류가 발생했습니다: {e}"
-
-
-async def run_stream(query: str, model_type: str = "gemini", allowed_resources: Optional[Dict[str, list]] = None):
-    """Streaming variant of run() — yields answer text chunks."""
-    if not _cache_loaded:
-        await warmup()
-
-    matched = search_resources(query, top_k=8, allowed_resources=allowed_resources)
-    context = _format_resource_context(matched)
-
-    llm = get_flash_client()
-    prompt = _build_answer_prompt(query, context, len(matched))
-
-    from app.core.stream_bridge import stream_sync_generator
-    try:
-        async for chunk in stream_sync_generator(
-            lambda: llm.generate_stream(prompt, temperature=0.3, max_output_tokens=2048)
-        ):
-            yield chunk
-    except Exception as e:
-        logger.error("team_agent_stream_failed", error=str(e))
-        yield f"팀별 자료 검색 중 오류가 발생했습니다: {e}"

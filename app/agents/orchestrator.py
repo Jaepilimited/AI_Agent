@@ -865,11 +865,16 @@ class OrchestratorAgent:
             _wiki_block = f"\n\n[참고: 관련 사내 지식]\n{wiki_context}"
             _handler_ctx = (conversation_context + _wiki_block) if conversation_context else _wiki_block.lstrip()
 
-        # CS/Team/Multi → true token streaming (same pattern as the BigQuery
-        # route above: prep runs async, only the final LLM answer streams).
+        # CS/Multi → true token streaming (same pattern as the BigQuery route
+        # above: prep runs async, only the final LLM answer streams).
         # No circuit breaker here, matching the BigQuery streaming path —
         # generator-based flows don't compose with the is_available() gate.
-        if route in ("cs", "team", "multi"):
+        #
+        # Note: "team" route is not included here — it's currently
+        # unreachable (the keyword classifier and _DB_REGISTRY both route
+        # team-resource queries to "notion" instead; see _keyword_classify).
+        # A pre-existing condition, not introduced by this streaming work.
+        if route in ("cs", "multi"):
             from app.core.stream_bridge import stream_with_timeout, StreamTimeout
 
             if route == "cs":
@@ -878,13 +883,6 @@ class OrchestratorAgent:
                     f"[이전 대화]\n{_handler_ctx}\n\n[현재 질문]\n{query}" if _handler_ctx else query
                 )
                 _stream_gen = _route_stream_fn(_contextualized_query, model_type=model_type)
-                _stream_timeout = 30.0
-            elif route == "team":
-                from app.agents.team_agent import run_stream as _route_stream_fn
-                _contextualized_query = (
-                    f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}" if conversation_context else query
-                )
-                _stream_gen = _route_stream_fn(_contextualized_query, model_type=model_type, allowed_resources=enabled_team_resources)
                 _stream_timeout = 30.0
             else:  # multi
                 _stream_gen = self._handle_multi_stream(
@@ -904,12 +902,15 @@ class OrchestratorAgent:
             yield ("done", "")
             return
 
-        # Non-streaming routes (Notion, GWS) → simulate streaming
+        # Non-streaming routes (Notion, GWS, Team) → simulate streaming
         # Timeout: GWS 45s (inner agent 30s + buffer), others 30s
+        # Note: "team" is currently unreachable (see comment above) but this
+        # dispatch is kept as-is in case that classification changes.
         from app.core.safety import get_circuit
 
         handlers = {
             "gws": self._handle_gws,
+            "team": self._handle_team,
         }
         handler = handlers.get(route, self._handle_direct)
         _route_timeout = 45.0 if route == "gws" else 30.0
@@ -925,6 +926,11 @@ class OrchestratorAgent:
                     result = await asyncio.wait_for(
                         self._handle_qdrant(query, messages, conversation_context, model_type, user_email),
                         timeout=20.0,
+                    )
+                elif route == "team":
+                    result = await asyncio.wait_for(
+                        handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources),
+                        timeout=_route_timeout,
                     )
                 else:
                     result = await asyncio.wait_for(
