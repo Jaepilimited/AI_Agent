@@ -997,7 +997,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
                 _try_generate_chart, chart_llm, query, sql, result_preview, results
             )
 
-            answer = answer_future.result()
+            answer = answer_future.result(timeout=120.0)
             # Give chart up to 8s after answer is ready; skip if slow
             try:
                 chart_markdown = chart_future.result(timeout=8.0)
