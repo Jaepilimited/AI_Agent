@@ -122,3 +122,32 @@
 - **#16 (CS/GWS/Multi 가짜 스트리밍)**: Phase 2 Task 3(로딩 인디케이터 버그 수정)로 대기 중 "검색 중..." 표시가 계속 보이게 되면서 체감 문제가 상당 부분 완화됨. 남은 개선(핸들러를 제너레이터로 전환)은 4개 핸들러 시그니처 변경이 필요한 큰 리팩터 — 별도 설계 논의 필요
 
 배포: `pm2 restart skin1004-prod` (restart_time=2, health check 200 OK, 안정적)
+
+## Phase 4 완료 (2026-07-09)
+
+**#16 (CS/Multi 가짜 스트리밍 → 진짜 스트리밍)**: CS와 Multi 라우트를 실제 토큰
+단위 스트리밍으로 전환. `app/core/stream_bridge.py`에 재사용 가능한 브릿지
+헬퍼(`stream_sync_generator`, `stream_with_timeout`) 추가, `cs_agent.run_stream()`
+신규 추가, `_handle_multi`를 `_multi_prepare`/`_build_multi_synthesis_prompt`
+공유 헬퍼로 리팩터링 후 `_handle_multi_stream` 추가. `orchestrator.py`의
+`route_and_stream`에서 cs/multi를 BigQuery와 동일한 진짜 스트리밍 패턴으로 배선.
+
+**배포 전 잡은 실제 버그**: `stream_with_timeout`의 최초 구현(poll-and-retry
+방식)이 스트림 전체를 무음으로 삭제하는 버그가 있었음 — `asyncio.wait_for`가
+타임아웃 시 내부 `__anext__()`를 취소하는데, 이게 async generator를
+종료시켜버려서 재시도 시 `StopAsyncIteration`이 즉시 발생. 직접 테스트
+스크립트(`test_bridge_direct.py`)로 배포 전 발견·수정 (남은 시간을 재계산해
+1회만 대기하는 방식으로 교체).
+
+**Team 라우트는 스트리밍 전환 대상에서 제외**: 조사 중 "team" 라우트가 현재
+시스템에서 도달 불가능한 죽은 코드임을 발견 (`_keyword_classify`가
+`_TEAM_KEYWORDS` 매칭 시 "notion"을 리턴하고, `_DB_REGISTRY`에도 team으로
+매핑되는 항목이 없음 — 이번 작업과 무관한 기존 상태). 추가했던 team 스트리밍
+코드는 제거하고 `_handle_team`의 원래 제네릭 디스패치를 그대로 복원함.
+
+검증: `test_streaming_phase4.py`로 CS(13 chunks)/Multi(89 chunks) 실제 증분
+스트리밍 확인, dev 재시작 후 prod 배포 (restart_time=3, health check 200 OK).
+
+남은 항목: #13(_handle_bigquery 중복 재시도, 텔레메트리 부재로 보류),
+#14(wiki_extractor N+1, 실익 대비 리스크 낮아 보류), #11(p95 LIMIT, 정확도
+리스크로 보류)은 그대로 미해결 상태로 남김.
