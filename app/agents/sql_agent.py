@@ -20,7 +20,6 @@ import concurrent.futures
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
-from app.agents.query_verifier import QueryVerifierAgent
 from app.core.security import sanitize_sql, validate_sql
 from app.models.state import AgentState
 
@@ -549,30 +548,6 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
         _query = state.get("query", "")
         _brand_filter = state.get("brand_filter")
         _cache_store(_cache_key(_query, _brand_filter), _query, sql, _brand_filter)
-
-    # QueryVerifier: fire-and-forget (non-blocking, log-only)
-    # Previously blocked up to 15s — now runs in background thread
-    try:
-        import asyncio
-        import threading
-
-        verifier = QueryVerifierAgent()
-        schema_info = (_schema_cache_sales or "") + "".join(_schema_cache_tables.values())
-        _sql_ref = sql  # capture for closure
-
-        def _verify_bg():
-            try:
-                vr = asyncio.run(verifier.verify(_sql_ref, schema_info))
-                if isinstance(vr, dict) and not vr.get("valid", True):
-                    logger.info("query_verifier_bg_issue", errors=vr.get("errors", []))
-                else:
-                    logger.debug("query_verifier_bg_passed")
-            except Exception as ex:
-                logger.debug("query_verifier_bg_skipped", error=str(ex))
-
-        threading.Thread(target=_verify_bg, daemon=True).start()
-    except Exception as e:
-        logger.debug("query_verifier_launch_failed", error=str(e))
 
     return {"sql_valid": True, "error": None}
 
