@@ -3,6 +3,13 @@
 Single server on port 3000: AI backend + custom frontend.
 """
 
+# torch must be imported before google.cloud.bigquery to prevent
+# Windows DLL initialization conflict (c10.dll vs gRPC DLLs)
+try:
+    import torch  # noqa: F401
+except Exception:
+    pass
+
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -73,6 +80,21 @@ def create_app() -> FastAPI:
         loop.set_default_executor(ThreadPoolExecutor(max_workers=100, thread_name_prefix="skin1004"))
         logger.info("thread_pool_configured", max_workers=100)
 
+        # Windows proactor event loop logs a noisy ConnectionResetError traceback
+        # whenever a client disconnects mid-response (benign). Suppress only that case.
+        _default_handler = loop.get_exception_handler()
+
+        def _quiet_proactor_reset(loop, context):
+            exc = context.get("exception")
+            if isinstance(exc, ConnectionResetError):
+                return
+            if _default_handler:
+                _default_handler(loop, context)
+            else:
+                loop.default_exception_handler(context)
+
+        loop.set_exception_handler(_quiet_proactor_reset)
+
         # Ensure admin user exists in MariaDB
         _ensure_admin()
         _ensure_audit_table()
@@ -85,6 +107,9 @@ def create_app() -> FastAPI:
             ensure_wiki_communities_table,
             ensure_anon_columns,
             ensure_eval_tables,
+            ensure_agent_skills_table,
+            ensure_quality_snapshots_table,
+            ensure_knowledge_gaps_table,
         )
         ensure_knowledge_wiki_table()
         ensure_wiki_extraction_log_table()
@@ -94,6 +119,9 @@ def create_app() -> FastAPI:
         ensure_wiki_communities_table()
         ensure_anon_columns()
         ensure_eval_tables()
+        ensure_agent_skills_table()
+        ensure_quality_snapshots_table()
+        ensure_knowledge_gaps_table()
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -120,11 +148,13 @@ def create_app() -> FastAPI:
         _scheduler.add_job(_sync_team_resources_job, "cron", hour=1, minute=0, id="team_sync_daily")
         _scheduler.add_job(_extract_wiki_hourly, "cron", minute=15, id="wiki_extract_hourly")
         _scheduler.add_job(_qdrant_pipeline_job, "cron", hour=5, minute=0, id="qdrant_pipeline_daily")
+        _scheduler.add_job(_quality_snapshot_job, "cron", hour=0, minute=5, id="quality_snapshot_daily")
+        _scheduler.add_job(_weekly_growth_report_job, "cron", day_of_week="mon", hour=0, minute=10, id="weekly_growth_report")
         # AD sync is handled exclusively by Windows Task Scheduler (SKIN1004-AD-Sync-Daily at 22:00).
         # Removed from APScheduler to prevent concurrent dual-trigger race condition.
         _scheduler.start()
         _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10"])
         yield
         logger.info("application_shutdown")
 
@@ -167,23 +197,18 @@ def create_app() -> FastAPI:
 
     @app.get("/login")
     async def login_page():
-        from app.core.safety import get_maintenance_manager
-        if get_maintenance_manager().active:
-            return FileResponse(str(_FRONTEND_DIR / "maintenance.html"), media_type="text/html", headers=_NO_CACHE)
         return FileResponse(str(_FRONTEND_DIR / "login.html"), media_type="text/html", headers=_NO_CACHE)
+
+    _CHAT_HTML_CACHE = (_FRONTEND_DIR / "chat.html").read_text(encoding="utf-8")
 
     @app.get("/")
     async def index(request: Request):
-        from app.core.safety import get_maintenance_manager
-        if get_maintenance_manager().active:
-            return FileResponse(str(_FRONTEND_DIR / "maintenance.html"), media_type="text/html", headers=_NO_CACHE)
         # Check if user is authenticated
         token = request.cookies.get("token")
         if not token:
             return RedirectResponse(url="/login", status_code=302)
         from fastapi.responses import HTMLResponse
-        html = (_FRONTEND_DIR / "chat.html").read_text(encoding="utf-8")
-        return HTMLResponse(html, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
+        return HTMLResponse(_CHAT_HTML_CACHE, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
 
     # Serve static files (no-cache middleware for dev)
     from starlette.middleware import Middleware
@@ -268,6 +293,11 @@ def _ensure_audit_table():
             )
         except Exception as e:
             logger.warning("audit_table_create_failed", error=str(e))
+    # Add context_len column (idempotent — silently ignored if already exists)
+    try:
+        execute("ALTER TABLE audit_logs ADD COLUMN context_len INT DEFAULT NULL")
+    except Exception:
+        pass
 
 
 async def _warmup_notion_titles():
@@ -434,6 +464,26 @@ async def _extract_wiki_hourly():
         logger.info("wiki_hourly_extract_done", **result)
     except Exception as e:
         logger.error("wiki_hourly_extract_failed", error=str(e))
+
+
+async def _quality_snapshot_job():
+    """Daily 00:05: compute quality snapshot for yesterday."""
+    try:
+        from app.core.quality_monitor import compute_daily_snapshot
+        result = await asyncio.to_thread(compute_daily_snapshot)
+        logger.info("quality_snapshot_done", date=result.get("date"), flags=len(result.get("flags", [])))
+    except Exception as e:
+        logger.error("quality_snapshot_failed", error=str(e))
+
+
+async def _weekly_growth_report_job():
+    """Monday 00:10: compute and persist weekly growth report."""
+    try:
+        from app.core.growth_report import compute_weekly_growth
+        result = await asyncio.to_thread(compute_weekly_growth)
+        logger.info("weekly_growth_done", **{k: v for k, v in result.items() if k != "quality_trend"})
+    except Exception as e:
+        logger.error("weekly_growth_failed", error=str(e))
 
 
 async def _warmup_face_search():
