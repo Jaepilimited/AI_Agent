@@ -74,3 +74,29 @@
 2. BigQuery 결과 로딩 — **특이사항 없음**. `app/core/bigquery.py:64-68`의 `execute_query`는 RowIterator를 순회하며 `max_rows` 도달 시 즉시 break, 전체 결과셋을 메모리에 올리지 않음. `maximum_bytes_billed=10GB` 캡 + 파티션 필터로 스캔 비용 제어.
 
 3. `app/agents/orchestrator.py:1741` (`_handle_multi`) — **`_enforce_partition_filter`를 완전히 우회하는 유일한 경로**. 이 함수(sql_agent.py:87)는 대형 테이블(SALES_ALL_Backup/integrated_ad/Integrated_marketing_cost) 쿼리에 날짜 필터가 없으면 재생성을 강제하는 안전장치인데, 실제 호출 지점은 `run_sql_agent`(1449줄)와 `run_sql_agent_stream`(1498줄) 두 곳뿐. `_handle_multi`(내부+외부 정보 결합 답변 라우트, 예: "환율 때문에 베트남 매출 하락?")는 컴파일된 LangGraph를 `_graph.invoke(state)`로 직접 호출하며 이 노드 체인에는 partition 필터 강제가 없음. **영향도: 상** (날짜 범위 모호한 질의가 90일 기본값 프롬프트 지시에만 의존 — LLM이 지시를 놓치면 대형 테이블 풀스캔 방지 안전망이 이 경로에만 없음, 정확히 `_enforce_partition_filter`가 막으려던 시나리오) / **리스크: 하** (`_bq_query_sync()` 안에서 `_graph.invoke` 결과의 `generated_sql`에 `_enforce_partition_filter`를 한 번 더 통과시키거나, `run_sql_agent`를 재사용하도록 교체. 단, 현재 `_graph.invoke`는 이미 execute까지 끝낸 answer 텍스트만 반환하는 구조라 사후 검증이 어색함 — 구조 변경 소요는 있으나 리스크 자체는 낮음)
+
+## 우선순위 목록
+
+영향도(상→중→하) 우선, 동일 영향도 내에서는 리스크(하→중→상) 순 정렬.
+
+| # | 클러스터 | 파일:라인 | 문제 | 영향도 | 리스크 | 권장 조치 |
+|---|---------|-----------|------|--------|--------|-----------|
+| 1 | 에이전트 | `sql_agent.py:1001-1003` | 차트 타임아웃이 주석(3초)과 다르게 `300.0`으로 설정된 오타 — 차트 생성 지연 시 최대 5분 추가 대기 | 상 | 하 | `timeout=300.0` → `8.0`으로 수정 (스트리밍 버전과 동일하게) |
+| 2 | BigQuery | `orchestrator.py:1741` (`_handle_multi`) | `_enforce_partition_filter`를 우회하는 유일한 경로 — 날짜 필터 없는 대형 테이블 풀스캔 안전망 부재 | 상 | 하 | `_bq_query_sync()`에서 `_graph.invoke` 결과의 `generated_sql`에 `_enforce_partition_filter` 재적용, 또는 `run_sql_agent` 재사용으로 교체 |
+| 3 | BigQuery | `sql_agent.py:1490-1502` (`run_sql_agent_stream`) | generate_sql→validate→execute가 전부 동기 실행되며 그 사이 SSE 피드백 없음 — "source:bigquery" 표시 후 완전 침묵(수초~수십초) | 상 | 하 | 1492행(generate_sql 직전), 1502행(execute_sql 직전)에 상태 문자열 yield 추가 |
+| 4 | 에이전트 | `routes.py:154-158`, `orchestrator.py` `route_and_stream:768-785` | direct 라우트가 대화 이력을 캡 없이 전체 전달 — 토큰 비용 O(n), 누적 비용 O(n²) | 상 | 중 | 오래된 메시지 요약 또는 최근 N개로 캡 (direct 라우트 한정) |
+| 5 | 에이전트 | `sql_agent.py:789-790` | 0건 결과 안내에도 동일한 `timeout=300.0` — 의도된 "빠른 실패→템플릿 폴백"이 사실상 발동 안 함 | 중 | 하 | 짧은 타임아웃(3~8초)으로 수정 |
+| 6 | 에이전트 | `sql_agent.py:1000` + 비스트리밍 `chat_completions` | `answer_future.result()`에 타임아웃 없음, 비스트리밍 엔드포인트엔 전체 타임아웃도 없어 Flash API 행 시 HTTP 요청 그대로 hang | 중 | 하 | `answer_future`에 타임아웃 추가, `route_and_execute()` 전체에 상한 타임아웃 추가 |
+| 7 | API | `main.py:209` (`index()`) | "/" 라우트가 매 요청마다 chat.html을 동기 `.read_text()`로 읽어 이벤트 루프 블로킹 | 중 | 하 | `to_thread` 래핑 또는 서버 시작 시 1회 캐싱 |
+| 8 | DB | `admin_group_api.py:194-199, 211-217` | 부서 배정/해제 시 사용자 수만큼 개별 INSERT/DELETE 루프 (N+1) | 중 | 하 | multi-row INSERT VALUES / `IN (...)` 배치 DELETE로 교체 |
+| 9 | DB | `wiki_extractor.py:230-234, 257-261` | dup/conflict 체크가 `WHERE LOWER(entity)=LOWER(%s)` 사용 — 일반 인덱스는 함수 래핑 시 못 씀 → fact마다 풀스캔 | 중 | 하 | entity를 소문자로 normalize해 저장하거나 `entity_lower` 생성 컬럼 + 인덱스 추가 |
+| 10 | API | `admin_api.py:182-247` (`get_metrics`) | 5개 독립 쿼리가 순차 await, gather 미사용 | 중 | 하 | `asyncio.gather`로 병렬화 |
+| 11 | API | `admin_api.py:201-205` | p95 계산이 최근 1시간 audit_logs를 LIMIT 없이 전부 로드해 Python 정렬 | 하 | 하 | LIMIT 또는 DB 측 percentile 계산으로 대체 |
+| 12 | API | `main.py:99-124` (lifespan) | 부팅 시 다수 동기 DB 호출이 to_thread 없이 실행 (1회성) | 하 | 하 | to_thread 래핑 (선택적, 부팅 1회라 우선순위 낮음) |
+| 13 | 에이전트 | `orchestrator.py:1459-1493` (`_handle_bigquery`) | 1차 실패 시 전체 SQL 파이프라인 재실행 + fallback까지 최악 5~6회 LLM 호출 누적 | 중 | 중 | 복구율 유지하며 재시도 계층 축소 |
+| 14 | DB | `wiki_extractor.py:225-296` (`_insert_facts_sync`) | fact마다 dup-check + conflict-check 쿼리 반복 (백그라운드 실행이라 사용자 체감 지연 없음, 테이블 성장에 따라 부하 누적) | 하~중 | 중 | 조건부 로직 재작성 필요한 배치화 |
+| 15 | API | `auth_middleware.py:41-69` (`get_current_user`) | 인증 필요한 모든 엔드포인트가 매 요청 DB JOIN 1회 (진짜 중복은 아님, 캐싱 없음) | 하~중 | 중 | role 캐시 + 변경 시 무효화 전략 필요 |
+| 16 | 에이전트 | `orchestrator.py:882-907` (CS/GWS/Notion/Team/Multi) | 핸들러 완료를 통째로 기다린 뒤 "가짜 스트리밍" — 최대 45~300초 무응답 가능 | 중 | 상 | 핸들러를 제너레이터로 전환 (시그니처 변경 필요, 범위 큼) |
+| 17 | 에이전트 | `query_verifier.py` / `sql_agent.py:553-575` | 매 SQL 요청마다 결과가 어디에도 쓰이지 않는 LLM 검증 호출 (비용만 발생, 지연 없음) | 하 | 하 | 제거하거나 valid=False 시 캐시 무효화 등 실제 액션에 연결 |
+
+**특이사항 없음으로 확인된 영역**: 커넥션 풀 설정, BigQuery 결과 스트리밍(RowIterator), multi 라우트의 웹검색+BQ 병렬화, format_answer의 답변+차트 병렬화, 조기 SSE source 피드백(이미 구현됨), RequestLoggingMiddleware(DB 조회 없음).
