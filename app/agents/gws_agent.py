@@ -1,11 +1,14 @@
-"""Google Workspace Sub Agent (v4.2 — per-user OAuth2 + timeout + recursion limit).
+"""Google Workspace Sub Agent (v4.3 — per-user OAuth2 + timeout + recursion limit).
 
 Replaces MCP-based single-user approach with individual OAuth2 authentication.
 Each user authenticates with their own Google account to access Gmail/Drive/Calendar.
-Uses Claude Sonnet as ReAct agent with bound API tools.
+Uses Gemini Flash as ReAct agent with bound API tools.
 
 v4.1: Added 120s timeout for ReAct agent to prevent 300s+ hangs on complex searches.
 v4.2: Added recursion_limit=10 to cap tool call iterations (~4-5 tool calls max).
+v4.3: Switched from Claude Sonnet to Gemini Flash (Sonnet was the only live
+consumer of AgentModel.GWS_AGENT — no other user-facing model selection
+exists in this app, so there's no reason to keep two model providers here).
 """
 
 import asyncio
@@ -16,7 +19,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 try:
-    from langchain_anthropic import ChatAnthropic
+    from langchain_google_genai import ChatGoogleGenerativeAI
     from langchain_core.tools import tool
     from langgraph.errors import GraphRecursionError
     from langgraph.prebuilt import create_react_agent
@@ -28,7 +31,6 @@ except Exception as e:
 from app.config import get_settings
 from app.core.google_auth import GoogleAuthManager
 from app.core.google_workspace import list_calendar_events, search_drive, search_gmail
-from app.models.agent_models import AgentModel
 
 _auth_manager = None
 
@@ -41,13 +43,12 @@ def _get_auth_manager() -> GoogleAuthManager:
 
 
 def _extract_text(content) -> str:
-    """Extract the text block from an Anthropic response.
+    """Extract the text block from a LangChain chat model response.
 
-    Claude Sonnet 5 runs adaptive thinking by default, so ``content`` is a
-    plain string only when the model skipped thinking; on tasks complex
-    enough to trigger it (e.g. synthesizing search results), LangChain
-    returns a list of content blocks (a "thinking" block plus a "text"
-    block) instead.
+    ``content`` is a plain string for simple replies, but both Gemini and
+    Claude can return a list of content blocks instead (e.g. a "thinking"
+    block alongside the "text" block) for more complex generations — this
+    pulls out just the text.
     """
     if isinstance(content, str):
         return content
@@ -66,10 +67,10 @@ class GWSAgent:
             self.llm = None
             return
         settings = get_settings()
-        self.llm = ChatAnthropic(
-            model=AgentModel.GWS_AGENT.value,
-            anthropic_api_key=settings.anthropic_api_key,
-            max_tokens=4096,
+        self.llm = ChatGoogleGenerativeAI(
+            model=settings.gemini_flash_model,
+            google_api_key=settings.gemini_api_key,
+            max_output_tokens=4096,
         )
 
     async def run(self, query: str, user_email: str = "") -> str:

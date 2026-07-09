@@ -24,7 +24,6 @@ from app.core.response_formatter import ensure_formatting
 from app.agents.sql_agent import run_sql_agent
 
 # v3.0 new agents
-from app.agents.query_verifier import QueryVerifierAgent
 from app.agents.notion_agent import NotionAgent
 from app.agents.gws_agent import GWSAgent
 
@@ -144,18 +143,11 @@ class OrchestratorAgent:
                     self._SOURCE_ROUTE_MAP[alias] = entry["route"]
 
         # v3.0 new agents (lazy init)
-        self._query_verifier = None
         self._notion_agent = None
         self._gws_agent = None
 
         # Strong refs for fire-and-forget background tasks (prevents GC mid-flight)
         self._bg_tasks: set = set()
-
-    @property
-    def query_verifier(self):
-        if self._query_verifier is None:
-            self._query_verifier = QueryVerifierAgent()
-        return self._query_verifier
 
     @property
     def notion_agent(self):
