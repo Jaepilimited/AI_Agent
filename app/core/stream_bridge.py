@@ -6,7 +6,7 @@ BigQuery streaming route (see orchestrator.py's _bq_worker), factored out
 so CS/Team/Multi routes can reuse it instead of re-implementing the bridge.
 """
 import asyncio
-from typing import AsyncIterator, Callable, Iterable
+from typing import AsyncIterable, AsyncIterator, Callable, Iterable
 
 
 async def stream_sync_generator(sync_gen_factory: Callable[[], Iterable[str]]) -> AsyncIterator[str]:
@@ -45,3 +45,31 @@ async def stream_sync_generator(sync_gen_factory: Callable[[], Iterable[str]]) -
         if isinstance(item, Exception):
             raise item
         yield item
+
+
+class StreamTimeout(Exception):
+    """Raised by stream_with_timeout() when total elapsed time exceeds the budget."""
+
+
+async def stream_with_timeout(
+    async_gen: AsyncIterable[str], timeout_s: float, poll_s: float = 5.0
+) -> AsyncIterator[str]:
+    """Iterate an async generator, raising StreamTimeout if it runs past timeout_s.
+
+    Polls each step with a poll_s timeout (rather than one wait_for(timeout_s)
+    around the whole generator) so a route that's still actively producing
+    chunks isn't killed mid-stream by a single long wait — total elapsed time
+    across all polls is what's checked against timeout_s.
+    """
+    it = async_gen.__aiter__()
+    start = asyncio.get_event_loop().time()
+    while True:
+        try:
+            chunk = await asyncio.wait_for(it.__anext__(), timeout=poll_s)
+        except asyncio.TimeoutError:
+            if asyncio.get_event_loop().time() - start > timeout_s:
+                raise StreamTimeout()
+            continue
+        except StopAsyncIteration:
+            return
+        yield chunk

@@ -859,24 +859,60 @@ class OrchestratorAgent:
             yield ("done", "")
             return
 
-        # Non-streaming routes (CS, Notion, GWS, Multi) → simulate streaming
-        # Timeout: multi 300s (BQ+웹검색+합성), GWS 45s (inner agent 30s + buffer), others 30s
-        from app.core.safety import get_circuit
-
-        handlers = {
-            "gws": self._handle_gws,
-            "cs": self._handle_cs,
-            "team": self._handle_team,
-            "multi": self._handle_multi,
-        }
-        handler = handlers.get(route, self._handle_direct)
-        _route_timeout = 45.0 if route == "gws" else 30.0
-
         # 지식 회수 루프: cs/multi 라우트에 wiki 팩트 주입 (direct/BQ는 위에서 이미 처리)
         _handler_ctx = conversation_context
         if wiki_context and route in ("cs", "multi"):
             _wiki_block = f"\n\n[참고: 관련 사내 지식]\n{wiki_context}"
             _handler_ctx = (conversation_context + _wiki_block) if conversation_context else _wiki_block.lstrip()
+
+        # CS/Team/Multi → true token streaming (same pattern as the BigQuery
+        # route above: prep runs async, only the final LLM answer streams).
+        # No circuit breaker here, matching the BigQuery streaming path —
+        # generator-based flows don't compose with the is_available() gate.
+        if route in ("cs", "team", "multi"):
+            from app.core.stream_bridge import stream_with_timeout, StreamTimeout
+
+            if route == "cs":
+                from app.agents.cs_agent import run_stream as _route_stream_fn
+                _contextualized_query = (
+                    f"[이전 대화]\n{_handler_ctx}\n\n[현재 질문]\n{query}" if _handler_ctx else query
+                )
+                _stream_gen = _route_stream_fn(_contextualized_query, model_type=model_type)
+                _stream_timeout = 30.0
+            elif route == "team":
+                from app.agents.team_agent import run_stream as _route_stream_fn
+                _contextualized_query = (
+                    f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}" if conversation_context else query
+                )
+                _stream_gen = _route_stream_fn(_contextualized_query, model_type=model_type, allowed_resources=enabled_team_resources)
+                _stream_timeout = 30.0
+            else:  # multi
+                _stream_gen = self._handle_multi_stream(
+                    query, _handler_ctx, model_type, brand_filter=brand_filter, enabled_sources=enabled_sources
+                )
+                _stream_timeout = 300.0
+
+            try:
+                async for chunk in stream_with_timeout(_stream_gen, timeout_s=_stream_timeout):
+                    yield ("chunk", chunk)
+            except StreamTimeout:
+                logger.warning("route_timeout", route=route, timeout_s=_stream_timeout)
+                yield ("chunk", "\n\n⚠️ 분석이 예상보다 오래 걸리고 있습니다. 조회 범위를 좁혀서 다시 시도해 주세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - 기간을 한정: \"2025년 1분기\" 대신 \"2025년 3월\"\n> - 국가/채널 지정: \"일본 큐텐 매출\"\n> - 제품 지정: \"센텔라 앰플 매출 추이\"")
+            except Exception as e:
+                logger.error("route_execution_failed", route=route, error=str(e))
+                yield ("chunk", "⚠️ 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n다른 방식으로 질문하시면 도움이 될 수 있습니다:\n- 질문을 더 구체적으로 (기간, 국가, 제품 등 조건 추가)\n- 복잡한 질문은 나누어서 하나씩 질문")
+            yield ("done", "")
+            return
+
+        # Non-streaming routes (Notion, GWS) → simulate streaming
+        # Timeout: GWS 45s (inner agent 30s + buffer), others 30s
+        from app.core.safety import get_circuit
+
+        handlers = {
+            "gws": self._handle_gws,
+        }
+        handler = handlers.get(route, self._handle_direct)
+        _route_timeout = 45.0 if route == "gws" else 30.0
 
         # Check circuit breaker before calling
         circuit = get_circuit(route)
@@ -885,21 +921,10 @@ class OrchestratorAgent:
             result = {"answer": f"⚠️ {route} 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.", "source": route}
         else:
             try:
-                if route == "multi":
-                    # multi = BQ 파이프라인 + 웹검색 + 합성 — 30s로는 부족 (2026-06-11, fid 36)
-                    result = await asyncio.wait_for(
-                        handler(query, messages, _handler_ctx, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources),
-                        timeout=300.0,
-                    )
-                elif route == "notion":
+                if route == "notion":
                     result = await asyncio.wait_for(
                         self._handle_qdrant(query, messages, conversation_context, model_type, user_email),
                         timeout=20.0,
-                    )
-                elif route == "team":
-                    result = await asyncio.wait_for(
-                        handler(query, messages, conversation_context, model_type, user_email, enabled_team_resources=enabled_team_resources),
-                        timeout=_route_timeout,
                     )
                 else:
                     result = await asyncio.wait_for(
