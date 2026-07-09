@@ -450,16 +450,30 @@ class ClaudeClient:
             timeout=60.0,
         )
         self.model = model or self.settings.anthropic_opus_model
-        # Claude 4.x+ deprecated temperature parameter
-        self._use_temperature = not any(
-            x in self.model for x in ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4"]
-        )
+        # Claude 4.x/5.x reject a non-default temperature — only pre-4 models accept it.
+        # Opt-in (not opt-out) so newly configured models (sonnet-5, fable-5, ...) default
+        # safely to "no temperature" instead of silently 400ing.
+        self._use_temperature = any(x in self.model for x in ["claude-3", "claude-2"])
         logger.info("claude_client_initialized", model=self.model)
 
     def _apply_temperature(self, kwargs: Dict[str, Any], temperature: float) -> None:
         """Add temperature to kwargs only if model supports it."""
         if self._use_temperature:
             kwargs["temperature"] = temperature
+
+    @staticmethod
+    def _wrap_system(system_instruction: Union[str, list]) -> list:
+        """Mark the system prompt as a cache breakpoint (Anthropic prompt caching).
+
+        A plain string becomes a single cached block — repeat calls with the
+        identical string reuse the cached prefix instead of reprocessing it.
+        Callers that need part of the prompt to stay dynamic (e.g. a date that
+        changes daily) should pass their own list of blocks instead; only the
+        blocks they mark with cache_control are cached.
+        """
+        if isinstance(system_instruction, list):
+            return system_instruction
+        return [{"type": "text", "text": system_instruction, "cache_control": {"type": "ephemeral"}}]
 
     def generate(
         self,
@@ -478,7 +492,7 @@ class ClaudeClient:
             "messages": [{"role": "user", "content": prompt}],
         }
         if system_instruction:
-            kwargs["system"] = system_instruction
+            kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
             response = _claude_retry(self.client.messages.create, **kwargs)
@@ -526,7 +540,7 @@ class ClaudeClient:
             "messages": [{"role": "user", "content": content_blocks}],
         }
         if system_instruction:
-            kwargs["system"] = system_instruction
+            kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
             response = _claude_retry(self.client.messages.create, **kwargs)
@@ -594,7 +608,7 @@ class ClaudeClient:
             "messages": api_messages,
         }
         if system_instruction:
-            kwargs["system"] = system_instruction
+            kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
             response = _claude_retry(self.client.messages.create, **kwargs)
@@ -618,7 +632,7 @@ class ClaudeClient:
             "messages": [{"role": "user", "content": prompt}],
         }
         if system_instruction:
-            kwargs["system"] = system_instruction
+            kwargs["system"] = self._wrap_system(system_instruction)
         with _CLAUDE_SEM:
             try:
                 with self.client.messages.stream(**kwargs) as stream:
@@ -675,7 +689,7 @@ class ClaudeClient:
             "messages": api_messages,
         }
         if system_instruction:
-            kwargs["system"] = system_instruction
+            kwargs["system"] = self._wrap_system(system_instruction)
         with _CLAUDE_SEM:
             try:
                 with self.client.messages.stream(**kwargs) as stream:
@@ -698,7 +712,7 @@ class ClaudeClient:
             "model": self.model,
             "max_tokens": 4096,
             **({} if not self._use_temperature else {"temperature": temperature}),
-            "system": json_system.strip(),
+            "system": self._wrap_system(json_system.strip()),
             "messages": [{"role": "user", "content": prompt}],
         }
 
@@ -798,7 +812,7 @@ def get_llm_client(model_type: str = MODEL_GEMINI) -> Any:
 def get_flash_client() -> GeminiClient:
     """Get Gemini Flash client for fast, lightweight tasks (routing, grading).
 
-    Uses gemini-2.5-flash which is much faster than Pro for simple tasks.
+    Uses settings.gemini_flash_model (gemini-3.5-flash) — much faster than Pro for simple tasks.
     """
     global _gemini_flash_client
     if _gemini_flash_client is None:
@@ -807,16 +821,3 @@ def get_flash_client() -> GeminiClient:
         _gemini_flash_client.model = settings.gemini_flash_model
         logger.info("gemini_flash_client_initialized", model=_gemini_flash_client.model)
     return _gemini_flash_client
-
-
-def resolve_model_type(model_id: str) -> str:
-    """Resolve Open WebUI model ID to internal model type.
-
-    Args:
-        model_id: Model ID from request (e.g., "skin1004-Search", "skin1004-Analysis").
-
-    Returns:
-        MODEL_GEMINI or MODEL_CLAUDE.
-    """
-    # All models now route to Claude (Gemini Search model removed)
-    return MODEL_CLAUDE

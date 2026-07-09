@@ -321,7 +321,7 @@ class OrchestratorAgent:
         self,
         query: str,
         messages: Optional[List[Dict[str, str]]] = None,
-        model_type: str = MODEL_GEMINI,
+        model_type: str = MODEL_CLAUDE,
         user_email: str = "",
         images: Optional[List[dict]] = None,
         brand_filter: Optional[str] = None,
@@ -334,7 +334,7 @@ class OrchestratorAgent:
         Args:
             query: User's natural language question (latest message).
             messages: Full conversation history for context continuity.
-            model_type: "gemini" or "claude" — which LLM to use.
+            model_type: Always MODEL_CLAUDE (user-facing model selection removed).
             user_email: User's email for GWS OAuth authentication.
             images: Extracted images [{"data": bytes, "mime_type": str}].
             brand_filter: Comma-separated brand codes (e.g. "SK,CL,CBT" or "UM").
@@ -522,7 +522,7 @@ class OrchestratorAgent:
         self,
         query: str,
         messages=None,
-        model_type: str = MODEL_GEMINI,
+        model_type: str = MODEL_CLAUDE,
         user_email: str = "",
         images=None,
         brand_filter=None,
@@ -732,15 +732,13 @@ class OrchestratorAgent:
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:
-            llm = get_llm_client(model_type)
+            llm = get_llm_client(MODEL_CLAUDE)
             today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
-            system = self._build_direct_system_prompt(model_type)
+            system = self._build_direct_system_prompt()
 
             # Static prompt as a cached block; dynamic parts appended as separate,
             # uncached blocks so they don't invalidate the cached prefix (see
             # ClaudeClient._wrap_system and _build_direct_system_prompt).
-            # Block-list form only for Claude — Gemini's system_instruction expects
-            # a plain string, not Anthropic cache blocks.
             date_line = f"오늘 날짜는 {today}입니다."
             extra_blocks: List[str] = []
             if self._needs_web_search(query):
@@ -759,13 +757,10 @@ class OrchestratorAgent:
             if _stream_skill_ctx:
                 extra_blocks.append(_stream_skill_ctx)
 
-            if model_type == MODEL_CLAUDE:
-                final_system = [
-                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
-                    {"type": "text", "text": date_line},
-                ] + [{"type": "text", "text": block} for block in extra_blocks]
-            else:
-                final_system = "\n\n".join([system, date_line] + extra_blocks)
+            final_system = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": date_line},
+            ] + [{"type": "text", "text": block} for block in extra_blocks]
 
             # Stream via thread + queue
             _q: asyncio.Queue = asyncio.Queue()
@@ -1550,7 +1545,7 @@ class OrchestratorAgent:
         we give the LLM context that this was a SKIN1004 internal data query so it provides
         a helpful "data unavailable" response with suggestions.
         """
-        llm = get_llm_client(model_type)
+        llm = get_llm_client(MODEL_CLAUDE)
         fallback_prompt = f"""사용자가 Craver 내부 매출/판매 데이터를 조회하려 했으나, 데이터베이스에서 조회에 실패했습니다.
 
 사용자 질문: {query}
@@ -2043,7 +2038,7 @@ JSON만 반환:
             logger.warning("followup_generation_failed", error=str(e))
             return {"source": "direct", "answer": '{"follow_ups": []}'}
 
-    def _build_direct_system_prompt(self, model_type: str = MODEL_CLAUDE) -> str:
+    def _build_direct_system_prompt(self) -> str:
         """Build system prompt for direct LLM route (shared by _handle_direct and route_and_stream).
 
         Deliberately excludes the current date — the caller appends it as a
@@ -2200,7 +2195,7 @@ JSON만 반환:
             return await self._handle_system_task(query, messages)
 
         images = images or []
-        llm = get_llm_client(model_type)
+        llm = get_llm_client(MODEL_CLAUDE)
         today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
 
         model_name = "Claude Sonnet 4 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
@@ -2284,8 +2279,6 @@ JSON만 반환:
                 return {"source": "direct", "answer": answer}
 
             # Search grounding: run in thread pool to avoid blocking event loop
-            # Block-list form (cacheable prefix) only for Claude — Gemini's
-            # system_instruction expects a plain string, not Anthropic cache blocks.
             extra_blocks: List[str] = []
             if skill_context:
                 extra_blocks.append(skill_context)
@@ -2295,13 +2288,10 @@ JSON만 반환:
                 if search_context:
                     extra_blocks.append(f"## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}")
 
-            if model_type == MODEL_CLAUDE:
-                final_system = [
-                    {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
-                    {"type": "text", "text": date_line},
-                ] + [{"type": "text", "text": block} for block in extra_blocks]
-            else:
-                final_system = "\n\n".join([system, date_line] + extra_blocks)
+            final_system = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": date_line},
+            ] + [{"type": "text", "text": block} for block in extra_blocks]
 
             # Claude streaming for all direct queries (TTFB 1.7s vs Gemini 7s)
             import asyncio as _aio

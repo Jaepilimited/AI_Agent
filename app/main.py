@@ -419,7 +419,7 @@ async def _warmup_llm_clients():
             logger.warning("gemini_warmup_failed", error=str(e)[:200])
 
     async def _warm_claude_opus():
-        # Opus is the primary chat model (resolve_model_type → MODEL_CLAUDE → Opus).
+        # Claude is the primary chat model (all chat requests use MODEL_CLAUDE).
         try:
             from app.core.llm import get_llm_client, MODEL_CLAUDE
             client = get_llm_client(MODEL_CLAUDE)

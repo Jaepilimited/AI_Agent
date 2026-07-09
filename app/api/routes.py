@@ -5,13 +5,15 @@ import time
 from typing import AsyncGenerator
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 
 from app.agents.orchestrator import OrchestratorAgent
+from app.api.auth_middleware import get_current_user
 from app.config import get_settings
 from app.db.mariadb import fetch_one, fetch_all
-from app.core.llm import resolve_model_type
+from app.db.models import User
+from app.core.llm import MODEL_CLAUDE
 from app.models.schemas import (
     ChatCompletionChoice,
     ChatCompletionRequest,
@@ -60,6 +62,13 @@ def _get_orchestrator():
         _orchestrator = OrchestratorAgent()
     return _orchestrator
 
+
+def _require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 router = APIRouter()
 
 
@@ -69,12 +78,16 @@ async def dashboard():
     return FileResponse("app/static/dashboard.html", media_type="text/html")
 
 
-@router.post("/api/save-roadmap")
-async def save_roadmap(request: Request):
-    """Save edited roadmap HTML to static file."""
-    body = await request.body()
+def _write_roadmap_file(body: bytes) -> None:
     with open("app/static/roadmap.html", "wb") as f:
         f.write(body)
+
+
+@router.post("/api/save-roadmap")
+async def save_roadmap(request: Request, _: User = Depends(_require_admin)):
+    """Save edited roadmap HTML to static file."""
+    body = await request.body()
+    await asyncio.to_thread(_write_roadmap_file, body)
     return {"status": "ok"}
 
 
@@ -84,6 +97,9 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
 
     Supports both streaming and non-streaming responses.
     """
+    if not getattr(http_request.state, "user_id", None):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
     # Extract user_email from JWT auth (NO default fallback — prevents accessing other users' GWS)
     user_email = (
         getattr(http_request.state, "user_email", "")
@@ -94,8 +110,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     # Server-side brand_filter: always from DB (JWT/frontend values ignored — stale risk)
     brand_filter = None
     user_id = getattr(http_request.state, "user_id", None)
-    jwt_role = getattr(http_request.state, "jwt_role", "")
-    if user_id and jwt_role != "admin":
+    if user_id:
         try:
             row = await asyncio.to_thread(
                 fetch_one,
@@ -132,8 +147,9 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     if images:
         logger.info("multimodal_request", image_count=len(images), text_length=len(query))
 
-    # Resolve which LLM to use based on model selection
-    model_type = resolve_model_type(request.model)
+    # User-facing model selection was removed — every chat request answers with
+    # Claude. request.model is kept only for logging/audit and response echo.
+    model_type = MODEL_CLAUDE
 
     # Build conversation history for context continuity
     # No message limit — Gemini 2.5 Flash supports 1M token context
@@ -218,7 +234,7 @@ async def _stream_response(
     Args:
         query: User query.
         messages: Full conversation history.
-        model_type: "gemini" or "claude".
+        model_type: Always MODEL_CLAUDE (user-facing model selection removed).
         request: Original request.
         user_email: User's email for GWS auth.
         images: Extracted images (list of {"data": bytes, "mime_type": str}).
@@ -233,6 +249,7 @@ async def _stream_response(
     _t_start = time.monotonic()
     _t_first_token = None
     _detected_route = "direct"
+    _context_len = sum(len(str(m.get("content", ""))) for m in (messages or [])[:-1])
 
     # Send initial chunk with role
     initial_chunk = ChatCompletionStreamResponse(
@@ -324,12 +341,13 @@ async def _stream_response(
     # Wave 4: Audit log (fire-and-forget)
     try:
         from app.db.mariadb import execute as db_execute
+        _audit_vals = (user_email or "", _detected_route, query[:500], _first_token_ms, _total_ms, request.model, _context_len)
         asyncio.get_event_loop().run_in_executor(
             None,
             lambda: db_execute(
-                "INSERT INTO audit_logs (user_email, route, query, first_token_ms, total_ms, model) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (user_email or "", _detected_route, query[:500], _first_token_ms, _total_ms, request.model),
+                "INSERT INTO audit_logs (user_email, route, query, first_token_ms, total_ms, model, context_len) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                _audit_vals,
             ),
         )
     except Exception:
@@ -366,7 +384,7 @@ async def list_models():
 # ---------------------------------------------------------------------------
 
 @router.post("/admin/maintenance")
-async def toggle_maintenance(action: str = "on", reason: str = ""):
+async def toggle_maintenance(action: str = "on", reason: str = "", _: User = Depends(_require_admin)):
     """Toggle maintenance mode manually.
 
     Args:
@@ -411,7 +429,7 @@ async def get_announcement():
 
 
 @router.post("/api/announcement")
-async def set_announcement(message: str = "", clear: bool = False):
+async def set_announcement(message: str = "", clear: bool = False, _: User = Depends(_require_admin)):
     """Set or clear the site-wide announcement banner (admin only)."""
     from app.core.safety import get_announcement_manager
     am = get_announcement_manager()
@@ -439,7 +457,7 @@ async def scheduler_status():
 
 
 @router.post("/api/scheduler/run")
-async def scheduler_run_now(job_id: str):
+async def scheduler_run_now(job_id: str, _: User = Depends(_require_admin)):
     """Immediately trigger a scheduled job by ID (admin/dev only)."""
     import asyncio
     from app.main import _get_scheduler
@@ -495,9 +513,8 @@ async def _run_notion_sync_bg():
 @router.post("/api/notion-sync")
 async def trigger_notion_sync(request: Request):
     """Trigger Notion → Qdrant sync pipeline (admin only)."""
-    from app.api.auth_middleware import get_current_user
     user = await get_current_user(request)
-    if not user or user.get("role") != "admin":
+    if not user or user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
     if _notion_sync_state["running"]:
         return {"ok": False, "error": "이미 동기화 중입니다"}
@@ -526,7 +543,10 @@ async def readiness_check():
         notion_count = 0
 
     # BigQuery schema cache
-    bq_ready = bool(sql_mod._schema_cache)
+    bq_ready = bool(
+        getattr(sql_mod, "_schema_cache_tables", None)
+        or getattr(sql_mod, "_schema_cache_sales", "")
+    )
 
     # CS Q&A database
     try:
