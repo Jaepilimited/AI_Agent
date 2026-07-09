@@ -1687,19 +1687,19 @@ class OrchestratorAgent:
             logger.error("orchestrator_team_failed", error=str(e))
             return {"source": "team", "answer": "팀별 자료 검색 중 일시적인 문제가 발생했습니다.\n\n**다시 시도해 주세요.** 검색 키워드를 바꾸거나 더 구체적으로 질문하면 도움이 됩니다.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"HR 연차 규정 알려줘\"\n> - \"마케팅팀 브랜드 가이드라인\"\n> - \"영업팀 거래처 목록\""}
 
-    async def _handle_multi(
+    async def _multi_prepare(
         self,
         query: str,
-        messages: List[Dict[str, str]],
         conversation_context: str,
         model_type: str,
-        user_email: str = "",
         brand_filter: Optional[str] = None,
         enabled_sources: Optional[List[str]] = None,
-    ) -> dict:
-        """Multi-source analysis: internal data (BigQuery) + external info (Google Search).
+    ):
+        """Shared prep for _handle_multi/_handle_multi_stream: run web search +
+        BigQuery in parallel, return everything the synthesis step needs.
 
-        v6.4: Steps 1+2 run in parallel via asyncio.to_thread, synthesis uses Flash.
+        Returns:
+            (web_context, bq_answer, sub_results, ctx_section, today)
         """
         today = datetime.now().strftime("%Y-%m-%d")
         sub_results = {}
@@ -1789,16 +1789,19 @@ class OrchestratorAgent:
         except Exception as e:
             logger.error("multi_parallel_failed", error=str(e))
 
-        # --- Step 3: Synthesize with Flash for speed (v6.4) ---
-        flash = get_flash_client()
+        return web_context, bq_answer, sub_results, ctx_section, today
 
-        synthesis_prompt = f"""당신은 Craver의 데이터 분석 전문 AI입니다.
+    def _build_multi_synthesis_prompt(
+        self, query: str, ctx_section: str, bq_answer: str, web_context: str, today: str
+    ) -> str:
+        """Build the multi-route synthesis prompt (shared by _handle_multi/_handle_multi_stream)."""
+        return f"""당신은 Craver의 데이터 분석 전문 AI입니다.
 내부 데이터와 외부 정보를 종합하여 **분석 보고서 형식**으로 답변하세요.
 
 ## 사용자 질문
 {query}
 {ctx_section}
-{"사용자 질문이 이전 대화를 참조하면('아까', '그', '위 형식처럼' 등) 위 대화 맥락을 반영해 답변하세요." if _ctx else ""}
+{"사용자 질문이 이전 대화를 참조하면('아까', '그', '위 형식처럼' 등) 위 대화 맥락을 반영해 답변하세요." if ctx_section else ""}
 ## 내부 데이터 (BigQuery 매출/주문 데이터)
 {bq_answer if bq_answer else "데이터 조회 결과 없음"}
 
@@ -1841,6 +1844,27 @@ class OrchestratorAgent:
 5. 후속 질문은 우리 시스템이 답변 가능한 구체적 질문만 제안하세요.
 """
 
+    async def _handle_multi(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+        brand_filter: Optional[str] = None,
+        enabled_sources: Optional[List[str]] = None,
+    ) -> dict:
+        """Multi-source analysis: internal data (BigQuery) + external info (Google Search).
+
+        v6.4: Steps 1+2 run in parallel via asyncio.to_thread, synthesis uses Flash.
+        """
+        web_context, bq_answer, sub_results, ctx_section, today = await self._multi_prepare(
+            query, conversation_context, model_type, brand_filter, enabled_sources
+        )
+        synthesis_prompt = self._build_multi_synthesis_prompt(query, ctx_section, bq_answer, web_context, today)
+
+        # --- Step 3: Synthesize with Flash for speed (v6.4) ---
+        flash = get_flash_client()
         try:
             answer = await asyncio.to_thread(flash.generate, synthesis_prompt, temperature=0.3)
         except Exception as e:
@@ -1858,6 +1882,38 @@ class OrchestratorAgent:
             "answer": answer,
             "sub_results": sub_results,
         }
+
+    async def _handle_multi_stream(
+        self,
+        query: str,
+        conversation_context: str,
+        model_type: str,
+        brand_filter: Optional[str] = None,
+        enabled_sources: Optional[List[str]] = None,
+    ):
+        """Streaming variant of _handle_multi — yields answer text chunks.
+
+        Reuses the same parallel web-search + BigQuery prep as _handle_multi;
+        only the final synthesis call streams instead of blocking.
+        """
+        web_context, bq_answer, _sub_results, ctx_section, today = await self._multi_prepare(
+            query, conversation_context, model_type, brand_filter, enabled_sources
+        )
+        synthesis_prompt = self._build_multi_synthesis_prompt(query, ctx_section, bq_answer, web_context, today)
+
+        flash = get_flash_client()
+        from app.core.stream_bridge import stream_sync_generator
+        try:
+            async for chunk in stream_sync_generator(lambda: flash.generate_stream(synthesis_prompt, temperature=0.3)):
+                yield chunk
+        except Exception as e:
+            logger.warning("multi_synthesize_stream_failed", error=str(e))
+            parts = []
+            if bq_answer:
+                parts.append(f"## 내부 데이터\n{bq_answer}")
+            if web_context:
+                parts.append(f"## 외부 정보\n{web_context}")
+            yield "\n\n".join(parts) if parts else "분석에 필요한 정보를 수집하지 못했습니다."
 
     async def _handle_system_task(
         self,
