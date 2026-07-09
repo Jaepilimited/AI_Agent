@@ -98,7 +98,7 @@ def _canonicalize_entity_sync(entity: str) -> str:
     """
     try:
         rows = fetch_all(
-            "SELECT entity FROM knowledge_wiki WHERE LOWER(entity) = LOWER(%s) LIMIT 1",
+            "SELECT entity FROM knowledge_wiki WHERE entity = %s LIMIT 1",
             (entity,),
         )
         return rows[0]["entity"] if rows else entity
@@ -229,7 +229,7 @@ def _insert_facts_sync(
             if f.period and f.metric and f.value:
                 dup = fetch_all(
                     "SELECT id FROM knowledge_wiki "
-                    "WHERE LOWER(entity) = LOWER(%s) AND period = %s "
+                    "WHERE entity = %s AND period = %s "
                     "  AND metric = %s AND value = %s AND status <> 'archived' LIMIT 1",
                     (canonical_entity, f.period, f.metric, f.value),
                 )
@@ -257,7 +257,7 @@ def _flag_conflict_sync(new_id: int, entity: str, period: str, metric: str, valu
         siblings = fetch_all(
             """
             SELECT id, value FROM knowledge_wiki
-            WHERE LOWER(entity) = LOWER(%s) AND period = %s AND metric = %s
+            WHERE entity = %s AND period = %s AND metric = %s
               AND id <> %s AND status <> 'archived'
             LIMIT 5
             """,
@@ -462,3 +462,33 @@ def _guess_route_sync(conversation_id: str, message_id: int) -> str | None:
         return rows[0]["route"] if rows else None
     except Exception:
         return None
+
+
+# ------------------------------------------------------------------
+# Real-time capture: call after BQ/multi answer (fire-and-forget)
+# ------------------------------------------------------------------
+
+def extract_and_save_from_qa(query: str, answer: str, route: str = "bigquery") -> int:
+    """BQ 답변에서 팩트를 즉시 추출해 knowledge_wiki에 저장한다.
+
+    orchestrator._capture_bq_facts() → asyncio.to_thread(this) 로 호출.
+    Sync함수: to_thread 래퍼 안에서 실행된다.
+    중복·빈 답변은 조용히 스킵. 삽입 건수 반환.
+    """
+    if not query.strip() or not answer.strip():
+        return 0
+    # 답변이 너무 짧으면 팩트 없음 (오류 메시지 등)
+    if len(answer.strip()) < 80:
+        return 0
+    # 오류 답변 스킵
+    if answer.strip().startswith("⚠️") or "SQL" in answer[:50]:
+        return 0
+
+    facts = _extract_facts_sync(query, answer)
+    if not facts:
+        return 0
+
+    inserted = _insert_facts_sync(facts, None, None, route)
+    if inserted:
+        logger.info("realtime_facts_captured", count=inserted, query=query[:60])
+    return inserted
