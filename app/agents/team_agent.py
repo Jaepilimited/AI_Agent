@@ -187,15 +187,9 @@ def _format_resource_context(matched: List[Dict]) -> str:
     return "\n".join(lines)
 
 
-async def run(query: str, model_type: str = "gemini", allowed_resources: Optional[Dict[str, list]] = None) -> str:
-    if not _cache_loaded:
-        await warmup()
-
-    matched = search_resources(query, top_k=8, allowed_resources=allowed_resources)
-    context = _format_resource_context(matched)
-
-    llm = get_flash_client()
-    prompt = f"""{LANGUAGE_DETECTION_RULE}
+def _build_answer_prompt(query: str, context: str, match_count: int) -> str:
+    """Build the team-resource answer prompt (shared by run() and run_stream())."""
+    return f"""{LANGUAGE_DETECTION_RULE}
 
 당신은 Craver의 사내 자료 검색 도우미입니다.
 아래는 사용자의 질문과 매칭된 팀별 자료 목록입니다.
@@ -203,7 +197,7 @@ async def run(query: str, model_type: str = "gemini", allowed_resources: Optiona
 ## 사용자 질문
 {query}
 
-## 검색된 자료 ({len(matched)}건)
+## 검색된 자료 ({match_count}건)
 {context}
 
 ## 답변 규칙
@@ -222,9 +216,42 @@ async def run(query: str, model_type: str = "gemini", allowed_resources: Optiona
 > - [같은 카테고리의 다른 시트]
 """
 
+
+async def run(query: str, model_type: str = "gemini", allowed_resources: Optional[Dict[str, list]] = None) -> str:
+    if not _cache_loaded:
+        await warmup()
+
+    matched = search_resources(query, top_k=8, allowed_resources=allowed_resources)
+    context = _format_resource_context(matched)
+
+    llm = get_flash_client()
+    prompt = _build_answer_prompt(query, context, len(matched))
+
     try:
         answer = await asyncio.to_thread(llm.generate, prompt, temperature=0.3, max_output_tokens=2048)
         return answer
     except Exception as e:
         logger.error("team_agent_failed", error=str(e))
         return f"팀별 자료 검색 중 오류가 발생했습니다: {e}"
+
+
+async def run_stream(query: str, model_type: str = "gemini", allowed_resources: Optional[Dict[str, list]] = None):
+    """Streaming variant of run() — yields answer text chunks."""
+    if not _cache_loaded:
+        await warmup()
+
+    matched = search_resources(query, top_k=8, allowed_resources=allowed_resources)
+    context = _format_resource_context(matched)
+
+    llm = get_flash_client()
+    prompt = _build_answer_prompt(query, context, len(matched))
+
+    from app.core.stream_bridge import stream_sync_generator
+    try:
+        async for chunk in stream_sync_generator(
+            lambda: llm.generate_stream(prompt, temperature=0.3, max_output_tokens=2048)
+        ):
+            yield chunk
+    except Exception as e:
+        logger.error("team_agent_stream_failed", error=str(e))
+        yield f"팀별 자료 검색 중 오류가 발생했습니다: {e}"

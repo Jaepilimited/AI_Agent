@@ -348,6 +348,18 @@ def _word_overlap_score(query_tokens: set, text: str) -> float:
     return len(overlap) / len(query_tokens)
 
 
+def _log_knowledge_gap(query: str) -> None:
+    """CS에서 답 못 찾은 질문을 knowledge_gaps 테이블에 저장 (fire-and-forget, sync)."""
+    try:
+        from app.db.mariadb import execute
+        execute(
+            "INSERT INTO knowledge_gaps (question, route) VALUES (%s, 'cs')",
+            (query[:500],),
+        )
+    except Exception:
+        pass
+
+
 def search_qa(query: str, top_k: int = 10) -> List[Dict[str, str]]:
     """Search the cached Q&A data for entries matching the query.
 
@@ -458,7 +470,8 @@ async def run(query: str, model_type: str = "gemini") -> str:
     matched = search_qa(query, top_k=10)
 
     if not matched:
-        # No matches — try broader search with just content words
+        # No matches — log knowledge gap for autonomous growth tracking
+        _log_knowledge_gap(query)
         return await _generate_no_match_answer(query, model_type)
 
     # Format context and generate answer
@@ -466,17 +479,9 @@ async def run(query: str, model_type: str = "gemini") -> str:
     return await _generate_answer(query, context, len(matched), model_type)
 
 
-async def _generate_answer(
-    query: str,
-    context: str,
-    match_count: int,
-    model_type: str,
-) -> str:
-    """Generate a synthesized answer from matched Q&A entries."""
-    # Use Flash for CS — simple Q&A synthesis doesn't need Pro/Claude
-    llm = get_flash_client()
-
-    prompt = f"""당신은 SKIN1004/COMMONLABS/ZOMBIE BEAUTY의 CS(고객상담) 전문 AI입니다.
+def _build_answer_prompt(query: str, context: str, match_count: int) -> str:
+    """Build the CS answer-synthesis prompt (shared by run() and run_stream())."""
+    return f"""당신은 SKIN1004/COMMONLABS/ZOMBIE BEAUTY의 CS(고객상담) 전문 AI입니다.
 고객의 질문에 전문적이면서도 친절하게, 구조화된 형태로 답변하세요.
 
 아래는 사내 CS 데이터베이스에서 검색된 Q&A 자료입니다.
@@ -531,6 +536,18 @@ async def _generate_answer(
     `⚠️ 본 정보는 사내 대외비입니다. 외부(고객, 거래처, SNS 등)에 공유하지 마세요.`
 12. 특정 성분 함량(ppm, %) 관련 답변에도 동일하게 대외비 안내를 추가하세요."""
 
+
+async def _generate_answer(
+    query: str,
+    context: str,
+    match_count: int,
+    model_type: str,
+) -> str:
+    """Generate a synthesized answer from matched Q&A entries."""
+    # Use Flash for CS — simple Q&A synthesis doesn't need Pro/Claude
+    llm = get_flash_client()
+    prompt = _build_answer_prompt(query, context, match_count)
+
     try:
         answer = llm.generate(prompt, temperature=0.3)
         return answer
@@ -538,6 +555,41 @@ async def _generate_answer(
         logger.error("cs_generate_failed", error=str(e))
         # Fallback: return raw matched Q&A
         return f"CS DB 검색 결과:\n\n{context}"
+
+
+async def run_stream(query: str, model_type: str = "gemini"):
+    """Streaming variant of run() — yields answer text chunks.
+
+    Mirrors run()'s search/no-match logic exactly; only the final answer
+    synthesis step streams instead of blocking.
+    """
+    global _qa_cache, _cache_loaded
+
+    if not _cache_loaded:
+        await warmup()
+
+    if not _qa_cache:
+        yield "CS 데이터베이스가 비어있습니다. 스프레드시트 설정을 확인해주세요."
+        return
+
+    matched = search_qa(query, top_k=10)
+
+    if not matched:
+        _log_knowledge_gap(query)
+        yield await _generate_no_match_answer(query, model_type)
+        return
+
+    context = _format_qa_context(matched)
+    prompt = _build_answer_prompt(query, context, len(matched))
+    llm = get_flash_client()
+
+    from app.core.stream_bridge import stream_sync_generator
+    try:
+        async for chunk in stream_sync_generator(lambda: llm.generate_stream(prompt, temperature=0.3)):
+            yield chunk
+    except Exception as e:
+        logger.error("cs_generate_stream_failed", error=str(e))
+        yield f"CS DB 검색 결과:\n\n{context}"
 
 
 async def _generate_no_match_answer(query: str, model_type: str) -> str:
