@@ -67,7 +67,7 @@ class RemoveUsers(BaseModel):
 # ── Group CRUD ──
 
 @group_router.get("")
-async def list_groups(user: User = Depends(get_current_user)):
+async def list_groups(user: User = Depends(_require_admin)):
     """List all groups with member counts."""
     groups = await _fetch_all("""
         SELECT g.id, g.name, g.description, g.brand_filter, g.created_at,
@@ -139,7 +139,7 @@ async def delete_group(group_id: int, admin: User = Depends(_require_admin)):
 # ── Group Membership ──
 
 @group_router.get("/{group_id}/members")
-async def list_group_members(group_id: int, user: User = Depends(get_current_user)):
+async def list_group_members(group_id: int, user: User = Depends(_require_admin)):
     """List members of a group."""
     members = await _fetch_all("""
         SELECT a.id, a.username, a.display_name, a.email, a.department
@@ -191,12 +191,14 @@ async def assign_users_to_group(
 
     # Batch insert new assignments
     added = 0
-    for uid in new_ids:
+    if new_ids:
+        values_sql = ",".join(["(%s, %s)"] * len(new_ids))
+        params = tuple(p for uid in new_ids for p in (uid, group_id))
         await _execute(
-            "INSERT INTO user_groups (ad_user_id, group_id) VALUES (%s, %s)",
-            (uid, group_id),
+            f"INSERT INTO user_groups (ad_user_id, group_id) VALUES {values_sql}",
+            params,
         )
-        added += 1
+        added = len(new_ids)
 
     logger.info("users_assigned", group=group["name"], added=added, skipped=skipped,
                 dept=req.department, by=admin.email)
@@ -209,12 +211,12 @@ async def remove_users_from_group(
 ):
     """Remove AD users from a group."""
     removed = 0
-    for uid in req.ad_user_ids:
-        r = await _execute(
-            "DELETE FROM user_groups WHERE ad_user_id = %s AND group_id = %s",
-            (uid, group_id),
+    if req.ad_user_ids:
+        placeholders = ",".join(["%s"] * len(req.ad_user_ids))
+        removed = await _execute(
+            f"DELETE FROM user_groups WHERE group_id = %s AND ad_user_id IN ({placeholders})",
+            (group_id, *req.ad_user_ids),
         )
-        removed += r
 
     logger.info("users_removed", group_id=group_id, removed=removed, by=admin.email)
     return {"ok": True, "removed": removed}
@@ -224,7 +226,7 @@ async def remove_users_from_group(
 
 @ad_router.get("/users")
 async def list_ad_users(
-    user: User = Depends(get_current_user),
+    user: User = Depends(_require_admin),
     dept: Optional[str] = Query(None, description="Filter by department keyword"),
     search: Optional[str] = Query(None, description="Search name/email"),
     group_id: Optional[int] = Query(None, description="Filter by group"),
@@ -266,7 +268,7 @@ async def list_ad_users(
 
 
 @ad_router.get("/departments")
-async def list_departments(user: User = Depends(get_current_user)):
+async def list_departments(user: User = Depends(_require_admin)):
     """List all departments with user counts."""
     depts = await _fetch_all("""
         SELECT department, COUNT(*) as cnt
@@ -280,12 +282,9 @@ async def list_departments(user: User = Depends(get_current_user)):
 
 @ad_router.post("/sync")
 async def sync_ad_users(admin: User = Depends(_require_admin)):
-    """Trigger AD user sync (runs sync_ad_users.py)."""
-    import os
-    script = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-        "scripts", "sync_ad_users.py",
-    )
+    """Trigger AD user sync (runs the CRM repo's sync-ad-users.py, which carries the
+    DEPARTMENT_OVERRIDES fix for members whose AD OU path is truncated)."""
+    script = r"C:\Users\DB_PC\Desktop\python_bcj\CRM\skin1004-crm\scripts\sync-ad-users.py"
     try:
         proc = await asyncio.to_thread(
             subprocess.run,
@@ -305,7 +304,7 @@ async def sync_ad_users(admin: User = Depends(_require_admin)):
 
 
 @ad_router.get("/stats")
-async def ad_stats(user: User = Depends(get_current_user)):
+async def ad_stats(user: User = Depends(_require_admin)):
     """Quick stats for admin dashboard (single query)."""
     row = await _fetch_one("""
         SELECT
