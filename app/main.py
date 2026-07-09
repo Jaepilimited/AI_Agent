@@ -96,8 +96,8 @@ def create_app() -> FastAPI:
         loop.set_exception_handler(_quiet_proactor_reset)
 
         # Ensure admin user exists in MariaDB
-        _ensure_admin()
-        _ensure_audit_table()
+        await asyncio.to_thread(_ensure_admin)
+        await asyncio.to_thread(_ensure_audit_table)
         from app.db.mariadb import (
             ensure_knowledge_wiki_table,
             ensure_wiki_extraction_log_table,
@@ -111,17 +111,22 @@ def create_app() -> FastAPI:
             ensure_quality_snapshots_table,
             ensure_knowledge_gaps_table,
         )
-        ensure_knowledge_wiki_table()
-        ensure_wiki_extraction_log_table()
-        ensure_wiki_entity_aliases_table()
-        ensure_wiki_graph_edges_table()
-        ensure_wiki_entity_pages_table()
-        ensure_wiki_communities_table()
-        ensure_anon_columns()
-        ensure_eval_tables()
-        ensure_agent_skills_table()
-        ensure_quality_snapshots_table()
-        ensure_knowledge_gaps_table()
+        # Sequential — some of these create tables others may reference (FK-adjacent),
+        # so we preserve original ordering rather than gathering concurrently.
+        for _ensure_fn in (
+            ensure_knowledge_wiki_table,
+            ensure_wiki_extraction_log_table,
+            ensure_wiki_entity_aliases_table,
+            ensure_wiki_graph_edges_table,
+            ensure_wiki_entity_pages_table,
+            ensure_wiki_communities_table,
+            ensure_anon_columns,
+            ensure_eval_tables,
+            ensure_agent_skills_table,
+            ensure_quality_snapshots_table,
+            ensure_knowledge_gaps_table,
+        ):
+            await asyncio.to_thread(_ensure_fn)
         logger.info("mariadb_initialized")
 
         logger.info(
