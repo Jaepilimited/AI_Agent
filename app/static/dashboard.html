@@ -8,15 +8,15 @@
 <script>
   // Inherit theme: query param > parent window > localStorage
   (function() {
-    var theme = "dark";
+    var theme = "light";
     var params = new URLSearchParams(window.location.search);
     if (params.get("theme")) {
       theme = params.get("theme");
     } else {
       try {
-        theme = window.parent.document.documentElement.classList.contains("light") ? "light" : "dark";
+        theme = window.parent.document.documentElement.classList.contains("dark") ? "dark" : "light";
       } catch(e) {
-        if (window.localStorage && localStorage.theme === "light") theme = "light";
+        if (window.localStorage && localStorage.theme === "dark") theme = "dark";
       }
     }
     if (theme === "light") document.documentElement.classList.add("light");

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="ko" class="dark">
+<html lang="ko" class="light">
 <head>
   <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111111">
+  <meta name="theme-color" content="#fafaf9">
   <title>Craver AI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,13 +15,13 @@
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" id="hljs-theme">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css" id="hljs-theme">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <!-- Chart.js (로컬 번들 — CDN 차단 환경 대응) -->
   <script src="/static/chart.umd.min.js"></script>
   <script>
-    if (localStorage.theme === "light") {
-      document.documentElement.classList.replace("dark", "light");
+    if (localStorage.theme === "dark") {
+      document.documentElement.classList.replace("light", "dark");
     }
   </script>
 </head>
