@@ -27,9 +27,9 @@
 
 | 질문 유형 | 사용 테이블 |
 |-----------|-----------|
-| **수량** (몇 개, 판매량, 갯수) | `Product` (개별 제품 단위, 정확) ⭐ |
+| **수량** (몇 개, 판매량, 갯수) | `Product` ⛔ 무조건 Product! SALES_ALL의 Total_Qty 사용 절대 금지 ⭐ |
 | **매출** (얼마, 매출액, 금액, revenue) | `SALES_ALL_Backup` |
-| **매출 + 수량** 동시 | `SALES_ALL_Backup` (Total_Qty 보유) |
+| **매출 + 수량** 동시 | 매출은 `SALES_ALL_Backup`, 수량은 `Product` — 서브쿼리 2개로 결합: `SELECT (SELECT SUM(Sales1_R) FROM SALES_ALL_Backup WHERE ...) AS revenue, (SELECT SUM(Total_Qty) FROM Product WHERE ...) AS qty` |
 | **제품 리스트** (어떤 제품?) | `Product` |
 | **광고 데이터** (ROAS, CTR, 노출, 클릭, 전환, 매체/팀/계정별) | `integrated_ad` |
 | **마케팅 비용** (퍼포먼스/인플루언서) | `Integrated_marketing_cost` (Field='광고'→퍼포먼스, '시딩'→인플루언서) |
@@ -42,7 +42,7 @@
 | **재구매** (재구매율, 리텐션, 코호트) | `SALES_ALL_Backup` (ID 컬럼으로 고객 식별) |
 
 - Product 테이블: 매출 없음! 수량만!
-- SALES_ALL_Backup: SET 컬럼은 세트 묶음 포함. 매출+수량 모두 있음
+- SALES_ALL_Backup: SET 컬럼은 세트 묶음 포함 → **Total_Qty가 세트를 1개로 세어 수량이 부정확**. 수량 답변에 SALES_ALL_Backup.Total_Qty 사용 절대 금지 (2026-07-15 실제 오답 발생)
 
 ## ⛔ 보유하지 않은 데이터 (다른 데이터로 대체 생성 금지!)
 
@@ -74,6 +74,7 @@ SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판�
   - **제품/라인/카테고리 질문** (사용자가 제품명·라인명·SKU를 명시한 경우) → `Brand IN ('SK', 'CL')` (CBT/UM/DD 미포함)
 - ⚠️ **크레이버코퍼레이션 = 전체 회사** → 전사 매출 질문 시 Brand 필터 없이
 - **Brand 값 목록**: SK=스킨1004(스킨천사), CL=커먼랩스, CBT=중국사업, UM=우마, DD=DD계열
+- ⚠️ **CBT/UM/DD는 실제 브랜드명이 아니라 사업부문/채널 구분 코드** (SK/CL만 실제 스킨케어 브랜드명). 답변 텍스트에서 이 값들을 언급할 때 "OO 브랜드"라고 단순 표기하지 말고 반드시 정식 의미를 병기할 것 (예: "SK(스킨1004), CL(커먼랩스), CBT(중국사업 부문)" — "SK, CL, CBT 세 브랜드"처럼 셋을 동등한 브랜드로 나열 금지)
 
 #### Mall_Classification 값 목록
 - SK_B2B_Domestic, SK_B2B_Overseas
@@ -107,6 +108,8 @@ SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판�
 | Line | STRING | 제품 라인 (Centella, Hyalucica, Probiocica 등) |
 
 Line 실제 DISTINCT 값: 'B_Line', 'C_Line', 'Centella', 'Centella_Teca', 'Dual_Triple', 'E_Line', 'Hyalu_Teca', 'Hyalucica', 'LabinNature', 'Others', 'Poremizing', 'Probiocica', 'SET', 'Teatrica', 'Tone_Brightening', 'ZB'
+- ⚠️ **"실제 제품 라인이 몇 개/뭐가 있는지" 질문**: 'Others', 'SET', 'ZB', 'B_Line', 'C_Line', 'E_Line', 'Dual_Triple'은 제품 라인이 아니라 집계용 버킷/세트 코드이므로 제외 — `AND Line NOT IN ('Others', 'SET', 'ZB', 'B_Line', 'C_Line', 'E_Line', 'Dual_Triple')` 반드시 적용
+- ⚠️ **개수(COUNT)와 목록(나열) 질문에 동일한 제외 조건을 일관되게 적용할 것** — "라인이 몇 개야?"에 위 제외 필터를 적용해 9개라고 답했다면, 후속 질문 "그 9개가 뭔지 알려줘"에도 반드시 같은 제외 필터를 적용해 9개 목록으로 답할 것 (필터 없이 재조회해 13개를 보여주는 등 앞뒤 숫자가 달라지면 안 됨)
 
 #### 매출 (핵심) ⭐
 | 컬럼 | 타입 | 설명 |
@@ -190,11 +193,16 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
    - 올바른 값: 미국, 인도네시아, 말레이시아, 필리핀, 일본, 중국, 대만, 홍콩, 한국, 태국, 베트남, 싱가포르, 호주, 독일, 영국, 프랑스, 캐나다 등
 6. **Date는 DATETIME** — DATE 함수 또는 EXTRACT 사용
 7. **매출 = Sales1_R** (Sales2_R은 명시적 요청 시만)
-8. **수량 = Total_Qty** (Quantity 사용 금지)
+8. **수량 = Total_Qty** (Quantity 사용 금지) — ⛔ 수량 집계는 반드시 `Product` 테이블의 Total_Qty. SALES_ALL_Backup의 Total_Qty를 수량 답변에 쓰지 마라
 9. **제품명 = `` `SET` ``** (Product_Name 사용 금지, 백틱 필수!)
 10. **대륙 = Continent1** (Continent2는 상세 필요 시만)
 11. **팀 = Team_NEW** (Team 사용 금지)
 12. **CTE(WITH절) 허용** — 복잡한 쿼리에 적극 사용. CTE 이름에 예약어 금지.
+    - ⚠️ **CTE CROSS JOIN 비율 계산 시 GROUP BY 필수 규칙**: CTE의 집계 컬럼을 SELECT에 쓰면 반드시 GROUP BY에 포함하거나 집계함수로 감싸야 함.
+    - ❌ `WITH ts AS (SELECT SUM(Sales1_R) AS total) ... GROUP BY country` → `ts.total` 참조 시 오류
+    - ✅ 방법1: `GROUP BY country, ts.total` (CTE 컬럼을 GROUP BY에 추가)
+    - ✅ 방법2: `MAX(ts.total)` 로 감싸기 (CROSS JOIN 시 모든 행 값 동일하므로 MAX 안전)
+    - ✅ 방법3: 스칼라 서브쿼리 `SUM(Sales1_R) / (SELECT SUM(Sales1_R) FROM ... ) * 100`
 
 ### 13~14. 제품/플랫폼 필터
 13. **플랫폼 필터 = Mall_Classification LIKE**
@@ -230,13 +238,35 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
 
 ### 20. "최근", "요즘", "잘 팔리는" = 최근 3개월 기본
 - `WHERE Date >= DATE_SUB(CURRENT_DATETIME(), INTERVAL 3 MONTH)`
-- "가장 잘 팔리는" → `SUM(Total_Qty) DESC LIMIT 10`
+- "가장 잘 팔리는" → `Product` 테이블에서 `SUM(Total_Qty) DESC LIMIT 10`
 - 되묻기 금지! 모호하면 기본값 적용
 
 ### 20-1. Timeout 방지
 - 전국가 YoY → TOP 10 국가만 (서브쿼리)
 - 전체 기간 누적 → 최근 12개월 제한
 - 대규모 교차분석 → `LIMIT 50` + DESC
+
+### 20-2. "신제품" = 첫 판매일로부터 6개월 이내 (확정 정의)
+- **신제품 = 데이터에 처음 등장한 날(첫 판매일)로부터 6개월 이하인 제품**
+- 첫 판매일 판정은 세트가 분해된 `Product` 테이블 기준 (SKU 단위 정확성)
+- 되묻지 말 것. "신제품", "신상", "새로 나온 제품" 모두 이 정의를 적용한다.
+- 패턴:
+```sql
+WITH first_sale AS (
+  SELECT Product AS product_name, MIN(Date) AS first_date
+  FROM `skin1004-319714.Sales_Integration.Product`
+  WHERE Product != 'Sachet'
+  GROUP BY Product
+  HAVING MIN(Date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)
+)
+SELECT ...
+FROM `skin1004-319714.Sales_Integration.Product` p
+JOIN first_sale f ON p.Product = f.product_name
+WHERE ...
+```
+- 매출을 물으면 `SALES_ALL_Backup.Sales1_R`, 수량을 물으면 `Product.Total_Qty`
+  (규칙 8 유지). 신제품 판정만 위 서브쿼리로 하고 집계는 원래 규칙대로.
+- 사용자가 "2025년 이후 신제품"처럼 **명시적 기준을 주면 그것을 우선**한다.
 
 ### 21. 메가와리(Mega Wari) — 큐텐(Qoo10) 전용!
 - 반드시: `Mall_Classification LIKE '%Q10%'` 필터
@@ -286,7 +316,7 @@ LIMIT 1000
 - **"인기 제품", "베스트셀러" → 매출(Sales1_R) 기준** ORDER BY total_revenue DESC
 - **B2C의 Company_Name = Mall_Classification** — B2C "업체별" → Mall_Classification으로 GROUP BY
 - **"지난달 대비 이번달"** → 현재월 불완전 데이터. SQL은 정상 생성
-- **수량 질문 → Product 테이블 우선** (SALES_ALL의 Total_Qty는 세트 묶음 포함, 부정확)
+- **수량 질문 → 무조건 Product 테이블** (SALES_ALL의 Total_Qty는 세트를 1개로 세어 부정확 — 수량 답변에 사용 절대 금지)
 - **신규업체수 = `COUNT(DISTINCT Company_Name) WHERE New_Flag = '신규'`** (First_Cohort 비교 금지!)
 - **동남아 = Continent2**: `Continent2 = '동남아시아'` (Continent1에 없음!)
 - **Product 테이블: Sachet 제외 필수**: `AND Product != 'Sachet'` (FOC 관련은 Sachet 포함)
@@ -368,8 +398,9 @@ LIMIT 1000
 | 앰플, 세럼 | `'%Ampoule%'` |
 | 크림 | `'%Cream%'` |
 | 토너 | `'%Toner%'` |
-| 선세럼, 선크림 | `'%Sun%'` |
+| 선세럼, 선크림, 선스크린 | `'%Sun%'` |
 | 선스틱 | `'%Sun_Stick%'` |
+| 포어마이징 벨벳 피니쉬 선스크린, 포어마이징 벨벳 선크림, 포어마이징 벨벳 선스크린 | `Product LIKE '%Velvet_Finish%'` (실제 SKU: SK_Poremizing_Velvet_Finish_Sunscreen_50ml) |
 | 클렌징 오일 | `'%Cleansing_Oil%'` |
 | 폼클렌저 | `'%Foam%'` |
 | 마스크, 시트팩 | `'%Mask%'` |
@@ -402,6 +433,126 @@ LIMIT 1000
 | 워터핏 선세럼 전체 (용량 무관) | — | `'%Hyalucica_Waterfit_Sun_Serum%'` |
 ❌ 절대 금지: `SK_Centella_Hyalucica_Waterfit_Sun_Serum_UV_50ml_OTC`, `SK_Hyalucica_Waterfit_Sun_Serum_OTC` 등 존재하지 않는 SET 값 사용
 
+### 전체 제품 SKU 목록 (Product 컬럼 DISTINCT 값 — SET LIKE 필터 기준)
+> ⚠️ 사용자가 제품명을 언급할 때 아래 목록을 참고해 정확한 LIKE 패턴 생성. 존재하지 않는 SKU 절대 사용 금지.
+> 💡 한국어 별칭이 있으면 그 패턴 사용. 없으면 SKU에서 핵심 단어 추출해 `'%핵심단어%'` 사용.
+
+**SK — 센텔라 (Centella)**
+- 앰플: SK_Centella_Ampoule_{100ml/120ml/20ml/30ml/55ml/Sachet} → `'%Centella_Ampoule%'`
+- 앰플폼(클렌저): SK_Centella_Ampoule_Foam_{125ml/20ml/Sachet} → `'%Centella_Ampoule_Foam%'`
+- 앰플 리무버: SK_Centella_Ampoule_Remover_150ml → `'%Ampoule_Remover%'`
+- 수딩크림: SK_Centella_Soothing_Cream_{15ml/30ml/75ml/100ml/Sachet} → `'%Centella_Soothing_Cream%'`
+- 크림: SK_Centella_Cream_{30ml/75ml} → `'%Centella_Cream%'`
+- 토닝토너: SK_Centella_Toning_Toner_{30ml/210ml/400ml/Sachet} → `'%Centella_Toning_Toner%'`
+- 퀵카밍패드: SK_Centella_Quick_Calming_Pad_{70ea/70ea_Pouch/2Sachet/70ea_SET} → `'%Quick_Calming_Pad%'`
+- 클렌징오일: SK_Centella_Light_Cleansing_Oil_{30ml/200ml/300ml/Sachet} → `'%Light_Cleansing_Oil%'`
+- 스팟크림: SK_Centella_Spot_Cream_20ml → `'%Centella_Spot_Cream%'`
+- PDRN크림: SK_Centella_PDRN1_5_Cream_30ml → `'%PDRN%'`
+- 흉터크림/오인먼트: SK_Centella_scar_Oinment_30g → `'%scar_Oinment%'`
+- 워터겔마스크: SK_Centella_Watergel_sheet_ampoule_mask_25ml_{1ea/5ea/10ea/30ea} → `'%Watergel_sheet%'`
+- 에어핏 선크림: SK_Centella_Airfit_Suncream_{50ml/Light_50ml/Plus_20ml/Plus_50ml} → `'%Centella_Airfit_Suncream%'`
+- 센텔라테카 앰플: SK_Centella_Teca_Ampoule_50ml → `'%Centella_Teca_Ampoule%'`
+- 센텔라테카 크림: SK_Centella_Teca_Cream_75ml → `'%Centella_Teca_Cream%'`
+- 센텔라테카 수딩토너: SK_Centella_Teca_Soothing_Toner_210ml → `'%Centella_Teca_Soothing_Toner%'`
+
+**SK — 히알루시카 (Hyalucica)**
+- 퍼스트앰플(히알루론산앰플): SK_Hyalucica_First_Ampoule_{15ml/50ml/100ml/Sachet} → `'%Hyalucica_First_Ampoule%'`
+- 블루세럼: SK_Hyalucica_Blue_Serum_{30ml/50ml/Sachet} → `'%Blue_Serum%'`
+- 브라이트닝토너: SK_Hyalucica_Brightening_Toner_{30ml/210ml/Sachet} → `'%Hyalucica_Brightening_Toner%'`
+- 모이스처크림: SK_Hyalucica_Moisture_Cream_{30ml/75ml/Sachet} → `'%Hyalucica_Moisture_Cream%'`
+- 슬리핑팩: SK_Hyalucica_Sleeping_Pack_{30ml/100ml/Sachet} → `'%Hyalucica_Sleeping_Pack%'`
+- 클라우디미스트: SK_Hyalucica_Cloudy_Mist_120ml → `'%Cloudy_Mist%'`
+- 클렌징밀크: SK_Hyalucica_Gentle_Cleansing_Milk_200ml → `'%Gentle_Cleansing_Milk%'`
+- 하이드레이팅마스크: SK_Hyalucica_Hydrating_Mask_{23ml/23ml_x_5ea} → `'%Hydrating_Mask%'`
+- 젤리핏패드: SK_Hyalucica_JellyFit_Ampoule_Pad_60pads → `'%JellyFit%'`
+- 워터핏선세럼: SK_Hyalucica_Waterfit_Sun_Serum_{50ml/15ml/100ml/OTC_50ml/50ml_twin_pack/Sachet} → `'%Waterfit_Sun_Serum%'`
+- 실키핏선스틱: SK_Hyalucica_Silky_Fit_Sun_Stick_{7g/20g} → `'%Silky_Fit_Sun_Stick%'`
+
+**SK — 히알루테카 (Hyalu_Teca)**
+- 플럼핑앰플: SK_Hyalu_Teca_Plumping_Ampoule_50ml → `'%Plumping_Ampoule%'`
+- 퍼밍크림: SK_Hyalu_Teca_Firming_Cream_50ml → `'%Firming_Cream%'`
+- 글라스스킨밀크: SK_Hyalu_Teca_Glass_Skin_Milk_210ml → `'%Glass_Skin_Milk%'`
+
+**SK — 포어마이징 (Poremizing)**
+- 프레시앰플: SK_Poremizing_Fresh_Ampoule_{30ml/50ml/100ml/Sachet} → `'%Poremizing_Fresh_Ampoule%'`
+- 클리어앰플패드: SK_Poremizing_Clear_Ampoule_60Pads → `'%Clear_Ampoule%'`
+- 클리어토너: SK_Poremizing_Clear_Toner_{210ml/Sachet} → `'%Poremizing_Clear_Toner%'`
+- 딥클렌징폼: SK_Poremizing_Deep_Cleansing_Foam_{75ml/125ml/Sachet} → `'%Deep_Cleansing_Foam%'`
+- 라이트젤크림: SK_Poremizing_Light_Gel_Cream_{75ml/Sachet} → `'%Light_Gel_Cream%'`
+- 클래리파잉마스크: SK_Poremizing_Clarifying_Mask_{1ea/5ea} → `'%Clarifying_Mask%'`
+- 글로우래핑마스크: SK_Poremizing_Glow_Wrapping_Mask → `'%Glow_Wrapping_Mask%'`
+- 클레이스틱마스크: SK_Poremizing_Quick_Clay_Stick_Mask_27g → `'%Clay_Stick_Mask%'`
+- 틴티드선스크린: SK_Poremizing_Tinted_Sunscreen_50ml → `'%Tinted_Sunscreen%'`
+- **벨벳피니쉬선스크린(벨벳선크림)**: SK_Poremizing_Velvet_Finish_Sunscreen_{50ml/Sachet} → `'%Velvet_Finish%'`
+
+**SK — 티트리카 (Teatrica)**
+- 릴리프앰플: SK_Teatrica_Relief_Ampoule_{30ml/100ml/Sachet} → `'%Teatrica_Relief_Ampoule%'`
+- 퓨리파잉토너: SK_Teatrica_Purifying_Toner_{210ml/Sachet} → `'%Teatrica_Purifying_Toner%'`
+- BHA폼클렌저: SK_Teatrica_BHA_Foam_{125ml/Sachet} → `'%BHA_Foam%'`
+- B5크림: SK_Teatrica_B5_Cream_{75ml/Sachet} → `'%Teatrica_B5_Cream%'`
+- 마일드필링젤: SK_Teatrica_Mild_Peeling_Gel_125ml → `'%Mild_Peeling_Gel%'`
+- 릴랙싱마스크: SK_Teatrica_Relaxing_Mask_{24ml/24ml_x_5ea} → `'%Relaxing_Mask%'`
+- 수딩선밀크: SK_Teatrica_Soothing_Sun_Milk_{50ml/Sachet} → `'%Soothing_Sun_Milk%'`
+- 스팟커버패치: SK_Teatrica_Spot_Cover_Patch_22ea → `'%Spot_Cover_Patch%'`
+- 스팟크림: SK_Teatrica_Spot_Cream_20ml → `'%Teatrica_Spot_Cream%'`
+
+**SK — 톤브라이트닝 (Tone_Brightening)**
+- 캡슐앰플: SK_Tone_Brightening_Capsule_Ampoule_{30ml/50ml/100ml/Sachet} → `'%Capsule_Ampoule%'`
+- 부스팅토너: SK_Tone_Brightening_Boosting_Toner_{210ml/Sachet} → `'%Boosting_Toner%'`
+- 캡슐크림: SK_Tone_Brightening_Capsule_Cream_75ml → `'%Capsule_Cream%'`
+- 클렌징젤폼: SK_Tone_Brightening_Cleansing_Gel_Foam_{125ml/Sachet} → `'%Cleansing_Gel_Foam%'`
+- 다크스팟패드: SK_Tone_Brightening_Dark_Spot_Ampoule_Pad_60pads → `'%Dark_Spot_Ampoule_Pad%'`
+- 글로우마스크: SK_Tone_Brightening_Glow_Mask_{1ea/5ea} → `'%Tone_Brightening_Glow_Mask%'`
+- 톤업선스크린: SK_Tone_Brightening_Tone_Up_Sunscreen_50ml → `'%Tone_Up_Sunscreen%'`
+
+**SK — 프로바이오시카 (Probiocica)**
+- 인텐시브앰플: SK_Probiocica_Intensive_Ampoule_{30ml/50ml/95ml/Sachet} → `'%Probiocica_Intensive_Ampoule%'`
+- 인리치크림: SK_Probiocica_Enrich_Cream_{15ml/50ml/Sachet} → `'%Enrich_Cream%'`
+- 에센스토너: SK_Probiocica_Essence_Toner_{210ml/Sachet} → `'%Essence_Toner%'`
+- 바쿠치올아이크림: SK_Probiocica_Bakuchiol_Eyecream_{20ml/Sachet/Twin_pack_20ml} → `'%Bakuchiol_Eyecream%'`
+- 글로우선앰플: SK_Probiocica_Glow_Sun_Ampoule_{50ml/Sachet} → `'%Glow_Sun_Ampoule%'`
+- 너리싱마스크: SK_Probiocica_Nourishing_Mask_{22ml/22ml_x_5ea} → `'%Nourishing_Mask%'`
+
+**SK — 랩인네이처 (LabinNature)**
+- 아젤라산앰플: SK_LabinNature_Azelaic_Acid_10_Ampoule_{9ml/30ml/Sachet} → `'%Azelaic_Acid%'`
+- 마트릭실앰플: SK_LabinNature_Matrixyl_10_Boosting_Shot_Ampoule_{9ml/30ml/Sachet} → `'%Matrixyl%'`
+- 나이아신아마이드앰플: SK_LabinNature_Niacinamide_10_Boosting_Shot_Ampoule_{9ml/30ml/Sachet} → `'%Niacinamide%'`
+- 레티놀앰플: SK_LabinNature_Retinol_02_Boosting_Shot_Ampoule_{9ml/30ml/Sachet} → `'%Retinol%'`
+
+⚠️ **성분(포뮬레이션) 데이터 한계**: BigQuery에는 제품별 실제 배합 성분 테이블이 없음. 위 성분명 매핑은 "랩인네이처 Boosting Shot Ampoule" 라인처럼 **제품명에 성분명이 그대로 들어간 제품에 한해서만** 유효함.
+- "전체 제품 중 OO 성분이 포함/미포함된 제품" 같은 질문은 `product_name LIKE '%OO%'` 방식으로는 정확히 답할 수 없음 (제품명에 성분명이 없다고 실제로 그 성분이 안 들어있는 건 아님)
+- 이런 질문에는 위 랩인네이처 라인 등 제품명에 성분이 명시된 제품 외에는 **"제품명 기반으로는 확인 가능하나, 전체 제품의 실제 배합 성분 데이터는 보유하고 있지 않다"는 한계를 답변에 반드시 명시**할 것 — 제품명에 성분명이 없다고 임의로 "미포함"이라 단정하거나, 그 결과를 TOP 순위처럼 확정적으로 제시하지 말 것
+
+**ZB — 좀비뷰티 (ZombieBeauty)**
+- 좀비팩: ZB_Zombie_Pack_Activator_Kit_8ea → `'%Zombie_Pack%'`
+- 위치팩: ZB_Witch_Pack_{8ea/16ea} → `'%Witch_Pack%'`
+- 마미팩: ZB_Mummy_Pack_Activator_Kit_8ea → `'%Mummy_Pack%'`
+- 호박팩: ZB_Pumpkin_Pack_{8ea/16ea} → `'%Pumpkin_Pack%'`
+- 블러디필: ZB_Bloody_Peel_Light_30ml → `'%Bloody_Peel%'`
+- 코쿤팩: ZB_Cocoon_Pack_100g → `'%Cocoon_Pack%'`
+- 핸드샷: ZB_Hand_Shot_30ml → `'%Hand_Shot%'`
+- 허트리프카밍팩: ZB_Heartleaf_Calming_Pack_1ea → `'%Heartleaf_Calming%'`
+- 필로우샷: ZB_Pillow_Shot_200ml → `'%Pillow_Shot%'`
+
+**CL — 커먼랩스 (CommonLabs)**
+- 비타민B5앰플: CL_Vitamin_B5_Moisture_Ampoule_{18ml/30ml} → `'CL_%Vitamin_B5%'`
+- 비타민B5패드: CL_Vita_B5_Mild_Peeling_Pad → `'%Vita_B5_Mild_Peeling_Pad%'`
+- 비타민C앰플: CL_Vitamin_C_Brightening_Ampoule_30ml → `'CL_%Vitamin_C%Ampoule%'`
+- 비타민C크림: CL_Vitamin_C_Brightening_Gel_Cream_{30ml/50ml/70g} → `'CL_%Vitamin_C%Cream%'`
+- 비타민C선세럼: CL_Vitamin_C_Brightening_Sun_Serum_51ml → `'CL_%Vitamin_C%Sun%'`
+- 비타민C선스틱: CL_Vitamin_C_Brightening_Sun_Stick_20g → `'%Vitamin_C%Sun_Stick%'`
+- 비타민C필링토너: CL_Vitamin_C_Brightening_Peeling_Toner_200ml → `'%Vitamin_C%Peeling_Toner%'`
+- 비타민C마스크: CL_Vitamin_C_Glow_Boosting_Face_Mask_120ml → `'%Vitamin_C%Mask%'`
+- 비타민E앰플: CL_Vitamin_E_Calming_Ampoule_30ml → `'CL_%Vitamin_E%Ampoule%'`
+- 비타민E크림: CL_Vitamin_E_Calming_Light_Cream_{30ml/70g} → `'CL_%Vitamin_E%Cream%'`
+- 비타민E스팟크림: CL_Vitamin_E_Micro_Needle_Spot_Cream_10ml → `'%Micro_Needle_Spot%'`
+- 트리플비타토너: CL_Triple_Vita_Balancing_Toner_{40ml/210ml} → `'%Triple_Vita%Toner%'`
+- 트리플비타마스크: CL_Triple_Vita_Balancing_Mask_{1ea/10ea} → `'%Triple_Vita%Mask%'`
+- 트리플비타크림: CL_Triple_Vita_Facial_Cream_70g → `'%Triple_Vita%Cream%'`
+- 듀얼비타앰플: CL_Dual_Vita_Anti_Oxidant_Ampoule_10ml → `'%Dual_Vita%Ampoule%'`
+- 듀얼비타클렌저: CL_Dual_Vita_Purifying_Cleanser_120ml → `'%Dual_Vita%Cleanser%'`
+- 꿀라민마스크: CL_Ggultamin_{B/C/E}_Real_Gel_Mask → `'%Ggultamin%'`
+
 ---
 
 ## 상대적 날짜 처리
@@ -424,8 +575,8 @@ LIMIT 1000
 
 ### 1. 단순 매출 (제품 분해 X!)
 ```sql
--- "쇼피 인도네시아 이번 달 매출" → 제품 안 물어봄 = 총합만!
-SELECT SUM(Sales1_R) AS total_revenue, SUM(Total_Qty) AS total_quantity
+-- "쇼피 인도네시아 이번 달 매출" → 제품 안 물어봄 = 총합만! (수량까지 물었으면 수량은 Product 서브쿼리로)
+SELECT SUM(Sales1_R) AS total_revenue
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
 WHERE Country = '인도네시아' AND Mall_Classification LIKE '%Shopee%'
   AND EXTRACT(YEAR FROM Date) = 2026 AND EXTRACT(MONTH FROM Date) = 3
