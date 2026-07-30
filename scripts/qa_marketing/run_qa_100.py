@@ -13,6 +13,7 @@ Usage:
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -30,8 +31,13 @@ RESULTS_DIR = BASE_DIR / "results_qa100"
 QUESTIONS_DIR = BASE_DIR / "questions_qa100"
 
 # ── API ──
-API_URL = "http://localhost:3000/v1/chat/completions"
-HEALTH_URL = "http://localhost:3000/health"
+# 2026-07-30 신규 서버 이관: localhost:3000(172.16.1.250)은 이제 리다이렉트 껍데기라
+# 여기를 때리면 실제 서비스가 아니라 307 응답만 테스트하게 된다. 기본 대상을 신규 서버로 둔다.
+# 다른 대상으로 돌리려면 QA_BASE_URL 환경변수로 덮어쓸 것.
+#   예) set QA_BASE_URL=http://127.0.0.1:3000   (로컬 개발 인스턴스)
+QA_BASE_URL = os.getenv("QA_BASE_URL", "http://10.1.100.5").rstrip("/")
+API_URL = f"{QA_BASE_URL}/v1/chat/completions"
+HEALTH_URL = f"{QA_BASE_URL}/health"
 MODEL = "gemini"
 
 # ── Threading ──

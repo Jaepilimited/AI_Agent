@@ -17,26 +17,62 @@
 **지도가 커버하지 못하는 영역**:
 - `tests/`, `scripts/` 일회성 파일, `backup_*`, `logs/`, `temp_*`, `app/frontend/`, `app/static/` — 이들은 지도에 없다. 필요시 직접 탐색.
 
-## 배포 규칙 (최우선) — 2026-06-12 로컬 메인 전환
+## 배포 규칙 (최우선) — 2026-07-30 신규 서버 이관 완료
 
-- **프로덕션 = 로컬 Windows 서버 172.16.1.250:3000 (PM2 `skin1004-prod`)**: 사용자가 사용 중
-- **배포 흐름**: 코드 수정(로컬) → `pm2 restart skin1004-prod` (같은 머신이므로 pull 불필요)
-- ⚠️ Windows fork 모드에서 `pm2 reload`는 고아 프로세스를 만들 수 있음(2026-07-06 장애) — 반드시 `restart` 사용, 배포 후 `pm2 status`로 ↺ 카운터 확인
-- 코드 변경 후 별도 확인 없이 바로 프로덕션 반영 (2026-06-01 정책 변경)
-- `git push jaepilimited master`는 코드 백업용으로 유지
-- 프로덕션(skin1004-prod) kill, stop, delete 절대 금지
-- **GCP(34.64.99.179)는 2026-06-12부로 AI Agent 서비스 중지** — CRM(skin1004-crm-*)만 운영 중. AI Agent용으로 pull/reload 하지 말 것
+### ⚠️ 프로덕션은 더 이상 172.16.1.250 이 아니다
+
+- **프로덕션 = `http://10.1.100.5` (사내 신규 서버, IT팀 관리 VM)**
+  - Web `10.1.100.5` (nginx) → WAS `10.1.150.5` (앱, systemd `ai-craver`)
+  - APP `10.1.150.105` (배치 크론) / DB `10.1.200.5` (MariaDB 10.11, DB명 `ai`)
+- **172.16.1.250:3000 은 리다이렉트 껍데기다.** 앱은 떠 있지만 모든 요청을 307로
+  신규 서버에 넘기고 배치 스케줄러도 꺼져 있다. **여기에만 배포하면 아무것도 반영되지 않는다.**
+
+### 배포 흐름 (두 곳 모두 반영 — 컷오버 후 병행 기간)
+
+```
+python scripts/deploy_new_server.py was    # ★ 실제 서비스. 코드 전송 + systemd 재기동 + 헬스체크
+pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.250). 리다이렉트 로직 바꿀 때만
+```
+- `CRAVER_SSH_PW` 환경변수 필요 (계정 `jeffrey`, 비밀번호는 노션 "AI Craver" 페이지)
+- 신규 서버는 git 저장소가 아니라 **SFTP 전송본**이다. git pull 로 갱신되지 않는다.
+- **패키지(requirements) 변경 시**엔 휠을 다시 받아 올려야 한다 (런북 참조)
+- 배치 크론을 바꿨으면 `deploy_new_server.py app` 도 실행
+
+### 상태 확인·롤백
+
+- 전체 점검: `python scripts/verify_migration.py` (SSH·프록시·DB·서비스 한 번에)
+- 신규 서버 로그: `journalctl -u ai-craver -n 50 --no-pager` (SSH 접속 후)
+- **롤백**: 172.16.1.250 의 `.env` 에서 `MIGRATED_REDIRECT_URL` 줄 삭제 → `pm2 restart skin1004-prod`
+  → 기존 서버가 즉시 원래대로 서비스하고 스케줄러도 자동 재개
+- 172.16.1.250 은 롤백 대비로 유지 중. **kill / stop / delete 절대 금지**
+- `git push jaepilimited master` 는 코드 백업용으로 유지
+
+### 이관 상세
+
+`docs/MIGRATION_AI_CRAVER.md` 가 단일 소스 — 검증 결과·오프라인 구축 절차·컷오버·롤백 전부 여기 있다.
+
+### 아직 172.16.1.250 에 남아 있는 것
+
+- **CRM 서비스** (`:3100`) — 전용 서버로 별도 이관 예정. 이것 때문에 DB_PC 를 끌 수 없다.
+- `SKIN1004-Watchdog`, `SKIN1004-PM2-AutoStart`, `SKIN1004-Git-Push-Daily` (예약 작업)
+- AD 동기화·지식맵 예약 작업은 APP 서버 크론으로 이관했고 **DB_PC 쪽은 비활성화**했다
+  (중복 실행 방지). 롤백 시 `schtasks /change /tn SKIN1004-AD-Sync-Daily /enable` 로 되살릴 것.
+- **GCP(34.64.99.179)** 는 2026-06-12부로 AI Agent 서비스 중지 — CRM 만 운영 중
 
 ## 서버 관리
 
-- **로컬 프로덕션** (포트 3000, ecosystem.windows.config.js)
-  - 반영: `pm2 restart skin1004-prod`
-  - 로그: `pm2 logs skin1004-prod --lines 30 --nostream`
-- **로컬 개발** (포트 3001)
-  - 개발 restart: `pm2 restart skin1004-dev`
-  - 로그: `pm2 logs skin1004-dev --lines 30 --nostream`
-- 서버 켜기(재부팅 후): `pm2 start ecosystem.windows.config.js`
-- 상태 확인: `pm2 status` — ↺(재시작 수)가 수십 회 이상이면 포트 점유 고아 프로세스 의심 (delete → 포트 킬 → start)
+- **신규 프로덕션 (실제 서비스)**
+  - SSH: `jeffrey@10.1.100.5` / `10.1.150.5` / `10.1.150.105` (172.16.1.250 에서만 접속 허용)
+  - 앱 재기동: `sudo systemctl restart ai-craver` (WAS)
+  - 로그: `journalctl -u ai-craver -n 50 --no-pager`
+  - nginx: `sudo nginx -t && sudo systemctl reload nginx` (Web)
+  - DB 접속: WAS 경유 터널링만 가능 (DB 직접 접근 차단)
+- **기존 서버 172.16.1.250 (리다이렉트 껍데기 + CRM)**
+  - 반영: `pm2 restart skin1004-prod` / 로그: `pm2 logs skin1004-prod --lines 30 --nostream`
+  - ⚠️ Windows fork 모드에서 `pm2 reload` 는 고아 프로세스를 만든다(2026-07-06 장애) — 반드시 `restart`
+  - `pm2 status` 의 ↺ 가 수십 회 이상이면 포트 점유 고아 의심 (delete → 포트 킬 → start)
+  - 서버 켜기(재부팅 후): `pm2 start ecosystem.windows.config.js`
+- **로컬 개발** (포트 3001): `pm2 restart skin1004-dev`
 - GCP SSH (CRM 확인용): `ssh -i C:/Users/DB_PC/.ssh/gcp_skin1004 skin1004@34.64.99.179`
 
 ## BigQuery 데이터 규칙 (SQL 로직 기준)

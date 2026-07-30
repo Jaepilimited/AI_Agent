@@ -149,17 +149,25 @@ def create_app() -> FastAPI:
         # Safety: auto-detect table updates via __TABLES__ metadata polling
         asyncio.create_task(_start_maintenance_monitor())
         # APScheduler: daily 01:00 team resources sync + hourly wiki extraction
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        _scheduler = AsyncIOScheduler()
-        _scheduler.add_job(_sync_team_resources_job, "cron", hour=1, minute=0, id="team_sync_daily")
-        _scheduler.add_job(_extract_wiki_hourly, "cron", minute=15, id="wiki_extract_hourly")
-        _scheduler.add_job(_qdrant_pipeline_job, "cron", hour=5, minute=0, id="qdrant_pipeline_daily")
-        _scheduler.add_job(_quality_snapshot_job, "cron", hour=0, minute=5, id="quality_snapshot_daily")
-        _scheduler.add_job(_weekly_growth_report_job, "cron", day_of_week="mon", hour=0, minute=10, id="weekly_growth_report")
-        # AD sync is handled exclusively by Windows Task Scheduler (SKIN1004-AD-Sync-Daily at 22:00).
-        # Removed from APScheduler to prevent concurrent dual-trigger race condition.
-        _scheduler.start()
-        _set_scheduler(_scheduler)
+        #
+        # 이관 리다이렉트가 켜진 인스턴스는 사용자를 신규 서버로 넘기기만 하는 껍데기이므로
+        # 배치를 돌리지 않는다. 그러지 않으면 구/신 서버가 같은 잡을 이중 실행하고,
+        # 특히 05:00 Qdrant 파이프라인은 **동일한 Qdrant Cloud 컬렉션에 양쪽이 동시 업로드**한다.
+        if settings.migrated_redirect_url:
+            logger.warning("scheduler_skipped_migrated_instance",
+                           reason="redirect-only shim; batch jobs run on the new server")
+        else:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            _scheduler = AsyncIOScheduler()
+            _scheduler.add_job(_sync_team_resources_job, "cron", hour=1, minute=0, id="team_sync_daily")
+            _scheduler.add_job(_extract_wiki_hourly, "cron", minute=15, id="wiki_extract_hourly")
+            _scheduler.add_job(_qdrant_pipeline_job, "cron", hour=5, minute=0, id="qdrant_pipeline_daily")
+            _scheduler.add_job(_quality_snapshot_job, "cron", hour=0, minute=5, id="quality_snapshot_daily")
+            _scheduler.add_job(_weekly_growth_report_job, "cron", day_of_week="mon", hour=0, minute=10, id="weekly_growth_report")
+            # AD sync is handled exclusively by Windows Task Scheduler (SKIN1004-AD-Sync-Daily at 22:00).
+            # Removed from APScheduler to prevent concurrent dual-trigger race condition.
+            _scheduler.start()
+            _set_scheduler(_scheduler)
         logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10"])
         yield
         logger.info("application_shutdown")
