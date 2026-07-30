@@ -996,13 +996,28 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background-clip: text;
 }
 
+/* 로그인 화면의 "WHAT DO YOU CRAVE?" 타이포그래피를 그대로 가져온다.
+   (.craver-line 과 동일한 display 폰트 / 900 weight / italic) */
 .chat-welcome .welcome-sub {
   font-family: var(--font-display);
-  font-weight: 700;
-  font-size: clamp(26px, 4.5vw, 40px);
-  line-height: 1.2;
-  color: var(--text-muted);
-  margin-top: 4px;
+  font-weight: 900;
+  font-style: italic;
+  font-size: clamp(30px, 5.2vw, 48px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-top: 6px;
+}
+
+/* 브랜드 단어 하나에만 색을 준다. 문구 전체를 오렌지로 칠하면 위의 이름 줄
+   (동일 그라데이션)과 경쟁하고, 라이트 배경(#fafaf9)에서 대비가 2.4:1 로 떨어져
+   큰 글씨 기준(3:1)에 미달한다. 라이트는 어두운 오렌지로 내려 3.9:1 을 확보. */
+.chat-welcome .crave-accent {
+  font-style: inherit;
+  color: #b06f00;
+}
+html.dark .chat-welcome .crave-accent {
+  color: var(--accent-hover);
 }
 
 .chat-welcome .suggestions {
@@ -1100,6 +1115,8 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   max-width: 70%;
   font-size: var(--text-sm);
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* User message edit button */
@@ -4082,6 +4099,42 @@ html.dark .db-autocomplete-dropdown {
 }
 .notion-sync-btn:hover:not(:disabled) { background: var(--accent); color: #fff; }
 .notion-sync-btn:disabled, .notion-sync-btn.syncing { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Quality Alert Bar (System Status drawer) ── */
+.quality-alert-bar {
+  padding: 10px 14px;
+  margin: 8px 0 4px;
+  background: rgba(220, 120, 0, 0.08);
+  border: 1px solid rgba(220, 120, 0, 0.3);
+  border-radius: var(--radius);
+}
+.quality-alert-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #c47000;
+  margin-bottom: 6px;
+}
+[data-theme="dark"] .quality-alert-title { color: #f0a030; }
+.quality-flag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.quality-route {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: rgba(220,120,0,0.15);
+  color: #b36000;
+  padding: 1px 7px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+[data-theme="dark"] .quality-route { color: #f0a030; background: rgba(240,160,48,0.15); }
+.quality-issues {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 .notion-sync-spinner {
   display: inline-block;
