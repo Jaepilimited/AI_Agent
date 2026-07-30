@@ -26,7 +26,16 @@ USER = "jeffrey"
 
 SERVERS = {"Web": "10.1.100.5", "WAS": "10.1.150.5", "APP": "10.1.150.105"}
 DB_HOST, DB_PORT = "10.1.200.5", 3306
-PROXY, PROXY_PORT = "10.1.50.5", 3128
+# ⚠️ Proxy 실주소는 10.1.50.2 다. 노션 설계서(10.1.50.5)와 IT 메일(10.5.50.2)은 둘 다 오기였고,
+#    2026-07-29 실측으로 10.1.50.2:3128 만 응답함을 확인했다.
+PROXY, PROXY_PORT = "10.1.50.2", 3128
+# 프록시 경유로 실제 도달해야 하는 외부 도메인 (숫자 응답이면 통과, 000이면 실패)
+EXT_TARGETS = [
+    ("Claude", "https://api.anthropic.com/v1/models"),
+    ("Gemini", "https://generativelanguage.googleapis.com/"),
+    ("BigQuery", "https://bigquery.googleapis.com/"),
+    ("Notion", "https://api.notion.com/v1"),
+]
 
 OK, NG, WARN = "OK  ", "실패", "주의"
 
@@ -87,15 +96,23 @@ def main() -> int:
         '&& echo OPEN || echo "차단/무응답"; }\n'
     )
 
-    print(f"\n[2] 서버 → Proxy {PROXY}:{PROXY_PORT}   (현재 최대 블로커)")
+    print(f"\n[2] 서버 → Proxy {PROXY}:{PROXY_PORT}")
     for name, ip in SERVERS.items():
         try:
-            r = sh(ip, probe_sh + f'echo -n "$(p {PROXY} {PROXY_PORT})"; '
-                                  f'ping -c1 -W2 {PROXY} >/dev/null 2>&1 '
-                                  f'&& echo " / ICMP응답" || echo " / ICMP무응답"')
+            r = sh(ip, probe_sh + f"p {PROXY} {PROXY_PORT}")
             print(f"    {name:<4} → proxy:3128   {r.strip()}")
         except Exception as e:
             print(f"    {name:<4} SSH 실패: {type(e).__name__}")
+
+    print("\n[2-1] WAS → 외부 API (프록시 경유, 000=실패)")
+    px = f"http://{PROXY}:{PROXY_PORT}"
+    for label, url in EXT_TARGETS:
+        try:
+            code = sh(SERVERS["WAS"],
+                      f"curl -s -o /dev/null -w '%{{http_code}}' -x {px} --max-time 15 '{url}'").strip()
+            print(f"    {label:<9} {code}{'  (도달)' if code not in ('', '000') else '  ★실패'}")
+        except Exception as e:
+            print(f"    {label:<9} 확인 실패: {type(e).__name__}")
 
     print(f"\n[3] 서버 → DB {DB_HOST}:{DB_PORT}   (대조군 — 동일 게이트웨이 경유)")
     for name, ip in SERVERS.items():
@@ -144,25 +161,31 @@ def main() -> int:
     lp = 13500
 
     def fwd(sock):
+        # 터널 종료 시 소켓이 먼저 닫혀 예외가 나는 것은 정상이므로 조용히 끝낸다
+        ch = None
         try:
             ch = tr.open_channel("direct-tcpip", (DB_HOST, DB_PORT), sock.getpeername())
+            while True:
+                r, _, _ = select.select([sock, ch], [], [], 20)
+                if sock in r:
+                    d = sock.recv(65536)
+                    if not d:
+                        break
+                    ch.sendall(d)
+                if ch in r:
+                    d = ch.recv(65536)
+                    if not d:
+                        break
+                    sock.sendall(d)
         except Exception:
-            sock.close()
-            return
-        while True:
-            r, _, _ = select.select([sock, ch], [], [], 20)
-            if sock in r:
-                d = sock.recv(65536)
-                if not d:
-                    break
-                ch.sendall(d)
-            if ch in r:
-                d = ch.recv(65536)
-                if not d:
-                    break
-                sock.sendall(d)
-        ch.close()
-        sock.close()
+            pass
+        finally:
+            for s in (ch, sock):
+                try:
+                    if s:
+                        s.close()
+                except Exception:
+                    pass
 
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
