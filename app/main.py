@@ -11,6 +11,7 @@ except Exception:
     pass
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -174,6 +175,33 @@ def create_app() -> FastAPI:
 
     # Setup middleware (CORS, logging)
     setup_middleware(app)
+
+    # --- 서버 이관 리다이렉트 (2026-07-30) ---
+    # MIGRATED_REDIRECT_URL 이 설정돼 있으면 모든 사용자 요청을 신규 서버로 넘긴다.
+    # 이관 후 기존 주소(172.16.1.250:3000)로 들어오는 접속 때문에 대화가 구 DB에만
+    # 쌓여 데이터가 갈라지는 것을 막기 위한 장치다.
+    #   끄는 방법: .env 에서 MIGRATED_REDIRECT_URL 을 지우고 pm2 restart
+    # 제외 경로:
+    #   /health          — watchdog 가 죽은 것으로 오판하지 않도록
+    #   /auth/google, /settings — CRM OAuth 콜백 프록시(신규 서버로 옮기지 않은 기능)
+    # ⚠️ os.getenv 로 읽으면 안 된다 — .env 는 pydantic-settings 가 직접 읽고
+    #    os.environ 에는 넣지 않으므로 항상 빈 값이 된다(2026-07-30 실제 겪음).
+    _redirect_base = settings.migrated_redirect_url.rstrip("/")
+    if _redirect_base:
+        _keep_prefixes = ("/health", "/auth/google", "/settings", "/api/auth/google")
+
+        @app.middleware("http")
+        async def _migrated_redirect(request: Request, call_next):
+            path = request.url.path
+            if path.startswith(_keep_prefixes):
+                return await call_next(request)
+            target = f"{_redirect_base}{path}"
+            if request.url.query:
+                target += f"?{request.url.query}"
+            # 307: 메서드와 본문을 보존한다 (POST 도 안전하게 넘어감)
+            return RedirectResponse(url=target, status_code=307)
+
+        logger.warning("migrated_redirect_enabled", target=_redirect_base)
 
     # --- API routes ---
     app.include_router(router)           # /v1/chat/completions, /dashboard, /health, etc.

@@ -1,0 +1,59 @@
+; AI Craver — WAS(10.1.150.5) systemd 유닛
+;
+; PM2를 쓰지 않는 이유 (2026-07-29 확인):
+;   신규 서버에 node/npm이 설치돼 있지 않고, registry.npmjs.org 접근도 막혀 있어
+;   PM2 설치 자체가 불가능하다. systemd 255가 이미 있으므로 이쪽이 정석이며,
+;   Windows에서 반복 재발하던 PM2 fork 모드 고아 프로세스 문제도 함께 사라진다.
+;
+; 설치:
+;   sudo cp deploy/ai-craver.service /etc/systemd/system/
+;   sudo systemctl daemon-reload
+;   sudo systemctl enable --now ai-craver
+; 확인:
+;   systemctl status ai-craver
+;   journalctl -u ai-craver -f          (로그는 journald가 관리 — 로테이션 불필요)
+
+[Unit]
+Description=AI Craver (SKIN1004 Enterprise AI)
+Documentation=file:///home/jeffrey/AI_Agent/docs/MIGRATION_AI_CRAVER.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=jeffrey
+Group=jeffrey
+WorkingDirectory=/home/jeffrey/AI_Agent
+EnvironmentFile=/home/jeffrey/AI_Agent/.env
+
+# 외부 API는 Proxy 경유. 사내 대역은 프록시를 타지 않도록 제외한다.
+# ⚠️ Proxy 실주소는 10.1.50.2 다. 노션 설계서의 10.1.50.5, IT 메일의 10.5.50.2 는 둘 다
+#    오기였고, 2026-07-29 실측으로 10.1.50.2:3128 만 응답함을 확인했다.
+Environment=HTTPS_PROXY=http://10.1.50.2:3128
+Environment=HTTP_PROXY=http://10.1.50.2:3128
+Environment=NO_PROXY=localhost,127.0.0.1,10.1.0.0/16,172.16.0.0/12
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONUTF8=1
+
+ExecStart=/home/jeffrey/AI_Agent/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 3000
+
+Restart=always
+RestartSec=5
+; 10분 내 5회 초과 실패 시 정지 (크래시 루프 방지)
+StartLimitBurst=5
+StartLimitIntervalSec=600
+
+; 메모리 2GiB 서버 — 앱 실사용 400MB 기준으로 여유를 두되 폭주는 차단
+MemoryMax=1600M
+TimeoutStopSec=30
+KillSignal=SIGINT
+
+; 보안 강화 (앱은 자기 디렉토리 외에는 쓸 일이 없다)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/jeffrey/AI_Agent
+
+[Install]
+WantedBy=multi-user.target

@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     google_application_credentials: str = "C:/json_key/skin1004-319714-60527c477460.json"
 
     # Gemini
-    gemini_model: str = "gemini-3-pro-preview"
-    gemini_flash_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-pro-preview"
+    gemini_flash_model: str = "gemini-3.5-flash"
     gemini_api_key: str = ""
 
     # BigQuery - Sales
@@ -42,8 +42,8 @@ class Settings(BaseSettings):
 
     # Anthropic (v3.0) — Opus (complex) + Sonnet (light)
     anthropic_api_key: str = ""
-    anthropic_opus_model: str = "claude-opus-4-6"
-    anthropic_sonnet_model: str = "claude-sonnet-4-6"
+    anthropic_opus_model: str = "claude-opus-4-8"
+    anthropic_sonnet_model: str = "claude-sonnet-5"
 
     # Notion MCP (v3.0)
     notion_mcp_token: str = ""
@@ -60,9 +60,6 @@ class Settings(BaseSettings):
 
     # CS DB (Google Spreadsheet with Q&A data)
     cs_spreadsheet_id: str = ""
-
-    # Tavily
-    tavily_api_key: str = ""
 
     # Server
     host: str = "0.0.0.0"
@@ -93,6 +90,12 @@ class Settings(BaseSettings):
     ad_user: str = ""
     ad_password: str = ""
     ad_search_base: str = ""
+
+    # 서버 이관 리다이렉트 (2026-07-30)
+    # 값이 있으면 모든 사용자 요청을 이 주소로 307 리다이렉트한다. 이관 후 기존 주소로
+    # 들어오는 접속 때문에 대화가 구 DB에만 쌓여 데이터가 갈라지는 것을 막는 장치.
+    # 되돌리려면 .env 에서 MIGRATED_REDIRECT_URL 을 비우고 재기동.
+    migrated_redirect_url: str = ""
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:8000,http://172.16.1.250:3000,http://172.16.1.250:3001"

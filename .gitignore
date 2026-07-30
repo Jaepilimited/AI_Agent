@@ -150,6 +150,7 @@ custom_frontend/
 logo_datauri.txt
 관리자/
 .gstack/
+.worktrees/
 
 # Knowledge Map build cache (regenerable)
 knowledge_map/.cache/
@@ -168,3 +169,7 @@ data/_local_inventory.json
 # Nightly debug/auto-fix system (runtime state + generated reports)
 scripts/_nightly_state.json
 logs/nightly_debug/
+
+# 컷오버용 임시 DB 덤프 (scripts/cutover_db_sync.py 가 생성·삭제)
+cutover.sql
+skin1004_ai*.sql

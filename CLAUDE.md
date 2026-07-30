@@ -20,7 +20,8 @@
 ## 배포 규칙 (최우선) — 2026-06-12 로컬 메인 전환
 
 - **프로덕션 = 로컬 Windows 서버 172.16.1.250:3000 (PM2 `skin1004-prod`)**: 사용자가 사용 중
-- **배포 흐름**: 코드 수정(로컬) → `pm2 reload skin1004-prod` (같은 머신이므로 pull 불필요)
+- **배포 흐름**: 코드 수정(로컬) → `pm2 restart skin1004-prod` (같은 머신이므로 pull 불필요)
+- ⚠️ Windows fork 모드에서 `pm2 reload`는 고아 프로세스를 만들 수 있음(2026-07-06 장애) — 반드시 `restart` 사용, 배포 후 `pm2 status`로 ↺ 카운터 확인
 - 코드 변경 후 별도 확인 없이 바로 프로덕션 반영 (2026-06-01 정책 변경)
 - `git push jaepilimited master`는 코드 백업용으로 유지
 - 프로덕션(skin1004-prod) kill, stop, delete 절대 금지
@@ -29,7 +30,7 @@
 ## 서버 관리
 
 - **로컬 프로덕션** (포트 3000, ecosystem.windows.config.js)
-  - 반영: `pm2 reload skin1004-prod`
+  - 반영: `pm2 restart skin1004-prod`
   - 로그: `pm2 logs skin1004-prod --lines 30 --nostream`
 - **로컬 개발** (포트 3001)
   - 개발 restart: `pm2 restart skin1004-dev`
@@ -41,9 +42,12 @@
 ## BigQuery 데이터 규칙 (SQL 로직 기준)
 
 - **매출** → `SALES_ALL_Backup.Sales1_R` (원화 환산, 항상 이 컬럼)
-- **판매수량** → `SALES_ALL_Backup.Total_Qty` (일반 집계)
-- **SKU 단위 수량** → `Product.Total_Qty` (개별 제품 단위 정밀 조회 시)
-- `Product` 테이블은 `SALES_ALL_Backup`의 세트 제품(SET에 `+` 연결)을 개별 SKU로 분해한 테이블
+- **판매수량** → **무조건 `Product.Total_Qty`** (2026-07-15 확정 — SALES_ALL_Backup.Total_Qty는 세트를 1개로 세어 부정확, 수량 답변에 사용 절대 금지. 실제 오답 사고로 규칙 강화)
+- **매출+수량 동시 질문** → 매출은 SALES_ALL_Backup, 수량은 Product 서브쿼리로 각각 조회
+- `Product` 테이블은 `SALES_ALL_Backup`의 세트 제품(SET에 `+` 연결)을 개별 SKU로 분해한 테이블 (필터 컬럼은 SALES_ALL과 동일: Country, Date, Brand, Mall_Classification 등)
+- **신제품 정의 (2026-07-27 확정)** → **첫 판매일(데이터 최초 등장일)로부터 6개월 이하**인 제품
+  - SQL 구현: 제품별 `MIN(Date)`로 첫 판매일을 구하고, 기준 시점(보통 오늘)으로부터 6개월 이내인 제품만 필터 — 예: `HAVING MIN(Date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)`
+  - 첫 판매일 판정은 세트 분해된 `Product` 테이블 기준 (SKU 단위 정확성)
 
 ## 노션 데이터 규칙
 

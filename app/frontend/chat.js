@@ -6,6 +6,23 @@
 (function () {
   "use strict";
 
+  // ===== Markdown links (출처/소스 링크 포함) — 항상 새 창으로 =====
+  if (window.marked && typeof marked.use === "function") {
+    marked.use({
+      renderer: {
+        link: function (linkToken) {
+          var href = linkToken.href, title = linkToken.title, tokens = linkToken.tokens;
+          var text = this.parser.parseInline(tokens);
+          if (!href) return text;
+          var html = '<a href="' + href + '" target="_blank" rel="noopener noreferrer"';
+          if (title) html += ' title="' + title + '"';
+          html += ">" + text + "</a>";
+          return html;
+        },
+      },
+    });
+  }
+
   // ===== Wave 3: Toast notification system =====
   var _toastContainer = null;
   function showToast(message, type) {
@@ -1490,7 +1507,9 @@
     _S.text = "";
     _S.completedHtml = "";
     _S.lastCompleted = "";
-    _S.queue = [];
+    // NOTE: do NOT reset _S.queue here — the first content chunk is pushed
+    // BEFORE this is called, so clearing the queue silently drops it.
+    // Queue reset happens at stream start instead (before the reader loop).
     _scheduleDrain();
   }
 
@@ -1740,6 +1759,9 @@
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
       var buffer = "";
+
+      // Fresh queue per stream (leftovers from an aborted previous stream)
+      _S.queue = [];
 
       while (true) {
         var result = await reader.read();
@@ -2363,6 +2385,38 @@
       var config = JSON.parse(chartMatch[1]);
       var isDark = document.documentElement.classList.contains("dark");
 
+      // 긴 라벨(제품명 등) 겹침 방지: 공통 접두사 계산 (원본은 툴팁에 유지)
+      function _commonPrefixOf(list) {
+        if (!list || list.length < 3) return "";
+        for (var ci = 0; ci < list.length; ci++) {
+          if (typeof list[ci] !== "string") return "";
+        }
+        var p = list[0];
+        for (var i = 1; i < list.length && p.length; i++) {
+          while (p.length && list[i].indexOf(p) !== 0) p = p.slice(0, -1);
+        }
+        var sp = p.lastIndexOf(" ");
+        p = sp > 0 ? p.slice(0, sp + 1) : "";
+        return p.length >= 6 ? p : "";
+      }
+      var _labelPrefix = _commonPrefixOf(config.data && config.data.labels);
+      function _shortTick(raw, maxLen) {
+        var s = String(raw);
+        if (_labelPrefix && s.indexOf(_labelPrefix) === 0) s = s.slice(_labelPrefix.length);
+        if (s.length > maxLen) s = s.slice(0, maxLen - 1) + "…";
+        return s;
+      }
+      // 시리즈명(범례)도 공통 접두사가 길면 제거 — 전치된 제품별 멀티라인 대응
+      var _dsList = (config.data && config.data.datasets) || [];
+      var _dsPrefix = _commonPrefixOf(_dsList.map(function(d) { return d.label; }));
+      if (_dsPrefix) {
+        _dsList.forEach(function(d) {
+          if (typeof d.label === "string" && d.label.indexOf(_dsPrefix) === 0) {
+            d.label = d.label.slice(_dsPrefix.length);
+          }
+        });
+      }
+
       // Theme-aware colors (read from CSS variables)
       var rootStyles = getComputedStyle(document.documentElement);
       var textColor = rootStyles.getPropertyValue("--text").trim() || (isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.75)");
@@ -2428,10 +2482,12 @@
               // For regular bar/line, X is the category axis
               var isCategoryAxis = (isHorizontalBar && axis === "y") || (!isHorizontalBar && axis === "x");
               if (isCategoryAxis) {
+                // 가로바 y축은 24자, 회전되는 x축은 14자로 축약 (전체명은 툴팁에)
+                var _maxTickLen = (isHorizontalBar && axis === "y") ? 24 : 14;
                 config.options.scales[axis].ticks.callback = function(value) {
                   var labels = config.data && config.data.labels;
-                  if (labels && labels[value] != null) return labels[value];
-                  return value;
+                  var lbl = (labels && labels[value] != null) ? labels[value] : value;
+                  return _shortTick(lbl, _maxTickLen);
                 };
               } else {
                 // Numeric value axis: preserve decimals for small values
@@ -2534,24 +2590,42 @@
             var ctx = chart.ctx;
             var isDarkMode = document.documentElement.classList.contains("dark");
             var labelColor = isDarkMode ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.72)";
+            // 이미 그린 라벨 영역 — 겹치는 라벨은 그리지 않는다
+            var drawnRects = [];
+            function _collides(x1, y1, x2, y2) {
+              for (var ri = 0; ri < drawnRects.length; ri++) {
+                var r = drawnRects[ri];
+                if (x1 < r[2] && x2 > r[0] && y1 < r[3] && y2 > r[1]) return true;
+              }
+              return false;
+            }
+            var visibleCount = chart.data.datasets.filter(function(d, i) {
+              return !chart.getDatasetMeta(i).hidden;
+            }).length;
             chart.data.datasets.forEach(function(dataset, dsIdx) {
               var meta = chart.getDatasetMeta(dsIdx);
               if (meta.hidden) return;
               // 포인트가 많으면 겹침 방지를 위해 일부만 표시 (마지막 포인트는 항상 표시)
               var step = Math.max(1, Math.ceil(meta.data.length / 16));
               meta.data.forEach(function(point, idx) {
+                // 시리즈가 4개 이상이면 각 시리즈의 마지막 포인트만 라벨링
+                if (visibleCount >= 4 && idx !== meta.data.length - 1) return;
                 if (idx % step !== 0 && idx !== meta.data.length - 1) return;
                 var val = dataset.data[idx];
                 if (val == null) return;
                 var fmt = _fmtLabelVal(val);
                 ctx.save();
                 ctx.font = "bold 11px Segoe UI, Arial, sans-serif";
-                ctx.fillStyle = labelColor;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "bottom";
                 // 차트 좌우 경계 밖으로 라벨이 잘리지 않게 보정
                 var halfW = ctx.measureText(fmt).width / 2;
                 var lx = Math.min(Math.max(point.x, chart.chartArea.left + halfW), chart.chartArea.right - halfW);
+                var bx1 = lx - halfW - 2, bx2 = lx + halfW + 2;
+                var by2 = point.y - 4, by1 = by2 - 15;
+                if (_collides(bx1, by1, bx2, by2)) { ctx.restore(); return; }
+                drawnRects.push([bx1, by1, bx2, by2]);
+                ctx.fillStyle = labelColor;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "bottom";
                 ctx.fillText(fmt, lx, point.y - 6);
                 ctx.restore();
               });
@@ -2565,6 +2639,15 @@
             var ctx = chart.ctx;
             var isDarkMode = document.documentElement.classList.contains("dark");
             var labelColor = isDarkMode ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.72)";
+            // 이미 그린 라벨 영역 — 겹치는 라벨은 그리지 않는다 (grouped bar 대응)
+            var drawnRects = [];
+            function _collides(x1, y1, x2, y2) {
+              for (var ri = 0; ri < drawnRects.length; ri++) {
+                var r = drawnRects[ri];
+                if (x1 < r[2] && x2 > r[0] && y1 < r[3] && y2 > r[1]) return true;
+              }
+              return false;
+            }
             chart.data.datasets.forEach(function(dataset, dsIdx) {
               var meta = chart.getDatasetMeta(dsIdx);
               if (meta.hidden) return;
@@ -2575,6 +2658,17 @@
                 var props = bar.getProps(["x", "y", "base", "width", "height"], true);
                 ctx.save();
                 ctx.font = "bold 11px Segoe UI, Arial, sans-serif";
+                var w = ctx.measureText(fmt).width;
+                var bx1, by1, bx2, by2;
+                if (_isHoriz) {
+                  bx1 = props.x + 5; bx2 = bx1 + w;
+                  by1 = props.y - 7; by2 = props.y + 7;
+                } else {
+                  bx1 = props.x - w / 2 - 2; bx2 = props.x + w / 2 + 2;
+                  by2 = props.y - 1; by1 = by2 - 15;
+                }
+                if (_collides(bx1, by1, bx2, by2)) { ctx.restore(); return; }
+                drawnRects.push([bx1, by1, bx2, by2]);
                 ctx.fillStyle = labelColor;
                 if (_isHoriz) {
                   ctx.textAlign = "left";
@@ -3006,7 +3100,7 @@
           var info = SERVICE_ICONS[name] || { label: name, svg: '' };
           var detail = svc.detail || "";
           var alertMsg = "";
-          if (st === "updating") alertMsg = maintenanceReason;
+          if (st === "updating") alertMsg = svc.reason || maintenanceReason;
           else if (st === "error") alertMsg = detail;
           if (st === "updating") issues.push(info.label + ": 업데이트 중");
           else if (st === "error") issues.push(info.label + ": 오류");

@@ -1,0 +1,25 @@
+# AI Craver — App Server(10.1.150.105) crontab
+# 적용: crontab deploy/crontab.app-server  (jeffrey 계정)
+# 전제: 앱 경로 /home/jeffrey/AI_Agent, venv /home/jeffrey/AI_Agent/venv
+#
+# 주의:
+# - APScheduler 잡(팀리소스 01:00, 위키추출 매시:15, Qdrant 05:00, 품질 00:05,
+#   주간리포트 월 00:10)은 FastAPI 앱 내부(app/main.py)에서 실행되므로
+#   WAS의 앱 프로세스가 담당한다. 여기에 중복 등록하지 말 것 (이중 실행 위험).
+# - 여기 등록하는 것은 LDAP이 필요해 App Server에서만 돌 수 있는 AD sync와,
+#   앱 외부 배치인 knowledge map 빌드뿐이다.
+
+SHELL=/bin/bash
+APP_DIR=/home/jeffrey/AI_Agent
+PY=/home/jeffrey/AI_Agent/venv/bin/python
+
+# AD → MariaDB 동기화 (Windows Task Scheduler "SKIN1004-AD-Sync-Daily" 대체)
+# App Server → AD 172.16.1.13 (LDAP 389/636), App Server → DB 10.1.200.5 (3306) 방화벽 필요
+# 외부 통신: 동기화 결과를 잔디 웹훅(wh.jandi.com)으로 알림 → App Server → Proxy(3128) 경로 필요.
+#            프록시/화이트리스트 미비 시 알림만 실패하고 동기화 자체는 정상 완료된다(타임아웃 5초).
+0 22 * * * cd $APP_DIR && $PY scripts/sync_ad_users.py >> logs/ad_sync_cron.log 2>&1
+
+# Knowledge Map 자동 빌드 (Windows Task Scheduler 03:00 대체)
+# 2026-07-28 확인: app/knowledge_map/ 전체에 외부 네트워크 호출 없음(로컬 AST·마크다운 파싱 +
+# 그래프 연산). 이전 주석의 "Gemini 호출" 기재는 오류였음 → 이 잡에는 Proxy 경로 불필요.
+0 3 * * * cd $APP_DIR && $PY scripts/build_knowledge_graph.py --force >> logs/knowledge_map_cron.log 2>&1

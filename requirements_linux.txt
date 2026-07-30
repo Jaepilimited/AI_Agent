@@ -182,6 +182,11 @@ python-jose
 python-json-logger
 python-multipart
 pytz
+qdrant-client
+PyMySQL
+DBUtils
+tzlocal
+portalocker
 PyYAML
 pyzmq
 qtconsole

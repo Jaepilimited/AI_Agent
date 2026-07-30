@@ -9,12 +9,22 @@ Flow: LLM decides chart config → build_chartjs_config() → JSON in markdown
 """
 
 import json
+import os.path
+import re
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+# Labels containing these are treated as time-series (no value-sort, line-friendly)
+_TIME_HINTS = {"월", "년", "분기", "주차", "week", "month", "quarter",
+               "jan", "feb", "mar", "apr", "may", "jun",
+               "jul", "aug", "sep", "oct", "nov", "dec"}
+
+# Column names that look like time periods (revenue_2025_q3, sales_2026_01, ...)
+_RE_TIME_COL = re.compile(r"(20\d{2}|q[1-4]|분기|월|주차|quarter|month|week)", re.IGNORECASE)
 
 # Modern color palette — vibrant, accessible, distinct
 COLORS = [
@@ -179,8 +189,55 @@ def build_chartjs_config(
         labels = [str(row.get(x_col, "")) for row in data]
         datasets = []
 
+        # Wide time-columns on categorical rows (product × quarter 등):
+        # x축을 기간으로 전치하고 각 행(제품)을 시리즈로 — 제품명이 x축에
+        # 깔려 라벨이 겹치는 차트를 방지한다.
+        transpose = (
+            chart_type in ("line", "grouped_bar")
+            and isinstance(y_col, list)
+            and len(y_col) >= 2
+            and len(data) >= 2
+            and all(_RE_TIME_COL.search(str(c)) for c in y_col)
+            and not any(any(h in str(x).lower() for h in _TIME_HINTS) for x in labels)
+        )
+
+        if transpose:
+            chart_type = "line"
+            cjs_rows = sorted(
+                data,
+                key=lambda r: sum(float(r.get(c, 0) or 0) for c in y_col),
+                reverse=True,
+            )[:10]
+            # 기간 라벨 정리: revenue_2025_q3 → 2025 Q3
+            labels = [str(c) for c in y_col]
+            _pfx = os.path.commonprefix(labels)
+            # 구분자 경계까지만 접두사로 인정 (2025 연도 중간을 자르지 않게)
+            _cut = max(_pfx.rfind("_"), _pfx.rfind(" "))
+            _pfx = _pfx[: _cut + 1] if _cut >= 0 else ""
+            if len(_pfx) >= 3:
+                labels = [(l[len(_pfx):] or l) for l in labels]
+            labels = [
+                re.sub(r"(?i)\bq([1-4])\b", lambda m: "Q" + m.group(1),
+                       l.strip("_ ").replace("_", " "))
+                for l in labels
+            ]
+            for i, row in enumerate(cjs_rows):
+                border = COLORS_SOLID[i % len(COLORS_SOLID)]
+                datasets.append({
+                    "label": str(row.get(x_col, "")),
+                    "data": [float(row.get(c, 0) or 0) for c in y_col],
+                    "backgroundColor": COLORS[i % len(COLORS)],
+                    "borderColor": border,
+                    "borderWidth": 2.5,
+                    "fill": False,
+                    "tension": 0.35,
+                    "pointRadius": 5,
+                    "pointHoverRadius": 8,
+                    "pointBackgroundColor": border,
+                })
+
         # Handle grouped data (pivot)
-        if group_col and isinstance(y_col, str):
+        elif group_col and isinstance(y_col, str):
             x_order, groups, pivot = _pivot_grouped_data(data, x_col, y_col, group_col)
             labels = x_order
             for i, g in enumerate(groups):
@@ -265,9 +322,6 @@ def build_chartjs_config(
                 datasets.append(ds)
 
         # Sort bars by value (descending) for non-time-series
-        _TIME_HINTS = {"월", "년", "분기", "주차", "week", "month", "quarter",
-                       "jan", "feb", "mar", "apr", "may", "jun",
-                       "jul", "aug", "sep", "oct", "nov", "dec"}
         is_time_series = any(
             any(h in str(x).lower() for h in _TIME_HINTS) for x in labels
         )
@@ -424,6 +478,7 @@ def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_coun
 - **line**: 월별/일별/분기별 추이, 시계열 데이터는 **반드시 line** 사용. "월별", "추이", "트렌드" 키워드가 있으면 무조건 line.
   - 그룹별(국가별/몰별/브랜드별) 비교가 있으면 group_column 지정 → 멀티라인 차트
   - 단일 시계열이면 영역(fill) 라인 차트
+  - 결과가 "항목(제품/국가) 행 × 기간 컬럼" 와이드 형태면: chart_type=line, y_column에 기간 컬럼 배열 지정 → 시스템이 기간을 x축으로 자동 전치 (항목명을 x축에 두지 마세요)
 - bar: 카테고리별 비교 — **카테고리 5개 이하 + 이름이 짧을 때만** (시계열 아닐 때만)
 - **horizontal_bar**: 제품명, 브랜드명, SKU명 등 긴 텍스트 라벨이면 **반드시 사용**
 - pie: 비율/구성 (전체 대비 비중). 항목 수 상관없음 (시스템이 Top 9 + 기타 자동 집계)
