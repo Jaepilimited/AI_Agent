@@ -130,6 +130,8 @@ def create_app() -> FastAPI:
             ensure_knowledge_gaps_table,
         ):
             await asyncio.to_thread(_ensure_fn)
+        from app.core.self_check import ensure_self_check_tables
+        await asyncio.to_thread(ensure_self_check_tables)
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -166,11 +168,14 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_qdrant_pipeline_job, "cron", hour=5, minute=0, id="qdrant_pipeline_daily")
             _scheduler.add_job(_quality_snapshot_job, "cron", hour=0, minute=5, id="quality_snapshot_daily")
             _scheduler.add_job(_weekly_growth_report_job, "cron", day_of_week="mon", hour=0, minute=10, id="weekly_growth_report")
-            # AD sync is handled exclusively by Windows Task Scheduler (SKIN1004-AD-Sync-Daily at 22:00).
+            # 자가 점검 — AD sync(22:00) 와 새벽 배치가 모두 끝난 뒤에 돌려야
+            # "어제 배치가 돌았는가"를 제대로 판정한다. 07:30 이면 여유 있다.
+            _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
+            # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
             _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "self_check_07:30"])
         yield
         logger.info("application_shutdown")
 
@@ -517,6 +522,21 @@ async def _quality_snapshot_job():
         logger.info("quality_snapshot_done", date=result.get("date"), flags=len(result.get("flags", [])))
     except Exception as e:
         logger.error("quality_snapshot_failed", error=str(e))
+
+
+async def _self_check_job():
+    """매일 07:30: 시스템 건강성·데이터 무결성 자가 점검.
+
+    새로 깨진 검사만 잔디로 알린다. 2026-08-04 AD 동기화가 6일간 조용히
+    실패하고도 아무도 몰랐던 일을 다시 겪지 않기 위한 잡이다.
+    """
+    try:
+        from app.core.self_check import run_self_check
+        result = await asyncio.to_thread(run_self_check, True, True)
+        logger.info("self_check_done", passed=result.get("passed"), failed=result.get("failed"),
+                    repaired=result.get("repaired"), newly_broken=result.get("newly_broken"))
+    except Exception as e:
+        logger.error("self_check_failed", error=str(e))
 
 
 async def _weekly_growth_report_job():

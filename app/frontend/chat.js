@@ -4128,8 +4128,91 @@
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
       if (tab.dataset.tab === "users") loadAdminADUsers();
       if (tab.dataset.tab === "growth") loadGrowthReport();
+      if (tab.dataset.tab === "selfcheck") loadSelfCheck();
     });
   });
+
+  // ── 자가 점검 ──
+  // 배치가 조용히 죽거나 데이터가 썩는 것을 사람이 눈치채기 전에 보여준다.
+  var SELFCHECK_SEV = { critical: ["🔴", "심각"], warning: ["🟠", "주의"], info: ["🔵", "참고"] };
+
+  function loadSelfCheck() {
+    var el = document.getElementById("admin-selfcheck-body");
+    el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>불러오는 중…</p>";
+    fetch("/api/admin/self-check")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(renderSelfCheck)
+      .catch(function() {
+        el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>결과를 불러오지 못했습니다</p>";
+      });
+  }
+
+  function renderSelfCheck(d) {
+    var el = document.getElementById("admin-selfcheck-body");
+    var sum = document.getElementById("selfcheck-summary");
+    if (!d || !d.run) {
+      el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>아직 점검 기록이 없습니다. '지금 점검'을 눌러주세요.</p>";
+      sum.textContent = "";
+      return;
+    }
+    var run = d.run;
+    sum.textContent = run.passed + "/" + run.total + " 통과"
+      + (run.failed ? " · 실패 " + run.failed : "")
+      + (run.repaired ? " · 자가치유 " + run.repaired : "")
+      + " · " + String(run.run_at).replace("T", " ").slice(0, 16);
+
+    var html = "";
+    // 실패가 위로 오도록 서버가 정렬해서 준다
+    (d.results || []).forEach(function(r) {
+      var sev = SELFCHECK_SEV[r.severity] || ["⚪", r.severity];
+      var mark = r.ok ? "🟢" : sev[0];
+      var cls = r.ok ? "" : " style='background:rgba(217,54,54,0.06)'";
+      html += "<div class='admin-user-card'" + cls + ">"
+        + "<div class='admin-user-info' style='flex:1'>"
+        + "<div class='admin-user-detail'>"
+        + "<div class='admin-user-name'>" + mark + " " + escapeHtml(r.description || r.check_id)
+        + " <span class='admin-user-email'>[" + escapeHtml(r.category) + " / " + escapeHtml(sev[1]) + "]</span></div>"
+        + "<div class='admin-user-email'>" + escapeHtml(r.detail || "") + "</div>"
+        + (r.repaired ? "<div style='color:#2ecc71;font-size:12px;margin-top:2px'>자가치유: "
+            + escapeHtml(r.repair_note || "") + "</div>" : "")
+        + "</div></div></div>";
+    });
+
+    if (d.history && d.history.length > 1) {
+      html += "<div style='padding:10px 12px;margin-top:8px;border-top:1px solid var(--border)'>"
+        + "<div class='admin-user-email' style='margin-bottom:6px'>최근 추세</div>";
+      d.history.forEach(function(h) {
+        var bad = h.failed > 0;
+        html += "<div class='admin-user-email' style='font-size:12px'>"
+          + (bad ? "🔴 " : "🟢 ") + String(h.run_at).replace("T", " ").slice(0, 16)
+          + " — " + h.passed + "/" + h.total
+          + (h.repaired ? " (치유 " + h.repaired + ")" : "") + "</div>";
+      });
+      html += "</div>";
+    }
+    el.innerHTML = html;
+  }
+
+  var _btnSelfCheck = document.getElementById("btn-run-selfcheck");
+  if (_btnSelfCheck) {
+    _btnSelfCheck.addEventListener("click", function() {
+      _btnSelfCheck.disabled = true;
+      _btnSelfCheck.textContent = "점검 중…";
+      document.getElementById("admin-selfcheck-body").innerHTML =
+        "<p style='padding:12px;color:var(--text-secondary)'>검사 중입니다. BigQuery·Qdrant 확인 때문에 30초 정도 걸립니다…</p>";
+      fetch("/api/admin/self-check/run", { method: "POST" })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function() { loadSelfCheck(); })
+        .catch(function() {
+          document.getElementById("admin-selfcheck-body").innerHTML =
+            "<p style='padding:12px'>점검 실행에 실패했습니다</p>";
+        })
+        .finally(function() {
+          _btnSelfCheck.disabled = false;
+          _btnSelfCheck.textContent = "지금 점검";
+        });
+    });
+  }
 
   // ── Growth Report ──
   function loadGrowthReport() {

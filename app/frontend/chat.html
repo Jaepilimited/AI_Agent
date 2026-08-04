@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=153">
+  <link rel="stylesheet" href="/static/style.css?v=154">
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -245,6 +245,15 @@
       <button class="admin-tab active" data-tab="groups">그룹 관리</button>
       <button class="admin-tab" data-tab="users">AD 사용자</button>
       <button class="admin-tab" data-tab="growth">성장 지표</button>
+      <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
+    </div>
+    <!-- Tab: Self Check -->
+    <div class="admin-tab-content" id="tab-selfcheck">
+      <div class="admin-toolbar">
+        <button class="admin-btn-primary" id="btn-run-selfcheck">지금 점검</button>
+        <span id="selfcheck-summary" class="admin-stat-label"></span>
+      </div>
+      <div class="admin-drawer-body" id="admin-selfcheck-body"></div>
     </div>
     <!-- Tab: Groups -->
     <div class="admin-tab-content active" id="tab-groups">
@@ -281,6 +290,6 @@
   <!-- Theme Toggle -->
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
-  <script src="/frontend/chat.js?v=229"></script>
+  <script src="/frontend/chat.js?v=230"></script>
 </body>
 </html>

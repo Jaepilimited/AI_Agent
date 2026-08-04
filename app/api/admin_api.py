@@ -654,3 +654,38 @@ async def get_wiki_map(admin: User = Depends(_require_admin)) -> dict:
         ),
         "tree": tree,
     }
+
+
+# ── 자가 점검 (self-check) ──────────────────────────────────────────────────
+# 배치가 조용히 죽거나 데이터가 썩는 것을 사람이 눈치채기 전에 잡는다.
+# 상세는 app/core/self_check.py 참조.
+
+
+@admin_router.get("/self-check")
+async def get_self_check(_: User = Depends(_require_admin)) -> dict:
+    """최근 자가 점검 결과 + 추세."""
+    from app.core.self_check import get_latest_self_check
+
+    return await asyncio.to_thread(get_latest_self_check)
+
+
+@admin_router.post("/self-check/run")
+async def run_self_check_now(
+    admin: User = Depends(_require_admin),
+    auto_repair: bool = True,
+    notify: bool = False,
+) -> dict:
+    """자가 점검 즉시 실행. 수동 실행은 기본적으로 알림을 보내지 않는다
+    (사람이 화면을 보고 있으므로 잔디 알림은 소음이다)."""
+    from app.core.self_check import run_self_check
+
+    logger.info("self_check_manual_run", by=admin.email, auto_repair=auto_repair)
+    return await asyncio.to_thread(run_self_check, auto_repair, notify)
+
+
+@admin_router.get("/self-check/trend/{check_id}")
+async def get_self_check_trend(check_id: str, _: User = Depends(_require_admin)) -> dict:
+    """특정 검사의 이력 — '언제부터 깨졌나'를 답한다."""
+    from app.core.self_check import get_check_trend
+
+    return {"check_id": check_id, "history": await asyncio.to_thread(get_check_trend, check_id)}
