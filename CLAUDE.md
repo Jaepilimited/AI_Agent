@@ -85,6 +85,25 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
   - SQL 구현: 제품별 `MIN(Date)`로 첫 판매일을 구하고, 기준 시점(보통 오늘)으로부터 6개월 이내인 제품만 필터 — 예: `HAVING MIN(Date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)`
   - 첫 판매일 판정은 세트 분해된 `Product` 테이블 기준 (SKU 단위 정확성)
 
+## 재무 손익(FI) 열람 권한 — 2026-08-04
+
+- **테이블**: `skin1004-319714.Sales_Integration.FI_LLM_Flat` (월별 연결 손익, `Record_Type='PL'`)
+- **보유 기간은 2026-01 ~ 2026-06 뿐이다.** 범위 밖 질문엔 빈 결과 대신 보유 기간을 먼저 안내한다.
+- **승인된 사람만 조회 가능**. 권한은 `ad_users.can_view_fi` (users 가 **아니다**)
+  - 미가입자에게도 미리 부여해둘 수 있고, 가입하면 자동 적용된다
+  - `user_groups` 도 `ad_user_id` 를 키로 쓰므로 일관됨
+  - admin 은 플래그와 무관하게 항상 허용
+- **관리**: Admin > AD 사용자 탭의 `손익` 체크박스 (`PUT /api/admin/ad/users/{id}/fi`)
+  - 일괄 부여/회수 스크립트: `python scripts/grant_fi_access.py [--dry-run|--revoke]`
+- **권한 판정은 반드시 서버에서 DB 조회로** 한다. JWT·프론트 값은 stale 위험이 있어 신뢰하지 않는다
+- **방어선을 줄이지 말 것** (하나가 뚫려도 나머지가 막는 구조):
+  1. `orchestrator._requests_fi_data()` — 손익 키워드/소스 감지 시 LLM 호출 전 거절
+  2. `sql_agent._load_prompt(can_view_fi=False)` — 프롬프트에서 FI 스키마 섹션 제거
+  3. `_allowed_tables_from_sources()` — 테이블 화이트리스트에서 FI 제외
+  4. `security.validate_sql()` — 실행 직전 FI 참조 재검사 (대소문자 무관)
+  5. 프론트 — 손익 데이터소스 칩 숨김
+- 컬럼은 `ensure_fi_permission_column()` 이 앱 기동 시 자동 추가 (idempotent)
+
 ## 노션 데이터 규칙
 
 - 사용자가 **노션을 명시적으로 언급하지 않는 한** 노션 데이터를 답변에 포함하지 않음
