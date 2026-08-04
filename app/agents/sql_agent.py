@@ -837,6 +837,14 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             "answer": f"죄송합니다. 질문을 처리하는 중 오류가 발생했습니다.\n\n오류: {error}"
         }
 
+    # GROUP BY 없는 집계 쿼리(SUM/COUNT 단독)는 매칭 데이터가 0건이어도
+    # 값이 전부 NULL인 행 1개를 돌려준다. 그대로 두면 "0건" 경로를 못 타고
+    # LLM이 빈 결과를 놓친 채 원인을 지어낸다 (2028년 미래 날짜 질문에
+    # "신규 진출 여부 확인 필요"로 답한 사례, 2026-08). 빈 결과로 정규화한다.
+    if results and len(results) == 1 and all(v is None for v in results[0].values()):
+        logger.info("sql_result_all_null_treated_as_empty", sql=(sql or "")[:200])
+        results = None
+
     if not results:
         # Build context hints for valid column values referenced in SQL
         _value_hints = []
@@ -849,6 +857,20 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             _value_hints.append(
                 "Country는 한국어 값: 미국, 인도네시아, 말레이시아, 필리핀, 일본, 중국, 한국, 태국, 베트남, 싱가포르, 호주, 독일 등"
             )
+        # 광역 대륙명을 Continent2에서 찾는 오류가 잦다 (유럽 → 0건, 2026-08 실제 발생).
+        # 유효 값을 그대로 넘겨 LLM이 원인을 추측하지 않고 대조로 짚게 한다.
+        if "CONTINENT1" in sql_upper:
+            _value_hints.append(
+                "Continent1 유효 값: CIS, 글로벌, 기타, 남미, 북미, 아시아, 아프리카, "
+                "오세아니아, 유럽, 중동, 중미"
+            )
+        if "CONTINENT2" in sql_upper:
+            _value_hints.append(
+                "Continent2 유효 값: CIS, 글로벌_B2B, 글로벌_플랫폼, 기타, 남아메리카, 동남아시아, "
+                "동남유럽, 동아시아, 북미, 북아프리카, 북유럽, 서남아시아, 서유럽, 아프리카, "
+                "오세아니아, 중동, 중앙아메리카 "
+                "(⚠️ '유럽'·'아시아'·'동유럽'은 Continent2에 없다. 광역 대륙은 Continent1을 써야 한다)"
+            )
         _hints_text = "\n".join(_value_hints)
 
         # Try Flash LLM for helpful empty-result message (with timeout), else template
@@ -858,6 +880,15 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             # "작년은 2024년" 같은 틀린 원인 분석을 내놓는다 (2026-08 실제 발생).
             _today = datetime.now()
             _range_note = ""
+            # 미래 기간을 물으면 그게 0건의 확정적 원인이다. 짚어주지 않으면
+            # LLM 이 "신규 진출 여부" 같은 엉뚱한 원인을 지어낸다.
+            _years = [int(y) for y in re.findall(r"\b(20\d{2})\b", sql or "")]
+            if _years and min(_years) > _today.year:
+                _range_note += (
+                    f"\n⚠️ 이 SQL 은 {min(_years)}년을 조회하는데 오늘은 {_today.year}년이다. "
+                    "**미래 기간이라 데이터가 있을 수 없다**는 것이 0행의 확정적 원인이다. "
+                    "다른 원인을 추측하지 말고 이 점을 명확히 안내하라."
+                )
             if "FI_LLM_Flat" in (sql or ""):
                 _range_note = (
                     "\n⚠️ 이 질문이 쓰는 재무 손익 테이블(FI_LLM_Flat)은 **2026-01 ~ 2026-06** 만 "
@@ -870,7 +901,12 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 ```
 오늘 날짜: {_today.strftime('%Y-%m-%d')} (올해={_today.year}, 작년={_today.year - 1})
 {f"유효 값: {_hints_text}" if _hints_text else ""}{_range_note}
-간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 왜 0건인지 가능한 원인 (조건 불일치, 해당 기간 데이터 없음 등) 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
+⚠️ 원인 분석 방법: 위에 "유효 값" 목록이 있으면 **SQL의 필터 리터럴을 그 목록과 먼저 대조하라.**
+목록에 없는 값으로 필터했다면 **그것이 0행의 확정적 원인**이다 — 다른 원인을 나열하지 말고
+어느 값이 왜 잘못됐는지, 올바른 컬럼·값이 무엇인지 한 가지로 단정해 답하라.
+대조해도 원인이 없을 때만 추정 원인을 제시하되, 추정임을 밝혀라.
+
+간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 위 방법으로 짚은 원인 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
                 answer = f.result(timeout=8.0)

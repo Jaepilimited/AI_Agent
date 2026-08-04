@@ -216,11 +216,24 @@ def build_chartjs_config(
             _pfx = _pfx[: _cut + 1] if _cut >= 0 else ""
             if len(_pfx) >= 3:
                 labels = [(l[len(_pfx):] or l) for l in labels]
+            # 공통 접미사도 제거 ("Q1 sales"/"Q2 sales" → "Q1"/"Q2").
+            # 접두사만 걷어내면 측정값 이름이 눈금마다 반복돼 축이 지저분해진다.
+            _sfx = os.path.commonprefix([l[::-1] for l in labels])[::-1]
+            _scut = min((_sfx.find(c) for c in ("_", " ") if c in _sfx), default=-1)
+            _sfx = _sfx[_scut:] if _scut >= 0 else ""
+            if len(_sfx) >= 2:
+                _stripped = [l[: -len(_sfx)].strip("_ ") for l in labels]
+                # 잘라낸 뒤에도 서로 구분되고 비어 있지 않을 때만 채택
+                if all(_stripped) and len(set(_stripped)) == len(_stripped):
+                    labels = _stripped
             labels = [
                 re.sub(r"(?i)\bq([1-4])\b", lambda m: "Q" + m.group(1),
                        l.strip("_ ").replace("_", " "))
                 for l in labels
             ]
+            # 전치하면 x축은 더 이상 행 엔티티(국가·제품)가 아니라 기간이다.
+            # 원래 x_label("국가")을 그대로 두면 축 제목이 거짓말을 한다.
+            x_label = "기간"
             for i, row in enumerate(cjs_rows):
                 border = COLORS_SOLID[i % len(COLORS_SOLID)]
                 datasets.append({
