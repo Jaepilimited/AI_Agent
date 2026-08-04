@@ -93,6 +93,24 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
   `if not results:` 로만 하면 이 케이스를 놓쳐 LLM이 원인을 지어낸다. 전 컬럼 NULL 단일 행은
   빈 결과로 정규화할 것 (`format_answer` 에 구현됨)
 
+## 자가 점검 (self-check) — 2026-08-04
+
+- **파일**: `app/core/self_check.py` / **실행**: 매일 07:30 (APScheduler `self_check_daily`)
+- **화면**: Admin > `자가 점검` 탭 (즉시 실행·추세 확인)
+- **API**: `GET /api/admin/self-check`, `POST /api/admin/self-check/run`, `GET /api/admin/self-check/trend/{id}`
+- **왜 만들었나**: AD 동기화가 **6일간 매일 밤 실패**했는데 아무도 몰랐다. 크론은 돌았고
+  로그도 남았지만 읽는 사람이 없었다. `quality_monitor` 는 답변 품질만 본다 — 배치가 죽었는지,
+  데이터가 썩었는지, 권한이 뚫렸는지는 아무도 감시하지 않았다.
+- **검사 12종**: batch(신선도 3) / integrity(고아·이메일·인코딩 4) / permission(FI 방어선·인원·admin 3) / datasource(BQ·Qdrant 2)
+- **원칙 — 새 검사 추가 시 지킬 것**:
+  - 검사(`fn`)는 **부작용이 없어야** 한다. 고치는 것은 `repair` 로 분리
+  - 자가치유는 **되돌릴 수 있는 것만**. DB 스키마 변경·삭제는 절대 자동화 금지
+  - 활성 AD 계정의 `display_name` 은 치유 대상이 아니다 (다음 sync 가 덮어씀)
+  - 치유 후 **재검사해서 정말 나았을 때만** 성공으로 기록
+  - 알림은 **상태가 바뀐 것만** (정상→실패, 실패→정상). 매일 같은 알림은 곧 무시당한다
+- ⚠️ `LIKE '%...%'` 를 파라미터 없이 쓰지 마라 — pymysql 이 `%` 를 포맷 지시자로 읽어 터진다.
+  백슬래시 매칭은 `LOCATE(CONCAT(CHAR(92),'u'), col)` 처럼 회피할 것
+
 ## 코드 규칙 — 재발 방지
 
 - ⛔ **`ThreadPoolExecutor` 를 `with` 블록으로 감싸고 `future.result(timeout=N)` 을 쓰지 마라.**
