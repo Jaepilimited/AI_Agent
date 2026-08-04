@@ -23,13 +23,14 @@
 
 ## ⚠️ 테이블 선택 규칙
 
-13개 테이블 중 질문에 맞는 테이블 선택:
+14개 테이블 중 질문에 맞는 테이블 선택:
 
 | 질문 유형 | 사용 테이블 |
 |-----------|-----------|
 | **수량** (몇 개, 판매량, 갯수) | `Product` ⛔ 무조건 Product! SALES_ALL의 Total_Qty 사용 절대 금지 ⭐ |
 | **매출** (얼마, 매출액, 금액, revenue) | `SALES_ALL_Backup` |
 | **매출 + 수량** 동시 | 매출은 `SALES_ALL_Backup`, 수량은 `Product` — 서브쿼리 2개로 결합: `SELECT (SELECT SUM(Sales1_R) FROM SALES_ALL_Backup WHERE ...) AS revenue, (SELECT SUM(Total_Qty) FROM Product WHERE ...) AS qty` |
+| **손익/이익/원가/판관비** (영업이익, 매출총이익, 이익률, 원가율, 판관비, 광고선전비·물류비 등 계정과목, 부서/본부별 손익) | `FI_LLM_Flat` ⭐ 재무 확정 손익, 월 단위 (테이블 14 참조) |
 | **제품 리스트** (어떤 제품?) | `Product` |
 | **광고 데이터** (ROAS, CTR, 노출, 클릭, 전환, 매체/팀/계정별) | `integrated_ad` |
 | **마케팅 비용** (퍼포먼스/인플루언서) | `Integrated_marketing_cost` (Field='광고'→퍼포먼스, '시딩'→인플루언서) |
@@ -1270,6 +1271,75 @@ ORDER BY month, Mall_Classification
 - 재구매 = 같은 기간 내 2회 이상 구매한 고객 (ID 기준)
 - Brand IN ('SK', 'CL') 필터 필수
 - ⛔ SALES_repurchase 테이블 사용 금지! SALES_ALL_Backup만 사용!
+
+---
+
+## 테이블 14: FI_LLM_Flat (재무 손익 — 이익/원가/판관비) ⭐ LONG 포맷
+
+테이블: `skin1004-319714.Sales_Integration.FI_LLM_Flat`
+
+**특징**: 재무 연결손익 기준 **월 단위 확정 손익**. 한 행 = 하나의 금액 (long format, `Record_Type, Year_Month, Country, Item` 클러스터링).
+- **영업이익, 매출총이익, 매출원가, 판관비, 이익률, 계정과목(광고선전비 등), 부서/본부별 손익 질문은 무조건 이 테이블!**
+- 단순 "매출" 질문은 기존대로 `SALES_ALL_Backup` (일별/주문 단위). 단, 이익률 계산처럼 매출과 이익을 함께 쓸 때는 FI_LLM_Flat 안에서 매출액·이익을 같이 조회 (테이블 간 혼합 금지 — 기준이 달라 숫자 안 맞음)
+- 일별 데이터 없음! 월 단위(Year_Month)가 최소 단위
+- ⚠️ **보유 기간: 2026-01 ~ 2026-06 (6개월치뿐)**. 이 범위 밖(작년·재작년 등)을 묻는 경우
+  빈 결과만 돌려주지 말고 "재무 손익 데이터는 2026년 1~6월만 보유 중"이라고 먼저 안내한 뒤
+  가능한 기간으로 다시 제안할 것. (매출·수량은 SALES_ALL_Backup 에 과거 데이터가 있으므로
+  이 제약은 손익 질문에만 해당)
+
+### ⛔ Record_Type — 모든 쿼리에 필수 필터! (섞어서 SUM하면 판관비 이중집계)
+
+| 값 | 내용 | 신뢰도 |
+|----|------|--------|
+| `'PL'` | 손익 실적. `Item` = '매출액'/'매출원가'/'매출총이익'/'판관비'/'영업이익'/'판매수량' | 확정치 |
+| `'SGA_DETAIL'` | 판관비 계정과목별 상세. `Item` = 전체 계정과목명 (예: '(판)광고선전비(페이드 마케팅_해외)') | **추정치** (부서×월 판관비 구성비로 비례배분) |
+
+### 컬럼 스키마
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| Record_Type | STRING | 'PL' / 'SGA_DETAIL' ⛔ 필수 필터 |
+| Item | STRING | PL: 손익 항목명(한국어) / SGA_DETAIL: 계정과목명 |
+| Amount | FLOAT | 금액(원). Item='판매수량' 행만 수량 |
+| Year_Month | STRING | **'YYYY-MM' 문자열** ⚠️ DATE 아님! `= '2026-06'` 또는 `LIKE '2026-%'` 사용, EXTRACT/DATE 함수 금지 |
+| Country / Continent1 / Continent2 | STRING | 국가(한국어) / 권역 / 대륙 |
+| Sales_Type | STRING | 'B2B' / 'B2C' |
+| Channel | STRING | 거래처/채널명 |
+| Brand | STRING | 'SK'(스킨1004) 등 |
+| Division / Department | STRING | 본부 / 부서 |
+| Team | STRING | 팀 (SGA_DETAIL 전용) |
+| Line / Category / Product_Name / Product_Code | STRING | 제품 계층 ⚠️ Brand='SK'만 유효 (제품 분석 시 `Brand='SK'` 필터) |
+| Adjustment_Type | STRING | PL 전용: '일반' / '연결조정' / '내부마진' |
+| SM_Main_Category | STRING | 계정 **대분류**: '광고선전비'/'물류비'/'수수료'/'인건비'/'기타' ⭐ "광고선전비 얼마?" → 이 컬럼! |
+| SM_Sub_Category | STRING | 계정 중분류 (광고선전비/운반비/수출경비/판매수수료/지급수수료/급여 등) |
+| SM_Detail_Category | STRING | 계정 소분류 (페이드 마케팅_해외/인플루언서 마케팅/관세 등) |
+| Cost_Class | STRING | '판매직접' / '판매간접' |
+| Is_Estimated | BOOL | SGA_DETAIL이면 TRUE |
+
+### 규칙
+1. 손익 항목(매출액·영업이익 등) → `WHERE Record_Type='PL' AND Item='영업이익'` (Item 정확 일치, 한국어)
+2. 계정과목(광고선전비 등) → `WHERE Record_Type='SGA_DETAIL' AND SM_Main_Category='광고선전비'` ⛔ `Item='광고선전비'` 정확 일치는 0건! 반드시 SM_Main_Category/SM_Sub_Category 사용
+3. 이익률 = `SAFE_DIVIDE(SUM(IF(Item='영업이익', Amount, 0)), SUM(IF(Item='매출액', Amount, 0)))` 패턴 (같은 Record_Type='PL' 안에서)
+4. 회사 전체 손익 = Adjustment_Type 전체 포함(연결 기준). "조정 제외" 요청 시만 `Adjustment_Type='일반'`
+5. 계정과목 상세는 추정치 — 답변에 "비례배분 추정치" 명시 권장
+
+### 예시 쿼리
+```sql
+-- "일본 올해 월별 영업이익이랑 영업이익률"
+SELECT Year_Month,
+  SUM(IF(Item='매출액', Amount, 0)) AS sales,
+  SUM(IF(Item='영업이익', Amount, 0)) AS op_income,
+  ROUND(SAFE_DIVIDE(SUM(IF(Item='영업이익', Amount, 0)), SUM(IF(Item='매출액', Amount, 0))) * 100, 1) AS op_margin_pct
+FROM `skin1004-319714.Sales_Integration.FI_LLM_Flat`
+WHERE Record_Type='PL' AND Country='일본' AND Year_Month LIKE '2026-%'
+GROUP BY Year_Month ORDER BY Year_Month LIMIT 1000
+
+-- "일본 광고선전비 B2B/B2C 얼마씩?"
+SELECT Sales_Type, SUM(Amount) AS ad_expense
+FROM `skin1004-319714.Sales_Integration.FI_LLM_Flat`
+WHERE Record_Type='SGA_DETAIL' AND SM_Main_Category='광고선전비' AND Country='일본'
+GROUP BY Sales_Type LIMIT 1000
+```
 
 ---
 

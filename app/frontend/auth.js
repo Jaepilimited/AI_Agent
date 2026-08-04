@@ -1,4 +1,4 @@
-/* Craver AI — auth.js
+/* Cella — auth.js
    Login / Signup: Name → Team → Password (AD-linked)
 */
 

@@ -20,7 +20,7 @@ import concurrent.futures
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
-from app.core.security import sanitize_sql, validate_sql
+from app.core.security import FI_ACCESS_DENIED_MESSAGE, sanitize_sql, validate_sql
 from app.models.state import AgentState
 
 logger = structlog.get_logger(__name__)
@@ -88,6 +88,8 @@ def _enforce_partition_filter(
     query: str,
     cache_key: Optional[str] = None,
     brand_filter: Optional[str] = None,
+    can_view_fi: bool = False,
+    allowed_tables: Optional[set] = None,
 ) -> str:
     """If SQL targets a large table without any date filter, request Flash re-gen.
 
@@ -123,7 +125,7 @@ def _enforce_partition_filter(
 
     logger.info("partition_filter_missing_rewrite", sql=sql[:200])
     retry_prompt = (
-        _load_prompt("sql_generator.txt")
+        _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
         + f"\n\n## 사용자 질문\n{query}"
         + "\n\n⚠️⚠️ 이전 SQL이 대형 테이블 전체를 스캔합니다 (매우 느림)!"
         + "\n반드시 WHERE Date BETWEEN ... AND ... 날짜 조건을 추가하세요."
@@ -136,7 +138,9 @@ def _enforce_partition_filter(
         new_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
         new_sql = sanitize_sql(new_sql)
         if new_sql and len(new_sql) > 10:
-            is_valid, _ = validate_sql(new_sql)
+            if allowed_tables is None:
+                allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
+            is_valid, _ = validate_sql(new_sql, allowed_tables=allowed_tables)
             if is_valid:
                 logger.info("partition_filter_rewritten", new_sql=new_sql[:200])
                 if cache_key:
@@ -279,41 +283,45 @@ _schema_cache: str = ""
 
 _prompt_cache: dict = {}
 
-def _load_prompt(filename: str) -> str:
+
+def _mask_fi_prompt(prompt: str) -> str:
+    """Remove the FI routing row and table section without touching neighbors."""
+    prompt = re.sub(
+        r"(?m)^\|[^\r\n]*`FI_LLM_Flat`[^\r\n]*\|\s*\r?\n?",
+        "",
+        prompt,
+    )
+    return re.sub(
+        r"(?ms)^## 테이블 14: FI_LLM_Flat[^\r\n]*(?:\r?\n).*?(?=^## |\Z)",
+        "",
+        prompt,
+    )
+
+
+def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
     """Load a prompt template from the prompts directory (cached after first read)."""
-    if filename not in _prompt_cache:
+    cache_key = (filename, bool(can_view_fi))
+    if cache_key not in _prompt_cache:
         prompt_path = PROMPTS_DIR / filename
-        _prompt_cache[filename] = prompt_path.read_text(encoding="utf-8")
-    return _prompt_cache[filename]
+        prompt = prompt_path.read_text(encoding="utf-8")
+        if not can_view_fi:
+            prompt = _mask_fi_prompt(prompt)
+        _prompt_cache[cache_key] = prompt
+    return _prompt_cache[cache_key]
 
 
-# --- LangGraph Nodes ---
+# --- Schema context helpers (shared by generate_sql and the tool-loop agent) ---
 
 
-def generate_sql(state: AgentState) -> Dict[str, Any]:
-    """Generate SQL from natural language query.
+def _allowed_tables_from_sources(
+    enabled_sources,
+    can_view_fi: bool = False,
+) -> Optional[set]:
+    """Map enabled_sources labels to allowed BigQuery table paths.
 
-    Args:
-        state: Current agent state with user query.
-
-    Returns:
-        Updated state with generated_sql.
+    Returns None when no filtering applies (all tables allowed).
     """
-    query = state["query"]
-    brand_filter = state.get("brand_filter")
-    enabled_sources = state.get("enabled_sources")
-    logger.info("generating_sql", query=query, enabled_sources=enabled_sources)
-
-    # Use Flash for SQL generation (Pro is too slow due to thinking mode)
-    llm = get_flash_client()
-    system_prompt = _load_prompt("sql_generator.txt")
-
-    # Get table schemas (lazy: only include tables relevant to the query)
-    global _schema_cache_sales, _schema_cache_tables, _schema_cache
-    bq = get_bigquery_client()
     settings = get_settings()
-
-    # enabled_sources → allowed table paths mapping
     _SOURCE_TABLE_MAP = {
         "매출": [settings.sales_table_full_path],
         "제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
@@ -328,25 +336,27 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         "쇼피 리뷰": ["skin1004-319714.Review_Data.New_Shopee_Review"],
         "스마트스토어 리뷰": ["skin1004-319714.Review_Data.New_Smartstore_Review"],
         "메타광고": ["skin1004-319714.ad_data.meta data_test"],
+        "손익": ["skin1004-319714.Sales_Integration.FI_LLM_Flat"],
     }
-
-    # Build allowed_tables set from enabled_sources
-    allowed_tables = None  # None = no filtering (all allowed)
-    if enabled_sources is not None:
+    if enabled_sources is None:
+        if can_view_fi:
+            return None
+        allowed_tables = set(settings.allowed_tables)
+    else:
         allowed_tables = set()
         for src in enabled_sources:
             for tp in _SOURCE_TABLE_MAP.get(src, []):
                 allowed_tables.add(tp)
-        logger.info("sql_table_filter", allowed_count=len(allowed_tables), sources=enabled_sources)
+    if not can_view_fi:
+        allowed_tables.discard("skin1004-319714.Sales_Integration.FI_LLM_Flat")
+    return allowed_tables
 
-    # ── SQL Cache: skip LLM if cached SQL uses only allowed tables ──
-    conv_context = state.get("conversation_context", "")
-    if not conv_context:  # Only cache standalone questions (not follow-ups)
-        cache_key = _cache_key(query, brand_filter)
-        cached_sql = _cache_lookup(cache_key, allowed_tables)
-        if cached_sql:
-            logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
-            return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
+
+def _build_schema_context(query: str, allowed_tables: Optional[set]) -> str:
+    """Assemble the lazy-loaded schema context block for a query."""
+    global _schema_cache_sales, _schema_cache_tables
+    bq = get_bigquery_client()
+    settings = get_settings()
 
     # 1) Determine which schemas to include
     include_sales = (allowed_tables is None) or (settings.sales_table_full_path in allowed_tables)
@@ -427,13 +437,17 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         schema_context += _schema_cache_tables.get(table_path, "")
 
     logger.info("schema_context_built", total_tables=1 + len(matched_entries), query_matched=len(matched_entries))
+    return schema_context
 
+
+def _build_date_context() -> str:
+    """Today/this-month/last-month prompt block for date disambiguation."""
     today = datetime.now().strftime("%Y-%m-%d")
     this_year = datetime.now().year
     this_month = datetime.now().month
     last_month = this_month - 1 if this_month > 1 else 12
     last_month_year = this_year if this_month > 1 else this_year - 1
-    date_context = (
+    return (
         f"\n\n## ⚠️ 오늘 날짜 (최우선 적용)\n"
         f"오늘: {today}\n"
         f"- **이번 달** = {this_year}년 {this_month}월 → `EXTRACT(YEAR FROM Date) = {this_year} AND EXTRACT(MONTH FROM Date) = {this_month}`\n"
@@ -441,6 +455,51 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         f"- **올해** = {this_year}년 → `EXTRACT(YEAR FROM Date) = {this_year}`\n"
         f"- ⛔ '이번 달'이라고 하면 반드시 {this_month}월! 다른 월로 바꾸지 마세요. 데이터가 적어도 {this_month}월이 맞습니다."
     )
+
+
+# --- LangGraph Nodes ---
+
+
+def generate_sql(state: AgentState) -> Dict[str, Any]:
+    """Generate SQL from natural language query.
+
+    Args:
+        state: Current agent state with user query.
+
+    Returns:
+        Updated state with generated_sql.
+    """
+    query = state["query"]
+    brand_filter = state.get("brand_filter")
+    enabled_sources = state.get("enabled_sources")
+    can_view_fi = bool(state.get("can_view_fi", False))
+    logger.info("generating_sql", query=query, enabled_sources=enabled_sources)
+
+    # Use Flash for SQL generation (Pro is too slow due to thinking mode)
+    llm = get_flash_client()
+    system_prompt = _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
+
+    # Get table schemas (lazy: only include tables relevant to the query)
+    allowed_tables = _allowed_tables_from_sources(enabled_sources, can_view_fi)
+    if allowed_tables is not None:
+        logger.info("sql_table_filter", allowed_count=len(allowed_tables), sources=enabled_sources)
+
+    # ── SQL Cache: skip LLM if cached SQL uses only allowed tables ──
+    conv_context = state.get("conversation_context", "")
+    if not conv_context:  # Only cache standalone questions (not follow-ups)
+        cache_key = _cache_key(query, brand_filter)
+        cached_sql = _cache_lookup(cache_key, allowed_tables)
+        if cached_sql:
+            logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
+            return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
+
+    schema_context = _build_schema_context(query, allowed_tables)
+
+    this_year = datetime.now().year
+    this_month = datetime.now().month
+    last_month = this_month - 1 if this_month > 1 else 12
+    last_month_year = this_year if this_month > 1 else this_year - 1
+    date_context = _build_date_context()
 
     # Include conversation context if available
     conv_context = state.get("conversation_context", "")
@@ -533,10 +592,16 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
     if not sql:
         return {"sql_valid": False, "error": "SQL이 생성되지 않았습니다."}
 
-    is_valid, error_msg = validate_sql(sql)
+    allowed_tables = _allowed_tables_from_sources(
+        state.get("enabled_sources"),
+        bool(state.get("can_view_fi", False)),
+    )
+    is_valid, error_msg = validate_sql(sql, allowed_tables=allowed_tables)
 
     if not is_valid:
         logger.warning("sql_validation_failed", error=error_msg, sql=sql[:200])
+        if error_msg == FI_ACCESS_DENIED_MESSAGE:
+            return {"sql_valid": False, "error": FI_ACCESS_DENIED_MESSAGE}
         return {"sql_valid": False, "error": f"SQL 검증 실패: {error_msg}"}
 
     logger.info("sql_validation_passed", sql=sql[:200])
@@ -553,7 +618,12 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
 
 
 def _retry_with_stronger_model(
-    query: str, failed_sql: str, bq, brand_filter: Optional[str] = None
+    query: str,
+    failed_sql: str,
+    bq,
+    brand_filter: Optional[str] = None,
+    can_view_fi: bool = False,
+    allowed_tables: Optional[set] = None,
 ) -> Optional[Dict[str, Any]]:
     """Escalate a zero-result product-name query from Flash to Claude Opus.
 
@@ -580,14 +650,19 @@ def _retry_with_stronger_model(
         )
         retry_sql = llm.generate(
             retry_prompt,
-            system_instruction=_load_prompt("sql_generator.txt"),
+            system_instruction=_load_prompt("sql_generator.txt", can_view_fi=can_view_fi),
             temperature=0.0, max_output_tokens=10000,
         )
         retry_sql = sanitize_sql(retry_sql)
         if not retry_sql:
             return None
 
-        is_valid, validation_error = validate_sql(retry_sql)
+        if allowed_tables is None:
+            allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
+        is_valid, validation_error = validate_sql(
+            retry_sql,
+            allowed_tables=allowed_tables,
+        )
         if not is_valid:
             logger.warning("sql_product_escalation_invalid", error=validation_error, sql=retry_sql[:200])
             return None
@@ -613,6 +688,21 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
     if not sql or not state.get("sql_valid"):
         return {"sql_result": None, "error": "실행할 수 없는 SQL입니다."}
 
+    can_view_fi = bool(state.get("can_view_fi", False))
+    allowed_tables = _allowed_tables_from_sources(
+        state.get("enabled_sources"),
+        can_view_fi,
+    )
+    is_valid, validation_error = validate_sql(sql, allowed_tables=allowed_tables)
+    if not is_valid:
+        logger.warning("sql_pre_execution_validation_failed", error=validation_error, sql=sql[:200])
+        error = (
+            FI_ACCESS_DENIED_MESSAGE
+            if validation_error == FI_ACCESS_DENIED_MESSAGE
+            else f"SQL 검증 실패: {validation_error}"
+        )
+        return {"sql_result": None, "error": error}
+
     logger.info("executing_sql", sql=sql[:200])
 
     try:
@@ -625,7 +715,12 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
         # to a stronger model instead of always paying that latency cost up front.
         if len(results) == 0 and re.search(r"`?SET`?\s+LIKE|\bProduct\s+LIKE", sql, re.IGNORECASE):
             escalated = _retry_with_stronger_model(
-                state.get("query", ""), sql, bq, brand_filter=state.get("brand_filter")
+                state.get("query", ""),
+                sql,
+                bq,
+                brand_filter=state.get("brand_filter"),
+                can_view_fi=can_view_fi,
+                allowed_tables=allowed_tables,
             )
             if escalated is not None:
                 return escalated
@@ -640,7 +735,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 llm = get_flash_client()
                 query = state.get("query", "")
                 retry_prompt = (
-                    _load_prompt("sql_generator.txt")
+                    _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
                     + f"\n\n## 사용자 질문\n{query}"
                     + "\n\n⛔⛔⛔ 이전 SQL이 구문 오류 발생! 다음 규칙을 반드시 지키세요:"
                     + "\n1. 질문에 여러 항목(매출+마케팅비 등)이 있으면 **매출 SQL만 생성**"
@@ -653,7 +748,10 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 from app.core.security import sanitize_sql
                 retry_sql = sanitize_sql(retry_sql)
                 if retry_sql:
-                    is_valid, _verr = validate_sql(retry_sql)
+                    is_valid, _verr = validate_sql(
+                        retry_sql,
+                        allowed_tables=allowed_tables,
+                    )
                     if not is_valid:
                         logger.error("sql_retry_validation_failed", error=_verr[:200])
                         # fall through to the existing failure return below (do NOT execute)
@@ -732,6 +830,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     error = state.get("error")
 
     # Handle error cases
+    if error == FI_ACCESS_DENIED_MESSAGE:
+        return {"answer": FI_ACCESS_DENIED_MESSAGE}
     if error:
         return {
             "answer": f"죄송합니다. 질문을 처리하는 중 오류가 발생했습니다.\n\n오류: {error}"
@@ -754,11 +854,22 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # Try Flash LLM for helpful empty-result message (with timeout), else template
         try:
             empty_llm = get_flash_client()
+            # 오늘 날짜를 반드시 넣는다. 없으면 LLM이 현재 연도를 추측해
+            # "작년은 2024년" 같은 틀린 원인 분석을 내놓는다 (2026-08 실제 발생).
+            _today = datetime.now()
+            _range_note = ""
+            if "FI_LLM_Flat" in (sql or ""):
+                _range_note = (
+                    "\n⚠️ 이 질문이 쓰는 재무 손익 테이블(FI_LLM_Flat)은 **2026-01 ~ 2026-06** 만 "
+                    "보유하고 있다. 요청 기간이 이 범위 밖이면 그것이 0행의 확정적 원인이므로, "
+                    "다른 원인을 추측하지 말고 보유 기간을 명확히 안내한 뒤 그 범위로 다시 제안할 것."
+                )
             empty_prompt = f"""사용자가 "{query}"라고 질문했고, SQL 결과가 0행입니다:
 ```sql
 {sql}
 ```
-{f"유효 값: {_hints_text}" if _hints_text else ""}
+오늘 날짜: {_today.strftime('%Y-%m-%d')} (올해={_today.year}, 작년={_today.year - 1})
+{f"유효 값: {_hints_text}" if _hints_text else ""}{_range_note}
 간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 왜 0건인지 가능한 원인 (조건 불일치, 해당 기간 데이터 없음 등) 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
@@ -1302,6 +1413,7 @@ async def run_sql_agent_unlimited(
     previous_sql: str,
     query: str,
     model_type: str = MODEL_GEMINI,
+    can_view_fi: bool = False,
 ) -> str:
     """Re-run a previous SQL query without the LIMIT restriction.
 
@@ -1326,8 +1438,14 @@ async def run_sql_agent_unlimited(
     logger.info("sql_agent_unlimited_rerun", sql=unlimited_sql[:200])
 
     # Validate
-    is_valid, error_msg = validate_sql(unlimited_sql)
+    allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
+    is_valid, error_msg = validate_sql(
+        unlimited_sql,
+        allowed_tables=allowed_tables,
+    )
     if not is_valid:
+        if error_msg == FI_ACCESS_DENIED_MESSAGE:
+            return FI_ACCESS_DENIED_MESSAGE
         return f"SQL 검증 실패: {error_msg}"
 
     try:
@@ -1378,6 +1496,7 @@ async def run_sql_agent(
     model_type: str = MODEL_GEMINI,
     brand_filter: Optional[str] = None,
     enabled_sources: Optional[list] = None,
+    can_view_fi: bool = False,
 ) -> str:
     """Run the Text-to-SQL agent on a query.
 
@@ -1399,7 +1518,6 @@ async def run_sql_agent(
         "sql_result": None,
         "retrieved_docs": None,
         "doc_relevance": None,
-        "web_search_results": None,
         "answer": "",
         "needs_retry": False,
         "retry_count": 0,
@@ -1408,6 +1526,7 @@ async def run_sql_agent(
         "conversation_context": conversation_context,
         "model_type": model_type,
         "brand_filter": brand_filter,
+        "can_view_fi": can_view_fi,
         "enabled_sources": enabled_sources,
     }
 
@@ -1424,6 +1543,8 @@ async def run_sql_agent(
             state["generated_sql"] = _enforce_partition_filter(
                 state.get("generated_sql", ""), query,
                 cache_key=ck, brand_filter=brand_filter,
+                can_view_fi=can_view_fi,
+                allowed_tables=_allowed_tables_from_sources(enabled_sources, can_view_fi),
             )
             state.update(execute_sql(state))
         state.update(format_answer(state))
@@ -1434,6 +1555,145 @@ async def run_sql_agent(
     return answer
 
 
+# --- Fast-answer experiment (BQ_FAST_ANSWER=1): template table first, short LLM insights after ---
+
+_COL_LABELS = {
+    "total_revenue": "매출액 (원)", "revenue": "매출액 (원)", "sales": "매출액 (원)",
+    "total_quantity": "판매수량 (개)", "total_qty": "판매수량 (개)", "quantity": "판매수량 (개)",
+    "total_orders": "주문 건수", "product_name": "제품", "product": "제품",
+    "country": "국가", "month": "월", "quarter": "분기", "year": "연도",
+    "mall_classification": "채널", "company_name": "판매처", "team_new": "팀",
+    "brand": "브랜드", "line": "라인", "date": "날짜", "continent1": "대륙", "continent2": "권역",
+}
+
+
+def _fast_fmt_cell(v) -> str:
+    from decimal import Decimal as _D
+    if v is None:
+        return "-"
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, (int, float, _D)):
+        f = float(v)
+        # Monetary/large values: whole numbers read better than stray decimals
+        if f == int(f) or abs(f) >= 10000:
+            return f"{round(f):,}"
+        return f"{f:,.2f}"
+    return str(v)
+
+
+def _fast_table_markdown(results: list, max_rows: int = 15) -> str:
+    cols = list(results[0].keys())
+    heads = [_COL_LABELS.get(c.lower(), c) for c in cols]
+    lines = ["| " + " | ".join(heads) + " |", "|" + "|".join([" :--- "] * len(cols)) + "|"]
+    for row in results[:max_rows]:
+        lines.append("| " + " | ".join(_fast_fmt_cell(row.get(c)) for c in cols) + " |")
+    table = "\n".join(lines)
+    if len(results) > max_rows:
+        table += f"\n\n*(전체 {len(results)}행 중 상위 {max_rows}행 표시)*"
+    return table
+
+
+def _fast_summary_line(results: list) -> str:
+    """One-line computed summary: totals of revenue/qty-like numeric columns."""
+    from decimal import Decimal as _D
+    parts = []
+    cols = list(results[0].keys())
+    for c in cols:
+        cl = c.lower()
+        vals = [r.get(c) for r in results if isinstance(r.get(c), (int, float, _D))]
+        if not vals:
+            continue
+        total = float(sum(float(v) for v in vals))
+        if "revenue" in cl or "sales" in cl or "매출" in cl:
+            uk = total / 100_000_000
+            parts.append(f"총 매출액 **약 {uk:,.1f}억원** ({int(total):,}원)")
+        elif "qty" in cl or "quantity" in cl or "수량" in cl:
+            parts.append(f"총 판매수량 **{int(total):,}개**")
+        elif "order" in cl:
+            parts.append(f"총 주문 **{int(total):,}건**")
+    return " · ".join(parts)
+
+
+def _fast_answer_stream(query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end):
+    """Yield template-rendered table instantly, then short LLM insights.
+
+    Removes the 3-4s full-answer LLM generation from the critical path: the
+    user sees title+summary+table the moment BigQuery returns, and only the
+    insights/follow-up section is model-generated (short prompt, short output).
+    """
+    import concurrent.futures
+    import time as _time
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    _t_tpl = _time.perf_counter()
+
+    title = re.sub(r"\s*(알려줘|보여줘|알려주세요|보여주세요|줄래\??|해줘)\s*$", "", query.strip())
+    out_head = f"### 📊 {title}\n\n"
+    summary = _fast_summary_line(results)
+    if summary:
+        out_head += f"#### 요약\n{summary}\n\n"
+    out_head += f"#### 상세 데이터\n{_fast_table_markdown(results)}\n"
+    yield out_head
+
+    # Chart in background while insights stream
+    result_preview = _build_smart_preview(results, query) if len(results) > 100 else json.dumps(
+        results[:50], ensure_ascii=False, indent=2, default=str
+    )
+    _chart_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    chart_future = _chart_executor.submit(
+        _try_generate_chart, get_flash_client(), query, sql, result_preview, results
+    )
+
+    wiki_block = f"\n## 참고 팩트(지식 위키 — 결과 보완용으로만)\n{wiki_context}\n" if wiki_context else ""
+    insight_prompt = f"""사용자 질문: {query}
+SQL 결과 ({len(results)}행):
+{result_preview}
+{wiki_block}
+결과 표는 이미 사용자에게 표시되었다. 표/수치 나열을 반복하지 말고 아래 형식만 출력하라:
+
+#### 분석 및 인사이트
+- [결과에서 도출한 구체적 인사이트 2~3개, 비율·비교 등 계산 활용]
+
+---
+*조회 기준: {today} | 내부 데이터베이스*
+> 💡 **이런 것도 물어보세요**
+> - [구체적 후속 질문 1]
+> - [구체적 후속 질문 2]
+> - [구체적 후속 질문 3]
+
+규칙: SQL 결과만 근거로. 금액 1억+ → "약 OO.O억원". 플레이스홀더 출력 금지.
+⚠️ 후속 질문은 대괄호([]) 없이 완성된 실제 질문 문장으로 출력하라.
+⚠️ 테이블명·프로젝트 ID·컬럼명 노출 금지. 출처는 '내부 데이터베이스'로만."""
+
+    llm = get_flash_client()
+    _t_ins = _time.perf_counter()
+    yield "\n"
+    for chunk in llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500):
+        yield chunk
+    _t_end = _time.perf_counter()
+
+    try:
+        chart_markdown = chart_future.result(timeout=8.0)
+        if chart_markdown:
+            yield f"\n\n#### 시각화\n{chart_markdown}"
+    except (concurrent.futures.TimeoutError, Exception):
+        pass
+    _chart_executor.shutdown(wait=False)
+
+    yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
+
+    logger.info(
+        "bq_fast_timing",
+        sql_gen_ms=round((_t_gen - _t0) * 1000),
+        bq_exec_ms=round((_t_exec_end - _t_exec_start) * 1000),
+        template_ms=round((_t_ins - _t_tpl) * 1000),
+        insights_ms=round((_t_end - _t_ins) * 1000),
+        total_ms=round((_t_end - _t0) * 1000),
+        rows=len(results),
+    )
+
+
 def run_sql_agent_stream(
     query: str,
     conversation_context: str = "",
@@ -1441,6 +1701,7 @@ def run_sql_agent_stream(
     brand_filter: Optional[str] = None,
     enabled_sources: Optional[list] = None,
     wiki_context: str = "",
+    can_view_fi: bool = False,
 ):
     """Streaming version of run_sql_agent. Yields text chunks during format_answer.
 
@@ -1450,31 +1711,56 @@ def run_sql_agent_stream(
     Yields:
         str: text chunks as the answer is generated.
     """
+    # Experimental single-session tool-loop path (dev A/B: BQ_TOOL_LOOP=1 on
+    # skin1004-dev only — see ecosystem.windows.config.js). Prod keeps the
+    # legacy generate→execute→format pipeline below.
+    import os
+    if os.getenv("BQ_TOOL_LOOP") == "1":
+        from app.agents.sql_tool_agent import run_sql_tool_loop_stream
+        yield from run_sql_tool_loop_stream(
+            query,
+            conversation_context=conversation_context,
+            brand_filter=brand_filter,
+            enabled_sources=enabled_sources,
+            wiki_context=wiki_context,
+            can_view_fi=can_view_fi,
+        )
+        return
+
     initial_state: AgentState = {
         "query": query,
         "route_type": "text_to_sql",
         "generated_sql": None, "sql_valid": None, "sql_result": None,
-        "retrieved_docs": None, "doc_relevance": None, "web_search_results": None,
+        "retrieved_docs": None, "doc_relevance": None,
         "answer": "", "needs_retry": False, "retry_count": 0,
         "error": None, "messages": None,
         "conversation_context": conversation_context,
         "model_type": model_type,
         "brand_filter": brand_filter,
+        "can_view_fi": can_view_fi,
         "enabled_sources": enabled_sources,
     }
 
     # Run SQL generation + validation + execution (non-streaming)
+    import time as _time
+    _t0 = _time.perf_counter()
     state = dict(initial_state)
     state.update(generate_sql(state))
+    _t_gen = _time.perf_counter()
     state.update(validate_sql_node(state))
+    _t_exec_start = _t_exec_end = _time.perf_counter()
     if state.get("sql_valid"):
         conv_ctx = state.get("conversation_context", "")
         ck = _cache_key(query, brand_filter) if not conv_ctx else None
         state["generated_sql"] = _enforce_partition_filter(
             state.get("generated_sql", ""), query,
             cache_key=ck, brand_filter=brand_filter,
+            can_view_fi=can_view_fi,
+            allowed_tables=_allowed_tables_from_sources(enabled_sources, can_view_fi),
         )
+        _t_exec_start = _time.perf_counter()
         state.update(execute_sql(state))
+        _t_exec_end = _time.perf_counter()
 
     sql = state.get("generated_sql", "")
     results = state.get("sql_result")
@@ -1484,6 +1770,14 @@ def run_sql_agent_stream(
     if error or not results:
         state.update(format_answer(state))
         yield state.get("answer", "")
+        return
+
+    # Fast-answer experiment (dev A/B: BQ_FAST_ANSWER=1): template table
+    # instantly from rows, LLM only for short insights.
+    if os.getenv("BQ_FAST_ANSWER") == "1":
+        yield from _fast_answer_stream(
+            query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end
+        )
         return
 
     # Build format prompt (same as format_answer but stream the LLM call)
@@ -1535,8 +1829,22 @@ def run_sql_agent_stream(
     chart_future = _chart_executor.submit(_try_generate_chart, chart_llm, query, sql, result_preview, results)
 
     # Stream answer (chart generates in parallel)
+    _t_stream_start = _time.perf_counter()
+    _t_first_token = None
     for chunk in llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000):
+        if _t_first_token is None:
+            _t_first_token = _time.perf_counter()
         yield chunk
+    _t_stream_end = _time.perf_counter()
+    logger.info(
+        "bq_stage_timing",
+        sql_gen_ms=round((_t_gen - _t0) * 1000),
+        bq_exec_ms=round((_t_exec_end - _t_exec_start) * 1000),
+        answer_first_token_ms=round(((_t_first_token or _t_stream_end) - _t_stream_start) * 1000),
+        answer_stream_ms=round((_t_stream_end - _t_stream_start) * 1000),
+        total_ms=round((_t_stream_end - _t0) * 1000),
+        rows=len(results),
+    )
 
     # Chart should be done by now (ran in parallel with answer streaming)
     try:

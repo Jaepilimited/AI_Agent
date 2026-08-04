@@ -1,4 +1,4 @@
-/* Craver AI — chat.js
+/* Cella — chat.js
    Main chat SPA: SSE streaming, sidebar (date-grouped, search, collapse),
    follow-up suggestions, markdown, charts, theme
 */
@@ -367,7 +367,7 @@
   // ===== Data Source Filter (Grouped) =====
   var SOURCE_GROUPS = [
     { id: "sales", label: "매출 데이터", emoji: "\uD83D\uDCCA",
-      keys: ["매출", "제품"] },
+      keys: ["매출", "제품", "손익"] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
       keys: ["광고", "마케팅", "Shopify", "플랫폼",
              "인플루언서", "아마존검색", "메타광고",
@@ -381,10 +381,30 @@
       keys: ["Google Workspace"] },
   ];
   var DATA_SOURCE_KEYS = [];
-  SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
+  function _sourceVisibleForCurrentUser(key) {
+    return key !== "손익" || !currentUser || !!currentUser.can_view_fi;
+  }
+  function _rebuildDataSourceKeys() {
+    DATA_SOURCE_KEYS = [];
+    SOURCE_GROUPS.forEach(function(g) {
+      g.keys.forEach(function(k) {
+        if (_sourceVisibleForCurrentUser(k)) DATA_SOURCE_KEYS.push(k);
+      });
+    });
+  }
+  function _applyFiSourceVisibility() {
+    if (currentUser && currentUser.can_view_fi) return;
+    SOURCE_GROUPS.forEach(function(g) {
+      g.keys = g.keys.filter(function(k) { return k !== "손익"; });
+    });
+    _rebuildDataSourceKeys();
+    enabledSources = enabledSources.filter(function(k) { return k !== "손익"; });
+    saveEnabledSources();
+  }
+  _rebuildDataSourceKeys();
   // Source key → route mapping for orchestrator
   var SOURCE_ROUTE_MAP = {
-    "매출": "bigquery", "제품": "bigquery",
+    "매출": "bigquery", "제품": "bigquery", "손익": "bigquery",
     "광고": "bigquery", "마케팅": "bigquery",
     "Shopify": "bigquery", "플랫폼": "bigquery",
     "인플루언서": "bigquery", "아마존검색": "bigquery",
@@ -413,6 +433,7 @@
     var container = _ensureChipsContainer();
     if (!container) return;
     container.innerHTML = "";
+    keys = (keys || []).filter(_sourceVisibleForCurrentUser);
     if (!keys || keys.length === 0) { container.style.display = "none"; return; }
     var colorMap = { bigquery: "#4285f4", notion: "#9b59b6", cs: "#27ae60", gws: "#e89200", team: "#9b59b6" };
     keys.forEach(function(k) {
@@ -596,6 +617,7 @@
       var resp = await fetch("/api/auth/me");
       if (!resp.ok) { window.location.href = "/login"; return; }
       currentUser = await resp.json();
+      _applyFiSourceVisibility();
       userName.textContent = currentUser.name;
       userAvatar.textContent = (currentUser.name || "U").charAt(0).toUpperCase();
       var welcomeName = document.getElementById("welcome-user-name");
@@ -2836,6 +2858,7 @@
     // 매출
     "매출":           { label: "매출", svg: _svgBar },
     "제품":           { label: "제품", svg: _svgBox },
+    "손익":           { label: "손익", svg: _svgBar },
     // 마케팅
     "광고":           { label: "광고", svg: _svgUpload },
     "마케팅":          { label: "마케팅", svg: _svgDollar },
@@ -3198,8 +3221,7 @@
           }
           teamKeys.sort();
           grp.keys = teamKeys.concat(staticKeys);
-          DATA_SOURCE_KEYS = [];
-          SOURCE_GROUPS.forEach(function(g) { g.keys.forEach(function(k) { DATA_SOURCE_KEYS.push(k); }); });
+          _rebuildDataSourceKeys();
           teamKeys.forEach(function(k) {
             if (enabledSources.indexOf(k) < 0) enabledSources.push(k);
           });
@@ -3551,7 +3573,7 @@
 
   // ===== Model Access Control =====
   var MODEL_LABELS = {
-    "skin1004-Analysis": "Craver Analysis",
+    "skin1004-Analysis": "Cella Analysis",
   };
 
   function showAdminButton() {
@@ -4214,6 +4236,7 @@
       '<div class="admin-stat"><div class="admin-stat-num">' + s.total_ad_users + '</div><div class="admin-stat-label">AD 사용자</div></div>' +
       '<div class="admin-stat"><div class="admin-stat-num">' + s.assigned_users + '</div><div class="admin-stat-label">배정됨</div></div>' +
       '<div class="admin-stat"><div class="admin-stat-num">' + s.unassigned_users + '</div><div class="admin-stat-label">미배정</div></div>' +
+      '<div class="admin-stat"><div class="admin-stat-num">' + s.fi_allowed_users + '</div><div class="admin-stat-label">손익 허용</div></div>' +
       '<div class="admin-stat"><div class="admin-stat-num">' + s.total_groups + '</div><div class="admin-stat-label">그룹</div></div>';
   }
 
@@ -4259,7 +4282,7 @@
     var container = document.getElementById("admin-group-list");
     // Update group filter in users tab
     var gf = document.getElementById("admin-group-filter");
-    var gfHtml = '<option value="">전체 그룹</option><option value="unassigned">미배정</option>';
+    var gfHtml = '<option value="">전체 그룹</option><option value="unassigned">미배정</option><option value="fi_allowed">손익 허용</option>';
     groups.forEach(function(g) {
       gfHtml += '<option value="' + g.id + '">' + g.name + '</option>';
     });
@@ -4343,6 +4366,7 @@
     if (dept) params.set("dept", dept);
     if (search) params.set("search", search);
     if (groupFilter === "unassigned") params.set("unassigned", "true");
+    else if (groupFilter === "fi_allowed") params.set("fi_only", "true");
     else if (groupFilter) params.set("group_id", groupFilter);
 
     fetch("/api/admin/ad/users?" + params.toString())
@@ -4360,21 +4384,50 @@
           var groupBadge = u.group_names
             ? '<span class="admin-ad-group-badge">' + escapeHtml(u.group_names) + '</span>'
             : '<span class="admin-ad-group-badge none">미배정</span>';
+          var signupBadge = u.user_id
+            ? ''
+            : ' <span class="admin-ad-group-badge none">미가입</span>';
 
           html += '<div class="admin-ad-user">';
           html += '<div class="admin-ad-avatar">' + initial + '</div>';
           html += '<div class="admin-ad-info">';
-          html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small></div>';
+          html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small>' + signupBadge + '</div>';
           html += '<div class="admin-ad-email">' + escapeHtml(u.email || "N/A") + '</div>';
           html += '<div class="admin-ad-dept">' + escapeHtml(deptShort) + '</div>';
           html += '</div>';
           html += groupBadge;
           if (isAdmin()) {
+            html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer">';
+            html += '<input type="checkbox" class="admin-fi-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_fi ? ' checked' : '') + '> 손익</label>';
             html += '<button class="admin-ad-assign" onclick="adminAssignUser(' + u.id + ', \'' + escapeHtml(u.display_name) + '\')">배정</button>';
           }
           html += '</div>';
         });
         container.innerHTML = html;
+        container.querySelectorAll(".admin-fi-toggle").forEach(function(checkbox) {
+          checkbox.addEventListener("change", function() {
+            var requested = checkbox.checked;
+            checkbox.disabled = true;
+            fetch("/api/admin/ad/users/" + checkbox.dataset.adUserId + "/fi", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ can_view_fi: requested })
+            }).then(function(r) {
+              if (!r.ok) throw new Error("권한 변경에 실패했습니다.");
+              return r.json();
+            }).then(function() {
+              checkbox.disabled = false;
+              loadAdminStats();
+              if (document.getElementById("admin-group-filter").value === "fi_allowed" && !requested) {
+                loadAdminADUsers();
+              }
+            }).catch(function(e) {
+              checkbox.checked = !requested;
+              checkbox.disabled = false;
+              alert(e.message || "권한 변경에 실패했습니다.");
+            });
+          });
+        });
       }).catch(function(e) { console.error("Failed to load AD users:", e); });
   }
 

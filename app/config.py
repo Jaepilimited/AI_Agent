@@ -148,6 +148,8 @@ class Settings(BaseSettings):
             "skin1004-319714.Review_Data.New_Smartstore_Review",
             # Ad data
             "skin1004-319714.ad_data.meta data_test",
+            # Financial P&L (FI Dashboard — monthly consolidated income statement)
+            "skin1004-319714.Sales_Integration.FI_LLM_Flat",
         ]
 
 

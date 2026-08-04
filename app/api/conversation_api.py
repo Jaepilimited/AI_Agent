@@ -137,7 +137,7 @@ async def get_conversation(
 
     messages = await _db_fetch_all(
         "SELECT id, role, content, created_at FROM messages "
-        "WHERE conversation_id = %s ORDER BY created_at",
+        "WHERE conversation_id = %s ORDER BY created_at, id",
         (convo_id,),
     )
     return ConversationDetail(
@@ -268,6 +268,27 @@ async def submit_feedback(
     )
     logger.info("feedback_submitted", message_id=req.message_id, rating=req.rating,
                 has_comment=bool(req.comment), anon_id=anon_id_for(user.id))
+
+    # 👍 → 해당 (질문, 답변) 쌍을 skill memory에 저장 (fire-and-forget)
+    if req.rating == 1:
+        try:
+            from app.agents.skill_memory import save_positive_skill
+            asyncio.create_task(
+                asyncio.to_thread(save_positive_skill, req.message_id, convo_id)
+            )
+        except Exception:
+            pass
+
+    # 👎 → negative 패턴 저장 + SQL 캐시 무효화 (fire-and-forget)
+    if req.rating == -1:
+        try:
+            from app.agents.skill_memory import save_negative_skill
+            asyncio.create_task(
+                asyncio.to_thread(save_negative_skill, req.message_id, convo_id, req.comment or "")
+            )
+        except Exception:
+            pass
+
     return {"ok": True, "rating": req.rating}
 
 

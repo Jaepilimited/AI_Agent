@@ -25,13 +25,19 @@ from app.knowledge_map.config import (
 )
 from app.knowledge_map.exporters import (
     append_wiki_log,
+    write_cluster_wiki_page,
     write_graph_json,
     write_graph_report,
     write_wiki_index,
 )
 from app.knowledge_map.graph import Edge, KnowledgeGraph, Node
 from app.knowledge_map.md_parser import parse_markdown_file, MarkdownNode
-from app.knowledge_map.semantic import SemanticFacts, extract_semantic_facts_batch
+from app.knowledge_map.semantic import (
+    SemanticFacts,
+    extract_semantic_facts_batch,
+    synthesize_cluster_wiki_batch,
+    synthesize_graph_report,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -207,7 +213,69 @@ async def build(
 
     graph.compute_clusters()
 
+    # ── Cluster wiki synthesis ─────────────────────────────────────────
+    now_iso = datetime.now().astimezone().isoformat()
     commit = _current_commit()
+
+    cluster_to_nodes: dict[str, list[Node]] = {}
+    for n in graph.nodes():
+        if n.cluster:
+            cluster_to_nodes.setdefault(n.cluster, []).append(n)
+
+    # Cross-cluster edge hints (file-level only, capped per cluster)
+    node_to_cluster: dict[str, str] = {
+        n.id: n.cluster for n in graph.nodes() if n.cluster
+    }
+    cross_cluster: dict[str, list[str]] = {}
+    for e in graph.edges():
+        src_c = node_to_cluster.get(e.src)
+        dst_c = node_to_cluster.get(e.dst)
+        if src_c and dst_c and src_c != dst_c:
+            hint = f"- `{e.src}` →[{e.type}]→ `{e.dst}` ({dst_c})"
+            bucket = cross_cluster.setdefault(src_c, [])
+            if len(bucket) < 15 and hint not in bucket:
+                bucket.append(hint)
+
+    # Decide which clusters to regenerate
+    changed_file_ids = {str(f).replace("\\", "/") for f in changed}
+    clusters_to_regen: set[str] = set()
+    for cluster_name, nodes in cluster_to_nodes.items():
+        wiki_path = WIKI_DIR / f"{cluster_name}.md"
+        if not wiki_path.exists() or any(n.file in changed_file_ids for n in nodes):
+            clusters_to_regen.add(cluster_name)
+
+    wiki_calls = 0
+    if clusters_to_regen:
+        logger.info("knowledge_map.wiki.start", clusters=len(clusters_to_regen))
+        batch_items = []
+        for cluster_name in sorted(clusters_to_regen):
+            nodes = cluster_to_nodes[cluster_name]
+            file_summaries = [
+                {"file": n.file or n.id, "summary": (n.summary or "")[:200]}
+                for n in nodes
+                if n.type in ("file", "doc")
+            ]
+            batch_items.append((
+                cluster_name,
+                file_summaries,
+                cross_cluster.get(cluster_name, []),
+                now_iso,
+            ))
+        wiki_results = await synthesize_cluster_wiki_batch(batch_items)
+        wiki_calls = len(wiki_results)
+        for cluster_name, body in wiki_results:
+            wiki_path = WIKI_DIR / f"{cluster_name}.md"
+            write_cluster_wiki_page(cluster_name, body, wiki_path)
+            for n in cluster_to_nodes[cluster_name]:
+                n.wiki_page = f"knowledge_map/wiki/{cluster_name}.md"
+        logger.info("knowledge_map.wiki.done", wiki_calls=wiki_calls)
+    else:
+        # Pages exist and nothing changed — populate wiki_page from existing files
+        for cluster_name, nodes in cluster_to_nodes.items():
+            for n in nodes:
+                n.wiki_page = f"knowledge_map/wiki/{cluster_name}.md"
+
+    # ── Export ────────────────────────────────────────────────────────
     write_graph_json(
         graph,
         GRAPH_JSON,
@@ -215,31 +283,60 @@ async def build(
         file_count=len(files),
         extra_stats={
             "flash_calls": flash_calls,
+            "wiki_calls": wiki_calls,
             "cache_hits": len(files) - len(changed),
             "build_duration_sec": round((datetime.now() - started).total_seconds(), 2),
         },
     )
     write_wiki_index(graph, WIKI_INDEX)
 
-    report_body = (
-        f"# SKIN1004 AI Agent — Knowledge Map\n"
-        f"**Generated**: {datetime.now().astimezone().isoformat()} · "
-        f"**Files**: {len(files)} · **Nodes**: {len(graph.nodes())} · "
-        f"**Edges**: {len(graph.edges())} · **Commit**: {commit}\n\n"
-        f"## Clusters\n"
-    )
-    for cluster, cnt in sorted(graph.cluster_counts().items()):
-        report_body += f"- **{cluster}** — {cnt} nodes\n"
-    report_body += "\n## God Nodes\n"
-    for n in graph.god_nodes(top_n=8):
-        report_body += f"- `{n.id}` ({n.type}) — {n.summary[:80] or 'no summary'}\n"
-    report_body += "\n## How to navigate\nRead this file first, then open graph.json and follow wiki_page fields. Never Grep without consulting this map.\n"
+    # ── GRAPH_REPORT.md (Flash-synthesized when something changed) ────
+    if changed or wiki_calls or force:
+        import json as _json
+        god_nodes_data = [
+            {"id": n.id, "type": n.type, "summary": (n.summary or "")[:120],
+             "wiki_page": n.wiki_page or ""}
+            for n in graph.god_nodes(top_n=8)
+        ]
+        cluster_data = [
+            {"cluster": c, "count": cnt, "wiki": f"wiki/{c}.md"}
+            for c, cnt in sorted(graph.cluster_counts().items())
+        ]
+        inputs_payload = {
+            "generated_at": now_iso,
+            "commit": commit,
+            "file_count": len(files),
+            "node_count": len(graph.nodes()),
+            "edge_count": len(graph.edges()),
+            "clusters": cluster_data,
+            "god_nodes": god_nodes_data,
+        }
+        report_body = await synthesize_graph_report(
+            _json.dumps(inputs_payload, ensure_ascii=False, indent=2)
+        )
+    else:
+        report_body = (
+            f"# SKIN1004 AI Agent — Knowledge Map\n"
+            f"**Generated**: {now_iso} · "
+            f"**Files**: {len(files)} · **Nodes**: {len(graph.nodes())} · "
+            f"**Edges**: {len(graph.edges())} · **Commit**: {commit}\n\n"
+            f"## Clusters\n"
+        )
+        for cluster, cnt in sorted(graph.cluster_counts().items()):
+            report_body += f"- **{cluster}** — {cnt} nodes\n"
+        report_body += "\n## God Nodes\n"
+        for n in graph.god_nodes(top_n=8):
+            report_body += f"- `{n.id}` ({n.type}) — {n.summary[:80] or 'no summary'}\n"
+        report_body += "\n## How to navigate\nRead this file first, then open graph.json and follow wiki_page fields. Never Grep without consulting this map.\n"
     write_graph_report(report_body, REPORT_MD)
 
     new_cache = {str(f): file_fingerprint(f) for f in files}
     cache.save(new_cache)
 
-    append_wiki_log(WIKI_LOG, f"build complete · files={len(files)} changed={len(changed)} flash={flash_calls}")
+    append_wiki_log(
+        WIKI_LOG,
+        f"build complete · files={len(files)} changed={len(changed)} flash={flash_calls} wiki={wiki_calls}",
+    )
 
     stats = {
         "files": len(files),
@@ -248,6 +345,7 @@ async def build(
         "edges": len(graph.edges()),
         "clusters": len(graph.cluster_counts()),
         "flash_calls": flash_calls,
+        "wiki_calls": wiki_calls,
         "duration_sec": round((datetime.now() - started).total_seconds(), 2),
     }
     logger.info("knowledge_map.build.done", **stats)

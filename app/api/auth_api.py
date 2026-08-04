@@ -25,13 +25,58 @@ logger = structlog.get_logger(__name__)
 auth_api_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _ALGORITHM = "HS256"
-_TOKEN_EXPIRE_DAYS = 365
+_TOKEN_EXPIRE_DAYS = 7
 _ALL_MODELS = "skin1004-Analysis"
 
 # ── AD user cache (avoid DB hit on every keystroke) ──
 _ad_cache: list[dict] = []
 _ad_cache_ts: float = 0
 _AD_CACHE_TTL = 300  # 5 minutes
+
+# ── On-demand AD resync fallback ──
+# The scheduled sync only runs nightly at 22:00 (SKIN1004-AD-Sync-Daily). A brand-new
+# hire whose AD account was created *today* is invisible to signup/signin until then,
+# which turns into a same-day "I can't find my name / it says user not found" incident
+# every time someone onboards mid-day. Self-heal: when a lookup against the local
+# ad_users cache/table comes up empty, do one live AD fetch + upsert before giving up,
+# then retry. Cooldown guards against hammering the AD server on repeated typos.
+_last_ad_resync_attempt: float = 0
+_AD_RESYNC_COOLDOWN = 120  # seconds
+
+
+async def _maybe_ad_fallback_resync() -> bool:
+    """On a lookup miss, try one live AD fetch+upsert (rate-limited). Returns True if it ran."""
+    global _last_ad_resync_attempt
+    now = time.time()
+    if (now - _last_ad_resync_attempt) < _AD_RESYNC_COOLDOWN:
+        return False
+    _last_ad_resync_attempt = now
+
+    def _do_resync() -> bool:
+        from scripts.sync_ad_users import fetch_ad_users, sync_to_db, _acquire_lock, _release_lock
+        # If the nightly cron (or another request) is already syncing, don't collide —
+        # that run will cover this lookup anyway once it finishes.
+        if not _acquire_lock():
+            logger.info("ad_fallback_resync_skipped_locked")
+            return False
+        try:
+            users = fetch_ad_users(retries=1)
+            sync_to_db(users, dry_run=False)
+            return True
+        finally:
+            _release_lock()
+
+    try:
+        ran = await asyncio.to_thread(_do_resync)
+    except Exception as e:
+        logger.warning("ad_fallback_resync_failed", error=str(e))
+        return False
+
+    if ran:
+        global _ad_cache, _ad_cache_ts
+        _ad_cache, _ad_cache_ts = [], 0  # force _get_ad_cache() to reload from DB
+        logger.info("ad_fallback_resync_completed")
+    return ran
 
 # ── /me sliding-refresh debounce ──
 # Avoid re-issuing a cookie (and re-querying brand_filter) on every /me call.
@@ -197,13 +242,7 @@ async def _get_ad_cache() -> list[dict]:
     return _ad_cache
 
 
-@auth_api_router.get("/search-name")
-async def search_by_name(
-    name: str = Query(..., min_length=1, description="Name to search")
-):
-    """Find AD users by name (searches display_name, ad_name, username)."""
-    cache = await _get_ad_cache()
-    q = name.lower()
+def _match_cache(cache: list[dict], q: str) -> list[dict]:
     results = []
     for u in cache:
         display = (u.get("display_name") or "").lower()
@@ -216,7 +255,50 @@ async def search_by_name(
     return results
 
 
+@auth_api_router.get("/search-name")
+async def search_by_name(
+    name: str = Query(..., min_length=1, description="Name to search")
+):
+    """Find AD users by name (searches display_name, ad_name, username).
+
+    Self-heals on a miss: a brand-new hire may not be in ad_users yet if they're
+    signing up before tonight's scheduled sync — try one live AD resync before
+    reporting no results, so onboarding never blocks on the cron schedule.
+    """
+    cache = await _get_ad_cache()
+    q = name.lower()
+    results = _match_cache(cache, q)
+    if not results and await _maybe_ad_fallback_resync():
+        cache = await _get_ad_cache()
+        results = _match_cache(cache, q)
+    return results
+
+
 # ── Auth endpoints ──
+
+async def _lookup_ad_user(department: str, name: str, ad_user_id: int | None) -> dict | None:
+    """Look up an ad_users row by id (preferred) or department+display_name.
+
+    Self-heals on a miss: retries once after a live AD resync, so a same-day
+    hire isn't blocked by the nightly-only sync schedule.
+    """
+    async def _query() -> dict | None:
+        if ad_user_id:
+            return await _db_fetch_one(
+                "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
+                (ad_user_id,),
+            )
+        return await _db_fetch_one(
+            "SELECT id, display_name, email, department FROM ad_users "
+            "WHERE is_active = 1 AND department = %s AND display_name = %s",
+            (department, name),
+        )
+
+    ad_user = await _query()
+    if not ad_user and await _maybe_ad_fallback_resync():
+        ad_user = await _query()
+    return ad_user
+
 
 @auth_api_router.post("/signup")
 async def signup(req: SignupRequest, response: Response):
@@ -224,18 +306,7 @@ async def signup(req: SignupRequest, response: Response):
     if len(req.password) < 4:
         raise HTTPException(status_code=400, detail="비밀번호는 4자 이상이어야 합니다")
 
-    # Find AD user — prefer id to avoid display_name mismatch
-    if req.id:
-        ad_user = await _db_fetch_one(
-            "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
-            (req.id,),
-        )
-    else:
-        ad_user = await _db_fetch_one(
-            "SELECT id, display_name, email, department FROM ad_users "
-            "WHERE is_active = 1 AND department = %s AND display_name = %s",
-            (req.department, req.name),
-        )
+    ad_user = await _lookup_ad_user(req.department, req.name, req.id)
     if not ad_user:
         raise HTTPException(status_code=404, detail="해당 부서/이름의 AD 사용자를 찾을 수 없습니다")
 
@@ -277,18 +348,7 @@ async def signup(req: SignupRequest, response: Response):
 @auth_api_router.post("/signin")
 async def signin(req: SigninRequest, response: Response):
     """Sign in with department + name + password."""
-    # Find AD user — prefer id (avoids display_name mismatch when names differ between ad_users and users tables)
-    if req.id:
-        ad_user = await _db_fetch_one(
-            "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
-            (req.id,),
-        )
-    else:
-        ad_user = await _db_fetch_one(
-            "SELECT id, display_name, email, department FROM ad_users "
-            "WHERE is_active = 1 AND department = %s AND display_name = %s",
-            (req.department, req.name),
-        )
+    ad_user = await _lookup_ad_user(req.department, req.name, req.id)
     if not ad_user:
         raise HTTPException(status_code=401, detail="사용자를 찾을 수 없습니다")
 
@@ -339,6 +399,17 @@ async def me(response: Response, user: User = Depends(get_current_user)):
         while len(_me_last_refresh) > _ME_REFRESH_LRU_CAP:
             _me_last_refresh.popitem(last=False)
 
+    can_view_fi = user.role == "admin"
+    if not can_view_fi and user.ad_user_id:
+        try:
+            fi_row = await _db_fetch_one(
+                "SELECT can_view_fi FROM ad_users WHERE id = %s",
+                (user.ad_user_id,),
+            )
+            can_view_fi = bool(fi_row and fi_row.get("can_view_fi"))
+        except Exception as e:
+            logger.warning("fi_permission_lookup_failed", user_id=user.id, error=str(e))
+
     # brand_filters = what the dropdown shows
     # Admin: all groups (can choose any filter), no personal filter
     # Non-admin: only their own groups (auto-enforced)
@@ -366,6 +437,7 @@ async def me(response: Response, user: User = Depends(get_current_user)):
         "name": user.name,
         "department": user.department,
         "role": user.role,
+        "can_view_fi": can_view_fi,
         "allowed_models": _resolve_models(user.role, user.allowed_models),
         "brand_filters": brand_filters,
         "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,
@@ -424,4 +496,3 @@ async def crm_google_callback_proxy(request: Request):
     if qs:
         target += f"?{qs}"
     return RedirectResponse(url=target, status_code=302)
-

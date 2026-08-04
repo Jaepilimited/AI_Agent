@@ -100,6 +100,7 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(_ensure_admin)
         await asyncio.to_thread(_ensure_audit_table)
         from app.db.mariadb import (
+            ensure_fi_permission_column,
             ensure_knowledge_wiki_table,
             ensure_wiki_extraction_log_table,
             ensure_wiki_entity_aliases_table,
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
         # Sequential — some of these create tables others may reference (FK-adjacent),
         # so we preserve original ordering rather than gathering concurrently.
         for _ensure_fn in (
+            ensure_fi_permission_column,
             ensure_knowledge_wiki_table,
             ensure_wiki_extraction_log_table,
             ensure_wiki_entity_aliases_table,

@@ -105,6 +105,18 @@ def get_maria_conn():
     return _get_pool().connection()
 
 
+def ensure_fi_permission_column():
+    """Add ad_users.can_view_fi if missing (idempotent)."""
+    try:
+        execute(
+            "ALTER TABLE ad_users "
+            "ADD COLUMN can_view_fi TINYINT(1) NOT NULL DEFAULT 0 "
+            "COMMENT '재무 손익(FI_LLM_Flat) 열람 허용'"
+        )
+    except Exception:
+        pass  # column already exists
+
+
 # ===========================================================================
 # team_resources table DDL
 # ===========================================================================
@@ -367,6 +379,84 @@ def ensure_eval_tables():
         execute(_EVAL_QA_DDL)
     except Exception as e:
         logger.warning("eval_tables_error", error=str(e))
+
+
+_AGENT_SKILLS_DDL = """
+CREATE TABLE IF NOT EXISTS agent_skills (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    route VARCHAR(32) NOT NULL,
+    query_text TEXT NOT NULL,
+    response_summary TEXT NOT NULL,
+    message_id INT NULL,
+    is_negative TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_route_created (route, created_at),
+    INDEX idx_route_negative (route, is_negative)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+"""
+
+
+def ensure_agent_skills_table():
+    try:
+        execute(_AGENT_SKILLS_DDL)
+        # Add is_negative column to existing tables (idempotent)
+        existing = fetch_one(
+            "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = 'agent_skills' AND COLUMN_NAME = 'is_negative'",
+        )
+        if not existing:
+            execute("ALTER TABLE agent_skills ADD COLUMN is_negative TINYINT(1) NOT NULL DEFAULT 0")
+            execute("ALTER TABLE agent_skills ADD INDEX idx_route_negative (route, is_negative)")
+    except Exception as e:
+        logger.warning("agent_skills_table_error", error=str(e))
+
+
+_QUALITY_SNAPSHOTS_DDL = """
+CREATE TABLE IF NOT EXISTS quality_snapshots (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    snapshot_date DATE NOT NULL,
+    route VARCHAR(32) NOT NULL,
+    accuracy_rate FLOAT DEFAULT NULL COMMENT '👍 / (👍 + 👎)',
+    feedback_count INT NOT NULL DEFAULT 0,
+    avg_response_ms INT DEFAULT NULL,
+    avg_context_len INT DEFAULT NULL,
+    request_count INT NOT NULL DEFAULT 0,
+    flag_accuracy TINYINT(1) NOT NULL DEFAULT 0,
+    flag_speed TINYINT(1) NOT NULL DEFAULT 0,
+    flag_context TINYINT(1) NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_date_route (snapshot_date, route),
+    INDEX idx_snapshot_date (snapshot_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+"""
+
+
+def ensure_quality_snapshots_table():
+    try:
+        execute(_QUALITY_SNAPSHOTS_DDL)
+    except Exception as e:
+        logger.warning("quality_snapshots_table_error", error=str(e))
+
+
+_KNOWLEDGE_GAPS_DDL = """
+CREATE TABLE IF NOT EXISTS knowledge_gaps (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    question TEXT NOT NULL,
+    route VARCHAR(32) NOT NULL DEFAULT 'cs',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reviewed TINYINT(1) NOT NULL DEFAULT 0,
+    INDEX idx_kg_route_created (route, created_at),
+    INDEX idx_kg_reviewed (reviewed)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+"""
+
+
+def ensure_knowledge_gaps_table():
+    try:
+        execute(_KNOWLEDGE_GAPS_DDL)
+    except Exception as e:
+        logger.warning("knowledge_gaps_table_error", error=str(e))
 
 
 def ensure_anon_columns():

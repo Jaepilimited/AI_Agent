@@ -16,7 +16,6 @@ class AgentState(TypedDict):
         sql_result: Query execution results.
         retrieved_docs: Documents retrieved by RAG.
         doc_relevance: Whether retrieved docs are relevant.
-        web_search_results: Results from Tavily web search (CRAG fallback).
         answer: Final generated answer.
         needs_retry: Whether the answer needs regeneration.
         retry_count: Number of retries performed.
@@ -35,7 +34,6 @@ class AgentState(TypedDict):
     # RAG
     retrieved_docs: Optional[List[str]]
     doc_relevance: Optional[Literal["yes", "no"]]
-    web_search_results: Optional[List[str]]
 
     # Output
     answer: str
@@ -54,6 +52,9 @@ class AgentState(TypedDict):
 
     # Brand filter (group-based access control)
     brand_filter: Optional[str]
+
+    # Financial P&L table access (fail-closed when omitted by callers)
+    can_view_fi: bool
 
     # Source filter (frontend checkbox selection)
     enabled_sources: Optional[List[str]]

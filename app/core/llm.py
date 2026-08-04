@@ -1,10 +1,15 @@
-"""Dual LLM client: Gemini 3 Pro + Claude (Opus 4.6 / Sonnet 4.6).
+"""Dual LLM client: Gemini (Pro + Flash) + Claude Opus.
 
-Provides a unified interface for both models.
-Open WebUI model selection determines which LLM is used.
+Provides a unified interface for both models. Claude Opus is the primary
+chat model for the direct route (see MODEL_CLAUDE); Gemini Flash handles the
+bulk of internal tasks (SQL generation, formatting, routing, CS/Notion/Qdrant
+search); Gemini Pro is used only as a Google Search grounding assistant for
+Claude's answers. There is no user-facing model selection.
 
-Gemini side:  3 Pro (conversation) / 3 Flash (internal tasks)
-Claude side:  Opus 4.6 (complex reasoning) / Sonnet 4.6 (light tasks)
+Gemini side:  gemini_model (settings.gemini_model, search grounding) /
+              gemini_flash_model (settings.gemini_flash_model, internal tasks)
+Claude side:  anthropic_opus_model (settings.anthropic_opus_model) — the only
+              Claude tier actually used; anthropic_sonnet_model is unused.
 """
 
 import re
@@ -119,18 +124,31 @@ class LLMClient(Protocol):
     ) -> str: ...
 
 
-# --- Gemini 2.5 Pro Client ---
+# --- Gemini Client ---
 
 
 class GeminiClient:
-    """Wrapper for Gemini 3 Pro API calls via google-genai SDK."""
+    """Wrapper for Gemini API calls via google-genai SDK (model set by settings.gemini_model)."""
 
     def __init__(self) -> None:
         from google import genai
         self.settings = get_settings()
         self.client = genai.Client(api_key=self.settings.gemini_api_key)
         self.model = self.settings.gemini_model
+        # None = provider default (dynamic thinking). 0 disables thinking —
+        # only safe on Flash models; Pro rejects a zero budget.
+        self.thinking_budget: Optional[int] = None
         logger.info("gemini_client_initialized", model=self.model)
+
+    def _make_config(self, **kwargs) -> Any:
+        """Build GenerateContentConfig, applying the client-level thinking budget."""
+        from google.genai import types
+
+        if self.thinking_budget is not None:
+            kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_budget=self.thinking_budget
+            )
+        return types.GenerateContentConfig(**kwargs)
 
     def generate(
         self,
@@ -144,7 +162,7 @@ class GeminiClient:
 
         logger.info("gemini_generating", prompt_length=len(prompt))
 
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
@@ -173,9 +191,7 @@ class GeminiClient:
         max_output_tokens: int = 8192,
     ):
         """Generate a streaming response from Gemini. Yields text chunks."""
-        from google.genai import types
-
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
@@ -218,7 +234,7 @@ class GeminiClient:
             parts.append(types.Part.from_bytes(data=img["data"], mime_type=img["mime_type"]))
         parts.append(types.Part.from_text(text=text))
 
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
@@ -266,7 +282,7 @@ class GeminiClient:
 
             contents.append(types.Content(role=role, parts=parts))
 
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
@@ -292,9 +308,7 @@ class GeminiClient:
         temperature: float = 0.0,
     ) -> str:
         """Generate a JSON response from Gemini (native JSON mode)."""
-        from google.genai import types
-
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=4096,
             response_mime_type="application/json",
@@ -326,7 +340,7 @@ class GeminiClient:
 
         logger.info("gemini_generating_with_search", prompt_length=len(prompt))
 
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             tools=[types.Tool(google_search=types.GoogleSearch())],
@@ -399,7 +413,7 @@ class GeminiClient:
 
             contents.append(types.Content(role=role, parts=parts))
 
-        config = types.GenerateContentConfig(
+        config = self._make_config(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             tools=[types.Tool(google_search=types.GoogleSearch())],
@@ -791,7 +805,7 @@ def get_llm_client(model_type: str = MODEL_GEMINI) -> Any:
     """Get or create the appropriate LLM client.
 
     Args:
-        model_type: "gemini" for Gemini 3 Pro, "claude" for Claude Opus.
+        model_type: "gemini" for Gemini (settings.gemini_model), "claude" for Claude Opus.
 
     Returns:
         LLM client instance (GeminiClient or ClaudeClient).
@@ -819,5 +833,9 @@ def get_flash_client() -> GeminiClient:
         _gemini_flash_client = GeminiClient()
         settings = get_settings()
         _gemini_flash_client.model = settings.gemini_flash_model
+        # Flash defaults to dynamic thinking, which adds seconds per call.
+        # All flash tasks here (SQL gen, formatting, charts, routing) run
+        # with thinking off; zero-result SQL already escalates to Claude.
+        _gemini_flash_client.thinking_budget = 0
         logger.info("gemini_flash_client_initialized", model=_gemini_flash_client.model)
     return _gemini_flash_client

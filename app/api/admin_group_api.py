@@ -64,6 +64,10 @@ class RemoveUsers(BaseModel):
     ad_user_ids: list[int]
 
 
+class FiAccessUpdate(BaseModel):
+    can_view_fi: bool
+
+
 # ── Group CRUD ──
 
 @group_router.get("")
@@ -231,6 +235,7 @@ async def list_ad_users(
     search: Optional[str] = Query(None, description="Search name/email"),
     group_id: Optional[int] = Query(None, description="Filter by group"),
     unassigned: bool = Query(False, description="Only unassigned users"),
+    fi_only: bool = Query(False, description="Only FI-enabled users"),
 ):
     """List AD users with optional filters."""
     conditions = ["a.is_active = 1"]
@@ -251,12 +256,17 @@ async def list_ad_users(
     if unassigned:
         conditions.append("ug.group_id IS NULL")
 
+    if fi_only:
+        conditions.append("a.can_view_fi = 1")
+
     where = " AND ".join(conditions)
 
     sql = f"""
         SELECT a.id, a.username, a.display_name, a.email, a.department,
+               a.can_view_fi, u.id AS user_id,
                GROUP_CONCAT(g.name SEPARATOR ', ') as group_names
         FROM ad_users a
+        LEFT JOIN users u ON u.ad_user_id = a.id
         LEFT JOIN user_groups ug ON a.id = ug.ad_user_id
         LEFT JOIN access_groups g ON ug.group_id = g.id
         WHERE {where}
@@ -265,6 +275,32 @@ async def list_ad_users(
     """
     users = await _fetch_all(sql, tuple(params))
     return users
+
+
+@ad_router.put("/users/{ad_user_id}/fi")
+async def update_fi_access(
+    ad_user_id: int,
+    req: FiAccessUpdate,
+    admin: User = Depends(_require_admin),
+):
+    """Grant or revoke FI_LLM_Flat access for one AD user."""
+    target = await _fetch_one(
+        "SELECT id, username, display_name FROM ad_users WHERE id = %s",
+        (ad_user_id,),
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="AD user not found")
+
+    await _execute(
+        "UPDATE ad_users SET can_view_fi = %s WHERE id = %s",
+        (1 if req.can_view_fi else 0, ad_user_id),
+    )
+    logger.info("admin_update_fi", target=target["username"], by=admin.email)
+    return {
+        "ok": True,
+        "ad_user_id": ad_user_id,
+        "can_view_fi": req.can_view_fi,
+    }
 
 
 @ad_router.get("/departments")
@@ -310,11 +346,13 @@ async def ad_stats(user: User = Depends(_require_admin)):
         SELECT
             (SELECT COUNT(*) FROM ad_users WHERE is_active = 1) as total_ad_users,
             (SELECT COUNT(DISTINCT ad_user_id) FROM user_groups) as assigned_users,
-            (SELECT COUNT(*) FROM access_groups) as total_groups
+            (SELECT COUNT(*) FROM access_groups) as total_groups,
+            (SELECT COUNT(*) FROM ad_users WHERE is_active = 1 AND can_view_fi = 1) as fi_allowed_users
     """)
     return {
         "total_ad_users": row["total_ad_users"],
         "assigned_users": row["assigned_users"],
         "unassigned_users": row["total_ad_users"] - row["assigned_users"],
         "total_groups": row["total_groups"],
+        "fi_allowed_users": row["fi_allowed_users"],
     }

@@ -107,24 +107,29 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         or ""
     )
 
-    # Server-side brand_filter: always from DB (JWT/frontend values ignored — stale risk)
+    # Server-side access flags: always from DB (JWT/frontend values ignored — stale risk)
     brand_filter = None
+    can_view_fi = False
     user_id = getattr(http_request.state, "user_id", None)
     if user_id:
         try:
             row = await asyncio.to_thread(
                 fetch_one,
-                "SELECT u.role, g.brand_filter FROM users u "
+                "SELECT u.role, a.can_view_fi, g.brand_filter FROM users u "
+                "LEFT JOIN ad_users a ON u.ad_user_id = a.id "
                 "LEFT JOIN user_groups ug ON u.ad_user_id = ug.ad_user_id "
                 "LEFT JOIN access_groups g ON ug.group_id = g.id AND g.brand_filter IS NOT NULL "
-                "WHERE u.id = %s AND u.role != 'admin' LIMIT 1",
+                "WHERE u.id = %s LIMIT 1",
                 (user_id,),
             )
-            if row and row.get("brand_filter"):
-                brand_filter = row["brand_filter"]
+            if row:
+                is_admin = row["role"] == "admin"
+                brand_filter = None if is_admin else (row.get("brand_filter") or None)
+                can_view_fi = is_admin or bool(row.get("can_view_fi"))
+            if brand_filter:
                 logger.info("brand_filter_from_db", user_id=user_id, brand_filter=brand_filter)
         except Exception as e:
-            logger.warning("brand_filter_lookup_failed", user_id=user_id, error=str(e))
+            logger.warning("chat_access_lookup_failed", user_id=user_id, error=str(e))
 
     logger.info(
         "chat_completion_request",
@@ -133,6 +138,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         stream=request.stream,
         user_email=user_email or None,
         brand_filter=brand_filter or None,
+        can_view_fi=can_view_fi,
     )
 
     # Extract the last user message as the query
@@ -184,7 +190,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
 
     if request.stream:
         return StreamingResponse(
-            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources, enabled_team_resources=enabled_team_resources),
+            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, enabled_team_resources=enabled_team_resources),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
         )
@@ -192,7 +198,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     # Non-streaming response (v3.0: Orchestrator)
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, enabled_sources=enabled_sources, enabled_team_resources=enabled_team_resources
+            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, enabled_team_resources=enabled_team_resources
         )
         answer = result.get("answer", "")
     except Exception as e:
@@ -226,6 +232,7 @@ async def _stream_response(
     user_email: str = "",
     images: list = None,
     brand_filter: str = None,
+    can_view_fi: bool = False,
     enabled_sources: list = None,
     enabled_team_resources: dict = None,
 ) -> AsyncGenerator[str, None]:
@@ -269,7 +276,7 @@ async def _stream_response(
     try:
         async for msg_type, content in _get_orchestrator().route_and_stream(
             query, messages, model_type, user_email=user_email, images=images or [],
-            brand_filter=brand_filter, enabled_sources=enabled_sources,
+            brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources,
             enabled_team_resources=enabled_team_resources,
         ):
             if msg_type == "source":
@@ -566,5 +573,4 @@ async def readiness_check():
         "cs_loaded": cs_ready,
         "cs_db_count": cs_count,
     }
-
 

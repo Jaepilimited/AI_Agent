@@ -19,6 +19,7 @@ import structlog
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.prompt_fragments import FOLLOWUP_INSTRUCTION, LANGUAGE_DETECTION_RULE
 from app.core.response_formatter import ensure_formatting
+from app.core.security import FI_ACCESS_DENIED_MESSAGE
 
 # Existing agent
 from app.agents.sql_agent import run_sql_agent
@@ -124,6 +125,19 @@ _DIRECT_LOCK_KW = frozenset([
     "대출", "연봉", "이직", "항공", "비행기", "호텔", "숙소", "맛집",
 ])
 
+_FI_QUERY_KEYWORDS = (
+    "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
+)
+
+
+def _requests_fi_data(query: str, enabled_sources=None, db_entry=None) -> bool:
+    if any(keyword in (query or "") for keyword in _FI_QUERY_KEYWORDS):
+        return True
+    if "손익" in (enabled_sources or []):
+        return True
+    entries = db_entry if isinstance(db_entry, list) else [db_entry]
+    return any(isinstance(entry, dict) and entry.get("key") == "손익" for entry in entries)
+
 
 class OrchestratorAgent:
     """Orchestrator-Worker pattern conductor.
@@ -172,6 +186,7 @@ class OrchestratorAgent:
         # ── BigQuery 매출 ──
         {"key": "매출", "aliases": ["sales", "매출데이터", "세일즈"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "매출", "desc": "통합 매출 — 글로벌 전 플랫폼"},
         {"key": "제품", "aliases": ["product", "제품데이터"], "route": "bigquery", "group": "매출 데이터", "icon": "box", "label": "제품", "desc": "제품별 판매 수량"},
+        {"key": "손익", "aliases": ["pl", "손익계산서", "영업이익", "판관비", "재무손익"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "손익", "desc": "재무 손익 — 영업이익/원가/판관비 (월 단위)"},
         # ── BigQuery 마케팅 ──
         {"key": "광고", "aliases": ["ad", "ads", "광고데이터", "광고비"], "route": "bigquery", "group": "마케팅 데이터", "icon": "megaphone", "label": "광고", "desc": "통합 광고 데이터"},
         {"key": "마케팅", "aliases": ["marketing", "마케팅비용"], "route": "bigquery", "group": "마케팅 데이터", "icon": "dollar", "label": "마케팅", "desc": "통합 마케팅 비용"},
@@ -317,6 +332,7 @@ class OrchestratorAgent:
         user_email: str = "",
         images: Optional[List[dict]] = None,
         brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
         enabled_team_resources: Optional[Dict[str, list]] = None,
         stream_callback=None,
@@ -351,6 +367,10 @@ class OrchestratorAgent:
         if db_entry and not isinstance(db_entry, list):
             db_entry = [db_entry]
 
+        if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
+            logger.info("fi_access_denied", path="route_and_execute", query=query[:100])
+            return {"source": "bigquery", "answer": FI_ACCESS_DENIED_MESSAGE}
+
         if db_entry:
             query = clean_query or query
             if not query.strip():
@@ -372,7 +392,7 @@ class OrchestratorAgent:
                 }
                 handler = handlers.get(route, self._handle_direct)
                 if route in ("bigquery", "multi"):
-                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
+                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
                 elif route == "notion":
                     result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])
                 elif route == "team":
@@ -392,7 +412,7 @@ class OrchestratorAgent:
             for entry in db_entry:
                 route = entry["route"]
                 if route in ("bigquery", "multi"):
-                    tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)))
+                    tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)))
                 elif route == "notion":
                     tasks.append(("notion", entry, self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])))
                 elif route == "cs":
@@ -486,7 +506,7 @@ class OrchestratorAgent:
         }
         handler = handlers.get(route, self._handle_direct)
         if route in ("bigquery", "multi"):
-            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)
+            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
         elif route == "notion":
             result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email)
         elif route == "direct" or handler == self._handle_direct:
@@ -518,6 +538,7 @@ class OrchestratorAgent:
         user_email: str = "",
         images=None,
         brand_filter=None,
+        can_view_fi: bool = False,
         enabled_sources=None,
         enabled_team_resources=None,
     ):
@@ -546,6 +567,12 @@ class OrchestratorAgent:
         # Normalize to list
         if db_entry and not isinstance(db_entry, list):
             db_entry = [db_entry]
+
+        if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
+            logger.info("fi_access_denied", path="route_and_stream", query=query[:100])
+            yield ("source", "bigquery")
+            yield ("done", FI_ACCESS_DENIED_MESSAGE)
+            return
 
         if db_entry:
             query = clean_query or query
@@ -580,7 +607,7 @@ class OrchestratorAgent:
                     _loop = asyncio.get_running_loop()
                     def _bq():
                         try:
-                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=enabled_sources):
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=enabled_sources, can_view_fi=can_view_fi):
                                 _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                         except Exception as e:
                             _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
@@ -618,7 +645,7 @@ class OrchestratorAgent:
                 for entry in db_entry:
                     r = entry["route"]
                     if r in ("bigquery", "multi"):
-                        tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, enabled_sources=enabled_sources)))
+                        tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)))
                     elif r == "notion":
                         tasks.append(("notion", entry, self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])))
                     elif r == "cs":
@@ -818,6 +845,7 @@ class OrchestratorAgent:
                         brand_filter=brand_filter,
                         enabled_sources=enabled_sources,
                         wiki_context=wiki_context,
+                        can_view_fi=can_view_fi,
                     ):
                         _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                 except Exception as e:
@@ -873,7 +901,7 @@ class OrchestratorAgent:
                 _stream_timeout = 30.0
             else:  # multi
                 _stream_gen = self._handle_multi_stream(
-                    query, _handler_ctx, model_type, brand_filter=brand_filter, enabled_sources=enabled_sources
+                    query, _handler_ctx, model_type, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources
                 )
                 _stream_timeout = 300.0
 
@@ -1055,6 +1083,8 @@ class OrchestratorAgent:
         "순위 상승", "순위 변동", "순위 추이", "경쟁사 순위",
         # Repurchase
         "재구매", "재구매율", "리텐션", "코호트",
+        # Financial P&L (FI_LLM_Flat)
+        "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
         # Region / Continent / Team / Account
         "cis", "동남아", "유럽", "북미", "남미", "중동", "대륙",
         "신규", "업체", "거래처", "바이어", "b2b", "b2c",
@@ -1302,6 +1332,7 @@ class OrchestratorAgent:
                 "예스스타일", "스타일코리안", "졸스", "소시올라", "올리브영",
                 "순위", "랭킹", "플랫폼", "카테고리", "노출",
                 "재구매", "코호트",
+                "영업이익", "매출총이익", "판관비", "손익", "이익률", "영업이익률",
             ]
             if not any(t in q for t in _SKIN1004_TERMS):
                 return "direct"
@@ -1332,6 +1363,8 @@ class OrchestratorAgent:
             "분포", "현황", "건수",
             # Repurchase
             "재구매", "재구매율", "리텐션", "코호트", "재방문",
+            # Financial P&L (FI_LLM_Flat)
+            "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
         ]
         # Team resource check — team data lookups (before CS to avoid overlap)
         if any(kw in q for kw in self._TEAM_KEYWORDS):
@@ -1367,6 +1400,7 @@ class OrchestratorAgent:
                 "리뷰", "평점", "별점", "스마트스토어", "네이버스토어",
                 "예스스타일", "yesstyle", "스타일코리안", "졸스", "소시올라",
                 "재구매", "재구매율", "순위 상승", "순위 변동",
+                "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
                 "국가별", "월별", "팀별", "채널별", "제품별", "브랜드별", "사업부",
                 "데이터", "테이블", "컬럼", "있나요", "존재", "포함",
                 "revenue", "platform", "campaign", "google ads", "cost",
@@ -1445,6 +1479,7 @@ class OrchestratorAgent:
         model_type: str,
         user_email: str = "",
         brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
     ) -> dict:
         """BigQuery Agent with conversation context.
@@ -1459,7 +1494,13 @@ class OrchestratorAgent:
 
         # Check for "full data" follow-up request
         if self._is_fulldata_request(query, conversation_context):
-            return await self._handle_fulldata_request(query, messages, conversation_context, model_type)
+            return await self._handle_fulldata_request(
+                query,
+                messages,
+                conversation_context,
+                model_type,
+                can_view_fi=can_view_fi,
+            )
 
         # Maintenance check: warn but don't block (production-ready)
         _maintenance_warning = ""
@@ -1487,6 +1528,7 @@ class OrchestratorAgent:
                 model_type=model_type,
                 brand_filter=brand_filter,
                 enabled_sources=enabled_sources,
+                can_view_fi=can_view_fi,
             )
             # Check if SQL agent returned an error (it returns error as string, not exception)
             if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
@@ -1498,6 +1540,7 @@ class OrchestratorAgent:
                     model_type=model_type,
                     brand_filter=brand_filter,
                     enabled_sources=enabled_sources,
+                    can_view_fi=can_view_fi,
                 )
                 if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
                     logger.warning("bigquery_sql_failed_fallback_to_direct", query=query[:100])
@@ -1574,6 +1617,7 @@ class OrchestratorAgent:
         messages: List[Dict[str, str]],
         conversation_context: str,
         model_type: str,
+        can_view_fi: bool = False,
     ) -> dict:
         """Re-run previous BigQuery SQL without LIMIT when user requests full data."""
         from app.agents.sql_agent import _extract_previous_sql, run_sql_agent_unlimited
@@ -1613,6 +1657,7 @@ class OrchestratorAgent:
                 previous_sql=previous_sql,
                 query=original_query,
                 model_type=model_type,
+                can_view_fi=can_view_fi,
             )
             return {"source": "bigquery", "answer": answer}
         except Exception as e:
@@ -1711,6 +1756,7 @@ class OrchestratorAgent:
         conversation_context: str,
         model_type: str,
         brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
     ):
         """Shared prep for _handle_multi/_handle_multi_stream: run web search +
@@ -1769,6 +1815,8 @@ class OrchestratorAgent:
                 conversation_context=conversation_context,
                 model_type=model_type,
                 brand_filter=brand_filter,
+                enabled_sources=enabled_sources,
+                can_view_fi=can_view_fi,
             )
             return data_query, answer
 
@@ -1870,6 +1918,7 @@ class OrchestratorAgent:
         model_type: str,
         user_email: str = "",
         brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
     ) -> dict:
         """Multi-source analysis: internal data (BigQuery) + external info (Google Search).
@@ -1877,7 +1926,7 @@ class OrchestratorAgent:
         v6.4: Steps 1+2 run in parallel via asyncio.to_thread, synthesis uses Flash.
         """
         web_context, bq_answer, sub_results, ctx_section, today = await self._multi_prepare(
-            query, conversation_context, model_type, brand_filter, enabled_sources
+            query, conversation_context, model_type, brand_filter, can_view_fi, enabled_sources
         )
         synthesis_prompt = self._build_multi_synthesis_prompt(query, ctx_section, bq_answer, web_context, today)
 
@@ -1907,6 +1956,7 @@ class OrchestratorAgent:
         conversation_context: str,
         model_type: str,
         brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
     ):
         """Streaming variant of _handle_multi — yields answer text chunks.
@@ -1915,7 +1965,7 @@ class OrchestratorAgent:
         only the final synthesis call streams instead of blocking.
         """
         web_context, bq_answer, _sub_results, ctx_section, today = await self._multi_prepare(
-            query, conversation_context, model_type, brand_filter, enabled_sources
+            query, conversation_context, model_type, brand_filter, can_view_fi, enabled_sources
         )
         synthesis_prompt = self._build_multi_synthesis_prompt(query, ctx_section, bq_answer, web_context, today)
 
@@ -2037,7 +2087,7 @@ JSON만 반환:
         separate, uncached block so this (large, static) prompt stays byte-identical
         across requests and reuses Anthropic's prompt cache. See ClaudeClient._wrap_system.
         """
-        model_name = "Claude Sonnet 4 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
+        model_name = "Claude Opus 4.8 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
         # Import the full system prompt from _handle_direct inline (it's too long to duplicate)
         # We reference the same structure
         return f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
@@ -2190,7 +2240,7 @@ JSON만 반환:
         llm = get_llm_client(MODEL_CLAUDE)
         today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
 
-        model_name = "Claude Sonnet 4 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
+        model_name = "Claude Opus 4.8 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
 
         system = f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
 이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.

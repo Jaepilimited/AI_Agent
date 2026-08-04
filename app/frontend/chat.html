@@ -5,13 +5,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#fafaf9">
-  <title>Craver AI</title>
+  <title>Cella</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=149">
+  <link rel="stylesheet" href="/static/style.css?v=153">
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -40,8 +40,8 @@
       <!-- Header: logo (clickable → home), brand, new-chat + collapse -->
       <div class="sidebar-header">
         <a href="#" class="sidebar-home-link" id="sidebar-home-link" title="홈으로">
-          <img class="logo" id="sidebar-logo" src="/static/splash-dark-new.png" alt="Craver">
-          <span class="brand-gradient">Craver AI</span>
+          <img class="logo" id="sidebar-logo" src="/static/splash-dark-new.png" alt="Cella">
+          <span class="brand-gradient">Cella</span>
         </a>
         <div class="sidebar-header-actions">
           <button class="sidebar-icon-btn" id="btn-new-chat" title="새 대화" aria-label="새 대화">
@@ -141,7 +141,7 @@
               <img class="welcome-logo" id="welcome-logo" src="/static/splash-dark-new.png" alt="">
               <h1 class="welcome-hello"><span id="welcome-user-name"></span>님,</h1>
             </div>
-            <h1 class="welcome-sub">What do you <em class="crave-accent">crave</em>?</h1>
+            <h1 class="welcome-sub">What do you crave?</h1>
           </div>
           <div class="suggestions" id="welcome-suggestions">
             <button class="suggestion-chip" data-q="쇼피 인도네시아 이번 달 매출 알려줘">쇼피 인도네시아 매출</button>
@@ -263,6 +263,7 @@
         <select id="admin-group-filter" class="admin-select">
           <option value="">전체 그룹</option>
           <option value="unassigned">미배정</option>
+          <option value="fi_allowed">손익 허용</option>
         </select>
         <input type="text" id="admin-search" class="admin-input" placeholder="이름/이메일 검색">
       </div>
@@ -280,6 +281,6 @@
   <!-- Theme Toggle -->
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
-  <script src="/frontend/chat.js?v=227"></script>
+  <script src="/frontend/chat.js?v=229"></script>
 </body>
 </html>

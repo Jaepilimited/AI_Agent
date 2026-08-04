@@ -4,13 +4,19 @@ All generated SQL must pass these checks before execution.
 """
 
 import re
-from typing import List, Tuple
+from typing import Collection, Optional, Tuple
 
 import structlog
 
 from app.config import get_settings
 
 logger = structlog.get_logger(__name__)
+
+FI_ACCESS_DENIED_MESSAGE = (
+    "재무 손익 데이터는 별도 열람 권한이 필요합니다.\n"
+    "필요하시면 임재필에게 요청해 주세요."
+)
+_FI_TABLE_NAME = "FI_LLM_Flat"
 
 ALLOWED_STATEMENTS = {"SELECT"}
 
@@ -33,11 +39,16 @@ MAX_TIMEOUT_SECONDS = 30
 MAX_RESULT_ROWS = 10000
 
 
-def validate_sql(sql: str) -> Tuple[bool, str]:
+def validate_sql(
+    sql: str,
+    allowed_tables: Optional[Collection[str]] = None,
+) -> Tuple[bool, str]:
     """Validate SQL query for safety.
 
     Args:
         sql: The SQL query to validate.
+        allowed_tables: User-specific table allowlist. Defaults to the global
+            allowlist for backward compatibility.
 
     Returns:
         Tuple of (is_valid, error_message).
@@ -66,7 +77,17 @@ def validate_sql(sql: str) -> Tuple[bool, str]:
 
     # 4. Check table whitelist
     settings = get_settings()
-    table_valid, table_error = _validate_tables(sql, settings.allowed_tables)
+    effective_allowed_tables = (
+        settings.allowed_tables if allowed_tables is None else allowed_tables
+    )
+    fi_is_allowed = any(
+        table.casefold().endswith(f".{_FI_TABLE_NAME.casefold()}")
+        for table in effective_allowed_tables
+    )
+    if _FI_TABLE_NAME.casefold() in sql.casefold() and not fi_is_allowed:
+        return False, FI_ACCESS_DENIED_MESSAGE
+
+    table_valid, table_error = _validate_tables(sql, effective_allowed_tables)
     if not table_valid:
         return False, table_error
 
@@ -78,7 +99,7 @@ def validate_sql(sql: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def _validate_tables(sql: str, allowed_tables: List[str]) -> Tuple[bool, str]:
+def _validate_tables(sql: str, allowed_tables: Collection[str]) -> Tuple[bool, str]:
     """Validate that only allowed tables are referenced.
 
     Args:
@@ -91,13 +112,15 @@ def _validate_tables(sql: str, allowed_tables: List[str]) -> Tuple[bool, str]:
     # Extract table references from FROM and JOIN clauses
     # Matches backtick-quoted GCP table paths: `project.dataset.table`
     # Matches project.dataset.table paths — allows spaces in table name (e.g. `ad_data.meta data_test`)
-    table_pattern = r'`(skin1004-319714\.[^`]+)`'
+    table_pattern = r'`([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[^`]+)`'
     referenced_tables = re.findall(table_pattern, sql)
 
-    if not referenced_tables:
-        # Also check for unquoted table references
-        from_pattern = r'(?:FROM|JOIN)\s+(\S+\.\S+\.\S+)'
-        referenced_tables = re.findall(from_pattern, sql, re.IGNORECASE)
+    # Also check for unquoted table references (e.g. subqueries missing backticks).
+    # Anchored to a strict identifier.identifier.identifier shape so join conditions
+    # like "ON t1.product_name = t2.product_name" or subqueries ("JOIN (SELECT ...")
+    # can never be misread as a table path.
+    unquoted_pattern = r'(?:FROM|JOIN)\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b'
+    referenced_tables += re.findall(unquoted_pattern, sql, re.IGNORECASE)
 
     for table in referenced_tables:
         table_clean = table.strip('`').strip()

@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SKIN1004 AI Agent</title>
+  <title>SKIN1004 AI Agent — 점검 중</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       height: 100%;
-      background: #000;
+      background: #0e1420;
       color: #fff;
       font-family: 'Montserrat', 'Apple SD Gothic Neo', sans-serif;
       display: flex;
@@ -20,55 +20,67 @@
       padding: 40px 24px;
     }
     .logo {
-      width: 140px;
+      width: 100px;
       opacity: 0.85;
-      margin-bottom: 48px;
+      margin-bottom: 40px;
     }
-    .title {
-      font-size: 15px;
+    .label {
+      font-size: 12px;
       font-weight: 600;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
       color: #e89200;
       margin-bottom: 20px;
     }
-    .message {
-      font-size: 22px;
+    .title {
+      font-size: 24px;
       font-weight: 700;
-      line-height: 1.6;
-      margin-bottom: 32px;
+      line-height: 1.5;
       color: #fff;
+      margin-bottom: 12px;
     }
-    .new-url {
-      display: inline-block;
-      font-size: 18px;
-      font-weight: 600;
-      color: #e89200;
-      text-decoration: none;
-      border-bottom: 1.5px solid #e89200;
-      padding-bottom: 2px;
-      transition: opacity 0.2s;
-    }
-    .new-url:hover { opacity: 0.75; }
     .sub {
-      margin-top: 48px;
-      font-size: 12px;
-      color: #444;
-      letter-spacing: 0.05em;
+      font-size: 15px;
+      color: #7a8a9a;
+      line-height: 1.7;
+      margin-bottom: 40px;
+    }
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 2.5px solid #243040;
+      border-top-color: #e89200;
+      border-radius: 50%;
+      margin: 0 auto 40px;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer {
+      font-size: 11px;
+      color: #2a3a4a;
+      letter-spacing: 0.06em;
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <img class="logo" src="/static/splash-dark-new.png" alt="SKIN1004 AI Agent" onerror="this.style.display='none'">
-    <div class="title">공지사항</div>
-    <div class="message">
-      서버가 새 주소로 이전되었습니다.<br>아래 링크를 통해 접속해 주세요.
+    <div class="label">잠시만 기다려 주세요</div>
+    <div class="title">데이터를 업데이트하고 있습니다</div>
+    <div class="sub">
+      BigQuery 데이터 동기화가 진행 중입니다.<br>
+      완료 후 자동으로 정상 접속됩니다.
     </div>
-    <a class="new-url" href="http://34.64.99.179:3000" target="_blank">
-      http://34.64.99.179:3000
-    </a>
-    <div class="sub">SKIN1004 AI Agent &nbsp;·&nbsp; Craver Enterprise</div>
+    <div class="spinner"></div>
+    <div class="footer">SKIN1004 AI Agent &nbsp;·&nbsp; Cella Enterprise</div>
   </div>
+  <script>
+    // 30초마다 서버 상태 확인 → 정상이면 자동 새로고침
+    setInterval(function() {
+      fetch('/safety/status').then(function(r){ return r.json(); }).then(function(d){
+        if (!d.maintenance || !d.maintenance.active) location.reload();
+      }).catch(function(){});
+    }, 30000);
+  </script>
 </body>
 </html>
