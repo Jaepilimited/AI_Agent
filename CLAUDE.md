@@ -84,6 +84,32 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 - **신제품 정의 (2026-07-27 확정)** → **첫 판매일(데이터 최초 등장일)로부터 6개월 이하**인 제품
   - SQL 구현: 제품별 `MIN(Date)`로 첫 판매일을 구하고, 기준 시점(보통 오늘)으로부터 6개월 이내인 제품만 필터 — 예: `HAVING MIN(Date) >= DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH)`
   - 첫 판매일 판정은 세트 분해된 `Product` 테이블 기준 (SKU 단위 정확성)
+- **대륙 = `Continent1` 기본** (2026-08-04 오답 사고로 규칙화)
+  - `Continent2` 에는 **'유럽'·'아시아'·'동유럽' 값이 아예 없다.** 광역 대륙을 거기서 찾으면 0건이 난다
+  - 광역(유럽/아시아/북미/남미/중미/중동/아프리카/오세아니아/CIS) → `Continent1`
+  - 세부 권역(서유럽/북유럽/동남유럽/동남아시아/동아시아/서남아시아/북아프리카/남아메리카/중앙아메리카) → `Continent2`
+  - 예외는 "동남아"뿐 — `Continent1` 에 없어서 `Continent2 = '동남아시아'` 를 쓴다
+- **`GROUP BY` 없는 집계(`SUM`/`COUNT`)는 0건이어도 NULL 한 행을 돌려준다.** 빈 결과 판정을
+  `if not results:` 로만 하면 이 케이스를 놓쳐 LLM이 원인을 지어낸다. 전 컬럼 NULL 단일 행은
+  빈 결과로 정규화할 것 (`format_answer` 에 구현됨)
+
+## 코드 규칙 — 재발 방지
+
+- ⛔ **`ThreadPoolExecutor` 를 `with` 블록으로 감싸고 `future.result(timeout=N)` 을 쓰지 마라.**
+  블록을 빠져나갈 때 `shutdown(wait=True)` 가 걸려 **타임아웃이 무의미해진다** —
+  워커가 끝날 때까지 그대로 기다린다. 실제로 "차트 8초 넘으면 건너뛴다"는 로직이
+  통째로 무력화돼 있었다 (2026-08-04 발견).
+  ```python
+  pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+  try:
+      answer = pool.submit(fn).result(timeout=8.0)
+  finally:
+      pool.shutdown(wait=False)   # ← 반드시 wait=False
+  ```
+  스트리밍 경로(`run_sql_agent_stream` 등)는 원래 이 방식이다. 새 코드도 여기 맞출 것.
+- **차트 축 라벨은 전치(transpose) 여부에 따라 의미가 바뀐다.** 전치하면 x축은 기간이 되므로
+  원래 x축 제목(예: '국가')을 그대로 두면 축이 거짓말을 한다. 컬럼명을 눈금으로 쓸 때는
+  공통 접두사뿐 아니라 **접미사도** 제거할 것 (`Q1 sales`/`Q2 sales` → `Q1`/`Q2`)
 
 ## 재무 손익(FI) 열람 권한 — 2026-08-04
 

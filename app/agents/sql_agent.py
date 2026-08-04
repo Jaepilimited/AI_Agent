@@ -907,9 +907,14 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 대조해도 원인이 없을 때만 추정 원인을 제시하되, 추정임을 밝혀라.
 
 간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 위 방법으로 짚은 원인 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            # ⚠️ with 블록으로 감싸지 마라. 블록을 빠져나갈 때 shutdown(wait=True)가
+            # 걸려 아래 8초 타임아웃이 무의미해진다 (LLM 이 멈추면 그만큼 그대로 대기).
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
                 f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
                 answer = f.result(timeout=8.0)
+            finally:
+                pool.shutdown(wait=False)
             if answer and len(answer) > 30:
                 return {"answer": answer}
         except (concurrent.futures.TimeoutError, Exception):
@@ -1112,7 +1117,12 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     try:
         # Answer generation: foreground. Chart: parallel with short timeout.
         # User sees answer immediately; chart appended only if ready fast enough.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        # ⚠️ with 블록으로 감싸지 마라. 블록 종료 시 shutdown(wait=True)가 걸려
+        # 아래 "차트 8초 넘으면 건너뛴다"는 로직이 무력화된다 — 느린 차트가
+        # 답변 전체를 그만큼 붙잡는다. 스트리밍 경로처럼 shutdown(wait=False)로 푼다.
+        chart_markdown = None
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        try:
             answer_future = executor.submit(llm.generate, prompt, None, 0.05, 65536)
             chart_llm = get_flash_client()
             chart_future = executor.submit(
@@ -1126,6 +1136,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             except concurrent.futures.TimeoutError:
                 chart_markdown = None
                 logger.info("chart_generation_skipped_timeout")
+        finally:
+            executor.shutdown(wait=False)
 
         if chart_markdown:
             insight_markers = ["#### 분석 및 인사이트", "#### 분석", "### 분석 및 인사이트", "### 분석"]
