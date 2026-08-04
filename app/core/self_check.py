@@ -117,14 +117,28 @@ def _check_ad_sync_fresh() -> CheckResult:
 
 
 def _check_wiki_extract_fresh() -> CheckResult:
+    """위키 추출 잡이 **밀린 일감을 처리하고 있는가**.
+
+    "마지막 기록이 N시간 전"만 보면 안 된다. 이 잡은 처리할 메시지가 없으면
+    로그를 남기지 않으므로, 밤새 아무도 안 쓰면 정상인데도 실패로 잡힌다
+    (2026-08-05 실제로 이 오탐이 났다). 신선도가 아니라 **backlog** 로 판정한다.
+    """
     # 컬럼명은 processed_at 이다 (created_at 아님 — 실제로 헛짚었던 부분)
     row = fetch_one("SELECT MAX(processed_at) AS m FROM wiki_extraction_log")
     last = row and row.get("m")
     if not last:
         return CheckResult(False, "추출 기록 없음")
+
+    pending = fetch_one("SELECT COUNT(*) c FROM messages WHERE created_at > %s", (last,))
+    n_pending = (pending or {}).get("c", 0)
     age_h = (datetime.now() - last).total_seconds() / 3600
-    # 매시 :15 실행 → 3시간이면 명백히 멈춘 것
-    return CheckResult(age_h <= 3, f"마지막 위키 추출 {last} ({age_h:.1f}시간 전)")
+    if n_pending == 0:
+        return CheckResult(True, f"마지막 추출 {last} — 이후 신규 메시지 없음 (처리할 일감 없음)")
+    # 매시 :15 실행 → 일감이 있는데 3시간째 안 줄었으면 멈춘 것
+    return CheckResult(
+        age_h <= 3,
+        f"마지막 추출 {last} ({age_h:.1f}시간 전) · 미처리 메시지 {n_pending}건",
+    )
 
 
 def _check_quality_snapshot_fresh() -> CheckResult:
