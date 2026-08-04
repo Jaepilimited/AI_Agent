@@ -10,6 +10,7 @@ Usage:
 """
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -149,10 +150,85 @@ _NAME_OVERRIDES: dict[str, str] = {
     "jes@skin1004korea.com": "조은서",
     "camilak0314@skin1004korea.com": "김서현",
     "pa1004@skin1004korea.com": "안나",
+    # ── 영문+한자 복합 display_name 유저 (email 키) ────────────────────────
+    "dspark@skin1004korea.com": "박다솜",
+    "dhlee@cravercorp.com": "이도학",
+    "gayeon@cravercorp.com": "유가연",
+    "chillahs@cravercorp.com": "이한서",
+    "jungle@cravercorp.com": "정재명",
+    "kmsgkgk@cravercorp.com": "강민성",
+    "ksw@cravercorp.com": "권상우",
+    "csj@cravercorp.com": "최서정",
+    "twchoi@cravercorp.com": "최태웅",
+    "yein@cravercorp.com": "김예인",
+    "ydlee@skin1004korea.com": "이용두",
+    # ── 순수 영문 display_name (email 키) ─────────────────────────────────
+    "cjswngur@cravercorp.com": "천주혁",
+    "hichun@cravercorp.com": "전항일",
+    "moonsub.song@cravercorp.com": "송문섭",
+    # ── 이메일 없는 유저 (username 키) ────────────────────────────────────
+    "hrkang": "강희림",
+    "hban": "안홍비",
+    "whlee": "이원희",
+}
+
+# ── 부서/이메일 수동 오버라이드 ────────────────────────────────────────────────
+# 2026-07-22: CRM(skin1004-crm/scripts/sync-ad-users.py)의 B2B팀 전용 포크에만
+# 있던 오버라이드를 병합. Task Scheduler(SKIN1004-AD-Sync-Daily)가 다시 이 스크립트를
+# 정식으로 실행하게 되면서, CRM 포크가 갖고 있던 부서/이메일 보정이 이 스크립트에도
+# 필요해졌다 (CRM 쪽은 B2B 팀 검증/신규팀원 자동등록 전용으로 남고, ad_users 동기화
+# 자체는 여기 한 곳에서만 한다).
+_DEPARTMENT_OVERRIDES: dict[str, str] = {
+    # 신혜연: AD 상 'Sales Dept'에서 끊겨 영업1 필터에서 누락됨. 팀장이므로 강제.
+    "haily": "Craver_Accounts > Users > Brand Division > Sales Dept > 영업1 > 글로벌세일즈1",
+}
+
+_EMAIL_OVERRIDES: dict[str, str] = {
+    # 보정된 한글 display_name 기준 (이름 오버라이드 적용 후).
+    "서주희": "juhee.seo@skin1004korea.com",
+    "송민서": "minseosong@skin1004korea.com",
+    "이수현": "shlee1@skin1004korea.com",
+    "조민경": "mkcho@skin1004korea.com",
+    "최서연": "sychoi@skin1004korea.com",
+    "신혜연": "haily@skin1004korea.com",
+    "이새":   "jesse.lee@skin1004korea.com",
+    "조한나": "hanna13@skin1004korea.com",
+    # 2026-08-05: AD 에 mail 속성이 없어 users.email 이 빈 문자열로 남아 있던 건
+    # (2026-03-17 noemail.local 폴백 도입 전에 가입해 대체값조차 못 받았다).
+    "전휘빈": "hbjeon@skin1004korea.com",
 }
 
 
+# ── 복합 display_name 자동 추출 ──────────────────────────────────────────────
+# AD가 "EngName_한글이름_漢字" 형태로 저장하는 경우 한글 부분만 추출.
+# 명시적 _NAME_OVERRIDES 가 없을 때만 적용.
+_COMPLEX_RE = re.compile(r'^[A-Za-z0-9_]+_([가-힣]{2,6})(?:_[^\s]*)?$')
+
+def _extract_korean_name(display_name: str) -> str | None:
+    m = _COMPLEX_RE.match(display_name)
+    return m.group(1) if m else None
+
+
 # ── STEP 1: AD에서 사용자 가져오기 (재시도 3회) ──────────────────────────────
+
+def _entry_to_user(entry) -> dict:
+    """Convert an ldap3 entry without its stdout-dependent string renderer."""
+    dn = entry.entry_dn
+    ou_parts = [part.replace("OU=", "") for part in dn.split(",") if part.startswith("OU=")]
+    ou_path = " > ".join(reversed(ou_parts)) if ou_parts else "Root"
+
+    username = entry.sAMAccountName.value
+    display = entry.displayName.value if entry.displayName and entry.displayName.value else entry.name.value
+    email = entry.mail.value if entry.mail and entry.mail.value else None
+
+    return {
+        "username": username,
+        "display_name": display,
+        "email": email,
+        "department": ou_path,
+        "full_dn": dn,
+    }
+
 
 def fetch_ad_users(retries: int = 3) -> list[dict]:
     from ldap3 import Server, Connection, Tls, ALL, SUBTREE
@@ -183,23 +259,7 @@ def fetch_ad_users(retries: int = 3) -> list[dict]:
                     attributes=["sAMAccountName", "name", "displayName", "mail", "department"],
                 )
 
-                users = []
-                for entry in conn.entries:
-                    dn = entry.entry_dn
-                    ou_parts = [p.replace("OU=", "") for p in dn.split(",") if p.startswith("OU=")]
-                    ou_path = " > ".join(reversed(ou_parts)) if ou_parts else "Root"
-                    display = (
-                        str(entry.displayName)
-                        if hasattr(entry, "displayName") and entry.displayName
-                        else str(entry.name)
-                    )
-                    users.append({
-                        "username": str(entry.sAMAccountName),
-                        "display_name": display,
-                        "email": str(entry.mail) if entry.mail else None,
-                        "department": ou_path,
-                        "full_dn": dn,
-                    })
+                users = [_entry_to_user(entry) for entry in conn.entries]
 
                 ok(f"AD 사용자 {len(users)}명 조회 완료")
                 return users
@@ -218,15 +278,32 @@ def fetch_ad_users(retries: int = 3) -> list[dict]:
 def sync_to_db(users: list[dict], dry_run: bool = False):
     if dry_run:
         info("DRY RUN - DB 변경 없음")
+        auto_preview = 0
         for u in users:
-            name = _NAME_OVERRIDES.get(u.get("email") or "", u["display_name"])
-            print(f"  {name} ({u['username']}) / {u['email'] or 'N/A'}")
-        info(f"총 {len(users)}명")
+            email    = u.get("email") or ""
+            username = u.get("username") or ""
+            if email in _NAME_OVERRIDES:
+                name = _NAME_OVERRIDES[email]
+                tag  = "[override]"
+            elif username in _NAME_OVERRIDES:
+                name = _NAME_OVERRIDES[username]
+                tag  = "[override]"
+            else:
+                korean = _extract_korean_name(u["display_name"])
+                if korean:
+                    name = korean
+                    tag  = "[auto]"
+                    auto_preview += 1
+                else:
+                    name = u["display_name"]
+                    tag  = ""
+            print(f"  {name} ({u['username']}) {tag} / {u['email'] or 'N/A'}")
+        info(f"총 {len(users)}명 (자동 정제 예정: {auto_preview}명)")
         return
 
     conn = get_db_connection()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    inserted = updated = override_applied = 0
+    inserted = updated = override_applied = auto_cleaned = 0
 
     try:
         with conn.cursor() as cursor:
@@ -234,9 +311,33 @@ def sync_to_db(users: list[dict], dry_run: bool = False):
 
             for u in users:
                 email = u.get("email") or ""
+                username = u.get("username") or ""
                 if email in _NAME_OVERRIDES:
                     u["display_name"] = _NAME_OVERRIDES[email]
                     override_applied += 1
+                elif username in _NAME_OVERRIDES:
+                    u["display_name"] = _NAME_OVERRIDES[username]
+                    override_applied += 1
+                else:
+                    # 복합 display_name 자동 정제 (EngName_한글_漢字 → 한글)
+                    korean = _extract_korean_name(u["display_name"])
+                    if korean:
+                        info(f"  자동 정제: {u['username']} '{u['display_name']}' → '{korean}'")
+                        u["display_name"] = korean
+                        auto_cleaned += 1
+
+                if username in _DEPARTMENT_OVERRIDES:
+                    override_dept = _DEPARTMENT_OVERRIDES[username]
+                    if u.get("department") != override_dept:
+                        info(f"  부서 오버라이드: {u['display_name']}({username}) → '{override_dept}'")
+                    u["department"] = override_dept
+
+                # 이메일 오버라이드는 보정된 한글 이름 기준으로 매칭한다.
+                if u["display_name"] in _EMAIL_OVERRIDES:
+                    override_email = _EMAIL_OVERRIDES[u["display_name"]]
+                    if u.get("email") != override_email:
+                        info(f"  이메일 오버라이드: {u['display_name']} → '{override_email}'")
+                    u["email"] = override_email
 
                 cursor.execute("""
                     INSERT INTO ad_users (username, display_name, email, department, full_dn, is_active, synced_at)
@@ -257,7 +358,7 @@ def sync_to_db(users: list[dict], dry_run: bool = False):
 
             conn.commit()
 
-        ok(f"신규: {inserted}명 / 갱신: {updated}명 / 이름 오버라이드: {override_applied}명")
+        ok(f"신규: {inserted}명 / 갱신: {updated}명 / 이름 오버라이드: {override_applied}명 / 자동 정제: {auto_cleaned}명")
 
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) as cnt FROM ad_users WHERE is_active = 1")
@@ -276,6 +377,24 @@ def heal_names(dry_run: bool = False, _retries: int = 3):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
+            # 선제 정제: users.display_name 도 복합 패턴이면 한글만 추출
+            cursor.execute(
+                "SELECT id, email, display_name FROM users WHERE display_name REGEXP '^[A-Za-z0-9_]+_[가-힣]'"
+            )
+            complex_users = cursor.fetchall()
+            pre_fixed = 0
+            for u in complex_users:
+                korean = _extract_korean_name(u["display_name"])
+                if korean:
+                    if dry_run:
+                        info(f"  [DRY] users 정제: {u['email']} '{u['display_name']}' → '{korean}'")
+                    else:
+                        cursor.execute("UPDATE users SET display_name = %s WHERE id = %s", (korean, u["id"]))
+                        pre_fixed += 1
+            if not dry_run and pre_fixed:
+                conn.commit()
+                ok(f"users 복합 display_name {pre_fixed}명 자동 정제")
+
             cursor.execute("""
                 SELECT ad.id, ad.username, ad.display_name AS ad_name,
                        u.display_name AS korean_name, u.email
