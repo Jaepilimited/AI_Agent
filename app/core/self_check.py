@@ -117,7 +117,8 @@ def _check_ad_sync_fresh() -> CheckResult:
 
 
 def _check_wiki_extract_fresh() -> CheckResult:
-    row = fetch_one("SELECT MAX(created_at) AS m FROM wiki_extraction_log")
+    # 컬럼명은 processed_at 이다 (created_at 아님 — 실제로 헛짚었던 부분)
+    row = fetch_one("SELECT MAX(processed_at) AS m FROM wiki_extraction_log")
     last = row and row.get("m")
     if not last:
         return CheckResult(False, "추출 기록 없음")
@@ -166,18 +167,21 @@ def _check_users_email() -> CheckResult:
     return CheckResult(not rows, f"이메일 누락 {len(rows)}명: {names[:5]}")
 
 
-_ESCAPED_NAME_SQL = r"SELECT id, username, display_name FROM {} WHERE display_name LIKE '%\\\\u%'"
+# LIKE '%...%' 를 쓰면 pymysql 이 `%` 를 포맷 지시자로 읽어 터진다(파라미터가 없어도
+# 빈 튜플이 전달되면 포맷을 시도한다). 게다가 MySQL LIKE 에서 백슬래시는 이스케이프
+# 문자라 백슬래시 리터럴 매칭이 지저분해진다. CHAR(92)+LOCATE 로 둘 다 피한다.
+_ESCAPED_NAME_COND = "LOCATE(CONCAT(CHAR(92), 'u'), display_name) > 0"
 
 
 def _check_name_encoding() -> CheckResult:
-    """`\\uXXXX` 로 이스케이프된 채 저장된 이름을 찾는다.
+    r"""`\uXXXX` 로 이스케이프된 채 저장된 이름을 찾는다.
 
     AD 에서 삭제된(비활성) 계정에만 남아 있는 레거시라 자동 복원이 안전하다.
     활성 계정은 다음 AD sync 가 덮어쓰므로 손대지 않는다 (CLAUDE.md 규칙).
     """
     rows = fetch_all(
-        r"SELECT id, username, display_name, is_active FROM ad_users "
-        r"WHERE display_name LIKE '%\\\\u%'"
+        "SELECT id, username, display_name, is_active FROM ad_users "
+        f"WHERE {_ESCAPED_NAME_COND}"
     )
     inactive = [r for r in rows if not r["is_active"]]
     return CheckResult(
