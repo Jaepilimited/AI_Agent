@@ -32,13 +32,17 @@ USER = "jeffrey"
 EXCLUDE_DIRS = {
     ".git", ".worktrees", "node_modules", "logs", "backup", "__pycache__",
     "venv", "sshenv", ".pytest_cache", "remotion-guide", "qdrant_db",
-    "qdrant_db_learning", ".agents", ".codex", ".multiagent", "knowledge_map",
+    "qdrant_db_learning", ".agents", ".codex", ".multiagent",
     "open-webui-backup", "craver_design_clone", "_docker_recovery_temp",
     "custom_frontend", "backup_before_custom_frontend", "temp_pdf_preview",
     "docs", "tests", "wheels",
 }
+# ⚠️ EXCLUDE_DIRS 는 **디렉토리 이름**으로 거른다. 이름이 겹치는 소스 패키지가
+# 같이 빠지므로, 최상위 산출물 디렉토리는 반드시 EXCLUDE_PATHS(경로 기준)에 쓸 것.
+#   - knowledge_map: 이름으로 걸렀더니 소스 패키지 `app/knowledge_map/` 까지 빠져
+#     APP 서버의 03:00 그래프 빌드가 매일 ModuleNotFoundError 로 죽었다 (2026-08-05 발견).
 # app/static/charts 는 서버사이드 차트 시절 PNG 5천여개(687MB) 잔재. 현재 미사용.
-EXCLUDE_PATHS = {"app/static/charts"}
+EXCLUDE_PATHS = {"app/static/charts", "knowledge_map"}
 EXCLUDE_EXT = {".pyc", ".pyo", ".log", ".sql", ".pdf", ".xlsx"}
 # .env 는 서버별 값이 다르므로 덮어쓰지 않는다 (최초 1회만 수동 구성)
 EXCLUDE_FILES = {".env"}

@@ -39,5 +39,21 @@ def main() -> int:
     return 0
 
 
+def _tracked_main() -> int:
+    """크론 실행을 job_runs 에 기록한다 — 죽어도 자가 점검이 알아채도록.
+
+    (2026-08-05: app/knowledge_map 이 배포에서 누락돼 이 잡이 매일
+     ModuleNotFoundError 로 죽고 있었는데 아무도 몰랐다.)
+    """
+    try:
+        from app.core.self_check import track_job
+    except Exception:
+        return main()  # 기록 불가여도 본 작업은 수행한다
+    with track_job("knowledge_map_build") as jr:
+        rc = main()
+        jr.set_note(f"exit={rc}")
+    return rc
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_tracked_main())

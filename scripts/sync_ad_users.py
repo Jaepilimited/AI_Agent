@@ -561,5 +561,22 @@ def main():
             _release_lock()
 
 
+def _tracked_main():
+    """크론 실행을 job_runs 에 기록한다 — 조용히 실패하지 않도록.
+
+    (2026-08-04: APP 서버 .env 의 DB 비밀번호 오타로 6일간 매일 밤 실패했는데
+     아무도 몰랐다. dry-run/heal-only 는 정기 실행이 아니므로 기록하지 않는다.)
+    """
+    if "--dry-run" in sys.argv or "--heal-only" in sys.argv:
+        return main()
+    try:
+        from app.core.self_check import track_job
+    except Exception:
+        return main()  # 기록 불가여도 본 작업은 수행한다
+    with track_job("ad_sync") as jr:
+        main()
+        jr.set_note("AD sync 완료")
+
+
 if __name__ == "__main__":
-    main()
+    _tracked_main()

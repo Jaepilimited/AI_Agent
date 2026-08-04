@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import re
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, Optional
@@ -73,13 +74,97 @@ CREATE TABLE IF NOT EXISTS self_check_results (
 """
 
 
+_DDL_JOB_RUNS = """
+CREATE TABLE IF NOT EXISTS job_runs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    job_id VARCHAR(64) NOT NULL,
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at DATETIME NULL,
+    ok TINYINT(1) NULL,
+    detail TEXT,
+    duration_ms INT NULL,
+    INDEX idx_job (job_id, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
 def ensure_self_check_tables() -> None:
-    """검사 결과 저장 테이블 생성 (idempotent)."""
-    for ddl in (_DDL_RUNS, _DDL_RESULTS):
+    """검사 결과·잡 실행 기록 테이블 생성 (idempotent)."""
+    for ddl in (_DDL_RUNS, _DDL_RESULTS, _DDL_JOB_RUNS):
         try:
             execute(ddl)
         except Exception as e:  # 이미 있으면 무시
             logger.debug("self_check_ddl_skip", error=str(e)[:120])
+
+
+# ── 잡 실행 기록 ──────────────────────────────────────────────────────────────
+#
+# 배치 건강성을 **부수효과**(테이블에 행이 늘었나)로 판정하면 함정에 빠진다.
+# 위키 추출 잡은 처리할 메시지가 없으면 로그를 남기지 않아, 밤새 한산했을 뿐인데
+# "3시간째 기록 없음 = 고장"으로 오탐이 났다 (2026-08-05).
+#
+# 그래서 **실행 자체**를 기록한다. 일감이 없어도 "돌았고 할 일이 없었다"가 남으므로
+# '할 일이 없어서 안 돈 것'과 '죽어서 못 돈 것'이 구분된다.
+
+
+class _JobRun:
+    """track_job 이 넘겨주는 핸들 — 잡이 자기 결과를 한 줄로 남긴다."""
+
+    def __init__(self) -> None:
+        self.note = ""
+
+    def set_note(self, note: str) -> None:
+        self.note = str(note)[:1000]
+
+
+@contextmanager
+def track_job(job_id: str):
+    """스케줄 잡 실행을 job_runs 에 기록한다. 예외는 실패로 남기고 그대로 올린다."""
+    ensure_self_check_tables()
+    started = datetime.now()
+    run_id = None
+    try:
+        run_id = execute_lastid(
+            "INSERT INTO job_runs (job_id, started_at) VALUES (%s, %s)", (job_id, started)
+        )
+    except Exception as e:
+        logger.warning("job_run_insert_failed", job=job_id, error=str(e)[:120])
+
+    handle = _JobRun()
+    try:
+        yield handle
+    except Exception as e:
+        _finish_job(run_id, started, False, f"{type(e).__name__}: {str(e)[:400]}")
+        raise
+    else:
+        _finish_job(run_id, started, True, handle.note)
+
+
+def _finish_job(run_id, started, ok: bool, detail: str) -> None:
+    if run_id is None:
+        return
+    try:
+        execute(
+            "UPDATE job_runs SET finished_at = %s, ok = %s, detail = %s, duration_ms = %s "
+            "WHERE id = %s",
+            (datetime.now(), 1 if ok else 0, (detail or "")[:1000],
+             int((datetime.now() - started).total_seconds() * 1000), run_id),
+        )
+    except Exception as e:
+        logger.warning("job_run_update_failed", run_id=run_id, error=str(e)[:120])
+
+
+# 잡별 허용 간격(시간). 스케줄 주기 + 여유를 준다.
+EXPECTED_JOBS: dict[str, tuple[float, str]] = {
+    "wiki_extract_hourly": (3, "위키 추출 (매시 :15)"),
+    "team_sync_daily": (26, "팀 리소스 동기화 (01:00)"),
+    "qdrant_pipeline_daily": (26, "Qdrant 파이프라인 (05:00)"),
+    "quality_snapshot_daily": (26, "품질 스냅샷 (00:05)"),
+    "self_check_daily": (26, "자가 점검 (07:30)"),
+    "weekly_growth_report": (24 * 8, "주간 성장 리포트 (월 00:10)"),
+    "ad_sync": (26, "AD 동기화 (APP 서버 22:00)"),
+    "knowledge_map_build": (26, "지식맵 빌드 (APP 서버 03:00)"),
+}
 
 
 # ── 검사 정의 ─────────────────────────────────────────────────────────────────
@@ -139,6 +224,42 @@ def _check_wiki_extract_fresh() -> CheckResult:
         age_h <= 3,
         f"마지막 추출 {last} ({age_h:.1f}시간 전) · 미처리 메시지 {n_pending}건",
     )
+
+
+def _check_job_heartbeats() -> CheckResult:
+    """등록된 모든 스케줄 잡이 제 주기 안에 **성공적으로** 돌았는가.
+
+    부수효과가 아니라 job_runs 의 실행 기록으로 판정하므로, 일감이 없어 아무것도
+    하지 않은 실행도 정상으로 잡힌다. 잡 하나를 새로 추가할 때 EXPECTED_JOBS 에만
+    등록하면 자동으로 감시 대상이 된다.
+    """
+    now = datetime.now()
+    stale, failing, never = [], [], []
+    for job_id, (max_h, label) in EXPECTED_JOBS.items():
+        row = fetch_one(
+            "SELECT started_at, ok, detail FROM job_runs WHERE job_id = %s "
+            "ORDER BY id DESC LIMIT 1",
+            (job_id,),
+        )
+        if not row:
+            never.append(label)
+            continue
+        age_h = (now - row["started_at"]).total_seconds() / 3600
+        if age_h > max_h:
+            stale.append(f"{label} {age_h:.0f}h 전")
+        elif row["ok"] == 0:
+            failing.append(f"{label}: {(row['detail'] or '')[:60]}")
+
+    parts = []
+    if stale:
+        parts.append(f"주기 초과 {len(stale)}건 — {', '.join(stale)}")
+    if failing:
+        parts.append(f"실패 {len(failing)}건 — {'; '.join(failing)}")
+    if never:
+        parts.append(f"기록 없음 {len(never)}건 (도입 직후일 수 있음) — {', '.join(never)}")
+    ok = not (stale or failing)
+    return CheckResult(ok, " / ".join(parts) if parts else
+                       f"등록된 잡 {len(EXPECTED_JOBS)}개 모두 정상 주기")
 
 
 def _check_quality_snapshot_fresh() -> CheckResult:
@@ -295,6 +416,8 @@ CHECKS: list[Check] = [
           "위키 추출이 3시간 내 동작했는가", _check_wiki_extract_fresh),
     Check("quality_snapshot_fresh", "batch", SEV_WARNING,
           "품질 스냅샷이 2일 내 생성됐는가", _check_quality_snapshot_fresh),
+    Check("job_heartbeats", "batch", SEV_CRITICAL,
+          "모든 스케줄 잡이 제 주기 안에 성공했는가", _check_job_heartbeats),
     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
           "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,

@@ -478,12 +478,15 @@ async def _warmup_llm_clients():
 
 async def _sync_team_resources_job():
     """Daily 01:00 cron job: Notion → MariaDB sync."""
+    from app.core.self_check import track_job
     try:
         import asyncio
-        from scripts.sync_team_resources import sync
-        count = await asyncio.to_thread(sync, dry_run=False)
-        from app.agents.team_agent import warmup
-        await warmup()
+        with track_job("team_sync_daily") as jr:
+            from scripts.sync_team_resources import sync
+            count = await asyncio.to_thread(sync, dry_run=False)
+            from app.agents.team_agent import warmup
+            await warmup()
+            jr.set_note(f"{count}건 동기화")
         logger.info("team_resources_daily_sync_done", count=count)
     except Exception as e:
         logger.error("team_resources_daily_sync_failed", error=str(e))
@@ -491,9 +494,12 @@ async def _sync_team_resources_job():
 
 async def _qdrant_pipeline_job():
     """Daily 05:00: Notion → Qdrant 서버 직접 업로드 (전체 sync)."""
+    from app.core.self_check import track_job
     try:
-        from scripts.notion_qdrant_pipeline import run_pipeline
-        stats = await asyncio.to_thread(run_pipeline)
+        with track_job("qdrant_pipeline_daily") as jr:
+            from scripts.notion_qdrant_pipeline import run_pipeline
+            stats = await asyncio.to_thread(run_pipeline)
+            jr.set_note(str({k: v for k, v in stats.items() if isinstance(v, (int, bool))})[:400])
         logger.info("qdrant_pipeline_done", **{k: v for k, v in stats.items() if isinstance(v, (int, bool))})
     except Exception as e:
         logger.error("qdrant_pipeline_failed", error=str(e))
@@ -506,9 +512,13 @@ async def _extract_wiki_hourly():
     pair is missed if a batch runs long. The extractor already skips pairs
     that already have wiki rows.
     """
+    from app.core.self_check import track_job
     try:
-        from app.knowledge.wiki_extractor import extract_batch
-        result = await extract_batch(since_minutes=75, limit=200, max_concurrent=4)
+        with track_job("wiki_extract_hourly") as jr:
+            from app.knowledge.wiki_extractor import extract_batch
+            result = await extract_batch(since_minutes=75, limit=200, max_concurrent=4)
+            # 처리할 게 없어도 "돌았다"는 기록은 남는다 — 한산함과 고장을 구분하기 위함
+            jr.set_note(str(result)[:400])
         logger.info("wiki_hourly_extract_done", **result)
     except Exception as e:
         logger.error("wiki_hourly_extract_failed", error=str(e))
@@ -516,9 +526,12 @@ async def _extract_wiki_hourly():
 
 async def _quality_snapshot_job():
     """Daily 00:05: compute quality snapshot for yesterday."""
+    from app.core.self_check import track_job
     try:
-        from app.core.quality_monitor import compute_daily_snapshot
-        result = await asyncio.to_thread(compute_daily_snapshot)
+        with track_job("quality_snapshot_daily") as jr:
+            from app.core.quality_monitor import compute_daily_snapshot
+            result = await asyncio.to_thread(compute_daily_snapshot)
+            jr.set_note(f"{result.get('date')} · flags {len(result.get('flags', []))}")
         logger.info("quality_snapshot_done", date=result.get("date"), flags=len(result.get("flags", [])))
     except Exception as e:
         logger.error("quality_snapshot_failed", error=str(e))
@@ -530,9 +543,11 @@ async def _self_check_job():
     새로 깨진 검사만 잔디로 알린다. 2026-08-04 AD 동기화가 6일간 조용히
     실패하고도 아무도 몰랐던 일을 다시 겪지 않기 위한 잡이다.
     """
+    from app.core.self_check import run_self_check, track_job
     try:
-        from app.core.self_check import run_self_check
-        result = await asyncio.to_thread(run_self_check, True, True)
+        with track_job("self_check_daily") as jr:
+            result = await asyncio.to_thread(run_self_check, True, True)
+            jr.set_note(f"{result.get('passed')}/{result.get('total')} 통과")
         logger.info("self_check_done", passed=result.get("passed"), failed=result.get("failed"),
                     repaired=result.get("repaired"), newly_broken=result.get("newly_broken"))
     except Exception as e:
@@ -541,9 +556,12 @@ async def _self_check_job():
 
 async def _weekly_growth_report_job():
     """Monday 00:10: compute and persist weekly growth report."""
+    from app.core.self_check import track_job
     try:
-        from app.core.growth_report import compute_weekly_growth
-        result = await asyncio.to_thread(compute_weekly_growth)
+        with track_job("weekly_growth_report") as jr:
+            from app.core.growth_report import compute_weekly_growth
+            result = await asyncio.to_thread(compute_weekly_growth)
+            jr.set_note(str({k: v for k, v in result.items() if k != "quality_trend"})[:400])
         logger.info("weekly_growth_done", **{k: v for k, v in result.items() if k != "quality_trend"})
     except Exception as e:
         logger.error("weekly_growth_failed", error=str(e))
