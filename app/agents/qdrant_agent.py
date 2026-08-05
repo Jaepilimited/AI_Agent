@@ -59,6 +59,33 @@ TEAM_MAP = {
     "op": "OP", "운영": "OP",
 }
 
+
+def resolve_team_filter(team_key: Optional[str]) -> Optional[str]:
+    """@@키 → Qdrant payload 의 team 값.
+
+    오케스트레이터의 데이터소스 키는 "GM EAST" 처럼 공백을 쓰는데 TEAM_MAP 은
+    "gm_east" 로 갖고 있어 lower() 조회만으로는 빗나갔다. 그러면 필터가 None 이
+    되어 **선택하지 않은 팀 문서까지 전부 검색**됐다 (2026-08-05 발견).
+
+    범위 선택 기능은 매핑이 어긋났을 때 **닫히는 쪽**으로 실패해야 한다.
+    모르는 키는 원문을 그대로 필터로 써서 결과가 비게 만든다 — 남의 팀 문서가
+    섞여 나오는 것보다 아무것도 안 나오는 편이 안전하고, 신호도 분명하다.
+    """
+    if not team_key:
+        return None
+    raw = team_key.strip()
+    k = raw.lower()
+    if k in TEAM_MAP:
+        return TEAM_MAP[k]
+    # 공백/언더스코어 표기 차이 흡수 ("gm east" ↔ "gm_east" ↔ "gmeast")
+    squashed = k.replace(" ", "").replace("_", "").replace("-", "")
+    for alias, team in TEAM_MAP.items():
+        if alias.replace(" ", "").replace("_", "").replace("-", "") == squashed:
+            return team
+    logger.warning("qdrant_team_key_unmapped", team_key=raw,
+                   note="TEAM_MAP 에 없어 원문으로 필터한다 (전체 검색 방지)")
+    return raw
+
 # ── Qdrant Cloud 설정 (env 우선, 없으면 .env 파일 참조) ──────────────────────
 def _qdrant_url() -> str:
     return os.getenv("QDRANT_URL", "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333")
@@ -188,7 +215,7 @@ def _format_results(results: list[dict]) -> str:
 
 
 async def run(query: str, team_key: Optional[str] = None, model_type: str = "gemini") -> str:
-    team_filter = TEAM_MAP.get(team_key.lower(), None) if team_key else None
+    team_filter = resolve_team_filter(team_key)
     logger.info("qdrant_search_start", query=query[:80], team_key=team_key, team_filter=team_filter)
 
     try:
