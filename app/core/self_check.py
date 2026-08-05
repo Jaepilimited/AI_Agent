@@ -164,7 +164,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "self_check_daily": (26, "자가 점검 (07:30)"),
     "weekly_growth_report": (24 * 8, "주간 성장 리포트 (월 00:10)"),
     "ad_sync": (26, "AD 동기화 (APP 서버 22:00)"),
-    "knowledge_map_build": (26, "지식맵 빌드 (APP 서버 03:00)"),
+    "knowledge_map_build": (26, "지식맵 빌드 (WAS 03:00)"),
 }
 
 

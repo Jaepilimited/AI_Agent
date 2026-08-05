@@ -170,12 +170,15 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_weekly_growth_report_job, "cron", day_of_week="mon", hour=0, minute=10, id="weekly_growth_report")
             # 자가 점검 — AD sync(22:00) 와 새벽 배치가 모두 끝난 뒤에 돌려야
             # "어제 배치가 돌았는가"를 제대로 판정한다. 07:30 이면 여유 있다.
+            # 지식맵 빌드 — APP 크론에서 이관 (APP 은 Gemini 가 막혀 돌 수 없었다).
+            # deploy/crontab.app-server 에 다시 등록하면 이중 실행이 된다.
+            _scheduler.add_job(_knowledge_map_job, "cron", hour=3, minute=0, id="knowledge_map_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
             _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "self_check_07:30"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "self_check_07:30"])
         yield
         logger.info("application_shutdown")
 
@@ -535,6 +538,27 @@ async def _quality_snapshot_job():
         logger.info("quality_snapshot_done", date=result.get("date"), flags=len(result.get("flags", [])))
     except Exception as e:
         logger.error("quality_snapshot_failed", error=str(e))
+
+
+async def _knowledge_map_job():
+    """매일 03:00: 지식맵 그래프 빌드.
+
+    2026-08-05 APP 서버 크론에서 이관. 이 빌드는 app/knowledge_map/semantic.py 에서
+    Gemini(Flash)를 호출하는데, APP 서버는 프록시에 Gemini 가 열려 있지 않아
+    이관 이후 한 번도 성공하지 못하고 매일 실패하고 있었다. WAS 는 Gemini 가
+    열려 있어 정상 완주한다(실측 51초).
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("knowledge_map_build") as jr:
+            from app.knowledge_map.builder import build
+            stats = await build(force=True)
+            jr.set_note(str({k: v for k, v in (stats or {}).items()
+                             if isinstance(v, (int, float))})[:400])
+        logger.info("knowledge_map_build_done", **{k: v for k, v in (stats or {}).items()
+                                                   if isinstance(v, (int, float))})
+    except Exception as e:
+        logger.error("knowledge_map_build_failed", error=str(e))
 
 
 async def _self_check_job():
