@@ -181,12 +181,44 @@ INGREDIENT_EXCLUSION_MESSAGE = (
 )
 
 
-def _requests_ingredient_exclusion(query: str) -> bool:
-    """성분 '미포함' 기준 필터링을 요구하는 질문인가."""
+_INCLUSION_TERMS = ("들어간", "들어있는", "포함", "함유", "든 제품", "있는 제품")
+
+# 감지에 쓰는 성분어 중 "성분" 은 일반어라 성분명 추출 대상에서 뺀다.
+_GENERIC_TERMS = {"성분", "전성분"}
+
+
+def _extract_ingredient(query: str) -> Optional[str]:
+    """질문에서 성분명을 뽑는다. 일반어('성분')만 있으면 None."""
+    q = (query or "").lower()
+    hits = [t for t in _INGREDIENT_TERMS if t in q and t not in _GENERIC_TERMS]
+    if not hits:
+        return None
+    return max(hits, key=len)  # "비타민 c" 처럼 긴 쪽 우선
+
+
+def _ingredient_filter_intent(query: str) -> Optional[tuple[str, bool]]:
+    """성분 기준 제품 필터링 질문인가.
+
+    Returns:
+        (성분명, contains) 또는 None. contains=False 면 '미포함' 질문.
+    """
     q = (query or "").lower()
     if not any(t in q for t in _INGREDIENT_TERMS):
-        return False
-    return any(t in q for t in _EXCLUSION_TERMS)
+        return None
+    excl = any(t in q for t in _EXCLUSION_TERMS)
+    incl = any(t in q for t in _INCLUSION_TERMS)
+    if not (excl or incl):
+        return None
+    ing = _extract_ingredient(query)
+    if not ing:
+        return None
+    return (ing, not excl)
+
+
+def _requests_ingredient_exclusion(query: str) -> bool:
+    """성분 '미포함' 기준 필터링을 요구하는 질문인가 (하위 호환)."""
+    intent = _ingredient_filter_intent(query)
+    return bool(intent and not intent[1])
 
 
 class OrchestratorAgent:
@@ -421,9 +453,11 @@ class OrchestratorAgent:
             logger.info("fi_access_denied", path="route_and_execute", query=query[:100])
             return {"source": "bigquery", "answer": FI_ACCESS_DENIED_MESSAGE}
 
-        if _requests_ingredient_exclusion(query):
-            logger.info("ingredient_exclusion_blocked", path="route_and_execute", query=query[:100])
-            return {"source": "bigquery", "answer": INGREDIENT_EXCLUSION_MESSAGE}
+        _ing_intent = _ingredient_filter_intent(query)
+        if _ing_intent:
+            logger.info("ingredient_query", path="route_and_execute",
+                        ingredient=_ing_intent[0], contains=_ing_intent[1])
+            return await self._handle_ingredient_query(query, _ing_intent, model_type)
 
         if db_entry:
             query = clean_query or query
@@ -628,10 +662,13 @@ class OrchestratorAgent:
             yield ("done", FI_ACCESS_DENIED_MESSAGE)
             return
 
-        if _requests_ingredient_exclusion(query):
-            logger.info("ingredient_exclusion_blocked", path="route_and_stream", query=query[:100])
+        _ing_intent = _ingredient_filter_intent(query)
+        if _ing_intent:
+            logger.info("ingredient_query", path="route_and_stream",
+                        ingredient=_ing_intent[0], contains=_ing_intent[1])
+            _r = await self._handle_ingredient_query(query, _ing_intent, model_type)
             yield ("source", "bigquery")
-            yield ("done", INGREDIENT_EXCLUSION_MESSAGE)
+            yield ("done", _r.get("answer", ""))
             return
 
         if db_entry:
@@ -1741,6 +1778,75 @@ class OrchestratorAgent:
             contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
         result = await self.notion_agent.run(contextualized_query, model_type=model_type)
         return {"source": "notion", "answer": result}
+
+    async def _handle_ingredient_query(self, query: str, intent, model_type: str) -> dict:
+        """성분 기준 제품 질문을 전성분 데이터로 답한다.
+
+        LLM 이 SQL 을 짜게 두지 않는다. 성분 판정은 결정적이어야 하고, 제품명
+        문자열 매칭으로 흘러가면 처음의 오답(성분이 든 제품이 '미포함 1위')이
+        그대로 재현되기 때문이다. 여기서 제품 목록을 확정한 뒤 그 목록으로만
+        집계한다.
+        """
+        import asyncio as _asyncio
+
+        ingredient, contains = intent
+        from app.core.ingredients import resolve_products_by_ingredient
+
+        try:
+            res = await _asyncio.to_thread(resolve_products_by_ingredient, ingredient, contains)
+        except Exception as e:
+            logger.error("ingredient_resolve_failed", error=str(e)[:200])
+            return {"source": "bigquery", "answer": INGREDIENT_EXCLUSION_MESSAGE}
+
+        products = res.get("products") or []
+        if not res.get("total_known"):
+            # 적재가 안 됐거나 비어 있으면 예전처럼 정직하게 거절한다
+            return {"source": "bigquery", "answer": INGREDIENT_EXCLUSION_MESSAGE}
+
+        label = "포함" if contains else "미포함"
+        if not products:
+            return {"source": "bigquery", "answer": (
+                f"**{ingredient} {label} 제품이 없습니다.**\n\n"
+                f"{res['coverage_note']}"
+            )}
+
+        # 확정된 제품 목록으로만 집계 — 성분 판정은 이미 끝났다
+        from app.core.bigquery import get_bigquery_client
+
+        inlist = ", ".join("'" + p.replace("'", "\\'") + "'" for p in products[:900])
+        sql = (
+            "SELECT Product AS product_name, SUM(Total_Qty) AS qty\n"
+            "FROM `skin1004-319714.Sales_Integration.Product`\n"
+            f"WHERE Product IN ({inlist})\n"
+            "  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n"
+            "  AND Product != 'Sachet'\n"
+            "GROUP BY product_name ORDER BY qty DESC LIMIT 20"
+        )
+        try:
+            bq = get_bigquery_client()
+            rows = await _asyncio.to_thread(bq.execute_query, sql, 180.0, 100)
+        except Exception as e:
+            logger.error("ingredient_bq_failed", error=str(e)[:200])
+            return {"source": "bigquery", "answer": (
+                f"{ingredient} {label} 제품 {len(products)}종을 찾았으나 판매 데이터 조회에 실패했습니다."
+            )}
+
+        lines = [
+            f"### 🧪 {ingredient} {label} 제품 판매수량 (최근 12개월)",
+            "",
+            f"전성분 기준으로 **{len(products)}종**이 해당합니다.",
+            "",
+            "| 순위 | 제품 | 판매수량 |",
+            "| ---: | :--- | ---: |",
+        ]
+        for i, r in enumerate(rows[:15], 1):
+            q = int(r.get("qty") or 0)
+            lines.append(f"| {i} | {r.get('product_name')} | {q:,} |")
+        lines += [
+            "",
+            f"> ⚠️ {res['coverage_note']}",
+        ]
+        return {"source": "bigquery", "answer": "\n".join(lines)}
 
     async def _handle_qdrant(self, query, messages, conversation_context, model_type, user_email="", team_key=None):
         from app.agents.qdrant_agent import run as run_qdrant

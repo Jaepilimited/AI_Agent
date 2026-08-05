@@ -132,6 +132,8 @@ def create_app() -> FastAPI:
             await asyncio.to_thread(_ensure_fn)
         from app.core.self_check import ensure_self_check_tables
         await asyncio.to_thread(ensure_self_check_tables)
+        from app.core.ingredients import ensure_ingredient_tables
+        await asyncio.to_thread(ensure_ingredient_tables)
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -173,12 +175,13 @@ def create_app() -> FastAPI:
             # 지식맵 빌드 — APP 크론에서 이관 (APP 은 Gemini 가 막혀 돌 수 없었다).
             # deploy/crontab.app-server 에 다시 등록하면 이중 실행이 된다.
             _scheduler.add_job(_knowledge_map_job, "cron", hour=3, minute=0, id="knowledge_map_daily")
+            _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
             _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "self_check_07:30"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "self_check_07:30"])
         yield
         logger.info("application_shutdown")
 
@@ -538,6 +541,23 @@ async def _quality_snapshot_job():
         logger.info("quality_snapshot_done", date=result.get("date"), flags=len(result.get("flags", [])))
     except Exception as e:
         logger.error("quality_snapshot_failed", error=str(e))
+
+
+async def _ingredient_sync_job():
+    """매일 04:00: 제품 전성분 스프레드시트 → MariaDB 적재.
+
+    성분 판정을 제품명 문자열 매칭으로 하다가 오답이 났던 건(노션 AI Tester)을
+    실제 전성분 데이터로 답하기 위한 적재다. Sheets + BigQuery 를 호출한다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("ingredient_sync_daily") as jr:
+            from app.core.ingredients import sync_ingredients
+            stats = await asyncio.to_thread(sync_ingredients)
+            jr.set_note(str(stats)[:400])
+        logger.info("ingredient_sync_done", **stats)
+    except Exception as e:
+        logger.error("ingredient_sync_failed", error=str(e))
 
 
 async def _knowledge_map_job():
