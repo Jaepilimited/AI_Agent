@@ -20,7 +20,12 @@ import concurrent.futures
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
-from app.core.security import FI_ACCESS_DENIED_MESSAGE, sanitize_sql, validate_sql
+from app.core.security import (
+    FI_ACCESS_DENIED_MESSAGE,
+    SOURCE_SCOPE_DENIED_PREFIX,
+    sanitize_sql,
+    validate_sql,
+)
 from app.models.state import AgentState
 
 logger = structlog.get_logger(__name__)
@@ -313,16 +318,12 @@ def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
 # --- Schema context helpers (shared by generate_sql and the tool-loop agent) ---
 
 
-def _allowed_tables_from_sources(
-    enabled_sources,
-    can_view_fi: bool = False,
-) -> Optional[set]:
-    """Map enabled_sources labels to allowed BigQuery table paths.
+def _source_table_map(settings) -> dict:
+    """데이터소스(@@) 이름 → BigQuery 테이블 경로.
 
-    Returns None when no filtering applies (all tables allowed).
+    허용목록 계산과 "어느 소스를 켜야 하나" 안내가 같은 표를 봐야 어긋나지 않는다.
     """
-    settings = get_settings()
-    _SOURCE_TABLE_MAP = {
+    return {
         "매출": [settings.sales_table_full_path],
         "제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
         "광고": ["skin1004-319714.marketing_analysis.integrated_ad"],
@@ -338,6 +339,18 @@ def _allowed_tables_from_sources(
         "메타광고": ["skin1004-319714.ad_data.meta data_test"],
         "손익": ["skin1004-319714.Sales_Integration.FI_LLM_Flat"],
     }
+
+
+def _allowed_tables_from_sources(
+    enabled_sources,
+    can_view_fi: bool = False,
+) -> Optional[set]:
+    """Map enabled_sources labels to allowed BigQuery table paths.
+
+    Returns None when no filtering applies (all tables allowed).
+    """
+    settings = get_settings()
+    _SOURCE_TABLE_MAP = _source_table_map(settings)
     if enabled_sources is None:
         if can_view_fi:
             return None
@@ -350,6 +363,43 @@ def _allowed_tables_from_sources(
     if not can_view_fi:
         allowed_tables.discard("skin1004-319714.Sales_Integration.FI_LLM_Flat")
     return allowed_tables
+
+
+def _source_scope_message(error_msg: str, enabled_sources) -> Optional[str]:
+    """데이터소스(@@) 선택 때문에 막힌 것이면, 어떤 소스를 켜야 하는지 알려준다.
+
+    이 안내가 없으면 "데이터를 조회하지 못했습니다" 로 흘러가 사용자가 시스템
+    오류로 오해한다. 실제로는 선택 범위 밖을 물었을 뿐이고, 소스만 바꾸면 된다.
+    """
+    if not enabled_sources:
+        return None  # 소스를 안 골랐으면 범위 문제가 아니다
+    m = re.search(r"허용되지 않은 테이블입니다:\s*(\S+)", error_msg or "")
+    if not m:
+        return None
+    table = m.group(1).strip()
+
+    # 테이블 → 소스 이름 역매핑 (같은 표를 두 곳에서 쓰지 않도록 재사용)
+    settings = get_settings()
+    reverse = {}
+    for src, paths in _source_table_map(settings).items():
+        for tp in paths:
+            reverse[tp] = src
+    needed = reverse.get(table)
+
+    picked = ", ".join(f"@@{s}" for s in enabled_sources)
+    head = f"{SOURCE_SCOPE_DENIED_PREFIX}({picked})로는 이 질문에 답할 수 없습니다."
+    gap = chr(10) * 2
+    if needed:
+        return (
+            head + gap
+            + f"이 데이터는 **@@{needed}** 에 있습니다. 입력창에 `@@{needed}` 를 "
+            + "추가로 선택하시면 바로 조회해 드리겠습니다."
+        )
+    return (
+        head + gap
+        + "필요한 데이터가 선택 범위 밖에 있습니다. 데이터소스 선택을 해제하거나 "
+        + "다른 소스를 골라 다시 질문해 주세요."
+    )
 
 
 def _build_schema_context(query: str, allowed_tables: Optional[set]) -> str:
@@ -602,6 +652,9 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
         logger.warning("sql_validation_failed", error=error_msg, sql=sql[:200])
         if error_msg == FI_ACCESS_DENIED_MESSAGE:
             return {"sql_valid": False, "error": FI_ACCESS_DENIED_MESSAGE}
+        _scope = _source_scope_message(error_msg, state.get("enabled_sources"))
+        if _scope:
+            return {"sql_valid": False, "error": _scope}
         return {"sql_valid": False, "error": f"SQL 검증 실패: {error_msg}"}
 
     logger.info("sql_validation_passed", sql=sql[:200])
@@ -696,11 +749,11 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
     is_valid, validation_error = validate_sql(sql, allowed_tables=allowed_tables)
     if not is_valid:
         logger.warning("sql_pre_execution_validation_failed", error=validation_error, sql=sql[:200])
-        error = (
-            FI_ACCESS_DENIED_MESSAGE
-            if validation_error == FI_ACCESS_DENIED_MESSAGE
-            else f"SQL 검증 실패: {validation_error}"
-        )
+        if validation_error == FI_ACCESS_DENIED_MESSAGE:
+            error = FI_ACCESS_DENIED_MESSAGE
+        else:
+            error = (_source_scope_message(validation_error, state.get("enabled_sources"))
+                     or f"SQL 검증 실패: {validation_error}")
         return {"sql_result": None, "error": error}
 
     logger.info("executing_sql", sql=sql[:200])
@@ -832,6 +885,9 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     # Handle error cases
     if error == FI_ACCESS_DENIED_MESSAGE:
         return {"answer": FI_ACCESS_DENIED_MESSAGE}
+    # 데이터소스 범위 안내는 오류가 아니라 사용자 안내다 — 그대로 보여준다
+    if error and str(error).startswith(SOURCE_SCOPE_DENIED_PREFIX):
+        return {"answer": error}
     if error:
         return {
             "answer": f"죄송합니다. 질문을 처리하는 중 오류가 발생했습니다.\n\n오류: {error}"

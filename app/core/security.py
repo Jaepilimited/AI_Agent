@@ -18,6 +18,11 @@ FI_ACCESS_DENIED_MESSAGE = (
 )
 _FI_TABLE_NAME = "FI_LLM_Flat"
 
+# 화이트리스트 거부 메시지의 접두사. 데이터소스(@@) 선택 때문에 막힌 경우
+# sql_agent 가 이 접두사로 시작하는 안내문을 만들어 사용자에게 그대로 보여준다.
+# 시스템 오류처럼 보이는 "조회하지 못했습니다" 로 흘러가지 않게 하기 위함.
+SOURCE_SCOPE_DENIED_PREFIX = "선택하신 데이터소스"
+
 ALLOWED_STATEMENTS = {"SELECT"}
 
 BLOCKED_KEYWORDS = {
