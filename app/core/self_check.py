@@ -235,7 +235,14 @@ def _check_job_heartbeats() -> CheckResult:
     등록하면 자동으로 감시 대상이 된다.
     """
     now = datetime.now()
-    stale, failing, never = [], [], []
+    # 계측을 켠 시점. 이보다 주기가 긴 잡은 아직 한 번도 돌 기회가 없었을 수 있으므로
+    # "기록 없음"을 실패로 보지 않는다. 유예가 지나면 자동으로 실패로 전환된다 —
+    # 무기한 봐주면 잡이 통째로 사라져도 영영 모른다.
+    first = fetch_one("SELECT MIN(started_at) AS m FROM job_runs")
+    tracking_since = (first or {}).get("m")
+    tracking_h = ((now - tracking_since).total_seconds() / 3600) if tracking_since else 0.0
+
+    stale, failing, never, pending = [], [], [], []
     for job_id, (max_h, label) in EXPECTED_JOBS.items():
         row = fetch_one(
             "SELECT started_at, ok, detail FROM job_runs WHERE job_id = %s "
@@ -243,7 +250,8 @@ def _check_job_heartbeats() -> CheckResult:
             (job_id,),
         )
         if not row:
-            never.append(label)
+            # 계측을 켠 지 이 잡의 주기보다 오래됐는데도 기록이 없으면 진짜 안 도는 것
+            (never if tracking_h > max_h else pending).append(label)
             continue
         age_h = (now - row["started_at"]).total_seconds() / 3600
         if age_h > max_h:
@@ -257,8 +265,10 @@ def _check_job_heartbeats() -> CheckResult:
     if failing:
         parts.append(f"실패 {len(failing)}건 — {'; '.join(failing)}")
     if never:
-        parts.append(f"기록 없음 {len(never)}건 (도입 직후일 수 있음) — {', '.join(never)}")
-    ok = not (stale or failing)
+        parts.append(f"주기가 지났는데 실행 기록이 아예 없음 {len(never)}건 — {', '.join(never)}")
+    if pending:
+        parts.append(f"첫 실행 대기 {len(pending)}건 (계측 {tracking_h:.1f}h 경과) — {', '.join(pending)}")
+    ok = not (stale or failing or never)
     return CheckResult(ok, " / ".join(parts) if parts else
                        f"등록된 잡 {len(EXPECTED_JOBS)}개 모두 정상 주기")
 
