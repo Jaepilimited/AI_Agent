@@ -111,6 +111,29 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 - ⚠️ `LIKE '%...%'` 를 파라미터 없이 쓰지 마라 — pymysql 이 `%` 를 포맷 지시자로 읽어 터진다.
   백슬래시 매칭은 `LOCATE(CONCAT(CHAR(92),'u'), col)` 처럼 회피할 것
 
+### 배치 건강성은 부수효과가 아니라 실행 기록으로 판정한다
+
+- **모든 스케줄 잡은 `track_job("<job_id>")` 으로 감싼다.** 실행 자체가 `job_runs` 에 남아야
+  "할 일이 없어서 안 돈 것"과 "죽어서 못 돈 것"이 구분된다. 테이블에 행이 늘었는지로
+  판정하면 한산한 밤을 고장으로 오탐한다 (2026-08-05 실제 발생)
+- 새 잡을 추가하면 `EXPECTED_JOBS` 에 `(허용시간, 라벨)` 을 등록한다 — 그것만으로 감시 대상이 된다
+
+### 서버별 프록시 허용 범위가 다르다 (2026-08-05 실측)
+
+| | Jandi | Gemini/BigQuery/Claude/Notion |
+|---|---|---|
+| **WAS** 10.1.150.5 | ❌ 403 | ✅ |
+| **APP** 10.1.150.105 | ✅ | ❌ |
+
+- **잔디 알림은 WAS 에서 못 보낸다.** 자가 점검이 WAS 에서 돌므로 알림이 나가지 않는다
+  → `alert_channel` 검사가 이 상태를 잡는다. IT 에 `wh.jandi.com` 오픈 요청 필요
+- **지식맵 빌드는 Gemini 를 호출한다** (`app/knowledge_map/semantic.py`). APP 크론에 있는데
+  APP 은 Gemini 가 막혀 있어 돌 수 없다. 크론 주석의 "외부 호출 없음" 기재는 **오류**다
+  → IT 에 오픈 요청하거나 WAS 스케줄러로 옮겨야 한다
+- ⚠️ `deploy_new_server.py` 의 `EXCLUDE_DIRS` 는 **디렉토리 이름**으로 거른다. 이름이 겹치는
+  소스 패키지가 통째로 빠지므로 최상위 산출물은 `EXCLUDE_PATHS` 에 쓸 것
+  (`knowledge_map` 을 이름으로 걸러 `app/knowledge_map/` 이 배포에서 누락됐던 사고)
+
 ## 코드 규칙 — 재발 방지
 
 - ⛔ **`ThreadPoolExecutor` 를 `with` 블록으로 감싸고 `future.result(timeout=N)` 을 쓰지 마라.**
