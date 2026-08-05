@@ -101,16 +101,22 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
     스킨천사에서 빼지 않으면 이중 계상된다
   - **CBT·JBT·KBT·EAST·WEST·DT·B2B 는 팀** → `Team_NEW` 로 답할 것. 브랜드로 나열 금지
   - ⚠️ `Product` 테이블에만 있는 `DD`(356건)는 정체 미확인
-- ⛔ **제품 전성분 데이터는 없다** (2026-08-05 전 데이터셋 확인). `Product` 테이블에 성분 컬럼이
-  없고, BigQuery 어디에도 자사 제품 성분 테이블이 없다. CS Q&A 구글시트에 텍스트로만 존재한다.
-  - 그래서 **"X 성분이 안 들어간 제품" 류 질문은 원리적으로 답할 수 없다** — 부재는 증명해야 하는데
-    증명할 데이터가 없다. 제품명 문자열 매칭(`LIKE '%RETINOL%'`)으로 답하면 제품명에 성분이 안 적힌
-    제품이 "미포함"으로 분류돼 **해당 성분이 든 제품이 미포함 1위로 올라온다** (실제 오답 사고)
-  - `orchestrator._requests_ingredient_exclusion()` 이 이런 질문을 LLM 호출 전에 막고 대안을 안내한다.
-    **면책 문구를 붙여 순위를 내는 방식으로 되돌리지 말 것** — 틀린 순위표는 면책을 붙여도 틀렸다
-  - 정확히 답할 수 있는 것: **제품 라인 기준** (`Line`: Centella, Hyalucica, Tone_Brightening,
-    Poremizing, Probiocica, Teatrica, LabinNature, Centella_Teca, Hyalu_Teca, ZB 등)
-  - 개별 제품 전성분은 `@@BP`(제품 Q&A) 경로에서 확인 가능
+- **제품 전성분은 사내 스프레드시트에 있다** (BigQuery 에는 없다 — 2026-08-06 구축)
+  - 출처: 시트 `11gX_Gg7...` → 탭 `01. 제품정보_내수통합용(품목기준)`, 7행부터.
+    **AG=전성분(KR, 2025-07 이후 최신) / AH=전성분(EN)**, G열이 BigQuery 매칭 키.
+    AC~AF 는 구버전이니 쓰지 말 것
+  - 적재: `app/core/ingredients.py` → `product_ingredients` / `product_ingredient_map`.
+    매일 04:00 `ingredient_sync_daily` 자동 갱신 (자가 점검 EXPECTED_JOBS 등록됨).
+    수동은 `python scripts/sync_product_ingredients.py [--dry-run]`
+  - 커버리지: BigQuery 243종 중 **115종 매칭**(종수 47%) — **판매수량 기준 89.7%**.
+    미매칭은 대부분 Sachet·기획세트
+  - ⛔ **"성분 미상"과 "성분 미포함"을 절대 섞지 마라.** 시트에 없는 제품은 성분을 *모르는* 것이지
+    *안 들어간* 것이 아니다. 뭉개면 원래 오답(제품명 `LIKE '%RETINOL%'` 매칭으로 나이아신아마이드가
+    든 제품이 "미포함 1위")이 그대로 재현된다. 미매칭은 결과에서 빼고 커버리지를 답변에 명시한다
+  - ⛔ **LLM 에 성분 SQL 을 맡기지 마라** — 다시 제품명 문자열 매칭으로 흘러간다.
+    `orchestrator._handle_ingredient_query()` 가 제품 목록을 먼저 확정하고 그 목록으로만 집계한다
+  - 검증법: 같은 성분의 포함/미포함 목록 **교집합이 0** 이어야 한다
+  - 개별 제품 전성분 설명은 `@@BP`(제품 Q&A) 경로가 계속 담당한다
 - **대륙 = `Continent1` 기본** (2026-08-04 오답 사고로 규칙화)
   - `Continent2` 에는 **'유럽'·'아시아'·'동유럽' 값이 아예 없다.** 광역 대륙을 거기서 찾으면 0건이 난다
   - 광역(유럽/아시아/북미/남미/중미/중동/아프리카/오세아니아/CIS) → `Continent1`
