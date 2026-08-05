@@ -242,10 +242,10 @@ def _check_job_heartbeats() -> CheckResult:
     tracking_since = (first or {}).get("m")
     tracking_h = ((now - tracking_since).total_seconds() / 3600) if tracking_since else 0.0
 
-    stale, failing, never, pending = [], [], [], []
+    stale, failing, never, pending, hung = [], [], [], [], []
     for job_id, (max_h, label) in EXPECTED_JOBS.items():
         row = fetch_one(
-            "SELECT started_at, ok, detail FROM job_runs WHERE job_id = %s "
+            "SELECT started_at, finished_at, ok, detail FROM job_runs WHERE job_id = %s "
             "ORDER BY id DESC LIMIT 1",
             (job_id,),
         )
@@ -254,7 +254,12 @@ def _check_job_heartbeats() -> CheckResult:
             (never if tracking_h > max_h else pending).append(label)
             continue
         age_h = (now - row["started_at"]).total_seconds() / 3600
-        if age_h > max_h:
+        # 시작만 하고 끝나지 않은 실행 — 외부 호출에 매달려 멈춘 경우가 여기 걸린다.
+        # started_at 이 최근이라 "신선"해 보이므로 이 분기가 없으면 통과해버린다
+        # (2026-08-05 지식맵 빌드가 Gemini 호출에 걸려 실제로 이 상태였다).
+        if row["finished_at"] is None and age_h > max_h:
+            hung.append(f"{label} {age_h:.0f}h째 미종료")
+        elif age_h > max_h:
             stale.append(f"{label} {age_h:.0f}h 전")
         elif row["ok"] == 0:
             failing.append(f"{label}: {(row['detail'] or '')[:60]}")
@@ -264,11 +269,13 @@ def _check_job_heartbeats() -> CheckResult:
         parts.append(f"주기 초과 {len(stale)}건 — {', '.join(stale)}")
     if failing:
         parts.append(f"실패 {len(failing)}건 — {'; '.join(failing)}")
+    if hung:
+        parts.append(f"시작 후 끝나지 않음 {len(hung)}건 — {', '.join(hung)}")
     if never:
         parts.append(f"주기가 지났는데 실행 기록이 아예 없음 {len(never)}건 — {', '.join(never)}")
     if pending:
         parts.append(f"첫 실행 대기 {len(pending)}건 (계측 {tracking_h:.1f}h 경과) — {', '.join(pending)}")
-    ok = not (stale or failing or never)
+    ok = not (stale or failing or never or hung)
     return CheckResult(ok, " / ".join(parts) if parts else
                        f"등록된 잡 {len(EXPECTED_JOBS)}개 모두 정상 주기")
 
