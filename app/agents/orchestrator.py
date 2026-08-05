@@ -139,6 +139,56 @@ def _requests_fi_data(query: str, enabled_sources=None, db_entry=None) -> bool:
     return any(isinstance(entry, dict) and entry.get("key") == "손익" for entry in entries)
 
 
+# ── 성분 미포함 질문 차단 ──────────────────────────────────────────────────────
+#
+# 자사 제품의 **전성분 데이터가 시스템에 없다** (2026-08-05 확인: BigQuery 전 데이터셋에
+# 자사 제품 성분 테이블 없음. Product 테이블에도 성분 컬럼 없음. CS Q&A 시트에 텍스트로만 존재).
+#
+# 그래서 "X 안 들어간 제품" 류 질문에 SQL 이 제품명 문자열 매칭(`LIKE '%RETINOL%'`)으로
+# 답해 왔고, 제품명에 성분이 안 적힌 제품이 "미포함"으로 분류돼 **나이아신아마이드가 든
+# 제품이 '나이아신아마이드 미포함 1위'로 나오는 오답**이 났다 (노션 AI Tester 미해결 건).
+#
+# 포함/미포함은 대칭이 아니다. "들어간 제품"은 라인·제품명으로 근사라도 되지만,
+# **"안 들어간 제품"은 전성분을 모르면 원리적으로 판정할 수 없다.** 부재는 증명해야 하는데
+# 증명할 데이터가 없다. 면책 문구를 붙인 순위표는 여전히 틀린 순위표다 — 그래서 막는다.
+
+_INGREDIENT_TERMS = (
+    "나이아신아마이드", "레티놀", "히알루론산", "판테놀", "세라마이드", "살리실산",
+    "아데노신", "알부틴", "비타민c", "비타민 c", "아스코르빅", "마데카소사이드",
+    "알란토인", "스쿠알란", "콜라겐", "펩타이드", "글리세린", "우레아",
+    "파라벤", "향료", "인공향료", "알코올", "에탄올", "미네랄오일", "실리콘",
+    "에센셜오일", "aha", "bha", "pha", "성분",
+)
+
+_EXCLUSION_TERMS = (
+    "안 들어간", "안들어간", "안 들어있는", "안들어있는", "들어가지 않은", "들어있지 않은",
+    "없는", "미포함", "불포함", "제외한", "제외하고", "빼고", "뺀", "무첨가", "프리", "free",
+)
+
+INGREDIENT_EXCLUSION_MESSAGE = (
+    "**성분 미포함 기준으로는 순위를 낼 수 없습니다.**\n\n"
+    "제품별 **전성분 데이터를 시스템이 보유하고 있지 않습니다.** "
+    "지금 조회 가능한 것은 매출·수량과 제품명·라인뿐이라, "
+    "특정 성분이 **들어있지 않다**는 것은 확인할 방법이 없습니다.\n"
+    "(제품명에 성분이 안 적혀 있다고 해서 실제로 안 들어간 것은 아닙니다. "
+    "이 방식으로 답하면 해당 성분이 든 제품이 '미포함 1위'로 올라오는 오답이 납니다.)\n\n"
+    "**대신 이렇게 하실 수 있습니다**\n"
+    "- **제품 라인 기준**으로 물어보시면 정확합니다 — 센텔라, 히알루시카, 톤브라이트닝, "
+    "포어마이징, 프로바이오시카, 티트리카, 랩인네이처 등\n"
+    "  예) \"센텔라 라인 제외한 제품 판매량 순위\"\n"
+    "- **개별 제품의 전성분**은 `@@BP` (제품 Q&A)를 선택해 물어보시면 확인됩니다\n"
+    "  예) \"@@BP 센텔라 앰플 전성분 알려줘\""
+)
+
+
+def _requests_ingredient_exclusion(query: str) -> bool:
+    """성분 '미포함' 기준 필터링을 요구하는 질문인가."""
+    q = (query or "").lower()
+    if not any(t in q for t in _INGREDIENT_TERMS):
+        return False
+    return any(t in q for t in _EXCLUSION_TERMS)
+
+
 class OrchestratorAgent:
     """Orchestrator-Worker pattern conductor.
 
@@ -371,6 +421,10 @@ class OrchestratorAgent:
             logger.info("fi_access_denied", path="route_and_execute", query=query[:100])
             return {"source": "bigquery", "answer": FI_ACCESS_DENIED_MESSAGE}
 
+        if _requests_ingredient_exclusion(query):
+            logger.info("ingredient_exclusion_blocked", path="route_and_execute", query=query[:100])
+            return {"source": "bigquery", "answer": INGREDIENT_EXCLUSION_MESSAGE}
+
         if db_entry:
             query = clean_query or query
             if not query.strip():
@@ -572,6 +626,12 @@ class OrchestratorAgent:
             logger.info("fi_access_denied", path="route_and_stream", query=query[:100])
             yield ("source", "bigquery")
             yield ("done", FI_ACCESS_DENIED_MESSAGE)
+            return
+
+        if _requests_ingredient_exclusion(query):
+            logger.info("ingredient_exclusion_blocked", path="route_and_stream", query=query[:100])
+            yield ("source", "bigquery")
+            yield ("done", INGREDIENT_EXCLUSION_MESSAGE)
             return
 
         if db_entry:

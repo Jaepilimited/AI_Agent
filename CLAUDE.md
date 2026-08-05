@@ -101,6 +101,16 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
     스킨천사에서 빼지 않으면 이중 계상된다
   - **CBT·JBT·KBT·EAST·WEST·DT·B2B 는 팀** → `Team_NEW` 로 답할 것. 브랜드로 나열 금지
   - ⚠️ `Product` 테이블에만 있는 `DD`(356건)는 정체 미확인
+- ⛔ **제품 전성분 데이터는 없다** (2026-08-05 전 데이터셋 확인). `Product` 테이블에 성분 컬럼이
+  없고, BigQuery 어디에도 자사 제품 성분 테이블이 없다. CS Q&A 구글시트에 텍스트로만 존재한다.
+  - 그래서 **"X 성분이 안 들어간 제품" 류 질문은 원리적으로 답할 수 없다** — 부재는 증명해야 하는데
+    증명할 데이터가 없다. 제품명 문자열 매칭(`LIKE '%RETINOL%'`)으로 답하면 제품명에 성분이 안 적힌
+    제품이 "미포함"으로 분류돼 **해당 성분이 든 제품이 미포함 1위로 올라온다** (실제 오답 사고)
+  - `orchestrator._requests_ingredient_exclusion()` 이 이런 질문을 LLM 호출 전에 막고 대안을 안내한다.
+    **면책 문구를 붙여 순위를 내는 방식으로 되돌리지 말 것** — 틀린 순위표는 면책을 붙여도 틀렸다
+  - 정확히 답할 수 있는 것: **제품 라인 기준** (`Line`: Centella, Hyalucica, Tone_Brightening,
+    Poremizing, Probiocica, Teatrica, LabinNature, Centella_Teca, Hyalu_Teca, ZB 등)
+  - 개별 제품 전성분은 `@@BP`(제품 Q&A) 경로에서 확인 가능
 - **대륙 = `Continent1` 기본** (2026-08-04 오답 사고로 규칙화)
   - `Continent2` 에는 **'유럽'·'아시아'·'동유럽' 값이 아예 없다.** 광역 대륙을 거기서 찾으면 0건이 난다
   - 광역(유럽/아시아/북미/남미/중미/중동/아프리카/오세아니아/CIS) → `Continent1`
