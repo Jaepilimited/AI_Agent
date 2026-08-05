@@ -63,15 +63,11 @@ class GWSAgent:
     """Google Workspace agent with per-user OAuth2 authentication."""
 
     def __init__(self):
-        if not _LANGCHAIN_AVAILABLE:
-            self.llm = None
-            return
-        settings = get_settings()
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.gemini_flash_model,
-            google_api_key=settings.gemini_api_key,
-            max_output_tokens=4096,
-        )
+        # LangChain(ChatGoogleGenerativeAI + create_react_agent)은 더 이상 쓰지 않는다.
+        # 그 래퍼가 **프록시를 통과하지 못해** 호출이 통째로 멈췄다 —
+        # 실측: 기본/transport='rest' 모두 45초 무응답, 결국 300초 타임아웃까지 매달렸다.
+        # 답변 정리는 앱이 다른 곳에서 쓰는 REST 클라이언트(get_flash_client, 실측 2.4초)로 한다.
+        pass
 
     async def run(self, query: str, user_email: str = "") -> str:
         """Search Google Workspace for relevant info.
@@ -83,9 +79,6 @@ class GWSAgent:
         Returns:
             Answer text, or auth URL if not authenticated.
         """
-        if self.llm is None:
-            return "Google Workspace 기능을 일시적으로 사용할 수 없습니다.\n잠시 후 다시 시도해주세요."
-
         # No user_email → can't authenticate
         if not user_email:
             return (
@@ -105,79 +98,115 @@ class GWSAgent:
                 f"<!-- gws-auth:{auth_url} -->"
             )
 
-        # Build tools with user's credentials bound via closure
-        all_tools = self._build_tools(creds)
-
-        # Pre-classify query to restrict tools and reduce ReAct iterations
+        # ── 도구 직접 호출 (ReAct 루프 없음) ──────────────────────────────
+        #
+        # 원래는 create_react_agent + ChatGoogleGenerativeAI 였는데,
+        # 그 LangChain 래퍼가 **프록시를 통과하지 못해** 호출이 통째로 멈췄다.
+        # 실측: 기본/transport='rest' 모두 45초 안에 응답 없음 → 300초 타임아웃까지
+        # 매달렸고, 사용자에겐 "분석이 오래 걸립니다" 만 보였다 (👎 3건).
+        # 반면 앱이 다른 곳에서 쓰는 REST 클라이언트(get_flash_client)는 2.4초에 응답한다.
+        #
+        # 게다가 시스템 프롬프트가 이미 "도구는 1번만 호출하라"고 요구하고 있었다.
+        # 한 번만 부를 거면 ReAct 루프가 필요 없다 — 분류해서 직접 부르고 결과를
+        # 정리만 시키는 편이 빠르고 결과도 예측 가능하다.
         tool_type = self._classify_tool(query)
-        if tool_type == "calendar":
-            tools = [t for t in all_tools if t.name == "calendar_search"]
-        elif tool_type == "gmail":
-            tools = [t for t in all_tools if t.name == "gmail_search"]
-        elif tool_type == "drive":
-            tools = [t for t in all_tools if t.name == "drive_search"]
-        else:
-            tools = all_tools
+        results = await asyncio.to_thread(self._collect, creds, query, tool_type)
 
-        tool_hint = ""
-        if tool_type != "all":
-            tool_hint = f"\n8. 이 질문은 {tool_type} 관련입니다. {tools[0].name} 도구만 사용하세요. 다른 도구는 호출하지 마세요."
+        if not results.strip():
+            return "검색 결과가 없습니다."
 
+        from app.core.llm import get_flash_client
+
+        prompt = (
+            "당신은 Craver의 Google Workspace 비서입니다. 아래 **검색 결과만** 사용해 "
+            "사용자 질문에 한국어로 답하세요. 결과에 없는 내용을 지어내지 마세요.\n\n"
+            f"## 사용자 질문\n{query}\n\n"
+            f"## 검색 결과\n{results[:12000]}\n\n"
+            "## 형식\n"
+            "- 일정: 날짜별로 묶어 시간·제목·장소를 표로\n"
+            "- 메일: 제목·보낸사람·날짜·요약을 표로\n"
+            "- 파일: 파일명·유형·수정일·링크를 표로\n"
+            "- 날짜/시간은 한국어로 (예: 2026년 2월 12일 오후 3시)\n"
+            "- 질문이 특정 시간대(오전, 11시 등)를 물으면 결과 중 해당 시간대만 골라 답하세요\n"
+            "- 결과가 비어 있으면 '검색 결과가 없습니다'라고만 답하세요"
+        )
         try:
-            agent = create_react_agent(self.llm, tools)
-            system_msg = (
-                "당신은 Craver의 Google Workspace 검색 AI입니다.\n"
-                "사용자의 Gmail, Google Drive, Google Calendar에서 정보를 검색합니다.\n\n"
-                "## 답변 형식 규칙\n"
-                "1. 항상 한국어로 답변하세요.\n"
-                "2. 검색 결과를 아래 구조로 정리하세요:\n\n"
-                "### 📬 [검색 유형] 검색 결과\n\n"
-                "**검색 조건**: [사용한 검색어/기간]\n"
-                "**결과**: [N]건\n\n"
-                "결과를 마크다운 표 또는 번호 목록으로 정리하세요:\n"
-                "- 메일: 제목, 보낸사람, 날짜, 요약을 표로\n"
-                "- 일정: 날짜별로 그룹핑하여 시간/제목/장소\n"
-                "- 파일: 파일명, 유형, 수정일, 링크를 표로\n\n"
-                "3. 검색 결과가 없으면 '검색 결과가 없습니다'라고 간결하게 답변하세요.\n"
-                "4. 날짜/시간은 한국어 형식으로 (예: 2026년 2월 12일 오후 3시)\n"
-                "5. 핵심 항목은 **굵게** 강조하세요.\n"
-                "6. 도구는 **1번만** 호출하세요. 결과가 없어도 다른 도구로 재시도하지 마세요. 바로 '검색 결과가 없습니다'로 답하세요.\n"
-                "7. **캘린더 시간 필터링 규칙**: calendar_search의 query 파라미터는 이벤트 제목/설명 텍스트 검색입니다. "
-                "시간 기반 질문('오전 일정', '11시 일정', '오후 3시 미팅')은 query를 비워서(\"\") 전체 일정을 가져온 뒤, "
-                "결과에서 해당 시간대 일정만 골라서 답변하세요. 절대로 '오전', '11시', '오후' 같은 시간 표현을 query에 넣지 마세요."
-                + tool_hint
+            llm = get_flash_client()
+            answer = await asyncio.wait_for(
+                asyncio.to_thread(llm.generate, prompt, None, 0.2), timeout=40.0
             )
-            result = await asyncio.wait_for(
-                agent.ainvoke(
-                    {
-                        "messages": [
-                            {"role": "system", "content": system_msg},
-                            {"role": "user", "content": query},
-                        ]
-                    },
-                    config={"recursion_limit": 6},
-                ),
-                timeout=300.0,
-            )
-            return _extract_text(result["messages"][-1].content)
+            return answer or results
         except asyncio.TimeoutError:
-            logger.warning("gws_agent_timeout", query=query[:100], user_email=user_email)
-            return (
-                "Google Workspace 검색이 시간 초과되었습니다 (30초).\n\n"
-                "**해결 방법**:\n"
-                "- 더 구체적인 검색어를 사용해주세요 (예: 발신자, 제목, 날짜 범위)\n"
-                "- 검색 범위를 좁혀주세요 (예: '오늘 메일' 대신 '오늘 Craver 메일')"
-            )
-        except GraphRecursionError:
-            logger.warning("gws_agent_recursion_limit", query=query[:100], user_email=user_email)
-            return (
-                "Google Workspace 검색이 최대 반복 횟수에 도달했습니다.\n\n"
-                "검색을 완료하기 위해 더 구체적인 질문으로 다시 시도해주세요.\n"
-                "예: 기간, 발신자, 키워드 등을 함께 지정해주세요."
-            )
+            logger.warning("gws_format_timeout", user_email=user_email)
+            return results  # 정리에 실패해도 원본 결과는 돌려준다
         except Exception as e:
-            logger.error("gws_agent_failed", error=str(e), user_email=user_email)
-            return f"Google Workspace 검색 중 오류 발생: {str(e)}"
+            logger.error("gws_format_failed", error=str(e)[:200], user_email=user_email)
+            return results
+
+    def _collect(self, creds, query: str, tool_type: str) -> str:
+        """분류된 도구를 직접 호출해 원본 결과 텍스트를 모은다 (블로킹 — to_thread 로 부를 것)."""
+        parts = []
+
+        def _calendar():
+            # 시간 표현("오전", "11시")을 검색어로 넣으면 결과가 0건이 된다.
+            # 제목 검색이 아니라 기간 조회이므로 query 는 비우고 days_ahead 만 조절한다.
+            q = (query or "").lower()
+            days = 7
+            if any(k in q for k in ("오늘", "today")):
+                days = 1
+            elif any(k in q for k in ("내일", "tomorrow")):
+                days = 2
+            elif any(k in q for k in ("이번주", "이번 주", "this week")):
+                days = 7
+            elif any(k in q for k in ("다음주", "다음 주", "next week")):
+                days = 14
+            elif any(k in q for k in ("이번달", "이번 달", "한달", "this month")):
+                days = 31
+            try:
+                ev = list_calendar_events(creds, query=None, days_ahead=days)
+            except Exception as e:
+                return f"[캘린더 오류] {str(e)[:200]}"
+            if not ev:
+                return "[캘린더] 일정이 없습니다."
+            lines = ["[캘린더]"]
+            for e in ev:
+                loc = f" (장소: {e['location']})" if e.get("location") else ""
+                lines.append(f"- {e['summary']}: {e['start']} ~ {e['end']}{loc}")
+            return "\n".join(lines)
+
+        def _gmail():
+            try:
+                ms = search_gmail(creds, query, max_results=10)
+            except Exception as e:
+                return f"[메일 오류] {str(e)[:200]}"
+            if not ms:
+                return "[메일] 검색 결과가 없습니다."
+            lines = ["[메일]"]
+            for m in ms:
+                lines.append(f"- {m['subject']} (보낸사람: {m['from']}, 날짜: {m['date']})\n  {m['snippet']}")
+            return "\n".join(lines)
+
+        def _drive():
+            try:
+                fs = search_drive(creds, query, max_results=10)
+            except Exception as e:
+                return f"[드라이브 오류] {str(e)[:200]}"
+            if not fs:
+                return "[드라이브] 검색 결과가 없습니다."
+            lines = ["[드라이브]"]
+            for f in fs:
+                lines.append(f"- {f['name']} ({f['mimeType']}, 수정: {f['modifiedTime']})\n  {f['webViewLink']}")
+            return "\n".join(lines)
+
+        picked = {"calendar": [_calendar], "gmail": [_gmail], "drive": [_drive]}.get(
+            tool_type, [_calendar, _gmail, _drive]
+        )
+        for fn in picked:
+            try:
+                parts.append(fn())
+            except Exception as e:
+                parts.append(f"[{fn.__name__} 실패] {str(e)[:150]}")
+        return "\n\n".join(parts)
 
     @staticmethod
     def _classify_tool(query: str) -> str:

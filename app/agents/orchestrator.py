@@ -1015,7 +1015,10 @@ class OrchestratorAgent:
             return
 
         # Non-streaming routes (Notion, GWS, Team) → simulate streaming
-        # Timeout: GWS 45s (inner agent 30s + buffer), others 30s
+        # Timeout: GWS 60s, others 30s.
+        # 주의: 예전엔 여기 45s 인데 gws_agent 내부는 300s 라 어긋나 있었다 —
+        # 주석엔 "inner agent 30s" 라고 적혀 있었지만 실제 값은 300s 였다.
+        # 지금은 내부가 (도구 호출 + 정리 40s) 구조라 60s 면 충분하다.
         # Note: "team" is currently unreachable (see comment above) but this
         # dispatch is kept as-is in case that classification changes.
         from app.core.safety import get_circuit
@@ -1025,7 +1028,7 @@ class OrchestratorAgent:
             "team": self._handle_team,
         }
         handler = handlers.get(route, self._handle_direct)
-        _route_timeout = 45.0 if route == "gws" else 30.0
+        _route_timeout = 60.0 if route == "gws" else 30.0
 
         # Check circuit breaker before calling
         circuit = get_circuit(route)
