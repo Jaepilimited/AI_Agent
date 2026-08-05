@@ -11,7 +11,9 @@
     1. 검사    — 인프라·배치 신선도·DB 무결성·권한 불변식을 단언(assert)으로 검증
     2. 기록    — 결과를 DB 에 남겨 추세를 본다 (언제부터 깨졌는지 알 수 있게)
     3. 자가치유 — 안전하게 되돌릴 수 있는 것은 스스로 고친다
-    4. 알림    — **새로 깨진 것**만 잔디로 알린다 (매일 같은 알림은 무시당한다)
+    4. 노출    — 새로 깨진 것을 사이드바 배지와 Admin 탭으로 알린다.
+                 잔디 전송은 기본 꺼짐(self_check_notify) — 운영상 쓰지 않기로 했고
+                 WAS 는 프록시에서 wh.jandi.com 이 막혀 있다.
 
 설계 원칙:
     - 검사는 부작용이 없어야 한다. 고치는 것은 `repair` 로 분리한다.
@@ -476,8 +478,6 @@ CHECKS: list[Check] = [
           "FI 열람 허용 인원이 정상 범위인가", _check_fi_grant_count),
     Check("admin_exists", "permission", SEV_CRITICAL,
           "관리자 계정이 존재하는가", _check_admin_exists),
-    Check("alert_channel", "ops", SEV_CRITICAL,
-          "알림 경로(잔디)가 열려 있는가", _check_alert_channel),
     Check("bq_tables", "datasource", SEV_CRITICAL,
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
     Check("qdrant", "datasource", SEV_CRITICAL,
@@ -580,7 +580,8 @@ def run_self_check(auto_repair: bool = True, notify: bool = True) -> dict:
                     if not r.ok and prev.get(c.id, True)]
     recovered = [c for c, r, _, _ in results if r.ok and prev.get(c.id) is False]
 
-    if notify and (newly_broken or recovered):
+    from app.config import get_settings
+    if notify and get_settings().self_check_notify and (newly_broken or recovered):
         lines = []
         if newly_broken:
             lines.append("*새로 실패한 검사*")

@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # 들어오는 접속 때문에 대화가 구 DB에만 쌓여 데이터가 갈라지는 것을 막는 장치.
     # 되돌리려면 .env 에서 MIGRATED_REDIRECT_URL 을 비우고 재기동.
     migrated_redirect_url: str = ""
+    # 자가 점검 결과를 잔디로 보낼지. 기본 꺼짐 —
+    # WAS 는 프록시에서 wh.jandi.com 이 막혀 있고, 운영상 잔디 알림을 쓰지 않기로 했다.
+    # 결과는 Admin > 자가 점검 탭과 사이드바 배지로 확인한다.
+    self_check_notify: bool = False
 
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:8000,http://172.16.1.250:3000,http://172.16.1.250:3001"

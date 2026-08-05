@@ -4137,3 +4137,31 @@ html.dark .db-autocomplete-dropdown {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+
+/* 자가 점검 실패 배지 — 잔디 알림을 쓰지 않으므로 이것이 유일한 능동 통보 수단이다.
+   관리자가 화면을 안 열어도 사이드바에서 눈에 띄어야 한다. */
+.sidebar-badge {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #e89200;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.sidebar-badge.critical {
+  background: #d93636;
+  animation: sidebar-badge-pulse 2s ease-in-out infinite;
+}
+@keyframes sidebar-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-badge.critical { animation: none; }
+}

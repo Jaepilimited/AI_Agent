@@ -3581,7 +3581,31 @@
       document.getElementById("admin-btn-wrap").style.display = "";
       var wb = document.getElementById("wiki-btn-wrap");
       if (wb) wb.style.display = "";
+      // 자가 점검 실패를 관리자 눈에 띄게 — 잔디 알림을 쓰지 않으므로
+      // 이 배지가 유일한 능동적 통보 수단이다. 화면을 안 열면 모르는 상태를 막는다.
+      refreshSelfCheckBadge();
+      setInterval(refreshSelfCheckBadge, 300000);  // 5분
     }
+  }
+
+  function refreshSelfCheckBadge() {
+    var badge = document.getElementById("selfcheck-badge");
+    if (!badge) return;
+    fetch("/api/admin/self-check")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var run = d && d.run;
+        if (!run || !run.failed) { badge.style.display = "none"; return; }
+        var crit = (d.results || []).filter(function (x) {
+          return !x.ok && x.severity === "critical";
+        }).length;
+        badge.textContent = run.failed;
+        badge.title = "자가 점검 실패 " + run.failed + "건"
+          + (crit ? " (심각 " + crit + ")" : "") + " — 클릭해 확인";
+        badge.className = crit ? "sidebar-badge critical" : "sidebar-badge";
+        badge.style.display = "";
+      })
+      .catch(function () {});
   }
 
   function isAdmin() {
@@ -4129,6 +4153,7 @@
       if (tab.dataset.tab === "users") loadAdminADUsers();
       if (tab.dataset.tab === "growth") loadGrowthReport();
       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
+      if (tab.dataset.tab !== "selfcheck") refreshSelfCheckBadge();
     });
   });
 
