@@ -2098,7 +2098,7 @@ JSON만 반환:
 ## 회사 소개
 (주)크레이버코퍼레이션(Craver Corporation) — "WHAT DO YOU CRAVE?"
 공동대표: 전항일/천주혁. 설립 2014년 8월. 서울 강남구 테헤란로 129.
-브랜드: SKIN1004(메인), CommonLabs, Zombie Beauty. 마다가스카르 센텔라 기반 클린 뷰티(Cruelty-Free & Vegan).
+브랜드: SKIN1004(스킨천사, 메인)과 umma(우마)가 주력, CommonLabs·Zombie Beauty는 소규모. 마다가스카르 센텔라 기반 클린 뷰티(Cruelty-Free & Vegan).
 글로벌 K-뷰티 리더. Shopee/YesStyle/StyleKorean 카테고리 1위. 리테일: Costco, ULTA, H&M, 올리브영.
 진출: 한국, 북미, 유럽, 동남아, 일본, 중국, 중남미, 중동.
 "우리 회사" = Craver Corporation / SKIN1004. 회사 질문은 이 정보로 답변(웹검색 불필요).
@@ -2255,7 +2255,8 @@ JSON만 반환:
 - **소재지**: 서울 강남구 테헤란로 129, 11층·12층
 - **업종**: 패션·명품·뷰티 > 뷰티 > 화장품
 - **기업유형**: 스타트업
-- **브랜드**: SKIN1004(메인), CommonLabs(커먼랩스), Zombie Beauty(좀비뷰티)
+- **브랜드**: SKIN1004(스킨천사) · umma(우마) 가 주력, CommonLabs(커먼랩스) · Zombie Beauty(좀비뷰티) 는 소규모
+  ※ CBT·JBT·KBT 등은 브랜드가 아니라 **팀**이다. 브랜드로 소개하지 말 것
 - **브랜드 철학**: "Clean Beauty from Madagascar Centella Asiatica" — 마다가스카르 센텔라 아시아티카 기반 클린 뷰티, Cruelty-Free & Vegan
 - **주요 제품**: 센텔라 앰플, 크림, 토너, 선크림, 클렌징 오일 등
 - **글로벌 포지션**: K-뷰티 가장 빠르게 성장하는 기업. Shopee, YesStyle, StyleKorean, Stylevana 등 주요 글로벌 플랫폼에서 카테고리 1위
