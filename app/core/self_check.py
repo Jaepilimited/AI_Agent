@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -371,6 +372,31 @@ def _check_fi_grant_count() -> CheckResult:
     return CheckResult(0 < n <= 30, f"FI 열람 허용 {n}명")
 
 
+def _check_alert_channel() -> CheckResult:
+    """알림 경로(잔디)가 실제로 열려 있는가.
+
+    자가 점검이 아무리 잘 잡아도 알림이 안 나가면 소용이 없다. 실제로
+    WAS 는 프록시 화이트리스트에 wh.jandi.com 이 없어 `Tunnel connection
+    failed: 403` 이 났다 (2026-08-05). 탐지는 되는데 통보가 안 되는 상태였다.
+
+    메시지를 보내지 않고 **터널만** 확인한다 — 매일 테스트 메시지를 쏘면
+    그 자체가 소음이다. 엔드포인트가 GET 을 거절(4xx/5xx)해도 터널은 열린 것이다.
+    """
+    try:
+        req = urllib.request.Request(JANDI_URL, method="GET")
+        urllib.request.urlopen(req, timeout=8)
+        return CheckResult(True, "알림 경로 정상")
+    except urllib.error.HTTPError as e:
+        # 응답 코드를 받았다 = 터널은 열렸다. 웹훅이 GET 을 거절한 것뿐.
+        return CheckResult(True, f"알림 경로 정상 (엔드포인트 HTTP {e.code})")
+    except Exception as e:
+        return CheckResult(
+            False,
+            f"알림 전송 불가 — {type(e).__name__}: {str(e)[:120]}. "
+            "이 상태에서는 검사가 실패해도 아무도 통보받지 못한다.",
+        )
+
+
 def _check_admin_exists() -> CheckResult:
     row = fetch_one("SELECT COUNT(*) c FROM users WHERE role = 'admin'")
     n = (row or {}).get("c", 0)
@@ -433,6 +459,8 @@ CHECKS: list[Check] = [
           "FI 열람 허용 인원이 정상 범위인가", _check_fi_grant_count),
     Check("admin_exists", "permission", SEV_CRITICAL,
           "관리자 계정이 존재하는가", _check_admin_exists),
+    Check("alert_channel", "ops", SEV_CRITICAL,
+          "알림 경로(잔디)가 열려 있는가", _check_alert_channel),
     Check("bq_tables", "datasource", SEV_CRITICAL,
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
     Check("qdrant", "datasource", SEV_CRITICAL,
@@ -454,7 +482,7 @@ def _previous_state() -> dict[str, bool]:
     return {r["check_id"]: bool(r["ok"]) for r in rows}
 
 
-def _notify(title: str, body: str, color: str) -> None:
+def _notify(title: str, body: str, color: str) -> bool:
     try:
         data = json.dumps({
             "body": body,
@@ -468,8 +496,12 @@ def _notify(title: str, body: str, color: str) -> None:
                      "Content-Type": "application/json"},
         )
         urllib.request.urlopen(req, timeout=5).read()
+        return True
     except Exception as e:
-        logger.warning("self_check_notify_failed", error=str(e)[:120])
+        # 조용히 삼키면 "알림이 안 온다 = 문제가 없다"로 오해하게 된다
+        logger.error("self_check_notify_failed", error=str(e)[:200],
+                     hint="프록시 화이트리스트에 wh.jandi.com 이 있는지 확인")
+        return False
 
 
 def run_self_check(auto_repair: bool = True, notify: bool = True) -> dict:
