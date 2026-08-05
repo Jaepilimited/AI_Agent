@@ -30,9 +30,17 @@ HEADERS = {
 }
 CLIENT = httpx.Client(timeout=30)
 
-TEAM_DATA_TOGGLE_ID = "3272b428-3b00-806d-aabf-cfbcd9237fb0"
+# 팀 토글들이 달려 있는 부모. 예전에는 별도 토글 블록이었는데 페이지 구조가 바뀌면서
+# 그 블록이 빈 문단으로 남았고(자식 없음), 2026-07-30 부터 매일 0건으로 돌고 있었다.
+# 지금은 팀 토글이 HUB 페이지의 직계 자식이라 페이지 ID 를 그대로 쓴다.
+# 출처: [DB] 각 팀 노션 페이지 HUB
+TEAM_DATA_TOGGLE_ID = "2e12b428-3b00-8011-ae32-e39bf73b7f7b"
 
 SKIP_TEAMS = {"유통1(노션x)", "유통2(노션x)", ""}
+
+# HUB 페이지에는 팀 토글 말고도 자동 생성된 로그 토글이 잔뜩 쌓인다
+# ("🤖 AI 학습 현황 — ..." 80여 개). 팀으로 오인해 크롤링하지 않도록 걸러낸다.
+_NON_TEAM_TOGGLE_MARKERS = ("🤖", "AI 학습 현황")
 
 _URL_RE = re.compile(r'https?://[^\s<>"]+')
 _GSHEET_RE = re.compile(r'docs\.google\.com/spreadsheets')
@@ -359,6 +367,8 @@ def crawl_all_teams(only_teams: Optional[set] = None):
             continue
         team_name = _extract_text(block["toggle"].get("rich_text", []))
         team_name = team_name.replace("[GM]", "GM ").replace("  ", " ").strip()
+        if any(m in team_name for m in _NON_TEAM_TOGGLE_MARKERS):
+            continue  # 자동 생성 로그 토글 — 팀이 아니다
         if team_name in SKIP_TEAMS or "노션x" in team_name.lower() or "노션 x" in team_name.lower():
             logger.info("team_skipped", team=team_name)
             continue
