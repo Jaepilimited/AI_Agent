@@ -726,8 +726,12 @@ async def create_alias(req: AliasCreate, admin: User = Depends(_require_admin)) 
         "ON DUPLICATE KEY UPDATE canonical=VALUES(canonical), category=VALUES(category), note=VALUES(note)",
         (alias[:100], canonical[:200], req.category[:30], req.note[:200]),
     )
+    _purged = await asyncio.to_thread(
+        execute, "DELETE FROM sql_cache WHERE query_text LIKE %s", (f"%{alias}%",)
+    )
     invalidate_cache()
-    logger.info("alias_upserted", alias=alias, canonical=canonical, by=admin.email)
+    logger.info("alias_upserted", alias=alias, canonical=canonical,
+                purged_sql_cache=_purged, by=admin.email)
     return {"ok": True, "alias": alias, "canonical": canonical}
 
 
@@ -787,8 +791,14 @@ async def approve_alias_candidate(
     await asyncio.to_thread(
         execute, "UPDATE term_alias_candidates SET status='approved' WHERE id = %s", (cand_id,)
     )
+    # 이 용어가 들어간 질문의 캐시된 SQL 은 보정 전에 생성된 것 — 지워야 새 규칙이 적용된다.
+    # (프롬프트를 고쳐도 캐시가 옛 SQL 을 돌려주던 브랜드 건과 같은 함정)
+    _purged = await asyncio.to_thread(
+        execute, "DELETE FROM sql_cache WHERE query_text LIKE %s", (f"%{row['term']}%",)
+    )
     invalidate_cache()
-    logger.info("alias_candidate_approved", term=row["term"], canonical=canonical, by=admin.email)
+    logger.info("alias_candidate_approved", term=row["term"], canonical=canonical,
+                purged_sql_cache=_purged, by=admin.email)
     return {"ok": True, "alias": row["term"], "canonical": canonical}
 
 
