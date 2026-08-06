@@ -31,7 +31,7 @@ from typing import Optional
 
 import structlog
 
-from app.db.mariadb import execute, fetch_all, fetch_one
+from app.db.mariadb import execute, execute_lastid, fetch_all, fetch_one
 
 logger = structlog.get_logger(__name__)
 
@@ -175,9 +175,11 @@ def run_golden(trigger_type: str = "scheduled", scope: Optional[str] = None) -> 
     if scope == "daily":
         items = [it for it in items if it.get("freq", "daily") == "daily"]
 
-    execute("INSERT INTO golden_runs (trigger_type, scope) VALUES (%s, %s)",
-            (trigger_type, scope))
-    run_id = (fetch_one("SELECT LAST_INSERT_ID() id") or {}).get("id")
+    # ⚠️ LAST_INSERT_ID() 를 별도 쿼리로 읽으면 풀의 다른 커넥션이 걸려 0이 나온다
+    # (2026-08-06 첫 런에서 실제 발생 — 런 마감 UPDATE가 빗나가 가드에 걸렸다)
+    run_id = execute_lastid(
+        "INSERT INTO golden_runs (trigger_type, scope) VALUES (%s, %s)",
+        (trigger_type, scope))
     logger.info("golden_run_start", run_id=run_id, scope=scope, items=len(items))
 
     s = get_settings()
