@@ -88,22 +88,39 @@ def load_golden_set() -> list[dict]:
 # ── 실행 ─────────────────────────────────────────────────────────────────────
 
 
-def _make_token(auth: str) -> str:
-    """골든 전용 토큰. email 이 실사용자와 달라 사용 통계·audit 에서 분리된다.
+def _ensure_golden_user() -> int:
+    """골든 전용 비관리자 users 행을 보장하고 id 를 돌려준다.
 
-    auth='user' 는 비관리자 권한 검증용 — golden-bot@system 은 ad_users 에 없으므로
-    FI 등 DB 조회 기반 권한이 전부 미승인 상태로 판정된다 (그게 검증 목적이다).
+    ⚠️ 권한 판정(FI 등)은 JWT 가 아니라 **users.id 기반 DB 조회**다 (routes.py).
+    첫 런에서 admin 의 user_id 를 빌려 썼더니 role='admin' 우회가 발동해
+    perm_fi_denied 가 오탐으로 실패했다 (2026-08-06) — 방어선은 정상이었고
+    하네스가 틀렸던 것. 전용 계정은 role='user' + ad_user_id NULL 이라
+    FI 미승인 상태가 정확히 재현된다.
     """
+    row = fetch_one("SELECT id FROM users WHERE email = %s", (GOLDEN_EMAIL,))
+    if row:
+        return row["id"]
+    return execute_lastid(
+        "INSERT INTO users (email, password_hash, display_name, role, is_active) "
+        "VALUES (%s, %s, %s, 'user', 1)",
+        (GOLDEN_EMAIL, "!golden-no-login", "골든셋 러너"),
+    )
+
+
+def _make_token(auth: str) -> str:
+    """골든 전용 토큰. email 이 실사용자와 달라 사용 통계·audit 에서 분리된다."""
     import jwt as _pyjwt
 
     from app.config import get_settings
 
     s = get_settings()
-    adm = fetch_one("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1")
-    role = "admin" if auth != "user" else "user"
+    if auth == "user":
+        uid, role = _ensure_golden_user(), "user"
+    else:
+        adm = fetch_one("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1")
+        uid, role = (adm or {}).get("id", 1), "admin"
     return _pyjwt.encode(
-        {"user_id": (adm or {}).get("id", 1), "email": GOLDEN_EMAIL, "role": role,
-         "brand_filter": "",
+        {"user_id": uid, "email": GOLDEN_EMAIL, "role": role, "brand_filter": "",
          "exp": datetime.now(timezone.utc) + timedelta(hours=2)},
         s.jwt_secret_key, algorithm="HS256",
     )
@@ -200,6 +217,7 @@ def run_golden(trigger_type: str = "scheduled", scope: Optional[str] = None) -> 
             limit = item.get("expect", {}).get("max_seconds", 120)
             t0 = time.time()
             answer = ""
+            route = ""
             reasons: list[str] = []
             try:
                 r = client.post(
@@ -212,7 +230,9 @@ def run_golden(trigger_type: str = "scheduled", scope: Optional[str] = None) -> 
                 if r.status_code != 200:
                     reasons = [f"HTTP {r.status_code}"]
                 else:
-                    answer = ((r.json().get("choices") or [{}])[0]
+                    body = r.json()
+                    route = body.get("route") or ""
+                    answer = ((body.get("choices") or [{}])[0]
                               .get("message") or {}).get("content", "") or ""
                     reasons = _evaluate(item, answer, elapsed)
             except Exception as e:
@@ -228,7 +248,7 @@ def run_golden(trigger_type: str = "scheduled", scope: Optional[str] = None) -> 
                 "elapsed_ms, answer_len, route, answer_head) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (run_id, item["id"], item.get("category", ""), int(ok),
                  " / ".join(reasons)[:2000] if reasons else None,
-                 int(elapsed * 1000), len(answer), _fetch_route(item["question"]),
+                 int(elapsed * 1000), len(answer), route or _fetch_route(item["question"]),
                  answer[:400]),
             )
             logger.info("golden_item", run_id=run_id, item=item["id"], ok=ok,

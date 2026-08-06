@@ -207,6 +207,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
 
     response = ChatCompletionResponse(
         model=request.model,
+        route=result.get("source"),
         choices=[
             ChatCompletionChoice(
                 index=0,

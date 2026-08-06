@@ -25,7 +25,7 @@
     },
     {
       "id": "inc_brand_definition", "category": "incident", "freq": "daily",
-      "question": "브랜드별 매출 비중 알려줘",
+      "question": "올해 브랜드별 매출 비중 알려줘",
       "expect": {"contains_all": ["스킨천사"], "contains_any": ["우마", "UM"], "min_len": 150, "max_seconds": 150},
       "note": "2026-08-05 확정: 브랜드 4종, CBT는 스킨천사 합산, 팀을 브랜드로 내지 말 것"
     },
@@ -93,7 +93,7 @@
     },
     {
       "id": "core_continent_share", "category": "bq_core", "freq": "daily",
-      "question": "대륙별 매출 비중 알려줘",
+      "question": "올해 대륙별 매출 비중 알려줘",
       "expect": {"contains_any": ["유럽", "아시아", "북미"], "sql_contains_any": ["Continent1"], "min_len": 150, "max_seconds": 150}
     },
     {
@@ -127,6 +127,12 @@
       "id": "core_uma_brand", "category": "bq_core", "freq": "weekly",
       "question": "우마 브랜드 올해 매출 알려줘",
       "expect": {"sql_contains_any": ["UM"], "contains_any": ["억", "백만"], "min_len": 60, "max_seconds": 150}
+    },
+    {
+      "id": "bq_clarify_short_query", "category": "bq_core", "freq": "weekly",
+      "question": "브랜드별 매출 비중 알려줘",
+      "expect": {"contains_any": ["기간", "채널"], "max_seconds": 60},
+      "note": "기간·채널 없는 짧은 BQ 질문은 되물음(grill-me)이 정상 동작이다"
     },
     {
       "id": "fu_clarify_b2c", "category": "followup", "freq": "daily",

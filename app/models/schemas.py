@@ -123,6 +123,9 @@ class ChatCompletionResponse(BaseModel):
     model: str = "skin1004-ai"
     choices: List[ChatCompletionChoice]
     usage: UsageInfo = Field(default_factory=UsageInfo)
+    # 비표준 확장: 처리 라우트(bigquery/direct/notion/...) — OpenAI 클라이언트는 무시하고,
+    # 골든셋 러너가 라우터 변경 전후를 비교할 때 쓴다
+    route: Optional[str] = None
 
 
 # --- Streaming Response Models ---
