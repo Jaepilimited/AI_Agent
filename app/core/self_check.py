@@ -29,7 +29,8 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 import structlog
@@ -453,6 +454,97 @@ def _check_qdrant() -> CheckResult:
     return CheckResult(n > 0, f"{COLLECTION} {n} points / 컬렉션 {len(cols)}개")
 
 
+# ---- 답변 품질 (canary) ----
+
+
+_CANARY_QUESTIONS = [
+    # (라벨, 질문, 허용 시간 s) — 내용 정답성이 아니라 **구조적 건강**만 본다
+    ("bigquery", "2026년 상반기 국가별 매출 top3 알려줘", 90.0),
+    ("direct", "오늘 며칠이야?", 45.0),
+]
+
+_CANARY_ERROR_PHRASES = ("오류가 발생", "시간 초과", "오래 걸리고", "일시적으로 불안정")
+
+
+def _check_canary_answers() -> CheckResult:
+    """대표 질문을 실제 API 로 돌려 답변 경로가 구조적으로 온전한지 본다.
+
+    👎 피드백의 잘림·타임아웃 유형은 간헐적이라 사후 재현이 안 됐다 (2026-08-06,
+    4건 모두 재현 실패). 매일 같은 질문을 돌려두면 재발한 **시점**이 기록에 남아
+    "언제부터 깨졌나"를 답할 수 있다. 검사 항목: 오류 문구 / 앞부분 유실
+    (문장 중간에서 시작) / 코드블록 미닫힘 / 빈 답변 / 응답 시간.
+    내용이 맞는지는 보지 않는다 — LLM 표현 변동으로 오탐이 나기 때문이다.
+    """
+    import httpx as _httpx
+    import jwt as _pyjwt
+
+    from app.config import get_settings
+
+    s = get_settings()
+    adm = fetch_one("SELECT id, email, role FROM users WHERE role='admin' ORDER BY id LIMIT 1")
+    if not adm:
+        return CheckResult(False, "admin 계정이 없어 카나리아를 돌릴 수 없다")
+    token = _pyjwt.encode(
+        {"user_id": adm["id"], "email": adm["email"], "role": "admin", "brand_filter": "",
+         "exp": datetime.now(timezone.utc) + timedelta(minutes=15)},
+        s.jwt_secret_key, algorithm="HS256",
+    )
+
+    problems = []
+    with _httpx.Client(base_url=f"http://127.0.0.1:{s.port}") as client:
+        for label, q, limit in _CANARY_QUESTIONS:
+            t0 = time.time()
+            try:
+                r = client.post(
+                    "/v1/chat/completions",
+                    json={"model": "claude", "stream": False,
+                          "messages": [{"role": "user", "content": q}]},
+                    cookies={"token": token}, timeout=limit + 30,
+                )
+                el = time.time() - t0
+                if r.status_code != 200:
+                    problems.append(f"{label}: HTTP {r.status_code}")
+                    continue
+                a = ((r.json().get("choices") or [{}])[0].get("message") or {}).get("content", "") or ""
+            except Exception as e:
+                problems.append(f"{label}: {type(e).__name__} ({time.time()-t0:.0f}s)")
+                continue
+
+            if len(a.strip()) < 50:
+                problems.append(f"{label}: 답변이 비었거나 너무 짧음 ({len(a)}자)")
+            if any(ph in a for ph in _CANARY_ERROR_PHRASES):
+                problems.append(f"{label}: 오류 문구 노출 — {a[:60]!r}")
+            if re.match(r"^\s*(니다|습니다|입니다)|^\s*[.,)\]}]", a):
+                problems.append(f"{label}: 앞부분 유실 의심 — {a[:40]!r}")
+            if a.count("```") % 2 != 0:
+                problems.append(f"{label}: 코드블록 미닫힘 (뒷부분 잘림 의심)")
+            if el > limit:
+                problems.append(f"{label}: {el:.0f}s (허용 {limit:.0f}s 초과)")
+
+    return CheckResult(
+        not problems,
+        " / ".join(problems) if problems else
+        f"카나리아 {len(_CANARY_QUESTIONS)}건 모두 온전 (잘림·오류문구·시간 정상)",
+    )
+
+
+def _check_feedback_spike() -> CheckResult:
+    """👎 가 급증하지 않았는가 — 절대량이 아니라 직전 주 대비로 본다.
+
+    누적 비율(👎 75%)을 임계로 쓰면 평상시에도 계속 울려 알림이 죽는다.
+    스파이크(최근 7일이 직전 7일의 2배 이상 && 5건 이상)만 잡는다.
+    """
+    cur = (fetch_one(
+        "SELECT COUNT(*) c FROM message_feedback "
+        "WHERE rating = -1 AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or {}).get("c", 0)
+    prev = (fetch_one(
+        "SELECT COUNT(*) c FROM message_feedback "
+        "WHERE rating = -1 AND created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) "
+        "AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)") or {}).get("c", 0)
+    spiked = cur >= 5 and cur >= 2 * max(prev, 1)
+    return CheckResult(not spiked, f"최근 7일 👎 {cur}건 / 직전 7일 {prev}건")
+
+
 # ---- 등록 ----
 
 CHECKS: list[Check] = [
@@ -483,6 +575,10 @@ CHECKS: list[Check] = [
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
     Check("qdrant", "datasource", SEV_CRITICAL,
           "Qdrant 기본 컬렉션에 데이터가 있는가", _check_qdrant),
+    Check("canary_answers", "quality", SEV_WARNING,
+          "대표 질문 답변이 구조적으로 온전한가", _check_canary_answers),
+    Check("feedback_spike", "quality", SEV_WARNING,
+          "👎 피드백이 급증하지 않았는가", _check_feedback_spike),
 ]
 
 

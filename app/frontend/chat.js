@@ -4224,7 +4224,7 @@
       _btnSelfCheck.disabled = true;
       _btnSelfCheck.textContent = "점검 중…";
       document.getElementById("admin-selfcheck-body").innerHTML =
-        "<p style='padding:12px;color:var(--text-secondary)'>검사 중입니다. BigQuery·Qdrant 확인 때문에 30초 정도 걸립니다…</p>";
+        "<p style='padding:12px;color:var(--text-secondary)'>검사 중입니다. BigQuery·Qdrant 확인과 답변 카나리아 때문에 1분 정도 걸립니다…</p>";
       fetch("/api/admin/self-check/run", { method: "POST" })
         .then(function(r) { return r.ok ? r.json() : null; })
         .then(function() { loadSelfCheck(); })
