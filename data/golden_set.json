@@ -129,6 +129,18 @@
       "expect": {"sql_contains_any": ["UM"], "contains_any": ["억", "백만"], "min_len": 60, "max_seconds": 150}
     },
     {
+      "id": "src_isolation_amazon_review", "category": "bq_core", "freq": "weekly",
+      "question": "@@아마존 리뷰 센텔라 앰플 아마존 평점 알려줘",
+      "expect": {"contains_any": ["평점", "리뷰", "감성"], "not_contains": ["선택하신 데이터소스", "오류가 발생"], "min_len": 100, "max_seconds": 120},
+      "note": "공백 포함 소스 키 파싱 회귀 방지 — '@@아마존 리뷰'가 아마존검색으로 오인되던 사고 (2026-08-06)"
+    },
+    {
+      "id": "src_isolation_meta_platform", "category": "bq_core", "freq": "weekly",
+      "question": "@@메타광고 광고 플랫폼별 분포 알려줘",
+      "expect": {"contains_any": ["INSTAGRAM", "FACEBOOK", "인스타", "페이스북", "플랫폼"], "not_contains": ["선택하신 데이터소스", "오류가 발생"], "min_len": 100, "max_seconds": 120},
+      "note": "@@ 지정 소스의 스키마 강제 포함 + 테이블 스코프 지시 회귀 방지 (2026-08-06)"
+    },
+    {
       "id": "bq_clarify_short_query", "category": "bq_core", "freq": "weekly",
       "question": "브랜드별 매출 비중 알려줘",
       "expect": {"contains_any": ["기간", "채널"], "max_seconds": 60},
