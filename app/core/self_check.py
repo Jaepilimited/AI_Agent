@@ -458,9 +458,11 @@ def _check_qdrant() -> CheckResult:
 
 
 _CANARY_QUESTIONS = [
-    # (라벨, 질문, 허용 시간 s) — 내용 정답성이 아니라 **구조적 건강**만 본다
-    ("bigquery", "2026년 상반기 국가별 매출 top3 알려줘", 90.0),
-    ("direct", "오늘 며칠이야?", 45.0),
+    # (라벨, 질문, 허용 시간 s, 최소 길이) — 내용 정답성이 아니라 **구조적 건강**만 본다
+    # 최소 길이는 질문별이다: "오늘 며칠이야?" 의 정답은 원래 ~30자라
+    # 일괄 50자 기준을 걸었더니 정상 답변이 "너무 짧음" 오탐으로 잡혔다 (2026-08-06 첫 실행).
+    ("bigquery", "2026년 상반기 국가별 매출 top3 알려줘", 90.0, 150),
+    ("direct", "오늘 며칠이야?", 45.0, 10),
 ]
 
 _CANARY_ERROR_PHRASES = ("오류가 발생", "시간 초과", "오래 걸리고", "일시적으로 불안정")
@@ -492,7 +494,7 @@ def _check_canary_answers() -> CheckResult:
 
     problems = []
     with _httpx.Client(base_url=f"http://127.0.0.1:{s.port}") as client:
-        for label, q, limit in _CANARY_QUESTIONS:
+        for label, q, limit, min_len in _CANARY_QUESTIONS:
             t0 = time.time()
             try:
                 r = client.post(
@@ -510,8 +512,8 @@ def _check_canary_answers() -> CheckResult:
                 problems.append(f"{label}: {type(e).__name__} ({time.time()-t0:.0f}s)")
                 continue
 
-            if len(a.strip()) < 50:
-                problems.append(f"{label}: 답변이 비었거나 너무 짧음 ({len(a)}자)")
+            if len(a.strip()) < min_len:
+                problems.append(f"{label}: 답변이 비었거나 너무 짧음 ({len(a)}자 < {min_len})")
             if any(ph in a for ph in _CANARY_ERROR_PHRASES):
                 problems.append(f"{label}: 오류 문구 노출 — {a[:60]!r}")
             if re.match(r"^\s*(니다|습니다|입니다)|^\s*[.,)\]}]", a):
