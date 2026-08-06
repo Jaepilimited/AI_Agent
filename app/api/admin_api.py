@@ -809,3 +809,15 @@ async def reject_alias_candidate(cand_id: int, admin: User = Depends(_require_ad
     )
     logger.info("alias_candidate_rejected", cand_id=cand_id, by=admin.email)
     return {"ok": True, "updated": n}
+
+
+# ── LLM·BigQuery 비용 리포트 ─────────────────────────────────────────────────
+# "운영 비용이 얼마인가" (2026-08-06 운영본부 방향). 상세는 app/core/usage_meter.py.
+
+
+@admin_router.get("/llm-costs")
+async def get_llm_costs(days: int = 30, _: User = Depends(_require_admin)) -> dict:
+    """일별·모델별 토큰 사용량과 추정 비용 (요율은 조회 시점 소급 적용)."""
+    from app.core.usage_meter import get_usage_report
+
+    return await asyncio.to_thread(get_usage_report, max(1, min(days, 365)))

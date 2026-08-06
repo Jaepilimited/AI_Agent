@@ -83,15 +83,33 @@ def _retry_call(func, *args, **kwargs):
 
 
 def _gemini_retry(func, *args, **kwargs):
-    """Retry wrapper that holds a Gemini concurrency slot."""
+    """Retry wrapper that holds a Gemini concurrency slot.
+
+    비스트리밍 Gemini 호출이 전부 이 퍼널을 지나므로, 토큰 계측(usage_meter)도
+    여기 한 곳에서 한다. 스트리밍은 각 스트림 루프에서 마지막 청크로 기록한다.
+    """
     with _GEMINI_SEM:
-        return _retry_call(func, *args, **kwargs)
+        resp = _retry_call(func, *args, **kwargs)
+    try:
+        from app.core.usage_meter import record_gemini
+        record_gemini(kwargs.get("model", ""), "generate",
+                      getattr(resp, "usage_metadata", None))
+    except Exception:
+        pass  # 계측 실패가 서비스에 영향을 주면 안 된다
+    return resp
 
 
 def _claude_retry(func, *args, **kwargs):
-    """Retry wrapper that holds a Claude concurrency slot."""
+    """Retry wrapper that holds a Claude concurrency slot. (토큰 계측 포함 — 위와 동일)"""
     with _CLAUDE_SEM:
-        return _retry_call(func, *args, **kwargs)
+        resp = _retry_call(func, *args, **kwargs)
+    try:
+        from app.core.usage_meter import record_claude
+        record_claude(kwargs.get("model", ""), "generate",
+                      getattr(resp, "usage", None))
+    except Exception:
+        pass
+    return resp
 
 
 # --- Common Interface ---
@@ -200,13 +218,21 @@ class GeminiClient:
 
         with _GEMINI_SEM:
             try:
+                _last_usage = None
                 for chunk in self.client.models.generate_content_stream(
                     model=self.model,
                     contents=prompt,
                     config=config,
                 ):
+                    if getattr(chunk, "usage_metadata", None):
+                        _last_usage = chunk.usage_metadata  # 마지막 청크에 최종 사용량이 온다
                     if chunk.text:
                         yield chunk.text
+                try:
+                    from app.core.usage_meter import record_gemini
+                    record_gemini(self.model, "stream", _last_usage)
+                except Exception:
+                    pass
             except Exception as e:
                 logger.error("gemini_stream_failed", error=str(e))
                 raise
@@ -652,6 +678,12 @@ class ClaudeClient:
                 with self.client.messages.stream(**kwargs) as stream:
                     for text in stream.text_stream:
                         yield text
+                    try:
+                        from app.core.usage_meter import record_claude
+                        record_claude(self.model, "stream",
+                                      getattr(stream.get_final_message(), "usage", None))
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.error("claude_stream_failed", error=str(e))
                 raise
@@ -709,6 +741,12 @@ class ClaudeClient:
                 with self.client.messages.stream(**kwargs) as stream:
                     for text in stream.text_stream:
                         yield text
+                    try:
+                        from app.core.usage_meter import record_claude
+                        record_claude(self.model, "history_stream",
+                                      getattr(stream.get_final_message(), "usage", None))
+                    except Exception:
+                        pass
             except Exception as e:
                 logger.error("claude_history_stream_failed", error=str(e))
                 raise

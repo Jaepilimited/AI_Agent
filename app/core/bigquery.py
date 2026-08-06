@@ -60,6 +60,11 @@ class BigQueryClient:
             try:
                 query_job = self.client.query(sql, job_config=job_config)
                 results = query_job.result(timeout=timeout)
+                try:
+                    from app.core.usage_meter import record_bigquery
+                    record_bigquery(getattr(query_job, "total_bytes_billed", None))
+                except Exception:
+                    pass  # 계측 실패가 조회에 영향을 주면 안 된다
 
                 rows = []
                 for i, row in enumerate(results):
