@@ -130,6 +130,7 @@ def ensure_term_aliases_table() -> None:
     """테이블 생성 + 비어 있으면 시드 (idempotent)."""
     try:
         execute(_DDL)
+        execute(_DDL_CANDIDATES)
         rows = fetch_all("SELECT COUNT(*) c FROM term_aliases")
         if rows and rows[0]["c"] == 0:
             for alias, canonical, cat, note in _SEED:
@@ -241,3 +242,110 @@ def expand_aliases(query: str) -> tuple[str, list[str]]:
     out, fuzzy_hits = _fuzzy_correct(out)
     hits.extend(fuzzy_hits)
     return out, hits
+
+
+# ── 3층: 미인식 용어 자동 수집 (사전이 스스로 자라는 경로) ─────────────────────
+#
+# 0건 답변이 나온 질문에서 시스템이 모르는 한글 용어를 후보로 적재한다.
+# 후보는 자동으로 사전에 들어가지 않는다 — admin 이 승인해야 한다.
+# (오타 보정과 같은 원칙: 확신 없는 치환은 조용한 오답을 만든다.)
+
+_DDL_CANDIDATES = """
+CREATE TABLE IF NOT EXISTS term_alias_candidates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    term VARCHAR(100) NOT NULL UNIQUE,
+    first_query VARCHAR(500) NOT NULL DEFAULT '',
+    occurrences INT NOT NULL DEFAULT 1,
+    suggested_canonical VARCHAR(200) DEFAULT NULL,
+    suggested_score FLOAT DEFAULT NULL,
+    status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+# 질문에 흔히 나오는 일반어 — 후보에서 걸러낸다. 여기 없는 도메인 명사만 남는다.
+_STOPWORDS = frozenset("""
+매출 매출액 판매량 판매수량 판매 수량 순위 실적 비중 총합 합계 총액 금액 비용 광고비
+알려줘 알려주세요 보여줘 보여주세요 뽑아줘 정리해줘 비교해줘 분석해줘 확인해줘 해줘 해주세요 알려 주세요
+비교 분석 확인 기준 기간 조회 요약 상세 현황 추이 통계 정보 데이터 결과 목록 종류
+상반기 하반기 분기 월별 연도별 연별 주별 일별 국가별 제품별 팀별 채널별 브랜드별 라인별 권역별
+올해 작년 재작년 내년 지난달 이번달 지난주 이번주 오늘 어제 최근 지난 이번 향후
+전체 전부 각각 모두 기존 신규 이후 이전 대비 대상 관련 부분 해당
+얼마 얼마야 얼마임 무엇 뭐야 뭔지 어디 어떻게 왜 언제 누구
+차트 그래프 도식화 시각화 테이블 리포트
+제품 라인 브랜드 국가 채널 팀 플랫폼 카테고리 고객 거래처 업체
+년 월 일 주 개 건 명 원 억원 만원 개월
+아마존 쇼피 큐텐 틱톡 틱톡샵 라자다 올리브영 이커머스 자사몰
+미국 일본 중국 한국 태국 베트남 필리핀 대만 홍콩 독일 영국 프랑스 폴란드 러시아 인도 호주
+유럽 아시아 북미 남미 중미 중동 동남아 동남아시아
+""".split())
+
+_PARTICLES = "은는이가을를의도만과와랑에서로부터"
+
+
+def _known_terms() -> set:
+    """사전·어휘에 이미 있는 표기 — 후보에서 제외."""
+    known = set(_STOPWORDS)
+    for term, canonical in _FUZZY_VOCAB:
+        known.add(term)
+        known.update(canonical.split())
+    try:
+        for r in fetch_all("SELECT alias, canonical FROM term_aliases"):
+            known.add(r["alias"].lower())
+            known.update(r["canonical"].split())
+    except Exception:
+        pass
+    return known
+
+
+def _strip_particle(tok: str) -> str:
+    if len(tok) >= 3 and tok[-1] in _PARTICLES:
+        return tok[:-1]
+    return tok
+
+
+def _suggest(term: str) -> tuple[Optional[str], Optional[float]]:
+    """후보 용어에 가장 가까운 정식 명칭을 제안한다 (표시용 — 확정은 admin)."""
+    tj = _jamo(term)
+    best, best_score = None, 0.0
+    for vocab_term, canonical in _FUZZY_VOCAB:
+        score = SequenceMatcher(None, tj, _jamo(vocab_term)).ratio()
+        if score > best_score:
+            best, best_score = canonical, score
+    if best_score >= 0.5:
+        return best, round(best_score, 2)
+    return None, None
+
+
+def collect_candidates(query: str) -> int:
+    """0건 답변이 나온 질문에서 미인식 한글 용어를 후보로 적재한다.
+
+    format_answer 의 빈 결과 분기에서 백그라운드 스레드로 호출된다 —
+    사용자 응답 경로를 절대 늦추지 않는다. 반환: 적재/갱신한 후보 수.
+    """
+    if not query or len(query) > 500:
+        return 0
+    try:
+        known = _known_terms()
+        saved = 0
+        for run in re.findall(r"[가-힣]{2,15}", query):
+            tok = _strip_particle(run)
+            if len(tok) < 2 or tok in known or tok.lower() in known:
+                continue
+            # 이미 정식명칭(원문) 형태로 치환된 조각은 원문 쪽이 사전에 있으므로 위에서 걸러진다
+            sug, score = _suggest(tok)
+            execute(
+                "INSERT INTO term_alias_candidates "
+                "(term, first_query, suggested_canonical, suggested_score) "
+                "VALUES (%s, %s, %s, %s) "
+                "ON DUPLICATE KEY UPDATE occurrences = occurrences + 1, last_seen_at = NOW()",
+                (tok[:100], query[:500], sug, score),
+            )
+            saved += 1
+        if saved:
+            logger.info("alias_candidates_collected", count=saved, query=query[:80])
+        return saved
+    except Exception as e:
+        logger.warning("alias_candidates_failed", error=str(e)[:120])
+        return 0

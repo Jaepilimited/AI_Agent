@@ -902,6 +902,15 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         results = None
 
     if not results:
+        # 0건 질문에서 미인식 용어를 후보로 수집 (백그라운드 — 응답을 늦추지 않는다).
+        # 스트리밍 경로도 0건이면 format_answer 를 타므로 이 한 곳이면 된다.
+        try:
+            import threading as _th
+
+            from app.core.term_aliases import collect_candidates as _cc
+            _th.Thread(target=_cc, args=(query,), daemon=True).start()
+        except Exception:
+            pass
         # Build context hints for valid column values referenced in SQL
         _value_hints = []
         sql_upper = (sql or "").upper()

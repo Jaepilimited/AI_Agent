@@ -739,3 +739,63 @@ async def delete_alias(alias_id: int, admin: User = Depends(_require_admin)) -> 
     invalidate_cache()
     logger.info("alias_deleted", alias_id=alias_id, by=admin.email)
     return {"ok": True, "deleted": n}
+
+
+# ── 용어 후보 (미인식 용어 자동 수집) ────────────────────────────────────────
+# 0건 답변이 나온 질문에서 수집된 후보. 승인해야 사전에 들어간다.
+
+
+@admin_router.get("/aliases/candidates")
+async def list_alias_candidates(_: User = Depends(_require_admin)) -> list:
+    """대기 중인 용어 후보 — 자주 나온 순."""
+    return await asyncio.to_thread(
+        fetch_all,
+        "SELECT id, term, occurrences, suggested_canonical, suggested_score, "
+        "first_query, created_at, last_seen_at "
+        "FROM term_alias_candidates WHERE status = 'pending' "
+        "ORDER BY occurrences DESC, last_seen_at DESC LIMIT 100",
+    )
+
+
+class CandidateApprove(BaseModel):
+    canonical: str = ""          # 비우면 suggested_canonical 사용
+    category: str = "product"
+
+
+@admin_router.post("/aliases/candidates/{cand_id}/approve")
+async def approve_alias_candidate(
+    cand_id: int, req: CandidateApprove, admin: User = Depends(_require_admin)
+) -> dict:
+    from app.db.mariadb import fetch_one as _fetch_one
+    from app.core.term_aliases import invalidate_cache
+
+    row = await asyncio.to_thread(
+        _fetch_one, "SELECT term, suggested_canonical FROM term_alias_candidates WHERE id = %s",
+        (cand_id,),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="후보가 없습니다")
+    canonical = (req.canonical or row.get("suggested_canonical") or "").strip()
+    if not canonical:
+        raise HTTPException(status_code=400, detail="canonical 을 지정해 주세요 (제안값 없음)")
+    await asyncio.to_thread(
+        execute,
+        "INSERT INTO term_aliases (alias, canonical, category, note) VALUES (%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE canonical=VALUES(canonical)",
+        (row["term"][:100], canonical[:200], req.category[:30], f"후보 승인 by {admin.email}"[:200]),
+    )
+    await asyncio.to_thread(
+        execute, "UPDATE term_alias_candidates SET status='approved' WHERE id = %s", (cand_id,)
+    )
+    invalidate_cache()
+    logger.info("alias_candidate_approved", term=row["term"], canonical=canonical, by=admin.email)
+    return {"ok": True, "alias": row["term"], "canonical": canonical}
+
+
+@admin_router.post("/aliases/candidates/{cand_id}/reject")
+async def reject_alias_candidate(cand_id: int, admin: User = Depends(_require_admin)) -> dict:
+    n = await asyncio.to_thread(
+        execute, "UPDATE term_alias_candidates SET status='rejected' WHERE id = %s", (cand_id,)
+    )
+    logger.info("alias_candidate_rejected", cand_id=cand_id, by=admin.email)
+    return {"ok": True, "updated": n}
