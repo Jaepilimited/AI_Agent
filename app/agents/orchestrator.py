@@ -554,11 +554,13 @@ class OrchestratorAgent:
         else:
             # Step 1: Classify query intent
             # Fast path: keyword match first, LLM fallback only for short ambiguous queries
-            route = self._keyword_classify(query)
+            route, _confident = self._keyword_classify_ex(query)
             is_system_task = query.strip().startswith("### Task:")
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
-            if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-                if len(query.strip()) <= 120:
+            # LLM 우선 하이브리드: 키워드가 확신 없이 분류한 경우는 LLM 판정이 기본값.
+            # 명백한 케이스(확신 분류·직접 잠금·시스템 태스크)만 키워드로 끝낸다.
+            if not _confident and not is_system_task and not _is_direct_locked:
+                if len(query.strip()) <= 300:
                     flash = get_flash_client()
                     route = await self._classify_with_llm(query, conversation_context, flash)
             # Apply enabled_sources filter — redirect to direct if route is disabled
@@ -810,9 +812,9 @@ class OrchestratorAgent:
                 logger.info("stream_single_source_fast_path", route=_single_route)
 
         if _single_route:
-            route = _single_route
+            route, _confident = _single_route, True
         else:
-            route = self._keyword_classify(query)
+            route, _confident = self._keyword_classify_ex(query)
 
         # Wave 1: Emit source hint IMMEDIATELY
         yield ("source", route)
@@ -839,8 +841,9 @@ class OrchestratorAgent:
         if not _single_route:
             # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
-            if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-                if len(query.strip()) <= 120:
+            # LLM 우선 하이브리드: 확신 없는 분류는 LLM 판정이 기본값 (비스트리밍과 동일)
+            if not _confident and not is_system_task and not _is_direct_locked:
+                if len(query.strip()) <= 300:
                     flash = get_flash_client()
                     new_route = await self._classify_with_llm(query, conversation_context, flash)
                     if new_route != route:
@@ -1362,35 +1365,44 @@ class OrchestratorAgent:
     ]
 
     def _keyword_classify(self, query: str) -> str:
-        """Keyword-based query classification.
+        """(호환용) 라우트만 반환 — 확신 플래그가 필요하면 _keyword_classify_ex."""
+        return self._keyword_classify_ex(query)[0]
+
+    def _keyword_classify_ex(self, query: str) -> tuple:
+        """키워드 분류 + 확신 플래그 → (route, confident).
 
         Priority: Hard overrides > System tasks > Full data request > How-to (Notion) > Notion (explicit) > GWS > CS > Data > External > Direct
+
+        confident=False 는 "특정 의도 키워드에 걸려서가 아니라 **폴스루/가드 강등**으로
+        direct 가 됐다"는 뜻이다. 호출부는 이 경우 LLM 분류를 기본값으로 쓴다
+        (2026-08-06 LLM 우선 하이브리드 — 키워드 목록에 단어가 없어 direct 로 새던
+        사고 4건이 계기. 명백한 케이스만 키워드로 끝내 지연·비용을 아낀다).
         """
         # Open WebUI system tasks (title/tag/follow-up) → direct, skip BQ false routing
         if query.strip().startswith("### Task:"):
-            return "direct"
+            return ("direct", True)
 
         q = query.lower()
 
-        # Wave 2: Short greetings (<5 chars) → always direct
+        # 5자 미만 초단문 — 인사일 수도, "B2B" 같은 후속 조건일 수도 있다 → LLM 판단
         if len(q.strip()) < 5:
-            return "direct"
+            return ("direct", False)
 
         # Wave 2: Hard-override to direct (greetings, external topics, chitchat)
         # 단, 데이터 키워드가 있으면 override 건너뜀 ("회사 1분기 매출" 등)
         if any(kw in q for kw in self._DIRECT_OVERRIDE):
             if not any(kw in q for kw in self._DATA_OVERRIDE_GUARD):
-                return "direct"
+                return ("direct", True)
 
         # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
         # 단, PEOPLE/HR·팀 키워드가 있으면 건너뜀 ("육아휴직 쓸 수 있어" 등은 팀 자료 질문)
         if any(p in q for p in self._CAPABILITY_PATTERNS):
             if not any(kw in q for kw in self._TEAM_KEYWORDS):
-                return "direct"
+                return ("direct", True)
 
         # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
         if any(kw in q for kw in self._FULLDATA_KEYWORDS):
-            return "bigquery"
+            return ("bigquery", True)
 
         # Team/HR resource check — BEFORE howto/notion to catch HR queries
         # BUT if strong data keywords present → bigquery takes priority
@@ -1410,14 +1422,14 @@ class OrchestratorAgent:
         has_team = any(kw in q for kw in _TEAM_SPECIFIC)
         has_data = any(kw in q for kw in _DATA_OVERRIDE)
         if has_team and not has_data:
-            return "notion"
+            return ("notion", True)
 
         # How-to / guide questions about platforms → Notion (not BigQuery)
         if any(kw in q for kw in self._HOWTO_KEYWORDS):
-            return "notion"
+            return ("notion", True)
         if any(kw in q for kw in self._HOWTO_BROAD_KEYWORDS):
             if any(p in q for p in self._PLATFORM_TOOL_NAMES):
-                return "notion"
+                return ("notion", True)
 
         # Pre-compute data keyword match (used in Notion guard + later routing)
         has_data = any(kw in q for kw in self._DATA_KEYWORDS)
@@ -1425,9 +1437,9 @@ class OrchestratorAgent:
         # Notion check — but defer to bigquery when strong data keywords present
         if any(kw in q for kw in self._NOTION_KEYWORDS):
             if any(kw in q for kw in self._COMPOUND_NOTION):
-                return "notion"
+                return ("notion", True)
             if not has_data:
-                return "notion"
+                return ("notion", True)
 
         # GWS check — highest priority for personal workspace queries
         # 단, "화상회의 프로그램 뭐 써" 같은 툴 식별 질문은 개인 데이터 검색이 아니므로 제외
@@ -1435,7 +1447,7 @@ class OrchestratorAgent:
                                      "어떤 툴", "무슨 프로그램", "무슨 툴"]
         if any(kw in q for kw in self._GWS_KEYWORDS):
             if not any(p in q for p in _TOOL_IDENTITY_PATTERNS):
-                return "gws"
+                return ("gws", True)
 
         # Web search guard: if search keywords match but NO SKIN1004 business context → direct
         # "올해 한국 GDP 성장률" → direct (general knowledge)
@@ -1457,7 +1469,7 @@ class OrchestratorAgent:
                 "팔린", "팔리", "베스트셀러", "판매량", "인기 제품",
             ]
             if not any(t in q for t in _SKIN1004_TERMS):
-                return "direct"
+                return ("direct", False)  # 가드 강등 — 확신 없음, LLM 재판정 대상
 
         # CS check — product Q&A, ingredients, usage, skincare
         # When both CS + DATA keywords present, only prefer BQ for strong analytics keywords
@@ -1490,11 +1502,11 @@ class OrchestratorAgent:
         ]
         # Team resource check — team data lookups (before CS to avoid overlap)
         if any(kw in q for kw in self._TEAM_KEYWORDS):
-            return "notion"
+            return ("notion", True)
 
         has_strong_data = any(kw in q for kw in _STRONG_DATA)
         if any(kw in q for kw in self._CS_KEYWORDS) and not has_strong_data:
-            return "cs"
+            return ("cs", True)
         has_external = any(kw in q for kw in self._EXTERNAL_KEYWORDS)
 
         # Both data + external context needed → multi-source analysis
@@ -1506,8 +1518,8 @@ class OrchestratorAgent:
             if external_hits == ["트렌드"]:
                 data_trend = ["매출 트렌드", "매출트렌드", "판매 트렌드", "실적 트렌드", "주문 트렌드"]
                 if any(p in q for p in data_trend):
-                    return "bigquery"
-            return "multi"
+                    return ("bigquery", True)
+            return ("multi", True)
 
         if has_data:
             # Guard: data keywords present but NO SKIN1004 business context → direct
@@ -1534,9 +1546,9 @@ class OrchestratorAgent:
                 "impression", "conversion", "cpc", "cpv", "cpe",
             ]
             if any(t in q for t in _BIZ_CONTEXT):
-                return "bigquery"
-            return "direct"
-        return "direct"
+                return ("bigquery", True)
+            return ("direct", False)  # 데이터 단어는 있는데 사업 맥락 불명 — LLM 재판정
+        return ("direct", False)  # 아무 키워드도 안 걸림 — LLM 재판정
 
     # Keywords that indicate user wants full/unlimited data from previous query
     _FULLDATA_KEYWORDS = [
