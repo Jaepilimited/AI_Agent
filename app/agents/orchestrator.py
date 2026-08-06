@@ -439,6 +439,12 @@ class OrchestratorAgent:
         conversation_context = _build_conversation_context(messages)
 
         # ═══ @@ 데이터소스 직접 지정 ═══
+        # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
+        from app.core.term_aliases import expand_aliases
+        query, _alias_hits = expand_aliases(query)
+        if _alias_hits:
+            logger.info("alias_expanded", hits=_alias_hits)
+
         db_entry, clean_query = self.parse_db_prefix(query)
 
         # Special commands: @@전체, @@전체해제, @@목록
@@ -644,6 +650,12 @@ class OrchestratorAgent:
         conversation_context = _build_conversation_context(messages)
 
         # ═══ @@ 데이터소스 직접 지정 (streaming) ═══
+        # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
+        from app.core.term_aliases import expand_aliases
+        query, _alias_hits = expand_aliases(query)
+        if _alias_hits:
+            logger.info("alias_expanded", hits=_alias_hits)
+
         db_entry, clean_query = self.parse_db_prefix(query)
 
         # Special commands

@@ -134,6 +134,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_self_check_tables)
         from app.core.ingredients import ensure_ingredient_tables
         await asyncio.to_thread(ensure_ingredient_tables)
+        from app.core.term_aliases import ensure_term_aliases_table
+        await asyncio.to_thread(ensure_term_aliases_table)
         logger.info("mariadb_initialized")
 
         logger.info(

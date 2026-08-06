@@ -689,3 +689,53 @@ async def get_self_check_trend(check_id: str, _: User = Depends(_require_admin))
     from app.core.self_check import get_check_trend
 
     return {"check_id": check_id, "history": await asyncio.to_thread(get_check_trend, check_id)}
+
+
+# ── 사내 용어 사전 (term aliases) ────────────────────────────────────────────
+# "센앰→센텔라 앰플" 같은 은어 치환 사전. 상세는 app/core/term_aliases.py.
+
+
+@admin_router.get("/aliases")
+async def list_aliases(_: User = Depends(_require_admin)) -> list:
+    """용어 사전 전체. note 에 '추측' 이 있는 항목은 AI 유추라 검수가 필요하다."""
+    return await asyncio.to_thread(
+        fetch_all,
+        "SELECT id, alias, canonical, category, note, created_at "
+        "FROM term_aliases ORDER BY category, alias",
+    )
+
+
+class AliasCreate(BaseModel):
+    alias: str
+    canonical: str
+    category: str = "product"
+    note: str = ""
+
+
+@admin_router.post("/aliases")
+async def create_alias(req: AliasCreate, admin: User = Depends(_require_admin)) -> dict:
+    from app.core.term_aliases import invalidate_cache
+
+    alias = req.alias.strip()
+    canonical = req.canonical.strip()
+    if not alias or not canonical:
+        raise HTTPException(status_code=400, detail="alias/canonical 이 비어 있습니다")
+    await asyncio.to_thread(
+        execute,
+        "INSERT INTO term_aliases (alias, canonical, category, note) VALUES (%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE canonical=VALUES(canonical), category=VALUES(category), note=VALUES(note)",
+        (alias[:100], canonical[:200], req.category[:30], req.note[:200]),
+    )
+    invalidate_cache()
+    logger.info("alias_upserted", alias=alias, canonical=canonical, by=admin.email)
+    return {"ok": True, "alias": alias, "canonical": canonical}
+
+
+@admin_router.delete("/aliases/{alias_id}")
+async def delete_alias(alias_id: int, admin: User = Depends(_require_admin)) -> dict:
+    from app.core.term_aliases import invalidate_cache
+
+    n = await asyncio.to_thread(execute, "DELETE FROM term_aliases WHERE id = %s", (alias_id,))
+    invalidate_cache()
+    logger.info("alias_deleted", alias_id=alias_id, by=admin.email)
+    return {"ok": True, "deleted": n}
