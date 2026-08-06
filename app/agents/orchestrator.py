@@ -558,7 +558,7 @@ class OrchestratorAgent:
             is_system_task = query.strip().startswith("### Task:")
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
             if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-                if len(query.strip()) <= 50:
+                if len(query.strip()) <= 120:
                     flash = get_flash_client()
                     route = await self._classify_with_llm(query, conversation_context, flash)
             # Apply enabled_sources filter — redirect to direct if route is disabled
@@ -840,7 +840,7 @@ class OrchestratorAgent:
             # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
             if route == "direct" and conversation_context and not is_system_task and not _is_direct_locked:
-                if len(query.strip()) <= 50:
+                if len(query.strip()) <= 120:
                     flash = get_flash_client()
                     new_route = await self._classify_with_llm(query, conversation_context, flash)
                     if new_route != route:
@@ -1160,7 +1160,7 @@ class OrchestratorAgent:
         "몰별", "채널별", "브랜드별", "제품별", "카테고리별", "카테고리", "SKU",
         "라인", "차트", "그래프", "그려", "시각화", "도표", "플롯", "그래프로", "차트로", "시각화해",
         "막대그래프", "원형그래프", "꺾은선", "파이차트", "바차트", "그려줘",
-        "재고", "판매", "거래", "실적", "성과",
+        "재고", "판매", "거래", "실적", "성과", "수출",
         "데이터", "조회", "집계", "합계", "평균",
         "분석", "추이", "증감", "성장률",
         "top", "순위", "랭킹",
@@ -1516,6 +1516,9 @@ class OrchestratorAgent:
                 "광고비", "광고", "메타", "roas", "ctr", "마케팅비", "마케팅 비용", "마케팅", "비용", "노출수", "클릭수",
                 "퍼포먼스", "시딩", "총액", "얼마", "메가와리",
                 "인플루언서", "반품", "환불", "b2b", "b2c", "거래처", "업체",
+                # 거래 이력 질문 ("첫 거래일자", "거래 시작일") — 국가명만 있고 매출/판매
+                # 단어가 없어도 우리 거래 데이터 질문이다 (2026-08-06 direct 오분류 사고)
+                "거래일", "거래 시작", "첫 거래", "거래 이력", "거래 내역", "수출",
                 "리뷰", "평점", "별점", "스마트스토어", "네이버스토어",
                 "예스스타일", "yesstyle", "스타일코리안", "졸스", "소시올라",
                 "재구매", "재구매율", "순위 상승", "순위 변동",
@@ -2352,6 +2355,7 @@ JSON만 반환:
 ## 핵심 원칙
 - 전문적이면서 친근한 톤. 바로 답변 시작. 서론/인사 없이 핵심부터.
 - 질문한 내용만 답변. 모르면 솔직하게. 추측하지 않기.
+- ⛔ **"조회를 진행하겠습니다", "잠시만 기다려 주세요" 같은 예고를 하지 마라.** 너는 이 턴이 끝나면 스스로 조회를 시작할 수 없다 — 그 약속은 지켜지지 않는 거짓말이 된다. 사내 데이터(매출·거래·수량 등) 조회가 필요한 질문이 왔다면, 조회를 약속하는 대신 "질문을 이렇게 다시 보내주시면 바로 조회됩니다: 'B2B 국가별 첫 거래일 알려줘'"처럼 **바로 조회되는 재질문 형태**를 안내하라.
 - 짧은 질문에는 짧게 (1-3문장), 복잡한 주제는 헤더/표/bullet으로 구조화.
 - 핵심 수치는 **굵게**. 인사이트는 > 인용으로.
 - 후속 질문 제안은 답변 맨 끝에 **항상 포함**하세요 (예외: "안녕", "고마워" 같은 순수 인사만 생략):
