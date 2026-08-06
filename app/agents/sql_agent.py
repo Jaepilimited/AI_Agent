@@ -604,7 +604,11 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             "질문 표현이 이 테이블의 컬럼과 정확히 일치하지 않으면 가장 가까운 컬럼으로 "
             "재해석해서 SQL 을 생성하라 (예: '키워드 검색 순위' → 이 테이블에 키워드 컬럼이 "
             "없고 ASIN 단위라면 제품(ASIN_Title)별 노출수/클릭수 순위로, '플랫폼별 분포' → "
-            "publisher_platform 같은 실제 존재하는 컬럼으로)."
+            "publisher_platform 같은 실제 존재하는 컬럼으로). "
+            "단, 개념 자체가 테이블에 없어 대체가 부정확해지는 경우(예: 고객 식별자가 없는데 "
+            "'고객 수')는 다른 값을 그 개념인 척 단정하지 말고, 컬럼 별칭에 실제 기준을 "
+            "드러내라 — 예: COUNT(DISTINCT Order_name) AS unique_order_count (고객 수 아님, "
+            "주문 수). 답변 단계가 이 별칭을 보고 한계를 설명할 수 있어야 한다."
         )
 
     full_prompt = f"{system_prompt}{schema_context}{table_scope_section}{conv_section}{brand_section}{skill_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
@@ -806,20 +810,38 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
         return {"sql_result": results, "error": None}
     except Exception as e:
         error_str = str(e)
-        # Syntax error → likely truncated/complex SQL. Retry with simplified query.
-        if "Syntax error" in error_str:
+        # 구문 오류·컬럼명 오류 → 오류 메시지를 실어 1회 재생성.
+        # ⚠️ "Syntax error" 만 잡으면 "Unrecognized name"(없는 컬럼)이 재시도 없이
+        # 사용자에게 그대로 노출된다 (2026-08-06 @@아마존검색 'Date' 컬럼 사고).
+        if "Syntax error" in error_str or "Unrecognized name" in error_str:
             logger.warning("sql_syntax_error_retry", error=error_str[:200], original_sql=sql[:300])
             try:
                 llm = get_flash_client()
                 query = state.get("query", "")
+                # @@ 로 좁힌 소스는 기본 프롬프트에 스키마가 없다 — 재생성에도 스키마와
+                # 테이블 스코프를 실어야 같은 컬럼 오류를 반복하지 않는다
+                _schema_ctx = _build_schema_context(query, allowed_tables)
+                _scope = ""
+                if allowed_tables is not None and 0 < len(allowed_tables) <= 5:
+                    _scope = ("\n\n## ⛔ 사용 가능 테이블\n"
+                              + "\n".join(f"- `{t}`" for t in sorted(allowed_tables))
+                              + "\n위 테이블만 사용하고, 컬럼명은 위 스키마의 정확한 이름만 사용하라 "
+                              "(모든 테이블에 Date 컬럼이 있는 게 아니다).")
+                _syntax_rules = ""
+                if "Syntax error" in error_str:
+                    _syntax_rules = (
+                        "\n1. 질문에 여러 항목(매출+마케팅비 등)이 있으면 **매출 SQL만 생성**"
+                        "\n2. UNION ALL 금지! CASE WHEN 패턴만 사용!"
+                        "\n3. 모든 괄호를 반드시 닫을 것! CTE 사용 시 WITH ... AS (...) SELECT ... 완전한 형태"
+                        "\n4. 짧고 간결한 SQL만! 20줄 이내!"
+                    )
                 retry_prompt = (
                     _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
+                    + _schema_ctx + _scope
                     + f"\n\n## 사용자 질문\n{query}"
-                    + "\n\n⛔⛔⛔ 이전 SQL이 구문 오류 발생! 다음 규칙을 반드시 지키세요:"
-                    + "\n1. 질문에 여러 항목(매출+마케팅비 등)이 있으면 **매출 SQL만 생성**"
-                    + "\n2. UNION ALL 금지! CASE WHEN 패턴만 사용!"
-                    + "\n3. 모든 괄호를 반드시 닫을 것! CTE 사용 시 WITH ... AS (...) SELECT ... 완전한 형태"
-                    + "\n4. 짧고 간결한 SQL만! 20줄 이내!"
+                    + f"\n\n⛔⛔⛔ 이전 SQL이 다음 오류로 실패했다:\n{error_str[:300]}\n"
+                    + "오류 원인을 고쳐 SQL을 다시 작성하라. 컬럼명은 스키마에 있는 정확한 이름만 사용."
+                    + _syntax_rules
                     + _build_brand_section(state.get("brand_filter"))
                 )
                 retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
