@@ -418,10 +418,18 @@ def _build_schema_context(query: str, allowed_tables: Optional[set]) -> str:
 
     # 2) Lazy-load: only include marketing tables whose keywords match AND are allowed
     query_lower = query.lower()
+    # @@ 로 소스를 좁힌 경우(허용 테이블 소수)는 키워드 매칭과 무관하게 그 테이블
+    # 스키마를 반드시 싣는다 — 안 실으면 LLM 이 없는 컬럼("media")을 지어내거나
+    # 다른 테이블로 이탈해 소스 안내로 튕긴다 (2026-08-06 Playwright 전수 테스트:
+    # @@메타광고 '플랫폼별 분포' / @@아마존검색 키워드 질문 6건). 일반 라우팅
+    # (allowed 가 None 이거나 대형 세트)에서는 기존 키워드 lazy-load 를 유지한다.
+    force_all_allowed = allowed_tables is not None and len(allowed_tables) <= 5
     matched_entries = [
         (t[0], t[1], t[2]) for t in MARKETING_TABLES
-        if any(kw in query_lower for kw in t[2])
-        and (allowed_tables is None or t[0] in allowed_tables)
+        if (force_all_allowed and t[0] in allowed_tables)
+        or (not force_all_allowed
+            and any(kw in query_lower for kw in t[2])
+            and (allowed_tables is None or t[0] in allowed_tables))
     ]
 
     # ── Parallel schema fetch: sales + product + marketing in one pool ──

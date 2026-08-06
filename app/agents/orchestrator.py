@@ -327,30 +327,71 @@ class OrchestratorAgent:
         if "@@" not in q:
             return None, query
 
-        # Extract all @@tokens
-        tokens = re.findall(r'@@(\S+)', q)
-        if not tokens:
-            return "list", ""
+        # ⚠️ \S+ 토큰화 금지 — "@@아마존 리뷰"가 공백에서 잘려 별칭 '아마존'(아마존검색)에
+        # 걸리면 엉뚱한 소스로 격리된다. UI 칩도 "@@아마존 리뷰 " 형태로 입력하므로
+        # 실사용 버그였다 (2026-08-06 Playwright 전수 테스트에서 발견).
+        # → 등록된 키/별칭을 길이 내림차순(최장 일치)으로 스캔한다.
+        names = []
+        for entry in cls._DB_REGISTRY:
+            names.append((entry["key"].lower(), entry))
+            for a in entry["aliases"]:
+                names.append((a.lower(), entry))
+        names.sort(key=lambda x: len(x[0]), reverse=True)
+        special_names = sorted(cls._DB_SPECIAL.items(), key=lambda x: len(x[0]), reverse=True)
 
-        # Remove all @@tokens from query to get clean text
-        clean = re.sub(r'@@\S+\s*', '', q).strip()
+        ql = q.lower()
+        spans = []      # (start, end, entry|None)
+        specials = []
+        i = 0
+        while True:
+            i = ql.find("@@", i)
+            if i < 0:
+                break
+            rest = ql[i + 2:]
+            hit = None
+            for prefix, special in special_names:
+                if rest.startswith(prefix):
+                    end = i + 2 + len(prefix)
+                    nxt = ql[end:end + 1]
+                    if nxt in ("", " ", "\t", "\n", ":"):
+                        hit = ("special", special, end + (1 if nxt == ":" else 0))
+                        break
+            if hit is None:
+                for name, entry in names:
+                    if rest.startswith(name):
+                        end = i + 2 + len(name)
+                        nxt = ql[end:end + 1]
+                        if nxt in ("", " ", "\t", "\n", ":"):
+                            hit = ("entry", entry, end + (1 if nxt == ":" else 0))
+                            break
+            if hit is None:
+                m = re.match(r"@@\S*", ql[i:])
+                spans.append((i, i + m.end(), None))
+                i = i + m.end()
+            else:
+                kind, obj, end = hit
+                spans.append((i, end, obj if kind == "entry" else None))
+                if kind == "special":
+                    specials.append(obj)
+                i = end
 
-        # Check special commands (only first token)
-        if len(tokens) == 1:
-            prefix = tokens[0].lower().rstrip(":")
-            special = cls._DB_SPECIAL.get(prefix)
-            if special:
-                return special, clean
+        # 매칭 구간(+뒤따르는 공백 1개)을 제거해 clean 구성
+        out, last = [], 0
+        for s_, e_, _ in spans:
+            out.append(q[last:s_])
+            if e_ < len(q) and q[e_] == " ":
+                e_ += 1
+            last = e_
+        out.append(q[last:])
+        clean = "".join(out).strip()
 
-        # Match each token against registry
+        if len(spans) == 1 and specials:
+            return specials[0], clean
+
         entries = []
-        for tok in tokens:
-            prefix = tok.lower().rstrip(":")
-            for entry in cls._DB_REGISTRY:
-                if prefix == entry["key"].lower() or prefix in [a.lower() for a in entry["aliases"]]:
-                    if entry not in entries:
-                        entries.append(entry)
-                    break
+        for _, _, obj in spans:
+            if obj is not None and obj not in entries:
+                entries.append(obj)
 
         if not entries:
             return None, query
