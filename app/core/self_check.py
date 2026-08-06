@@ -169,6 +169,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "ad_sync": (26, "AD 동기화 (APP 서버 22:00)"),
     "knowledge_map_build": (26, "지식맵 빌드 (WAS 03:00)"),
     "ingredient_sync_daily": (26, "제품 전성분 적재 (04:00)"),
+    "golden_daily": (26, "골든셋 회귀 (05:30)"),
 }
 
 
@@ -530,6 +531,29 @@ def _check_canary_answers() -> CheckResult:
     )
 
 
+def _check_golden_regression() -> CheckResult:
+    """골든셋 최신 런이 직전 런 대비 회귀했는가.
+
+    카나리아가 '구조적 건강'을 본다면 골든셋은 '내용 회귀'를 본다 —
+    이번 주 사고들(라우팅 오분류, 후속 맥락 유실, 브랜드/대륙 오답)을
+    문항으로 고정해뒀으므로, 같은 유형이 재발하면 여기서 이름이 찍힌다.
+    """
+    from app.core.golden_runner import latest_regression
+
+    reg = latest_regression()
+    if not reg.get("comparable"):
+        return CheckResult(True, "비교할 런이 2개 미만 (첫 주에는 정상)")
+    newly = reg.get("newly_failed", [])
+    if newly:
+        names = ", ".join(f["item_id"] for f in newly[:5])
+        return CheckResult(
+            False,
+            f"직전 런 대비 새로 깨진 문항 {len(newly)}건: {names}"
+            f" (런 {reg['prev_run']}→{reg['latest_run']}, Admin>골든셋에서 비교)",
+        )
+    return CheckResult(True, f"신규 실패 0건 (통과율 {reg.get('pass_rate')}%, 런 {reg['latest_run']})")
+
+
 def _check_feedback_spike() -> CheckResult:
     """👎 가 급증하지 않았는가 — 절대량이 아니라 직전 주 대비로 본다.
 
@@ -581,6 +605,8 @@ CHECKS: list[Check] = [
           "대표 질문 답변이 구조적으로 온전한가", _check_canary_answers),
     Check("feedback_spike", "quality", SEV_WARNING,
           "👎 피드백이 급증하지 않았는가", _check_feedback_spike),
+    Check("golden_regression", "quality", SEV_WARNING,
+          "골든셋이 직전 런 대비 회귀하지 않았는가", _check_golden_regression),
 ]
 
 

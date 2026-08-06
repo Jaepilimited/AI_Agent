@@ -248,6 +248,16 @@
       <button class="admin-tab" data-tab="users">AD 사용자</button>
       <button class="admin-tab" data-tab="growth">성장 지표</button>
       <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
+      <button class="admin-tab" data-tab="golden">골든셋</button>
+    </div>
+    <!-- Tab: Golden Set -->
+    <div class="admin-tab-content" id="tab-golden">
+      <div class="admin-toolbar">
+        <button class="admin-btn-primary" id="btn-run-golden">데일리 런 실행</button>
+        <button class="admin-btn-secondary" id="btn-run-golden-full">전체 런</button>
+        <span id="golden-summary" class="admin-stat-label"></span>
+      </div>
+      <div class="admin-drawer-body" id="admin-golden-body"></div>
     </div>
     <!-- Tab: Self Check -->
     <div class="admin-tab-content" id="tab-selfcheck">
@@ -292,7 +302,7 @@
   <!-- Theme Toggle -->
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
-  <script src="/frontend/chat.js?v=232"></script>
+  <script src="/frontend/chat.js?v=233"></script>
   <script src="/frontend/cella-pet.js?v=7"></script>
 </body>
 </html>

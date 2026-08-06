@@ -138,6 +138,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_term_aliases_table)
         from app.core.usage_meter import ensure_usage_table
         await asyncio.to_thread(ensure_usage_table)
+        from app.core.golden_runner import ensure_golden_tables
+        await asyncio.to_thread(ensure_golden_tables)
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -181,11 +183,13 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_knowledge_map_job, "cron", hour=3, minute=0, id="knowledge_map_daily")
             _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
+            # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
+            _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
             _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "self_check_07:30"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "golden_05:30", "self_check_07:30"])
         yield
         logger.info("application_shutdown")
 
@@ -600,6 +604,23 @@ async def _self_check_job():
                     repaired=result.get("repaired"), newly_broken=result.get("newly_broken"))
     except Exception as e:
         logger.error("self_check_failed", error=str(e))
+
+
+async def _golden_job():
+    """매일 05:30: 골든셋 회귀 런 (일요일은 전체 문항).
+
+    자가 점검(07:30)의 golden_regression 검사가 직전 런과 비교해
+    새로 깨진 문항을 알린다 — 여기서는 실행·기록만 한다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("golden_daily") as jr:
+            from app.core.golden_runner import run_golden
+            result = await asyncio.to_thread(run_golden, "scheduled", None)
+            jr.set_note(f"{result.get('passed')}/{result.get('total')} 통과 ({result.get('scope')})")
+        logger.info("golden_run_job_done", **{k: v for k, v in result.items() if k != "note"})
+    except Exception as e:
+        logger.error("golden_run_job_failed", error=str(e))
 
 
 async def _weekly_growth_report_job():

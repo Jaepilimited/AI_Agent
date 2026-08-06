@@ -691,6 +691,54 @@ async def get_self_check_trend(check_id: str, _: User = Depends(_require_admin))
     return {"check_id": check_id, "history": await asyncio.to_thread(get_check_trend, check_id)}
 
 
+# ── 골든셋 회귀 (golden set) ─────────────────────────────────────────────────
+# 답변 품질을 런 단위로 기록하고 런끼리 비교한다. 상세는 app/core/golden_runner.py.
+
+
+@admin_router.get("/golden/runs")
+async def golden_runs(_: User = Depends(_require_admin), limit: int = 30) -> dict:
+    """골든셋 런 목록 (통과율 추세)."""
+    from app.core.golden_runner import get_runs
+
+    return {"runs": await asyncio.to_thread(get_runs, min(limit, 100))}
+
+
+@admin_router.get("/golden/runs/{run_id}")
+async def golden_run_detail(run_id: int, _: User = Depends(_require_admin)) -> dict:
+    """런 상세 — 문항별 통과/실패 사유/응답 시간/라우트."""
+    from app.core.golden_runner import get_run_detail
+
+    return await asyncio.to_thread(get_run_detail, run_id)
+
+
+@admin_router.get("/golden/compare")
+async def golden_compare(a: int, b: int, _: User = Depends(_require_admin)) -> dict:
+    """런 비교 — a(기준) 대비 b(대상)의 신규 실패/신규 통과/라우트 변경/지연 변화."""
+    from app.core.golden_runner import compare_runs
+
+    return await asyncio.to_thread(compare_runs, a, b)
+
+
+@admin_router.post("/golden/run")
+async def golden_run_now(
+    admin: User = Depends(_require_admin), scope: str = "daily"
+) -> dict:
+    """골든셋 즉시 실행 (백그라운드) — scope: daily|full.
+
+    수 분 걸리므로 시작만 응답하고, 결과는 런 목록에서 확인한다."""
+    import threading
+
+    from app.core.golden_runner import run_golden
+
+    logger.info("golden_manual_run", by=admin.email, scope=scope)
+    threading.Thread(
+        target=run_golden, args=("manual", scope if scope in ("daily", "full") else "daily"),
+        daemon=True,
+    ).start()
+    return {"started": True, "scope": scope,
+            "hint": "수 분 뒤 GET /api/admin/golden/runs 에서 결과 확인"}
+
+
 # ── 사내 용어 사전 (term aliases) ────────────────────────────────────────────
 # "센앰→센텔라 앰플" 같은 은어 치환 사전. 상세는 app/core/term_aliases.py.
 

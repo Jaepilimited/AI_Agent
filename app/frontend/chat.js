@@ -4153,6 +4153,7 @@
       if (tab.dataset.tab === "users") loadAdminADUsers();
       if (tab.dataset.tab === "growth") loadGrowthReport();
       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
+      if (tab.dataset.tab === "golden") loadGolden();
       if (tab.dataset.tab !== "selfcheck") refreshSelfCheckBadge();
     });
   });
@@ -4238,6 +4239,165 @@
         });
     });
   }
+
+  // ── 골든셋 회귀 ──
+  // 답변 품질을 런 단위로 기록하고, 두 런을 비교해 "무엇이 새로 깨졌나"를 보여준다.
+  var _goldenRuns = [];
+
+  function loadGolden() {
+    var el = document.getElementById("admin-golden-body");
+    el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>불러오는 중…</p>";
+    fetch("/api/admin/golden/runs")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { renderGolden(d && d.runs ? d.runs : []); })
+      .catch(function() {
+        el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>결과를 불러오지 못했습니다</p>";
+      });
+  }
+
+  function renderGolden(runs) {
+    _goldenRuns = runs;
+    var el = document.getElementById("admin-golden-body");
+    var sum = document.getElementById("golden-summary");
+    if (!runs.length) {
+      el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>아직 런 기록이 없습니다. '데일리 런 실행'을 눌러주세요 (5~10분 소요).</p>";
+      sum.textContent = "";
+      return;
+    }
+    var latest = runs[0];
+    sum.textContent = "최신: " + latest.passed + "/" + latest.total + " 통과 (" + latest.pass_rate + "%)"
+      + " · " + String(latest.started_at).slice(0, 16);
+
+    // 비교 컨트롤 — 기본값: 직전 런(A) vs 최신 런(B)
+    var opts = runs.map(function(r) {
+      return "<option value='" + r.id + "'>#" + r.id + " " + String(r.started_at).slice(5, 16)
+        + " (" + r.pass_rate + "%, " + r.scope + ")</option>";
+    }).join("");
+    var html = "<div style='padding:10px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap'>"
+      + "<span class='admin-user-email'>비교:</span>"
+      + "<select id='golden-cmp-a' class='admin-select'>" + opts + "</select>"
+      + "<span class='admin-user-email'>→</span>"
+      + "<select id='golden-cmp-b' class='admin-select'>" + opts + "</select>"
+      + "<button class='admin-btn-secondary' id='btn-golden-compare'>비교</button>"
+      + "</div><div id='golden-compare-result'></div>";
+
+    // 런 목록 (클릭 → 문항 상세)
+    runs.forEach(function(r) {
+      var bad = r.passed < r.total;
+      html += "<div class='admin-user-card golden-run-row' data-run='" + r.id + "' style='cursor:pointer"
+        + (bad ? ";background:rgba(217,54,54,0.06)" : "") + "'>"
+        + "<div class='admin-user-info' style='flex:1'><div class='admin-user-detail'>"
+        + "<div class='admin-user-name'>" + (bad ? "🔴" : "🟢") + " 런 #" + r.id
+        + " — " + r.passed + "/" + r.total + " 통과 (" + r.pass_rate + "%)"
+        + " <span class='admin-user-email'>[" + r.scope + " / " + r.trigger_type + "]</span></div>"
+        + "<div class='admin-user-email'>" + String(r.started_at).slice(0, 16)
+        + " · 평균 " + (r.avg_ms / 1000).toFixed(1) + "s"
+        + (r.note ? " · " + escapeHtml(r.note) : "") + "</div>"
+        + "</div></div></div>"
+        + "<div class='golden-run-detail' id='golden-detail-" + r.id + "' style='display:none'></div>";
+    });
+    el.innerHTML = html;
+
+    if (runs.length > 1) document.getElementById("golden-cmp-a").value = runs[1].id;
+    document.getElementById("golden-cmp-b").value = runs[0].id;
+
+    document.getElementById("btn-golden-compare").addEventListener("click", runGoldenCompare);
+    el.querySelectorAll(".golden-run-row").forEach(function(row) {
+      row.addEventListener("click", function() { toggleGoldenDetail(row.dataset.run); });
+    });
+  }
+
+  function toggleGoldenDetail(runId) {
+    var box = document.getElementById("golden-detail-" + runId);
+    if (box.style.display !== "none") { box.style.display = "none"; return; }
+    box.style.display = "block";
+    box.innerHTML = "<p style='padding:8px 24px;color:var(--text-secondary)'>불러오는 중…</p>";
+    fetch("/api/admin/golden/runs/" + runId)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !d.results) { box.innerHTML = ""; return; }
+        var html = "";
+        // 실패 문항을 위로
+        d.results.sort(function(a, b) { return a.ok - b.ok; });
+        d.results.forEach(function(it) {
+          html += "<div style='padding:6px 24px;font-size:12px;border-bottom:1px solid var(--border)'>"
+            + (it.ok ? "🟢" : "🔴") + " <b>" + escapeHtml(it.item_id) + "</b>"
+            + " <span class='admin-user-email'>[" + escapeHtml(it.category) + " / "
+            + (it.route ? escapeHtml(it.route) + " / " : "") + (it.elapsed_ms / 1000).toFixed(1) + "s]</span>"
+            + (it.ok ? "" : "<div style='color:#d93636;margin-top:2px'>" + escapeHtml(it.fail_reasons || "") + "</div>"
+              + "<div class='admin-user-email' style='margin-top:2px'>" + escapeHtml((it.answer_head || "").slice(0, 160)) + "</div>")
+            + "</div>";
+        });
+        box.innerHTML = html;
+      })
+      .catch(function() { box.innerHTML = ""; });
+  }
+
+  function runGoldenCompare() {
+    var a = document.getElementById("golden-cmp-a").value;
+    var b = document.getElementById("golden-cmp-b").value;
+    var out = document.getElementById("golden-compare-result");
+    out.innerHTML = "<p style='padding:8px 12px;color:var(--text-secondary)'>비교 중…</p>";
+    fetch("/api/admin/golden/compare?a=" + a + "&b=" + b)
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || d.error) {
+          out.innerHTML = "<p style='padding:8px 12px'>" + escapeHtml((d && d.error) || "비교 실패") + "</p>";
+          return;
+        }
+        var html = "<div style='padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg-secondary)'>"
+          + "<div class='admin-user-name'>런 #" + d.run_a + " → #" + d.run_b
+          + " : " + d.pass_rate_a + "% → " + d.pass_rate_b + "%"
+          + " (공통 " + d.common_items + "문항)</div>";
+        function section(title, arr, color, fmt) {
+          if (!arr || !arr.length) return "";
+          var s = "<div style='margin-top:6px;color:" + color + ";font-size:13px'><b>" + title + " " + arr.length + "건</b></div>";
+          arr.forEach(function(x) { s += "<div style='font-size:12px;padding-left:8px'>" + fmt(x) + "</div>"; });
+          return s;
+        }
+        html += section("🔴 새로 깨짐", d.newly_failed, "#d93636", function(x) {
+          return escapeHtml(x.item_id) + " — " + escapeHtml(x.fail_reasons || "");
+        });
+        html += section("🟢 새로 통과", d.newly_passed, "#2ecc71", function(x) {
+          return escapeHtml(x.item_id);
+        });
+        html += section("⚠️ 계속 실패", d.still_failing, "var(--text-secondary)", function(x) {
+          return escapeHtml(x.item_id);
+        });
+        html += section("↔️ 라우트 변경", d.route_changed, "var(--text-secondary)", function(x) {
+          return escapeHtml(x.item_id) + ": " + escapeHtml(x.from) + " → " + escapeHtml(x.to);
+        });
+        var lat = (d.latency_top_changes || []).filter(function(x) { return Math.abs(x.delta_ms) > 3000; });
+        html += section("⏱ 지연 변화 3초↑", lat, "var(--text-secondary)", function(x) {
+          return escapeHtml(x.item_id) + ": " + (x.from_ms / 1000).toFixed(1) + "s → " + (x.to_ms / 1000).toFixed(1) + "s";
+        });
+        if (!d.newly_failed.length && !d.newly_passed.length && !d.route_changed.length && !lat.length) {
+          html += "<div class='admin-user-email' style='margin-top:6px'>차이 없음 — 두 런이 동일하게 동작했습니다</div>";
+        }
+        html += "</div>";
+        out.innerHTML = html;
+      })
+      .catch(function() { out.innerHTML = "<p style='padding:8px 12px'>비교 실패</p>"; });
+  }
+
+  function bindGoldenRun(btnId, scope, label) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener("click", function() {
+      btn.disabled = true;
+      btn.textContent = "실행 요청됨…";
+      fetch("/api/admin/golden/run?scope=" + scope, { method: "POST" })
+        .then(function() {
+          document.getElementById("admin-golden-body").insertAdjacentHTML("afterbegin",
+            "<p style='padding:12px;color:var(--text-secondary)'>백그라운드에서 실행 중입니다 (5~10분). 잠시 후 새로고침하거나 탭을 다시 열어주세요.</p>");
+        })
+        .finally(function() {
+          setTimeout(function() { btn.disabled = false; btn.textContent = label; }, 5000);
+        });
+    });
+  }
+  bindGoldenRun("btn-run-golden", "daily", "데일리 런 실행");
+  bindGoldenRun("btn-run-golden-full", "full", "전체 런");
 
   // ── Growth Report ──
   function loadGrowthReport() {

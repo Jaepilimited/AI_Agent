@@ -1,0 +1,198 @@
+{
+  "_doc": "골든셋 — 답변 품질 회귀 기준. freq: daily(매일 05:30)|weekly(일요일 전체). expect: contains_all/contains_any/not_contains(답변 본문), sql_contains_any(답변에 포함된 SQL 블록), min_len, max_seconds. auth:'user'는 비관리자 토큰(권한 차단 검증용). 문항 수정 시 주의: 시점에 따라 변하는 숫자를 기대값으로 고정하지 말 것.",
+  "items": [
+    {
+      "id": "inc_first_trade_routing", "category": "incident", "freq": "daily",
+      "question": "아래 국가들 첫 거래일자 확인이 필요하여 확인 부탁드립니다:\n-인도네시아\n-베트남\n-멕시코\n-에콰도르\n-칠레",
+      "expect": {"contains_all": ["인도네시아", "2019"], "contains_any": ["2022", "2021"], "not_contains": ["잠시만 기다려", "조회를 진행하겠"], "min_len": 150, "max_seconds": 150},
+      "note": "2026-08-06 사고: direct 오분류로 '조회하겠습니다' 빈 약속"
+    },
+    {
+      "id": "inc_clarify_followup_b2b", "category": "incident", "freq": "daily",
+      "history": [
+        {"role": "user", "content": "인도네시아, 베트남, 멕시코, 에콰도르, 칠레 첫 거래일자 확인 부탁드립니다"},
+        {"role": "assistant", "content": "국가별 첫 거래일자를 확인하려면 채널 기준이 필요합니다. B2B/B2C 중 어느 기준인지 알려주시면 조회하겠습니다."}
+      ],
+      "question": "B2B",
+      "expect": {"contains_all": ["인도네시아"], "contains_any": ["2019"], "not_contains": ["Costco"], "min_len": 100, "max_seconds": 150},
+      "note": "2026-08-06 사고: 되물음 답변이 직전 질문과 결합되지 않고 일반 B2B 현황 조회로 샘"
+    },
+    {
+      "id": "inc_europe_continent1", "category": "incident", "freq": "daily",
+      "question": "2026년 상반기 유럽 매출 알려줘",
+      "expect": {"contains_any": ["억", "백만"], "not_contains": ["조회된 데이터가 없", "결과가 없습니다"], "sql_contains_any": ["Continent1"], "min_len": 100, "max_seconds": 150},
+      "note": "2026-08-04 사고: Continent2에 '유럽'이 없어 0건"
+    },
+    {
+      "id": "inc_brand_definition", "category": "incident", "freq": "daily",
+      "question": "브랜드별 매출 비중 알려줘",
+      "expect": {"contains_all": ["스킨천사"], "contains_any": ["우마", "UM"], "min_len": 150, "max_seconds": 150},
+      "note": "2026-08-05 확정: 브랜드 4종, CBT는 스킨천사 합산, 팀을 브랜드로 내지 말 것"
+    },
+    {
+      "id": "inc_doc_routing_hr", "category": "incident", "freq": "daily",
+      "question": "휴가 신청 절차 알려줘",
+      "expect": {"not_contains": ["SELECT", "조회된 데이터가 없"], "min_len": 60, "max_seconds": 90},
+      "note": "2026-08-05 사고: 업무 문서 질문이 bigquery로 새던 라우팅"
+    },
+    {
+      "id": "inc_ingredient_contains", "category": "incident", "freq": "daily",
+      "question": "나이아신아마이드 들어간 제품 뭐 있어?",
+      "expect": {"contains_any": ["나이아신"], "not_contains": ["LIKE '%RETINOL%'"], "min_len": 100, "max_seconds": 120},
+      "note": "2026-08-06 구축: 전성분 데이터 기반 — 제품명 문자열 추측 금지"
+    },
+    {
+      "id": "inc_typo_hyalu", "category": "incident", "freq": "daily",
+      "question": "힝라우선세럼 올해 매출 알려줘",
+      "expect": {"contains_any": ["히알루", "워터핏", "선 세럼", "선세럼"], "min_len": 80, "max_seconds": 150},
+      "note": "2026-08-06 구축: 자모 유사도 오타 보정"
+    },
+    {
+      "id": "inc_alias_senam", "category": "incident", "freq": "daily",
+      "question": "센앰 올해 매출 얼마야?",
+      "expect": {"contains_any": ["센텔라", "앰플"], "min_len": 80, "max_seconds": 150},
+      "note": "2026-08-06 구축: 사내 은어 사전 (센앰→센텔라 100 앰플)"
+    },
+    {
+      "id": "inc_quantity_rule", "category": "incident", "freq": "daily",
+      "question": "센텔라 100 앰플 작년 판매수량 알려줘",
+      "expect": {"contains_any": ["개", "수량"], "sql_contains_any": ["Total_Qty"], "min_len": 80, "max_seconds": 150},
+      "note": "2026-07-15 강화: 수량은 무조건 Product.Total_Qty (세트 분해)"
+    },
+    {
+      "id": "inc_megawari_filter", "category": "incident", "freq": "daily",
+      "question": "2025년 4분기 메가와리 매출 알려줘",
+      "expect": {"contains_any": ["억", "메가와리"], "sql_contains_any": ["Q10"], "min_len": 80, "max_seconds": 150},
+      "note": "메가와리는 Mall_Classification LIKE %Q10% 필수"
+    },
+    {
+      "id": "perm_fi_denied", "category": "permission", "freq": "daily", "auth": "user",
+      "question": "6월 영업이익 알려줘",
+      "expect": {"contains_any": ["권한", "승인", "허용"], "not_contains": ["영업이익률은", "억원입니다"], "max_seconds": 60},
+      "note": "미승인 사용자의 손익 질문은 LLM 호출 전에 차단돼야 한다 (방어선 1)"
+    },
+    {
+      "id": "core_top_countries", "category": "bq_core", "freq": "daily",
+      "question": "2026년 상반기 국가별 매출 top5 알려줘",
+      "expect": {"contains_any": ["미국", "인도네시아", "일본"], "min_len": 150, "max_seconds": 150}
+    },
+    {
+      "id": "core_monthly_trend", "category": "bq_core", "freq": "daily",
+      "question": "2026년 월별 매출 추이 보여줘",
+      "expect": {"contains_any": ["1월", "01월", "2026-01"], "min_len": 150, "max_seconds": 150}
+    },
+    {
+      "id": "core_amazon", "category": "bq_core", "freq": "daily",
+      "question": "올해 아마존 매출 얼마야?",
+      "expect": {"contains_all": ["아마존"], "contains_any": ["억", "백만"], "min_len": 80, "max_seconds": 150}
+    },
+    {
+      "id": "core_qty_top_products", "category": "bq_core", "freq": "daily",
+      "question": "올해 가장 많이 팔린 제품 top5 알려줘",
+      "expect": {"contains_any": ["앰플", "선", "크림", "토너"], "sql_contains_any": ["Total_Qty"], "min_len": 150, "max_seconds": 150}
+    },
+    {
+      "id": "core_continent_share", "category": "bq_core", "freq": "daily",
+      "question": "대륙별 매출 비중 알려줘",
+      "expect": {"contains_any": ["유럽", "아시아", "북미"], "sql_contains_any": ["Continent1"], "min_len": 150, "max_seconds": 150}
+    },
+    {
+      "id": "core_japan", "category": "bq_core", "freq": "daily",
+      "question": "일본 올해 매출 알려줘",
+      "expect": {"contains_all": ["일본"], "contains_any": ["억", "백만"], "min_len": 80, "max_seconds": 150}
+    },
+    {
+      "id": "core_yoy", "category": "bq_core", "freq": "weekly",
+      "question": "올해 상반기 매출 전년 대비 어때?",
+      "expect": {"contains_any": ["%", "전년"], "min_len": 150, "max_seconds": 150}
+    },
+    {
+      "id": "core_new_products", "category": "bq_core", "freq": "weekly",
+      "question": "신제품 매출 현황 알려줘",
+      "expect": {"sql_contains_any": ["MIN(Date)", "6 MONTH"], "min_len": 120, "max_seconds": 150},
+      "note": "신제품 = 첫 판매일로부터 6개월 이하 (2026-07-27 확정)"
+    },
+    {
+      "id": "core_chart_render", "category": "bq_core", "freq": "weekly",
+      "question": "국가별 매출 top5 차트로 그려줘",
+      "expect": {"contains_any": ["chart", "```"], "min_len": 100, "max_seconds": 150}
+    },
+    {
+      "id": "core_zombie_line", "category": "bq_core", "freq": "weekly",
+      "question": "좀비뷰티 매출 얼마야?",
+      "expect": {"sql_contains_any": ["ZB"], "contains_any": ["억", "백만", "좀비"], "min_len": 60, "max_seconds": 150},
+      "note": "좀비뷰티는 Brand='SK' AND Line='ZB'"
+    },
+    {
+      "id": "core_uma_brand", "category": "bq_core", "freq": "weekly",
+      "question": "우마 브랜드 올해 매출 알려줘",
+      "expect": {"sql_contains_any": ["UM"], "contains_any": ["억", "백만"], "min_len": 60, "max_seconds": 150}
+    },
+    {
+      "id": "fu_clarify_b2c", "category": "followup", "freq": "daily",
+      "history": [
+        {"role": "user", "content": "인도네시아, 베트남 첫 거래일자 알려줘"},
+        {"role": "assistant", "content": "| 국가 | 첫 거래일자 |\n| 인도네시아 | 2019-01-08 |\n| 베트남 | 2019-03-20 |\n(B2B+B2C 통합 기준입니다. 채널별로 필요하시면 알려주세요.)"}
+      ],
+      "question": "B2C",
+      "expect": {"contains_any": ["인도네시아", "베트남"], "not_contains": ["Costco"], "min_len": 80, "max_seconds": 150}
+    },
+    {
+      "id": "fu_condition_thisyear", "category": "followup", "freq": "daily",
+      "history": [
+        {"role": "user", "content": "국가별 매출 top5 알려줘"},
+        {"role": "assistant", "content": "| 국가 | 매출 |\n| 미국 | 1,234억 |\n| 인도네시아 | 890억 |\n(전체 기간 기준)"}
+      ],
+      "question": "올해만",
+      "expect": {"contains_any": ["2026"], "min_len": 100, "max_seconds": 150}
+    },
+    {
+      "id": "fu_chart_request", "category": "followup", "freq": "daily",
+      "history": [
+        {"role": "user", "content": "2026년 월별 매출 알려줘"},
+        {"role": "assistant", "content": "2026년 월별 매출: 1월 461억, 2월 549억, 3월 697억, 4월 746억, 5월 800억, 6월 795억, 7월 695억"}
+      ],
+      "question": "차트로 보여줘",
+      "expect": {"contains_any": ["chart", "월"], "min_len": 60, "max_seconds": 150}
+    },
+    {
+      "id": "fu_compare_lastyear", "category": "followup", "freq": "weekly",
+      "history": [
+        {"role": "user", "content": "올해 아마존 매출 얼마야?"},
+        {"role": "assistant", "content": "2026년 아마존 매출은 약 1,234억원입니다."}
+      ],
+      "question": "그거 작년이랑 비교하면?",
+      "expect": {"contains_any": ["%", "작년", "전년", "2025"], "min_len": 100, "max_seconds": 150}
+    },
+    {
+      "id": "dir_company_intro", "category": "direct", "freq": "daily",
+      "question": "우리 회사 소개해줘",
+      "expect": {"contains_any": ["크레이버", "Craver", "SKIN1004"], "min_len": 100, "max_seconds": 60}
+    },
+    {
+      "id": "dir_greeting", "category": "direct", "freq": "daily",
+      "question": "안녕!",
+      "expect": {"not_contains": ["SELECT", "오류가 발생"], "min_len": 5, "max_seconds": 60}
+    },
+    {
+      "id": "dir_founding", "category": "direct", "freq": "weekly",
+      "question": "회사 창립일이 언제야?",
+      "expect": {"contains_any": ["2014"], "min_len": 20, "max_seconds": 60}
+    },
+    {
+      "id": "cs_centella_ingredients", "category": "cs", "freq": "daily",
+      "question": "센텔라 앰플 전성분 알려줘",
+      "expect": {"contains_any": ["병풀", "정제수"], "min_len": 100, "max_seconds": 90}
+    },
+    {
+      "id": "cs_sunserum_usage", "category": "cs", "freq": "weekly",
+      "question": "워터핏 선 세럼 사용법 알려줘",
+      "expect": {"contains_any": ["바르", "사용", "덧발"], "min_len": 100, "max_seconds": 90}
+    },
+    {
+      "id": "notion_leave_policy", "category": "notion", "freq": "weekly",
+      "question": "연차 사용 규정 알려줘",
+      "expect": {"not_contains": ["오류가 발생", "SELECT"], "min_len": 60, "max_seconds": 90}
+    }
+  ]
+}
