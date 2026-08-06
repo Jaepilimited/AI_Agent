@@ -144,10 +144,18 @@ def ensure_term_aliases_table() -> None:
         logger.warning("term_aliases_ensure_failed", error=str(e)[:150])
 
 
+# 별칭 뒤에 붙을 수 있는 조사 — 붙어도 별칭으로 인정한다 ("델메랑", "센앰은").
+# ⚠️ '로/으로' 는 일부러 뺐다: "스스" + "로" = "스스로" 라는 일반 단어가 되어
+# "스스로 해결" 이 스마트스토어로 오염된다. 조사가 아니라 단어의 일부일 수 있는
+# 것은 허용하지 않는다.
+_PARTICLES_AFTER = "(?:이랑|이라|한테|에서|부터|까지|보다|하고|랑|은|는|이|가|을|를|의|도|만|과|와)?"
+
+
 def _compile(alias: str) -> re.Pattern:
     if re.fullmatch(r"[A-Za-z0-9]+", alias):
         return re.compile(rf"(?i)\b{re.escape(alias)}\b")
-    return re.compile(rf"(?<![가-힣]){re.escape(alias)}(?![가-힣])")
+    # 별칭 + (조사 0~1개) 뒤가 한글이 아니어야 매칭 — 조사는 소비하지 않고 남긴다
+    return re.compile(rf"(?<![가-힣]){re.escape(alias)}(?={_PARTICLES_AFTER}(?![가-힣]))")
 
 
 def _load() -> list[tuple[re.Pattern, str, str]]:
