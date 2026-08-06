@@ -590,7 +590,24 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     except Exception:
         pass
 
-    full_prompt = f"{system_prompt}{schema_context}{conv_section}{brand_section}{skill_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
+    # 사용자가 @@ 로 소스를 지정한 경우: 허용 테이블을 명시적으로 강제한다.
+    # 스키마만 실어주면 LLM 이 "광고 플랫폼별 분포" 같은 일반적 표현에서
+    # 프롬프트 본문에 나오는 다른 테이블(통합 광고 등)로 이탈해 실행이 거부된다
+    # (2026-08-06 Playwright 전수 테스트: @@메타광고 1건·@@아마존검색 4건).
+    table_scope_section = ""
+    if allowed_tables is not None and 0 < len(allowed_tables) <= 5:
+        _tl = "\n".join(f"- `{t}`" for t in sorted(allowed_tables))
+        table_scope_section = (
+            "\n\n## ⛔ 사용 가능 테이블 (사용자가 데이터소스를 직접 지정함)\n"
+            f"{_tl}\n"
+            "위 테이블만 사용하라 — 목록 밖 테이블을 참조하면 실행이 거부된다. "
+            "질문 표현이 이 테이블의 컬럼과 정확히 일치하지 않으면 가장 가까운 컬럼으로 "
+            "재해석해서 SQL 을 생성하라 (예: '키워드 검색 순위' → 이 테이블에 키워드 컬럼이 "
+            "없고 ASIN 단위라면 제품(ASIN_Title)별 노출수/클릭수 순위로, '플랫폼별 분포' → "
+            "publisher_platform 같은 실제 존재하는 컬럼으로)."
+        )
+
+    full_prompt = f"{system_prompt}{schema_context}{table_scope_section}{conv_section}{brand_section}{skill_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
 
     try:
         sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=10000)

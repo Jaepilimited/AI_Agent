@@ -419,6 +419,42 @@
     "Google Workspace": "gws"
   };
   var _DB_ALIASES = {};  // @@alias → canonical key (populated by loadDbSources)
+
+  // @@ 소스 최장 일치 파싱 — 서버 parse_db_prefix 와 동일 규칙.
+  // ⚠️ \S+ 로 자르면 "@@아마존 리뷰"가 공백에서 잘려 별칭 "아마존"(아마존검색)에
+  // 걸린다 (2026-08-06 Playwright 전수 테스트에서 발견 — 리뷰 4종·GM 팀 전부 영향).
+  function parseSourceTokens(text) {
+    var names = Object.keys(_DB_ALIASES).sort(function(a, b) { return b.length - a.length; });
+    var keys = [], clean = "", i = 0, lower = text.toLowerCase();
+    while (i < text.length) {
+      var at = lower.indexOf("@@", i);
+      if (at < 0) { clean += text.slice(i); break; }
+      clean += text.slice(i, at);
+      var rest = lower.slice(at + 2), hit = null;
+      for (var n = 0; n < names.length; n++) {
+        if (rest.indexOf(names[n]) === 0) {
+          var nxt = rest.charAt(names[n].length);
+          if (nxt === "" || nxt === " " || nxt === ":" || nxt === "\t" || nxt === "\n") {
+            hit = names[n];
+            break;
+          }
+        }
+      }
+      if (hit) {
+        var canonical = _DB_ALIASES[hit] || hit;
+        if (keys.indexOf(canonical) < 0) keys.push(canonical);
+        var end = at + 2 + hit.length;
+        if (text.charAt(end) === ":") end++;
+        if (text.charAt(end) === " ") end++;
+        i = end;
+      } else {
+        // 미등록 토큰은 기존 동작대로 텍스트에서 제거만 한다
+        var m = /^@@\S*\s*/.exec(text.slice(at));
+        i = at + m[0].length;
+      }
+    }
+    return { keys: keys, clean: clean.trim() };
+  }
   var _sourceChipsContainer = null;
   function _ensureChipsContainer() {
     if (_sourceChipsContainer) return _sourceChipsContainer;
@@ -747,7 +783,7 @@
 
       // Already selected keys (multi-select)
       var val = chatInput.value;
-      var selectedKeys = (val.match(/@@(\S+)/g) || []).map(function(m) { return m.substring(2); });
+      var selectedKeys = parseSourceTokens(val).keys;
 
       // Build grouped HTML
       var html = '<div class="db-ac-special">';
@@ -1646,14 +1682,10 @@
       }
     }
 
-    // Parse @@ source selections from input text
-    var atAtMatches = text.match(/@@(\S+)/g) || [];
-    var atAtKeys = atAtMatches.map(function(m) { return m.substring(2); })
-      .filter(function(k) { return DATA_SOURCE_KEYS.indexOf(k) >= 0 || Object.keys(_DB_ALIASES).indexOf(k.toLowerCase()) >= 0; });
-    // Resolve aliases
-    atAtKeys = atAtKeys.map(function(k) { return _DB_ALIASES[k.toLowerCase()] || k; });
-    // Remove @@ tokens from the displayed text
-    var cleanText = text.replace(/@@\S+\s*/g, "").trim();
+    // Parse @@ source selections from input text (최장 일치 — 공백 포함 키 지원)
+    var _parsed = parseSourceTokens(text);
+    var atAtKeys = _parsed.keys;
+    var cleanText = _parsed.clean;
     if (atAtKeys.length > 0) {
       text = cleanText;
       showActiveSourceChips(atAtKeys);
