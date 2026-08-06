@@ -225,6 +225,10 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
    - ✅ `CASE WHEN Country IN ('중국', '대만', '홍콩') THEN '중화권'`
    - ❌ `CASE WHEN Country IN ('China', 'Taiwan', 'Hong Kong') THEN '중화권'`
    - 올바른 값: 미국, 인도네시아, 말레이시아, 필리핀, 일본, 중국, 대만, 홍콩, 한국, 태국, 베트남, 싱가포르, 호주, 독일, 영국, 프랑스, 캐나다 등
+5-2. **용어 보정 표기 `정식명칭(원래표현)`** — 질문에 이 형태가 보이면 시스템이 사내
+    은어·오타를 보정한 것이다 (예: "센텔라 앰플(센앰)", "포어마이징(pm)").
+    ⛔ SQL 필터에는 **정식명칭만** 사용하라. 괄호 안 원래표현(은어·오타)을 LIKE 조건에
+    넣으면 데이터에 없는 문자열이라 무조건 0건이 된다.
 6. **Date는 DATETIME** — DATE 함수 또는 EXTRACT 사용
 7. **매출 = Sales1_R** (Sales2_R은 명시적 요청 시만)
 8. **수량 = Total_Qty** (Quantity 사용 금지) — ⛔ 수량 집계는 반드시 `Product` 테이블의 Total_Qty. SALES_ALL_Backup의 Total_Qty를 수량 답변에 쓰지 마라
