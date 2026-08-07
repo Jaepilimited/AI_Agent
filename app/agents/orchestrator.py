@@ -506,6 +506,11 @@ class OrchestratorAgent:
                         ingredient=_ing_intent[0], contains=_ing_intent[1])
             return await self._handle_ingredient_query(query, _ing_intent, model_type)
 
+        from app.core.model_rights import model_rights_intent
+        if model_rights_intent(query):
+            logger.info("model_rights_query", path="route_and_execute", query=query[:80])
+            return await self._handle_model_rights(query, model_type)
+
         if db_entry:
             query = clean_query or query
             if not query.strip():
@@ -723,6 +728,14 @@ class OrchestratorAgent:
                         ingredient=_ing_intent[0], contains=_ing_intent[1])
             _r = await self._handle_ingredient_query(query, _ing_intent, model_type)
             yield ("source", "bigquery")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        from app.core.model_rights import model_rights_intent
+        if model_rights_intent(query):
+            logger.info("model_rights_query", path="route_and_stream", query=query[:80])
+            _r = await self._handle_model_rights(query, model_type)
+            yield ("source", "direct")
             yield ("done", _r.get("answer", ""))
             return
 
@@ -1861,6 +1874,45 @@ class OrchestratorAgent:
             contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
         result = await self.notion_agent.run(contextualized_query, model_type=model_type)
         return {"source": "notion", "answer": result}
+
+    async def _handle_model_rights(self, query: str, model_type: str) -> dict:
+        """모델 초상권 질문 — 판정(기간·만료)은 DB 데이터가 하고 LLM 은 설명만 한다.
+
+        시트 → MariaDB 적재본(model_rights)에서 오늘 날짜 기준 판정을 끝낸
+        컨텍스트를 만들어 넘긴다. 잘못 쓰면 모델당 수백만 원짜리 실수라
+        LLM 이 기간을 계산하게 두지 않는다 (전성분 핸들러와 같은 원칙).
+        """
+        import asyncio as _asyncio
+
+        from app.core.model_rights import get_rights_context
+
+        try:
+            ctx = await _asyncio.to_thread(get_rights_context, query)
+        except Exception as e:
+            logger.error("model_rights_failed", error=str(e)[:200])
+            ctx = ""
+        if not ctx:
+            return {"source": "direct", "answer": (
+                "모델 초상권 데이터가 아직 적재되지 않았습니다. "
+                "관리자에게 초상권 시트 동기화를 요청해 주세요.")}
+
+        from app.core.llm import get_flash_client
+        prompt = (
+            "너는 마케팅팀의 모델 초상권 안내 담당이다. 아래 판정 데이터만 근거로 "
+            "사용자 질문에 답하라.\n"
+            "규칙: 판정(사용 가능/만료/불가)은 데이터에 이미 계산돼 있다 — 절대 스스로 "
+            "기간을 재계산하지 마라. 만료·불가·불명 건은 반드시 담당자 문의를 안내하라. "
+            "표로 정리하고, 마지막에 '기재된 매체·기간 외 사용 시 추가 초상권 비용 발생' "
+            "경고를 짧게 붙여라.\n\n"
+            f"## 초상권 판정 데이터\n{ctx}\n\n## 사용자 질문\n{query}"
+        )
+        try:
+            llm = get_flash_client()
+            answer = await _asyncio.to_thread(llm.generate, prompt, temperature=0.1)
+        except Exception as e:
+            logger.error("model_rights_llm_failed", error=str(e)[:200])
+            answer = f"### 모델 초상권 현황 (자동 판정)\n\n```\n{ctx}\n```"
+        return {"source": "direct", "answer": answer}
 
     async def _handle_ingredient_query(self, query: str, intent, model_type: str) -> dict:
         """성분 기준 제품 질문을 전성분 데이터로 답한다.

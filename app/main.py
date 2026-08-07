@@ -140,6 +140,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_usage_table)
         from app.core.golden_runner import ensure_golden_tables
         await asyncio.to_thread(ensure_golden_tables)
+        from app.core.model_rights import ensure_model_rights_tables
+        await asyncio.to_thread(ensure_model_rights_tables)
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -185,6 +187,7 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
             _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")
+            _scheduler.add_job(_model_rights_job, "cron", hour=4, minute=30, id="model_rights_sync_daily")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
@@ -604,6 +607,19 @@ async def _self_check_job():
                     repaired=result.get("repaired"), newly_broken=result.get("newly_broken"))
     except Exception as e:
         logger.error("self_check_failed", error=str(e))
+
+
+async def _model_rights_job():
+    """매일 04:30: 모델 초상권 시트 → MariaDB 적재."""
+    from app.core.self_check import track_job
+    try:
+        with track_job("model_rights_sync_daily") as jr:
+            from app.core.model_rights import sync_model_rights
+            stats = await asyncio.to_thread(sync_model_rights)
+            jr.set_note(str(stats)[:200])
+        logger.info("model_rights_sync_done", **stats)
+    except Exception as e:
+        logger.error("model_rights_sync_failed", error=str(e))
 
 
 async def _golden_job():
