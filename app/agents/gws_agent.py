@@ -198,13 +198,42 @@ class GWSAgent:
             return "\n".join(lines)
 
         def _drive():
+            # 캘린더와 같은 원리 — 사용자 문장 전체를 검색어로 넣으면 항상 0건이다.
+            # ① "사진/영상/PDF" 같은 유형 표현 → mimeType 필터로 변환
+            # ② 조사·명령어를 걷어낸 핵심 키워드만 name/fullText 검색에 사용
+            #    (키워드가 안 남으면 유형 필터만으로 최근 파일을 보여준다)
+            q = (query or "").lower()
+            mime = None
+            for kws, m in (
+                (("사진", "이미지", "image", "photo", "jpg", "png"), "image/"),
+                (("영상", "동영상", "video", "mp4"), "video/"),
+                (("pdf",), "application/pdf"),
+                (("스프레드시트", "시트", "spreadsheet", "엑셀"), "spreadsheet"),
+                (("슬라이드", "ppt", "발표자료"), "presentation"),
+            ):
+                if any(k in q for k in kws):
+                    mime = m
+                    break
+            _STOP = {
+                "내", "나의", "우리", "드라이브", "drive", "구글", "google", "파일", "폴더",
+                "사진", "이미지", "image", "photo", "영상", "동영상", "video", "pdf",
+                "스프레드시트", "시트", "엑셀", "슬라이드", "ppt", "발표자료", "문서",
+                "찾아줘", "찾아", "검색해줘", "검색", "보여줘", "알려줘", "뭐", "뭐가",
+                "있어", "있나", "있지", "최근", "최근에", "올린", "저장한", "들어간",
+                "관련", "관련된", "좀", "해줘", "주세요", "에서", "은", "는", "이", "가",
+            }
+            tokens = [t.strip("?.,!") for t in q.split()]
+            kw = " ".join(t for t in tokens if t and t not in _STOP)
             try:
-                fs = search_drive(creds, query, max_results=10)
+                fs = search_drive(creds, kw, max_results=10, mime_contains=mime)
+                # 키워드+유형 동시 검색이 0건이면 유형만으로 완화 재시도
+                if not fs and kw and mime:
+                    fs = search_drive(creds, "", max_results=10, mime_contains=mime)
             except Exception as e:
                 return f"[드라이브 오류] {str(e)[:200]}"
             if not fs:
                 return "[드라이브] 검색 결과가 없습니다."
-            lines = ["[드라이브]"]
+            lines = [f"[드라이브] (검색어: {kw or '전체'}{', 유형: ' + mime if mime else ''})"]
             for f in fs:
                 lines.append(f"- {f['name']} ({f['mimeType']}, 수정: {f['modifiedTime']})\n  {f['webViewLink']}")
             return "\n".join(lines)

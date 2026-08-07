@@ -62,21 +62,30 @@ def search_drive(
     creds: Credentials,
     query: str,
     max_results: int = 10,
+    mime_contains: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Search Google Drive files.
 
     Args:
         creds: Valid Google OAuth2 credentials.
-        query: Drive search query (e.g. "name contains 'report'").
+        query: 핵심 검색 키워드 (빈 문자열이면 이름/본문 조건 없이 최근 파일).
+            ⚠️ 사용자 문장 전체를 넣으면 안 된다 — "내 드라이브에서 사진 찾아줘" 를
+            name contains 로 검색하면 항상 0건이다 (2026-08-07 실동작 테스트에서 발견).
         max_results: Maximum number of files to return.
+        mime_contains: mimeType 부분 일치 필터 (예: "image/", "video/", "application/pdf").
 
     Returns:
         List of file dicts with name, mimeType, modifiedTime, webViewLink.
     """
     service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
-    # Convert natural language to Drive query format
-    drive_query = f"name contains '{query}' or fullText contains '{query}'"
+    clauses = ["trashed = false"]
+    kw = (query or "").strip().replace("'", "\\'")
+    if kw:
+        clauses.append(f"(name contains '{kw}' or fullText contains '{kw}')")
+    if mime_contains:
+        clauses.append(f"mimeType contains '{mime_contains}'")
+    drive_query = " and ".join(clauses)
 
     results = service.files().list(
         q=drive_query,
