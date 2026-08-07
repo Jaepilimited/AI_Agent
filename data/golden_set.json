@@ -141,6 +141,12 @@
       "note": "@@ 지정 소스의 스키마 강제 포함 + 테이블 스코프 지시 회귀 방지 (2026-08-06)"
     },
     {
+      "id": "model_rights_query", "category": "incident", "freq": "weekly",
+      "question": "센텔라 라인에서 지금 쓸 수 있는 모델 누구야?",
+      "expect": {"contains_any": ["사용 가능", "모델"], "not_contains": ["적재되지 않았습니다", "오류가 발생"], "min_len": 100, "max_seconds": 60},
+      "note": "모델 초상권 파이프라인 (2026-08-07) — 판정은 DB, LLM은 설명만"
+    },
+    {
       "id": "bq_clarify_short_query", "category": "bq_core", "freq": "weekly",
       "question": "브랜드별 매출 비중 알려줘",
       "expect": {"contains_any": ["기간", "채널"], "max_seconds": 60},
