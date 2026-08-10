@@ -88,6 +88,60 @@ _LARGE_TABLES_REQUIRING_DATE_FILTER = [
 ]
 
 
+# 전 테이블 공통: Country 값은 한국어 국가명. 프롬프트 지시(기본 규칙 + 스키마 경고
+# + 말미 리마인더)에도 LLM이 확률적으로 영어 리터럴을 뽑는 사례가 남는다
+# (2026-08-10 '인도네시아쪽은?' 실측 — 같은 코드에서 한국어/영어가 갈렸다).
+# 프롬프트는 확률을 높일 뿐이므로, 생성 후 결정적으로 교정한다.
+_COUNTRY_EN2KR = {
+    "INDONESIA": "인도네시아", "USA": "미국", "UNITED STATES": "미국",
+    "AMERICA": "미국", "JAPAN": "일본", "CHINA": "중국", "TAIWAN": "대만",
+    "HONG KONG": "홍콩", "KOREA": "한국", "SOUTH KOREA": "한국",
+    "THAILAND": "태국", "VIETNAM": "베트남", "SINGAPORE": "싱가포르",
+    "MALAYSIA": "말레이시아", "PHILIPPINES": "필리핀", "AUSTRALIA": "호주",
+    "GERMANY": "독일", "UK": "영국", "UNITED KINGDOM": "영국",
+    "FRANCE": "프랑스", "CANADA": "캐나다", "INDIA": "인도", "RUSSIA": "러시아",
+    "SPAIN": "스페인", "ITALY": "이탈리아", "NETHERLANDS": "네덜란드",
+    "POLAND": "폴란드", "BRAZIL": "브라질", "MEXICO": "멕시코",
+    "SAUDI ARABIA": "사우디아라비아", "UAE": "아랍에미리트",
+    "UNITED ARAB EMIRATES": "아랍에미리트", "EGYPT": "이집트",
+    "KAZAKHSTAN": "카자흐스탄", "UKRAINE": "우크라이나",
+    "CAMBODIA": "캄보디아", "MYANMAR": "미얀마", "LAOS": "라오스",
+}
+
+_re_country_eq = re.compile(
+    r"(Country\s*(?:=|!=|<>)\s*)'([A-Za-z][A-Za-z .]*)'", re.IGNORECASE)
+_re_country_like = re.compile(
+    r"(Country\s+LIKE\s*)'(%?)([A-Za-z][A-Za-z .]*)(%?)'", re.IGNORECASE)
+_re_country_in = re.compile(
+    r"(Country\s+(?:NOT\s+)?IN\s*\()([^)]*)(\))", re.IGNORECASE)
+
+
+def _localize_country_literals(sql: str) -> str:
+    """Country 비교의 영어 국가명 리터럴을 한국어로 교정 (사전에 없는 값은 유지)."""
+    def _eq(m):
+        kr = _COUNTRY_EN2KR.get(m.group(2).strip().upper())
+        return m.group(1) + "'" + kr + "'" if kr else m.group(0)
+
+    def _like(m):
+        kr = _COUNTRY_EN2KR.get(m.group(3).strip().upper())
+        if not kr:
+            return m.group(0)
+        return m.group(1) + "'" + m.group(2) + kr + m.group(4) + "'"
+
+    def _in(m):
+        body = re.sub(
+            r"'([A-Za-z][A-Za-z .]*)'",
+            lambda mm: "'" + _COUNTRY_EN2KR.get(
+                mm.group(1).strip().upper(), mm.group(1)) + "'",
+            m.group(2))
+        return m.group(1) + body + m.group(3)
+
+    sql = _re_country_eq.sub(_eq, sql)
+    sql = _re_country_like.sub(_like, sql)
+    sql = _re_country_in.sub(_in, sql)
+    return sql
+
+
 def _enforce_partition_filter(
     sql: str,
     query: str,
@@ -142,6 +196,7 @@ def _enforce_partition_filter(
         llm = get_flash_client()
         new_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
         new_sql = sanitize_sql(new_sql)
+        new_sql = _localize_country_literals(new_sql)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
                 allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
@@ -477,6 +532,11 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
                     text = f"\n\n### 제품 마스터 (Product)\n" + "\n".join(tbl_lines)
                 else:  # marketing
                     text = f"\n\n### {label} ({table_short})\n" + "\n".join(tbl_lines)
+                    # 국가 리터럴 규칙은 SALES_ALL 섹션에만 있어 lazy-load 테이블엔
+                    # 적용되지 않았다 — 'INDONESIA' 영문 필터로 0건 (2026-08-10 UI 실측)
+                    if any(col["name"] == "Country" for col in tbl_schema):
+                        text += ("\n  ⚠️ Country 값은 한국어 국가명('인도네시아', '미국', "
+                                 "'독일' 등) — 영어 국가명('Indonesia' 등)으로 필터하면 0건이 난다")
                 return kind, table_path, text
             except Exception as e:
                 # Preserve original per-table warning labels
@@ -586,14 +646,22 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     brand_section = _build_brand_section(brand_filter)
     # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름
 
-    sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 **먼저 이전 대화 맥락으로 의도를 해소**하고, 맥락으로도 해소되지 않을 때만 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성."
+    sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 **먼저 이전 대화 맥락으로 의도를 해소**하고, 맥락으로도 해소되지 않을 때만 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성.\n⚠️ 국가 필터: 모든 테이블의 Country 값은 **한국어 국가명**이다 — WHERE Country='인도네시아' (O), Country='Indonesia'/'INDONESIA' (X, 0건이 난다)."
     # 직전 실행 테이블 앵커 — conv_section 중간의 일반 지시만으론 LLM이 후속
     # 질문에서 매출로 회귀한다(2026-08-10 판매수량·쇼피파이 시나리오 실측).
     # 프롬프트 맨 끝, 최종 지시 바로 옆에 마지막 실행 테이블을 명시해 고정한다.
+    # ⚠️ @@ 로 소스를 좁힌 경우(allowed_tables 존재) 화이트리스트 밖 테이블은
+    # 앵커에서 제외한다 — 안 그러면 "직전 테이블을 유지하라"는 앵커와 "허용
+    # 테이블만 사용하라"는 스코프 지시가 충돌해 검증 실패 SQL 을 유도한다.
     _prev_tbl_tags = re.findall(r"\[실행된 쿼리 테이블: ([^\]]+)\]", conv_context)
+    _prev_tbls = []
     if _prev_tbl_tags:
+        _prev_tbls = [t.strip() for t in _prev_tbl_tags[-1].split(",")]
+        if allowed_tables is not None:
+            _prev_tbls = [t for t in _prev_tbls if t in allowed_tables]
+    if _prev_tbls:
         sql_only_reminder += (
-            f"\n⚠️ 직전 답변의 실행 테이블: {_prev_tbl_tags[-1]} — 현재 질문이 "
+            f"\n⚠️ 직전 답변의 실행 테이블: {', '.join(_prev_tbls)} — 현재 질문이 "
             "'~별로 나눠줘', '비교해줘', '작년 같은 기간은?' 같은 후속이면 **이 테이블과 "
             "그 지표(광고비/판매수량/리뷰/손익 등)** 기준으로 SQL을 생성하라. 기간만 바꾸고 "
             "테이블·지표는 유지한다. 직전 질문에 특정 제품·브랜드·국가 필터가 있었으면 "
@@ -676,6 +744,10 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = sql.replace("'TikTok'", "'틱톡'")
             sql = sql.replace("'YouTube'", "'유튜브'")
             sql = sql.replace("'Facebook'", "'페이스북'")
+
+        # Country 영어 리터럴 → 한국어 (전 테이블 공통 규칙)
+        if sql:
+            sql = _localize_country_literals(sql)
 
         logger.info("sql_generated", sql=sql[:200])
 
@@ -765,6 +837,7 @@ def _retry_with_stronger_model(
             temperature=0.0, max_output_tokens=10000,
         )
         retry_sql = sanitize_sql(retry_sql)
+        retry_sql = _localize_country_literals(retry_sql)
         if not retry_sql:
             return None
 
@@ -842,14 +915,19 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
         # 구문 오류·컬럼명 오류 → 오류 메시지를 실어 1회 재생성.
         # ⚠️ "Syntax error" 만 잡으면 "Unrecognized name"(없는 컬럼)이 재시도 없이
         # 사용자에게 그대로 노출된다 (2026-08-06 @@아마존검색 'Date' 컬럼 사고).
-        if "Syntax error" in error_str or "Unrecognized name" in error_str:
+        # "incompatible types"(UNION ALL 컬럼 타입 불일치)도 재생성 대상 —
+        # 2026-08-10 실사용자 '마차이' 리뷰 질문이 재시도 없이 오류 노출됨
+        if any(k in error_str for k in ("Syntax error", "Unrecognized name", "incompatible types")):
             logger.warning("sql_syntax_error_retry", error=error_str[:200], original_sql=sql[:300])
             try:
                 llm = get_flash_client()
                 query = state.get("query", "")
                 # @@ 로 좁힌 소스는 기본 프롬프트에 스키마가 없다 — 재생성에도 스키마와
-                # 테이블 스코프를 실어야 같은 컬럼 오류를 반복하지 않는다
-                _schema_ctx = _build_schema_context(query, allowed_tables)
+                # 테이블 스코프를 실어야 같은 컬럼 오류를 반복하지 않는다.
+                # conv_context 도 전달 — 재생성 경로에서만 맥락이 빠지면 후속 질문이
+                # 오류를 만났을 때 재생성본이 주제 이탈한다 (2026-08-10 검토에서 발견)
+                _schema_ctx = _build_schema_context(
+                    query, allowed_tables, state.get("conversation_context", ""))
                 _scope = ""
                 if allowed_tables is not None and 0 < len(allowed_tables) <= 5:
                     _scope = ("\n\n## ⛔ 사용 가능 테이블\n"
@@ -876,6 +954,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
                 from app.core.security import sanitize_sql
                 retry_sql = sanitize_sql(retry_sql)
+                retry_sql = _localize_country_literals(retry_sql)
                 if retry_sql:
                     is_valid, _verr = validate_sql(
                         retry_sql,
