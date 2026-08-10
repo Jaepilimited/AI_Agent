@@ -402,8 +402,16 @@ def _source_scope_message(error_msg: str, enabled_sources) -> Optional[str]:
     )
 
 
-def _build_schema_context(query: str, allowed_tables: Optional[set]) -> str:
-    """Assemble the lazy-loaded schema context block for a query."""
+def _build_schema_context(query: str, allowed_tables: Optional[set],
+                          conv_context: str = "") -> str:
+    """Assemble the lazy-loaded schema context block for a query.
+
+    conv_context 도 키워드 매칭에 포함해야 한다 — "광고비 얼마야?" 다음에
+    "6월과 비교해줘"가 오면 현재 질문엔 '광고' 단어가 없어 광고 테이블 스키마가
+    빠지고, LLM 은 보이는 매출 스키마로 SQL 을 써서 주제가 매출로 넘어간다
+    (2026-08-10 실사용 제보). 맥락 꼬리(최근 1500자)만 매칭에 쓴다.
+    """
+    _match_text = (query + " " + (conv_context or "")[-1500:]).lower()
     global _schema_cache_sales, _schema_cache_tables
     bq = get_bigquery_client()
     settings = get_settings()
@@ -413,11 +421,11 @@ def _build_schema_context(query: str, allowed_tables: Optional[set]) -> str:
 
     # 1b) Determine Product inclusion
     product_path = f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"
-    include_product = (allowed_tables is None and any(kw in query.lower() for kw in ["제품", "product", "sku", "카테고리"])) or \
+    include_product = (allowed_tables is None and any(kw in _match_text for kw in ["제품", "product", "sku", "카테고리"])) or \
                       (allowed_tables is not None and product_path in allowed_tables)
 
     # 2) Lazy-load: only include marketing tables whose keywords match AND are allowed
-    query_lower = query.lower()
+    query_lower = _match_text
     # @@ 로 소스를 좁힌 경우(허용 테이블 소수)는 키워드 매칭과 무관하게 그 테이블
     # 스키마를 반드시 싣는다 — 안 실으면 LLM 이 없는 컬럼("media")을 지어내거나
     # 다른 테이블로 이탈해 소스 안내로 튕긴다 (2026-08-06 Playwright 전수 테스트:
@@ -551,7 +559,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
             return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
 
-    schema_context = _build_schema_context(query, allowed_tables)
+    schema_context = _build_schema_context(query, allowed_tables, conv_context)
 
     this_year = datetime.now().year
     this_month = datetime.now().month
@@ -563,7 +571,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     conv_context = state.get("conversation_context", "")
     conv_section = ""
     if conv_context:
-        conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?', '시각화해줘', '차트로 보여줘' 같은 참조를 이해하세요.\n⚠️ 현재 질문이 'B2B', '올해만', '월별로' 같은 짧은 단어/구라면 이것은 새 질문이 아니라 **직전 대화에 대한 답이나 조건 추가**다. 직전 AI 답변이 조건을 되물었다면(예: 'B2B/B2C 구분이 필요하시면 알려주세요'), 직전 사용자 질문에 이 조건을 결합한 하나의 요청으로 해석해 SQL을 생성하라. 예: 직전 질문 '국가별 첫 거래일자 확인' + 현재 답 'B2B' → 해당 국가들의 B2B 기준 MIN(Date) 조회. 직전 질문의 의도를 버리고 현재 단어만으로 일반 현황 조회를 만들면 안 된다.\n⚠️ '시각화해줘', '차트로 그려줘' 같은 후속 요청이 오면, 이전 답변에서 사용된 동일한 데이터 범위/조건/집계 수준으로 SQL을 생성하세요. 이전에 분기별 비교였다면 분기별로, 월별이었다면 월별로 유지하세요.\n⚠️ 이전 답변에서 특정 판매처(Company_Name), 국가(Country), 채널(Mall_Classification)이 나열된 상태에서 사용자가 '판매처별', '국가별', '채널별' 후속 질문을 하면, 이전 답변에 등장한 그 항목들을 WHERE 조건으로 포함하세요. 예: 이전에 예스아시아닷컴코리아·Stylevana가 나왔으면 다음 SQL에도 Company_Name IN ('예스아시아닷컴코리아', 'Stylevana', ...)를 추가."
+        conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?', '시각화해줘', '차트로 보여줘' 같은 참조를 이해하세요.\n⚠️ 현재 질문이 'B2B', '올해만', '월별로' 같은 짧은 단어/구라면 이것은 새 질문이 아니라 **직전 대화에 대한 답이나 조건 추가**다. 직전 AI 답변이 조건을 되물었다면(예: 'B2B/B2C 구분이 필요하시면 알려주세요'), 직전 사용자 질문에 이 조건을 결합한 하나의 요청으로 해석해 SQL을 생성하라. 예: 직전 질문 '국가별 첫 거래일자 확인' + 현재 답 'B2B' → 해당 국가들의 B2B 기준 MIN(Date) 조회. 직전 질문의 의도를 버리고 현재 단어만으로 일반 현황 조회를 만들면 안 된다.\n⚠️ **주제(지표·테이블) 유지**: 직전 대화가 광고비였으면 '6월과 비교해줘' 같은 후속도 **광고비 기준**으로 답하라 — 사용자가 명시적으로 주제를 바꾸지 않는 한 매출로 갈아타지 마라. 직전 답변의 '실행된 쿼리'가 보이면 같은 테이블을 우선 사용하라.\n⚠️ '시각화해줘', '차트로 그려줘' 같은 후속 요청이 오면, 이전 답변에서 사용된 동일한 데이터 범위/조건/집계 수준으로 SQL을 생성하세요. 이전에 분기별 비교였다면 분기별로, 월별이었다면 월별로 유지하세요.\n⚠️ 이전 답변에서 특정 판매처(Company_Name), 국가(Country), 채널(Mall_Classification)이 나열된 상태에서 사용자가 '판매처별', '국가별', '채널별' 후속 질문을 하면, 이전 답변에 등장한 그 항목들을 WHERE 조건으로 포함하세요. 예: 이전에 예스아시아닷컴코리아·Stylevana가 나왔으면 다음 SQL에도 Company_Name IN ('예스아시아닷컴코리아', 'Stylevana', ...)를 추가."
 
     # Brand filter injection: only if user has a group filter assigned
     brand_filter = state.get("brand_filter")

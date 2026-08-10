@@ -153,6 +153,16 @@
       "note": "기간·채널 없는 짧은 BQ 질문은 되물음(grill-me)이 정상 동작이다"
     },
     {
+      "id": "fu_topic_continuity_ad", "category": "incident", "freq": "daily",
+      "history": [
+        {"role": "user", "content": "26년도 7월달 총 광고비 얼마야"},
+        {"role": "assistant", "content": "2026년 7월 한 달간 집행된 총 광고비는 약 65.5억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(cost_krw) AS total_ad_cost FROM `skin1004-319714.marketing_analysis.integrated_ad` WHERE date BETWEEN '2026-07-01' AND '2026-07-31'\n```\n</details>"}
+      ],
+      "question": "26년도 6월달과 비교해서 팀별로 비교해서 설명해줘",
+      "expect": {"sql_contains_any": ["integrated_ad"], "contains_any": ["광고비", "광고"], "not_contains": ["SALES_ALL_Backup"], "min_len": 150, "max_seconds": 150},
+      "note": "2026-08-10 실사용 제보: 광고비 대화 중 후속 비교가 매출로 주제 이탈 — 스키마 lazy-load가 맥락을 안 봐서"
+    },
+    {
       "id": "fu_clarify_b2c", "category": "followup", "freq": "daily",
       "history": [
         {"role": "user", "content": "인도네시아, 베트남 첫 거래일자 알려줘"},
