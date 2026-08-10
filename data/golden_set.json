@@ -108,18 +108,18 @@
     },
     {
       "id": "core_new_products", "category": "bq_core", "freq": "weekly",
-      "question": "신제품 매출 현황 알려줘",
+      "question": "올해 신제품 매출 현황 알려줘",
       "expect": {"sql_contains_any": ["MIN(Date)", "6 MONTH"], "min_len": 120, "max_seconds": 150},
       "note": "신제품 = 첫 판매일로부터 6개월 이하 (2026-07-27 확정)"
     },
     {
       "id": "core_chart_render", "category": "bq_core", "freq": "weekly",
-      "question": "국가별 매출 top5 차트로 그려줘",
+      "question": "올해 국가별 매출 top5 차트로 그려줘",
       "expect": {"contains_any": ["chart", "```"], "min_len": 100, "max_seconds": 150}
     },
     {
       "id": "core_zombie_line", "category": "bq_core", "freq": "weekly",
-      "question": "좀비뷰티 매출 얼마야?",
+      "question": "올해 좀비뷰티 매출 얼마야?",
       "expect": {"sql_contains_any": ["ZB"], "contains_any": ["억", "백만", "좀비"], "min_len": 60, "max_seconds": 150},
       "note": "좀비뷰티는 Brand='SK' AND Line='ZB'"
     },
