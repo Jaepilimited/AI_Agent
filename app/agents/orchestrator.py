@@ -281,7 +281,7 @@ class OrchestratorAgent:
         {"key": "큐텐 리뷰", "aliases": ["qoo10 review", "쿠텐 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "큐텐 리뷰", "desc": "큐텐 리뷰"},
         {"key": "쇼피 리뷰", "aliases": ["shopee review"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "쇼피 리뷰", "desc": "쇼피 리뷰"},
         {"key": "스마트스토어 리뷰", "aliases": ["smartstore review", "네이버 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "스마트스토어 리뷰", "desc": "스마트스토어 리뷰"},
-        {"key": "초상권", "aliases": ["모델", "모델사진", "모델초상권", "rights"], "route": "model_rights", "group": "마케팅 데이터", "icon": "users", "label": "초상권", "desc": "모델 사진 사용 가능 여부·기한"},
+        {"key": "초상권", "aliases": ["모델", "모델사진", "모델초상권", "rights", "bc"], "route": "model_rights", "group": "BC", "icon": "users", "label": "초상권", "desc": "모델 사진 사용 가능 여부·기한 ([BC] 모델 초상권 현황)"},
         # ── Notion (팀별자료 — 벡터 검색, 알파벳순) ──
         {"key": "B2B1", "aliases": ["b2b1", "국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 (매출/거래처/재고)"},
         {"key": "B2B2", "aliases": ["b2b2", "b2b", "해외영업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B2", "desc": "B2B 프로세스/온보딩"},
