@@ -10,9 +10,10 @@ initial_state = {
     "query": "앰플 100ml 2월 매출이 얼마야?",
     "route_type": "text_to_sql",
     "generated_sql": None, "sql_valid": None, "sql_result": None,
-    "retrieved_docs": None, "doc_relevance": None, "web_search_results": None,
+    "retrieved_docs": None, "doc_relevance": None,
     "answer": "", "needs_retry": False, "retry_count": 0, "error": None,
     "messages": None, "conversation_context": "", "model_type": "gemini",
+    "can_view_fi": True, "enabled_sources": None,
 }
 
 result = graph.invoke(initial_state)

@@ -236,14 +236,27 @@ def run_one(session, base_url, query, team_label, idx):
                 "status": "FAIL", "time": round(elapsed, 1), "answer_len": 0, "reason": str(e)[:100]}
 
 
+def _get_token():
+    """Build a JWT the same way the app verifies it (see app/api/middleware.py) —
+    signin requires the real AD password, which this script doesn't have."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    import jwt
+
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from app.config import get_settings
+
+    return jwt.encode(
+        {"user_id": 1, "sub": "1", "email": "jeffrey@skin1004korea.com", "role": "admin", "exp": 9999999999},
+        get_settings().jwt_secret_key,
+        algorithm="HS256",
+    )
+
+
 def run_team(base_url, questions, team_label, concurrency=3):
     """Run all questions for a team with limited concurrency."""
     session = requests.Session()
-    # Login
-    session.post(f"{base_url}/api/auth/signin", json={
-        "department": "Craver_Accounts > Users > Brand Division > Operations Dept > Data Business > 데이터분석",
-        "name": "임재필", "password": "1234"
-    })
+    session.cookies.set("token", _get_token())
 
     results = []
     with ThreadPoolExecutor(max_workers=concurrency) as pool:

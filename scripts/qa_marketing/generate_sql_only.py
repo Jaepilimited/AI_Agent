@@ -85,7 +85,7 @@ def warmup_schemas():
 def generate_sql_for_query(query: str) -> str:
     """Generate SQL for a single query using Flash LLM."""
     llm = get_flash_client()
-    system_prompt = _load_prompt("sql_generator.txt")
+    system_prompt = _load_prompt("sql_generator.txt", can_view_fi=True)
 
     # Build schema context (same logic as generate_sql node)
     schema_context = sql_mod._schema_cache_sales or ""

@@ -14,11 +14,26 @@ TOKEN = None
 
 
 def get_token():
-    """Generate JWT token for testing."""
+    """Generate JWT token for testing.
+
+    Uses the same secret resolution as the app (get_settings) — the previously
+    hardcoded value was stale, so those tokens were silently invalid and only
+    worked while /v1/chat/completions had no auth gate. Payload must carry
+    user_id: the middleware sets request.state.user_id from it and the
+    endpoint 401s without it.
+    """
+    import sys
+    from pathlib import Path
+
     import jwt
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from app.config import get_settings
+
+    # NOTE: PyJWT >= 2.10 rejects non-string "sub" at decode time — keep it a str.
     return jwt.encode(
-        {"sub": 1, "email": "jeffrey@skin1004korea.com", "role": "admin", "exp": 9999999999},
-        "skin1004-ai-secret-key-2024",
+        {"user_id": 1, "sub": "1", "email": "jeffrey@skin1004korea.com", "role": "admin", "exp": 9999999999},
+        get_settings().jwt_secret_key,
         algorithm="HS256",
     )
 
