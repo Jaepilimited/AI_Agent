@@ -372,6 +372,8 @@
       keys: ["광고", "마케팅", "Shopify", "플랫폼",
              "인플루언서", "아마존검색", "메타광고",
              "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
+    { id: "bc", label: "BC", emoji: "\uD83D\uDCF8",
+      keys: ["초상권"] },
     { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
       keys: ["B2B1", "B2B2", "BCM", "CS", "Craver", "DB",
              "GM EAST", "GM WEST", "JBT", "KBT", "PEOPLE", "BP"],
