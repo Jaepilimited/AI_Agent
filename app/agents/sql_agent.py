@@ -414,6 +414,12 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
     (선두의 '[실행된 쿼리 테이블: ...]' 태그 포함)가 윈도에 들어온다.
     """
     _match_text = (query + " " + (conv_context or "")[-3000:]).lower()
+    # 맥락에 등장한 테이블(직전 실행 SQL·태그)은 키워드 매칭과 무관하게 스키마를
+    # 결정적으로 포함한다 — 후속 질문에 주제 단어가 없어도 직전 테이블 스키마가
+    # 반드시 실리도록 (2026-08-10 아키텍처 변경). allowed_tables 화이트리스트는
+    # 그대로 존중한다 (FI 방어선 유지).
+    _ctx_tables = set(re.findall(
+        r"skin1004-319714\.[A-Za-z_]\w*\.[A-Za-z_]\w*", conv_context or ""))
     global _schema_cache_sales, _schema_cache_tables
     bq = get_bigquery_client()
     settings = get_settings()
@@ -423,7 +429,7 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
 
     # 1b) Determine Product inclusion
     product_path = f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"
-    include_product = (allowed_tables is None and any(kw in _match_text for kw in ["제품", "product", "sku", "카테고리"])) or \
+    include_product = (allowed_tables is None and (product_path in _ctx_tables or any(kw in _match_text for kw in ["제품", "product", "sku", "카테고리"]))) or \
                       (allowed_tables is not None and product_path in allowed_tables)
 
     # 2) Lazy-load: only include marketing tables whose keywords match AND are allowed
@@ -438,7 +444,7 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
         (t[0], t[1], t[2]) for t in MARKETING_TABLES
         if (force_all_allowed and t[0] in allowed_tables)
         or (not force_all_allowed
-            and any(kw in query_lower for kw in t[2])
+            and (t[0] in _ctx_tables or any(kw in query_lower for kw in t[2]))
             and (allowed_tables is None or t[0] in allowed_tables))
     ]
 

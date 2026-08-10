@@ -48,6 +48,8 @@ _re_chart_block = re.compile(r"```chart-config[\s\S]*?```", re.MULTILINE)
 _re_details_block = re.compile(r"<details[\s\S]*?</details>", re.MULTILINE)
 _re_follow_block = re.compile(r"> 💡 \*\*이런 것도 물어보세요\*\*[\s\S]*$", re.MULTILINE)
 _re_bq_table_ref = re.compile(r"skin1004-319714\.[A-Za-z_]\w*\.[A-Za-z_]\w*")
+_re_sql_in_details = re.compile(
+    r"<details[^>]*>[\s\S]*?```sql\s*([\s\S]*?)```[\s\S]*?</details>")
 
 
 def _strip_assistant_noise(content: str) -> str:
@@ -97,9 +99,14 @@ def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
     """Build conversation context — keep last 10 turns (20 messages).
 
-    Assistant messages are stripped of chart/SQL noise, then capped at 1500 chars
-    so that table rows and specific values survive truncation.
-    User messages are kept as-is (short by nature).
+    맥락 소실 최소화 원칙 (2026-08-10 아키텍처 변경):
+    - 마지막 AI 답변은 3000자, 그 이전 답변은 800자 — 후속 질문이 참조하는 건
+      거의 항상 직전 답변이므로 토큰 예산을 최신에 몰아준다.
+    - 마지막으로 실행된 SQL은 원문 그대로 맨 끝에 부착한다. 테이블·지표·필터·
+      기간이 전부 담긴 무손실 앵커라, 요약 텍스트가 어떻게 절단되든 후속 질문
+      ("지난달이랑 비교해줘", "국가별로 나눠줘")의 기준이 살아남는다.
+      지시문("주제를 유지하라")만으로는 LLM이 매출로 회귀하는 것을 실측으로
+      확인했다 — 정보를 직접 주는 것이 유일하게 안정적이다.
     """
     if not messages or len(messages) <= 1:
         return ""
@@ -111,21 +118,35 @@ def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
         lines.append(f"[이전 대화 {len(history) - 20}개 메시지 생략 — 최근 10턴만 표시]")
         history = history[-20:]
 
-    for msg in history:
+    last_ai_idx = max(
+        (i for i, m in enumerate(history) if m.get("role") in ("assistant", "model")),
+        default=-1,
+    )
+    last_sql = ""
+    for i, msg in enumerate(history):
         role = msg.get("role", "user")
-        content = _content_to_text(msg.get("content", ""))
-        if not content:
+        raw = _content_to_text(msg.get("content", ""))
+        if not raw:
             continue
         if role == "user":
-            if len(content) > 300:
-                content = content[:300] + "..."
-            lines.append(f"사용자: {content}")
+            if len(raw) > 300:
+                raw = raw[:300] + "..."
+            lines.append(f"사용자: {raw}")
         elif role in ("assistant", "model"):
-            content = _strip_assistant_noise(content)
-            if len(content) > 1500:
-                content = content[:1500] + "..."
+            sqls = _re_sql_in_details.findall(raw)
+            if sqls:
+                last_sql = sqls[-1].strip()
+            content = _strip_assistant_noise(raw)
+            cap = 3000 if i == last_ai_idx else 800
+            if len(content) > cap:
+                content = content[:cap] + "..."
             lines.append(f"AI: {content}")
 
+    if last_sql:
+        lines.append(
+            "[직전 실행 SQL — 후속 질문은 이 테이블·지표·필터를 기준으로 해석]\n"
+            + last_sql[:600]
+        )
     return "\n".join(lines)
 
 

@@ -183,6 +183,16 @@
       "note": "2026-08-10 발견: 수량 후속이 매출로 이탈 + 제품 필터 소실 — 테이블·지표·필터 유지 앵커로 수정"
     },
     {
+      "id": "fu_topic_continuity_mkt_country", "category": "incident", "freq": "weekly",
+      "history": [
+        {"role": "user", "content": "마케팅 비용 올해 얼마야?"},
+        {"role": "assistant", "content": "2026년 총 마케팅 비용은 약 312.4억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(cost) FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost` WHERE date >= '2026-01-01'\n```\n</details>"}
+      ],
+      "question": "인도네시아쪽은?",
+      "expect": {"contains_any": ["마케팅", "marketing"], "not_contains": ["SALES_ALL_Backup"], "min_len": 100, "max_seconds": 150},
+      "note": "2026-08-10 사용자 제보 패턴: 주제 단어 없는 지역 후속('인도네시아쪽은?')이 마케팅 맥락을 유지해야 — 직전 SQL 원문 보존 아키텍처로 해결"
+    },
+    {
       "id": "fu_clarify_b2c", "category": "followup", "freq": "daily",
       "history": [
         {"role": "user", "content": "인도네시아, 베트남 첫 거래일자 알려줘"},
