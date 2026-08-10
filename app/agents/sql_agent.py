@@ -409,9 +409,11 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
     conv_context 도 키워드 매칭에 포함해야 한다 — "광고비 얼마야?" 다음에
     "6월과 비교해줘"가 오면 현재 질문엔 '광고' 단어가 없어 광고 테이블 스키마가
     빠지고, LLM 은 보이는 매출 스키마로 SQL 을 써서 주제가 매출로 넘어간다
-    (2026-08-10 실사용 제보). 맥락 꼬리(최근 1500자)만 매칭에 쓴다.
+    (2026-08-10 실사용 제보). 맥락 꼬리(최근 3000자)만 매칭에 쓴다 —
+    직전 AI 답변이 1500자로 절단되므로 그보다 넓어야 마지막 답변 전체
+    (선두의 '[실행된 쿼리 테이블: ...]' 태그 포함)가 윈도에 들어온다.
     """
-    _match_text = (query + " " + (conv_context or "")[-1500:]).lower()
+    _match_text = (query + " " + (conv_context or "")[-3000:]).lower()
     global _schema_cache_sales, _schema_cache_tables
     bq = get_bigquery_client()
     settings = get_settings()
@@ -571,7 +573,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     conv_context = state.get("conversation_context", "")
     conv_section = ""
     if conv_context:
-        conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?', '시각화해줘', '차트로 보여줘' 같은 참조를 이해하세요.\n⚠️ 현재 질문이 'B2B', '올해만', '월별로' 같은 짧은 단어/구라면 이것은 새 질문이 아니라 **직전 대화에 대한 답이나 조건 추가**다. 직전 AI 답변이 조건을 되물었다면(예: 'B2B/B2C 구분이 필요하시면 알려주세요'), 직전 사용자 질문에 이 조건을 결합한 하나의 요청으로 해석해 SQL을 생성하라. 예: 직전 질문 '국가별 첫 거래일자 확인' + 현재 답 'B2B' → 해당 국가들의 B2B 기준 MIN(Date) 조회. 직전 질문의 의도를 버리고 현재 단어만으로 일반 현황 조회를 만들면 안 된다.\n⚠️ **주제(지표·테이블) 유지**: 직전 대화가 광고비였으면 '6월과 비교해줘' 같은 후속도 **광고비 기준**으로 답하라 — 사용자가 명시적으로 주제를 바꾸지 않는 한 매출로 갈아타지 마라. 직전 답변의 '실행된 쿼리'가 보이면 같은 테이블을 우선 사용하라.\n⚠️ '시각화해줘', '차트로 그려줘' 같은 후속 요청이 오면, 이전 답변에서 사용된 동일한 데이터 범위/조건/집계 수준으로 SQL을 생성하세요. 이전에 분기별 비교였다면 분기별로, 월별이었다면 월별로 유지하세요.\n⚠️ 이전 답변에서 특정 판매처(Company_Name), 국가(Country), 채널(Mall_Classification)이 나열된 상태에서 사용자가 '판매처별', '국가별', '채널별' 후속 질문을 하면, 이전 답변에 등장한 그 항목들을 WHERE 조건으로 포함하세요. 예: 이전에 예스아시아닷컴코리아·Stylevana가 나왔으면 다음 SQL에도 Company_Name IN ('예스아시아닷컴코리아', 'Stylevana', ...)를 추가."
+        conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?', '시각화해줘', '차트로 보여줘' 같은 참조를 이해하세요.\n⚠️ 현재 질문이 'B2B', '올해만', '월별로' 같은 짧은 단어/구라면 이것은 새 질문이 아니라 **직전 대화에 대한 답이나 조건 추가**다. 직전 AI 답변이 조건을 되물었다면(예: 'B2B/B2C 구분이 필요하시면 알려주세요'), 직전 사용자 질문에 이 조건을 결합한 하나의 요청으로 해석해 SQL을 생성하라. 예: 직전 질문 '국가별 첫 거래일자 확인' + 현재 답 'B2B' → 해당 국가들의 B2B 기준 MIN(Date) 조회. 직전 질문의 의도를 버리고 현재 단어만으로 일반 현황 조회를 만들면 안 된다.\n⚠️ **주제(지표·테이블) 유지**: 직전 AI 답변에 '[실행된 쿼리 테이블: ...]' 표시가 있으면 '지난달이랑 비교해줘', '국가별로 나눠줘', '작년 같은 기간은?' 같은 후속 질문은 **그 테이블·그 지표 기준**으로 SQL을 생성하라. 직전 주제가 광고비·인플루언서·리뷰·판매수량·쇼피파이·손익이었는데 후속 질문에 주제 단어가 없다고 매출(SALES_ALL_Backup)로 갈아타지 마라 — 사용자가 '매출은?', '그럼 판매액은?'처럼 명시적으로 주제를 바꿀 때만 테이블을 바꾼다.\n⚠️ '시각화해줘', '차트로 그려줘' 같은 후속 요청이 오면, 이전 답변에서 사용된 동일한 데이터 범위/조건/집계 수준으로 SQL을 생성하세요. 이전에 분기별 비교였다면 분기별로, 월별이었다면 월별로 유지하세요.\n⚠️ 이전 답변에서 특정 판매처(Company_Name), 국가(Country), 채널(Mall_Classification)이 나열된 상태에서 사용자가 '판매처별', '국가별', '채널별' 후속 질문을 하면, 이전 답변에 등장한 그 항목들을 WHERE 조건으로 포함하세요. 예: 이전에 예스아시아닷컴코리아·Stylevana가 나왔으면 다음 SQL에도 Company_Name IN ('예스아시아닷컴코리아', 'Stylevana', ...)를 추가."
 
     # Brand filter injection: only if user has a group filter assigned
     brand_filter = state.get("brand_filter")
@@ -579,6 +581,19 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름
 
     sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 **먼저 이전 대화 맥락으로 의도를 해소**하고, 맥락으로도 해소되지 않을 때만 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성."
+    # 직전 실행 테이블 앵커 — conv_section 중간의 일반 지시만으론 LLM이 후속
+    # 질문에서 매출로 회귀한다(2026-08-10 판매수량·쇼피파이 시나리오 실측).
+    # 프롬프트 맨 끝, 최종 지시 바로 옆에 마지막 실행 테이블을 명시해 고정한다.
+    _prev_tbl_tags = re.findall(r"\[실행된 쿼리 테이블: ([^\]]+)\]", conv_context)
+    if _prev_tbl_tags:
+        sql_only_reminder += (
+            f"\n⚠️ 직전 답변의 실행 테이블: {_prev_tbl_tags[-1]} — 현재 질문이 "
+            "'~별로 나눠줘', '비교해줘', '작년 같은 기간은?' 같은 후속이면 **이 테이블과 "
+            "그 지표(광고비/판매수량/리뷰/손익 등)** 기준으로 SQL을 생성하라. 기간만 바꾸고 "
+            "테이블·지표는 유지한다. 직전 질문에 특정 제품·브랜드·국가 필터가 있었으면 "
+            "(예: '센텔라 100 앰플 판매수량' → '국가별로 나눠줘') 그 필터도 그대로 유지한다. "
+            "사용자가 '매출은?'처럼 명시적으로 지표를 바꿔 물을 때만 다른 테이블로 전환한다."
+        )
     # Inject current month into ambiguous date references in the query itself
     _month_keywords = {"이번 달": f"{this_year}년 {this_month}월(이번 달)", "이번달": f"{this_year}년 {this_month}월(이번달)", "지난 달": f"{last_month_year}년 {last_month}월(지난 달)", "지난달": f"{last_month_year}년 {last_month}월(지난달)"}
     _resolved_query = query

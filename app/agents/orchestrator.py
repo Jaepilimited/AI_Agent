@@ -47,6 +47,7 @@ def _content_to_text(content) -> str:
 _re_chart_block = re.compile(r"```chart-config[\s\S]*?```", re.MULTILINE)
 _re_details_block = re.compile(r"<details[\s\S]*?</details>", re.MULTILINE)
 _re_follow_block = re.compile(r"> 💡 \*\*이런 것도 물어보세요\*\*[\s\S]*$", re.MULTILINE)
+_re_bq_table_ref = re.compile(r"skin1004-319714\.[A-Za-z_]\w*\.[A-Za-z_]\w*")
 
 
 def _strip_assistant_noise(content: str) -> str:
@@ -54,11 +55,21 @@ def _strip_assistant_noise(content: str) -> str:
 
     These blocks are machine-readable or boilerplate and waste context space.
     Keeps markdown text (summaries, tables, insights) for SQL generation context.
+
+    SQL 블록을 지우더라도 거기 쓰인 테이블명은 태그로 보존한다 — 후속 질문
+    ("지난달이랑 비교해줘")의 주제 유지에 필요한 유일한 앵커다. 본문 텍스트에
+    주제 단어가 없으면(예: 판매수량 답변에 'Product' 단어 부재) 스키마 lazy-load
+    매칭도, LLM의 테이블 선택도 매출로 흘러간다 (2026-08-10 6종 시나리오 테스트).
+    태그는 맨 앞에 붙인다 — 1500자 절단에서 살아남아야 하므로.
     """
+    tables = list(dict.fromkeys(_re_bq_table_ref.findall(content)))
     content = _re_chart_block.sub("[차트 생략]", content)
     content = _re_details_block.sub("[SQL 생략]", content)
     content = _re_follow_block.sub("", content)
-    return content.strip()
+    content = content.strip()
+    if tables:
+        content = "[실행된 쿼리 테이블: " + ", ".join(tables) + "] " + content
+    return content
 
 
 _DIRECT_HISTORY_CAP = 30  # 최근 15턴 — 참조형 질문("아까 그거") 안전 마진
