@@ -78,8 +78,20 @@ CREATE TABLE IF NOT EXISTS model_right_periods (
 """
 
 
+_DDL_FACES = """
+CREATE TABLE IF NOT EXISTS model_faces (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    model_name VARCHAR(100) NOT NULL,
+    embedding BLOB NOT NULL,
+    source VARCHAR(300) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_model (model_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
 def ensure_model_rights_tables() -> None:
-    for ddl in (_DDL_MODELS, _DDL_PERIODS):
+    for ddl in (_DDL_MODELS, _DDL_PERIODS, _DDL_FACES):
         try:
             execute(ddl)
         except Exception as e:

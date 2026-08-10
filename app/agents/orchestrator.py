@@ -513,7 +513,7 @@ class OrchestratorAgent:
         if _mr_selected or model_rights_intent(query):
             _q_mr = (clean_query or query) if _mr_entries else query
             logger.info("model_rights_query", path="route_and_execute", query=_q_mr[:80])
-            return await self._handle_model_rights(_q_mr, model_type)
+            return await self._handle_model_rights(_q_mr, model_type, images=images)
 
         if db_entry:
             query = clean_query or query
@@ -741,7 +741,7 @@ class OrchestratorAgent:
         if _mr_selected or model_rights_intent(query):
             _q_mr = (clean_query or query) if _mr_entries else query
             logger.info("model_rights_query", path="route_and_stream", query=_q_mr[:80])
-            _r = await self._handle_model_rights(_q_mr, model_type)
+            _r = await self._handle_model_rights(_q_mr, model_type, images=images)
             yield ("source", "direct")
             yield ("done", _r.get("answer", ""))
             return
@@ -1882,22 +1882,68 @@ class OrchestratorAgent:
         result = await self.notion_agent.run(contextualized_query, model_type=model_type)
         return {"source": "notion", "answer": result}
 
-    async def _handle_model_rights(self, query: str, model_type: str) -> dict:
+    async def _handle_model_rights(self, query: str, model_type: str, images=None) -> dict:
         """모델 초상권 질문 — 판정(기간·만료)은 DB 데이터가 하고 LLM 은 설명만 한다.
 
         시트 → MariaDB 적재본(model_rights)에서 오늘 날짜 기준 판정을 끝낸
         컨텍스트를 만들어 넘긴다. 잘못 쓰면 모델당 수백만 원짜리 실수라
         LLM 이 기간을 계산하게 두지 않는다 (전성분 핸들러와 같은 원칙).
+
+        사진이 첨부되면 얼굴 인식(buffalo_l ONNX, 서브프로세스)으로 등록된 모델과
+        대조해 인물을 식별한다 — 사진 일부(크롭)여도 얼굴만 보이면 매칭된다.
+        서브프로세스인 이유: onnxruntime 세션 ~400MB 를 2GB WAS 앱에 상주시키지
+        않기 위해 (실행 후 즉시 반환).
         """
         import asyncio as _asyncio
 
         from app.core.model_rights import get_rights_context
+
+        face_note = ""
+        if images:
+            try:
+                import json as _json
+                import os as _os
+                import sys as _sys
+                import tempfile as _tmp
+
+                from pathlib import Path as _P
+                with _tmp.NamedTemporaryFile(suffix=".jpg", delete=False) as _tf:
+                    _tf.write(images[0]["data"])
+                    _img_path = _tf.name
+                _script = str(_P(__file__).resolve().parent.parent.parent
+                              / "scripts" / "identify_model_face.py")
+                proc = await _asyncio.create_subprocess_exec(
+                    _sys.executable, _script, _img_path,
+                    stdout=_asyncio.subprocess.PIPE, stderr=_asyncio.subprocess.PIPE)
+                out, err = await _asyncio.wait_for(proc.communicate(), timeout=120)
+                _os.unlink(_img_path)
+                _lines = [l for l in out.decode("utf-8", "replace").splitlines() if l.strip().startswith("{")]
+                r = _json.loads(_lines[-1]) if _lines else {}
+                if r.get("match"):
+                    face_note = (f"[사진 인식 결과] 업로드된 사진 속 인물: **{r['match']}** "
+                                 f"(유사도 {r['score']:.2f}, 얼굴 {r['n_faces']}개 감지)\n")
+                    query = f"{r['match']} — {query}"
+                elif r.get("maybe"):
+                    face_note = (f"[사진 인식 결과] 확신은 낮지만 **{r['maybe']}** 로 보임 "
+                                 f"(유사도 {r['score']:.2f}) — 확실하지 않으니 이름으로 재확인 권장\n")
+                    query = f"{r['maybe']} — {query}"
+                elif r.get("n_faces"):
+                    face_note = (f"[사진 인식 결과] 얼굴은 감지했으나 등록된 모델({r.get('enrolled', 0)}명)과 "
+                                 "일치하지 않음 — 모델 이름으로 질문해 주세요\n")
+                else:
+                    face_note = "[사진 인식 결과] 사진에서 얼굴을 찾지 못함\n"
+                logger.info("model_face_identify", result={k: v for k, v in r.items() if k != "second"})
+            except Exception as e:
+                logger.error("model_face_identify_failed", error=str(e)[:200])
+                face_note = "[사진 인식 결과] 인식 실패 — 모델 이름으로 질문해 주세요\n"
 
         try:
             ctx = await _asyncio.to_thread(get_rights_context, query)
         except Exception as e:
             logger.error("model_rights_failed", error=str(e)[:200])
             ctx = ""
+        if ctx and face_note:
+            ctx = face_note + "\n" + ctx
         if not ctx:
             return {"source": "direct", "answer": (
                 "모델 초상권 데이터가 아직 적재되지 않았습니다. "
