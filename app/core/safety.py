@@ -300,6 +300,24 @@ def get_safety_status() -> dict:
     for label, detail in _mkt_tables.items():
         services[label] = _bq_service(label, detail)
 
+    # 모델 초상권 (시트 → MariaDB, 매일 04:30 적재) — 적재 수·신선도로 판정
+    try:
+        from datetime import datetime as _dt
+
+        from app.db.mariadb import fetch_one as _fetch_one
+        _mr = _fetch_one("SELECT COUNT(*) c, MAX(synced_at) s FROM model_rights")
+        if not _mr or not _mr.get("c"):
+            services["초상권"] = {"status": "error", "detail": "모델 초상권 (미적재)"}
+        else:
+            _age_h = ((_dt.now() - _mr["s"]).total_seconds() / 3600) if _mr.get("s") else 999
+            services["초상권"] = {
+                "status": "ok" if _age_h <= 26 else "error",
+                "detail": f"모델 초상권 — 모델 {_mr['c']}명"
+                          + ("" if _age_h <= 26 else f" (적재 {int(_age_h)}시간 전)"),
+            }
+    except Exception:
+        services["초상권"] = {"status": "error", "detail": "모델 초상권 (조회 실패)"}
+
     # Notion (Qdrant) — 팀별 분리 (5분 캐시)
     import time as _time
     _QDRANT_TEAM_LABELS = {
