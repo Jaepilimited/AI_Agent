@@ -307,6 +307,24 @@
       "question": "올해 서구권마케팅팀 광고비 알려줘",
       "expect": {"contains_any": ["서구권마케팅팀", "WEST_MKT"], "not_contains": ["존재하지 않", "올바르지 않은 값", "0행"], "sql_contains_any": ["'WEST_MKT'"], "min_len": 80, "max_seconds": 150},
       "note": "2026-08-11 실사용 오답: 프롬프트가 integrated_ad.team 값을 'WEST'로 잘못 적어 0건. 실제는 Team_NEW와 같은 코드 체계(WEST_MKT/WEST_Ecomm/CBT 포함). 잘못된 SQL이 sql_cache에 남아 재생되던 것도 함께 확인"
+    },
+    {
+      "id": "promo_team_rollup", "category": "bq_core", "freq": "daily",
+      "question": "올해 팀별 프로모션 건수 알려줘",
+      "expect": {"contains_any": ["동남아시아1팀", "east1"], "not_contains": ["허용되지 않은", "오류가 발생", "조회하지 못"], "sql_contains_any": ["promotion_calendar.promotion"], "min_len": 120, "max_seconds": 150},
+      "note": "2026-08-11 프로모션 캘린더 신규 소스. @@ 없이도 전역 화이트리스트(config.allowed_tables)에 있어야 통과 — 없으면 '허용되지 않은 테이블'로 막힌다"
+    },
+    {
+      "id": "promo_schedule_routing", "category": "incident", "freq": "daily",
+      "question": "올해 인도네시아 프로모션 일정 알려줘",
+      "expect": {"contains_any": ["쇼피", "틱톡샵", "프로모션"], "not_contains": ["Google 계정", "Google Workspace", "사내 문서"], "sql_contains_any": ["'ID'"], "min_len": 150, "max_seconds": 150},
+      "note": "'일정'이 GWS 캘린더 키워드라 개인 구글 캘린더로 오라우팅되던 문제. country_code는 이 테이블만 2글자 ISO('인도네시아'로 필터하면 0건)"
+    },
+    {
+      "id": "gws_personal_calendar_kept", "category": "incident", "freq": "weekly",
+      "question": "내 이번주 일정 알려줘",
+      "expect": {"contains_any": ["Google", "캘린더", "일정"], "min_len": 20, "max_seconds": 120},
+      "note": "프로모션 라우팅을 고치면서 개인 캘린더(GWS) 경로가 죽지 않았는지 확인 — 반대 방향 회귀 감시"
     }
   ]
 }

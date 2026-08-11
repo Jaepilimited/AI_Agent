@@ -325,6 +325,7 @@ class OrchestratorAgent:
         {"key": "Shopify", "aliases": ["shopify", "쇼피파이"], "route": "bigquery", "group": "마케팅 데이터", "icon": "cart", "label": "Shopify", "desc": "글로벌 자사몰 판매"},
         {"key": "플랫폼", "aliases": ["platform", "플랫폼데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "store", "label": "플랫폼", "desc": "플랫폼 순위/가격"},
         {"key": "아마존검색", "aliases": ["amazon", "아마존"], "route": "bigquery", "group": "마케팅 데이터", "icon": "search", "label": "아마존검색", "desc": "아마존 검색 분석"},
+        {"key": "프로모션", "aliases": ["promotion", "행사", "기획전", "프로모"], "route": "bigquery", "group": "마케팅 데이터", "icon": "calendar", "label": "프로모션", "desc": "프로모션 캘린더 (실행 일정)"},
         {"key": "메타광고", "aliases": ["meta", "메타"], "route": "bigquery", "group": "마케팅 데이터", "icon": "phone", "label": "메타광고", "desc": "메타 광고 라이브러리"},
         {"key": "아마존 리뷰", "aliases": ["amazon review"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "아마존 리뷰", "desc": "아마존 리뷰"},
         {"key": "큐텐 리뷰", "aliases": ["qoo10 review", "쿠텐 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "큐텐 리뷰", "desc": "큐텐 리뷰"},
@@ -989,11 +990,11 @@ class OrchestratorAgent:
                     extra_blocks.append(f"## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}")
             if wiki_context:
                 extra_blocks.append(
-                    "## 참고: 지식 위키에 이미 저장된 관련 팩트\n"
+                    "## 참고: 신뢰 상태가 표시된 지식 위키 컨텍스트\n"
                     f"{wiki_context}\n"
-                    "위 팩트는 이전 대화에서 추출된 사내 기관 기억입니다. "
-                    "해당 팩트로 사용자 질문에 답변할 수 있다면 활용하고, "
-                    "관련 없거나 오래된 것 같으면 무시하세요."
+                    "위 내용은 원문 자체가 아니라 이전 답변에서 추출된 조직 기억입니다. "
+                    "각 항목의 신뢰 규칙을 반드시 지키고, 원 데이터 조회 결과와 다르면 "
+                    "원 데이터와 충돌 사실을 우선 설명하세요."
                 )
             if _stream_skill_ctx:
                 extra_blocks.append(_stream_skill_ctx)
@@ -1229,8 +1230,10 @@ class OrchestratorAgent:
 
 경로 옵션:
 - bigquery: 순수 데이터 조회 (매출, 수량, 주문, 재고 등 숫자 조회/집계만 필요)
+  + **프로모션/행사 일정도 여기다** — 어느 팀이 어느 몰에서 언제 프로모션을 하는지는
+    사내 프로모션 캘린더(BigQuery)에 있다. 문서도 개인 캘린더도 아니다
 - notion: 사내 문서, 정책, 매뉴얼, 프로세스 관련
-- gws: Google Drive 파일, Gmail 메일, Calendar 일정 관련
+- gws: Google Drive 파일, Gmail 메일, **개인** Calendar 일정 (내 일정·회의·미팅)
 - cs: 제품 CS 상담 (성분, 사용법, 비건인증, 피부 관련 질문, 제품 문의)
 - multi: 내부 데이터 + 외부 정보가 모두 필요한 복합 분석 질문
   예시: "날씨가 매출에 영향?", "매출 하락 원인", "시장 트렌드와 매출 비교", "인도네시아 경제 상황이 판매에 미치는 영향"
@@ -1242,6 +1245,9 @@ class OrchestratorAgent:
 - ⚠️ 제품명 + 국가/지역(남미, 북미, 동남아, 유럽, 특정 국가 등) + 반응/매출/판매/인기/실적 → bigquery (판매 데이터 조회)
   예: "포어마이징 벨벳 선크림 남미 반응" → bigquery (CS 아님!)
   예: "히알루론산 세럼 동남아 얼마나 팔려?" → bigquery
+- ⚠️ "프로모션/행사/기획전 + 일정·스케줄·언제·예정" → **bigquery** (프로모션 캘린더)
+  예: "인도네시아 프로모션 일정" · "8월에 무슨 행사 있어?" · "쇼피 프로모션 언제야?"
+  반면 "내 일정", "회의 잡힌 거", "미팅 언제야" 는 gws (개인 캘린더)
 - SKIN1004 데이터 + 외부맥락(날씨/시장/경쟁/원인/영향/트렌드) → multi
 - 외부 정보만 → direct
 - ⚠️ SKIN1004/매출/제품과 무관한 질문(부동산, 주식, 일반상식, 개인질문 등)은 이전 대화가 BQ였어도 반드시 direct!
@@ -1555,8 +1561,18 @@ class OrchestratorAgent:
         # 단, "화상회의 프로그램 뭐 써" 같은 툴 식별 질문은 개인 데이터 검색이 아니므로 제외
         _TOOL_IDENTITY_PATTERNS = ["뭐 써", "뭐써", "뭐 사용해", "뭐사용해", "어떤 프로그램",
                                      "어떤 툴", "무슨 프로그램", "무슨 툴"]
+        # 프로모션 캘린더 도입(2026-08-11)으로 '일정·스케줄·캘린더'가 두 도메인에 걸친다.
+        # "인도네시아 프로모션 일정" 은 BigQuery 프로모션 테이블이지 개인 구글 캘린더가 아니다.
+        # 키워드를 늘리는 대신 **확신 플래그의 조건을 좁힌다** (오분류 대응 원칙).
+        # 단 "내 캘린더"·메일·드라이브처럼 개인 워크스페이스가 명시되면 그대로 GWS.
+        _PROMO_TERMS = ["프로모션", "프로모", "행사", "기획전", "메가와리", "메가세일",
+                        "런칭", "출시 일정", "판촉"]
+        _PERSONAL_SCOPE = ["내 ", "제 ", "메일", "gmail", "드라이브", "drive",
+                           "회의록", "회의", "미팅", "스프레드시트", "구글시트"]
         if any(kw in q for kw in self._GWS_KEYWORDS):
-            if not any(p in q for p in _TOOL_IDENTITY_PATTERNS):
+            _promo_ctx = (any(t in q for t in _PROMO_TERMS)
+                          and not any(p in q for p in _PERSONAL_SCOPE))
+            if not any(p in q for p in _TOOL_IDENTITY_PATTERNS) and not _promo_ctx:
                 return ("gws", True)
 
         # Web search guard: if search keywords match but NO SKIN1004 business context → direct

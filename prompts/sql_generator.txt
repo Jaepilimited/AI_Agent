@@ -1337,6 +1337,79 @@ ORDER BY month, Mall_Classification
 
 ---
 
+## 테이블 15: promotion (프로모션 캘린더) ⭐ 실행 일정
+
+테이블: `skin1004-319714.promotion_calendar.promotion`
+
+**어느 팀이 어느 몰에서 언제 프로모션을 하는지**를 담은 실행 스케줄이다.
+매출·광고비 같은 실적이 아니라 **계획/일정**이며 미래 날짜가 정상적으로 들어 있다.
+
+### 컬럼
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| promotion_id | STRING | 프로모션 ID (PK) |
+| title | STRING | 프로모션 제목 ⭐ |
+| team_id | STRING | 담당 팀 ⚠️ **소문자·하이픈** (아래 표) |
+| status | STRING | 상태 — `'scheduled'` 단일값 (필터 의미 없음) |
+| channel | STRING | 판매 채널/몰 ⚠️ 표기 혼재 (아래) |
+| country_code | STRING | ⚠️ **2글자 ISO 코드** (`'KR'`, `'US'`) — 한국어 국가명 아님! |
+| priority | STRING | 중요도 `'A'` > `'B'` > `'C'` |
+| owner_name | STRING | 담당자 (한글 이름, NULL 있음) |
+| start_date | DATE | 시작일 ⭐ |
+| end_date | DATE | 종료일 ⭐ |
+| notes | STRING | 메모 (내용 상세) |
+| is_deleted | BOOL | 삭제 여부 ⭐ |
+| created_at / updated_at / synced_at | TIMESTAMP | 생성/수정/동기화 시각 |
+
+### ⛔ 필수 규칙
+- **`WHERE NOT is_deleted` 를 항상 건다.** 삭제분(약 19%)이 섞이면 일정이 부풀려진다
+- 기간 겹침으로 조회한다 — "8월 프로모션" = `start_date <= '2026-08-31' AND end_date >= '2026-08-01'`
+  (시작일만 보면 7월에 시작해 8월까지 가는 행사를 놓친다)
+- "진행 중" = `CURRENT_DATE() BETWEEN start_date AND end_date`,
+  "예정" = `start_date > CURRENT_DATE()`
+- **미래 날짜가 정상이다.** 다른 테이블처럼 "미래라서 0건" 이라고 안내하지 말 것
+
+### team_id 값 (⚠️ 다른 테이블과 표기가 다르다)
+`east1`, `east2`, `kbt`, `jbt`, `cbt`, `west-mkt`, `west-ecomm`, `bcm`
+- **소문자 + 하이픈**이다. `Team_NEW` 의 `WEST_MKT`(대문자·언더바)로 조회하면 0건
+- 공식 팀명 → 값: 동남아시아1팀 `east1` · 동남아시아2팀 `east2` · 한국사업팀 `kbt` ·
+  일본사업팀 `jbt` · 중국사업팀 `cbt` · 서구권마케팅팀 `west-mkt` ·
+  서구권이커머스팀 `west-ecomm` · 브랜드커뮤니케이션팀 `bcm`
+- 영업1/2팀·유통1/2팀은 이 테이블에 프로모션이 없다
+
+### country_code 값
+`ID`(인도네시아) `MY`(말레이시아) `PH`(필리핀) `KR`(한국) `US`(미국)
+`SG`(싱가포르) `JP`(일본) `AU`(호주) `CN`(중국) `GLOBAL`(전세계 공통)
+- ⛔ `country_code = '인도네시아'` 는 0건 — **여기서만 ISO 코드**를 쓴다
+
+### channel 값 (표기 혼재 — 같은 몰이 여러 이름)
+쇼피 · 틱톡샵/Tiktokshop · 스스(스마트스토어) · 아마존/Amazon · 라쿠텐 ·
+Yesstyle · 네이버 · 쇼피파이 · 큐텐 · 올영/올리브영/Oliveyoung · Tmall ·
+무신사 · 지그재그 · StyleKorean · Walmart · 시코르 · 브랜드관
+- 채널로 거를 때는 **`LIKE` 로 변형을 함께** 잡는다:
+  `(channel LIKE '%아마존%' OR LOWER(channel) LIKE '%amazon%')`
+- 올리브영은 `'올영'`·`'올리브영'`·`'Oliveyoung'` 셋 다 존재한다
+
+### 예시
+```sql
+-- 이번 달 진행/예정 프로모션
+SELECT title, team_id, channel, country_code, priority, start_date, end_date
+FROM `skin1004-319714.promotion_calendar.promotion`
+WHERE NOT is_deleted
+  AND start_date <= LAST_DAY(CURRENT_DATE()) AND end_date >= DATE_TRUNC(CURRENT_DATE(), MONTH)
+ORDER BY start_date
+LIMIT 1000
+```
+```sql
+-- 팀별 프로모션 건수 (올해)
+SELECT team_id, COUNT(*) AS promo_count
+FROM `skin1004-319714.promotion_calendar.promotion`
+WHERE NOT is_deleted AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM CURRENT_DATE())
+GROUP BY team_id ORDER BY promo_count DESC
+```
+
+---
+
 ## 테이블 14: FI_LLM_Flat (재무 손익 — 이익/원가/판관비) ⭐ LONG 포맷
 
 테이블: `skin1004-319714.Sales_Integration.FI_LLM_Flat`

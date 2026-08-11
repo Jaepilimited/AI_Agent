@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=155">
+  <link rel="stylesheet" href="/static/style.css?v=160">
   <link rel="stylesheet" href="/static/cella-pet.css?v=8">
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
@@ -235,9 +235,9 @@
 
   <!-- Admin Drawer -->
   <div id="skin-admin-overlay" class="closed"></div>
-  <div id="skin-admin-drawer" class="closed" role="dialog" aria-label="User Management">
+  <div id="skin-admin-drawer" class="closed" role="dialog" aria-label="Admin">
     <div class="drawer-header">
-      <span class="drawer-title">User Management</span>
+      <span class="drawer-title">Admin</span>
       <button class="drawer-close" id="admin-drawer-close">&times;</button>
     </div>
     <!-- Stats bar -->
@@ -246,9 +246,77 @@
     <div class="admin-tabs">
       <button class="admin-tab active" data-tab="groups">그룹 관리</button>
       <button class="admin-tab" data-tab="users">AD 사용자</button>
+      <button class="admin-tab" data-tab="visitors">방문자</button>
       <button class="admin-tab" data-tab="growth">성장 지표</button>
       <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
       <button class="admin-tab" data-tab="golden">골든셋</button>
+    </div>
+    <!-- Tab: Visitors -->
+    <div class="admin-tab-content" id="tab-visitors">
+      <div class="admin-drawer-body admin-visitor-body">
+        <section class="visitor-analytics" id="visitor-analytics" aria-label="방문자 분석">
+          <div class="visitor-analytics-head">
+            <div>
+              <span class="visitor-kicker">USAGE</span>
+              <h2>방문자 흐름</h2>
+              <p>로그인 사용자 기준 · 하루 1명으로 집계</p>
+            </div>
+            <div class="visitor-range" role="group" aria-label="방문자 분석 기간">
+              <button class="visitor-range-btn active" data-days="30">30일</button>
+              <button class="visitor-range-btn" data-days="90" disabled title="90일치 데이터가 쌓인 후 사용할 수 있습니다">90일</button>
+              <button class="visitor-range-btn" data-days="365" disabled title="1년치 데이터가 쌓인 후 사용할 수 있습니다">1년</button>
+            </div>
+          </div>
+
+          <div class="visitor-collection-note" id="visitor-collection-note">
+            <span class="visitor-live-dot" aria-hidden="true"></span>
+            <strong>8월 11일부터 수집 중</strong>
+            <span>과거 방문 데이터는 포함되지 않습니다</span>
+          </div>
+
+          <div class="visitor-kpis" aria-live="polite">
+            <article class="visitor-kpi visitor-kpi-primary">
+              <span class="visitor-kpi-label" id="visitor-range-label">수집 시작 이후 순방문자</span>
+              <div><strong id="visitor-unique">—</strong><span>명</span></div>
+              <small id="visitor-trend">비교 데이터 수집 중</small>
+            </article>
+            <article class="visitor-kpi">
+              <span class="visitor-kpi-label">오늘 방문자</span>
+              <div><strong id="visitor-today">—</strong><span>명</span></div>
+              <small id="visitor-registered">가입 사용자 —명</small>
+            </article>
+            <article class="visitor-kpi">
+              <span class="visitor-kpi-label">페이지 방문</span>
+              <div><strong id="visitor-page-visits">—</strong><span>회</span></div>
+              <small id="visitor-period-caption">8월 11일 이후 합계</small>
+            </article>
+          </div>
+
+          <div class="visitor-panel visitor-chart-panel">
+            <div class="visitor-panel-head">
+              <div><strong>순방문자 추이</strong><span id="visitor-chart-unit">월별</span></div>
+              <span id="visitor-tracking-since">추적 시작일 확인 중</span>
+            </div>
+            <div class="visitor-chart-wrap">
+              <canvas id="visitor-chart" aria-label="기간별 순방문자 추이"></canvas>
+              <div class="visitor-chart-empty" id="visitor-chart-empty" hidden>방문 데이터가 쌓이면 추이가 표시됩니다.</div>
+            </div>
+          </div>
+
+          <div class="visitor-panel visitor-table-panel">
+            <div class="visitor-panel-head">
+              <div><strong>최근 방문자</strong><span id="visitor-list-count">0명</span></div>
+              <span class="visitor-list-note">최근 50명 표시 · 전체 방문은 통계에 포함</span>
+            </div>
+            <div class="visitor-table-scroll">
+              <table class="visitor-table">
+                <thead><tr><th>사용자</th><th>부서</th><th>마지막 방문</th><th>방문일</th><th>열람</th></tr></thead>
+                <tbody id="visitor-table-body"><tr><td colspan="5" class="visitor-table-empty">방문 기록을 불러오는 중입니다.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
     <!-- Tab: Golden Set -->
     <div class="admin-tab-content" id="tab-golden">
@@ -302,7 +370,7 @@
   <!-- Theme Toggle -->
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
-  <script src="/frontend/chat.js?v=235"></script>
+  <script src="/frontend/chat.js?v=241"></script>
   <script src="/frontend/cella-pet.js?v=8"></script>
 </body>
 </html>

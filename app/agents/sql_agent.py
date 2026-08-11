@@ -241,10 +241,79 @@ def _relabel_team_values(results):
         return results
     for row in results:
         for col in team_cols:
-            kr = TEAM_CODE2KR.get(row.get(col))
+            v = row.get(col)
+            # 프로모션 테이블은 team_id 가 'east1'·'west-mkt' 형식이라 코드 표와
+            # 키가 다르다 — 두 체계 모두 한글 팀명으로 보이게 한다
+            kr = TEAM_CODE2KR.get(v) or _PROMO_ID2KR.get(v)
             if kr:
-                row[col] = f"{kr}({row[col]})"
+                row[col] = f"{kr}({v})"
     return results
+
+
+# ── 프로모션 캘린더(promotion_calendar.promotion) 전용 값 체계 ──────────────
+# 이 테이블만 팀·국가 표기가 다르다 (2026-08-11 실측):
+#   team_id      = 소문자·하이픈  east1 / west-mkt / west-ecomm / kbt / jbt / cbt / bcm
+#   country_code = 2글자 ISO      ID / MY / PH / KR / US / SG / JP / AU / CN / GLOBAL
+# 다른 테이블은 Team_NEW 대문자 코드와 **한국어 국가명**을 쓴다. 섞이면 0건이 난다
+# — 광고 테이블에서 똑같이 당했으므로 처음부터 결정적으로 교정한다.
+_PROMO_TEAM_ID = {code: code.lower().replace("_", "-") for code in TEAM_CODE2KR}
+_PROMO_ID2KR = {pid: TEAM_CODE2KR[code] for code, pid in _PROMO_TEAM_ID.items()}
+
+_COUNTRY_KR2ISO = {
+    "인도네시아": "ID", "말레이시아": "MY", "필리핀": "PH", "한국": "KR",
+    "미국": "US", "싱가포르": "SG", "일본": "JP", "호주": "AU", "중국": "CN",
+    "글로벌": "GLOBAL", "전세계": "GLOBAL",
+    "대만": "TW", "베트남": "VN", "태국": "TH", "영국": "GB", "독일": "DE",
+    "캐나다": "CA", "프랑스": "FR", "스페인": "ES", "인도": "IN",
+}
+
+_re_promo_team = re.compile(
+    r"(\bteam_id\b\s*(?:=|!=|<>)\s*)'([^']*)'", re.IGNORECASE)
+_re_promo_team_in = re.compile(
+    r"(\bteam_id\b\s+(?:NOT\s+)?IN\s*\()((?:'[^']*'|[^)])*)(\))", re.IGNORECASE)
+_re_country_code = re.compile(
+    r"(\bcountry_code\b\s*(?:=|!=|<>)\s*)'([^']*)'", re.IGNORECASE)
+_re_country_code_in = re.compile(
+    r"(\bcountry_code\b\s+(?:NOT\s+)?IN\s*\()((?:'[^']*'|[^)])*)(\))", re.IGNORECASE)
+
+
+# Team_NEW 코드는 대소문자가 섞여 있다('WEST_Ecomm') — 대문자 키로 찾을 수 있게 색인
+_TEAM_CODE_CI = {code.upper(): code for code in TEAM_CODE2KR}
+
+
+def _promo_team_id(literal: str) -> Optional[str]:
+    """한글 팀명·Team_NEW 코드·표시형 → promotion.team_id 값."""
+    raw = (literal or "").strip()
+    if raw.lower() in set(_PROMO_TEAM_ID.values()):
+        return None  # 이미 올바른 형식
+    code = _team_code(raw) or _TEAM_CODE_CI.get(raw.upper())
+    return _PROMO_TEAM_ID.get(code) if code else None
+
+
+def _iso_country(literal: str) -> Optional[str]:
+    """한국어 국가명 → 2글자 ISO 코드 (이미 코드면 None)."""
+    raw = re.sub(r"\s+", "", literal or "")
+    return _COUNTRY_KR2ISO.get(raw)
+
+
+def _localize_promotion_literals(sql: str) -> str:
+    """promotion 테이블 전용 리터럴 교정 (team_id·country_code)."""
+    def _sub_one(m, fn):
+        v = fn(m.group(2))
+        return m.group(1) + "'" + v + "'" if v else m.group(0)
+
+    def _sub_in(m, fn):
+        body = re.sub(
+            r"'([^']*)'",
+            lambda mm: "'" + (fn(mm.group(1)) or mm.group(1)) + "'",
+            m.group(2))
+        return m.group(1) + body + m.group(3)
+
+    sql = _re_promo_team.sub(lambda m: _sub_one(m, _promo_team_id), sql)
+    sql = _re_promo_team_in.sub(lambda m: _sub_in(m, _promo_team_id), sql)
+    sql = _re_country_code.sub(lambda m: _sub_one(m, _iso_country), sql)
+    sql = _re_country_code_in.sub(lambda m: _sub_in(m, _iso_country), sql)
+    return sql
 
 
 def _division_codes(literal: str) -> Optional[list]:
@@ -347,6 +416,7 @@ def _enforce_partition_filter(
         new_sql = sanitize_sql(new_sql)
         new_sql = _localize_country_literals(new_sql)
         new_sql = _localize_team_literals(new_sql)
+        new_sql = _localize_promotion_literals(new_sql)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
                 allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
@@ -485,6 +555,10 @@ MARKETING_TABLES = [
      ["스마트스토어 리뷰", "smartstore review", "스마트스토어리뷰", "네이버 리뷰"]),
     ("skin1004-319714.ad_data.meta data_test", "메타 광고 라이브러리",
      ["메타 광고", "meta ad", "페이스북 광고 라이브러리", "인스타 광고"]),
+    ("skin1004-319714.promotion_calendar.promotion", "프로모션 캘린더",
+     ["프로모션", "promotion", "행사", "이벤트", "프로모", "기획전",
+      "캘린더", "일정", "스케줄", "schedule", "언제 하", "예정",
+      "블랙프라이데이", "black friday", "메가와리 일정", "런칭", "launch"]),
 ]
 
 # Backward-compatible flat schema cache (filled on first full load)
@@ -589,6 +663,7 @@ def _source_table_map(settings) -> dict:
         "플랫폼": ["skin1004-319714.Platform_Data.raw_data"],
         "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
         "아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
+        "프로모션": ["skin1004-319714.promotion_calendar.promotion"],
         "아마존 리뷰": ["skin1004-319714.Review_Data.New_Amazon_Review"],
         "큐텐 리뷰": ["skin1004-319714.Review_Data.New_Qoo10_Review"],
         "쇼피 리뷰": ["skin1004-319714.Review_Data.New_Shopee_Review"],
@@ -951,6 +1026,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         if sql:
             sql = _localize_country_literals(sql)
             sql = _localize_team_literals(sql)
+            sql = _localize_promotion_literals(sql)
 
         logger.info("sql_generated", sql=sql[:200])
 
@@ -1042,6 +1118,7 @@ def _retry_with_stronger_model(
         retry_sql = sanitize_sql(retry_sql)
         retry_sql = _localize_country_literals(retry_sql)
         retry_sql = _localize_team_literals(retry_sql)
+        retry_sql = _localize_promotion_literals(retry_sql)
         if not retry_sql:
             return None
 
@@ -1160,6 +1237,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = sanitize_sql(retry_sql)
                 retry_sql = _localize_country_literals(retry_sql)
                 retry_sql = _localize_team_literals(retry_sql)
+                retry_sql = _localize_promotion_literals(retry_sql)
                 if retry_sql:
                     is_valid, _verr = validate_sql(
                         retry_sql,

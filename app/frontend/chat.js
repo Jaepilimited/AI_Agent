@@ -301,6 +301,32 @@
   // ===== Helpers =====
   function _escHtml(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
+  var _ANSWER_LOADING_LABELS = {
+    direct: "생각하는 중",
+    bigquery: "데이터 확인 중",
+    notion: "관련 문서 찾는 중",
+    cs: "제품 정보 확인 중",
+    gws: "Google 자료 확인 중",
+    multi: "여러 자료 종합 중"
+  };
+
+  function _renderAnswerLoading(target, route) {
+    if (!target) return;
+    var indicator = target.classList && target.classList.contains("typing-indicator")
+      ? target
+      : target.querySelector(".typing-indicator");
+    if (!indicator) return;
+
+    var label = _ANSWER_LOADING_LABELS[route] || _ANSWER_LOADING_LABELS.direct;
+    indicator.className = "typing-indicator answer-loading";
+    indicator.setAttribute("role", "status");
+    indicator.setAttribute("aria-live", "polite");
+    indicator.setAttribute("aria-label", label);
+    indicator.innerHTML =
+      '<span class="answer-loading-mark" aria-hidden="true"></span>' +
+      '<span class="answer-loading-label">' + label + '</span>';
+  }
+
   // ===== Confirm Delete Dialog =====
   function _confirmDelete(id, title) {
     var overlay = document.createElement("div");
@@ -371,7 +397,8 @@
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
       keys: ["광고", "마케팅", "Shopify", "플랫폼",
              "인플루언서", "아마존검색", "메타광고",
-             "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
+             "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰",
+             "프로모션"] },
     { id: "bc", label: "BC", emoji: "\uD83D\uDCF8",
       keys: ["초상권"] },
     { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
@@ -413,6 +440,7 @@
     "메타광고": "bigquery",
     "아마존 리뷰": "bigquery", "큐텐 리뷰": "bigquery",
     "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
+    "프로모션": "bigquery",
     "BP": "cs",
     "B2B1": "notion", "GM WEST": "notion", "CS": "notion",
     "DB": "notion", "B2B2": "notion", "PEOPLE": "notion",
@@ -1045,9 +1073,19 @@
     document.getElementById("btn-system-status").addEventListener("click", openStatusDrawer);
     document.getElementById("status-drawer-close").addEventListener("click", closeStatusDrawer);
     document.getElementById("skin-status-overlay").addEventListener("click", closeStatusDrawer);
-
     // Admin drawer
     document.getElementById("btn-admin").addEventListener("click", openAdminDrawer);
+    document.querySelectorAll(".visitor-range-btn").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var days = parseInt(btn.getAttribute("data-days"), 10);
+        if (!days || days === _visitorAnalyticsDays) return;
+        _visitorAnalyticsDays = days;
+        document.querySelectorAll(".visitor-range-btn").forEach(function(item) {
+          item.classList.toggle("active", item === btn);
+        });
+        loadVisitorAnalytics(days);
+      });
+    });
     var _wikiBtn = document.getElementById("btn-wiki");
     if (_wikiBtn) _wikiBtn.addEventListener("click", openWikiDrawer);
     var _wikiClose = document.getElementById("wiki-drawer-close");
@@ -1773,21 +1811,9 @@
     aiMsgEl.classList.add("streaming");
     scrollToBottom();
 
-    // Wave 1: Client-side pre-routing — show skeleton UI immediately
+    // Wave 1: Client-side pre-routing — show a truthful progress state immediately
     var _preRoute = _clientPreRoute(text);
-    if (_preRoute !== "direct") {
-      var _preLoadingMsgs = {
-        bigquery: "📊 데이터 조회 중...",
-        notion: "📋 Notion 문서 검색 중...",
-        cs: "🧴 CS Q&A 검색 중...",
-        gws: "📧 Google Workspace 확인 중...",
-        multi: "📈 종합 분석 중...",
-      };
-      var _preTyping = contentEl.querySelector(".typing-indicator");
-      if (_preTyping && _preLoadingMsgs[_preRoute]) {
-        _preTyping.innerHTML = '<span class="loading-text">' + _preLoadingMsgs[_preRoute] + '</span>';
-      }
-    }
+    _renderAnswerLoading(contentEl, _preRoute);
 
     // Transform send button → stop button
     btnSend.disabled = false;
@@ -1843,18 +1869,9 @@
                 var srcParts = srcMatch[1].split(":");
                 detectedSource = srcParts[0];
                 if (srcParts[1]) detectedSourceLabel = srcParts[1];
-                // Route-specific loading message
-                var loadingMsgs = {
-                  bigquery: "📊 데이터 조회 중...",
-                  notion: "📋 Notion 문서 검색 중...",
-                  cs: "🧴 CS Q&A 검색 중...",
-                  gws: "📧 Google Workspace 확인 중...",
-                  multi: "📈 종합 분석 중...",
-                };
+                // Replace the initial state with the server-confirmed route.
                 var typingEl = aiMsgEl.querySelector(".typing-indicator");
-                if (typingEl && loadingMsgs[detectedSource]) {
-                  typingEl.innerHTML = '<span class="loading-text">' + loadingMsgs[detectedSource] + '</span>';
-                }
+                _renderAnswerLoading(typingEl, detectedSource);
                 var stripped = delta.content.replace(/<!-- source:[\w:+\s\u0080-\uFFFF]+? -->/, "");
                 if (stripped) { _S.queue.push(stripped); pushedContent = true; }
               } else {
@@ -2322,6 +2339,7 @@
 
     if (streaming) {
       bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+      _renderAnswerLoading(bubble, "direct");
     } else {
       bubble.dataset.raw = content;
       renderMarkdown(bubble, content);
@@ -2839,6 +2857,9 @@
         ? "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css"
         : "https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css";
     }
+    if (_visitorAnalyticsData) {
+      requestAnimationFrame(function() { _renderVisitorChart(_visitorAnalyticsData); });
+    }
   }
 
   // ===== Dashboard Drawer =====
@@ -2865,12 +2886,212 @@
   function openStatusDrawer() {
     pollSystemStatus(); // Refresh on open
     document.getElementById("skin-status-overlay").className = "open";
-    document.getElementById("skin-status-drawer").className = "open";
+    var drawer = document.getElementById("skin-status-drawer");
+    drawer.classList.remove("closed");
+    drawer.classList.add("open");
   }
 
   function closeStatusDrawer() {
     document.getElementById("skin-status-overlay").className = "closed";
-    document.getElementById("skin-status-drawer").className = "closed";
+    var drawer = document.getElementById("skin-status-drawer");
+    drawer.classList.remove("open");
+    drawer.classList.add("closed");
+  }
+
+  var _visitorAnalyticsDays = 30;
+  var _visitorAnalyticsChart = null;
+  var _visitorAnalyticsData = null;
+  var _visitorAnalyticsRequest = 0;
+
+  function _visitorRangeText(days) {
+    return days === 365 ? "최근 1년" : "최근 " + days + "일";
+  }
+
+  function _formatVisitorDateTime(value) {
+    if (!value) return "—";
+    var parsed = new Date(String(value).replace(" ", "T"));
+    if (isNaN(parsed.getTime())) return String(value);
+    return parsed.toLocaleString("ko-KR", {
+      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"
+    });
+  }
+
+  function _formatVisitorDate(value) {
+    if (!value) return "";
+    var parts = String(value).split("-");
+    if (parts.length !== 3) return String(value);
+    return Number(parts[1]) + "월 " + Number(parts[2]) + "일";
+  }
+
+  function _visitorChartLabel(period, granularity) {
+    if (granularity === "month") return period.slice(0, 7).replace("-", ".");
+    return period.slice(5).replace("-", ".");
+  }
+
+  function _renderVisitorChart(data) {
+    var canvas = document.getElementById("visitor-chart");
+    if (!canvas || typeof Chart === "undefined") return;
+    if (_visitorAnalyticsChart) {
+      _visitorAnalyticsChart.destroy();
+      _visitorAnalyticsChart = null;
+    }
+
+    var series = data.series || [];
+    var granularity = (data.range && data.range.granularity) || "month";
+    var values = series.map(function(row) { return row.visitors || 0; });
+    var empty = values.every(function(value) { return value === 0; });
+    var emptyEl = document.getElementById("visitor-chart-empty");
+    if (emptyEl) emptyEl.hidden = !empty;
+
+    var styles = getComputedStyle(document.documentElement);
+    var textColor = styles.getPropertyValue("--text-secondary").trim() || "#777";
+    var gridColor = styles.getPropertyValue("--border").trim() || "rgba(0,0,0,.08)";
+    var ctx = canvas.getContext("2d");
+    var fill = ctx.createLinearGradient(0, 0, 0, 220);
+    fill.addColorStop(0, "rgba(232, 146, 0, 0.24)");
+    fill.addColorStop(1, "rgba(232, 146, 0, 0.01)");
+
+    _visitorAnalyticsChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: series.map(function(row) { return _visitorChartLabel(row.period, granularity); }),
+        datasets: [{
+          label: "순방문자",
+          data: values,
+          borderColor: "#e89200",
+          backgroundColor: fill,
+          borderWidth: 2,
+          pointRadius: series.length > 40 ? 0 : 2.5,
+          pointHoverRadius: 4,
+          pointBackgroundColor: "#e89200",
+          fill: true,
+          tension: 0.32
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: "index" },
+        animation: { duration: 280 },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            displayColors: false,
+            callbacks: {
+              label: function(context) { return "순방문자 " + context.parsed.y + "명"; }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: textColor, maxTicksLimit: granularity === "day" ? 8 : 12, maxRotation: 0, font: { size: 10 } },
+            border: { display: false }
+          },
+          y: {
+            beginAtZero: true,
+            suggestedMax: empty ? 4 : undefined,
+            grid: { color: gridColor },
+            ticks: { color: textColor, precision: 0, font: { size: 10 } },
+            border: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  function _renderVisitorAnalytics(data) {
+    _visitorAnalyticsData = data;
+    var range = data.range || { days: _visitorAnalyticsDays, granularity: "month" };
+    var summary = data.summary || {};
+    var availability = data.availability || {};
+    var rangeText = _visitorRangeText(range.days);
+    var trackedDays = Number(availability.tracked_days || 0);
+    var trackingDate = _formatVisitorDate(data.tracking_started_at);
+    var partialLabel = range.is_partial ? "수집 시작 이후" : rangeText;
+    document.getElementById("visitor-range-label").textContent = partialLabel + " 순방문자";
+    document.getElementById("visitor-unique").textContent = Number(summary.unique_visitors || 0).toLocaleString("ko-KR");
+    document.getElementById("visitor-today").textContent = Number(summary.today_visitors || 0).toLocaleString("ko-KR");
+    document.getElementById("visitor-page-visits").textContent = Number(summary.page_visits || 0).toLocaleString("ko-KR");
+    document.getElementById("visitor-registered").textContent = "가입 사용자 " + Number(summary.registered_users || 0).toLocaleString("ko-KR") + "명";
+    document.getElementById("visitor-period-caption").textContent = (range.is_partial && trackingDate ? trackingDate + " 이후" : rangeText) + " 합계";
+    document.getElementById("visitor-chart-unit").textContent = range.granularity === "day" ? "일별" : (range.granularity === "week" ? "주별" : "월별");
+    document.getElementById("visitor-tracking-since").textContent = trackingDate ? trackingDate + " → 오늘" : "오늘부터 방문을 기록합니다";
+
+    var collectionNote = document.getElementById("visitor-collection-note");
+    if (collectionNote && trackingDate) {
+      collectionNote.innerHTML = '<span class="visitor-live-dot" aria-hidden="true"></span><strong>' + _escHtml(trackingDate) + '부터 수집 중</strong><span>현재 ' + trackedDays.toLocaleString("ko-KR") + '일치 · 과거 데이터 없음</span>';
+    }
+
+    var availableRanges = availability.available_ranges || [30];
+    document.querySelectorAll(".visitor-range-btn").forEach(function(button) {
+      var buttonDays = Number(button.getAttribute("data-days"));
+      var enabled = availableRanges.indexOf(buttonDays) !== -1;
+      button.disabled = !enabled;
+      if (enabled) {
+        button.removeAttribute("title");
+      } else {
+        button.title = buttonDays === 365 ? "1년치 데이터가 쌓인 후 사용할 수 있습니다" : buttonDays + "일치 데이터가 쌓인 후 사용할 수 있습니다";
+      }
+    });
+
+    var trendEl = document.getElementById("visitor-trend");
+    var change = summary.change_pct;
+    trendEl.className = "";
+    if (!availability.comparison_ready || change === null || change === undefined) {
+      trendEl.textContent = "이전 기간 비교 데이터 수집 중";
+      trendEl.classList.add("neutral");
+    } else if (change > 0) {
+      trendEl.textContent = "↑ " + change.toFixed(1) + "% 증가 · 이전 " + Number(summary.previous_unique_visitors || 0).toLocaleString("ko-KR") + "명";
+      trendEl.classList.add("positive");
+    } else if (change < 0) {
+      trendEl.textContent = "↓ " + Math.abs(change).toFixed(1) + "% 감소 · 이전 " + Number(summary.previous_unique_visitors || 0).toLocaleString("ko-KR") + "명";
+      trendEl.classList.add("negative");
+    } else {
+      trendEl.textContent = "변동 없음 · 이전 " + Number(summary.previous_unique_visitors || 0).toLocaleString("ko-KR") + "명";
+      trendEl.classList.add("neutral");
+    }
+
+    var visitors = data.visitors || [];
+    document.getElementById("visitor-list-count").textContent = visitors.length + "명";
+    var tbody = document.getElementById("visitor-table-body");
+    if (visitors.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="visitor-table-empty">선택한 기간의 방문 기록이 없습니다.</td></tr>';
+    } else {
+      tbody.innerHTML = visitors.map(function(visitor) {
+        return '<tr>' +
+          '<td><div class="visitor-person"><strong>' + _escHtml(visitor.name || "이름 없음") + '</strong><span>' + _escHtml(visitor.email || "") + '</span></div></td>' +
+          '<td>' + _escHtml(visitor.department || "—") + '</td>' +
+          '<td>' + _escHtml(_formatVisitorDateTime(visitor.last_seen_at)) + '</td>' +
+          '<td class="visitor-number">' + Number(visitor.active_days || 0).toLocaleString("ko-KR") + '일</td>' +
+          '<td class="visitor-number">' + Number(visitor.visits || 0).toLocaleString("ko-KR") + '회</td>' +
+          '</tr>';
+      }).join("");
+    }
+    _renderVisitorChart(data);
+  }
+
+  function loadVisitorAnalytics(days) {
+    var section = document.getElementById("visitor-analytics");
+    if (!section || section.hidden || !currentUser || currentUser.role !== "admin") return;
+    var requestId = ++_visitorAnalyticsRequest;
+    section.setAttribute("aria-busy", "true");
+    fetch("/api/admin/visitor-analytics?days=" + encodeURIComponent(days))
+      .then(function(response) {
+        if (!response.ok) throw new Error("visitor analytics request failed");
+        return response.json();
+      })
+      .then(function(data) {
+        if (requestId !== _visitorAnalyticsRequest) return;
+        _renderVisitorAnalytics(data);
+      })
+      .catch(function() {
+        if (requestId !== _visitorAnalyticsRequest) return;
+        document.getElementById("visitor-table-body").innerHTML = '<tr><td colspan="5" class="visitor-table-empty error">방문자 데이터를 불러오지 못했습니다.</td></tr>';
+      })
+      .finally(function() {
+        if (requestId === _visitorAnalyticsRequest) section.removeAttribute("aria-busy");
+      });
   }
 
   // ===== System Status (SVG icons) — clean names, no BQ prefix =====
@@ -2883,6 +3104,7 @@
   var _svgChat = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
   var _svgGlobe = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
   var _svgMonitor = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>';
+  var _svgCalendar = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';
   var _svgTarget = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>';
   var _svgBag = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
   var _svgUpload = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
@@ -2905,6 +3127,7 @@
     "큐텐 리뷰":       { label: "큐텐 리뷰", svg: _svgStar },
     "쇼피 리뷰":       { label: "쇼피 리뷰", svg: _svgStar },
     "스마트스토어 리뷰": { label: "스마트스토어 리뷰", svg: _svgStar },
+    "프로모션":        { label: "프로모션", svg: _svgCalendar },
     // 팀별 자료
     "Craver":         { label: "Craver", svg: _svgGlobe },
     "DB":             { label: "DB", svg: _svgBar },
@@ -2937,6 +3160,7 @@
   var SLASH_PRESETS = [
     { cmd: "매출", label: "매출 데이터", keys: ["매출", "제품"] },
     { cmd: "광고", label: "광고 데이터", keys: ["광고", "메타광고"] },
+    { cmd: "프로모션", label: "프로모션 캘린더", keys: ["프로모션"] },
     { cmd: "리뷰", label: "리뷰 전체", keys: ["아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
@@ -3262,7 +3486,8 @@
         });
 
         // Toolbar
-        var html = '<div class="source-select-toolbar">' +
+        var html = '<div class="status-section-heading"><span>DATA SOURCES</span><strong>데이터 소스 상태</strong></div>' +
+          '<div class="source-select-toolbar">' +
           '<button class="source-btn-all" id="source-select-all">전체 선택</button>' +
           '<button class="source-btn-none" id="source-deselect-all">전체 해제</button>' +
           '<span class="source-count-label" id="source-count-label">' + enabledSources.length + '/' + DATA_SOURCE_KEYS.length + '</span>' +
@@ -3652,7 +3877,13 @@
 
   function openAdminDrawer() {
     document.getElementById("skin-admin-overlay").className = "open";
-    document.getElementById("skin-admin-drawer").className = "open";
+    var drawer = document.getElementById("skin-admin-drawer");
+    drawer.classList.remove("closed");
+    drawer.classList.add("open");
+    var activeTab = document.querySelector(".admin-tab.active");
+    var activeTabName = activeTab ? activeTab.dataset.tab : "groups";
+    drawer.classList.toggle("visitor-mode", activeTabName === "visitors");
+    if (activeTabName === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
     // Hide write-actions for non-admin
     document.getElementById("btn-create-group").style.display = isAdmin() ? "" : "none";
     document.getElementById("btn-sync-ad").style.display = isAdmin() ? "" : "none";
@@ -3670,7 +3901,9 @@
 
   function closeAdminDrawer() {
     document.getElementById("skin-admin-overlay").className = "closed";
-    document.getElementById("skin-admin-drawer").className = "closed";
+    var drawer = document.getElementById("skin-admin-drawer");
+    drawer.classList.remove("open");
+    drawer.classList.add("closed");
   }
 
   // ===== Knowledge Wiki Drawer =====
@@ -4184,7 +4417,9 @@
       document.querySelectorAll(".admin-tab-content").forEach(function(c) { c.classList.remove("active"); });
       tab.classList.add("active");
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+      document.getElementById("skin-admin-drawer").classList.toggle("visitor-mode", tab.dataset.tab === "visitors");
       if (tab.dataset.tab === "users") loadAdminADUsers();
+      if (tab.dataset.tab === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
       if (tab.dataset.tab === "growth") loadGrowthReport();
       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
       if (tab.dataset.tab === "golden") loadGolden();

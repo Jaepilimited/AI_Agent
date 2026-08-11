@@ -152,6 +152,8 @@ class Settings(BaseSettings):
             "skin1004-319714.Review_Data.New_Smartstore_Review",
             # Ad data
             "skin1004-319714.ad_data.meta data_test",
+            # Promotion calendar (실행 일정 — 팀·몰별 프로모션 스케줄)
+            "skin1004-319714.promotion_calendar.promotion",
             # Financial P&L (FI Dashboard — monthly consolidated income statement)
             "skin1004-319714.Sales_Integration.FI_LLM_Flat",
         ]

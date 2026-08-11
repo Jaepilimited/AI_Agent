@@ -296,6 +296,7 @@ def get_safety_status() -> dict:
         "큐텐 리뷰": "큐텐 리뷰",
         "쇼피 리뷰": "쇼피 리뷰",
         "스마트스토어 리뷰": "스마트스토어 리뷰",
+        "프로모션": "프로모션 캘린더 (실행 일정)",
     }
     for label, detail in _mkt_tables.items():
         services[label] = _bq_service(label, detail)
@@ -431,6 +432,7 @@ _MONITORED_TABLES: Dict[str, tuple] = {
     "큐텐 리뷰": ("Review_Data", "New_Qoo10_Review"),
     "쇼피 리뷰": ("Review_Data", "New_Shopee_Review"),
     "스마트스토어 리뷰": ("Review_Data", "New_Smartstore_Review"),
+    "프로모션": ("promotion_calendar", "promotion"),
 }
 
 
