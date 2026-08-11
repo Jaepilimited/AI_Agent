@@ -253,6 +253,23 @@ def _requests_ingredient_exclusion(query: str) -> bool:
     return bool(intent and not intent[1])
 
 
+
+def _scope_sources(enabled_sources, db_entry):
+    """@@ 로 고른 소스를 테이블 화이트리스트의 근거로 쓴다.
+
+    ⚠️ 프론트도 @@ 를 파싱해 enabled_sources 를 보내지만, 서버가 그걸 **믿기만 하면**
+    프론트를 거치지 않는 클라이언트(API·골든 하네스)는 스코프 없이 전 테이블을 조회한다.
+    실제로 `@@메타광고` 질문이 화이트리스트 밖 integrated_ad 를 읽고 있었다 (2026-08-11).
+    FI 권한과 같은 원칙 — 판정 근거는 서버가 직접 가진다.
+    클라이언트가 값을 보냈으면 그대로 존중하고(칩 선택), 없을 때만 파싱 결과로 채운다.
+    """
+    if enabled_sources is not None:
+        return enabled_sources
+    if not db_entry:
+        return None
+    return [e["key"] for e in db_entry]
+
+
 class OrchestratorAgent:
     """Orchestrator-Worker pattern conductor.
 
@@ -568,7 +585,7 @@ class OrchestratorAgent:
                 }
                 handler = handlers.get(route, self._handle_direct)
                 if route in ("bigquery", "multi"):
-                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
+                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)
                 elif route == "notion":
                     result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])
                 elif route == "team":
@@ -588,7 +605,7 @@ class OrchestratorAgent:
             for entry in db_entry:
                 route = entry["route"]
                 if route in ("bigquery", "multi"):
-                    tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)))
+                    tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)))
                 elif route == "notion":
                     tasks.append(("notion", entry, self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])))
                 elif route == "cs":
@@ -811,7 +828,7 @@ class OrchestratorAgent:
                     _loop = asyncio.get_running_loop()
                     def _bq():
                         try:
-                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=enabled_sources, can_view_fi=can_view_fi):
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi):
                                 _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                         except Exception as e:
                             _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
@@ -849,7 +866,7 @@ class OrchestratorAgent:
                 for entry in db_entry:
                     r = entry["route"]
                     if r in ("bigquery", "multi"):
-                        tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)))
+                        tasks.append(("bigquery", entry, self._handle_bigquery(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)))
                     elif r == "notion":
                         tasks.append(("notion", entry, self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])))
                     elif r == "cs":
@@ -1679,8 +1696,18 @@ class OrchestratorAgent:
         "글로벌", "한국", "일본", "미국", "동남아", "유럽", "중동",
     ]
 
-    def _bq_needs_clarification(self, query: str, conversation_context: str) -> bool:
-        """기간·채널 모두 없는 짧은 BQ 쿼리면 True."""
+    def _bq_needs_clarification(
+        self, query: str, conversation_context: str, source_explicit: bool = False
+    ) -> bool:
+        """기간·채널 모두 없는 짧은 BQ 쿼리면 True.
+
+        ⚠️ 사용자가 `@@`나 데이터소스 칩으로 소스를 직접 고른 경우는 되묻지 않는다.
+        이미 범위를 좁히는 행동을 한 사람에게 "아마존? 큐텐? 쇼피?"라고 되묻는 것은
+        무의미하고(그 소스에 없는 판매몰을 묻게 된다), 스트리밍 경로는 애초에
+        되묻지 않아 같은 질문이 경로에 따라 다르게 동작했다 (2026-08-11 발견).
+        """
+        if source_explicit:
+            return False
         if len(query.strip()) > 40:
             return False
         if conversation_context:
@@ -1713,6 +1740,7 @@ class OrchestratorAgent:
         brand_filter: Optional[str] = None,
         can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
+        source_explicit: bool = False,
     ) -> dict:
         """BigQuery Agent with conversation context.
 
@@ -1720,7 +1748,11 @@ class OrchestratorAgent:
         preserving context that this was a SKIN1004 internal data query.
         """
         # 의도 확인: 기간·채널 없는 짧은 쿼리 → 먼저 물어보기
-        if self._bq_needs_clarification(query, conversation_context):
+        # (소스를 직접 고른 질문은 제외 — 스트리밍 경로와 동작을 맞춘다)
+        if self._bq_needs_clarification(
+            query, conversation_context,
+            source_explicit=source_explicit or enabled_sources is not None,
+        ):
             clarify_q = await self._ask_bq_clarification(query, model_type)
             return {"source": "bigquery", "answer": clarify_q}
 
@@ -2306,10 +2338,14 @@ class OrchestratorAgent:
         brand_filter: Optional[str] = None,
         can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
+        source_explicit: bool = False,
     ) -> dict:
         """Multi-source analysis: internal data (BigQuery) + external info (Google Search).
 
         v6.4: Steps 1+2 run in parallel via asyncio.to_thread, synthesis uses Flash.
+
+        source_explicit 은 `@@` 단일 소스 경로에서 넘어온다 (되묻기 억제용).
+        내부 BQ 조회는 _multi_prepare 가 sql_agent 를 직접 부르므로 되묻기 자체가 없다.
         """
         web_context, bq_answer, sub_results, ctx_section, today = await self._multi_prepare(
             query, conversation_context, model_type, brand_filter, can_view_fi, enabled_sources
