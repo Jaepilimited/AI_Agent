@@ -12,6 +12,7 @@ Claude side:  anthropic_opus_model (settings.anthropic_opus_model) — the only
               Claude tier actually used; anthropic_sonnet_model is unused.
 """
 
+import json
 import re
 import threading
 import time
@@ -113,6 +114,61 @@ def _claude_retry(func, *args, **kwargs):
 
 
 # --- Common Interface ---
+
+
+def repair_json(text: str) -> str:
+    """모델이 낸 JSON 의 괄호 짝을 맞춰 돌려준다 (정상이면 그대로).
+
+    ⚠️ `response_mime_type="application/json"` 을 줘도 모델이 닫는 괄호를 빠뜨리거나
+    하나 더 붙인다. finish_reason=STOP · parts=1 · 89토큰으로 **정상 종료한 응답**이
+    그랬다 (2026-08-11 gemini-3.5-flash 실측). 절단이 아니라 모델의 형식 결함이라
+    재시도로도 안 없어진다 — 국가·팀 리터럴과 같은 이유로 결정적으로 교정한다.
+
+    실제로 차트가 조용히 사라지던 원인이었다 (하루 38건).
+    """
+    s = (text or "").strip()
+    if not s:
+        return s
+    try:
+        json.loads(s)
+        return s
+    except Exception:
+        pass
+
+    # 1) 닫는 괄호가 남는 경우 ('}\n}') — 뒤에서부터 하나씩 떼며 파싱되는 지점을 찾는다
+    trimmed = s
+    while trimmed and trimmed[-1] in "}]":
+        trimmed = trimmed[:-1].rstrip()
+        try:
+            json.loads(trimmed)
+            return trimmed
+        except Exception:
+            continue
+
+    # 2) 닫는 괄호가 모자라는 경우 — 문자열 밖의 여는 괄호만 세어 채운다
+    stack, in_str, esc = [], False, False
+    for ch in s:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]" and stack:
+            stack.pop()
+    candidate = s + ('"' if in_str else "")
+    candidate += "".join("}" if c == "{" else "]" for c in reversed(stack))
+    try:
+        json.loads(candidate)
+        return candidate
+    except Exception:
+        return s  # 고칠 수 없으면 원문 그대로 — 호출부가 로그를 남긴다
 
 
 class LLMClient(Protocol):
@@ -349,7 +405,22 @@ class GeminiClient:
                 contents=prompt,
                 config=config,
             )
-            return response.text or "{}"
+            text = repair_json(response.text or "{}")
+            # 응답이 끝까지 오지 않으면 호출부에서 JSONDecodeError 로만 보인다.
+            # 원인(토큰 상한·안전필터)을 여기서 WARNING 으로 남긴다 — 프로덕션은
+            # INFO 를 버리므로 INFO 로 남기면 진단이 불가능하다 (2026-08-11).
+            try:
+                cand = (response.candidates or [None])[0]
+                fr = getattr(cand, "finish_reason", None)
+                fr_name = str(getattr(fr, "name", fr))
+                if fr is not None and fr_name.upper() != "STOP":
+                    logger.warning(
+                        "gemini_json_incomplete", finish_reason=fr_name,
+                        text_len=len(text), model=self.model,
+                        usage=str(getattr(response, "usage_metadata", ""))[:200])
+            except Exception:
+                pass
+            return text
         except Exception as e:
             logger.error("gemini_json_failed", error=str(e))
             raise
@@ -775,7 +846,7 @@ class ClaudeClient:
                 match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
                 if match:
                     text = match.group(1).strip()
-            return text
+            return repair_json(text)
         except Exception as e:
             logger.error("claude_json_failed", error=str(e))
             raise

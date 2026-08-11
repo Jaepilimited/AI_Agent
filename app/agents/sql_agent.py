@@ -1779,6 +1779,10 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
     """
     from app.core.chart import build_chartjs_config, get_chart_config_prompt
 
+    # ⚠️ 원문을 INFO 로만 남기면 프로덕션에서 사라진다 — stdlib 기본 레벨이 WARNING 이라
+    # 앱 INFO 로그는 한 줄도 저널에 남지 않는다 (2026-08-11 확인: info 0 / warn 91 / err 46).
+    # 실패를 진단하려면 실패 경로에서 원문을 함께 남겨야 한다.
+    config_json = ""
     try:
         # Truncate SQL and results to prevent prompt overflow → chart config JSON truncation
         sql_short = sql[:300] + "..." if len(sql) > 300 else sql
@@ -1815,7 +1819,8 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
         logger.warning("chartjs_config_returned_none")
         return ""
     except Exception as e:
-        logger.error("chart_generation_skipped", error=str(e), error_type=type(e).__name__)
+        logger.error("chart_generation_skipped", error=str(e), error_type=type(e).__name__,
+                     raw=config_json[:600], raw_len=len(config_json), query=query[:80])
         return ""
 
 
