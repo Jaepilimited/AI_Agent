@@ -275,6 +275,12 @@
       "question": "JBT 매출 올해 얼마야?",
       "expect": {"contains_any": ["일본사업팀", "JBT"], "not_contains": ["좀비뷰티", "존재하지 않"], "sql_contains_any": ["'JBT'"], "min_len": 80, "max_seconds": 150},
       "note": "코드로 물어도 그대로 통해야 한다(혼용). JBT를 좀비뷰티로 오해한 2026-08-07 사고 회귀 감시 겸용"
+    },
+    {
+      "id": "division_rollup", "category": "incident", "freq": "daily",
+      "question": "올해 본부별 매출 알려줘",
+      "expect": {"contains_all": ["글로벌마케팅본부"], "contains_any": ["영업1본부", "유통1본부", "유통2본부", "상품본부"], "not_contains": ["GM 사업부", "PR 사업부", "존재하지 않"], "min_len": 150, "max_seconds": 150},
+      "note": "2026-08-11 조직도 확정. 본부=글로벌마케팅/영업1/유통1/유통2/상품 5개. 예전 'B2B·GM·PR·DD 사업부' 명칭으로 답하면 회귀"
     }
   ]
 }

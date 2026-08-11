@@ -114,14 +114,20 @@ SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판�
 
 **데이터에는 코드만 들어 있다.** 사용자가 한글 팀명으로 물어도 SQL 에는 **반드시 코드**를 쓴다.
 
-| 공식 팀명 | Team_NEW 코드 | | 공식 팀명 | Team_NEW 코드 |
-|---|---|---|---|---|
-| 영업1팀 | `B2B1` | | 중국사업팀 | `CBT` |
-| 영업2팀 | `B2B2` | | 일본사업팀 | `JBT` |
-| 유통1팀 | `DT1` | | 한국사업팀 | `KBT` |
-| 유통2팀 | `DT2` | | 서구권마케팅팀 | `WEST_MKT` |
-| 동남아시아1팀 | `EAST1` | | 서구권이커머스팀 | `WEST_Ecomm` |
-| 동남아시아2팀 | `EAST2` | | 브랜드커뮤니케이션팀 | `BCM` |
+| 공식 팀명 | 코드 | 본부 |
+|---|---|---|
+| 중국사업팀 | `CBT` | 글로벌마케팅본부 |
+| 일본사업팀 | `JBT` | 글로벌마케팅본부 |
+| 한국사업팀 | `KBT` | 글로벌마케팅본부 |
+| 동남아시아1팀 | `EAST1` | 글로벌마케팅본부 |
+| 동남아시아2팀 | `EAST2` | 글로벌마케팅본부 |
+| 서구권마케팅팀 | `WEST_MKT` | 글로벌마케팅본부 |
+| 서구권이커머스팀 | `WEST_Ecomm` | 글로벌마케팅본부 |
+| 영업1팀 | `B2B1` | 영업1본부 |
+| 영업2팀 | `B2B2` | 영업1본부 |
+| 브랜드커뮤니케이션팀 | `BCM` | 상품본부 |
+| 유통1팀 | `DT1` | 유통1본부 |
+| 유통2팀 | `DT2` | 유통2본부 |
 
 - ✅ `WHERE Team_NEW = 'B2B1'` ← "영업1팀 매출 알려줘"
 - ❌ `WHERE Team_NEW = '영업1팀'` ← **0건이 난다. 한글 팀명은 데이터에 없다**
@@ -217,17 +223,39 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
     2026-08-11 실측: 싱가포르는 EAST2, EAST2 에 베트남·태국 매출은 없다
 - WEST_Ecomm = **서구권이커머스팀** (미국 아마존/틱톡), WEST_MKT = **서구권마케팅팀**
 - CBT = **중국사업팀**, JBT = **일본사업팀**, KBT = **한국사업팀**, BCM = **브랜드커뮤니케이션팀**
-- B2B1 = **영업1팀**, B2B2 = **영업2팀** (SK·CL B2B), DT1 = **유통1팀**, DT2 = **유통2팀** (UM 유통)
+- B2B1 = **영업1팀**, B2B2 = **영업2팀** (SK·CL B2B)
+- DT1 = **유통1팀**(유통1본부 소속), DT2 = **유통2팀**(유통2본부 소속) — UM 유통
+  - 조직도에는 리테일_UMMA·리테일1~3 / 뉴비즈1·뉴비즈2·코스트코 같은 이름이 더 있지만
+    `Team_NEW` 에는 없다. 그 단위로 물으면 **나눌 수 없다고 안내**할 것
+    (코스트코·ULTA 거래는 전부 DT2 — 2026-08-11 실측)
 - OP·기타 = 정식 팀 아님 (잔여값 — 팀별 집계에서 제외)
 - ⚠️ GM_EAST1/GM_EAST2/GM_Ecomm/GM_MKT/DD_DT1/DD_DT2 구버전 — 없음!
 - ⚠️ integrated_ad.team 값은 다름: 'EAST1', 'EAST2', 'JBT', 'KBT', 'WEST', '기타' (WEST_Ecomm/WEST_MKT 아님!)
 
-사업부(Division) 매핑:
-- **B2B 사업부**: Team_NEW IN ('B2B1', 'B2B2')
-- **GM 사업부**: Team_NEW IN ('CBT', 'EAST1', 'EAST2', 'WEST_Ecomm', 'WEST_MKT', 'JBT', 'KBT')
-- **PR 사업부**: Team_NEW IN ('BCM')
-- **DD/유통 사업부**: Team_NEW IN ('DT1', 'DT2')
-- "실적" = Sales1_R(매출액). "전사 실적" = 모든 팀 합산. "사업부별" = CASE WHEN 사업부 그룹핑
+#### ⭐ 본부(Division) → 소속 팀 매핑 (2026-08-11 조직도 확정)
+
+| 본부 | 소속 Team_NEW |
+|---|---|
+| **글로벌마케팅본부** | `CBT`, `EAST1`, `EAST2`, `JBT`, `KBT`, `WEST_Ecomm`, `WEST_MKT` |
+| **영업1본부** | `B2B1`, `B2B2` |
+| **유통1본부** | `DT1` (유통1팀) |
+| **유통2본부** | `DT2` (유통2팀) |
+| **상품본부** | `BCM` (플래그십 파트) |
+
+- "본부별"·"사업부별" 질문은 위 그룹으로 `CASE WHEN` 묶어서 답한다:
+  ```sql
+  CASE
+    WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부'
+    WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부'
+    WHEN Team_NEW = 'DT1' THEN '유통1본부'
+    WHEN Team_NEW = 'DT2' THEN '유통2본부'
+    WHEN Team_NEW = 'BCM' THEN '상품본부'
+  END AS division
+  ```
+  `WHERE Team_NEW NOT IN ('기타','OP')` 를 함께 걸어 잔여값을 뺀다
+- 조직도의 팀명은 `GM CBT`·`GM EAST 1` 처럼 GM 접두가 붙지만 **데이터 값에는 없다**
+  (`Team_NEW='GM CBT'` 는 0건 — 접두를 떼고 `'CBT'` 로 조회)
+- "실적" = Sales1_R(매출액). "전사 실적" = 모든 팀 합산
 
 ---
 

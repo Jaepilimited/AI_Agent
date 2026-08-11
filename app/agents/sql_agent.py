@@ -149,11 +149,27 @@ def _localize_country_literals(sql: str) -> str:
 # 보증되지 않아 생성 후 결정적으로 교정한다.
 TEAM_CODE2KR = {
     "B2B1": "영업1팀", "B2B2": "영업2팀",
+    # DT1·DT2 는 팀이고 각각 유통1본부·유통2본부 소속이다. 조직도에는 그 아래
+    # 리테일_UMMA·리테일1~3 / 뉴비즈1·뉴비즈2·코스트코 같은 이름이 더 있지만
+    # Team_NEW 에는 없다 — 그 단위로는 나눌 수 없다 (2026-08-11 조직도 대조).
     "DT1": "유통1팀", "DT2": "유통2팀",
     "EAST1": "동남아시아1팀", "EAST2": "동남아시아2팀",
     "WEST_MKT": "서구권마케팅팀", "WEST_Ecomm": "서구권이커머스팀",
     "CBT": "중국사업팀", "JBT": "일본사업팀", "KBT": "한국사업팀",
     "BCM": "브랜드커뮤니케이션팀",
+}
+
+# 본부(Division) → 소속 Team_NEW 코드 (2026-08-11 조직도 확정).
+# "본부별"·"사업부별" 질문은 이 그룹으로 묶는다.
+TEAM_DIVISIONS = {
+    "글로벌마케팅본부": ["CBT", "EAST1", "EAST2", "JBT", "KBT", "WEST_Ecomm", "WEST_MKT"],
+    "영업1본부": ["B2B1", "B2B2"],
+    "유통1본부": ["DT1"],
+    "유통2본부": ["DT2"],
+    "상품본부": ["BCM"],
+}
+TEAM_CODE2DIVISION = {
+    code: div for div, codes in TEAM_DIVISIONS.items() for code in codes
 }
 
 # 답변에 쓰는 팀 표기 규칙 — 포맷 프롬프트 3곳(비스트리밍·스트리밍·fast-answer)이
@@ -171,6 +187,7 @@ TEAM_DISPLAY_RULE = (
 _TEAM_KR2CODE = {
     "영업1": "B2B1", "영업2": "B2B2",
     "유통1": "DT1", "유통2": "DT2",
+    "유통1본부": "DT1", "유통2본부": "DT2",
     "동남아시아1": "EAST1", "동남아시아2": "EAST2",
     "동남아1": "EAST1", "동남아2": "EAST2",
     "서구권마케팅": "WEST_MKT", "서구권이커머스": "WEST_Ecomm",
