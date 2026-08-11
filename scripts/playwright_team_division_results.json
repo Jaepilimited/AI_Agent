@@ -1,0 +1,57 @@
+[
+  {
+    "id": "kr_name_filter",
+    "status": "PASS",
+    "fails": [],
+    "elapsed": 10.1,
+    "chars": 361,
+    "sql": "SQLCopySELECT \n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND Team_NEW = 'B2B1'\nLIMIT 1000\n\nSELECT \n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND Team_NEW = 'B2B1'\nLIMIT 1",
+    "chart_labels": [],
+    "console_errors": [],
+    "answer_head": "10:23\nBigQuery\n📊 올해 영업1팀 매출\n요약\n\n총 매출액 약 1,679.8억원 (167,975,986,032원)\n\n상세 데이터\n표 복사\n매출액 (원)\n167,975,986,033\n분석 및 인사이트\n영업1팀(B2B1)의 올해 매출 실적: 올해 영업1팀(B2B1)의 누적 매출액은 약 1679.8억원(167,975,986,032.54원)을 기록하고 있습니다.\n전체 매출 기여도: 2026년 1분기 전체 통합 매출(약 2,317.0억원)과 비교했을 때, 영업1팀(B2B1)은 조직 내에서 매우 높은 매출 비중을 차지하며 핵심적인 매"
+  },
+  {
+    "id": "team_rollup_display",
+    "status": "PASS",
+    "fails": [],
+    "elapsed": 13.2,
+    "chars": 1070,
+    "sql": "SQLCopySELECT \n  Team_NEW AS team,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND Team_NEW IS NOT NULL \n  AND Team_NEW NOT IN ('기타', 'OP')\nGROUP BY team\nORDER BY total_revenue DESC\nLIMIT 1000\n\nSELECT \n  Team_NEW AS team,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Inte",
+    "chart_labels": [],
+    "console_errors": [],
+    "answer_head": "10:23\nBigQuery\n📊 올해 팀별 매출\n요약\n\n총 매출액 약 7,572.2억원 (757,223,857,213원)\n\n상세 데이터\n표 복사\nteam\t매출액 (원)\n영업1팀(B2B1)\t167,975,986,033\n영업2팀(B2B2)\t121,437,460,943\n유통2팀(DT2)\t101,768,409,731\n유통1팀(DT1)\t94,300,000,000\n서구권마케팅팀(WEST_MKT)\t66,990,770,096\n동남아시아1팀(EAST1)\t63,875,163,121\n서구권이커머스팀(WEST_Ecomm)\t36,288,551,457\n중국사"
+  },
+  {
+    "id": "division_rollup",
+    "status": "PASS",
+    "fails": [],
+    "elapsed": 13.2,
+    "chars": 598,
+    "sql": "SQLCopySELECT \n  CASE\n    WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부'\n    WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부'\n    WHEN Team_NEW = 'DT1' THEN '유통1본부'\n    WHEN Team_NEW = 'DT2' THEN '유통2본부'\n    WHEN Team_NEW = 'BCM' THEN '상품본부'\n    ELSE '기타/미분류'\n  END AS division,\n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES",
+    "chart_labels": [],
+    "console_errors": [],
+    "answer_head": "10:23\nBigQuery\n📊 올해 본부별 매출\n요약\n\n총 매출액 약 7,572.2억원 (757,223,857,213원)\n\n상세 데이터\n표 복사\ndivision\t매출액 (원)\n영업1본부\t289,413,446,976\n글로벌마케팅본부\t269,841,160,538\n유통2본부\t101,768,409,731\n유통1본부\t94,300,000,000\n상품본부\t1,900,839,968\n분석 및 인사이트\n영업1본부와 글로벌마케팅본부의 매출 주도: 영업1본부(약 2,894.1억원)와 글로벌마케팅본부(약 2,698.4억원)가 전체 매출의 압도적인 비중을 "
+  },
+  {
+    "id": "code_still_works",
+    "status": "PASS",
+    "fails": [],
+    "elapsed": 11.7,
+    "chars": 337,
+    "sql": "SQLCopySELECT \n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND Team_NEW = 'JBT'\nLIMIT 1000\n\nSELECT \n  SUM(Sales1_R) AS total_revenue\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= '2019-01-01'\n  AND EXTRACT(YEAR FROM Date) = 2026\n  AND Team_NEW = 'JBT'\nLIMIT 100",
+    "chart_labels": [],
+    "console_errors": [],
+    "answer_head": "10:23\nBigQuery\n📊 JBT 매출 올해 얼마야?\n요약\n\n총 매출액 약 290.9억원 (29,086,886,673원)\n\n상세 데이터\n표 복사\n매출액 (원)\n29,086,886,674\n분석 및 인사이트\n올해 누적 매출 현황: 일본사업팀(JBT)의 올해(2026년) 누적 총 매출은 약 290.9억 원을 기록하고 있습니다.\n분기 매출 기여도: 참고 데이터에 따르면 일본사업팀(JBT)의 2026년 1분기 매출은 약 131.0억 원이었으며, 이는 올해 현재까지 누적 매출(약 290.9억 원)의 약 45.0%를 차지하는 규모입니다.\n\n"
+  },
+  {
+    "id": "at_source_isolation",
+    "status": "PASS",
+    "fails": [],
+    "elapsed": 13.2,
+    "chars": 911,
+    "sql": "SQLCopySELECT \n  platform,\n  COUNT(DISTINCT ad_archive_id) AS ad_count,\n  COUNTIF(is_active = TRUE) AS active_ad_count,\n  ROUND(COUNTIF(is_active = TRUE) * 100.0 / NULLIF(COUNT(*), 0), 1) AS active_rate_pct\nFROM `skin1004-319714.ad_data.meta data_test`,\nUNNEST(JSON_EXTRACT_ARRAY(publisher_platform)) AS platform\nWHERE collect_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)\n  AND brand IS NOT NULL",
+    "chart_labels": [],
+    "console_errors": [],
+    "answer_head": "10:24\nBigQuery\n📊 광고 플랫폼별 분포\n상세 데이터\n표 복사\nplatform\tad_count\tactive_ad_count\tactive_rate_pct\n\"INSTAGRAM\"\t141,649\t1,384,964\t99.90\n\"FACEBOOK\"\t128,543\t1,257,958\t99.90\n\"THREADS\"\t117,119\t1,078,111\t100\n\"AUDIENCE_NETWORK\"\t101,837\t987,550\t100\n\"MESSENGER\"\t49,557\t560,481\t100\n\"WHATSAPP\"\t15,686\t139,733\t100\n분석 및 인사"
+  }
+]

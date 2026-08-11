@@ -137,7 +137,7 @@
     {
       "id": "src_isolation_meta_platform", "category": "bq_core", "freq": "weekly",
       "question": "@@메타광고 광고 플랫폼별 분포 알려줘",
-      "expect": {"contains_any": ["INSTAGRAM", "FACEBOOK", "인스타", "페이스북"], "not_contains": ["선택하신 데이터소스", "오류가 발생", "언제인가요"], "min_len": 100, "max_seconds": 120},
+      "expect": {"contains_any": ["INSTAGRAM", "FACEBOOK", "Instagram", "Facebook", "인스타", "페이스북"], "not_contains": ["선택하신 데이터소스", "오류가 발생", "언제인가요"], "min_len": 100, "max_seconds": 120},
       "note": "@@ 지정 소스의 스키마 강제 포함 + 테이블 스코프 지시 회귀 방지 (2026-08-06). 2026-08-11 강화: 기대값에 '플랫폼'이 있어 되묻기 문장만으로도 통과하고 있었다(SQL을 아예 안 탔다). 실제 플랫폼 값을 요구하고 되묻기 문구를 금지한다"
     },
     {
