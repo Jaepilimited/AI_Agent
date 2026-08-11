@@ -195,14 +195,32 @@ _TEAM_KR2CODE = {
     "브랜드커뮤니케이션": "BCM", "브랜드컴": "BCM",
 }
 
-_re_team_eq = re.compile(r"(Team_NEW\s*(?:=|!=|<>)\s*)'([^']*)'", re.IGNORECASE)
-_re_team_like = re.compile(r"(Team_NEW\s+(?:NOT\s+)?LIKE\s*)'(%?)([^%']*)(%?)'", re.IGNORECASE)
-_re_team_in = re.compile(r"(Team_NEW\s+(?:NOT\s+)?IN\s*\()([^)]*)(\))", re.IGNORECASE)
+# 광고 테이블(integrated_ad)의 팀 컬럼명은 `team` 이고 값 체계는 Team_NEW 와 같다
+# (2026-08-11 실측: EAST1·EAST2·WEST_MKT·WEST_Ecomm·CBT·JBT·KBT·기타).
+# 두 컬럼이 같은 교정을 받아야 "서구권마케팅팀 광고비" 가 통한다.
+# `\bteam\b` 는 `Team_NEW` 와 겹치지 않는다 ('_' 가 단어 문자라 경계가 서지 않음).
+_TEAM_COL = r"\b(?:Team_NEW|team)\b"
+_re_team_eq = re.compile(rf"({_TEAM_COL}\s*)(=|!=|<>)(\s*)'([^']*)'", re.IGNORECASE)
+_re_team_like = re.compile(
+    rf"({_TEAM_COL}\s+(?:NOT\s+)?LIKE\s*)'(%?)([^%']*)(%?)'", re.IGNORECASE)
+# ⚠️ 본문을 `[^)]*` 로 잡으면 리터럴 안의 괄호에서 잘린다 — 표시형 '영업1팀(B2B1)' 이
+# 바로 그 경우다. 따옴표 문자열은 통째로 삼키고, 그 밖에서만 ')' 를 끝으로 본다.
+_re_team_in = re.compile(
+    rf"({_TEAM_COL}\s+(?:NOT\s+)?IN\s*\()((?:'[^']*'|[^)])*)(\))", re.IGNORECASE)
+
+# 표시형 '영업1팀(B2B1)' 에서 코드만 뽑는다. 답변 표가 이 형식이라 다음 턴 컨텍스트에
+# 그대로 들어가고, LLM 이 그 문자열을 필터로 쓰면 0건이 난다 — 우리가 만든 표기가
+# 스스로 판 함정이므로 여기서 되돌린다 (2026-08-11 재검토에서 발견).
+_re_code_in_parens = re.compile(r"\(([A-Za-z0-9_]+)\)\s*$")
 
 
 def _team_code(literal: str) -> Optional[str]:
-    """한글 팀명 리터럴 → Team_NEW 코드. 팀명이 아니면 None."""
-    key = re.sub(r"\s+", "", literal or "")
+    """한글 팀명 또는 표시형('영업1팀(B2B1)') → 코드. 팀명이 아니면 None."""
+    raw = (literal or "").strip()
+    m = _re_code_in_parens.search(raw)
+    if m and m.group(1) in TEAM_CODE2KR:
+        return m.group(1)
+    key = re.sub(r"\s+", "", raw)
     key = re.sub(r"팀$", "", key)
     return _TEAM_KR2CODE.get(key)
 
@@ -215,10 +233,10 @@ def _relabel_team_values(results):
     """
     if not results:
         return results
-    team_cols = [
-        k for k in results[0].keys()
-        if k.lower() in ("team", "team_new", "팀") or k.lower().endswith("_team")
-    ]
+    # 컬럼명이 team/Team_NEW 만은 아니다 — LLM 이 `Team AS team_code` 처럼 별칭을
+    # 붙이면 정확 일치로는 놓친다 (2026-08-11 '본부별 마케팅비' 에서 코드 노출).
+    # 값이 팀 코드일 때만 바꾸므로 team_count 같은 숫자 컬럼은 영향이 없다.
+    team_cols = [k for k in results[0].keys() if "team" in k.lower() or "팀" in k]
     if not team_cols:
         return results
     for row in results:
@@ -229,11 +247,27 @@ def _relabel_team_values(results):
     return results
 
 
+def _division_codes(literal: str) -> Optional[list]:
+    """본부명 리터럴 → 소속 팀 코드 목록. 본부명이 아니면 None."""
+    return TEAM_DIVISIONS.get(re.sub(r"\s+", "", literal or ""))
+
+
 def _localize_team_literals(sql: str) -> str:
-    """Team_NEW 비교의 한글 팀명을 코드로 교정 (사전에 없는 값은 유지)."""
+    """팀 비교의 한글 팀명·본부명을 코드로 교정 (사전에 없는 값은 유지).
+
+    - 팀명   → 코드            `= '영업1팀'`       → `= 'B2B1'`
+    - 표시형 → 코드            `= '영업1팀(B2B1)'` → `= 'B2B1'`
+    - 본부명 → 소속 코드 IN절  `= '영업1본부'`     → `IN ('B2B1','B2B2')`
+    """
     def _eq(m):
-        code = _team_code(m.group(2))
-        return m.group(1) + "'" + code + "'" if code else m.group(0)
+        col, op, gap, lit = m.group(1), m.group(2), m.group(3), m.group(4)
+        codes = _division_codes(lit)
+        if codes:
+            # 본부는 단일 값이 아니라 팀 묶음이다 — 비교 연산 자체를 바꾼다
+            joined = ", ".join(f"'{c}'" for c in codes)
+            return f"{col}{'NOT IN' if op in ('!=', '<>') else 'IN'} ({joined})"
+        code = _team_code(lit)
+        return f"{col}{op}{gap}'{code}'" if code else m.group(0)
 
     def _like(m):
         code = _team_code(m.group(3))
@@ -242,11 +276,14 @@ def _localize_team_literals(sql: str) -> str:
         return m.group(1) + "'" + m.group(2) + code + m.group(4) + "'"
 
     def _in(m):
-        body = re.sub(
-            r"'([^']*)'",
-            lambda mm: "'" + (_team_code(mm.group(1)) or mm.group(1)) + "'",
-            m.group(2))
-        return m.group(1) + body + m.group(3)
+        def _one(mm):
+            lit = mm.group(1)
+            codes = _division_codes(lit)
+            if codes:                      # 본부명은 소속 팀 코드들로 펼친다
+                return ", ".join(f"'{c}'" for c in codes)
+            return "'" + (_team_code(lit) or lit) + "'"
+
+        return m.group(1) + re.sub(r"'([^']*)'", _one, m.group(2)) + m.group(3)
 
     sql = _re_team_eq.sub(_eq, sql)
     sql = _re_team_like.sub(_like, sql)
@@ -471,12 +508,64 @@ def _mask_fi_prompt(prompt: str) -> str:
     )
 
 
+def build_team_section() -> str:
+    """팀·본부 매핑 프롬프트 섹션을 코드 상수에서 생성한다.
+
+    ⚠️ 조직 매핑을 프롬프트 텍스트에도 적어두면 조직이 바뀔 때 코드와 어긋난다.
+    실제로 TEAM_DIVISIONS 를 만들어놓고 프롬프트에는 같은 표를 손으로 또 적어
+    두 곳이 따로 놀았다 (2026-08-11 재검토). 진실은 코드 상수 하나뿐이다.
+    """
+    rows = "\n".join(
+        f"| {kr} | `{code}` | {TEAM_CODE2DIVISION.get(code, '-')} |"
+        for code, kr in TEAM_CODE2KR.items()
+    )
+    case_lines = []
+    for div, codes in TEAM_DIVISIONS.items():
+        cond = (f"Team_NEW = '{codes[0]}'" if len(codes) == 1
+                else "Team_NEW IN (" + ",".join(f"'{c}'" for c in codes) + ")")
+        case_lines.append(f"    WHEN {cond} THEN '{div}'")
+    case_sql = "  CASE\n" + "\n".join(case_lines) + "\n  END AS division"
+    div_rows = "\n".join(
+        f"| **{div}** | " + " · ".join(f"`{c}`({TEAM_CODE2KR[c]})" for c in codes) + " |"
+        for div, codes in TEAM_DIVISIONS.items()
+    )
+    return f"""#### ⭐ 공식 팀명 ↔ 코드 ↔ 본부 (조직도 기준 — 둘 다 통해야 한다)
+
+**데이터에는 코드만 들어 있다.** 사용자가 한글 팀명으로 물어도 SQL 에는 **반드시 코드**를 쓴다.
+
+| 공식 팀명 | 코드 | 본부 |
+|---|---|---|
+{rows}
+
+- ✅ `WHERE Team_NEW = 'B2B1'` ← "영업1팀 매출 알려줘"
+- ❌ `WHERE Team_NEW = '영업1팀'` ← **0건이 난다. 한글 팀명은 데이터에 없다**
+- "동남아1팀"·"영업 1팀"처럼 줄여 쓰거나 띄어 써도 같은 팀이다
+- **`기타`·`OP` 는 정식 팀이 아니다** — "팀별"로 나눌 때는
+  `AND Team_NEW NOT IN ('기타','OP')` 로 제외한다
+
+#### ⭐ 본부(Division) → 소속 팀
+
+| 본부 | 소속 팀 |
+|---|---|
+{div_rows}
+
+- "본부별"·"사업부별" 질문은 이 그룹으로 묶는다:
+  ```sql
+{case_sql}
+  ```
+- 조직도 팀명의 `GM ` 접두(`GM CBT` 등)는 **데이터에 없다** — 떼고 코드로 조회
+- 조직도에는 유통 쪽에 리테일_UMMA·리테일1~3 / 뉴비즈1·2·코스트코 같은 이름이
+  더 있지만 `Team_NEW` 에는 없다. 그 단위로 물으면 **나눌 수 없다고 안내**할 것
+  (코스트코·ULTA 거래는 전부 `DT2`)"""
+
+
 def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
     """Load a prompt template from the prompts directory (cached after first read)."""
     cache_key = (filename, bool(can_view_fi))
     if cache_key not in _prompt_cache:
         prompt_path = PROMPTS_DIR / filename
         prompt = prompt_path.read_text(encoding="utf-8")
+        prompt = prompt.replace("{{TEAM_SECTION}}", build_team_section())
         if not can_view_fi:
             prompt = _mask_fi_prompt(prompt)
         _prompt_cache[cache_key] = prompt

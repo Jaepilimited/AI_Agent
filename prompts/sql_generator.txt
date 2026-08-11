@@ -110,30 +110,8 @@ SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판�
   팀 질문은 `Team_NEW` 로 답한다. 이 값들을 "브랜드"라고 부르지 말 것.
 - 부득이 이 코드들을 언급할 때는 정식 의미를 병기한다 (예: "CBT(중국사업팀)").
 
-#### ⭐ 공식 팀명 ↔ Team_NEW 코드 (2026-08-11 확정 — 둘 다 통해야 한다)
+{{TEAM_SECTION}}
 
-**데이터에는 코드만 들어 있다.** 사용자가 한글 팀명으로 물어도 SQL 에는 **반드시 코드**를 쓴다.
-
-| 공식 팀명 | 코드 | 본부 |
-|---|---|---|
-| 중국사업팀 | `CBT` | 글로벌마케팅본부 |
-| 일본사업팀 | `JBT` | 글로벌마케팅본부 |
-| 한국사업팀 | `KBT` | 글로벌마케팅본부 |
-| 동남아시아1팀 | `EAST1` | 글로벌마케팅본부 |
-| 동남아시아2팀 | `EAST2` | 글로벌마케팅본부 |
-| 서구권마케팅팀 | `WEST_MKT` | 글로벌마케팅본부 |
-| 서구권이커머스팀 | `WEST_Ecomm` | 글로벌마케팅본부 |
-| 영업1팀 | `B2B1` | 영업1본부 |
-| 영업2팀 | `B2B2` | 영업1본부 |
-| 브랜드커뮤니케이션팀 | `BCM` | 상품본부 |
-| 유통1팀 | `DT1` | 유통1본부 |
-| 유통2팀 | `DT2` | 유통2본부 |
-
-- ✅ `WHERE Team_NEW = 'B2B1'` ← "영업1팀 매출 알려줘"
-- ❌ `WHERE Team_NEW = '영업1팀'` ← **0건이 난다. 한글 팀명은 데이터에 없다**
-- "동남아1팀"·"영업 1팀"처럼 줄여 쓰거나 띄어 써도 같은 팀이다
-- **`기타`·`OP` 는 정식 팀이 아니다** (합계 0 수준의 잔여값).
-  "팀별"로 나눌 때는 `AND Team_NEW NOT IN ('기타','OP')` 로 제외한다
 
 #### Mall_Classification 값 목록
 - SK_B2B_Domestic, SK_B2B_Overseas
@@ -230,31 +208,12 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
     (코스트코·ULTA 거래는 전부 DT2 — 2026-08-11 실측)
 - OP·기타 = 정식 팀 아님 (잔여값 — 팀별 집계에서 제외)
 - ⚠️ GM_EAST1/GM_EAST2/GM_Ecomm/GM_MKT/DD_DT1/DD_DT2 구버전 — 없음!
-- ⚠️ integrated_ad.team 값은 다름: 'EAST1', 'EAST2', 'JBT', 'KBT', 'WEST', '기타' (WEST_Ecomm/WEST_MKT 아님!)
+- **`integrated_ad.team` 도 같은 코드 체계다** (2026-08-11 실측 교정):
+  `EAST1`·`EAST2`·`WEST_MKT`·`WEST_Ecomm`·`CBT`·`JBT`·`KBT`·`기타`
+  - ⚠️ 예전 기재 "'WEST' 로 통합, WEST_Ecomm/WEST_MKT 아님" 은 **오류**였다.
+    그대로 믿고 `team='WEST'` 로 조회해 0건이 나던 문제 ("서구권마케팅팀 광고비")
+  - 광고비가 없는 팀(`DT1`·`DT2`·`B2B1`·`B2B2`·`BCM`)은 이 표에 아예 없다
 
-#### ⭐ 본부(Division) → 소속 팀 매핑 (2026-08-11 조직도 확정)
-
-| 본부 | 소속 Team_NEW |
-|---|---|
-| **글로벌마케팅본부** | `CBT`, `EAST1`, `EAST2`, `JBT`, `KBT`, `WEST_Ecomm`, `WEST_MKT` |
-| **영업1본부** | `B2B1`, `B2B2` |
-| **유통1본부** | `DT1` (유통1팀) |
-| **유통2본부** | `DT2` (유통2팀) |
-| **상품본부** | `BCM` (플래그십 파트) |
-
-- "본부별"·"사업부별" 질문은 위 그룹으로 `CASE WHEN` 묶어서 답한다:
-  ```sql
-  CASE
-    WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부'
-    WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부'
-    WHEN Team_NEW = 'DT1' THEN '유통1본부'
-    WHEN Team_NEW = 'DT2' THEN '유통2본부'
-    WHEN Team_NEW = 'BCM' THEN '상품본부'
-  END AS division
-  ```
-  `WHERE Team_NEW NOT IN ('기타','OP')` 를 함께 걸어 잔여값을 뺀다
-- 조직도의 팀명은 `GM CBT`·`GM EAST 1` 처럼 GM 접두가 붙지만 **데이터 값에는 없다**
-  (`Team_NEW='GM CBT'` 는 0건 — 접두를 떼고 `'CBT'` 로 조회)
 - "실적" = Sales1_R(매출액). "전사 실적" = 모든 팀 합산
 
 ---
@@ -771,7 +730,7 @@ GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
 |------|------|------|
 | date | DATE | 광고 집행일 |
 | country | STRING | 국가 (한국어) |
-| team | STRING | 담당팀 — EAST1, EAST2, JBT, KBT, WEST, 기타 |
+| team | STRING | 담당팀 — SALES_ALL 의 Team_NEW 와 **같은 코드 체계** |
 | media | STRING | **매체 (플랫폼) ⭐** |
 | account_name | STRING | 광고 계정명 |
 | cost_krw | FLOAT | 광고비 (KRW) |
@@ -790,9 +749,13 @@ GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
 - 영어: United States, Japan, South Korea 등 일부 행 영어로 저장됨
 - 국가 필터링 시: `country IN ('미국', 'United States')` 처럼 양쪽 포함 권장
 
-### team 값 (integrated_ad 전용)
-실제 DISTINCT: 'EAST1', 'EAST2', 'JBT', 'KBT', 'WEST', '기타'
-- ⚠️ 'WEST' (SALES_ALL의 'WEST_Ecomm'/'WEST_MKT'와 다름!)
+### team 값 (2026-08-11 실측 교정)
+실제 DISTINCT: 'EAST1', 'EAST2', 'WEST_MKT', 'WEST_Ecomm', 'CBT', 'JBT', 'KBT', '기타'
+- **Team_NEW 와 같은 코드 체계다.** 한글 팀명으로 물어도 코드로 조회한다
+  (예: "서구권마케팅팀 광고비" → `team = 'WEST_MKT'`)
+- ⚠️ 예전 기재 "'WEST' 로 통합, WEST_Ecomm/WEST_MKT 아님" 은 **오류**였다 —
+  그대로 믿고 `team='WEST'` 로 조회해 0건이 나던 문제
+- 광고비가 없는 팀(DT1·DT2·B2B1·B2B2·BCM)은 이 테이블에 아예 없다
 
 ### ⚠️ 매체 매핑 규칙 (필수!)
 | 사용자 표현 | media 값 |
@@ -908,8 +871,9 @@ FROM cur LEFT JOIN prev USING(media) ORDER BY yoy_growth DESC;
 
 ### ⚠️ 실제 DISTINCT 값 (integrated_ad와 다름!)
 - **Field**: '광고' (퍼포먼스), '시딩' (인플루언서) — 2가지만
-- **Team**: '', 'B2B2', 'B2B3', 'BCM', 'CBT', 'EAST1', 'EAST2', 'GM', 'JBT', 'KBT', 'KM', 'WEST', '기타'
-  - ⚠️ 'WEST' (WEST_Ecomm/WEST_MKT 아님!), 'GM', 'KM', 'B2B3' 포함
+- **Team** (2026-08-11 실측 교정): 'WEST_MKT', 'EAST1', 'CBT', 'JBT', 'WEST_Ecomm',
+  'EAST2', 'KBT', '기타' — integrated_ad·Team_NEW 와 **같은 코드 체계**
+  - ⚠️ 예전 기재의 'WEST'·'GM'·'KM'·'B2B3'·'' 는 2025년 이후 데이터에 없다
 - **Media** (integrated_ad와 **완전히 다른 형식!**):
   `'Amazon'`, `'KakaoMoments'`, `'Meta(Facebook/Instagram)'`, `'NaverGFA'`, `'NaverSearch'`, `'Qoo10'`, `'Rakuten'`, `'Shopee'`, `'SingleONE'`, `'Snapchat'`, `'TikTok'`, `'Tokopedia'`, `'X(Twitter)'`, `'YouTube(Google)'`, `'기타'`
   - ⚠️ Meta = 'Meta(Facebook/Instagram)' (integrated_ad의 'Meta'와 다름!)

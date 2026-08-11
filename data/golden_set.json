@@ -281,6 +281,32 @@
       "question": "올해 본부별 매출 알려줘",
       "expect": {"contains_all": ["글로벌마케팅본부"], "contains_any": ["영업1본부", "유통1본부", "유통2본부", "상품본부"], "not_contains": ["GM 사업부", "PR 사업부", "존재하지 않"], "min_len": 150, "max_seconds": 150},
       "note": "2026-08-11 조직도 확정. 본부=글로벌마케팅/영업1/유통1/유통2/상품 5개. 예전 'B2B·GM·PR·DD 사업부' 명칭으로 답하면 회귀"
+    },
+    {
+      "id": "fu_team_filter_carryover", "category": "followup", "freq": "daily",
+      "history": [
+        {"role": "user", "content": "올해 영업1팀 매출 알려줘"},
+        {"role": "assistant", "content": "### 📊 2026년 영업1팀(B2B1) 매출\n\n영업1팀(B2B1)의 올해 누적 매출은 약 1,679.8억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE EXTRACT(YEAR FROM Date) = 2026 AND Team_NEW = 'B2B1'\n```\n</details>"}
+      ],
+      "question": "작년은?",
+      "expect": {"sql_contains_any": ["'B2B1'"], "not_contains": ["존재하지 않", "어느 팀"], "min_len": 80, "max_seconds": 150},
+      "note": "기간만 바뀌는 후속에서 팀 필터가 유지돼야 한다. 전사 매출로 넓어지면 회귀 (2026-08-11 UI 멀티턴 테스트에서 통과 확인한 시나리오)"
+    },
+    {
+      "id": "fu_division_drilldown", "category": "followup", "freq": "weekly",
+      "history": [
+        {"role": "user", "content": "올해 본부별 매출 알려줘"},
+        {"role": "assistant", "content": "### 📊 2026년 본부별 매출\n\n영업1본부 2,894.1억원, 글로벌마케팅본부 2,698.4억원, 유통2본부 1,017.7억원, 유통1본부 943.0억원, 상품본부 19.1억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT CASE WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부' WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부' WHEN Team_NEW='DT1' THEN '유통1본부' WHEN Team_NEW='DT2' THEN '유통2본부' WHEN Team_NEW='BCM' THEN '상품본부' END AS division, SUM(Sales1_R) FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE EXTRACT(YEAR FROM Date)=2026 GROUP BY division\n```\n</details>"}
+      ],
+      "question": "글로벌마케팅본부만 팀별로 나눠줘",
+      "expect": {"contains_any": ["중국사업팀", "일본사업팀", "서구권마케팅팀", "동남아시아1팀"], "not_contains": ["영업1팀", "유통1팀"], "sql_contains_any": ["WEST_MKT"], "min_len": 150, "max_seconds": 150},
+      "note": "본부 → 소속 팀 드릴다운. 다른 본부 팀이 섞이면 회귀"
+    },
+    {
+      "id": "ad_team_kr_name", "category": "incident", "freq": "daily",
+      "question": "올해 서구권마케팅팀 광고비 알려줘",
+      "expect": {"contains_any": ["서구권마케팅팀", "WEST_MKT"], "not_contains": ["존재하지 않", "올바르지 않은 값", "0행"], "sql_contains_any": ["'WEST_MKT'"], "min_len": 80, "max_seconds": 150},
+      "note": "2026-08-11 실사용 오답: 프롬프트가 integrated_ad.team 값을 'WEST'로 잘못 적어 0건. 실제는 Team_NEW와 같은 코드 체계(WEST_MKT/WEST_Ecomm/CBT 포함). 잘못된 SQL이 sql_cache에 남아 재생되던 것도 함께 확인"
     }
   ]
 }
