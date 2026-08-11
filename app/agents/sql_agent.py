@@ -142,6 +142,101 @@ def _localize_country_literals(sql: str) -> str:
     return sql
 
 
+# ── 팀명 ↔ Team_NEW 코드 (2026-08-11 공식 팀명 확정) ─────────────────────────
+# 데이터에는 코드(B2B1·JBT…)만 들어 있는데 사내에서는 한글 팀명을 쓴다.
+# 둘 다 통해야 하므로 (1) 질문·SQL 의 한글명은 코드로 교정하고,
+# (2) 답변 표시는 한글명을 쓴다. 국가 리터럴과 같은 이유로 프롬프트만으로는
+# 보증되지 않아 생성 후 결정적으로 교정한다.
+TEAM_CODE2KR = {
+    "B2B1": "영업1팀", "B2B2": "영업2팀",
+    "DT1": "유통1팀", "DT2": "유통2팀",
+    "EAST1": "동남아시아1팀", "EAST2": "동남아시아2팀",
+    "WEST_MKT": "서구권마케팅팀", "WEST_Ecomm": "서구권이커머스팀",
+    "CBT": "중국사업팀", "JBT": "일본사업팀", "KBT": "한국사업팀",
+    "BCM": "브랜드커뮤니케이션팀",
+}
+
+# 답변에 쓰는 팀 표기 규칙 — 포맷 프롬프트 3곳(비스트리밍·스트리밍·fast-answer)이
+# 같은 문구를 쓰도록 한 곳에 둔다. 예전에는 세 곳이 제각각 "KBT=국내사업" 같은
+# 비공식 설명을 들고 있었다.
+TEAM_DISPLAY_RULE = (
+    "⚠️ 팀 표기(임의 해석 금지): 아래가 공식 팀명이다. 표·차트 라벨·본문 모두 "
+    "`한글팀명(코드)` 형식으로 쓰라 (예: `영업1팀(B2B1)`).\n"
+    + ", ".join(f"{c}={kr}" for c, kr in TEAM_CODE2KR.items())
+    + "\n`기타`·`OP` 는 정식 팀이 아니다. JBT 를 좀비뷰티 등 다른 의미로 지어내지 마라 "
+    "(2026-08-07 실제 오답)."
+)
+
+# 조회 키는 공백 제거 + 끝의 '팀' 제거 형태 ('영업 1팀' · '영업1' · '영업1팀' 모두 매칭)
+_TEAM_KR2CODE = {
+    "영업1": "B2B1", "영업2": "B2B2",
+    "유통1": "DT1", "유통2": "DT2",
+    "동남아시아1": "EAST1", "동남아시아2": "EAST2",
+    "동남아1": "EAST1", "동남아2": "EAST2",
+    "서구권마케팅": "WEST_MKT", "서구권이커머스": "WEST_Ecomm",
+    "중국사업": "CBT", "일본사업": "JBT", "한국사업": "KBT",
+    "브랜드커뮤니케이션": "BCM", "브랜드컴": "BCM",
+}
+
+_re_team_eq = re.compile(r"(Team_NEW\s*(?:=|!=|<>)\s*)'([^']*)'", re.IGNORECASE)
+_re_team_like = re.compile(r"(Team_NEW\s+(?:NOT\s+)?LIKE\s*)'(%?)([^%']*)(%?)'", re.IGNORECASE)
+_re_team_in = re.compile(r"(Team_NEW\s+(?:NOT\s+)?IN\s*\()([^)]*)(\))", re.IGNORECASE)
+
+
+def _team_code(literal: str) -> Optional[str]:
+    """한글 팀명 리터럴 → Team_NEW 코드. 팀명이 아니면 None."""
+    key = re.sub(r"\s+", "", literal or "")
+    key = re.sub(r"팀$", "", key)
+    return _TEAM_KR2CODE.get(key)
+
+
+def _relabel_team_values(results):
+    """결과 행의 팀 코드를 '한글팀명(코드)' 로 치환한다.
+
+    표기를 LLM 지시에만 맡기면 확률적으로 코드가 그대로 나온다. 값 자체를 바꾸면
+    표·차트 라벨·인사이트가 한 번에 맞는다 (차트는 이 값을 라벨로 그대로 쓴다).
+    """
+    if not results:
+        return results
+    team_cols = [
+        k for k in results[0].keys()
+        if k.lower() in ("team", "team_new", "팀") or k.lower().endswith("_team")
+    ]
+    if not team_cols:
+        return results
+    for row in results:
+        for col in team_cols:
+            kr = TEAM_CODE2KR.get(row.get(col))
+            if kr:
+                row[col] = f"{kr}({row[col]})"
+    return results
+
+
+def _localize_team_literals(sql: str) -> str:
+    """Team_NEW 비교의 한글 팀명을 코드로 교정 (사전에 없는 값은 유지)."""
+    def _eq(m):
+        code = _team_code(m.group(2))
+        return m.group(1) + "'" + code + "'" if code else m.group(0)
+
+    def _like(m):
+        code = _team_code(m.group(3))
+        if not code:
+            return m.group(0)
+        return m.group(1) + "'" + m.group(2) + code + m.group(4) + "'"
+
+    def _in(m):
+        body = re.sub(
+            r"'([^']*)'",
+            lambda mm: "'" + (_team_code(mm.group(1)) or mm.group(1)) + "'",
+            m.group(2))
+        return m.group(1) + body + m.group(3)
+
+    sql = _re_team_eq.sub(_eq, sql)
+    sql = _re_team_like.sub(_like, sql)
+    sql = _re_team_in.sub(_in, sql)
+    return sql
+
+
 def _enforce_partition_filter(
     sql: str,
     query: str,
@@ -197,6 +292,7 @@ def _enforce_partition_filter(
         new_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
         new_sql = sanitize_sql(new_sql)
         new_sql = _localize_country_literals(new_sql)
+        new_sql = _localize_team_literals(new_sql)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
                 allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
@@ -748,6 +844,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         # Country 영어 리터럴 → 한국어 (전 테이블 공통 규칙)
         if sql:
             sql = _localize_country_literals(sql)
+            sql = _localize_team_literals(sql)
 
         logger.info("sql_generated", sql=sql[:200])
 
@@ -838,6 +935,7 @@ def _retry_with_stronger_model(
         )
         retry_sql = sanitize_sql(retry_sql)
         retry_sql = _localize_country_literals(retry_sql)
+        retry_sql = _localize_team_literals(retry_sql)
         if not retry_sql:
             return None
 
@@ -955,6 +1053,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 from app.core.security import sanitize_sql
                 retry_sql = sanitize_sql(retry_sql)
                 retry_sql = _localize_country_literals(retry_sql)
+                retry_sql = _localize_team_literals(retry_sql)
                 if retry_sql:
                     is_valid, _verr = validate_sql(
                         retry_sql,
@@ -1056,6 +1155,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         logger.info("sql_result_all_null_treated_as_empty", sql=(sql or "")[:200])
         results = None
 
+    results = _relabel_team_values(results)
+
     if not results:
         # 0건 질문에서 미인식 용어를 후보로 수집 (백그라운드 — 응답을 늦추지 않는다).
         # 스트리밍 경로도 0건이면 format_answer 를 타므로 이 한 곳이면 된다.
@@ -1070,8 +1171,13 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         _value_hints = []
         sql_upper = (sql or "").upper()
         if "TEAM_NEW" in sql_upper:
+            # ⚠️ 예전에는 GM_EAST1·DD_DT1 같은 구버전 코드를 힌트로 넣고 있었다.
+            # 프롬프트 본문에는 "구버전 — 없음!"이라 적혀 있는 값들이라, 0건일 때
+            # 존재하지도 않는 코드를 대안으로 안내하게 된다 (2026-08-11 발견).
             _value_hints.append(
-                "Team_NEW 유효 값: GM_EAST1, GM_EAST2, GM_Ecomm, GM_MKT, CBT, JBT, KBT, BCM, B2B1, B2B2, DD_DT1, DD_DT2, OP, 기타 (⚠️ GM_WEST는 존재하지 않음!)"
+                "Team_NEW 유효 값(코드 = 공식 팀명): "
+                + ", ".join(f"{c} = {kr}" for c, kr in TEAM_CODE2KR.items())
+                + " (⚠️ GM_EAST1·GM_Ecomm·GM_MKT·DD_DT1·DD_DT2·GM_WEST 는 구버전이라 존재하지 않는다)"
             )
         if "COUNTRY" in sql_upper:
             _value_hints.append(
@@ -1254,6 +1360,18 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             "- CBT·JBT·KBT 등은 **팀**입니다. 브랜드로 나열하지 마세요."
         )
 
+    # 팀 표기 — 데이터는 코드, 사내 공식 명칭은 한글이다 (2026-08-11 확정).
+    # 코드를 그대로 내면 사용자가 자기 팀을 못 알아본다. 한글명을 앞세우고 코드를 병기한다.
+    _team_warning = ""
+    if re.search(r"Team_NEW", sql, re.IGNORECASE):
+        _team_warning = (
+            "⚠️ **팀 표기 (중요!)**: 조회 결과의 팀 코드는 **공식 한글 팀명으로 바꿔서** 제시하세요. "
+            "표·차트 라벨·본문 모두 `한글팀명(코드)` 형식으로 씁니다 (예: `영업1팀(B2B1)`).\n"
+            + "\n".join(f"- `{c}` → **{kr}**" for c, kr in TEAM_CODE2KR.items())
+            + "\n- 위 목록에 없는 값(`기타`·`OP` 등)은 정식 팀이 아니므로 "
+            "'기타'로 묶거나 표에서 제외하고, 그 사실을 한 줄로 밝히세요."
+        )
+
     _ingredient_keywords = ("성분", "나이아신아마이드", "레티놀", "히알루론산", "판테놀", "세라마이드")
     _ingredient_query = any(kw in query for kw in _ingredient_keywords) and any(
         kw in query for kw in ("포함", "미포함", "함유", "안 들어", "안들어", "없는")
@@ -1339,6 +1457,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 - 조건 설명(브랜드, 기간)은 답변 끝에 짧게 괄호로
 - ⚠️ 불완전 월 데이터 경고 (매우 중요!): 오늘은 {today_kr}입니다. 월별 추이/비교 데이터에 현재 월({today[:7]})이 포함되어 있다면, 해당 월은 아직 진행 중이므로 데이터가 불완전합니다. 반드시 "⚠️ {today[:7]}월 데이터는 {today}까지의 부분 집계입니다"라고 명시하고, 추세 분석에서 현재 월 수치가 낮은 것은 미완료 때문임을 언급하세요. 절대 불완전한 현재 월 데이터를 완성된 과거 월과 동일 선상에서 비교하지 마세요.
 {_brand_warning}
+{_team_warning}
 {_ingredient_warning}
 """
 
@@ -1941,9 +2060,7 @@ SQL 결과 ({len(results)}행):
 규칙: SQL 결과만 근거로. 금액 1억+ → "약 OO.O억원". 플레이스홀더 출력 금지.
 ⚠️ 후속 질문은 대괄호([]) 없이 완성된 실제 질문 문장으로 출력하라.
 ⚠️ 테이블명·프로젝트 ID·컬럼명 노출 금지. 출처는 '내부 데이터베이스'로만.
-⚠️ 팀 코드 의미(임의 해석 금지): EAST1/EAST2=동남아, WEST_Ecomm/WEST_MKT=미주·글로벌,
-CBT=중국, JBT=일본사업, KBT=국내사업, BCM=국내온라인, B2B1/B2B2=해외도매, DT1/DT2=유통, OP=운영.
-JBT를 좀비뷰티 등 다른 의미로 지어내지 마라 (2026-08-07 실제 오답)."""
+{TEAM_DISPLAY_RULE}"""
 
     llm = get_flash_client()
     _t_ins = _time.perf_counter()
@@ -2051,6 +2168,9 @@ def run_sql_agent_stream(
         yield state.get("answer", "")
         return
 
+    # 팀 코드 → 한글 팀명 (fast-answer 의 결정적 표까지 함께 적용된다)
+    results = _relabel_team_values(results)
+
     # Fast-answer experiment (dev A/B: BQ_FAST_ANSWER=1): template table
     # instantly from rows, LLM only for short insights.
     if os.getenv("BQ_FAST_ANSWER") == "1":
@@ -2100,9 +2220,7 @@ def run_sql_agent_stream(
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
-⚠️ 팀 코드 의미(임의 해석 금지): EAST1/EAST2=동남아, WEST_Ecomm/WEST_MKT=미주·글로벌,
-CBT=중국, JBT=일본사업, KBT=국내사업, BCM=국내온라인, B2B1/B2B2=해외도매, DT1/DT2=유통, OP=운영.
-JBT를 좀비뷰티 등 다른 의미로 지어내지 마라 (2026-08-07 실제 오답)."""
+{TEAM_DISPLAY_RULE}"""
 
     # Start chart generation in background BEFORE streaming answer
     import concurrent.futures

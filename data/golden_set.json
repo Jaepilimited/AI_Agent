@@ -257,6 +257,24 @@
       "id": "notion_leave_policy", "category": "notion", "freq": "weekly",
       "question": "연차 사용 규정 알려줘",
       "expect": {"not_contains": ["오류가 발생", "SELECT"], "min_len": 60, "max_seconds": 90}
+    },
+    {
+      "id": "team_kr_name_filter", "category": "incident", "freq": "daily",
+      "question": "올해 영업1팀 매출 알려줘",
+      "expect": {"contains_any": ["영업1팀", "B2B1"], "not_contains": ["존재하지 않", "찾을 수 없"], "sql_contains_any": ["'B2B1'"], "min_len": 100, "max_seconds": 150},
+      "note": "2026-08-11 공식 팀명 확정. 한글 팀명으로 물어도 SQL은 코드여야 한다 — Team_NEW='영업1팀'이면 0건. _localize_team_literals가 결정적으로 교정"
+    },
+    {
+      "id": "team_kr_name_display", "category": "incident", "freq": "daily",
+      "question": "올해 팀별 매출 알려줘",
+      "expect": {"contains_all": ["영업1팀"], "contains_any": ["동남아시아1팀", "서구권마케팅팀", "일본사업팀"], "not_contains": ["GM_EAST1", "DD_DT1"], "min_len": 200, "max_seconds": 150},
+      "note": "팀 표기는 코드가 아니라 공식 한글 팀명 (_relabel_team_values). 구버전 코드(GM_*/DD_*) 등장은 회귀 신호"
+    },
+    {
+      "id": "team_code_still_works", "category": "incident", "freq": "weekly",
+      "question": "JBT 매출 올해 얼마야?",
+      "expect": {"contains_any": ["일본사업팀", "JBT"], "not_contains": ["좀비뷰티", "존재하지 않"], "sql_contains_any": ["'JBT'"], "min_len": 80, "max_seconds": 150},
+      "note": "코드로 물어도 그대로 통해야 한다(혼용). JBT를 좀비뷰티로 오해한 2026-08-07 사고 회귀 감시 겸용"
     }
   ]
 }

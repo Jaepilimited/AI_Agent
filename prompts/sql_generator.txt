@@ -108,7 +108,26 @@ SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판�
   ```
 - **CBT · JBT · KBT · EAST1/2 · WEST_MKT · WEST_Ecomm · DT1/2 · B2B1/2 · BCM 은 팀** →
   팀 질문은 `Team_NEW` 로 답한다. 이 값들을 "브랜드"라고 부르지 말 것.
-- 부득이 이 코드들을 언급할 때는 정식 의미를 병기한다 (예: "CBT(중국사업 팀)").
+- 부득이 이 코드들을 언급할 때는 정식 의미를 병기한다 (예: "CBT(중국사업팀)").
+
+#### ⭐ 공식 팀명 ↔ Team_NEW 코드 (2026-08-11 확정 — 둘 다 통해야 한다)
+
+**데이터에는 코드만 들어 있다.** 사용자가 한글 팀명으로 물어도 SQL 에는 **반드시 코드**를 쓴다.
+
+| 공식 팀명 | Team_NEW 코드 | | 공식 팀명 | Team_NEW 코드 |
+|---|---|---|---|---|
+| 영업1팀 | `B2B1` | | 중국사업팀 | `CBT` |
+| 영업2팀 | `B2B2` | | 일본사업팀 | `JBT` |
+| 유통1팀 | `DT1` | | 한국사업팀 | `KBT` |
+| 유통2팀 | `DT2` | | 서구권마케팅팀 | `WEST_MKT` |
+| 동남아시아1팀 | `EAST1` | | 서구권이커머스팀 | `WEST_Ecomm` |
+| 동남아시아2팀 | `EAST2` | | 브랜드커뮤니케이션팀 | `BCM` |
+
+- ✅ `WHERE Team_NEW = 'B2B1'` ← "영업1팀 매출 알려줘"
+- ❌ `WHERE Team_NEW = '영업1팀'` ← **0건이 난다. 한글 팀명은 데이터에 없다**
+- "동남아1팀"·"영업 1팀"처럼 줄여 쓰거나 띄어 써도 같은 팀이다
+- **`기타`·`OP` 는 정식 팀이 아니다** (합계 0 수준의 잔여값).
+  "팀별"로 나눌 때는 `AND Team_NEW NOT IN ('기타','OP')` 로 제외한다
 
 #### Mall_Classification 값 목록
 - SK_B2B_Domestic, SK_B2B_Overseas
@@ -193,10 +212,13 @@ Line 실제 DISTINCT 값: 'B_Line', 'C_Line', 'Centella', 'Centella_Teca', 'Dual
 
 Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
 'B2B1', 'B2B2', 'BCM', 'CBT', 'DT1', 'DT2', 'EAST1', 'EAST2', 'JBT', 'KBT', 'OP', 'WEST_Ecomm', 'WEST_MKT', '기타'
-- EAST1 (동남아1—인니/필리핀/싱가포르), EAST2 (동남아2—말레이/베트남/태국)
-- WEST_Ecomm (이커머스—미국 아마존/틱톡), WEST_MKT (글로벌마케팅)
-- CBT (중국), JBT (일본), KBT (한국), BCM (브랜드커머스/국내온라인)
-- B2B1, B2B2 (해외 도매), DT1, DT2 (DD/UM 유통), OP (운영)
+- EAST1 = **동남아시아1팀** (인도네시아·필리핀), EAST2 = **동남아시아2팀** (말레이시아·싱가포르)
+  - ⚠️ 예전 설명("EAST1=인니/필리핀/싱가포르, EAST2=말레이/베트남/태국")은 **오류**였다.
+    2026-08-11 실측: 싱가포르는 EAST2, EAST2 에 베트남·태국 매출은 없다
+- WEST_Ecomm = **서구권이커머스팀** (미국 아마존/틱톡), WEST_MKT = **서구권마케팅팀**
+- CBT = **중국사업팀**, JBT = **일본사업팀**, KBT = **한국사업팀**, BCM = **브랜드커뮤니케이션팀**
+- B2B1 = **영업1팀**, B2B2 = **영업2팀** (SK·CL B2B), DT1 = **유통1팀**, DT2 = **유통2팀** (UM 유통)
+- OP·기타 = 정식 팀 아님 (잔여값 — 팀별 집계에서 제외)
 - ⚠️ GM_EAST1/GM_EAST2/GM_Ecomm/GM_MKT/DD_DT1/DD_DT2 구버전 — 없음!
 - ⚠️ integrated_ad.team 값은 다름: 'EAST1', 'EAST2', 'JBT', 'KBT', 'WEST', '기타' (WEST_Ecomm/WEST_MKT 아님!)
 
@@ -665,7 +687,8 @@ GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
   ```
 - **동남아 국가별**: `WHERE Continent2 = '동남아시아' ... GROUP BY Country ORDER BY total_revenue DESC`
 - **월별 추이**: `FORMAT_DATETIME('%Y-%m', Date) AS month ... GROUP BY month ORDER BY month`
-- **팀별**: `GROUP BY Team_NEW ORDER BY total_revenue DESC` (Team_NEW IS NOT NULL)
+- **팀별**: `WHERE Team_NEW IS NOT NULL AND Team_NEW NOT IN ('기타','OP') ... GROUP BY Team_NEW ORDER BY total_revenue DESC`
+  (12개 정식 팀만. 한글 팀명으로 물어도 SQL 은 코드 — 위 "공식 팀명 ↔ 코드" 표 참조)
 - **플랫폼 비교**: `GROUP BY Mall_Classification` + `(LIKE '%Shopee%' OR LIKE '%Tiktok%')`
 - **해외B2B 업체**: `GROUP BY Company_Name` + `Sales_Type='B2B' AND Mall_Classification LIKE '%Overseas%'`
 - **최대/최소**: 전체 월별 반환 → ORDER BY DESC로 포맷팅 단계에서 비교
