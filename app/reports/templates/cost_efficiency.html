@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko" data-report-ready="false">
+<head>
+<meta charset="utf-8">
+<title>FOC·바우처 비용 효율화</title>
+<style>
+  :root{
+    --ink:#16181d; --muted:#6b7280; --line:#e5e7eb; --bg:#fff;
+    --accent:#1f6feb; --warn:#b45309; --warn-bg:#fffbeb; --good:#047857;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.75 -apple-system,"Segoe UI","Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 32px 96px}
+  h1{font-size:31px;line-height:1.35;letter-spacing:-.02em;margin:0 0 8px}
+  h2{font-size:21px;letter-spacing:-.01em;margin:56px 0 4px;padding-top:28px;
+    border-top:1px solid var(--line)}
+  h3{font-size:16px;margin:32px 0 4px;color:var(--muted);font-weight:600}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 40px}
+  .lede{color:var(--muted);margin:6px 0 24px}
+  p{margin:14px 0}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:26px 0}
+  .card{border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .card .k{font-size:12px;color:var(--muted);letter-spacing:.02em}
+  .card .v{font-size:25px;font-weight:650;letter-spacing:-.02em;margin-top:6px}
+  .card .d{font-size:12px;color:var(--muted);margin-top:4px}
+  table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+  th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{background:#f9fafb;font-weight:600;color:var(--muted);
+    font-size:12px;letter-spacing:.02em;border-bottom:1px solid var(--line)}
+  tbody tr:hover{background:#fafafa}
+  .scroll{overflow-x:auto}
+  .note{background:var(--warn-bg);border:1px solid #fde68a;border-left:3px solid var(--warn);
+    border-radius:6px;padding:14px 16px;margin:18px 0;font-size:14px}
+  .note b{color:var(--warn)}
+  .ok{color:var(--good)}
+  .bar{height:6px;background:#eef2f7;border-radius:3px;overflow:hidden;min-width:70px}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  .foot{margin-top:64px;padding-top:20px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:13px}
+  .missing{background:#fee2e2;color:#b91c1c;padding:0 4px;border-radius:3px}
+  @media print{
+    @page{size:A4 landscape;margin:12mm}
+    body{font-size:11pt}
+    h2{page-break-after:avoid}
+    table{page-break-inside:avoid}
+    .wrap{padding:0;max-width:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>무상 지원과 할인, 어디까지가 투자이고 어디부터가 관성인가</h1>
+  <p class="sub">{{ meta.params.brand }} 브랜드 · 집계 구간 {{ meta.params.window_label }} ·
+     중점 {{ meta.params.focus_label }} (비교 {{ meta.params.compare_label }})</p>
+
+  <h2>지출의 크기와 방향</h2>
+  <p class="lede">B2C의 바우처·할인과 B2B의 FOC(무상 출고)를 하나의 인센티브 지출로 묶어 본다.
+     기준은 매출이 아니라, 이 회사가 실제로 남기는 매출총이익이다.</p>
+
+  <div class="cards">
+    <div class="card"><div class="k">인센티브 지출</div>
+      <div class="v">{{ derived.pnl.H1_26.incentive | eok }}</div>
+      <div class="d">FOC 원가 + 바우처·할인</div></div>
+    <div class="card"><div class="k">매출 대비</div>
+      <div class="v">{{ derived.pnl.H1_26.incentive_of_sales_pct | pct }}</div>
+      <div class="d">직전 동기 {{ derived.pnl.H1_25.incentive_of_sales_pct | pct }}</div></div>
+    <div class="card"><div class="k">매출총이익 대비</div>
+      <div class="v">{{ derived.pnl.H1_26.incentive_of_gross_pct | pct }}</div>
+      <div class="d">여기서 크기가 드러난다</div></div>
+    <div class="card"><div class="k">한계 인센티브율</div>
+      <div class="v">{{ derived.yoy.marginal_rate_pct | pct }}</div>
+      <div class="d">늘어난 매출에 붙은 비율</div></div>
+  </div>
+
+  <p>매출 대비로는 작아 보이지만, 매출총이익 기준으로 보면 이야기가 달라진다.
+     더 중요한 것은 <b>방향</b>이다. 늘어난 매출에 붙은 한계 인센티브율이 기존 평균율
+     {{ derived.yoy.avg_rate_prev_pct | pct }}보다 높다면, 매출을 사기 위해 점점 더 비싼 값을
+     치르고 있다는 뜻이다. 평균율이 그대로 유지됐을 경우와의 차이가
+     <b>{{ derived.yoy.drift_cost | eok }}</b>이며, 이것이 성장에 따른 증가가 아니라
+     관성으로 늘어난 몫이다.</p>
+
+  <h3>기간·유형별 집계</h3>
+  <div class="scroll"><table id="t-summary"></table></div>
+  <p class="lede">직접비는 유상 제품원가 + FOC 원가 + 바우처·할인으로 정의한다.
+     원천의 원가 컬럼은 무상 출고분 원가를 이미 포함하므로 분리 집계해 이중계상을 막았다.</p>
+
+  <h2>FOC는 넓게 퍼진 비용이 아니라 몇 곳에 몰린 비용이다</h2>
+  <p>B2B FOC를 받는 거래처는 {{ derived.b2b_concentration.n_accounts | num }}곳이지만,
+     상위 다섯 곳이 전체의 {{ derived.b2b_concentration.top5_pct | pct }},
+     상위 스무 곳이 {{ derived.b2b_concentration.top20_pct | pct }}를 차지한다.
+     넓게 퍼진 비용이라면 정책이 필요하지만, 몰려 있는 비용은 협상 몇 건으로 움직인다.</p>
+  <div class="scroll"><table id="t-accounts"></table></div>
+
+  <h2>같은 회사 안에서 얼마나 벌어지는가</h2>
+  <p>팀별로 인센티브 비중이 크게 갈린다. 편차 자체는 문제가 아니다 — 채널 경제성이 다르기
+     때문이다. 판단 기준은 <b>매출이 늘어난 만큼 인센티브가 늘었는가</b>이다.</p>
+  <div class="scroll"><table id="t-team"></table></div>
+
+  <h3>채널별 할인 프로파일</h3>
+  <div class="scroll"><table id="t-channel"></table></div>
+
+  <h2>상한을 걸면 얼마가 남는가</h2>
+  <p class="lede">아래는 중점 기간 실적에 규칙을 소급 적용했을 때의 산술 절감이다.
+     인센티브 축소에 따른 매출 감소(탄력성)는 반영하지 않았다 —
+     협상과 정책의 목표선이지 확정 손익이 아니다.</p>
+  <h3>B2B 거래처별 FOC 상한</h3>
+  <div class="scroll"><table id="t-focsim"></table></div>
+  <h3>B2C 채널별 할인 상한</h3>
+  <div class="scroll"><table id="t-discsim"></table></div>
+
+  <h2>산출 기준과 데이터 신뢰도</h2>
+  <div id="gates"></div>
+  <p>여기서 말하는 매출총이익은 매출에서 제품원가와 인센티브만 뺀 값이다.
+     판매수수료·물류비는 원천 신뢰도 문제로 제외했고, 인건비·마케팅비 등 고정비는 이 원천에
+     아예 없다. 따라서 이 값은 <b>공헌이익도 영업이익도 아니며</b>, 부문 손익계산서의 어느
+     라인과도 일치하지 않는다. 비율의 방향과 크기를 판단하는 용도로만 쓰고, 확정 손익은
+     재무팀 마감 수치를 따라야 한다.</p>
+
+  <div class="foot">
+    스펙 <code>{{ meta.spec }}</code> · 조회 소요 {{ meta.elapsed_sec }}초 ·
+    수치 검증용 쿼리는 같은 이름의 <code>.sql</code> 파일에 기대값과 함께 들어 있다.
+  </div>
+</div>
+
+<script type="application/json" id="report-payload">/*__PAYLOAD__*/</script>
+<script>
+const PAYLOAD = JSON.parse(document.getElementById('report-payload').textContent);
+
+const eok = v => (v === null || v === undefined) ? '—' : Number(v).toLocaleString('ko-KR',
+  {minimumFractionDigits:1, maximumFractionDigits:1}) + '억';
+const pct = v => (v === null || v === undefined) ? '—' : Number(v).toFixed(2) + '%';
+const num = v => (v === null || v === undefined) ? '—' : Number(v).toLocaleString('ko-KR');
+const rate = (a, b) => (b ? (Number(a) / Number(b) * 100) : 0);
+
+function table(el, cols, rows) {
+  const node = document.getElementById(el);
+  if (!node) return;
+  const head = '<thead><tr>' + cols.map(c => `<th>${c.h}</th>`).join('') + '</tr></thead>';
+  const body = '<tbody>' + rows.map(r =>
+    '<tr>' + cols.map(c => `<td>${c.f(r)}</td>`).join('') + '</tr>').join('') + '</tbody>';
+  node.innerHTML = head + body;
+}
+
+function bar(v, max) {
+  const w = max ? Math.max(0, Math.min(100, v / max * 100)) : 0;
+  return `<div class="bar"><i style="width:${w}%"></i></div>`;
+}
+
+(function () {
+  const P = PAYLOAD, D = P.derived, F = P.facts;
+
+  // 기간·유형별 요약
+  const per = F.summary.map(r => {
+    const direct = r.paid_cost + r.foc_cost + r.discount;
+    const inc = r.foc_cost + r.discount;
+    return Object.assign({}, r, {direct, inc,
+      gross: r.sales - direct, incRate: rate(inc, r.sales)});
+  });
+  table('t-summary', [
+    {h:'기간', f:r => r.period === 'H1_26' ? P.meta.params.focus_label : P.meta.params.compare_label},
+    {h:'유형', f:r => r.Sales_Type},
+    {h:'매출', f:r => eok(r.sales)},
+    {h:'유상 원가', f:r => eok(r.paid_cost)},
+    {h:'FOC 원가', f:r => eok(r.foc_cost)},
+    {h:'바우처·할인', f:r => eok(r.discount)},
+    {h:'직접비', f:r => eok(r.direct)},
+    {h:'매출총이익', f:r => eok(r.gross)},
+    {h:'인센티브율', f:r => pct(r.incRate)},
+  ], per);
+
+  // 거래처 집중도
+  const maxFoc = Math.max(...D.b2b_concentration.top.map(r => r.foc_cost), 0);
+  table('t-accounts', [
+    {h:'거래처', f:r => r.account},
+    {h:'매출', f:r => eok(r.sales)},
+    {h:'FOC 원가', f:r => eok(r.foc_cost)},
+    {h:'FOC율', f:r => pct(r.foc_rate_pct)},
+    {h:'', f:r => bar(r.foc_cost, maxFoc)},
+  ], D.b2b_concentration.top);
+
+  // 팀별
+  const teams = F.by_team.map(r => Object.assign({}, r,
+    {inc: r.foc_cost + r.discount, incRate: rate(r.foc_cost + r.discount, r.sales)}))
+    .sort((a, b) => b.inc - a.inc);
+  const maxInc = Math.max(...teams.map(r => r.inc), 0);
+  table('t-team', [
+    {h:'팀', f:r => r.team},
+    {h:'유형', f:r => r.Sales_Type},
+    {h:'매출', f:r => eok(r.sales)},
+    {h:'FOC 원가', f:r => eok(r.foc_cost)},
+    {h:'바우처·할인', f:r => eok(r.discount)},
+    {h:'인센티브율', f:r => pct(r.incRate)},
+    {h:'', f:r => bar(r.inc, maxInc)},
+  ], teams);
+
+  // 채널별
+  const chans = F.by_channel.map(r => Object.assign({}, r,
+    {discRate: rate(r.discount, r.sales)})).sort((a, b) => b.discount - a.discount);
+  table('t-channel', [
+    {h:'채널', f:r => r.channel},
+    {h:'매출', f:r => eok(r.sales)},
+    {h:'바우처·할인', f:r => eok(r.discount)},
+    {h:'할인율', f:r => pct(r.discRate)},
+  ], chans);
+
+  // 시뮬레이션
+  table('t-focsim', [
+    {h:'상한', f:r => r.cap_pct + '%'},
+    {h:'적용 대상 거래처', f:r => num(r.n_accounts_over) + '곳'},
+    {h:'절감액', f:r => eok(r.save)},
+  ], D.foc_cap_sim);
+  table('t-discsim', [
+    {h:'상한', f:r => r.cap_pct + '%'},
+    {h:'적용 대상 채널', f:r => num(r.n_channels_over) + '곳'},
+    {h:'절감액', f:r => eok(r.save)},
+  ], D.discount_cap_sim);
+
+  // 품질 게이트 — 제외한 것과 그 영향을 반드시 노출한다
+  document.getElementById('gates').innerHTML = P.gates.map(g => g.passed
+    ? `<p class="ok">✓ ${g.label} — ${g.detail}</p>`
+    : `<div class="note"><b>${g.label}</b> — ${g.detail}<br>${g.impact}</div>`).join('');
+
+  document.documentElement.setAttribute('data-report-ready', 'true');
+})();
+</script>
+</body>
+</html>
