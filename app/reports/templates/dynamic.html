@@ -34,7 +34,12 @@
   .up{color:var(--up)} .down{color:var(--down)}
   .bar{height:5px;background:#eef2f7;border-radius:3px;overflow:hidden;min-width:60px}
   .bar>i{display:block;height:100%;background:var(--accent)}
-  .spark{display:block;width:100%;height:120px;margin:14px 0}
+  .chart{display:block;width:100%;height:auto;margin:16px 0 10px}
+  .chart .ax{font-size:13px;fill:var(--muted);font-family:inherit}
+  .find.vals{margin-top:10px}
+  .find.vals li::before{background:var(--muted)}
+  .find.vals .nm{font-weight:600}
+  .find.vals .bar{margin:5px 0 0;max-width:340px}
   details.more{margin:-6px 0 8px}
   details.more>summary{cursor:pointer;color:var(--accent);font-size:13px;
     list-style:none;padding:4px 0}
@@ -100,22 +105,58 @@ function cell(row, col, unit) {
   return `<td>${esc(v)}</td>`;
 }
 
-function sparkline(rows) {
+// 눈금을 사람이 읽는 값으로 올림. 1·2·5 만 쓰면 55.1억이 100억으로 올라가
+// 차트 위 절반이 빈다 — 중간 단계를 둔다 (55.1 → 60).
+const _NICE = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(v)));
+  const f = v / e;
+  return (_NICE.find(n => f <= n + 1e-9) || 10) * e;
+}
+
+/* 기간 추세 차트.
+   ⛔ **바닥은 반드시 0이다.** 최솟값을 바닥에 붙이면 면적이 거짓말을 한다 —
+      실제로 최저 6.6억(최고의 12%)이 0으로 보였다 (2026-08-13 사용자 지적).
+   그리고 축이 없으면 어느 봉우리가 언제인지 알 수 없어 차트가 표의 장식이 된다. */
+function trendChart(rows, unit) {
   const vals = rows.map(r => Number(r.value) || 0);
   if (vals.length < 2) return '';
-  const max = Math.max(...vals), min = Math.min(...vals);
-  const span = (max - min) || 1;
-  const W = 1000, H = 120, pad = 6;
-  const pts = vals.map((v, i) => {
-    const x = pad + i * (W - 2 * pad) / (vals.length - 1);
-    const y = H - pad - (v - min) / span * (H - 2 * pad);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  });
-  const area = `${pad},${H - pad} ` + pts.join(' ') + ` ${W - pad},${H - pad}`;
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-    <polygon points="${area}" fill="var(--accent-soft)"/>
-    <polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.5"
-      vector-effect="non-scaling-stroke"/></svg>`;
+  const top = niceMax(Math.max(...vals, 0));
+  const W = 1000, H = 230, padL = 58, padR = 10, padT = 14, padB = 34;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const y0 = padT + plotH;                       // 0 선
+  const yOf = v => y0 - (v / top) * plotH;
+  const slot = plotW / vals.length;
+  const bw = Math.min(slot * 0.62, 46);
+  const peak = vals.indexOf(Math.max(...vals));
+
+  // 눈금선 3개 (0 / 절반 / 최대) — 값을 왼쪽에 적는다
+  const grid = [0, 0.5, 1].map(f => {
+    const y = yOf(top * f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"
+              stroke="${f === 0 ? '#c9ced6' : '#eef1f5'}" stroke-width="1"/>
+            <text x="${padL - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end"
+              class="ax">${fmtMetric(top * f, unit)}</text>`;
+  }).join('');
+
+  // 눈금이 빽빽하면 건너뛰되 첫·끝·최고점은 항상 적는다
+  const step = vals.length <= 12 ? 1 : Math.ceil(vals.length / 9);
+  const bars = rows.map((r, i) => {
+    const v = vals[i], x = padL + slot * i + (slot - bw) / 2;
+    const y = yOf(v), h = Math.max(y0 - y, v > 0 ? 1 : 0);
+    const show = i % step === 0 || i === vals.length - 1 || i === peak;
+    const lab = show
+      ? `<text x="${(x + bw / 2).toFixed(1)}" y="${y0 + 20}" text-anchor="middle"
+           class="ax">${esc(r.dim)}</text>` : '';
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}"
+              height="${h.toFixed(1)}" rx="2"
+              fill="${i === peak ? 'var(--accent)' : 'var(--accent-soft)'}"
+              stroke="var(--accent)" stroke-width="${i === peak ? 0 : 1}"><title>${esc(r.dim)} · ${
+              esc(fmtMetric(v, unit))}</title></rect>${lab}`;
+  }).join('');
+
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${grid}${bars}</svg>`;
 }
 
 function bars(rows, key) {
@@ -135,14 +176,53 @@ function bars(rows, key) {
   document.getElementById('lede').textContent = M.lede || '';
   document.getElementById('question').textContent = '질문: ' + M.question;
 
-  const SHOW = 12;   // 표에 바로 보이는 행 수. 나머지는 접어 둔다 — 44행짜리 표는 읽히지 않는다
+  const SHOW = 12;    // 표에 바로 보이는 행 수. 나머지는 접어 둔다 — 44행짜리 표는 읽히지 않는다
+  const INLINE = 2;   // 이 행 수 이하는 표 대신 문장으로. 두 줄짜리 표는 표일 이유가 없다
+
+  // 값 셀의 텍스트만 뽑는다 (표와 같은 포맷터를 쓰므로 숫자가 갈리지 않는다)
+  function cellText(row, col, unit) {
+    const d = document.createElement('div');
+    d.innerHTML = cell(row, col, unit);
+    return d.textContent.trim();
+  }
+
+  // 표를 문장으로 바꾸면서 **막대를 같이 잃어버렸다** (2026-08-13). 표 경로에만 막대가
+  // 붙어 있어서 2행짜리 세 절의 차트가 조용히 사라졌다. 문장에도 비교 막대를 붙인다.
+  function inlineRows(s) {
+    const valCols = s.columns.filter(c => c.key !== 'dim');
+    const barHtml = (s.chart === 'bar') ? bars(s.rows, s.chart_key) : null;
+    return `<ul class="find vals">` + s.rows.map((r, i) => {
+      const name = esc(r.dim);
+      const parts = valCols.map(c => `${esc(c.label)} <b>${esc(cellText(r, c, s.unit))}</b>`);
+      return `<li><span class="nm"${r.dim_full ? ` title="${esc(r.dim_full)}"` : ''}>${name}</span> — ${
+        parts.join(' · ')}${barHtml ? barHtml[i] : ''}</li>`;
+    }).join('') + `</ul>`;
+  }
+
   document.getElementById('sections').innerHTML = P.sections.map(s => {
+    const findHtml = `<ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>`;
+    const isTrend = (s.chart === 'line');
+    const chartHtml = isTrend ? trendChart(s.rows, s.unit) : '';
+
+    // 행이 둘 이하면 표를 만들지 않는다. total 은 발견 문장이 이미 두 기간을 말하므로 그것도 생략.
+    if (s.rows.length <= INLINE) {
+      const body = (s.block === 'total') ? '' : inlineRows(s);
+      return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${body}`;
+    }
+
     const barCol = (s.chart === 'bar');
     const cols = s.columns.concat(barCol ? [{key:'__bar', label:''}] : []);
     const barHtml = barCol ? bars(s.rows, s.chart_key) : [];
     const head = '<thead><tr>' + cols.map(c => `<th>${esc(c.label)}</th>`).join('') + '</tr></thead>';
     const tr = (r, i) => '<tr>' + cols.map(c =>
       c.key === '__bar' ? `<td>${barHtml[i]}</td>` : cell(r, c, s.unit)).join('') + '</tr>';
+    // 추세 절은 차트가 18개월을 다 보여준다. 같은 값을 표로 또 깔면 화면만 길어진다 — 접어 둔다
+    if (isTrend) {
+      const all = `<div class="scroll"><table>${head}<tbody>${s.rows.map(tr).join('')}</tbody></table></div>`;
+      return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}` +
+        `<details class="more"><summary>월별 수치 ${s.rows.length}행 보기</summary>${all}</details>`;
+    }
+
     const head_rows = s.rows.slice(0, SHOW).map(tr).join('');
     const rest = s.rows.slice(SHOW);
     const table = `<div class="scroll"><table>${head}<tbody>${head_rows}</tbody></table></div>`;
@@ -150,10 +230,7 @@ function bars(rows, key) {
       ? `<details class="more"><summary>나머지 ${rest.length}행 보기</summary>
          <div class="scroll"><table>${head}<tbody>${rest.map((r, i) => tr(r, i + SHOW)).join('')}</tbody></table></div></details>`
       : '';
-    return `<h2>${esc(s.title)}</h2>
-      ${s.chart === 'line' ? sparkline(s.rows) : ''}
-      <ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-      ${table}${more}`;
+    return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${table}${more}`;
   }).join('');
 
   document.getElementById('quality').innerHTML = (P.quality_notes || []).map(n =>

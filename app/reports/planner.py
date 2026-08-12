@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 import structlog
@@ -101,6 +102,20 @@ def default_plan(question: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_RE_ALLOWED_NUM = re.compile(r"20\d{2}|B2B|B2C|[12][HhQq]|[1-4]분기")
+
+
+def _has_invented_number(text: str) -> bool:
+    """제목·도입부에 **지어낸 수치**가 있는가.
+
+    연도(2026)나 B2B/B2C 는 통과시킨다. 처음엔 숫자가 하나라도 있으면 버렸는데,
+    그러면 "2026년 일본 B2C 매출 요인" 같은 멀쩡한 제목까지 날아가 제목이
+    "2026 상반기 분석 보고서" 로 뭉개졌다 (2026-08-12). 막아야 할 것은
+    조회하지 않고 지어낸 **통계**(191.3억, +35%)이지 기간 표기가 아니다.
+    """
+    return bool(re.search(r"\d", _RE_ALLOWED_NUM.sub("", text or "")))
+
+
 def _clean_section(s: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
     if not isinstance(s, dict):
         return None
@@ -159,10 +174,10 @@ def _clean_section(s: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
 
     title = (s.get("title") or "").strip()
     # 제목에 숫자가 있으면 버린다 — 계획 단계에서 수치를 지어낸 것이다
-    if title and not any(c.isdigit() for c in title):
+    if title and not _has_invented_number(title):
         out["title"] = title[:60]
     elif title:
-        problems.append(f"제목에 숫자가 들어가 버림: '{title[:40]}'")
+        problems.append(f"제목에 지어낸 수치가 있어 버림: '{title[:40]}'")
 
     if isinstance(s.get("limit"), int):
         out["limit"] = max(3, min(50, s["limit"]))
@@ -207,11 +222,11 @@ def plan(question: str, ctx: Dict[str, Any], llm=None) -> Dict[str, Any]:
         return default_plan(question, ctx)
 
     title = (data.get("title") or "").strip()
-    if not title or any(c.isdigit() for c in title):
+    if not title or _has_invented_number(title):
         title = f"{ctx['focus_label']} 분석 보고서"
     lede = (data.get("lede") or "").strip()
-    if any(c.isdigit() for c in lede):
-        lede = ""   # 도입부에 숫자를 지어낸 경우 버린다
+    if _has_invented_number(lede):
+        lede = ""   # 도입부에 수치를 지어낸 경우만 버린다 (연도는 통과)
 
     return {"title": title[:80], "lede": lede[:200], "sections": sections,
             "dropped": problems}

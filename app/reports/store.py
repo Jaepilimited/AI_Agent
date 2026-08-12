@@ -58,9 +58,36 @@ def ensure_report_tables() -> None:
         logger.debug("report_ddl_skip", error=str(e)[:120])
 
 
+def _code_version() -> str:
+    """payload 를 만드는 코드의 지문.
+
+    ⚠️ 이게 없으면 **코드를 고쳐 배포해도 캐시가 옛 payload 를 계속 돌려준다.**
+    실제로 겪었다 (2026-08-12): 누적 열·라벨을 고쳐 배포했는데 보고서가 그대로여서
+    한참 헤맸다. 표시(템플릿)는 렌더 때마다 새로 그려지니 일부만 바뀌어 더 헷갈렸다.
+    `sql_cache` 가 고친 뒤에도 옛 SQL 을 재생하던 것과 같은 함정이다.
+    """
+    global _CODE_VER
+    if _CODE_VER:
+        return _CODE_VER
+    h = hashlib.md5()
+    here = os.path.dirname(os.path.abspath(__file__))
+    for name in ("blocks.py", "semantic.py", "dynamic.py", "planner.py"):
+        try:
+            with open(os.path.join(here, name), "rb") as fh:
+                h.update(fh.read())
+        except OSError:
+            pass
+    _CODE_VER = h.hexdigest()[:8]
+    return _CODE_VER
+
+
+_CODE_VER = ""
+
+
 def params_hash(spec_id: str, params: Dict[str, Any]) -> str:
-    """캐시 키. 값이 같으면 같은 보고서다."""
-    blob = json.dumps({"spec": spec_id, "params": params}, sort_keys=True, default=str)
+    """캐시 키. 값이 같고 **만드는 코드도 같으면** 같은 보고서다."""
+    blob = json.dumps({"spec": spec_id, "params": params, "code": _code_version()},
+                      sort_keys=True, default=str)
     return hashlib.md5(blob.encode("utf-8")).hexdigest()
 
 
