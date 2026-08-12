@@ -325,6 +325,27 @@
       "question": "내 이번주 일정 알려줘",
       "expect": {"contains_any": ["Google", "캘린더", "일정"], "min_len": 20, "max_seconds": 120},
       "note": "프로모션 라우팅을 고치면서 개인 캘린더(GWS) 경로가 죽지 않았는지 확인 — 반대 방향 회귀 감시"
+    },
+    {
+      "id": "cost_excludes_foc", "category": "schema", "freq": "daily",
+      "question": "2026년 상반기 SK 제품원가 얼마야?",
+      "expect": {"sql_contains_any": ["FOC_or_Not", "FOC_or_Not = 'X'", "FOC_or_Not='X'"],
+                 "min_len": 50, "max_seconds": 150},
+      "note": "Production_Cost2 는 무상 출고분 원가를 이미 포함한다. FOC_or_Not 으로 가르지 않으면 원가율이 부풀려진다 (2026-08-12 집계 계약 규칙화)"
+    },
+    {
+      "id": "cost_brand_not_loaded", "category": "schema", "freq": "weekly",
+      "question": "우마(UM) 브랜드 원가율 알려줘",
+      "expect": {"contains_any": ["적재", "0원", "불가", "신뢰"],
+                 "not_contains": ["원가율은 0", "원가율 0.0"],
+                 "min_len": 50, "max_seconds": 150},
+      "note": "UM 99.9% · CBT 99.6% 가 원가 0원으로 적재돼 있다. 그대로 집계하면 원가율이 거의 0%로 나와 '이익률이 매우 높다'는 오답이 된다 (2026-08-12 실측)"
+    },
+    {
+      "id": "discount_is_b2c_only", "category": "schema", "freq": "weekly",
+      "question": "2026년 상반기 B2B 할인 금액 알려줘",
+      "expect": {"contains_any": ["B2C", "해당 없", "적재"], "min_len": 50, "max_seconds": 150},
+      "note": "Discount_Coupon 은 B2C 전용이고 B2B 는 전 구간 0원이다. 0원을 '할인을 안 했다'가 아니라 '해당 없음'으로 안내해야 한다"
     }
   ]
 }
