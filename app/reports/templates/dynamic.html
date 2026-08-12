@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko" data-report-ready="false">
+<head>
+<meta charset="utf-8">
+<title>분석 보고서</title>
+<style>
+  :root{
+    --ink:#16181d; --muted:#6b7280; --line:#e5e7eb; --bg:#fff;
+    --accent:#1f6feb; --accent-soft:#dbeafe; --warn:#b45309; --warn-bg:#fffbeb;
+    --up:#047857; --down:#b91c1c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.75 -apple-system,"Segoe UI","Malgun Gothic",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 32px 96px}
+  h1{font-size:30px;line-height:1.35;letter-spacing:-.02em;margin:0 0 8px}
+  h2{font-size:20px;letter-spacing:-.01em;margin:52px 0 6px;padding-top:26px;
+    border-top:1px solid var(--line)}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 8px}
+  .lede{color:var(--muted);margin:0 0 36px}
+  .q{background:#f9fafb;border-left:3px solid var(--accent);border-radius:0 6px 6px 0;
+    padding:12px 16px;margin:0 0 32px;color:var(--muted);font-size:14px}
+  .find{margin:14px 0 6px;padding:0;list-style:none}
+  .find li{position:relative;padding-left:18px;margin:7px 0}
+  .find li::before{content:"";position:absolute;left:4px;top:.72em;width:5px;height:5px;
+    border-radius:50%;background:var(--accent)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  thead th{background:#f9fafb;font-weight:600;color:var(--muted);font-size:12px}
+  tbody tr:hover{background:#fafafa}
+  .scroll{overflow-x:auto}
+  .up{color:var(--up)} .down{color:var(--down)}
+  .bar{height:5px;background:#eef2f7;border-radius:3px;overflow:hidden;min-width:60px}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  .spark{display:block;width:100%;height:120px;margin:14px 0}
+  .note{background:var(--warn-bg);border:1px solid #fde68a;border-left:3px solid var(--warn);
+    border-radius:6px;padding:12px 15px;margin:14px 0;font-size:14px}
+  .note b{color:var(--warn)}
+  .foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:13px}
+  @media print{
+    @page{size:A4 landscape;margin:12mm}
+    body{font-size:11pt}
+    h2{page-break-after:avoid} table{page-break-inside:avoid}
+    .wrap{padding:0;max-width:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title"></h1>
+  <p class="sub" id="sub"></p>
+  <p class="lede" id="lede"></p>
+  <div class="q" id="question"></div>
+  <div id="sections"></div>
+  <h2>산출 기준과 데이터 신뢰도</h2>
+  <div id="quality"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script type="application/json" id="report-payload">/*__PAYLOAD__*/</script>
+<script>
+const P = JSON.parse(document.getElementById('report-payload').textContent);
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function fmtMetric(v, unit) {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  if (!isFinite(n)) return esc(v);
+  if (unit === '억') return n.toLocaleString('ko-KR', {minimumFractionDigits:1, maximumFractionDigits:1}) + '억';
+  return n.toLocaleString('ko-KR') + (unit || '');
+}
+function fmtPct(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  return Number(v).toFixed(1) + '%';
+}
+function cell(row, col, unit) {
+  const v = row[col.key];
+  if (col.fmt === 'metric') {
+    const cls = (col.key === 'delta' && Number(v) !== 0) ? (Number(v) > 0 ? 'up' : 'down') : '';
+    return `<td class="${cls}">${fmtMetric(v, unit)}</td>`;
+  }
+  if (col.fmt === 'pct') {
+    const cls = (col.key === 'growth' && v !== null) ? (Number(v) >= 0 ? 'up' : 'down') : '';
+    return `<td class="${cls}">${fmtPct(v)}</td>`;
+  }
+  return `<td>${esc(v)}</td>`;
+}
+
+function sparkline(rows) {
+  const vals = rows.map(r => Number(r.value) || 0);
+  if (vals.length < 2) return '';
+  const max = Math.max(...vals), min = Math.min(...vals);
+  const span = (max - min) || 1;
+  const W = 1000, H = 120, pad = 6;
+  const pts = vals.map((v, i) => {
+    const x = pad + i * (W - 2 * pad) / (vals.length - 1);
+    const y = H - pad - (v - min) / span * (H - 2 * pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const area = `${pad},${H - pad} ` + pts.join(' ') + ` ${W - pad},${H - pad}`;
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <polygon points="${area}" fill="var(--accent-soft)"/>
+    <polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.5"
+      vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+function bars(rows, unit) {
+  const max = Math.max(...rows.map(r => Math.abs(Number(r.value) || 0)), 0);
+  return rows.map(r => {
+    const w = max ? Math.abs(Number(r.value) || 0) / max * 100 : 0;
+    return `<div class="bar"><i style="width:${w.toFixed(1)}%"></i></div>`;
+  });
+}
+
+(function () {
+  const M = P.meta;
+  document.getElementById('title').textContent = M.title;
+  document.getElementById('sub').textContent =
+    `중점 ${M.params.focus_label} · 비교 ${M.params.compare_label} · 섹션 ${P.sections.length}개`;
+  document.getElementById('lede').textContent = M.lede || '';
+  document.getElementById('question').textContent = '질문: ' + M.question;
+
+  document.getElementById('sections').innerHTML = P.sections.map(s => {
+    const barCol = (s.chart === 'bar');
+    const cols = s.columns.concat(barCol ? [{key:'__bar', label:''}] : []);
+    const barHtml = barCol ? bars(s.rows, s.unit) : [];
+    const head = '<thead><tr>' + cols.map(c => `<th>${esc(c.label)}</th>`).join('') + '</tr></thead>';
+    const body = '<tbody>' + s.rows.map((r, i) => '<tr>' + cols.map(c =>
+      c.key === '__bar' ? `<td>${barHtml[i]}</td>` : cell(r, c, s.unit)).join('') + '</tr>').join('') + '</tbody>';
+    return `<h2>${esc(s.title)}</h2>
+      ${s.chart === 'line' ? sparkline(s.rows) : ''}
+      <ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
+      <div class="scroll"><table>${head}${body}</table></div>`;
+  }).join('');
+
+  document.getElementById('quality').innerHTML = (P.quality_notes || []).map(n =>
+    `<div class="note"><b>${esc(n.label)}</b> — ${esc(n.text)}</div>`).join('')
+    + (M.skipped && M.skipped.length
+        ? `<div class="note"><b>실린 내용에서 빠진 절</b> — ${esc(M.skipped.join(', '))}. 조회 결과가 없어 뺐습니다.</div>`
+        : '');
+
+  document.getElementById('foot').textContent =
+    `조회 ${M.queries}회 · ${M.elapsed_sec}초 · 모든 수치는 조회 결과에서 왔고, 서술 문장은 규칙으로 생성됐습니다.`;
+
+  document.documentElement.setAttribute('data-report-ready', 'true');
+})();
+</script>
+</body>
+</html>

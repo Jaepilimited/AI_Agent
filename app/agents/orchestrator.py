@@ -804,7 +804,7 @@ class OrchestratorAgent:
         # ⚠️ 진행 문구를 ("chunk", ...) 로 보내면 안 된다 — routes.py 가 streamed_live 를 세워
         #    뒤따르는 ("done", 본문) 을 통째로 버린다 (2026-08-12 확인).
         from app.reports import registry as _rep_reg
-        if _rep_reg.match(query):
+        if _rep_reg.wants_report(query):
             yield ("source", "bigquery")
             _r = await self._handle_report(query, user_email)
             if _r:
@@ -1988,7 +1988,7 @@ class OrchestratorAgent:
         """
         from app.reports import registry, service
 
-        if not registry.match(query):
+        if not registry.wants_report(query):
             return None
         if not user_email:
             logger.info("report_skipped_no_user", query=query[:80])

@@ -67,6 +67,61 @@ def _summarize(spec_id: str, payload: Dict[str, Any]) -> list[str]:
     return lines
 
 
+def _summarize_dynamic(payload: Dict[str, Any]) -> list[str]:
+    """동적 보고서 요약 — 각 절의 첫 발견을 모은다. 전부 규칙이 만든 문장이다."""
+    lines = []
+    for s in payload.get("sections", [])[:4]:
+        if s.get("findings"):
+            lines.append(f"**{s['title']}** — {s['findings'][0]}")
+    skipped = (payload.get("meta") or {}).get("skipped") or []
+    if skipped:
+        lines.append(f"⚠️ 조회 결과가 없어 {len(skipped)}개 절을 뺐습니다 ({', '.join(skipped[:3])}).")
+    return lines
+
+
+def _run_dynamic(question: str, user_id: int, params: Dict[str, Any],
+                 use_cache: bool) -> Dict[str, Any]:
+    from app.reports import dynamic
+
+    ctx = {k: v for k, v in params.items() if not k.startswith("_")}
+    ctx["base_filters"] = params.get("_filters") or {}
+    # 캐시 키에 질문을 넣는다 — 같은 기간이라도 질문이 다르면 다른 보고서다
+    phash = store.params_hash("dynamic", {**ctx, "q": question.strip().lower()})
+
+    payload = None
+    cached = store.find_fresh("dynamic", phash) if use_cache else None
+    if cached:
+        try:
+            payload = json.loads(cached["payload_json"])
+            logger.info("report_cache_hit", spec="dynamic", source_report=cached["id"])
+        except Exception:
+            payload = None
+
+    if payload is None:
+        payload = dynamic.build(question, ctx)
+
+    if not payload.get("sections"):
+        raise RuntimeError("조회 결과가 모두 비어 보고서를 만들 수 없습니다")
+
+    title = payload["meta"]["title"]
+    html = render.render(payload, "dynamic.html", allow_literals=[])
+    rid = store.save(user_id=user_id, spec_id="dynamic", title=title,
+                     params=ctx, payload=payload, html=html, question=question,
+                     cache_key=phash)
+    return {
+        "report_id": rid,
+        "spec": "dynamic",
+        "title": title,
+        "url": f"/api/reports/{rid}",
+        "period": ctx.get("focus_label"),
+        "summary": _summarize_dynamic(payload),
+        "notes": [],
+        "sections": len(payload["sections"]),
+        "gates_failed": 0,
+        "elapsed_sec": (payload.get("meta") or {}).get("elapsed_sec"),
+    }
+
+
 def run(question: str, user_id: int, *, spec_id: Optional[str] = None,
         use_cache: bool = True) -> Optional[Dict[str, Any]]:
     """보고서를 만들고 저장한다. 해당 없으면 None.
@@ -76,10 +131,12 @@ def run(question: str, user_id: int, *, spec_id: Optional[str] = None,
     if spec_id:
         params = registry.parse_params(question, spec_id)
     else:
-        hit = registry.match(question)
-        if not hit:
+        r = registry.route(question)
+        if not r:
             return None
-        spec_id, params = hit
+        if r["kind"] == "dynamic":
+            return _run_dynamic(question, user_id, r["params"], use_cache)
+        spec_id, params = r["spec_id"], r["params"]
 
     store.ensure_report_tables()
     spec = registry.get_spec(spec_id, **{k: v for k, v in params.items()
@@ -139,7 +196,10 @@ def run(question: str, user_id: int, *, spec_id: Optional[str] = None,
 
 def to_markdown(result: Dict[str, Any]) -> str:
     """채팅 답변 본문."""
-    parts = [f"**{result['title']}** · {result['period']} 기준 보고서를 만들었습니다.", ""]
+    head = f"**{result['title']}** · {result['period']} 기준"
+    if result.get("sections"):
+        head += f" · {result['sections']}개 절"
+    parts = [head + " 보고서를 만들었습니다.", ""]
     parts += [f"- {s}" for s in result["summary"]]
     for n in result.get("notes", []):
         parts += ["", f"> {n}"]

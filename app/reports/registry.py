@@ -101,6 +101,48 @@ _BRANDS = {"스킨천사": "SK", "skin1004": "SK", "sk": "SK",
            "커먼랩스": "CL", "좀비뷰티": "SK"}
 
 
+def extract_filters(q: str) -> Dict[str, Any]:
+    """질문에 등장한 국가·대륙·팀·영업유형을 필터로 뽑는다.
+
+    **LLM 에 맡기지 않는다.** "일본 매출 보고서"의 '일본'을 놓치면 전사 보고서가 나와서
+    질문에 답하지 않은 문서가 된다. 이건 확률에 걸 문제가 아니다.
+    값은 실제 데이터에 있는 것만 쓴다 (CLAUDE.md 의 국가명은 한국어).
+    """
+    out: Dict[str, Any] = {}
+
+    hits = [c for c in _COUNTRIES if c in q]
+    # '한국'이 '한국사업팀' 의 일부로 잡히는 것 같은 부분 일치를 막는다
+    hits = [c for c in hits if not any(c != o and c in o for o in hits)]
+    if hits:
+        out["국가"] = hits[:5]
+
+    conts = [c for c in ["유럽", "아시아", "북미", "남미", "중미", "중동", "아프리카",
+                         "오세아니아", "CIS"] if c in q]
+    if conts and "국가" not in out:
+        out["대륙"] = conts[:3]
+
+    from app.agents.sql_agent import TEAM_CODE2KR
+    teams = [code for code, kr in TEAM_CODE2KR.items() if kr in q]
+    if teams:
+        out["팀"] = teams
+
+    if "b2b" in q.lower():
+        out["영업유형"] = ["B2B"]
+    elif "b2c" in q.lower():
+        out["영업유형"] = ["B2C"]
+    return out
+
+
+# 실제 데이터에 있는 주요 국가 (한국어). 전체 191개를 다 볼 필요는 없다 —
+# 보고서로 물어보는 국가는 사실상 여기 안에 있고, 없으면 전사 보고서로 나간다.
+_COUNTRIES = [
+    "한국", "일본", "미국", "중국", "인도네시아", "베트남", "태국", "필리핀", "말레이시아",
+    "싱가포르", "대만", "홍콩", "호주", "캐나다", "영국", "프랑스", "독일", "스페인",
+    "이탈리아", "네덜란드", "폴란드", "러시아", "인도", "브라질", "멕시코", "터키",
+    "사우디아라비아", "아랍에미리트", "카자흐스탄", "우크라이나",
+]
+
+
 def parse_params(q: str, spec_id: str) -> Dict[str, Any]:
     params: Dict[str, Any] = dict(parse_period(q))
     ql = q.lower()
@@ -117,11 +159,7 @@ def parse_params(q: str, spec_id: str) -> Dict[str, Any]:
 
 
 def match(question: str) -> Optional[Tuple[str, Dict[str, Any]]]:
-    """질문이 등록된 보고서에 해당하면 (스펙 id, 파라미터) 를 돌려준다.
-
-    보고서 신호어 + 주제어가 **둘 다** 있어야 한다. "FOC 얼마야?" 같은 단순 조회는
-    보고서로 만들지 않는다 — 답 한 줄이면 될 것을 스무 초 기다리게 하면 안 된다.
-    """
+    """고정 스펙에 해당하면 (스펙 id, 파라미터). 아니면 None."""
     ql = question.lower()
     if not any(w in ql for w in _REPORT_WORDS):
         return None
@@ -129,3 +167,32 @@ def match(question: str) -> Optional[Tuple[str, Dict[str, Any]]]:
         if any(t in ql for t in meta["topics"]):
             return spec_id, parse_params(question, spec_id)
     return None
+
+
+def wants_report(question: str) -> bool:
+    """보고서를 원하는 질문인가.
+
+    신호어("보고서·리포트·분석해줘·진단…")가 있어야 한다. "일본 매출 얼마야?" 같은
+    단순 조회를 보고서로 만들어 스무 초 기다리게 하지 않는다.
+    """
+    ql = question.lower()
+    return any(w in ql for w in _REPORT_WORDS)
+
+
+def route(question: str) -> Optional[Dict[str, Any]]:
+    """질문 → 어떤 경로로 보고서를 만들 것인가.
+
+    - `spec`    : 손으로 검증한 고정 스펙 (집계 계약·시뮬레이션이 있는 깊은 분석)
+    - `dynamic` : 블록을 조합하는 넓은 분석. 스펙이 없는 주제는 전부 이쪽
+
+    고정 스펙이 있으면 **그쪽이 이긴다.** 같은 주제를 동적으로 다시 만들면
+    검증된 분석을 얕은 것으로 덮어쓰게 된다.
+    """
+    if not wants_report(question):
+        return None
+    hit = match(question)
+    if hit:
+        return {"kind": "spec", "spec_id": hit[0], "params": hit[1]}
+    params = parse_params(question, "")
+    params["_filters"] = extract_filters(question)
+    return {"kind": "dynamic", "spec_id": None, "params": params}
