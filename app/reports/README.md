@@ -1,7 +1,24 @@
-# 보고서 파이프라인 (1단계)
+# 보고서 파이프라인
 
 `매출분석/cost_efficiency/` 의 일회성 파이프라인을 재현 가능한 스펙으로 옮긴 것.
 질문 하나로 완성 보고서를 내는 것이 아니라, **사람이 검토할 수 있는 초안**을 만든다.
+
+## 사용자는 채팅에서 질문으로 받는다
+
+> "SK FOC 바우처 비용 효율화 보고서 만들어줘" → 요약 4줄 + `[보고서 열기]` 링크 (5초)
+
+- 판정은 `registry.match()` — **보고서 신호어**(보고서·리포트·분석해줘·진단…) + **주제어**가
+  둘 다 있어야 한다. "FOC 얼마야?" 같은 단순 조회를 보고서로 만들지 않는다
+- 기간은 `registry.parse_period()` 가 결정적으로 뽑는다. 명시가 없으면 **직전에 끝난 반기**다 —
+  진행 중인 반기를 기본으로 잡으면 두 달치로 반기 비율을 내고 그걸 반기 실적처럼 읽는다
+- ⛔ **열람은 본인이 만든 것만.** admin 도 남의 보고서를 열 수 없다 (2026-08-12 결정).
+  원가·마진·거래처별 FOC율이 들어가므로 매출 질문과 같은 수준으로 열지 않는다.
+  판정은 `store.get_for_user()` **한 곳에서만** 한다 — 흩으면 한 곳만 고치고 뚫린다
+- 없는 것과 남의 것을 구분해 알려주지 않는다 (둘 다 404)
+- 같은 스펙·기간이면 payload 를 재사용하되 **요청자 본인의 행을 새로 만든다.**
+  남의 행을 그대로 돌려주면 열람 권한이 무너진다
+
+## CLI
 
 ```
 python scripts/build_report.py cost_efficiency              # 조회 → payload → HTML → 검증 SQL
@@ -10,6 +27,7 @@ python scripts/render_report_pdf.py docs/reports/cost_efficiency.html
 ```
 
 산출물은 `docs/reports/<스펙>.{html,payload.json,verify.sql,pdf}`.
+채팅으로 만든 것은 `data/reports/<id>.html` + `reports` 테이블.
 
 ## 왜 이렇게 나눴나
 
@@ -34,6 +52,14 @@ python scripts/render_report_pdf.py docs/reports/cost_efficiency.html
 - **모든 fact 에 `expect` 를 달아라.** `verify.sql` 에 기대값 주석으로 나가 사람이 검산한다
 - 템플릿의 `/*__PAYLOAD__*/` 는 `<script type="application/json">` 안에 둔다.
   JS 식 자리에 두면 치환 후 문법 오류가 난다 (실제로 겪음)
+- ⚠️ **캐시 해시는 '요청 시점' 파라미터로 만든다.** 게이트가 채널을 제외하면 2회차
+  파라미터가 달라지는데, 최종 파라미터로 해시를 만들면 다음 요청과 영영 어긋나
+  캐시가 절대 히트하지 않는다 (2026-08-12 실측 — 히트한 줄 알았는데 재조회하고 있었다)
+- ⚠️ **스트리밍에서 진행 문구를 `("chunk", …)` 로 보내지 마라.** `routes.py` 가
+  `streamed_live` 를 세워 뒤따르는 `("done", 본문)` 을 통째로 버린다.
+  소비부가 아는 이벤트는 `source`·`chunk`·`done` 셋뿐이다
+- ⛔ 조회 병렬화에 `with ThreadPoolExecutor` 를 쓰지 마라 (CLAUDE.md 금지 규칙).
+  `shutdown(wait=False)` 를 `finally` 에 둔다
 
 ## 품질 게이트가 이 파이프라인의 핵심이다
 

@@ -63,13 +63,13 @@
 
   <div class="cards">
     <div class="card"><div class="k">인센티브 지출</div>
-      <div class="v">{{ derived.pnl.H1_26.incentive | eok }}</div>
+      <div class="v">{{ derived.pnl.focus.incentive | eok }}</div>
       <div class="d">FOC 원가 + 바우처·할인</div></div>
     <div class="card"><div class="k">매출 대비</div>
-      <div class="v">{{ derived.pnl.H1_26.incentive_of_sales_pct | pct }}</div>
-      <div class="d">직전 동기 {{ derived.pnl.H1_25.incentive_of_sales_pct | pct }}</div></div>
+      <div class="v">{{ derived.pnl.focus.incentive_of_sales_pct | pct }}</div>
+      <div class="d">직전 동기 {{ derived.pnl.compare.incentive_of_sales_pct | pct }}</div></div>
     <div class="card"><div class="k">매출총이익 대비</div>
-      <div class="v">{{ derived.pnl.H1_26.incentive_of_gross_pct | pct }}</div>
+      <div class="v">{{ derived.pnl.focus.incentive_of_gross_pct | pct }}</div>
       <div class="d">여기서 크기가 드러난다</div></div>
     <div class="card"><div class="k">한계 인센티브율</div>
       <div class="v">{{ derived.yoy.marginal_rate_pct | pct }}</div>
@@ -161,7 +161,7 @@ function bar(v, max) {
       gross: r.sales - direct, incRate: rate(inc, r.sales)});
   });
   table('t-summary', [
-    {h:'기간', f:r => r.period === 'H1_26' ? P.meta.params.focus_label : P.meta.params.compare_label},
+    {h:'기간', f:r => r.period === 'focus' ? P.meta.params.focus_label : P.meta.params.compare_label},
     {h:'유형', f:r => r.Sales_Type},
     {h:'매출', f:r => eok(r.sales)},
     {h:'유상 원가', f:r => eok(r.paid_cost)},

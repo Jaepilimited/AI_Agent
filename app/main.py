@@ -30,6 +30,7 @@ from app.api.eval_api import eval_router
 from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
 from app.api.middleware import setup_middleware
+from app.api.reports_api import router as reports_router
 from app.api.routes import router
 from app.config import get_settings
 from app.core.log_scrub import scrub_identity_processor
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(_ensure_audit_table)
         from app.db.mariadb import (
             ensure_fi_permission_column,
+            ensure_user_visits_table,
             ensure_knowledge_wiki_table,
             ensure_wiki_extraction_log_table,
             ensure_wiki_entity_aliases_table,
@@ -117,6 +119,7 @@ def create_app() -> FastAPI:
         # so we preserve original ordering rather than gathering concurrently.
         for _ensure_fn in (
             ensure_fi_permission_column,
+            ensure_user_visits_table,
             ensure_knowledge_wiki_table,
             ensure_wiki_extraction_log_table,
             ensure_wiki_entity_aliases_table,
@@ -142,6 +145,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_golden_tables)
         from app.core.model_rights import ensure_model_rights_tables
         await asyncio.to_thread(ensure_model_rights_tables)
+        from app.reports.store import ensure_report_tables
+        await asyncio.to_thread(ensure_report_tables)
         logger.info("mariadb_initialized")
 
         logger.info(
@@ -246,6 +251,7 @@ def create_app() -> FastAPI:
     app.include_router(eval_router)          # /api/admin/eval/*
     app.include_router(harness_router)       # /harness, /api/harness/*
     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
+    app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
 
     # --- Frontend routes ---
 

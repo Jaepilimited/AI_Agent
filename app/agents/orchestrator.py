@@ -565,6 +565,10 @@ class OrchestratorAgent:
             logger.info("model_rights_query", path="route_and_execute", query=_q_mr[:80])
             return await self._handle_model_rights(_q_mr, model_type, images=images)
 
+        _rep = await self._handle_report(query, user_email)
+        if _rep:
+            return _rep
+
         if db_entry:
             query = clean_query or query
             if not query.strip():
@@ -795,6 +799,17 @@ class OrchestratorAgent:
             yield ("source", "direct")
             yield ("done", _r.get("answer", ""))
             return
+
+        # 보고서는 조회를 여러 번 돌아 5~10초 걸린다. source 를 먼저 흘려 로딩 표시를 띄운다.
+        # ⚠️ 진행 문구를 ("chunk", ...) 로 보내면 안 된다 — routes.py 가 streamed_live 를 세워
+        #    뒤따르는 ("done", 본문) 을 통째로 버린다 (2026-08-12 확인).
+        from app.reports import registry as _rep_reg
+        if _rep_reg.match(query):
+            yield ("source", "bigquery")
+            _r = await self._handle_report(query, user_email)
+            if _r:
+                yield ("done", _r.get("answer", ""))
+                return
 
         if db_entry:
             query = clean_query or query
@@ -1961,6 +1976,47 @@ class OrchestratorAgent:
             contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
         result = await self.notion_agent.run(contextualized_query, model_type=model_type)
         return {"source": "notion", "answer": result}
+
+    async def _handle_report(self, query: str, user_email: str) -> Optional[dict]:
+        """등록된 보고서에 해당하는 질문이면 보고서를 만들고 요약을 돌려준다.
+
+        해당 없으면 None — 평소 라우팅으로 흘러간다.
+
+        보고서는 **본인만 열람**하므로 소유자를 확정할 수 있어야 한다. 이메일로
+        `users.id` 를 서버에서 조회한다 (JWT·프론트 값을 믿지 않는 기존 원칙과 같다).
+        신원을 못 잡으면 만들지 않는다 — 주인 없는 보고서를 남기지 않기 위해서다.
+        """
+        from app.reports import registry, service
+
+        if not registry.match(query):
+            return None
+        if not user_email:
+            logger.info("report_skipped_no_user", query=query[:80])
+            return None
+
+        from app.db.mariadb import fetch_one
+        row = await asyncio.to_thread(
+            fetch_one, "SELECT id FROM users WHERE email = %s", (user_email,))
+        if not row:
+            logger.info("report_skipped_unknown_user", email=user_email[:40])
+            return None
+
+        try:
+            result = await asyncio.to_thread(service.run, query, row["id"])
+        except Exception as e:
+            logger.warning("report_failed", error=str(e)[:300], query=query[:80])
+            return {
+                "source": "bigquery",
+                "answer": "보고서를 만드는 중 문제가 발생했습니다. "
+                          "잠시 후 다시 시도해주시고, 계속되면 DB팀에 알려주세요.",
+            }
+        if not result:
+            return None
+
+        logger.info("report_delivered", report_id=result["report_id"],
+                    spec=result["spec"], sec=result.get("elapsed_sec"))
+        return {"source": "bigquery", "answer": service.to_markdown(result),
+                "report_id": result["report_id"]}
 
     async def _handle_model_rights(self, query: str, model_type: str, images=None) -> dict:
         """모델 초상권 질문 — 판정(기간·만료)은 DB 데이터가 하고 LLM 은 설명만 한다.

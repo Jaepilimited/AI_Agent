@@ -86,8 +86,8 @@ FACTS: List[Fact] = [
         expect="H1'26 B2B FOC원가 113.7억 / B2C 할인 121.5억+FOC행 12.4억 (틱톡 제외 전 기준)",
         sql=f"""
         SELECT
-          CASE WHEN Date BETWEEN '{{focus_start}}' AND '{{focus_end}}' THEN 'H1_26'
-               WHEN Date BETWEEN '{{compare_start}}' AND '{{compare_end}}' THEN 'H1_25'
+          CASE WHEN Date BETWEEN '{{focus_start}}' AND '{{focus_end}}' THEN 'focus'
+               WHEN Date BETWEEN '{{compare_start}}' AND '{{compare_end}}' THEN 'compare'
                ELSE 'other' END AS period,
           Sales_Type,
           {COST_COLS}
@@ -270,7 +270,7 @@ def derive(facts: Dict[str, Rows], params: Dict[str, Any]) -> Dict[str, Any]:
     out["pnl"] = pnl
 
     # 전년 동기 대비 — 매출이 는 만큼 인센티브가 늘었는가 (한계율)
-    cur, prv = pnl.get("H1_26"), pnl.get("H1_25")
+    cur, prv = pnl.get("focus"), pnl.get("compare")
     if cur and prv:
         d_sales = cur["sales"] - prv["sales"]
         d_inc = cur["incentive"] - prv["incentive"]

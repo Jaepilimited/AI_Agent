@@ -12,6 +12,7 @@ payload 구조:
 """
 from __future__ import annotations
 
+import concurrent.futures
 import time
 from typing import Any, Dict, List
 
@@ -41,26 +42,46 @@ def build_payload(
     *,
     timeout: float = 300.0,
     only: List[str] | None = None,
+    parallel: int = 8,
 ) -> Dict[str, Any]:
     """스펙을 실행해 payload 를 만든다.
 
-    only: 특정 fact 만 돌리고 싶을 때 (개발 중 반복 실행용)
+    only:     특정 fact 만 돌리고 싶을 때 (개발 중 반복 실행용)
+    parallel: 동시 조회 수. 순차로는 조회당 1~1.5초가 그대로 쌓인다.
+              BigQuery 클라이언트에 이미 동시 15 세마포어가 걸려 있어 그 아래로 둔다.
     """
     t0 = time.time()
     facts: Dict[str, Rows] = {}
     expects: Dict[str, str] = {}
     timings: Dict[str, float] = {}
 
-    for f in spec.facts:
-        if only and f.id not in only:
-            continue
-        sql = f.sql.format(**spec.params)
+    todo = [f for f in spec.facts if not only or f.id in only]
+
+    def _one(f):
         t = time.time()
-        rows = _run_sql(sql, timeout)
-        timings[f.id] = round(time.time() - t, 2)
-        facts[f.id] = rows
+        rows = _run_sql(f.sql.format(**spec.params), timeout)
+        return f.id, rows, round(time.time() - t, 2)
+
+    if parallel > 1 and len(todo) > 1:
+        # ⛔ `with ThreadPoolExecutor` 를 쓰지 않는다 — 블록 이탈 시 shutdown(wait=True) 가
+        #    걸려 타임아웃이 무의미해진다 (CLAUDE.md 금지 규칙).
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=parallel)
+        try:
+            futs = [pool.submit(_one, f) for f in todo]
+            for fut in futs:
+                fid, rows, sec = fut.result(timeout=timeout + 30)
+                facts[fid], timings[fid] = rows, sec
+        finally:
+            pool.shutdown(wait=False)
+    else:
+        for f in todo:
+            fid, rows, sec = _one(f)
+            facts[fid], timings[fid] = rows, sec
+
+    for f in todo:
         expects[f.id] = f.expect
-        logger.info("report_fact_done", fact=f.id, rows=len(rows), sec=timings[f.id])
+        logger.info("report_fact_done", fact=f.id,
+                    rows=len(facts.get(f.id, [])), sec=timings.get(f.id))
 
     gates: List[Dict[str, Any]] = []
     for g in spec.gates:
