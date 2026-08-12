@@ -44,6 +44,12 @@ python scripts/deploy_new_server.py was    # ★ 실제 서비스. 코드 전송
 pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.250). 리다이렉트 로직 바꿀 때만
 ```
 - `CRAVER_SSH_PW` 환경변수 필요 (계정 `jeffrey`, 비밀번호는 노션 "AI Craver" 페이지)
+- **paramiko 는 `sshenv/` 격리 venv 에 있다** — 전역 파이썬에 깔면 별도 실행 중인
+  프로세스와 충돌한다. 없으면 만들 것:
+  `python -m venv sshenv && ./sshenv/Scripts/python -m pip install paramiko`
+  그리고 배포는 `./sshenv/Scripts/python scripts/deploy_new_server.py was`
+- ⚠️ **새 패키지를 추가했으면 배포 목록에 드는지 먼저 확인**하라 (`collect()` 를 직접 호출).
+  `EXCLUDE_DIRS` 가 디렉토리 **이름**으로 걸러 `app/knowledge_map/` 이 통째로 빠진 적이 있다
 - 신규 서버는 git 저장소가 아니라 **SFTP 전송본**이다. git pull 로 갱신되지 않는다.
 - **패키지(requirements) 변경 시**엔 휠을 다시 받아 올려야 한다 (런북 참조)
 - 배치 크론을 바꿨으면 `deploy_new_server.py app` 도 실행
