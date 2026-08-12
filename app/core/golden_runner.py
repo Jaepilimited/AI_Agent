@@ -130,11 +130,31 @@ def _extract_sql_blocks(answer: str) -> str:
     return "\n".join(re.findall(r"```sql\s*\n(.*?)```", answer, re.DOTALL | re.IGNORECASE))
 
 
+_RE_FOLLOWUP = re.compile(r"\n>?\s*💡\s*\*{0,2}이런 것도 물어보세요.*", re.DOTALL)
+_RE_DETAILS = re.compile(r"<details>.*?</details>", re.DOTALL | re.IGNORECASE)
+
+
+def _body_only(answer: str) -> str:
+    """판정에 쓸 **본문**만 남긴다.
+
+    후속 질문 안내와 `<details>`(실행 쿼리) 블록을 뺀다. 둘 다 LLM 이 관련 용어를
+    잔뜩 흩뿌리는 구간이라, 포함시키면 본문이 틀려도 기대 키워드가 걸려 통과한다.
+
+    실제로 겪은 것 (2026-08-12 run#23):
+        "B2B 할인 금액" 문항이 기대어 'B2C' 로 통과했는데, 그 'B2C' 는 본문이 아니라
+        후속 질문 제안("B2C 채널의 할인 금액은?")에 있었다. 본문은 오히려
+        "B2B 프로모션 검토 필요" 라고 오도하고 있었다.
+    sql_contains_any 는 원문에서 따로 뽑으므로 영향받지 않는다.
+    """
+    a = _RE_FOLLOWUP.sub("", answer or "")
+    return _RE_DETAILS.sub("", a)
+
+
 def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
     """기대 조건 평가 — 실패 사유 목록 반환 (빈 목록 = 통과)."""
     exp = item.get("expect", {})
     reasons = []
-    a = answer or ""
+    a = _body_only(answer)
 
     for kw in exp.get("contains_all", []):
         if kw not in a:
@@ -148,13 +168,16 @@ def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
 
     sql_kws = exp.get("sql_contains_any", [])
     if sql_kws:
-        sql = _extract_sql_blocks(a) or a  # SQL 블록이 없으면 본문 전체에서라도 찾는다
+        # ⚠️ 원문에서 뽑는다 — SQL 은 <details> 안에 있고, 본문에서는 그 블록을 걷어냈다
+        sql = _extract_sql_blocks(answer or "") or (answer or "")
         if not any(kw.lower() in sql.lower() for kw in sql_kws):
             reasons.append(f"SQL 규칙 위반 — 다음 중 하나 필요: {sql_kws}")
 
+    # 길이는 "답변이 오긴 왔는가" 검사라 원문 기준으로 둔다 (본문 기준으로 바꾸면
+    # 기존 문항들의 임계값이 한꺼번에 어긋난다)
     min_len = exp.get("min_len", 1)
-    if len(a.strip()) < min_len:
-        reasons.append(f"답변이 짧음 ({len(a.strip())}자 < {min_len})")
+    if len((answer or "").strip()) < min_len:
+        reasons.append(f"답변이 짧음 ({len((answer or '').strip())}자 < {min_len})")
     max_s = exp.get("max_seconds")
     if max_s and elapsed_s > max_s:
         reasons.append(f"응답 {elapsed_s:.0f}s (허용 {max_s:.0f}s 초과)")

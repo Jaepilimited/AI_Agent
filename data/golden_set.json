@@ -344,8 +344,10 @@
     {
       "id": "discount_is_b2c_only", "category": "schema", "freq": "weekly",
       "question": "2026년 상반기 B2B 할인 금액 알려줘",
-      "expect": {"contains_any": ["B2C", "해당 없", "적재"], "min_len": 50, "max_seconds": 150},
-      "note": "Discount_Coupon 은 B2C 전용이고 B2B 는 전 구간 0원이다. 0원을 '할인을 안 했다'가 아니라 '해당 없음'으로 안내해야 한다"
+      "expect": {"contains_any": ["B2C 전용", "B2C에만", "B2C 채널에만", "집계되지 않"],
+                 "not_contains": ["확인이 필요합니다", "진행되지 않았"],
+                 "min_len": 50, "max_seconds": 150},
+      "note": "Discount_Coupon 은 B2C 전용이고 B2B 는 전 구간 0원이다. 0원을 '할인을 안 했다'로 읽으면 안 된다. ⚠️ 처음엔 기대어가 'B2C' 였는데 그 말이 **후속 질문 제안**('B2C 채널의 할인 금액은?')에 있어 본문이 오도해도 통과했다 (run#23). 판정에서 후속질문·details 를 걷어내도록 고쳤고, 기대어도 본문에서만 나올 말로 좁혔다"
     }
   ]
 }

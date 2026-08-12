@@ -1573,6 +1573,22 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     else:
         _ingredient_warning = ""
 
+    # B2B 할인 0원을 "할인을 안 했다"로 서술하는 것을 막는다.
+    # Discount_Coupon 에는 B2B 값이 구조적으로 들어오지 않는다 — 0 은 '없음'이 아니라 '해당 없음'이다.
+    # ⚠️ 프롬프트(sql_generator.txt)에만 적어두면 SQL 생성에는 반영돼도 **서술 프롬프트에는
+    #    닿지 않아** 답변이 그대로 오도한다 (2026-08-12 실측). 서술 단계에서 다시 막는다.
+    _b2b_discount_warning = ""
+    if re.search(r"Discount_Coupon", sql, re.IGNORECASE) and re.search(
+        r"Sales_Type\s*=\s*'B2B'", sql, re.IGNORECASE
+    ):
+        _b2b_discount_warning = (
+            "⚠️ **B2B 할인 서술 규칙 (필수)**: `Discount_Coupon` 은 B2C 전용 항목이라 "
+            "B2B 는 전 구간 0원으로 적재됩니다. 합계 0원을 **'할인을 하지 않았다'로 서술하지 마세요.** "
+            "요약에 \"이 항목은 B2C 전용이라 B2B 는 집계되지 않습니다\"를 반드시 포함하고, "
+            "'프로모션이 없었는지 확인이 필요하다', '정가 거래 중심으로 보인다' 같은 "
+            "추측성 해석은 붙이지 마세요. B2B 의 무상 지원은 FOC(무상 출고)로 확인한다고 안내하세요."
+        )
+
     _result_header = f"총 {len(results)}행"
     if len(results) > 15:
         _result_header += f", 아래는 상위 {min(15, len(results))}건 프리뷰"
@@ -1643,6 +1659,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 {_brand_warning}
 {_team_warning}
 {_ingredient_warning}
+{_b2b_discount_warning}
 """
 
     try:
