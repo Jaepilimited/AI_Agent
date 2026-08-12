@@ -298,5 +298,353 @@ class Total:
         return s
 
 
+@block("contribution", "성장 기여도",
+       "성장이 어디서 왔는지 분해 — 몇 개 항목이 증가분의 대부분을 만들었는가")
+class Contribution:
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Query]:
+        return Compare.queries(p, ctx)
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        d = DIMENSIONS[p["dim"]]
+        cur = {r["dim"]: float(r["value"] or 0) for r in facts["cur"]}
+        prv = {r["dim"]: float(r["value"] or 0) for r in facts["prv"]}
+        net = sum(cur.values()) - sum(prv.values())
+
+        items = [{"dim": k, "delta": round(cur.get(k, 0) - prv.get(k, 0), 1)}
+                 for k in set(cur) | set(prv)]
+        items.sort(key=lambda r: -r["delta"])
+        # 순증감 대비 기여도. 순증감이 0 에 가까우면 비율이 폭발하므로 절대증감 기준으로 바꾼다
+        gross = sum(abs(r["delta"]) for r in items) or 1.0
+        base = net if abs(net) > gross * 0.1 else None
+        cum = 0.0
+        rows = []
+        for r in items:
+            share = _pct(r["delta"], base) if base else _pct(abs(r["delta"]), gross)
+            cum += share
+            rows.append({**r, "share": round(share, 1), "cum": round(cum, 1)})
+        rows = relabel_rows(rows, p["dim"])
+
+        s = Section(block="contribution",
+                    title=p.get("title") or f"{d.label}별 {m.label} 성장 기여도",
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows, chart="bar",
+                    columns=[{"key": "dim", "label": d.label},
+                             {"key": "delta", "label": "증감", "fmt": "metric"},
+                             {"key": "share", "label": "기여도", "fmt": "pct"},
+                             {"key": "cum", "label": "누적", "fmt": "pct"}])
+        s.findings.append(
+            f"순증감 {_fmt(net, m.unit)}"
+            + ("" if base else " — 증감이 서로 상쇄돼 기여도는 절대 증감 기준으로 계산했다"))
+        pos = [r for r in rows if r["delta"] > 0]
+        if pos:
+            need = 0
+            acc = 0.0
+            tot_pos = sum(r["delta"] for r in pos)
+            for r in pos:
+                acc += r["delta"]
+                need += 1
+                if acc >= tot_pos * 0.8:
+                    break
+            s.findings.append(
+                f"증가분의 80%를 {need}개 항목이 만들었다 — "
+                + ", ".join(r["dim"] for r in pos[:need][:5]))
+        neg = [r for r in rows if r["delta"] < 0]
+        if neg:
+            worst = min(neg, key=lambda r: r["delta"])
+            s.findings.append(
+                f"가장 크게 줄어든 곳은 {worst['dim']} {_fmt(worst['delta'], m.unit)} "
+                f"— 줄어든 곳이 {len(neg)}개")
+        return s
+
+
+@block("concentration", "집중도",
+       "소수에 몰려 있는가 넓게 퍼져 있는가 — 파레토·상위 점유")
+class Concentration:
+    LIMIT = 500
+
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Query]:
+        f = p.get("filters", {})
+        return {
+            "cur": Query(metric=p["metric"], dim=p["dim"], filters=f,
+                         start=ctx["focus_start"], end=ctx["focus_end"],
+                         limit=Concentration.LIMIT),
+            # ⚠️ 잘린 목록의 합을 전체로 쓰면 비중이 부풀려지고 "N개가 80%" 도 틀린다.
+            #    전체 합계는 축 없이 따로 구한다 (2026-08-12).
+            "tot": Query(metric=p["metric"], filters=f,
+                         start=ctx["focus_start"], end=ctx["focus_end"]),
+        }
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        d = DIMENSIONS[p["dim"]]
+        rows_all = sorted(facts["cur"], key=lambda r: -(float(r.get("value") or 0)))
+        truncated = len(rows_all) >= Concentration.LIMIT
+        tot_row = facts.get("tot") or []
+        grand = float(tot_row[0]["value"]) if tot_row and tot_row[0].get("value") else 0.0
+        listed = _total(rows_all)
+        # 집중도는 **그 축에 귀속된 범위 안에서** 본다. 전체 합계를 분모로 쓰면
+        # 축이 비어 있는 행(제품명 없는 매출 등)까지 섞여 집중도가 실제보다 낮게 보인다.
+        # 잘렸을 때만 전체 합계를 분모로 쓰고 그 사실을 밝힌다.
+        total = grand if (truncated and grand) else listed
+        coverage = _pct(listed, grand) if grand else None
+        cum = 0.0
+        n50 = n80 = None
+        for i, r in enumerate(rows_all, 1):
+            cum += float(r["value"] or 0)
+            if n50 is None and cum >= total * 0.5:
+                n50 = i
+            if n80 is None and cum >= total * 0.8:
+                n80 = i
+                break
+
+        shown = rows_all[:15]
+        c = 0.0
+        out = []
+        for i, r in enumerate(shown, 1):
+            c += float(r["value"] or 0)
+            out.append({"rank": i, "dim": r["dim"], "value": r["value"],
+                        "share": _pct(r["value"], total), "cum": round(_pct(c, total), 1)})
+        out = relabel_rows(out, p["dim"])
+
+        s = Section(block="concentration",
+                    title=p.get("title") or f"{d.label} 집중도",
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=out, chart="bar",
+                    columns=[{"key": "rank", "label": "순위"},
+                             {"key": "dim", "label": d.label},
+                             {"key": "value", "label": m.label, "fmt": "metric"},
+                             {"key": "share", "label": "비중", "fmt": "pct"},
+                             {"key": "cum", "label": "누적", "fmt": "pct"}])
+        s.findings.append(
+            f"{d.label} "
+            + (f"{Concentration.LIMIT}개 이상 (상위 {Concentration.LIMIT}개만 조회)"
+               if truncated else f"{len(rows_all)}개")
+            + f" · 집계 대상 {_fmt(total, m.unit)}")
+        if coverage is not None and coverage < 99.5:
+            s.findings.append(
+                f"{d.label} 값이 붙은 것은 전체 {_fmt(grand, m.unit)} 중 {coverage}%다 "
+                f"— 비중은 이 범위 안에서 읽어야 한다")
+        if n50:
+            s.findings.append(
+                f"절반을 {n50}개가 차지한다"
+                + (f" · 80%를 {n80}개가 차지한다" if n80 else ""))
+        elif truncated:
+            s.findings.append(
+                f"상위 {Concentration.LIMIT}개로도 절반에 못 미친다 — 매우 넓게 퍼져 있다")
+        if n80 and len(rows_all) and not truncated:
+            ratio = _pct(n80, len(rows_all))
+            s.findings.append(
+                f"상위 {ratio}%가 80%를 만든다 — "
+                + ("소수 집중형이라 몇 건의 협상·정책으로 움직인다" if ratio <= 25
+                   else "고르게 퍼져 있어 개별 대응보다 전반 정책이 맞다"))
+        return s
+
+
+@block("movers", "급변",
+       "전년 대비 급증·급감한 항목 — 규모가 의미 있는 것만")
+class Movers:
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Query]:
+        return Compare.queries(p, ctx)
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        d = DIMENSIONS[p["dim"]]
+        cur = {r["dim"]: float(r["value"] or 0) for r in facts["cur"]}
+        prv = {r["dim"]: float(r["value"] or 0) for r in facts["prv"]}
+        total = sum(cur.values()) or 1.0
+        # ⚠️ 규모 하한이 없으면 "0.1억 → 0.4억, +300%" 같은 잡음이 1위로 올라온다
+        floor = max(total * 0.005, 0.0)
+
+        rows = []
+        for k in set(cur) | set(prv):
+            c, q = cur.get(k, 0.0), prv.get(k, 0.0)
+            if max(c, q) < floor:
+                continue
+            rows.append({"dim": k, "prev": round(q, 1), "value": round(c, 1),
+                         "delta": round(c - q, 1),
+                         "growth": _pct(c - q, q) if q else None})
+        ups = sorted([r for r in rows if r["growth"] is not None and r["growth"] > 0],
+                     key=lambda r: -r["growth"])[:8]
+        downs = sorted([r for r in rows if r["growth"] is not None and r["growth"] < 0],
+                       key=lambda r: r["growth"])[:8]
+        news = sorted([r for r in rows if r["growth"] is None and r["value"] > 0],
+                      key=lambda r: -r["value"])[:5]
+        out = relabel_rows(ups + downs, p["dim"])
+
+        s = Section(block="movers", title=p.get("title") or f"{d.label} 급변 항목",
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=out, chart="none",
+                    columns=[{"key": "dim", "label": d.label},
+                             {"key": "prev", "label": ctx["compare_label"], "fmt": "metric"},
+                             {"key": "value", "label": ctx["focus_label"], "fmt": "metric"},
+                             {"key": "delta", "label": "증감", "fmt": "metric"},
+                             {"key": "growth", "label": "성장률", "fmt": "pct"}])
+        s.findings.append(
+            f"전체의 {_pct(floor, total):.1f}% 미만인 항목은 뺐다 — "
+            f"작은 수의 배율 변동이 상위를 차지하는 것을 막기 위해서다")
+        if ups:
+            s.findings.append(
+                "급증: " + ", ".join(f"{r['dim']} {r['growth']:+.0f}%" for r in ups[:3]))
+        if downs:
+            s.findings.append(
+                "급감: " + ", ".join(f"{r['dim']} {r['growth']:+.0f}%" for r in downs[:3]))
+        if news:
+            s.findings.append(
+                f"직전 기간에 없던 항목 {len(news)}개 — "
+                + ", ".join(f"{r['dim']} {_fmt(r['value'], m.unit)}" for r in news[:3]))
+        return s
+
+
+@block("mixshift", "구성 변화",
+       "비중이 몇 %p 움직였는가 — 성장과는 다른 이야기다")
+class MixShift:
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Query]:
+        return Compare.queries(p, ctx)
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        d = DIMENSIONS[p["dim"]]
+        cur = {r["dim"]: float(r["value"] or 0) for r in facts["cur"]}
+        prv = {r["dim"]: float(r["value"] or 0) for r in facts["prv"]}
+        tc, tp = sum(cur.values()) or 1.0, sum(prv.values()) or 1.0
+        rows = []
+        for k in set(cur) | set(prv):
+            sc, sp = _pct(cur.get(k, 0), tc), _pct(prv.get(k, 0), tp)
+            rows.append({"dim": k, "prev_share": sp, "share": sc,
+                         "shift": round(sc - sp, 1), "value": round(cur.get(k, 0), 1)})
+        rows.sort(key=lambda r: -abs(r["shift"]))
+        rows = relabel_rows(rows[:15], p["dim"])
+
+        s = Section(block="mixshift", title=p.get("title") or f"{d.label} 구성 변화",
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows, chart="none",
+                    columns=[{"key": "dim", "label": d.label},
+                             {"key": "prev_share", "label": f"{ctx['compare_label']} 비중",
+                              "fmt": "pct"},
+                             {"key": "share", "label": f"{ctx['focus_label']} 비중",
+                              "fmt": "pct"},
+                             {"key": "shift", "label": "변화(%p)", "fmt": "pct"}])
+        up = [r for r in rows if r["shift"] > 0][:3]
+        dn = [r for r in rows if r["shift"] < 0][:3]
+        if up:
+            s.findings.append(
+                "비중이 커진 곳: " + ", ".join(f"{r['dim']} {r['shift']:+.1f}%p" for r in up))
+        if dn:
+            s.findings.append(
+                "비중이 줄어든 곳: " + ", ".join(f"{r['dim']} {r['shift']:+.1f}%p" for r in dn))
+        s.findings.append(
+            "비중이 줄었다고 매출이 줄어든 것은 아니다 — 다른 곳이 더 빨리 컸을 수 있다")
+        return s
+
+
+@block("seasonality", "계절성",
+       "전년 동월과 나란히 — 주기가 있는가, 이번 달이 원래 그런 달인가")
+class Seasonality:
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Query]:
+        return {"cur": Query(metric=p["metric"], dim="월", filters=p.get("filters", {}),
+                             start=ctx["start"], end=ctx["end"], limit=60,
+                             having_positive=False)}
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        by_ym = {r["dim"]: float(r["value"] or 0) for r in facts["cur"]}
+        rows = []
+        for ym in sorted(by_ym):
+            y, mm = ym.split("-")
+            prev_ym = f"{int(y) - 1}-{mm}"
+            q = by_ym.get(prev_ym)
+            if q is None:
+                continue
+            c = by_ym[ym]
+            rows.append({"dim": ym, "prev": round(q, 1), "value": round(c, 1),
+                         "growth": _pct(c - q, q) if q else None})
+        s = Section(block="seasonality", title=p.get("title") or f"{m.label} 전년 동월 대비",
+                    metric=p["metric"], dim="월", unit=m.unit, rows=rows, chart="line",
+                    columns=[{"key": "dim", "label": "월"},
+                             {"key": "prev", "label": "전년 동월", "fmt": "metric"},
+                             {"key": "value", "label": "당월", "fmt": "metric"},
+                             {"key": "growth", "label": "전년 동월 대비", "fmt": "pct"}])
+        if not rows:
+            s.findings.append("전년 동월과 짝지을 데이터가 없어 계절성을 볼 수 없다")
+            return s
+        g = [r["growth"] for r in rows if r["growth"] is not None]
+        if g:
+            s.findings.append(
+                f"전년 동월 대비 평균 {sum(g)/len(g):+.1f}% "
+                f"(최고 {max(g):+.0f}% · 최저 {min(g):+.0f}%)")
+        # 달마다 몰리는 패턴 — 월별 평균을 전체 평균과 비교
+        per_month: Dict[str, List[float]] = {}
+        for ym, v in by_ym.items():
+            per_month.setdefault(ym.split("-")[1], []).append(v)
+        avg_all = sum(by_ym.values()) / max(len(by_ym), 1)
+        peaks = sorted(((sum(v) / len(v), mm) for mm, v in per_month.items()), reverse=True)
+        if peaks and avg_all:
+            hi = peaks[0]
+            if hi[0] > avg_all * 1.3:
+                s.findings.append(
+                    f"{int(hi[1])}월이 평균보다 {_pct(hi[0] - avg_all, avg_all):.0f}% 높다 "
+                    f"— 주기적 성수기로 보인다")
+        return s
+
+
+@block("ratio", "비율 지표",
+       "두 지표의 비 — 원가율·할인율·객단가처럼 '얼마당 얼마'를 보는 절")
+class Ratio:
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Query]:
+        f = p.get("filters", {})
+        return {
+            "num": Query(metric=p["metric"], dim=p["dim"], filters=f,
+                         start=ctx["focus_start"], end=ctx["focus_end"],
+                         limit=p.get("limit", 25)),
+            "den": Query(metric=p["metric2"], dim=p["dim"], filters=f,
+                         start=ctx["focus_start"], end=ctx["focus_end"],
+                         limit=p.get("limit", 25)),
+        }
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m, m2 = METRICS[p["metric"]], METRICS[p["metric2"]]
+        d = DIMENSIONS[p["dim"]]
+        num = {r["dim"]: float(r["value"] or 0) for r in facts["num"]}
+        den = {r["dim"]: float(r["value"] or 0) for r in facts["den"]}
+        rows = []
+        for k, dv in den.items():
+            if dv <= 0:
+                continue
+            nv = num.get(k, 0.0)
+            rows.append({"dim": k, "value": round(nv, 1), "base": round(dv, 1),
+                         "ratio": _pct(nv, dv, 2)})
+        rows.sort(key=lambda r: -r["ratio"])
+        rows = relabel_rows(rows[:20], p["dim"])
+
+        tot_n, tot_d = sum(num.values()), sum(den.values())
+        s = Section(block="ratio",
+                    title=p.get("title") or f"{d.label}별 {m.label}÷{m2.label}",
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows, chart="bar",
+                    columns=[{"key": "dim", "label": d.label},
+                             {"key": "value", "label": m.label, "fmt": "metric"},
+                             {"key": "base", "label": m2.label, "fmt": "metric"},
+                             {"key": "ratio", "label": "비율", "fmt": "pct"}])
+        if tot_d:
+            s.findings.append(f"전체 {_pct(tot_n, tot_d, 2)}%"
+                              f" ({_fmt(tot_n, m.unit)} ÷ {_fmt(tot_d, m2.unit)})")
+        if rows:
+            s.findings.append(
+                f"가장 높은 곳 {rows[0]['dim']} {rows[0]['ratio']}% · "
+                f"가장 낮은 곳 {rows[-1]['dim']} {rows[-1]['ratio']}%")
+            if tot_d:
+                over = [r for r in rows if r["ratio"] > _pct(tot_n, tot_d, 2)]
+                s.findings.append(f"전체 평균을 넘는 곳이 {len(over)}개")
+        return s
+
+
 def available() -> Dict[str, str]:
     return {k: v["desc"] for k, v in BLOCKS.items()}

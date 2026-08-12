@@ -19,7 +19,7 @@ from app.reports import semantic as S
 
 logger = structlog.get_logger(__name__)
 
-MAX_SECTIONS = 8
+MAX_SECTIONS = 9
 
 
 PROMPT = """당신은 데이터 분석 보고서의 **목차를 설계**합니다. 숫자는 쓰지 않습니다.
@@ -46,6 +46,12 @@ PROMPT = """당신은 데이터 분석 보고서의 **목차를 설계**합니�
 - 질문이 특정 국가·팀·채널로 좁혀져 있으면 filters 에 넣으세요. 예: {{"국가": ["일본"]}}
 - 질문이 특정 축을 강조하면(예: "채널별") 그 축 섹션을 앞에 두세요.
 - cross 블록은 dim 과 dim2 를 모두 지정합니다.
+- ratio 블록은 metric(분자)과 metric2(분모)를 지정합니다. **둘은 같은 테이블이어야 합니다** —
+  수량은 다른 테이블이라 매출과 나눌 수 없습니다. 쓸 만한 조합:
+  할인÷매출(할인율), 유상원가÷매출(원가율), FOC원가÷매출(FOC율), 매출÷주문수(객단가)
+- 질문이 "왜 늘었나/줄었나"를 물으면 contribution 을, "어디에 몰려 있나"를 물으면
+  concentration 을, "뭐가 갑자기 변했나"를 물으면 movers 를 넣으세요.
+- 같은 블록을 축만 바꿔 두 번 쓰는 것은 좋습니다 (국가별 구성 + 채널별 구성).
 - title 은 한국어 명사구로 짧게. **숫자를 넣지 마세요.**
 
 {{
@@ -54,9 +60,14 @@ PROMPT = """당신은 데이터 분석 보고서의 **목차를 설계**합니�
   "sections": [
     {{"block": "total", "metric": "매출", "title": "..."}},
     {{"block": "trend", "metric": "매출", "dim": "월", "title": "..."}},
-    {{"block": "breakdown", "metric": "매출", "dim": "국가", "title": "..."}}
+    {{"block": "breakdown", "metric": "매출", "dim": "국가", "title": "..."}},
+    {{"block": "ratio", "metric": "할인", "metric2": "매출", "dim": "채널", "title": "..."}},
+    {{"block": "cross", "metric": "매출", "dim": "국가", "dim2": "채널", "title": "..."}}
   ]
-}}"""
+}}
+
+⚠️ total 을 뺀 모든 블록은 **dim 이 반드시 있어야** 합니다. ratio 도 마찬가지입니다 —
+dim 없는 절은 버려집니다."""
 
 
 def _vocab_text() -> Dict[str, str]:
@@ -121,7 +132,21 @@ def _clean_section(s: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
         if d2 not in S.DIMENSIONS or d2 == out.get("dim"):
             problems.append(f"cross 에 쓸 수 없는 dim2 '{d2}'")
             return None
+        if S.METRICS[metric].table not in S.DIMENSIONS[d2].tables:
+            problems.append(f"'{d2}' 축은 '{metric}' 지표와 못 쓴다 (cross)")
+            return None
         out["dim2"] = d2
+
+    if blk == "ratio":
+        m2 = s.get("metric2")
+        if m2 not in S.METRICS or m2 == metric:
+            problems.append(f"ratio 에 쓸 수 없는 metric2 '{m2}'")
+            return None
+        # 분자·분모가 다른 테이블이면 행을 맞출 수 없다 (매출은 SALES, 수량은 Product)
+        if S.METRICS[m2].table != S.METRICS[metric].table:
+            problems.append(f"'{metric}'÷'{m2}' 는 테이블이 달라 계산할 수 없다")
+            return None
+        out["metric2"] = m2
 
     filters = {}
     for k, v in (s.get("filters") or {}).items():
