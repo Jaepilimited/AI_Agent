@@ -42,7 +42,9 @@ EXCLUDE_DIRS = {
 #   - knowledge_map: 이름으로 걸렀더니 소스 패키지 `app/knowledge_map/` 까지 빠져
 #     APP 서버의 03:00 그래프 빌드가 매일 ModuleNotFoundError 로 죽었다 (2026-08-05 발견).
 # app/static/charts 는 서버사이드 차트 시절 PNG 5천여개(687MB) 잔재. 현재 미사용.
-EXCLUDE_PATHS = {"app/static/charts", "knowledge_map"}
+#   - data/reports: 채팅으로 생성된 보고서 HTML(원가·마진·거래처명 포함). 서버마다 따로
+#     쌓이는 산출물이고 DB payload 로 재생성되므로 올리지 않는다.
+EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports"}
 EXCLUDE_EXT = {".pyc", ".pyo", ".log", ".sql", ".pdf", ".xlsx"}
 # .env 는 서버별 값이 다르므로 덮어쓰지 않는다 (최초 1회만 수동 구성)
 EXCLUDE_FILES = {".env"}

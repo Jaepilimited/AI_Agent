@@ -179,3 +179,6 @@ docs/reports/
 
 # 채팅으로 생성된 보고서 본문 (원가·마진 포함, DB payload 로 재생성 가능)
 data/reports/
+
+# 배포용 격리 venv (paramiko 전용). 전역 파이썬을 건드리지 않으려고 따로 둔다
+sshenv/
