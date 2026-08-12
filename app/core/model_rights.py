@@ -27,6 +27,7 @@ from typing import Optional
 
 import structlog
 
+from app.config import get_settings
 from app.db.mariadb import execute, fetch_all
 
 logger = structlog.get_logger(__name__)
@@ -234,12 +235,22 @@ def sync_model_rights() -> dict:
     from googleapiclient.discovery import build
 
     ensure_model_rights_tables()
+    credential_path = (
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or get_settings().google_application_credentials
+    )
     creds = Credentials.from_service_account_file(
-        os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        credential_path,
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
     )
-    svc = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    meta = svc.spreadsheets().get(spreadsheetId=SPREADSHEET_ID).execute()
+    svc = build(
+        "sheets", "v4", credentials=creds, cache_discovery=False, num_retries=2
+    )
+    meta = (
+        svc.spreadsheets()
+        .get(spreadsheetId=SPREADSHEET_ID)
+        .execute(num_retries=2)
+    )
 
     all_models = []
     for sh in meta["sheets"]:
@@ -247,7 +258,7 @@ def sync_model_rights() -> dict:
         rows = (
             svc.spreadsheets().values()
             .get(spreadsheetId=SPREADSHEET_ID, range=f"'{tab}'!A1:R1000")
-            .execute().get("values", [])
+            .execute(num_retries=2).get("values", [])
         )
         all_models.extend(parse_tab(rows, tab))
 
