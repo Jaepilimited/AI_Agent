@@ -15,6 +15,7 @@ CLAUDE.md 의 BigQuery 규칙이 여기 코드로 들어와 있다:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -32,6 +33,8 @@ class Metric:
     scale: float = 1e8
     nd: int = 1
     desc: str = ""
+    # 표시 단위(억) 말고 **실제 값의 단위**. 비율 지표에서 "원/건" 같은 라벨을 만들 때 쓴다.
+    base_unit: str = "원"
 
     def select(self, alias: str = "value") -> str:
         if self.scale != 1:
@@ -60,6 +63,7 @@ METRICS: Dict[str, Metric] = {
     "매출": Metric("매출", "매출", SALES, "SUM(Sales1_R)",
                  desc="원화 환산 실매출. FOC 행은 0으로 적재된다"),
     "수량": Metric("수량", "판매수량", PRODUCT, "SUM(Total_Qty)", unit="개", scale=1, nd=0,
+                 base_unit="개",
                  desc="세트를 개별 SKU 로 분해한 수량. SALES_ALL 의 Total_Qty 를 쓰면 안 된다"),
     "유상원가": Metric("유상원가", "유상 제품원가", SALES,
                    "SUM(CASE WHEN FOC_or_Not='X' THEN Production_Cost2 ELSE 0 END)",
@@ -70,9 +74,9 @@ METRICS: Dict[str, Metric] = {
     "할인": Metric("할인", "바우처·할인", SALES, "SUM(Discount_Coupon)",
                  desc="B2C 전용. B2B 는 전 구간 0원"),
     "주문수": Metric("주문수", "주문 건수", SALES, "COUNT(DISTINCT Order_Number)",
-                  unit="건", scale=1, nd=0),
+                  unit="건", scale=1, nd=0, base_unit="건"),
     "거래처수": Metric("거래처수", "거래처 수", SALES, "COUNT(DISTINCT ID)",
-                   unit="곳", scale=1, nd=0),
+                   unit="곳", scale=1, nd=0, base_unit="곳"),
 }
 
 DIMENSIONS: Dict[str, Dimension] = {
@@ -190,18 +194,53 @@ def build_sql(q: Query) -> str:
     return sql
 
 
+def short_product(name: str) -> str:
+    """제품 라벨을 읽을 수 있게 줄인다.
+
+    `SET` 컬럼에는 세트 구성이 원문 그대로 들어 있다:
+        "SK_Centella_Watergel_sheet_ampoule_mask_25ml_5ea + SK_Centella_Teca_Ampoule_50ml + ..."
+    이걸 그대로 쓰면 표가 화면 두 배로 넘치고(실측 2,344px), 발견 문장은 이름만
+    여덟 줄이 된다 (2026-08-12 사용자 보고). 원문은 `dim_full` 에 남겨 둔다.
+    """
+    s = (name or "").strip()
+    parts = [p.strip() for p in s.split("+") if p.strip()]
+
+    def one(x: str) -> str:
+        x = re.sub(r"^SK_", "", x)
+        return x.replace("_", " ").strip()
+
+    if len(parts) > 1:
+        return f"{one(parts[0])} 외 {len(parts) - 1}종 세트"
+    return one(s)
+
+
 def relabel_rows(rows: List[Dict[str, Any]], dim: Optional[str]) -> List[Dict[str, Any]]:
-    """팀 코드를 한글 팀명으로 되돌린다 (표·차트 라벨이 한 번에 맞는다)."""
-    if not dim or DIMENSIONS.get(dim, Dimension("", "", "")).relabel != "team":
+    """표시용 라벨 정리 — 팀 코드는 한글로, 제품 세트명은 읽을 수 있게 줄인다.
+
+    (표·차트 라벨·발견 문장이 한 번에 같은 값을 쓴다.)
+    """
+    if not dim:
         return rows
-    try:
-        from app.agents.sql_agent import TEAM_CODE2KR
-    except Exception:
+    d = DIMENSIONS.get(dim)
+    if not d:
         return rows
-    for r in rows:
-        v = r.get("dim")
-        if v in TEAM_CODE2KR:
-            r["dim"] = f"{TEAM_CODE2KR[v]}({v})"
+
+    if d.relabel == "team":
+        try:
+            from app.agents.sql_agent import TEAM_CODE2KR
+        except Exception:
+            return rows
+        for r in rows:
+            v = r.get("dim")
+            if v in TEAM_CODE2KR:
+                r["dim"] = f"{TEAM_CODE2KR[v]}({v})"
+        return rows
+
+    if dim == "제품":
+        for r in rows:
+            full = r.get("dim") or ""
+            r["dim_full"] = full
+            r["dim"] = short_product(full)
     return rows
 
 

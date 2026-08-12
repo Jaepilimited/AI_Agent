@@ -35,6 +35,12 @@
   .bar{height:5px;background:#eef2f7;border-radius:3px;overflow:hidden;min-width:60px}
   .bar>i{display:block;height:100%;background:var(--accent)}
   .spark{display:block;width:100%;height:120px;margin:14px 0}
+  details.more{margin:-6px 0 8px}
+  details.more>summary{cursor:pointer;color:var(--accent);font-size:13px;
+    list-style:none;padding:4px 0}
+  details.more>summary::-webkit-details-marker{display:none}
+  details.more>summary::before{content:"▸ "}
+  details.more[open]>summary::before{content:"▾ "}
   .note{background:var(--warn-bg);border:1px solid #fde68a;border-left:3px solid var(--warn);
     border-radius:6px;padding:12px 15px;margin:14px 0;font-size:14px}
   .note b{color:var(--warn)}
@@ -80,6 +86,9 @@ function fmtPct(v) {
 }
 function cell(row, col, unit) {
   const v = row[col.key];
+  if (col.key === 'dim' && row.dim_full && row.dim_full !== v)
+    return `<td title="${esc(row.dim_full)}">${esc(v)}</td>`;
+  if (col.fmt === 'metric2') return `<td>${fmtMetric(v, col.unit)}</td>`;
   if (col.fmt === 'metric') {
     const cls = (col.key === 'delta' && Number(v) !== 0) ? (Number(v) > 0 ? 'up' : 'down') : '';
     return `<td class="${cls}">${fmtMetric(v, unit)}</td>`;
@@ -109,10 +118,11 @@ function sparkline(rows) {
       vector-effect="non-scaling-stroke"/></svg>`;
 }
 
-function bars(rows, unit) {
-  const max = Math.max(...rows.map(r => Math.abs(Number(r.value) || 0)), 0);
+function bars(rows, key) {
+  key = key || 'value';
+  const max = Math.max(...rows.map(r => Math.abs(Number(r[key]) || 0)), 0);
   return rows.map(r => {
-    const w = max ? Math.abs(Number(r.value) || 0) / max * 100 : 0;
+    const w = max ? Math.abs(Number(r[key]) || 0) / max * 100 : 0;
     return `<div class="bar"><i style="width:${w.toFixed(1)}%"></i></div>`;
   });
 }
@@ -125,17 +135,25 @@ function bars(rows, unit) {
   document.getElementById('lede').textContent = M.lede || '';
   document.getElementById('question').textContent = '질문: ' + M.question;
 
+  const SHOW = 12;   // 표에 바로 보이는 행 수. 나머지는 접어 둔다 — 44행짜리 표는 읽히지 않는다
   document.getElementById('sections').innerHTML = P.sections.map(s => {
     const barCol = (s.chart === 'bar');
     const cols = s.columns.concat(barCol ? [{key:'__bar', label:''}] : []);
-    const barHtml = barCol ? bars(s.rows, s.unit) : [];
+    const barHtml = barCol ? bars(s.rows, s.chart_key) : [];
     const head = '<thead><tr>' + cols.map(c => `<th>${esc(c.label)}</th>`).join('') + '</tr></thead>';
-    const body = '<tbody>' + s.rows.map((r, i) => '<tr>' + cols.map(c =>
-      c.key === '__bar' ? `<td>${barHtml[i]}</td>` : cell(r, c, s.unit)).join('') + '</tr>').join('') + '</tbody>';
+    const tr = (r, i) => '<tr>' + cols.map(c =>
+      c.key === '__bar' ? `<td>${barHtml[i]}</td>` : cell(r, c, s.unit)).join('') + '</tr>';
+    const head_rows = s.rows.slice(0, SHOW).map(tr).join('');
+    const rest = s.rows.slice(SHOW);
+    const table = `<div class="scroll"><table>${head}<tbody>${head_rows}</tbody></table></div>`;
+    const more = rest.length
+      ? `<details class="more"><summary>나머지 ${rest.length}행 보기</summary>
+         <div class="scroll"><table>${head}<tbody>${rest.map((r, i) => tr(r, i + SHOW)).join('')}</tbody></table></div></details>`
+      : '';
     return `<h2>${esc(s.title)}</h2>
       ${s.chart === 'line' ? sparkline(s.rows) : ''}
       <ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>
-      <div class="scroll"><table>${head}${body}</table></div>`;
+      ${table}${more}`;
   }).join('');
 
   document.getElementById('quality').innerHTML = (P.quality_notes || []).map(n =>

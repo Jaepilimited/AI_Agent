@@ -30,6 +30,7 @@ class Section:
     rows: List[Dict[str, Any]] = field(default_factory=list)
     findings: List[str] = field(default_factory=list)
     chart: str = ""          # 'line' | 'bar' | 'none'
+    chart_key: str = "value" # 막대가 무엇을 그리는가. 비율 절은 'ratio' 로 둔다
     columns: List[Dict[str, str]] = field(default_factory=list)
     note: str = ""
 
@@ -53,6 +54,12 @@ def _pct(a, b, nd=1) -> float:
 
 def _total(rows) -> float:
     return sum(float(r.get("value") or 0) for r in rows)
+
+
+def _names(items, n=3, key="dim") -> str:
+    """이름 나열은 짧게. 다섯 개만 이어붙여도 문장이 아니라 문단이 된다 (2026-08-12)."""
+    head = ", ".join(str(r[key]) for r in items[:n])
+    return head + (f" 외 {len(items) - n}개" if len(items) > n else "")
 
 
 # ── 블록 정의 ─────────────────────────────────────────────────────────────────
@@ -193,17 +200,18 @@ class Compare:
             g = sorted(gain, key=lambda r: -r["delta"])[:3]
             share = _pct(sum(r["delta"] for r in g), sum(r["delta"] for r in gain))
             s.findings.append(
-                "증가를 이끈 곳: " + ", ".join(f"{r['dim']} {_fmt(r['delta'], m.unit)}" for r in g)
+                "증가를 이끈 곳: "
+                + ", ".join(f"{r['dim']} {_fmt(r['delta'], m.unit)}" for r in g[:3])
                 + f" — 증가분의 {share}%")
         if loss:
             l = sorted(loss, key=lambda r: r["delta"])[:3]
             s.findings.append(
-                "줄어든 곳: " + ", ".join(f"{r['dim']} {_fmt(r['delta'], m.unit)}" for r in l))
+                "줄어든 곳: "
+                + ", ".join(f"{r['dim']} {_fmt(r['delta'], m.unit)}" for r in l[:3]))
         newcomers = [r for r in rows if r["prev"] == 0 and r["value"] > 0]
         if newcomers:
             s.findings.append(
-                f"직전 기간에 없던 곳 {len(newcomers)}개 — "
-                + ", ".join(r["dim"] for r in newcomers[:5]))
+                f"직전 기간에 없던 곳 {len(newcomers)}개 — {_names(newcomers)}")
         return s
 
 
@@ -319,24 +327,42 @@ class Contribution:
         # 순증감 대비 기여도. 순증감이 0 에 가까우면 비율이 폭발하므로 절대증감 기준으로 바꾼다
         gross = sum(abs(r["delta"]) for r in items) or 1.0
         base = net if abs(net) > gross * 0.1 else None
+        up_sum = sum(r["delta"] for r in items if r["delta"] > 0)
+        down_sum = sum(r["delta"] for r in items if r["delta"] < 0)
+        # ⚠️ 줄어든 항목이 있으면 양수 기여도의 합이 순증감을 넘어 **누적이 100%를 넘는다**
+        #    (실측 248%). 그 열은 읽는 사람을 혼란스럽게만 하므로 상쇄가 있을 땐 빼고,
+        #    대신 증가분·감소분 총량을 문장으로 밝힌다 (2026-08-12 사용자 보고).
+        has_offset = bool(down_sum)
         cum = 0.0
         rows = []
         for r in items:
             share = _pct(r["delta"], base) if base else _pct(abs(r["delta"]), gross)
             cum += share
-            rows.append({**r, "share": round(share, 1), "cum": round(cum, 1)})
+            row = {**r, "share": round(share, 1)}
+            if not has_offset:
+                row["cum"] = round(cum, 1)
+            rows.append(row)
         rows = relabel_rows(rows, p["dim"])
 
+        cols = [{"key": "dim", "label": d.label},
+                {"key": "delta", "label": "증감", "fmt": "metric"},
+                {"key": "share", "label": "순증감 대비 기여도", "fmt": "pct"}]
+        if not has_offset:
+            cols.append({"key": "cum", "label": "누적", "fmt": "pct"})
         s = Section(block="contribution",
                     title=p.get("title") or f"{d.label}별 {m.label} 성장 기여도",
-                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows, chart="bar",
-                    columns=[{"key": "dim", "label": d.label},
-                             {"key": "delta", "label": "증감", "fmt": "metric"},
-                             {"key": "share", "label": "기여도", "fmt": "pct"},
-                             {"key": "cum", "label": "누적", "fmt": "pct"}])
-        s.findings.append(
-            f"순증감 {_fmt(net, m.unit)}"
-            + ("" if base else " — 증감이 서로 상쇄돼 기여도는 절대 증감 기준으로 계산했다"))
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows,
+                    chart="bar", chart_key="delta",   # 이 절의 수치는 value 가 아니라 delta 다
+                    columns=cols)
+        if has_offset:
+            s.findings.append(
+                f"늘어난 곳 합계 {_fmt(up_sum, m.unit)} · 줄어든 곳 합계 "
+                f"{_fmt(down_sum, m.unit)} → 순증감 {_fmt(net, m.unit)}. "
+                f"상쇄가 있어 개별 기여도의 합은 100%를 넘는다")
+        else:
+            s.findings.append(f"순증감 {_fmt(net, m.unit)}")
+        if not base:
+            s.findings.append("증감이 서로 상쇄돼 기여도는 절대 증감 기준으로 계산했다")
         pos = [r for r in rows if r["delta"] > 0]
         if pos:
             need = 0
@@ -348,8 +374,7 @@ class Contribution:
                 if acc >= tot_pos * 0.8:
                     break
             s.findings.append(
-                f"증가분의 80%를 {need}개 항목이 만들었다 — "
-                + ", ".join(r["dim"] for r in pos[:need][:5]))
+                f"증가분의 80%를 {need}개 항목이 만들었다 — {_names(pos[:need])}")
         neg = [r for r in rows if r["delta"] < 0]
         if neg:
             worst = min(neg, key=lambda r: r["delta"])
@@ -468,13 +493,16 @@ class Movers:
             rows.append({"dim": k, "prev": round(q, 1), "value": round(c, 1),
                          "delta": round(c - q, 1),
                          "growth": _pct(c - q, q) if q else None})
+        # ⚠️ 라벨 정리를 **먼저** 한다. 나중에 하면 ups/downs 만 정리되고 news 는
+        #    원문 세트명("A + B + C…")으로 문장에 실린다 (2026-08-12 사용자 보고).
+        rows = relabel_rows(rows, p["dim"])
         ups = sorted([r for r in rows if r["growth"] is not None and r["growth"] > 0],
                      key=lambda r: -r["growth"])[:8]
         downs = sorted([r for r in rows if r["growth"] is not None and r["growth"] < 0],
                        key=lambda r: r["growth"])[:8]
         news = sorted([r for r in rows if r["growth"] is None and r["value"] > 0],
                       key=lambda r: -r["value"])[:5]
-        out = relabel_rows(ups + downs, p["dim"])
+        out = ups + downs
 
         s = Section(block="movers", title=p.get("title") or f"{d.label} 급변 항목",
                     metric=p["metric"], dim=p["dim"], unit=m.unit, rows=out, chart="none",
@@ -495,7 +523,8 @@ class Movers:
         if news:
             s.findings.append(
                 f"직전 기간에 없던 항목 {len(news)}개 — "
-                + ", ".join(f"{r['dim']} {_fmt(r['value'], m.unit)}" for r in news[:3]))
+                + ", ".join(f"{r['dim']} {_fmt(r['value'], m.unit)}" for r in news[:3])
+                + (f" 외 {len(news) - 3}개" if len(news) > 3 else ""))
         return s
 
 
@@ -615,33 +644,58 @@ class Ratio:
         d = DIMENSIONS[p["dim"]]
         num = {r["dim"]: float(r["value"] or 0) for r in facts["num"]}
         den = {r["dim"]: float(r["value"] or 0) for r in facts["den"]}
+
+        # ⚠️ 단위가 같을 때만 백분율이다 (할인÷매출 = 할인율).
+        #    단위가 다르면(매출÷주문수) 백분율은 무의미하다 — 실제로 "객단가 0.04%" 가
+        #    나왔었다 (2026-08-12). 이럴 땐 실제 값끼리 나눠 '원/건' 으로 낸다.
+        as_pct = m.base_unit == m2.base_unit
+        rate_unit = "%" if as_pct else f"{m.base_unit}/{m2.base_unit}"
+
+        def _rate(nv, dv):
+            if not dv:
+                return 0.0
+            if as_pct:
+                return round(nv / dv * 100, 2)
+            return round((nv * m.scale) / (dv * m2.scale), 0)
+
+        def _rate_text(v):
+            return f"{v:,.2f}%" if as_pct else f"{v:,.0f}{rate_unit}"
+
         rows = []
         for k, dv in den.items():
             if dv <= 0:
                 continue
             nv = num.get(k, 0.0)
             rows.append({"dim": k, "value": round(nv, 1), "base": round(dv, 1),
-                         "ratio": _pct(nv, dv, 2)})
+                         "ratio": _rate(nv, dv), "ratio_text": _rate_text(_rate(nv, dv))})
         rows.sort(key=lambda r: -r["ratio"])
         rows = relabel_rows(rows[:20], p["dim"])
 
         tot_n, tot_d = sum(num.values()), sum(den.values())
+        overall = _rate(tot_n, tot_d)
         s = Section(block="ratio",
                     title=p.get("title") or f"{d.label}별 {m.label}÷{m2.label}",
-                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows, chart="bar",
+                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows,
+                    chart="bar", chart_key="ratio",   # 막대는 비율 기준 (분자로 그리면 표와 어긋난다)
                     columns=[{"key": "dim", "label": d.label},
                              {"key": "value", "label": m.label, "fmt": "metric"},
-                             {"key": "base", "label": m2.label, "fmt": "metric"},
-                             {"key": "ratio", "label": "비율", "fmt": "pct"}])
+                             # ⚠️ 분모는 **자기 단위**로 찍는다. 분자 단위(억)를 쓰면
+                             #    476,835건이 "423,030.0억" 으로 나온다 (2026-08-12 실측)
+                             {"key": "base", "label": m2.label, "fmt": "metric2",
+                              "unit": m2.unit},
+                             {"key": "ratio_text",
+                              "label": "비율" if as_pct else f"{m.label}/{m2.label}"}])
         if tot_d:
-            s.findings.append(f"전체 {_pct(tot_n, tot_d, 2)}%"
-                              f" ({_fmt(tot_n, m.unit)} ÷ {_fmt(tot_d, m2.unit)})")
+            s.findings.append(
+                f"전체 {_rate_text(overall)} "
+                f"({_fmt(tot_n, m.unit)} ÷ {_fmt(tot_d, m2.unit)})")
         if rows:
             s.findings.append(
-                f"가장 높은 곳 {rows[0]['dim']} {rows[0]['ratio']}% · "
-                f"가장 낮은 곳 {rows[-1]['dim']} {rows[-1]['ratio']}%")
-            if tot_d:
-                over = [r for r in rows if r["ratio"] > _pct(tot_n, tot_d, 2)]
+                f"가장 높은 곳 {rows[0]['dim']} {rows[0]['ratio_text']}"
+                + (f" · 가장 낮은 곳 {rows[-1]['dim']} {rows[-1]['ratio_text']}"
+                   if len(rows) > 1 else ""))
+            if tot_d and len(rows) > 2:
+                over = [r for r in rows if r["ratio"] > overall]
                 s.findings.append(f"전체 평균을 넘는 곳이 {len(over)}개")
         return s
 
