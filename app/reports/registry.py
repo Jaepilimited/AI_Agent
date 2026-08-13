@@ -169,14 +169,33 @@ def match(question: str) -> Optional[Tuple[str, Dict[str, Any]]]:
     return None
 
 
+# 보고서 **기능에 대해 묻는** 질문. 보고서를 달라는 게 아니다.
+# ⛔ "보고서 기능은 어떤 때 쓰면 좋아?" 가 매번 전사 매출 보고서를 만들고 있었다
+#    (2026-08-13 실측, 10건 생성). 질문에 답하지도 못하면서 플래너 LLM 1회 +
+#    BigQuery 8~12회를 태우고 9~18초를 쓴다. 신호어만 보면 요청과 질문을 못 가른다.
+_REPORT_META = re.compile(
+    r"(보고서|리포트)\s*(기능|메뉴|탭)"                      # 보고서 기능/메뉴/탭
+    r"|(보고서|리포트)\s*(이란|란\b|이 뭐|가 뭐|는 뭐)"        # 보고서란 / 보고서가 뭐야
+    r"|(보고서|리포트)[^?.!]{0,10}(사용법|쓰는\s*법|만드는\s*법)"
+    r"|어떻게\s*(보고서|리포트)"                             # 어떻게 보고서를 만들어?
+    r"|(보고서|리포트)[^?.!]{0,10}어떻게\s*(만들|써|사용|쓰|봐|보나)"
+)
+
+
 def wants_report(question: str) -> bool:
-    """보고서를 원하는 질문인가.
+    """보고서를 **달라는** 질문인가.
 
     신호어("보고서·리포트·분석해줘·진단…")가 있어야 한다. "일본 매출 얼마야?" 같은
     단순 조회를 보고서로 만들어 스무 초 기다리게 하지 않는다.
+
+    ⛔ 신호어가 있어도 **기능을 묻는 질문이면 만들지 않는다.** 대응은 신호어를
+       빼는 게 아니다 — "매출 보고서 만들어줘"는 계속 만들어야 한다. 요청형과
+       설명 요구를 결정적으로 가른다.
     """
     ql = question.lower()
-    return any(w in ql for w in _REPORT_WORDS)
+    if not any(w in ql for w in _REPORT_WORDS):
+        return False
+    return not _REPORT_META.search(ql)
 
 
 def route(question: str) -> Optional[Dict[str, Any]]:
