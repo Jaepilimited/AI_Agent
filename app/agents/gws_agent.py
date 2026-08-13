@@ -12,7 +12,10 @@ exists in this app, so there's no reason to keep two model providers here).
 """
 
 import asyncio
+import re
+from datetime import datetime, timedelta
 from typing import List
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -33,6 +36,113 @@ from app.core.google_auth import GoogleAuthManager
 from app.core.google_workspace import list_calendar_events, search_drive, search_gmail
 
 _auth_manager = None
+_SEOUL = ZoneInfo("Asia/Seoul")
+
+
+def _current_question(query: str) -> str:
+    """Remove conversation history before using text as an API search query."""
+    marker = "[현재 질문]"
+    if marker in (query or ""):
+        return query.rsplit(marker, 1)[1].strip()
+    return (query or "").strip()
+
+
+_GMAIL_OPERATOR_RE = re.compile(
+    r'(?<![\w-])-?(?:from|to|cc|bcc|subject|label|in|is|has|filename|'
+    r'after|before|older|newer|newer_than|older_than):(?:"[^"]*"|\S+)',
+    re.IGNORECASE,
+)
+
+
+def build_gmail_query(query: str, now: datetime | None = None) -> str:
+    """Translate a natural Korean mail request into Gmail search syntax.
+
+    Gmail's API does not understand instructions such as ``오늘 메일 요약``.
+    Relative dates and common mail states are converted deterministically,
+    while explicit Gmail operators supplied by the user are preserved.
+    """
+    question = _current_question(query)
+    lowered = question.lower()
+    current = now or datetime.now(_SEOUL)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=_SEOUL)
+    current = current.astimezone(_SEOUL)
+    today = current.date()
+
+    explicit_operators = _GMAIL_OPERATOR_RE.findall(question)
+    operators_lower = " ".join(explicit_operators).lower()
+    has_date_operator = any(
+        f"{name}:" in operators_lower
+        for name in ("after", "before", "older", "newer", "newer_than", "older_than")
+    )
+
+    generated: List[str] = []
+    if not has_date_operator:
+        start = end = None
+        if any(word in lowered for word in ("어제", "yesterday")):
+            start, end = today - timedelta(days=1), today
+        elif any(word in lowered for word in ("오늘", "today")):
+            start, end = today, today + timedelta(days=1)
+        elif any(word in lowered for word in ("그제", "그저께")):
+            start, end = today - timedelta(days=2), today - timedelta(days=1)
+        elif any(word in lowered for word in ("지난주", "지난 주", "last week")):
+            this_monday = today - timedelta(days=today.weekday())
+            start, end = this_monday - timedelta(days=7), this_monday
+        elif any(word in lowered for word in ("이번주", "이번 주", "this week")):
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=7)
+        elif any(word in lowered for word in ("지난달", "지난 달", "last month")):
+            end = today.replace(day=1)
+            start = (end - timedelta(days=1)).replace(day=1)
+        elif any(word in lowered for word in ("이번달", "이번 달", "this month")):
+            start = today.replace(day=1)
+            end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        elif any(word in lowered for word in ("최근", "latest", "recent")):
+            generated.append("newer_than:7d")
+
+        if start is not None and end is not None:
+            generated.extend([
+                f"after:{start:%Y/%m/%d}",
+                f"before:{end:%Y/%m/%d}",
+            ])
+
+    if any(word in lowered for word in ("읽지 않은", "안 읽은", "미열람", "unread")):
+        if "is:" not in operators_lower:
+            generated.append("is:unread")
+    if any(word in lowered for word in ("첨부파일", "첨부 파일", "attachment")):
+        if "has:" not in operators_lower:
+            generated.append("has:attachment")
+
+    sent = any(word in lowered for word in ("보낸 메일", "발송한", "발신한", "sent mail"))
+    received = any(word in lowered for word in (
+        "받은 메일", "수신 메일", "수신한", "수신 받은", "들어온 메일",
+        "도착한 메일", "온 메일", "received",
+    ))
+    if sent and "in:" not in operators_lower:
+        generated.append("in:sent")
+    elif received and not any(key in operators_lower for key in ("from:", "in:")):
+        generated.append("-from:me")
+
+    residual = _GMAIL_OPERATOR_RE.sub(" ", question.lower())
+    stop_phrases = (
+        "요약해주세요", "정리해주세요", "검색해주세요", "확인해주세요",
+        "요약해줘", "정리해줘", "검색해줘", "찾아줘", "보여줘", "알려줘", "확인해줘",
+        "읽지 않은", "안 읽은", "첨부 파일", "받은 메일", "보낸 메일", "수신 받은",
+        "들어온 메일", "도착한 메일", "수신 메일", "온 메일",
+        "지난 주", "이번 주", "지난 달", "이번 달", "last week", "this week",
+        "last month", "this month", "sent mail",
+        "yesterday", "today", "latest", "recent", "received", "attachment", "unread",
+        "그저께", "지난주", "이번주", "지난달", "이번달", "어제", "오늘", "그제", "최근",
+        "발송한", "발신한", "수신한", "미열람", "첨부파일",
+        "이메일", "gmail", "메일", "내용", "본문", "요약", "정리", "검색", "확인",
+        "내", "나의", "좀", "관련", "대해서", "해줘", "해주세요", "줘", "주세요",
+    )
+    for phrase in sorted(stop_phrases, key=len, reverse=True):
+        residual = residual.replace(phrase, " ")
+    residual = re.sub(r"[^0-9a-zA-Z가-힣@._+-]+", " ", residual)
+    keywords = [token for token in residual.split() if len(token) > 1]
+
+    return " ".join([*explicit_operators, *generated, *keywords]).strip()
 
 
 def _get_auth_manager() -> GoogleAuthManager:
@@ -132,7 +242,7 @@ class GWSAgent:
             "당신은 Craver의 Google Workspace 비서입니다. 아래 **검색 결과만** 사용해 "
             "사용자 질문에 한국어로 답하세요. 결과에 없는 내용을 지어내지 마세요.\n\n"
             f"## 사용자 질문\n{query}\n\n"
-            f"## 검색 결과\n{results[:12000]}\n\n"
+            f"## 검색 결과\n{results[:24000]}\n\n"
             "## 형식\n"
             f"{fmt_lines}\n"
             "- 날짜/시간은 한국어로 (예: 2026년 2월 12일 오후 3시)\n"
@@ -157,11 +267,12 @@ class GWSAgent:
     def _collect(self, creds, query: str, tool_type: str) -> str:
         """분류된 도구를 직접 호출해 원본 결과 텍스트를 모은다 (블로킹 — to_thread 로 부를 것)."""
         parts = []
+        current_query = _current_question(query)
 
         def _calendar():
             # 시간 표현("오전", "11시")을 검색어로 넣으면 결과가 0건이 된다.
             # 제목 검색이 아니라 기간 조회이므로 query 는 비우고 days_ahead 만 조절한다.
-            q = (query or "").lower()
+            q = current_query.lower()
             days = 7
             if any(k in q for k in ("오늘", "today")):
                 days = 1
@@ -187,14 +298,19 @@ class GWSAgent:
 
         def _gmail():
             try:
-                ms = search_gmail(creds, query, max_results=10)
+                gmail_query = build_gmail_query(current_query)
+                ms = search_gmail(creds, gmail_query, max_results=10)
             except Exception as e:
                 return f"[메일 오류] {str(e)[:200]}"
             if not ms:
                 return "[메일] 검색 결과가 없습니다."
             lines = ["[메일]"]
             for m in ms:
-                lines.append(f"- {m['subject']} (보낸사람: {m['from']}, 날짜: {m['date']})\n  {m['snippet']}")
+                content = m.get("body") or m.get("snippet", "")
+                lines.append(
+                    f"- {m['subject']} (보낸사람: {m['from']}, 날짜: {m['date']})"
+                    f"\n  {content}"
+                )
             return "\n".join(lines)
 
         def _drive():
@@ -202,7 +318,7 @@ class GWSAgent:
             # ① "사진/영상/PDF" 같은 유형 표현 → mimeType 필터로 변환
             # ② 조사·명령어를 걷어낸 핵심 키워드만 name/fullText 검색에 사용
             #    (키워드가 안 남으면 유형 필터만으로 최근 파일을 보여준다)
-            q = (query or "").lower()
+            q = current_query.lower()
             mime = None
             for kws, m in (
                 (("사진", "이미지", "image", "photo", "jpg", "png"), "image/"),
@@ -256,19 +372,28 @@ class GWSAgent:
         """
         # 공백 차이로 분류가 빗나가지 않게 정규화한다.
         # ("이번 주 일정" 이 cal 키워드 "이번주" 에 안 걸려 all 로 빠지던 문제)
-        q = query.lower().replace(" ", "")
-        cal_kw = ["캘린더", "calendar", "일정", "schedule", "내일", "오늘",
-                   "이번주", "다음주", "모레", "스케줄", "회의", "미팅",
-                   "약속", "일주일", "이번달일정", "며칠"]
+        q = _current_question(query).lower().replace(" ", "")
+        cal_explicit_kw = ["캘린더", "calendar", "일정", "schedule", "스케줄",
+                           "회의", "미팅", "약속"]
+        cal_time_kw = ["내일", "오늘", "이번주", "다음주", "모레", "일주일",
+                       "이번달일정", "며칠"]
         mail_kw = ["메일", "mail", "gmail", "편지", "이메일", "받은",
                    "보낸", "inbox", "발송", "수신", "발신", "invoice",
                    "shipping", "메시지"]
         drive_kw = ["드라이브", "drive", "파일", "file", "폴더", "문서",
                     "시트", "sheet", "용량"]
 
-        cal = any(k in q for k in cal_kw)
+        cal_explicit = any(k in q for k in cal_explicit_kw)
+        cal = cal_explicit or any(k in q for k in cal_time_kw)
         mail = any(k in q for k in mail_kw)
         drive = any(k in q for k in drive_kw)
+
+        # "오늘"은 메일의 기간 조건이지 캘린더 요청이 아니다. 반면
+        # "오늘 메일과 일정"처럼 일정 자체를 명시하면 여러 도구를 조회한다.
+        if mail and not drive and not cal_explicit:
+            return "gmail"
+        if drive and not mail and not cal_explicit:
+            return "drive"
 
         # Single tool detected
         if cal and not mail and not drive:
@@ -293,12 +418,13 @@ class GWSAgent:
         def gmail_search(query: str) -> str:
             """Gmail에서 메일을 검색합니다. query에 검색어를 입력하세요. 예: 'from:boss', 'subject:보고서', '최근 메일'"""
             try:
-                results = search_gmail(creds, query, max_results=10)
+                results = search_gmail(creds, build_gmail_query(query), max_results=10)
                 if not results:
                     return "검색 결과가 없습니다."
                 lines = []
                 for m in results:
-                    lines.append(f"- **{m['subject']}** (보낸사람: {m['from']}, 날짜: {m['date']})\n  {m['snippet']}")
+                    content = m.get("body") or m.get("snippet", "")
+                    lines.append(f"- **{m['subject']}** (보낸사람: {m['from']}, 날짜: {m['date']})\n  {content}")
                 return "\n".join(lines)
             except Exception as e:
                 return f"Gmail 검색 오류: {str(e)}"

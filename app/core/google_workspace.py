@@ -4,6 +4,7 @@ Stateless functions that accept credentials and call Gmail/Drive/Calendar APIs.
 """
 
 import base64
+import html
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -13,6 +14,95 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 logger = structlog.get_logger(__name__)
+
+# A daily digest can contain ten messages. Keep every message represented in
+# the formatter prompt instead of letting the first few long mails crowd out
+# the rest; 2,000 characters is enough for a useful per-message summary.
+GMAIL_BODY_MAX_CHARS = 2_000
+
+
+def _gmail_part_headers(part: Dict[str, Any]) -> Dict[str, str]:
+    """Return MIME headers with case-insensitive names."""
+    return {
+        str(header.get("name", "")).lower(): str(header.get("value", ""))
+        for header in part.get("headers", [])
+    }
+
+
+def _decode_gmail_part(part: Dict[str, Any]) -> str:
+    """Decode a Gmail API MIME part without downloading attachments."""
+    data = part.get("body", {}).get("data")
+    if not data:
+        return ""
+
+    try:
+        padded = data + ("=" * (-len(data) % 4))
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        return ""
+
+    content_type = _gmail_part_headers(part).get("content-type", "")
+    charset_match = re.search(r"charset\s*=\s*[\"']?([^;\"'\s]+)", content_type, re.I)
+    charsets = [charset_match.group(1)] if charset_match else []
+    charsets.extend(["utf-8", "cp949", "latin-1"])
+    for charset in charsets:
+        try:
+            return raw.decode(charset)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
+def _html_to_text(value: str) -> str:
+    value = re.sub(r"(?is)<(script|style)\b.*?>.*?</\1>", " ", value)
+    value = re.sub(r"(?i)<br\s*/?>", "\n", value)
+    value = re.sub(r"(?i)</(?:p|div|li|tr|h[1-6])\s*>", "\n", value)
+    value = re.sub(r"(?s)<[^>]+>", " ", value)
+    return html.unescape(value)
+
+
+def _normalize_mail_text(value: str) -> str:
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in value.splitlines()]
+    text = "\n".join(lines)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip(" \n\r\t\x00")
+
+
+def extract_gmail_body(
+    payload: Dict[str, Any],
+    max_chars: int = GMAIL_BODY_MAX_CHARS,
+) -> str:
+    """Extract readable body text from a Gmail MIME payload.
+
+    Plain text is preferred over HTML so multipart/alternative messages are
+    not duplicated. Parts marked as attachments are intentionally skipped.
+    """
+    plain_parts: List[str] = []
+    html_parts: List[str] = []
+
+    def visit(part: Dict[str, Any]) -> None:
+        headers = _gmail_part_headers(part)
+        disposition = headers.get("content-disposition", "").lower()
+        if part.get("filename") or "attachment" in disposition:
+            return
+
+        for child in part.get("parts", []) or []:
+            visit(child)
+
+        mime_type = str(part.get("mimeType", "")).lower()
+        if mime_type not in {"text/plain", "text/html"}:
+            return
+        decoded = _decode_gmail_part(part)
+        if not decoded:
+            return
+        if mime_type == "text/plain":
+            plain_parts.append(decoded)
+        else:
+            html_parts.append(_html_to_text(decoded))
+
+    visit(payload or {})
+    body = "\n\n".join(plain_parts or html_parts)
+    return _normalize_mail_text(body)[:max_chars]
 
 
 def search_gmail(
@@ -28,7 +118,7 @@ def search_gmail(
         max_results: Maximum number of messages to return.
 
     Returns:
-        List of message dicts with subject, from, date, snippet.
+        List of message dicts with subject, from, date, snippet, and body.
     """
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
     results = service.users().messages().list(
@@ -42,17 +132,18 @@ def search_gmail(
     output = []
     for msg_info in messages:
         msg = service.users().messages().get(
-            userId="me", id=msg_info["id"], format="metadata",
-            metadataHeaders=["Subject", "From", "Date"],
+            userId="me", id=msg_info["id"], format="full",
         ).execute()
 
-        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        payload = msg.get("payload", {})
+        headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
         output.append({
             "id": msg_info["id"],
             "subject": headers.get("Subject", "(제목 없음)"),
             "from": headers.get("From", ""),
             "date": headers.get("Date", ""),
             "snippet": msg.get("snippet", ""),
+            "body": extract_gmail_body(payload),
         })
 
     return output
