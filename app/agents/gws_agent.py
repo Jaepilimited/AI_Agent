@@ -97,6 +97,8 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
         elif any(word in lowered for word in ("이번달", "이번 달", "this month")):
             start = today.replace(day=1)
             end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        elif any(word in lowered for word in ("방금", "just arrived", "just received")):
+            generated.append("newer_than:1d")
         elif any(word in lowered for word in ("최근", "latest", "recent")):
             generated.append("newer_than:7d")
 
@@ -127,12 +129,16 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
     stop_phrases = (
         "요약해주세요", "정리해주세요", "검색해주세요", "확인해주세요",
         "요약해줘", "정리해줘", "검색해줘", "찾아줘", "보여줘", "알려줘", "확인해줘",
+        "무엇인가요", "무엇이야", "이뭐예요", "이뭐에요", "이뭔가요",
+        "이뭐야", "이머야", "이뭔데", "이뭐임", "이뭐냐",
+        "뭐예요", "뭐에요", "뭔가요", "뭐야", "머야", "뭔데", "뭐임", "뭐냐",
         "읽지 않은", "안 읽은", "첨부 파일", "받은 메일", "보낸 메일", "수신 받은",
         "들어온 메일", "도착한 메일", "수신 메일", "온 메일",
         "지난 주", "이번 주", "지난 달", "이번 달", "last week", "this week",
         "last month", "this month", "sent mail",
         "yesterday", "today", "latest", "recent", "received", "attachment", "unread",
         "그저께", "지난주", "이번주", "지난달", "이번달", "어제", "오늘", "그제", "최근",
+        "최신", "방금",
         "발송한", "발신한", "수신한", "미열람", "첨부파일",
         "이메일", "gmail", "메일", "내용", "본문", "요약", "정리", "검색", "확인",
         "내", "나의", "좀", "관련", "대해서", "해줘", "해주세요", "줘", "주세요",
@@ -143,6 +149,16 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
     keywords = [token for token in residual.split() if len(token) > 1]
 
     return " ".join([*explicit_operators, *generated, *keywords]).strip()
+
+
+def gmail_result_limit(query: str) -> int:
+    """Return one message when the user explicitly asks for the newest one."""
+    normalized = _current_question(query).lower().replace(" ", "")
+    newest_markers = (
+        "최신메일", "가장최근메일", "마지막메일", "방금온메일",
+        "latestmail", "newestmail", "mostrecentmail",
+    )
+    return 1 if any(marker in normalized for marker in newest_markers) else 10
 
 
 def _get_auth_manager() -> GoogleAuthManager:
@@ -299,7 +315,11 @@ class GWSAgent:
         def _gmail():
             try:
                 gmail_query = build_gmail_query(current_query)
-                ms = search_gmail(creds, gmail_query, max_results=10)
+                ms = search_gmail(
+                    creds,
+                    gmail_query,
+                    max_results=gmail_result_limit(current_query),
+                )
             except Exception as e:
                 return f"[메일 오류] {str(e)[:200]}"
             if not ms:
@@ -418,7 +438,11 @@ class GWSAgent:
         def gmail_search(query: str) -> str:
             """Gmail에서 메일을 검색합니다. query에 검색어를 입력하세요. 예: 'from:boss', 'subject:보고서', '최근 메일'"""
             try:
-                results = search_gmail(creds, build_gmail_query(query), max_results=10)
+                results = search_gmail(
+                    creds,
+                    build_gmail_query(query),
+                    max_results=gmail_result_limit(query),
+                )
                 if not results:
                     return "검색 결과가 없습니다."
                 lines = []

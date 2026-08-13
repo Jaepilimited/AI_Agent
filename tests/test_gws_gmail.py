@@ -48,6 +48,28 @@ def test_build_gmail_query_handles_recent_unread_mail():
     )
 
 
+def test_build_gmail_query_drops_colloquial_what_is_it_suffix():
+    assert gws_agent.build_gmail_query("최신메일이머야", now=NOW) == ""
+    assert gws_agent.build_gmail_query("최신 메일이 뭐야?", now=NOW) == ""
+
+
+def test_build_gmail_query_keeps_today_filter_with_colloquial_suffix():
+    assert gws_agent.build_gmail_query("오늘 메일머야", now=NOW) == (
+        "after:2026/08/13 before:2026/08/14"
+    )
+
+
+def test_build_gmail_query_understands_just_arrived_mail():
+    assert gws_agent.build_gmail_query("방금 온 메일 뭐야", now=NOW) == (
+        "newer_than:1d -from:me"
+    )
+
+
+def test_latest_mail_request_fetches_only_the_newest_message():
+    assert gws_agent.gmail_result_limit("최신메일이머야") == 1
+    assert gws_agent.gmail_result_limit("오늘 메일머야") == 10
+
+
 def test_today_mail_is_classified_as_gmail_not_all_tools():
     assert gws_agent.GWSAgent._classify_tool("오늘 메일 요약") == "gmail"
     assert gws_agent.GWSAgent._classify_tool("오늘 일정") == "calendar"
