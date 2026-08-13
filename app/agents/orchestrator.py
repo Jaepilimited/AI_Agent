@@ -2712,6 +2712,14 @@ JSON만 반환:
         "맛집", "여행", "관광", "항공", "비행기", "호텔", "숙소", "여행지",
     ]
 
+    # 시간을 가리키기만 하는 말. 이것 하나로는 "바깥 정보가 필요하다"는 근거가 못 된다.
+    # "안녕? **오늘** 뭐 도와줄 수 있어?" 가 이것 때문에 구글 검색을 돌아 첫 토큰이
+    # 2.5초 → 12~17초가 됐다 (2026-08-13 실측).
+    _AMBIENT_TIME = {"오늘", "지금", "현재", "최근", "올해", "이번 달", "이번달", "실시간"}
+    # 어시스턴트 자신에 대한 질문 — 검색해 올 바깥 정보가 애초에 없다
+    _SELF_REF = ["안녕", "도와", "할 수 있", "할수있", "어시스턴트", "너는", "네가",
+                 "기능", "사용법", "쓰는 법"]
+
     def _needs_web_search(self, query: str) -> bool:
         """Check if query needs real-time web search or can be answered directly."""
         q = query.lower().strip()
@@ -2720,7 +2728,13 @@ JSON만 반환:
         if any(kw in q for kw in _NO_SEARCH):
             return False
         # Check search keywords FIRST — even short queries like "현재 대통령" need search
-        if any(kw in q for kw in self._SEARCH_KEYWORDS):
+        hits = [kw for kw in self._SEARCH_KEYWORDS if kw in q]
+        if hits:
+            # 걸린 게 시간어뿐이고 질문 대상이 어시스턴트 자신이면 검색하지 않는다.
+            # ⚠️ 키워드를 빼서 고치지 않는다 — "오늘 환율"·"지금 뉴스"는 그대로 검색해야
+            #    하므로, 시간어 **외에** 실제 주제어가 하나라도 있으면 검색으로 간다
+            if all(h in self._AMBIENT_TIME for h in hits) and any(s in q for s in self._SELF_REF):
+                return False
             return True
         # Very short queries (greetings, single words) → no search
         if len(q) <= 10:
@@ -3010,9 +3024,14 @@ JSON만 반환:
         """Gather real-time info via Gemini Search for non-Gemini models.
 
         Returns search context string, or empty string if not needed / failed.
+
+        ⚠️ **Flash 를 쓴다.** multi 경로는 v6.5 에서 이미 Pro→Flash 로 바꿨는데
+        (60-80s → 30-40s) direct 경로만 Pro 로 남아 있었다. 같은 질문 실측
+        (2026-08-13): Pro 7.8~8.4s vs Flash 2.0~2.1s. 이 호출은 Claude 가 답을
+        쓰기 **전에** 동기로 끼어들므로 첫 토큰이 그만큼 통째로 밀린다.
         """
         try:
-            gemini = get_llm_client(MODEL_GEMINI)
+            gemini = get_flash_client()
             search_result = gemini.generate_with_search(
                 f"다음 질문에 답하기 위해 필요한 최신 정보를 검색하여 핵심만 정리하세요. "
                 f"길게 설명하지 말고 사실 위주로 간결하게 정리하세요.\n\n질문: {query}",
