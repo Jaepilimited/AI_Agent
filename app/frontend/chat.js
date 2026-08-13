@@ -77,35 +77,21 @@
   var _fbModal = null;
   function _getFbModal() {
     if (_fbModal) return _fbModal;
+    // ⛔ 인라인 스타일로 두지 마라 — 여기 있던 `--panel`·`--input-bg` 는 **존재하지 않는
+    //    토큰**이라 폴백(#1e1e1e/#111)이 항상 먹었고, 라이트 모드에서 어두운 입력창에
+    //    어두운 글자가 찍혀 **쓴 글이 보이지 않았다** (2026-08-13 사용자 제보).
+    //    테마를 타야 하는 것은 style.css 에 두고 클래스로 붙인다.
     var overlay = document.createElement("div");
     overlay.id = "feedback-modal-overlay";
-    overlay.style.cssText = [
-      "display:none;position:fixed;inset:0;z-index:9999",
-      "background:rgba(0,0,0,.55);backdrop-filter:blur(4px)",
-      "align-items:center;justify-content:center"
-    ].join(";");
     overlay.innerHTML = [
-      '<div id="feedback-modal-box" style="',
-        'background:var(--panel,#1e1e1e);border:1px solid var(--border,#333);',
-        'border-radius:16px;padding:24px 28px;width:420px;max-width:90vw;',
-        'box-shadow:0 8px 32px rgba(0,0,0,.5)">',
-      '<div style="font-size:15px;font-weight:600;margin-bottom:6px">어떤 점이 부족했나요?</div>',
-      '<div style="font-size:12px;color:var(--text-muted,#888);margin-bottom:14px">',
-        '상세 내용을 남겨주시면 서비스 개선에 반영합니다. (선택)</div>',
-      '<textarea id="feedback-modal-text" rows="4" placeholder="예: 매출 수치가 다른 것 같아요 / 답변이 너무 짧아요 ..." ',
-        'style="width:100%;box-sizing:border-box;resize:vertical;',
-        'background:var(--input-bg,#111);border:1px solid var(--border,#333);',
-        'border-radius:8px;color:var(--text,#e8e8e8);padding:10px 12px;',
-        'font-size:13px;font-family:inherit;outline:none"></textarea>',
-      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">',
-        '<button id="feedback-modal-cancel" style="',
-          'padding:7px 16px;border:1px solid var(--border,#333);border-radius:8px;',
-          'background:transparent;color:var(--text,#e8e8e8);cursor:pointer;font-size:13px">',
-          '취소</button>',
-        '<button id="feedback-modal-submit" style="',
-          'padding:7px 18px;border:none;border-radius:8px;',
-          'background:#e89200;color:#fff;cursor:pointer;font-size:13px;font-weight:600">',
-          '보내기</button>',
+      '<div id="feedback-modal-box" class="fb-box">',
+      '<div class="fb-title">어떤 점이 부족했나요?</div>',
+      '<div class="fb-sub">상세 내용을 남겨주시면 서비스 개선에 반영합니다. (선택)</div>',
+      '<textarea id="feedback-modal-text" class="fb-text" rows="4" ',
+        'placeholder="예: 매출 수치가 다른 것 같아요 / 답변이 너무 짧아요 ..."></textarea>',
+      '<div class="fb-actions">',
+        '<button id="feedback-modal-cancel" class="fb-btn">취소</button>',
+        '<button id="feedback-modal-submit" class="fb-btn fb-btn-primary">보내기</button>',
       '</div>',
       '</div>'
     ].join("");

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Eval Review · Cella</title>
-  <link rel="stylesheet" href="/static/style.css?v=211">
+  <link rel="stylesheet" href="/static/style.css?v=212">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     body { padding: 0; margin: 0; }
@@ -17,7 +17,7 @@
     .progress-pill {
       display: inline-flex; gap: 10px; align-items: center;
       padding: 4px 12px; border-radius: 999px;
-      background: var(--panel, #f3f3f3); font-size: 13px;
+      background: var(--bg-elevated); font-size: 13px;
     }
     .progress-pill .good { color: #10a37f; font-weight: 600; }
     .progress-pill .bad { color: #dc2626; font-weight: 600; }
@@ -29,7 +29,7 @@
       border: 1px solid var(--border, #e5e5e5);
       padding: 8px; vertical-align: top; text-align: left;
     }
-    .eval-table th { background: var(--panel, #f9f9f9); position: sticky; top: 56px; z-index: 5; }
+    .eval-table th { background: var(--bg-elevated); position: sticky; top: 56px; z-index: 5; }
     .col-num { width: 48px; color: #888; text-align: center; }
     .col-team { width: 160px; font-weight: 500; }
     .col-q { width: 280px; white-space: pre-wrap; word-break: break-word; }
@@ -46,7 +46,7 @@
       padding: 4px 10px; margin-right: 3px; border: 1px solid var(--border, #ccc);
       border-radius: 6px; background: var(--bg, #fff); cursor: pointer; font-size: 13px;
     }
-    .verdict-btn:hover { background: var(--panel, #f3f3f3); }
+    .verdict-btn:hover { background: var(--bg-elevated); }
     .verdict-btn.active-good { background: #d1fae5; border-color: #10a37f; }
     .verdict-btn.active-bad { background: #fecaca; border-color: #dc2626; }
     .verdict-btn.active-skip { background: #e5e7eb; border-color: #6b7280; }
