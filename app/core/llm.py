@@ -388,11 +388,17 @@ class GeminiClient:
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.0,
+        max_output_tokens: int = 4096,
     ) -> str:
-        """Generate a JSON response from Gemini (native JSON mode)."""
+        """Generate a JSON response from Gemini (native JSON mode).
+
+        ⚠️ `max_output_tokens` 를 넉넉히 줄 것. 4096 으로 고정돼 있던 탓에 긴 응답이
+        잘렸는데, `repair_json` 이 괄호를 닫아 **잘림이 정상 JSON 처럼 보였다** —
+        문장이 중간에서 끊긴 채 통과했다 (2026-08-13 판단 절에서 실측).
+        """
         config = self._make_config(
             temperature=temperature,
-            max_output_tokens=4096,
+            max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
         )
         if system_instruction:

@@ -47,6 +47,34 @@ def _fmt(v: Any, unit: str, nd: int = 1) -> str:
     return f"{f:,.0f}{unit}"
 
 
+_JOSA = {"은는": ("은", "는"), "이가": ("이", "가"), "을를": ("을", "를")}
+# 숫자를 읽었을 때 받침이 있는 것: 0(영)·1(일)·3(삼)·6(육)·7(칠)·8(팔)
+_DIGIT_JONG = set("013678")
+
+
+def _josa(word: str, kind: str = "은는") -> str:
+    """받침에 맞는 조사를 붙인다.
+
+    "일본는 +35.4%", "55.1억가 최고" 처럼 조사가 틀리면 자동 생성 티가 난다
+    (2026-08-13). 라벨이 한글·숫자·영문 다 오므로 셋 다 처리한다.
+    """
+    w = (word or "").rstrip()
+    if not w:
+        return w
+    jong, ch = None, w[-1]
+    if "가" <= ch <= "힣":              # 한글 음절
+        jong = (ord(ch) - 0xAC00) % 28 != 0
+    elif ch.isdigit():
+        jong = ch in _DIGIT_JONG
+    elif ch.isalpha():                           # 영문은 모음으로 끝나면 받침 없음으로 읽는다
+        jong = ch.lower() not in "aeiouy"
+    if jong is None:                             # 기호 등 — 판단 불가면 병기해 오답을 피한다
+        a, b = _JOSA[kind]
+        return f"{w}({a}){b}"
+    a, b = _JOSA[kind]
+    return w + (a if jong else b)
+
+
 def _pct(a, b, nd=1) -> float:
     b = float(b or 0)
     return round(float(a or 0) / b * 100, nd) if b else 0.0
@@ -627,6 +655,95 @@ class Seasonality:
                 s.findings.append(
                     f"{int(hi[1])}월이 평균보다 {_pct(hi[0] - avg_all, avg_all):.0f}% 높다 "
                     f"— 원인은 프로모션 일정과 맞춰 봐야 한다 (프로모션 대조 절)")
+        return s
+
+
+@block("versus", "대상 vs 나머지",
+       "질문이 좁힌 대상(일본·우마·중국사업팀 등)을 **나머지와 나란히** 놓고 성장 속도를 "
+       "견준다. '왜 이렇게 컸나'·'다른 곳과 뭐가 달랐나'를 물을 때. dim 이 필요 없다",
+       needs_dim=False)
+class Versus:
+    """⛔ 필터는 **모든 절에 AND 로** 걸리므로, 그대로 두면 비교 대상이 존재할 수 없다.
+    "일본이 다른 나라와 뭐가 달랐나"를 물어도 일본만 나온다 (2026-08-13).
+
+    그래서 이 절만 **주 필터 하나를 빼고** 한 번 더 조회해서, 그 차이로 '나머지'를
+    만든다. 나머지 = (주 필터 없는 전체) − (대상). 남은 필터(영업유형 등)는 양쪽에
+    똑같이 걸어야 같은 성격끼리 비교된다 — 일본 B2C 는 '일본 외 B2C' 와 견준다.
+    """
+
+    # 무엇을 '대상'으로 볼지. 지리 → 조직 → 브랜드 순으로 하나만 고른다
+    PRIMARY = ("국가", "권역", "대륙", "팀", "브랜드")
+
+    @staticmethod
+    def _split(p):
+        f = dict(p.get("filters") or {})
+        for key in Versus.PRIMARY:
+            if f.get(key):
+                rest = {k: v for k, v in f.items() if k != key}
+                return key, f, rest
+        return None, f, f
+
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Any]:
+        key, mine, rest = Versus._split(p)
+        if not key:
+            return {}          # 좁힌 대상이 없으면 비교할 것이 없다
+        q = lambda flt, s, e: Query(metric=p["metric"], filters=flt, start=s, end=e)
+        return {
+            "mine_cur": q(mine, ctx["focus_start"], ctx["focus_end"]),
+            "mine_prv": q(mine, ctx["compare_start"], ctx["compare_end"]),
+            "all_cur": q(rest, ctx["focus_start"], ctx["focus_end"]),
+            "all_prv": q(rest, ctx["compare_start"], ctx["compare_end"]),
+        }
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        key, mine, _ = Versus._split(p)
+        one = lambda name: float(((facts.get(name) or [{}])[0] or {}).get("value") or 0)
+        mc, mp = one("mine_cur"), one("mine_prv")
+        ac, ap = one("all_cur"), one("all_prv")
+        rc, rp = ac - mc, ap - mp          # 나머지 = 전체 − 대상
+
+        label = " · ".join(str(v) for v in (mine.get(key) or []))
+        rest_label = f"{label} 외"
+        mk = lambda nm, c, q: {"dim": nm, "prev": round(q, m.nd), "value": round(c, m.nd),
+                               "delta": round(c - q, m.nd),
+                               "growth": _pct(c - q, q) if q else None}
+        rows = [mk(label, mc, mp), mk(rest_label, rc, rp)]
+
+        s = Section(block="versus", title=p.get("title") or f"{label} vs {rest_label}",
+                    metric=p["metric"], dim=None, unit=m.unit, rows=rows,
+                    chart="bar", chart_key="delta",
+                    columns=[{"key": "dim", "label": "구분"},
+                             {"key": "prev", "label": ctx["compare_label"], "fmt": "metric"},
+                             {"key": "value", "label": ctx["focus_label"], "fmt": "metric"},
+                             {"key": "delta", "label": "증감", "fmt": "metric"},
+                             {"key": "growth", "label": "성장률", "fmt": "pct"}])
+
+        if rc <= 0 and rp <= 0:
+            s.findings.append(f"{rest_label} 실적이 없어 견줄 대상이 없다")
+            return s
+
+        gm = _pct(mc - mp, mp) if mp else None
+        gr = _pct(rc - rp, rp) if rp else None
+        if gm is not None and gr is not None:
+            if gr > 0 and gm > 0:
+                s.findings.append(
+                    f"{label} {gm:+.1f}% · {rest_label} {gr:+.1f}% — "
+                    f"{'빠르다' if gm > gr else '느리다'} ({abs(gm / gr):.1f}배)")
+            else:
+                s.findings.append(f"{label} {gm:+.1f}% · {rest_label} {gr:+.1f}%")
+
+        tot_delta = (mc - mp) + (rc - rp)
+        if tot_delta:
+            s.findings.append(
+                f"전체 증가분 {_fmt(tot_delta, m.unit, m.nd)} 중 "
+                f"{_pct(mc - mp, tot_delta):.0f}%가 {label}에서 나왔다 "
+                f"(비중은 {_pct(mc, ac):.0f}%)")
+        if ac:
+            s.findings.append(
+                f"{label} 비중 {_pct(mp, ap):.1f}% → {_pct(mc, ac):.1f}%")
         return s
 
 

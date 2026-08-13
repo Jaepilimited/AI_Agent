@@ -66,6 +66,80 @@ def _quality_notes(ctx: Dict[str, Any]) -> List[Dict[str, str]]:
     return notes
 
 
+def _conclusion(sections: List[Dict[str, Any]], ctx: Dict[str, Any],
+                quality: List[Dict[str, str]]) -> Dict[str, Any] | None:
+    """이미 만들어진 절들의 **숫자에서** 결론 문단을 뽑는다.
+
+    ⛔ 여기서도 LLM 을 쓰지 않는다. 절마다 발견 문장은 있는데 그걸 종합하는 문단이
+       없어서 보고서가 '표 모음'으로 읽혔다 (2026-08-13). 종합을 LLM 에 맡기면
+       그럴듯한데 틀린 문장이 맨 앞에 오게 된다 — 가장 위험한 자리다.
+
+    ⚠️ 없는 절은 건너뛴다. 문장이 하나뿐이면 결론을 만들지 않는다 — 총량 절을
+       한 번 더 읽는 꼴이라 자리만 차지한다.
+    """
+    from app.reports.blocks import _fmt, _josa, _pct
+
+    by = {}
+    for s in sections:
+        by.setdefault(s["block"], s)
+    out: List[str] = []
+
+    tot = by.get("total")
+    if tot and len(tot["rows"]) >= 2:
+        c = float(tot["rows"][0].get("value") or 0)
+        q = float(tot["rows"][1].get("value") or 0)
+        u = tot["unit"]
+        out.append(f"{ctx['focus_label']} {_fmt(c, u)}" +
+                   (f", 전년 동기 대비 {_pct(c - q, q):+.1f}%" if q else ""))
+
+    vs = by.get("versus")
+    if vs and len(vs["rows"]) == 2:
+        a, b = vs["rows"]
+        ga, gb = a.get("growth"), b.get("growth")
+        if ga is not None and gb is not None and gb > 0 and ga > 0:
+            out.append(f"{_josa(str(a['dim']), '은는')} {ga:+.1f}%로 "
+                       f"{b['dim']}({gb:+.1f}%)보다 {abs(ga / gb):.1f}배 "
+                       f"{'빠르다' if ga > gb else '느리다'}")
+        da, db = float(a.get("delta") or 0), float(b.get("delta") or 0)
+        if da + db:
+            out.append(f"전체 증가분의 {_pct(da, da + db):.0f}%가 {a['dim']}에서 나왔다")
+
+    con = by.get("contribution")
+    if con and con["rows"]:
+        top = [r for r in con["rows"] if float(r.get("delta") or 0) > 0][:3]
+        if top:
+            names = ", ".join(str(r["dim"]) for r in top)
+            share = sum(float(r.get("share") or r.get("value") or 0) for r in top)
+            out.append(f"증가를 이끈 곳은 {names}" +
+                       (f" (증가분의 {share:.0f}%)" if 0 < share <= 100 else ""))
+
+    tr = by.get("trend")
+    if tr and len(tr["rows"]) >= 3:
+        rs = tr["rows"]
+        hi = max(rs, key=lambda r: float(r.get("value") or 0))
+        lo = min(rs, key=lambda r: float(r.get("value") or 0))
+        hv, lv = _fmt(hi["value"], tr["unit"]), _fmt(lo["value"], tr["unit"])
+        out.append(f"월별로는 {hi['dim']} {_josa(hv, '이가')} 최고, "
+                   f"{lo['dim']} {_josa(lv, '이가')} 최저다")
+
+    pr = by.get("promotion")
+    if pr and pr["findings"]:
+        marked = [f for f in pr["findings"] if "행사가 기록된" in f]
+        if marked:
+            out.append(marked[0])
+
+    # 데이터 결함으로 뺀 것이 있으면 결론에서도 말한다 — 맨 아래 주석만으로는 안 읽힌다
+    if quality:
+        out.append("이 수치는 " + " · ".join(n["label"] for n in quality[:3]) +
+                   " 를 제외하고 읽어야 한다 (아래 '산출 기준' 참조)")
+
+    if len(out) < 2:
+        return None
+    return {"block": "conclusion", "title": "결론", "metric": "", "dim": None,
+            "unit": "", "rows": [], "findings": out[:6], "chart": "none",
+            "chart_key": "value", "columns": [], "note": ""}
+
+
 def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = None,
           parallel: int = 8) -> Dict[str, Any]:
     """질문 → payload (섹션 목록 포함)."""
@@ -134,6 +208,23 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
     if errors:
         logger.warning("dynamic_report_partial", errors=errors[:5], skipped=skipped)
 
+    # 결론은 **맨 앞**에 온다. 다 읽어야 알 수 있는 보고서는 안 읽힌다
+    notes = _quality_notes(ctx)
+
+    # 판단 절 — 이 파이프라인에서 유일하게 LLM 이 문장을 쓰는 곳. 숫자는 검증한다
+    insight = None
+    try:
+        from app.reports import insight as _ins
+        insight = _ins.build(question, sections, ctx)
+    except Exception as e:
+        logger.warning("insight_failed", error=str(e)[:200])
+    if insight:
+        sections.insert(0, insight)
+
+    concl = _conclusion(sections, ctx, notes)
+    if concl:
+        sections.insert(0, concl)
+
     payload = {
         "meta": {
             "kind": "dynamic",
@@ -147,7 +238,7 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
             "planner_dropped": the_plan.get("dropped", []),
         },
         "sections": sections,
-        "quality_notes": _quality_notes(ctx),
+        "quality_notes": notes,
     }
     logger.info("dynamic_report_built", sections=len(sections), queries=len(jobs),
                 skipped=len(skipped), sec=payload["meta"]["elapsed_sec"])
