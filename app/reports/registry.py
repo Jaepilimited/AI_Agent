@@ -181,6 +181,24 @@ _REPORT_META = re.compile(
     r"|(보고서|리포트)[^?.!]{0,10}어떻게\s*(만들|써|사용|쓰|봐|보나)"
 )
 
+# ⛔ 위 정규식만으로는 부족했다. **"이 시스템으로 뭘 할 수 있는지 짧게 정리해줘" 도
+#    보고서를 만들었다** — '보고서'라는 말이 없어도 `정리해줘`가 신호어이기 때문이다
+#    (2026-08-13, 2건 생성). 신호어는 여러 개고 대상어도 여러 개라 문구를 하나씩
+#    막는 방식으로는 끝이 없다. **대상이 시스템 자신이고 데이터 명사가 하나도 없으면
+#    분석할 대상이 없는 질문**이라는 구조로 판정한다.
+_SELF_SUBJECT = re.compile(r"시스템|서비스|어시스턴트|에이전트|챗봇|프로그램|기능|너는|네가|당신")
+_DATA_NOUN = re.compile(
+    r"매출|판매|수량|물량|원가|비용|할인|바우처|실적|이익|마진|객단가|성장|점유|"
+    r"거래처|고객|제품|상품|채널|국가|지역|권역|대륙|팀|브랜드|라인|카테고리|"
+    r"광고|마케팅|재고|리뷰|프로모션|foc|sku|b2b|b2c")
+
+
+def _is_meta_question(ql: str) -> bool:
+    """보고서를 **달라는** 게 아니라 기능·시스템을 **설명해 달라는** 질문인가."""
+    if _REPORT_META.search(ql):
+        return True
+    return bool(_SELF_SUBJECT.search(ql)) and not _DATA_NOUN.search(ql)
+
 
 def wants_report(question: str) -> bool:
     """보고서를 **달라는** 질문인가.
@@ -195,7 +213,7 @@ def wants_report(question: str) -> bool:
     ql = question.lower()
     if not any(w in ql for w in _REPORT_WORDS):
         return False
-    return not _REPORT_META.search(ql)
+    return not _is_meta_question(ql)
 
 
 def route(question: str) -> Optional[Dict[str, Any]]:
