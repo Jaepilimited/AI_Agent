@@ -364,7 +364,7 @@ class OrchestratorAgent:
         {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법)"},
         {"key": "PEOPLE", "aliases": ["people", "피플", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지"},
         # ── 시스템 ──
-        {"key": "gws", "aliases": ["google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
+        {"key": "gws", "aliases": ["google workspace", "workspace", "워크스페이스", "google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
         # ── 확장 ──
     ]
 

@@ -1,0 +1,187 @@
+#cella-pet-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.cella-guide {
+  --cella-size: 132px;
+  --cella-bottom: 104px;
+  position: absolute;
+  right: 18px;
+  bottom: var(--cella-bottom);
+  width: var(--cella-size);
+  height: calc(var(--cella-size) * 1.92);
+  user-select: none;
+  pointer-events: none;
+}
+
+.cella-guide[hidden],
+.cella-summon[hidden] {
+  display: none;
+}
+
+.cella-static-avatar {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cella-static-avatar img {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 9px 9px rgb(42 33 20 / 16%));
+  pointer-events: none;
+}
+
+.cella-static-shadow {
+  position: absolute;
+  z-index: 0;
+  right: 12%;
+  bottom: 1.5%;
+  left: 18%;
+  height: 7%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgb(47 36 22 / 20%) 0%, rgb(47 36 22 / 0%) 72%);
+  filter: blur(2px);
+  pointer-events: none;
+}
+
+.cella-guide-card {
+  --cella-bubble-bg: var(--bg-elevated, #fff);
+  --cella-bubble-border: var(--border, #e7e2da);
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(100% - 6px);
+  width: 238px;
+  padding: 12px 13px 10px;
+  color: var(--text, #25221d);
+  background: var(--cella-bubble-bg);
+  border: 1px solid var(--cella-bubble-border);
+  border-radius: 17px 17px 5px 17px;
+  box-shadow: 0 12px 30px -10px rgb(42 33 20 / 20%);
+  pointer-events: none;
+}
+
+.cella-guide-card::before,
+.cella-guide-card::after {
+  position: absolute;
+  width: 0;
+  height: 0;
+  content: '';
+  border-style: solid;
+  pointer-events: none;
+}
+
+.cella-guide-card::before {
+  right: 17px;
+  bottom: -15px;
+  border-width: 15px 3px 0 17px;
+  border-color: var(--cella-bubble-border) transparent transparent transparent;
+}
+
+.cella-guide-card::after {
+  right: 18px;
+  bottom: -12px;
+  border-width: 13px 3px 0 15px;
+  border-color: var(--cella-bubble-bg) transparent transparent transparent;
+}
+
+.cella-guide-card strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #8a5700;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+}
+
+.cella-guide-text {
+  margin: 0;
+  color: var(--text-secondary, #5d5850);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.cella-hide-button,
+.cella-summon {
+  color: var(--text-secondary, #5d5850);
+  font: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.cella-hide-button {
+  display: block;
+  width: auto;
+  min-height: 22px;
+  margin: 7px 0 0 auto;
+  padding: 1px 7px;
+  color: var(--text-muted, #817b72);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.cella-hide-button:hover {
+  color: var(--text, #25221d);
+  background: var(--bg-hover, #efebe4);
+}
+
+.cella-summon:hover {
+  color: var(--text, #25221d);
+  background: var(--bg-hover, #efebe4);
+}
+
+.cella-hide-button:focus-visible,
+.cella-summon:focus-visible {
+  outline: 2px solid var(--accent, #c98217);
+  outline-offset: 2px;
+}
+
+.cella-summon {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9;
+  min-height: 30px;
+  padding: 0 11px;
+  background: var(--bg-elevated, #f7f4ef);
+  border: 1px solid var(--border, #ddd7cd);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 650;
+  box-shadow: 0 5px 16px rgb(42 33 20 / 12%);
+}
+
+@media (max-width: 768px) {
+  .cella-guide {
+    --cella-size: 96px;
+    right: 12px;
+  }
+
+  .cella-guide-card {
+    width: 208px;
+    padding: 11px 12px 9px;
+  }
+
+  .cella-guide-text {
+    font-size: 11px;
+  }
+
+  .cella-summon {
+    right: 12px;
+    bottom: 12px;
+  }
+}

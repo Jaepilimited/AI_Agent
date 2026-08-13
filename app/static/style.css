@@ -1122,7 +1122,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: var(--text-tertiary);
+  color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s;
@@ -1140,8 +1140,8 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   padding: 10px 14px;
   border: 1.5px solid var(--accent);
   border-radius: 12px;
-  background: var(--bg-main);
-  color: var(--text-primary);
+  background: var(--bg);
+  color: var(--text);
   font-family: inherit;
   font-size: var(--text-sm);
   line-height: 1.6;
@@ -1171,7 +1171,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
-.msg-edit-cancel:hover { background: var(--bg-sidebar-hover); }
+.msg-edit-cancel:hover { background: var(--bg-hover); }
 
 .message-assistant .message-content {
   background: var(--bg-msg-ai);
@@ -1328,7 +1328,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 .msg-action-btn:hover {
   background: var(--bg-hover);
-  color: var(--text-primary);
+  color: var(--text);
 }
 .feedback-btn.feedback-active {
   color: var(--accent);
@@ -1343,7 +1343,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   border: 1px solid var(--error);
   border-radius: 12px;
   padding: var(--space-md);
-  color: var(--text-primary);
+  color: var(--text);
 }
 .error-retry-btn {
   margin-top: 8px;
@@ -1648,7 +1648,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .message-assistant .message-content em:last-of-type {
   display: block;
   font-size: var(--text-caption);
-  color: var(--text-tertiary, var(--text-secondary));
+  color: var(--text-muted, var(--text-secondary));
   opacity: 0.7;
   margin-top: 4px;
 }
@@ -2095,11 +2095,14 @@ pre:hover .code-copy-btn { opacity: 1; }
   min-width: 280px;
   max-height: 380px;
   overflow-y: auto;
-  background: rgba(var(--bg-secondary-rgb, 255,255,255), 0.92);
+  /* 라이트 기준 값. 다크는 아래 `html.dark` 규칙이 덮는다.
+     ⛔ 예전엔 정의된 적 없는 변수(--bg-secondary-rgb)를 참조해 폴백만 늘 먹었다.
+        있는 척하는 테마 연동이었다 — 실제 전환은 아래 규칙이 한다 */
+  background: rgba(255,255,255,0.92);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   contain: layout style;
-  border: 1px solid rgba(var(--border-rgb, 200,200,200), 0.5);
+  border: 1px solid rgba(200,200,200,0.5);
   border-radius: 12px;
   box-shadow: 0 -6px 24px rgba(0,0,0,0.15);
   z-index: 100;
@@ -2200,7 +2203,7 @@ html.dark .db-autocomplete-dropdown {
 .db-ac-name {
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2499,7 +2502,7 @@ html.dark .db-autocomplete-dropdown {
 
 .visitor-range-btn:hover { color: var(--text); }
 .visitor-range-btn:disabled {
-  color: var(--text-disabled, var(--text-muted));
+  color: var(--text-muted, var(--text-muted));
   cursor: not-allowed;
   opacity: 0.38;
 }
@@ -3103,7 +3106,7 @@ html.dark .db-autocomplete-dropdown {
   left: 0; right: 0;
   max-height: 420px;
   overflow-y: auto;
-  background: var(--bg-card);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
@@ -3543,7 +3546,7 @@ html.dark .db-autocomplete-dropdown {
   font-size: var(--text-xs);
   font-weight: 600;
   margin-bottom: 4px;
-  color: var(--fg);
+  color: var(--text);
 }
 .admin-group-desc {
   font-size: var(--text-caption);
@@ -3696,7 +3699,7 @@ html.dark .db-autocomplete-dropdown {
   padding: 8px 4px;
   font-size: var(--text-ui);
   font-weight: 600;
-  color: var(--fg);
+  color: var(--text);
   border-bottom: 1px solid var(--border);
   margin-bottom: 6px;
 }
@@ -3714,7 +3717,7 @@ html.dark .db-autocomplete-dropdown {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 4px 0;
-  background: var(--card-bg, var(--bg-input));
+  background: var(--bg-surface, var(--bg-input));
 }
 .dept-user-item {
   display: flex;
@@ -3766,10 +3769,10 @@ html.dark .db-autocomplete-dropdown {
   font-weight: 600;
   color: var(--accent);
   padding: 6px 8px 2px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   z-index: 1;
 }
 .admin-btn-primary.danger {
@@ -3858,6 +3861,7 @@ html.dark .db-autocomplete-dropdown {
   .craver-solid small { display: none; }
 
   .message-user .message-content { max-width: 85%; }
+
   .chat-welcome .suggestions { gap: 6px; }
   .chat-welcome .suggestion-chip {
     font-size: var(--text-caption);
@@ -4418,7 +4422,7 @@ html.dark .db-autocomplete-dropdown {
   margin: 8px 0 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   flex-wrap: wrap;
 }
 .notion-sync-info {
@@ -4459,7 +4463,7 @@ html.dark .db-autocomplete-dropdown {
   margin: 8px 0 4px;
   background: rgba(220, 120, 0, 0.08);
   border: 1px solid rgba(220, 120, 0, 0.3);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
 }
 .quality-alert-title {
   font-size: var(--text-sm);

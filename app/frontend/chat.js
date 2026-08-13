@@ -4621,7 +4621,7 @@
           out.innerHTML = "<p style='padding:8px 12px'>" + escapeHtml((d && d.error) || "비교 실패") + "</p>";
           return;
         }
-        var html = "<div style='padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg-secondary)'>"
+        var html = "<div style='padding:10px 12px;border-bottom:1px solid var(--border);background:var(--bg-elevated)'>"
           + "<div class='admin-user-name'>런 #" + d.run_a + " → #" + d.run_b
           + " : " + d.pass_rate_a + "% → " + d.pass_rate_b + "%"
           + " (공통 " + d.common_items + "문항)</div>";
@@ -4708,7 +4708,7 @@
     html += '</div>';
 
     // 품질 추이
-    html += '<div style="background:var(--sidebar-bg);border-radius:8px;padding:10px 12px;margin-bottom:12px">';
+    html += '<div style="background:var(--bg-sidebar);border-radius:8px;padding:10px 12px;margin-bottom:12px">';
     html += '<div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">품질 추이 (이번 주)</div>';
     html += '<div style="display:flex;gap:24px">';
     html += '<div><div style="font-size:18px;font-weight:700">' + accNow + '</div><div style="font-size:11px;color:var(--text-secondary)">정확도 ' + (accDelta ? '<span style="color:' + (qt.accuracy_delta >= 0 ? "#27ae60" : "#c0392b") + '">' + accDelta + '</span>' : "") + '</div></div>';
@@ -4733,7 +4733,7 @@
   }
 
   function _growthCard(label, value, sub, color) {
-    return '<div style="background:var(--sidebar-bg);border-radius:8px;padding:10px 12px;border-left:3px solid ' + color + '">' +
+    return '<div style="background:var(--bg-sidebar);border-radius:8px;padding:10px 12px;border-left:3px solid ' + color + '">' +
       '<div style="font-size:20px;font-weight:700;color:' + color + '">' + value + '</div>' +
       '<div style="font-size:12px;font-weight:600;margin-top:2px">' + label + '</div>' +
       '<div style="font-size:11px;color:var(--text-secondary)">' + sub + '</div>' +
@@ -5031,7 +5031,7 @@
     overlay.innerHTML =
       '<div class="admin-modal admin-modal-wide">' +
       '<h3>\'' + escapeHtml(groupName) + '\' 부서 일괄 배정</h3>' +
-      '<select id="modal-top-dept" style="width:100%;padding:8px;margin:8px 0;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:14px">' + topOptions + '</select>' +
+      '<select id="modal-top-dept" style="width:100%;padding:8px;margin:8px 0;border-radius:6px;border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);font-size:14px">' + topOptions + '</select>' +
       '<div id="sub-dept-list" class="dept-user-list" style="display:none">' +
       '<div class="dept-user-header"><span id="sub-dept-count"></span>' +
       '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="sub-dept-check-all" checked> 전체 선택</label></div>' +
@@ -5264,7 +5264,7 @@
         overlay.innerHTML =
           '<div class="admin-modal admin-modal-wide" style="max-width:600px">' +
           '<h3>' + escapeHtml(groupName) + ' 멤버 (' + members.length + '명)</h3>' +
-          '<input type="text" id="member-search" placeholder="이름/부서 검색..." style="width:100%;padding:8px;margin:4px 0 8px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);font-size:13px">' +
+          '<input type="text" id="member-search" placeholder="이름/부서 검색..." style="width:100%;padding:8px;margin:4px 0 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);font-size:13px">' +
           '<div class="dept-user-header" style="margin-bottom:4px">' +
           '<span id="member-sel-count">0명 선택</span>' +
           '<label style="font-size:12px;cursor:pointer"><input type="checkbox" id="member-check-all"> 전체 선택</label></div>' +
