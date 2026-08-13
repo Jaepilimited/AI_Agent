@@ -45,10 +45,12 @@ class Settings(BaseSettings):
     anthropic_opus_model: str = "claude-opus-5"
     anthropic_sonnet_model: str = "claude-sonnet-5"
     # Opus 5 는 thinking 이 기본 ON 이다. 깊이(low|medium|high|xhigh|max)가 지연과
-    # 직결되므로 값으로 둔다. **첫 청크 실측** (2026-08-13, 같은 질문 2회 최솟값):
-    #     4.8(thinking 없음) 1.1s │ 5·low 1.8s │ 5·medium 2.4s │ 5·high 3.8s
-    # 채팅은 첫 청크가 체감의 전부라 low 로 둔다. 올릴 땐 반드시 다시 재고 올릴 것.
-    anthropic_effort: str = "low"
+    # 직결되므로 값으로 둔다. **프로덕션 실측** (2026-08-13, 4문항×3회 중앙값,
+    # 캐시 회피용 문구를 붙여 매번 새 질문으로):
+    #     완료까지  low 11.0s → medium 13.3s (+2.3s, +20%)
+    # 첫 글자는 두 설정 모두 0.02s — 앱이 먼저 흘리므로 체감 지연은 완료 시간에 있다.
+    # 올릴 땐 반드시 다시 재고 올릴 것 (SDK 단독 측정은 앱 지연과 다르다).
+    anthropic_effort: str = "medium"
 
     # Notion MCP (v3.0)
     notion_mcp_token: str = ""
