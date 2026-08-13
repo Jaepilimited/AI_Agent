@@ -107,6 +107,24 @@ _BRANDS = {"스킨천사": "SK", "skin1004": "SK", "sk": "SK",
            "커먼랩스": "CL", "좀비뷰티": "SK"}
 
 
+def _standalone(text: str, word: str) -> bool:
+    """`word` 가 다른 낱말에 파묻히지 않고 **낱말로** 등장하는가.
+
+    ⛔ 단순 `in` 검사는 **"외부 요인도 같이 봐줘" 에서 '인도'를 잡는다** (2026-08-13 실측).
+       그 한 글자 때문에 일본 보고서가 '일본·인도' 보고서로 조용히 바뀌었다.
+
+    앞 글자만 본다 — 뒤는 조사(은·는·도·과·에서…)가 붙는 게 정상이라 막으면 안 된다.
+    앞이 한글이면 더 긴 낱말의 일부로 본다 ('요인도'의 '인도', '남중국해'의 '중국').
+    """
+    i = text.find(word)
+    while i != -1:
+        prev = text[i - 1] if i else ""
+        if not ("가" <= prev <= "힣"):
+            return True
+        i = text.find(word, i + 1)
+    return False
+
+
 def extract_filters(q: str) -> Dict[str, Any]:
     """질문에 등장한 국가·대륙·팀·영업유형을 필터로 뽑는다.
 
@@ -123,7 +141,7 @@ def extract_filters(q: str) -> Dict[str, Any]:
     if teams:
         out["팀"] = teams
 
-    hits = [c for c in _COUNTRIES if c in q]
+    hits = [c for c in _COUNTRIES if _standalone(q, c)]
     # '한국'이 '한국사업팀' 의 일부로 잡히는 것 같은 부분 일치를 막는다
     hits = [c for c in hits if not any(c != o and c in o for o in hits)]
     # ⛔ **팀 이름 안의 국가어를 국가로 잡지 않는다.** "중국사업팀 실적 보고서" 가

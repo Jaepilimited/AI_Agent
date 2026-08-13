@@ -298,6 +298,9 @@ function bars(rows, key) {
 
   document.getElementById('sections').innerHTML = P.sections.map(s => {
     const findHtml = `<ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>`;
+    // ⚠️ s.note 는 오랫동안 **화면에 나오지 않았다** — 블록이 적어 둔 주의사항을
+    //    아무도 못 봤다 (2026-08-13 발견). 절 끝에 반드시 그린다
+    const noteHtml = s.note ? `<div class="note">${esc(s.note)}</div>` : '';
     const isTrend = (s.chart === 'line');
     const ax = axisOf(s);
     // 추세는 x가 기간이라 세로 막대, 범주형은 이름이 길어 가로 막대가 읽힌다
@@ -326,7 +329,7 @@ function bars(rows, key) {
     // 행이 둘 이하면 표를 만들지 않는다. total 은 발견 문장이 이미 두 기간을 말하므로 그것도 생략.
     if (s.rows.length <= INLINE) {
       const body = (s.block === 'total' || !s.rows.length) ? '' : inlineRows(s);
-      return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${body}`;
+      return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${body}${noteHtml}`;
     }
 
     const barCol = (s.chart === 'bar');
@@ -339,7 +342,7 @@ function bars(rows, key) {
     if (isTrend) {
       const all = `<div class="scroll"><table>${head}<tbody>${s.rows.map(tr).join('')}</tbody></table></div>`;
       return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}` +
-        `<details class="more"><summary>월별 수치 ${s.rows.length}행 보기</summary>${all}</details>`;
+        `<details class="more"><summary>월별 수치 ${s.rows.length}행 보기</summary>${all}</details>` + noteHtml;
     }
 
     const head_rows = s.rows.slice(0, SHOW).map(tr).join('');
@@ -349,7 +352,7 @@ function bars(rows, key) {
       ? `<details class="more"><summary>나머지 ${rest.length}행 보기</summary>
          <div class="scroll"><table>${head}<tbody>${rest.map((r, i) => tr(r, i + SHOW)).join('')}</tbody></table></div></details>`
       : '';
-    return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${table}${more}`;
+    return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${table}${more}${noteHtml}`;
   }).join('');
 
   document.getElementById('quality').innerHTML = (P.quality_notes || []).map(n =>

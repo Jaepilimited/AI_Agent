@@ -44,7 +44,9 @@ def _facts_from_sections(sections: List[Dict[str, Any]], limit_rows: int = 12) -
     """LLM 에 줄 사실 묶음. **이미 계산된 값만** 넣는다."""
     out = []
     for s in sections:
-        if s["block"] == "conclusion":
+        # ⛔ external 은 **검색 결과**지 조회 결과가 아니다. 사실 묶음에 넣으면
+        #    검증되지 않은 문장을 근거로 해석이 만들어진다 (2026-08-13)
+        if s["block"] in ("conclusion", "lead", "external"):
             continue
         cols = [c for c in (s.get("columns") or [])]
         rows = []

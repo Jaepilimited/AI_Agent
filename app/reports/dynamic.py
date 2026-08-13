@@ -209,6 +209,16 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
     # (2026-08-13 사용자 지적) — 사실은 규칙이, 해석·액션은 LLM 이 쓰되 한 자리에 놓는다
     notes = _quality_notes(ctx)
 
+    # 외부 맥락 — 질문이 외부 요인을 물었을 때만. 조회 결과가 아니라 검색 결과라
+    # **맨 뒤에** 두고 라벨을 붙인다. 판단 절보다 앞에 두면 근거처럼 읽힌다
+    try:
+        from app.reports import external as _ext
+        ext = _ext.build(question, ctx)
+        if ext:
+            sections.append(ext)
+    except Exception as e:
+        logger.warning("external_section_failed", error=str(e)[:200])
+
     # 질문에 답하지 못한 것이 있으면 **가장 먼저** 밝힌다. 비슷한 지표로 바꿔치기한 채
     # 그럴듯한 문서를 내놓는 것이 이 파이프라인에서 가장 나쁜 실패다
     miss = _uncovered(question, sections)
