@@ -230,13 +230,28 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
                     f"해당 데이터가 보고서 어휘에 없어 비슷한 지표로 대체하지 않고 비워 뒀다. "
                     f"채팅에서 직접 물으면 조회할 수 있다."})
 
+    # 판정 계층 — 절마다 결론 한 줄, 행마다 판정. **해석보다 먼저** 돈다:
+    # 판정이 붙은 절을 LLM 이 읽어야 해석이 같은 결론 위에서 쓰인다
+    try:
+        from app.reports import judge as _judge
+        _judge.apply(sections)
+        foc = _judge.focus(sections, ctx, notes, skipped)
+        if foc:
+            sections.append(foc)
+    except Exception as e:
+        logger.warning("judge_stage_failed", error=str(e)[:200])
+        foc = None
+
     head = _headline(sections, ctx, notes)
 
     lead: Dict[str, Any] = {}
     try:
         from app.reports import insight as _ins
-        # 이미 적힌 요약을 넘겨 되풀이를 막는다 (프롬프트 + 후처리 양쪽)
-        lead = _ins.build(question, sections, ctx, already=head) or {}
+        # 이미 적힌 요약을 넘겨 되풀이를 막는다 (프롬프트 + 후처리 양쪽).
+        # 실행안 버킷도 함께 넘긴다 — 규칙이 이미 지목한 곳을 다시 지목하지 않도록
+        said = list(head) + [f"{r['bucket']}: {r['dim']} {r['why']}"
+                             for r in ((foc or {}).get("rows") or [])]
+        lead = _ins.build(question, sections, ctx, already=said) or {}
     except Exception as e:
         logger.warning("insight_failed", error=str(e)[:200])
 
@@ -249,6 +264,9 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
             "insights": lead.get("findings") or [],  # 해석 — LLM 이 씀 (수치 검증됨)
             "actions": lead.get("actions") or [],
             "dropped": lead.get("dropped", 0),
+            # 데이터 결함은 **맨 앞에서** 보여준다. 맨 뒤 '산출 기준'에만 두면
+            # 표를 다 읽고 결론까지 낸 다음에야 눈에 들어온다 (2026-08-13)
+            "notes": notes,
         })
 
     payload = {

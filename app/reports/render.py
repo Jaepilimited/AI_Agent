@@ -17,6 +17,10 @@ import os
 import re
 from typing import Any, Dict, List, Tuple
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
 
 _SLOT = re.compile(r"\{\{\s*([A-Za-z0-9_.\[\]]+)\s*(?:\|\s*([a-z0-9]+)\s*)?\}\}")
@@ -70,6 +74,42 @@ def lint_template(html: str, allow: List[str] | None = None) -> List[Tuple[int, 
     return bad
 
 
+def lint_script(html: str) -> str:
+    """템플릿 안 자바스크립트의 **문법**을 본다. 문제 없으면 빈 문자열.
+
+    ⛔ 이 검사가 없어서 오타 하나에 **보고서가 백지로 나갔다** (2026-08-13:
+       `rest` 를 두 번 선언해 스크립트가 통째로 죽었다). 서버는 200 을 주고
+       HTML 도 멀쩡히 저장되므로 **어디에서도 에러가 나지 않는다** — 사람이 열어
+       보기 전까지 아무도 모른다. 표시가 코드에 있는 구조라 표시도 검사해야 한다.
+
+    node 가 없으면 검사를 건너뛴다 (배포 서버에는 node 가 없을 수 있다).
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node")
+    if not node:
+        return ""
+    src = "\n".join(m.group(1) for m in
+                    re.finditer(r"<script(?![^>]*type=)[^>]*>(.*?)</script>", html, re.S))
+    if not src.strip():
+        return ""
+    fd, path = tempfile.mkstemp(suffix=".js")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(src)
+        p = subprocess.run([node, "--check", path], capture_output=True, text=True, timeout=20)
+        return "" if p.returncode == 0 else (p.stderr or p.stdout)[:400]
+    except Exception:
+        return ""
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def render(payload: Dict[str, Any], template_name: str, *,
            allow_literals: List[str] | None = None,
            strict: bool = True) -> str:
@@ -83,6 +123,13 @@ def render(payload: Dict[str, Any], template_name: str, *,
         raise ValueError(
             f"템플릿 서술에 하드코딩된 숫자가 {len(problems)}곳 있다. 슬롯으로 바꿔라:\n{lines}"
         )
+
+    # 표시가 코드에 있는 구조라 코드도 검사한다. 문법이 깨지면 **에러 없이 백지**가 나간다
+    js_err = lint_script(html)
+    if js_err:
+        logger.error("template_script_syntax_error", template=template_name, error=js_err)
+        if strict:
+            raise ValueError(f"템플릿 스크립트 문법 오류 — 보고서가 백지로 나간다:\n{js_err}")
 
     missing: List[str] = []
 

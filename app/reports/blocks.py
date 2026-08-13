@@ -33,6 +33,11 @@ class Section:
     chart_key: str = "value" # 막대가 무엇을 그리는가. 비율 절은 'ratio' 로 둔다
     columns: List[Dict[str, str]] = field(default_factory=list)
     note: str = ""
+    # 비율 절의 분모 지표. `judge` 가 "분자가 분모의 일부인가"를 보고 100% 초과를 잡는다
+    metric2: str = ""
+    # 아래 둘은 `judge.apply()` 가 채운다 (절의 결론 한 줄 + 발견 목록에서 겹치는 개수)
+    headline: str = ""
+    headline_skip: List[int] = field(default_factory=list)
 
 
 def _fmt(v: Any, unit: str, nd: int = 1) -> str:
@@ -997,7 +1002,8 @@ class Ratio:
         overall = _rate(tot_n, tot_d)
         s = Section(block="ratio",
                     title=p.get("title") or f"{d.label}별 {m.label}÷{m2.label}",
-                    metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows,
+                    metric=p["metric"], metric2=p["metric2"], dim=p["dim"], unit=m.unit,
+                    rows=rows,
                     chart="bar", chart_key="ratio",   # 막대는 비율 기준 (분자로 그리면 표와 어긋난다)
                     columns=[{"key": "dim", "label": d.label},
                              {"key": "value", "label": m.label, "fmt": "metric"},

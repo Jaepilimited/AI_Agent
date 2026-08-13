@@ -28,6 +28,9 @@
   table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
   th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
   th:first-child,td:first-child{text-align:left}
+  /* 문장 열은 왼쪽 정렬 + 줄바꿈 허용 — 근거·사건 설명이 한 줄로 뻗으면 표가 옆으로 샌다 */
+  td.txt,th.txt{text-align:left}
+  td.txt{white-space:normal;min-width:180px}
   thead th{background:#f9fafb;font-weight:600;color:var(--muted);font-size:12px}
   tbody tr:hover{background:#fafafa}
   .scroll{overflow-x:auto}
@@ -60,6 +63,22 @@
   .note{background:var(--warn-bg);border:1px solid #fde68a;border-left:3px solid var(--warn);
     border-radius:6px;padding:12px 15px;margin:14px 0;font-size:14px}
   .note b{color:var(--warn)}
+  /* 절의 결론 한 줄. 글머리표 다섯 줄 중 무엇이 요점인지 고르지 않아도 되게 한다 */
+  .key{display:flex;gap:12px;align-items:flex-start;margin:14px 0 10px;
+    background:#f7f9fc;border-left:3px solid var(--accent);border-radius:0 6px 6px 0;
+    padding:11px 16px}
+  .key .tag{flex:none;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--accent);
+    padding-top:3px}
+  .key .msg{font-weight:600;line-height:1.6}
+  /* 판정 열 — 읽는 사람이 계산하지 않게 한다 */
+  td .vd{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;
+    font-weight:600;background:#eef1f5;color:var(--muted);white-space:nowrap}
+  td .vd.up{background:#e7f6ef;color:var(--up)}
+  td .vd.down{background:#fdecec;color:var(--down)}
+  td .vd.warn{background:var(--warn-bg);color:var(--warn)}
+  .basis{color:var(--muted);font-size:13px;margin:-4px 0 8px}
+  .buk{font-weight:700;white-space:nowrap}
+  .buk.b0{color:var(--up)} .buk.b1{color:var(--down)} .buk.b2{color:var(--warn)}
   .foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);
     color:var(--muted);font-size:13px}
   @media print{
@@ -113,8 +132,24 @@ function cell(row, col, unit) {
     const cls = (col.key === 'growth' && v !== null) ? (Number(v) >= 0 ? 'up' : 'down') : '';
     return `<td class="${cls}">${fmtPct(v)}</td>`;
   }
+  // 판정은 색으로도 읽힌다 — 표가 길어지면 글자만으로는 훑어지지 않는다
+  if (col.key === 'verdict') {
+    const t = String(v == null ? '' : v);
+    const cls = /급증|증가|높음/.test(t) ? 'up'
+      : /급감|감소|낮음/.test(t) ? 'down'
+      : /확인|미집계/.test(t) ? 'warn' : '';
+    return `<td>${t ? `<span class="vd ${cls}">${esc(t)}</span>` : ''}</td>`;
+  }
+  if (col.key === 'bucket') {
+    const i = ['키울 곳', '막을 곳', '확인할 곳'].indexOf(String(v));
+    return `<td class="txt"><span class="buk b${i < 0 ? 0 : i}">${esc(v)}</span></td>`;
+  }
+  // 표는 숫자를 오른쪽에 맞추지만 **문장 열은 왼쪽**이어야 읽힌다. 근거·사건 설명이
+  // 오른쪽 끝에 붙어 있으면 눈이 매 줄 오른쪽 끝을 찾아가야 한다
+  if (TEXT_COLS.has(col.key)) return `<td class="txt">${esc(v)}</td>`;
   return `<td>${esc(v)}</td>`;
 }
+const TEXT_COLS = new Set(['why', 'event', 'source', 'axis', 'note', 'action']);
 
 // 눈금을 사람이 읽는 값으로 올림. 1·2·5 만 쓰면 55.1억이 100억으로 올라가
 // 차트 위 절반이 빈다 — 중간 단계를 둔다 (55.1 → 60).
@@ -297,7 +332,18 @@ function bars(rows, key) {
   }
 
   document.getElementById('sections').innerHTML = P.sections.map(s => {
-    const findHtml = `<ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>`;
+    // 결론 한 줄을 따로 세우고, 그 줄에 쓰인 발견은 아래에서 다시 찍지 않는다
+    const keyHtml = s.headline
+      ? `<div class="key"><span class="tag">결론</span><span class="msg">${esc(s.headline)}</span></div>`
+      : '';
+    // ⚠️ 이름을 `rest` 로 뒀다가 아래 표의 `rest`(나머지 행)와 부딪쳐 **스크립트가
+    //    통째로 죽었다** — 화면이 백지가 됐다 (2026-08-13). 같은 스코프의 이름을 확인할 것
+    const skip = new Set(s.headline_skip || []);
+    const restFinds = (s.findings || []).filter((_, i) => !skip.has(i));
+    const findHtml = restFinds.length
+      ? `<ul class="find">${restFinds.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : '';
+    const basisHtml = s.verdict_basis
+      ? `<p class="basis">판정 기준 — ${esc(s.verdict_basis)}</p>` : '';
     // ⚠️ s.note 는 오랫동안 **화면에 나오지 않았다** — 블록이 적어 둔 주의사항을
     //    아무도 못 봤다 (2026-08-13 발견). 절 끝에 반드시 그린다
     const noteHtml = s.note ? `<div class="note">${esc(s.note)}</div>` : '';
@@ -322,26 +368,34 @@ function bars(rows, key) {
         `<li><span class="nm">${esc(a.title)}</span><br>${esc(a.text)}</li>`).join('');
       const actHtml = acts
         ? `<h3 class="acth">다음 할 일</h3><ol class="acts">${acts}</ol>` : '';
+      // 데이터 결함은 표를 읽기 **전에** 보여준다. 맨 뒤 '산출 기준'에만 두면
+      // 결론까지 다 낸 다음에야 눈에 들어온다
+      const nts = (s.notes || []).map(n =>
+        `<div class="note"><b>${esc(n.label)}</b> — ${esc(n.text)}</div>`).join('');
+      const ntHtml = nts ? `<h3 class="acth">먼저 알아야 할 것</h3>${nts}` : '';
       return `<section class="concl"><h2>${esc(s.title)}</h2>${
-        factHtml}${insHtml}${actHtml}</section>`;
+        factHtml}${insHtml}${actHtml}${ntHtml}</section>`;
     }
 
     // 행이 둘 이하면 표를 만들지 않는다. total 은 발견 문장이 이미 두 기간을 말하므로 그것도 생략.
-    if (s.rows.length <= INLINE) {
+    // ⚠️ focus·external 은 값이 아니라 **목록**이라 한 줄이어도 표로 둔다 (문장으로 풀면 근거가 흩어진다)
+    if (s.rows.length <= INLINE && s.block !== 'focus' && s.block !== 'external') {
       const body = (s.block === 'total' || !s.rows.length) ? '' : inlineRows(s);
-      return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${body}${noteHtml}`;
+      return `<h2>${esc(s.title)}</h2>${chartHtml}${keyHtml}${findHtml}${body}${noteHtml}`;
     }
 
     const barCol = (s.chart === 'bar');
     const cols = s.columns.concat(barCol ? [{key:'__bar', label:''}] : []);
     const barHtml = barCol ? bars(s.rows, s.chart_key) : [];
-    const head = '<thead><tr>' + cols.map(c => `<th>${esc(c.label)}</th>`).join('') + '</tr></thead>';
+    const head = '<thead><tr>' + cols.map(c =>
+      `<th${TEXT_COLS.has(c.key) || c.key === 'bucket' ? ' class="txt"' : ''}>${esc(c.label)}</th>`
+    ).join('') + '</tr></thead>';
     const tr = (r, i) => '<tr>' + cols.map(c =>
       c.key === '__bar' ? `<td>${barHtml[i]}</td>` : cell(r, c, s.unit)).join('') + '</tr>';
     // 추세 절은 차트가 18개월을 다 보여준다. 같은 값을 표로 또 깔면 화면만 길어진다 — 접어 둔다
     if (isTrend) {
       const all = `<div class="scroll"><table>${head}<tbody>${s.rows.map(tr).join('')}</tbody></table></div>`;
-      return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}` +
+      return `<h2>${esc(s.title)}</h2>${chartHtml}${keyHtml}${findHtml}` +
         `<details class="more"><summary>월별 수치 ${s.rows.length}행 보기</summary>${all}</details>` + noteHtml;
     }
 
@@ -352,7 +406,8 @@ function bars(rows, key) {
       ? `<details class="more"><summary>나머지 ${rest.length}행 보기</summary>
          <div class="scroll"><table>${head}<tbody>${rest.map((r, i) => tr(r, i + SHOW)).join('')}</tbody></table></div></details>`
       : '';
-    return `<h2>${esc(s.title)}</h2>${chartHtml}${findHtml}${table}${more}${noteHtml}`;
+    return `<h2>${esc(s.title)}</h2>${chartHtml}${keyHtml}${findHtml}${basisHtml}${
+      table}${more}${noteHtml}`;
   }).join('');
 
   document.getElementById('quality').innerHTML = (P.quality_notes || []).map(n =>
