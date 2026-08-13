@@ -42,8 +42,13 @@ class Settings(BaseSettings):
 
     # Anthropic (v3.0) — Opus (complex) + Sonnet (light)
     anthropic_api_key: str = ""
-    anthropic_opus_model: str = "claude-opus-4-8"
+    anthropic_opus_model: str = "claude-opus-5"
     anthropic_sonnet_model: str = "claude-sonnet-5"
+    # Opus 5 는 thinking 이 기본 ON 이다. 깊이(low|medium|high|xhigh|max)가 지연과
+    # 직결되므로 값으로 둔다. **첫 청크 실측** (2026-08-13, 같은 질문 2회 최솟값):
+    #     4.8(thinking 없음) 1.1s │ 5·low 1.8s │ 5·medium 2.4s │ 5·high 3.8s
+    # 채팅은 첫 청크가 체감의 전부라 low 로 둔다. 올릴 땐 반드시 다시 재고 올릴 것.
+    anthropic_effort: str = "low"
 
     # Notion MCP (v3.0)
     notion_mcp_token: str = ""

@@ -31,6 +31,22 @@ from app.agents.gws_agent import GWSAgent
 logger = structlog.get_logger(__name__)
 
 
+def _model_display_name() -> str:
+    """답변에 노출되는 모델 이름 — **설정에서 만든다.**
+
+    손으로 적어 두면 모델을 올려도 프롬프트에 옛 이름이 남는다. 실제로
+    `claude-opus-5` 로 올린 직후에도 "Claude Opus 4.8 기반"이라고 답했다
+    (2026-08-13). 값은 기동 시 고정이라 프롬프트 캐시도 그대로 유지된다.
+    """
+    from app.config import get_settings
+    parts = (get_settings().anthropic_opus_model or "").replace("claude-", "").split("-")
+    tier = parts[0].capitalize() if parts and parts[0] else "Opus"
+    ver = ".".join(parts[1:])
+    return (f"Claude {tier} {ver}".strip() +
+            " (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용")
+
+
+
 def _content_to_text(content) -> str:
     """Extract plain text from content (str or multimodal list)."""
     if isinstance(content, str):
@@ -1990,15 +2006,20 @@ class OrchestratorAgent:
 
         if not registry.wants_report(query):
             return None
+
+        # ⚠️ 아래 건너뜀은 **사용자가 보고서를 달라고 했는데 일반 답변이 나가는** 상황이다.
+        #    에러가 아니라 조용한 강등이라 아무도 모른다. INFO 로 남기면 프로덕션에서
+        #    통째로 버려져(앱 INFO 0건) 영영 안 보인다 — 반드시 WARNING 이다 (CLAUDE.md).
         if not user_email:
-            logger.info("report_skipped_no_user", query=query[:80])
+            logger.warning("report_skipped_no_user", query=query[:80])
             return None
 
         from app.db.mariadb import fetch_one
         row = await asyncio.to_thread(
             fetch_one, "SELECT id FROM users WHERE email = %s", (user_email,))
         if not row:
-            logger.info("report_skipped_unknown_user", email=user_email[:40])
+            logger.warning("report_skipped_unknown_user", email=user_email[:40],
+                           query=query[:80])
             return None
 
         try:
@@ -2011,6 +2032,9 @@ class OrchestratorAgent:
                           "잠시 후 다시 시도해주시고, 계속되면 DB팀에 알려주세요.",
             }
         if not result:
+            # wants_report 가 True 였는데 여기까지 와서 비었다 = 라우팅이 갈린 것이다.
+            # 조용히 흘려보내면 "보고서 달랬는데 왜 안 나오지"가 재현 불가로 남는다
+            logger.warning("report_route_yielded_nothing", query=query[:80])
             return None
 
         logger.info("report_delivered", report_id=result["report_id"],
@@ -2581,7 +2605,7 @@ JSON만 반환:
         separate, uncached block so this (large, static) prompt stays byte-identical
         across requests and reuses Anthropic's prompt cache. See ClaudeClient._wrap_system.
         """
-        model_name = "Claude Opus 4.8 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
+        model_name = _model_display_name()
         # Import the full system prompt from _handle_direct inline (it's too long to duplicate)
         # We reference the same structure
         return f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
@@ -2735,7 +2759,7 @@ JSON만 반환:
         llm = get_llm_client(MODEL_CLAUDE)
         today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
 
-        model_name = "Claude Opus 4.8 (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용"
+        model_name = _model_display_name()
 
         system = f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
 이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.

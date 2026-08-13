@@ -565,12 +565,45 @@ class ClaudeClient:
         # Opt-in (not opt-out) so newly configured models (sonnet-5, fable-5, ...) default
         # safely to "no temperature" instead of silently 400ing.
         self._use_temperature = any(x in self.model for x in ["claude-3", "claude-2"])
-        logger.info("claude_client_initialized", model=self.model)
+        self._thinking = any(m in self.model for m in self._THINKING_MODELS)
+        self._effort = getattr(self.settings, "anthropic_effort", "medium")
+        logger.info("claude_client_initialized", model=self.model,
+                    thinking=self._thinking, effort=self._effort if self._thinking else None)
 
     def _apply_temperature(self, kwargs: Dict[str, Any], temperature: float) -> None:
         """Add temperature to kwargs only if model supports it."""
         if self._use_temperature:
             kwargs["temperature"] = temperature
+
+    # --- Opus 5+ thinking ---
+    # Opus 5 부터 **thinking 이 기본으로 켜진다** (4.8 은 파라미터를 빼면 꺼졌다).
+    # 그냥 모델명만 올리면 두 가지가 조용히 깨진다:
+    #   1) `max_tokens` 가 thinking + 답변을 **합쳐서** 제한한다 → 답변이 중간에 잘린다
+    #   2) `content[0]` 이 text 가 아니라 thinking 블록이 된다 → `.text` 가 없다
+    # 그래서 여기서 명시적으로 켜고(끄면 `<thinking>` 태그가 답변에 새는 사례가 있다),
+    # 출력 한도에 여유를 주고, 텍스트는 블록을 훑어서 꺼낸다.
+    _THINKING_MODELS = ("claude-opus-5", "claude-fable-5", "claude-mythos-5", "claude-sonnet-5")
+    _MIN_MAX_TOKENS = 16000
+
+    def _tune(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._thinking:
+            return kwargs
+        kwargs.setdefault("thinking", {"type": "adaptive"})
+        kwargs.setdefault("output_config", {"effort": self._effort})
+        kwargs["max_tokens"] = max(int(kwargs.get("max_tokens") or 0), self._MIN_MAX_TOKENS)
+        return kwargs
+
+    @staticmethod
+    def _first_text(response, default: str = "") -> str:
+        """응답에서 **첫 text 블록**을 꺼낸다.
+
+        `content[0].text` 를 그대로 쓰면 thinking 이 켜진 순간 터진다 —
+        0번이 thinking 블록이기 때문이다. 블록 종류가 늘어도 안 깨지게 훑는다.
+        """
+        for block in (getattr(response, "content", None) or []):
+            if getattr(block, "type", None) == "text":
+                return block.text
+        return default
 
     @staticmethod
     def _wrap_system(system_instruction: Union[str, list]) -> list:
@@ -606,8 +639,8 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
-            response = _claude_retry(self.client.messages.create, **kwargs)
-            text = response.content[0].text if response.content else ""
+            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            text = self._first_text(response)
             logger.info("claude_response_generated", response_length=len(text))
             return text
         except Exception as e:
@@ -654,8 +687,8 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
-            response = _claude_retry(self.client.messages.create, **kwargs)
-            result = response.content[0].text if response.content else ""
+            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            result = self._first_text(response)
             logger.info("claude_vision_response_generated", response_length=len(result))
             return result
         except Exception as e:
@@ -722,8 +755,8 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
-            response = _claude_retry(self.client.messages.create, **kwargs)
-            return response.content[0].text if response.content else ""
+            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            return self._first_text(response)
         except Exception as e:
             logger.error("claude_history_failed", error=str(e))
             raise
@@ -746,7 +779,7 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
         with _CLAUDE_SEM:
             try:
-                with self.client.messages.stream(**kwargs) as stream:
+                with self.client.messages.stream(**self._tune(kwargs)) as stream:
                     for text in stream.text_stream:
                         yield text
                     try:
@@ -809,7 +842,7 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
         with _CLAUDE_SEM:
             try:
-                with self.client.messages.stream(**kwargs) as stream:
+                with self.client.messages.stream(**self._tune(kwargs)) as stream:
                     for text in stream.text_stream:
                         yield text
                     try:
@@ -840,8 +873,8 @@ class ClaudeClient:
         }
 
         try:
-            response = _claude_retry(self.client.messages.create, **kwargs)
-            text = response.content[0].text if response.content else "{}"
+            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            text = self._first_text(response, "{}")
             if "```" in text:
                 match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
                 if match:

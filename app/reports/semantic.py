@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 SALES = "`skin1004-319714.Sales_Integration.SALES_ALL_Backup`"
 PRODUCT = "`skin1004-319714.Sales_Integration.Product`"
+PROMO = "`skin1004-319714.promotion_calendar.promotion`"
 
 
 @dataclass
@@ -192,6 +193,66 @@ def build_sql(q: Query) -> str:
     else:
         sql += "\nLIMIT 1"
     return sql
+
+
+# ── 프로모션 캘린더 ────────────────────────────────────────────────────────
+# **주기성은 여기서 잡는다.** 매출의 톱니를 보고 "행사였겠지" 추정하지 않는다
+# (2026-08-13 사용자 지시). 일본 매출이 3·6·9월에 솟는 것은 큐텐 메가와리인데,
+# 그건 실적 데이터가 아니라 이 일정표가 아는 사실이다.
+#
+# ⛔ 이 테이블만 값 체계가 다르다 — team_id 는 소문자·하이픈, country_code 는 2글자 ISO.
+#    다른 테이블 습관대로 '일본' 을 넣으면 에러 없이 0건이 난다.
+# ⛔ **`NOT is_deleted` 를 항상 붙인다** (약 19% 가 삭제분).
+# ⛔ 기간은 **겹침**으로 본다. 시작일만 보면 달을 걸친 행사를 통째로 놓친다.
+
+def _promo_filter_sql(filters: Dict[str, Any]) -> str:
+    """보고서 필터(한글 국가·팀) → 프로모션 테이블의 값 체계."""
+    try:
+        from app.agents.sql_agent import _iso_country, _promo_team_id
+    except Exception:
+        return ""
+    out = []
+    for key, col, conv in (("국가", "country_code", _iso_country),
+                           ("팀", "team_id", _promo_team_id)):
+        vals = filters.get(key) if filters else None
+        if not vals:
+            continue
+        vals = vals if isinstance(vals, (list, tuple)) else [vals]
+        # 변환에 실패한 값을 조용히 버리면 필터가 헐거워진다 — 원값을 함께 넣는다
+        mapped = [conv(str(v)) or str(v) for v in vals if v not in (None, "")]
+        if mapped:
+            out.append(f"{col} IN ({', '.join(_lit(x) for x in mapped)})")
+    return "".join(f"\n  AND {c}" for c in out)
+
+
+def promotion_coverage_sql(filters: Optional[Dict[str, Any]] = None) -> str:
+    """캘린더가 **실제로 담고 있는 구간과 밀도**.
+
+    이걸 먼저 확인하지 않으면 '프로모션이 없던 달'과 '캘린더에 안 적힌 달'을
+    같은 것으로 세게 된다 — 성분에서 '미포함'과 '미상'을 섞어 오답을 냈던 것과
+    똑같은 실패다. 실측(2026-08-13): 보유 구간 2026-02-09~2026-12-13, 그나마
+    2·3월은 각 1건뿐이고 4월부터 채워진다.
+    """
+    return (f"SELECT MIN(start_date) AS lo, MAX(end_date) AS hi, COUNT(*) AS n\n"
+            f"FROM {PROMO}\nWHERE NOT is_deleted" + _promo_filter_sql(filters or {}))
+
+
+def promotion_month_sql(start: str, end: str,
+                        filters: Optional[Dict[str, Any]] = None) -> str:
+    """기간과 겹치는 프로모션을 **월별로** 편다 (달을 걸친 행사는 양쪽 달에 잡힌다)."""
+    return f"""SELECT
+  FORMAT_DATE('%Y-%m', d) AS dim,
+  COUNT(DISTINCT promotion_id) AS promos,
+  STRING_AGG(DISTINCT title, ' · ' ORDER BY title LIMIT 3) AS names
+FROM {PROMO} p,
+  UNNEST(GENERATE_DATE_ARRAY(
+    GREATEST(p.start_date, DATE({_lit(start)})),
+    LEAST(p.end_date, DATE({_lit(end)})))) d
+WHERE NOT p.is_deleted
+  AND p.start_date <= DATE({_lit(end)})
+  AND p.end_date >= DATE({_lit(start)}){_promo_filter_sql(filters or {})}
+GROUP BY 1
+ORDER BY 1"""
 
 
 def short_product(name: str) -> str:

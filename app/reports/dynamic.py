@@ -85,7 +85,10 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
     for idx, sec in enumerate(the_plan["sections"]):
         cls = B.BLOCKS[sec["block"]]["cls"]
         for name, q in cls.queries(sec, ctx).items():
-            jobs.append((idx, name, S.build_sql(q)))
+            # 대부분의 블록은 Query 를 돌려주고 SQL 은 semantic 이 만든다. 프로모션
+            # 캘린더처럼 지표·축 어휘로 표현할 수 없는 조회만 완성된 SQL 을 돌려준다
+            # — 그것도 semantic 안에서 만들어지고 validate_sql 을 똑같이 통과한다.
+            jobs.append((idx, name, q if isinstance(q, str) else S.build_sql(q)))
 
     results: Dict[tuple, Any] = {}
     errors: List[str] = []

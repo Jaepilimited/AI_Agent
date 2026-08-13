@@ -617,9 +617,104 @@ class Seasonality:
         if peaks and avg_all:
             hi = peaks[0]
             if hi[0] > avg_all * 1.3:
+                # ⛔ 여기서 "주기적 성수기로 보인다" 라고 쓰던 것을 뺐다 (2026-08-13).
+                #    매출의 톱니만 보고 원인을 추정한 문장이었다. 원인은 이 표가 아니라
+                #    프로모션 캘린더가 안다 — `promotion` 블록으로 넘긴다.
                 s.findings.append(
                     f"{int(hi[1])}월이 평균보다 {_pct(hi[0] - avg_all, avg_all):.0f}% 높다 "
-                    f"— 주기적 성수기로 보인다")
+                    f"— 원인은 프로모션 일정과 맞춰 봐야 한다 (프로모션 대조 절)")
+        return s
+
+
+@block("promotion", "프로모션 대조",
+       "프로모션 일정(캘린더)과 월별 매출을 맞춰 본다. 매출이 주기적으로 솟는 이유가 "
+       "행사인지 확인할 때. 질문의 국가·팀 필터를 따른다", needs_dim=False)
+class Promotion:
+    """매출의 톱니를 보고 '행사였겠지' 추정하지 않는다 — 일정표에 물어본다.
+
+    ⛔ **기록이 없는 달을 '행사가 없던 달'로 세지 않는다.** 캘린더는 계획 시트라
+       뒤늦게 채워지고, 실측(2026-08-13) 기준 2026-04 이후만 촘촘하다. 2026-03
+       메가와리처럼 실제로 있었던 행사가 캘린더에는 없다. 없는 것과 모르는 것을
+       섞으면 성분에서 '미포함'과 '미상'을 섞어 오답을 냈던 실패가 그대로 재현된다.
+       그래서 비교 기준은 '행사 없는 달'이 아니라 **구간 전체 평균**이다.
+    """
+
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Any]:
+        from app.reports import semantic as S
+        f = p.get("filters", {})
+        return {
+            "sales": Query(metric=p["metric"], dim="월", filters=f,
+                           start=ctx["focus_start"], end=ctx["focus_end"],
+                           limit=60, having_positive=False),
+            "promo": S.promotion_month_sql(ctx["focus_start"], ctx["focus_end"], f),
+            "cover": S.promotion_coverage_sql(f),
+        }
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m = METRICS[p["metric"]]
+        by_promo = {r["dim"]: r for r in (facts.get("promo") or [])}
+        sales = {r["dim"]: float(r.get("value") or 0) for r in (facts.get("sales") or [])}
+
+        rows = []
+        for ym in sorted(sales):
+            pr = by_promo.get(ym)
+            rows.append({"dim": ym,
+                         "promos": int(pr["promos"]) if pr else 0,
+                         "names": (pr or {}).get("names") or "—",
+                         "value": round(sales[ym], m.nd)})
+
+        s = Section(block="promotion",
+                    title=p.get("title") or f"프로모션 일정과 {m.label}",
+                    metric=p["metric"], dim="월", unit=m.unit, rows=rows, chart="bar",
+                    columns=[{"key": "dim", "label": "월"},
+                             {"key": "promos", "label": "프로모션"},
+                             {"key": "names", "label": "주요 행사"},
+                             {"key": "value", "label": m.label, "fmt": "metric"}])
+
+        cov = (facts.get("cover") or [{}])[0] or {}
+        lo, hi, n = cov.get("lo"), cov.get("hi"), int(cov.get("n") or 0)
+        if not n or not rows:
+            s.findings.append("이 조건에 맞는 프로모션 일정이 캘린더에 없다 — "
+                              "행사가 없었다는 뜻이 아니라 기록이 없다는 뜻이다")
+            return s
+
+        s.findings.append(f"캘린더 보유 구간 {lo} ~ {hi} · 일정 {n:,}건")
+
+        marked = [r for r in rows if r["promos"] > 0]
+        blank = [r for r in rows if r["promos"] == 0]
+        if not marked:
+            s.findings.append("이 기간에는 캘린더에 기록된 행사가 없다 — "
+                              "행사가 없었다는 근거는 되지 못한다")
+            return s
+
+        avg_all = sum(r["value"] for r in rows) / len(rows)
+        avg_mk = sum(r["value"] for r in marked) / len(marked)
+        if avg_all:
+            s.findings.append(
+                f"행사가 기록된 {len(marked)}개월 평균 {_fmt(avg_mk, m.unit, m.nd)} — "
+                f"구간 평균 {_fmt(avg_all, m.unit, m.nd)} 대비 "
+                f"{_pct(avg_mk - avg_all, avg_all):+.0f}%")
+
+        top = max(rows, key=lambda r: r["value"])
+        if top["promos"]:
+            s.findings.append(
+                f"{top['dim']} 가 가장 높다 ({_fmt(top['value'], m.unit, m.nd)}) — "
+                f"그달 일정: {top['names']}")
+        else:
+            s.findings.append(
+                f"{top['dim']} 가 가장 높은데 그달 일정이 캘린더에 없다 — "
+                f"기록이 비어 있어 원인을 일정으로 설명할 수 없다")
+
+        if blank:
+            # 발견 문장은 평문으로 렌더된다(HTML 주입을 막으려 escape 한다).
+            # 마크다운을 쓰면 별표가 그대로 보인다 — 강조는 문장 구조로 한다
+            s.findings.append(
+                f"{len(blank)}개월({_names(blank, 4)})은 캘린더에 기록이 없다 — "
+                f"행사가 없던 달로 세지 않았고, 비교 기준은 구간 전체 평균이다")
+            s.note = ("프로모션 캘린더는 실적이 아니라 계획 시트다. 뒤늦게 채워지므로 "
+                      "'기록 없음'을 '행사 없음'으로 읽으면 안 된다.")
         return s
 
 
