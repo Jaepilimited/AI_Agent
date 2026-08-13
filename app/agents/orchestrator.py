@@ -1502,6 +1502,20 @@ class OrchestratorAgent:
 
     # Capability question patterns ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
     # NOTE: "되나", "돼?" excluded — too broad (matches CS: "임산부가 써도 되나요")
+    # ── 낱말 경계를 봐야 하는 낱말 ──────────────────────────────────────────
+    # ⛔ 한국어는 띄어쓰기가 낱말 경계를 보장하지 않는다. 아래는 **더 긴 낱말 안에서
+    #    뜻이 뒤집히는** 것들이라 앞 글자를 확인한다 (`app/core/textmatch.py`).
+    #      전**환율**(전환율) ≠ 환율 · 가이드**라인** ≠ 라인 · 객**단가** ≠ 단가
+    #      **성과**급 ≠ 성과 · 요**인도** ≠ 인도
+    # ⚠️ 여기에 아무 낱말이나 넣지 마라 — "월별매출"의 `매출`은 잡혀야 맞다.
+    #    새 충돌은 tests/test_no_silent_failures.py 의 충돌 검출기가 알려준다.
+    _GUARDED = {"환율", "라인", "단가", "성과", "현황", "경쟁", "인도", "행사", "티어"}
+
+    def _has(self, q: str, words) -> bool:
+        """키워드 포함 검사 — `_GUARDED` 낱말만 경계를 본다."""
+        from app.core.textmatch import contains_any
+        return contains_any(q, words, self._GUARDED)
+
     _CAPABILITY_PATTERNS = ["가능해", "가능한가", "가능하나", "수 있어", "뭐할 수", "뭐 할 수"]
 
     # ── 이 서비스 자신의 기능을 묻는 질문 ────────────────────────────────────
@@ -1610,14 +1624,14 @@ class OrchestratorAgent:
 
         # Wave 2: Hard-override to direct (greetings, external topics, chitchat)
         # 단, 데이터 키워드가 있으면 override 건너뜀 ("회사 1분기 매출" 등)
-        if any(kw in q for kw in self._DIRECT_OVERRIDE):
+        if self._has(q, self._DIRECT_OVERRIDE):
             if not any(kw in q for kw in self._DATA_OVERRIDE_GUARD):
                 return ("direct", True)
 
         # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
         # 단, PEOPLE/HR·팀 키워드가 있으면 건너뜀 ("육아휴직 쓸 수 있어" 등은 팀 자료 질문)
         if any(p in q for p in self._CAPABILITY_PATTERNS):
-            if not any(kw in q for kw in self._TEAM_KEYWORDS):
+            if not self._has(q, self._TEAM_KEYWORDS):
                 return ("direct", True)
 
         # 이 서비스 **자신의 기능**을 묻는 질문 → direct. 사내 문서에도 CS Q&A 에도 답이 없다
@@ -1629,7 +1643,7 @@ class OrchestratorAgent:
             return ("direct", True)
 
         # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
-        if any(kw in q for kw in self._FULLDATA_KEYWORDS):
+        if self._has(q, self._FULLDATA_KEYWORDS):
             return ("bigquery", True)
 
         # Team/HR resource check — BEFORE howto/notion to catch HR queries
@@ -1654,25 +1668,25 @@ class OrchestratorAgent:
                      "절차", "정책", "규정", "프로세스", "작성법", "작성 방법"]
         _QTY_INTENT = ["얼마", "몇 ", "합계", "비용", "매출", "수량", "순위", "top",
                        "추이", "비중", "집계", "금액", "단가", "예산"]
-        has_team = any(kw in q for kw in _TEAM_SPECIFIC)
-        has_data = any(kw in q for kw in _DATA_OVERRIDE)
+        has_team = self._has(q, _TEAM_SPECIFIC)
+        has_data = self._has(q, _DATA_OVERRIDE)
         if has_team and not has_data:
             return ("notion", True)
-        if any(d in q for d in _DOC_WORD) and not any(t in q for t in _QTY_INTENT):
+        if self._has(q, _DOC_WORD) and not self._has(q, _QTY_INTENT):
             return ("notion", True)
 
         # How-to / guide questions about platforms → Notion (not BigQuery)
-        if any(kw in q for kw in self._HOWTO_KEYWORDS):
+        if self._has(q, self._HOWTO_KEYWORDS):
             return ("notion", True)
-        if any(kw in q for kw in self._HOWTO_BROAD_KEYWORDS):
+        if self._has(q, self._HOWTO_BROAD_KEYWORDS):
             if any(p in q for p in self._PLATFORM_TOOL_NAMES):
                 return ("notion", True)
 
         # Pre-compute data keyword match (used in Notion guard + later routing)
-        has_data = any(kw in q for kw in self._DATA_KEYWORDS)
+        has_data = self._has(q, self._DATA_KEYWORDS)
 
         # Notion check — but defer to bigquery when strong data keywords present
-        if any(kw in q for kw in self._NOTION_KEYWORDS):
+        if self._has(q, self._NOTION_KEYWORDS):
             if any(kw in q for kw in self._COMPOUND_NOTION):
                 return ("notion", True)
             if not has_data:
@@ -1690,7 +1704,7 @@ class OrchestratorAgent:
                         "런칭", "출시 일정", "판촉"]
         _PERSONAL_SCOPE = ["내 ", "제 ", "메일", "gmail", "드라이브", "drive",
                            "회의록", "회의", "미팅", "스프레드시트", "구글시트"]
-        if any(kw in q for kw in self._GWS_KEYWORDS):
+        if self._has(q, self._GWS_KEYWORDS):
             _promo_ctx = (any(t in q for t in _PROMO_TERMS)
                           and not any(p in q for p in _PERSONAL_SCOPE))
             if _promo_ctx:
@@ -1703,8 +1717,8 @@ class OrchestratorAgent:
         # Web search guard: if search keywords match but NO SKIN1004 business context → direct
         # "올해 한국 GDP 성장률" → direct (general knowledge)
         # "올해 미국 매출" → bigquery (매출 = SKIN1004 data)
-        if has_data and any(kw in q for kw in self._SEARCH_KEYWORDS):
-            if not any(t in q for t in self._BIZ_CONTEXT):
+        if has_data and self._has(q, self._SEARCH_KEYWORDS):
+            if not self._has(q, self._BIZ_CONTEXT):
                 return ("direct", False)  # 가드 강등 — 확신 없음, LLM 재판정 대상
 
         # CS check — product Q&A, ingredients, usage, skincare
@@ -1737,13 +1751,13 @@ class OrchestratorAgent:
             "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
         ]
         # Team resource check — team data lookups (before CS to avoid overlap)
-        if any(kw in q for kw in self._TEAM_KEYWORDS):
+        if self._has(q, self._TEAM_KEYWORDS):
             return ("notion", True)
 
-        has_strong_data = any(kw in q for kw in _STRONG_DATA)
-        if any(kw in q for kw in self._CS_KEYWORDS) and not has_strong_data:
+        has_strong_data = self._has(q, _STRONG_DATA)
+        if self._has(q, self._CS_KEYWORDS) and not has_strong_data:
             return ("cs", True)
-        has_external = any(kw in q for kw in self._EXTERNAL_KEYWORDS)
+        has_external = self._has(q, self._EXTERNAL_KEYWORDS)
 
         # Both data + external context needed → multi-source analysis
         if has_data and has_external:
@@ -1760,7 +1774,7 @@ class OrchestratorAgent:
         if has_data:
             # Guard: data keywords present but NO SKIN1004 business context → direct
             # e.g. "육룡이 나르샤 평점" → "평점" matches data but not about our products
-            if any(t in q for t in self._BIZ_CONTEXT):
+            if self._has(q, self._BIZ_CONTEXT):
                 return ("bigquery", True)
             return ("direct", False)  # 데이터 단어는 있는데 사업 맥락 불명 — LLM 재판정
         return ("direct", False)  # 아무 키워드도 안 걸림 — LLM 재판정
@@ -1779,7 +1793,7 @@ class OrchestratorAgent:
     def _is_fulldata_request(self, query: str, conversation_context: str) -> bool:
         """Check if user is requesting full data after a truncation warning."""
         q = query.lower().strip()
-        has_keyword = any(kw in q for kw in self._FULLDATA_KEYWORDS)
+        has_keyword = self._has(q, self._FULLDATA_KEYWORDS)
         has_truncation_context = "10,000행 제한" in conversation_context or "LIMIT에 도달" in conversation_context
         return has_keyword and has_truncation_context
 

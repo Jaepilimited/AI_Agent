@@ -107,22 +107,10 @@ _BRANDS = {"스킨천사": "SK", "skin1004": "SK", "sk": "SK",
            "커먼랩스": "CL", "좀비뷰티": "SK"}
 
 
-def _standalone(text: str, word: str) -> bool:
-    """`word` 가 다른 낱말에 파묻히지 않고 **낱말로** 등장하는가.
-
-    ⛔ 단순 `in` 검사는 **"외부 요인도 같이 봐줘" 에서 '인도'를 잡는다** (2026-08-13 실측).
-       그 한 글자 때문에 일본 보고서가 '일본·인도' 보고서로 조용히 바뀌었다.
-
-    앞 글자만 본다 — 뒤는 조사(은·는·도·과·에서…)가 붙는 게 정상이라 막으면 안 된다.
-    앞이 한글이면 더 긴 낱말의 일부로 본다 ('요인도'의 '인도', '남중국해'의 '중국').
-    """
-    i = text.find(word)
-    while i != -1:
-        prev = text[i - 1] if i else ""
-        if not ("가" <= prev <= "힣"):
-            return True
-        i = text.find(word, i + 1)
-    return False
+# 낱말 경계 판정은 `app/core/textmatch.py` 한 곳에 있다 — 라우팅 키워드도 같은 것을 쓴다.
+# ⛔ 예전엔 여기에만 있었고, 그래서 라우팅 쪽 `라인`·`환율` 은 같은 결함을 그대로 갖고
+#    있었다 ("가이드라인"의 라인, "전환율"의 환율). 같은 판정을 두 번 구현하지 마라.
+from app.core.textmatch import standalone as _standalone  # noqa: E402
 
 
 def extract_filters(q: str) -> Dict[str, Any]:

@@ -574,6 +574,25 @@ def _check_feedback_spike() -> CheckResult:
 
 # ---- 등록 ----
 
+
+# ---- 정적 검사 (에러가 안 나는 고장) ----
+# ⛔ 판정 로직은 `app/core/static_checks.py` 한 곳에 있다. 개발 중에는 pytest 가,
+#    서버에서는 이 자가 점검이 **같은 함수**를 부른다 — 서버에는 pytest 도 tests/ 도
+#    없어서 테스트만으로는 매일 돌 수 없었다 (2026-08-13).
+
+
+def _static(name: str):
+    """`static_checks` 의 함수 하나를 CheckResult 로 감싼다 (부작용 없음)."""
+    def run() -> CheckResult:
+        from app.core import static_checks as SC
+        for cid, fn, _label in SC.ALL:
+            if cid == name:
+                ok, detail = fn()
+                return CheckResult(ok, detail)
+        return CheckResult(True, "검사 정의 없음 — 건너뜀")
+    return run
+
+
 CHECKS: list[Check] = [
     Check("ad_sync_fresh", "batch", SEV_CRITICAL,
           "AD 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
@@ -608,6 +627,19 @@ CHECKS: list[Check] = [
           "👎 피드백이 급증하지 않았는가", _check_feedback_spike),
     Check("golden_regression", "quality", SEV_WARNING,
           "골든셋이 직전 런 대비 회귀하지 않았는가", _check_golden_regression),
+    # 정적 검사 — 코드·자산을 읽어 "정상처럼 보이는 고장"을 찾는다
+    Check("static_css_vars", "static", SEV_WARNING,
+          "정의되지 않은 CSS 변수를 참조하지 않는가 (폴백이 조용히 먹는다)",
+          _static("static_css_vars")),
+    Check("static_at_sources", "static", SEV_WARNING,
+          "@@ 데이터소스 목록이 프론트·서버에서 일치하는가", _static("static_at_sources")),
+    Check("static_prompt_copies", "static", SEV_WARNING,
+          "direct 시스템 프롬프트 사본이 하나인가", _static("static_prompt_copies")),
+    Check("static_cache_version", "static", SEV_WARNING,
+          "캐시 버전 문서와 실제가 일치하는가", _static("static_cache_version")),
+    Check("static_kw_collision", "static", SEV_WARNING,
+          "라우팅 키워드가 다른 경로의 긴 낱말에 삼켜지지 않는가",
+          _static("static_kw_collision")),
 ]
 
 
