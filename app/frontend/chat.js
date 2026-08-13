@@ -613,6 +613,16 @@
 
   // ===== Follow-up suggestion pools (based on actual BigQuery data) =====
   var FOLLOWUP_POOLS = {
+    // 보고서는 "보고서"라고 적었을 때만 만들어진다(또는 @@보고서 지정).
+    // 그래서 이 제안들은 전부 그 단어를 포함해야 실제로 보고서가 나온다.
+    report: [
+      "2026년 일본 매출 보고서 만들어줘",
+      "일본 B2C 매출 보고서 만들어줘 — 달마다 오르내리는 원인 위주로",
+      "우마 브랜드 매출 보고서 만들어줘",
+      "동남아 채널별 매출 보고서 만들어줘",
+      "중국사업팀 상반기 실적 보고서 만들어줘",
+      "SK FOC 바우처 비용 효율화 보고서 만들어줘",
+    ],
     sales: [
       "이번 달 국가별 매출 비교해줘",
       "전월 대비 매출 증감율 보여줘",
@@ -2048,7 +2058,10 @@
     var q = (query || "").toLowerCase();
     var pool = [];
 
-    if (/쇼피|shopee/.test(q)) pool = FOLLOWUP_POOLS.shopee;
+    // 보고서를 물었으면 보고서 제안을 준다 — 다른 풀은 "보고서"라는 말이 없어서
+    // 그대로 누르면 일반 답변이 나온다 (2026-08-13 규칙: 명시했을 때만 생성)
+    if (/보고서|리포트|report/.test(q)) pool = FOLLOWUP_POOLS.report;
+    else if (/쇼피|shopee/.test(q)) pool = FOLLOWUP_POOLS.shopee;
     else if (/아마존|amazon/.test(q)) pool = FOLLOWUP_POOLS.amazon;
     else if (/틱톡|tiktok/.test(q)) pool = FOLLOWUP_POOLS.tiktok;
     else if (/@@cs|cs |고객|반품|배송|교환|환불|성분|문의|사용법|앰플|크림|토너|루틴|피부|제품.*(효능|성분|사용)/.test(q)) pool = FOLLOWUP_POOLS.cs;

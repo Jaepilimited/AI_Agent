@@ -48,6 +48,16 @@ def _quality_notes(ctx: Dict[str, Any]) -> List[Dict[str, str]]:
             {"label": "원가 미적재 브랜드",
              "text": "UM(99.9%)·CBT(99.6%) 는 제품원가가 사실상 0원으로 적재돼 있다. "
                      "원가·수익성 수치는 SK 기준으로만 읽어야 한다."})
+    # ⛔ UM·CBT 는 제품명이 통째로 비어 있다 (2026-08-13 실측). 이걸 말하지 않으면
+    #    제품 절이 "조회 결과가 없어 뺐습니다" 로만 사라져 **왜 없는지를 아무도 모른다.**
+    #    없는 것과 못 잡은 것을 가르는 것은 프로모션·성분에서와 같은 원칙이다.
+    _brands = set((ctx.get("base_filters") or {}).get("브랜드") or [])
+    if _brands & {"UM", "CBT"}:
+        notes.append(
+            {"label": "제품명 미적재 브랜드",
+             "text": "UM·CBT 는 제품명(SET)이 100% 비어 있고 Product 테이블에도 행이 없다. "
+                     "제품별·수량 절은 조회가 0건이라 실릴 수 없다 — 제품이 안 팔린 것이 "
+                     "아니라 이름이 적재되지 않은 것이다. 국가·채널·월 단위는 정상 집계된다."})
     if ctx.get("has_discount_metric"):
         notes.append(
             {"label": "할인 미적재 채널",

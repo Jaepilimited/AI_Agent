@@ -116,21 +116,45 @@ def extract_filters(q: str) -> Dict[str, Any]:
     """
     out: Dict[str, Any] = {}
 
-    hits = [c for c in _COUNTRIES if c in q]
-    # '한국'이 '한국사업팀' 의 일부로 잡히는 것 같은 부분 일치를 막는다
-    hits = [c for c in hits if not any(c != o and c in o for o in hits)]
-    if hits:
-        out["국가"] = hits[:5]
-
-    conts = [c for c in ["유럽", "아시아", "북미", "남미", "중미", "중동", "아프리카",
-                         "오세아니아", "CIS"] if c in q]
-    if conts and "국가" not in out:
-        out["대륙"] = conts[:3]
-
+    # 팀을 **먼저** 잡는다 — 아래에서 국가 오인을 걸러내는 데 필요하다
     from app.agents.sql_agent import TEAM_CODE2KR
+    team_krs = [kr for kr in TEAM_CODE2KR.values() if kr in q]
     teams = [code for code, kr in TEAM_CODE2KR.items() if kr in q]
     if teams:
         out["팀"] = teams
+
+    hits = [c for c in _COUNTRIES if c in q]
+    # '한국'이 '한국사업팀' 의 일부로 잡히는 것 같은 부분 일치를 막는다
+    hits = [c for c in hits if not any(c != o and c in o for o in hits)]
+    # ⛔ **팀 이름 안의 국가어를 국가로 잡지 않는다.** "중국사업팀 실적 보고서" 가
+    #    `팀=CBT AND 국가=중국` 으로 나가 CBT 의 중국 외 실적이 통째로 빠졌다
+    #    (2026-08-13 발견). 팀을 지정했으면 그 팀의 전 범위를 보는 게 질문의 뜻이다
+    hits = [c for c in hits if not any(c in kr for kr in team_krs)]
+    if hits:
+        out["국가"] = hits[:5]
+
+    # ⛔ **세부 권역을 대륙으로 잡으면 범위가 훨씬 넓어진다.** "동남아시아" 가
+    #    `대륙=아시아` 로 잡혀 동아시아·서남아시아까지 들어왔다. 광역은 Continent1,
+    #    세부 권역은 Continent2 다 (CLAUDE.md 대륙 규칙) — 권역을 먼저 본다
+    regs = [r for r in _REGIONS if r in q]
+    if not regs and "동남아" in q:
+        regs = ["동남아시아"]
+    if regs and "국가" not in out:
+        out["권역"] = regs[:3]
+    elif not regs:
+        conts = [c for c in ["유럽", "아시아", "북미", "남미", "중미", "중동", "아프리카",
+                             "오세아니아", "CIS"] if c in q]
+        if conts and "국가" not in out:
+            out["대륙"] = conts[:3]
+
+    # 브랜드 — 안 잡으면 "우마 매출 보고서"가 **전사 보고서**로 나간다 (2026-08-13 발견).
+    # CLAUDE.md 브랜드 규칙 그대로: CBT 는 스킨천사에 합산, 좀비뷰티는 SK 안의 Line='ZB'
+    ql_b = q.lower()
+    for word, filt in _BRAND_FILTERS.items():
+        if word in ql_b:
+            for k, v in filt.items():
+                out.setdefault(k, v)
+            break
 
     if "b2b" in q.lower():
         out["영업유형"] = ["B2B"]
@@ -138,6 +162,23 @@ def extract_filters(q: str) -> Dict[str, Any]:
         out["영업유형"] = ["B2C"]
     return out
 
+
+# 세부 권역 = `Continent2`. 광역 대륙(`Continent1`)과 섞으면 범위가 달라진다
+_REGIONS = ["동남아시아", "동아시아", "서남아시아", "서유럽", "북유럽", "동유럽",
+            "동남유럽", "북아프리카", "남아메리카", "중앙아메리카"]
+
+# 브랜드어 → 필터. 값은 CLAUDE.md 의 브랜드 정의와 같아야 한다
+#   - 스킨천사는 `Brand IN ('SK','CBT')` — CBT 는 팀 값이 잘못 들어간 것이라 합산한다
+#   - 좀비뷰티는 `Brand` 에 없다. `Brand='SK'` 안의 `Line='ZB'` 다
+# ⚠️ 'sk'·'um' 같은 짧은 코드는 넣지 않는다 — 다른 단어에 부분 일치해 오탐한다
+_BRAND_FILTERS: Dict[str, Dict[str, Any]] = {
+    "좀비뷰티": {"브랜드": ["SK"], "라인": ["ZB"]},   # 스킨천사보다 먼저 봐야 한다
+    "스킨천사": {"브랜드": ["SK", "CBT"]},
+    "skin1004": {"브랜드": ["SK", "CBT"]},
+    "우마": {"브랜드": ["UM"]},
+    "umma": {"브랜드": ["UM"]},
+    "커먼랩스": {"브랜드": ["CL"]},
+}
 
 # 실제 데이터에 있는 주요 국가 (한국어). 전체 191개를 다 볼 필요는 없다 —
 # 보고서로 물어보는 국가는 사실상 여기 안에 있고, 없으면 전사 보고서로 나간다.
