@@ -244,6 +244,12 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
     ⚠️ 한 곳만 고치면 `@@보고서` 인데 `route()` 가 None 을 내 조용히 일반 답변이 나간다
   - System Status(`safety.get_safety_status`)에 **생성 조건을 함께 노출**한다 —
     "왜 보고서가 안 만들어지지"를 화면에서 답할 수 있어야 한다
+  - **사용자 가이드**(노션 "AI Chat 가이드" `3262b428…`)에도 같은 예시가 들어 있다.
+    ⛔ `scripts/notion_user_guide.py` 는 **돌리지 마라 — 페이지를 통째로 지운다.**
+    그 스크립트는 clear 후 재생성인데 실제 페이지는 손으로 많이 편집됐다(스크린샷·
+    DB 정보·Tester 섹션…). 게다가 `upload_to_notion` 이 블록 헬퍼를 더 이상
+    내보내지 않아 import 부터 깨져 있다. 가이드는 **바꿀 구간만** 고친다
+    (Notion MCP `update-page` 의 `update_content` old_str/new_str)
   - **작동이 검증된 예시 질문**은 `app/reports/README.md` 의 표에 있다. 웰컴 칩
     (`chat.html`)과 후속 제안(`chat.js` `FOLLOWUP_POOLS.report`)도 같은 문장을 쓴다 —
     ⚠️ 제안 문구에 "보고서"가 빠지면 눌러도 일반 답변이 나간다
