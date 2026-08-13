@@ -180,3 +180,48 @@ def test_external_only_when_asked():
 ])
 def test_josa(word, kind, expected):
     assert _josa(word, kind) == expected
+
+
+# ── 자기 기능 질문은 direct 로 (2026-08-13) ──────────────────────────────────
+# ⛔ 사내 문서에도 CS Q&A 에도 답이 없는 질문이다. 실측: "보고서 기능은…" 이 notion 으로,
+#    "보고서 사용법…" 이 **확신을 갖고 cs** 로 갔다 — 확신 분류라 LLM 재판정도 못 탄다.
+
+@pytest.mark.parametrize("question,expected", [
+    ("보고서 기능은 어떤 때 쓰면 좋아?", "direct"),
+    ("보고서 사용법 알려줘", "direct"),
+    ("보고서 만드는 방법 알려줘", "direct"),
+    ("리포트 기능 어떻게 써?", "direct"),
+    ("이 시스템으로 뭘 할 수 있는지 짧게 정리해줘", "direct"),
+    ("셀라는 무슨 기능이 있어?", "direct"),
+    # ⚠️ 반대 방향 — 외부 플랫폼·사내 툴·제품은 그대로 각자 경로로 가야 한다
+    ("틱톡샵 접속 방법 알려줘", "notion"),
+    ("잔디 사용법 알려줘", "notion"),
+    ("센텔라 앰플 사용법 알려줘", "cs"),
+    ("연차 규정 알려줘", "notion"),
+    ("2026년 상반기 일본 매출 알려줘", "bigquery"),
+    ("셀라야 2026 상반기 일본 매출 알려줘", "bigquery"),
+    ("2026년 일본 매출 보고서 만들어줘", "bigquery"),
+])
+def test_self_feature_question_routes_direct(question, expected):
+    from app.agents.orchestrator import OrchestratorAgent
+    o = OrchestratorAgent.__new__(OrchestratorAgent)
+    route, confident = OrchestratorAgent._keyword_classify_ex(o, question)
+    assert route == expected
+    assert confident, "확신 없이 넘기면 LLM 판정에 맡겨져 결과가 흔들린다"
+
+
+def test_both_direct_prompts_describe_the_report_feature():
+    """⛔ direct 경로 시스템 프롬프트가 **두 벌**이다 (스트리밍/비스트리밍).
+
+    한쪽만 고쳤다가 "보고서라는 별도 메뉴는 없습니다" 라고 답한 적이 있다
+    (2026-08-13). 같은 사실을 두 곳에 적어야 하는 구조라, 어긋나면 여기서 잡는다.
+    """
+    import inspect
+    from app.agents import orchestrator as O
+
+    src = inspect.getsource(O)
+    blocks = src.count("## 시스템 기능")
+    assert blocks >= 2, "프롬프트 사본 수가 바뀌었다 — 이 테스트의 전제를 다시 확인할 것"
+    # 두 사본 모두 보고서 기능과 생성 조건을 담아야 한다
+    for marker in ("@@보고서", "보고서 열기", "공유"):
+        assert src.count(marker) >= 2, f"프롬프트 한쪽에만 있다: {marker}"
