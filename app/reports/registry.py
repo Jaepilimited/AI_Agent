@@ -28,10 +28,16 @@ SPECS: Dict[str, Dict[str, Any]] = {
 }
 
 # 보고서를 원한다는 신호. 주제어만으로는 단순 조회 질문과 구분되지 않는다.
-_REPORT_WORDS = [
-    "보고서", "리포트", "report", "분석해줘", "분석 해줘", "진단", "종합",
-    "정리해줘", "브리핑", "심층", "딥다이브", "deep dive",
-]
+# 보고서는 **특수한 경우다** — 조회 8~12회에 10~30초가 든다. 그래서 사용자가
+# **명시적으로 요청했을 때만** 만든다 (2026-08-13 규칙 결정):
+#     ① `@@보고서` 로 데이터소스를 지정했거나
+#     ② 질문에 "보고서"·"리포트"·"report" 라고 적었거나
+#
+# ⛔ 예전에는 "분석해줘·정리해줘·종합·진단·심층·브리핑·딥다이브" 도 신호어였다.
+#    이 말들은 평범한 조회 질문에도 흔해서 **의도치 않은 보고서가 계속 생겼다** —
+#    "이 시스템으로 뭘 할 수 있는지 짧게 정리해줘" 가 전사 매출 보고서를 만든 것이
+#    대표적이다. 신호어를 넓게 두고 예외를 덧붙이는 방식으로는 끝이 나지 않았다.
+_REPORT_WORDS = ["보고서", "리포트", "report"]
 
 
 def get_spec(spec_id: str, **overrides) -> ReportSpec:
@@ -216,7 +222,7 @@ def wants_report(question: str) -> bool:
     return not _is_meta_question(ql)
 
 
-def route(question: str) -> Optional[Dict[str, Any]]:
+def route(question: str, explicit: bool = False) -> Optional[Dict[str, Any]]:
     """질문 → 어떤 경로로 보고서를 만들 것인가.
 
     - `spec`    : 손으로 검증한 고정 스펙 (집계 계약·시뮬레이션이 있는 깊은 분석)
@@ -225,7 +231,9 @@ def route(question: str) -> Optional[Dict[str, Any]]:
     고정 스펙이 있으면 **그쪽이 이긴다.** 같은 주제를 동적으로 다시 만들면
     검증된 분석을 얕은 것으로 덮어쓰게 된다.
     """
-    if not wants_report(question):
+    # explicit = `@@보고서` 로 지정한 경우. 문구를 보지 않는다 —
+    # "@@보고서 일본 매출" 처럼 '보고서'라는 말이 본문에 없어도 만들어야 한다
+    if not explicit and not wants_report(question):
         return None
     hit = match(question)
     if hit:

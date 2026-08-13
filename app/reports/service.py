@@ -123,7 +123,7 @@ def _run_dynamic(question: str, user_id: int, params: Dict[str, Any],
 
 
 def run(question: str, user_id: int, *, spec_id: Optional[str] = None,
-        use_cache: bool = True) -> Optional[Dict[str, Any]]:
+        use_cache: bool = True, explicit: bool = False) -> Optional[Dict[str, Any]]:
     """보고서를 만들고 저장한다. 해당 없으면 None.
 
     캐시가 있어도 **요청자 본인의 행을 새로 만든다** — 남의 행을 돌려주면 열람 권한이 무너진다.
@@ -131,7 +131,7 @@ def run(question: str, user_id: int, *, spec_id: Optional[str] = None,
     if spec_id:
         params = registry.parse_params(question, spec_id)
     else:
-        r = registry.route(question)
+        r = registry.route(question, explicit=explicit)
         if not r:
             return None
         if r["kind"] == "dynamic":

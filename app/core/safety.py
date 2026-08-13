@@ -379,6 +379,18 @@ def get_safety_status() -> dict:
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}
 
+    # 보고서 — 데이터소스가 아니라 산출물이지만, **언제 만들어지는지**를 여기서 알린다.
+    # 보고서는 조회 8~12회에 10~30초가 드는 특수 경로라 명시했을 때만 만든다
+    # (2026-08-13 규칙). 그 조건을 사용자가 볼 수 있어야 "왜 안 만들어지지"가 없다.
+    try:
+        from app.reports import blocks as _rb
+        services["보고서"] = {
+            "status": "ok",
+            "detail": f"블록 {len(_rb.BLOCKS)}종 · @@보고서 또는 '보고서' 명시 시 생성",
+        }
+    except Exception as e:
+        services["보고서"] = {"status": "error", "detail": str(e)[:30]}
+
     # Gemini / Claude API — 내부 전용 (System Status에 노출하지 않음)
 
     # GWS Token (per-user OAuth)

@@ -331,6 +331,8 @@ class OrchestratorAgent:
     # route: 라우팅 대상, label: 사용자에게 표시되는 이름, desc: 설명
     _DB_REGISTRY = [
         # ── BigQuery 매출 ──
+        # ── 보고서 (산출물 — 테이블이 아니다) ──
+        {"key": "보고서", "aliases": ["리포트", "report", "reports"], "route": "report", "group": "보고서", "icon": "doc", "label": "보고서", "desc": "질문에 맞춰 절을 조합한 분석 보고서 (본인만 열람)"},
         {"key": "매출", "aliases": ["sales", "매출데이터", "세일즈"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "매출", "desc": "통합 매출 — 글로벌 전 플랫폼"},
         {"key": "제품", "aliases": ["product", "제품데이터"], "route": "bigquery", "group": "매출 데이터", "icon": "box", "label": "제품", "desc": "제품별 판매 수량"},
         {"key": "손익", "aliases": ["pl", "손익계산서", "영업이익", "판관비", "재무손익"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "손익", "desc": "재무 손익 — 영업이익/원가/판관비 (월 단위)"},
@@ -581,7 +583,12 @@ class OrchestratorAgent:
             logger.info("model_rights_query", path="route_and_execute", query=_q_mr[:80])
             return await self._handle_model_rights(_q_mr, model_type, images=images)
 
-        _rep = await self._handle_report(query, user_email)
+        # `@@보고서` 로 지정했으면 문구를 보지 않는다. 지정했을 땐 접두어를 뗀
+        # 본문으로 만들어야 제목·필터가 깨끗하다
+        _rep_selected = any(e.get("route") == "report" for e in (db_entry or []))
+        _rep = await self._handle_report(
+            (clean_query or query) if _rep_selected else query,
+            user_email, explicit=_rep_selected)
         if _rep:
             return _rep
 
@@ -820,9 +827,11 @@ class OrchestratorAgent:
         # ⚠️ 진행 문구를 ("chunk", ...) 로 보내면 안 된다 — routes.py 가 streamed_live 를 세워
         #    뒤따르는 ("done", 본문) 을 통째로 버린다 (2026-08-12 확인).
         from app.reports import registry as _rep_reg
-        if _rep_reg.wants_report(query):
+        _rep_selected = any(e.get("route") == "report" for e in _mr_entries)
+        _rep_query = (clean_query or query) if _rep_selected else query
+        if _rep_selected or _rep_reg.wants_report(_rep_query):
             yield ("source", "bigquery")
-            _r = await self._handle_report(query, user_email)
+            _r = await self._handle_report(_rep_query, user_email, explicit=_rep_selected)
             if _r:
                 yield ("done", _r.get("answer", ""))
                 return
@@ -1993,7 +2002,8 @@ class OrchestratorAgent:
         result = await self.notion_agent.run(contextualized_query, model_type=model_type)
         return {"source": "notion", "answer": result}
 
-    async def _handle_report(self, query: str, user_email: str) -> Optional[dict]:
+    async def _handle_report(self, query: str, user_email: str,
+                             explicit: bool = False) -> Optional[dict]:
         """등록된 보고서에 해당하는 질문이면 보고서를 만들고 요약을 돌려준다.
 
         해당 없으면 None — 평소 라우팅으로 흘러간다.
@@ -2004,7 +2014,9 @@ class OrchestratorAgent:
         """
         from app.reports import registry, service
 
-        if not registry.wants_report(query):
+        # 보고서는 명시적으로 요청했을 때만 만든다 — `@@보고서` 지정(explicit) 이거나
+        # 질문에 "보고서/리포트" 라고 적었을 때. `@@보고서` 는 문구를 보지 않는다
+        if not explicit and not registry.wants_report(query):
             return None
 
         # ⚠️ 아래 건너뜀은 **사용자가 보고서를 달라고 했는데 일반 답변이 나가는** 상황이다.
@@ -2023,7 +2035,8 @@ class OrchestratorAgent:
             return None
 
         try:
-            result = await asyncio.to_thread(service.run, query, row["id"])
+            result = await asyncio.to_thread(
+                lambda: service.run(query, row["id"], explicit=explicit))
         except Exception as e:
             logger.warning("report_failed", error=str(e)[:300], query=query[:80])
             return {

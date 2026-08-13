@@ -392,6 +392,10 @@
 
   // ===== Data Source Filter (Grouped) =====
   var SOURCE_GROUPS = [
+    // 보고서는 테이블이 아니라 산출물이다. 조회 8~12회에 10~30초가 드는 특수 경로라
+    // @@보고서 로 지정했을 때(또는 질문에 "보고서"라고 적었을 때)만 만든다
+    { id: "report", label: "보고서", emoji: "📄",
+      keys: ["보고서"] },
     { id: "sales", label: "매출 데이터", emoji: "\uD83D\uDCCA",
       keys: ["매출", "제품", "손익"] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
@@ -433,6 +437,7 @@
   _rebuildDataSourceKeys();
   // Source key → route mapping for orchestrator
   var SOURCE_ROUTE_MAP = {
+    "보고서": "report",
     "매출": "bigquery", "제품": "bigquery", "손익": "bigquery",
     "광고": "bigquery", "마케팅": "bigquery",
     "Shopify": "bigquery", "플랫폼": "bigquery",
@@ -3111,6 +3116,8 @@
   var _svgFile = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
   var _svgFolder = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
   var SERVICE_ICONS = {
+    // 보고서
+    "보고서":         { label: "보고서", svg: _svgFile },
     // 매출
     "매출":           { label: "매출", svg: _svgBar },
     "제품":           { label: "제품", svg: _svgBox },
@@ -3158,6 +3165,7 @@
 
   // Quick-select presets for // command
   var SLASH_PRESETS = [
+    { cmd: "보고서", label: "분석 보고서", keys: ["보고서"] },
     { cmd: "매출", label: "매출 데이터", keys: ["매출", "제품"] },
     { cmd: "광고", label: "광고 데이터", keys: ["광고", "메타광고"] },
     { cmd: "프로모션", label: "프로모션 캘린더", keys: ["프로모션"] },
