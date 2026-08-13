@@ -52,3 +52,37 @@ def test_every_front_source_parses_cleanly(key):
     entry, clean = OrchestratorAgent.parse_db_prefix(f"@@{key} 매출 알려줘")
     assert entry, f"@@{key} 를 서버가 인식하지 못한다"
     assert clean.strip() == "매출 알려줘", f"@@{key} 파싱 후 질문이 오염됐다: {clean!r}"
+
+
+# ── 채팅 답변 수치 검증 (2026-08-13) ────────────────────────────────────────
+# 보고서는 이 방어선을 갖고 있었지만 채팅에는 없었다. 지금은 계측만 한다.
+
+_ROWS = [{"country": "미국", "rev": 115360000000.0},
+         {"country": "일본", "rev": 25650000000.0},
+         {"country": "인도네시아", "rev": 51830000000.0}]
+
+
+@pytest.mark.parametrize("answer", [
+    "미국 1,153.6억, 일본 256.5억입니다.",          # 행 값 (억 표기)
+    "미국 115,360,000,000원입니다.",                # 행 값 (원 표기)
+    "전체 합계는 1,928.4억입니다.",                  # 열 합계
+    "미국이 전체의 59.8%를 차지합니다.",              # 비중
+    "일본은 미국 대비 -77.8% 입니다.",               # 증감률
+    "2026년 상위 3개 국가입니다.",                   # 연도·작은 정수
+])
+def test_answer_check_accepts_derivable_numbers(answer):
+    """⚠️ 정상 답변을 미검증으로 잡으면 경보가 무의미해진다 — 단위 변환이 특히 중요하다."""
+    from app.core.answer_check import verify
+    res = verify(answer, _ROWS, "2026 상반기 국가별 매출")
+    assert not res["unverified"], f"정상 수치를 미검증으로 잡았다: {res['unverified']}"
+
+
+@pytest.mark.parametrize("answer,bad", [
+    ("미국 1,153.6억이며 광고비는 412.7억입니다.", "412.7"),   # 조회에 없는 지표
+    ("미국이 전체의 88.8%를 차지합니다.", "88.8"),             # 틀린 비중
+    ("베트남은 88.3억입니다.", "88.3"),                       # 조회에 없는 행
+])
+def test_answer_check_flags_unexplainable_numbers(answer, bad):
+    from app.core.answer_check import verify
+    res = verify(answer, _ROWS, "2026 상반기 국가별 매출")
+    assert bad in res["unverified"], f"{bad} 를 못 잡았다: {res}"

@@ -1698,6 +1698,17 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             if not inserted:
                 answer = answer + f"\n\n#### 시각화\n{chart_markdown}"
 
+        # 답변 속 수치가 조회 결과에서 나온 것인지 확인한다. 보고서는 이 방어선을
+        # 갖고 있었지만 **채팅에는 없었다** — 가장 위험한 실패(그럴듯한데 틀린 숫자)가
+        # 가장 넓은 경로에서 무방비였다 (2026-08-13).
+        # ⛔ 지금은 답변을 손대지 않는다 — 채팅의 수치는 상당수가 파생값이라 발생률을
+        #    먼저 재고 다음 단계를 정한다. 기록은 WARNING 으로 남는다.
+        try:
+            from app.core.answer_check import log_verification
+            log_verification(answer, results, query, route="bigquery")
+        except Exception:
+            pass
+
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
         return {"answer": answer}
