@@ -1011,14 +1011,33 @@ class Ratio:
             s.findings.append(
                 f"전체 {_rate_text(overall)} "
                 f"({_fmt(tot_n, m.unit)} ÷ {_fmt(tot_d, m2.unit)})")
-        if rows:
+        # ⛔ **분자 0 을 "가장 낮은 곳"으로 부르지 마라.** 이 데이터에서 0 은
+        #    "정말 0" 과 "집계되지 않음" 이 섞여 있다 — 광고 전환매출은 Meta·Tiktok 이
+        #    전환을 추적하지 않으면 0 이고(매출이 없다는 뜻이 아니다), 원가는 UM·CBT 가
+        #    99% 미적재다. 0 을 꼴찌로 쓰면 **미집계가 최악 실적으로 둔갑한다** (2026-08-13).
+        live = [r for r in rows if r["ratio"] > 0]
+        zeros = [r for r in rows if r["ratio"] <= 0]
+        if live:
             s.findings.append(
-                f"가장 높은 곳 {rows[0]['dim']} {rows[0]['ratio_text']}"
-                + (f" · 가장 낮은 곳 {rows[-1]['dim']} {rows[-1]['ratio_text']}"
-                   if len(rows) > 1 else ""))
-            if tot_d and len(rows) > 2:
-                over = [r for r in rows if r["ratio"] > overall]
+                f"가장 높은 곳 {live[0]['dim']} {live[0]['ratio_text']}"
+                + (f" · 가장 낮은 곳 {live[-1]['dim']} {live[-1]['ratio_text']}"
+                   if len(live) > 1 else ""))
+            if tot_d and len(live) > 2:
+                over = [r for r in live if r["ratio"] > overall]
                 s.findings.append(f"전체 평균을 넘는 곳이 {len(over)}개")
+        if zeros:
+            s.findings.append(
+                f"{len(zeros)}곳({_names(zeros, 3)})은 {m.label}이 0이다 — 실제로 0인지 "
+                f"집계되지 않은 것인지 이 데이터로는 구분되지 않아 순위에서 뺐다")
+
+        # 서로 다른 테이블을 나눈 비율은 두 수의 출처가 다르다는 사실이 결론을 좌우한다
+        if m.table != m2.table:
+            s.note = (f"{m.label}과 {m2.label}은 서로 다른 테이블에서 왔다 — 집계 시점과 "
+                      f"기준이 달라 정확히 대응하지 않는다. 방향을 보는 용도로만 읽을 것.")
+        if "전환매출" in (p["metric"], p.get("metric2")):
+            s.note = ((s.note + " ") if s.note else "") + (
+                "광고 전환매출은 광고 플랫폼이 스스로 집계한 값이라 실매출(Sales1_R)과 "
+                "다르다. 플랫폼별 추적 방식이 달라 플랫폼끼리 견주는 것도 정확하지 않다.")
         return s
 
 
