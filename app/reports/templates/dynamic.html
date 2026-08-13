@@ -36,6 +36,7 @@
   .bar>i{display:block;height:100%;background:var(--accent)}
   .chart{display:block;width:100%;height:auto;margin:16px 0 10px}
   .chart .ax{font-size:13px;fill:var(--muted);font-family:inherit}
+  .chart .axt{font-size:14px;fill:var(--ink);font-family:inherit;font-weight:600}
   .find.vals{margin-top:10px}
   .find.vals li::before{background:var(--muted)}
   .find.vals .nm{font-weight:600}
@@ -115,30 +116,52 @@ function niceMax(v) {
   return (_NICE.find(n => f <= n + 1e-9) || 10) * e;
 }
 
-/* 기간 추세 차트.
+const AX_LINE = "#9aa3ad";     // 축선 — 눈금선(#eef1f5)보다 진해야 축으로 읽힌다
+const AX_GRID = "#eef1f5";
+
+function axisTitles(W, H, padL, padB, xTitle, yTitle) {
+  // ⛔ 눈금 숫자만 있고 **축 제목이 없으면 무슨 축인지 알 수 없다** (2026-08-13 지적).
+  //    "0.0억 / 100.0억" 만 떠 있으면 그게 매출인지 수량인지 읽는 사람이 모른다.
+  // ⚠️ y 제목은 **맨 왼쪽에 고정**한다. padL 기준으로 잡으면 눈금 숫자·범주 라벨과
+  //    겹친다 (라벨 길이는 데이터마다 달라서 여백을 계산으로 못 맞춘다).
+  const ym = 18, xm = padL + (W - padL) / 2;
+  return `<text x="${xm}" y="${H - 6}" text-anchor="middle" class="axt">${esc(xTitle)}</text>
+    <text x="${ym}" y="${(H - padB) / 2 + padB / 2}" text-anchor="middle" class="axt"
+      transform="rotate(-90 ${ym} ${(H - padB) / 2 + padB / 2})">${esc(yTitle)}</text>`;
+}
+
+/* 기간 추세 차트 — 세로 막대.
    ⛔ **바닥은 반드시 0이다.** 최솟값을 바닥에 붙이면 면적이 거짓말을 한다 —
       실제로 최저 6.6억(최고의 12%)이 0으로 보였다 (2026-08-13 사용자 지적).
-   그리고 축이 없으면 어느 봉우리가 언제인지 알 수 없어 차트가 표의 장식이 된다. */
-function trendChart(rows, unit) {
+   ⛔ **축선과 축 제목이 있어야 차트다.** 눈금만 떠 있으면 표의 장식이다. */
+function trendChart(rows, unit, yTitle, xTitle) {
   const vals = rows.map(r => Number(r.value) || 0);
   if (vals.length < 2) return '';
   const top = niceMax(Math.max(...vals, 0));
-  const W = 1000, H = 230, padL = 58, padR = 10, padT = 14, padB = 34;
+  const W = 1000, H = 268, padL = 96, padR = 14, padT = 16, padB = 66;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const y0 = padT + plotH;                       // 0 선
+  const y0 = padT + plotH;                       // 0 선 = x축
   const yOf = v => y0 - (v / top) * plotH;
   const slot = plotW / vals.length;
   const bw = Math.min(slot * 0.62, 46);
   const peak = vals.indexOf(Math.max(...vals));
 
-  // 눈금선 3개 (0 / 절반 / 최대) — 값을 왼쪽에 적는다
-  const grid = [0, 0.5, 1].map(f => {
+  const grid = [0.5, 1].map(f => {
     const y = yOf(top * f);
     return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"
-              stroke="${f === 0 ? '#c9ced6' : '#eef1f5'}" stroke-width="1"/>
-            <text x="${padL - 8}" y="${(y + 4).toFixed(1)}" text-anchor="end"
-              class="ax">${fmtMetric(top * f, unit)}</text>`;
+              stroke="${AX_GRID}" stroke-width="1"/>`;
   }).join('');
+  const ticks = [0, 0.5, 1].map(f => {
+    const y = yOf(top * f);
+    return `<text x="${padL - 10}" y="${(y + 4).toFixed(1)}" text-anchor="end"
+              class="ax">${fmtMetric(top * f, unit)}</text>
+            <line x1="${padL - 5}" y1="${y.toFixed(1)}" x2="${padL}" y2="${y.toFixed(1)}"
+              stroke="${AX_LINE}" stroke-width="1"/>`;
+  }).join('');
+  const axes = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${y0}"
+                  stroke="${AX_LINE}" stroke-width="1.5"/>
+                <line x1="${padL}" y1="${y0}" x2="${W - padR}" y2="${y0}"
+                  stroke="${AX_LINE}" stroke-width="1.5"/>`;
 
   // 눈금이 빽빽하면 건너뛰되 첫·끝·최고점은 항상 적는다
   const step = vals.length <= 12 ? 1 : Math.ceil(vals.length / 9);
@@ -156,7 +179,61 @@ function trendChart(rows, unit) {
               esc(fmtMetric(v, unit))}</title></rect>${lab}`;
   }).join('');
 
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${grid}${bars}</svg>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${grid}${bars}${axes}${ticks}${
+    axisTitles(W, H, padL, padB, xTitle, yTitle)}</svg>`;
+}
+
+/* 범주형 가로 막대 차트 — 구성·순위·성장·기여도 절용.
+   표 안 5px 슬라이버는 축이 없어 크기를 읽을 수 없다. 값 축을 가진 차트로 올린다. */
+function catChart(rows, key, fmt, unit, yTitle, xTitle, limit) {
+  const val = r => Number(r[key]) || 0;
+  // 그리는 값 기준으로 정렬해서 자른다. 표 순서(대개 매출순)대로 자르면 **가장 크게
+  // 줄어든 항목이 잘려 나간다** — 증감 차트에서 그건 핵심을 버리는 것이다
+  const use = rows.slice().sort((a, b) => val(b) - val(a)).slice(0, limit || 12);
+  const hasNeg = use.some(r => val(r) < 0);
+  const top = niceMax(Math.max(...use.map(r => Math.abs(val(r))), 0));
+  const W = 1000, rowH = 26, padL = 250, padR = 96, padT = 14, padB = 56;
+  const H = padT + use.length * rowH + padB;
+  const plotW = W - padL - padR;
+  const zero = hasNeg ? padL + plotW / 2 : padL;      // 음수가 있으면 0을 가운데로
+  const span = hasNeg ? plotW / 2 : plotW;
+  const y1 = padT + use.length * rowH;
+
+  const tickAt = hasNeg ? [-1, -0.5, 0, 0.5, 1] : [0, 0.5, 1];
+  const ticks = tickAt.map(f => {
+    const x = zero + f * span;
+    return `<line x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${y1}"
+              stroke="${f === 0 ? AX_LINE : AX_GRID}" stroke-width="${f === 0 ? 1.5 : 1}"/>
+            <text x="${x.toFixed(1)}" y="${y1 + 20}" text-anchor="middle" class="ax">${
+              fmt === 'pct' ? fmtPct(top * f) : fmtMetric(top * f, unit)}</text>`;
+  }).join('');
+
+  const bars = use.map((r, i) => {
+    const v = val(r), w = Math.abs(v) / top * span;
+    const y = padT + i * rowH + 4, h = rowH - 9;
+    const x = v < 0 ? zero - w : zero;
+    const neg = v < 0;
+    const label = String(r.dim == null ? '' : r.dim);
+    const short = label.length > 26 ? label.slice(0, 25) + '…' : label;
+    const txt = fmt === 'pct' ? fmtPct(v) : fmtMetric(v, unit);
+    return `<text x="${padL - 10}" y="${(y + h - 2).toFixed(1)}" text-anchor="end"
+              class="ax">${esc(short)}<title>${esc(label)}</title></text>
+            <rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(w, 1).toFixed(1)}"
+              height="${h}" rx="2" fill="${neg ? 'var(--down)' : 'var(--accent)'}"
+              opacity="${neg ? 0.75 : 0.85}"><title>${esc(label)} · ${esc(txt)}</title></rect>
+            <text x="${(v < 0 ? x - 6 : x + w + 6).toFixed(1)}" y="${(y + h - 2).toFixed(1)}"
+              text-anchor="${v < 0 ? 'end' : 'start'}" class="ax">${esc(txt)}</text>`;
+  }).join('');
+
+  const axis = `<line x1="${padL}" y1="${padT}" x2="${padL}" y2="${y1}"
+                  stroke="${AX_LINE}" stroke-width="1.5"/>
+                <line x1="${padL}" y1="${y1}" x2="${W - padR}" y2="${y1}"
+                  stroke="${AX_LINE}" stroke-width="1.5"/>`;
+  const more = rows.length > use.length
+    ? `<text x="${padL}" y="${H - 6}" class="ax">상위 ${use.length}개만 그렸습니다 (전체 ${rows.length}개는 아래 표)</text>`
+    : '';
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${ticks}${bars}${axis}${
+    axisTitles(W, H, padL, padB, xTitle, yTitle)}${more}</svg>`;
 }
 
 function bars(rows, key) {
@@ -199,10 +276,26 @@ function bars(rows, key) {
     }).join('') + `</ul>`;
   }
 
+  // 축 제목은 payload 의 컬럼 라벨에서 가져온다 — 차트와 표가 같은 말을 쓰게 된다
+  function axisOf(s) {
+    const key = s.chart_key || 'value';
+    const col = (s.columns || []).find(c => c.key === key) || {};
+    const dimCol = (s.columns || []).find(c => c.key === 'dim') || {};
+    const unit = col.fmt === 'metric2' ? (col.unit || s.unit) : s.unit;
+    const y = (col.label || '값') + (col.fmt === 'pct' ? ' (%)' : unit ? ` (${unit})` : '');
+    return { key, fmt: col.fmt, unit, yTitle: y, xTitle: dimCol.label || '항목' };
+  }
+
   document.getElementById('sections').innerHTML = P.sections.map(s => {
     const findHtml = `<ul class="find">${s.findings.map(f => `<li>${esc(f)}</li>`).join('')}</ul>`;
     const isTrend = (s.chart === 'line');
-    const chartHtml = isTrend ? trendChart(s.rows, s.unit) : '';
+    const ax = axisOf(s);
+    // 추세는 x가 기간이라 세로 막대, 범주형은 이름이 길어 가로 막대가 읽힌다
+    const chartHtml = isTrend
+      ? trendChart(s.rows, s.unit, ax.yTitle, ax.xTitle)
+      : (s.chart === 'bar' && s.rows.length > INLINE
+          ? catChart(s.rows, ax.key, ax.fmt, ax.unit, ax.xTitle, ax.yTitle, 12)
+          : '');
 
     // 행이 둘 이하면 표를 만들지 않는다. total 은 발견 문장이 이미 두 기간을 말하므로 그것도 생략.
     if (s.rows.length <= INLINE) {

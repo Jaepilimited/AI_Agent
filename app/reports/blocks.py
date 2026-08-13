@@ -183,8 +183,12 @@ class Compare:
             rows.append({"dim": k, "value": round(c, 1), "prev": round(q, 1),
                          "delta": round(c - q, 1), "growth": _pct(c - q, q) if q else None})
         rows = relabel_rows(rows, p["dim"])
+        # ⛔ 차트는 **증감**을 그린다. value 로 그리면 바로 앞 '구성' 절과 똑같은 그림이
+        #    두 번 나온다 — 이 절이 답하는 건 "얼마인가"가 아니라 "얼마나 움직였나"다
+        #    (2026-08-13 발견). 음수가 섞이면 0을 가운데 두고 좌우로 그린다.
         s = Section(block="compare", title=p.get("title") or f"{d.label}별 {m.label} 전년 대비",
                     metric=p["metric"], dim=p["dim"], unit=m.unit, rows=rows, chart="bar",
+                    chart_key="delta",
                     columns=[{"key": "dim", "label": d.label},
                              {"key": "prev", "label": ctx["compare_label"], "fmt": "metric"},
                              {"key": "value", "label": ctx["focus_label"], "fmt": "metric"},
