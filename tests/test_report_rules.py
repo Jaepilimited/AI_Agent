@@ -225,3 +225,40 @@ def test_both_direct_prompts_describe_the_report_feature():
     # 두 사본 모두 보고서 기능과 생성 조건을 담아야 한다
     for marker in ("@@보고서", "보고서 열기", "공유"):
         assert src.count(marker) >= 2, f"프롬프트 한쪽에만 있다: {marker}"
+
+
+# ── 라우팅 광역 회귀 (2026-08-13 스윕에서 나온 것들) ─────────────────────────
+# ⛔ **confident=True 인데 틀린 것**이 위험하다 — LLM 재판정도 못 타고 조용히 나간다.
+#    스윕에서 실제로 3건 나왔다: "roas가 뭐야?"→bigquery(뜻 질문에 SQL),
+#    "인플루언서 시딩 가이드라인"→bigquery('가이드라인'의 '라인'이 매치),
+#    "보고서 사용법"→cs. 아래는 그 교정과 반대 방향을 함께 고정한다.
+
+@pytest.mark.parametrize("question,expected", [
+    # 용어의 뜻 — SQL 을 만들 대상이 아니다
+    ("roas가 뭐야?", "direct"),
+    ("객단가가 무슨 뜻이야", "direct"),
+    ("메가와리가 뭐야?", "direct"),
+    # ⚠️ 반대 방향 — 값을 물으면 조회다
+    ("메가와리 매출 알려줘", "bigquery"),
+    ("지난달 roas 얼마야", "bigquery"),
+    # 문서를 달라는 말이 있으면 데이터 명사가 섞여도 문서다
+    ("인플루언서 시딩 가이드라인 알려줘", "notion"),
+    ("광고 소재 가이드라인 알려줘", "notion"),
+    ("온라인 판매 가이드라인", "notion"),
+    # ⚠️ 반대 방향 — 수량·금액을 물으면 조회다
+    ("인플루언서 시딩 비용 얼마 썼어", "bigquery"),
+    # 세 목록(_DATA_KEYWORDS·_SKIN1004_TERMS·_BIZ_CONTEXT)이 어긋나면 direct 로 떨어진다
+    ("FOC 무상출고 비용 얼마나 나갔어", "bigquery"),
+    ("할인 많이 준 채널 어디야", "bigquery"),
+    ("신제품 몇 개나 나왔어", "bigquery"),
+    ("일본 큐텐 메가와리 때 얼마나 팔렸어", "bigquery"),
+    # 프로모션 일정은 개인 캘린더가 아니라 프로모션 캘린더(BigQuery)다
+    ("8월 인도네시아 프로모션 일정 알려줘", "bigquery"),
+    ("내일 미팅 몇시야", "gws"),
+    ("안 읽은 메일 확인해줘", "gws"),
+])
+def test_routing_sweep(question, expected):
+    from app.agents.orchestrator import OrchestratorAgent
+    o = OrchestratorAgent.__new__(OrchestratorAgent)
+    route, confident = OrchestratorAgent._keyword_classify_ex(o, question)
+    assert (route, confident) == (expected, True)

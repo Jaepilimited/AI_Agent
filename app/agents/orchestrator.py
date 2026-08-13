@@ -1317,9 +1317,18 @@ class OrchestratorAgent:
         "쇼피", "아마존", "틱톡", "국가별", "월별",
         "대륙별", "플랫폼별", "연도별", "분기별",
         "몰별", "채널별", "브랜드별", "제품별", "카테고리별", "카테고리", "SKU",
-        "라인", "차트", "그래프", "그려", "시각화", "도표", "플롯", "그래프로", "차트로", "시각화해",
+        # ⛔ 예전엔 그냥 "라인" 이었다 — **"가이드라인" 안에서 매치돼** 문서 질문이
+        #    데이터로 갔다 (2026-08-13 실측: "인플루언서 시딩 가이드라인 알려줘" → bigquery).
+        #    보고서 필터의 '요인도 → 인도' 와 같은 부류다. 낱말 경계를 못 보는 단순 포함
+        #    검사에서는 **짧은 낱말을 그대로 두지 마라** ("온라인·오프라인·타임라인"도 걸린다)
+        "라인별", "제품 라인", "라인 매출",
+        "차트", "그래프", "그려", "시각화", "도표", "플롯", "그래프로", "차트로", "시각화해",
         "막대그래프", "원형그래프", "꺾은선", "파이차트", "바차트", "그려줘",
         "재고", "판매", "거래", "실적", "성과", "수출", "팔린", "팔리",
+        # ⚠️ 이 낱말들이 없어 "FOC 무상출고 비용 얼마나 나갔어" 가 direct 로 샜다 (2026-08-13)
+        "foc", "무상출고", "무상 출고", "바우처", "원가", "광고비", "roas", "객단가",
+        # 구어체로 물어도 데이터다 — 이것들이 없어 LLM 재판정으로 넘어가 왕복이 늘었다
+        "메가와리", "신제품", "할인", "팔렸", "잘나가", "잘 나가",
         "데이터", "조회", "집계", "합계", "평균",
         "분석", "추이", "증감", "성장률",
         "top", "순위", "랭킹",
@@ -1506,6 +1515,29 @@ class OrchestratorAgent:
     _FEATURE_WORD = ["기능", "사용법", "쓰는 법", "쓰는법", "만드는 법", "만드는 방법",
                      "어떻게 써", "어떻게 쓰", "뭘 할 수", "뭐 할 수", "무엇을 할 수"]
 
+    # ── 용어 뜻을 묻는 질문 ──────────────────────────────────────────────────
+    # ⛔ "roas가 뭐야?" 가 **확신을 갖고 bigquery** 로 갔다 (2026-08-13 실측).
+    #    'roas' 가 데이터 키워드라서다. 뜻을 묻는 질문에 SQL 을 만들면 답이 나올 수 없다.
+    #    가이드에도 "ROAS가 뭐야?" 는 일반 질문 예시로 적혀 있다.
+    _DEFINE_PAT = ["가 뭐", "이 뭐", "는 뭐", "은 뭐", "란 뭐", "이란 뭐",
+                   "무슨 뜻", "뜻이 뭐", "의미가 뭐", "뭔가요", "뭐예요", "뭐에요"]
+    # 조회 의도 — 이게 있으면 뜻이 아니라 값을 묻는 것이다
+    _QUERY_SCOPE = ["얼마", "몇 ", "개수", "합계", "순위", "top", "추이", "비중",
+                    "년", "월", "분기", "상반기", "하반기", "작년", "올해", "지난",
+                    "이번", "별 ", "별로", "보여줘", "조회"]
+
+    def _is_definition_question(self, q: str) -> bool:
+        """지표·용어의 **뜻**을 묻는가. 값을 묻는 것과 갈라야 한다.
+
+        "roas가 뭐야?" 는 설명, "지난달 roas 얼마야" 는 조회다. 기간·집계·수량 표현이
+        하나라도 있으면 조회로 본다 (뜻을 물으면서 기간을 적지는 않는다).
+        """
+        if not any(p in q for p in self._DEFINE_PAT):
+            return False
+        if any(s in q for s in self._QUERY_SCOPE):
+            return False
+        return len(q.strip()) <= 40 and not any(ch.isdigit() for ch in q)
+
     def _is_self_feature_question(self, q: str) -> bool:
         """우리 서비스 자신의 기능을 설명해 달라는 질문인가.
 
@@ -1592,6 +1624,10 @@ class OrchestratorAgent:
         if self._is_self_feature_question(q):
             return ("direct", True)
 
+        # 지표·용어의 **뜻**을 묻는 질문 → direct (SQL 을 만들 대상이 아니다)
+        if self._is_definition_question(q):
+            return ("direct", True)
+
         # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
         if any(kw in q for kw in self._FULLDATA_KEYWORDS):
             return ("bigquery", True)
@@ -1611,9 +1647,18 @@ class OrchestratorAgent:
         _DATA_OVERRIDE = ["매출", "비용", "합계", "월별", "조회수", "저장수", "좋아요수",
                           "협업건", "유가 협업", "무가 협업", "시딩", "인플루언서",
                           "광고비", "roas", "ctr", "cpv", "cpe", "전환", "클릭"]
+        # ⛔ 문서를 달라는 말이 있으면 데이터 명사가 섞여 있어도 문서다 (2026-08-13 실측:
+        #    "인플루언서 시딩 가이드라인 알려줘" 가 '시딩' 때문에 bigquery 로 갔다).
+        #    단 **수량·금액을 묻는 말이 있으면 조회**다 — "시딩 비용 얼마 썼어"는 그대로 데이터.
+        _DOC_WORD = ["가이드라인", "가이드", "매뉴얼", "메뉴얼", "양식", "템플릿",
+                     "절차", "정책", "규정", "프로세스", "작성법", "작성 방법"]
+        _QTY_INTENT = ["얼마", "몇 ", "합계", "비용", "매출", "수량", "순위", "top",
+                       "추이", "비중", "집계", "금액", "단가", "예산"]
         has_team = any(kw in q for kw in _TEAM_SPECIFIC)
         has_data = any(kw in q for kw in _DATA_OVERRIDE)
         if has_team and not has_data:
+            return ("notion", True)
+        if any(d in q for d in _DOC_WORD) and not any(t in q for t in _QTY_INTENT):
             return ("notion", True)
 
         # How-to / guide questions about platforms → Notion (not BigQuery)
@@ -1648,7 +1693,11 @@ class OrchestratorAgent:
         if any(kw in q for kw in self._GWS_KEYWORDS):
             _promo_ctx = (any(t in q for t in _PROMO_TERMS)
                           and not any(p in q for p in _PERSONAL_SCOPE))
-            if not any(p in q for p in _TOOL_IDENTITY_PATTERNS) and not _promo_ctx:
+            if _promo_ctx:
+                # 프로모션 캘린더는 BigQuery 다. 확신 없이 넘기면 LLM 왕복만 늘고
+                # 판정도 흔들린다 (2026-08-13: direct 로 떨어져 있었다)
+                return ("bigquery", True)
+            if not any(p in q for p in _TOOL_IDENTITY_PATTERNS):
                 return ("gws", True)
 
         # Web search guard: if search keywords match but NO SKIN1004 business context → direct
@@ -1669,6 +1718,10 @@ class OrchestratorAgent:
                 # 판매 표현 — "올해 가장 많이 팔린 제품 top5"가 '올해'(검색 키워드) 때문에
                 # direct 로 새던 구멍 (2026-08-06 골든셋 첫 런에서 발견)
                 "팔린", "팔리", "베스트셀러", "판매량", "인기 제품",
+                # ⚠️ 데이터 낱말은 **세 목록에 함께** 넣어야 한다 — _DATA_KEYWORDS 만
+                #    고치면 여기서 걸려 direct 로 떨어진다 (2026-08-13 실측)
+                "할인", "바우처", "foc", "무상출고", "무상 출고", "원가", "객단가",
+                "신제품", "팔렸", "잘나가", "잘 나가", "프로모션", "기획전",
             ]
             if not any(t in q for t in _SKIN1004_TERMS):
                 return ("direct", False)  # 가드 강등 — 확신 없음, LLM 재판정 대상
@@ -1746,6 +1799,10 @@ class OrchestratorAgent:
                 "데이터", "테이블", "컬럼", "있나요", "존재", "포함",
                 "revenue", "platform", "campaign", "google ads", "cost",
                 "impression", "conversion", "cpc", "cpv", "cpe",
+                # ⚠️ 데이터 낱말은 **세 목록에 함께** 넣어야 한다 — _DATA_KEYWORDS 만
+                #    고치면 여기서 걸려 direct 로 떨어진다 (2026-08-13 실측)
+                "할인", "바우처", "foc", "무상출고", "무상 출고", "원가", "객단가",
+                "신제품", "팔렸", "잘나가", "잘 나가", "프로모션", "기획전",
             ]
             if any(t in q for t in _BIZ_CONTEXT):
                 return ("bigquery", True)
