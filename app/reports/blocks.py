@@ -658,6 +658,112 @@ class Seasonality:
         return s
 
 
+@block("correlation", "상관",
+       "두 지표가 **같이 움직이는가** — 광고비↔매출, 할인율↔매출처럼. 월별 시계열로 "
+       "피어슨 상관을 계산하고, 한 달 시차(선행 효과)도 함께 본다. dim 이 필요 없다",
+       needs_dim=False)
+class Correlation:
+    """⛔ **상관계수는 반드시 계산해서 낸다.** LLM 이 쓰면 통계처럼 생긴 창작이 되고,
+    하필 사람들이 가장 잘 믿는 형태다 (2026-08-13).
+
+    ⚠️ 그리고 **상관은 인과가 아니다.** 광고비와 매출이 같이 오르는 것은 광고가
+    매출을 만든 것일 수도, 매출이 클 것 같아 광고를 더 쓴 것일 수도 있다.
+    발견 문장에 이 경고를 항상 붙인다 — 빼면 사람이 인과로 읽는다.
+    """
+
+    MIN_POINTS = 6          # 표본이 적으면 상관계수는 우연히 커진다
+
+    @staticmethod
+    def queries(p, ctx) -> Dict[str, Any]:
+        m2 = p.get("metric2")
+        if not m2 or m2 == p["metric"]:
+            return {}
+        f = p.get("filters", {})
+        q = lambda mk: Query(metric=mk, dim="월", filters=f,
+                             start=ctx["start"], end=ctx["end"], limit=60,
+                             having_positive=False)
+        return {"a": q(p["metric"]), "b": q(m2)}
+
+    @staticmethod
+    def _pearson(xs, ys):
+        n = len(xs)
+        if n < 2:
+            return None
+        mx, my = sum(xs) / n, sum(ys) / n
+        sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        sxx = sum((x - mx) ** 2 for x in xs)
+        syy = sum((y - my) ** 2 for y in ys)
+        if sxx <= 0 or syy <= 0:
+            return None
+        return sxy / ((sxx ** 0.5) * (syy ** 0.5))
+
+    @staticmethod
+    def _strength(r: float) -> str:
+        a = abs(r)
+        if a >= 0.8:
+            return "매우 강한"
+        if a >= 0.6:
+            return "강한"
+        if a >= 0.4:
+            return "뚜렷한"
+        if a >= 0.2:
+            return "약한"
+        return "거의 없는"
+
+    @staticmethod
+    def build(p, facts, ctx) -> Section:
+        m, m2 = METRICS[p["metric"]], METRICS[p["metric2"]]
+        A = {r["dim"]: float(r.get("value") or 0) for r in (facts.get("a") or [])}
+        B = {r["dim"]: float(r.get("value") or 0) for r in (facts.get("b") or [])}
+        months = sorted(set(A) & set(B))
+
+        rows = [{"dim": ym, "value": round(A[ym], m.nd), "base": round(B[ym], m2.nd)}
+                for ym in months]
+        s = Section(block="correlation",
+                    title=p.get("title") or f"{m.label}와 {m2.label}의 상관",
+                    metric=p["metric"], dim="월", unit=m.unit, rows=rows, chart="none",
+                    columns=[{"key": "dim", "label": "월"},
+                             {"key": "value", "label": m.label, "fmt": "metric"},
+                             {"key": "base", "label": m2.label, "fmt": "metric2",
+                              "unit": m2.unit}])
+
+        if len(months) < Correlation.MIN_POINTS:
+            s.findings.append(
+                f"짝지을 수 있는 달이 {len(months)}개뿐이라 상관을 내지 않았다 "
+                f"(최소 {Correlation.MIN_POINTS}개 필요) — 표본이 적으면 계수가 우연히 커진다")
+            return s
+
+        xs = [A[ym] for ym in months]
+        ys = [B[ym] for ym in months]
+        r0 = Correlation._pearson(xs, ys)
+        if r0 is None:
+            s.findings.append("한쪽 값이 전 구간 같아 상관을 낼 수 없다")
+            return s
+
+        s.findings.append(
+            f"{_josa(m.label, '이가')[:-1]}{'와' if _josa(m.label, '이가').endswith('가') else '과'}"
+            f" {_josa(m2.label, '은는')} {Correlation._strength(r0)} "
+            f"{'양' if r0 >= 0 else '음'}의 상관 (r={r0:+.2f}, {len(months)}개월)")
+
+        # 한 달 시차 — 이번 달 B 가 다음 달 A 에 붙는가 (광고의 선행 효과)
+        if len(months) >= Correlation.MIN_POINTS + 1:
+            r1 = Correlation._pearson([A[ym] for ym in months[1:]],
+                                      [B[ym] for ym in months[:-1]])
+            if r1 is not None:
+                better = "더 강하다" if abs(r1) > abs(r0) else "더 약하다"
+                s.findings.append(
+                    f"한 달 시차(전월 {m2.label} → 당월 {m.label})는 r={r1:+.2f} — "
+                    f"동월 상관보다 {better}")
+
+        # ⛔ 이 문장을 빼지 마라. 상관을 인과로 읽는 것이 이 절의 유일한 위험이다
+        s.findings.append(
+            "상관은 인과가 아니다 — 함께 움직였다는 사실만 말한다. "
+            "어느 쪽이 원인인지, 제3의 요인이 둘을 함께 움직였는지는 이 수치로 알 수 없다")
+        s.note = ("상관계수는 월별 합계로 계산했다. 기간이 짧거나 한 달이 특이하면 "
+                  "값이 크게 흔들린다.")
+        return s
+
+
 @block("versus", "대상 vs 나머지",
        "질문이 좁힌 대상(일본·우마·중국사업팀 등)을 **나머지와 나란히** 놓고 성장 속도를 "
        "견준다. '왜 이렇게 컸나'·'다른 곳과 뭐가 달랐나'를 물을 때. dim 이 필요 없다",

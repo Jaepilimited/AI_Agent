@@ -66,6 +66,32 @@ def _quality_notes(ctx: Dict[str, Any]) -> List[Dict[str, str]]:
     return notes
 
 
+# 질문이 요구하는 주제 → 그걸 답하려면 반드시 있어야 하는 지표.
+# ⛔ **어휘에 없으면 플래너는 가장 비슷한 지표로 바꿔 계획을 세운다.** 실제로 광고비·ROAS 를
+#    물었는데 할인액·할인율 보고서가 나왔고, 버려진 계획도 0건이라 아무도 몰랐다
+#    (2026-08-13 실측). 에러보다 나쁘다 — **질문에 답하지 않았다는 사실을 본문에 적는다.**
+_TOPIC_NEEDS: List[tuple] = [
+    (r"광고|ad\b|roas|cpc|cpm|ctr|acos|매체|캠페인", {"광고비", "노출", "클릭", "전환", "전환매출"}),
+    (r"재고|입고|출고량|stock", set()),
+    (r"리뷰|평점|별점|후기", set()),
+    (r"인플루언서|인플|시딩", set()),
+]
+
+
+def _uncovered(question: str, sections: List[Dict[str, Any]]) -> List[str]:
+    """질문이 요구했는데 **보고서가 다루지 못한** 주제."""
+    import re as _re
+    used = {s.get("metric") for s in sections}
+    out = []
+    for pat, needed in _TOPIC_NEEDS:
+        if not _re.search(pat, question, _re.I):
+            continue
+        if needed and (used & needed):
+            continue          # 요구한 주제를 실제로 다뤘다
+        out.append(pat.split("|")[0])
+    return out
+
+
 def _headline(sections: List[Dict[str, Any]], ctx: Dict[str, Any],
               quality: List[Dict[str, str]]) -> List[str]:
     """맨 앞에 놓을 **사실 요약** 두세 줄.
@@ -182,6 +208,18 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
     # 맨 앞 절 하나로 합친다. **요약과 해석을 따로 두면 같은 숫자를 두 번 말한다**
     # (2026-08-13 사용자 지적) — 사실은 규칙이, 해석·액션은 LLM 이 쓰되 한 자리에 놓는다
     notes = _quality_notes(ctx)
+
+    # 질문에 답하지 못한 것이 있으면 **가장 먼저** 밝힌다. 비슷한 지표로 바꿔치기한 채
+    # 그럴듯한 문서를 내놓는 것이 이 파이프라인에서 가장 나쁜 실패다
+    miss = _uncovered(question, sections)
+    if miss:
+        logger.warning("report_uncovered_topic", topics=miss, question=question[:100])
+        notes.insert(0, {
+            "label": "질문에 답하지 못한 부분",
+            "text": f"질문의 '{', '.join(miss)}' 관련 요구는 이 보고서가 다루지 못했다. "
+                    f"해당 데이터가 보고서 어휘에 없어 비슷한 지표로 대체하지 않고 비워 뒀다. "
+                    f"채팅에서 직접 물으면 조회할 수 있다."})
+
     head = _headline(sections, ctx, notes)
 
     lead: Dict[str, Any] = {}

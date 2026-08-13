@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List, Optional
 SALES = "`skin1004-319714.Sales_Integration.SALES_ALL_Backup`"
 PRODUCT = "`skin1004-319714.Sales_Integration.Product`"
 PROMO = "`skin1004-319714.promotion_calendar.promotion`"
+AD = "`skin1004-319714.marketing_analysis.integrated_ad`"
 
 
 @dataclass
@@ -78,18 +79,37 @@ METRICS: Dict[str, Metric] = {
                   unit="건", scale=1, nd=0, base_unit="건"),
     "거래처수": Metric("거래처수", "거래처 수", SALES, "COUNT(DISTINCT ID)",
                    unit="곳", scale=1, nd=0, base_unit="곳"),
+    # ── 마케팅 (integrated_ad) ──────────────────────────────────────────────
+    # ⛔ 이 테이블에는 **채널·브랜드·제품이 없다.** 섞을 수 있는 축은 월·분기·국가·팀·매체뿐.
+    #    "채널별 ROAS" 는 데이터에 없는 질문이다 — 만들어내지 말 것
+    "광고비": Metric("광고비", "광고비", AD, "SUM(cost_krw)",
+                  desc="원화 광고 집행비. 국가·팀·매체 단위"),
+    "노출": Metric("노출", "노출수", AD, "SUM(impressions)", unit="회", scale=1, nd=0,
+                 base_unit="회"),
+    "클릭": Metric("클릭", "클릭수", AD, "SUM(clicks)", unit="회", scale=1, nd=0,
+                 base_unit="회"),
+    "전환": Metric("전환", "전환수", AD, "SUM(conversions)", unit="건", scale=1, nd=0,
+                 base_unit="건"),
+    "전환매출": Metric("전환매출", "광고 전환매출", AD, "SUM(conversion_value_krw)",
+                   desc="광고 플랫폼이 집계한 전환매출. 실매출(Sales1_R)과 다른 수치다"),
 }
 
 DIMENSIONS: Dict[str, Dimension] = {
-    "월": Dimension("월", "월", "FORMAT_DATE('%Y-%m', Date)"),
+    "월": Dimension("월", "월", "FORMAT_DATE('%Y-%m', Date)",
+                  tables=[SALES, PRODUCT, AD]),
     "분기": Dimension("분기", "분기",
                     "CONCAT(CAST(EXTRACT(YEAR FROM Date) AS STRING), '-Q', "
-                    "CAST(EXTRACT(QUARTER FROM Date) AS STRING))"),
-    "국가": Dimension("국가", "국가", "Country", desc="한국어 국가명"),
+                    "CAST(EXTRACT(QUARTER FROM Date) AS STRING))",
+                    tables=[SALES, PRODUCT, AD]),
+    # 광고 테이블도 **한국어 국가명**을 쓴다 (2026-08-13 실측: 148개 일치) —
+    # 컬럼명만 다르므로 표기 교정 없이 축만 맞추면 매출과 나란히 놓을 수 있다
+    "국가": Dimension("국가", "국가", "Country", desc="한국어 국가명",
+                    tables=[SALES, PRODUCT, AD], expr_by_table={AD: "country"}),
     "대륙": Dimension("대륙", "대륙", "Continent1",
                     desc="광역 대륙은 반드시 Continent1 (Continent2 에는 '유럽'이 없다)"),
     "권역": Dimension("권역", "세부 권역", "Continent2", desc="동남아시아·서유럽 등"),
-    "팀": Dimension("팀", "팀", "Team_NEW", relabel="team", exclude=["기타", "OP"]),
+    "팀": Dimension("팀", "팀", "Team_NEW", relabel="team", exclude=["기타", "OP"],
+                   tables=[SALES, PRODUCT, AD], expr_by_table={AD: "team"}),
     "채널": Dimension("채널", "판매 채널", "Mall_Classification"),
     "브랜드": Dimension("브랜드", "브랜드", "Brand",
                      desc="CBT 는 스킨천사(SK)에 합산해야 한다"),
@@ -102,10 +122,15 @@ DIMENSIONS: Dict[str, Dimension] = {
                     expr_by_table={PRODUCT: "Product"}),
     "영업유형": Dimension("영업유형", "영업 유형", "Sales_Type"),
     "신규여부": Dimension("신규여부", "신규/기존 거래처", "New_Flag", tables=[SALES]),
+    # 광고 전용 축 — 매출 테이블에는 없다
+    "매체": Dimension("매체", "광고 매체", "media", tables=[AD],
+                    desc="Meta·Google·TikTok 등 광고 매체 (광고 지표에만 쓸 수 있다)"),
+    "캠페인유형": Dimension("캠페인유형", "캠페인 유형", "campaign_type", tables=[AD]),
 }
 
 # 필터로 쓸 수 있는 축 — 값은 리터럴 교정을 거친다
-FILTERABLE = ["국가", "대륙", "권역", "팀", "채널", "브랜드", "라인", "카테고리", "영업유형"]
+FILTERABLE = ["국가", "대륙", "권역", "팀", "채널", "브랜드", "라인", "카테고리",
+              "영업유형", "매체"]
 
 
 @dataclass

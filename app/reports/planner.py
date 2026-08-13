@@ -52,6 +52,9 @@ PROMPT = """당신은 데이터 분석 보고서의 **목차를 설계**합니�
   할인÷매출(할인율), 유상원가÷매출(원가율), FOC원가÷매출(FOC율), 매출÷주문수(객단가)
 - 질문이 "왜 늘었나/줄었나"를 물으면 contribution 을, "어디에 몰려 있나"를 물으면
   concentration 을, "뭐가 갑자기 변했나"를 물으면 movers 를 넣으세요.
+- 질문이 **상관·영향·효과**("광고비를 늘리면 매출이 오르나", "할인이 매출에 영향을 주나")
+  를 물으면 correlation 절을 넣으세요. metric 과 metric2 를 지정합니다 (dim 불필요).
+  쓸 만한 조합: 매출↔광고비, 매출↔할인, 매출↔클릭, 전환↔광고비
 - 질문이 **"왜 이렇게 컸나/줄었나"·"다른 곳과 뭐가 달랐나"·"어디가 특별한가"** 를 물으면
   versus 절을 **앞쪽에** 넣으세요. 질문이 좁힌 대상(일본·우마·중국사업팀 등)을 나머지와
   나란히 놓고 성장 속도를 견줍니다. dim 이 필요 없습니다.
@@ -158,15 +161,28 @@ def _clean_section(s: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
             return None
         out["dim2"] = d2
 
+    # correlation 도 metric2 를 쓴다 (테이블이 달라도 월 축으로 맞춘다)
+    if blk == "correlation":
+        m2 = s.get("metric2")
+        if m2 not in S.METRICS or m2 == metric:
+            problems.append(f"correlation 에 쓸 수 없는 metric2 '{m2}'")
+            return None
+        out["metric2"] = m2
+
     if blk == "ratio":
         m2 = s.get("metric2")
         if m2 not in S.METRICS or m2 == metric:
             problems.append(f"ratio 에 쓸 수 없는 metric2 '{m2}'")
             return None
-        # 분자·분모가 다른 테이블이면 행을 맞출 수 없다 (매출은 SALES, 수량은 Product)
+        # 테이블이 달라도 **축이 양쪽에 다 있으면** 계산할 수 있다. ratio 는 SQL 조인이
+        # 아니라 두 조회를 축 키로 맞춰 나누기 때문이다 — 매출÷광고비(ROAS)가 이렇게 된다.
+        # ⛔ 축이 한쪽에만 있으면 키가 안 맞아 조용히 0건이 나온다. 그건 막는다
         if S.METRICS[m2].table != S.METRICS[metric].table:
-            problems.append(f"'{metric}'÷'{m2}' 는 테이블이 달라 계산할 수 없다")
-            return None
+            d = out.get("dim")
+            if not d or S.METRICS[m2].table not in S.DIMENSIONS[d].tables:
+                problems.append(
+                    f"'{metric}'÷'{m2}' 는 테이블이 다르고 '{d}' 축이 양쪽에 없어 못 맞춘다")
+                return None
         out["metric2"] = m2
 
     filters = {}
