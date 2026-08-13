@@ -332,7 +332,7 @@ class OrchestratorAgent:
     _DB_REGISTRY = [
         # ── BigQuery 매출 ──
         # ── 보고서 (산출물 — 테이블이 아니다) ──
-        {"key": "보고서", "aliases": ["리포트", "report", "reports"], "route": "report", "group": "보고서", "icon": "doc", "label": "보고서", "desc": "질문에 맞춰 절을 조합한 분석 보고서 (본인만 열람)"},
+        {"key": "보고서", "aliases": ["리포트", "report", "reports"], "route": "report", "group": "보고서", "icon": "doc", "label": "보고서", "desc": "질문에 맞춰 절을 조합한 분석 보고서 (본인 + 지목해 공유한 사람만 열람)"},
         {"key": "매출", "aliases": ["sales", "매출데이터", "세일즈"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "매출", "desc": "통합 매출 — 글로벌 전 플랫폼"},
         {"key": "제품", "aliases": ["product", "제품데이터"], "route": "bigquery", "group": "매출 데이터", "icon": "box", "label": "제품", "desc": "제품별 판매 수량"},
         {"key": "손익", "aliases": ["pl", "손익계산서", "영업이익", "판관비", "재무손익"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "손익", "desc": "재무 손익 — 영업이익/원가/판관비 (월 단위)"},
@@ -2008,7 +2008,8 @@ class OrchestratorAgent:
 
         해당 없으면 None — 평소 라우팅으로 흘러간다.
 
-        보고서는 **본인만 열람**하므로 소유자를 확정할 수 있어야 한다. 이메일로
+        보고서는 **본인과 본인이 지목해 공유한 사람만** 열람하므로 소유자를 확정할 수
+        있어야 한다 (공유를 걸 수 있는 사람도 소유자뿐이다). 이메일로
         `users.id` 를 서버에서 조회한다 (JWT·프론트 값을 믿지 않는 기존 원칙과 같다).
         신원을 못 잡으면 만들지 않는다 — 주인 없는 보고서를 남기지 않기 위해서다.
         """

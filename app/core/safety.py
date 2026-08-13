@@ -386,7 +386,8 @@ def get_safety_status() -> dict:
         from app.reports import blocks as _rb
         services["보고서"] = {
             "status": "ok",
-            "detail": f"블록 {len(_rb.BLOCKS)}종 · @@보고서 또는 '보고서' 명시 시 생성",
+            "detail": (f"블록 {len(_rb.BLOCKS)}종 · @@보고서 또는 '보고서' 명시 시 생성 · "
+                       "열람은 본인 + 지목해 공유한 사람"),
         }
     except Exception as e:
         services["보고서"] = {"status": "error", "detail": str(e)[:30]}

@@ -1,12 +1,20 @@
 # -*- coding: utf-8 -*-
 """보고서 저장·열람 권한.
 
-**본인이 만든 보고서만 열람한다** (admin 제외 — 2026-08-12 사용자 결정).
+**만든 사람과, 만든 사람이 지목한 사람만 연다** (admin 도 예외가 아니다 — 2026-08-12 결정).
 보고서에는 원가·마진·거래처별 FOC율이 들어가므로 매출 질문과 같은 수준으로 열지 않는다.
+
+공유는 **사람을 지목하는 방식**이다 (2026-08-13 추가). 링크를 아는 사람이 모두 열 수 있는
+방식은 만들지 않았다 — 잔디·메일로 링크가 한 번 새면 회수할 수단이 없고, 이 문서에 든 것이
+원가와 거래처별 마진이기 때문이다. 대신 **URL 은 그대로 붙여도 된다**: 지목된 사람만 열리고
+나머지는 404 를 본다. 누구에게 공유했는지는 언제든 보고 되돌릴 수 있다.
 
 권한 판정 원칙은 FI 와 같다:
     - **반드시 서버에서 DB 조회로** 판정한다. JWT·프론트 값은 stale 위험이 있어 믿지 않는다
-    - 소유자 비교는 `reports.user_id` 하나로 끝난다 — 조건을 늘리면 우회 경로가 늘어난다
+    - 판정은 `get_for_user()` **한 곳**이다. 소유자냐 공유받았느냐를 여기서 한 번에 본다 —
+      호출부에 조건을 흩으면 한 곳만 고치고 뚫린다
+    - 공유를 **거는 쪽**(`share_add`)도 소유자 확인을 SQL 안에서 한다. 파이썬에서 먼저
+      확인하고 나중에 INSERT 하면 그 사이가 비고, 확인을 빠뜨린 호출부가 생긴다
 
 HTML 본문은 파일로 두고 DB 에는 경로만 둔다 (수십 KB 를 DB 에 넣지 않기 위해).
 파일이 사라져도 payload 로 다시 렌더할 수 있게 payload 는 DB 에 넣는다.
@@ -50,9 +58,23 @@ CREATE TABLE IF NOT EXISTS reports (
 """
 
 
+_SHARE_DDL = """
+CREATE TABLE IF NOT EXISTS report_shares (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    report_id   INT NOT NULL,
+    user_id     INT NOT NULL,
+    shared_by   INT NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_report_user (report_id, user_id),
+    INDEX idx_user (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
 def ensure_report_tables() -> None:
     try:
         execute(_DDL)
+        execute(_SHARE_DDL)
         os.makedirs(REPORT_DIR, exist_ok=True)
     except Exception as e:  # 기동을 막지 않는다
         logger.debug("report_ddl_skip", error=str(e)[:120])
@@ -141,21 +163,114 @@ def save(*, user_id: int, spec_id: str, title: str, params: Dict[str, Any],
     return rid
 
 
+# 이름은 AD 한글 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
+_NAME = "COALESCE(a.display_name, u.display_name, u.email)"
+
+
 def get_for_user(report_id: int, user_id: int) -> Optional[Dict[str, Any]]:
-    """소유자 본인에게만 돌려준다. 없거나 남의 것이면 None — 둘을 구분해 알려주지 않는다."""
-    return fetch_one(
-        "SELECT id, user_id, spec, title, params_json, payload_json, html_path, "
-        "question, gates_failed, created_at "
-        "FROM reports WHERE id = %s AND user_id = %s",
-        (report_id, user_id),
+    """이 사용자가 열 수 있는 보고서. 아니면 None.
+
+    **열람 판정은 여기 한 곳이다** — 소유자이거나, 소유자가 지목해 공유한 사람이거나.
+    없는 것과 권한 없는 것을 구분해 알려주지 않는다 (존재 여부도 정보다).
+    """
+    row = fetch_one(
+        f"SELECT r.id, r.user_id, r.spec, r.title, r.params_json, r.payload_json, "
+        f"r.html_path, r.question, r.gates_failed, r.created_at, "
+        f"{_NAME} AS owner_name "
+        "FROM reports r "
+        "JOIN users u ON u.id = r.user_id "
+        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
+        "WHERE r.id = %s AND (r.user_id = %s OR s.id IS NOT NULL)",
+        (user_id, report_id, user_id),
     )
+    if row:
+        row["is_owner"] = int(row.get("user_id") or 0) == int(user_id)
+    return row
 
 
 def list_for_user(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
+    """내가 만든 것 + 나에게 공유된 것. 어느 쪽인지 `is_owner` 로 구분한다."""
     return fetch_all(
-        "SELECT id, spec, title, question, gates_failed, elapsed_sec, created_at "
-        "FROM reports WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
-        (user_id, limit),
+        f"SELECT r.id, r.spec, r.title, r.question, r.gates_failed, r.elapsed_sec, "
+        f"r.created_at, (r.user_id = %s) AS is_owner, {_NAME} AS owner_name, "
+        "(SELECT COUNT(*) FROM report_shares x WHERE x.report_id = r.id) AS share_count "
+        "FROM reports r "
+        "JOIN users u ON u.id = r.user_id "
+        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
+        "WHERE r.user_id = %s OR s.id IS NOT NULL "
+        "ORDER BY r.created_at DESC LIMIT %s",
+        (user_id, user_id, user_id, limit),
+    )
+
+
+# ── 공유 ─────────────────────────────────────────────────────────────────────
+
+def share_list(report_id: int, owner_id: int) -> List[Dict[str, Any]]:
+    """누구에게 공유돼 있나. **소유자에게만** 보여준다."""
+    return fetch_all(
+        f"SELECT s.user_id, {_NAME} AS name, COALESCE(a.email, u.email) AS email, "
+        "COALESCE(a.department, '') AS department, s.created_at "
+        "FROM report_shares s "
+        "JOIN reports r ON r.id = s.report_id AND r.user_id = %s "
+        "JOIN users u ON u.id = s.user_id "
+        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "WHERE s.report_id = %s ORDER BY s.created_at",
+        (owner_id, report_id),
+    )
+
+
+def share_add(report_id: int, owner_id: int, target_id: int) -> bool:
+    """공유를 건다. 소유자가 아니면 아무 일도 일어나지 않는다.
+
+    ⚠️ 소유자 확인을 `SELECT ... WHERE r.user_id = owner` 로 **INSERT 안에서** 한다.
+       파이썬에서 미리 확인하는 방식이면 확인을 빠뜨린 호출부가 언젠가 생긴다.
+    """
+    if int(target_id) == int(owner_id):
+        return False        # 자기 자신에게 거는 공유는 의미가 없다
+    ensure_report_tables()
+    n = execute(
+        "INSERT IGNORE INTO report_shares (report_id, user_id, shared_by) "
+        "SELECT r.id, u.id, r.user_id FROM reports r JOIN users u ON u.id = %s "
+        "WHERE r.id = %s AND r.user_id = %s",
+        (target_id, report_id, owner_id),
+    )
+    ok = bool(n)
+    logger.info("report_share_add", report_id=report_id, owner_id=owner_id,
+                target_id=target_id, created=ok)
+    return ok
+
+
+def share_remove(report_id: int, owner_id: int, target_id: int) -> bool:
+    n = execute(
+        "DELETE s FROM report_shares s JOIN reports r ON r.id = s.report_id "
+        "WHERE s.report_id = %s AND s.user_id = %s AND r.user_id = %s",
+        (report_id, target_id, owner_id),
+    )
+    logger.info("report_share_remove", report_id=report_id, owner_id=owner_id,
+                target_id=target_id, removed=bool(n))
+    return bool(n)
+
+
+def search_share_targets(q: str, me_id: int, limit: int = 8) -> List[Dict[str, Any]]:
+    """공유할 사람 찾기. **가입한 사용자만** 나온다 — 로그인해야 열 수 있기 때문이다.
+
+    미가입자에게 미리 권한을 걸어두는 FI 방식([[ad_users]])과 다른 이유: 공유는 지금
+    보여주려고 누르는 동작이라, 열 수 없는 사람을 목록에 올리면 공유한 줄 알게 된다.
+    """
+    term = (q or "").strip()
+    if len(term) < 2:       # 한 글자면 전 직원 명부를 훑는 것과 다름없다
+        return []
+    like = f"%{term}%"
+    return fetch_all(
+        f"SELECT u.id, {_NAME} AS name, COALESCE(a.email, u.email) AS email, "
+        "COALESCE(a.department, '') AS department "
+        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "WHERE u.id <> %s AND (a.display_name LIKE %s OR u.display_name LIKE %s "
+        "  OR u.email LIKE %s OR a.email LIKE %s OR a.department LIKE %s) "
+        f"ORDER BY {_NAME} LIMIT %s",
+        (me_id, like, like, like, like, like, limit),
     )
 
 
@@ -193,5 +308,8 @@ def purge_older_than(days: int = 90) -> int:
             except OSError:
                 pass
     if rows:
+        # 공유 행을 먼저 지운다 — 남으면 나중에 같은 id 가 재사용될 때 남의 것이 열린다
+        execute("DELETE s FROM report_shares s LEFT JOIN reports r ON r.id = s.report_id "
+                "WHERE r.id IS NULL OR r.created_at < DATE_SUB(NOW(), INTERVAL %s DAY)", (days,))
         execute("DELETE FROM reports WHERE created_at < DATE_SUB(NOW(), INTERVAL %s DAY)", (days,))
     return len(rows)
