@@ -2,352 +2,1179 @@
   "_doc": "골든셋 — 답변 품질 회귀 기준. freq: daily(매일 05:30)|weekly(일요일 전체). expect: contains_all/contains_any/not_contains(답변 본문), sql_contains_any(답변에 포함된 SQL 블록), min_len, max_seconds. auth:'user'는 비관리자 토큰(권한 차단 검증용). 문항 수정 시 주의: 시점에 따라 변하는 숫자를 기대값으로 고정하지 말 것.",
   "items": [
     {
-      "id": "inc_first_trade_routing", "category": "incident", "freq": "daily",
+      "id": "inc_first_trade_routing",
+      "category": "incident",
+      "freq": "daily",
       "question": "아래 국가들 첫 거래일자 확인이 필요하여 확인 부탁드립니다:\n-인도네시아\n-베트남\n-멕시코\n-에콰도르\n-칠레",
-      "expect": {"contains_all": ["인도네시아", "2019"], "contains_any": ["2022", "2021"], "not_contains": ["잠시만 기다려", "조회를 진행하겠"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "contains_all": [
+          "인도네시아",
+          "2019"
+        ],
+        "contains_any": [
+          "2022",
+          "2021"
+        ],
+        "not_contains": [
+          "잠시만 기다려",
+          "조회를 진행하겠"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "2026-08-06 사고: direct 오분류로 '조회하겠습니다' 빈 약속"
     },
     {
-      "id": "inc_clarify_followup_b2b", "category": "incident", "freq": "daily",
+      "id": "inc_clarify_followup_b2b",
+      "category": "incident",
+      "freq": "daily",
       "history": [
-        {"role": "user", "content": "인도네시아, 베트남, 멕시코, 에콰도르, 칠레 첫 거래일자 확인 부탁드립니다"},
-        {"role": "assistant", "content": "국가별 첫 거래일자를 확인하려면 채널 기준이 필요합니다. B2B/B2C 중 어느 기준인지 알려주시면 조회하겠습니다."}
+        {
+          "role": "user",
+          "content": "인도네시아, 베트남, 멕시코, 에콰도르, 칠레 첫 거래일자 확인 부탁드립니다"
+        },
+        {
+          "role": "assistant",
+          "content": "국가별 첫 거래일자를 확인하려면 채널 기준이 필요합니다. B2B/B2C 중 어느 기준인지 알려주시면 조회하겠습니다."
+        }
       ],
       "question": "B2B",
-      "expect": {"contains_all": ["인도네시아"], "contains_any": ["2019"], "not_contains": ["Costco"], "min_len": 100, "max_seconds": 150},
+      "expect": {
+        "contains_all": [
+          "인도네시아"
+        ],
+        "contains_any": [
+          "2019"
+        ],
+        "not_contains": [
+          "Costco"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      },
       "note": "2026-08-06 사고: 되물음 답변이 직전 질문과 결합되지 않고 일반 B2B 현황 조회로 샘"
     },
     {
-      "id": "inc_europe_continent1", "category": "incident", "freq": "daily",
+      "id": "inc_europe_continent1",
+      "category": "incident",
+      "freq": "daily",
       "question": "2026년 상반기 유럽 매출 알려줘",
-      "expect": {"contains_any": ["억", "백만"], "not_contains": ["조회된 데이터가 없", "결과가 없습니다"], "sql_contains_any": ["Continent1"], "min_len": 100, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "억",
+          "백만"
+        ],
+        "not_contains": [
+          "조회된 데이터가 없",
+          "결과가 없습니다"
+        ],
+        "sql_contains_any": [
+          "Continent1"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      },
       "note": "2026-08-04 사고: Continent2에 '유럽'이 없어 0건"
     },
     {
-      "id": "inc_brand_definition", "category": "incident", "freq": "daily",
+      "id": "inc_brand_definition",
+      "category": "incident",
+      "freq": "daily",
       "question": "올해 브랜드별 매출 비중 알려줘",
-      "expect": {"contains_all": ["스킨천사"], "contains_any": ["우마", "UM"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "contains_all": [
+          "스킨천사"
+        ],
+        "contains_any": [
+          "우마",
+          "UM"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "2026-08-05 확정: 브랜드 4종, CBT는 스킨천사 합산, 팀을 브랜드로 내지 말 것"
     },
     {
-      "id": "inc_doc_routing_hr", "category": "incident", "freq": "daily",
+      "id": "inc_doc_routing_hr",
+      "category": "incident",
+      "freq": "daily",
       "question": "휴가 신청 절차 알려줘",
-      "expect": {"not_contains": ["SELECT", "조회된 데이터가 없"], "min_len": 60, "max_seconds": 90},
+      "expect": {
+        "not_contains": [
+          "SELECT",
+          "조회된 데이터가 없"
+        ],
+        "min_len": 60,
+        "max_seconds": 90
+      },
       "note": "2026-08-05 사고: 업무 문서 질문이 bigquery로 새던 라우팅"
     },
     {
-      "id": "inc_ingredient_contains", "category": "incident", "freq": "daily",
+      "id": "inc_ingredient_contains",
+      "category": "incident",
+      "freq": "daily",
       "question": "나이아신아마이드 들어간 제품 뭐 있어?",
-      "expect": {"contains_any": ["나이아신"], "not_contains": ["LIKE '%RETINOL%'"], "min_len": 100, "max_seconds": 120},
+      "expect": {
+        "contains_any": [
+          "나이아신"
+        ],
+        "not_contains": [
+          "LIKE '%RETINOL%'"
+        ],
+        "min_len": 100,
+        "max_seconds": 120
+      },
       "note": "2026-08-06 구축: 전성분 데이터 기반 — 제품명 문자열 추측 금지"
     },
     {
-      "id": "inc_typo_hyalu", "category": "incident", "freq": "daily",
+      "id": "inc_typo_hyalu",
+      "category": "incident",
+      "freq": "daily",
       "question": "힝라우선세럼 올해 매출 알려줘",
-      "expect": {"contains_any": ["히알루", "워터핏", "선 세럼", "선세럼"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "히알루",
+          "워터핏",
+          "선 세럼",
+          "선세럼"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "2026-08-06 구축: 자모 유사도 오타 보정"
     },
     {
-      "id": "inc_alias_senam", "category": "incident", "freq": "daily",
+      "id": "inc_alias_senam",
+      "category": "incident",
+      "freq": "daily",
       "question": "센앰 올해 매출 얼마야?",
-      "expect": {"contains_any": ["센텔라", "앰플"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "센텔라",
+          "앰플"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "2026-08-06 구축: 사내 은어 사전 (센앰→센텔라 100 앰플)"
     },
     {
-      "id": "inc_quantity_rule", "category": "incident", "freq": "daily",
+      "id": "inc_quantity_rule",
+      "category": "incident",
+      "freq": "daily",
       "question": "센텔라 100 앰플 작년 판매수량 알려줘",
-      "expect": {"contains_any": ["개", "수량"], "sql_contains_any": ["Total_Qty"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "개",
+          "수량"
+        ],
+        "sql_contains_any": [
+          "Total_Qty"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "2026-07-15 강화: 수량은 무조건 Product.Total_Qty (세트 분해)"
     },
     {
-      "id": "inc_megawari_filter", "category": "incident", "freq": "daily",
+      "id": "inc_megawari_filter",
+      "category": "incident",
+      "freq": "daily",
       "question": "2025년 4분기 메가와리 매출 알려줘",
-      "expect": {"contains_any": ["억", "메가와리"], "sql_contains_any": ["Q10"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "억",
+          "메가와리"
+        ],
+        "sql_contains_any": [
+          "Q10"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "메가와리는 Mall_Classification LIKE %Q10% 필수"
     },
     {
-      "id": "perm_fi_denied", "category": "permission", "freq": "daily", "auth": "user",
+      "id": "perm_fi_denied",
+      "category": "permission",
+      "freq": "daily",
+      "auth": "user",
       "question": "6월 영업이익 알려줘",
-      "expect": {"contains_any": ["권한", "승인", "허용"], "not_contains": ["영업이익률은", "억원입니다"], "max_seconds": 60},
+      "expect": {
+        "contains_any": [
+          "권한",
+          "승인",
+          "허용"
+        ],
+        "not_contains": [
+          "영업이익률은",
+          "억원입니다"
+        ],
+        "max_seconds": 60
+      },
       "note": "미승인 사용자의 손익 질문은 LLM 호출 전에 차단돼야 한다 (방어선 1)"
     },
     {
-      "id": "core_top_countries", "category": "bq_core", "freq": "daily",
+      "id": "core_top_countries",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "2026년 상반기 국가별 매출 top5 알려줘",
-      "expect": {"contains_any": ["미국", "인도네시아", "일본"], "min_len": 150, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "미국",
+          "인도네시아",
+          "일본"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_monthly_trend", "category": "bq_core", "freq": "daily",
+      "id": "core_monthly_trend",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "2026년 월별 매출 추이 보여줘",
-      "expect": {"contains_any": ["1월", "01월", "2026-01"], "min_len": 150, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "1월",
+          "01월",
+          "2026-01"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_amazon", "category": "bq_core", "freq": "daily",
+      "id": "core_amazon",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "올해 아마존 매출 얼마야?",
-      "expect": {"contains_all": ["아마존"], "contains_any": ["억", "백만"], "min_len": 80, "max_seconds": 150}
+      "expect": {
+        "contains_all": [
+          "아마존"
+        ],
+        "contains_any": [
+          "억",
+          "백만"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_qty_top_products", "category": "bq_core", "freq": "daily",
+      "id": "core_qty_top_products",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "올해 가장 많이 팔린 제품 top5 알려줘",
-      "expect": {"contains_any": ["앰플", "선", "크림", "토너"], "sql_contains_any": ["Total_Qty"], "min_len": 150, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "앰플",
+          "선",
+          "크림",
+          "토너"
+        ],
+        "sql_contains_any": [
+          "Total_Qty"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_continent_share", "category": "bq_core", "freq": "daily",
+      "id": "core_continent_share",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "올해 대륙별 매출 비중 알려줘",
-      "expect": {"contains_any": ["유럽", "아시아", "북미"], "sql_contains_any": ["Continent1"], "min_len": 150, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "유럽",
+          "아시아",
+          "북미"
+        ],
+        "sql_contains_any": [
+          "Continent1"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_japan", "category": "bq_core", "freq": "daily",
+      "id": "core_japan",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "일본 올해 매출 알려줘",
-      "expect": {"contains_all": ["일본"], "contains_any": ["억", "백만"], "min_len": 80, "max_seconds": 150}
+      "expect": {
+        "contains_all": [
+          "일본"
+        ],
+        "contains_any": [
+          "억",
+          "백만"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_yoy", "category": "bq_core", "freq": "weekly",
+      "id": "core_yoy",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "올해 상반기 매출 전년 대비 어때?",
-      "expect": {"contains_any": ["%", "전년"], "min_len": 150, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "%",
+          "전년"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_new_products", "category": "bq_core", "freq": "weekly",
+      "id": "core_new_products",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "올해 신제품 매출 현황 알려줘",
-      "expect": {"sql_contains_any": ["MIN(Date)", "6 MONTH"], "min_len": 120, "max_seconds": 150},
+      "expect": {
+        "sql_contains_any": [
+          "MIN(Date)",
+          "6 MONTH"
+        ],
+        "min_len": 120,
+        "max_seconds": 150
+      },
       "note": "신제품 = 첫 판매일로부터 6개월 이하 (2026-07-27 확정)"
     },
     {
-      "id": "core_chart_render", "category": "bq_core", "freq": "weekly",
+      "id": "core_chart_render",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "올해 국가별 매출 top5 차트로 그려줘",
-      "expect": {"contains_any": ["chart", "```"], "min_len": 100, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "chart",
+          "```"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "core_zombie_line", "category": "bq_core", "freq": "weekly",
+      "id": "core_zombie_line",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "올해 좀비뷰티 매출 얼마야?",
-      "expect": {"sql_contains_any": ["ZB"], "contains_any": ["억", "백만", "좀비"], "min_len": 60, "max_seconds": 150},
+      "expect": {
+        "sql_contains_any": [
+          "ZB"
+        ],
+        "contains_any": [
+          "억",
+          "백만",
+          "좀비"
+        ],
+        "min_len": 60,
+        "max_seconds": 150
+      },
       "note": "좀비뷰티는 Brand='SK' AND Line='ZB'"
     },
     {
-      "id": "core_uma_brand", "category": "bq_core", "freq": "weekly",
+      "id": "core_uma_brand",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "우마 브랜드 올해 매출 알려줘",
-      "expect": {"sql_contains_any": ["UM"], "contains_any": ["억", "백만"], "min_len": 60, "max_seconds": 150}
+      "expect": {
+        "sql_contains_any": [
+          "UM"
+        ],
+        "contains_any": [
+          "억",
+          "백만"
+        ],
+        "min_len": 60,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "src_isolation_amazon_review", "category": "bq_core", "freq": "weekly",
+      "id": "src_isolation_amazon_review",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "@@아마존 리뷰 센텔라 앰플 아마존 평점 알려줘",
-      "expect": {"contains_any": ["평점", "리뷰", "감성"], "not_contains": ["선택하신 데이터소스", "오류가 발생"], "min_len": 100, "max_seconds": 120},
+      "expect": {
+        "contains_any": [
+          "평점",
+          "리뷰",
+          "감성"
+        ],
+        "not_contains": [
+          "선택하신 데이터소스",
+          "오류가 발생"
+        ],
+        "min_len": 100,
+        "max_seconds": 120
+      },
       "note": "공백 포함 소스 키 파싱 회귀 방지 — '@@아마존 리뷰'가 아마존검색으로 오인되던 사고 (2026-08-06)"
     },
     {
-      "id": "src_isolation_meta_platform", "category": "bq_core", "freq": "weekly",
+      "id": "src_isolation_meta_platform",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "@@메타광고 광고 플랫폼별 분포 알려줘",
-      "expect": {"contains_any": ["INSTAGRAM", "FACEBOOK", "Instagram", "Facebook", "인스타", "페이스북"], "not_contains": ["선택하신 데이터소스", "오류가 발생", "언제인가요"], "min_len": 100, "max_seconds": 120},
+      "expect": {
+        "contains_any": [
+          "INSTAGRAM",
+          "FACEBOOK",
+          "Instagram",
+          "Facebook",
+          "인스타",
+          "페이스북"
+        ],
+        "not_contains": [
+          "선택하신 데이터소스",
+          "오류가 발생",
+          "언제인가요"
+        ],
+        "min_len": 100,
+        "max_seconds": 120
+      },
       "note": "@@ 지정 소스의 스키마 강제 포함 + 테이블 스코프 지시 회귀 방지 (2026-08-06). 2026-08-11 강화: 기대값에 '플랫폼'이 있어 되묻기 문장만으로도 통과하고 있었다(SQL을 아예 안 탔다). 실제 플랫폼 값을 요구하고 되묻기 문구를 금지한다"
     },
     {
-      "id": "model_rights_query", "category": "incident", "freq": "weekly",
+      "id": "model_rights_query",
+      "category": "incident",
+      "freq": "weekly",
       "question": "센텔라 라인에서 지금 쓸 수 있는 모델 누구야?",
-      "expect": {"contains_any": ["사용 가능", "모델"], "not_contains": ["적재되지 않았습니다", "오류가 발생"], "min_len": 100, "max_seconds": 60},
+      "expect": {
+        "contains_any": [
+          "사용 가능",
+          "모델"
+        ],
+        "not_contains": [
+          "적재되지 않았습니다",
+          "오류가 발생"
+        ],
+        "min_len": 100,
+        "max_seconds": 60
+      },
       "note": "모델 초상권 파이프라인 (2026-08-07) — 판정은 DB, LLM은 설명만"
     },
     {
-      "id": "bq_clarify_short_query", "category": "bq_core", "freq": "weekly",
+      "id": "bq_clarify_short_query",
+      "category": "bq_core",
+      "freq": "weekly",
       "question": "브랜드별 매출 비중 알려줘",
-      "expect": {"contains_any": ["기간", "채널"], "max_seconds": 60},
+      "expect": {
+        "contains_any": [
+          "기간",
+          "채널"
+        ],
+        "max_seconds": 60
+      },
       "note": "기간·채널 없는 짧은 BQ 질문은 되물음(grill-me)이 정상 동작이다"
     },
     {
-      "id": "fu_topic_continuity_ad", "category": "incident", "freq": "daily",
+      "id": "fu_topic_continuity_ad",
+      "category": "incident",
+      "freq": "daily",
       "history": [
-        {"role": "user", "content": "26년도 7월달 총 광고비 얼마야"},
-        {"role": "assistant", "content": "2026년 7월 한 달간 집행된 총 광고비는 약 65.5억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(cost_krw) AS total_ad_cost FROM `skin1004-319714.marketing_analysis.integrated_ad` WHERE date BETWEEN '2026-07-01' AND '2026-07-31'\n```\n</details>"}
+        {
+          "role": "user",
+          "content": "26년도 7월달 총 광고비 얼마야"
+        },
+        {
+          "role": "assistant",
+          "content": "2026년 7월 한 달간 집행된 총 광고비는 약 65.5억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(cost_krw) AS total_ad_cost FROM `skin1004-319714.marketing_analysis.integrated_ad` WHERE date BETWEEN '2026-07-01' AND '2026-07-31'\n```\n</details>"
+        }
       ],
       "question": "26년도 6월달과 비교해서 팀별로 비교해서 설명해줘",
-      "expect": {"sql_contains_any": ["integrated_ad"], "contains_any": ["광고비", "광고"], "not_contains": ["SALES_ALL_Backup"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "sql_contains_any": [
+          "integrated_ad"
+        ],
+        "contains_any": [
+          "광고비",
+          "광고"
+        ],
+        "not_contains": [
+          "SALES_ALL_Backup"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "2026-08-10 실사용 제보: 광고비 대화 중 후속 비교가 매출로 주제 이탈 — 스키마 lazy-load가 맥락을 안 봐서"
     },
     {
-      "id": "fu_topic_continuity_influencer", "category": "incident", "freq": "weekly",
+      "id": "fu_topic_continuity_influencer",
+      "category": "incident",
+      "freq": "weekly",
       "history": [
-        {"role": "user", "content": "올해 7월 인플루언서 협업 건수 알려줘"},
-        {"role": "assistant", "content": "2026년 7월 인플루언서 협업은 총 128건입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT COUNT(*) FROM `skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS` WHERE DATE(upload_date) BETWEEN '2026-07-01' AND '2026-07-31'\n```\n</details>"}
+        {
+          "role": "user",
+          "content": "올해 7월 인플루언서 협업 건수 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "2026년 7월 인플루언서 협업은 총 128건입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT COUNT(*) FROM `skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS` WHERE DATE(upload_date) BETWEEN '2026-07-01' AND '2026-07-31'\n```\n</details>"
+        }
       ],
       "question": "지난달이랑 비교해줘",
-      "expect": {"contains_any": ["인플루언서", "협업", "influencer"], "not_contains": ["SALES_ALL_Backup"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "인플루언서",
+          "협업",
+          "influencer"
+        ],
+        "not_contains": [
+          "SALES_ALL_Backup"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "2026-08-10 6종 시나리오 테스트에서 발견: 인플루언서 후속 비교가 매출로 이탈 — 직전 쿼리 테이블 태그 보존으로 수정"
     },
     {
-      "id": "fu_topic_continuity_qty", "category": "incident", "freq": "weekly",
+      "id": "fu_topic_continuity_qty",
+      "category": "incident",
+      "freq": "weekly",
       "history": [
-        {"role": "user", "content": "올해 센텔라 100 앰플 판매수량 알려줘"},
-        {"role": "assistant", "content": "2026년 센텔라 100 앰플 판매수량은 약 312만 개입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(Total_Qty) FROM `skin1004-319714.Sales_Integration.Product` WHERE Product LIKE '%Centella Ampoule%' AND Date >= '2026-01-01'\n```\n</details>"}
+        {
+          "role": "user",
+          "content": "올해 센텔라 100 앰플 판매수량 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "2026년 센텔라 100 앰플 판매수량은 약 312만 개입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(Total_Qty) FROM `skin1004-319714.Sales_Integration.Product` WHERE Product LIKE '%Centella Ampoule%' AND Date >= '2026-01-01'\n```\n</details>"
+        }
       ],
       "question": "국가별로 나눠서 보여줘",
-      "expect": {"sql_contains_any": ["Total_Qty"], "contains_any": ["Centella", "센텔라"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "sql_contains_any": [
+          "Total_Qty"
+        ],
+        "contains_any": [
+          "Centella",
+          "센텔라"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "2026-08-10 발견: 수량 후속이 매출로 이탈 + 제품 필터 소실 — 테이블·지표·필터 유지 앵커로 수정"
     },
     {
-      "id": "fu_topic_continuity_mkt_country", "category": "incident", "freq": "weekly",
+      "id": "fu_topic_continuity_mkt_country",
+      "category": "incident",
+      "freq": "weekly",
       "history": [
-        {"role": "user", "content": "마케팅 비용 올해 얼마야?"},
-        {"role": "assistant", "content": "2026년 총 마케팅 비용은 약 312.4억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(cost) FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost` WHERE date >= '2026-01-01'\n```\n</details>"}
+        {
+          "role": "user",
+          "content": "마케팅 비용 올해 얼마야?"
+        },
+        {
+          "role": "assistant",
+          "content": "2026년 총 마케팅 비용은 약 312.4억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(cost) FROM `skin1004-319714.marketing_analysis.Integrated_marketing_cost` WHERE date >= '2026-01-01'\n```\n</details>"
+        }
       ],
       "question": "인도네시아쪽은?",
-      "expect": {"contains_any": ["마케팅", "marketing"], "not_contains": ["SALES_ALL_Backup", "존재하지 않습니다"], "min_len": 100, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "마케팅",
+          "marketing"
+        ],
+        "not_contains": [
+          "SALES_ALL_Backup",
+          "존재하지 않습니다"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      },
       "note": "2026-08-10 사용자 제보 패턴: 마케팅 맥락 유지 + 국가 리터럴 한국어 교정(_localize_country_literals). 인도네시아 마케팅 데이터는 실존(1.1만 행)하므로 '존재하지 않습니다'는 회귀 신호"
     },
     {
-      "id": "fu_clarify_b2c", "category": "followup", "freq": "daily",
+      "id": "fu_clarify_b2c",
+      "category": "followup",
+      "freq": "daily",
       "history": [
-        {"role": "user", "content": "인도네시아, 베트남 첫 거래일자 알려줘"},
-        {"role": "assistant", "content": "| 국가 | 첫 거래일자 |\n| 인도네시아 | 2019-01-08 |\n| 베트남 | 2019-03-20 |\n(B2B+B2C 통합 기준입니다. 채널별로 필요하시면 알려주세요.)"}
+        {
+          "role": "user",
+          "content": "인도네시아, 베트남 첫 거래일자 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "| 국가 | 첫 거래일자 |\n| 인도네시아 | 2019-01-08 |\n| 베트남 | 2019-03-20 |\n(B2B+B2C 통합 기준입니다. 채널별로 필요하시면 알려주세요.)"
+        }
       ],
       "question": "B2C",
-      "expect": {"contains_any": ["인도네시아", "베트남"], "not_contains": ["Costco"], "min_len": 80, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "인도네시아",
+          "베트남"
+        ],
+        "not_contains": [
+          "Costco"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "fu_condition_thisyear", "category": "followup", "freq": "daily",
+      "id": "fu_condition_thisyear",
+      "category": "followup",
+      "freq": "daily",
       "history": [
-        {"role": "user", "content": "국가별 매출 top5 알려줘"},
-        {"role": "assistant", "content": "| 국가 | 매출 |\n| 미국 | 1,234억 |\n| 인도네시아 | 890억 |\n(전체 기간 기준)"}
+        {
+          "role": "user",
+          "content": "국가별 매출 top5 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "| 국가 | 매출 |\n| 미국 | 1,234억 |\n| 인도네시아 | 890억 |\n(전체 기간 기준)"
+        }
       ],
       "question": "올해만",
-      "expect": {"contains_any": ["2026"], "min_len": 100, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "2026"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "fu_chart_request", "category": "followup", "freq": "daily",
+      "id": "fu_chart_request",
+      "category": "followup",
+      "freq": "daily",
       "history": [
-        {"role": "user", "content": "2026년 월별 매출 알려줘"},
-        {"role": "assistant", "content": "2026년 월별 매출: 1월 461억, 2월 549억, 3월 697억, 4월 746억, 5월 800억, 6월 795억, 7월 695억"}
+        {
+          "role": "user",
+          "content": "2026년 월별 매출 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "2026년 월별 매출: 1월 461억, 2월 549억, 3월 697억, 4월 746억, 5월 800억, 6월 795억, 7월 695억"
+        }
       ],
       "question": "차트로 보여줘",
-      "expect": {"contains_any": ["chart", "월"], "min_len": 60, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "chart",
+          "월"
+        ],
+        "min_len": 60,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "fu_compare_lastyear", "category": "followup", "freq": "weekly",
+      "id": "fu_compare_lastyear",
+      "category": "followup",
+      "freq": "weekly",
       "history": [
-        {"role": "user", "content": "올해 아마존 매출 얼마야?"},
-        {"role": "assistant", "content": "2026년 아마존 매출은 약 1,234억원입니다."}
+        {
+          "role": "user",
+          "content": "올해 아마존 매출 얼마야?"
+        },
+        {
+          "role": "assistant",
+          "content": "2026년 아마존 매출은 약 1,234억원입니다."
+        }
       ],
       "question": "그거 작년이랑 비교하면?",
-      "expect": {"contains_any": ["%", "작년", "전년", "2025"], "min_len": 100, "max_seconds": 150}
+      "expect": {
+        "contains_any": [
+          "%",
+          "작년",
+          "전년",
+          "2025"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      }
     },
     {
-      "id": "dir_company_intro", "category": "direct", "freq": "daily",
+      "id": "dir_company_intro",
+      "category": "direct",
+      "freq": "daily",
       "question": "우리 회사 소개해줘",
-      "expect": {"contains_any": ["크레이버", "Craver", "SKIN1004"], "min_len": 100, "max_seconds": 60}
+      "expect": {
+        "contains_any": [
+          "크레이버",
+          "Craver",
+          "SKIN1004"
+        ],
+        "min_len": 100,
+        "max_seconds": 60
+      }
     },
     {
-      "id": "dir_greeting", "category": "direct", "freq": "daily",
+      "id": "dir_greeting",
+      "category": "direct",
+      "freq": "daily",
       "question": "안녕!",
-      "expect": {"not_contains": ["SELECT", "오류가 발생"], "min_len": 5, "max_seconds": 60}
+      "expect": {
+        "not_contains": [
+          "SELECT",
+          "오류가 발생"
+        ],
+        "min_len": 5,
+        "max_seconds": 60
+      }
     },
     {
-      "id": "dir_founding", "category": "direct", "freq": "weekly",
+      "id": "dir_founding",
+      "category": "direct",
+      "freq": "weekly",
       "question": "회사 창립일이 언제야?",
-      "expect": {"contains_any": ["2014"], "min_len": 20, "max_seconds": 60}
+      "expect": {
+        "contains_any": [
+          "2014"
+        ],
+        "min_len": 20,
+        "max_seconds": 60
+      }
     },
     {
-      "id": "cs_centella_ingredients", "category": "cs", "freq": "daily",
+      "id": "cs_centella_ingredients",
+      "category": "cs",
+      "freq": "daily",
       "question": "센텔라 앰플 전성분 알려줘",
-      "expect": {"contains_any": ["병풀", "정제수"], "min_len": 100, "max_seconds": 90}
+      "expect": {
+        "contains_any": [
+          "병풀",
+          "정제수"
+        ],
+        "min_len": 100,
+        "max_seconds": 90
+      }
     },
     {
-      "id": "cs_sunserum_usage", "category": "cs", "freq": "weekly",
+      "id": "cs_sunserum_usage",
+      "category": "cs",
+      "freq": "weekly",
       "question": "워터핏 선 세럼 사용법 알려줘",
-      "expect": {"contains_any": ["바르", "사용", "덧발"], "min_len": 100, "max_seconds": 90}
+      "expect": {
+        "contains_any": [
+          "바르",
+          "사용",
+          "덧발"
+        ],
+        "min_len": 100,
+        "max_seconds": 90
+      }
     },
     {
-      "id": "notion_leave_policy", "category": "notion", "freq": "weekly",
+      "id": "notion_leave_policy",
+      "category": "notion",
+      "freq": "weekly",
       "question": "연차 사용 규정 알려줘",
-      "expect": {"not_contains": ["오류가 발생", "SELECT"], "min_len": 60, "max_seconds": 90}
+      "expect": {
+        "not_contains": [
+          "오류가 발생",
+          "SELECT"
+        ],
+        "min_len": 60,
+        "max_seconds": 90
+      }
     },
     {
-      "id": "team_kr_name_filter", "category": "incident", "freq": "daily",
+      "id": "team_kr_name_filter",
+      "category": "incident",
+      "freq": "daily",
       "question": "올해 영업1팀 매출 알려줘",
-      "expect": {"contains_any": ["영업1팀", "B2B1"], "not_contains": ["존재하지 않", "찾을 수 없"], "sql_contains_any": ["'B2B1'"], "min_len": 100, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "영업1팀",
+          "B2B1"
+        ],
+        "not_contains": [
+          "존재하지 않",
+          "찾을 수 없"
+        ],
+        "sql_contains_any": [
+          "'B2B1'"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      },
       "note": "2026-08-11 공식 팀명 확정. 한글 팀명으로 물어도 SQL은 코드여야 한다 — Team_NEW='영업1팀'이면 0건. _localize_team_literals가 결정적으로 교정"
     },
     {
-      "id": "team_kr_name_display", "category": "incident", "freq": "daily",
+      "id": "team_kr_name_display",
+      "category": "incident",
+      "freq": "daily",
       "question": "올해 팀별 매출 알려줘",
-      "expect": {"contains_all": ["영업1팀"], "contains_any": ["동남아시아1팀", "서구권마케팅팀", "일본사업팀"], "not_contains": ["GM_EAST1", "DD_DT1"], "min_len": 200, "max_seconds": 150},
+      "expect": {
+        "contains_all": [
+          "영업1팀"
+        ],
+        "contains_any": [
+          "동남아시아1팀",
+          "서구권마케팅팀",
+          "일본사업팀"
+        ],
+        "not_contains": [
+          "GM_EAST1",
+          "DD_DT1"
+        ],
+        "min_len": 200,
+        "max_seconds": 150
+      },
       "note": "팀 표기는 코드가 아니라 공식 한글 팀명 (_relabel_team_values). 구버전 코드(GM_*/DD_*) 등장은 회귀 신호"
     },
     {
-      "id": "team_code_still_works", "category": "incident", "freq": "weekly",
+      "id": "team_code_still_works",
+      "category": "incident",
+      "freq": "weekly",
       "question": "JBT 매출 올해 얼마야?",
-      "expect": {"contains_any": ["일본사업팀", "JBT"], "not_contains": ["좀비뷰티", "존재하지 않"], "sql_contains_any": ["'JBT'"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "일본사업팀",
+          "JBT"
+        ],
+        "not_contains": [
+          "좀비뷰티",
+          "존재하지 않"
+        ],
+        "sql_contains_any": [
+          "'JBT'"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "코드로 물어도 그대로 통해야 한다(혼용). JBT를 좀비뷰티로 오해한 2026-08-07 사고 회귀 감시 겸용"
     },
     {
-      "id": "division_rollup", "category": "incident", "freq": "daily",
+      "id": "division_rollup",
+      "category": "incident",
+      "freq": "daily",
       "question": "올해 본부별 매출 알려줘",
-      "expect": {"contains_all": ["글로벌마케팅본부"], "contains_any": ["영업1본부", "유통1본부", "유통2본부", "상품본부"], "not_contains": ["GM 사업부", "PR 사업부", "존재하지 않"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "contains_all": [
+          "글로벌마케팅본부"
+        ],
+        "contains_any": [
+          "영업1본부",
+          "유통1본부",
+          "유통2본부",
+          "상품본부"
+        ],
+        "not_contains": [
+          "GM 사업부",
+          "PR 사업부",
+          "존재하지 않"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "2026-08-11 조직도 확정. 본부=글로벌마케팅/영업1/유통1/유통2/상품 5개. 예전 'B2B·GM·PR·DD 사업부' 명칭으로 답하면 회귀"
     },
     {
-      "id": "fu_team_filter_carryover", "category": "followup", "freq": "daily",
+      "id": "fu_team_filter_carryover",
+      "category": "followup",
+      "freq": "daily",
       "history": [
-        {"role": "user", "content": "올해 영업1팀 매출 알려줘"},
-        {"role": "assistant", "content": "### 📊 2026년 영업1팀(B2B1) 매출\n\n영업1팀(B2B1)의 올해 누적 매출은 약 1,679.8억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE EXTRACT(YEAR FROM Date) = 2026 AND Team_NEW = 'B2B1'\n```\n</details>"}
+        {
+          "role": "user",
+          "content": "올해 영업1팀 매출 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "### 📊 2026년 영업1팀(B2B1) 매출\n\n영업1팀(B2B1)의 올해 누적 매출은 약 1,679.8억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE EXTRACT(YEAR FROM Date) = 2026 AND Team_NEW = 'B2B1'\n```\n</details>"
+        }
       ],
       "question": "작년은?",
-      "expect": {"sql_contains_any": ["'B2B1'"], "not_contains": ["존재하지 않", "어느 팀"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "sql_contains_any": [
+          "'B2B1'"
+        ],
+        "not_contains": [
+          "존재하지 않",
+          "어느 팀"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "기간만 바뀌는 후속에서 팀 필터가 유지돼야 한다. 전사 매출로 넓어지면 회귀 (2026-08-11 UI 멀티턴 테스트에서 통과 확인한 시나리오)"
     },
     {
-      "id": "fu_division_drilldown", "category": "followup", "freq": "weekly",
+      "id": "fu_division_drilldown",
+      "category": "followup",
+      "freq": "weekly",
       "history": [
-        {"role": "user", "content": "올해 본부별 매출 알려줘"},
-        {"role": "assistant", "content": "### 📊 2026년 본부별 매출\n\n영업1본부 2,894.1억원, 글로벌마케팅본부 2,698.4억원, 유통2본부 1,017.7억원, 유통1본부 943.0억원, 상품본부 19.1억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT CASE WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부' WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부' WHEN Team_NEW='DT1' THEN '유통1본부' WHEN Team_NEW='DT2' THEN '유통2본부' WHEN Team_NEW='BCM' THEN '상품본부' END AS division, SUM(Sales1_R) FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE EXTRACT(YEAR FROM Date)=2026 GROUP BY division\n```\n</details>"}
+        {
+          "role": "user",
+          "content": "올해 본부별 매출 알려줘"
+        },
+        {
+          "role": "assistant",
+          "content": "### 📊 2026년 본부별 매출\n\n영업1본부 2,894.1억원, 글로벌마케팅본부 2,698.4억원, 유통2본부 1,017.7억원, 유통1본부 943.0억원, 상품본부 19.1억원입니다.\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT CASE WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부' WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부' WHEN Team_NEW='DT1' THEN '유통1본부' WHEN Team_NEW='DT2' THEN '유통2본부' WHEN Team_NEW='BCM' THEN '상품본부' END AS division, SUM(Sales1_R) FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE EXTRACT(YEAR FROM Date)=2026 GROUP BY division\n```\n</details>"
+        }
       ],
       "question": "글로벌마케팅본부만 팀별로 나눠줘",
-      "expect": {"contains_any": ["중국사업팀", "일본사업팀", "서구권마케팅팀", "동남아시아1팀"], "not_contains": ["영업1팀", "유통1팀"], "sql_contains_any": ["WEST_MKT"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "중국사업팀",
+          "일본사업팀",
+          "서구권마케팅팀",
+          "동남아시아1팀"
+        ],
+        "not_contains": [
+          "영업1팀",
+          "유통1팀"
+        ],
+        "sql_contains_any": [
+          "WEST_MKT"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "본부 → 소속 팀 드릴다운. 다른 본부 팀이 섞이면 회귀"
     },
     {
-      "id": "ad_team_kr_name", "category": "incident", "freq": "daily",
+      "id": "ad_team_kr_name",
+      "category": "incident",
+      "freq": "daily",
       "question": "올해 서구권마케팅팀 광고비 알려줘",
-      "expect": {"contains_any": ["서구권마케팅팀", "WEST_MKT"], "not_contains": ["존재하지 않", "올바르지 않은 값", "0행"], "sql_contains_any": ["'WEST_MKT'"], "min_len": 80, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "서구권마케팅팀",
+          "WEST_MKT"
+        ],
+        "not_contains": [
+          "존재하지 않",
+          "올바르지 않은 값",
+          "0행"
+        ],
+        "sql_contains_any": [
+          "'WEST_MKT'"
+        ],
+        "min_len": 80,
+        "max_seconds": 150
+      },
       "note": "2026-08-11 실사용 오답: 프롬프트가 integrated_ad.team 값을 'WEST'로 잘못 적어 0건. 실제는 Team_NEW와 같은 코드 체계(WEST_MKT/WEST_Ecomm/CBT 포함). 잘못된 SQL이 sql_cache에 남아 재생되던 것도 함께 확인"
     },
     {
-      "id": "promo_team_rollup", "category": "bq_core", "freq": "daily",
+      "id": "promo_team_rollup",
+      "category": "bq_core",
+      "freq": "daily",
       "question": "올해 팀별 프로모션 건수 알려줘",
-      "expect": {"contains_any": ["동남아시아1팀", "east1"], "not_contains": ["허용되지 않은", "오류가 발생", "조회하지 못"], "sql_contains_any": ["promotion_calendar.promotion"], "min_len": 120, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "동남아시아1팀",
+          "east1"
+        ],
+        "not_contains": [
+          "허용되지 않은",
+          "오류가 발생",
+          "조회하지 못"
+        ],
+        "sql_contains_any": [
+          "promotion_calendar.promotion"
+        ],
+        "min_len": 120,
+        "max_seconds": 150
+      },
       "note": "2026-08-11 프로모션 캘린더 신규 소스. @@ 없이도 전역 화이트리스트(config.allowed_tables)에 있어야 통과 — 없으면 '허용되지 않은 테이블'로 막힌다"
     },
     {
-      "id": "promo_schedule_routing", "category": "incident", "freq": "daily",
+      "id": "promo_schedule_routing",
+      "category": "incident",
+      "freq": "daily",
       "question": "올해 인도네시아 프로모션 일정 알려줘",
-      "expect": {"contains_any": ["쇼피", "틱톡샵", "프로모션"], "not_contains": ["Google 계정", "Google Workspace", "사내 문서"], "sql_contains_any": ["'ID'"], "min_len": 150, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "쇼피",
+          "틱톡샵",
+          "프로모션"
+        ],
+        "not_contains": [
+          "Google 계정",
+          "Google Workspace",
+          "사내 문서"
+        ],
+        "sql_contains_any": [
+          "'ID'"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
       "note": "'일정'이 GWS 캘린더 키워드라 개인 구글 캘린더로 오라우팅되던 문제. country_code는 이 테이블만 2글자 ISO('인도네시아'로 필터하면 0건)"
     },
     {
-      "id": "gws_personal_calendar_kept", "category": "incident", "freq": "weekly",
+      "id": "gws_personal_calendar_kept",
+      "category": "incident",
+      "freq": "weekly",
       "question": "내 이번주 일정 알려줘",
-      "expect": {"contains_any": ["Google", "캘린더", "일정"], "min_len": 20, "max_seconds": 120},
+      "expect": {
+        "contains_any": [
+          "Google",
+          "캘린더",
+          "일정"
+        ],
+        "min_len": 20,
+        "max_seconds": 120
+      },
       "note": "프로모션 라우팅을 고치면서 개인 캘린더(GWS) 경로가 죽지 않았는지 확인 — 반대 방향 회귀 감시"
     },
     {
-      "id": "cost_excludes_foc", "category": "schema", "freq": "daily",
+      "id": "cost_excludes_foc",
+      "category": "schema",
+      "freq": "daily",
       "question": "2026년 상반기 SK 제품원가 얼마야?",
-      "expect": {"sql_contains_any": ["FOC_or_Not", "FOC_or_Not = 'X'", "FOC_or_Not='X'"],
-                 "min_len": 50, "max_seconds": 150},
+      "expect": {
+        "sql_contains_any": [
+          "FOC_or_Not",
+          "FOC_or_Not = 'X'",
+          "FOC_or_Not='X'"
+        ],
+        "min_len": 50,
+        "max_seconds": 150
+      },
       "note": "Production_Cost2 는 무상 출고분 원가를 이미 포함한다. FOC_or_Not 으로 가르지 않으면 원가율이 부풀려진다 (2026-08-12 집계 계약 규칙화)"
     },
     {
-      "id": "cost_brand_not_loaded", "category": "schema", "freq": "weekly",
+      "id": "cost_brand_not_loaded",
+      "category": "schema",
+      "freq": "weekly",
       "question": "2026년 상반기 우마(UM) 브랜드 원가율 알려줘",
-      "expect": {"contains_any": ["적재", "누락", "불가"],
-                 "not_contains": ["원가율은 0", "원가율 0.0", "언제인가요"],
-                 "min_len": 50, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "적재",
+          "누락",
+          "불가"
+        ],
+        "not_contains": [
+          "원가율은 0",
+          "원가율 0.0",
+          "언제인가요"
+        ],
+        "min_len": 50,
+        "max_seconds": 150
+      },
       "note": "UM 99.9% · CBT 99.6% 가 원가 0원으로 적재돼 있다. 그대로 집계하면 원가율이 거의 0%로 나와 '이익률이 매우 높다'는 오답이 된다 (2026-08-12 실측). ⚠️ 기간을 반드시 넣을 것 — 안 넣으면 기간을 되묻느라 규칙을 타지 않고 1.5초에 끝나 문항이 무의미해진다 (run#22 에서 실제로 그랬다). 되묻기 재발을 막으려 '언제인가요'를 금지어로 둔다"
     },
     {
-      "id": "discount_is_b2c_only", "category": "schema", "freq": "weekly",
+      "id": "discount_is_b2c_only",
+      "category": "schema",
+      "freq": "weekly",
       "question": "2026년 상반기 B2B 할인 금액 알려줘",
-      "expect": {"contains_any": ["B2C 전용", "B2C에만", "B2C 채널에만", "집계되지 않"],
-                 "not_contains": ["확인이 필요합니다", "진행되지 않았"],
-                 "min_len": 50, "max_seconds": 150},
+      "expect": {
+        "contains_any": [
+          "B2C 전용",
+          "B2C에만",
+          "B2C 채널에만",
+          "집계되지 않"
+        ],
+        "not_contains": [
+          "확인이 필요합니다",
+          "진행되지 않았"
+        ],
+        "min_len": 50,
+        "max_seconds": 150
+      },
       "note": "Discount_Coupon 은 B2C 전용이고 B2B 는 전 구간 0원이다. 0원을 '할인을 안 했다'로 읽으면 안 된다. ⚠️ 처음엔 기대어가 'B2C' 였는데 그 말이 **후속 질문 제안**('B2C 채널의 할인 금액은?')에 있어 본문이 오도해도 통과했다 (run#23). 판정에서 후속질문·details 를 걷어내도록 고쳤고, 기대어도 본문에서만 나올 말로 좁혔다"
+    },
+    {
+      "id": "report_meta_question_no_build",
+      "category": "report",
+      "freq": "daily",
+      "question": "보고서 기능은 어떤 때 쓰면 좋아?",
+      "expect": {
+        "not_contains": [
+          "/api/reports/",
+          "보고서를 만들었습니다"
+        ],
+        "min_len": 150,
+        "max_seconds": 90
+      },
+      "note": "2026-08-13 사고: 기능을 묻는 질문에 전사 매출 보고서를 10건 만들었다. 플래너 1회 + BigQuery 8~12회를 태우고 질문에는 답하지 못한다. 기대어를 두지 않고 '만들지 않았다'만 본다 — 설명 답변에도 '보고서'라는 말이 들어가서"
+    },
+    {
+      "id": "report_selfask_no_build",
+      "category": "report",
+      "freq": "daily",
+      "question": "이 시스템으로 뭘 할 수 있는지 짧게 정리해줘",
+      "expect": {
+        "not_contains": [
+          "/api/reports/",
+          "보고서를 만들었습니다"
+        ],
+        "min_len": 150,
+        "max_seconds": 90
+      },
+      "note": "'보고서'라는 말이 없는데도 신호어 '정리해줘' 때문에 2건이 더 만들어졌다. 문구를 하나씩 막는 방식으로는 끝나지 않아, 대상이 시스템 자신이고(_SELF_SUBJECT) 데이터 명사가 없으면(_DATA_NOUN) 분석할 대상이 없는 질문으로 판정한다"
+    },
+    {
+      "id": "report_data_query_no_build",
+      "category": "report",
+      "freq": "daily",
+      "question": "2026년 상반기 일본 매출 정리해줘",
+      "expect": {
+        "contains_any": [
+          "억",
+          "원"
+        ],
+        "not_contains": [
+          "/api/reports/",
+          "보고서를 만들었습니다"
+        ],
+        "min_len": 80,
+        "max_seconds": 120
+      },
+      "note": "반대 방향 감시 — '정리해줘'는 이제 보고서 신호어가 아니다. 평범한 조회로 답해야 한다. 위 두 문항과 짝으로 봐야 의미가 있다 (한쪽만 있으면 규칙을 한 방향으로만 조인다)"
+    },
+    {
+      "id": "report_explicit_builds",
+      "category": "report",
+      "freq": "weekly",
+      "question": "2026년 상반기 일본 매출 보고서 만들어줘",
+      "expect": {
+        "contains_all": [
+          "/api/reports/",
+          "보고서를 만들었습니다"
+        ],
+        "not_contains": [
+          "어떤 기간",
+          "언제 기준",
+          "알려주시면"
+        ],
+        "min_len": 100,
+        "max_seconds": 240
+      },
+      "note": "'보고서'라고 명시하면 반드시 만들어야 한다. not_contains 는 되묻기로 빠지는 것을 막는다"
+    },
+    {
+      "id": "report_atat_builds",
+      "category": "report",
+      "freq": "weekly",
+      "question": "@@보고서 2026년 상반기 일본 매출",
+      "expect": {
+        "contains_all": [
+          "/api/reports/"
+        ],
+        "not_contains": [
+          "허용되지 않은",
+          "없는 보고서"
+        ],
+        "min_len": 100,
+        "max_seconds": 240
+      },
+      "note": "@@보고서 는 데이터소스 지정이라 본문에 '보고서'라는 말이 없어도 만든다. explicit 플래그가 _handle_report → service.run → registry.route 로 관통하는지 본다"
+    },
+    {
+      "id": "report_country_filter_not_substring",
+      "category": "report",
+      "freq": "weekly",
+      "question": "2026 상반기 일본 매출 보고서 만들어줘 외부 요인도 같이 봐줘",
+      "expect": {
+        "contains_all": [
+          "/api/reports/",
+          "일본"
+        ],
+        "not_contains": [
+          "인도"
+        ],
+        "min_len": 100,
+        "max_seconds": 300
+      },
+      "note": "2026-08-13 사고: '외부 요인도'의 '인도'를 국가로 잡아 일본 보고서가 '일본 · 인도' 보고서가 됐다. 요약에 versus 절('일본 · 인도과 타 국가...')이 실려 드러난다. ⚠️ 절 조합이 바뀌면 요약에서 안 보일 수 있다 — 확실한 감시는 tests/test_report_rules.py 의 extract_filters 케이스다. 여긴 사용자가 보는 쪽만 본다"
     }
   ]
 }
