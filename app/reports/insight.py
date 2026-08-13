@@ -96,6 +96,22 @@ def _complete(text: str) -> bool:
     return bool(t) and t[-1] in ".。!?…)”\"'」』%"
 
 
+def _echoes(text: str, already: List[str]) -> bool:
+    """이미 적힌 요약을 수치까지 그대로 되풀이하는 문장인가.
+
+    프롬프트로 "되풀이하지 마라"고 해도 확률적이다. 문장의 수치 집합이 요약 한 줄에
+    **완전히 포함되고 새 수치가 하나도 없으면** 새로 말하는 것이 없다고 본다.
+    """
+    mine = {_norm(t) for t in _NUM.findall(text or "")}
+    if not mine:
+        return False
+    for line in already or []:
+        theirs = {_norm(t) for t in _NUM.findall(line)}
+        if theirs and mine <= theirs:
+            return True
+    return False
+
+
 PROMPT = """당신은 데이터 분석 보고서의 **해석과 실행 제안**을 씁니다.
 
 아래는 이미 조회가 끝난 사실입니다. 여기 없는 수치는 절대 쓰지 마세요.
@@ -105,6 +121,9 @@ PROMPT = """당신은 데이터 분석 보고서의 **해석과 실행 제안**�
 
 ## 기간
 중점 {focus_label} / 비교 {compare_label}
+
+## 이미 보고서 맨 앞에 적힌 요약 — **되풀이하지 마세요**
+{already}
 
 ## 조회된 사실
 {facts}
@@ -118,6 +137,8 @@ PROMPT = """당신은 데이터 분석 보고서의 **해석과 실행 제안**�
 
 ## 규칙
 - **위 사실에 있는 수치만** 쓰세요. 없는 숫자를 쓰면 그 문장은 버려집니다.
+- **이미 적힌 요약을 다시 말하지 마세요.** 총량·성장률만 되풀이하는 문장은 버려집니다.
+  요약이 "무엇이 얼마인가"를 말했으니, 여기서는 "왜 그런가·무엇이 걸리는가"를 쓰세요.
 - 수치를 쓸 때는 사실에 적힌 표기 그대로 쓰세요 (예: 191.3억, +35.4%).
 - 추측·일반론 금지. "~로 보인다" 대신 사실이 말하는 것만.
 - 데이터가 빠져 있다는 사실도 리스크로 쓸 수 있습니다.
@@ -130,7 +151,7 @@ PROMPT = """당신은 데이터 분석 보고서의 **해석과 실행 제안**�
 
 
 def build(question: str, sections: List[Dict[str, Any]], ctx: Dict[str, Any],
-          llm=None) -> Optional[Dict[str, Any]]:
+          llm=None, already: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
     """판단 절을 만든다. 실패하면 None — 보고서는 이것 없이도 완성된다."""
     facts = _facts_from_sections(sections)
     if len(facts) < 2:
@@ -144,9 +165,11 @@ def build(question: str, sections: List[Dict[str, Any]], ctx: Dict[str, Any],
             logger.warning("insight_no_llm", error=str(e)[:120])
             return None
 
+    already = [a for a in (already or []) if a]
     prompt = PROMPT.format(
         question=question, focus_label=ctx.get("focus_label", ""),
         compare_label=ctx.get("compare_label", ""),
+        already=("\n".join(f"- {a}" for a in already) or "(없음)"),
         facts=json.dumps(facts, ensure_ascii=False, default=str)[:9000],
         n_ins=MAX_INSIGHTS, n_act=MAX_ACTIONS)
     try:
@@ -172,6 +195,9 @@ def build(question: str, sections: List[Dict[str, Any]], ctx: Dict[str, Any],
         bad = _verify(t, allowed)
         if bad:
             dropped.append(f"insight[{bad}] {t[:60]}")
+            continue
+        if _echoes(t, already):
+            dropped.append(f"insight[요약반복] {t[:60]}")
             continue
         ins.append(t)
 

@@ -66,16 +66,15 @@ def _quality_notes(ctx: Dict[str, Any]) -> List[Dict[str, str]]:
     return notes
 
 
-def _conclusion(sections: List[Dict[str, Any]], ctx: Dict[str, Any],
-                quality: List[Dict[str, str]]) -> Dict[str, Any] | None:
-    """이미 만들어진 절들의 **숫자에서** 결론 문단을 뽑는다.
+def _headline(sections: List[Dict[str, Any]], ctx: Dict[str, Any],
+              quality: List[Dict[str, str]]) -> List[str]:
+    """맨 앞에 놓을 **사실 요약** 두세 줄.
 
-    ⛔ 여기서도 LLM 을 쓰지 않는다. 절마다 발견 문장은 있는데 그걸 종합하는 문단이
-       없어서 보고서가 '표 모음'으로 읽혔다 (2026-08-13). 종합을 LLM 에 맡기면
-       그럴듯한데 틀린 문장이 맨 앞에 오게 된다 — 가장 위험한 자리다.
+    ⛔ LLM 을 쓰지 않는다. 규모·성장·비교는 틀리면 안 되는 자리라 규칙이 쓴다.
 
-    ⚠️ 없는 절은 건너뛴다. 문장이 하나뿐이면 결론을 만들지 않는다 — 총량 절을
-       한 번 더 읽는 꼴이라 자리만 차지한다.
+    ⚠️ **짧게 유지할 것.** 처음엔 추세·기여도·프로모션까지 여섯 줄을 담았더니
+       바로 아래 해석 절과 같은 얘기를 두 번 하게 됐다 (2026-08-13 사용자 지적).
+       여기는 '무엇이 얼마인가'까지만 말하고, '왜·그래서'는 해석이 맡는다.
     """
     from app.reports.blocks import _fmt, _josa, _pct
 
@@ -104,40 +103,12 @@ def _conclusion(sections: List[Dict[str, Any]], ctx: Dict[str, Any],
         if da + db:
             out.append(f"전체 증가분의 {_pct(da, da + db):.0f}%가 {a['dim']}에서 나왔다")
 
-    con = by.get("contribution")
-    if con and con["rows"]:
-        top = [r for r in con["rows"] if float(r.get("delta") or 0) > 0][:3]
-        if top:
-            names = ", ".join(str(r["dim"]) for r in top)
-            share = sum(float(r.get("share") or r.get("value") or 0) for r in top)
-            out.append(f"증가를 이끈 곳은 {names}" +
-                       (f" (증가분의 {share:.0f}%)" if 0 < share <= 100 else ""))
-
-    tr = by.get("trend")
-    if tr and len(tr["rows"]) >= 3:
-        rs = tr["rows"]
-        hi = max(rs, key=lambda r: float(r.get("value") or 0))
-        lo = min(rs, key=lambda r: float(r.get("value") or 0))
-        hv, lv = _fmt(hi["value"], tr["unit"]), _fmt(lo["value"], tr["unit"])
-        out.append(f"월별로는 {hi['dim']} {_josa(hv, '이가')} 최고, "
-                   f"{lo['dim']} {_josa(lv, '이가')} 최저다")
-
-    pr = by.get("promotion")
-    if pr and pr["findings"]:
-        marked = [f for f in pr["findings"] if "행사가 기록된" in f]
-        if marked:
-            out.append(marked[0])
-
     # 데이터 결함으로 뺀 것이 있으면 결론에서도 말한다 — 맨 아래 주석만으로는 안 읽힌다
     if quality:
         out.append("이 수치는 " + " · ".join(n["label"] for n in quality[:3]) +
                    " 를 제외하고 읽어야 한다 (아래 '산출 기준' 참조)")
 
-    if len(out) < 2:
-        return None
-    return {"block": "conclusion", "title": "결론", "metric": "", "dim": None,
-            "unit": "", "rows": [], "findings": out[:6], "chart": "none",
-            "chart_key": "value", "columns": [], "note": ""}
+    return out[:3]
 
 
 def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = None,
@@ -208,22 +179,29 @@ def build(question: str, ctx: Dict[str, Any], *, plan: Dict[str, Any] | None = N
     if errors:
         logger.warning("dynamic_report_partial", errors=errors[:5], skipped=skipped)
 
-    # 결론은 **맨 앞**에 온다. 다 읽어야 알 수 있는 보고서는 안 읽힌다
+    # 맨 앞 절 하나로 합친다. **요약과 해석을 따로 두면 같은 숫자를 두 번 말한다**
+    # (2026-08-13 사용자 지적) — 사실은 규칙이, 해석·액션은 LLM 이 쓰되 한 자리에 놓는다
     notes = _quality_notes(ctx)
+    head = _headline(sections, ctx, notes)
 
-    # 판단 절 — 이 파이프라인에서 유일하게 LLM 이 문장을 쓰는 곳. 숫자는 검증한다
-    insight = None
+    lead: Dict[str, Any] = {}
     try:
         from app.reports import insight as _ins
-        insight = _ins.build(question, sections, ctx)
+        # 이미 적힌 요약을 넘겨 되풀이를 막는다 (프롬프트 + 후처리 양쪽)
+        lead = _ins.build(question, sections, ctx, already=head) or {}
     except Exception as e:
         logger.warning("insight_failed", error=str(e)[:200])
-    if insight:
-        sections.insert(0, insight)
 
-    concl = _conclusion(sections, ctx, notes)
-    if concl:
-        sections.insert(0, concl)
+    if head or lead:
+        sections.insert(0, {
+            "block": "lead", "title": "요약과 해석", "metric": "", "dim": None,
+            "unit": "", "rows": [], "chart": "none", "chart_key": "value",
+            "columns": [], "note": "",
+            "findings": head,                       # 사실 — 규칙이 씀
+            "insights": lead.get("findings") or [],  # 해석 — LLM 이 씀 (수치 검증됨)
+            "actions": lead.get("actions") or [],
+            "dropped": lead.get("dropped", 0),
+        })
 
     payload = {
         "meta": {

@@ -51,6 +51,8 @@
     border-radius:0 8px 8px 0;padding:6px 22px 18px;margin:0 0 34px}
   .concl h2{border-top:none;margin-top:18px;padding-top:0;font-size:19px}
   .concl .find li{margin:9px 0}
+  .concl .lead-fact li{font-weight:600}
+  .concl h3.acth{margin-top:20px}
   h3.acth{font-size:15px;margin:22px 0 4px;color:var(--muted);letter-spacing:.01em}
   ol.acts{margin:6px 0 4px;padding-left:22px}
   ol.acts li{margin:10px 0;padding-left:4px}
@@ -305,18 +307,20 @@ function bars(rows, key) {
           ? catChart(s.rows, ax.key, ax.fmt, ax.unit, ax.xTitle, ax.yTitle, 12)
           : '');
 
-    // 결론은 절이 아니라 문단이다 — 표도 차트도 없이 맨 앞에서 논지만 말한다
-    if (s.block === 'conclusion') {
-      return `<section class="concl"><h2>${esc(s.title)}</h2>${findHtml}</section>`;
-    }
-
-    // 판단 절 — 해석(문장) + 다음 할 일(제목 + 설명)
-    if (s.block === 'insight') {
+    // 맨 앞 절 — 사실(규칙) → 해석(LLM) → 다음 할 일. 하나로 묶어 같은 숫자를
+    // 두 번 말하지 않게 한다. 사실만 강조 배경에 올려 근거와 해석을 눈으로 가른다
+    if (s.block === 'lead') {
+      const facts = (s.findings || []).map(f => `<li>${esc(f)}</li>`).join('');
+      const factHtml = facts ? `<ul class="find lead-fact">${facts}</ul>` : '';
+      const ins = (s.insights || []).map(f => `<li>${esc(f)}</li>`).join('');
+      const insHtml = ins
+        ? `<h3 class="acth">해석</h3><ul class="find">${ins}</ul>` : '';
       const acts = (s.actions || []).map(a =>
         `<li><span class="nm">${esc(a.title)}</span><br>${esc(a.text)}</li>`).join('');
       const actHtml = acts
         ? `<h3 class="acth">다음 할 일</h3><ol class="acts">${acts}</ol>` : '';
-      return `<h2>${esc(s.title)}</h2>${findHtml}${actHtml}`;
+      return `<section class="concl"><h2>${esc(s.title)}</h2>${
+        factHtml}${insHtml}${actHtml}</section>`;
     }
 
     // 행이 둘 이하면 표를 만들지 않는다. total 은 발견 문장이 이미 두 기간을 말하므로 그것도 생략.
