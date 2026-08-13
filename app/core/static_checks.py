@@ -59,43 +59,58 @@ def undefined_css_vars() -> Tuple[bool, str]:
 # ── 2) `@@` 데이터소스 — 프론트와 서버가 같은 목록을 보는가 ──────────────────
 
 def front_source_keys() -> set:
-    """`chat.js` SOURCE_GROUPS[*].keys — 사용자가 실제로 고를 수 있는 @@ 목록."""
+    """서버가 단일 소스다 — 프론트는 `/api/datasources` 로 목록을 받는다 (2026-08-13).
+
+    ⛔ 예전엔 `chat.js` 가 같은 목록을 하드코딩해 갖고 있었다. 그래서 서버만 고치면
+       조용히 어긋났고, `@@Google Workspace` 질문 오염과 `초상권` 라우트 누락이
+       거기서 나왔다. 지금은 프론트 키 = 서버 키다.
+    """
+    from app.agents.orchestrator import OrchestratorAgent
+    return {e["key"] for e in OrchestratorAgent._DB_REGISTRY}
+
+
+def _front_group_names() -> set:
+    """`chat.js` 의 GROUP_BY_NAME — 서버 그룹 이름을 화면 그룹에 잇는 표."""
     if not _exists("app/frontend/chat.js"):
         return set()
-    m = re.search(r"var SOURCE_GROUPS = \[(.*?)\n  \];", _read("app/frontend/chat.js"), re.S)
-    if not m:
-        return set()
-    keys = set()
-    for block in re.finditer(r"keys:\s*\[(.*?)\]", m.group(1), re.S):
-        keys |= set(re.findall(r'"([^"]+)"', block.group(1)))
-    return keys
+    m = re.search(r"var GROUP_BY_NAME = \{(.*?)\};", _read("app/frontend/chat.js"), re.S)
+    return set(re.findall(r'"([^"]+)"\s*:', m.group(1))) if m else set()
 
 
 def at_source_parity() -> Tuple[bool, str]:
-    """`@@` 는 프론트와 서버가 **각자** 파싱한다 — 목록이 갈리면 조용히 샌다.
+    """`@@` 목록이 화면까지 온전히 도달하는가.
 
-    `@@Google Workspace 오늘 일정` 이 소스는 맞게 잡히면서 질문을 "Workspace 오늘 일정"
-    으로 오염시켰던 사고를 잡는다 (2026-08-13).
+    두 가지를 본다:
+      1. **프론트가 목록을 다시 하드코딩하지 않았는가** — 사본이 생기면 또 어긋난다
+      2. 서버 그룹이 전부 `GROUP_BY_NAME` 에 있는가 — 없는 그룹의 소스는 **화면에서
+         통째로 사라진다** (에러 없이)
+    그리고 모든 키가 `@@키 질문` 에서 **깨끗이 걷히는지** 확인한다.
     """
-    front = front_source_keys()
-    if not front:
-        return True, "프론트 목록을 읽지 못함 — 건너뜀"
+    if not _exists("app/frontend/chat.js"):
+        return True, "chat.js 없음 — 건너뜀"
+    js = _read("app/frontend/chat.js")
+
+    i = js.find("var SOURCE_GROUPS = [")
+    j = js.find("];", i) if i >= 0 else -1
+    literal = js[i:j] if j > i else ""
+    if re.search(r"keys:\s*\[\s*[\"']", literal):
+        return False, "프론트가 @@ 목록을 다시 하드코딩했다 — /api/datasources 로 받아야 한다"
+
     from app.agents.orchestrator import OrchestratorAgent
 
-    known = set()
-    for e in OrchestratorAgent._DB_REGISTRY:
-        known.add(e["key"].lower())
-        known |= {a.lower() for a in (e.get("aliases") or [])}
-    missing = sorted(k for k in front if k.lower() not in known)
+    srv_groups = {e.get("group", "") for e in OrchestratorAgent._DB_REGISTRY}
+    missing_groups = sorted(g for g in srv_groups if g and g not in _front_group_names())
+    if missing_groups:
+        return False, f"GROUP_BY_NAME 에 없는 서버 그룹 {missing_groups} — 화면에서 사라진다"
 
     dirty = []
-    for k in sorted(front):
-        entry, clean = OrchestratorAgent.parse_db_prefix(f"@@{k} 매출 알려줘")
+    for e in OrchestratorAgent._DB_REGISTRY:
+        entry, clean = OrchestratorAgent.parse_db_prefix(f"@@{e['key']} 매출 알려줘")
         if not entry or clean.strip() != "매출 알려줘":
-            dirty.append(f"{k}→{clean.strip()!r}")
-    if missing or dirty:
-        return False, (f"서버가 모르는 키 {missing} · 파싱 후 질문 오염 {dirty[:4]}")
-    return True, f"@@ 소스 {len(front)}개 일치"
+            dirty.append(f"{e['key']}→{clean.strip()!r}")
+    if dirty:
+        return False, f"파싱 후 질문 오염 {dirty[:4]}"
+    return True, f"@@ 소스 {len(srv_groups)}그룹 · 키 {len(OrchestratorAgent._DB_REGISTRY)}개 정상"
 
 
 # ── 3) direct 프롬프트 단일 소스 ────────────────────────────────────────────
@@ -186,7 +201,26 @@ def keyword_collisions() -> Tuple[bool, str]:
                        else "경로가 갈리는 새 충돌 없음")
 
 
+def asset_sanity() -> Tuple[bool, str]:
+    """프론트 자산이 비었거나 뭉텅 잘리지 않았는가.
+
+    ⛔ 스크립트로 파일을 쓰다 실패하면 `open(w)` 가 **이미 자른 뒤**라 0바이트가 남는다.
+       실제로 두 번 겪었다 (2026-07, 2026-08-13). 화면은 백지가 되고 서버는 200 을 준다.
+    """
+    MIN = {"app/frontend/chat.js": 150_000, "app/static/style.css": 50_000,
+           "app/frontend/chat.html": 5_000}
+    bad = []
+    for rel, floor in MIN.items():
+        if not _exists(rel):
+            bad.append(f"{rel} 없음"); continue
+        n = os.path.getsize(os.path.join(ROOT, rel))
+        if n < floor:
+            bad.append(f"{rel} {n}바이트 (최소 {floor})")
+    return (not bad), ("; ".join(bad) if bad else "프론트 자산 크기 정상")
+
+
 ALL = [
+    ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
     ("static_at_sources", at_source_parity, "@@ 데이터소스 프론트/서버 일치"),
     ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),

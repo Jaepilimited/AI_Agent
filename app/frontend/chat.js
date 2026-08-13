@@ -381,24 +381,45 @@
     // 보고서는 테이블이 아니라 산출물이다. 조회 8~12회에 10~30초가 드는 특수 경로라
     // @@보고서 로 지정했을 때(또는 질문에 "보고서"라고 적었을 때)만 만든다
     { id: "report", label: "보고서", emoji: "📄",
-      keys: ["보고서"] },
+      keys: [] },
     { id: "sales", label: "매출 데이터", emoji: "\uD83D\uDCCA",
-      keys: ["매출", "제품", "손익"] },
+      keys: [] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
-      keys: ["광고", "마케팅", "Shopify", "플랫폼",
-             "인플루언서", "아마존검색", "메타광고",
-             "아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰",
-             "프로모션"] },
+      keys: [] },
     { id: "bc", label: "BC", emoji: "\uD83D\uDCF8",
-      keys: ["초상권"] },
+      keys: [] },
     { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
-      keys: ["B2B1", "B2B2", "BCM", "CS", "Craver", "DB",
-             "GM EAST", "GM WEST", "JBT", "KBT", "PEOPLE", "BP"],
+      keys: [],
       _dynamic: true,
       link: "https://www.notion.so/skin1004/DB-HUB-2e12b4283b008011ae32e39bf73b7f7b" },
     { id: "system", label: "시스템", emoji: "\u2699",
-      keys: ["Google Workspace"] },
+      keys: [] },
   ];
+  // ⛔ **@@ 소스 목록을 하드코딩하지 마라.** 서버 `_DB_REGISTRY` 가 단일 소스이고
+  //    위 배열의 `keys` 는 `/api/datasources` 응답으로 채워진다 (2026-08-13 단일 소스화).
+  //    예전엔 같은 목록을 프론트가 따로 갖고 있어 서버만 고치면 조용히 어긋났다 —
+  //    `@@Google Workspace` 가 질문에 "Workspace" 를 남긴 사고가 그 결과다.
+  //    위에 남은 것은 **표현**뿐이다 (그룹 순서·이모지·링크).
+  var GROUP_BY_NAME = {
+    "보고서": "report", "매출 데이터": "sales", "마케팅 데이터": "marketing",
+    "BC": "bc", "Notion": "notion", "시스템": "system"
+  };
+  var SOURCE_LABELS = {};   // key -> 화면에 쓸 이름 (gws -> Google Workspace)
+
+  function fillSourceGroups(data) {
+    SOURCE_GROUPS.forEach(function(g) { g.keys = []; });
+    (data || []).forEach(function(d) {
+      var gid = GROUP_BY_NAME[d.group];
+      if (!gid) return;   // 서버에 새 그룹이 생기면 위 표에 넣어야 화면에 뜬다
+      for (var i = 0; i < SOURCE_GROUPS.length; i++) {
+        if (SOURCE_GROUPS[i].id === gid) { SOURCE_GROUPS[i].keys.push(d.key); break; }
+      }
+      SOURCE_LABELS[d.key] = d.label || d.key;
+      SOURCE_ROUTE_MAP[d.key] = d.route || "bigquery";
+    });
+    return SOURCE_GROUPS;
+  }
+
   var DATA_SOURCE_KEYS = [];
   function _sourceVisibleForCurrentUser(key) {
     return key !== "손익" || !currentUser || !!currentUser.can_view_fi;
@@ -421,24 +442,7 @@
     saveEnabledSources();
   }
   _rebuildDataSourceKeys();
-  // Source key → route mapping for orchestrator
-  var SOURCE_ROUTE_MAP = {
-    "보고서": "report",
-    "매출": "bigquery", "제품": "bigquery", "손익": "bigquery",
-    "광고": "bigquery", "마케팅": "bigquery",
-    "Shopify": "bigquery", "플랫폼": "bigquery",
-    "인플루언서": "bigquery", "아마존검색": "bigquery",
-    "메타광고": "bigquery",
-    "아마존 리뷰": "bigquery", "큐텐 리뷰": "bigquery",
-    "쇼피 리뷰": "bigquery", "스마트스토어 리뷰": "bigquery",
-    "프로모션": "bigquery",
-    "BP": "cs",
-    "B2B1": "notion", "GM WEST": "notion", "CS": "notion",
-    "DB": "notion", "B2B2": "notion", "PEOPLE": "notion",
-    "BCM": "notion", "GM EAST": "notion", "Craver": "notion",
-    "KBT": "notion", "JBT": "notion",
-    "Google Workspace": "gws"
-  };
+  var SOURCE_ROUTE_MAP = {};   // /api/datasources 로 채운다
   var _DB_ALIASES = {};  // @@alias → canonical key (populated by loadDbSources)
 
   // @@ 소스 최장 일치 파싱 — 서버 parse_db_prefix 와 동일 규칙.
@@ -784,7 +788,26 @@
           _DB_ALIASES[d.key.toLowerCase()] = d.key;
           (d.aliases || []).forEach(function(a) { _DB_ALIASES[a.toLowerCase()] = d.key; });
         });
-      }).catch(function() {});
+        fillSourceGroups(data);
+        try { localStorage.setItem("dbSourcesCache", JSON.stringify(data)); } catch (e) {}
+        _applyFiSourceVisibility();
+        _rebuildDataSourceKeys();
+      }).catch(function() {
+        // 목록을 못 받으면 @@ 가 통째로 죽는다. 마지막으로 성공한 응답을 쓴다.
+        // ⛔ 하드코딩 폴백을 두지 않는다 — 그게 바로 없애려던 두 번째 사본이다.
+        try {
+          var cached = JSON.parse(localStorage.getItem("dbSourcesCache") || "null");
+          if (cached && cached.length) {
+            cached.forEach(function(d) {
+              _DB_ALIASES[d.key.toLowerCase()] = d.key;
+              (d.aliases || []).forEach(function(a) { _DB_ALIASES[a.toLowerCase()] = d.key; });
+            });
+            fillSourceGroups(cached);
+            _applyFiSourceVisibility();
+            _rebuildDataSourceKeys();
+          }
+        } catch (e) {}
+      });
     })();
 
     // ═══ Active Source Chips — uses module-level functions (see IIFE top) ═══

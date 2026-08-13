@@ -226,7 +226,19 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
   `if not results:` 로만 하면 이 케이스를 놓쳐 LLM이 원인을 지어낸다. 전 컬럼 NULL 단일 행은
   빈 결과로 정규화할 것 (`format_answer` 에 구현됨)
 
-### 새 데이터소스(테이블)를 붙일 때 건드릴 7곳
+### `@@` 데이터소스 — 서버가 단일 소스다 (2026-08-13)
+
+- **프론트는 `/api/datasources` 로 목록을 받는다.** `chat.js` 에 키를 하드코딩하지 마라.
+  - ⛔ 예전엔 같은 목록을 프론트가 따로 갖고 있었다. 서버만 고치면 조용히 어긋났고,
+    실제로 두 가지가 새 있었다: `@@Google Workspace` 가 질문에 "Workspace" 를 남겼고,
+    `초상권` 은 프론트 라우트 맵에 없어 `bigquery` 로 잘못 떨어졌다(서버는 `model_rights`)
+  - `chat.js` 에 남는 것은 **표현**뿐이다 — 그룹 순서·이모지·링크(`GROUP_META`/`GROUP_BY_NAME`)
+  - ⚠️ **서버에 새 그룹을 만들면 `GROUP_BY_NAME` 에도 넣어야 한다.** 안 넣으면 그 그룹의
+    소스가 **화면에서 통째로 사라진다** (에러 없이) — `static_at_sources` 가 이걸 잡는다
+  - 목록을 못 받으면 마지막 성공분(localStorage)을 쓴다. **하드코딩 폴백은 두지 않는다** —
+    그게 바로 없애려던 두 번째 사본이다
+
+## 새 데이터소스(테이블)를 붙일 때 건드릴 7곳
 
 하나라도 빠지면 **에러가 아니라 반쪽만 동작**해서 발견이 늦다 (2026-08-11 프로모션 통합에서 정리).
 
@@ -441,7 +453,7 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
   로그도 남았지만 읽는 사람이 없었다. `quality_monitor` 는 답변 품질만 본다 — 배치가 죽었는지,
   데이터가 썩었는지, 권한이 뚫렸는지는 아무도 감시하지 않았다.
 - **검사 21종**: batch(신선도 4) / integrity(고아·이메일·인코딩 4) / permission(FI 방어선·인원·admin 3) /
-  datasource(BQ·Qdrant 2) / quality(카나리·피드백·골든 3) / **static(정적 5)**
+  datasource(BQ·Qdrant 2) / quality(카나리·피드백·골든 3) / **static(정적 6)**
 - **static 검사는 `app/core/static_checks.py` 가 판정한다** (2026-08-13 추가).
   개발 중에는 `tests/test_no_silent_failures.py` 가, 서버에서는 자가 점검이 **같은 함수**를
   부른다 — ⛔ **서버에는 pytest 도 `tests/` 도 node 도 없다.** 테스트만 만들어 두면
@@ -683,7 +695,7 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 ## 캐시 버전
 
 - CSS/JS 변경 시 `chat.html`의 `?v=` 번호 증가 필수
-- 현재: style.css?v=162, chat.js?v=244 (2026-08-13 기준 — 올릴 때 이 줄도 같이 갱신할 것)
+- 현재: style.css?v=162, chat.js?v=245 (2026-08-13 기준 — 올릴 때 이 줄도 같이 갱신할 것)
 - `login.html`·`eval_review.html` 은 별도 번호를 쓴다. 해당 화면 CSS 를 건드렸으면 그쪽도 올릴 것
 - ⚠️ **이 줄이 실제와 어긋나면 테스트가 실패한다** (`test_cache_version_doc_matches_reality`).
   실제로 한 번 어긋나 있었다 — 문서가 한 칸 뒤처지면 다음 사람이 잘못된 번호에서 올린다

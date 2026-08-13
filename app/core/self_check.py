@@ -628,6 +628,9 @@ CHECKS: list[Check] = [
     Check("golden_regression", "quality", SEV_WARNING,
           "골든셋이 직전 런 대비 회귀하지 않았는가", _check_golden_regression),
     # 정적 검사 — 코드·자산을 읽어 "정상처럼 보이는 고장"을 찾는다
+    Check("static_assets", "static", SEV_CRITICAL,
+          "프론트 자산이 비었거나 잘리지 않았는가 (0바이트면 화면이 백지다)",
+          _static("static_assets")),
     Check("static_css_vars", "static", SEV_WARNING,
           "정의되지 않은 CSS 변수를 참조하지 않는가 (폴백이 조용히 먹는다)",
           _static("static_css_vars")),

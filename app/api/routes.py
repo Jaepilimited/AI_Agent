@@ -484,7 +484,12 @@ async def list_datasources():
     """Return available @@ data sources for frontend autocomplete."""
     from app.agents.orchestrator import OrchestratorAgent
     registry = OrchestratorAgent.get_db_registry()
-    return [{"key": e["key"], "aliases": e["aliases"], "label": e["label"], "desc": e["desc"], "group": e.get("group", ""), "icon": e.get("icon", "")} for e in registry]
+    # ⚠️ `route` 와 `group` 을 반드시 함께 준다 — 프론트가 이 응답으로 @@ 목록과
+    #    라우트 맵을 **만든다**. 예전엔 프론트가 같은 목록을 하드코딩해 갖고 있었고,
+    #    그래서 서버만 고치면 조용히 어긋났다 (2026-08-13 단일 소스화).
+    return [{"key": e["key"], "aliases": e["aliases"], "label": e["label"],
+             "desc": e["desc"], "group": e.get("group", ""), "icon": e.get("icon", ""),
+             "route": e.get("route", "bigquery")} for e in registry]
 
 
 @router.get("/api/notion-sync/status")
