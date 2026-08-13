@@ -210,21 +210,30 @@ def test_self_feature_question_routes_direct(question, expected):
     assert confident, "확신 없이 넘기면 LLM 판정에 맡겨져 결과가 흔들린다"
 
 
-def test_both_direct_prompts_describe_the_report_feature():
-    """⛔ direct 경로 시스템 프롬프트가 **두 벌**이다 (스트리밍/비스트리밍).
+def test_direct_prompt_has_exactly_one_source():
+    """direct 시스템 프롬프트는 **한 벌**이어야 한다.
 
-    한쪽만 고쳤다가 "보고서라는 별도 메뉴는 없습니다" 라고 답한 적이 있다
-    (2026-08-13). 같은 사실을 두 곳에 적어야 하는 구조라, 어긋나면 여기서 잡는다.
+    ⛔ 예전엔 스트리밍/비스트리밍 두 벌이었고, 한쪽만 고쳤다가 "보고서라는 별도
+       메뉴는 없습니다" 라고 답했다 (2026-08-13). 사본이 다시 생기면 여기서 막는다.
     """
     import inspect
     from app.agents import orchestrator as O
 
     src = inspect.getsource(O)
-    blocks = src.count("## 시스템 기능")
-    assert blocks >= 2, "프롬프트 사본 수가 바뀌었다 — 이 테스트의 전제를 다시 확인할 것"
-    # 두 사본 모두 보고서 기능과 생성 조건을 담아야 한다
-    for marker in ("@@보고서", "보고서 열기", "공유"):
-        assert src.count(marker) >= 2, f"프롬프트 한쪽에만 있다: {marker}"
+    assert src.count("당신은 Craver의 AI 어시스턴트입니다") == 1, (
+        "direct 프롬프트 사본이 늘었다 — _build_direct_system_prompt() 하나만 두라")
+    assert src.count("## 시스템 기능") == 1
+
+
+def test_direct_prompt_covers_the_features_users_ask_about():
+    """사용자가 자주 묻는 기능이 프롬프트에 실제로 들어 있는가."""
+    from app.agents.orchestrator import OrchestratorAgent
+
+    o = OrchestratorAgent.__new__(OrchestratorAgent)
+    prompt = OrchestratorAgent._build_direct_system_prompt(o)
+    for marker in ("@@보고서", "보고서 열기", "공유", "대시보드", "대표 제품",
+                   "답변 형식 표준", "CBT·JBT·KBT"):
+        assert marker in prompt, f"프롬프트에 없다: {marker}"
 
 
 # ── 라우팅 광역 회귀 (2026-08-13 스윕에서 나온 것들) ─────────────────────────
