@@ -522,14 +522,31 @@
       var saved = localStorage.getItem("skin1004_enabled_sources");
       if (saved) {
         var parsed = JSON.parse(saved);
-        // Migrate: if any saved key not in current set, reset to all
+        // ⚠️ 소스 목록이 **아직 안 온 상태**(비동기 로드)에서는 검증하지 마라.
+        //    예전엔 여기서 "저장된 키가 현재 목록에 없다" → 저장분을 지웠는데,
+        //    목록이 비어 있으니 **항상 참**이 돼 사용자의 선택이 통째로 날아가고
+        //    `0/30` 이 됐다 (2026-08-14 사용자 제보 — 내가 만든 회귀).
+        //    검증은 목록이 도착한 뒤 `_reconcileEnabledSources()` 가 한다.
+        if (!DATA_SOURCE_KEYS.length) return parsed;
         var hasOld = parsed.some(function(k) { return DATA_SOURCE_KEYS.indexOf(k) < 0; });
         if (!hasOld && parsed.length > 0) return parsed;
         localStorage.removeItem("skin1004_enabled_sources");
       }
     } catch (e) {}
-    // Default: all enabled
+    // Default: all enabled (목록이 아직 없으면 빈 배열 — 도착 후 전체로 채운다)
     return DATA_SOURCE_KEYS.slice();
+  }
+
+  // 소스 목록이 도착한 뒤 선택 상태를 맞춘다. 목록이 비동기라 이 단계가 반드시 필요하다.
+  function _reconcileEnabledSources() {
+    if (!DATA_SOURCE_KEYS.length) return;
+    var before = enabledSources.length;
+    enabledSources = enabledSources.filter(function(k) {
+      return DATA_SOURCE_KEYS.indexOf(k) >= 0;
+    });
+    // 저장된 것이 없거나(첫 로그인) 전부 무효면 **전체 선택**이 기본값이다
+    if (!enabledSources.length) enabledSources = DATA_SOURCE_KEYS.slice();
+    if (enabledSources.length !== before) saveEnabledSources();
   }
   function saveEnabledSources() {
     localStorage.setItem("skin1004_enabled_sources", JSON.stringify(enabledSources));
@@ -792,6 +809,7 @@
         try { localStorage.setItem("dbSourcesCache", JSON.stringify(data)); } catch (e) {}
         _applyFiSourceVisibility();
         _rebuildDataSourceKeys();
+        _reconcileEnabledSources();
       }).catch(function() {
         // 목록을 못 받으면 @@ 가 통째로 죽는다. 마지막으로 성공한 응답을 쓴다.
         // ⛔ 하드코딩 폴백을 두지 않는다 — 그게 바로 없애려던 두 번째 사본이다.
@@ -805,6 +823,7 @@
             fillSourceGroups(cached);
             _applyFiSourceVisibility();
             _rebuildDataSourceKeys();
+            _reconcileEnabledSources();
           }
         } catch (e) {}
       });
