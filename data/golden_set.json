@@ -25,6 +25,34 @@
       "note": "2026-08-06 사고: direct 오분류로 '조회하겠습니다' 빈 약속"
     },
     {
+      "id": "inc_b2b_vendor_share_alias_and_period",
+      "category": "incident",
+      "freq": "daily",
+      "question": "월별 각 b2b 업체별 매출의 비중이 얼마인지 2025년부터 뽑아줘. 왜냐면 좀 비중있는 업체별의 매출이 대충 얼마인지 확인하려해",
+      "expect": {
+        "contains_all": [
+          "2025",
+          "B2B"
+        ],
+        "contains_any": [
+          "업체",
+          "거래처",
+          "Company_Name"
+        ],
+        "not_contains": [
+          "포어마이징 매출",
+          "CS Q&A",
+          "사내 CS 데이터베이스"
+        ],
+        "sql_contains_any": [
+          "ROW_NUMBER"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
+      "note": "2026-08-14 사고: '얼마인지'가 포어마이징으로 오타 교정되고 전역 LIMIT 1000이 1~2월만 남김"
+    },
+    {
       "id": "inc_clarify_followup_b2b",
       "category": "incident",
       "freq": "daily",
@@ -1175,6 +1203,27 @@
         "max_seconds": 300
       },
       "note": "2026-08-13 사고: '외부 요인도'의 '인도'를 국가로 잡아 일본 보고서가 '일본 · 인도' 보고서가 됐다. 요약에 versus 절('일본 · 인도과 타 국가...')이 실려 드러난다. ⚠️ 절 조합이 바뀌면 요약에서 안 보일 수 있다 — 확실한 감시는 tests/test_report_rules.py 의 extract_filters 케이스다. 여긴 사용자가 보는 쪽만 본다"
+    },
+    {
+      "id": "inc_brand_scope_country_total",
+      "category": "incident",
+      "freq": "daily",
+      "question": "2026년 7월 미국과 캐나다에서 발생한 매출을 각각 알려줘",
+      "expect": {
+        "contains_all": [
+          "219",
+          "17"
+        ],
+        "not_contains": [
+          "86.5",
+          "86.6",
+          "언제인가요",
+          "어느 브랜드"
+        ],
+        "min_len": 150,
+        "max_seconds": 120
+      },
+      "note": "2026-08-06 제보: 묻지 않은 Brand IN ('SK','CL','CBT') 로 우마가 빠져 미국 매출이 61% 축소됐다"
     }
   ]
 }

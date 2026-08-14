@@ -296,6 +296,47 @@ def _iso_country(literal: str) -> Optional[str]:
     return _COUNTRY_KR2ISO.get(raw)
 
 
+# ⛔ **묻지 않은 브랜드 필터가 매출을 조용히 깎고 있었다** (2026-08-14 제보로 확인).
+#    "26년 7월 미국·인도네시아·말레이시아·호주·멕시코·캐나다 매출" 질문에
+#    LLM 이 `Brand IN ('SK','CL','CBT')` 를 스스로 붙여 **우마(UM)를 통째로 뺐다**:
+#
+#        멕시코  8.15억  ← 답변      /  9.32억  실제  (UM 1.17억 누락)
+#        미국   86.55억  ← 답변      / 219.34억 실제  (UM 132.79억 누락 · 61%)
+#        캐나다  6.56억  ← 답변      /  17.83억 실제  (UM 11.27억 누락 · 63%)
+#
+#    답변은 조회 조건에 "대상 브랜드: SK, CL, CBT"라고 적었지만, 국가별 매출을 물은
+#    사람이 그 줄을 브랜드 한정으로 읽을 이유가 없다. **틀린 티가 안 나는 실패다.**
+#
+#    원인은 프롬프트가 자기 자신과 모순인 것이다 — 73행은 "국가별 매출 → 브랜드
+#    필터 없이"인데 4곳이 "Brand IN ('SK','CL') 필수"라고 적혀 있었다(그중 하나는
+#    국가 질문 예시였다). 프롬프트를 고쳐도 지시는 확률일 뿐이라 여기서 보증한다 —
+#    국가 리터럴·팀 리터럴 교정과 같은 계열이다.
+#
+#    ⚠️ 제품/라인 질문에서는 이 필터가 **맞다** (UM·CBT 는 제품명이 100% 비어 있다).
+#       그래서 질문에 제품어나 브랜드명이 하나라도 있으면 건드리지 않는다.
+_BRAND_TERMS = ("브랜드", "스킨천사", "스킨1004", "skin1004", "우마", "umma", "um ",
+                "좀비뷰티", "좀비", "커먼랩스", "commonlabs", "라인별")
+_PRODUCT_TERMS = ("제품", "품목", "sku", "라인", "카테고리", "세트", "앰플", "크림",
+                  "토너", "선크림", "패드", "클렌징", "마스크", "세럼", "에센스")
+# 스킨천사 계열만 남기고 UM/DD 를 빼는 필터 (이것만 대상으로 한다)
+_SUBSET_BRAND_RE = re.compile(
+    r"\s*AND\s+Brand\s+IN\s*\(\s*(?:'(?:SK|CL|CBT)'\s*,?\s*){2,3}\)", re.I)
+
+
+def _strip_unrequested_brand_filter(sql: str, question: str) -> str:
+    """묻지 않은 브랜드 축소를 걷어낸다. **프롬프트가 이미 정한 규칙을 강제할 뿐이다.**"""
+    if not sql or not question or not _SUBSET_BRAND_RE.search(sql):
+        return sql
+    q = question.lower()
+    if any(t in q for t in _BRAND_TERMS) or any(t in q for t in _PRODUCT_TERMS):
+        return sql                      # 브랜드·제품을 물었으면 그 필터가 맞다
+    cleaned = _SUBSET_BRAND_RE.sub("", sql)
+    if cleaned != sql:
+        logger.warning("brand_filter_stripped", question=question[:120],
+                       removed=_SUBSET_BRAND_RE.search(sql).group(0).strip())
+    return cleaned
+
+
 def _localize_promotion_literals(sql: str) -> str:
     """promotion 테이블 전용 리터럴 교정 (team_id·country_code)."""
     def _sub_one(m, fn):
@@ -417,6 +458,7 @@ def _enforce_partition_filter(
         new_sql = _localize_country_literals(new_sql)
         new_sql = _localize_team_literals(new_sql)
         new_sql = _localize_promotion_literals(new_sql)
+        new_sql = _strip_unrequested_brand_filter(new_sql, query)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
                 allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
@@ -1192,6 +1234,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = _localize_country_literals(sql)
             sql = _localize_team_literals(sql)
             sql = _localize_promotion_literals(sql)
+            sql = _strip_unrequested_brand_filter(sql, query)
 
         logger.info("sql_generated", sql=sql[:200])
 
@@ -1284,6 +1327,7 @@ def _retry_with_stronger_model(
         retry_sql = _localize_country_literals(retry_sql)
         retry_sql = _localize_team_literals(retry_sql)
         retry_sql = _localize_promotion_literals(retry_sql)
+        retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
         if not retry_sql:
             return None
 
@@ -1437,6 +1481,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _localize_country_literals(retry_sql)
                 retry_sql = _localize_team_literals(retry_sql)
                 retry_sql = _localize_promotion_literals(retry_sql)
+                retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
                 if retry_sql:
                     if (_period_retry_required
                             and not _has_partitioned_period_ranking(retry_sql)):

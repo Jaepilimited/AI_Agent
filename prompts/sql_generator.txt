@@ -220,8 +220,10 @@ Line 실제 DISTINCT 값: 'B_Line', 'C_Line', 'Centella', 'Centella_Teca', 'Dual
 - ⚠️ 라인 지정 없이 카테고리만 언급 시 → `Category = 'Cream'` 사용! `SET LIKE '%Cream%'` 금지!
 - 라인+제품 조합(예: "센텔라 크림")은 기존 LIKE 필터 유지
 
-#### ⚠️ 제품 관련 매출 질문 시 Brand IN ('SK', 'CL') 필수!
-- 제품/카테고리/라인 관련 → `WHERE Brand IN ('SK', 'CL')`
+#### ⚠️ **제품·카테고리·라인 질문에 한해** Brand IN ('SK', 'CBT', 'CL')
+- 제품/카테고리/라인 관련 → `WHERE Brand IN ('SK', 'CBT', 'CL')` (UM·CBT 는 제품명이 100% 비어 있다)
+- ⛔ **국가별·팀별·채널별·기간별 총매출에는 붙이지 마라.** 우마(UM, 3,252억)가 통째로 빠진다.
+  실제 오답: 2026-07 미국 매출을 86.6억으로 답했으나 실제는 219.3억이었다 (UM 132.8억 누락, 2026-08-14)
 - 브랜드 전체 비교 질문은 필터 없이 전체 브랜드 포함
 
 #### 조직/관리
@@ -271,6 +273,18 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
 2. **BigQuery 문법**: `EXTRACT(YEAR FROM Date)`, `FORMAT_DATETIME('%Y-%m', Date)`, `SAFE_DIVIDE(a, b)`, `CONTAINS_SUBSTR()`
 3. **테이블명 백틱 필수**: `` `skin1004-319714.Sales_Integration.SALES_ALL_Backup` ``
 4. **LIMIT 1000** (대형 테이블도 충분)
+   - ⚠️ **기간 × 고카디널리티 교차분석**(예: 월별 업체별·거래처별·제품별)은
+     오래된 기간부터 정렬한 뒤 전역 `LIMIT 1000`으로 자르지 마라. 그러면 요청 기간이
+     남아 있어도 앞쪽 몇 달만 반환되어 전체 기간처럼 오답한다.
+   - "2025년부터 월별 주요 업체"처럼 기간과 상위 항목을 함께 물으면
+     첫 CTE에서 `GROUP BY month, company` 집계를 먼저 완료하고, 다음 CTE에서 집계된
+     `month` 별칭으로 `ROW_NUMBER() OVER (PARTITION BY month ORDER BY metric DESC)`를 계산해
+     **기간별 TOP N**을 제한한 뒤 `ORDER BY month DESC, rank`로 반환하라. GROUP BY와 같은
+     SELECT에서 원본 `Date`를 윈도 함수에 다시 쓰면 BigQuery 오류가 나므로 금지한다.
+     사용자가 요청한 시작일부터 최신 가용 기간까지 모든 기간이 결과에 남아야 한다.
+   - 전체 기간 핵심 업체의 월별 추이를 원하면, 전체 기간 TOP N 업체를 별도 CTE에서 먼저
+     확정한 뒤 그 업체들의 모든 월을 반환하라. 어느 방식이든 전역 LIMIT 때문에 기간이
+     잘리는 SQL은 금지한다.
 5. **Country 값은 한국어** — 변환 불필요. ⚠️ CASE WHEN Country 매핑도 반드시 한국어!
    - ✅ `CASE WHEN Country IN ('중국', '대만', '홍콩') THEN '중화권'`
    - ❌ `CASE WHEN Country IN ('China', 'Taiwan', 'Hong Kong') THEN '중화권'`
@@ -315,6 +329,9 @@ Team_NEW 실제 DISTINCT 값 (SALES_ALL_Backup 기준):
 - **데이터 시작: 2019-01-01** — 모든 쿼리에 `Date >= '2019-01-01'` 필수 (2019년 이전 = 목표/플래너 데이터)
 - **기간 미지정 시 전체 기간**: 특정 연도 언급 없으면 `Date >= '2019-01-01'`만 사용, 연도 필터 추가 금지
 - **"올해", "지난달" 등 명시적 기간 표현이 있을 때만** 날짜 필터 추가
+- **"2025년부터/이후" 같은 과거 실적 시작점만 지정**: 미래 전망·예정·계획을 명시하지
+  않았다면 반드시 `Date <= CURRENT_DATETIME()`도 붙여 오늘 이후 행을 제외한다. 매출·판매·
+  수량·주문·광고 실적에 적용한다. 시작일 하한만 두면 미래일로 잘못 적재된 행이 실적에 섞인다.
 
 ### 16. 시각화/차트 요청 시
 - 반드시 SUM/COUNT + GROUP BY 집계. raw 행 금지!
@@ -687,7 +704,7 @@ LIMIT 1000
 SELECT CONCAT(CAST(EXTRACT(YEAR FROM Date) AS STRING), '-Q', CAST(EXTRACT(QUARTER FROM Date) AS STRING)) AS quarter,
   Category, SUM(Sales1_R) AS total_revenue
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
-WHERE Team_NEW = 'JBT' AND Brand IN ('SK', 'CL') AND Date >= '2025-01-01' AND Date <= '2026-03-31'
+WHERE Team_NEW = 'JBT' AND Brand IN ('SK', 'CBT', 'CL') AND Date >= '2025-01-01'  -- Category(제품) 절이라 붙는다 AND Date <= '2026-03-31'
 GROUP BY quarter, Category ORDER BY quarter, total_revenue DESC LIMIT 1000
 ```
 
@@ -695,7 +712,8 @@ GROUP BY quarter, Category ORDER BY quarter, total_revenue DESC LIMIT 1000
 ```sql
 SELECT `SET` AS product, SUM(Sales1_R) AS total_revenue
 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
-WHERE Date BETWEEN '2024-01-01' AND '2024-12-31' AND Brand IN ('SK', 'CL') AND Country = '인도네시아'
+WHERE Date BETWEEN '2024-01-01' AND '2024-12-31' AND Brand IN ('SK', 'CBT', 'CL') AND Country = '인도네시아'
+  -- ⚠️ 이 필터는 **제품(`SET`)별 질문이라서** 붙는다. 국가별 총매출 질문에는 붙이지 마라 (우마가 통째로 빠진다)
   AND `SET` IS NOT NULL AND `SET` != '' AND `SET` != 'Sachet' AND `SET` NOT LIKE '% + %'
 GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
 ```
@@ -741,7 +759,8 @@ GROUP BY `SET` ORDER BY total_revenue DESC LIMIT 10
 
 ⚠️ **사용 금지 컬럼**: Quantity, Event_Qty, Product_Name_Base, Qty_NameBase, Event_Qty_NameBase, Team, Manager, FOC_or_Not, Type_of_Company, Type_of_Company_ENG, Country_ENG, Continent1_ENG, Continent2_ENG, Line_ENG, Channel, In_out_bound, Product_Type, TIER, foc2, Type_of_Item, Product_ENG
 ⚠️ **Sachet 제외 필수**: `AND Product != 'Sachet'` (FOC 관련은 포함)
-⚠️ **Brand IN ('SK', 'CL') 필수** — DD/UM 제외
+⚠️ **제품 단위 질문이면** `Brand IN ('SK', 'CBT', 'CL')` — UM·DD 는 이 테이블에 행이 없다.
+   ⛔ 국가별·팀별 총매출에는 붙이지 마라 (그건 SALES_ALL 로 전 브랜드를 봐야 한다)
 ⚠️ Sales1_R, Sales2_R, Order_Count 등 **매출 관련 컬럼 없음!**
 ⚠️ 세트 이미 분리됨 → `NOT LIKE '% + %'` 불필요
 
@@ -1247,8 +1266,7 @@ sales_monthly AS (
     FORMAT_DATE('%Y-%m', Date) AS month,
     SUM(Sales1_R) AS total_sales
   FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
-  WHERE Brand IN ('SK', 'CL')
-    AND Date >= '2026-01-01'
+  WHERE Date >= '2026-01-01'          -- ⛔ 총매출에 Brand 필터를 붙이지 마라 (우마 누락)
   GROUP BY month
 )
 SELECT
@@ -1320,8 +1338,7 @@ sales_team AS (
     END AS team,
     SUM(Sales1_R) AS total_sales
   FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`
-  WHERE Brand IN ('SK', 'CL')
-    AND Date >= '2026-01-01'
+  WHERE Date >= '2026-01-01'          -- ⛔ 팀별 매출에도 Brand 필터를 붙이지 마라
   GROUP BY month, team
 )
 SELECT
@@ -1373,7 +1390,7 @@ ORDER BY month, Mall_Classification
 
 ### 규칙
 - 재구매 = 같은 기간 내 2회 이상 구매한 고객 (ID 기준)
-- Brand IN ('SK', 'CL') 필터 필수
+- Brand IN ('SK', 'CBT', 'CL') 필터 (재구매는 제품 구매 이력 기준). ⚠️ 국가·팀 총매출에는 붙이지 마라
 - ⛔ SALES_repurchase 테이블 사용 금지! SALES_ALL_Backup만 사용!
 
 ---
