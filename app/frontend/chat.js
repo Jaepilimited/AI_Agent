@@ -4472,9 +4472,83 @@
       if (tab.dataset.tab === "growth") loadGrowthReport();
       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
       if (tab.dataset.tab === "golden") loadGolden();
+      if (tab.dataset.tab === "feedback") loadFeedbackInbox();
       if (tab.dataset.tab !== "selfcheck") refreshSelfCheckBadge();
     });
   });
+
+
+  // ── 붐따(👎) 처리함 ──
+  // ⛔ 이 화면이 생기기 전까지 **코멘트를 읽을 방법이 없었다.** 수집·집계는 되는데
+  //    내용은 아무도 못 봤고, 넉 달치 39건이 그대로 쌓여 있었다 (2026-08-14).
+  var FEEDBACK_STATUS = {
+    new: ["미확인", "var(--text)"],
+    ack: ["처리 중", "var(--text-secondary)"],
+    done: ["완료", "var(--text-muted)"],
+    wontfix: ["보류", "var(--text-muted)"]
+  };
+
+  function loadFeedbackInbox() {
+    var el = document.getElementById("admin-feedback-body");
+    var st = document.getElementById("feedback-filter").value;
+    el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>불러오는 중…</p>";
+    fetch("/api/admin/feedback?only_down=true" + (st ? "&status=" + st : ""))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) { renderFeedbackInbox(d); })
+      .catch(function() {
+        el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>불러오지 못했습니다</p>";
+      });
+  }
+
+  function renderFeedbackInbox(d) {
+    var el = document.getElementById("admin-feedback-body");
+    var sum = document.getElementById("feedback-summary");
+    if (!d) { el.innerHTML = "<p style='padding:12px'>불러오지 못했습니다</p>"; return; }
+    var s = d.summary || {};
+    sum.textContent = "미처리 " + (s.open || 0) + "건 (코멘트 " + (s.open_with_comment || 0) + "건)";
+    var items = d.items || [];
+    if (!items.length) {
+      el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>해당 상태의 붐따가 없습니다.</p>";
+      return;
+    }
+    el.innerHTML = items.map(function(it) {
+      var meta = FEEDBACK_STATUS[it.status] || FEEDBACK_STATUS.new;
+      // ⚠️ 코멘트는 사용자가 쓴 글이다 — 반드시 이스케이프한다 (HTML 주입 방지)
+      var body = it.comment
+        ? "<div style='margin:6px 0;white-space:pre-wrap'>" + escapeHtml(it.comment) + "</div>"
+        : "<div style='margin:6px 0;color:var(--text-muted)'>(코멘트 없음 — 👎만 눌림)</div>";
+      var note = it.handled_note
+        ? "<div style='color:var(--text-muted);font-size:12px'>메모: " + escapeHtml(it.handled_note) + "</div>"
+        : "";
+      var opts = Object.keys(FEEDBACK_STATUS).map(function(k) {
+        return "<option value='" + k + "'" + (k === it.status ? " selected" : "") + ">"
+          + FEEDBACK_STATUS[k][0] + "</option>";
+      }).join("");
+      return "<div style='padding:10px 12px;border-bottom:1px solid var(--border)'>"
+        + "<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap'>"
+        + "<strong style='color:" + meta[1] + "'>" + meta[0] + "</strong>"
+        + "<span class='admin-user-email'>" + escapeHtml(it.user_name || "(알 수 없음)") + "</span>"
+        + "<span class='admin-user-email'>" + String(it.created_at || "").slice(0, 16) + "</span>"
+        + "<select class='admin-select' data-fb-id='" + it.id + "' style='margin-left:auto'>" + opts + "</select>"
+        + "</div>" + body + note + "</div>";
+    }).join("");
+
+    el.querySelectorAll("select[data-fb-id]").forEach(function(sel) {
+      sel.addEventListener("change", function() {
+        fetch("/api/admin/feedback/" + sel.dataset.fbId, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: sel.value })
+        }).then(function(r) {
+          if (!r.ok) { alert("상태 변경 실패"); return; }
+          loadFeedbackInbox();
+        });
+      });
+    });
+  }
+
+  var _fbFilter = document.getElementById("feedback-filter");
+  if (_fbFilter) _fbFilter.addEventListener("change", loadFeedbackInbox);
 
   // ── 자가 점검 ──
   // 배치가 조용히 죽거나 데이터가 썩는 것을 사람이 눈치채기 전에 보여준다.

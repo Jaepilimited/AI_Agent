@@ -1,9 +1,10 @@
 """Admin endpoints: user management, model access control (MariaDB)."""
 
 import asyncio
+from datetime import date, datetime, timedelta
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
@@ -15,6 +16,7 @@ logger = structlog.get_logger(__name__)
 admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 _ALL_MODELS = "skin1004-Analysis"
+_VISITOR_TRACKING_STARTED_ON = date(2026, 8, 11)
 
 
 # ── Async DB wrappers ──
@@ -275,6 +277,180 @@ async def get_metrics(admin: User = Depends(_require_admin)) -> dict:
         "db_pool": pool_state,
         "concurrency_gates": gates,
         "active_users_15m": active_users,
+    }
+
+
+def _visitor_period_keys(start: date, end: date, granularity: str) -> list[str]:
+    """Return every chart bucket, including periods with zero visitors."""
+    keys: list[str] = []
+    if granularity == "day":
+        cursor = start
+        while cursor <= end:
+            keys.append(cursor.isoformat())
+            cursor += timedelta(days=1)
+        return keys
+
+    if granularity == "week":
+        cursor = start - timedelta(days=start.weekday())
+        last = end - timedelta(days=end.weekday())
+        while cursor <= last:
+            keys.append(cursor.isoformat())
+            cursor += timedelta(days=7)
+        return keys
+
+    cursor = start.replace(day=1)
+    last = end.replace(day=1)
+    while cursor <= last:
+        keys.append(cursor.isoformat())
+        if cursor.month == 12:
+            cursor = cursor.replace(year=cursor.year + 1, month=1)
+        else:
+            cursor = cursor.replace(month=cursor.month + 1)
+    return keys
+
+
+def _date_key(value) -> str:
+    if isinstance(value, (date, datetime)):
+        return value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
+    return str(value or "")[:10]
+
+
+@admin_router.get("/visitor-analytics")
+async def get_visitor_analytics(
+    days: int = Query(30),
+    _: User = Depends(_require_admin),
+) -> dict:
+    """Authenticated visitor trend and recent visitor ledger. Admin only."""
+    if days not in (30, 90, 365):
+        raise HTTPException(status_code=400, detail="days must be 30, 90, or 365")
+
+    today = date.today()
+    requested_start = today - timedelta(days=days - 1)
+    start = max(requested_start, _VISITOR_TRACKING_STARTED_ON)
+    previous_start = requested_start - timedelta(days=days)
+    previous_end = requested_start - timedelta(days=1)
+    tracked_days = max((today - _VISITOR_TRACKING_STARTED_ON).days + 1, 0)
+    comparison_ready = _VISITOR_TRACKING_STARTED_ON <= previous_start
+    available_ranges = [30]
+    if tracked_days >= 90:
+        available_ranges.append(90)
+    if tracked_days >= 365:
+        available_ranges.append(365)
+    granularity = "day" if days == 30 else ("week" if days == 90 else "month")
+    bucket_sql = {
+        "day": "DATE(v.visit_date)",
+        "week": "DATE_SUB(v.visit_date, INTERVAL WEEKDAY(v.visit_date) DAY)",
+        "month": "DATE_FORMAT(v.visit_date, '%%Y-%%m-01')",
+    }[granularity]
+
+    summary_rows, series_rows, visitor_rows, registered_rows = await asyncio.gather(
+        _db_fetch_all(
+            """SELECT
+                   COUNT(DISTINCT CASE WHEN visit_date BETWEEN %s AND %s THEN user_id END) AS current_unique,
+                   COUNT(DISTINCT CASE WHEN visit_date BETWEEN %s AND %s THEN user_id END) AS previous_unique,
+                   COALESCE(SUM(CASE WHEN visit_date BETWEEN %s AND %s THEN visit_count ELSE 0 END), 0) AS current_visits,
+                   COUNT(DISTINCT CASE WHEN visit_date = %s THEN user_id END) AS today_unique
+               FROM user_visits
+               WHERE visit_date BETWEEN %s AND %s""",
+            (start, today, previous_start, previous_end, start, today, today, previous_start, today),
+        ),
+        _db_fetch_all(
+            f"""SELECT {bucket_sql} AS bucket,
+                       COUNT(DISTINCT v.user_id) AS visitors,
+                       COALESCE(SUM(v.visit_count), 0) AS visits
+                FROM user_visits v
+                WHERE v.visit_date BETWEEN %s AND %s
+                GROUP BY bucket
+                ORDER BY bucket""",
+            (start, today),
+        ),
+        _db_fetch_all(
+            """SELECT u.id,
+                      COALESCE(a.display_name, u.display_name, '') AS name,
+                      COALESCE(a.email, u.email, '') AS email,
+                      COALESCE(a.department, '') AS department,
+                      MAX(v.last_seen_at) AS last_seen_at,
+                      COUNT(*) AS active_days,
+                      COALESCE(SUM(v.visit_count), 0) AS visits
+               FROM user_visits v
+               JOIN users u ON u.id = v.user_id
+               LEFT JOIN ad_users a ON a.id = u.ad_user_id
+               WHERE v.visit_date BETWEEN %s AND %s
+               GROUP BY u.id, a.display_name, u.display_name, a.email, u.email, a.department
+               ORDER BY last_seen_at DESC
+               LIMIT 50""",
+            (start, today),
+        ),
+        _db_fetch_all("SELECT COUNT(*) AS cnt FROM users"),
+    )
+
+    summary = summary_rows[0] if summary_rows else {}
+    current_unique = int(summary.get("current_unique") or 0)
+    previous_unique = int(summary.get("previous_unique") or 0)
+    if not comparison_ready:
+        change_pct = None
+    elif previous_unique:
+        change_pct = round((current_unique - previous_unique) * 100 / previous_unique, 1)
+    elif current_unique:
+        change_pct = None
+    else:
+        change_pct = 0.0
+
+    series_map = {
+        _date_key(row.get("bucket")): {
+            "visitors": int(row.get("visitors") or 0),
+            "visits": int(row.get("visits") or 0),
+        }
+        for row in series_rows
+    }
+    series = [
+        {
+            "period": key,
+            "visitors": series_map.get(key, {}).get("visitors", 0),
+            "visits": series_map.get(key, {}).get("visits", 0),
+        }
+        for key in _visitor_period_keys(start, today, granularity)
+    ]
+
+    visitors = []
+    for row in visitor_rows:
+        last_seen = row.get("last_seen_at")
+        visitors.append({
+            "id": int(row["id"]),
+            "name": row.get("name") or "",
+            "email": row.get("email") or "",
+            "department": row.get("department") or "",
+            "last_seen_at": last_seen.isoformat() if hasattr(last_seen, "isoformat") else str(last_seen or ""),
+            "active_days": int(row.get("active_days") or 0),
+            "visits": int(row.get("visits") or 0),
+        })
+
+    return {
+        "range": {
+            "days": days,
+            "start": start.isoformat(),
+            "requested_start": requested_start.isoformat(),
+            "end": today.isoformat(),
+            "granularity": granularity,
+            "is_partial": start > requested_start,
+        },
+        "summary": {
+            "unique_visitors": current_unique,
+            "previous_unique_visitors": previous_unique if comparison_ready else None,
+            "change_pct": change_pct,
+            "today_visitors": int(summary.get("today_unique") or 0),
+            "page_visits": int(summary.get("current_visits") or 0),
+            "registered_users": int(registered_rows[0].get("cnt") or 0) if registered_rows else 0,
+        },
+        "tracking_started_at": _VISITOR_TRACKING_STARTED_ON.isoformat(),
+        "availability": {
+            "tracked_days": tracked_days,
+            "available_ranges": available_ranges,
+            "comparison_ready": comparison_ready,
+            "comparison_requires_days": days * 2,
+        },
+        "series": series,
+        "visitors": visitors,
     }
 
 
@@ -869,3 +1045,39 @@ async def get_llm_costs(days: int = 30, _: User = Depends(_require_admin)) -> di
     from app.core.usage_meter import get_usage_report
 
     return await asyncio.to_thread(get_usage_report, max(1, min(days, 365)))
+
+
+# ── 붐따(👎) 처리함 ─────────────────────────────────────────────────────────
+# ⛔ 이 엔드포인트가 생기기 전까지 **코멘트를 읽는 코드가 앱 전체에 없었다.**
+#    수집·집계는 되는데 내용은 아무도 못 봤다 (2026-08-14 실측).
+
+
+class FeedbackStatusIn(BaseModel):
+    status: str
+    note: str | None = None
+
+
+@admin_router.get("/feedback")
+async def list_feedback(
+    status: str | None = Query(None, description="new/ack/done/wontfix"),
+    only_down: bool = Query(True, description="붐따만 볼지"),
+    limit: int = Query(200, le=500),
+    _: User = Depends(_require_admin),
+):
+    from app.core.feedback_inbox import list_feedback as _list, summary
+    items = await asyncio.to_thread(_list, status, only_down, limit)
+    return {"items": items, "summary": await asyncio.to_thread(summary)}
+
+
+@admin_router.put("/feedback/{feedback_id}")
+async def update_feedback_status(
+    feedback_id: int, body: FeedbackStatusIn,
+    admin: User = Depends(_require_admin),
+):
+    from app.core.feedback_inbox import set_status
+    try:
+        await asyncio.to_thread(
+            set_status, feedback_id, body.status, admin.email, body.note)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}

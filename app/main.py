@@ -135,6 +135,10 @@ def create_app() -> FastAPI:
             await asyncio.to_thread(_ensure_fn)
         from app.core.self_check import ensure_self_check_tables
         await asyncio.to_thread(ensure_self_check_tables)
+        # 붐따 처리 상태 컬럼 — 없으면 "처리했다"를 남길 곳이 없어
+        # "인입은 됐는데 처리가 안 된 건지"를 영영 답할 수 없다 (2026-08-14)
+        from app.core.feedback_inbox import ensure_feedback_status_columns
+        await asyncio.to_thread(ensure_feedback_status_columns)
         from app.core.ingredients import ensure_ingredient_tables
         await asyncio.to_thread(ensure_ingredient_tables)
         from app.core.term_aliases import ensure_term_aliases_table
@@ -193,6 +197,8 @@ def create_app() -> FastAPI:
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
             _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")
             _scheduler.add_job(_model_rights_job, "cron", hour=4, minute=30, id="model_rights_sync_daily")
+            # 붐따 처리함 — 자가 점검(07:30) 뒤에 둔다. 밤새 들어온 것을 아침에 올린다
+            _scheduler.add_job(_feedback_digest_job, "cron", hour=8, minute=0, id="feedback_digest_daily")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
@@ -643,6 +649,26 @@ async def _golden_job():
         logger.info("golden_run_job_done", **{k: v for k, v in result.items() if k != "note"})
     except Exception as e:
         logger.error("golden_run_job_failed", error=str(e))
+
+
+async def _feedback_digest_job():
+    """매일 08:00: 새로 들어온 붐따(👎)를 읽어 처리 대상으로 올린다.
+
+    ⛔ 이 잡이 생기기 전까지 **붐따 코멘트를 읽는 경로가 없었다.** 넉 달치 39건이
+       쌓여 있었고, 그중 하나는 9일 뒤 개발자가 같은 증상을 직접 겪고서야 고쳐졌다.
+       "매일 개선하는 시스템"(Nightly-Debug)은 서버 로그 에러를 봤지 붐따를 본
+       적이 없다 (2026-08-14 확인).
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("feedback_digest_daily") as jr:
+            from app.core.feedback_inbox import run_daily_digest
+            result = await asyncio.to_thread(run_daily_digest)
+            jr.set_note(f"신규 {result['new']}건(코멘트 {result['new_with_comment']}) "
+                        f"· 미처리 {result['open']}건")
+        logger.info("feedback_digest_done", **result)
+    except Exception as e:
+        logger.error("feedback_digest_failed", error=str(e))
 
 
 async def _weekly_growth_report_job():

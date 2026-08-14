@@ -248,6 +248,7 @@
       <button class="admin-tab" data-tab="growth">성장 지표</button>
       <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
       <button class="admin-tab" data-tab="golden">골든셋</button>
+      <button class="admin-tab" data-tab="feedback">붐따 처리함</button>
     </div>
     <!-- Tab: Visitors -->
     <div class="admin-tab-content" id="tab-visitors">
@@ -325,6 +326,20 @@
       </div>
       <div class="admin-drawer-body" id="admin-golden-body"></div>
     </div>
+    <!-- Tab: Feedback inbox (붐따) -->
+    <div class="admin-tab-content" id="tab-feedback">
+      <div class="admin-toolbar">
+        <select id="feedback-filter" class="admin-select">
+          <option value="">전체</option>
+          <option value="new" selected>미확인</option>
+          <option value="ack">처리 중</option>
+          <option value="done">완료</option>
+          <option value="wontfix">보류</option>
+        </select>
+        <span id="feedback-summary" class="admin-stat-label"></span>
+      </div>
+      <div class="admin-drawer-body" id="admin-feedback-body"></div>
+    </div>
     <!-- Tab: Self Check -->
     <div class="admin-tab-content" id="tab-selfcheck">
       <div class="admin-toolbar">
@@ -368,7 +383,7 @@
   <!-- Theme Toggle -->
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
-  <script src="/frontend/chat.js?v=246"></script>
+  <script src="/frontend/chat.js?v=247"></script>
   <script src="/frontend/cella-pet.js?v=8"></script>
 </body>
 </html>

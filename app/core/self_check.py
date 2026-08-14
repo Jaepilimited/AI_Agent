@@ -171,6 +171,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "ingredient_sync_daily": (26, "제품 전성분 적재 (04:00)"),
     "golden_daily": (26, "골든셋 회귀 (05:30)"),
     "model_rights_sync_daily": (26, "모델 초상권 적재 (04:30)"),
+    "feedback_digest_daily": (26, "붐따 처리함 다이제스트 (08:00)"),
 }
 
 
