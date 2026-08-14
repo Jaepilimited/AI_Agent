@@ -868,6 +868,88 @@ def _build_date_context() -> str:
     )
 
 
+_PERIOD_RANK_TIME_TERMS = ("월별", "주별", "주차별", "일별", "분기별", "연도별")
+_PERIOD_RANK_DIM_TERMS = ("업체별", "거래처별", "바이어별", "제품별", "sku별", "채널별")
+_PERIOD_RANK_TOP_TERMS = (
+    "상위", "주요", "핵심", "비중있는", "비중 있는", "비중이 큰", "top", "랭킹",
+)
+_HISTORICAL_METRIC_TERMS = (
+    "매출", "판매", "수량", "주문", "실적", "비용", "광고비", "roas", "revenue",
+)
+_EXPLICIT_FUTURE_TERMS = (
+    "예정", "계획", "전망", "예측", "예상", "미래", "향후", "프로모션 일정",
+)
+
+
+def _requires_partitioned_period_ranking(query: str, conversation_context: str = "") -> bool:
+    """기간별 고카디널리티 TOP 분석이 전역 LIMIT으로 잘릴 위험이 있는가."""
+    text = f"{conversation_context}\n{query}".lower()
+    return (
+        any(term in text for term in _PERIOD_RANK_TIME_TERMS)
+        and any(term in text for term in _PERIOD_RANK_DIM_TERMS)
+        and any(term in text for term in _PERIOD_RANK_TOP_TERMS)
+    )
+
+
+def _has_partitioned_period_ranking(sql: str) -> bool:
+    """기간별 순위 창을 계산하고 TOP N 필터까지 실제 적용했는가."""
+    sql = sql or ""
+    window_aliases = re.findall(
+        r"\b(?:ROW_NUMBER|RANK|DENSE_RANK)\s*\(\s*\)\s*OVER\s*\("
+        r"[\s\S]*?\bPARTITION\s+BY\b[\s\S]*?\)\s+AS\s+`?([A-Za-z_]\w*)`?",
+        sql,
+        re.IGNORECASE,
+    )
+    rank_limit = r"(?:<=|<|=)\s*\d+|BETWEEN\s+1\s+AND\s+\d+"
+    for alias in window_aliases:
+        if re.search(
+            rf"\b(?:WHERE|AND|QUALIFY)\b[\s\S]*?\b{re.escape(alias)}\b\s*(?:{rank_limit})",
+            sql,
+            re.IGNORECASE,
+        ):
+            return True
+
+    # BigQuery QUALIFY는 별칭 없이 창 함수를 직접 필터링할 수도 있다.
+    return bool(re.search(
+        rf"\bQUALIFY\b[\s\S]*?\b(?:ROW_NUMBER|RANK|DENSE_RANK)\s*\(\s*\)"
+        rf"\s*OVER\s*\([\s\S]*?\bPARTITION\s+BY\b[\s\S]*?\)\s*(?:{rank_limit})",
+        sql,
+        re.IGNORECASE,
+    ))
+
+
+def _requires_current_date_cap(query: str, conversation_context: str = "") -> bool:
+    """과거 실적의 시작점만 지정한 질문은 오늘 이후 행을 포함하지 않는다."""
+    text = f"{conversation_context}\n{query}".lower()
+    has_history_start = bool(
+        re.search(r"20\d{2}\s*년?\s*(?:부터|이후)", text)
+        or re.search(r"date\s*>=\s*['\"]20\d{2}", text, re.IGNORECASE)
+    )
+    return (
+        has_history_start
+        and any(term in text for term in _HISTORICAL_METRIC_TERMS)
+        and not any(term in text for term in _EXPLICIT_FUTURE_TERMS)
+    )
+
+
+def _has_current_date_cap(sql: str) -> bool:
+    """Date에 오늘 이하 상한 또는 명시적 종료일이 있는가."""
+    sql = sql or ""
+    explicit_cap = re.search(
+        r"\b(?:\w+\.)?Date\s*(?:<=|<)\s*(?:CURRENT_(?:DATE|DATETIME)\s*\(\s*\)|"
+        r"DATE\s*\(\s*CURRENT_DATETIME\s*\(\s*\)\s*\)|['\"]20\d{2}-\d{2}-\d{2}['\"])",
+        sql,
+        re.IGNORECASE,
+    )
+    between_cap = re.search(
+        r"\b(?:\w+\.)?Date\s+BETWEEN\s+[^\n]+\s+AND\s+"
+        r"(?:CURRENT_(?:DATE|DATETIME)\s*\(\s*\)|['\"]20\d{2}-\d{2}-\d{2}['\"])",
+        sql,
+        re.IGNORECASE,
+    )
+    return bool(explicit_cap or between_cap)
+
+
 # --- LangGraph Nodes ---
 
 
@@ -917,6 +999,13 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     conv_section = ""
     if conv_context:
         conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?', '시각화해줘', '차트로 보여줘' 같은 참조를 이해하세요.\n⚠️ 현재 질문이 'B2B', '올해만', '월별로' 같은 짧은 단어/구라면 이것은 새 질문이 아니라 **직전 대화에 대한 답이나 조건 추가**다. 직전 AI 답변이 조건을 되물었다면(예: 'B2B/B2C 구분이 필요하시면 알려주세요'), 직전 사용자 질문에 이 조건을 결합한 하나의 요청으로 해석해 SQL을 생성하라. 예: 직전 질문 '국가별 첫 거래일자 확인' + 현재 답 'B2B' → 해당 국가들의 B2B 기준 MIN(Date) 조회. 직전 질문의 의도를 버리고 현재 단어만으로 일반 현황 조회를 만들면 안 된다.\n⚠️ **주제(지표·테이블) 유지**: 직전 AI 답변에 '[실행된 쿼리 테이블: ...]' 표시가 있으면 '지난달이랑 비교해줘', '국가별로 나눠줘', '작년 같은 기간은?' 같은 후속 질문은 **그 테이블·그 지표 기준**으로 SQL을 생성하라. 직전 주제가 광고비·인플루언서·리뷰·판매수량·쇼피파이·손익이었는데 후속 질문에 주제 단어가 없다고 매출(SALES_ALL_Backup)로 갈아타지 마라 — 사용자가 '매출은?', '그럼 판매액은?'처럼 명시적으로 주제를 바꿀 때만 테이블을 바꾼다.\n⚠️ '시각화해줘', '차트로 그려줘' 같은 후속 요청이 오면, 이전 답변에서 사용된 동일한 데이터 범위/조건/집계 수준으로 SQL을 생성하세요. 이전에 분기별 비교였다면 분기별로, 월별이었다면 월별로 유지하세요.\n⚠️ 이전 답변에서 특정 판매처(Company_Name), 국가(Country), 채널(Mall_Classification)이 나열된 상태에서 사용자가 '판매처별', '국가별', '채널별' 후속 질문을 하면, 이전 답변에 등장한 그 항목들을 WHERE 조건으로 포함하세요. 예: 이전에 예스아시아닷컴코리아·Stylevana가 나왔으면 다음 SQL에도 Company_Name IN ('예스아시아닷컴코리아', 'Stylevana', ...)를 추가."
+        conv_section += (
+            "\n⚠️ **정정/항의형 후속 질문**: '내가 ~라고 했지', '언급도 안 했어', "
+            "'그거 말고', '다시 뽑아줘'는 새 독립 질문이 아니다. 직전 사용자 요청과 "
+            "직전 실행 SQL을 기준으로 잘못 추가된 SELECT·CASE·WHERE 조건을 제거하거나 "
+            "요청한 기간/축을 복구해 SQL을 다시 생성하라. 사용자가 언급하지 않았다고 "
+            "지적한 제품·라인을 새 필터로 해석하지 마라."
+        )
 
     # Brand filter injection: only if user has a group filter assigned
     brand_filter = state.get("brand_filter")
@@ -924,6 +1013,24 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름
 
     sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 **먼저 이전 대화 맥락으로 의도를 해소**하고, 맥락으로도 해소되지 않을 때만 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성.\n⚠️ 국가 필터: 모든 테이블의 Country 값은 **한국어 국가명**이다 — WHERE Country='인도네시아' (O), Country='Indonesia'/'INDONESIA' (X, 0건이 난다)."
+    _period_rank_required = _requires_partitioned_period_ranking(query, conv_context)
+    if _period_rank_required:
+        sql_only_reminder += (
+            "\n⛔ 이 질문은 기간별 고카디널리티 TOP 분석이다. 반드시 "
+            "1단계 CTE에서 기간축·항목축별 SUM을 먼저 끝내고, 2단계 CTE에서 그 집계 결과의 "
+            "기간 별칭을 PARTITION BY에 사용해 ROW_NUMBER()/RANK()/DENSE_RANK()를 계산하라. "
+            "GROUP BY와 같은 SELECT에서 원본 Date를 윈도 함수에 다시 참조하면 BigQuery 오류가 난다. "
+            "그 뒤 바깥 WHERE rank <= N 또는 QUALIFY ... <= N으로 "
+            "각 기간의 TOP N을 실제 필터링하라. 순위 컬럼만 만들고 필터하지 않는 것도 금지한다. "
+            "기간 오름차순 + 전역 LIMIT만 둔 SQL은 앞쪽 기간만 남기므로 금지한다."
+        )
+    _current_date_cap_required = _requires_current_date_cap(query, conv_context)
+    if _current_date_cap_required:
+        sql_only_reminder += (
+            "\n⛔ 이 질문은 과거 실적의 시작일만 지정했다. 미래 데이터·예측을 명시적으로 "
+            "요청하지 않았으므로 모든 원본 매출/판매 테이블 스캔에 "
+            "`Date <= CURRENT_DATETIME()` 상한을 넣어 오늘 이후 행을 제외하라."
+        )
     # 직전 실행 테이블 앵커 — conv_section 중간의 일반 지시만으론 LLM이 후속
     # 질문에서 매출로 회귀한다(2026-08-10 판매수량·쇼피파이 시나리오 실측).
     # 프롬프트 맨 끝, 최종 지시 바로 옆에 마지막 실행 테이블을 명시해 고정한다.
@@ -1006,6 +1113,64 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = sanitize_sql(sql)
             if sql:
                 logger.info("sql_generation_retry_success", sql=sql[:200])
+
+        # 월별 업체 TOP처럼 행이 많은 교차분석은 전역 LIMIT이 앞쪽 기간만 남겨도
+        # 문법·보안 검증을 모두 통과한다. 프롬프트만으로는 정정 후 재생성에서 다시
+        # 퇴행한 실측이 있어, 실행 전에 구조를 검사하고 한 번 더 생성한다.
+        if sql and _period_rank_required and not _has_partitioned_period_ranking(sql):
+            logger.warning("sql_period_rank_missing_retry", sql=sql[:300])
+            rank_retry_prompt = (
+                full_prompt
+                + f"\n\n⛔ 이전 SQL은 기간별 순위 창 없이 전역 LIMIT을 사용해 요청 기간을 "
+                  f"잘라낼 수 있어 거부됐다:\n```sql\n{sql}\n```\n"
+                  "반드시 ROW_NUMBER()/RANK()/DENSE_RANK() OVER "
+                  "(PARTITION BY 기간축 ORDER BY 지표 DESC)로 순위를 만든 뒤, 바깥 WHERE "
+                  "rank <= N 또는 QUALIFY ... <= N으로 각 기간 TOP N을 실제 필터링한 "
+                  "완전한 SQL만 다시 출력하라. 순위 컬럼만 만들고 필터하지 마라."
+            )
+            rank_retry_sql = sanitize_sql(
+                llm.generate(rank_retry_prompt, temperature=0.0, max_output_tokens=10000)
+            )
+            if rank_retry_sql and _has_partitioned_period_ranking(rank_retry_sql):
+                sql = rank_retry_sql
+                logger.info("sql_period_rank_retry_success", sql=sql[:300])
+            else:
+                logger.error("sql_period_rank_retry_failed", sql=(rank_retry_sql or "")[:300])
+                return {
+                    "generated_sql": None,
+                    "error": (
+                        "요청 기간이 잘릴 수 있는 SQL을 안전하게 교정하지 못했습니다. "
+                        "기간별 상위 개수를 명시해 다시 질문해 주세요."
+                    ),
+                }
+
+        if sql and _current_date_cap_required and not _has_current_date_cap(sql):
+            logger.warning("sql_current_date_cap_missing_retry", sql=sql[:300])
+            cap_retry_prompt = (
+                full_prompt
+                + f"\n\n⛔ 이전 SQL은 과거 실적 질문인데 오늘 이후 미래 행을 막는 Date "
+                  f"상한이 없어 거부됐다:\n```sql\n{sql}\n```\n"
+                  "모든 원본 매출/판매 테이블 스캔에 Date <= CURRENT_DATETIME()을 넣어 "
+                  "오늘 이후 행을 제외한 완전한 SQL만 다시 출력하라."
+            )
+            cap_retry_sql = sanitize_sql(
+                llm.generate(cap_retry_prompt, temperature=0.0, max_output_tokens=10000)
+            )
+            cap_retry_ok = bool(cap_retry_sql and _has_current_date_cap(cap_retry_sql))
+            if _period_rank_required:
+                cap_retry_ok = cap_retry_ok and _has_partitioned_period_ranking(cap_retry_sql)
+            if cap_retry_ok:
+                sql = cap_retry_sql
+                logger.info("sql_current_date_cap_retry_success", sql=sql[:300])
+            else:
+                logger.error("sql_current_date_cap_retry_failed", sql=(cap_retry_sql or "")[:300])
+                return {
+                    "generated_sql": None,
+                    "error": (
+                        "미래 데이터가 섞일 수 있는 SQL을 안전하게 교정하지 못했습니다. "
+                        "종료일을 명시해 다시 질문해 주세요."
+                    ),
+                }
 
         # Fix English media names → Korean (influencer table uses Korean values)
         if sql and "influencer_input_ALL_TEAMS" in sql:
@@ -1198,7 +1363,10 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
         # 사용자에게 그대로 노출된다 (2026-08-06 @@아마존검색 'Date' 컬럼 사고).
         # "incompatible types"(UNION ALL 컬럼 타입 불일치)도 재생성 대상 —
         # 2026-08-10 실사용자 '마차이' 리뷰 질문이 재시도 없이 오류 노출됨
-        if any(k in error_str for k in ("Syntax error", "Unrecognized name", "incompatible types")):
+        if any(k in error_str for k in (
+            "Syntax error", "Unrecognized name", "incompatible types",
+            "neither grouped nor aggregated",
+        )):
             logger.warning("sql_syntax_error_retry", error=error_str[:200], original_sql=sql[:300])
             try:
                 llm = get_flash_client()
@@ -1207,8 +1375,8 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 # 테이블 스코프를 실어야 같은 컬럼 오류를 반복하지 않는다.
                 # conv_context 도 전달 — 재생성 경로에서만 맥락이 빠지면 후속 질문이
                 # 오류를 만났을 때 재생성본이 주제 이탈한다 (2026-08-10 검토에서 발견)
-                _schema_ctx = _build_schema_context(
-                    query, allowed_tables, state.get("conversation_context", ""))
+                _conv_ctx = state.get("conversation_context", "")
+                _schema_ctx = _build_schema_context(query, allowed_tables, _conv_ctx)
                 _scope = ""
                 if allowed_tables is not None and 0 < len(allowed_tables) <= 5:
                     _scope = ("\n\n## ⛔ 사용 가능 테이블\n"
@@ -1223,13 +1391,44 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                         "\n3. 모든 괄호를 반드시 닫을 것! CTE 사용 시 WITH ... AS (...) SELECT ... 완전한 형태"
                         "\n4. 짧고 간결한 SQL만! 20줄 이내!"
                     )
+                if "neither grouped nor aggregated" in error_str:
+                    _syntax_rules += (
+                        "\n1. GROUP BY 집계와 ROW_NUMBER/RANK 계산을 같은 SELECT에 두지 말 것"
+                        "\n2. 첫 CTE에서 기간·항목별 SUM 집계를 완료하고, 다음 CTE에서 "
+                        "집계된 기간 별칭으로 PARTITION BY 할 것"
+                        "\n3. 윈도 함수에서 GROUP BY 이전 원본 Date를 다시 참조하지 말 것"
+                    )
+                _conv_retry = ""
+                if _conv_ctx:
+                    _conv_retry = (
+                        "\n\n## 이전 대화 맥락 (정정 후 재생성에도 반드시 유지)\n"
+                        + _conv_ctx
+                    )
+                _period_retry_required = _requires_partitioned_period_ranking(
+                    query, _conv_ctx
+                )
+                _period_retry_rule = ""
+                if _period_retry_required:
+                    _period_retry_rule = (
+                        "\n⛔ 기간별 주요 항목 분석이므로 첫 CTE에서 기간·항목별 집계를 "
+                        "완료하고, 다음 CTE에서 집계된 기간 별칭으로 ROW_NUMBER() OVER "
+                        "(PARTITION BY 기간별칭 ORDER BY 지표 DESC)를 계산한 뒤 바깥 WHERE "
+                        "rank <= N으로 실제 필터링하라."
+                    )
+                _cap_retry_required = _requires_current_date_cap(query, _conv_ctx)
+                _cap_retry_rule = ""
+                if _cap_retry_required:
+                    _cap_retry_rule = (
+                        "\n⛔ 과거 실적의 시작일만 지정된 질문이므로 모든 원본 매출/판매 "
+                        "테이블 스캔에 Date <= CURRENT_DATETIME() 상한을 유지하라."
+                    )
                 retry_prompt = (
                     _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
-                    + _schema_ctx + _scope
+                    + _schema_ctx + _scope + _conv_retry
                     + f"\n\n## 사용자 질문\n{query}"
                     + f"\n\n⛔⛔⛔ 이전 SQL이 다음 오류로 실패했다:\n{error_str[:300]}\n"
                     + "오류 원인을 고쳐 SQL을 다시 작성하라. 컬럼명은 스키마에 있는 정확한 이름만 사용."
-                    + _syntax_rules
+                    + _syntax_rules + _period_retry_rule + _cap_retry_rule
                     + _build_brand_section(state.get("brand_filter"))
                 )
                 retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
@@ -1238,6 +1437,21 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _localize_country_literals(retry_sql)
                 retry_sql = _localize_team_literals(retry_sql)
                 retry_sql = _localize_promotion_literals(retry_sql)
+                if retry_sql:
+                    if (_period_retry_required
+                            and not _has_partitioned_period_ranking(retry_sql)):
+                        logger.error(
+                            "sql_retry_period_rank_missing",
+                            sql=retry_sql[:300],
+                        )
+                        retry_sql = ""
+                if retry_sql:
+                    if _cap_retry_required and not _has_current_date_cap(retry_sql):
+                        logger.error(
+                            "sql_retry_current_date_cap_missing",
+                            sql=retry_sql[:300],
+                        )
+                        retry_sql = ""
                 if retry_sql:
                     is_valid, _verr = validate_sql(
                         retry_sql,
@@ -1306,6 +1520,89 @@ def _extract_table_sources(sql: str) -> str:
     return " + ".join(sorted(table_names))
 
 
+
+# 프롬프트의 DISTINCT 국가 목록을 단일 소스로 재사용한다 (목록을 코드에 또 두지 않는다).
+_COUNTRY_VALUES: list = []
+
+
+def _all_countries() -> list:
+    global _COUNTRY_VALUES
+    if _COUNTRY_VALUES:
+        return _COUNTRY_VALUES
+    try:
+        import os
+        import re as _re
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), "prompts", "sql_generator.txt")
+        with open(path, encoding="utf-8") as fh:
+            m = _re.search(r"\*\*Country 실제 값 \(DISTINCT[^)]*\)\*\*:\s*(.+)", fh.read())
+        if m:
+            _COUNTRY_VALUES = [v.strip().strip("*") for v in m.group(1).split(",") if v.strip()]
+    except Exception:
+        _COUNTRY_VALUES = []
+    return _COUNTRY_VALUES
+
+
+def _country_hint(sql: str) -> str:
+    """0건일 때 국가 값을 **실제 목록과 대조해** 알려준다 (추측하게 두지 않는다)."""
+    import re as _re
+    known = _all_countries()
+    used = _re.findall(r"Country\s*(?:=|LIKE|IN)\s*\(?\s*'([^']+)'", sql or "", _re.I)
+    used += _re.findall(r"'([^']+)'", " ".join(
+        _re.findall(r"Country\s+IN\s*\(([^)]*)\)", sql or "", _re.I)))
+    seen, checked = set(), []
+    for v in used:
+        v = v.strip().strip("%")
+        if v and v not in seen:
+            seen.add(v)
+            checked.append(v)
+    if not known or not checked:
+        return "Country는 한국어 국가명이다 (실제 목록은 위 DISTINCT 절 참조)."
+    ok = [v for v in checked if v in known]
+    bad = [v for v in checked if v not in known]
+    parts = []
+    if ok:
+        parts.append(
+            f"⚠️ {', '.join(ok)} 는 **실재하는 국가다** (DISTINCT 목록에 있음). "
+            f"0건인 이유를 국가 값 탓으로 돌리지 마라 — 기간·거래처·제품 등 **다른 조건**이 원인이다")
+    for v in bad:
+        near = [k for k in known if v[:2] and v[:2] in k][:5]
+        parts.append(f"'{v}' 는 Country 목록에 없다"
+                     + (f" (비슷한 값: {', '.join(near)})" if near else ""))
+    return " / ".join(parts)
+
+
+
+# ⛔ **금액 컬럼을 "수량" 으로 부르는 오답이 실제로 나갔다** (2026-08-14).
+#    "에콰도르 Valkirias FOC" 답변이 `SUM(FOC)` 376,968.4 를 **"377,000개"** 라고 썼다.
+#    `FOC` 는 `Production_Cost2` 와 같은 값, 즉 **원가 금액(원)** 이다 — 프롬프트 스키마엔
+#    "FOC 금액" 이라고 맞게 적혀 있었는데도 서술 단계에서 뒤집혔다. 수량 컬럼은
+#    `Total_Qty`·`FOC_Qty` 뿐이고 그건 `Product` 테이블에만 있다.
+#    금액을 개수로 읽으면 **자릿수가 그대로라 틀린 티가 안 난다** — 가장 위험한 종류다.
+_MONEY_COLS = ("Sales1_R", "Sales2_R", "Sales1_R_FOC", "Sales2_R_FOC", "FOC",
+               "Production_Cost2", "Production_Cost", "Discount_Coupon",
+               "Service_Fee", "ad_spend_krw", "conversion_value_krw")
+_QTY_COLS = ("Total_Qty", "FOC_Qty")
+
+
+def _unit_note(sql: str) -> str:
+    """SQL 이 고른 컬럼에서 **단위를 결정적으로** 뽑아 서술 단계에 못 박는다."""
+    up = (sql or "").upper()
+    money = [c for c in _MONEY_COLS if c.upper() in up]
+    qty = [c for c in _QTY_COLS if c.upper() in up]
+    if not money and not qty:
+        return ""
+    lines = ["", "⚠️ **단위 (SQL 이 고른 컬럼에서 확정된 사실 — 추측 금지)**:"]
+    if money:
+        lines.append(
+            "- " + ", ".join(money) + " 는 **금액(원)** 이다. 값에 '개'·'수량'·'개수'·"
+            "'EA' 를 붙이지 마라. 표 헤더도 '금액' 또는 '원' 으로 쓸 것"
+            + ("" if qty else " — 이 결과에는 **수량 컬럼이 없다.** 수량을 답하지 마라"))
+    if qty:
+        lines.append("- " + ", ".join(qty) + " 만 **수량(개)** 이다")
+    return "\n".join(lines)
+
+
 def format_answer(state: AgentState) -> Dict[str, Any]:
     """Format SQL results into a natural language answer with optional chart.
 
@@ -1364,9 +1661,13 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
                 + " (⚠️ GM_EAST1·GM_Ecomm·GM_MKT·DD_DT1·DD_DT2·GM_WEST 는 구버전이라 존재하지 않는다)"
             )
         if "COUNTRY" in sql_upper:
-            _value_hints.append(
-                "Country는 한국어 값: 미국, 인도네시아, 말레이시아, 필리핀, 일본, 중국, 한국, 태국, 베트남, 싱가포르, 호주, 독일 등"
-            )
+            # ⛔ **부분 목록을 "유효 값" 으로 주지 마라.** 예전엔 191개 중 12개만 나열하고
+            #    "등" 을 붙였는데, LLM 이 그걸 전체 목록으로 읽고 **실재하는 국가를 없다고
+            #    단정했다** — "에콰도르 Valkirias FOC" 질문에 "에콰도르는 유효 국가 목록에
+            #    존재하지 않는다" 고 답했다 (2026-08-14 사용자 제보). 실제로는 2,448건·33.8억
+            #    (2022-08~2026-08) 이 있고 Valkirias 거래처도 있었다.
+            #    Team_NEW·Continent 힌트가 **전체 목록**을 주는 것과 같은 이유다.
+            _value_hints.append(_country_hint(sql))
         # 광역 대륙명을 Continent2에서 찾는 오류가 잦다 (유럽 → 0건, 2026-08 실제 발생).
         # 유효 값을 그대로 넘겨 LLM이 원인을 추측하지 않고 대조로 짚게 한다.
         if "CONTINENT1" in sql_upper:
@@ -1381,6 +1682,18 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
                 "오세아니아, 중동, 중앙아메리카 "
                 "(⚠️ '유럽'·'아시아'·'동유럽'은 Continent2에 없다. 광역 대륙은 Continent1을 써야 한다)"
             )
+        # ⛔ **유효 값 목록만으로는 추측을 못 막는다.** 국가 힌트를 전체 목록으로 고쳤더니
+        #    같은 질문에서 이번엔 거래처명을 의심했다 (2026-08-14). 목록을 붙일 수 없는
+        #    컬럼(거래처·제품)이 늘 남기 때문이다. **필터를 하나씩 빼고 실제로 세어**
+        #    범인을 짚는다 — 0행일 때만 도는 조회 1회다.
+        try:
+            from app.core.zero_row import diagnose as _diagnose
+            _dx = _diagnose(sql, get_bigquery_client())
+            if _dx:
+                _value_hints.append(_dx)
+        except Exception as _e:
+            logger.warning("zero_row_diagnose_skipped", error=str(_e)[:150])
+
         _hints_text = "\n".join(_value_hints)
 
         # Try Flash LLM for helpful empty-result message (with timeout), else template
@@ -1635,6 +1948,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
+{_unit_note(sql)}
 ⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
 
 ⚠️ **분량 제한 (최우선)**:
@@ -2436,6 +2750,7 @@ def run_sql_agent_stream(
 
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
+{_unit_note(sql)}
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
 {TEAM_DISPLAY_RULE}"""
 
