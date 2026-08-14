@@ -10,12 +10,14 @@ Two public entry points:
   orchestrator to inject context before routing.
 - ``extract_keywords(query)``: exposed for debugging and unit tests.
 
-Ranking is a simple weighted score:
+Ranking is a simple weighted score plus a trust-state adjustment:
     score = 2 * entity_matches + 1 * summary_matches
           + 0.5 * confidence
           - 0.1 * log10(age_days + 1)
 
-Pending / active rows both participate. Archived rows are excluded.
+Pending / active rows both participate, but their trust state is explicit in
+the injected context. Archived rows are excluded. Unresolved conflicts are
+preserved and surfaced instead of silently picking one claim.
 """
 
 from __future__ import annotations
@@ -28,6 +30,15 @@ from datetime import datetime, timezone
 import structlog
 
 from app.db.mariadb import fetch_all
+from app.knowledge.trust import (
+    DISPUTED,
+    PARTLY_TRUSTED,
+    STALE_RISK,
+    TRUSTED,
+    TRUST_LABELS,
+    TRUST_ORDER,
+    annotate_fact_trust,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -47,28 +58,14 @@ _DEFAULT_LIMIT = 6
 
 
 def extract_keywords(query: str) -> list[str]:
-    """Pull meaningful tokens out of a query for LIKE matching.
+    """질문에서 LIKE 매칭에 쓸 토큰을 뽑는다.
 
-    Handles Korean, alphanumerics and slash/dash-joined terms. Drops short
-    tokens and Korean/English stopwords.
+    ⛔ 판정은 `app/core/query_keywords.py` 한 곳에 있다. 예전엔 여기서 따로 뽑았고
+       **조사를 떼지 않아** `매출이`·`일본에서` 로 LIKE 를 걸었다 — "매출" 이 든 문서를
+       조용히 못 찾았다 (2026-08-14, 드라이브 검색 사고와 같은 뿌리).
     """
-    if not query:
-        return []
-    # Keep Korean syllables, Latin letters, digits, and a few joiners
-    parts = re.findall(r"[가-힣A-Za-z0-9][가-힣A-Za-z0-9\-_/.]*", query)
-    seen: set[str] = set()
-    out: list[str] = []
-    for p in parts:
-        t = p.lower()
-        if len(t) < _TOKEN_MIN_LEN:
-            continue
-        if t in _STOP_TOKENS:
-            continue
-        if t in seen:
-            continue
-        seen.add(t)
-        out.append(p)
-    return out
+    from app.core.query_keywords import extract as _extract
+    return _extract(query, extra_stop=_STOP_TOKENS, min_len=_TOKEN_MIN_LEN)
 
 
 def _build_candidate_query(tokens: list[str]) -> tuple[str, tuple]:
@@ -85,7 +82,9 @@ def _build_candidate_query(tokens: list[str]) -> tuple[str, tuple]:
     sql = f"""
         SELECT id, domain, entity, period, metric, value, summary,
                confidence, extracted_at, source_route, status,
-               thumbs_up, thumbs_down
+               thumbs_up, thumbs_down, review_status, conflict_with_id,
+               conflict_reason, validated_at, source_conversation_id,
+               source_message_id
         FROM knowledge_wiki
         WHERE status <> 'archived'
           AND ({where})
@@ -105,6 +104,14 @@ def _score(row: dict, tokens: list[str]) -> float:
 
     score = 2.0 * entity_hits + 1.0 * summary_hits + 0.5 * value_hits
     score += 0.5 * float(row.get("confidence") or 0)
+
+    trust_state = row.get("trust_state") or annotate_fact_trust(row)["trust_state"]
+    score += {
+        TRUSTED: 1.0,
+        PARTLY_TRUSTED: -0.25,
+        DISPUTED: -0.75,
+        STALE_RISK: -0.5,
+    }.get(trust_state, -0.25)
 
     # Freshness: newer is slightly better
     extracted_at = row.get("extracted_at")
@@ -133,6 +140,7 @@ def _search_sync(query: str, limit: int) -> list[dict]:
     if not candidates:
         return []
 
+    candidates = [annotate_fact_trust(row) for row in candidates]
     scored = [(row, _score(row, tokens)) for row in candidates]
     scored.sort(key=lambda x: x[1], reverse=True)
     top = [r for r, s in scored[:limit] if s > 0]
@@ -203,18 +211,38 @@ async def search_facts(query: str, limit: int = _DEFAULT_LIMIT) -> list[dict]:
 
 
 def format_facts_for_prompt(facts: list[dict]) -> str:
-    """Render fact rows as a Markdown bullet list suitable for injection."""
+    """Render facts with trust and provenance rules suitable for injection."""
     if not facts:
         return ""
-    lines = []
-    for f in facts:
-        summary = (f.get("summary") or "").strip()
-        period = f.get("period") or ""
-        metric = f.get("metric") or ""
-        source = f.get("source_route") or "wiki"
-        tag_bits = [b for b in [period, metric] if b]
-        tag = f" ({', '.join(tag_bits)})" if tag_bits else ""
-        lines.append(f"- {summary}{tag}  _[source: {source}]_")
+    groups: dict[str, list[dict]] = {state: [] for state in TRUST_ORDER}
+    for fact in facts:
+        f = annotate_fact_trust(fact)
+        groups[f["trust_state"]].append(f)
+
+    lines = [
+        "### 컨텍스트 신뢰 규칙",
+        "- **검증됨**만 확정 사실처럼 단정하세요.",
+        "- **검증 대기**는 이전 AI 답변에서 추출된 참고 정보입니다. 중요한 결론은 원 데이터로 다시 확인하세요.",
+        "- **충돌/검토 필요**는 어느 한쪽을 임의로 선택하지 말고, 충돌이 해결되지 않았다고 밝히세요.",
+        "- **최신성 주의**는 현재도 유효한지 확인하고, 확인할 근거가 부족하면 그렇게 말하세요.",
+    ]
+    for state in TRUST_ORDER:
+        if not groups[state]:
+            continue
+        lines.extend(["", f"### {TRUST_LABELS[state]}"])
+        for f in groups[state]:
+            summary = (f.get("summary") or "").strip()
+            period = f.get("period") or ""
+            metric = f.get("metric") or ""
+            route = f.get("source_route") or "unknown"
+            extracted_at = f.get("extracted_at")
+            extracted = extracted_at.strftime("%Y-%m-%d") if isinstance(extracted_at, datetime) else "날짜 미상"
+            tag_bits = [str(b) for b in (period, metric) if b]
+            tag = f" ({', '.join(tag_bits)})" if tag_bits else ""
+            provenance = f"이전 답변 추출 · route={route} · {extracted}"
+            if state == DISPUTED and f.get("conflict_with_id"):
+                provenance += f" · conflict=#{f['conflict_with_id']}"
+            lines.append(f"- [{TRUST_LABELS[state]}] {summary}{tag}  _[{provenance}]_")
     return "\n".join(lines)
 
 

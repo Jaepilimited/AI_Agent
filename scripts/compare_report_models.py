@@ -23,6 +23,13 @@ from typing import Any, Dict, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# ⚠️ Windows 콘솔은 cp949 라 '—' 한 글자에 UnicodeEncodeError 로 죽는다.
+#    실제로 두 모델을 다 돌리고 **출력 단계에서 결과를 통째로 잃었다** (2026-08-14).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 
 def _client(name: str):
     """이름 → LLM 클라이언트. 없는 이름이면 그대로 알려준다.
@@ -103,6 +110,15 @@ def main() -> None:
 
     if not results:
         raise SystemExit("생성된 결과가 없다")
+
+    # 출력이 깨져도 결과는 남긴다 — 조회 8~12회를 모델 수만큼 태운 것을 잃지 않기 위해.
+    # 실제로 두 모델을 다 돌리고 **출력 단계의 인코딩 오류로 통째로 잃었다** (2026-08-14)
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "docs", "reports")
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "compare_last.json"), "w", encoding="utf-8") as fh:
+        json.dump([{k: v for k, v in r.items() if k != "payload"} for r in results],
+                  fh, ensure_ascii=False, indent=1)
 
     print("\n" + "=" * 78)
     print(f"질문: {args.question}")

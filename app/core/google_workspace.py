@@ -170,22 +170,39 @@ def search_drive(
     """
     service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
-    clauses = ["trashed = false"]
-    kw = (query or "").strip().replace("'", "\\'")
-    if kw:
-        clauses.append(f"(name contains '{kw}' or fullText contains '{kw}')")
-    if mime_contains:
-        clauses.append(f"mimeType contains '{mime_contains}'")
-    drive_query = " and ".join(clauses)
+    def _run(kws: List[str]) -> List[Dict[str, Any]]:
+        clauses = ["trashed = false"]
+        for k in kws:
+            k = k.replace("'", "\\'")
+            clauses.append(f"(name contains '{k}' or fullText contains '{k}')")
+        if mime_contains:
+            clauses.append(f"mimeType contains '{mime_contains}'")
+        res = service.files().list(
+            q=" and ".join(clauses),
+            pageSize=max_results,
+            fields="files(id, name, mimeType, modifiedTime, webViewLink)",
+            orderBy="modifiedTime desc",
+        ).execute()
+        return res.get("files", [])
 
-    results = service.files().list(
-        q=drive_query,
-        pageSize=max_results,
-        fields="files(id, name, mimeType, modifiedTime, webViewLink)",
-        orderBy="modifiedTime desc",
-    ).execute()
-
-    files = results.get("files", [])
+    # ⛔ **낱말을 통째로 한 조건에 넣지 마라.** `name contains '신규 입사자 교안 자료'` 는
+    #    그 문구가 통으로 들어간 파일만 찾는다 — 실제 파일명이
+    #    "[ICON 교안] 운영본부_부서소개_260805" 였고 0건이 나왔다 (2026-08-14 제보).
+    #    낱말마다 조건을 만들어 AND 로 걸고, 0건이면 **핵심어만 남겨 넓힌다.**
+    words = [w for w in (query or "").split() if w.strip()]
+    if not words:
+        files = _run([])
+    else:
+        files = _run(words[:5])
+        if not files and len(words) > 2:
+            # 긴 낱말이 더 구체적이고, 한국어는 **뒤에 오는 명사가 머리말**이다
+            # ("신규 입사자 교안" → 교안). 길이 우선, 같으면 뒤쪽을 남긴다
+            ranked = sorted(enumerate(words), key=lambda kv: (len(kv[1]), kv[0]),
+                            reverse=True)
+            files = _run([w for _, w in ranked[:2]])
+        # ⛔ **한 낱말까지 풀지 않는다.** 실제로 "신규 입사자 교안" 을 한 낱말로 넓혔더니
+        #    관련 없는 스프레드시트 4건이 나왔고, 답변은 그걸 찾은 것처럼 보여줬다
+        #    (2026-08-14). **0건이라고 말하는 편이 낫다** — 잡음은 답처럼 보여서 더 나쁘다
     return [
         {
             "id": f["id"],

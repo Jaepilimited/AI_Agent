@@ -154,6 +154,39 @@ PROMPT = """당신은 데이터 분석 보고서의 **해석과 실행 제안**�
 }}"""
 
 
+def _default_llm():
+    """해석은 **Claude**가 쓴다 — 계획은 Gemini 가 짠다 (2026-08-14 비교로 결정).
+
+    같은 질문을 두 모델로 만들어 견준 결과 (`scripts/compare_report_models.py`):
+
+        | | claude | gemini |
+        |---|---|---|
+        | 해석 문장 | 6 | 5 |
+        | 계획 중복 | contribution 2회 | 없음 |
+        | 계획 버림 | 1 | 0 |
+
+    Claude 는 **두 숫자를 맞춰보고 관계를 발견**했고(UM 증가분 = 신규 채널 규모),
+    Gemini 는 절 하나씩을 요약하는 데 가까웠다. 반대로 계획은 Gemini 가 깔끔했다 —
+    Claude 는 같은 블록을 두 번 넣고 어휘 밖 계획도 냈다. 그래서 역할을 나눴다.
+
+    ⚠️ Claude 는 더 과감하게 해석하고 그만큼 더 틀린다 (미검증 수치 2건 대 0건).
+       `_verify` 가 걸러내므로 사용자에게는 검증된 문장만 간다 — 이 방어선이 없으면
+       이 선택을 하면 안 된다.
+
+    Claude 를 못 쓰면 기본 클라이언트로 물러난다. 해석이 통째로 사라지는 것보다 낫다.
+    """
+    from app.core.llm import MODEL_CLAUDE, get_llm_client
+    try:
+        return get_llm_client(MODEL_CLAUDE)
+    except Exception as e:
+        logger.warning("insight_claude_unavailable", error=str(e)[:120])
+    try:
+        return get_llm_client()
+    except Exception as e:
+        logger.warning("insight_no_llm", error=str(e)[:120])
+        return None
+
+
 def build(question: str, sections: List[Dict[str, Any]], ctx: Dict[str, Any],
           llm=None, already: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
     """판단 절을 만든다. 실패하면 None — 보고서는 이것 없이도 완성된다."""
@@ -162,11 +195,8 @@ def build(question: str, sections: List[Dict[str, Any]], ctx: Dict[str, Any],
         return None
 
     if llm is None:
-        try:
-            from app.core.llm import get_llm_client
-            llm = get_llm_client()
-        except Exception as e:
-            logger.warning("insight_no_llm", error=str(e)[:120])
+        llm = _default_llm()
+        if llm is None:
             return None
 
     already = [a for a in (already or []) if a]

@@ -304,3 +304,18 @@ def test_fallback_plan_follows_intent():
     assert change["sections"][0]["block"] == "compare"
     assert size["sections"][0]["block"] == "total"
     assert change["lede"] != size["lede"]
+
+
+def test_insight_uses_claude_planner_uses_gemini():
+    """역할 분담이 유지되는가 — 계획은 Gemini, 해석은 Claude (2026-08-14 비교로 결정).
+
+    ⛔ 한쪽만 바뀌면 조용히 품질이 달라진다. 어느 쪽이 어느 모델인지 여기서 못 박는다.
+    """
+    from app.core.llm import ClaudeClient, GeminiClient
+    from app.reports import insight as INS
+
+    assert isinstance(INS._default_llm(), ClaudeClient), "해석은 Claude 여야 한다"
+
+    import inspect
+    src = inspect.getsource(__import__("app.reports.planner", fromlist=["plan"]).plan)
+    assert "get_llm_client()" in src, "계획은 기본 클라이언트(Gemini) 여야 한다"

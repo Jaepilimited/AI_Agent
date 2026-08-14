@@ -86,3 +86,60 @@ def test_answer_check_flags_unexplainable_numbers(answer, bad):
     from app.core.answer_check import verify
     res = verify(answer, _ROWS, "2026 상반기 국가별 매출")
     assert bad in res["unverified"], f"{bad} 를 못 잡았다: {res}"
+
+
+def test_llm_clients_share_generate_json_signature():
+    """⛔ 클라이언트를 바꿔 끼우려면 **서명이 같아야** 한다.
+
+    ClaudeClient.generate_json 에 `max_output_tokens` 가 없어서, 그걸 넘기는 호출부에서
+    TypeError 가 나고 호출부의 except 가 삼켰다 — 보고서 해석 절이 Claude 에서만
+    조용히 사라졌다 (2026-08-14 모델 비교에서 발견).
+    """
+    import inspect
+
+    from app.core.llm import ClaudeClient, GeminiClient
+
+    g = set(inspect.signature(GeminiClient.generate_json).parameters)
+    c = set(inspect.signature(ClaudeClient.generate_json).parameters)
+    assert g <= c, f"Claude 에 없는 인자: {sorted(g - c)} — 호출부가 조용히 실패한다"
+
+
+# ── 질문 → 검색 키워드 (2026-08-14) ────────────────────────────────────────
+# ⛔ 한국어는 교착어라 **조사를 떼고 나서** 불용어를 봐야 한다. 안 그러면 검색이
+#    조용히 빗나간다 — 드라이브는 항상 0건이었고("구글드라이브에서 …" 통째로 검색),
+#    위키는 `매출이` 로 LIKE 를 걸어 "매출" 문서를 못 찾았다.
+
+@pytest.mark.parametrize("question,expected", [
+    ("구글드라이브에서 내가 작성한 신규 입사자 교안 자료 찾아줘", ["신규", "입사자", "교안"]),
+    ("일본에서 매출이 왜 늘었는지 알려줘", ["일본", "매출", "늘었는지"]),
+    ("보고서 파이프라인의 판정 계층은 뭐야", ["보고서", "파이프라인", "판정", "계층"]),
+    # ⚠️ 원문 표기를 지켜야 한다 — 대문자가 뜻인 경우가 있다
+    ("B2B 거래처의 첫 거래일", ["B2B", "거래처", "거래일"]),
+    # 유형어만 남으면 키워드는 비어야 한다 (mimeType 필터가 대신한다)
+    ("내 드라이브에 있는 사진 보여줘", []),
+])
+def test_query_keywords(question, expected):
+    from app.core.query_keywords import extract
+    drive_stop = {"드라이브", "구글드라이브", "구글", "사진", "작성한", "시트"}
+    assert extract(question, extra_stop=drive_stop) == expected
+
+
+def test_search_paths_share_one_extractor():
+    """검색 경로마다 불용어를 다시 만들면 한 곳만 고쳐진다 — 실제로 그래서 두 곳이 깨졌다."""
+    import inspect
+
+    from app.agents import gws_agent
+    from app.knowledge import wiki_search
+
+    for mod in (gws_agent, wiki_search):
+        src = inspect.getsource(mod)
+        assert "query_keywords" in src, f"{mod.__name__} 이 공용 추출기를 쓰지 않는다"
+
+
+def test_strip_particle_keeps_short_nouns():
+    """⚠️ 조사를 떼다 낱말을 깎으면 안 된다 — '교안'의 '안', '자료'의 '료'."""
+    from app.core.textmatch import strip_particle
+    assert strip_particle("구글드라이브에서") == "구글드라이브"
+    assert strip_particle("매출이") == "매출"
+    assert strip_particle("교안") == "교안"
+    assert strip_particle("자료") == "자료"

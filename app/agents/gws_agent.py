@@ -350,16 +350,18 @@ class GWSAgent:
                 if any(k in q for k in kws):
                     mime = m
                     break
-            _STOP = {
-                "내", "나의", "우리", "드라이브", "drive", "구글", "google", "파일", "폴더",
+            # 검색어 추출은 `app/core/query_keywords.py` 한 곳이다 (위키 검색도 같은 것을 쓴다).
+            # ⛔ 예전엔 여기서 자체 불용어로 걸렀고 조사를 떼지 않아 `구글드라이브에서`·
+            #    `내가` 가 통째로 남았다 — 질문 문장이 검색어가 돼 **항상 0건**이었다
+            from app.core.query_keywords import extract as _extract_kw
+            _DRIVE_STOP = {
+                "드라이브", "구글드라이브", "구글", "drive", "google",
                 "사진", "이미지", "image", "photo", "영상", "동영상", "video", "pdf",
-                "스프레드시트", "시트", "엑셀", "슬라이드", "ppt", "발표자료", "문서",
-                "찾아줘", "찾아", "검색해줘", "검색", "보여줘", "알려줘", "뭐", "뭐가",
-                "있어", "있나", "있지", "최근", "최근에", "올린", "저장한", "들어간",
-                "관련", "관련된", "좀", "해줘", "주세요", "에서", "은", "는", "이", "가",
+                "스프레드시트", "시트", "엑셀", "슬라이드", "ppt", "발표자료",
+                "최근", "최근에", "올린", "저장한", "저장", "업로드", "공유", "받은",
+                "작성한", "작성", "만든", "들어간", "담긴",
             }
-            tokens = [t.strip("?.,!") for t in q.split()]
-            kw = " ".join(t for t in tokens if t and t not in _STOP)
+            kw = " ".join(_extract_kw(q, extra_stop=_DRIVE_STOP))
             try:
                 fs = search_drive(creds, kw, max_results=10, mime_contains=mime)
                 # 키워드+유형 동시 검색이 0건이면 유형만으로 완화 재시도
@@ -368,6 +370,10 @@ class GWSAgent:
             except Exception as e:
                 return f"[드라이브 오류] {str(e)[:200]}"
             if not fs:
+                # ⛔ "결과 없음" 은 **정말 없을 때와 검색어가 망가졌을 때가 똑같이 생겼다.**
+                #    검색어를 남겨야 나중에 구분할 수 있다 (2026-08-14 사고의 교훈)
+                from app.core.query_keywords import log_empty
+                log_empty("drive", current_query, kw.split(), mime=mime or "")
                 return "[드라이브] 검색 결과가 없습니다."
             lines = [f"[드라이브] (검색어: {kw or '전체'}{', 유형: ' + mime if mime else ''})"]
             for f in fs:

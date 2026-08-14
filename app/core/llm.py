@@ -866,13 +866,20 @@ class ClaudeClient:
         prompt: str,
         system_instruction: Optional[str] = None,
         temperature: float = 0.0,
+        max_output_tokens: int = 4096,
     ) -> str:
-        """Generate a JSON response from Claude."""
+        """Generate a JSON response from Claude.
+
+        ⛔ `max_output_tokens` 는 **GeminiClient 와 인자 이름을 맞춰야 한다.** 예전엔 이
+           인자가 없어서, 호출부가 그것을 넘기면 TypeError 가 나고 호출부의 `except` 가
+           삼켰다 — 보고서 **해석 절이 Claude 에서만 통째로 사라졌다** (2026-08-14
+           모델 비교에서 발견). 두 클라이언트를 바꿔 끼울 수 있으려면 서명이 같아야 한다.
+        """
         json_system = (system_instruction or "") + "\n\nIMPORTANT: 반드시 유효한 JSON만 출력하세요. 다른 텍스트는 포함하지 마세요."
 
         kwargs: Dict[str, Any] = {
             "model": self.model,
-            "max_tokens": 4096,
+            "max_tokens": max_output_tokens,
             **({} if not self._use_temperature else {"temperature": temperature}),
             "system": self._wrap_system(json_system.strip()),
             "messages": [{"role": "user", "content": prompt}],

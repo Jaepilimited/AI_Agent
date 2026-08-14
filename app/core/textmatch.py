@@ -45,6 +45,38 @@ def standalone(text: str, word: str) -> bool:
     return False
 
 
+# 명사 뒤에 붙는 조사·어미. 긴 것부터 봐야 "에서"가 "서"로 잘리지 않는다
+_PARTICLES = ("에서는", "에서도", "에서의", "에서", "으로는", "으로도", "으로", "로는",
+              "에게서", "에게", "한테", "까지", "부터", "보다", "처럼", "만큼", "마다",
+              "이라는", "라는", "이라고", "라고", "이란", "란",
+              "의", "이", "가", "은", "는", "을", "를", "도", "만", "와", "과", "랑",
+              "에", "로", "야", "아")
+
+
+def strip_particle(token: str) -> str:
+    """토큰 끝의 조사를 떼어 낸다 — 한국어는 교착어라 이걸 안 하면 불용어가 안 걸린다.
+
+    ⛔ 실제 사고: 드라이브 검색이 `구글드라이브에서 내가 작성한 …` 을 통째로 검색어로
+       넣어 **항상 0건**이었다. 불용어 목록에 `드라이브`·`에서`·`내` 가 있었는데
+       조사가 붙어 한 덩어리라 하나도 안 걸렸다 (2026-08-14 사용자 제보).
+
+    ⚠️ **두 글자 이하로 줄어들면 떼지 않는다** — "교안"의 '안', "자료"의 '료' 처럼
+       멀쩡한 낱말이 잘려 나간다.
+
+    >>> strip_particle("구글드라이브에서")
+    '구글드라이브'
+    >>> strip_particle("내가")
+    '내'
+    >>> strip_particle("교안")
+    '교안'
+    """
+    t = (token or "").strip()
+    for p in _PARTICLES:
+        if t.endswith(p) and len(t) - len(p) >= 2:
+            return t[: -len(p)]
+    return t
+
+
 def contains_any(text: str, words: Iterable[str],
                  guarded: Optional[Set[str]] = None) -> bool:
     """`words` 중 하나라도 `text` 에 있는가. `guarded` 에 든 낱말만 경계를 본다."""
