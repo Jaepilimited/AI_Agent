@@ -33,6 +33,7 @@ except Exception as e:
 
 from app.config import get_settings
 from app.core.google_auth import GoogleAuthManager
+from app.core import query_keywords
 from app.core.google_workspace import list_calendar_events, search_drive, search_gmail
 
 _auth_manager = None
@@ -143,12 +144,82 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
         "이메일", "gmail", "메일", "내용", "본문", "요약", "정리", "검색", "확인",
         "내", "나의", "좀", "관련", "대해서", "해줘", "해주세요", "줘", "주세요",
     )
-    for phrase in sorted(stop_phrases, key=len, reverse=True):
+    # ⛔ **부분 문자열로 지우면 오타 꼬리가 검색어로 남는다** (2026-08-14 사용자 제보).
+    #    `오늘 메일 요야ㅐㄱ` → 검색어 `요야` → **0건**. 바로 다시 친 `오늘 메일 요약` 은
+    #    정상 동작했다. 같은 부류가 여럿이다: `요약해조` → `해조`, `정리해줭` → `해줭`.
+    #    Gmail 은 에러를 내지 않으므로 "오늘 메일이 없다" 와 구분이 안 된다 —
+    #    드라이브 0건 사고와 같은 종류다.
+    #    ⛔ **대응은 불용어를 더 쌓는 것이 아니다.** 오타는 목록으로 끝이 없고,
+    #    사용자가 이미 그 방식의 위험을 지적했다. **어절 단위로** 보면 목록을 늘리지
+    #    않고 잡힌다 — 불용어를 떼어 낸 자리에 짧은 꼬리만 남으면 그건 낱말이 아니다.
+    # ⚠️ 띄어쓰기를 품은 불용어("받은 메일"·"안 읽은")는 **문장 전체에서 먼저** 지운다.
+    #    어절 단위로만 보면 걸리지 않아 `받은`·`들어온` 이 검색어로 남는다 (회귀로 확인)
+    multi = sorted((p for p in stop_phrases if " " in p), key=len, reverse=True)
+    single = sorted((p for p in stop_phrases if " " not in p), key=len, reverse=True)
+    for phrase in multi:
         residual = residual.replace(phrase, " ")
-    residual = re.sub(r"[^0-9a-zA-Z가-힣@._+-]+", " ", residual)
-    keywords = [token for token in residual.split() if len(token) > 1]
+
+    keywords: List[str] = []
+    for word in residual.split():
+        cleaned = word
+        for phrase in single:
+            cleaned = cleaned.replace(phrase, " ")
+        stripped = bool(cleaned.strip() != word.strip())
+        for token in re.sub(r"[^0-9a-zA-Z가-힣@._+-]+", " ", cleaned).split():
+            if len(token) < 2:
+                continue
+            # ⚠️ **불용어를 뗀 자리에 2글자 이하가 남으면 어미 오타다** (`해조`·`해줭`).
+            #    뗀 것이 없는 어절은 그대로 둔다 — `환율`·`면세` 처럼 짧아도 뜻이 있다
+            if stripped and len(token) <= 2:
+                continue
+            keywords.append(token)
+
+    # 한글 낱자(ㄱ~ㅎ·ㅏ~ㅣ)가 섞인 어절은 **오타가 확실하다.** 완성형이 아니다
+    if re.search(r"[ㄱ-ㆎ]", question):
+        keywords = [k for k in keywords
+                    if not re.search(r"[ㄱ-ㆎ]", _jamo_source(question, k))]
 
     return " ".join([*explicit_operators, *generated, *keywords]).strip()
+
+
+def _jamo_source(question: str, token: str) -> str:
+    """`token` 이 나온 원래 어절을 돌려준다 (낱자는 정규식에서 이미 잘려 나간다).
+
+    `요야ㅐㄱ` 은 정리 후 `요야` 로 남아 겉보기엔 멀쩡하다. 원 어절을 봐야
+    낱자가 섞였다는 사실이 보인다.
+    """
+    for word in (question or "").split():
+        if token in word:
+            return word
+    return token
+
+
+def run_gmail_search(creds, question: str, max_results: int):
+    """Gmail 조회 — **0건이면 검색어를 빼고 한 번 더** 본다. (메일, 넓혔는지 여부)
+
+    ⛔ 위의 어절 규칙으로도 **완성형 오타는 못 잡는다** (`요약`→`유약`). 그때 남는
+       검색어 하나가 조용히 0건을 만들고, 사용자는 "오늘 메일이 없구나" 로 읽는다.
+       날짜·상태 연산자가 이미 의도를 담고 있으므로 검색어만 빼고 다시 본다.
+
+    ⚠️ 드라이브에서는 같은 완화를 **하지 않았다** — 거기서 넓히면 관련 없는 파일이
+       답처럼 보인다. 메일은 다르다: 넓힌 결과가 "오늘 받은 메일 전부" 라 사용자가
+       무엇을 보고 있는지 안다. 대신 **넓혔다는 사실을 반드시 밝힌다.**
+    """
+    q = build_gmail_query(question)
+    messages = search_gmail(creds, q, max_results=max_results)
+    if messages:
+        return messages, ""
+    operators = " ".join(t for t in q.split() if ":" in t)
+    dropped = " ".join(t for t in q.split() if ":" not in t)
+    if not operators or not dropped:
+        query_keywords.log_empty("gmail", question, dropped.split())
+        return [], ""
+    logger.warning("gmail_empty_relaxed", question=(question or "")[:120],
+                   gmail_query=q, dropped=dropped)
+    messages = search_gmail(creds, operators, max_results=max_results)
+    if not messages:
+        return [], ""
+    return messages, f"(검색어 '{dropped}' 로는 결과가 없어 해당 기간 전체를 보여줍니다)"
 
 
 def gmail_result_limit(query: str) -> int:
@@ -314,17 +385,13 @@ class GWSAgent:
 
         def _gmail():
             try:
-                gmail_query = build_gmail_query(current_query)
-                ms = search_gmail(
-                    creds,
-                    gmail_query,
-                    max_results=gmail_result_limit(current_query),
-                )
+                ms, widened = run_gmail_search(
+                    creds, current_query, gmail_result_limit(current_query))
             except Exception as e:
                 return f"[메일 오류] {str(e)[:200]}"
             if not ms:
                 return "[메일] 검색 결과가 없습니다."
-            lines = ["[메일]"]
+            lines = [f"[메일] {widened}".rstrip()]
             for m in ms:
                 content = m.get("body") or m.get("snippet", "")
                 lines.append(
@@ -465,14 +532,11 @@ class GWSAgent:
         def gmail_search(query: str) -> str:
             """Gmail에서 메일을 검색합니다. query에 검색어를 입력하세요. 예: 'from:boss', 'subject:보고서', '최근 메일'"""
             try:
-                results = search_gmail(
-                    creds,
-                    build_gmail_query(query),
-                    max_results=gmail_result_limit(query),
-                )
+                results, widened = run_gmail_search(
+                    creds, query, gmail_result_limit(query))
                 if not results:
                     return "검색 결과가 없습니다."
-                lines = []
+                lines = [widened] if widened else []
                 for m in results:
                     content = m.get("body") or m.get("snippet", "")
                     lines.append(f"- **{m['subject']}** (보낸사람: {m['from']}, 날짜: {m['date']})\n  {content}")
