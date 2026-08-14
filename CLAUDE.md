@@ -354,6 +354,19 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
     만든 사람 기준으로 굳는다**. 인쇄·PDF 에서는 빠진다(`@media print`)
   - ⚠️ `GET /api/reports/share-targets` 는 **`/{report_id}` 보다 위에** 둬야 한다.
     아래 두면 report_id 로 먹혀 422 가 난다
+- **질문 유형이 보고서의 모양을 정한다** (`app/reports/intent.py`, 2026-08-14).
+  ⛔ 예전엔 플래너 프롬프트에 *"보통 좋은 순서: 총량→추세→구성→전년비→순위"* 가 박혀 있어
+  **무엇을 물어도 비슷하게 생긴 보고서**가 나왔다 (사용자 지적)
+  - 유형 판정은 **규칙**이 한다 (LLM 아님): size · change · efficiency · compare_target ·
+    concentration · timing · ranking. 여러 개 걸리면 더 구체적인 것이 이긴다
+  - 유형별 권장 절 순서가 곧 논지다 — "왜 늘었나"는 `versus → compare → contribution`,
+    "효율"은 `ratio → correlation`, "언제"는 `seasonality → promotion`
+  - 뼈대는 프롬프트에 **우선순위로** 넣는다(강제 아님). LLM 이 죽어도 같은 유형의
+    기본 계획이 나온다 — 예전 기본 계획은 유형과 무관하게 규모형 하나였다
+- **모델을 바꿔 견주려면** `python scripts/compare_report_models.py "질문" --models gemini,claude`
+  - 이 파이프라인에서 모델이 바꾸는 것은 **계획과 해석뿐**이다. 숫자·SQL 은 결정적이라
+    모델을 바꿔도 표는 같다 — 비교도 그 둘만 본다
+  - ⛔ **자동 점수를 매기지 않는다.** LLM 이 LLM 을 채점하면 근거 없는 숫자가 하나 더 생긴다
 - **두 갈래다** — 손으로 검증한 고정 스펙(`specs/*.py`)과, 질문에 맞춰 블록을 조합하는
   동적 보고서(`planner`+`blocks`+`semantic`). 고정 스펙이 있으면 **그쪽이 이긴다**
 - **맨 앞 절이 논지를 말한다** (2026-08-13). 절을 나열만 하면 표 모음이지 분석이 아니다.
