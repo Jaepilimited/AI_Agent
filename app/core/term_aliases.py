@@ -93,7 +93,7 @@ _FUZZY_VOCAB = [
     ("메가와리", "메가와리"),
 ]
 
-_FUZZY_THRESHOLD = 0.70   # 자모 유사도 하한
+_FUZZY_THRESHOLD = 0.82   # 오탐 우선 방지: 얼마인지(0.76)·커머스(0.75)는 보정 금지
 _FUZZY_GAP = 0.05         # 1위-2위 최소 격차 — 애매하면 안 고친다
 
 # ── 자모 분해 ────────────────────────────────────────────────────────────────
@@ -193,10 +193,9 @@ def _fuzzy_correct(query: str) -> tuple[str, list[str]]:
             if term in run:
                 return run
         # 격차 판정은 **서로 다른 정식 명칭 간**에만 한다. 같은 용어의 이웃한
-        # 창(예: "힝라우" 0.71 vs "힝라" 0.67 — 둘 다 히알루)끼리 2위 경쟁을
-        # 시키면 정답이 자기 자신에게 밀려 기각된다 (실제 그 오류로 사용자
-        # 예시 '힝라우선세럼'이 보정되지 않았다).
-        per_canon: dict[str, tuple[float, int, int]] = {}
+        # 창끼리 2위 경쟁을 시키면 높은 유사도의 실제 오타도 자기 자신에게 밀려
+        # 기각되므로, 정식 명칭별 최고 점수만 비교한다.
+        per_canon: dict[str, tuple[float, int, int, str]] = {}
         for term, canonical in _FUZZY_VOCAB:
             tl = len(term)
             tj = _jamo(term)
@@ -207,16 +206,24 @@ def _fuzzy_correct(query: str) -> tuple[str, list[str]]:
                     window = run[i:i + w]
                     if window == term:
                         continue  # 정확 일치는 보정 대상이 아니다
-                    score = SequenceMatcher(None, _jamo(window), tj).ratio()
+                    window_jamo = _jamo(window)
+                    score = SequenceMatcher(None, window_jamo, tj).ratio()
                     cur = per_canon.get(canonical)
                     if cur is None or score > cur[0]:
-                        per_canon[canonical] = (score, i, i + w)
+                        per_canon[canonical] = (score, i, i + w, tj[0] if tj else "")
         ranked = sorted(per_canon.items(), key=lambda kv: kv[1][0], reverse=True)
         if not ranked:
             return run
-        canonical, (score, i, j) = ranked[0]
+        canonical, (score, i, j, target_initial) = ranked[0]
         second = ranked[1][1][0] if len(ranked) > 1 else 0.0
-        if score >= _FUZZY_THRESHOLD and (score - second) >= _FUZZY_GAP:
+        winning_jamo = _jamo(run[i:j])
+        # 후보 간 격차 계산은 기존 전체 후보를 그대로 둔다. 초성이 다른 후보를
+        # 미리 빼면 2위가 사라져 "커머스" 같은 애매한 일반어가 새로 통과한다.
+        # 최종 승자만 초성을 확인해 "얼마인지"(ㅇ)→"포어마이징"(ㅍ) 오염을 막는다.
+        same_initial = bool(winning_jamo and target_initial
+                            and winning_jamo[0] == target_initial)
+        if (same_initial and score >= _FUZZY_THRESHOLD
+                and (score - second) >= _FUZZY_GAP):
             hits.append(f"{run[i:j]}≈{canonical}({score:.2f})")
             return run[:i] + f"{canonical}({run[i:j]})" + run[j:]
         return run
@@ -308,9 +315,13 @@ def _known_terms() -> set:
 
 
 def _strip_particle(tok: str) -> str:
-    if len(tok) >= 3 and tok[-1] in _PARTICLES:
-        return tok[:-1]
-    return tok
+    """조사 제거는 `app/core/textmatch.py` 한 곳이다 (검색어 추출도 같은 것을 쓴다).
+
+    ⛔ 예전엔 여기서 **한 글자만** 뗐다 — `에서`·`으로` 같은 두 글자 조사는 못 뗐다.
+       검색 경로마다 조사 처리가 달라 조용히 어긋난 것이 2026-08-14 드라이브 사고다.
+    """
+    from app.core.textmatch import strip_particle
+    return strip_particle(tok)
 
 
 def _suggest(term: str) -> tuple[Optional[str], Optional[float]]:

@@ -177,12 +177,14 @@ def search_drive(
             clauses.append(f"(name contains '{k}' or fullText contains '{k}')")
         if mime_contains:
             clauses.append(f"mimeType contains '{mime_contains}'")
-        res = service.files().list(
-            q=" and ".join(clauses),
-            pageSize=max_results,
-            fields="files(id, name, mimeType, modifiedTime, webViewLink)",
-            orderBy="modifiedTime desc",
-        ).execute()
+        # ⚠️ 검색어가 있으면 **정렬을 지정하지 않는다** — Drive 가 관련도 순으로 준다.
+        #    `modifiedTime desc` 로 고정하면 딱 맞는 파일이 최근 파일에 밀려 상위 N 밖으로
+        #    나간다. 키워드가 없을 때(최근 파일 보기)만 수정일 순이 맞다.
+        params = dict(q=" and ".join(clauses), pageSize=max_results,
+                      fields="files(id, name, mimeType, modifiedTime, webViewLink)")
+        if not kws:
+            params["orderBy"] = "modifiedTime desc"
+        res = service.files().list(**params).execute()
         return res.get("files", [])
 
     # ⛔ **낱말을 통째로 한 조건에 넣지 마라.** `name contains '신규 입사자 교안 자료'` 는

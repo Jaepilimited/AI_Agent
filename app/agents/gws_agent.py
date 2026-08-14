@@ -362,11 +362,28 @@ class GWSAgent:
                 "작성한", "작성", "만든", "들어간", "담긴",
             }
             kw = " ".join(_extract_kw(q, extra_stop=_DRIVE_STOP))
+            widened = ""
             try:
                 fs = search_drive(creds, kw, max_results=10, mime_contains=mime)
+                # 0건이면 **같은 뜻의 다른 말**로 다시 찾는다. Drive API 는 낱말이 실제로
+                # 들어 있어야 찾으므로, 부르는 이름과 파일에 적힌 이름이 다르면 못 찾는다
+                # (제미나이는 의미로 찾아서 됐다 — 2026-08-14). 색인을 만들지 않고
+                # **검색 시점에** 넓히는 방식이라 권한·신선도 문제가 없다.
+                if not fs and kw:
+                    from app.core.query_keywords import expand, llm_variants
+                    # ① 확실한 표기 변형·사내 사전 → ② 그래도 없으면 LLM 이 대안을 낸다.
+                    #    ⛔ 동의어를 손으로 쌓지 않는 이유는 `query_keywords` 주석 참조
+                    for alt in expand(kw.split()) + llm_variants(current_query, kw.split()):
+                        fs = search_drive(creds, " ".join(alt), max_results=10,
+                                          mime_contains=mime)
+                        if fs:
+                            widened = " ".join(alt)
+                            break
                 # 키워드+유형 동시 검색이 0건이면 유형만으로 완화 재시도
                 if not fs and kw and mime:
                     fs = search_drive(creds, "", max_results=10, mime_contains=mime)
+                    if fs:
+                        widened = "(유형만)"
             except Exception as e:
                 return f"[드라이브 오류] {str(e)[:200]}"
             if not fs:
@@ -375,7 +392,11 @@ class GWSAgent:
                 from app.core.query_keywords import log_empty
                 log_empty("drive", current_query, kw.split(), mime=mime or "")
                 return "[드라이브] 검색 결과가 없습니다."
-            lines = [f"[드라이브] (검색어: {kw or '전체'}{', 유형: ' + mime if mime else ''})"]
+            # ⚠️ 넓혀서 찾았으면 **그 사실을 밝힌다.** 안 밝히면 근사치가 정답처럼 보인다
+            _note = (f", 원래 검색어로는 결과가 없어 '{widened}' 로 넓혀 찾음"
+                     if widened else "")
+            lines = [f"[드라이브] (검색어: {kw or '전체'}"
+                     f"{', 유형: ' + mime if mime else ''}{_note})"]
             for f in fs:
                 lines.append(f"- {f['name']} ({f['mimeType']}, 수정: {f['modifiedTime']})\n  {f['webViewLink']}")
             return "\n".join(lines)

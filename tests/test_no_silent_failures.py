@@ -143,3 +143,82 @@ def test_strip_particle_keeps_short_nouns():
     assert strip_particle("매출이") == "매출"
     assert strip_particle("교안") == "교안"
     assert strip_particle("자료") == "자료"
+
+
+# ── 검색어 동의어 확장 (2026-08-14) ─────────────────────────────────────────
+# Drive API 는 **낱말이 실제로 들어 있어야** 찾는다 (제미나이는 의미로 찾아서 됐다).
+# 색인을 만들지 않고 검색 시점에 넓힌다 — 권한·신선도 문제가 없다.
+
+def test_expand_swaps_one_word_at_a_time():
+    from app.core.query_keywords import expand
+    alts = expand(["매뉴얼", "배송"])
+    assert alts, "표기 변형 후보가 나와야 한다"
+    for a in alts:
+        assert len(a) == 2, "길이는 유지된다 (한 낱말만 바꾼다)"
+        diff = sum(1 for x, y in zip(a, ["매뉴얼", "배송"]) if x != y)
+        assert diff == 1, f"한 번에 하나만 바꿔야 한다: {a}"
+
+
+def test_seeds_contain_only_safe_variants():
+    """⛔ 씨앗에 **뜻이 다른 말**을 넣지 마라 (2026-08-14 사용자 판단).
+
+    실제로 {실적·성과·매출·결산} 을 동의어로 뒀었다 — "실적 자료" 를 찾는데
+    "매출 시트" 가 나오고 그게 정답처럼 보인다. 뜻이 비슷할 뿐인 말은 LLM 확장이
+    맡고, 씨앗에는 **표기 변형**만 남긴다.
+    """
+    from app.core.query_keywords import _SYNONYMS
+    flat = {w for g in _SYNONYMS for w in g}
+    for risky in ("매출", "실적", "성과", "결산", "교안", "온보딩"):
+        assert risky not in flat, f"뜻이 다를 수 있는 말이 씨앗에 있다: {risky}"
+
+
+def test_llm_expansion_is_the_growth_path():
+    """새 용어는 **사람이 등록하지 않아도** 대응돼야 한다 — LLM 확장이 그 자리다."""
+    import inspect
+
+    from app.agents import gws_agent
+    assert "llm_variants" in inspect.getsource(gws_agent)
+
+
+def test_widened_search_is_disclosed():
+    """⛔ 넓혀서 찾았으면 밝혀야 한다 — 안 밝히면 근사치가 정답처럼 보인다."""
+    import inspect
+
+    from app.agents import gws_agent
+    src = inspect.getsource(gws_agent)
+    assert "넓혀 찾음" in src, "확장 사실을 답변에 밝히는 문구가 없다"
+
+
+def test_synonyms_come_from_the_shared_dictionary():
+    """⛔ 동의어 목록을 코드에 또 만들지 마라 — 이미 DB 사전이 있다 (2026-08-14 지적).
+
+    `term_aliases` 는 별칭→정식명칭 한 방향이지만, **같은 정식명칭을 가진 별칭들은
+    서로 동의어**다. 새 용어는 관리자 화면에서 넣으면 코드 수정 없이 검색에 반영된다.
+    """
+    import inspect
+
+    from app.core import query_keywords as QK
+
+    src = inspect.getsource(QK.expand)
+    assert "_alias_groups()" in src, "확장이 DB 사전을 보지 않는다"
+    # 사전이 비어 있어도(테스트 환경) 씨앗만으로 동작해야 한다
+    assert QK.expand(["매뉴얼"]), "씨앗 표기 변형조차 동작하지 않는다"
+
+
+def test_particle_stripping_has_one_implementation():
+    """조사 제거가 여러 벌이면 경로마다 다르게 잘린다 — 실제로 그래서 어긋났다."""
+    import inspect
+
+    from app.core import term_aliases
+
+    src = inspect.getsource(term_aliases._strip_particle)
+    assert "textmatch" in src, "term_aliases 가 자체 조사 제거를 다시 갖고 있다"
+
+
+def test_empty_search_feeds_the_candidate_dictionary():
+    """0건 질문의 미등록 용어는 **자동으로** 후보에 쌓여야 한다 (수동 등록 금지)."""
+    import inspect
+
+    from app.core import query_keywords as QK
+
+    assert "collect_candidates" in inspect.getsource(QK.log_empty)
