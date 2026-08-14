@@ -166,6 +166,27 @@ def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+_BIGQUERY_CORRECTION_MARKERS = (
+    "라고했지", "라고했잖", "언급도안", "언급안", "언급하지않",
+    "말한적없", "그거말고", "잘못나왔", "잘못됐", "잘못되었",
+    "빼고다시", "제외하고다시", "다시뽑", "다시조회", "다시집계",
+)
+
+
+def _should_continue_bigquery_for_correction(query: str, conversation_context: str) -> bool:
+    """직전 SQL 결과를 고치는 후속 발화를 새 CS 질문으로 분류하지 않는다.
+
+    제품 라인명이 정정 문장에 다시 등장하면 키워드 분류기는 그 문장을 독립적인
+    CS 질문으로 확신한다. 직전 답변에 실제 실행 SQL이 있고, 현재 문장도 명시적인
+    정정/재조회 표현일 때만 BigQuery 흐름을 이어간다. SQL 앵커가 없는 일반 제품
+    문의는 건드리지 않는다.
+    """
+    if "[직전 실행 SQL" not in (conversation_context or ""):
+        return False
+    compact = re.sub(r"\s+", "", (query or "").lower())
+    return any(marker in compact for marker in _BIGQUERY_CORRECTION_MARKERS)
+
+
 # Direct-lock keywords — queries containing these skip LLM reclassification
 _DIRECT_LOCK_KW = frozenset([
     "회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이",
@@ -678,6 +699,9 @@ class OrchestratorAgent:
 
         if _single_route:
             route = _single_route
+        elif _should_continue_bigquery_for_correction(query, conversation_context):
+            route = "bigquery"
+            logger.info("bigquery_correction_followup", query=query[:100])
         else:
             # Step 1: Classify query intent
             # Fast path: keyword match first, LLM fallback only for short ambiguous queries
@@ -964,6 +988,9 @@ class OrchestratorAgent:
 
         if _single_route:
             route, _confident = _single_route, True
+        elif _should_continue_bigquery_for_correction(query, conversation_context):
+            route, _confident = "bigquery", True
+            logger.info("stream_bigquery_correction_followup", query=query[:100])
         else:
             route, _confident = self._keyword_classify_ex(query)
 
@@ -2749,7 +2776,7 @@ JSON만 반환:
 - 프로덕트 매트릭스 (Looker): https://lookerstudio.google.com/reporting/41182756-3fce-4c48-9c76-429ba9d99aaf/page/p_mde0034oqd
 - 플랫폼 대시보드 (Looker): https://lookerstudio.google.com/reporting/93148b10-d6a8-42f5-acdb-8192e5e79612/page/p_9an4m8l4wd
 - 제품 순위 트렌드 (Web): https://skin1004official.github.io/platform-metrics/
-- GM EAST 제품 대시보드 (Looker): https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/p_jhinbd29sd
+- GM EAST 제품 대시보드 (Looker): https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/ydIsF
 - 리뷰 대시보드 (Looker): https://lookerstudio.google.com/reporting/bd0bd4fa-fb97-472a-82a4-cfa1a42f27a2/page/p_jauu8i71yd
 - 아마존 대시보드 (Looker): https://lookerstudio.google.com/reporting/0932b147-5a33-4734-9895-7ede8bd99074/page/R2inF
 - Shopify 대시보드 (Looker): https://lookerstudio.google.com/reporting/afe86a46-018a-4918-ae64-4219ccf5b029/page/gK5fF
@@ -2761,14 +2788,20 @@ JSON만 반환:
 - 메타 광고 대시보드 (Looker): https://lookerstudio.google.com/reporting/a56e222e-48c2-43d2-844e-1cb536489bc6/page/MMeaE
 - TeamMint 대시보드 (Looker): https://lookerstudio.google.com/reporting/d5ab4952-0dda-4881-aa52-8b20f97edcf9/page/wpRLF
 - 통합 ROI 마케팅 대시보드 (Looker): https://lookerstudio.google.com/u/0/reporting/2214aeda-dfa0-4321-ae7c-79ceef01a6c9/page/bfsiE
+- GM WEST Ecomm 통합 대시보드 (Looker): https://datastudio.google.com/reporting/847f5a3b-54e4-47a9-98a2-d974f2020036/page/6jpvF
+- Amazon Ads Search Term Report (Looker): https://datastudio.google.com/reporting/d5d70074-5c8f-4877-b0fd-e385cf6d28b8/page/p_yvoevgrh5d
 
 **기타**
 - 유럽 판매채널 모니터링 (Looker): https://lookerstudio.google.com/reporting/db521aea-53b0-49fd-8352-c6142a097fe3/page/ji3HF/edit
 - 메가와리 대시보드 (Looker): https://lookerstudio.google.com/reporting/3ada86c9-85a4-4191-bdf0-1fb879d6a2ac/page/d51NF
 - 메타 광고 진행현황 분석 (Looker): https://lookerstudio.google.com/u/0/reporting/533e0388-3905-4a39-93ca-0516ed8167cb/page/p_577xmorfyd
+- 프로모션 캘린더 (Web): http://34.64.99.254:8041/
+- 물류관리 시스템 (Web): http://34.64.99.254:8051/
+- CS 대시보드 (Web): http://34.64.99.254:8061/
 
 **솔루션**
 - 이메일 및 틱톡 자동발송 시스템 (Notion): https://www.notion.so/skin1004/DM-Mail-2e82b4283b0080968d39f19678257d23
+- TikTok 이메일 팔로워 추출 (Sheets): https://docs.google.com/spreadsheets/d/1ZbQMPBi2S7uk6zK7r8QcvSmMDJogSGq7j8KDNu2Aya0/edit?gid=0#gid=0
 
 ## 핵심 원칙
 - 전문적이면서 친근한 톤. 바로 답변 시작. 서론/인사 없이 핵심부터.
@@ -2849,6 +2882,37 @@ JSON만 반환:
     _SELF_REF = ["안녕", "도와", "할 수 있", "할수있", "어시스턴트", "너는", "네가",
                  "기능", "사용법", "쓰는 법"]
 
+
+    # ⛔ **회사 밖 사실을 그라운딩 없이 답하면 지어낸다** (2026-08-11 제보).
+    #    "리센느 멤버는 몇명임?" 에 **"우연, 이한, 벨라, 케이티, 민주"** 라고 답했다 —
+    #    전부 지어낸 이름이다(실제는 원이·리브·미나미·메이·제나). 같은 대화에서
+    #    같은 주제가 세 번 다르게 나갔다: ① 환각 ② "연동돼 있지 않습니다" ③ 검색이
+    #    걸려 정답 + 스스로 정정. 제보자가 "어떤 로직으로 답을 가져오는지 모르겠다"고
+    #    쓴 것이 정확히 이 불일치다.
+    #
+    #    ⛔ 대응은 키워드(_SEARCH_KEYWORDS)에 아이돌 이름을 쌓는 것이 아니다 —
+    #       끝이 없고, 목록에 없는 고유명사에서 그대로 재발한다. **구조로 판정한다**:
+    #       바깥 사실을 묻는 형태인데(몇 명·누구·언제…) 우리 업무 어휘가 하나도 없고
+    #       어시스턴트 자신에 대한 질문도 아니면, 답의 근거가 모델 기억뿐이다.
+    #       그때는 검색을 태운다. 느려지는 대신 지어내지 않는다.
+    _FACT_ASK = ("몇 명", "몇명", "누구", "언제", "어디", "며칠", "몇 년", "몇년",
+                 "이름이 뭐", "뭐야", "뭔가요", "무엇", "얼마나", "어느 나라",
+                 "데뷔", "출시일", "설립", "창업", "본명", "나이", "생일")
+
+    def _is_external_fact_question(self, q: str) -> bool:
+        """바깥 고유명사에 대한 사실 질문인가 — 모델 기억으로 답하면 안 되는 부류."""
+        if not any(t in q for t in self._FACT_ASK):
+            return False
+        if any(s in q for s in self._SELF_REF):
+            return False            # 자기 기능 질문은 검색할 바깥 정보가 없다
+        # 업무 어휘가 하나라도 있으면 사내 질문이다 — 여기서 판단하지 않는다
+        from app.core.textmatch import contains_any
+        if contains_any(q, self._BIZ_CONTEXT, guarded=self._GUARDED):
+            return False
+        if contains_any(q, self._DATA_KEYWORDS, guarded=self._GUARDED):
+            return False
+        return True
+
     def _needs_web_search(self, query: str) -> bool:
         """Check if query needs real-time web search or can be answered directly."""
         q = query.lower().strip()
@@ -2864,6 +2928,9 @@ JSON만 반환:
             #    하므로, 시간어 **외에** 실제 주제어가 하나라도 있으면 검색으로 간다
             if all(h in self._AMBIENT_TIME for h in hits) and any(s in q for s in self._SELF_REF):
                 return False
+            return True
+        # 바깥 고유명사에 대한 사실 질문 → 모델 기억으로 답하면 지어낸다 (위 주석 참조)
+        if self._is_external_fact_question(q):
             return True
         # Very short queries (greetings, single words) → no search
         if len(q) <= 10:
