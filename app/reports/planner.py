@@ -39,11 +39,13 @@ PROMPT = """당신은 데이터 분석 보고서의 **목차를 설계**합니�
 ## 사용 가능한 축 (dim)
 {dims}
 
+{skeleton}
+
 ## 규칙
 - 아래 JSON 만 출력합니다. 설명·주석 금지.
 - metric·dim·block 은 **위 목록의 키를 그대로** 씁니다. 없는 말을 지어내지 마세요.
 - 섹션은 3~{max_sections}개. 질문에 답하는 순서로 배열하세요.
-- 보통 좋은 순서: 총량(total) → 추세(trend) → 구성(breakdown) → 전년비(compare) → 순위(ranking)
+- 절 순서는 아래 **질문 유형**에 맞춥니다 (모든 보고서가 같은 모양이면 안 됩니다).
 - 질문이 특정 국가·팀·채널로 좁혀져 있으면 filters 에 넣으세요. 예: {{"국가": ["일본"]}}
 - 질문이 특정 축을 강조하면(예: "채널별") 그 축 섹션을 앞에 두세요.
 - cross 블록은 dim 과 dim2 를 모두 지정합니다.
@@ -94,7 +96,16 @@ def _vocab_text() -> Dict[str, str]:
 
 
 def default_plan(question: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
-    """LLM 없이도 나오는 기본 매출 보고서."""
+    """LLM 없이도 나오는 기본 계획 — **질문 유형에 맞는 모양**으로 낸다.
+
+    ⛔ 예전엔 유형과 무관하게 총량→추세→구성→전년비→순위 하나였다. LLM 이 죽으면
+       "왜 줄었나"에도 규모 보고서가 나갔다 (2026-08-14).
+    """
+    from app.reports import intent as I
+    return I.fallback_plan(question, ctx)
+
+
+def _legacy_default(question: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "title": f"{ctx['focus_label']} 매출 보고서",
         "lede": "기간 전체 규모와 방향을 보고, 어디에서 왔는지 축별로 나눠 본다.",
@@ -216,11 +227,13 @@ def plan(question: str, ctx: Dict[str, Any], llm=None) -> Dict[str, Any]:
             logger.warning("planner_no_llm", error=str(e)[:120])
             return default_plan(question, ctx)
 
+    from app.reports import intent as I
+    det = I.detect(question)
     v = _vocab_text()
     prompt = PROMPT.format(question=question, max_sections=MAX_SECTIONS,
                            focus_label=ctx["focus_label"], focus_start=ctx["focus_start"],
                            focus_end=ctx["focus_end"], compare_label=ctx["compare_label"],
-                           **v)
+                           skeleton=I.skeleton_text(det), **v)
     try:
         raw = llm.generate_json(prompt)
         data = json.loads(raw) if isinstance(raw, str) else raw
@@ -251,4 +264,4 @@ def plan(question: str, ctx: Dict[str, Any], llm=None) -> Dict[str, Any]:
         lede = ""   # 도입부에 수치를 지어낸 경우만 버린다 (연도는 통과)
 
     return {"title": title[:80], "lede": lede[:200], "sections": sections,
-            "dropped": problems}
+            "dropped": problems, "intent": det["intent"]}

@@ -271,3 +271,36 @@ def test_routing_sweep(question, expected):
     o = OrchestratorAgent.__new__(OrchestratorAgent)
     route, confident = OrchestratorAgent._keyword_classify_ex(o, question)
     assert (route, confident) == (expected, True)
+
+
+# ── 질문 유형 → 보고서 뼈대 (2026-08-14) ────────────────────────────────────
+# ⛔ 예전엔 플래너 프롬프트에 "보통 좋은 순서: 총량→추세→구성→전년비→순위" 가 박혀
+#    있어 **무엇을 물어도 비슷하게 생긴 보고서**가 나왔다. 유형은 규칙이 판정한다.
+
+@pytest.mark.parametrize("question,expected,lead", [
+    ("2026 상반기 일본 매출 보고서 만들어줘", "size", "total"),
+    ("일본 매출이 왜 줄었는지 보고서 만들어줘", "change", "compare"),
+    ("채널별 할인율 효율 보고서 만들어줘", "efficiency", "ratio"),
+    ("일본이 다른 나라와 뭐가 달랐는지 보고서 만들어줘", "compare_target", "versus"),
+    ("거래처 쏠림 리스크 보고서 만들어줘", "concentration", "concentration"),
+    ("언제가 성수기인지 보고서 만들어줘", "timing", "seasonality"),
+    ("제품 top 10 보고서 만들어줘", "ranking", "ranking"),
+])
+def test_intent_shapes_the_report(question, expected, lead):
+    from app.reports import intent as I
+
+    det = I.detect(question)
+    assert det["intent"] == expected
+    assert det["order"][0] == lead, "맨 앞 절이 그 유형의 논지를 만들어야 한다"
+
+
+def test_fallback_plan_follows_intent():
+    """LLM 이 죽어도 **유형에 맞는 모양**이 나와야 한다 — 예전엔 규모형 하나였다."""
+    from app.reports import intent as I
+
+    ctx = {"focus_label": "2026 상반기"}
+    change = I.fallback_plan("매출이 왜 줄었나 보고서", ctx)
+    size = I.fallback_plan("일본 매출 보고서", ctx)
+    assert change["sections"][0]["block"] == "compare"
+    assert size["sections"][0]["block"] == "total"
+    assert change["lede"] != size["lede"]
