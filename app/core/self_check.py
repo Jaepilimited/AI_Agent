@@ -457,6 +457,47 @@ def _check_qdrant() -> CheckResult:
     return CheckResult(n > 0, f"{COLLECTION} {n} points / 컬렉션 {len(cols)}개")
 
 
+def _check_notion_allowlist() -> CheckResult:
+    """허용 목록의 노션 페이지를 인테그레이션이 **실제로 볼 수 있는가**.
+
+    ⛔ 안 보이는 페이지는 조용히 목록에서 빠진다 — 사용자는 "그 문서 얘기는 못 한다"는
+       사실을 모른 채 빈 답을 받는다. 로그에는 `notion_warmup_fetch_failed` 가 남지만
+       **7일간 228회 반복**되는 동안 아무도 못 봤다 (2026-08-18 로그 분석).
+       10개 중 2개(네이버 스마트스토어 운영방법 · 네이버 브랜드스토어 업무 공유)가
+       404 였고, 두 페이지 모두 **살아 있다** — 인테그레이션에 공유가 안 된 것이다.
+
+    반복 로그가 아니라 **상시 상태**로 보여야 누군가 고친다. 고치는 방법은 코드가
+    아니라 노션 UI 다 (페이지 → 연결 → 인테그레이션 추가) — 그래서 자가 점검이 맡는다.
+    """
+    import httpx
+
+    from app.agents.notion_agent import _ALLOWED_PAGES
+    from app.config import get_settings
+
+    tok = get_settings().notion_mcp_token
+    if not tok:
+        return CheckResult(False, "NOTION_MCP_TOKEN 미설정")
+    headers = {"Authorization": f"Bearer {tok}", "Notion-Version": "2022-06-28"}
+    blocked = []
+    with httpx.Client(timeout=20, headers=headers) as cl:
+        for entry in _ALLOWED_PAGES:
+            pid = entry["id"]
+            kind = "databases" if entry.get("type") == "database" else "pages"
+            try:
+                r = cl.get(f"https://api.notion.com/v1/{kind}/{pid}")
+                if r.status_code == 404:
+                    blocked.append(entry.get("description") or pid[:8])
+            except Exception as e:
+                return CheckResult(False, f"조회 실패: {str(e)[:80]}")
+    total = len(_ALLOWED_PAGES)
+    if blocked:
+        return CheckResult(
+            False,
+            f"{len(blocked)}/{total}개 접근 불가 — {', '.join(blocked)} "
+            f"(노션에서 해당 페이지 → 연결 → 인테그레이션 추가 필요)")
+    return CheckResult(True, f"{total}개 전부 접근 가능")
+
+
 # ---- 답변 품질 (canary) ----
 
 
@@ -620,6 +661,8 @@ CHECKS: list[Check] = [
           "관리자 계정이 존재하는가", _check_admin_exists),
     Check("bq_tables", "datasource", SEV_CRITICAL,
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
+    Check("notion_allowlist", "datasource", SEV_WARNING,
+          "노션 허용 페이지를 인테그레이션이 볼 수 있는가", _check_notion_allowlist),
     Check("qdrant", "datasource", SEV_CRITICAL,
           "Qdrant 기본 컬렉션에 데이터가 있는가", _check_qdrant),
     Check("canary_answers", "quality", SEV_WARNING,
