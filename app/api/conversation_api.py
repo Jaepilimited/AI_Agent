@@ -5,6 +5,8 @@ import uuid
 from typing import List, Optional
 
 import structlog
+
+from app.config import ALL_MODELS
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -58,7 +60,7 @@ class ConversationDetail(BaseModel):
 
 class CreateConversationRequest(BaseModel):
     title: Optional[str] = "New Chat"
-    model: Optional[str] = "skin1004-ai"
+    model: Optional[str] = ALL_MODELS
 
 
 class UpdateConversationRequest(BaseModel):
@@ -110,7 +112,7 @@ async def create_conversation(
         "INSERT INTO conversations (id, user_id, anon_id, title, model) "
         "VALUES (%s, %s, %s, %s, %s)",
         (convo_id, user.id, anon_id_for(user.id),
-         req.title or "New Chat", req.model or "skin1004-ai"),
+         req.title or "New Chat", req.model or ALL_MODELS),
     )
     convo = await _db_fetch_one(
         "SELECT id, title, model, updated_at FROM conversations WHERE id = %s",

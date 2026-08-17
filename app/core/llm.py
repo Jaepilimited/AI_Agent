@@ -145,7 +145,24 @@ def repair_json(text: str) -> str:
         except Exception:
             continue
 
-    # 2) 닫는 괄호가 모자라는 경우 — 문자열 밖의 여는 괄호만 세어 채운다
+    # 2) **값 뒤에 홀로 뜬 따옴표** — 괄호는 멀쩡한데 이것 하나로 파싱이 깨진다.
+    #    실측 원문 (2026-08-12·14 프로덕션, 차트 4건 유실):
+    #        ..., "y_label": "제품명"
+    #        "                      ← 키도 값도 아닌 따옴표 한 개
+    #        }
+    #    괄호 수선(1·3)으로는 안 잡힌다. 짝이 맞지 않는 줄만 지우고 다시 시도한다.
+    #    ⚠️ 문자열 안의 따옴표를 건드리면 안 되므로 **줄 전체가 따옴표뿐일 때만** 지운다.
+    lines = s.splitlines()
+    stripped = [ln for ln in lines if ln.strip() not in ('"', "'", '",', '"' * 2)]
+    if len(stripped) != len(lines):
+        cand = "\n".join(stripped)
+        try:
+            json.loads(cand)
+            return cand
+        except Exception:
+            s = cand      # 다음 단계가 이어서 시도한다
+
+    # 3) 닫는 괄호가 모자라는 경우 — 문자열 밖의 여는 괄호만 세어 채운다
     stack, in_str, esc = [], False, False
     for ch in s:
         if in_str:

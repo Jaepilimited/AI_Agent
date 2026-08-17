@@ -50,9 +50,22 @@ def _to_float(tok: str):
 
 
 def _numbers_in(text: str) -> List[float]:
+    """⚠️ **낱말에 붙은 숫자는 값이 아니라 이름이다.** 그대로 세면 오탐이 된다 —
+    실측에서 `SKIN1004` 의 **1004** 가 미검증 수치로 잡혔다 (2026-08-18 로그).
+    같은 부류: `Q10`·`100ml`·`B2B`·`SPF50`. 앞뒤가 글자면 건너뛴다."""
+    text = text or ""
     out = []
-    for m in _NUM.findall(text or ""):
-        v = _to_float(m)
+    for m in _NUM.finditer(text):
+        before = text[m.start() - 1] if m.start() else ""
+        after = text[m.end()] if m.end() < len(text) else ""
+        # ⚠️ **ASCII 글자만 본다.** 파이썬에서 한글도 isalpha() 라 그냥 쓰면
+        #    `87.2억`·`59건`의 단위에 걸려 **검출력이 통째로 죽는다** (실측에서 잡음).
+        def _ascii_alpha(ch: str) -> bool:
+            return bool(ch) and ch.isascii() and (ch.isalpha() or ch == "_")
+
+        if _ascii_alpha(before) or _ascii_alpha(after):
+            continue
+        v = _to_float(m.group())
         if v is not None:
             out.append(abs(v))
     return out
@@ -111,6 +124,9 @@ def verify(answer: str, rows: Sequence[Dict[str, Any]], question: str = "",
 
     vals, cols = _row_values(rows)
     q_vals = set(_numbers_in(question))
+    # ⚠️ **행 수 자체가 답에 자주 쓰인다** — "총 59건의 프로모션". 조회 결과가 설명하는
+    #    값인데 미검증으로 잡혀 발생률 1위였다 (2026-08-18 실측: 44.4%짜리 3건 전부 이것).
+    vals = set(vals) | {float(len(rows or []))}
 
     # ③ 열 합계 + **부분합·잔여합**
     #    "상위 5개 합계"·"기타 27개 합계" 는 행에 없지만 조회 결과로 설명되는 값이다.

@@ -4,6 +4,8 @@ import asyncio
 from datetime import date, datetime, timedelta
 
 import structlog
+
+from app.config import ALL_MODELS
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -15,7 +17,7 @@ logger = structlog.get_logger(__name__)
 
 admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-_ALL_MODELS = "skin1004-Analysis"
+_ALL_MODELS = ALL_MODELS
 _VISITOR_TRACKING_STARTED_ON = date(2026, 8, 11)
 
 
@@ -67,7 +69,7 @@ async def list_users(
             raw = u.get("allowed_models") or ""
             models = [m.strip() for m in raw.split(",") if m.strip()]
             if not models:
-                models = ["skin1004-Analysis"]
+                models = [ALL_MODELS]
         result.append(UserListItem(
             id=u["id"],
             email=u.get("ad_email") or u.get("email") or "",

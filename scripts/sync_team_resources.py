@@ -444,10 +444,25 @@ def print_tree(nodes: List[Dict]):
 
 def _enrich_with_playwright(teams: List[str], min_desc_len: int = 200):
     """Post-sync: use Playwright to crawl Notion pages with short descriptions."""
+    # ⛔ **가드가 엉뚱한 것을 검사하고 있었다** (2026-08-18 로그 분석).
+    #    아래 import 는 헬퍼 모듈만 확인한다 — playwright 자체는 `crawl_page_playwright`
+    #    **안에서** import 되므로, 없으면 여기서 안 걸리고 **페이지마다 터진다.**
+    #    그래서 하루 30건 × 7일 = 210건이 `playwright_page_failed` 로 쌓였고,
+    #    메시지가 "No module named 'playwright'"인데도 개별 페이지 오류처럼 보여
+    #    **기능이 통째로 죽은 사실이 묻혔다.** 진짜 오류를 가리는 소음이기도 하다.
+    #    의존성은 **한 번만, 실제로** 확인하고 없으면 조용히 건너뛴다.
     try:
         from scripts.crawl_notion_pages import get_pages_to_crawl, crawl_page_playwright, update_description
     except ImportError:
         logger.warning("playwright_enrichment_skipped", reason="crawl_notion_pages not importable")
+        return
+    try:
+        import playwright  # noqa: F401
+    except ImportError:
+        # 서버에는 브라우저 바이너리까지 필요해 설치하지 않는다. 보강만 건너뛰고
+        # 동기화 자체는 정상 완료한다 — 페이지마다 실패를 찍는 것보다 낫다.
+        logger.warning("playwright_enrichment_skipped", reason="playwright not installed",
+                       impact="노션 페이지 본문 보강 없음 (동기화 자체는 정상)")
         return
 
     pages = get_pages_to_crawl(teams, min_desc_len=min_desc_len)

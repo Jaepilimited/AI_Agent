@@ -7,6 +7,13 @@ from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# ⛔ **서비스 모델 이름은 여기가 단일 소스다.** 예전엔 9곳에 하드코딩돼 있었고,
+#    그 사이 `conversation_api` 만 옛 이름(`skin1004-ai`)에 머물러 있었다 —
+#    `/v1/models` 가 내주는 목록과 대화가 기록하는 모델명이 서로 달랐다
+#    (2026-08-18 정리). 같은 값을 여러 곳에 적으면 한쪽만 고쳐진다.
+ALL_MODELS = "skin1004-Analysis"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 

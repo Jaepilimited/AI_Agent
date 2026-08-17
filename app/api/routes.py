@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.agents.orchestrator import OrchestratorAgent
 from app.api.auth_middleware import get_current_user
-from app.config import get_settings
+from app.config import ALL_MODELS, get_settings
 from app.db.mariadb import fetch_one, fetch_all
 from app.db.models import User
 from app.core.llm import MODEL_CLAUDE
@@ -382,7 +382,7 @@ async def list_models():
     """List available models (OpenAI-compatible)."""
     return ModelListResponse(
         data=[
-            ModelInfo(id="skin1004-Analysis", owned_by="skin1004"),
+            ModelInfo(id=ALL_MODELS, owned_by="skin1004"),
         ]
     )
 

@@ -7,7 +7,7 @@ from typing import Optional
 import jwt
 from fastapi import HTTPException, Request
 
-from app.config import get_settings
+from app.config import ALL_MODELS, get_settings
 from app.db.mariadb import fetch_one
 from app.db.models import User
 
@@ -70,7 +70,7 @@ async def get_current_user(request: Request) -> User:
             name=row.get("ad_name") or row.get("display_name") or "",
             department=row.get("department") or "",
             role=row["role"],
-            allowed_models=row.get("allowed_models") or "skin1004-Analysis",
+            allowed_models=row.get("allowed_models") or ALL_MODELS,
             ad_user_id=row.get("ad_user_id"),
         )
         _user_cache[user_id] = (user, time.monotonic())

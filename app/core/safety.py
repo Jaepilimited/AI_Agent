@@ -491,10 +491,21 @@ async def maintenance_auto_detect_loop(interval: float = 60.0) -> None:
                     mm.set_table_baseline(label, row_count)
                     logger.info("maintenance_baseline_set", table=label, baseline=row_count)
 
-                # Detection 1: recently modified (within 3 min window)
-                if modified_ago is not None and modified_ago < _UPDATE_WINDOW_SECONDS:
+                # Detection 1: 적재 중으로 보이는 경우 (최근 수정 **그리고** 행이 줄어듦)
+                # ⛔ 예전엔 "최근 수정"만으로 점검 중을 켰다. 상시 적재되는 테이블
+                #    (광고·프로모션·마케팅·Shopify)은 늘 "0초 전 수정"이라 **영구히
+                #    점검 중**으로 표시됐다 — 7일간 153회 (2026-08-18 로그 분석).
+                #    게다가 아래 `continue` 가 Detection 2 를 건너뛰어 **베이스라인이
+                #    영영 갱신되지 않았다.** 오탐이 스스로를 고착시키는 구조였다.
+                #    적재 중이라는 진짜 신호는 "행이 줄어드는 것"이다 (truncate+reload).
+                #    단순 append 는 조회해도 안전하므로 점검 중으로 보지 않는다.
+                _base = mm.table_baseline(label)
+                if (modified_ago is not None and modified_ago < _UPDATE_WINDOW_SECONDS
+                        and _base and row_count < _base):
                     mm.auto_activate_table(
-                        label, f"테이블 업데이트 중 ({modified_ago:.0f}초 전 수정)"
+                        label,
+                        f"테이블 적재 중 (row {row_count:,} < 기준 {_base:,}, "
+                        f"{modified_ago:.0f}초 전 수정)",
                     )
                     continue
 

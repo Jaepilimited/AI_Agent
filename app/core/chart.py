@@ -115,6 +115,11 @@ def build_chartjs_config(
         group_col = chart_config.get("group_column")
 
         if not data or not x_col or not y_col:
+            # ⛔ 사유 없이 None 을 돌려주던 자리다. 주간 42건이 진단 정보 0으로
+            #    사라지고 있었다 (2026-08-18 로그 분석). 어느 경로로 죽었는지
+            #    남겨야 고칠 수 있다 — 이 저장소의 "조용한 실패" 원칙과 같다.
+            logger.warning("chart_skipped", reason="missing_columns",
+                           rows=len(data or []), x_col=x_col, y_col=y_col)
             return None
 
         # Validate x_column exists in data — auto-fix if not found
@@ -158,6 +163,8 @@ def build_chartjs_config(
                         x_col = y_col
                         y_col = fixed
                     else:
+                        logger.warning("chart_skipped", reason="no_numeric_column",
+                                       x_col=x_col, y_col=y_col, rows=len(data))
                         return None
 
         # Readability limits
@@ -169,6 +176,9 @@ def build_chartjs_config(
             unique_x = len(set(str(row.get(x_col, "")) for row in data))
             unique_g = len(set(str(row.get(group_col, "")) for row in data))
             if unique_x > 36 or unique_g > 15:
+                logger.warning("chart_skipped", reason="too_many_series",
+                               unique_x=unique_x, unique_groups=unique_g,
+                               chart_type=chart_type)
                 return None  # Too many periods or groups
         elif chart_type == "pie" and len(data) > 10:
             _pie_y = y_col if isinstance(y_col, str) else y_col[0]
@@ -183,6 +193,8 @@ def build_chartjs_config(
             elif len(data) <= 25:
                 pass  # Allow up to 25 items for most chart types
             else:
+                logger.warning("chart_skipped", reason="too_many_items",
+                               rows=len(data), limit=limit, chart_type=chart_type)
                 return None
 
         # --- Build Chart.js config ---

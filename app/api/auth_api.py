@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
-from app.config import get_settings
+from app.config import ALL_MODELS, get_settings
 from app.db.mariadb import fetch_all, fetch_one, execute, execute_lastid
 from app.db.models import User
 
@@ -26,7 +26,7 @@ auth_api_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _ALGORITHM = "HS256"
 _TOKEN_EXPIRE_DAYS = 7
-_ALL_MODELS = "skin1004-Analysis"
+_ALL_MODELS = ALL_MODELS
 
 # ── AD user cache (avoid DB hit on every keystroke) ──
 _ad_cache: list[dict] = []
@@ -136,7 +136,7 @@ def _resolve_models(role: str, allowed_models: str | None) -> list[str]:
         return [m.strip() for m in _ALL_MODELS.split(",") if m.strip()]
     raw = allowed_models or ""
     models = [m.strip() for m in raw.split(",") if m.strip()]
-    return models if models else ["skin1004-Analysis"]
+    return models if models else [ALL_MODELS]
 
 
 def _user_response(user_row: dict) -> dict:
@@ -186,6 +186,23 @@ def _set_cookie(response: Response, token: str):
         max_age=_TOKEN_EXPIRE_DAYS * 86400,
         path="/",
     )
+
+
+async def _record_authenticated_visit(user_id: int) -> None:
+    """Record one authenticated page open; keep one aggregate row per user/day."""
+    try:
+        await _db_execute(
+            """INSERT INTO user_visits
+                   (user_id, visit_date, first_seen_at, last_seen_at, visit_count)
+               VALUES (%s, CURDATE(), NOW(), NOW(), 1)
+               ON DUPLICATE KEY UPDATE
+                   last_seen_at = NOW(),
+                   visit_count = visit_count + 1""",
+            (user_id,),
+        )
+    except Exception as e:
+        # Analytics must never block sign-in or the main chat experience.
+        logger.warning("visit_tracking_failed", user_id=user_id, error=str(e))
 
 
 # ── Public endpoints (no auth required, for login form) ──
@@ -327,7 +344,7 @@ async def signup(req: SignupRequest, response: Response):
     user_id = await _db_execute_lastid(
         "INSERT INTO users (email, password_hash, display_name, role, allowed_models, ad_user_id) "
         "VALUES (%s, %s, %s, %s, %s, %s)",
-        (user_email, pw_hash, ad_user["display_name"], "user", "skin1004-Analysis", ad_user["id"]),
+        (user_email, pw_hash, ad_user["display_name"], "user", ALL_MODELS, ad_user["id"]),
     )
 
     bf = await asyncio.to_thread(_lookup_brand_filter, user_id)
@@ -341,7 +358,7 @@ async def signup(req: SignupRequest, response: Response):
         "name": ad_user["display_name"],
         "department": ad_user["department"],
         "role": "user",
-        "allowed_models": ["skin1004-Analysis"],
+        "allowed_models": [ALL_MODELS],
     }
 
 
@@ -398,6 +415,8 @@ async def me(response: Response, user: User = Depends(get_current_user)):
         _me_last_refresh.move_to_end(user.id)
         while len(_me_last_refresh) > _ME_REFRESH_LRU_CAP:
             _me_last_refresh.popitem(last=False)
+
+    await _record_authenticated_visit(user.id)
 
     can_view_fi = user.role == "admin"
     if not can_view_fi and user.ad_user_id:
