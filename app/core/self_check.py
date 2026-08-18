@@ -498,6 +498,58 @@ def _check_notion_allowlist() -> CheckResult:
     return CheckResult(True, f"{total}개 전부 접근 가능")
 
 
+# ── 프로덕션 로그의 **새 에러 유형** ────────────────────────────────────────
+# ⛔ 이걸 하려고 만든 `SKIN1004-Nightly-Debug` 가 있었지만 **7/09 부터 멈춰 있었고**
+#    로그·재기동·헬스체크가 전부 구서버(pm2 skin1004-prod, logs/pm2-prod-error.log,
+#    127.0.0.1:3000)를 향하고 있었다. 게다가 LLM 이 만든 diff 를 프로덕션에
+#    **자동 적용**하는 구조라 되살리기에 위험이 컸다.
+#    실제로 오늘(2026-08-18) 일주일치 로그를 사람이 훑어 여섯 종을 찾았다 —
+#    자동 수정이 아니라 **읽히는 것**이 값이었다. 그 부분만 여기로 옮긴다.
+_LOG_ERROR_BASELINE_HOURS = 24 * 7
+
+
+def _check_new_log_errors() -> CheckResult:
+    """어제 로그에 **직전 주에 없던 에러 유형**이 있는가.
+
+    ⚠️ 절대량이 아니라 **새로 나타난 종류**만 본다 — 늘 나던 에러를 매일 알리면
+       곧 무시당한다 (붐따 다이제스트·자가 점검 알림과 같은 판단).
+    """
+    import json
+    import subprocess
+    from collections import Counter
+
+    def _events(since: str, until: str = "") -> Counter:
+        cmd = ["journalctl", "-u", "ai-craver", "--since", since, "--no-pager", "-o", "cat"]
+        if until:
+            cmd += ["--until", until]
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=90).stdout
+        except Exception:
+            return Counter()
+        found = Counter()
+        for line in out.splitlines():
+            i = line.find("{")
+            if i < 0:
+                continue
+            try:
+                d = json.loads(line[i:])
+            except Exception:
+                continue
+            if str(d.get("level", "")).lower() in ("error", "critical"):
+                found[d.get("event", "?")] += 1
+        return found
+
+    recent = _events("1 day ago")
+    baseline = _events(f"{_LOG_ERROR_BASELINE_HOURS // 24 + 1} days ago", "1 day ago")
+    if not recent and not baseline:
+        return CheckResult(True, "최근 에러 로그 없음 (또는 journal 접근 불가)")
+    fresh = {e: n for e, n in recent.items() if e not in baseline}
+    if fresh:
+        top = ", ".join(f"{e}({n})" for e, n in sorted(fresh.items(), key=lambda kv: -kv[1])[:5])
+        return CheckResult(False, f"새 에러 유형 {len(fresh)}종: {top}")
+    return CheckResult(True, f"신규 에러 유형 없음 (어제 {sum(recent.values())}건 / 직전주 {sum(baseline.values())}건)")
+
+
 # ---- 답변 품질 (canary) ----
 
 
@@ -661,6 +713,8 @@ CHECKS: list[Check] = [
           "관리자 계정이 존재하는가", _check_admin_exists),
     Check("bq_tables", "datasource", SEV_CRITICAL,
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
+    Check("new_log_errors", "quality", SEV_WARNING,
+          "어제 로그에 직전 주에 없던 에러 유형이 있는가", _check_new_log_errors),
     Check("notion_allowlist", "datasource", SEV_WARNING,
           "노션 허용 페이지를 인테그레이션이 볼 수 있는가", _check_notion_allowlist),
     Check("qdrant", "datasource", SEV_CRITICAL,

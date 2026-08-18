@@ -1,5 +1,22 @@
 """Nightly debug/auto-fix orchestrator.
 
+⛔ **2026-08-18 현재 이 스크립트는 동작하지 않는다. 되살리려면 세 곳을 먼저 고쳐야 한다.**
+   서버 이관(2026-07-30) 이후 대상이 전부 구서버를 가리킨 채로 남았고,
+   Windows 예약 작업 `SKIN1004-Nightly-Debug` 는 **2026-07-09 마지막 실행 뒤
+   다음 실행이 잡히지 않았다**(트리거 만료). 상태가 "Ready" 라 화면상 살아 있어 보였고,
+   `EXPECTED_JOBS` 에도 없어 그 침묵이 감시되지 않았다.
+
+     1) 로그    `logs/pm2-prod-error.log`  → 실제 프로덕션은 WAS `journalctl -u ai-craver`
+     2) 재기동  `pm2 restart skin1004-prod` → 리다이렉트 껍데기만 재기동된다
+                                              (신규는 `systemctl restart ai-craver`)
+     3) 헬스    `127.0.0.1:3000`            → WAS 10.1.150.5
+
+   ⚠️ 되살리기 전에 **자동 적용(LLM diff → 프로덕션)** 을 유지할지 먼저 정할 것.
+   그 사이 이 스크립트의 값이던 "로그 에러를 읽는 일"은 자가 점검으로 옮겼다
+   (`self_check._check_new_log_errors` — 어제 로그에서 **직전 주에 없던 에러 유형**만
+   보고한다). 실제로 오늘 일주일치 로그를 훑어 여섯 종을 찾았는데, 값은 자동 수정이
+   아니라 **읽히는 것**에 있었다.
+
 Scheduled via Windows Task Scheduler ("SKIN1004-Nightly-Debug") every 2 hours
 between 22:00 and 07:00. See docs/superpowers/specs/2026-07-07-nightly-debug-system-design.md
 for the full design and safety rationale.
