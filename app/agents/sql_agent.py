@@ -1378,6 +1378,24 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
     if not sql or not state.get("sql_valid"):
         return {"sql_result": None, "error": "실행할 수 없는 SQL입니다."}
 
+    # ⛔ **실행 전에 참조 턴과 말이 맞는지 본다.** 후속 질문이 가리킨 턴의 필터가
+    #    새 SQL 에서 말없이 사라지면 다른 것을 세게 된다 — 같은 대화에서 매출이
+    #    300억 달라진 사고가 그것이다 (붐따 #116).
+    # ⚠️ 지금은 **계측만** 한다. 막거나 고치지 않는다 — 오탐이 조회를 끊으면
+    #    답변 수치 검증(answer_check)을 계측으로 시작한 이유와 같은 문제가 생긴다.
+    try:
+        from app.core.turn_state import (extract_states, resolve_reference,
+                                         verify_alignment)
+        _msgs = state.get("messages") or []
+        _q = state.get("query") or ""
+        if _msgs:
+            _states = extract_states(_msgs)
+            _ref = resolve_reference(_q, _states)
+            if _ref:
+                verify_alignment(sql, _ref, _q)      # 어긋나면 WARNING 을 남긴다
+    except Exception as _e:
+        logger.warning("turn_alignment_skipped", error=str(_e)[:120])
+
     can_view_fi = bool(state.get("can_view_fi", False))
     allowed_tables = _allowed_tables_from_sources(
         state.get("enabled_sources"),

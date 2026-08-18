@@ -158,10 +158,22 @@ def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
                 content = content[:cap] + "..."
             lines.append(f"AI: {content}")
 
+    # ⛔ 앵커 하나로는 부족했다 — 실측 40%가 600자에서 잘렸고, **직전 턴만** 남아
+    #    두 턴 전 조건을 이어받을 수 없었다. 같은 대화에서 매출이 300억 달라진
+    #    사고가 그것이다 (붐따 #116). 조회 턴 전체를 **구조로** 함께 싣는다.
+    #    ⚠️ 답변 원문·표·차트는 넣지 않는다 — 길이만 먹고 후속 해석에는 상태가 정확하다.
+    try:
+        from app.core.turn_state import compact_context, extract_states
+        _states = extract_states(messages)
+        if _states:
+            lines.append(compact_context(_states))
+    except Exception as _e:
+        logger.warning("turn_state_context_failed", error=str(_e)[:120])
+
     if last_sql:
         lines.append(
             "[직전 실행 SQL — 후속 질문은 이 테이블·지표·필터를 기준으로 해석]\n"
-            + last_sql[:600]
+            + last_sql[:1800]      # 실측 90퍼센타일 1,583자 — 600 은 40%가 잘렸다
         )
     return "\n".join(lines)
 
