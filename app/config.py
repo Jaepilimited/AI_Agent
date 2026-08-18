@@ -159,7 +159,17 @@ class Settings(BaseSettings):
             "skin1004-319714.Platform_Data.raw_data",
             "skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS",
             "skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance",
-            # Reviews (New_ schema — 2026-04 updated)
+            # Reviews — 2026-08-18 갱신. 데이터분석파트가 몰별 테이블을
+            # 국내/해외/매장으로 통합했는데 여기가 옛 4개에 머물러 있었다.
+            # 그래서 "국내몰 리뷰" 를 물으면 스마트스토어만 나오고(45,964 중 일부),
+            # "플래그십 스토어 리뷰" 는 아예 조회조차 못 했다 (이주훈 님 제보 2026-08-14).
+            "skin1004-319714.Review_Data.Korea_mall_Review",      # 국내몰 통합 8채널
+            "skin1004-319714.Review_Data.Oversea_mall_Review",    # 해외몰 통합 4채널
+            "skin1004-319714.Review_Data.Store_Review",           # 매장(구글맵·네이버 플레이스)
+            "skin1004-319714.Review_Data.Korea_mall_Review_keyword",
+            "skin1004-319714.Review_Data.Oversea_mall_Review_keyword",
+            "skin1004-319714.Review_Data.Store_Review_keyword",
+            # 구 몰별 테이블 — 통합 전 데이터를 보려는 질문이 있어 남겨 둔다
             "skin1004-319714.Review_Data.New_Amazon_Review",
             "skin1004-319714.Review_Data.New_Qoo10_Review",
             "skin1004-319714.Review_Data.New_Shopee_Review",

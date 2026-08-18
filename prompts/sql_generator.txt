@@ -1113,13 +1113,38 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 
 ## 테이블 9~12: 리뷰 데이터 (Review Tables)
 
-### 테이블 목록
-| 테이블 | Full Path |
-|--------|-----------|
-| New_Amazon_Review | `skin1004-319714.Review_Data.New_Amazon_Review` |
-| New_Qoo10_Review | `skin1004-319714.Review_Data.New_Qoo10_Review` |
-| New_Shopee_Review | `skin1004-319714.Review_Data.New_Shopee_Review` |
-| New_Smartstore_Review | `skin1004-319714.Review_Data.New_Smartstore_Review` |
+### 테이블 목록 (2026-08-18 실측 갱신 — 통합 테이블이 정본이다)
+
+⛔ **몰별 테이블을 직접 쓰지 마라.** 데이터분석파트가 국내/해외/매장으로 통합했는데
+   이 문서가 옛 4개에 머물러 있어 실제 오답이 났다 (이주훈 님 제보 2026-08-14):
+   - "국내몰 리뷰 몇 개" → `New_Smartstore_Review` 만 봐서 **스마트스토어만** 셌다
+     (국내몰은 8개 채널 69,374건인데 그중 일부만 답했다)
+   - "플래그십 스토어 리뷰" → `Store_Review` 를 몰라 **조회 자체를 못 했다**
+
+| 용도 | 테이블 | 행수 | 채널 |
+|---|---|---|---|
+| **국내몰 리뷰** | `skin1004-319714.Review_Data.Korea_mall_Review` | 69,374 | Smartstore·올리브영·MUSINSA·지그재그·ABLY·W컨셉·29CM·국내자사몰 |
+| **해외몰 리뷰** | `skin1004-319714.Review_Data.Oversea_mall_Review` | 135,416 | Qoo10·Shopee·Amazon·해외 자사몰 |
+| **매장(플래그십) 리뷰** | `skin1004-319714.Review_Data.Store_Review` | 3,490 | 구글맵·네이버 플레이스 |
+
+- "국내/해외 구분 없이 전체 리뷰" → 위 국내몰 + 해외몰을 **UNION ALL** 로 합친다
+- ⚠️ **매장 리뷰는 제품 리뷰가 아니다.** `Store_Review` 는 `product_name` 이 없다.
+  "플래그십/매장/오프라인 리뷰" 질문에만 쓰고 제품 리뷰 집계에 섞지 마라
+
+  **`Store_Review` 컬럼 (실측 2026-08-18)**
+  | 컬럼 | 타입 | 값 |
+  |---|---|---|
+  | `shopname` | STRING | ⭐ **매장명** — `명동 플래그십`(3,395) · `뉴욕 플래그십`(95) |
+  | `channel` | STRING | 리뷰가 달린 곳 — `구글맵`(3,465) · `네이버 플레이스`(25) |
+  | `review_date` | **DATE** | 다른 리뷰 테이블과 달리 STRING 이 아니다 → `SAFE_CAST` 불필요 |
+  | `stars` | 별점 | `overall_sentiment_score`, `staff_service_score`, `store_environment_score`, `in_store_experience_score`, `product_experience_score`, `cs_refund_exchange_score` |
+
+  - ⛔ **매장 이름은 `shopname` 으로 거른다.** `channel` 로 찾으면 0건이 난다 —
+    실제로 "뉴욕 플래그십 리뷰 2026년 몇 건" 에 **0건**으로 답했다(실제 95건).
+    `channel` 은 매장이 아니라 리뷰 플랫폼이다
+  - 매장명은 부분 일치로: `shopname LIKE '%뉴욕%'` / `LIKE '%명동%'`
+- 구 몰별 테이블(`New_Amazon_Review`·`New_Qoo10_Review`·`New_Shopee_Review`·
+  `New_Smartstore_Review`)은 **통합 전 데이터를 콕 집어 물을 때만** 쓴다
 
 ### 공통 컬럼 (4개 테이블 모두)
 - collected_date: ⛔ **무시! 사용 금지!** 수집일일 뿐 의미 없음

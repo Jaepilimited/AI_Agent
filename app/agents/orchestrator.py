@@ -1714,7 +1714,14 @@ class OrchestratorAgent:
                           "등록 절차", "등록절차", "신청 절차", "신청절차", "출장", "erp"]
         _DATA_OVERRIDE = ["매출", "비용", "합계", "월별", "조회수", "저장수", "좋아요수",
                           "협업건", "유가 협업", "무가 협업", "시딩", "인플루언서",
-                          "광고비", "roas", "ctr", "cpv", "cpe", "전환", "클릭"]
+                          "광고비", "roas", "ctr", "cpv", "cpe", "전환", "클릭",
+                          # ⛔ 리뷰는 BigQuery 도메인인데 이 목록에 없었다. 그래서
+                          #    "플래그십 스토어 리뷰 몇 건" 이 `플래그십`(팀 문서 낱말)에
+                          #    걸려 notion 으로 새고 조회를 못 했다 (이주훈 님 제보 2026-08-14).
+                          #    ⚠️ `_QTY_INTENT`(몇·얼마)로 통째로 뒤집으면 "연차 몇 개 남았어"
+                          #       같은 인사 질문까지 bigquery 로 간다 — 낱말을 좁게 더한다.
+                          #    "리뷰 작성 가이드라인" 은 아래 _DOC_WORD 가드가 notion 으로 지킨다
+                          "리뷰", "평점", "별점"]
         # ⛔ 문서를 달라는 말이 있으면 데이터 명사가 섞여 있어도 문서다 (2026-08-13 실측:
         #    "인플루언서 시딩 가이드라인 알려줘" 가 '시딩' 때문에 bigquery 로 갔다).
         #    단 **수량·금액을 묻는 말이 있으면 조회**다 — "시딩 비용 얼마 썼어"는 그대로 데이터.
@@ -1805,7 +1812,13 @@ class OrchestratorAgent:
             "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
         ]
         # Team resource check — team data lookups (before CS to avoid overlap)
-        if self._has(q, self._TEAM_KEYWORDS):
+        # ⛔ **여기에는 데이터 가드가 없었다.** 바로 위 _TEAM_KEYWORDS 정의에 "이 목록을
+        #    쓰는 아래쪽 검사에는 데이터 가드가 없다"고 경고까지 적혀 있었는데 그대로였다.
+        #    그래서 "플래그십 스토어 리뷰 몇 건이야" 가 `플래그십` 하나에 걸려 notion 으로
+        #    새고 조회를 못 했다 (이주훈 님 제보 2026-08-14).
+        #    ⚠️ 데이터 낱말이 **함께** 있을 때만 뒤집는다 — 통째로 뒤집으면
+        #       "조직도 알려줘"·"연차 규정" 같은 진짜 문서 질문이 bigquery 로 샌다.
+        if self._has(q, self._TEAM_KEYWORDS) and not self._has(q, self._DATA_KEYWORDS):
             return ("notion", True)
 
         has_strong_data = self._has(q, _STRONG_DATA)
