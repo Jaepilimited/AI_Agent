@@ -1139,8 +1139,11 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
   💡 컬럼별 뜻은 **더 이상 여기 적지 않는다.** 노션 정의서가 매일 03:40 에
      BigQuery 컬럼 설명으로 동기화되고(`schema_docs`), 스키마와 함께 자동으로
      실린다. 손으로 적은 설명은 반드시 낡는다 — 그게 이 사고의 원인이었다
-- 구 몰별 테이블(`New_Amazon_Review`·`New_Qoo10_Review`·`New_Shopee_Review`·
-  `New_Smartstore_Review`)은 **통합 전 데이터를 콕 집어 물을 때만** 쓴다
+- ⛔ **리뷰 테이블은 위 셋이 전부다** (2026-08-18 확정). 구 몰별 테이블
+  (`New_Amazon_Review`·`New_Qoo10_Review`·`New_Shopee_Review`·`New_Smartstore_Review`)과
+  파생 테이블(`*_keyword`·`*_Keywordextract`·`wordcloud` 등)은 **쓰지 않는다**
+- ⚠️ `ALL_Review`(130,933행)는 이름과 달리 **통합 전 4개 몰**이다. "전체 리뷰"에 쓰지 마라 —
+  국내몰+해외몰 UNION 이 진짜 전체다
 
 ### 공통 컬럼 (4개 테이블 모두)
 - collected_date: ⛔ **무시! 사용 금지!** 수집일일 뿐 의미 없음

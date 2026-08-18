@@ -35,10 +35,23 @@ class TestConsolidatedTablesAreAllowed:
         allowed = get_settings().allowed_tables
         assert any(t.endswith("." + table) for t in allowed), f"{table} 누락"
 
-    def test_legacy_kept(self):
-        """통합 전 데이터를 콕 집어 묻는 질문이 있어 구 테이블도 남긴다."""
+    @pytest.mark.parametrize("table", [
+        "New_Amazon_Review", "New_Qoo10_Review", "New_Shopee_Review",
+        "New_Smartstore_Review", "ALL_Review",
+        "Korea_mall_Review_keyword", "Store_Review_keyword",
+    ])
+    def test_legacy_removed(self, table):
+        """⛔ 구 몰별·파생 테이블은 **쓰지 않는다** (2026-08-18 사용자 확정).
+
+        통합본과 구본이 공존하면 "국내몰 리뷰가 스마트스토어만 세던" 혼동이
+        되살아난다. ⚠️ `ALL_Review` 는 이름과 달리 통합 전 4개 몰이라 특히 위험하다.
+        """
         allowed = get_settings().allowed_tables
-        assert any(t.endswith(".New_Smartstore_Review") for t in allowed)
+        assert not any(t.endswith("." + table) for t in allowed), f"{table} 가 남아 있다"
+
+    def test_exactly_three(self):
+        allowed = [t for t in get_settings().allowed_tables if ".Review_Data." in t]
+        assert len(allowed) == 3, f"리뷰 테이블은 셋이어야 한다: {allowed}"
 
 
 class TestPromptPointsAtConsolidated:
@@ -47,8 +60,13 @@ class TestPromptPointsAtConsolidated:
             assert t in _PROMPT, f"프롬프트에 {t} 없음"
 
     def test_warns_against_legacy_first(self):
-        """구 몰별 테이블을 기본으로 쓰지 말라는 경고가 남아 있어야 한다."""
+        """구 몰별 테이블을 쓰지 말라는 경고가 남아 있어야 한다."""
         assert "몰별 테이블을 직접 쓰지 마라" in _PROMPT
+        assert "리뷰 테이블은 위 셋이 전부다" in _PROMPT
+
+    def test_warns_about_all_review_name(self):
+        """⚠️ `ALL_Review` 는 이름이 '전체'인데 통합 전 4개 몰이다 — 함정이라 명시한다."""
+        assert "ALL_Review" in _PROMPT and "통합 전 4개 몰" in _PROMPT
 
     def test_store_review_is_not_product_review(self):
         """⚠️ 매장 리뷰에는 product_name 이 없다 — 제품 리뷰 집계에 섞이면 안 된다."""
