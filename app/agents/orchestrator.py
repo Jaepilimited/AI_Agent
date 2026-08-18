@@ -1629,6 +1629,28 @@ class OrchestratorAgent:
         """(호환용) 라우트만 반환 — 확신 플래그가 필요하면 _keyword_classify_ex."""
         return self._keyword_classify_ex(query)[0]
 
+    # ⛔ **사용자가 자기 데이터를 붙여넣었는데 앱이 그걸 무시하고 조회했다** (2026-08-18 실측).
+    #    권역별 마케팅 비용 표 60행을 붙여 "이 표를 정리해줘" 라고 했더니, 표는 쳐다보지도
+    #    않고 BigQuery 에서 전혀 다른 권역 ROAS 를 가져와 답했다. 숫자는 그럴듯한데
+    #    **묻지 않은 데이터**다 — 붙여넣은 사람은 자기 표가 반영된 줄 안다.
+    #    붙여넣은 표는 우리 DB 에 없는 값일 수 있으므로(그래서 붙여넣는다) 조회로 답하면 안 된다.
+    #    ⚠️ 판정은 **구조**로 한다. "표"·"붙여넣" 같은 낱말을 세면 목록 밖에서 재발한다.
+    _INLINE_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.M)
+    _INLINE_TSV_ROW = re.compile(r"^[^\n\t]+\t[^\n\t]+\t", re.M)
+
+    def _has_pasted_data(self, query: str) -> bool:
+        """질문 안에 **사용자가 가져온 데이터 덩어리**가 있는가.
+
+        마크다운 표 4행 이상, 또는 탭 구분 3행 이상이면 붙여넣은 데이터로 본다
+        (3행 이하는 예시로 든 것일 수 있어 조회를 막지 않는다).
+        """
+        if len(query or "") < 200:
+            return False
+        if len(self._INLINE_TABLE_ROW.findall(query)) >= 4:
+            return True
+        return len(self._INLINE_TSV_ROW.findall(query)) >= 3
+
+
     def _keyword_classify_ex(self, query: str) -> tuple:
         """키워드 분류 + 확신 플래그 → (route, confident).
 
@@ -1641,6 +1663,11 @@ class OrchestratorAgent:
         """
         # Open WebUI system tasks (title/tag/follow-up) → direct, skip BQ false routing
         if query.strip().startswith("### Task:"):
+            return ("direct", True)
+
+        # 붙여넣은 데이터가 있으면 **그 데이터로 답해야 한다** — 조회하면 다른 숫자가 나온다
+        if self._has_pasted_data(query):
+            logger.info("route_pasted_data", chars=len(query))
             return ("direct", True)
 
         q = query.lower()
