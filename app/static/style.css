@@ -4587,3 +4587,32 @@ html.dark .db-autocomplete-dropdown {
   border: none; padding: 7px 18px; background: var(--accent); color: #fff; font-weight: 600;
 }
 .fb-btn-primary:hover { filter: brightness(1.06); }
+
+
+/* ── 내 피드백 회신 알림 ──────────────────────────────────────────────
+   ⛔ 테마를 타야 하는 스타일을 자바스크립트 안에 인라인으로 두지 않는다.
+      예전에 피드백 모달이 없는 변수(--panel·--input-bg)를 참조해 라이트 모드에서
+      어두운 배경 + 어두운 글자가 됐다 (2026-08-13). 실제 토큰만 쓴다. */
+.feedback-reply-toast {
+  position: fixed; right: 20px; bottom: 20px; z-index: 9999;
+  width: min(380px, calc(100vw - 40px));
+  background: var(--bg-elevated); color: var(--text);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow-card); padding: 14px 16px; font-size: 13px;
+}
+.feedback-reply-toast .fr-head {
+  font-weight: 600; margin-bottom: 10px; display: flex;
+  align-items: center; justify-content: space-between;
+}
+.feedback-reply-toast .fr-close {
+  background: none; border: 0; color: var(--text-secondary);
+  font-size: 20px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.feedback-reply-toast .fr-item {
+  border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px;
+}
+.feedback-reply-toast .fr-mine {
+  color: var(--text-secondary); font-size: 12px; margin-bottom: 4px;
+}
+.feedback-reply-toast .fr-reply { line-height: 1.5; }
+.feedback-reply-toast .fr-reply strong { color: var(--text); margin-right: 4px; }

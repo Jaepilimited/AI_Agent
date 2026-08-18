@@ -45,6 +45,8 @@ _COLUMNS = (
     ("handled_at", "DATETIME NULL"),
     ("handled_by", "VARCHAR(120) NULL"),
     ("handled_note", "TEXT NULL"),
+    # 제보자가 회신을 읽었는지. ⛔ 회신이 **닿았는지 모르면** 안 한 것과 같다
+    ("reply_seen_at", "DATETIME NULL"),
 )
 
 
@@ -158,3 +160,33 @@ def run_daily_digest(hours: int = 24) -> Dict[str, Any]:
     else:
         logger.info("feedback_digest_quiet", **result)
     return result
+
+
+# ── 제보자 회신 ────────────────────────────────────────────────────────────
+# ⛔ **회신 경로가 없던 것이 인입량 부진의 가장 유력한 원인이다** (2026-08-18 실측).
+#    노션 채널은 제보마다 답글이 달려 8월 처리·회신 100% 인데, 앱은 회신 0건이었다.
+#    전휘빈 님은 5~7월에 수치 오류를 4번 제보했고 **그중 3건이 같은 두 원인**이었다 —
+#    답을 못 받으니 같은 것을 계속 겪으며 계속 신고한 것이다.
+#    고친 사실을 돌려주지 않으면, 제보는 "밑 빠진 독"이 되고 곧 아무도 안 쓴다.
+
+
+def replies_for_user(user_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+    """내 붐따 중 **처리되고 메모가 달린 것**. 안 읽은 것이 먼저 온다."""
+    return fetch_all(
+        "SELECT id, comment, created_at, status, handled_at, handled_note, "
+        "       (reply_seen_at IS NULL) AS unseen "
+        "FROM message_feedback "
+        "WHERE user_id = %s AND status IN (%s, %s) "
+        "  AND handled_note IS NOT NULL AND handled_note <> '' "
+        "ORDER BY unseen DESC, handled_at DESC LIMIT %s",
+        (int(user_id), STATUS_DONE, STATUS_WONTFIX, int(limit))) or []
+
+
+def mark_replies_seen(user_id: int) -> int:
+    """읽음 처리. ⚠️ 본인 것만 — user_id 를 **SQL 안에서** 건다
+    (파이썬에서 먼저 확인하고 나중에 UPDATE 하면 확인을 빠뜨린 호출부가 언젠가 생긴다)."""
+    return execute(
+        "UPDATE message_feedback SET reply_seen_at = NOW() "
+        "WHERE user_id = %s AND reply_seen_at IS NULL "
+        "  AND handled_note IS NOT NULL AND handled_note <> ''",
+        (int(user_id),))

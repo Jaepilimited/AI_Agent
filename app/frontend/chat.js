@@ -4478,6 +4478,42 @@
   });
 
 
+
+  // ── 내 피드백 회신 ──
+  // ⛔ 제보에 답이 없으면 사람들은 곧 제보를 멈춘다. 8월 앱 회신 0건이었고,
+  //    노션 채널(회신 100%)과 대비가 뚜렷했다 (2026-08-18 실측).
+  function loadMyFeedbackReplies() {
+    fetch("/api/conversations/feedback/replies")
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d || !d.unseen) return;
+        showFeedbackReplyToast(d.items.filter(function(i) { return i.unseen; }));
+      })
+      .catch(function() {});
+  }
+
+  function showFeedbackReplyToast(items) {
+    if (!items.length) return;
+    var box = document.createElement("div");
+    box.className = "feedback-reply-toast";
+    var rows = items.slice(0, 3).map(function(it) {
+      var mine = it.comment ? escapeHtml(String(it.comment).slice(0, 60)) : "(코멘트 없음)";
+      var badge = it.status === "done" ? "반영됨" : "보류";
+      return "<div class='fr-item'><div class='fr-mine'>“" + mine + "”</div>"
+        + "<div class='fr-reply'><strong>" + badge + "</strong> " + escapeHtml(it.handled_note || "") + "</div></div>";
+    }).join("");
+    var more = items.length > 3 ? " (총 " + items.length + "건)" : "";
+    box.innerHTML = "<div class='fr-head'>남기신 피드백에 답변이 달렸습니다" + more
+      + "<button class='fr-close' aria-label='닫기'>&times;</button></div>" + rows;
+    document.body.appendChild(box);
+    function dismiss() {
+      box.remove();
+      fetch("/api/conversations/feedback/replies/seen", { method: "POST" }).catch(function() {});
+    }
+    box.querySelector(".fr-close").addEventListener("click", dismiss);
+    setTimeout(dismiss, 25000);
+  }
+
   // ── 붐따(👎) 처리함 ──
   // ⛔ 이 화면이 생기기 전까지 **코멘트를 읽을 방법이 없었다.** 수집·집계는 되는데
   //    내용은 아무도 못 봤고, 넉 달치 39건이 그대로 쌓여 있었다 (2026-08-14).
@@ -4535,10 +4571,19 @@
 
     el.querySelectorAll("select[data-fb-id]").forEach(function(sel) {
       sel.addEventListener("change", function() {
+        // ⛔ **완료/보류로 바꿀 땐 회신을 받는다.** 회신이 안 돌아가면 제보가 끊긴다 —
+        //    8월 회신 0건이었고, 같은 사람이 같은 원인을 4번 신고한 일도 있었다.
+        var note = null;
+        if (sel.value === "done" || sel.value === "wontfix") {
+          note = window.prompt(
+            "제보자에게 보낼 회신 (비워도 되지만, 남기면 제보자 화면에 표시됩니다)\n\n"
+            + "예: 원인은 브랜드 필터에 우마가 빠진 것이었고 8/14 수정했습니다.", "");
+          if (note === null) { loadFeedbackInbox(); return; }   // 취소
+        }
         fetch("/api/admin/feedback/" + sel.dataset.fbId, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: sel.value })
+          body: JSON.stringify({ status: sel.value, note: note || null })
         }).then(function(r) {
           if (!r.ok) { alert("상태 변경 실패"); return; }
           loadFeedbackInbox();
@@ -5602,6 +5647,9 @@
       }
     });
   }
+
+  // 로그인 직후 한 번 — 내 제보에 답이 달렸는지 본다
+  setTimeout(loadMyFeedbackReplies, 1500);
 
   function escapeHtml(str) {
     if (!str) return "";

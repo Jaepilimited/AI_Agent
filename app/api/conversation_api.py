@@ -305,3 +305,24 @@ async def get_feedback(
         (convo_id, anon_id_for(user.id)),
     )
     return {str(r["message_id"]): r["rating"] for r in rows}
+
+
+# ── 내 피드백 회신 ─────────────────────────────────────────────────────────
+# ⛔ 회신 경로가 없어 8월 회신 0건이었다. 같은 사람이 같은 원인을 4번 제보한 일도
+#    있었다 — 고친 사실이 돌아가지 않으면 제보는 곧 끊긴다 (2026-08-18).
+
+
+@conversation_router.get("/feedback/replies")
+async def my_feedback_replies(user: User = Depends(get_current_user)):
+    """내가 남긴 붐따 중 처리되어 답이 달린 것."""
+    from app.core.feedback_inbox import replies_for_user
+    items = await asyncio.to_thread(replies_for_user, user.id)
+    return {"items": items, "unseen": sum(1 for i in items if i.get("unseen"))}
+
+
+@conversation_router.post("/feedback/replies/seen")
+async def mark_my_replies_seen(user: User = Depends(get_current_user)):
+    """읽음 처리 — 배지를 끈다."""
+    from app.core.feedback_inbox import mark_replies_seen
+    n = await asyncio.to_thread(mark_replies_seen, user.id)
+    return {"ok": True, "marked": n}
