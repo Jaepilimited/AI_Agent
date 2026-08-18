@@ -192,6 +192,8 @@ def create_app() -> FastAPI:
             # 지식맵 빌드 — APP 크론에서 이관 (APP 은 Gemini 가 막혀 돌 수 없었다).
             # deploy/crontab.app-server 에 다시 등록하면 이중 실행이 된다.
             _scheduler.add_job(_knowledge_map_job, "cron", hour=3, minute=0, id="knowledge_map_daily")
+            # 정의서 → BigQuery 컬럼 설명 (지식맵 03:00 뒤, 전성분 04:00 앞)
+            _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
@@ -669,6 +671,26 @@ async def _feedback_digest_job():
         logger.info("feedback_digest_done", **result)
     except Exception as e:
         logger.error("feedback_digest_failed", error=str(e))
+
+
+async def _schema_docs_job():
+    """매일 03:40: 노션 BigQuery 정의서 → BigQuery 컬럼 설명.
+
+    ⛔ 컬럼의 **뜻**이 앱에 닿을 경로가 없어서 만든 잡이다. 앱은 컬럼 이름과 타입만
+       봤고, 뜻은 프롬프트에 사람이 손으로 적어야 했다 — 그건 반드시 낡는다.
+       실제로 `Store_Review.shopname` 이 매장명인 줄 몰라 `channel` 로 찾아
+       "뉴욕 플래그십 0건"(실제 95건)이라고 답했다 (이주훈 님 제보 2026-08-14).
+    ⚠️ 지식맵 빌드(03:00) 뒤, 전성분 적재(04:00) 앞에 둔다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("schema_docs_daily") as jr:
+            from app.core.schema_docs import sync
+            stats = await asyncio.to_thread(sync)
+            jr.set_note(f"{stats['tables_matched']}개 테이블 · {stats['updated']}컬럼 갱신")
+        logger.info("schema_docs_job_done", **{k: v for k, v in stats.items() if k != "changed"})
+    except Exception as e:
+        logger.error("schema_docs_job_failed", error=str(e))
 
 
 async def _weekly_growth_report_job():

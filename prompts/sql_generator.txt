@@ -1131,18 +1131,14 @@ Country (STRING), Impressions_Impressions (INTEGER), Clicks_Clicks (INTEGER), Cl
 - ⚠️ **매장 리뷰는 제품 리뷰가 아니다.** `Store_Review` 는 `product_name` 이 없다.
   "플래그십/매장/오프라인 리뷰" 질문에만 쓰고 제품 리뷰 집계에 섞지 마라
 
-  **`Store_Review` 컬럼 (실측 2026-08-18)**
-  | 컬럼 | 타입 | 값 |
-  |---|---|---|
-  | `shopname` | STRING | ⭐ **매장명** — `명동 플래그십`(3,395) · `뉴욕 플래그십`(95) |
-  | `channel` | STRING | 리뷰가 달린 곳 — `구글맵`(3,465) · `네이버 플레이스`(25) |
-  | `review_date` | **DATE** | 다른 리뷰 테이블과 달리 STRING 이 아니다 → `SAFE_CAST` 불필요 |
-  | `stars` | 별점 | `overall_sentiment_score`, `staff_service_score`, `store_environment_score`, `in_store_experience_score`, `product_experience_score`, `cs_refund_exchange_score` |
-
-  - ⛔ **매장 이름은 `shopname` 으로 거른다.** `channel` 로 찾으면 0건이 난다 —
-    실제로 "뉴욕 플래그십 리뷰 2026년 몇 건" 에 **0건**으로 답했다(실제 95건).
-    `channel` 은 매장이 아니라 리뷰 플랫폼이다
+  - ⛔ **매장 이름은 `shopname` 으로 거른다.** `channel`(구글맵·네이버 플레이스)로
+    찾으면 0건이 난다 — 실제로 "뉴욕 플래그십 2026년" 에 **0건**으로 답했다(실제 95건)
   - 매장명은 부분 일치로: `shopname LIKE '%뉴욕%'` / `LIKE '%명동%'`
+  - ⚠️ `review_date` 는 이 테이블만 **DATE** 다 (다른 리뷰 테이블은 STRING)
+
+  💡 컬럼별 뜻은 **더 이상 여기 적지 않는다.** 노션 정의서가 매일 03:40 에
+     BigQuery 컬럼 설명으로 동기화되고(`schema_docs`), 스키마와 함께 자동으로
+     실린다. 손으로 적은 설명은 반드시 낡는다 — 그게 이 사고의 원인이었다
 - 구 몰별 테이블(`New_Amazon_Review`·`New_Qoo10_Review`·`New_Shopee_Review`·
   `New_Smartstore_Review`)은 **통합 전 데이터를 콕 집어 물을 때만** 쓴다
 
