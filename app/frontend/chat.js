@@ -3171,10 +3171,10 @@
     "인플루언서":      { label: "인플루언서", svg: _svgUsers },
     "아마존검색":      { label: "아마존검색", svg: _svgSearch },
     "메타광고":        { label: "메타광고", svg: _svgTarget },
-    "아마존 리뷰":     { label: "아마존 리뷰", svg: _svgStar },
-    "큐텐 리뷰":       { label: "큐텐 리뷰", svg: _svgStar },
-    "쇼피 리뷰":       { label: "쇼피 리뷰", svg: _svgStar },
-    "스마트스토어 리뷰": { label: "스마트스토어 리뷰", svg: _svgStar },
+    // 리뷰는 국내/해외/매장 통합 3종이 정본이다 (2026-08-18). 옛 몰별 이름은 별칭으로 흡수
+    "국내몰 리뷰":     { label: "국내몰 리뷰", svg: _svgStar },
+    "해외몰 리뷰":     { label: "해외몰 리뷰", svg: _svgStar },
+    "매장 리뷰":       { label: "매장 리뷰", svg: _svgStar },
     "프로모션":        { label: "프로모션", svg: _svgCalendar },
     // 팀별 자료
     "Craver":         { label: "Craver", svg: _svgGlobe },
@@ -3210,7 +3210,7 @@
     { cmd: "매출", label: "매출 데이터", keys: ["매출", "제품"] },
     { cmd: "광고", label: "광고 데이터", keys: ["광고", "메타광고"] },
     { cmd: "프로모션", label: "프로모션 캘린더", keys: ["프로모션"] },
-    { cmd: "리뷰", label: "리뷰 전체", keys: ["아마존 리뷰", "큐텐 리뷰", "쇼피 리뷰", "스마트스토어 리뷰"] },
+    { cmd: "리뷰", label: "리뷰 전체", keys: ["국내몰 리뷰", "해외몰 리뷰", "매장 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
     { cmd: "팀", label: "팀별 자료", _useGroup: "notion" },

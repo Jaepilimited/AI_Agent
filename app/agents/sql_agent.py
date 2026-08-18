@@ -722,10 +722,13 @@ def _source_table_map(settings) -> dict:
         "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
         "아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
         "프로모션": ["skin1004-319714.promotion_calendar.promotion"],
-        "아마존 리뷰": ["skin1004-319714.Review_Data.New_Amazon_Review"],
-        "큐텐 리뷰": ["skin1004-319714.Review_Data.New_Qoo10_Review"],
-        "쇼피 리뷰": ["skin1004-319714.Review_Data.New_Shopee_Review"],
-        "스마트스토어 리뷰": ["skin1004-319714.Review_Data.New_Smartstore_Review"],
+        # ⛔ 리뷰는 국내/해외/매장 **통합 3종**이 정본이다 (2026-08-18 확정).
+        #    구 몰별 소스(아마존·큐텐·쇼피·스마트스토어)를 남겨 두면 화이트리스트에
+        #    없는 테이블을 가리켜 "허용되지 않은 테이블" 로 막힌다 — @@ 로만 쓰면
+        #    발견이 늦다. 별칭으로 옛 이름을 흡수한다.
+        "국내몰 리뷰": ["skin1004-319714.Review_Data.Korea_mall_Review"],
+        "해외몰 리뷰": ["skin1004-319714.Review_Data.Oversea_mall_Review"],
+        "매장 리뷰": ["skin1004-319714.Review_Data.Store_Review"],
         "메타광고": ["skin1004-319714.ad_data.meta data_test"],
         "손익": ["skin1004-319714.Sales_Integration.FI_LLM_Flat"],
     }

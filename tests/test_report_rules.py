@@ -265,6 +265,21 @@ def test_direct_prompt_covers_the_features_users_ask_about():
     ("8월 인도네시아 프로모션 일정 알려줘", "bigquery"),
     ("내일 미팅 몇시야", "gws"),
     ("안 읽은 메일 확인해줘", "gws"),
+    # ── 2026-08-18 전수 QA 에서 나온 것 ─────────────────────────────────
+    # ⛔ 기간 + 집계를 함께 물으면 제품 문의가 아니라 조회다. 이게 없어서
+    #    "2026년 7월 shopify 반품 몇 건이야?" 가 cs 로 가 "확인할 수 없습니다"
+    #    라고 답했다 — 같은 질문을 @@Shopify 로 지정하면 305건이 나온다
+    ("2026년 7월 shopify 반품 몇 건이야?", "bigquery"),
+    # ⚠️ 반대 방향 — 기간이나 집계 **한쪽만** 있으면 그대로 CS 다
+    ("이번 달 반품 문의 어떻게 응대해?", "cs"),
+    ("교환 규정 몇 일까지야", "cs"),
+    ("센텔라 앰플 성분 알려줘", "cs"),
+    # ⛔ 문서 **위치**를 묻는 것도 문서 요청이다. 이게 없어서
+    #    "데이터 분석 파트 자료 어디 있어?" 가 bigquery 로 가 되묻기가 나갔다
+    ("데이터 분석 파트 자료 어디 있어?", "notion"),
+    ("조직도 문서 어디 있어?", "notion"),
+    # ⚠️ 반대 방향 — 수량·금액을 물으면 위치를 물어도 조회다
+    ("일본 매출 얼마 어디서 확인해", "bigquery"),
 ])
 def test_routing_sweep(question, expected):
     from app.agents.orchestrator import OrchestratorAgent
@@ -319,3 +334,20 @@ def test_insight_uses_claude_planner_uses_gemini():
     import inspect
     src = inspect.getsource(__import__("app.reports.planner", fromlist=["plan"]).plan)
     assert "get_llm_client()" in src, "계획은 기본 클라이언트(Gemini) 여야 한다"
+
+
+# ⛔ **확신을 갖고 cs 로 가면 LLM 재판정도 못 탄다** — 데이터가 있는데
+#    "확인할 수 없습니다" 가 나간다 (2026-08-18 shopify 반품 실측).
+#    아래는 cs 로 **끝나지만 않으면** 된다. direct/False 는 LLM 이 다시 보므로
+#    오답이 아니라 위임이다 (라우팅 점검의 기존 원칙).
+@pytest.mark.parametrize("question", [
+    "2026년 7월 shopify 반품 몇 건이야?",
+    "올해 교환 요청 몇 건이야",
+    "지난달 반품 수량 얼마야",
+    "2026년 상반기 반품 건수 추이 보여줘",
+])
+def test_period_aggregate_never_ends_at_cs(question):
+    from app.agents.orchestrator import OrchestratorAgent
+    o = OrchestratorAgent.__new__(OrchestratorAgent)
+    route, confident = OrchestratorAgent._keyword_classify_ex(o, question)
+    assert not (route == "cs" and confident), f"확신을 갖고 cs 로 갔다: {question}"

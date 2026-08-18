@@ -492,10 +492,9 @@ class OrchestratorAgent:
         {"key": "아마존검색", "aliases": ["amazon", "아마존"], "route": "bigquery", "group": "마케팅 데이터", "icon": "search", "label": "아마존검색", "desc": "아마존 검색 분석"},
         {"key": "프로모션", "aliases": ["promotion", "행사", "기획전", "프로모"], "route": "bigquery", "group": "마케팅 데이터", "icon": "calendar", "label": "프로모션", "desc": "프로모션 캘린더 (실행 일정)"},
         {"key": "메타광고", "aliases": ["meta", "메타"], "route": "bigquery", "group": "마케팅 데이터", "icon": "phone", "label": "메타광고", "desc": "메타 광고 라이브러리"},
-        {"key": "아마존 리뷰", "aliases": ["amazon review"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "아마존 리뷰", "desc": "아마존 리뷰"},
-        {"key": "큐텐 리뷰", "aliases": ["qoo10 review", "쿠텐 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "큐텐 리뷰", "desc": "큐텐 리뷰"},
-        {"key": "쇼피 리뷰", "aliases": ["shopee review"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "쇼피 리뷰", "desc": "쇼피 리뷰"},
-        {"key": "스마트스토어 리뷰", "aliases": ["smartstore review", "네이버 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "스마트스토어 리뷰", "desc": "스마트스토어 리뷰"},
+        {"key": "국내몰 리뷰", "aliases": ["스마트스토어 리뷰", "smartstore review", "네이버 리뷰", "올리브영 리뷰", "무신사 리뷰", "국내 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "국내몰 리뷰", "desc": "스마트스토어·올리브영·무신사 등 8채널"},
+        {"key": "해외몰 리뷰", "aliases": ["아마존 리뷰", "amazon review", "큐텐 리뷰", "qoo10 review", "쿠텐 리뷰", "쇼피 리뷰", "shopee review", "해외 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "해외몰 리뷰", "desc": "Qoo10·Shopee·Amazon·해외 자사몰"},
+        {"key": "매장 리뷰", "aliases": ["플래그십 리뷰", "오프라인 리뷰", "스토어 리뷰", "구글맵 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "매장 리뷰", "desc": "명동·뉴욕 플래그십 (구글맵·네이버 플레이스)"},
         {"key": "초상권", "aliases": ["모델", "모델사진", "모델초상권", "rights", "bc"], "route": "model_rights", "group": "BC", "icon": "users", "label": "초상권", "desc": "모델 사진 사용 가능 여부·기한 ([BC] 모델 초상권 현황)"},
         # ── Notion (팀별자료 — 벡터 검색, 알파벳순) ──
         {"key": "B2B1", "aliases": ["b2b1", "국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 (매출/거래처/재고)"},
@@ -1715,6 +1714,29 @@ class OrchestratorAgent:
             return False
         return len(q.strip()) <= 40 and not any(ch.isdigit() for ch in q)
 
+    # ── 기간 + 집계 의도 = 조회 질문 ──────────────────────────────────────────
+    # ⛔ "2026년 7월 shopify 반품 몇 건이야?" 가 **확신을 갖고 cs** 로 갔다
+    #    (2026-08-18 전수 QA 실측). `반품` 이 CS 낱말이라서다. 그 답변은
+    #    "CS 데이터베이스에서 확인할 수 없습니다" 였는데, `@@Shopify` 로 지정하면
+    #    같은 질문이 **305건** 을 정확히 돌려준다 — 데이터가 있는데 없다고 답했다.
+    #    확신 분류라 LLM 재판정도 못 탄다. 조용한 실패의 전형이다.
+    # 대응은 `반품` 을 데이터 낱말로 옮기는 게 아니다 — 그러면 "반품 절차 알려줘"
+    #    같은 진짜 CS 질문이 조회로 샌다. **질문의 모양**으로 가른다:
+    #    기간이 적혀 있고 + 개수·금액을 물으면, 그건 제품 문의가 아니라 집계다.
+    #    (문서 질문에서 이미 쓰는 `_DOC_WORD` + `_QTY_INTENT` 와 같은 계열의 판정)
+    _PERIOD_PAT = ["년", "월", "분기", "상반기", "하반기", "올해", "작년", "재작년",
+                   "지난달", "이번 달", "이번달", "최근", "누적", "전체 기간"]
+    _AGG_INTENT = ["몇 건", "몇건", "몇 개", "몇개", "얼마", "건수", "수량", "합계",
+                   "총액", "집계", "순위", "top", "추이", "비중", "평균"]
+
+    def _is_period_aggregate_question(self, q: str) -> bool:
+        """기간과 집계 의도가 **함께** 있는가 → 제품 문의가 아니라 조회다.
+
+        ⚠️ 둘 다 있어야 한다. 기간만 보면 "이번 달 반품 문의 어떻게 응대해?" 가
+        조회로 새고, 집계만 보면 "성분 몇 개 들어가?" 가 샌다.
+        """
+        return self._has(q, self._PERIOD_PAT) and self._has(q, self._AGG_INTENT)
+
     def _is_self_feature_question(self, q: str) -> bool:
         """우리 서비스 자신의 기능을 설명해 달라는 질문인가.
 
@@ -1861,8 +1883,16 @@ class OrchestratorAgent:
         # ⛔ 문서를 달라는 말이 있으면 데이터 명사가 섞여 있어도 문서다 (2026-08-13 실측:
         #    "인플루언서 시딩 가이드라인 알려줘" 가 '시딩' 때문에 bigquery 로 갔다).
         #    단 **수량·금액을 묻는 말이 있으면 조회**다 — "시딩 비용 얼마 썼어"는 그대로 데이터.
+        #    ⛔ "데이터 분석 파트 자료 어디 있어?" 가 **확신을 갖고 bigquery** 로 갔다
+        #       (2026-08-18 전수 QA 실측). `데이터 분석` 이 데이터 낱말이라서다.
+        #       1.3초 만에 "기간과 채널을 알려달라"는 되묻기가 나갔다 — 문서를 찾아
+        #       달라는 사람에게 조회 조건을 되물은 것이다. 문서 **위치**를 묻는 말도
+        #       문서 요청이다.
         _DOC_WORD = ["가이드라인", "가이드", "매뉴얼", "메뉴얼", "양식", "템플릿",
-                     "절차", "정책", "규정", "프로세스", "작성법", "작성 방법"]
+                     "절차", "정책", "규정", "프로세스", "작성법", "작성 방법",
+                     "자료 어디", "자료가 어디", "문서 어디", "문서가 어디",
+                     "어디 있어", "어디있어", "어디 있나", "어디서 봐", "어디서 찾",
+                     "어디서 확인"]
         _QTY_INTENT = ["얼마", "몇 ", "합계", "비용", "매출", "수량", "순위", "top",
                        "추이", "비중", "집계", "금액", "단가", "예산"]
         has_team = self._has(q, _TEAM_SPECIFIC)
@@ -1959,7 +1989,9 @@ class OrchestratorAgent:
 
         has_strong_data = self._has(q, _STRONG_DATA)
         if self._has(q, self._CS_KEYWORDS) and not has_strong_data:
-            return ("cs", True)
+            # 기간 + 집계를 함께 물으면 제품 문의가 아니라 조회다 (위 헬퍼 주석 참조)
+            if not self._is_period_aggregate_question(q):
+                return ("cs", True)
         has_external = self._has(q, self._EXTERNAL_KEYWORDS)
 
         # Both data + external context needed → multi-source analysis
