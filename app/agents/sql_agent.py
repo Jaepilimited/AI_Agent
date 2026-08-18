@@ -1654,42 +1654,6 @@ def _unit_note(sql: str) -> str:
     return "\n".join(lines)
 
 
-# ⛔ **"미상을 제외했다"는 사실을 LLM 에 맡기면 흘린다** (2026-08-18 실측).
-#    프롬프트에 "제외한 건수를 반드시 밝힌다"고 적었는데 답변에서 빠졌다.
-#    노션 연식 경고와 같은 결론이다 — 밝혀야 하는 사실은 **코드가** 붙인다.
-#    ⚠️ 건수를 지어내지 않는다. 같은 SQL 의 `IS NOT NULL` 을 `IS NULL` 로 바꿔
-#       **실제로 세어** 나머지 필터(기간·팀·국가)를 그대로 반영한다.
-_COVERAGE_COLS = ("Cost_krw",)
-_NOTNULL_RE = re.compile(r"\b(\w+)\s+IS\s+NOT\s+NULL\b", re.I)
-
-
-def _coverage_note(sql: str) -> str:
-    """미상을 제외한 조회면 **제외 건수를 실측해** 답변 끝에 붙인다."""
-    if not sql:
-        return ""
-    cols = [m.group(1) for m in _NOTNULL_RE.finditer(sql)
-            if m.group(1) in _COVERAGE_COLS]
-    if not cols:
-        return ""
-    col = cols[0]
-    probe = _NOTNULL_RE.sub(lambda m: f"{m.group(1)} IS NULL", sql, count=1)
-    probe = re.sub(r"^\s*SELECT\b.*?\bFROM\b", "SELECT COUNT(*) AS n FROM",
-                   probe, count=1, flags=re.I | re.S)
-    probe = re.sub(r"\bGROUP\s+BY\b.*$", "", probe, flags=re.I | re.S)
-    probe = re.sub(r"\bORDER\s+BY\b.*$", "", probe, flags=re.I | re.S)
-    try:
-        n = int((get_bigquery_client().execute_query(probe) or [{}])[0].get("n") or 0)
-    except Exception as e:
-        logger.warning("coverage_probe_failed", error=str(e)[:150])
-        return ""
-    if n <= 0:
-        return ""
-    logger.info("coverage_note_added", column=col, excluded=n)
-    return (f"\n\n> ℹ️ `{col}` 이 비어 있는 **{n:,}건은 제외**한 집계입니다. "
-            f"비용 미입력은 무상(무가)이 아니라 **확인되지 않은 것**이라, "
-            f"무가로 세면 비중이 부풀어 뺐습니다.")
-
-
 def format_answer(state: AgentState) -> Dict[str, Any]:
     """Format SQL results into a natural language answer with optional chart.
 
@@ -2110,8 +2074,6 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         except Exception:
             pass
 
-        # 미상을 제외한 집계면 **코드가** 제외 건수를 밝힌다 (프롬프트 지시는 흘린다)
-        answer += _coverage_note(sql)
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
         return {"answer": answer}

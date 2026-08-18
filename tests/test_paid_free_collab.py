@@ -53,23 +53,35 @@ class TestBothKeywordListsAgree:
                 assert "협업리뷰" not in w, f"붙어버린 항목: {w}"
 
 
-class TestNullIsNotFree:
-    """⛔ **미상을 무가로 세면 안 된다.**
+class TestNullCountsAsFree:
+    """⛔ **`Cost_krw IS NULL` 은 무가로 센다** (2026-08-18 사용자 확정).
 
-    비용 미입력(68,056건 · 23.4%)은 *공짜*가 아니라 *모르는* 것이다.
-    무가로 세면 무가가 54% → 77% 로 부풀고 유가 비중이 그만큼 깎인다.
-    성분에서 "미상"을 "미포함"으로 썼다가 난 오답과 같은 종류다.
+    비용이 발생하지 않은 협업은 비용란을 비워 두는 경우가 많아 0 과 NULL 을 같은
+    뜻으로 본다. 제외하면 전체 건수가 22.4% 줄어든다 (290,832 → 222,776).
+
+        유가 = Cost_krw > 0            65,657 (22.6%)
+        무가 = Cost_krw = 0 또는 NULL  225,175 (77.4%)
     """
 
     def test_rule_documented(self):
-        assert "Cost_krw IS NULL` 을 무가로 세지 마라" in _PROMPT
+        assert "`Cost_krw IS NULL` 은 무가로 센다" in _PROMPT
 
-    def test_exclusion_and_coverage_required(self):
-        assert "분모에서 제외하고" in _PROMPT
-        assert "커버리지" in _PROMPT or "제외한 건수를 답변에 반드시 밝힌다" in _PROMPT
+    def test_no_exclusion_instruction(self):
+        """예전 규칙(제외 + 커버리지 공시)이 남아 있으면 안 된다 — 서로 반대다."""
+        assert "무가로 세지 마라" not in _PROMPT
+        assert "WHERE Cost_krw IS NOT NULL" not in _PROMPT
 
-    def test_example_sql_excludes_null(self):
-        assert "WHERE Cost_krw IS NOT NULL" in _PROMPT
+    def test_single_condition_warned(self):
+        """`IS NOT NULL` 을 덧붙이면 무가가 통째로 빠진다."""
+        assert "IS NOT NULL` 을 덧붙이면 무가가 통째로 빠진다" in _PROMPT
+
+    def test_example_sql_includes_null(self):
+        assert "IF(Cost_krw > 0, '유가', '무가')" in _PROMPT
+
+    def test_coverage_note_removed(self):
+        """제외가 없으므로 '제외 건수' 안내가 붙으면 거짓말이 된다."""
+        import app.agents.sql_agent as sa
+        assert not hasattr(sa, "_coverage_note")
 
     def test_type_column_trap_documented(self):
         """`Type` 은 전 행이 NULL 이라 유가/무가를 여기서 찾으면 0건이 난다."""
