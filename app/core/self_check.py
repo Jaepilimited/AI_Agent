@@ -551,6 +551,32 @@ def _check_new_log_errors() -> CheckResult:
     return CheckResult(True, f"신규 에러 유형 없음 (어제 {sum(recent.values())}건 / 직전주 {sum(baseline.values())}건)")
 
 
+def _check_schema_changes() -> CheckResult:
+    """어제 대비 **앱이 쓰는 테이블**의 스키마가 바뀌었는가.
+
+    ⛔ 리뷰 테이블이 국내/해외/매장으로 통합됐는데 앱이 **한 달 넘게 몰랐다**
+       (2026-08-18 이주훈 님 제보로 발견). 에러 없이 숫자만 작게 나와서
+       아무도 못 알아챘다 — "국내몰 리뷰" 가 42,427건 중 4,140건만 셌다.
+    ⚠️ 화이트리스트 밖 변화는 실패로 올리지 않는다. 프로젝트 전체는 3,500개가
+       넘어(백업·테스트·중간 산출물) 매일 뜨면 소음이 된다.
+    """
+    from app.core.schema_watch import run as _watch
+    r = _watch()
+    if not r.get("ok"):
+        return CheckResult(False, str(r.get("detail"))[:150])
+    if r.get("baseline"):
+        return CheckResult(True, str(r.get("detail")))
+    watched = r.get("watched") or []
+    total = r.get("total", 0)
+    if watched:
+        return CheckResult(
+            False,
+            f"앱이 쓰는 테이블 변경 {len(watched)}건 — " + " / ".join(watched[:4])
+            + (f" 외 {len(watched)-4}건" if len(watched) > 4 else "")
+            + " (프롬프트·화이트리스트 반영 필요)")
+    return CheckResult(True, f"화이트리스트 변화 없음 (전체 변화 {total}건)")
+
+
 # ---- 답변 품질 (canary) ----
 
 
@@ -714,6 +740,8 @@ CHECKS: list[Check] = [
           "관리자 계정이 존재하는가", _check_admin_exists),
     Check("bq_tables", "datasource", SEV_CRITICAL,
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
+    Check("schema_changes", "datasource", SEV_WARNING,
+          "어제 대비 앱이 쓰는 테이블 스키마가 바뀌었는가", _check_schema_changes),
     Check("new_log_errors", "quality", SEV_WARNING,
           "어제 로그에 직전 주에 없던 에러 유형이 있는가", _check_new_log_errors),
     Check("notion_allowlist", "datasource", SEV_WARNING,

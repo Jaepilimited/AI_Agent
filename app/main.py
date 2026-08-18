@@ -139,6 +139,8 @@ def create_app() -> FastAPI:
         # "인입은 됐는데 처리가 안 된 건지"를 영영 답할 수 없다 (2026-08-14)
         from app.core.feedback_inbox import ensure_feedback_status_columns
         await asyncio.to_thread(ensure_feedback_status_columns)
+        from app.core.schema_watch import ensure_schema_watch_table
+        await asyncio.to_thread(ensure_schema_watch_table)
         from app.core.ingredients import ensure_ingredient_tables
         await asyncio.to_thread(ensure_ingredient_tables)
         from app.core.term_aliases import ensure_term_aliases_table
