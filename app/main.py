@@ -141,6 +141,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_feedback_status_columns)
         from app.core.schema_watch import ensure_schema_watch_table
         await asyncio.to_thread(ensure_schema_watch_table)
+        from app.core.value_lists import ensure_value_cache_table
+        await asyncio.to_thread(ensure_value_cache_table)
         from app.core.ingredients import ensure_ingredient_tables
         await asyncio.to_thread(ensure_ingredient_tables)
         from app.core.term_aliases import ensure_term_aliases_table
@@ -196,6 +198,7 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_knowledge_map_job, "cron", hour=3, minute=0, id="knowledge_map_daily")
             # 정의서 → BigQuery 컬럼 설명 (지식맵 03:00 뒤, 전성분 04:00 앞)
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
+            _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
             _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
@@ -693,6 +696,24 @@ async def _schema_docs_job():
         logger.info("schema_docs_job_done", **{k: v for k, v in stats.items() if k != "changed"})
     except Exception as e:
         logger.error("schema_docs_job_failed", error=str(e))
+
+
+async def _value_lists_job():
+    """매일 03:50: 컬럼 DISTINCT 값 목록 실측 → 캐시.
+
+    ⛔ 프롬프트에 값 목록을 손으로 적으면 반드시 낡는다. 실제로 Continent1 의
+       `남미`·`중미` 가 `중남미` 로 통합됐는데 프롬프트만 옛 값이었다 (2026-08-18).
+    ⚠️ 질문 경로에서는 캐시만 읽는다 — 여기서만 BigQuery 를 부른다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("value_lists_daily") as jr:
+            from app.core.value_lists import refresh
+            stats = await asyncio.to_thread(refresh)
+            jr.set_note(f"{len(stats)}개 목록 갱신")
+        logger.info("value_lists_job_done", **stats)
+    except Exception as e:
+        logger.error("value_lists_job_failed", error=str(e))
 
 
 async def _weekly_growth_report_job():

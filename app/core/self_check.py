@@ -173,6 +173,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "model_rights_sync_daily": (26, "모델 초상권 적재 (04:30)"),
     "feedback_digest_daily": (26, "붐따 처리함 다이제스트 (08:00)"),
     "schema_docs_daily": (26, "정의서 → BigQuery 컬럼 설명 (03:40)"),
+    "value_lists_daily": (26, "컬럼 값 목록 실측 갱신 (03:50)"),
 }
 
 
@@ -577,6 +578,22 @@ def _check_schema_changes() -> CheckResult:
     return CheckResult(True, f"화이트리스트 변화 없음 (전체 변화 {total}건)")
 
 
+def _check_value_lists() -> CheckResult:
+    """프롬프트에 들어가는 값 목록이 최신인가.
+
+    ⛔ 캐시가 비면 자리표시자가 **빈 줄로 사라진다.** 목록이 통째로 없으면 LLM 이
+       값을 지어내므로(에콰도르 사고와 같은 부류), 비었는지를 반드시 감시한다.
+    """
+    from app.core.value_lists import status
+    st = status()
+    if st["missing"]:
+        return CheckResult(False, f"값 목록 {len(st['missing'])}개 비어 있음: "
+                                  + ", ".join(st["missing"][:6]))
+    if st["stale"]:
+        return CheckResult(False, f"값 목록이 낡았다 (마지막 갱신 {st['updated_at'][:16]})")
+    return CheckResult(True, f"{st['cached']}/{st['total']}개 최신 ({st['updated_at'][:16]})")
+
+
 # ---- 답변 품질 (canary) ----
 
 
@@ -740,6 +757,8 @@ CHECKS: list[Check] = [
           "관리자 계정이 존재하는가", _check_admin_exists),
     Check("bq_tables", "datasource", SEV_CRITICAL,
           "허용된 BigQuery 테이블에 전부 접근되는가", _check_bq_tables),
+    Check("value_lists", "datasource", SEV_WARNING,
+          "프롬프트 값 목록이 최신인가", _check_value_lists),
     Check("schema_changes", "datasource", SEV_WARNING,
           "어제 대비 앱이 쓰는 테이블 스키마가 바뀌었는가", _check_schema_changes),
     Check("new_log_errors", "quality", SEV_WARNING,

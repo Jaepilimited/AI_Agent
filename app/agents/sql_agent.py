@@ -688,6 +688,16 @@ def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
         prompt_path = PROMPTS_DIR / filename
         prompt = prompt_path.read_text(encoding="utf-8")
         prompt = prompt.replace("{{TEAM_SECTION}}", build_team_section())
+        # ⛔ 손으로 적은 값 목록은 **반드시 낡는다.** `{{VALUES:이름}}` 을 실측으로 채운다.
+        #    2026-08-18 실측: Continent1 의 `남미`·`중미` 가 **`중남미` 로 통합**됐는데
+        #    프롬프트만 옛 값을 들고 있었다 → "남미 매출" 은 0건이 난다.
+        #    같은 부류로 에콰도르(191개 중 12개만 나열)·메가와리(2026 Q2 누락)를 겪었다.
+        # ⚠️ 캐시가 없으면 그 줄만 빠진다 — 배치가 채우고, 자가 점검이 감시한다.
+        try:
+            from app.core.value_lists import fill as _fill_values
+            prompt = _fill_values(prompt)
+        except Exception as _e:
+            logger.warning("value_list_fill_failed", error=str(_e)[:140])
         if not can_view_fi:
             prompt = _mask_fi_prompt(prompt)
         _prompt_cache[cache_key] = prompt
@@ -1577,22 +1587,22 @@ _COUNTRY_VALUES: list = []
 
 
 def _all_countries() -> list:
+    """국가 목록 — **값 목록 캐시**에서 온다 (프롬프트 파싱 아님).
+
+    ⛔ 예전엔 `prompts/sql_generator.txt` 의 DISTINCT 줄을 정규식으로 파싱했다.
+       그 줄이 `{{VALUES:Country}}` 자리표시자로 바뀌면서 파싱이 빈 목록을
+       돌려줬고, "에콰도르는 실재한다" 는 판정이 통째로 죽었다 (2026-08-18).
+       사본을 없애는 작업이 **사본을 읽던 코드**를 깨뜨린 것이다 — 같은 캐시를 본다.
+    """
     global _COUNTRY_VALUES
     if _COUNTRY_VALUES:
         return _COUNTRY_VALUES
     try:
-        import os
-        import re as _re
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-            os.path.abspath(__file__)))), "prompts", "sql_generator.txt")
-        with open(path, encoding="utf-8") as fh:
-            m = _re.search(r"\*\*Country 실제 값 \(DISTINCT[^)]*\)\*\*:\s*(.+)", fh.read())
-        if m:
-            _COUNTRY_VALUES = [v.strip().strip("*") for v in m.group(1).split(",") if v.strip()]
+        from app.core.value_lists import _cached
+        _COUNTRY_VALUES = _cached("Country") or []
     except Exception:
         _COUNTRY_VALUES = []
     return _COUNTRY_VALUES
-
 
 def _country_hint(sql: str) -> str:
     """0건일 때 국가 값을 **실제 목록과 대조해** 알려준다 (추측하게 두지 않는다)."""

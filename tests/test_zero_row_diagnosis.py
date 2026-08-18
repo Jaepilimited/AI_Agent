@@ -6,16 +6,37 @@
 2,448건·33.8억이 있었다. 원인은 0행 힌트가 국가 191개 중 12개만 나열하고
 "등" 을 붙인 것 — LLM 이 그걸 **전체 목록으로 읽었다**.
 """
+from pathlib import Path
+
 import pytest
 
 from app.agents.sql_agent import _all_countries, _country_hint
 from app.core.zero_row import _parse, split_and
 
+# 국가 목록은 이제 **값 목록 캐시**에서 온다 (프롬프트 파싱이 아니다 — 2026-08-18).
+# 로컬·CI 에는 캐시 DB 가 없으므로 주입해서 판정 로직만 검사한다.
+_COUNTRIES = ["가나", "과테말라", "멕시코", "미국", "베트남", "에콰도르", "일본",
+              "칠레", "페루", "한국"]
+
+
+@pytest.fixture(autouse=True)
+def _seed_country_cache(monkeypatch):
+    import app.agents.sql_agent as sa
+    monkeypatch.setattr(sa, "_COUNTRY_VALUES", list(_COUNTRIES))
+    yield
+
 
 class TestCountryHint:
-    def test_full_list_parsed(self):
-        """프롬프트의 DISTINCT 목록을 단일 소스로 읽는다 (코드에 목록을 또 두지 않는다)."""
-        assert len(_all_countries()) > 150
+    def test_reads_from_cache_not_prompt(self):
+        """⛔ 프롬프트를 파싱하지 않는다. 값 목록 캐시가 단일 소스다.
+
+        예전엔 `prompts/sql_generator.txt` 의 DISTINCT 줄을 정규식으로 읽었는데,
+        그 줄이 `{{VALUES:Country}}` 자리표시자로 바뀌면서 파싱이 빈 목록을
+        돌려줬고 "에콰도르는 실재한다" 판정이 통째로 죽었다 (2026-08-18).
+        """
+        assert "에콰도르" in _all_countries()
+        prompt = Path("prompts/sql_generator.txt").read_text(encoding="utf-8")
+        assert "{{VALUES:Country}}" in prompt
 
     @pytest.mark.parametrize("country", ["에콰도르", "칠레", "멕시코", "페루", "과테말라"])
     def test_real_country_never_called_invalid(self, country):
