@@ -166,6 +166,120 @@ def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+# ── 후속 발화 ↔ 주제 전환 ───────────────────────────────────────────────────
+# ⛔ **컨텍스트는 전달되는데 라우팅이 그것을 안 본다** (2026-08-18 재현).
+#    실측:
+#        턴1 "2026년 7월 미국 매출 얼마야?"  → bigquery  219.7억
+#        턴2 "센텔라 앰플은?"                → **CS 로 납치** — 제품 소개문이 나왔다
+#        턴3 "일본사업팀은?"                 → bigquery 복귀 (팀 낱말이 데이터 가드에 걸려 우연히 살았다)
+#    턴2 에서 기대한 것은 "7월 미국에서 센텔라 앰플 매출" 이다. 맥락이 매출인데도
+#    제품명 하나로 경로가 갈렸다. `_keyword_classify_ex()` 가 **현재 문장만** 받기
+#    때문이고, 확신 분류라 LLM 재판정도 타지 않는다.
+#    경로가 틀리면 컨텍스트를 아무리 잘 넘겨도 소용이 없다 — CS 에이전트는 매출을
+#    답할 수 없다.
+#
+# ⛔ 대응은 낱말 목록이 아니다. 이미 `_should_continue_bigquery_for_correction` 이
+#    "라고했지"·"그거말고" 같은 목록으로 막고 있었지만 "센텔라 앰플은?" 은 못 잡았다.
+#    **문장이 독립적으로 성립하는가**를 구조로 본다 (붙여넣기 감지·외부 사실
+#    그라운딩과 같은 방식):
+#      - 서술어도 의문사도 없이 **명사구로 끝나면** 앞 조회의 축을 바꾸는 발화다
+#      - 서술어가 붙으면("센텔라 앰플 성분 알려줘") 독립 질문이므로 정상 라우팅한다
+#    ⚠️ 주제 전환도 같은 규칙으로 처리된다 — 노션 문서를 묻는 완전한 문장은
+#       그대로 notion 으로 가고, 그 뒤의 후속 명사구는 **notion 을** 이어받는다.
+
+# 서술어·의문사가 있으면 독립 질문이다 (있는 그대로 라우팅)
+_PREDICATE_HINT = (
+    "줘", "해줘", "알려", "보여", "뭐", "무엇", "어떻", "왜", "언제", "어디", "누구",
+    "인가", "일까", "있어", "있나", "있는", "될까", "되나", "하나요", "하는지",
+    "얼마", "몇", "찾아", "정리", "분석", "비교", "설명", "가능",
+)
+# 후속 발화의 꼬리 — 명사구 + 조사로 끝난다 ("인도네시아는?", "센텔라 앰플은?")
+_FOLLOWUP_TAIL = re.compile(
+    r"(?:은|는|도|만|의|와|과|랑|이랑|말고|빼고|대신|기준으로|별로)\s*[?？]?\s*$")
+# 앞 발화를 잇는 접속어
+_FOLLOWUP_LEAD = ("그럼", "그러면", "그리고", "아니면", "그거", "저거", "이거", "거기")
+_FOLLOWUP_MAX_LEN = 25          # 이보다 길면 대개 독립 문장이다
+
+# 직전 답변에 남는 경로 표지 (답변 형식이 경로마다 다르다)
+_ROUTE_MARKERS = (
+    ("bigquery", ("[직전 실행 SQL", "내부 데이터베이스", "```chart-config")),
+    ("notion", ("Notion 사내 문서 검색", "사내 문서에서", "출처:")),
+    ("gws", ("[메일]", "[일정]", "구글 캘린더", "드라이브")),
+    ("cs", ("CS 데이터", "제품 Q&A")),
+)
+
+
+def _is_followup_utterance(query: str) -> bool:
+    """앞 발화의 축만 바꾸는 발화인가 (독립 질문이 아닌가)."""
+    q = (query or "").strip()
+    if not q or len(q) > _FOLLOWUP_MAX_LEN:
+        return False
+    body = q
+    for lead in _FOLLOWUP_LEAD:
+        if body.startswith(lead):
+            body = body[len(lead):].strip()
+            break
+    if not body:
+        return False
+    if any(h in body for h in _PREDICATE_HINT):
+        return False                      # 서술어·의문사가 있으면 독립 질문
+    return bool(_FOLLOWUP_TAIL.search(body))
+
+
+def _previous_route(conversation_context: str) -> Optional[str]:
+    """직전 턴이 어느 경로로 답했는지 — **마지막 AI 답변**에 남은 표지로 판정한다.
+
+    ⛔ 컨텍스트 **끝부분**을 보면 안 된다. `[직전 실행 SQL …]` 앵커가 맨 끝에
+       고정으로 붙어서, 노션으로 주제를 옮긴 뒤에도 계속 bigquery 로 읽힌다
+       (2026-08-18 실측: 매출 → 가이드라인 → "유가 협업은?" 이 bigquery 로 갔다).
+       앵커는 "직전 턴이 무엇이었나"가 아니라 "마지막으로 돈 SQL"이다.
+    """
+    ctx = conversation_context or ""
+    if not ctx:
+        return None
+    # 앵커를 떼고, 마지막 "AI:" 블록만 본다
+    body = ctx.split("[직전 실행 SQL")[0]
+    idx = body.rfind("\nAI:")
+    if idx == -1:
+        idx = body.rfind("AI:")
+    last_answer = body[idx:] if idx != -1 else body[-2500:]
+    for route, markers in _ROUTE_MARKERS:
+        if any(m in last_answer for m in markers):
+            return route
+    # 마지막 답변에 표지가 없고 SQL 앵커만 있으면, 직전 조회를 이어받는다
+    if "[직전 실행 SQL" in ctx:
+        return "bigquery"
+    return None
+
+
+# 지표를 가리키는 낱말 — 이런 후속은 **문서가 아니라 데이터**를 묻는 것이다
+_METRIC_NOUNS = ("매출", "비용", "광고비", "수량", "판매량", "협업", "시딩", "조회수",
+                 "좋아요", "클릭", "노출", "전환", "roas", "ctr", "리뷰", "원가",
+                 "재고", "반품", "환불", "순위", "비중", "점유율")
+
+
+def _inherit_route_for_followup(query: str, conversation_context: str) -> Optional[str]:
+    """후속 발화면 직전 경로를 물려준다. 아니면 None (정상 라우팅).
+
+    ⚠️ **무조건 상속하면 안 된다.** 실측: 가이드라인(notion) 답변 뒤 "유가 협업은?"
+       이 notion 을 물려받아 사내 문서를 뒤졌고, `유가` 가 사람 이름 **유가연** 에
+       걸려 엉뚱한 답이 나왔다 (2026-08-18).
+       지표를 가리키는 낱말은 **문서가 아니라 데이터**를 묻는 것이므로 상속하지 않고
+       정상 라우팅한다. 반대로 제품명·국가명·팀명은 축 값이라 그대로 상속한다
+       ("센텔라 앰플은?" 은 매출 맥락에서 그 제품의 매출을 묻는 것이다).
+    """
+    if not _is_followup_utterance(query):
+        return None
+    prev = _previous_route(conversation_context)
+    if not prev:
+        return None
+    if prev != "bigquery" and any(w in query.lower() for w in _METRIC_NOUNS):
+        logger.info("route_inherit_skipped_metric", query=query[:60], prev=prev)
+        return None
+    logger.info("route_inherited_followup", query=query[:60], route=prev)
+    return prev
+
+
 _BIGQUERY_CORRECTION_MARKERS = (
     "라고했지", "라고했잖", "언급도안", "언급안", "언급하지않",
     "말한적없", "그거말고", "잘못나왔", "잘못됐", "잘못되었",
@@ -702,6 +816,10 @@ class OrchestratorAgent:
         elif _should_continue_bigquery_for_correction(query, conversation_context):
             route = "bigquery"
             logger.info("bigquery_correction_followup", query=query[:100])
+        elif _inherit_route_for_followup(query, conversation_context):
+            # 앞 조회의 축만 바꾸는 발화("인도네시아는?"·"센텔라 앰플은?") →
+            # 직전 경로를 잇는다. 주제를 바꾸는 완전한 문장은 여기 안 걸린다.
+            route = _inherit_route_for_followup(query, conversation_context)
         else:
             # Step 1: Classify query intent
             # Fast path: keyword match first, LLM fallback only for short ambiguous queries
@@ -991,6 +1109,11 @@ class OrchestratorAgent:
         elif _should_continue_bigquery_for_correction(query, conversation_context):
             route, _confident = "bigquery", True
             logger.info("stream_bigquery_correction_followup", query=query[:100])
+        elif _inherit_route_for_followup(query, conversation_context):
+            # ⚠️ 스트리밍·비스트리밍 **두 경로 모두**에 걸어야 한다. 한쪽만 고치면
+            #    경로에 따라 답이 갈린다 (direct 프롬프트가 두 벌이던 사고와 같다).
+            route = _inherit_route_for_followup(query, conversation_context)
+            _confident = True
         else:
             route, _confident = self._keyword_classify_ex(query)
 
