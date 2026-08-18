@@ -207,9 +207,17 @@ def _format_results(results: list[dict]) -> str:
         section = p.get("section_path", "")
         text  = p.get("text", "")[:2000]
         url   = p.get("page_url", "")
+        # ⛔ **문서 날짜를 안 넘기면 LLM 이 낡은 문서를 고르고도 모른다** (2026-08-18 확인).
+        #    "야근 식대 지원한도"를 물었을 때 `복리후생`(15,000원)과 2023-03-31 자
+        #    `Database (FAQ, Terms)`(10,000원)가 **서로 다른 값**을 담고 있었는데,
+        #    앱은 2023년 것을 골라 10,000원이라고 답했다. 제보자가 "15000원임"이라고
+        #    바로잡았고(2026-07-08) 그게 맞았다. 날짜가 컨텍스트에 없으니 LLM 은
+        #    어느 쪽이 최신인지 알 방법이 없었다.
+        edited = str(p.get("last_edited_time") or "")[:10]
         header = f"[{i}] ({score:.2f}) {team} > {title}"
         if section:
             header += f" > {section}"
+        header += f"  [문서 수정일: {edited or '미상'}]"
         chunks.append(f"{header}\n{text}\n출처: {url}")
     return "\n\n---\n\n".join(chunks)
 
@@ -298,7 +306,50 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 
     try:
         answer = await asyncio.to_thread(llm.generate, prompt, None, 0.3, 2048)
-        return answer
+        return answer + _vintage_note(results)
     except Exception as e:
         logger.error("qdrant_answer_failed", error=str(e))
         return f"답변 생성 중 오류: {e}"
+
+
+# 사내 문서가 몇 년 전 것이면 그 사실 자체가 답의 일부다
+_STALE_DAYS = 365
+
+
+def _vintage_note(results: list[dict]) -> str:
+    """근거 문서가 오래됐으면 **코드가** 연식을 밝힌다.
+
+    ⛔ 프롬프트로 시켰더니 LLM 이 그냥 빠뜨렸다 (2026-08-18 실측 — 질문에서 명시적으로
+       요청했는데도 안 적었다). 사내 규정은 바뀌는데 문서는 안 따라오므로, 연식은
+       **답의 일부**다. 그래서 LLM 이 아니라 코드가 붙인다.
+
+    실제 사고: "야근 식대 지원한도"에 2023-03-31 자 FAQ 의 10,000원으로 답했다.
+    같은 워크스페이스의 `복리후생` 문서에는 15,000원으로 적혀 있었지만 그 청크는
+    상위에 오르지 않았다(질문이 FAQ 의 문답 형태와 더 닮았다). 제보자가 "15000원임"
+    이라고 바로잡기 전까지 아무도 몰랐다 (2026-07-08 붐따).
+    ⚠️ 검색 순위를 최신순으로 바꾸는 것은 답이 아니다 — 최신이 곧 관련 있는 것은
+       아니다. 대신 **연식을 보이게 해서 사람이 의심할 수 있게** 한다.
+    """
+    from datetime import datetime, timezone
+
+    # ⚠️ **전체 중 최신**으로 판정하면 안 된다 — 상위에 최신 문서가 하나라도 섞이면
+    #    경고가 사라진다. 실측에서 그렇게 놓쳤다: 1순위가 2023 년 FAQ 인데 5·6위에
+    #    2026 년 문서가 있어 경고가 안 붙었다. 답을 지배하는 것은 **상위 문서**다.
+    top = []
+    for r in (results or [])[:3]:
+        raw = str((r.get("payload") or {}).get("last_edited_time") or "")[:10]
+        if len(raw) == 10:
+            try:
+                top.append(datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc))
+            except ValueError:
+                pass
+    if not top:
+        return ""
+    newest = max(top)          # 상위 3건 중 가장 최신 — 셋 다 오래됐을 때만 경고한다
+    age = (datetime.now(timezone.utc) - newest).days
+    if age < _STALE_DAYS:
+        return ""
+    logger.warning("notion_answer_from_stale_docs", newest=newest.date().isoformat(), age_days=age)
+    return (f"\n\n> ⏳ 참고한 사내 문서 중 가장 최근 것이 **{newest:%Y-%m-%d}** 자입니다 "
+            f"({age // 365}년 이상 지남). 규정이 그 뒤에 바뀌었을 수 있으니 "
+            f"중요한 건이면 담당 부서에 확인해 주세요.")
