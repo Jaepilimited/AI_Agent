@@ -89,8 +89,12 @@ def _jandi_notify(title: str, body: str, color: str = "#e89200"):
             method="POST",
         )
         urllib.request.urlopen(req, timeout=5).read()
-    except Exception:
-        pass
+    except Exception as e:
+        # 조용히 삼키면 "알림이 안 온다 = 문제가 없다" 로 오해하게 된다.
+        # 실제로 APP 서버조차 프록시에서 wh.jandi.com 이 403 이라 이 알림은
+        # 계속 실패하고 있었는데, `except: pass` 라 로그에 흔적이 없었다
+        # (2026-08-18 확인). 이 저장소가 반복해서 겪는 조용한 실패다.
+        err(f"잔디 알림 실패 — {type(e).__name__}: {str(e)[:120]}")
 
 
 # ── 환경변수 ──────────────────────────────────────────────────────────────────
