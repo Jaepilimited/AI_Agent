@@ -117,6 +117,23 @@ def ensure_fi_permission_column():
         pass  # column already exists
 
 
+def ensure_user_visits_table():
+    """Create the authenticated page-visit ledger used by admin analytics."""
+    execute(
+        """CREATE TABLE IF NOT EXISTS user_visits (
+            id BIGINT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            visit_date DATE NOT NULL,
+            first_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            visit_count INT UNSIGNED NOT NULL DEFAULT 1,
+            UNIQUE KEY uq_user_visits_user_date (user_id, visit_date),
+            INDEX idx_user_visits_date (visit_date),
+            INDEX idx_user_visits_last_seen (last_seen_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"""
+    )
+
+
 # ===========================================================================
 # team_resources table DDL
 # ===========================================================================
