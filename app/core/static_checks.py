@@ -219,6 +219,44 @@ def asset_sanity() -> Tuple[bool, str]:
     return (not bad), ("; ".join(bad) if bad else "프론트 자산 크기 정상")
 
 
+def fi_prompt_masking() -> Tuple[bool, str]:
+    """권한 없는 사용자용 프롬프트에서 손익(FI) 섹션이 **실제로** 지워지는가.
+
+    ⛔ 이 검사가 없으면 조용히 뚫린다. `_mask_fi_prompt()` 는 프롬프트의 제목
+       (`## 테이블 14: FI_LLM_Flat …`)과 라우팅 표 행을 **정규식으로** 지운다.
+       프롬프트에서 번호를 바꾸거나 제목을 손보면 정규식이 안 맞고, **에러 없이**
+       FI 스키마가 권한 없는 사용자 프롬프트에 실린다.
+       기존 테스트는 합성 픽스처만 봤다 — 실제 파일이 바뀌어도 통과한다.
+
+    두 방향을 함께 본다:
+      ① 원본에는 FI 가 **있어야** 한다 (없어졌으면 검사 자체가 무의미해진 것)
+      ② 마스킹 후에는 FI 흔적이 **하나도 없어야** 한다
+    """
+    from app.agents.sql_agent import PROMPTS_DIR, _mask_fi_prompt
+
+    path = PROMPTS_DIR / "sql_generator.txt"
+    if not path.exists():
+        return False, "sql_generator.txt 없음"
+    raw = path.read_text(encoding="utf-8")
+
+    if "FI_LLM_Flat" not in raw:
+        return False, "원본 프롬프트에 FI_LLM_Flat 이 없다 — 마스킹 대상이 사라졌거나 이름이 바뀌었다"
+
+    masked = _mask_fi_prompt(raw)
+    # 표기 변형까지 본다 — 테이블명·데이터셋·필수 필터 컬럼
+    # ⚠️ `Sales_Integration` 은 매출·제품 테이블의 데이터셋이기도 하다 — FI 표식이 아니다.
+    #    (이 검사를 처음 켰을 때 그것 때문에 오탐이 났다)
+    leaks = [tok for tok in ("FI_LLM_Flat", "Record_Type", "SGA_DETAIL")
+             if tok in masked]
+    if leaks:
+        return False, f"마스킹 후에도 FI 흔적이 남았다: {', '.join(leaks)}"
+
+    removed = len(raw) - len(masked)
+    if removed < 500:
+        return False, f"지워진 분량이 {removed}자뿐 — 섹션이 아니라 한 줄만 지워졌을 수 있다"
+    return True, f"FI 섹션 {removed:,}자 제거 확인"
+
+
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
@@ -226,4 +264,5 @@ ALL = [
     ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),
     ("static_cache_version", cache_version_doc, "캐시 버전 문서 일치"),
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
+    ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
 ]

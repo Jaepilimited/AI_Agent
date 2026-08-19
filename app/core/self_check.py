@@ -789,6 +789,9 @@ CHECKS: list[Check] = [
     Check("static_kw_collision", "static", SEV_WARNING,
           "라우팅 키워드가 다른 경로의 긴 낱말에 삼켜지지 않는가",
           _static("static_kw_collision")),
+    Check("static_fi_mask", "static", SEV_CRITICAL,
+          "권한 없는 프롬프트에서 손익 섹션이 실제로 지워지는가",
+          _static("static_fi_mask")),
 ]
 
 

@@ -1811,6 +1811,36 @@ class OrchestratorAgent:
         return len(self._INLINE_TSV_ROW.findall(query)) >= 3
 
 
+    # 일정을 가리키는 말. 이것만 걸렸을 때는 "누구의 일정인가"를 따로 판정한다
+    _CAL_WORDS = ["일정", "스케줄", "캘린더", "calendar", "schedule"]
+
+    # 회사 축 — 이 낱말이 있으면 개인 캘린더가 아니라 사내 프로모션 캘린더를 묻는 것이다.
+    # ⚠️ 국가는 손으로 적지 않는다 — 값 목록 캐시(실측)에서 읽는다. 캐시가 비면
+    #    축이 없다고 보고 LLM 에 넘긴다 (없는 목록으로 확신하지 않는다).
+    _MALL_WORDS = ["큐텐", "qoo10", "쇼피", "shopee", "아마존", "amazon", "틱톡", "tiktok",
+                   "라자다", "lazada", "올리브영", "무신사", "스마트스토어", "자사몰",
+                   "shopify", "쇼피파이", "채널별", "몰별", "플랫폼별"]
+
+    def _has_business_axis(self, q: str) -> bool:
+        """질문이 회사 축(국가·몰/채널·팀)을 가리키는가."""
+        if any(w in q for w in self._MALL_WORDS):
+            return True
+        try:
+            from app.agents.sql_agent import TEAM_CODE2KR
+            for code, kr in TEAM_CODE2KR.items():
+                if kr in q or (len(code) >= 4 and code.lower() in q):
+                    return True
+        except Exception:
+            pass
+        try:
+            from app.core.value_lists import _cached
+            for c in (_cached("Country") or []):
+                if len(c) >= 2 and c in q:
+                    return True
+        except Exception:
+            pass
+        return False
+
     def _keyword_classify_ex(self, query: str) -> tuple:
         """키워드 분류 + 확신 플래그 → (route, confident).
 
@@ -1934,12 +1964,18 @@ class OrchestratorAgent:
         _PERSONAL_SCOPE = ["내 ", "제 ", "메일", "gmail", "드라이브", "drive",
                            "회의록", "회의", "미팅", "스프레드시트", "구글시트"]
         if self._has(q, self._GWS_KEYWORDS):
-            _promo_ctx = (any(t in q for t in _PROMO_TERMS)
-                          and not any(p in q for p in _PERSONAL_SCOPE))
-            if _promo_ctx:
-                # 프로모션 캘린더는 BigQuery 다. 확신 없이 넘기면 LLM 왕복만 늘고
-                # 판정도 흔들린다 (2026-08-13: direct 로 떨어져 있었다)
-                return ("bigquery", True)
+            # ⛔ 예전엔 "프로모션 낱말이 있으면 bigquery, 아니면 무조건 gws" 한 줄이었다.
+            #    그래서 **"일본 큐텐 8월 일정"** 처럼 프로모션이라 안 적고 사업 축으로 물으면
+            #    개인 구글 캘린더를 뒤졌다 (2026-08-19 점검에서 발견).
+            #    낱말을 더 쌓는 대신 **범위(scope)로 판정한다** — 이 질문이 개인 것인가,
+            #    회사 것인가. 둘 다 아니면 확신하지 않고 LLM 에 넘긴다 (확신 오분류가 최악이다).
+            _cal_only = (self._has(q, self._CAL_WORDS)
+                         and not any(p in q for p in _PERSONAL_SCOPE))
+            if _cal_only:
+                if any(t in q for t in _PROMO_TERMS) or self._has_business_axis(q):
+                    return ("bigquery", True)   # 사내 프로모션 캘린더
+                # 개인 것도 회사 것도 가리키지 않는 맨 "일정" — 판단을 LLM 에 맡긴다
+                return ("direct", False)
             if not any(p in q for p in _TOOL_IDENTITY_PATTERNS):
                 return ("gws", True)
 

@@ -566,6 +566,17 @@ PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 _schema_cache_sales: str = ""
 _schema_cache_tables: Dict[str, str] = {}  # table_path -> schema text
 
+def _kw_hit(kw, query_lower: str) -> bool:
+    """테이블 트리거 낱말 하나가 질문에 걸리는가.
+
+    튜플이면 **모두** 들어 있어야 한다 (AND). 장소·채널 이름처럼 다른 도메인과
+    겹치는 낱말을 좁히기 위한 것이다 — `("플래그십", "리뷰")` 는 매출 질문을 건드리지 않는다.
+    """
+    if isinstance(kw, tuple):
+        return all(k in query_lower for k in kw)
+    return kw in query_lower
+
+
 # Marketing / review / ad tables with keyword triggers for lazy loading
 MARKETING_TABLES = [
     ("skin1004-319714.marketing_analysis.integrated_ad", "통합 광고 데이터",
@@ -598,9 +609,15 @@ MARKETING_TABLES = [
      ["해외몰 리뷰", "해외 리뷰", "해외몰리뷰", "아마존 리뷰", "amazon review",
       "큐텐 리뷰", "qoo10 review", "큐텐리뷰", "쇼피 리뷰", "shopee review", "쇼피리뷰",
       "해외 자사몰 리뷰"]),
+    # ⚠️ `플래그십`·`명동`·`뉴욕 매장` 은 **매출 채널 이름이기도 하다** (사용자 지적 2026-08-19).
+    #    단독 낱말로 두면 "플래그십 매출" 에도 리뷰 스키마가 붙어 LLM 이 엉뚱한 테이블을
+    #    고를 수 있다. 장소 낱말은 **리뷰 낱말과 함께일 때만** 트리거한다 (튜플 = AND).
     ("skin1004-319714.Review_Data.Store_Review", "매장(플래그십) 리뷰",
-     ["플래그십", "매장 리뷰", "오프라인 리뷰", "스토어 리뷰", "구글맵", "네이버 플레이스",
-      "명동", "뉴욕 매장", "shopname", "매장별 리뷰", "별점"]),
+     ["매장 리뷰", "오프라인 리뷰", "스토어 리뷰", "매장별 리뷰",
+      "구글맵", "네이버 플레이스", "shopname", "별점",
+      ("플래그십", "리뷰"), ("플래그십", "후기"), ("플래그십", "평점"),
+      ("명동", "리뷰"), ("명동", "후기"), ("명동", "평점"),
+      ("뉴욕", "리뷰"), ("뉴욕", "후기"), ("뉴욕", "평점")]),
     ("skin1004-319714.ad_data.meta data_test", "메타 광고 라이브러리",
      ["메타 광고", "meta ad", "페이스북 광고 라이브러리", "인스타 광고"]),
     ("skin1004-319714.promotion_calendar.promotion", "프로모션 캘린더",
@@ -837,7 +854,7 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
         (t[0], t[1], t[2]) for t in MARKETING_TABLES
         if (force_all_allowed and t[0] in allowed_tables)
         or (not force_all_allowed
-            and (t[0] in _ctx_tables or any(kw in query_lower for kw in t[2]))
+            and (t[0] in _ctx_tables or any(_kw_hit(kw, query_lower) for kw in t[2]))
             and (allowed_tables is None or t[0] in allowed_tables))
     ]
 
