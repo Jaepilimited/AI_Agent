@@ -219,6 +219,24 @@ class NotionAgent:
                 content_length=len(content),
             )
 
+            # ⛔ 읽어온 문서가 질문과 **한 낱말도 겹치지 않으면** LLM 을 부르지 않는다.
+            #    2026-08-19 실측: "Alexa & Wai 정보"(초상권 DB 의 모델명)가 여기까지 와서
+            #    아마존 알렉사·W3C WAI·arXiv 논문을 지어냈다. 프롬프트에는 이미
+            #    "문서에 없는 내용은 추측하지 마세요"가 있다 — 지시는 확률이고 보증은
+            #    후처리다(이 저장소가 반복해서 내린 결론). 겹침이 0일 때만 막으므로
+            #    동의어로 답하는 정상 케이스(휴가↔연차)는 그대로 통과한다.
+            if not self._content_touches_query(query, content):
+                clean_term = self._extract_search_term(query)
+                logger.warning("notion_content_unrelated", query=query[:120],
+                               pages=len(pages), content_length=len(content))
+                return (
+                    f"**'{clean_term}'** 관련 내용을 Notion 문서에서 찾을 수 없습니다.\n\n"
+                    "검색된 문서가 질문과 관련이 없어 답변을 만들지 않았습니다 — "
+                    "없는 내용을 지어내지 않기 위해서입니다.\n\n"
+                    "다른 키워드로 다시 물어보시거나, 사내 데이터(매출·초상권 등)라면 "
+                    "`@@` 로 소스를 지정해 주세요."
+                )
+
             # Step 3: Generate answer using LLM
             return await self._generate_answer(query, content, model_type)
 
@@ -1005,6 +1023,24 @@ class NotionAgent:
         return "\n".join(lines)
 
     # ── Answer generation (unchanged from v5.0) ──
+
+    @staticmethod
+    def _content_touches_query(query: str, content: str) -> bool:
+        """읽어온 문서가 질문의 낱말을 하나라도 담고 있는가.
+
+        판정은 **겹침 0** 일 때만 False 다. 부분 일치를 요구하면 동의어로 답하는
+        정상 답변까지 막는다 (Drive 검색에서 배운 것과 같은 균형).
+        """
+        from app.core.query_keywords import extract
+
+        # 대화 맥락이 앞에 붙어 오므로 현재 질문만 본다
+        if "[현재 질문]" in query:
+            query = query.split("[현재 질문]", 1)[1]
+        kws = extract(query)
+        if not kws:
+            return True          # 뽑을 낱말이 없으면 판정하지 않는다
+        low = (content or "").lower()
+        return any(k.lower() in low for k in kws)
 
     async def _generate_answer(
         self, query: str, content: str, model_type: str
