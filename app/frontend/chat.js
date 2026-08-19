@@ -2179,6 +2179,10 @@
       label: "Multi",
       svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>'
     },
+    model_rights: {
+      label: "초상권",
+      svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'
+    },
     direct: {
       label: "Direct",
       svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
@@ -3448,6 +3452,7 @@
             '<span class="status-icon">' + info.svg + '</span>' +
             '<span class="status-name">' + info.label + '</span>' +
             (detailText ? '<span class="status-detail-text">' + detailText + '</span>' : '') +
+            (svc.url ? '<a href="' + svc.url + '" target="_blank" class="status-group-link" onclick="event.stopPropagation()" title="원본 시트 열기"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg> 시트</a>' : '') +
             '<span class="status-label' + labelClass + '">' + (labels[st] || st) + '</span>' +
             '</div>';
           if (alertMsg) {

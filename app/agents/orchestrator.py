@@ -724,7 +724,7 @@ class OrchestratorAgent:
         from app.core.model_rights import model_rights_intent
         _mr_entries = db_entry if isinstance(db_entry, list) else ([db_entry] if isinstance(db_entry, dict) else [])
         _mr_selected = any(e.get("route") == "model_rights" for e in _mr_entries)             or (enabled_sources and list(enabled_sources) == ["초상권"])
-        if _mr_selected or model_rights_intent(query):
+        if _mr_selected or model_rights_intent(query, has_image=bool(images)):
             _q_mr = (clean_query or query) if _mr_entries else query
             logger.info("model_rights_query", path="route_and_execute", query=_q_mr[:80])
             return await self._handle_model_rights(_q_mr, model_type, images=images)
@@ -968,11 +968,13 @@ class OrchestratorAgent:
         from app.core.model_rights import model_rights_intent
         _mr_entries = db_entry if isinstance(db_entry, list) else ([db_entry] if isinstance(db_entry, dict) else [])
         _mr_selected = any(e.get("route") == "model_rights" for e in _mr_entries)             or (enabled_sources and list(enabled_sources) == ["초상권"])
-        if _mr_selected or model_rights_intent(query):
+        if _mr_selected or model_rights_intent(query, has_image=bool(images)):
             _q_mr = (clean_query or query) if _mr_entries else query
             logger.info("model_rights_query", path="route_and_stream", query=_q_mr[:80])
             _r = await self._handle_model_rights(_q_mr, model_type, images=images)
-            yield ("source", "direct")
+            # ⚠️ "direct" 로 흘리면 audit_logs 에서 일반 대화와 섞여 **초상권 경로를
+            #    사후에 관측할 수 없다** (2026-08-19 조사에서 실제로 막혔다).
+            yield ("source", "model_rights")
             yield ("done", _r.get("answer", ""))
             return
 
@@ -2368,9 +2370,10 @@ class OrchestratorAgent:
         """
         import asyncio as _asyncio
 
-        from app.core.model_rights import get_rights_context
+        from app.core.model_rights import SHEET_URL, get_rights_context
 
         face_note = ""
+        _identified = False   # 사진 속 인물을 실제로 특정했는가
         if images:
             try:
                 import json as _json
@@ -2392,10 +2395,12 @@ class OrchestratorAgent:
                 _lines = [l for l in out.decode("utf-8", "replace").splitlines() if l.strip().startswith("{")]
                 r = _json.loads(_lines[-1]) if _lines else {}
                 if r.get("match"):
+                    _identified = True
                     face_note = (f"[사진 인식 결과] 업로드된 사진 속 인물: **{r['match']}** "
                                  f"(유사도 {r['score']:.2f}, 얼굴 {r['n_faces']}개 감지)\n")
                     query = f"{r['match']} — {query}"
                 elif r.get("maybe"):
+                    _identified = True
                     face_note = (f"[사진 인식 결과] 확신은 낮지만 **{r['maybe']}** 로 보임 "
                                  f"(유사도 {r['score']:.2f}) — 확실하지 않으니 이름으로 재확인 권장\n")
                     query = f"{r['maybe']} — {query}"
@@ -2409,17 +2414,31 @@ class OrchestratorAgent:
                 logger.error("model_face_identify_failed", error=str(e)[:200])
                 face_note = "[사진 인식 결과] 인식 실패 — 모델 이름으로 질문해 주세요\n"
 
+        # 사진을 붙였는데 인물을 특정하지 못했으면 전체 목록으로 되돌아가지 않는다 —
+        # "누구야" 에 모델 34명과 에이전시 연락처를 쏟아붓게 된다 (2026-08-19 실측).
+        _unidentified_photo = bool(images) and not _identified
         try:
-            ctx = await _asyncio.to_thread(get_rights_context, query)
+            ctx = await _asyncio.to_thread(get_rights_context, query,
+                                           not _unidentified_photo)
         except Exception as e:
             logger.error("model_rights_failed", error=str(e)[:200])
             ctx = ""
+        if not ctx and _unidentified_photo:
+            return {"source": "model_rights", "answer": (
+                f"{face_note}\n사진 속 인물을 초상권 DB 에서 특정하지 못했습니다.\n\n"
+                f"제가 가지고 있는 초상권 정보는 아래 시트가 전부입니다 — 쓰시려는 소재가 "
+                f"여기 적힌 **매체·지역·기간 범위** 안에 들어가는지 확인해 주세요.\n\n"
+                f"📄 [모델 초상권 현황 시트]({SHEET_URL})\n\n"
+                "**모델 이름을 알려주시면** 제가 바로 판정해 드립니다 "
+                "(예: \"라리사 지금 써도 돼?\"). 이름을 모르시면 촬영을 진행한 팀이나 "
+                "라인 담당자에게 확인이 필요합니다.")}
         if ctx and face_note:
             ctx = face_note + "\n" + ctx
         if not ctx:
-            return {"source": "direct", "answer": (
-                "모델 초상권 데이터가 아직 적재되지 않았습니다. "
-                "관리자에게 초상권 시트 동기화를 요청해 주세요.")}
+            return {"source": "model_rights", "answer": (
+                "모델 초상권 데이터가 아직 적재되지 않았습니다 — 관리자에게 시트 동기화를 "
+                f"요청해 주세요.\n\n그동안은 원본 시트에서 직접 확인하실 수 있습니다.\n\n"
+                f"📄 [모델 초상권 현황 시트]({SHEET_URL})")}
 
         from app.core.llm import get_flash_client
         prompt = (
@@ -2437,7 +2456,9 @@ class OrchestratorAgent:
         except Exception as e:
             logger.error("model_rights_llm_failed", error=str(e)[:200])
             answer = f"### 모델 초상권 현황 (자동 판정)\n\n```\n{ctx}\n```"
-        return {"source": "direct", "answer": answer}
+        # 원본 확인 경로는 코드가 붙인다. 프롬프트에 맡기면 빠뜨린다 (노션 연식 경고와 같은 결론)
+        answer = answer.rstrip() + f"\n\n---\n📄 원본: [모델 초상권 현황 시트]({SHEET_URL}) — 판정이 '불명'이거나 찾는 모델이 없으면 시트에서 직접 확인해 주세요."
+        return {"source": "model_rights", "answer": answer}
 
     async def _handle_ingredient_query(self, query: str, intent, model_type: str) -> dict:
         """성분 기준 제품 질문을 전성분 데이터로 답한다.

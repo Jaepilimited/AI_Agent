@@ -22,17 +22,21 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import date, datetime
 from typing import Optional
 
 import structlog
 
 from app.config import get_settings
+from app.core.textmatch import strip_particle
 from app.db.mariadb import execute, fetch_all
 
 logger = structlog.get_logger(__name__)
 
 SPREADSHEET_ID = "1iG7sH6dBAyw90O6qjMQQtEZm4LWjgw-FISXHwG23FIw"
+# 원본 시트 — 판정이 안 되거나 불명일 때 사용자가 직접 볼 수 있게 답변·상태에 노출한다
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SPREADSHEET_ID}/edit"
 
 # 라인별 초상권 담당자 (시트 상단 안내 기재)
 LINE_MANAGERS = {
@@ -295,8 +299,14 @@ def sync_model_rights() -> dict:
 # ── 조회 (핸들러용) ──────────────────────────────────────────────────────────
 
 
-def get_rights_context(query: str) -> str:
-    """질문과 관련된 모델들의 판정 요약 텍스트 — LLM 은 이걸 설명만 한다."""
+def get_rights_context(query: str, fallback_all: bool = True) -> str:
+    """질문과 관련된 모델들의 판정 요약 텍스트 — LLM 은 이걸 설명만 한다.
+
+    `fallback_all=False` 는 **사진을 붙였는데 인물을 특정하지 못한** 경우에 쓴다.
+    그때까지 전체 목록을 내려주면 "누구야" 한마디에 모델 34명과 에이전시 연락처를
+    쏟아붓는다 (2026-08-19 실측). 답이 아니라 소음이고, 연락처까지 함께 나간다 —
+    모르면 모른다고 답하는 편이 낫다 (성분의 '미상≠미포함' 과 같은 원칙).
+    """
     models = fetch_all("SELECT * FROM model_rights ORDER BY model_name")
     if not models:
         return ""
@@ -305,6 +315,8 @@ def get_rights_context(query: str) -> str:
     by_line = [m for m in models
                if m["product_line"] and any(tok and tok in q for tok in
                                             m["product_line"].replace("-", "").split())]
+    if not named and not by_line and not fallback_all:
+        return ""
     picked = named or by_line or models
     today = date.today()
 
@@ -342,8 +354,85 @@ def get_rights_context(query: str) -> str:
     return "\n".join(lines)
 
 
-def model_rights_intent(query: str) -> bool:
-    """초상권 질문인가 — 명시적 키워드 조합만 잡는다 (BQ '모델' 오폭 방지)."""
+# 사진이 붙었을 때 초상권으로 보내는 신호. 사람을 가리키거나(누구·인물),
+# 써도 되는지를 묻는(써도·기한) 말이 하나라도 있으면 초상권 질문이다.
+_PERSON_WORDS = ("누구", "누가", "인물", "사람", "모델")
+_USAGE_WORDS = ("써도", "쓸 수", "쓸수", "사용 가능", "사용가능", "사용해도",
+                "사용 기한", "기한", "만료", "언제까지")
+
+_NAMES_TTL = 300.0
+_NAMES_CACHE: dict = {"at": 0.0, "names": []}
+
+
+def _model_names_cached() -> list[str]:
+    """초상권 DB 에 실재하는 모델 이름 — 코드에 손으로 적지 않는다.
+
+    프롬프트에 값 목록을 적으면 반드시 낡는다는 것을 이미 겪었다(값 목록 실측화).
+    이름도 같다 — 시트에 모델이 추가되면 코드를 고치지 않아도 따라와야 한다.
+    """
+    now = time.monotonic()
+    if _NAMES_CACHE["names"] and now - _NAMES_CACHE["at"] < _NAMES_TTL:
+        return _NAMES_CACHE["names"]
+    rows = fetch_all("SELECT model_name FROM model_rights")
+    names = [str(r["model_name"]).strip() for r in rows if str(r.get("model_name") or "").strip()]
+    _NAMES_CACHE.update({"at": now, "names": names})
+    return names
+
+
+def _name_variants(name: str) -> list[str]:
+    """시트에 적힌 이름에서 사람들이 실제로 부르는 표기들을 뽑는다.
+
+    시트 표기는 한 칸에 여러 이름이 들어 있다 — `김제인 (김정은)` · `YINGXIN (잉씬)` ·
+    `Alexa & Wai` · `야오 조우`. 통짜로만 비교하면 **"김제인 관련 사진"이 안 걸린다**
+    (2026-08-19 배포 직후 프로덕션에서 실제로 bigquery 로 샜다).
+    """
+    raw = (name or "").strip()
+    if not raw:
+        return []
+    out = [raw]
+    # 괄호 안팎을 각각 후보로 (김제인 (김정은) → 김제인 / 김정은)
+    for part in re.split(r"[()]", raw):
+        part = part.strip()
+        if part and part != raw:
+            out.append(part)
+    # 'A & B' 는 통짜 이름이므로 쪼개지 않는다 — 한쪽만으로 특정되지 않는다
+    return [v for v in dict.fromkeys(out) if v]
+
+
+def _name_hit(query: str, name: str) -> bool:
+    """이름이 낱말로 나오는가.
+
+    ⛔ 부분 문자열로 보면 '조'가 '조회' 안에서, '안나'가 '안나푸르나' 안에서 걸린다
+       (보고서 필터의 '요인도 → 인도' 와 같은 부류). 어절을 조사까지 떼어 비교한다.
+    """
+    q = query or ""
+    for variant in _name_variants(name):
+        if " " in variant or "&" in variant:
+            # 여러 낱말로 된 이름은 공백만 지우고 통째로 본다
+            if variant.lower().replace(" ", "") in q.lower().replace(" ", ""):
+                return True
+            continue
+        n = variant.lower()
+        for tok in re.split(r"[\s,./·|]+", q):
+            tok = tok.strip("?!.\"'()[]{}<>~:;").lower()
+            if not tok:
+                continue
+            if tok == n or strip_particle(tok) == n:
+                return True
+    return False
+
+
+def model_rights_intent(query: str, has_image: bool = False) -> bool:
+    """초상권 질문인가.
+
+    낱말만 보던 게이트가 실제 오답을 냈다 (2026-08-19 프로덕션): 사진을 붙이고
+    "누구야" 라고 물으면 초상권 경로로 가지 못하고, 이미지가 있으면 direct(vision)
+    으로 **확신을 갖고** 강제되어 LLM 재판정도 못 탔다. 그래서 앱이 자기 기능을
+    "제공하지 않습니다" 라고 답했다. 이름 질문("Alexa & Wai 정보")도 같은 이유로
+    노션·웹으로 새서 지어냈다.
+
+    신호는 셋이다 — 명시 낱말(초상권) · **첨부된 사진** · **DB 에 실재하는 모델 이름**.
+    """
     q = query or ""
     if "초상권" in q:
         return True
@@ -351,4 +440,23 @@ def model_rights_intent(query: str) -> bool:
                           ("사진", "이미지", "써도", "쓸 수", "사용 가능", "사용해도",
                            "기한", "만료", "언제까지")):
         return True
+
+    _usage = any(k in q for k in _USAGE_WORDS)
+    # 사진이 붙어 있다는 것 자체가 신호다. 단 제품컷·차트 분석은 그대로 비전에 남긴다
+    # ("이 제품 성분", "이 차트 읽어줘"는 사람도 사용 가부도 묻지 않는다).
+    if has_image and (any(w in q for w in _PERSON_WORDS) or _usage):
+        return True
+
+    try:
+        names = _model_names_cached()
+    except Exception as e:  # DB 가 없어도 위 낱말 판정은 살아 있어야 한다
+        logger.warning("model_names_lookup_failed", error=str(e)[:200])
+        names = []
+    for name in names:
+        # 짧은 이름(조·소리·안나…)은 단독으로 경로를 가로채면 안 된다 — 보조 신호가 있을 때만.
+        _longest = max((len(v.replace(" ", "")) for v in _name_variants(name)), default=0)
+        if _longest <= 2 and not (has_image or _usage or "사진" in q):
+            continue
+        if _name_hit(q, name):
+            return True
     return False

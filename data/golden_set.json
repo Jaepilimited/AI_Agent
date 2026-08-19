@@ -1224,6 +1224,45 @@
         "max_seconds": 120
       },
       "note": "2026-08-06 제보: 묻지 않은 Brand IN ('SK','CL','CBT') 로 우마가 빠져 미국 매출이 61% 축소됐다"
+    },
+    {
+      "id": "model_rights_name_only",
+      "category": "incident",
+      "freq": "daily",
+      "question": "Alexa & Wai 모델 초상권 정보 알려줘",
+      "expect": {
+        "contains_any": [
+          "센텔라",
+          "지유환"
+        ],
+        "not_contains": [
+          "아마존",
+          "웹 접근성",
+          "Web Accessibility",
+          "arXiv",
+          "발레"
+        ],
+        "min_len": 80,
+        "max_seconds": 90
+      },
+      "note": "2026-08-19 사고: 모델명만 물으면 초상권 DB 를 안 보고 노션·웹 지식으로 새서 아마존 알렉사·W3C WAI 를 지어냈다. 이름은 DB 에서 실측해 잡는다"
+    },
+    {
+      "id": "notion_unrelated_no_fabrication",
+      "category": "incident",
+      "freq": "weekly",
+      "question": "Alexa & Wai 정보",
+      "expect": {
+        "not_contains": [
+          "아마존",
+          "Web Accessibility",
+          "arXiv",
+          "뉴욕 시티 발레"
+        ],
+        "min_len": 40,
+        "max_seconds": 90
+      },
+      "note": "2026-08-19: 모델명 질문이 사내 DB 대신 외부 지식으로 새서 아마존 알렉사·W3C WAI 를 지어냈다. ⚠️ 이 문항이 보는 것은 **답변 문자열**뿐이라 노션 경로의 겹침 가드 자체는 tests/test_notion_grounding.py 가 맡는다"
     }
   ]
 }
