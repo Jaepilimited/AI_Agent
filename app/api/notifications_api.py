@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""알림 API — 지금은 '나에게 공유된 보고서' 하나뿐이다.
+"""알림 API — 공유받은 보고서 · 내 붐따 처리 상태 · 업데이트 공지.
 
 메일로 보내고 싶었지만 **서버에서 메일이 나가지 않는다** (2026-08-19 실측: WAS·APP 양쪽
 모두 SMTP 25/587 차단, 로컬 MTA 없음, Google OAuth 스코프는 gmail.readonly).
@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.auth_middleware import get_current_user
 from app.db.models import User
+from app.core import announcements, feedback_inbox
 from app.reports import store
 
 logger = structlog.get_logger(__name__)
@@ -25,14 +26,26 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
 
+def _neg(iso: str) -> str:
+    """문자열 시각을 내림차순으로 정렬하기 위한 키 (최신이 앞)."""
+    return "".join(chr(0x10FFFF - ord(c)) if ord(c) < 0x10FFFF else c for c in (iso or ""))
+
+
+_FB_LABEL = {"new": "접수됨", "ack": "확인함", "done": "해결됨", "wontfix": "고치지 않음"}
+
+
 @router.get("")
 async def list_notifications(user: User = Depends(get_current_user)) -> dict:
-    """내 알림 목록 + 안 읽은 수.
+    """내 알림 — 공유받은 보고서 · 내 붐따 처리 상태 · 업데이트 공지.
 
-    `type` 을 달아 돌려준다 — 나중에 붐따 회신·자가 점검 알림을 같은 목록에 얹을 때
-    프론트를 다시 고치지 않기 위해서다 (지금 만들지는 않는다).
+    `type` 으로 구분한다. 프론트는 종류가 늘어도 같은 목록을 그린다.
     """
-    rows = await asyncio.to_thread(store.list_notifications, user.id)
+    shares, feedbacks, notices = await asyncio.gather(
+        asyncio.to_thread(store.list_notifications, user.id),
+        asyncio.to_thread(feedback_inbox.my_feedback, user.id),
+        asyncio.to_thread(announcements.for_user, user.id),
+    )
+
     items = [{
         "type": "report_share",
         "report_id": r["report_id"],
@@ -41,12 +54,46 @@ async def list_notifications(user: User = Depends(get_current_user)) -> dict:
         "created_at": r["created_at"].isoformat() if r.get("created_at") else "",
         "seen": bool(r.get("seen_at")),
         "url": f"/api/reports/{r['report_id']}",
-    } for r in rows]
+    } for r in shares]
+
+    # 붐따 — 처리 전 것도 보여준다. "접수는 됐나" 를 알 수 없으면 제보가 끊긴다
+    items += [{
+        "type": "feedback",
+        "feedback_id": f["id"],
+        # 코멘트가 없으면 **어느 대화에서 눌렀는지**를 제목으로 쓴다. 붐따는 코멘트
+        # 없이 누르는 경우가 대부분이라, 코멘트만 쓰면 "(내용 없음)" 이 줄줄이 뜬다
+        "title": ((f.get("comment") or "").strip()
+                  or (f.get("question") or "").strip()
+                  or "이전 답변")[:80],
+        "has_comment": bool((f.get("comment") or "").strip()),
+        "status": f.get("status") or "new",
+        "status_label": _FB_LABEL.get(f.get("status") or "new", "접수됨"),
+        "note": (f.get("handled_note") or "").strip(),
+        "created_at": f["created_at"].isoformat() if f.get("created_at") else "",
+        "handled_at": f["handled_at"].isoformat() if f.get("handled_at") else "",
+        "seen": not bool(f.get("unseen")),
+        "url": "",
+    } for f in feedbacks]
+
+    items += [{
+        "type": "announcement",
+        "title": a.get("title") or "",
+        "note": (a.get("body") or "").strip(),
+        "created_at": a["created_at"].isoformat() if a.get("created_at") else "",
+        "seen": not bool(a.get("unseen")),
+        "url": "",
+    } for a in notices]
+
+    # 안 읽은 것이 먼저, 그 안에서 최신순 — 새 소식이 옛 항목에 묻히지 않게 한다
+    items.sort(key=lambda i: (i["seen"], _neg(i["created_at"])))
     return {"unseen": sum(1 for i in items if not i["seen"]), "items": items}
 
 
 @router.post("/seen")
 async def mark_all_seen(user: User = Depends(get_current_user)) -> dict:
+    """세 종류를 함께 읽음 처리한다 — 사용자에게는 '알림' 하나다."""
     n = await asyncio.to_thread(store.mark_all_seen, user.id)
-    logger.info("notifications_marked_seen", user_id=user.id, count=n)
+    await asyncio.to_thread(feedback_inbox.mark_my_feedback_seen, user.id)
+    await asyncio.to_thread(announcements.mark_seen, user.id)
+    logger.info("notifications_marked_seen", user_id=user.id, shares=n)
     return {"marked": n}

@@ -1083,3 +1083,40 @@ async def update_feedback_status(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
+
+
+# ── 업데이트 공지 ────────────────────────────────────────────────────────────
+# 사용자가 "무엇이 바뀌었는지" 를 알 수 있는 유일한 경로다. 배포할 때 한 줄 남기면
+# 전 사용자의 알림함에 들어간다.
+
+class AnnouncementRequest(BaseModel):
+    title: str
+    body: str = ""
+
+
+@admin_router.get("/announcements")
+async def list_announcements(admin: User = Depends(_require_admin)) -> dict:
+    from app.core import announcements
+    rows = await asyncio.to_thread(announcements.recent, 20)
+    return {"items": rows}
+
+
+@admin_router.post("/announcements")
+async def create_announcement(
+    req: AnnouncementRequest, admin: User = Depends(_require_admin),
+) -> dict:
+    from app.core import announcements
+    title = (req.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="제목이 비어 있습니다.")
+    new_id = await asyncio.to_thread(
+        announcements.create, title, req.body or "", admin.display_name or admin.email)
+    logger.info("announcement_posted", id=new_id, by=admin.email)
+    return {"id": new_id}
+
+
+@admin_router.delete("/announcements/{ann_id}")
+async def delete_announcement(ann_id: int, admin: User = Depends(_require_admin)) -> dict:
+    from app.core import announcements
+    ok = await asyncio.to_thread(announcements.delete, ann_id)
+    return {"deleted": ok}

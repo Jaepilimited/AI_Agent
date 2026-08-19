@@ -156,6 +156,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_model_rights_tables)
         from app.reports.store import ensure_report_tables
         await asyncio.to_thread(ensure_report_tables)
+        from app.core.announcements import ensure_tables as _ensure_announce
+        await asyncio.to_thread(_ensure_announce)
         logger.info("mariadb_initialized")
 
         logger.info(

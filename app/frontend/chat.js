@@ -287,9 +287,9 @@
   // ===== Helpers =====
   function _escHtml(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
-  function _renderAnswerLoading(target, route, progress) {
+  function _renderAnswerLoading(target, route) {
     if (!window.CellaAnswerLoading) return null;
-    return window.CellaAnswerLoading.render(target, route, progress == null ? 15 : progress);
+    return window.CellaAnswerLoading.render(target, route);
   }
 
   function _destroyAnswerLoading(target) {
@@ -1838,7 +1838,7 @@
     aiMsgEl.classList.add("streaming");
     scrollToBottom();
 
-    // Wave 1: Client-side pre-routing — show a truthful progress state immediately
+    // Wave 1: Client-side pre-routing — show an honest indeterminate loading state immediately
     var _preRoute = _clientPreRoute(text);
     _renderAnswerLoading(contentEl, _preRoute);
 
@@ -1866,7 +1866,7 @@
       });
 
       // The server accepted the request and opened the response stream.
-      _renderAnswerLoading(contentEl, _preRoute, 35);
+      _renderAnswerLoading(contentEl, _preRoute);
 
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
@@ -1901,7 +1901,7 @@
                 if (srcParts[1]) detectedSourceLabel = srcParts[1];
                 // Replace the initial state with the server-confirmed route.
                 var typingEl = aiMsgEl.querySelector(".typing-indicator");
-                _renderAnswerLoading(typingEl, detectedSource, 60);
+                _renderAnswerLoading(typingEl, detectedSource);
                 var stripped = delta.content.replace(/<!-- source:[\w:+\s\u0080-\uFFFF]+? -->/, "");
                 if (stripped) { _S.queue.push(stripped); pushedContent = true; }
               } else {
@@ -2971,16 +2971,32 @@
       box.innerHTML = '<div class="notif-empty">새 알림이 없습니다.</div>';
       return;
     }
+    var STATUS_CLS = { done: "ok", wontfix: "muted", ack: "warn", new: "warn" };
     var html = "";
     items.forEach(function (it) {
-      html += '<a class="notif-item' + (it.seen ? "" : " unseen") + '" href="' +
-        _escape(it.url) + '" target="_blank" rel="noopener">' +
+      var text, extra = "";
+      if (it.type === "report_share") {
+        text = "<b>" + _escape(it.from_name) + "</b>님이 <i>" + _escape(it.title) +
+               "</i> 보고서를 공유했습니다";
+      } else if (it.type === "feedback") {
+        var what = it.has_comment
+          ? '내 피드백 <i>"' + _escape(it.title) + '"</i>'
+          : '<i>' + _escape(it.title) + '</i> 대화에 남긴 피드백';
+        text = what + ' — <span class="notif-status ' +
+               (STATUS_CLS[it.status] || "warn") + '">' + _escape(it.status_label) + "</span>";
+        if (it.note) extra = '<span class="notif-note">' + _escape(it.note) + "</span>";
+      } else {
+        text = "<b>업데이트</b> " + _escape(it.title);
+        if (it.note) extra = '<span class="notif-note">' + _escape(it.note) + "</span>";
+      }
+      var open = it.url ? ' href="' + _escape(it.url) + '" target="_blank" rel="noopener"' : "";
+      var tag = it.url ? "a" : "div";
+      html += "<" + tag + ' class="notif-item' + (it.seen ? "" : " unseen") + '"' + open + ">" +
         '<span class="notif-dot"></span>' +
         '<span class="notif-body">' +
-          '<span class="notif-text"><b>' + _escape(it.from_name) + '</b>님이 ' +
-          '<i>' + _escape(it.title) + '</i> 보고서를 공유했습니다</span>' +
-          '<span class="notif-time">' + _timeAgo(it.created_at) + '</span>' +
-        '</span></a>';
+          '<span class="notif-text">' + text + "</span>" + extra +
+          '<span class="notif-time">' + _timeAgo(it.created_at) + "</span>" +
+        "</span></" + tag + ">";
     });
     box.innerHTML = html;
   }

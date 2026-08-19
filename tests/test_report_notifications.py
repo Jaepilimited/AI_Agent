@@ -113,3 +113,61 @@ def test_notifications_api_is_not_admin_only():
     assert "get_current_user" in src
     assert "require_admin" not in src
     assert "user.id" in src         # 대상은 서버가 JWT 에서 정한다
+
+
+# ── 붐따 상태 · 업데이트 공지 (2026-08-19 확장) ──────────────────────────────
+
+def test_my_feedback_includes_unhandled_ones(db):
+    """⛔ 처리된 것만 보여주면 '접수는 됐나' 를 알 수 없다 — 그 침묵이 제보를 끊는다."""
+    from app.core import feedback_inbox
+    import app.core.feedback_inbox as fi
+    calls = []
+    fi.fetch_all = lambda sql, params=None: calls.append((sql, params)) or []
+    feedback_inbox.my_feedback(7)
+    sql, params = calls[-1]
+    assert "status" in sql
+    assert "handled_note IS NOT NULL" not in sql   # 메모 없는 것도 나와야 한다
+    assert "f.rating = -1" in sql                    # 붐따만
+    assert params[0] == 7
+
+
+def test_feedback_unseen_reflects_later_status_change(db):
+    """'확인함' 에서 읽고 나중에 '해결' 로 바뀌면 다시 안 읽음이어야 한다."""
+    from app.core import feedback_inbox
+    import app.core.feedback_inbox as fi
+    calls = []
+    fi.fetch_all = lambda sql, params=None: calls.append((sql, params)) or []
+    feedback_inbox.my_feedback(7)
+    sql, _ = calls[-1]
+    assert "f.reply_seen_at < f.handled_at" in sql
+
+
+def test_announcement_unseen_is_per_user_time(monkeypatch):
+    """공지×사용자 교차표를 만들지 않는다 — 사용자마다 '언제까지 읽었나' 한 값."""
+    from datetime import datetime, timedelta
+
+    from app.core import announcements
+
+    now = datetime.now()
+    monkeypatch.setattr(announcements, "fetch_all", lambda *a, **k: [
+        {"id": 2, "title": "새 기능", "body": "", "created_by": "임재필", "created_at": now},
+        {"id": 1, "title": "지난 공지", "body": "", "created_by": "임재필",
+         "created_at": now - timedelta(days=3)},
+    ])
+    monkeypatch.setattr(announcements, "fetch_one",
+                        lambda *a, **k: {"announce_seen_at": now - timedelta(days=1)})
+    rows = announcements.for_user(7)
+    assert rows[0]["unseen"] is True      # 읽은 뒤 올라온 것
+    assert rows[1]["unseen"] is False     # 읽기 전 것
+
+
+def test_marking_seen_covers_all_three_types():
+    """사용자에게는 '알림' 하나다 — 모두 읽음이 한 종류만 지우면 배지가 안 사라진다."""
+    import inspect
+
+    from app.api import notifications_api
+
+    src = inspect.getsource(notifications_api.mark_all_seen)
+    assert "store.mark_all_seen" in src
+    assert "mark_my_feedback_seen" in src
+    assert "announcements.mark_seen" in src

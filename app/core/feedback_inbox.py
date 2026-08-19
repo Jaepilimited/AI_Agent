@@ -190,3 +190,44 @@ def mark_replies_seen(user_id: int) -> int:
         "WHERE user_id = %s AND reply_seen_at IS NULL "
         "  AND handled_note IS NOT NULL AND handled_note <> ''",
         (int(user_id),))
+
+
+def my_feedback(user_id: int, limit: int = 10, days: int = 90) -> List[Dict[str, Any]]:
+    """내가 낸 붐따 — **처리 전 것도 포함**한다.
+
+    회신(`replies_for_user`)은 메모가 달린 것만 돌려준다. 그것만 보여주면 사용자는
+    "내가 신고한 게 접수는 됐나" 를 알 수 없다 — 답이 없는 구간이 길수록 제보가 끊긴다
+    (2026-08-18 회신 0건 분석). 상태를 그대로 보여준다.
+
+    ⚠️ 붐따는 **코멘트 없이 누르는 경우가 대부분**이라(실측: 최근 것 대부분 NULL)
+       제목에 코멘트만 쓰면 "(내용 없음)" 이 줄줄이 뜬다. 그때는 **내가 물었던 질문**을
+       제목으로 쓴다 — 무엇에 대한 신고인지 알아야 알림이 뜻을 갖는다.
+    ⚠️ 오래된 것은 빼야 한다. 100일 전 미처리 건이 목록을 채우면 새 소식이 묻힌다.
+    ⚠️ 안 읽음 판정은 `reply_seen_at < handled_at` 도 본다. 컬럼이 하나뿐이라
+       "확인함" 단계에서 읽고 나중에 "해결" 로 바뀌면 다시 안 읽음이 돼야 한다.
+    """
+    return fetch_all(
+        "SELECT f.id, f.comment, f.created_at, f.status, f.handled_at, f.handled_note, "
+        "       LEFT(COALESCE(c.title, ''), 80) AS question, "
+        "       (f.handled_at IS NOT NULL AND "
+        "        (f.reply_seen_at IS NULL OR f.reply_seen_at < f.handled_at)) AS unseen "
+        "FROM message_feedback f "
+        # ⛔ `message_feedback.conversation_id` 만 collation 이 다르게 만들어져 있다
+        #    (uca1400_ai_ci vs unicode_ci — 표를 만든 시기가 달라서다). 명시하지 않으면
+        #    "Illegal mix of collations" 로 **조인 자체가 터진다**. 서버마다 기본값이
+        #    다를 수 있으므로 스키마를 고치는 대신 조건에 못 박는다.
+        "LEFT JOIN conversations c "
+        "       ON c.id = f.conversation_id COLLATE utf8mb4_unicode_ci "
+        "WHERE f.user_id = %s AND f.rating = -1 "
+        "  AND f.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY) "
+        "ORDER BY unseen DESC, f.created_at DESC LIMIT %s",
+        (int(user_id), int(days), int(limit))) or []
+
+
+def mark_my_feedback_seen(user_id: int) -> int:
+    """내 붐따 알림을 읽음으로. ⚠️ 본인 것만 — user_id 를 SQL 안에서 건다."""
+    return execute(
+        "UPDATE message_feedback SET reply_seen_at = NOW() "
+        "WHERE user_id = %s AND rating = -1 AND handled_at IS NOT NULL "
+        "  AND (reply_seen_at IS NULL OR reply_seen_at < handled_at)",
+        (int(user_id),))
