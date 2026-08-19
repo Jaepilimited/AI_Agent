@@ -61,6 +61,12 @@ TARGETS = [
     {"name": "skin1004-dev",  "port": 3001, "label": "DEV"},
 ]
 
+PM2_WINDOWS_PIPE_ENV = {
+    "PM2_DAEMON_RPC_PORT": r"\\.\pipe\skin1004-db-pc-rpc.sock",
+    "PM2_DAEMON_PUB_PORT": r"\\.\pipe\skin1004-db-pc-pub.sock",
+    "PM2_INTERACTOR_RPC_PORT": r"\\.\pipe\skin1004-db-pc-interactor.sock",
+}
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -82,6 +88,14 @@ logger.addHandler(ch)
 # Helpers
 # ---------------------------------------------------------------------------
 
+def build_pm2_subprocess_env(base_env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return a subprocess environment isolated from Windows' global PM2 pipes."""
+    env = dict(os.environ if base_env is None else base_env)
+    for key, value in PM2_WINDOWS_PIPE_ENV.items():
+        env.setdefault(key, value)
+    return env
+
+
 def run_cmd(cmd: str, timeout: int = 15) -> tuple[int, str]:
     """Run a shell command, return (returncode, stdout+stderr).
 
@@ -93,6 +107,7 @@ def run_cmd(cmd: str, timeout: int = 15) -> tuple[int, str]:
             cmd, shell=True, capture_output=True, text=True,
             timeout=timeout, cwd=PROJECT_DIR,
             encoding="utf-8", errors="replace",
+            env=build_pm2_subprocess_env(),
         )
         return result.returncode, (result.stdout + result.stderr).strip()
     except subprocess.TimeoutExpired:
