@@ -1,63 +1,67 @@
 # SKIN1004 AI Agent — Knowledge Map
-**Generated**: 2026-08-10T03:00:26.007576+09:00 · **Files**: 144 · **Nodes**: 1323 · **Commit**: be6012c
+**Generated**: 2026-08-19T03:00:36.499205+09:00 · **Files**: 177 · **Nodes**: 1750 · **Commit**: 0040a93
 
 ## What this project is
-This project is the SKIN1004 Enterprise AI Agent platform, a FastAPI-based system designed to integrate custom AI capabilities with internal enterprise systems. It features a robust Text-to-SQL engine powered by LangGraph to query corporate databases, Active Directory (AD) synchronization for user and department management, and an OpenAI-compatible API layer for seamless Open WebUI integration. The system also includes a self-healing diagnostic suite (`self_check.py`) to ensure continuous data integrity and system health.
+The SKIN1004 AI Agent is an enterprise-grade AI backend and custom frontend system designed to support internal operations through advanced LLM capabilities. It features a robust Text-to-SQL engine powered by LangGraph, Active Directory (AD) synchronization, and self-checking diagnostic routines to ensure data integrity. The application exposes OpenAI-compatible endpoints for seamless integration with Open WebUI and other internal tools.
 
 ## Top-level Clusters
-1. **cluster_00** (70 files): Core database schemas, migration scripts, and connection pools for MariaDB.
-2. **cluster_01** (16 files): Active Directory (AD) synchronization services and LDAP connection utilities.
-3. **cluster_02** (6 files): PDF and document parsing utilities for internal knowledge base ingestion.
-4. **cluster_03** (33 files): LangGraph state definitions, node configurations, and agentic workflow helpers.
-5. **cluster_04** (124 files): Frontend static assets, UI components, and custom dashboard templates.
-6. **cluster_05** (134 files): Unit, integration, and regression test suites for API endpoints and agent workflows.
+1. **cluster_00** (63 files): Core database schemas, migrations, and connection pools for MariaDB.
+2. **cluster_01** (44 files): Active Directory (AD) integration, user synchronization, and department mapping logic.
+3. **cluster_02** (82 files): Custom frontend components, assets, and UI layout templates.
+4. **cluster_03** (76 files): LangGraph state definitions, node configurations, and agentic workflow utilities.
+5. **cluster_04** (100 files): Prompt templates, system instructions, and LLM model configuration files.
+6. **cluster_05** (161 files): Text-to-SQL validation, query parsing, and SQL execution safety layers.
 7. **cluster_06** (44 files): Logging, telemetry, and performance monitoring middleware.
-8. **cluster_07** (94 files): Prompt templates, system instructions, and LLM configuration files.
-9. **cluster_08** (44 files): Background task workers, Celery configurations, and cron job definitions.
-10. **cluster_09** (56 files): Vector database connectors (Chroma/Qdrant) and embedding generation pipelines.
-11. **cluster_10** (80 files): Text-to-SQL agent workflows, SQL validation logic, and execution sandboxes.
-12. **cluster_11** (177 files): Core API routing, user authentication, and OpenAI-compatible chat endpoints.
-13. **cluster_12** (43 files): Admin management APIs for user access control and model permissions.
-14. **cluster_13** (10 files): Rate limiting, CORS, and security middleware configurations.
-15. **cluster_14** (30 files): Multi-language translation utilities and localization dictionaries.
-16. **cluster_15** (24 files): File upload, storage adapters (S3/Local), and media processing pipelines.
-17. **cluster_16** (56 files): Self-check diagnostic scripts, system health monitors, and alert dispatchers.
-18. **cluster_17** (5 files): Docker, deployment scripts, and environment configuration templates.
-19. **cluster_18** (25 files): Cache management utilities using Redis and memory-backed stores.
-20. **cluster_19** (14 files): External API integrations (ERP, logistics, and shipping carriers).
-21. **cluster_20** (25 files): Knowledge Map generation, code parsing, and documentation indexing tools.
-22. **cluster_21** (29 files): Application entry points, server initializers, and global state managers.
-23. **cluster_22** (2 files): Legacy migration scripts and deprecated utility wrappers.
-24. **cluster_23** (6 files): Custom exception handlers and HTTP error formatters.
-25. **cluster_24** (176 files): Auto-generated API documentation, OpenAPI schemas, and developer guides.
+8. **cluster_07** (133 files): Document processing, vector embeddings, and RAG (Retrieval-Augmented Generation) pipelines.
+9. **cluster_08** (67 files): Excel/CSV report generation, data export utilities, and file download handlers.
+10. **cluster_09** (12 files): Multi-language translation utilities and localization dictionaries.
+11. **cluster_10** (16 files): Background task queues, Celery workers, and scheduled job definitions.
+12. **cluster_11** (69 files): Core SQL Agent implementation, LangGraph workflow orchestration, and query formatting.
+13. **cluster_12** (42 files): Session management, Redis caching, and rate-limiting middleware.
+14. **cluster_13** (193 files): Authentication, user registration, conversation history CRUD, and OpenAI-compatible API routes.
+15. **cluster_14** (34 files): FastAPI application entry points, server startup/shutdown lifecycles, and global exception handlers.
+16. **cluster_15** (48 files): Admin dashboards, user access control, and model permission management.
+17. **cluster_16** (38 files): Unit tests, integration tests, and mock data generators.
+18. **cluster_17** (17 files): Docker configurations, deployment scripts, and environment variable templates.
+19. **cluster_18** (6 files): PDF parsing, OCR processing, and unstructured data extraction.
+20. **cluster_19** (37 files): Slack/Teams notification webhooks and alert dispatchers.
+21. **cluster_20** (41 files): Self-check diagnostics, system health monitoring, and data integrity regression tests.
+22. **cluster_21** (10 files): API rate limiting, IP whitelisting, and security middleware.
+23. **cluster_22** (48 files): Knowledge map generation, AST parsing, and codebase indexing utilities.
+24. **cluster_23** (25 files): Knowledge map build orchestrator, caching, and graph export pipelines.
+25. **cluster_24** (63 files): Custom LLM tool definitions, external API connectors, and web search tools.
+26. **cluster_25** (5 files): Static assets, brand logos, and corporate identity files.
+27. **cluster_26** (2 files): Markdown documentation, user guides, and developer onboarding manuals.
+28. **cluster_27** (6 files): Database backup, recovery, and archival scripts.
+29. **cluster_28** (6 files): Third-party API SDK wrappers and client initializers.
+30. **cluster_29** (180 files): SQL query templates, metadata definitions, and database reflection schemas.
+31. **cluster_30** (82 files): Chat UI components, markdown renderers, and streaming response handlers.
 
 ## God Nodes (highest edge count — most central)
-- `app/agents/sql_agent.py` (10.md) — Text-to-SQL Agent using LangGraph with a structured generate → validate → execute → format workflow.
-- `app/api/routes.py` (11.md) — Core OpenAI-compatible API endpoints facilitating integration with Open WebUI.
-- `app/api/auth_api.py` (11.md) — Authentication endpoints (signup, signin, me, logout) linking MariaDB with AD department structures.
-- `app/main.py` (21.md) — FastAPI application entry point hosting both the AI backend and custom frontend on port 3000.
-- `app/api/admin_api.py` (12.md) — Admin endpoints managing user permissions and model access control lists in MariaDB.
-- `app/core/self_check.py` (16.md) — Self-diagnostic system designed to catch silent failures like AD sync issues and database drift.
-- `app/knowledge_map/builder.py` (20.md) — Knowledge Map build orchestrator managing code discovery, parsing, and graph exports.
-- `app/api/admin_group_api.py` (11.md) — Admin endpoints for managing Active Directory users, groups, and department mappings.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/agents/sql_agent.py` (112 edges) — Text-to-SQL Agent using LangGraph executing the generate_sql → validate_sql → execute_sql → format_answer workflow.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/admin_api.py` (98 edges) — Admin endpoints managing user permissions, model access control, and MariaDB configurations.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/main.py` (94 edges) — FastAPI application entry point hosting the unified AI backend and custom frontend on port 3000.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/auth_api.py` (89 edges) — Authentication endpoints handling signup, signin, and AD-linked department mapping in MariaDB.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/routes.py` (85 edges) — OpenAI-compatible API endpoints facilitating integration with Open WebUI.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/self_check.py` (81 edges) — Self-check diagnostic system preventing silent failures in AD synchronization and database integrity.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/builder.py` (76 edges) — Knowledge Map build orchestrator managing codebase discovery, AST parsing, and graph exports.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/conversation_api.py` (72 edges) — Conversation CRUD API managing chat history and session persistence in MariaDB.
 
 ## Suggested Questions This Map Can Answer Instantly
 1. How does the Text-to-SQL agent validate generated SQL queries before execution? (`app/agents/sql_agent.py`)
-2. Where are the OpenAI-compatible chat endpoints defined for Open WebUI integration? (`app/api/routes.py`)
-3. How does the system map Active Directory (AD) departments to local MariaDB users during authentication? (`app/api/auth_api.py`)
-4. What port and host configurations are used to launch the unified FastAPI server? (`app/main.py`)
-5. How can an administrator restrict specific LLM models for certain user groups? (`app/api/admin_api.py`)
-6. What daily checks does the self-diagnostic system run to prevent silent AD sync failures? (`app/core/self_check.py`)
-7. How is the codebase parsed and indexed to generate the interactive Knowledge Map? (`app/knowledge_map/builder.py`)
-8. Where are the API endpoints for managing AD group memberships and permissions? (`app/api/admin_group_api.py`)
-9. How are database connection pools configured for MariaDB queries? (`knowledge_map/wiki/cluster_00.md`)
-10. Where should I add a new background cron job for data synchronization? (`knowledge_map/wiki/cluster_08.md`)
+2. Where are the OpenAI-compatible endpoints defined for Open WebUI integration? (`app/api/routes.py`)
+3. How does the system handle Active Directory (AD) synchronization and department mapping? (`app/api/auth_api.py`)
+4. What diagnostic checks are run daily to prevent silent failures in AD synchronization? (`app/core/self_check.py`)
+5. How can I add a new admin endpoint for managing model access control? (`app/api/admin_api.py`)
+6. Where is the main FastAPI application initialized and configured? (`app/main.py`)
+7. How is chat history saved and retrieved from the MariaDB database? (`app/api/conversation_api.py`)
+8. How does the codebase indexer parse files to build the knowledge map? (`app/knowledge_map/builder.py`)
 
 ## Recent Changes
-- 2026-08-10 · Added automated Knowledge Map builder to track codebase architecture changes.
-- 2026-08-04 · Implemented `self_check.py` to resolve silent Active Directory synchronization failures.
-- 2026-07-28 · Integrated LangGraph-based Text-to-SQL agent with multi-step query validation.
-- 2026-07-15 · Created OpenAI-compatible API routes to support custom Open WebUI pipelines.
+- 2026-08-19 · Updated knowledge map builder to support incremental AST caching.
+- 2026-08-12 · Enhanced SQL Agent validation layer to prevent destructive queries.
+- 2026-08-04 · Implemented `self_check.py` to monitor and alert on AD synchronization failures.
+- 2026-07-28 · Added OpenAI-compatible streaming endpoints to `routes.py`.
 
 ## How to navigate
 Read this file first. Then open graph.json and find the 2-3 nodes most relevant to your question. Read only those nodes' wiki_page values (`knowledge_map/wiki/**/*.md`). Only read original source files if the wiki page doesn't answer. Never Grep without consulting this map first.
