@@ -192,20 +192,29 @@ def upload_update_log(md_path: str):
         },
     }
 
-    # Prepend to page (add after title, before existing content)
-    # Use "after" parameter if there's existing content, else just append
+    # 맨 위(최신이 위로)에 넣는다.
+    # ⛔ 예전에는 첫 블록을 **조회만 하고 쓰지 않아** 그냥 뒤에 붙었다 (2026-08-19 실측:
+    #    새 로그가 35번째 맨 아래로 갔다). 주석은 "prepend" 인데 동작은 append 였다 —
+    #    에러가 안 나서 오래 드러나지 않았다.
+    # ⚠️ Notion API 에는 "맨 앞에 넣기" 가 없다. `after` 로 **기존 첫 토글 바로 앞**
+    #    (= 안내 문단 뒤)에 끼운다.
     url = f"{NOTION_API}/blocks/{UPDATE_LOG_PAGE_ID}/children"
 
-    # First, get existing children to find the first block ID
-    resp = requests.get(url, headers=HEADERS, params={"page_size": 1})
+    resp = requests.get(url, headers=HEADERS, params={"page_size": 100})
     if resp.status_code != 200:
         print(f"Error fetching page: {resp.status_code} {resp.text}")
         return False
-
     existing = resp.json().get("results", [])
 
-    # Patch: prepend by adding new block
+    anchor = None          # 이 블록 **뒤**에 넣는다
+    for blk in existing:
+        if blk["type"] == "toggle":
+            break          # 첫 토글을 만나면 직전 블록이 앵커다
+        anchor = blk["id"]
+
     payload = {"children": [toggle_block]}
+    if anchor:
+        payload["after"] = anchor
 
     resp = requests.patch(url, headers=HEADERS, json=payload)
     if resp.status_code == 200:
