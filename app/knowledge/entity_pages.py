@@ -8,7 +8,7 @@ instead of pasting 10 disconnected lines, we paste one coherent summary.
 Design:
 
 - Input: all ``knowledge_wiki`` rows for a given canonical entity (status !=
-  archived).
+  archived), including their review/conflict/validation metadata.
 - Output: a markdown body stored in ``wiki_entity_pages.markdown``, plus
   metadata (fact_count, period_span, last_fact_at).
 - Idempotent: compiling the same entity twice produces the same page; we
@@ -38,6 +38,13 @@ from typing import Any
 import structlog
 
 from app.db.mariadb import execute, fetch_all, fetch_one
+from app.knowledge.trust import (
+    PARTLY_TRUSTED,
+    TRUSTED,
+    TRUST_LABELS,
+    TRUST_ORDER,
+    annotate_fact_trust,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -88,6 +95,8 @@ def _compile_markdown(entity: str, domain: str, facts: list[dict]) -> str:
     if not facts:
         return f"# {entity}\n\n_아직 기록된 팩트가 없습니다._\n"
 
+    facts = [annotate_fact_trust(f) for f in facts]
+
     # Split
     permanent: list[dict] = []
     timeline: list[dict] = []
@@ -98,9 +107,14 @@ def _compile_markdown(entity: str, domain: str, facts: list[dict]) -> str:
         else:
             timeline.append(f)
 
-    # TL;DR — top 3 highest-confidence facts, most recent first
+    # TL;DR — only reviewed facts are safe to summarize as assertions. If no
+    # reviewed fact exists, keep the page useful but label the fallback.
+    assertable = [f for f in facts if f["trust_state"] == TRUSTED]
+    tldr_source = assertable or [
+        f for f in facts if f["trust_state"] == PARTLY_TRUSTED
+    ]
     ranked = sorted(
-        facts,
+        tldr_source,
         key=lambda r: (
             float(r.get("confidence") or 0),
             _period_sort(r.get("period")),
@@ -115,7 +129,7 @@ def _compile_markdown(entity: str, domain: str, facts: list[dict]) -> str:
         if not summary or summary in seen_summaries:
             continue
         seen_summaries.add(summary)
-        tldr_lines.append(f"- {summary}")
+        tldr_lines.append(f"- [{TRUST_LABELS[r['trust_state']]}] {summary}")
         if len(tldr_lines) >= 3:
             break
 
@@ -136,6 +150,22 @@ def _compile_markdown(entity: str, domain: str, facts: list[dict]) -> str:
     out.append(f"# {entity}")
     if domain:
         out.append(f"**domain**: `{domain}`  ·  **facts**: {len(facts)}")
+    out.append("")
+
+    state_counts = {
+        state: sum(1 for f in facts if f["trust_state"] == state)
+        for state in TRUST_ORDER
+    }
+    out.append("## Trust status")
+    out.append(" · ".join(
+        f"{TRUST_LABELS[state]} {state_counts[state]}건"
+        for state in TRUST_ORDER if state_counts[state]
+    ))
+    out.append("")
+    out.append(
+        "> 검증됨만 확정 사실로 사용하세요. 검증 대기는 원 데이터 재확인이 필요하고, "
+        "충돌 항목은 어느 한쪽을 임의로 선택하면 안 됩니다."
+    )
     out.append("")
 
     if tldr_lines:
@@ -161,10 +191,11 @@ def _compile_markdown(entity: str, domain: str, facts: list[dict]) -> str:
                 if value and value != summary:
                     tag_bits.append(f"**{value}**")
                 tag = " · ".join(tag_bits)
+                trust = TRUST_LABELS[r["trust_state"]]
                 if tag:
-                    out.append(f"- {summary}  _({tag})_")
+                    out.append(f"- [{trust}] {summary}  _({tag})_")
                 else:
-                    out.append(f"- {summary}")
+                    out.append(f"- [{trust}] {summary}")
             out.append("")
 
     if permanent_sorted:
@@ -173,9 +204,9 @@ def _compile_markdown(entity: str, domain: str, facts: list[dict]) -> str:
             summary = (r.get("summary") or "").strip()
             metric = r.get("metric") or ""
             if metric:
-                out.append(f"- {summary}  _(`{metric}`)_")
+                out.append(f"- [{TRUST_LABELS[r['trust_state']]}] {summary}  _(`{metric}`)_")
             else:
-                out.append(f"- {summary}")
+                out.append(f"- [{TRUST_LABELS[r['trust_state']]}] {summary}")
         out.append("")
 
     # Footer
@@ -199,7 +230,9 @@ def compile_entity_page(canonical_entity: str) -> dict:
     facts = fetch_all(
         """
         SELECT id, domain, entity, period, metric, value, summary,
-               confidence, thumbs_up, extracted_at
+               confidence, thumbs_up, thumbs_down, extracted_at, status,
+               review_status, conflict_with_id, conflict_reason, validated_at,
+               source_route, source_conversation_id, source_message_id
         FROM knowledge_wiki
         WHERE (canonical_entity = %s OR entity = %s)
           AND status <> 'archived'
@@ -314,15 +347,41 @@ def search_entity_pages(query: str, limit: int = 5) -> list[dict]:
     clauses = []
     params: list[str] = []
     for t in tokens[:6]:
-        clauses.append("canonical_entity LIKE %s")
+        clauses.append("p.canonical_entity LIKE %s")
         params.append(f"%{t}%")
     where = " OR ".join(clauses)
     sql = f"""
-        SELECT canonical_entity, domain, markdown, fact_count, period_span,
-               last_fact_at
-        FROM wiki_entity_pages
-        WHERE {where}
-        ORDER BY fact_count DESC
+        SELECT p.canonical_entity, p.domain, p.markdown, p.fact_count,
+               p.period_span, p.last_fact_at
+        FROM wiki_entity_pages p
+        WHERE ({where})
+          AND p.fact_count = (
+              SELECT COUNT(*) FROM knowledge_wiki k
+              WHERE (k.canonical_entity = p.canonical_entity OR k.entity = p.canonical_entity)
+                AND k.status <> 'archived'
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM knowledge_wiki k
+              WHERE (k.canonical_entity = p.canonical_entity OR k.entity = p.canonical_entity)
+                AND k.status <> 'archived'
+                AND (
+                    k.extracted_at > p.compiled_at
+                    OR (k.validated_at IS NOT NULL AND k.validated_at > p.compiled_at)
+                )
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM knowledge_wiki k
+              WHERE (k.canonical_entity = p.canonical_entity OR k.entity = p.canonical_entity)
+                AND k.status = 'active'
+                AND k.validated_at IS NOT NULL
+                AND k.confidence >= 0.6
+                AND k.review_status <> 'needs_review'
+                AND (k.conflict_with_id IS NULL OR k.review_status = 'resolved')
+                AND (k.period IS NULL OR k.period = '' OR LOWER(k.period) = 'permanent')
+                AND DATE_ADD(k.validated_at, INTERVAL 181 DAY) > p.compiled_at
+                AND DATE_ADD(k.validated_at, INTERVAL 181 DAY) <= NOW()
+          )
+        ORDER BY p.fact_count DESC
         LIMIT {int(limit)}
     """
     return fetch_all(sql, tuple(params))
