@@ -236,6 +236,20 @@ _REPORT_META = re.compile(
     r"|(보고서|리포트)[^?.!]{0,10}어떻게\s*(만들|써|사용|쓰|봐|보나)"
 )
 
+# 보고서 **생성 기능**이 아니라 사내에서 쓰는 **업무 문서**에 관한 질문.
+# ⛔ "출장 보고서와 정산서 작성 시 B2B2팀의 내부 역할 분담 규정은?"이
+#    `보고서` 한 단어 때문에 2026 상반기 B2B 매출 보고서를 만들었다 (2026-08-19).
+#    이런 문장은 아래 일반 라우터가 이미 notion 으로 확신 분류한다. 여기서는 그보다
+#    먼저 실행되는 보고서 생성 경로만 막는다.
+_OPERATIONAL_REPORT = re.compile(
+    r"(출장|정산|업무|회의|품의|결재)\s*(보고서|리포트|report)"
+)
+_REPORT_DOCUMENT_QUESTION = re.compile(
+    r"(보고서|리포트|report)[^?.!]{0,60}"
+    r"(양식|템플릿|작성\s*(시|할\s*때|해야|방법|법)|제출|결재|승인|"
+    r"다운로드|어디서|별도|필수|규정|절차|역할\s*분담)"
+)
+
 # ⛔ 위 정규식만으로는 부족했다. **"이 시스템으로 뭘 할 수 있는지 짧게 정리해줘" 도
 #    보고서를 만들었다** — '보고서'라는 말이 없어도 `정리해줘`가 신호어이기 때문이다
 #    (2026-08-13, 2건 생성). 신호어는 여러 개고 대상어도 여러 개라 문구를 하나씩
@@ -249,8 +263,10 @@ _DATA_NOUN = re.compile(
 
 
 def _is_meta_question(ql: str) -> bool:
-    """보고서를 **달라는** 게 아니라 기능·시스템을 **설명해 달라는** 질문인가."""
+    """분석 보고서를 달라는 게 아니라 기능·업무 문서를 묻는 질문인가."""
     if _REPORT_META.search(ql):
+        return True
+    if _OPERATIONAL_REPORT.search(ql) or _REPORT_DOCUMENT_QUESTION.search(ql):
         return True
     return bool(_SELF_SUBJECT.search(ql)) and not _DATA_NOUN.search(ql)
 
