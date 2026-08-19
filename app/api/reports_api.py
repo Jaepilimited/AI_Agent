@@ -130,6 +130,12 @@ async def read_report(report_id: int, user: User = Depends(get_current_user)) ->
     if not html:
         raise HTTPException(status_code=410, detail="보고서 본문이 남아 있지 않습니다.")
 
+    # 공유받은 보고서를 **열었으면** 알림에서 읽음 처리한다. 목록에서 눌렀든 채팅
+    # 링크로 왔든 주소를 직접 쳤든 같은 자리를 지난다 — 여러 곳에 흩으면 한 경로에서만
+    # 배지가 안 사라진다.
+    if not row.get("is_owner"):
+        await asyncio.to_thread(store.mark_seen, report_id, user.id)
+
     # 공유 막대는 **보는 사람마다 다르다** — 저장본에 굽지 않고 응답마다 끼운다
     html = share_ui.inject(html, report_id, bool(row.get("is_owner")),
                            row.get("owner_name") or "")

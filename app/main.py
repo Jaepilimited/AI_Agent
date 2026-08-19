@@ -31,6 +31,7 @@ from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
 from app.api.middleware import setup_middleware
 from app.api.reports_api import router as reports_router
+from app.api.notifications_api import router as notifications_router
 from app.api.routes import router
 from app.config import get_settings
 from app.core.log_scrub import scrub_identity_processor
@@ -265,6 +266,7 @@ def create_app() -> FastAPI:
     app.include_router(harness_router)       # /harness, /api/harness/*
     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
     app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
+    app.include_router(notifications_router)   # /api/notifications/*
 
     # --- Frontend routes ---
 

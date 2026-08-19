@@ -1206,7 +1206,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Answer progress — a quiet inline signal, not another chat bubble */
 .message-assistant.streaming .message-content:has(> .answer-loading) {
-  width: max-content;
+  width: min(340px, 100%);
   max-width: 100%;
   padding: 8px 2px 8px 4px;
   background: transparent;
@@ -1214,11 +1214,12 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   overflow: visible;
 }
 
-.answer-loading {
+.typing-indicator.answer-loading {
   display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 24px;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(320px, calc(100vw - 96px));
+  min-height: 48px;
   padding: 0;
 }
 
@@ -1256,7 +1257,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   font-family: var(--font-korean);
   font-size: var(--text-sm);
   font-weight: 500;
-  line-height: 24px;
+  line-height: 20px;
   letter-spacing: -0.015em;
   white-space: nowrap;
   background: linear-gradient(90deg, var(--text-secondary) 10%, var(--text) 48%, var(--text-secondary) 86%);
@@ -1266,6 +1267,70 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: answer-loading-shimmer 1.8s ease-in-out infinite;
+}
+
+.answer-loading-body {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.answer-loading-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.answer-loading-percent {
+  color: var(--accent);
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.answer-loading-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--border));
+}
+
+.answer-loading-fill {
+  position: relative;
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--accent);
+  background-image: linear-gradient(90deg, var(--accent), var(--accent-hover));
+  box-shadow: 0 0 8px var(--accent-glow);
+  transition: width 420ms var(--transition);
+}
+
+.answer-loading-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.58) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: answer-loading-sweep 1.6s ease-in-out infinite;
+}
+
+.answer-loading-elapsed {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-family: var(--font-korean);
+  font-size: 10px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 .message-assistant.streaming .message-content > .answer-loading::after {
@@ -1286,6 +1351,11 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 @keyframes answer-loading-shimmer {
   0% { background-position: 120% 0; }
   65%, 100% { background-position: -120% 0; }
+}
+
+@keyframes answer-loading-sweep {
+  0%, 30% { transform: translateX(-100%); }
+  75%, 100% { transform: translateX(100%); }
 }
 
 /* Streaming tail — raw text being typed, before markdown parse */
@@ -2245,6 +2315,7 @@ html.dark .db-autocomplete-dropdown {
 /* Shared overlay base */
 #skin-dashboard-overlay,
 #skin-status-overlay,
+#notif-overlay,
 #skin-admin-overlay {
   position: fixed;
   inset: 0;
@@ -2353,10 +2424,13 @@ html.dark .db-autocomplete-dropdown {
    G. SYSTEM STATUS DRAWER
    ============================================================ */
 /* status overlay — base styles shared above */
-#skin-status-overlay.open { opacity: 1; visibility: visible; }
-#skin-status-overlay.closed { opacity: 0; visibility: hidden; pointer-events: none; }
+#skin-status-overlay.open,
+#notif-overlay.open { opacity: 1; visibility: visible; }
+#skin-status-overlay.closed,
+#notif-overlay.closed { opacity: 0; visibility: hidden; pointer-events: none; }
 
-#skin-status-drawer {
+#skin-status-drawer,
+#notif-drawer {
   position: fixed;
   top: 0; right: 0; bottom: 0;
   z-index: 10001;
@@ -2368,10 +2442,13 @@ html.dark .db-autocomplete-dropdown {
   box-shadow: -8px 0 32px rgba(0,0,0,0.3);
   transition: transform 0.3s var(--transition);
 }
-#skin-status-drawer.open { transform: translateX(0); }
-#skin-status-drawer.closed { transform: translateX(100%); }
+#skin-status-drawer.open,
+#notif-drawer.open { transform: translateX(0); }
+#skin-status-drawer.closed,
+#notif-drawer.closed { transform: translateX(100%); }
 
-#skin-status-drawer .drawer-header {
+#skin-status-drawer .drawer-header,
+#notif-drawer .drawer-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2380,7 +2457,8 @@ html.dark .db-autocomplete-dropdown {
   min-height: 52px;
 }
 
-#skin-status-drawer .drawer-title {
+#skin-status-drawer .drawer-title,
+#notif-drawer .drawer-title {
   font-family: var(--font-display);
   font-size: var(--text-ui);
   font-weight: 700;
@@ -2388,7 +2466,8 @@ html.dark .db-autocomplete-dropdown {
   color: var(--text-muted);
 }
 
-#skin-status-drawer .drawer-close {
+#skin-status-drawer .drawer-close,
+#notif-drawer .drawer-close {
   width: 28px; height: 28px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -2400,7 +2479,8 @@ html.dark .db-autocomplete-dropdown {
   align-items: center;
   justify-content: center;
 }
-#skin-status-drawer .drawer-close:hover {
+#skin-status-drawer .drawer-close:hover,
+#notif-drawer .drawer-close:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
@@ -4616,3 +4696,62 @@ html.dark .db-autocomplete-dropdown {
 }
 .feedback-reply-toast .fr-reply { line-height: 1.5; }
 .feedback-reply-toast .fr-reply strong { color: var(--text); margin-right: 4px; }
+
+/* ── 알림 (공유받은 보고서) — 2026-08-19 ────────────────────────────────────
+   ⛔ 색은 반드시 토큰으로 쓴다. 자바스크립트에 인라인으로 두면 테마 전환에서
+      조용히 빠진다 (피드백 모달이 그렇게 라이트 모드에서 안 보였다). */
+.notif-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: #E89200;
+  color: #fff;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-align: center;
+  line-height: 16px;
+}
+
+#notif-drawer .drawer-mark-all {
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  cursor: pointer;
+}
+#notif-drawer .drawer-mark-all:hover { background: var(--bg-hover); color: var(--text); }
+
+.notif-empty {
+  padding: 28px 16px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.notif-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+.notif-item:hover { background: var(--bg-hover); }
+.notif-item .notif-dot {
+  width: 7px; height: 7px; margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+.notif-item.unseen .notif-dot { background: #E89200; }
+.notif-item.unseen .notif-text { font-weight: 600; }
+.notif-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.notif-text { font-size: 0.875rem; line-height: 1.45; }
+.notif-text i { font-style: normal; color: var(--text-secondary); }
+.notif-time { font-size: var(--text-2xs); color: var(--text-muted); }

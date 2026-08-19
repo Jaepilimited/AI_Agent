@@ -287,30 +287,13 @@
   // ===== Helpers =====
   function _escHtml(s) { var d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
 
-  var _ANSWER_LOADING_LABELS = {
-    direct: "생각하는 중",
-    bigquery: "데이터 확인 중",
-    notion: "관련 문서 찾는 중",
-    cs: "제품 정보 확인 중",
-    gws: "Google 자료 확인 중",
-    multi: "여러 자료 종합 중"
-  };
+  function _renderAnswerLoading(target, route, progress) {
+    if (!window.CellaAnswerLoading) return null;
+    return window.CellaAnswerLoading.render(target, route, progress == null ? 15 : progress);
+  }
 
-  function _renderAnswerLoading(target, route) {
-    if (!target) return;
-    var indicator = target.classList && target.classList.contains("typing-indicator")
-      ? target
-      : target.querySelector(".typing-indicator");
-    if (!indicator) return;
-
-    var label = _ANSWER_LOADING_LABELS[route] || _ANSWER_LOADING_LABELS.direct;
-    indicator.className = "typing-indicator answer-loading";
-    indicator.setAttribute("role", "status");
-    indicator.setAttribute("aria-live", "polite");
-    indicator.setAttribute("aria-label", label);
-    indicator.innerHTML =
-      '<span class="answer-loading-mark" aria-hidden="true"></span>' +
-      '<span class="answer-loading-label">' + label + '</span>';
+  function _destroyAnswerLoading(target) {
+    if (window.CellaAnswerLoading) window.CellaAnswerLoading.destroy(target);
   }
 
   // ===== Confirm Delete Dialog =====
@@ -1114,6 +1097,7 @@
 
     // System Status drawer
     document.getElementById("btn-system-status").addEventListener("click", openStatusDrawer);
+    initNotifications();
     document.getElementById("status-drawer-close").addEventListener("click", closeStatusDrawer);
     document.getElementById("skin-status-overlay").addEventListener("click", closeStatusDrawer);
     // Admin drawer
@@ -1881,6 +1865,9 @@
         signal: currentAbortController.signal,
       });
 
+      // The server accepted the request and opened the response stream.
+      _renderAnswerLoading(contentEl, _preRoute, 35);
+
       var reader = response.body.getReader();
       var decoder = new TextDecoder();
       var buffer = "";
@@ -1914,7 +1901,7 @@
                 if (srcParts[1]) detectedSourceLabel = srcParts[1];
                 // Replace the initial state with the server-confirmed route.
                 var typingEl = aiMsgEl.querySelector(".typing-indicator");
-                _renderAnswerLoading(typingEl, detectedSource);
+                _renderAnswerLoading(typingEl, detectedSource, 60);
                 var stripped = delta.content.replace(/<!-- source:[\w:+\s\u0080-\uFFFF]+? -->/, "");
                 if (stripped) { _S.queue.push(stripped); pushedContent = true; }
               } else {
@@ -1935,7 +1922,10 @@
               // removed on the same tick it was set.
               if (pushedContent) {
                 var typing = aiMsgEl.querySelector(".typing-indicator");
-                if (typing) typing.remove();
+                if (typing) {
+                  _destroyAnswerLoading(typing);
+                  typing.remove();
+                }
                 if (!_S.running) _startTokenDrain(contentEl);
               }
             }
@@ -1946,7 +1936,10 @@
       if (e.name === "AbortError") {
         _stopTokenDrain();  // Stop token drain to prevent freeze
         var typing = aiMsgEl.querySelector(".typing-indicator");
-        if (typing) typing.remove();
+        if (typing) {
+          _destroyAnswerLoading(typing);
+          typing.remove();
+        }
         aiMsgEl.classList.remove("streaming");
         _resetSendBtn();
         isStreaming = false;
@@ -1979,7 +1972,10 @@
     _stopTokenDrain();
 
     var typing = aiMsgEl.querySelector(".typing-indicator");
-    if (typing) typing.remove();
+    if (typing) {
+      _destroyAnswerLoading(typing);
+      typing.remove();
+    }
 
     // Remove streaming cursor
     aiMsgEl.classList.remove("streaming");
@@ -2933,6 +2929,93 @@
   }
 
   // ===== System Status Drawer =====
+
+  // ── 알림 (공유받은 보고서) ──────────────────────────────────────────────
+  // 메일이 나가지 않는 동안(SMTP 차단) 앱 안에서 알린다. 대상 판정은 서버가 하고
+  // 프론트는 그린다 — 여기서 사용자 id 를 다루지 않는다.
+  var _notifTimer = null;
+
+  function _timeAgo(iso) {
+    if (!iso) return "";
+    var t = new Date(iso).getTime();
+    if (isNaN(t)) return "";
+    var m = Math.floor((Date.now() - t) / 60000);
+    if (m < 1) return "방금";
+    if (m < 60) return m + "분 전";
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + "시간 전";
+    return Math.floor(h / 24) + "일 전";
+  }
+
+  function renderNotifBadge(n) {
+    var b = document.getElementById("notif-badge");
+    if (!b) return;
+    if (n > 0) { b.textContent = n > 99 ? "99+" : String(n); b.style.display = ""; }
+    else { b.style.display = "none"; }
+  }
+
+  async function pollNotifications(render) {
+    try {
+      var r = await fetch("/api/notifications", { credentials: "same-origin" });
+      if (!r.ok) return;
+      var data = await r.json();
+      renderNotifBadge(data.unseen || 0);
+      if (render) renderNotifList(data.items || []);
+    } catch (e) { /* 알림 실패가 채팅을 막지 않는다 */ }
+  }
+
+  function renderNotifList(items) {
+    var box = document.getElementById("notif-items");
+    if (!box) return;
+    if (!items.length) {
+      box.innerHTML = '<div class="notif-empty">새 알림이 없습니다.</div>';
+      return;
+    }
+    var html = "";
+    items.forEach(function (it) {
+      html += '<a class="notif-item' + (it.seen ? "" : " unseen") + '" href="' +
+        _escape(it.url) + '" target="_blank" rel="noopener">' +
+        '<span class="notif-dot"></span>' +
+        '<span class="notif-body">' +
+          '<span class="notif-text"><b>' + _escape(it.from_name) + '</b>님이 ' +
+          '<i>' + _escape(it.title) + '</i> 보고서를 공유했습니다</span>' +
+          '<span class="notif-time">' + _timeAgo(it.created_at) + '</span>' +
+        '</span></a>';
+    });
+    box.innerHTML = html;
+  }
+
+  function openNotifDrawer() {
+    pollNotifications(true);
+    document.getElementById("notif-overlay").className = "open";
+    var d = document.getElementById("notif-drawer");
+    d.classList.remove("closed"); d.classList.add("open");
+  }
+
+  function closeNotifDrawer() {
+    document.getElementById("notif-overlay").className = "closed";
+    var d = document.getElementById("notif-drawer");
+    d.classList.remove("open"); d.classList.add("closed");
+    pollNotifications(false);   // 보고서를 열었으면 배지가 줄어든다
+  }
+
+  function initNotifications() {
+    var btn = document.getElementById("btn-notifications");
+    if (!btn) return;
+    btn.addEventListener("click", openNotifDrawer);
+    document.getElementById("notif-drawer-close").addEventListener("click", closeNotifDrawer);
+    document.getElementById("notif-overlay").addEventListener("click", closeNotifDrawer);
+    document.getElementById("notif-mark-all").addEventListener("click", async function () {
+      try {
+        await fetch("/api/notifications/seen", { method: "POST", credentials: "same-origin" });
+      } catch (e) { /* 실패해도 다음 폴링이 맞춘다 */ }
+      pollNotifications(true);
+    });
+    pollNotifications(false);
+    if (_notifTimer) clearInterval(_notifTimer);
+    _notifTimer = setInterval(function () { pollNotifications(false); }, 300000);  // 5분
+  }
+
   function openStatusDrawer() {
     pollSystemStatus(); // Refresh on open
     document.getElementById("skin-status-overlay").className = "open";

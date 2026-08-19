@@ -65,16 +65,33 @@ CREATE TABLE IF NOT EXISTS report_shares (
     user_id     INT NOT NULL,
     shared_by   INT NOT NULL,
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    seen_at     DATETIME NULL,
     UNIQUE KEY uk_report_user (report_id, user_id),
     INDEX idx_user (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 
 
+def ensure_seen_column() -> None:
+    """이미 만들어진 report_shares 에 seen_at 을 붙인다 (idempotent).
+
+    알림은 **별도 테이블을 두지 않는다** — 공유 사실은 이미 이 표에 있다.
+    사본을 만들면 공유 해제·삭제와 동기화가 어긋난다.
+    """
+    try:
+        rows = fetch_all("SHOW COLUMNS FROM report_shares LIKE 'seen_at'")
+        if not rows:
+            execute("ALTER TABLE report_shares ADD COLUMN seen_at DATETIME NULL")
+            logger.info("report_shares_seen_at_added")
+    except Exception as e:
+        logger.debug("report_shares_alter_skip", error=str(e)[:120])
+
+
 def ensure_report_tables() -> None:
     try:
         execute(_DDL)
         execute(_SHARE_DDL)
+        ensure_seen_column()
         os.makedirs(REPORT_DIR, exist_ok=True)
     except Exception as e:  # 기동을 막지 않는다
         logger.debug("report_ddl_skip", error=str(e)[:120])
@@ -313,3 +330,49 @@ def purge_older_than(days: int = 90) -> int:
                 "WHERE r.id IS NULL OR r.created_at < DATE_SUB(NOW(), INTERVAL %s DAY)", (days,))
         execute("DELETE FROM reports WHERE created_at < DATE_SUB(NOW(), INTERVAL %s DAY)", (days,))
     return len(rows)
+
+
+# ── 알림 (공유받은 보고서) ───────────────────────────────────────────────────
+#
+# 알림은 저장되는 것이 아니라 **파생값**이다 — "나에게 공유됐는데 아직 안 본 것".
+# 그래서 공유를 해제하면 알림도 함께 사라진다 (행이 없어지므로).
+
+def unseen_count(user_id: int) -> int:
+    row = fetch_one(
+        "SELECT COUNT(*) AS c FROM report_shares s JOIN reports r ON r.id = s.report_id "
+        "WHERE s.user_id = %s AND s.seen_at IS NULL",
+        (user_id,))
+    return int(row["c"]) if row else 0
+
+
+def list_notifications(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
+    """내게 온 알림만. 판정은 서버에서 user_id 로 한다 (프론트 값을 믿지 않는다)."""
+    return fetch_all(
+        f"SELECT s.report_id, s.created_at, s.seen_at, r.title, r.question, "
+        f"{_NAME} AS from_name "
+        "FROM report_shares s "
+        "JOIN reports r ON r.id = s.report_id "
+        "JOIN users u ON u.id = s.shared_by "
+        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "WHERE s.user_id = %s ORDER BY s.created_at DESC LIMIT %s",
+        (user_id, limit),
+    )
+
+
+def mark_seen(report_id: int, user_id: int) -> bool:
+    """그 사람이 그 보고서를 **열었을 때** 읽음으로 만든다.
+
+    목록에서 눌렀든 채팅 링크로 열었든 주소를 직접 쳤든 같은 자리에서 처리한다 —
+    읽음 처리를 여러 곳에 흩으면 한 경로에서만 배지가 안 사라진다.
+    """
+    n = execute(
+        "UPDATE report_shares SET seen_at = NOW() "
+        "WHERE report_id = %s AND user_id = %s AND seen_at IS NULL",
+        (report_id, user_id))
+    return bool(n)
+
+
+def mark_all_seen(user_id: int) -> int:
+    return int(execute(
+        "UPDATE report_shares SET seen_at = NOW() "
+        "WHERE user_id = %s AND seen_at IS NULL", (user_id,)) or 0)
