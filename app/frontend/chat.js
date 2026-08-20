@@ -3024,6 +3024,9 @@
 
   function openNotifDrawer() {
     pollNotifications(true);
+    // 알림함을 연 것 = 브리핑을 본 것. 공유·붐따는 각자의 지점에서 따로 찍힌다
+    fetch("/api/notifications/viewed", { method: "POST", credentials: "same-origin" })
+      .catch(function () { /* 기록 실패가 화면을 막지 않는다 */ });
     document.getElementById("notif-overlay").className = "open";
     var d = document.getElementById("notif-drawer");
     d.classList.remove("closed"); d.classList.add("open");

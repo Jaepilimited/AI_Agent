@@ -207,3 +207,20 @@ def test_effect_stats_reports_seen_and_conversion(monkeypatch):
     st = briefing.effect_stats(7)
     assert st["seen_pct"] == 40.0            # 10건 중 4건 열람
     assert st["conversion_pct"] == 30.0      # 10명 중 3명이 같은 날 질문
+
+
+def test_opening_the_drawer_counts_as_viewing_a_briefing():
+    """⛔ 열람이 '모두 읽음' 버튼에서만 찍히면 **열람률은 구조적으로 0** 이 된다.
+
+    보고서는 열 때, 붐따는 회신 토스트에서 찍히는데 브리핑만 기록 경로가 없었다
+    (2026-08-21 실측: 발송 109건 · 열람 0건). 측정이 고장 나면 개선 방향도 못 정한다.
+    ⚠️ 브리핑만 처리한다 — 공유·붐따까지 지우면 안 읽은 알림이 사라진다.
+    """
+    import inspect
+
+    from app.api import notifications_api
+
+    src = inspect.getsource(notifications_api.mark_viewed)
+    assert "briefing.mark_seen" in src
+    assert "store.mark_all_seen" not in src
+    assert "feedback" not in src.split('"""')[2]      # 본문에서 다른 종류를 건드리지 않는다

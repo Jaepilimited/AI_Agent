@@ -128,3 +128,16 @@ async def set_briefing_setting(off: bool = True,
     """
     await asyncio.to_thread(briefing.set_opt_out, user.id, off)
     return {"opted_out": off}
+
+
+@router.post("/viewed")
+async def mark_viewed(user: User = Depends(get_current_user)) -> dict:
+    """알림함을 **연 것** 을 브리핑 열람으로 기록한다.
+
+    ⛔ 이걸 넣기 전에는 브리핑 열람이 "모두 읽음" 버튼을 눌러야만 찍혔다. 보고서는 열면
+       찍히고 붐따는 회신 토스트에서 찍히는데(36/103), 브리핑만 기록 경로가 없었다 —
+       **열람률이 구조적으로 0 에 수렴한다.** 측정이 고장 나면 개선 방향도 정할 수 없다.
+    ⚠️ 브리핑만 처리한다. 공유·붐따까지 지우면 "읽지도 않았는데 배지가 사라졌다" 가 된다.
+    """
+    n = await asyncio.to_thread(briefing.mark_seen, user.id)
+    return {"marked": n}
