@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config import get_settings
+from app.config import get_settings, validate_jwt_secret
 
 logger = structlog.get_logger(__name__)
 
@@ -41,7 +41,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         if token:
             try:
                 settings = get_settings()
-                payload = pyjwt.decode(token, settings.jwt_secret_key, algorithms=["HS256"])
+                payload = pyjwt.decode(
+                    token,
+                    validate_jwt_secret(settings.jwt_secret_key),
+                    algorithms=["HS256"],
+                )
                 user_email = payload.get("email", "")
                 request.state.user_id = payload.get("user_id", "")
             except Exception:

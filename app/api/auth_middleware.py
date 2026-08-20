@@ -7,7 +7,7 @@ from typing import Optional
 import jwt
 from fastapi import HTTPException, Request
 
-from app.config import ALL_MODELS, get_settings
+from app.config import ALL_MODELS, get_settings, validate_jwt_secret
 from app.db.mariadb import fetch_one
 from app.db.models import User
 
@@ -28,7 +28,11 @@ def _extract_user_id(request: Request) -> int:
 
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[_ALGORITHM])
+        payload = jwt.decode(
+            token,
+            validate_jwt_secret(settings.jwt_secret_key),
+            algorithms=[_ALGORITHM],
+        )
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:

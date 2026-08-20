@@ -90,26 +90,79 @@ def _strip_assistant_noise(content: str) -> str:
     return content
 
 
-_DIRECT_HISTORY_CAP = 30  # 최근 15턴 — 참조형 질문("아까 그거") 안전 마진
+_DIRECT_HISTORY_CHAR_BUDGET = 60_000
+_DIRECT_HISTORY_ANCHOR_COUNT = 2
+_DIRECT_HISTORY_ANCHOR_CHAR_CAP = 2_000
+
+
+def _truncate_history_content(content, max_chars: int):
+    """Trim textual message content without mutating the original message."""
+    if isinstance(content, str):
+        return content[:max_chars]
+    if not isinstance(content, list):
+        return str(content)[:max_chars]
+
+    remaining = max_chars
+    truncated = []
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "text":
+            if remaining <= 0:
+                continue
+            text = str(part.get("text", ""))[:remaining]
+            truncated.append({**part, "text": text})
+            remaining -= len(text)
+        else:
+            truncated.append(part)
+    return truncated
 
 
 def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
     """Strip chart/SQL noise from assistant messages before sending to LLM history.
 
-    Caps to the most recent _DIRECT_HISTORY_CAP messages to bound per-turn
-    token cost on long sessions; full text (no 1500-char truncation) is kept
-    for messages within the cap so Claude can still track conversation
-    accurately within that window.
+    Short messages are not discarded merely because a conversation has many
+    turns. Only histories over a content-size budget are compacted; in that
+    case the opening user/assistant anchor and the newest messages are kept.
     """
-    capped = messages[-_DIRECT_HISTORY_CAP:] if len(messages) > _DIRECT_HISTORY_CAP else messages
     cleaned = []
-    for msg in capped:
+    for msg in messages:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role in ("assistant", "model") and isinstance(content, str):
             content = _strip_assistant_noise(content)
         cleaned.append({**msg, "content": content})
-    return cleaned
+
+    total_chars = sum(len(_content_to_text(msg.get("content", ""))) for msg in cleaned)
+    if total_chars <= _DIRECT_HISTORY_CHAR_BUDGET:
+        return cleaned
+
+    anchor_count = min(_DIRECT_HISTORY_ANCHOR_COUNT, len(cleaned))
+    anchors = []
+    for msg in cleaned[:anchor_count]:
+        anchors.append({
+            **msg,
+            "content": _truncate_history_content(
+                msg.get("content", ""), _DIRECT_HISTORY_ANCHOR_CHAR_CAP
+            ),
+        })
+
+    used_chars = sum(len(_content_to_text(msg.get("content", ""))) for msg in anchors)
+    remaining = max(0, _DIRECT_HISTORY_CHAR_BUDGET - used_chars)
+    newest = []
+    for msg in reversed(cleaned[anchor_count:]):
+        content = msg.get("content", "")
+        content_chars = len(_content_to_text(content))
+        if content_chars <= remaining:
+            newest.append(msg)
+            remaining -= content_chars
+            continue
+        if remaining > 0:
+            newest.append({
+                **msg,
+                "content": _truncate_history_content(content, remaining),
+            })
+        break
+
+    return anchors + list(reversed(newest))
 
 
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:

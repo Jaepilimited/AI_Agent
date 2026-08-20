@@ -12,6 +12,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 #    `/v1/models` 가 내주는 목록과 대화가 기록하는 모델명이 서로 달랐다
 #    (2026-08-18 정리). 같은 값을 여러 곳에 적으면 한쪽만 고쳐진다.
 ALL_MODELS = "skin1004-Analysis"
+JWT_SECRET_MIN_BYTES = 32
+_INSECURE_JWT_SECRETS = {"skin1004-ai-secret-change-me"}
+
+
+def validate_jwt_secret(secret: str) -> str:
+    """Return a usable JWT key or fail before the application can serve traffic."""
+    normalized = (secret or "").strip()
+    if (
+        normalized in _INSECURE_JWT_SECRETS
+        or len(normalized.encode("utf-8")) < JWT_SECRET_MIN_BYTES
+    ):
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be explicitly set to at least 32 bytes "
+            "and must not use the public default"
+        )
+    return normalized
 
 
 class Settings(BaseSettings):
@@ -83,7 +99,7 @@ class Settings(BaseSettings):
     chart_base_url: str = ""
 
     # Auth (custom frontend)
-    jwt_secret_key: str = "skin1004-ai-secret-change-me"
+    jwt_secret_key: str = ""
     sqlite_db_path: str = "C:/Users/DB_PC/.open-webui/data/skin1004_chat.db"
 
     # Pseudonymization salt for anon_id derivation (hmac-sha256(salt, user_id)[:16]).

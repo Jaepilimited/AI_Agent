@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
-from app.config import ALL_MODELS, get_settings
+from app.config import ALL_MODELS, get_settings, validate_jwt_secret
 from app.db.mariadb import fetch_all, fetch_one, execute, execute_lastid
 from app.db.models import User
 
@@ -160,7 +160,7 @@ def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: s
         "brand_filter": brand_filter,
         "role": role,
     }
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=_ALGORITHM)
+    return jwt.encode(payload, validate_jwt_secret(settings.jwt_secret_key), algorithm=_ALGORITHM)
 
 
 def _lookup_brand_filter(user_id: int) -> str:

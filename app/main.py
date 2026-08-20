@@ -33,7 +33,7 @@ from app.api.middleware import setup_middleware
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
 from app.api.routes import router
-from app.config import get_settings
+from app.config import get_settings, validate_jwt_secret
 from app.core.log_scrub import scrub_identity_processor
 from app.db.mariadb import fetch_one, execute
 
@@ -73,6 +73,7 @@ _STATIC_DIR = _BASE_DIR / "static"
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
+    validate_jwt_secret(settings.jwt_secret_key)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
