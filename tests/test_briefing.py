@@ -177,3 +177,33 @@ def test_leavers_are_excluded():
     """퇴사자에게 매일 매출 브리핑을 보내지 않는다."""
     import inspect
     assert "퇴사" in inspect.getsource(briefing.run_daily)
+
+
+# ── 끌 수 있어야 하고, 효과를 볼 수 있어야 한다 ─────────────────────────────
+
+def test_opted_out_users_are_excluded():
+    """⛔ 끌 수 없는 알림은 결국 **전체 알림을 무시하게** 만든다 —
+    그러면 공유·붐따 회신까지 함께 묻힌다."""
+    import inspect
+    src = inspect.getsource(briefing.run_daily)
+    assert "briefing_opt_out" in src
+
+
+def test_opt_out_is_per_user(monkeypatch):
+    calls = []
+    monkeypatch.setattr(briefing, "fetch_one", lambda *a, **k: {"o": 1})
+    monkeypatch.setattr(briefing, "execute", lambda sql, p=None: calls.append((sql, p)))
+    briefing.set_opt_out(7, True)
+    sql, params = calls[-1]
+    assert "briefing_opt_out" in sql and "WHERE id = %s" in sql
+    assert params == (1, 7)
+    assert briefing.is_opted_out(7) is True
+
+
+def test_effect_stats_reports_seen_and_conversion(monkeypatch):
+    """'자주 쓰게 만든다' 가 목적이면 **효과를 숫자로** 볼 수 있어야 한다."""
+    seq = [{"c": 10, "seen": 4}, {"c": 3}, {"c": 10}]
+    monkeypatch.setattr(briefing, "fetch_one", lambda *a, **k: seq.pop(0))
+    st = briefing.effect_stats(7)
+    assert st["seen_pct"] == 40.0            # 10건 중 4건 열람
+    assert st["conversion_pct"] == 30.0      # 10명 중 3명이 같은 날 질문

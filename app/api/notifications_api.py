@@ -110,3 +110,21 @@ async def mark_all_seen(user: User = Depends(get_current_user)) -> dict:
     await asyncio.to_thread(briefing.mark_seen, user.id)
     logger.info("notifications_marked_seen", user_id=user.id, shares=n)
     return {"marked": n}
+
+
+@router.get("/briefing-setting")
+async def briefing_setting(user: User = Depends(get_current_user)) -> dict:
+    off = await asyncio.to_thread(briefing.is_opted_out, user.id)
+    return {"opted_out": off}
+
+
+@router.post("/briefing-setting")
+async def set_briefing_setting(off: bool = True,
+                               user: User = Depends(get_current_user)) -> dict:
+    """브리핑 끄기/켜기.
+
+    ⛔ 끌 수 없는 알림은 결국 **전체 알림을 무시하게** 만든다 — 그러면 공유·붐따 회신까지
+       함께 묻힌다. 본인 설정만 바꾼다 (user_id 는 서버가 JWT 에서 정한다).
+    """
+    await asyncio.to_thread(briefing.set_opt_out, user.id, off)
+    return {"opted_out": off}

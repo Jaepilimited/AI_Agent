@@ -696,8 +696,11 @@ async def _briefing_job():
         with track_job("briefing_daily") as jr:
             from app.core.briefing import run_daily
             result = await asyncio.to_thread(run_daily)
+            from app.core.briefing import effect_stats
+            eff = await asyncio.to_thread(effect_stats)
             jr.set_note(f"기준일 {result.get('base')} · 생성 {result.get('made')}건 "
-                        f"· 변화없음 {result.get('skipped')}건 · 메일 {result.get('mailed')}건")
+                        f"· 변화없음 {result.get('skipped')}건 · 메일 {result.get('mailed')}건 "
+                        f"| 최근7일 열람 {eff['seen_pct']}% · 같은날 질문 {eff['conversion_pct']}%")
         logger.info("briefing_done", **result)
     except Exception as e:
         logger.error("briefing_failed", error=str(e))

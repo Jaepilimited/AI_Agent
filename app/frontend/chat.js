@@ -3042,6 +3042,18 @@
     btn.addEventListener("click", openNotifDrawer);
     document.getElementById("notif-drawer-close").addEventListener("click", closeNotifDrawer);
     document.getElementById("notif-overlay").addEventListener("click", closeNotifDrawer);
+    var offBtn = document.getElementById("notif-briefing-off");
+    if (offBtn) {
+      offBtn.addEventListener("click", async function () {
+        var off = offBtn.getAttribute("data-off") !== "1";
+        try {
+          await fetch("/api/notifications/briefing-setting?off=" + off,
+                      { method: "POST", credentials: "same-origin" });
+        } catch (e) { /* 실패해도 다음에 다시 누르면 된다 */ }
+        offBtn.setAttribute("data-off", off ? "1" : "0");
+        offBtn.textContent = off ? "브리핑 켜기" : "브리핑 끄기";
+      });
+    }
     document.getElementById("notif-mark-all").addEventListener("click", async function () {
       try {
         await fetch("/api/notifications/seen", { method: "POST", credentials: "same-origin" });

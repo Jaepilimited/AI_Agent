@@ -302,6 +302,7 @@ def run_daily() -> Dict[str, Any]:
     from app.core.bigquery import BigQueryClient
 
     ensure_tables()
+    ensure_optout_column()
     s = get_settings()
     bq = BigQueryClient()
     table = s.sales_table_full_path
@@ -317,7 +318,8 @@ def run_daily() -> Dict[str, Any]:
         "SELECT u.id, u.display_name, COALESCE(a.email, u.email) AS email, "
         "       COALESCE(a.department, '') AS department "
         "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
-        "WHERE u.is_active = 1 AND COALESCE(a.department,'') NOT LIKE %s", ("%퇴사%",)) or []
+        "WHERE u.is_active = 1 AND COALESCE(u.briefing_opt_out, 0) = 0 "
+        "  AND COALESCE(a.department,'') NOT LIKE %s", ("%퇴사%",)) or []
 
     try:
         from app.core.value_lists import _cached
@@ -354,3 +356,62 @@ def run_daily() -> Dict[str, Any]:
                 skipped=skipped, mailed=mailed, users=len(users))
     return {"base": str(base), "made": made, "skipped": skipped,
             "mailed": mailed, "users": len(users)}
+
+
+# ── 수신 거부 ────────────────────────────────────────────────────────────────
+# ⛔ 끌 수 없는 알림은 결국 **전체 알림을 무시하게** 만든다. 브리핑이 매일 배지를
+#    띄우는 동안 공유·붐따 회신까지 함께 묻히면, 정작 답을 기다리던 사람이 못 본다.
+
+def ensure_optout_column() -> None:
+    try:
+        if not fetch_one(
+            "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+            "AND COLUMN_NAME = 'briefing_opt_out'"):
+            execute("ALTER TABLE users ADD COLUMN briefing_opt_out TINYINT NOT NULL DEFAULT 0")
+            logger.info("users_briefing_opt_out_added")
+    except Exception as e:
+        logger.debug("optout_column_skip", error=str(e)[:120])
+
+
+def set_opt_out(user_id: int, off: bool) -> None:
+    ensure_optout_column()
+    execute("UPDATE users SET briefing_opt_out = %s WHERE id = %s",
+            (1 if off else 0, int(user_id)))
+    logger.info("briefing_opt_out_changed", user_id=user_id, off=off)
+
+
+def is_opted_out(user_id: int) -> bool:
+    ensure_optout_column()
+    r = fetch_one("SELECT briefing_opt_out o FROM users WHERE id = %s", (int(user_id),))
+    return bool(r and r.get("o"))
+
+
+# ── 효과 측정 ────────────────────────────────────────────────────────────────
+# ⛔ "자주 쓰게 만든다" 가 목적인데 측정이 없으면 성공·실패를 알 수 없다.
+#    감으로 "쓰는 것 같다" 고 말하게 된다 — 이 저장소가 피해 온 방식이다.
+
+def effect_stats(days: int = 7) -> Dict[str, Any]:
+    """보낸 것 대비 **열어봤는가**, 그리고 **질문으로 이어졌는가**."""
+    sent = fetch_one(
+        "SELECT COUNT(*) c, SUM(seen_at IS NOT NULL) seen FROM daily_briefings "
+        "WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)", (int(days),)) or {}
+    total = int(sent.get("c") or 0)
+    seen = int(sent.get("seen") or 0)
+    # 브리핑을 받은 날, 그 사람이 질문도 했는가 (전환)
+    conv = fetch_one(
+        "SELECT COUNT(DISTINCT b.user_id) c FROM daily_briefings b "
+        "JOIN users u ON u.id = b.user_id "
+        "JOIN audit_logs a ON a.user_email = u.email "
+        "  AND DATE(a.created_at) = DATE(b.created_at) "
+        "WHERE b.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)", (int(days),)) or {}
+    people = fetch_one(
+        "SELECT COUNT(DISTINCT user_id) c FROM daily_briefings "
+        "WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)", (int(days),)) or {}
+    n_people = int(people.get("c") or 0)
+    return {
+        "days": days, "sent": total, "seen": seen,
+        "seen_pct": round(seen / total * 100, 1) if total else 0.0,
+        "people": n_people, "asked_same_day": int(conv.get("c") or 0),
+        "conversion_pct": round(int(conv.get("c") or 0) / n_people * 100, 1) if n_people else 0.0,
+    }

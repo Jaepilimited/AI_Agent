@@ -783,7 +783,7 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 ## 캐시 버전
 
 - CSS/JS 변경 시 `chat.html`의 `?v=` 번호 증가 필수
-- 현재: style.css?v=167, chat.js?v=254 (2026-08-19 기준 — 올릴 때 이 줄도 같이 갱신할 것)
+- 현재: style.css?v=167, chat.js?v=255 (2026-08-19 기준 — 올릴 때 이 줄도 같이 갱신할 것)
 - `login.html`·`eval_review.html` 은 별도 번호를 쓴다. 해당 화면 CSS 를 건드렸으면 그쪽도 올릴 것
 - ⚠️ **이 줄이 실제와 어긋나면 테스트가 실패한다** (`test_cache_version_doc_matches_reality`).
   실제로 한 번 어긋나 있었다 — 문서가 한 칸 뒤처지면 다음 사람이 잘못된 번호에서 올린다
