@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
+from app.config import get_settings
 from app.db.models import User
 from app.reports import registry, service, share_ui, store
 
@@ -94,6 +95,26 @@ async def add_shares(report_id: int, req: ShareRequest,
         if await asyncio.to_thread(store.share_add, report_id, user.id, int(uid)):
             added += 1
     rows = await asyncio.to_thread(store.share_list, report_id, user.id)
+
+    # 앱 알림은 이미 걸렸다. 메일은 **길이 열려 있을 때만** 추가로 나간다 (기본 꺼짐).
+    # ⚠️ 메일이 실패해도 공유는 성공이다 — 여기서 예외가 나면 안 된다
+    if added and rows:
+        try:
+            from app.core import mailer
+            if mailer.is_enabled():
+                meta = await asyncio.to_thread(store.get_for_user, report_id, user.id)
+                title = (meta or {}).get("title") or "보고서"
+                base = (get_settings().public_base_url or "").rstrip("/")
+                for r in rows[-added:]:
+                    if r.get("email"):
+                        await asyncio.to_thread(
+                            mailer.report_shared, r["email"],
+                            user.display_name or user.email, title,
+                            f"{base}/api/reports/{report_id}")
+        except Exception as e:
+            logger.warning("share_mail_failed", report_id=report_id,
+                           error=f"{type(e).__name__}: {str(e)[:200]}")
+
     if not rows and not added:
         # 소유자가 아니면 아무것도 걸리지 않는다 — 존재 여부를 알려주지 않는다
         raise HTTPException(status_code=404, detail="보고서를 찾을 수 없습니다.")

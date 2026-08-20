@@ -384,6 +384,17 @@ def get_safety_status() -> dict:
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}
 
+    # 메일 발송 경로 — 열려 있는지 화면에서 바로 보이게 한다. 꺼져 있으면 '대기'
+    try:
+        from app.core import mailer as _mailer
+        services["메일 발송"] = {
+            "status": "ok" if _mailer.is_enabled() else "updating",
+            "detail": _mailer.status(),
+            "reason": "IT 에 SMTP 릴레이 개방을 요청한 상태입니다 (앱 알림은 정상)",
+        }
+    except Exception as _e:
+        services["메일 발송"] = {"status": "error", "detail": str(_e)[:40]}
+
     # 보고서 — 데이터소스가 아니라 산출물이지만, **언제 만들어지는지**를 여기서 알린다.
     # 보고서는 조회 8~12회에 10~30초가 드는 특수 경로라 명시했을 때만 만든다
     # (2026-08-13 규칙). 그 조건을 사용자가 볼 수 있어야 "왜 안 만들어지지"가 없다.

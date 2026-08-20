@@ -104,6 +104,26 @@ def set_status(feedback_id: int, status: str, who: str,
         "handled_at = " + ("NOW()" if done else "NULL") + " WHERE id = %s",
         (status, who, note, int(feedback_id)))
     logger.info("feedback_status_changed", id=feedback_id, status=status, who=who)
+
+    # 처리를 끝냈으면 제보자에게 메일로도 알린다 — **길이 열려 있을 때만** (기본 꺼짐).
+    # 앱 알림(사이드바)은 이미 뜬다. 메일은 "답이 돌아온다"를 확실히 하는 보조 경로다.
+    # ⚠️ 메일 실패가 상태 변경을 되돌리면 안 된다 — 여기서 예외를 밖으로 내지 않는다
+    if done:
+        try:
+            from app.core import mailer
+            if mailer.is_enabled():
+                row = fetch_one(
+                    "SELECT COALESCE(a.email, u.email) AS email, f.comment "
+                    "FROM message_feedback f JOIN users u ON u.id = f.user_id "
+                    "LEFT JOIN ad_users a ON a.id = u.ad_user_id WHERE f.id = %s",
+                    (int(feedback_id),))
+                if row and row.get("email"):
+                    label = {STATUS_DONE: "해결됨", STATUS_WONTFIX: "고치지 않음"}[status]
+                    mailer.feedback_handled(
+                        row["email"], (row.get("comment") or "(내용 없음)")[:80], label, note or "")
+        except Exception as e:
+            logger.warning("feedback_mail_failed", id=feedback_id,
+                           error=f"{type(e).__name__}: {str(e)[:200]}")
     return True
 
 

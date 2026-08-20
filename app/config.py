@@ -115,6 +115,20 @@ class Settings(BaseSettings):
     # 결과는 Admin > 자가 점검 탭과 사이드바 배지로 확인한다.
     self_check_notify: bool = False
 
+    # 메일 발송 (사내 SMTP 릴레이) — 기본 꺼짐.
+    # ⛔ 2026-08-19 실측: WAS·APP 양쪽에서 SMTP 25/587 차단, 로컬 MTA 없음, 프록시는
+    #    HTTP 전용이라 릴레이 불가. IT 가 방화벽을 열고 발신 계정을 주면 아래 네 줄만
+    #    .env 에 넣고 재기동한다 — 코드 배포 없이 켜진다.
+    # 메일 본문에 넣을 접속 주소 (사내). 비어 있으면 상대 경로만 나간다
+    public_base_url: str = "http://10.1.100.5"
+    mail_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "no-reply@cravercorp.com"
+    smtp_starttls: bool = True
+
     # CORS
     cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:8000,http://172.16.1.250:3000,http://172.16.1.250:3001"
     # Cookie
