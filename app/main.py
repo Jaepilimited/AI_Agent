@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_model_rights_job, "cron", hour=4, minute=30, id="model_rights_sync_daily")
             # 붐따 처리함 — 자가 점검(07:30) 뒤에 둔다. 밤새 들어온 것을 아침에 올린다
             _scheduler.add_job(_feedback_digest_job, "cron", hour=8, minute=0, id="feedback_digest_daily")
+            _scheduler.add_job(_briefing_job, "cron", hour=8, minute=20, id="briefing_daily")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
@@ -680,6 +681,26 @@ async def _feedback_digest_job():
         logger.info("feedback_digest_done", **result)
     except Exception as e:
         logger.error("feedback_digest_failed", error=str(e))
+
+
+async def _briefing_job():
+    """매일 08:20: 개인화 데일리 브리핑 — 사용자가 묻지 않아도 먼저 찾아간다.
+
+    ⛔ 이 잡이 없으면 Cella 는 "궁금할 때만 찾아가는 도구" 로 남는다. 실측(2026-08-20):
+       30일 활성 29명 중 **하루만 쓴 사람이 11명(38%)**. 열 이유를 매일 만드는 것이
+       사용 빈도를 올리는 유일한 길이다.
+    ⚠️ 변화가 없거나 어제와 같은 이야기면 **만들지 않는다** — 매일 뜨는 알림은 무시당한다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("briefing_daily") as jr:
+            from app.core.briefing import run_daily
+            result = await asyncio.to_thread(run_daily)
+            jr.set_note(f"기준일 {result.get('base')} · 생성 {result.get('made')}건 "
+                        f"· 변화없음 {result.get('skipped')}건 · 메일 {result.get('mailed')}건")
+        logger.info("briefing_done", **result)
+    except Exception as e:
+        logger.error("briefing_failed", error=str(e))
 
 
 async def _schema_docs_job():

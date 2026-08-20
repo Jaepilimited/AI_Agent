@@ -2985,6 +2985,13 @@
         text = what + ' — <span class="notif-status ' +
                (STATUS_CLS[it.status] || "warn") + '">' + _escape(it.status_label) + "</span>";
         if (it.note) extra = '<span class="notif-note">' + _escape(it.note) + "</span>";
+      } else if (it.type === "briefing") {
+        text = '<b>오늘의 브리핑</b> ' + _escape(it.title);
+        if (it.note) extra = '<span class="notif-note">' + _escape(it.note) + "</span>";
+        if (it.follow_up) {
+          extra += '<button class="notif-ask" data-q="' + _escape(it.follow_up) + '">' +
+                   _escape(it.follow_up) + ' →</button>';
+        }
       } else {
         text = "<b>업데이트</b> " + _escape(it.title);
         if (it.note) extra = '<span class="notif-note">' + _escape(it.note) + "</span>";
@@ -2999,6 +3006,20 @@
         "</span></" + tag + ">";
     });
     box.innerHTML = html;
+    wireNotifAskButtons();
+  }
+
+  function wireNotifAskButtons() {
+    // 브리핑의 "이어서 물어보기" — 누르면 입력창에 넣고 드로어를 닫는다.
+    // ⚠️ 자동 전송하지 않는다. 사용자가 문장을 고칠 여지를 남긴다
+    document.querySelectorAll("#notif-items .notif-ask").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var input = document.querySelector("#message-input, textarea");
+        if (input) { input.value = btn.getAttribute("data-q") || ""; input.focus(); }
+        closeNotifDrawer();
+      });
+    });
   }
 
   function openNotifDrawer() {

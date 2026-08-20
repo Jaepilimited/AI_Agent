@@ -4763,3 +4763,18 @@ html.dark .db-autocomplete-dropdown {
   border-left: 2px solid var(--border);
   padding-left: 8px;
 }
+
+/* 브리핑의 "이어서 물어보기" 버튼 */
+.notif-ask {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+  text-align: left;
+  cursor: pointer;
+}
+.notif-ask:hover { background: var(--bg-hover); color: var(--text); border-color: var(--border-strong); }

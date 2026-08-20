@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.auth_middleware import get_current_user
 from app.db.models import User
-from app.core import announcements, feedback_inbox
+from app.core import announcements, briefing, feedback_inbox
 from app.reports import store
 
 logger = structlog.get_logger(__name__)
@@ -40,10 +40,11 @@ async def list_notifications(user: User = Depends(get_current_user)) -> dict:
 
     `type` 으로 구분한다. 프론트는 종류가 늘어도 같은 목록을 그린다.
     """
-    shares, feedbacks, notices = await asyncio.gather(
+    shares, feedbacks, notices, briefs = await asyncio.gather(
         asyncio.to_thread(store.list_notifications, user.id),
         asyncio.to_thread(feedback_inbox.my_feedback, user.id),
         asyncio.to_thread(announcements.for_user, user.id),
+        asyncio.to_thread(briefing.for_user, user.id),
     )
 
     items = [{
@@ -85,6 +86,17 @@ async def list_notifications(user: User = Depends(get_current_user)) -> dict:
     } for a in notices]
 
     # 안 읽은 것이 먼저, 그 안에서 최신순 — 새 소식이 옛 항목에 묻히지 않게 한다
+    # 데일리 브리핑 — 사용자가 묻지 않아도 먼저 가는 유일한 알림이다
+    items += [{
+        "type": "briefing",
+        "title": b.get("title") or "",
+        "note": (b.get("body") or "").strip(),
+        "follow_up": b.get("follow_up") or "",
+        "created_at": b["created_at"].isoformat() if b.get("created_at") else "",
+        "seen": bool(b.get("seen_at")),
+        "url": "",
+    } for b in briefs]
+
     items.sort(key=lambda i: (i["seen"], _neg(i["created_at"])))
     return {"unseen": sum(1 for i in items if not i["seen"]), "items": items}
 
@@ -95,5 +107,6 @@ async def mark_all_seen(user: User = Depends(get_current_user)) -> dict:
     n = await asyncio.to_thread(store.mark_all_seen, user.id)
     await asyncio.to_thread(feedback_inbox.mark_my_feedback_seen, user.id)
     await asyncio.to_thread(announcements.mark_seen, user.id)
+    await asyncio.to_thread(briefing.mark_seen, user.id)
     logger.info("notifications_marked_seen", user_id=user.id, shares=n)
     return {"marked": n}
