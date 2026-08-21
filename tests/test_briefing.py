@@ -224,3 +224,82 @@ def test_opening_the_drawer_counts_as_viewing_a_briefing():
     assert "briefing.mark_seen" in src
     assert "store.mark_all_seen" not in src
     assert "feedback" not in src.split('"""')[2]      # 본문에서 다른 종류를 건드리지 않는다
+
+
+# ── 2026-08-21 실제 사고: "0.0억 · −100%" 가 사용자에게 나갔다 ───────────────
+
+def test_zero_revenue_scope_never_produces_a_briefing():
+    """⛔ 실제로 나간 문구를 그대로 막는다.
+
+        "인도 최근 7일 매출 0.0억 · 직전 7일 대비 -100%"
+
+    관심 축으로 인도가 뽑혔는데 최근 7일 매출이 0원이었다. 팀 축에만 규모 하한을 걸고
+    국가 축에는 안 건 것이 원인이다. **이번 기간에 규모가 없으면 어떤 축이든 안 보낸다** —
+    직전이 컸어도(1.5억 → 0원) 마찬가지다.
+    """
+    data = {
+        "base": date(2026, 8, 18), "cur_from": date(2026, 8, 12),
+        "prev_from": date(2026, 8, 5), "prev_to": date(2026, 8, 11),
+        "by_team": {}, "countries": [],
+        "by_country": {"인도": {"now": 0.0, "prev": 1.5e8}},
+    }
+    assert briefing.compose({"kind": "country", "code": "인도", "label": "인도"}, data) is None
+
+
+def test_team_with_no_revenue_this_period_is_silent():
+    """팀도 같다 — 직전에 팔렸어도 이번 기간이 0이면 보내지 않는다."""
+    assert briefing.compose(TEAM, _data(0, 5e8)) is None
+
+
+def test_country_scope_requires_actual_revenue():
+    """자주 물었다고 매출이 있는 것은 아니다 — 축을 잡을 때 규모를 확인한다."""
+    import inspect
+    src = inspect.getsource(briefing.run_daily)
+    assert 'by_country' in src and '_MIN_SCALE_KRW' in src
+
+
+# ── "가장 눈에 띄는 변화" 는 금액으로 고른다 (2026-08-21 사용자 지적) ────────
+
+def _rows(*triples):
+    return [{"team": None, "country": c, "now_amt": n, "prev_amt": p} for c, n, p in triples]
+
+
+def test_change_is_picked_by_amount_not_by_percentage():
+    """⛔ 변화율로 고르면 작은 나라의 배수가 이긴다.
+
+    실측: 규칙이 영국 +733%(+10.8억)를 골랐지만 정작 가장 크게 움직인 것은
+    아랍에미리트 **−12.9억**(16.8억→3.9억)이었다.
+    """
+    rows = _rows(("영국", 12.3e8, 1.5e8), ("아랍에미리트", 3.9e8, 16.8e8))
+    best = briefing._top_change(rows, None, team_now=143.7e8)
+    assert best["country"] == "아랍에미리트"
+    assert best["delta"] < 0
+
+
+def test_change_must_be_material_against_the_scope():
+    """축 합계 대비 미미한 움직임은 '눈에 띄는' 것이 아니다 (5% 미만 제외)."""
+    rows = _rows(("미국", 101e8, 99e8))          # +2억, 전사 143억의 1.4%
+    assert briefing._top_change(rows, None, team_now=143.7e8) is None
+
+
+def test_small_countries_below_scale_floor_are_out():
+    """규모 하한 1억 — 0.3억은 너무 낮아 중앙값 언저리를 다 끌어들였다."""
+    rows = _rows(("몰타", 0.9e8, 0.2e8))
+    assert briefing._top_change(rows, None, team_now=20e8) is None
+
+
+def test_company_wide_uses_country_totals_not_team_cells():
+    """⛔ 전사인데 팀×국가 셀로 고르면 한 팀의 호주가 뽑힌다 — 같은 나라가 쪼개진다."""
+    data = {
+        "base": date(2026, 8, 19), "cur_from": date(2026, 8, 13),
+        "prev_from": date(2026, 8, 6), "prev_to": date(2026, 8, 12),
+        "by_team": {"A": {"now": 100e8, "prev": 130e8}},
+        # 팀별로 쪼개 놓으면 각 셀은 작지만 합치면 가장 큰 이동이다
+        "countries": _rows(("아랍에미리트", 2e8, 8.4e8), ("아랍에미리트", 1.9e8, 8.4e8),
+                           ("호주", 13.8e8, 1.1e8)),
+        "by_country": {"아랍에미리트": {"now": 3.9e8, "prev": 16.8e8},
+                       "호주": {"now": 13.8e8, "prev": 1.1e8}},
+    }
+    b = briefing.compose({"kind": "all", "code": "", "label": "전사"}, data)
+    assert "아랍에미리트" in b["body"]
+    assert "호주" not in b["body"]

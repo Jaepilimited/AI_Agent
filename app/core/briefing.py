@@ -32,9 +32,16 @@ logger = structlog.get_logger(__name__)
 # ⚠️ 임계가 낮으면 매일 뜬다 — 매일 뜨는 알림은 곧 무시당한다. 실측(2026-08-20)에서
 #    주간 변동은 대부분 ±20% 안팎이라 15% 를 넘으면 "말할 만한 변화" 로 본다
 _MIN_DELTA_PCT = 15.0
-# 변화 항목(국가)으로 뽑을 최소 규모 — ⛔ 규모 하한이 없으면 러시아 +183% 같은
-#    작은 숫자가 1위로 올라온다 (보고서 판정 계층에서 이미 겪은 실패)
-_MIN_SCALE_KRW = 30_000_000     # 0.3억
+# 축·변화 항목의 최소 규모. ⛔ 0.3억은 너무 낮았다 (사용자 지적 2026-08-21) —
+#    실측에서 국가 66개 중 32개가 통과해 중앙값(0.25억) 언저리를 다 끌어들였다.
+_MIN_SCALE_KRW = 100_000_000    # 1억 (국가 66개 중 22개가 통과)
+
+# "눈에 띄는 변화" 는 **금액**으로 고른다. ⛔ 변화율로 고르면 작은 나라의 배수가 이긴다 —
+#    실측: 규칙이 영국 +733%(+10.8억)를 골랐지만, 정작 가장 크게 움직인 것은
+#    아랍에미리트 **−12.9억**(16.8억→3.9억)이었다. 그게 눈에 띄는 변화다.
+# 그리고 축 합계 대비 비중도 본다 — 전사 143억에서 1억 움직임은 눈에 띄지 않는다.
+_CHANGE_MIN_SHARE = 0.05        # 축 합계의 5% 이상 움직였을 때만
+_CHANGE_MIN_PCT = 10.0          # 그 나라 기준으로도 10% 이상 움직였을 때만
 
 
 _DDL = """
@@ -190,27 +197,35 @@ def _pct(now: float, prev: float) -> Optional[float]:
 
 def _top_change(rows: List[Dict[str, Any]], team: Optional[str],
                 team_now: float = 0.0) -> Optional[Dict[str, Any]]:
-    """가장 눈에 띄는 국가 변화 하나. ⛔ 규모 하한을 반드시 건다.
+    """**가장 크게 움직인** 나라 하나 — 변화율이 아니라 **금액**으로 고른다.
 
-    ⚠️ 팀이 사실상 한 나라만 담당하면(일본사업팀 → 일본) 그 나라는 팀 합계와 **같은 말**이다.
-       "일본사업팀 +77% · 눈에 띄는 변화: 일본 +77%" 는 한 줄을 두 번 쓴 것이다.
+    ⛔ 변화율로 고르면 작은 나라의 배수가 이긴다. 실측(2026-08-21): 영국 +733%(+10.8억)가
+       뽑혔지만 실제로 가장 크게 움직인 것은 아랍에미리트 −12.9억(16.8억→3.9억)이었다.
+       "가장 눈에 띄는 변화" 라고 적어 놓고 가장 눈에 띄지 않는 것을 고르고 있었다.
+
+    후보 자격 세 가지를 모두 넘어야 한다:
+      ① 이번·직전 **양쪽 다** 최소 규모(1억) 이상 — 한쪽만 보면 "0원 → −100%" 가 이긴다
+      ② 증감액이 **축 합계의 5% 이상** — 전사 143억에서 1억 움직임은 눈에 띄지 않는다
+      ③ 그 나라 기준으로도 10% 이상 — 큰 나라가 미미하게 흔들린 것을 제외한다
     """
     best = None
     for r in rows:
         if team and r["team"] != team:
             continue
         now, prev = float(r["now_amt"] or 0), float(r["prev_amt"] or 0)
-        # ⛔ **양쪽 다** 하한을 넘어야 한다. 한쪽만 보면 "이번 주 0원 → −100%" 가
-        #    1위로 올라온다 — 규모가 없는 변화는 변화가 아니다
         if now < _MIN_SCALE_KRW or prev < _MIN_SCALE_KRW:
             continue
         p = _pct(now, prev)
-        if p is None:
+        if p is None or abs(p) < _CHANGE_MIN_PCT:
             continue
         if team_now and now >= team_now * 0.85:
             continue          # 팀 합계와 같은 말 — 새 정보가 없다
-        if best is None or abs(p) > abs(best["pct"]):
-            best = {"country": r["country"], "now": now, "prev": prev, "pct": p}
+        delta = now - prev
+        if team_now and abs(delta) < team_now * _CHANGE_MIN_SHARE:
+            continue          # 축 규모에 비해 미미하다
+        if best is None or abs(delta) > abs(best["delta"]):
+            best = {"country": r["country"], "now": now, "prev": prev,
+                    "pct": p, "delta": delta}
     return best
 
 
@@ -225,13 +240,27 @@ def compose(scope: Dict[str, str], data: Dict[str, Any]) -> Optional[Dict[str, s
         slot = {"now": sum(v["now"] for v in data["by_team"].values()),
                 "prev": sum(v["prev"] for v in data["by_team"].values())}
     now, prev = slot["now"], slot["prev"]
-    # 기준 기간에 기록이 없으면 보내지 않는다 — "0원 · −100%" 는 알림이 아니라 소음이다
-    if now < _MIN_SCALE_KRW and prev < _MIN_SCALE_KRW:
+    # ⛔ **이번 기간에 규모가 없으면 어떤 축이든 보내지 않는다.**
+    #    2026-08-21 실제 사고: 인도가 관심 축으로 뽑혔는데 최근 7일 매출이 0원이라
+    #    "인도 최근 7일 매출 0.0억 · 직전 7일 대비 -100%" 가 사용자에게 나갔다.
+    #    팀 축에만 하한을 걸고 국가 축에는 안 건 것이 원인이다 — 여기서 **한 번에** 막는다.
+    #    직전이 컸어도(1.5억 → 0원) 마찬가지다. 0원짜리는 브리핑이 아니라 소음이다.
+    if now < _MIN_SCALE_KRW:
         return None
 
     pct = _pct(now, prev)
     # 국가 축이면 그 나라 자체가 주제다 — 변화 항목을 또 뽑으면 같은 말이 된다
-    change = None if scope["kind"] == "country" else _top_change(data["countries"], team, now)
+    if scope["kind"] == "country":
+        change = None
+    elif team:
+        change = _top_change(data["countries"], team, now)
+    else:
+        # ⛔ 전사는 국가 **합계**로 본다. 팀×국가 셀 단위로 고르면 "전사 브리핑인데
+        #    한 팀의 호주" 가 뽑힌다 — 같은 나라가 팀별로 쪼개져 진짜 큰 이동을 놓친다
+        #    (2026-08-21 실측: 아랍에미리트 −12.9억을 놓치고 호주 +12.7억을 골랐다).
+        change = _top_change(
+            [{"team": None, "country": c, "now_amt": v["now"], "prev_amt": v["prev"]}
+             for c, v in data["by_country"].items()], None, now)
     notable = (pct is not None and abs(pct) >= _MIN_DELTA_PCT) or \
               (change is not None and abs(change["pct"]) >= _MIN_DELTA_PCT * 2)
     if not notable:
@@ -244,8 +273,10 @@ def compose(scope: Dict[str, str], data: Dict[str, Any]) -> Optional[Dict[str, s
 
     lines = [f"· {label} 기준 · {span} 합계 {_fmt_eok(now)} ({move}, 직전 7일 {_fmt_eok(prev)})"]
     if change:
-        lines.append(f"· 눈에 띄는 변화: {change['country']} {_fmt_eok(change['now'])} "
-                     f"({change['pct']:+.0f}%, 직전 7일 {_fmt_eok(change['prev'])})")
+        lines.append(f"· 가장 크게 움직인 곳: {change['country']} "
+                     f"{_fmt_eok(change['prev'])} → {_fmt_eok(change['now'])} "
+                     f"({_fmt_eok(change['delta']) if change['delta'] < 0 else '+' + _fmt_eok(change['delta'])}, "
+                     f"{change['pct']:+.0f}%)")
     lines.append("· 기준일은 데이터가 안정적으로 들어온 마지막 날입니다 "
                  f"({base} — 적재 지연으로 최근 1~2일은 제외).")
 
@@ -331,9 +362,11 @@ def run_daily() -> Dict[str, Any]:
     for u in users:
         scope = resolve_scope(u["department"], TEAM_CODE2KR)
         if scope["kind"] == "all":
-            # 팀이 매출 축에 없으면 **실제로 묻던 나라**로 좁힌다
+            # 팀이 매출 축에 없으면 **실제로 묻던 나라**로 좁힌다.
+            # ⚠️ 단 그 나라에 **최근 매출이 실제로 있을 때만** 채택한다. 자주 물었다고
+            #    매출이 있는 것은 아니다 — 인도가 그래서 0원 브리핑이 됐다 (2026-08-21).
             c = infer_country(u.get("email") or "", known_countries)
-            if c:
+            if c and (data["by_country"].get(c, {}).get("now", 0) >= _MIN_SCALE_KRW):
                 scope = {"kind": "country", "code": c, "label": c}
         b = compose(scope, data)
         if not b or is_repeat(u["id"], b["title"]):
