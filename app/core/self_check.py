@@ -377,6 +377,39 @@ def _repair_name_encoding(payload: dict) -> str:
 # ---- 권한 불변식 ----
 
 
+def _check_auth_config() -> CheckResult:
+    """로그인이 **가능한 상태**인가 — 인증 설정이 유효한지 확인한다.
+
+    ⛔ 2026-08-21: `JWT_SECRET_KEY` 를 필수로 만드는 변경이 들어왔다. 좋은 변경이지만
+       `.env` 는 **배포 대상이 아니라서**, 서버 값을 먼저 채우지 않고 코드만 올리면
+       그 순간부터 전 직원의 로그인·모든 인증 요청이 RuntimeError 로 죽는다.
+       그런데 `/health` 는 인증을 안 타므로 배포는 **성공한 것처럼 보인다** —
+       사용자가 로그인을 시도해야만 드러난다. 그 구간을 없앤다.
+
+    ⚠️ 값 자체는 절대 로그에 남기지 않는다. 길이와 판정만 남긴다.
+    """
+    from app.config import get_settings, validate_jwt_secret
+
+    s = get_settings()
+    try:
+        key = validate_jwt_secret(s.jwt_secret_key)
+    except Exception as e:
+        return CheckResult(False, f"인증 설정 무효 — 로그인 불가: {str(e)[:120]}")
+
+    # 실제로 토큰을 만들고 되읽어 본다. 설정만 보고 통과시키면 알고리즘·라이브러리
+    # 문제를 놓친다 (검증은 "될 것 같다" 가 아니라 "된다" 여야 한다)
+    try:
+        import jwt as _jwt
+        tok = _jwt.encode({"sub": "self-check"}, key, algorithm="HS256")
+        back = _jwt.decode(tok, key, algorithms=["HS256"])
+        if back.get("sub") != "self-check":
+            return CheckResult(False, "토큰을 되읽었는데 내용이 다르다")
+    except Exception as e:
+        return CheckResult(False, f"토큰 발급·검증 실패: {type(e).__name__}: {str(e)[:100]}")
+
+    return CheckResult(True, f"인증 설정 정상 (키 {len(key)}자)")
+
+
 def _check_fi_permission_enforced() -> CheckResult:
     """무권한 사용자의 FI SQL 이 실제로 차단되는지 — 방어선이 살아 있는지 확인."""
     from app.agents.sql_agent import _allowed_tables_from_sources
@@ -750,6 +783,8 @@ CHECKS: list[Check] = [
     Check("name_encoding", "integrity", SEV_INFO,
           "이름이 이스케이프된 채 저장되지 않았는가", _check_name_encoding,
           repair=_repair_name_encoding),
+    Check("auth_config", "permission", SEV_CRITICAL,
+          "로그인이 가능한 상태인가 (JWT 설정 유효성)", _check_auth_config),
     Check("fi_permission_enforced", "permission", SEV_CRITICAL,
           "FI 차단 방어선이 살아 있는가", _check_fi_permission_enforced),
     Check("fi_grant_count", "permission", SEV_WARNING,
