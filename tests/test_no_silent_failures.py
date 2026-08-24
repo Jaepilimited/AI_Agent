@@ -338,3 +338,46 @@ def test_every_static_check_is_registered_in_self_check():
         f"static_checks.ALL 에 없는 id 를 self_check 가 등록했다: {dangling} — "
         "id 오타이거나 검사가 삭제된 것이다. 매일 07:30 에 '통과' 로 세어지고 있었다"
     )
+
+
+# ── 관문이 `@@`/슬래시 선택을 둘 다 보는가 (2026-08-24) ────────────────────
+# ⛔ `/보고서` 를 누르고 본문에 "보고서" 라고 안 적으면 **버튼이 무시됐다.**
+#    관문은 `db_entry`(=`@@보고서` 타이핑)만 봤고, 슬래시·칩 선택은 `enabled_sources`
+#    로만 온다. 관문이 놓치면 `@@` 단일소스 경로가 route="report" 를 확정하는데
+#    `HANDLER_ROUTES` 에 report 가 없어 조용히 `_handle_direct` 로 강등된다 —
+#    에러도, 안내도 없고, CLAUDE.md 가 약속한 "지정하면 문구를 보지 않는다"가 거짓이 된다.
+#    아키텍처 캔버스를 만들다 흐름을 코드로 다시 읽으면서 드러났다.
+
+@pytest.mark.parametrize("method", ["route_and_stream", "route_and_execute"])
+def test_report_intercept_checks_both_selection_channels(method):
+    """보고서 관문이 `db_entry` 와 `enabled_sources` 를 **둘 다** 보는가."""
+    import inspect
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    src = inspect.getsource(getattr(OrchestratorAgent, method))
+    head = src[:src.find("_rep_query") if "_rep_query" in src else len(src)]
+    assert "_rep_selected" in src, f"{method} 에 보고서 관문이 없다"
+    # 선택 경로 두 가지가 같은 판정에 들어와야 한다
+    idx = src.find("_rep_selected")
+    block = src[idx:idx + 400]
+    assert 'route") == "report"' in block, "db_entry 경로를 안 본다"
+    assert "enabled_sources" in block, (
+        "enabled_sources 경로를 안 본다 — /보고서·칩 선택이 조용히 무시된다")
+
+
+def test_both_intercepts_are_symmetric_about_enabled_sources():
+    """⚠️ 초상권 관문은 처음부터 둘 다 봤다. 보고서만 한쪽이었다.
+
+    관문이 늘어날 때 같은 비대칭이 생기지 않도록 **둘을 나란히** 검사한다.
+    """
+    import inspect
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    src = inspect.getsource(OrchestratorAgent.route_and_stream)
+    for flag in ("_mr_selected", "_rep_selected"):
+        i = src.find(flag)
+        assert i > 0, f"{flag} 가 없다"
+        assert "enabled_sources" in src[i:i + 400], (
+            f"{flag} 가 enabled_sources 를 보지 않는다 — 선택 경로 하나가 새 나간다")

@@ -852,7 +852,13 @@ class OrchestratorAgent:
 
         # `@@보고서` 로 지정했으면 문구를 보지 않는다. 지정했을 땐 접두어를 뗀
         # 본문으로 만들어야 제목·필터가 깨끗하다
-        _rep_selected = any(e.get("route") == "report" for e in (db_entry or []))
+        # ⛔ `/보고서`·칩 선택은 `db_entry` 가 아니라 `enabled_sources` 로만 온다.
+        #    앞쪽만 보면 route="report" 가 확정된 뒤 핸들러가 없어 조용히 direct 로
+        #    강등된다 (스트리밍 경로 주석 참조). `model_rights` 와 같은 모양으로 맞춘다.
+        _rep_selected = bool(
+            any(e.get("route") == "report" for e in (db_entry or []))
+            or (enabled_sources and list(enabled_sources) == ["보고서"])
+        )
         _rep = await self._handle_report(
             (clean_query or query) if _rep_selected else query,
             user_email, explicit=_rep_selected)
@@ -1089,7 +1095,18 @@ class OrchestratorAgent:
         # ⚠️ 진행 문구를 ("chunk", ...) 로 보내면 안 된다 — routes.py 가 streamed_live 를 세워
         #    뒤따르는 ("done", 본문) 을 통째로 버린다 (2026-08-12 확인).
         from app.reports import registry as _rep_reg
-        _rep_selected = any(e.get("route") == "report" for e in _mr_entries)
+        # ⛔ `@@보고서` 는 `db_entry` 로 오지만 `/보고서`(슬래시 프리셋)·칩 선택은
+        #    **`enabled_sources` 로만** 온다. 예전엔 앞쪽만 봐서, 사용자가 보고서를
+        #    고르고 본문에 "보고서" 라고 안 적으면 관문이 놓쳤다. 그러면 `@@` 단일소스
+        #    경로가 route="report" 를 확정하는데 `HANDLER_ROUTES` 에 report 가 없어
+        #    **조용히 `_handle_direct` 로 강등**된다 — 버튼을 눌렀는데 일반 답변이
+        #    나가고 에러도 안내도 없다 (2026-08-24 아키텍처 캔버스 작업 중 발견).
+        #    CLAUDE.md 는 "`@@보고서` 면 문구를 보지 않는다"고 약속하고 있었다.
+        #    바로 위 `model_rights` 관문과 **같은 모양**으로 맞춘다.
+        _rep_selected = bool(
+            any(e.get("route") == "report" for e in _mr_entries)
+            or (enabled_sources and list(enabled_sources) == ["보고서"])
+        )
         _rep_query = (clean_query or query) if _rep_selected else query
         if _rep_selected or _rep_reg.wants_report(_rep_query):
             yield ("source", "bigquery")
