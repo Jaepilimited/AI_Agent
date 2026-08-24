@@ -23,6 +23,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 from app.config import get_settings
+from app.core import product_lines
 from app.core.llm import get_flash_client, get_llm_client
 
 logger = structlog.get_logger(__name__)
@@ -382,8 +383,21 @@ def search_qa(query: str, top_k: int = 10) -> List[Dict[str, str]]:
     q_lower = query.lower()
     q_tokens = _tokenize(query)
 
+    # ⛔ 질문이 라인을 지목했으면 **다른 라인 자료로 답하지 않는다** (붐따 #111).
+    #    "히알루 테카 라인 제품 정보" 가 '라인·제품·정보' 겹침만으로 히알루시카 Q&A 를
+    #    최상위로 올렸고, 답변은 히알루시카를 설명하면서 바꿔치기했다는 말을 하지 않았다.
+    #    프롬프트 규칙("다른 제품 정보를 제공하지 마세요")은 이미 있었는데도 났다 —
+    #    보증은 코드가 한다. 지목한 라인 자료가 없으면 **0건**이 맞다:
+    #    `run()` 이 knowledge_gap 을 남기고 "찾지 못했습니다" 라고 답한다.
+    asked_lines = product_lines.mentioned(query)
+
     scored = []
     for qa in _qa_cache:
+        if asked_lines:
+            row_lines = product_lines.mentioned(
+                f"{qa['line']} {qa['product']} {qa['question']}")
+            if not (row_lines & asked_lines):
+                continue
         score = 0.0
 
         # Exact product/line/brand match in query → high boost

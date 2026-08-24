@@ -222,7 +222,12 @@ def my_feedback(user_id: int, limit: int = 10, days: int = 90) -> List[Dict[str,
     ⚠️ 붐따는 **코멘트 없이 누르는 경우가 대부분**이라(실측: 최근 것 대부분 NULL)
        제목에 코멘트만 쓰면 "(내용 없음)" 이 줄줄이 뜬다. 그때는 **내가 물었던 질문**을
        제목으로 쓴다 — 무엇에 대한 신고인지 알아야 알림이 뜻을 갖는다.
-    ⚠️ 오래된 것은 빼야 한다. 100일 전 미처리 건이 목록을 채우면 새 소식이 묻힌다.
+    ⚠️ 오래된 것은 빼야 한다. 100일 전 **미처리** 건이 목록을 채우면 새 소식이 묻힌다.
+    ⛔ 단 **회신은 나이와 무관하게 닿아야 한다.** 창을 그대로 두면 뒤늦게 처리 표시한
+       건이 `handled_at` 만 채운 채 화면에 뜨지 않는다 — 에러 없는 고장이다
+       (2026-08-24 실측: 묵은 붐따 16건을 처리했는데 7건이 창 밖이라 안 보였다).
+       그래서 "최근이거나, 처리됐는데 아직 안 읽은 것" 으로 넓힌다. 읽으면 다시
+       빠지므로 목록이 무한히 자라지 않는다.
     ⚠️ 안 읽음 판정은 `reply_seen_at < handled_at` 도 본다. 컬럼이 하나뿐이라
        "확인함" 단계에서 읽고 나중에 "해결" 로 바뀌면 다시 안 읽음이 돼야 한다.
     """
@@ -239,7 +244,9 @@ def my_feedback(user_id: int, limit: int = 10, days: int = 90) -> List[Dict[str,
         "LEFT JOIN conversations c "
         "       ON c.id = f.conversation_id COLLATE utf8mb4_unicode_ci "
         "WHERE f.user_id = %s AND f.rating = -1 "
-        "  AND f.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY) "
+        "  AND (f.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY) "
+        "       OR (f.handled_at IS NOT NULL "
+        "           AND (f.reply_seen_at IS NULL OR f.reply_seen_at < f.handled_at))) "
         "ORDER BY unseen DESC, f.created_at DESC LIMIT %s",
         (int(user_id), int(days), int(limit))) or []
 

@@ -171,3 +171,26 @@ def test_marking_seen_covers_all_three_types():
     assert "store.mark_all_seen" in src
     assert "mark_my_feedback_seen" in src
     assert "announcements.mark_seen" in src
+
+
+def test_handled_reply_escapes_the_age_window(db):
+    """⛔ 회신은 나이와 무관하게 닿아야 한다 — 90일 창이 회신까지 잘라내면 조용히 실패한다.
+
+    2026-08-24 실측으로 드러났다. 넉 달 묵은 붐따 16건을 뒤늦게 처리 표시했는데,
+    그중 7건이 90일보다 오래돼 **처리했다는 사실이 제보자에게 영원히 닿지 않았다.**
+    `handled_at` 은 채워지고 화면에는 아무것도 뜨지 않는다 — 에러가 없는 고장이다.
+
+    창 자체는 남긴다. 그 취지는 **미처리 건이 목록을 채우는 것**을 막는 것이지
+    회신을 막는 것이 아니었다. 그래서 조건을 "최근이거나, 처리됐는데 아직 안 읽은 것"
+    으로 넓힌다 — 읽고 나면 다시 빠지므로 목록이 무한히 자라지 않는다.
+    """
+    from app.core import feedback_inbox
+    import app.core.feedback_inbox as fi
+    calls = []
+    fi.fetch_all = lambda sql, params=None: calls.append((sql, params)) or []
+    feedback_inbox.my_feedback(7)
+    sql, _ = calls[-1]
+    window = sql[sql.index("WHERE"):]
+    assert "DATE_SUB(NOW()" in window                       # 창은 남아 있고
+    assert "f.handled_at IS NOT NULL" in window             # 처리된 것은
+    assert " OR " in window                                 # 창을 우회한다
