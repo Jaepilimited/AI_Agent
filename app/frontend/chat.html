@@ -270,6 +270,7 @@
       <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
       <button class="admin-tab" data-tab="golden">골든셋</button>
       <button class="admin-tab" data-tab="feedback">붐따 처리함</button>
+      <button class="admin-tab" data-tab="flow">아키텍처</button>
     </div>
     <!-- Tab: Visitors -->
     <div class="admin-tab-content" id="tab-visitors">
@@ -369,6 +370,15 @@
       </div>
       <div class="admin-drawer-body" id="admin-selfcheck-body"></div>
     </div>
+    <!-- Tab: Flow (아키텍처 캔버스) -->
+    <div class="admin-tab-content" id="tab-flow">
+      <div style="display:flex;gap:12px;height:70vh">
+        <div id="flow-canvas" style="flex:1;min-width:0;border:1px solid var(--border);border-radius:8px"></div>
+        <div id="flow-detail" style="width:320px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:8px;color:var(--text)">
+          노드를 클릭하세요.
+        </div>
+      </div>
+    </div>
     <!-- Tab: Groups -->
     <div class="admin-tab-content active" id="tab-groups">
       <div class="admin-toolbar">
@@ -405,7 +415,7 @@
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
   <script src="/frontend/answer-loading.js?v=2"></script>
-  <script src="/frontend/chat.js?v=256"></script>
+  <script src="/frontend/chat.js?v=257"></script>
   <script src="/frontend/cella-pet.js?v=8"></script>
 </body>
 </html>
