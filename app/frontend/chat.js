@@ -4836,7 +4836,10 @@
         //    여기서 실제 색상값으로 미리 풀어서 넘긴다 (열 때마다 다시 읽어 현재
         //    테마를 반영). getComputedStyle 이 실패하면(예: SSR) 무채색 폴백.
         var _cs = getComputedStyle(document.documentElement);
-        var edgeLabelColor = (_cs.getPropertyValue("--text-muted") || "").trim() || "#8a8a8a";
+        // ⚠️ --text-muted 는 라이트 모드에서 rgba(0,0,0,0.30) 이라 캔버스 9px
+        //    글자로는 사실상 안 보인다 (2026-08-24 스크린샷으로 확인) — --text-secondary
+        //    (0.55) 로 바꾸고 크기도 11 로 키운다.
+        var edgeLabelColor = (_cs.getPropertyValue("--text-secondary") || "").trim() || "#8a8a8a";
         var byId = {};
         var nodes = g.nodes.map(function(n) {
           byId[n.id] = n;
@@ -4855,7 +4858,7 @@
             arrows: "to",
             dashes: !!e.conditional,
             color: { color: e.conditional ? "#c76a00" : "rgba(128,128,128,0.5)" },
-            font: { size: 9, color: edgeLabelColor, strokeWidth: 0 },
+            font: { size: 11, color: edgeLabelColor, strokeWidth: 0 },
           };
         });
         var container = document.getElementById("flow-canvas");
