@@ -55,6 +55,7 @@ COOLDOWN_AFTER_RESTART = 60  # 복구 후 대기 시간 (서버 부팅 대기)
 ORPHAN_RESTART_JUMP_THRESHOLD = 10  # restart 카운터가 이 값보다 많이 튀면 고아 의심
 BOOT_GRACE_SECONDS = 60      # 마지막 (재)시작 이후 이 시간 안의 health 실패는 정상 부팅 중으로 간주 (실측 35~40초 + 여유)
 MAX_UNHEALTHY_SECONDS = 180  # 부팅 유예를 반복 받아도 최초 이상 감지로부터 이 시간을 넘기면 무조건 복구 시도
+CRASH_LOOP_STREAK = 3        # 연속 이 횟수만큼 restart 카운터가 늘면 크래시 루프로 확정 (health 무관)
 
 TARGETS = [
     {"name": "skin1004-prod", "port": 3000, "label": "PROD"},
@@ -233,6 +234,62 @@ def recover_orphan(target: dict) -> bool:
         return False
 
 
+def should_grant_boot_grace(
+    proc_status: str,
+    uptime_elapsed: float,
+    restart_count: int,
+    prev_restart_count: "int | None",
+) -> bool:
+    """이번 health 실패를 '아직 부팅 중'으로 봐줄지 판정.
+
+    ⛔ **경과시간만 보면 안 된다.** 유예(BOOT_GRACE_SECONDS)보다 빨리 죽는 크래시
+    루프는 볼 때마다 uptime 이 한 자리 초라 **영원히 유예를 받는다.** 실제로
+    2026-08-13~24 에 고아 프로세스가 포트를 쥔 채 PM2 프로세스가 56,833회 재시작
+    했는데, 워치독은 11일 내내 "부팅 유예 구간"만 적고 한 번도 복구하지 않았다.
+
+    판정 기준은 **재시작 카운터**다 — 정상 부팅은 카운터가 고정된 채 uptime 만
+    흐르고, 루프는 카운터가 계속 는다. 증가폭에 임계값을 두지 않는다:
+    임계값 10 을 뒀다가 실제 증가분(약 7)을 놓친 것이 이번 사고다.
+    """
+    if proc_status != "online":
+        return False
+    if uptime_elapsed >= BOOT_GRACE_SECONDS:
+        return False
+    # 첫 체크는 비교 기준이 없다 — 여기서 막으면 워치독 기동 직후 오탐이 난다.
+    if prev_restart_count is not None and restart_count > prev_restart_count:
+        return False
+    return True
+
+
+def restarted_since_last_check(
+    restart_count: int,
+    prev_restart_count: "int | None",
+    uptime_elapsed: float,
+) -> bool:
+    """직전 체크 이후 재시작했고 **지금도 갓 시작한 상태**인가.
+
+    두 조건을 모두 요구하는 이유는 오탐 방지다. 배포나 수동 restart 도 카운터를
+    올리지만, 그건 올라간 뒤 **그대로 떠 있다** — 다음 체크에서 uptime 이 유예를
+    넘어가 연속이 끊긴다. 크래시 루프는 볼 때마다 uptime 이 한 자리 초다
+    (실제 로그: "마지막 시작 후 8s" 가 11일간 반복).
+    """
+    if prev_restart_count is None:
+        return False
+    if restart_count <= prev_restart_count:
+        return False
+    return uptime_elapsed < BOOT_GRACE_SECONDS
+
+
+def is_crash_looping(restart_growth_streak: int) -> bool:
+    """연속 체크에서 재시작 카운터가 계속 늘었으면 크래시 루프.
+
+    ⚠️ **health 200 여부를 보지 않는다.** 고아 프로세스가 포트를 점유한 채 200 을
+    돌려주는 동안에도 PM2 프로세스는 bind 실패로 죽고 있었다 — health 를 전제로 둔
+    기존 고아 감지가 이 사고를 통째로 놓친 이유다.
+    """
+    return restart_growth_streak >= CRASH_LOOP_STREAK
+
+
 def recover_target(target: dict) -> bool:
     """단일 대상 복구 (포트 미응답). 성공하면 True."""
     pm2_name = target["name"]
@@ -313,6 +370,10 @@ def main() -> None:
     # MAX_UNHEALTHY_SECONDS를 넘기면 무조건 복구하기 위한 안전장치). health_ok가 True가
     # 되면 즉시 초기화된다.
     unhealthy_since: dict[str, float | None] = {t["name"]: None for t in TARGETS}
+    # 대상별 "연속 몇 번의 체크에서 restart 카운터가 늘었는가".
+    # health 와 무관한 크래시 루프 지표다 — 고아가 포트를 쥔 채 200 을 주면
+    # health 기반 감지는 전부 눈이 먼다 (2026-08-13~24, 56,833회 재시작).
+    restart_growth_streak: dict[str, int] = {t["name"]: 0 for t in TARGETS}
 
     while True:
         try:
@@ -323,6 +384,16 @@ def main() -> None:
 
                 health_ok = check_health(port)
                 proc_status, restart_count, uptime_elapsed = get_pm2_process_info(name)
+
+                # restart 카운터가 이번에도 늘었는가 — 늘었으면 연속 횟수를 쌓고,
+                # 멈췄으면 0 으로 되돌린다. 증가폭이 아니라 **연속성**을 본다:
+                # 증가폭 임계값(10)은 실제 증가분(약 7)에 못 미쳐 11일을 놓쳤다.
+                if restarted_since_last_check(
+                    restart_count, prev_restarts[name], uptime_elapsed
+                ):
+                    restart_growth_streak[name] += 1
+                else:
+                    restart_growth_streak[name] = 0
 
                 # 고아 프로세스 감지: 포트는 응답하는데 PM2 상태가 online이 아니거나
                 # restart 카운터가 직전 체크 대비 큰 폭으로 튀었으면 PM2 밖의
@@ -341,15 +412,32 @@ def main() -> None:
                     ):
                         orphan_detected = True
 
-                if orphan_detected:
-                    logger.warning(
-                        f"[{label}] 고아 프로세스 의심: health=200 이지만 "
-                        f"pm2_status={proc_status}, restart_count={restart_count} "
-                        f"(이전 체크 {prev_restarts[name]})"
-                    )
+                # ⛔ health 를 보지 않는 두 번째 관문. 위의 orphan_detected 는 전부
+                #    `if health_ok:` 안에 있어, 고아가 포트를 쥐고 200 을 주는 동안
+                #    PM2 프로세스가 죽어나가는 것을 볼 수 없었다.
+                crash_loop = is_crash_looping(restart_growth_streak[name])
+
+                if orphan_detected or crash_loop:
+                    if crash_loop and not orphan_detected:
+                        logger.error(
+                            f"[{label}] 크래시 루프 확정: restart 카운터가 연속 "
+                            f"{restart_growth_streak[name]}회 증가 "
+                            f"(현재 {restart_count}, health={health_ok}, "
+                            f"pm2_status={proc_status}). 포트를 점유한 프로세스를 정리한다"
+                        )
+                    else:
+                        logger.warning(
+                            f"[{label}] 고아 프로세스 의심: health=200 이지만 "
+                            f"pm2_status={proc_status}, restart_count={restart_count} "
+                            f"(이전 체크 {prev_restarts[name]})"
+                        )
                     recover_orphan(target)
                     fail_counts[name] = 0
                     unhealthy_since[name] = None
+                    restart_growth_streak[name] = 0
+                    # 복구 직후 카운터 기준을 갱신하지 않으면 방금의 delete→start 가
+                    # 다음 체크에서 또 '증가'로 읽혀 복구를 한 번 더 부른다.
+                    _, restart_count, _ = get_pm2_process_info(name)
                 elif health_ok:
                     if fail_counts[name] > 0:
                         logger.info(f"[{label}] 정상 복귀 (이전 {fail_counts[name]}회 실패)")
@@ -364,7 +452,12 @@ def main() -> None:
                     # 이 앱은 실측 35~40초가 걸리므로, 이 구간의 health 실패는 실패로 세지
                     # 않는다. 다만 이 유예를 계속 받아도 총 불량 지속시간이
                     # MAX_UNHEALTHY_SECONDS를 넘기면 진짜 반복 크래시로 보고 강제 진행한다.
-                    still_booting = proc_status == "online" and uptime_elapsed < BOOT_GRACE_SECONDS
+                    still_booting = should_grant_boot_grace(
+                        proc_status=proc_status,
+                        uptime_elapsed=uptime_elapsed,
+                        restart_count=restart_count,
+                        prev_restart_count=prev_restarts[name],
+                    )
 
                     if still_booting and total_unhealthy < MAX_UNHEALTHY_SECONDS:
                         logger.info(

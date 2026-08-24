@@ -25,6 +25,32 @@ _TIME_HINTS = {"월", "년", "분기", "주차", "week", "month", "quarter",
 
 # Column names that look like time periods (revenue_2025_q3, sales_2026_01, ...)
 _RE_TIME_COL = re.compile(r"(20\d{2}|q[1-4]|분기|월|주차|quarter|month|week)", re.IGNORECASE)
+_RE_YEAR_MONTH = re.compile(r"^(20\d{2})[-/.](0?[1-9]|1[0-2])(?:[-/.]\d{1,2})?$")
+
+
+def infer_chart_intent(query: str, data: List[Dict[str, Any]]) -> str:
+    """Deterministically classify chart intent; never leave YoY to the LLM."""
+    q = (query or "").lower()
+    if re.search(r"yoy|전년|전년도|작년|연도별\s*(비교|추이)|\b20\d{2}\s*(vs|대|대비)\s*20\d{2}", q):
+        return "yoy"
+    if re.search(r"월별|월간|시계열|추이|트렌드|trend|monthly|time\s*series", q):
+        return "trend"
+    if re.search(r"비중|구성비|점유율|share", q):
+        return "share"
+    return "comparison"
+
+
+def apply_chart_intent(config: Dict[str, Any], query: str, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Apply server-owned chart semantics after (not before) LLM config."""
+    intent = infer_chart_intent(query, data)
+    config = dict(config)
+    config["chart_intent"] = intent
+    if intent in ("yoy", "trend"):
+        config["chart_type"] = "line"
+    if intent == "yoy":
+        # The builder detects YYYY-MM and creates year-labelled datasets.
+        config["group_column"] = None
+    return config
 
 # Modern color palette — vibrant, accessible, distinct
 COLORS = [
@@ -198,6 +224,26 @@ def build_chartjs_config(
                 return None
 
         # --- Build Chart.js config ---
+        # Normalize monthly YYYY-MM rows into two (or more) year-labelled
+        # series over a shared month axis for a true YoY line chart.
+        if (chart_type == "line" and chart_config.get("chart_intent") == "yoy"
+                and isinstance(x_col, str) and not group_col):
+            parsed = [_RE_YEAR_MONTH.match(str(r.get(x_col, ""))) for r in data]
+            years = {m.group(1) for m in parsed if m}
+            if len(years) >= 2 and sum(bool(m) for m in parsed) >= 4:
+                yoy_rows = []
+                for row, match in zip(data, parsed):
+                    if not match:
+                        continue
+                    item = dict(row)
+                    item["__yoy_year"] = match.group(1)
+                    item["__yoy_month"] = f"{int(match.group(2))}월"
+                    yoy_rows.append(item)
+                data = yoy_rows
+                x_col = "__yoy_month"
+                group_col = "__yoy_year"
+                x_label = x_label or "월"
+
         labels = [str(row.get(x_col, "")) for row in data]
         datasets = []
 
@@ -268,6 +314,13 @@ def build_chartjs_config(
             for i, g in enumerate(groups):
                 color = COLORS[i % len(COLORS)]
                 border = COLORS_SOLID[i % len(COLORS_SOLID)]
+                if group_col == "__yoy_year":
+                    # Conventional YoY styling: current year blue/solid,
+                    # prior year neutral gray/dashed.
+                    if str(g) == "2026":
+                        color, border = "rgba(37, 99, 235, 0.85)", "rgba(37, 99, 235, 1)"
+                    elif str(g) == "2025":
+                        color, border = "rgba(107, 114, 128, 0.18)", "rgba(107, 114, 128, 1)"
                 values = [pivot[x].get(g, 0) for x in x_order]
                 ds = {
                     "label": g,
@@ -283,6 +336,8 @@ def build_chartjs_config(
                     ds["pointHoverRadius"] = 8
                     ds["pointBackgroundColor"] = border
                     ds["borderWidth"] = 2.5
+                    if group_col == "__yoy_year" and str(g) == "2025":
+                        ds["borderDash"] = [6, 4]
                 datasets.append(ds)
 
         elif isinstance(y_col, list):

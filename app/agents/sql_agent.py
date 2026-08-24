@@ -401,6 +401,74 @@ def _localize_team_literals(sql: str) -> str:
     return sql
 
 
+# 사용자가 말하는 별칭 → 실재하는 값. 두 컬럼에 각각 대응이 있다.
+#   Continent1 은 `중남미` 하나로 통합돼 있고, Continent2 가 남/중을 나눠 갖는다.
+_CONTINENT_ALIAS_TO_C2 = {"남미": "남아메리카", "중미": "중앙아메리카"}
+_CONTINENT_ALIAS_TO_C1 = {"남미": "중남미", "중미": "중남미"}
+# Continent2 로 옮겨도 안전한 값들 (별칭 + 이미 Continent2 표기인 것)
+_C2_SAFE_VALUES = set(_CONTINENT_ALIAS_TO_C2) | set(_CONTINENT_ALIAS_TO_C2.values())
+
+_RE_CONTINENT_ALIAS = re.compile(r"""(['"])(남미|중미)\1""")
+_RE_C1_PREDICATE = re.compile(
+    r"""Continent1\s*(?:=|(?:NOT\s+)?IN)\s*(\([^)]*\)|'[^']*'|"[^"]*")""",
+    re.IGNORECASE,
+)
+_RE_QUOTED_VALUE = re.compile(r"""(['"])([^'"]*)\1""")
+
+
+def _localize_continent_literals(sql: str) -> str:
+    """사용자가 말하는 `남미`·`중미` 를 실재하는 대륙 값으로 교정한다.
+
+    데이터에는 `Continent1='중남미'` 로 통합돼 있고, 더 잘게는
+    `Continent2` 에 `남아메리카`·`중앙아메리카` 로 있다. 프롬프트 지시만으로는
+    확률적이라 후처리가 보증한다 (국가·팀 리터럴과 같은 계열).
+
+    ⛔ **컬럼을 통째로 치환하면 안 된다.** 조건이 섞여 있을 때
+       `Continent1 IN ('남미','유럽')` → `Continent2 IN ('남아메리카','유럽')` 이 되는데
+       **`유럽` 은 Continent2 에 없다.** 절반이 조용히 0건이 되고, 답변은 그걸
+       "유럽 매출이 없다" 로 설명한다 — 에러가 없어 가장 늦게 발견되는 부류다.
+
+    그래서 조건에 든 값을 먼저 보고 정한다:
+      · 전부 남/중미 계열이면 → 더 정확한 `Continent2` 로 옮긴다
+      · 하나라도 Continent1 에만 있는 값이면 → 컬럼을 두고 `중남미` 로 접는다
+        (범위가 넓어질 뿐, 없는 값을 만들지 않는다)
+    """
+    if not sql or not _RE_CONTINENT_ALIAS.search(sql):
+        return sql
+
+    # 1) Continent1 조건에 실린 값을 전부 모아 옮겨도 되는지 판정한다.
+    literals: List[str] = []
+    for pred in _RE_C1_PREDICATE.findall(sql):
+        literals.extend(v for _q, v in _RE_QUOTED_VALUE.findall(pred))
+    can_move = bool(literals) and all(v in _C2_SAFE_VALUES for v in literals)
+
+    if can_move:
+        sql = _RE_CONTINENT_ALIAS.sub(
+            lambda m: f"{m.group(1)}{_CONTINENT_ALIAS_TO_C2[m.group(2)]}{m.group(1)}", sql)
+        # SELECT·GROUP BY 도 같이 옮겨야 라벨과 필터가 어긋나지 않는다.
+        return re.sub(r"Continent1\b", "Continent2", sql, flags=re.IGNORECASE)
+
+    # 2) 섞여 있다 — 컬럼을 두고 같은 컬럼에 실재하는 값으로 접는다.
+    sql = _RE_CONTINENT_ALIAS.sub(
+        lambda m: f"{m.group(1)}{_CONTINENT_ALIAS_TO_C1[m.group(2)]}{m.group(1)}", sql)
+
+    # 남미·중미가 둘 다 중남미로 접히면 IN 목록에 같은 값이 두 번 남는다.
+    def _dedupe(match: "re.Match") -> str:
+        pred = match.group(0)
+        inner = match.group(1)
+        if not inner.startswith("("):
+            return pred
+        seen, kept = set(), []
+        for quote, value in _RE_QUOTED_VALUE.findall(inner):
+            if value in seen:
+                continue
+            seen.add(value)
+            kept.append(f"{quote}{value}{quote}")
+        return pred.replace(inner, "(" + ",".join(kept) + ")")
+
+    return _RE_C1_PREDICATE.sub(_dedupe, sql)
+
+
 def _enforce_partition_filter(
     sql: str,
     query: str,
@@ -1269,6 +1337,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         if sql:
             sql = _localize_country_literals(sql)
             sql = _localize_team_literals(sql)
+            sql = _localize_continent_literals(sql)
             sql = _localize_promotion_literals(sql)
             sql = _strip_unrequested_brand_filter(sql, query)
 
@@ -2296,7 +2365,7 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
     Returns a ```chart-config``` markdown block with Chart.js JSON, or empty string.
     The frontend renders this interactively with animations and tooltips.
     """
-    from app.core.chart import build_chartjs_config, get_chart_config_prompt
+    from app.core.chart import build_chartjs_config, get_chart_config_prompt, apply_chart_intent
 
     # ⚠️ 원문을 INFO 로만 남기면 프로덕션에서 사라진다 — stdlib 기본 레벨이 WARNING 이라
     # 앱 INFO 로그는 한 줄도 저널에 남지 않는다 (2026-08-11 확인: info 0 / warn 91 / err 46).
@@ -2310,6 +2379,9 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
         config_json = llm.generate_json(config_prompt)
         logger.info("chart_config_raw", config_json=config_json[:500])
         config = json.loads(config_json)
+        # Chart semantics are server-owned.  The model may suggest labels and
+        # columns, but YoY/trend/share intent is normalized deterministically.
+        config = apply_chart_intent(config, query, results)
 
         # Force chart when user explicitly requested visualization
         _CHART_REQUEST = ("차트", "그래프", "시각화", "그려", "그려줘", "chart", "graph", "시각화해", "도표", "플롯", "분기별", "월별", "추이", "비중")

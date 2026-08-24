@@ -299,6 +299,47 @@ def _check_quality_snapshot_fresh() -> CheckResult:
     return CheckResult(age_d <= 2, f"마지막 품질 스냅샷 {last} ({age_d}일 전)")
 
 
+# 하루 재시작 허용치. 실측 근거 (2026-08-24):
+#   정상일  8/10 2건 · 8/11 26건 · 8/12 4건
+#   사고중  하루 약 5,300건 (8/13~8/24)
+# 50 이면 가장 바빴던 정상일의 2배, 사고의 1/100 — 사이가 넓어 오탐도 미탐도 어렵다.
+_RESTART_LOOP_DAILY_LIMIT = 50
+
+
+def _check_restart_loop() -> CheckResult:
+    """앱이 재시작을 반복하고 있지 않은가 — `llm_usage` 로 판정한다.
+
+    `main._warmup_llm_clients()` 가 기동할 때마다 Gemini·Claude 에 `"hi"` 를 한 번씩
+    보낸다. 그래서 **입력 토큰이 극히 작은 호출 수 = 재시작 횟수**다
+    (실측: Claude 쪽은 정확히 8토큰, 55,949건이 전부 이것이었다).
+
+    ⛔ 이 검사를 만든 이유 — 2026-08-13~24, PM2 밖 고아 프로세스가 3000/3001 을
+       점유해 PM2 프로세스가 **56,833회** 재시작했다. 그런데 고아가 계속 200 을
+       응답해서 **화면은 멀쩡했고**, 워치독은 자기 부팅 유예 규칙에 갇혀 11일간
+       "부팅 유예 구간"만 적었다. 아무도 몰랐다.
+
+    ⚠️ pm2 상태는 그 서버 안에서만 보인다. 반면 `llm_usage` 는 DB 에 남으므로
+       **어느 서버에서 돌든 여기서 관측된다** — 그래서 pm2 를 직접 보지 않는다.
+    """
+    try:
+        row = fetch_one(
+            "SELECT COUNT(*) c FROM llm_usage "
+            "WHERE provider = 'claude' AND input_tokens BETWEEN 1 AND 20 "
+            "AND ts >= DATE_SUB(NOW(), INTERVAL 24 HOUR)"
+        )
+    except Exception as e:  # 계측 테이블이 아직 없을 수 있다
+        return CheckResult(True, f"llm_usage 조회 불가 (판정 보류): {str(e)[:80]}")
+    n = (row or {}).get("c", 0) or 0
+    if n > _RESTART_LOOP_DAILY_LIMIT:
+        return CheckResult(
+            False,
+            f"24시간 재시작 {n}회 (허용 {_RESTART_LOOP_DAILY_LIMIT}회) — "
+            "크래시 루프 의심. 포트를 점유한 비-PM2 프로세스부터 확인할 것 "
+            "(pm2 ↺ 카운터 · netstat 포트 소유 PID)",
+        )
+    return CheckResult(True, f"24시간 재시작 {n}회")
+
+
 # ---- DB 무결성 ----
 
 
@@ -774,6 +815,8 @@ CHECKS: list[Check] = [
           "품질 스냅샷이 2일 내 생성됐는가", _check_quality_snapshot_fresh),
     Check("job_heartbeats", "batch", SEV_CRITICAL,
           "모든 스케줄 잡이 제 주기 안에 성공했는가", _check_job_heartbeats),
+    Check("restart_loop", "batch", SEV_CRITICAL,
+          "앱이 재시작을 반복하고 있지 않은가 (크래시 루프)", _check_restart_loop),
     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
           "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,

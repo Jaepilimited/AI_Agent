@@ -134,3 +134,38 @@ class TestStickyAnchorDoesNotWin:
                + "*Notion 사내 문서 검색 · 전체 팀 자료*" + nl
                + "[직전 실행 SQL — 후속]" + nl + "SELECT 1")
         assert _previous_route(ctx) == "notion"
+
+
+class TestVisualizationOnlyRequestInheritsRoute:
+    """⛔ 2026-08-21 사용자 제보 — "그래프로 그려줘" 가 가짜 ASCII 차트를 낳았다.
+
+    `_PREDICATE_HINT` 에 `"줘"` 가 있어 이 발화가 **독립 질문**으로 분류됐다.
+    → 경로를 못 물려받고 direct 로 떨어짐
+    → direct 에는 차트 경로가 없다 (`chart-config` 는 `sql_agent` 한 곳)
+    → LLM 이 ASCII 막대를 지어냈고, **눈금과 값이 맞지 않는 가짜 시계열**까지 나갔다.
+      게다가 "정식 차트로 받으려면 이렇게 다시 보내주세요" 라며 사용자에게 재입력을 요구했다.
+
+    없는 기능은 지어내는 게 아니라 **경로를 제대로 태워야** 한다.
+    """
+
+    @pytest.mark.parametrize("q", [
+        "그래프로 그려줘", "시계열 그래프로 그려줘", "차트로 보여줘",
+        "시계열 그래프로", "시각화해줘", "막대그래프로 다시 그려줘",
+    ])
+    def test_viz_only_inherits_previous_route(self, q):
+        assert _inherit_route_for_followup(q, _BQ_CTX) == "bigquery"
+
+    @pytest.mark.parametrize("q", [
+        "일본 매출 그래프 그려줘",
+        "남미 중미 2025년 2026년 매출 그래프 그려줘",
+    ])
+    def test_request_with_its_own_subject_routes_normally(self, q):
+        """⚠️ 주제가 남아 있으면 독립 질문이다 — 새로 조회해야 한다.
+
+        이걸 상속으로 삼키면 직전 주제의 차트가 나가고 질문에 답하지 않게 된다.
+        """
+        assert _inherit_route_for_followup(q, _BQ_CTX) is None
+
+    def test_viz_only_without_previous_route_does_not_guess(self):
+        """직전 경로가 없으면 물려받을 것도 없다 (첫 턴에 "그래프로 그려줘")."""
+        assert _inherit_route_for_followup("그래프로 그려줘", "") is None

@@ -257,8 +257,96 @@ def fi_prompt_masking() -> Tuple[bool, str]:
     return True, f"FI 섹션 {removed:,}자 제거 확인"
 
 
+# ── 8) 자동 주입 컬럼의 값을 손으로 다시 나열했는가 ─────────────────────────
+
+# 부정형 문장은 "이 값은 없다" 를 가르치는 정상 서술이라 열거로 세면 안 된다.
+_NEGATIVE_CONTEXT = re.compile(r"없다|없음|아니다|금지|마라|오답|쓰지|틀린")
+
+# SQL 예시(`WHERE Country IN ('중국','대만','홍콩')`)는 값을 **문서화**한 게 아니라
+# 쿼리를 보여준 것이다. 낡아도 조용한 오답을 만들지 않으므로 열거로 세지 않는다.
+# 위험한 것은 연산자 없이 "쓸 수 있는 값은 A, B, C" 라고 **적어 둔** 쪽이다.
+_SQL_OPERATOR = re.compile(r"\b(IN|LIKE|WHEN|WHERE|AND|OR)\b|[!=<>]=?")
+
+# 한 호흡에 인용부호 값이 이만큼 이상 나오면 '목록을 적은 것' 으로 본다.
+_ENUMERATION_MIN = 3
+
+_QUOTED = re.compile(r"[`'\"]([^`'\"\n]{1,20})[`'\"]")
+
+
+# 확인을 마친 예외. ⚠️ **뜰 때마다 실제 줄을 읽고 넣어라** — 그냥 쌓으면
+# `KNOWN_COLLISIONS` 와 같은 이유로 아무것도 안 지키는 목록이 된다.
+# 줄 번호가 아니라 내용으로 건다 (줄 번호는 편집마다 어긋난다).
+_KNOWN_HANDWRITTEN_OK = (
+    # `Integrated_marketing_cost.Team` 값 목록이다. `Team_NEW` 는 "같은 코드 체계" 라고
+    # **비교 언급**될 뿐, 이 줄이 문서화하는 컬럼이 아니다. 그 테이블 컬럼은 자동 주입
+    # 대상이 아니라 대조할 실측 목록 자체가 없다 (2026-08-24 확인).
+    "integrated_ad·Team_NEW 와",
+)
+
+
+def _autofilled_columns(prompt: str) -> List[str]:
+    """`{{VALUES:X}}` 가 실제로 박혀 있는 컬럼만 대상으로 삼는다.
+
+    ⚠️ 목록을 손으로 들고 있으면 이 검사 자체가 낡는다 — 검사가 막으려는 실패를
+       검사가 저지르는 꼴이다. 프롬프트에서 직접 읽는다.
+    """
+    return sorted(set(re.findall(r"\{\{VALUES:([A-Za-z_0-9]+)\}\}", prompt)))
+
+
+def _mentions_column(line: str, column: str) -> bool:
+    """⚠️ 부분 문자열 매치 금지 — `Category` 가 `SM_Main_Category` 안에서 잡힌다.
+
+    이 프로젝트에서 `'라인'`⊂`'가이드라인'`, `'환율'`⊂`'전환율'` 로 이미 겪은 부류다.
+    """
+    return re.search(rf"(?<![A-Za-z_0-9]){re.escape(column)}(?![A-Za-z_0-9])", line) is not None
+
+
+def prompt_no_handwritten_value_lists() -> Tuple[bool, str]:
+    """자동 주입되는 컬럼의 값 목록을 프롬프트 본문에 손으로 나열하지 않았는가.
+
+    ⛔ 2026-08-24 실제 오답: `{{VALUES:Continent1}}` 로 실측 목록(…중남미…)을 넣어두고도
+       규칙 본문에 옛 목록(남미·중미)이 ✅ 표시와 함께 남아 있었다. LLM 은 **손으로 적힌
+       쪽**을 믿고 0건을 냈고, 이어서 그 목록을 근거로 인용하며 "남미·중미 값은 정상
+       존재하므로 데이터가 없는 것" 이라고 단정했다 — 조회도 설명도 틀렸다.
+
+    `value_lists.py` 가 없애려던 실패인데 **사본을 하나만 지워서** 살아남았다.
+    이 검사는 "값 목록은 한 곳(자동 주입)에서만 온다" 를 강제한다.
+
+    ⚠️ 부정형("Continent2 에는 '유럽'·'아시아' 가 없다")은 가르치는 문장이라 통과시킨다.
+    """
+    rel = "prompts/sql_generator.txt"
+    if not _exists(rel):
+        return True, "건너뜀 (프롬프트 없음)"
+    prompt = _read(rel)
+    columns = _autofilled_columns(prompt)
+    if not columns:
+        return True, "건너뜀 (자동 주입 컬럼 없음)"
+    offenders: List[str] = []
+    for lineno, line in enumerate(prompt.split("\n"), 1):
+        if "{{VALUES:" in line or _NEGATIVE_CONTEXT.search(line):
+            continue
+        if _SQL_OPERATOR.search(line):      # 쿼리 예시는 문서화가 아니다
+            continue
+        if any(marker in line for marker in _KNOWN_HANDWRITTEN_OK):
+            continue
+        hit = next((c for c in columns if _mentions_column(line, c)), None)
+        if not hit:
+            continue
+        if len(_QUOTED.findall(line)) >= _ENUMERATION_MIN:
+            offenders.append(f"{rel}:{lineno} ({hit})")
+    if offenders:
+        return False, (
+            f"자동 주입 컬럼의 값을 손으로 나열한 곳 {len(offenders)}건: "
+            + ", ".join(offenders[:4])
+            + " — 목록은 {{VALUES:컬럼}} 한 곳에서만 와야 한다"
+        )
+    return True, f"손으로 적은 값 목록 없음 ({len(columns)}개 컬럼: {', '.join(columns)})"
+
+
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
+    ("static_value_list_dupes", prompt_no_handwritten_value_lists,
+     "자동 주입 컬럼 값을 손으로 다시 나열했는가"),
     ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
     ("static_at_sources", at_source_parity, "@@ 데이터소스 프론트/서버 일치"),
     ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),

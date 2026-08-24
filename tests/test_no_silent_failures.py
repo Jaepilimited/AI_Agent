@@ -27,6 +27,48 @@ def test_static_check(check_id, fn, label):
     assert ok, f"{label}: {detail}"
 
 
+def test_handwritten_value_list_detector_catches_the_real_incident():
+    """⛔ 2026-08-24 실제 오답 — 자동 주입 목록과 손으로 적은 목록이 갈렸다.
+
+    `{{VALUES:Continent1}}` 에는 실측(…중남미…)이 채워져 있었는데, 규칙 본문에
+    옛 목록(남미·중미)이 ✅ 표시와 함께 남아 있었다. LLM 은 **손으로 적힌 쪽**을 믿고
+    0건을 냈고, 이어서 그 목록을 근거로 인용하며 "남미·중미 값은 정상 존재하므로
+    데이터가 없는 것" 이라고 단정했다 — 조회도 설명도 틀렸다.
+    """
+    bad = ("    - ✅ **Continent1 사용** (광역): `'유럽'`, `'아시아'`, "
+           "`'북미'`, `'남미'`, `'중미'`, `'중동'`,")
+    assert not SC._SQL_OPERATOR.search(bad), "이 줄은 쿼리 예시가 아니라 문서화다"
+    assert not SC._NEGATIVE_CONTEXT.search(bad)
+    assert SC._mentions_column(bad, "Continent1")
+    assert len(SC._QUOTED.findall(bad)) >= SC._ENUMERATION_MIN
+
+
+def test_value_list_detector_ignores_sql_examples():
+    """⚠️ 오탐 방지 — 쿼리 예시는 값을 **문서화**한 게 아니다.
+
+    이걸 잡으면 프롬프트의 CASE WHEN 예시 20여 줄이 전부 경보가 되고,
+    경보가 소음이 되면 아무도 안 본다.
+    """
+    example = "  - ✅ `CASE WHEN Country IN ('중국', '대만', '홍콩') THEN '중화권'`"
+    assert SC._SQL_OPERATOR.search(example)
+
+
+def test_value_list_detector_uses_word_boundaries():
+    """⚠️ `Category` 가 `SM_Main_Category` 안에서 잡히면 안 된다.
+
+    이 프로젝트에서 `'라인'`⊂`'가이드라인'`, `'환율'`⊂`'전환율'` 로 이미 겪은 부류다.
+    """
+    assert SC._mentions_column("| Category | STRING |", "Category")
+    assert not SC._mentions_column("| SM_Main_Category | STRING |", "Category")
+
+
+def test_value_list_detector_targets_only_autofilled_columns():
+    """대상 컬럼을 손으로 들고 있으면 검사 자체가 낡는다 — 프롬프트에서 읽어야 한다."""
+    cols = SC._autofilled_columns("… {{VALUES:Continent1}} … {{VALUES:Team_NEW}} …")
+    assert cols == ["Continent1", "Team_NEW"]
+    assert SC._autofilled_columns("자리표시자 없음") == []
+
+
 def test_report_templates_have_valid_script():
     """⛔ 문법이 깨지면 **에러 없이 백지**가 나간다 (서버 200, HTML 정상 저장).
 

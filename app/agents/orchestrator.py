@@ -323,6 +323,48 @@ _METRIC_NOUNS = ("매출", "비용", "광고비", "수량", "판매량", "협업
                  "재고", "반품", "환불", "순위", "비중", "점유율")
 
 
+# 시각화 지시를 이루는 낱말들. 이것만으로 이뤄진 발화는 **새 주제가 없다**.
+_VIZ_NOUNS = ("그래프", "차트", "시각화", "도표", "플롯", "chart", "graph")
+# 차트 종류·조사·동사 등 시각화 지시에 딸려 오는 부속어 (긴 것부터 지운다)
+_VIZ_FILLER = (
+    "시계열", "막대그래프", "꺾은선", "막대", "파이", "원형", "도넛", "누적",
+    "영역", "산점도", "히트맵", "라인", "선형", "바",
+    "그려주", "그려", "보여주", "보여", "만들어", "그리", "뽑아", "바꿔",
+    "주세요", "해줘", "해서", "다시", "부탁", "please",
+    "이걸", "이거", "그거", "저거", "위에", "위", "좀", "한번",
+    "으로", "로", "를", "을", "은", "는", "도", "만", "요", "줘", "해",
+)
+_VIZ_STRIP = re.compile(
+    "|".join(re.escape(w) for w in sorted(_VIZ_FILLER, key=len, reverse=True))
+)
+_VIZ_MAX_LEN = 30
+
+
+def _is_visualization_only_request(query: str) -> bool:
+    """'그래프로 그려줘' 처럼 **시각화 지시밖에 없는** 발화인가.
+
+    ⛔ 이런 발화엔 새 주제가 없어 직전 턴의 데이터를 가리킬 수밖에 없다. 그런데
+       `_is_followup_utterance()` 는 `"줘"` 가 `_PREDICATE_HINT` 에 들어 있어 이걸
+       **독립 질문**으로 본다 → 경로를 못 물려받고 direct 로 떨어진다.
+       direct 에는 차트를 만드는 경로가 없다 (`chart-config` 는 `sql_agent` 한 곳).
+       그 결과 LLM 이 **ASCII 막대를 지어냈고, 눈금과 값이 맞지 않는 가짜 시계열**이
+       나갔다 (2026-08-21 사용자 제보). 없는 것을 없다고 하지 않고 그린 것이 문제다.
+
+    ⚠️ 주제가 하나라도 남으면 독립 질문이다 — "일본 매출 그래프 그려줘" 는 그대로
+       라우팅돼야 한다 (직전 주제가 무엇이든 일본 매출을 새로 조회해야 한다).
+    """
+    q = (query or "").strip().lower()
+    if not q or len(q) > _VIZ_MAX_LEN:
+        return False
+    if not any(n in q for n in _VIZ_NOUNS):
+        return False
+    for noun in _VIZ_NOUNS:
+        q = q.replace(noun, " ")
+    q = _VIZ_STRIP.sub(" ", q)
+    # 남은 것이 문장부호·공백뿐이면 시각화 지시만 있었던 것이다
+    return not re.sub(r"[\s,.!?~·…\-()]+", "", q)
+
+
 def _inherit_route_for_followup(query: str, conversation_context: str) -> Optional[str]:
     """후속 발화면 직전 경로를 물려준다. 아니면 None (정상 라우팅).
 
@@ -333,11 +375,17 @@ def _inherit_route_for_followup(query: str, conversation_context: str) -> Option
        정상 라우팅한다. 반대로 제품명·국가명·팀명은 축 값이라 그대로 상속한다
        ("센텔라 앰플은?" 은 매출 맥락에서 그 제품의 매출을 묻는 것이다).
     """
-    if not _is_followup_utterance(query):
+    viz_only = _is_visualization_only_request(query)
+    if not (_is_followup_utterance(query) or viz_only):
         return None
     prev = _previous_route(conversation_context)
     if not prev:
         return None
+    if viz_only:
+        # 시각화 지시만 있는 발화엔 지표 낱말이 없다 — 아래 가드를 탈 이유가 없고,
+        # 태워도 항상 통과한다. 어느 경로였든 "방금 그것"을 그리라는 뜻이다.
+        logger.info("route_inherited_viz_only", query=query[:60], route=prev)
+        return prev
     if prev != "bigquery" and any(w in query.lower() for w in _METRIC_NOUNS):
         logger.info("route_inherit_skipped_metric", query=query[:60], prev=prev)
         return None
