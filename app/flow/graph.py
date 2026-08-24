@@ -75,8 +75,11 @@ def expand_langgraph(ref: str, prefix: str) -> SubGraph:
 
 
 def _as_dict(n: Node) -> Dict[str, Any]:
+    # `unreachable` 은 **빈 문자열이 정상**이고, 값이 있으면 그 자체가 이유 문구다.
+    # 화면에서 흐릿하게·점선으로 그려 "엣지를 빠뜨린 것"과 구분한다.
     return {"id": n.id, "label": n.label, "fn": n.fn, "group": n.group,
-            "knobs": list(n.knobs), "has_subgraph": bool(n.subgraph)}
+            "knobs": list(n.knobs), "has_subgraph": bool(n.subgraph),
+            "unreachable": n.unreachable}
 
 
 def build() -> Dict[str, Any]:

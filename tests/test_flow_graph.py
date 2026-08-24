@@ -106,15 +106,123 @@ def test_build_wires_subgraph_into_main_flow():
     assert ("route.bigquery", "answer_check") not in pairs
 
 
+def _reachable_ids(out):
+    """도달 불가로 **명시한** 노드를 뺀 나머지 — 연결성 검사의 대상."""
+    unreachable = {n["id"] for n in out["nodes"] if n.get("unreachable")}
+    return {n["id"] for n in out["nodes"]} - unreachable
+
+
 def test_build_has_no_orphan_nodes():
-    """모든 노드가 최소 한 엣지에 등장해야 한다."""
+    """모든 노드가 최소 한 엣지에 등장해야 한다 (도달 불가 표시분 제외)."""
     out = graph.build()
-    node_ids = {n["id"] for n in out["nodes"]}
     touched = set()
     for e in out["edges"]:
         touched.add(e["src"])
         touched.add(e["dst"])
+    node_ids = _reachable_ids(out)
     assert node_ids <= touched, f"엣지에 전혀 등장하지 않는 노드: {node_ids - touched}"
+
+
+# ── 2026-08-24 리뷰: 그린 엣지 37개 중 13개가 코드가 하지 않는 일을 주장했다 ──
+# 아래 네 테스트가 그 13개를 각각 못질한다. 캔버스의 명제가
+# *그래프는 생성된다, 그려지지 않는다* 이므로, 이 테스트들이 그 명제 자체다.
+
+
+def test_router_out_edges_equal_the_classifier_route_universe():
+    """⛔ 라우터가 낼 수 없는 경로로 화살표를 그리면 **없는 길을 알려준다.**
+
+    실제 사고: 두 라우터 노드가 라우트 9종 전부로 부챗살을 그렸는데
+    `_keyword_classify_ex` 와 `_classify_with_llm` 은 여섯만 낸다 — 거짓 화살표 6개.
+    `report`·`model_rights` 는 심지어 **분류기보다 위**에서 가로채므로 방향까지
+    거꾸로였다. CLAUDE.md 는 이 화면이 "왜 보고서가 안 만들어지지"에 답하길
+    요구하는데, 그림대로 라우터를 뒤지면 거기엔 아무것도 없다.
+    """
+    from app.agents.orchestrator import ROUTER_ROUTES
+
+    out = graph.build()
+    for router in ("router.keyword", "router.llm"):
+        drawn = {e["dst"][len("route."):] for e in out["edges"]
+                 if e["src"] == router and e["dst"].startswith("route.")}
+        assert drawn == set(ROUTER_ROUTES), (
+            f"{router} 의 나가는 엣지가 분류기와 다르다: "
+            f"더 그림 {sorted(drawn - set(ROUTER_ROUTES))} / "
+            f"빠짐 {sorted(set(ROUTER_ROUTES) - drawn)}")
+
+
+def test_keyword_classifier_returns_only_router_routes():
+    """⚠️ 위 테스트는 `ROUTER_ROUTES` 상수가 맞다는 전제 위에 있다. 상수가 코드와
+    갈리면 둘이 사이좋게 틀린다 — 그래서 **함수 본문에서 직접** 읽어 대조한다.
+    `_keyword_classify_ex` 가 돌려주는 `("<route>", bool)` 리터럴이 전부다.
+    """
+    import inspect
+    import re
+
+    from app.agents.orchestrator import ROUTER_ROUTES, OrchestratorAgent
+
+    src = inspect.getsource(OrchestratorAgent._keyword_classify_ex)
+    returned = set(re.findall(r'return\s*\(\s*"([a-z_]+)"\s*,', src))
+    assert returned, "반환 리터럴을 하나도 못 읽었다 — 정규식이 낡았다"
+    assert returned <= set(ROUTER_ROUTES), (
+        f"분류기가 ROUTER_ROUTES 밖의 값을 낸다: {sorted(returned - set(ROUTER_ROUTES))}")
+
+
+def test_pre_router_intercepts_sit_upstream_of_the_router():
+    """보고서·초상권은 분류기가 **돌기도 전에** 가로챈다 (orchestrator.py 의
+    route_and_execute/route_and_stream 모두 분류기 호출보다 위에 있다).
+    캔버스가 이걸 라우터 하류로 그리면 실제 제어 흐름의 정반대다."""
+    out = graph.build()
+    pairs = {(e["src"], e["dst"]) for e in out["edges"]}
+    assert ("intercept.model_rights", "route.model_rights") in pairs
+    assert ("intercept.report", "route.report") in pairs
+    # 관문 → … → 라우터 순서여야 한다 (라우터가 관문보다 위면 안 된다)
+    assert ("intercept.report", "source_pin") in pairs
+    for router in ("router.keyword", "router.llm"):
+        assert (router, "route.report") not in pairs
+        assert (router, "route.model_rights") not in pairs
+
+
+def test_answer_check_hangs_off_bigquery_only():
+    """⛔ 안전장치가 덮지 않는 경로를 덮는다고 주장하는 것이 이 기능이 낼 수 있는
+    최악의 사고다. `answer_check` 의 호출부는 앱 전체에 **하나뿐**이다
+    (`sql_agent.format_answer` 안, 2026-08-24 전수 확인) — 그런데 캔버스는 7개
+    경로가 전부 수치검증을 거친다고 그렸다.
+
+    ⚠️ `multi` 도 `_multi_prepare` 로 sql_agent 를 부르지만, 그 답은 Flash 합성을
+       한 번 더 거쳐 나가므로 **최종 답변이 검증된 것이 아니다** — 그리지 않는다.
+    """
+    out = graph.build()
+    incoming = {e["src"] for e in out["edges"] if e["dst"] == "answer_check"}
+    assert incoming == {"bigquery.format_answer"}, (
+        f"answer_check 로 들어오는 엣지가 하나가 아니다: {sorted(incoming)}")
+
+
+def test_unreachable_node_is_marked_and_has_no_edges():
+    """`team` 은 `_handle_team` 과 디스패치 배선이 살아 있는데 어떤 진입점도
+    만들지 않는다. 화살표를 그리면 거짓말이고, 노드를 지우면 죽은 배선이 조용히
+    남는다 — 이유를 달아 '도달 불가' 로 표시하는 것이 세 번째 선택지다.
+    표시와 그림이 어긋나지 않는지(엣지 0개)를 여기서 못질한다."""
+    out = graph.build()
+    marked = [n for n in out["nodes"] if n.get("unreachable")]
+    assert [n["id"] for n in marked] == ["route.team"]
+    for n in marked:
+        assert n["unreachable"].strip(), "도달 불가면 이유를 적어야 한다"
+        touching = [e for e in out["edges"]
+                    if e["src"] == n["id"] or e["dst"] == n["id"]]
+        assert not touching, f"{n['id']} 는 도달 불가인데 엣지가 있다: {touching}"
+
+
+def test_every_route_the_code_can_produce_has_a_node():
+    """⛔ 예전 역방향 검사는 `_DB_REGISTRY` 만 봐서 `direct`·`team`·`multi` 처럼
+    `@@` 로 고를 수 없는 라우터 전용 경로를 **아예 못 봤다.** 열 번째 경로를
+    추가하면 캔버스 어디에도 없는데 검사는 계속 '일치' 라고 답했을 것이다."""
+    from app.agents.orchestrator import (HANDLER_ROUTES, ROUTER_ROUTES,
+                                         OrchestratorAgent)
+
+    every = (set(ROUTER_ROUTES) | set(HANDLER_ROUTES)
+             | {e["route"] for e in OrchestratorAgent._DB_REGISTRY})
+    ids = {n["id"] for n in graph.build()["nodes"]}
+    for r in sorted(every):
+        assert f"route.{r}" in ids, f"코드가 만들 수 있는 경로 {r} 가 캔버스에 없다"
 
 
 def test_build_has_no_disconnected_islands():
@@ -123,7 +231,7 @@ def test_build_has_no_disconnected_islands():
     있었을 뿐). 진짜 사고는 **본 흐름과 끊긴 별도 컴포넌트**였다는 것이라, `input`
     에서 엣지를 무방향으로 따라가 전체 노드에 닿는지를 봐야 이 결함이 잡힌다."""
     out = graph.build()
-    node_ids = {n["id"] for n in out["nodes"]}
+    node_ids = _reachable_ids(out)
     adjacency = collections.defaultdict(set)
     for e in out["edges"]:
         adjacency[e["src"]].add(e["dst"])

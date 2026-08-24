@@ -265,6 +265,26 @@ _FOLLOWUP_TAIL = re.compile(
 _FOLLOWUP_LEAD = ("그럼", "그러면", "그리고", "아니면", "그거", "저거", "이거", "거기")
 _FOLLOWUP_MAX_LEN = 25          # 이보다 길면 대개 독립 문장이다
 
+# ── 경로 집합 (아키텍처 캔버스·정적 검사가 읽는 단일 소스) ──
+#
+# ⛔ 이 두 집합을 함수 안에 리터럴로 두면 **캔버스가 조용히 낡는다.** 실제로
+#    2026-08-24 리뷰에서 걸렸다 — `app/flow/spec.py` 가 라우터에서 9개 경로가
+#    나오는 것처럼 그렸는데, 분류기는 6개만 낸다. 거짓 화살표 6개가 admin 화면에
+#    "권위 있어 보이는 거짓말"로 떠 있었다. 캔버스의 명제 자체가
+#    *그래프는 생성된다, 그려지지 않는다* 인데 그 명제를 캔버스가 어겼다.
+#
+# ROUTER_ROUTES — 분류기가 **낼 수 있는 값의 전부**.
+#   `_keyword_classify_ex` 의 모든 `return (...)` 리터럴과 `_classify_with_llm` 의
+#   허용 집합이 정확히 이 여섯이다 (2026-08-24 실측). 새 경로를 분류기에 추가하면
+#   여기부터 고쳐야 하고, 그래야 캔버스·정적 검사가 따라온다.
+ROUTER_ROUTES = frozenset({"bigquery", "notion", "gws", "cs", "multi", "direct"})
+
+# HANDLER_ROUTES — 경로 이름 → `_handle_<이름>` 실행 핸들러가 있는 것.
+#   ⚠️ `team` 은 여기 있지만 **어떤 진입점도 team 을 만들지 않는다** (분류기에 없고
+#      `_DB_REGISTRY` 에도 엔트리가 없다). 죽은 배선인 채로 남아 있다는 사실 자체를
+#      캔버스가 '도달 불가' 로 표시한다 — 목록에서 빼면 그 사실이 다시 안 보인다.
+HANDLER_ROUTES = ("bigquery", "notion", "gws", "cs", "team", "multi")
+
 # 직전 답변에 남는 경로 표지 (답변 형식이 경로마다 다르다)
 _ROUTE_MARKERS = (
     ("bigquery", ("[직전 실행 SQL", "내부 데이터베이스", "```chart-config")),
@@ -850,14 +870,7 @@ class OrchestratorAgent:
                 entry = db_entry[0]
                 route = entry["route"]
                 logger.info("db_prefix_routed", prefix=entry["key"], route=route, query=query[:80])
-                handlers = {
-                    "bigquery": self._handle_bigquery,
-                    "notion": self._handle_notion,
-                    "gws": self._handle_gws,
-                    "cs": self._handle_cs,
-                    "team": self._handle_team,
-                    "multi": self._handle_multi,
-                }
+                handlers = {r: getattr(self, f"_handle_{r}") for r in HANDLER_ROUTES}
                 handler = handlers.get(route, self._handle_direct)
                 if route in ("bigquery", "multi"):
                     result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)
@@ -973,14 +986,7 @@ class OrchestratorAgent:
                 pass
 
         # Step 2: Execute via Sub Agent with context
-        handlers = {
-            "bigquery": self._handle_bigquery,
-            "notion": self._handle_notion,
-            "gws": self._handle_gws,
-            "cs": self._handle_cs,
-            "team": self._handle_team,
-            "multi": self._handle_multi,
-        }
+        handlers = {r: getattr(self, f"_handle_{r}") for r in HANDLER_ROUTES}
         handler = handlers.get(route, self._handle_direct)
         if route in ("bigquery", "multi"):
             result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
@@ -1566,8 +1572,7 @@ class OrchestratorAgent:
             response = await asyncio.to_thread(llm.generate, prompt, temperature=0.0)
             route = response.strip().lower().split()[0] if response.strip() else "direct"
 
-            valid_routes = {"bigquery", "notion", "gws", "cs", "multi", "direct"}
-            if route in valid_routes:
+            if route in ROUTER_ROUTES:
                 return route
         except Exception as e:
             logger.warning("llm_classify_failed", error=str(e))

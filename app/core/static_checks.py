@@ -354,10 +354,22 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
 
     두 방향을 본다:
       · 선언 → 코드 : 노드가 가리키는 함수가 실제로 있는가
-      · 코드 → 선언 : `@@` 레지스트리의 라우트가 캔버스에 노드로 있는가
+      · 코드 → 선언 : 코드가 만들 수 있는 **모든 경로**가 캔버스에 노드로 있는가
+
+    ⛔ 예전엔 역방향이 `_DB_REGISTRY` 의 라우트 6종만 봤다 (bigquery·cs·gws·
+       model_rights·notion·report). `direct`·`team`·`multi` 는 `@@` 로 고를 수
+       없는 라우터 전용이라 **이 검사에 아예 안 보였다** — 열 번째 non-`@@` 경로를
+       추가하면 캔버스 어디에도 안 나오는데 검사는 계속 "일치" 라고 답했을 것이다
+       (2026-08-24 리뷰 지적). 지금은 세 출처의 합집합을 본다:
+         · `ROUTER_ROUTES`  — 분류기가 낼 수 있는 값
+         · `HANDLER_ROUTES` — `_handle_*` 실행 핸들러가 있는 값
+         · `_DB_REGISTRY`   — `@@` 로 고를 수 있는 값
+       오늘 이 합집합은 정확히 캔버스의 라우트 노드 집합이라 곧바로 통과하고,
+       **다음에 추가될 경로부터** 잡는다.
     """
     try:
-        from app.agents.orchestrator import OrchestratorAgent
+        from app.agents.orchestrator import (HANDLER_ROUTES, ROUTER_ROUTES,
+                                             OrchestratorAgent)
         from app.flow import graph, spec
     except Exception as e:
         return False, f"흐름 모듈 로드 실패: {str(e)[:120]}"
@@ -373,13 +385,32 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
                 problems.append(f"{node.id}→{dotted} ({type(e).__name__})")
 
     try:
-        node_ids = {n["id"] for n in graph.build()["nodes"]}
+        built = graph.build()
+        node_ids = {n["id"] for n in built["nodes"]}
     except Exception as e:
         return False, f"그래프 조립 실패: {str(e)[:120]}"
 
-    for route in sorted({e["route"] for e in OrchestratorAgent._DB_REGISTRY}):
+    registry_routes = {e["route"] for e in OrchestratorAgent._DB_REGISTRY}
+    every_route = set(ROUTER_ROUTES) | set(HANDLER_ROUTES) | registry_routes
+    for route in sorted(every_route):
         if f"route.{route}" not in node_ids:
-            problems.append(f"@@ 라우트 '{route}' 노드 없음")
+            problems.append(f"라우트 '{route}' 노드 없음")
+
+    # 라우터 노드의 나가는 엣지 = 분류기가 낼 수 있는 값. 하나라도 어긋나면
+    # 화면이 "이 질문은 저기로 갈 수 있다"고 없는 길을 알려준다 (13개 거짓 엣지 사고).
+    for router in ("router.keyword", "router.llm"):
+        drawn = {e["dst"][len("route."):] for e in built["edges"]
+                 if e["src"] == router and e["dst"].startswith("route.")}
+        if drawn != set(ROUTER_ROUTES):
+            problems.append(
+                f"{router} 엣지≠분류기 (+{sorted(drawn - set(ROUTER_ROUTES))} "
+                f"−{sorted(set(ROUTER_ROUTES) - drawn)})")
+
+    # 도달 불가로 표시한 노드에 화살표가 붙으면 표시와 그림이 서로 반대말을 한다
+    for node in spec.NODES:
+        if node.unreachable and any(
+                e["src"] == node.id or e["dst"] == node.id for e in built["edges"]):
+            problems.append(f"'{node.id}' 는 도달 불가로 적혔는데 엣지가 있다")
 
     if problems:
         return False, ("흐름 선언이 코드와 어긋난다 "

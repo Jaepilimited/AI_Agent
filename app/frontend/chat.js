@@ -4846,6 +4846,18 @@
           var color = n.group === "route" ? "#e89200"
                     : n.group === "sub" ? "#5b8def"
                     : n.group === "io" ? "#7a7a7a" : "#3aa675";
+          // ⚠️ 화살표 없이 홀로 뜬 노드는 두 가지일 수 있다 — 엣지를 빠뜨렸거나,
+          //    정말 도달할 수 없거나. 서버가 이유 문구를 주면 후자다. 흐릿한 점선
+          //    테두리 + 라벨에 (도달 불가) 를 붙여 "그리다 만 것"과 구분한다.
+          //    구분이 없으면 다음 사람이 "엣지가 빠졌네" 하고 없는 화살표를 그린다.
+          if (n.unreachable) {
+            return {
+              id: n.id, label: n.label + "\n(도달 불가)", shape: "box",
+              color: { background: "rgba(120,120,120,0.18)", border: "#8a8a8a" },
+              shapeProperties: { borderDashes: [4, 4] },
+              font: { color: "#8a8a8a", size: 12 },
+            };
+          }
           return {
             id: n.id, label: n.label, shape: "box",
             color: { background: color, border: color },
@@ -4881,6 +4893,8 @@
           detail.innerHTML =
             "<h3 style='margin:0 0 8px'>" + escapeHtml(n.label) + "</h3>" +
             "<div style='color:var(--text-muted);font-size:12px'>" + escapeHtml(n.id) + "</div>" +
+            (n.unreachable ? "<p style='margin:10px 0 4px;color:#c76a00'><b>도달 불가</b><br>"
+                             + escapeHtml(n.unreachable) + "</p>" : "") +
             (n.fn ? "<p style='margin:10px 0 4px'><b>실행 지점</b><br><code>"
                     + escapeHtml(n.fn) + "</code></p>" : "") +
             (knobs ? "<p style='margin:10px 0 4px'><b>설정값</b></p><ul>" + knobs + "</ul>" : "") +

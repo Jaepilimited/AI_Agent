@@ -324,3 +324,17 @@ def test_every_static_check_is_registered_in_self_check():
         "서버 자가 점검(매일 07:30)에서 돌지 않는다. self_check.py 의 static 카테고리에 "
         "Check(id, 'static', 심각도, 설명, _static(id)) 를 추가할 것"
     )
+
+    # ⛔ **반대 방향도 봐야 한다** (2026-08-24 리뷰). `_static(name)` 은 `SC.ALL` 에
+    #    없는 id 를 받으면 예전엔 `CheckResult(True, "검사 정의 없음 — 건너뜀")` 을
+    #    돌려줬다 — id 에 오타가 나거나 `SC.ALL` 에서 함수가 빠지면 **그 검사는
+    #    영원히 초록으로 통과한다.** 방어선이 사라진 것과 없는 것이 화면에서
+    #    똑같이 보인다. 위 사고(dca36c3)의 정확히 반대이고, 이 브랜치가 양쪽
+    #    거울에 항목을 더하면서 그 면적이 늘었다. 거울 목록은 양방향으로 대조한다.
+    known_ids = {check_id for check_id, _fn, _label in SC.ALL}
+    dangling = sorted(c.id for c in SELF.CHECKS
+                      if c.category == "static" and c.id not in known_ids)
+    assert not dangling, (
+        f"static_checks.ALL 에 없는 id 를 self_check 가 등록했다: {dangling} — "
+        "id 오타이거나 검사가 삭제된 것이다. 매일 07:30 에 '통과' 로 세어지고 있었다"
+    )
