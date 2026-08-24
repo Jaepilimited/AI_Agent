@@ -5,6 +5,7 @@ Workflow: generate_sql → validate_sql → execute_sql → format_answer
 
 import hashlib
 import json
+import calendar
 import re
 from collections import OrderedDict
 from datetime import datetime
@@ -416,6 +417,46 @@ _RE_C1_PREDICATE = re.compile(
 _RE_QUOTED_VALUE = re.compile(r"""(['"])([^'"]*)\1""")
 
 
+# ── 달을 지목한 질문의 기간 (붐따 #143·#144, 2026-08-24) ────────────────────
+# ⛔ 같은 질문 두 번에 총량이 1,805 / 11,865 로 갈렸다. SQL 두 개의 차이는 딱 하나,
+#    기간의 끝이었다 ('2026-08-24 23:59:59' vs '2026-08-31 23:59:59').
+#    프롬프트 15항이 "오늘 이후 행을 제외하라" 고 해서 LLM 이 확률적으로 잘랐는데,
+#    **자른 사실을 답변 어디에도 적지 않았다.** 달을 못 박은 질문이면 그 달 전체여야
+#    하고, 무엇보다 **매번 같아야** 한다 — 보증은 프롬프트가 아니라 코드가 한다.
+# ⚠️ 사용자가 기간 범위를 직접 말했으면(부터·까지·~) 건드리지 않는다. 스스로 자른
+#    기간을 늘리면 묻지 않은 것을 답하게 된다.
+_RE_MONTH_WORD = re.compile(r"(?<![0-9])(1[0-2]|0?[1-9])\s*월(?!말|초|중)")
+_RE_RANGE_WORD = re.compile(r"부터|까지|~|사이|이후|이전")
+_RE_BETWEEN_DATES = re.compile(
+    r"(BETWEEN\s*')(\d{4})-(\d{2})-(\d{2})([^']*)('\s*AND\s*')(\d{4})-(\d{2})-(\d{2})([^']*)(')",
+    re.IGNORECASE)
+
+
+def _normalize_named_period(sql: str, query: str) -> str:
+    """달을 지목한 질문이면 그 달 **전체**로 맞춘다 (조용히 잘린 상한을 되돌린다)."""
+    if not sql or not query:
+        return sql
+    if not _RE_MONTH_WORD.search(query) or _RE_RANGE_WORD.search(query):
+        return sql
+
+    def _fix(m: "re.Match") -> str:
+        y0, mo0, d0 = m.group(2), m.group(3), m.group(4)
+        y1, mo1, d1 = m.group(7), m.group(8), m.group(9)
+        # 같은 달이고, 1일에 시작하고, 말일보다 앞에서 끝날 때만 되돌린다
+        if (y0, mo0) != (y1, mo1) or d0 != "01":
+            return m.group(0)
+        last = calendar.monthrange(int(y1), int(mo1))[1]
+        if int(d1) >= last:
+            return m.group(0)
+        logger.warning("named_period_extended", month=f"{y1}-{mo1}",
+                       clamped_to=f"{y1}-{mo1}-{d1}", extended_to=f"{y1}-{mo1}-{last:02d}",
+                       query=query[:80])
+        return (f"{m.group(1)}{y0}-{mo0}-{d0}{m.group(5)}{m.group(6)}"
+                f"{y1}-{mo1}-{last:02d} 23:59:59{m.group(11)}")
+
+    return _RE_BETWEEN_DATES.sub(_fix, sql)
+
+
 def _localize_continent_literals(sql: str) -> str:
     """사용자가 말하는 `남미`·`중미` 를 실재하는 대륙 값으로 교정한다.
 
@@ -526,6 +567,7 @@ def _enforce_partition_filter(
         new_sql = _localize_country_literals(new_sql)
         new_sql = _localize_team_literals(new_sql)
         new_sql = _localize_promotion_literals(new_sql)
+        new_sql = _normalize_named_period(new_sql, query)
         new_sql = _strip_unrequested_brand_filter(new_sql, query)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
@@ -1339,6 +1381,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = _localize_team_literals(sql)
             sql = _localize_continent_literals(sql)
             sql = _localize_promotion_literals(sql)
+            sql = _normalize_named_period(sql, query)
             sql = _strip_unrequested_brand_filter(sql, query)
 
         logger.info("sql_generated", sql=sql[:200])
@@ -1432,6 +1475,7 @@ def _retry_with_stronger_model(
         retry_sql = _localize_country_literals(retry_sql)
         retry_sql = _localize_team_literals(retry_sql)
         retry_sql = _localize_promotion_literals(retry_sql)
+        retry_sql = _normalize_named_period(retry_sql, query)
         retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
         if not retry_sql:
             return None
@@ -1604,6 +1648,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _localize_country_literals(retry_sql)
                 retry_sql = _localize_team_literals(retry_sql)
                 retry_sql = _localize_promotion_literals(retry_sql)
+                retry_sql = _normalize_named_period(retry_sql, query)
                 retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
                 if retry_sql:
                     if (_period_retry_required
