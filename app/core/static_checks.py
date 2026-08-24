@@ -343,6 +343,50 @@ def prompt_no_handwritten_value_lists() -> Tuple[bool, str]:
     return True, f"손으로 적은 값 목록 없음 ({len(columns)}개 컬럼: {', '.join(columns)})"
 
 
+# ── 9) 흐름 선언 ↔ 코드 일치 ────────────────────────────────────────────────
+
+def flow_spec_matches_code() -> Tuple[bool, str]:
+    """캔버스가 그리는 흐름이 실제 코드와 같은가.
+
+    ⛔ 이 검사가 죽으면 **기능 전체가 무의미하다.** 그림이 코드와 갈리는 순간
+       캔버스는 이 프로젝트의 네 번째 "사본이 갈린 사고"가 된다
+       (direct 프롬프트 두 벌 / @@ 목록 두 벌 / Continent1 값 두 벌).
+
+    두 방향을 본다:
+      · 선언 → 코드 : 노드가 가리키는 함수가 실제로 있는가
+      · 코드 → 선언 : `@@` 레지스트리의 라우트가 캔버스에 노드로 있는가
+    """
+    try:
+        from app.agents.orchestrator import OrchestratorAgent
+        from app.flow import graph, spec
+    except Exception as e:
+        return False, f"흐름 모듈 로드 실패: {str(e)[:120]}"
+
+    problems: List[str] = []
+    for node in spec.NODES:
+        for dotted in (node.fn, node.subgraph):
+            if not dotted:
+                continue
+            try:
+                graph.resolve(dotted)
+            except Exception as e:
+                problems.append(f"{node.id}→{dotted} ({type(e).__name__})")
+
+    try:
+        node_ids = {n["id"] for n in graph.build()["nodes"]}
+    except Exception as e:
+        return False, f"그래프 조립 실패: {str(e)[:120]}"
+
+    for route in sorted({e["route"] for e in OrchestratorAgent._DB_REGISTRY}):
+        if f"route.{route}" not in node_ids:
+            problems.append(f"@@ 라우트 '{route}' 노드 없음")
+
+    if problems:
+        return False, ("흐름 선언이 코드와 어긋난다 "
+                       f"{len(problems)}건: " + ", ".join(problems[:4]))
+    return True, f"노드 {len(node_ids)}개 · 선언과 코드 일치"
+
+
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_value_list_dupes", prompt_no_handwritten_value_lists,
@@ -353,4 +397,5 @@ ALL = [
     ("static_cache_version", cache_version_doc, "캐시 버전 문서 일치"),
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
+    ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
 ]

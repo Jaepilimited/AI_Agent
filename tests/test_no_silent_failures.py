@@ -264,3 +264,37 @@ def test_empty_search_feeds_the_candidate_dictionary():
     from app.core import query_keywords as QK
 
     assert "collect_candidates" in inspect.getsource(QK.log_empty)
+
+
+def test_flow_spec_check_catches_dangling_function_reference():
+    """선언이 없는 함수를 가리키면 그림이 거짓말을 한다 — 반드시 잡혀야 한다."""
+    from app.flow import spec
+    from app.core import static_checks as SC
+
+    bad = spec.Node("ghost", "유령", fn="app.agents.orchestrator._nope_not_here")
+    original = spec.NODES
+    spec.NODES = original + (bad,)
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+        assert ok is False
+        assert "ghost" in detail
+    finally:
+        spec.NODES = original
+
+
+def test_flow_spec_check_catches_missing_at_source_route():
+    """`@@` 소스를 새로 붙였는데 캔버스에 노드가 없으면 잡아야 한다."""
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.core import static_checks as SC
+
+    original = OrchestratorAgent._DB_REGISTRY
+    OrchestratorAgent._DB_REGISTRY = original + [
+        {"key": "테스트소스", "aliases": [], "route": "nowhere",
+         "group": "x", "icon": "chart", "label": "x", "desc": "x"}
+    ]
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+        assert ok is False
+        assert "nowhere" in detail
+    finally:
+        OrchestratorAgent._DB_REGISTRY = original

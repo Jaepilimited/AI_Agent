@@ -871,6 +871,9 @@ CHECKS: list[Check] = [
     Check("static_fi_mask", "static", SEV_CRITICAL,
           "권한 없는 프롬프트에서 손익 섹션이 실제로 지워지는가",
           _static("static_fi_mask")),
+    Check("static_flow_spec", "static", SEV_WARNING,
+          "흐름 선언(캔버스)이 실제 코드·@@ 라우트와 일치하는가",
+          _static("static_flow_spec")),
 ]
 
 
