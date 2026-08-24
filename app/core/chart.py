@@ -28,10 +28,23 @@ _RE_TIME_COL = re.compile(r"(20\d{2}|q[1-4]|분기|월|주차|quarter|month|week
 _RE_YEAR_MONTH = re.compile(r"^(20\d{2})[-/.](0?[1-9]|1[0-2])(?:[-/.]\d{1,2})?$")
 
 
+# 연도를 **나눠 달라**는 표현 / 기간 **범위**를 잇는 표현.
+# ⛔ 연도가 둘 보인다고 YoY 로 보면 "2025년 1월부터 2026년 6월까지" 같은 범위까지
+#    연도별로 쫪진다 — 없던 비교가 생긴다. 범위 표현이 있으면 YoY 가 아니다.
+_RE_YEAR = re.compile(r"20\d{2}")
+_RANGE_HINT = re.compile(r"부터|까지|~|사이|이후|이전")
+_SPLIT_HINT = re.compile(r"라벨|각각|따로|나눠|나누어|분리|구분|비교|vs|대비")
+
+
 def infer_chart_intent(query: str, data: List[Dict[str, Any]]) -> str:
     """Deterministically classify chart intent; never leave YoY to the LLM."""
     q = (query or "").lower()
     if re.search(r"yoy|전년|전년도|작년|연도별\s*(비교|추이)|\b20\d{2}\s*(vs|대|대비)\s*20\d{2}", q):
+        return "yoy"
+    # "2025년 라벨1 2026년 라벨2" — yoy·전년 이란 말은 없지만 연도별로 나눠 달라는 뜻이다
+    # (붐따 #146: 이걸 trend 로 봐서 한 선 안에 두 해가 이어져 그려졌다)
+    if (len(set(_RE_YEAR.findall(q))) >= 2 and _SPLIT_HINT.search(q)
+            and not _RANGE_HINT.search(q)):
         return "yoy"
     if re.search(r"월별|월간|시계열|추이|트렌드|trend|monthly|time\s*series", q):
         return "trend"
@@ -47,9 +60,10 @@ def apply_chart_intent(config: Dict[str, Any], query: str, data: List[Dict[str, 
     config["chart_intent"] = intent
     if intent in ("yoy", "trend"):
         config["chart_type"] = "line"
-    if intent == "yoy":
-        # The builder detects YYYY-MM and creates year-labelled datasets.
-        config["group_column"] = None
+    # ⛔ 예전엔 여기서 `group_column = None` 으로 지우고 YoY 분기를 타게 했다.
+    #    그러면 대륙·팀 같은 **진짜 그룹 축이 사라져** 두 대륙을 물어도 어느 쪽 선인지
+    #    알 수 없고, 무엇보다 긴 형식 그대로 행 수 상한에 걸려 **차트가 통째로 사라졌다**
+    #    (붐따 #145). 빌더가 그룹 × 연도로 합쳐 시리즈를 만든다 — 여기선 건드리지 않는다.
     return config
 
 # Modern color palette — vibrant, accessible, distinct
@@ -193,6 +207,34 @@ def build_chartjs_config(
                                        x_col=x_col, y_col=y_col, rows=len(data))
                         return None
 
+        # ⛔ **정규화가 상한 검사보다 먼저다.** 예전엔 순서가 반대였고, 그래서
+        #    대륙 2개 × 20개월 = 40행이 긴 형식 그대로 행 수 상한(25/36)에 걸려
+        #    `return None` 으로 **차트가 통째로 사라졌다** (붐따 #145 "차트가 안나옴").
+        #    정규화하면 월 12 × 시리즈 4 라 여유롭게 통과한다. 상한 자체는 그대로 둔다.
+        if (chart_type == "line" and chart_config.get("chart_intent") == "yoy"
+                and isinstance(x_col, str)):
+            parsed = [_RE_YEAR_MONTH.match(str(r.get(x_col, ""))) for r in data]
+            years = {m.group(1) for m in parsed if m}
+            if len(years) >= 2 and sum(bool(m) for m in parsed) >= 4:
+                # 그룹 축(대륙·팀…)이 실제로 둘 이상일 때만 라벨에 함께 적는다.
+                # 하나뿐인데 붙이면 "남아메리카 2025" 처럼 군더더기가 된다.
+                multi_group = bool(group_col) and len(
+                    {str(r.get(group_col, "")) for r in data}) > 1
+                yoy_rows = []
+                for row, match in zip(data, parsed):
+                    if not match:
+                        continue
+                    item = dict(row)
+                    year = match.group(1)
+                    item["__yoy_series"] = (
+                        f"{row.get(group_col, '')} {year}" if multi_group else year)
+                    item["__yoy_month"] = f"{int(match.group(2))}월"
+                    yoy_rows.append(item)
+                data = yoy_rows
+                x_col = "__yoy_month"
+                group_col = "__yoy_series"
+                x_label = x_label or "월"
+
         # Readability limits
         max_items = {"bar": 15, "horizontal_bar": 20, "pie": 12, "line": 36}
         limit = max_items.get(chart_type, 20)
@@ -224,26 +266,6 @@ def build_chartjs_config(
                 return None
 
         # --- Build Chart.js config ---
-        # Normalize monthly YYYY-MM rows into two (or more) year-labelled
-        # series over a shared month axis for a true YoY line chart.
-        if (chart_type == "line" and chart_config.get("chart_intent") == "yoy"
-                and isinstance(x_col, str) and not group_col):
-            parsed = [_RE_YEAR_MONTH.match(str(r.get(x_col, ""))) for r in data]
-            years = {m.group(1) for m in parsed if m}
-            if len(years) >= 2 and sum(bool(m) for m in parsed) >= 4:
-                yoy_rows = []
-                for row, match in zip(data, parsed):
-                    if not match:
-                        continue
-                    item = dict(row)
-                    item["__yoy_year"] = match.group(1)
-                    item["__yoy_month"] = f"{int(match.group(2))}월"
-                    yoy_rows.append(item)
-                data = yoy_rows
-                x_col = "__yoy_month"
-                group_col = "__yoy_year"
-                x_label = x_label or "월"
-
         labels = [str(row.get(x_col, "")) for row in data]
         datasets = []
 
