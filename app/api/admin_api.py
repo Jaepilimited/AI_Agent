@@ -1120,3 +1120,17 @@ async def delete_announcement(ann_id: int, admin: User = Depends(_require_admin)
     from app.core import announcements
     ok = await asyncio.to_thread(announcements.delete, ann_id)
     return {"deleted": ok}
+
+
+@admin_router.get("/flow")
+async def get_flow(_: User = Depends(_require_admin)) -> dict:
+    """요청 실행 흐름 그래프 (아키텍처 캔버스용).
+
+    ⚠️ 그래프는 **코드에서 생성**된다 — 손으로 그린 사본이 아니다.
+       어긋남은 자가 점검 `static_flow_spec` 이 매일 잡는다.
+    """
+    from app.flow.graph import build
+
+    out = await asyncio.to_thread(build)
+    out["generated_at"] = datetime.now().isoformat(timespec="seconds")
+    return out

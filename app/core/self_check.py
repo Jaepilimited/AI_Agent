@@ -795,14 +795,23 @@ def _check_feedback_spike() -> CheckResult:
 
 
 def _static(name: str):
-    """`static_checks` 의 함수 하나를 CheckResult 로 감싼다 (부작용 없음)."""
+    """`static_checks` 의 함수 하나를 CheckResult 로 감싼다 (부작용 없음).
+
+    ⛔ **없는 id 는 실패로 답한다.** 예전엔 `CheckResult(True, "검사 정의 없음 — 건너뜀")`
+       이었다 — id 에 오타가 나거나 `SC.ALL` 에서 함수가 빠지면 그 검사는 **영원히
+       초록으로 통과**한다. 방어선이 사라진 것과 없는 것이 화면에서 똑같이 보인다.
+       이 브랜치가 고친 `dca36c3`(SC.ALL 에는 있는데 CHECKS 에 없어 서버에서 안 돌던
+       검사)의 정확히 반대 방향이고, 같은 부류의 조용한 실패다 (2026-08-24 리뷰).
+       거울 목록 두 벌은 **양쪽 다** 대조해야 한다.
+    """
     def run() -> CheckResult:
         from app.core import static_checks as SC
         for cid, fn, _label in SC.ALL:
             if cid == name:
                 ok, detail = fn()
                 return CheckResult(ok, detail)
-        return CheckResult(True, "검사 정의 없음 — 건너뜀")
+        return CheckResult(False, f"'{name}' 이 static_checks.ALL 에 없다 — "
+                                  "id 오타이거나 검사가 삭제됐다 (통과로 세지 않는다)")
     return run
 
 
@@ -856,6 +865,10 @@ CHECKS: list[Check] = [
     Check("static_assets", "static", SEV_CRITICAL,
           "프론트 자산이 비었거나 잘리지 않았는가 (0바이트면 화면이 백지다)",
           _static("static_assets")),
+    Check("static_value_list_dupes", "static", SEV_WARNING,
+          "자동 주입 컬럼의 값 목록을 프롬프트에 손으로 다시 나열하지 않았는가 "
+          "(낡은 목록을 LLM 이 믿고 0건을 '데이터 없음'으로 오답한 사고)",
+          _static("static_value_list_dupes")),
     Check("static_css_vars", "static", SEV_WARNING,
           "정의되지 않은 CSS 변수를 참조하지 않는가 (폴백이 조용히 먹는다)",
           _static("static_css_vars")),
@@ -871,6 +884,9 @@ CHECKS: list[Check] = [
     Check("static_fi_mask", "static", SEV_CRITICAL,
           "권한 없는 프롬프트에서 손익 섹션이 실제로 지워지는가",
           _static("static_fi_mask")),
+    Check("static_flow_spec", "static", SEV_WARNING,
+          "흐름 선언(캔버스)이 실제 코드·@@ 라우트와 일치하는가",
+          _static("static_flow_spec")),
 ]
 
 

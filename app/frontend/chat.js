@@ -4613,6 +4613,7 @@
       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
       if (tab.dataset.tab === "golden") loadGolden();
       if (tab.dataset.tab === "feedback") loadFeedbackInbox();
+      if (tab.dataset.tab === "flow") loadFlowCanvas();
       if (tab.dataset.tab !== "selfcheck") refreshSelfCheckBadge();
     });
   });
@@ -4815,6 +4816,97 @@
           _btnSelfCheck.textContent = "지금 점검";
         });
     });
+  }
+
+  // ── 아키텍처 캔버스 ──
+  // ⛔ 그래프는 서버가 **코드에서 생성**해 준다. 여기서 노드를 손으로 그리지 마라 —
+  //    그리는 순간 코드와 갈리고, 그건 이 프로젝트가 세 번 당한 사고다.
+  var _flowNetwork = null;
+  function loadFlowCanvas() {
+    var detail = document.getElementById("flow-detail");
+    // ⚠️ 이 앱의 admin fetch 는 **세션 쿠키** 방식이다. 헤더를 직접 붙이지 마라 —
+    //    `authHeaders()` 같은 헬퍼는 이 파일에 없다 (2026-08-24 확인).
+    //    다른 admin 로더도 그냥 `fetch("/api/admin/self-check")` 를 쓴다 (chat.js:4745).
+    fetch("/api/admin/flow")
+      .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function(g) {
+        // ⚠️ vis-network 는 <canvas> 에 그린다. canvas 2D 컨텍스트의 fillStyle 은
+        //    CSS 커스텀 프로퍼티 문자열을 해석하지 못해 조용히 무시되고 기본값(검정)
+        //    으로 남는다 — DOM 이 아니라서 undefined_css_vars 정적 검사도 못 잡는다.
+        //    여기서 실제 색상값으로 미리 풀어서 넘긴다 (열 때마다 다시 읽어 현재
+        //    테마를 반영). getComputedStyle 이 실패하면(예: SSR) 무채색 폴백.
+        var _cs = getComputedStyle(document.documentElement);
+        // ⚠️ --text-muted 는 라이트 모드에서 rgba(0,0,0,0.30) 이라 캔버스 9px
+        //    글자로는 사실상 안 보인다 (2026-08-24 스크린샷으로 확인) — --text-secondary
+        //    (0.55) 로 바꾸고 크기도 11 로 키운다.
+        var edgeLabelColor = (_cs.getPropertyValue("--text-secondary") || "").trim() || "#8a8a8a";
+        var byId = {};
+        var nodes = g.nodes.map(function(n) {
+          byId[n.id] = n;
+          var color = n.group === "route" ? "#e89200"
+                    : n.group === "sub" ? "#5b8def"
+                    : n.group === "io" ? "#7a7a7a" : "#3aa675";
+          // ⚠️ 화살표 없이 홀로 뜬 노드는 두 가지일 수 있다 — 엣지를 빠뜨렸거나,
+          //    정말 도달할 수 없거나. 서버가 이유 문구를 주면 후자다. 흐릿한 점선
+          //    테두리 + 라벨에 (도달 불가) 를 붙여 "그리다 만 것"과 구분한다.
+          //    구분이 없으면 다음 사람이 "엣지가 빠졌네" 하고 없는 화살표를 그린다.
+          if (n.unreachable) {
+            return {
+              id: n.id, label: n.label + "\n(도달 불가)", shape: "box",
+              color: { background: "rgba(120,120,120,0.18)", border: "#8a8a8a" },
+              shapeProperties: { borderDashes: [4, 4] },
+              font: { color: "#8a8a8a", size: 12 },
+            };
+          }
+          return {
+            id: n.id, label: n.label, shape: "box",
+            color: { background: color, border: color },
+            font: { color: "#fff", size: 12 },
+          };
+        });
+        var edges = g.edges.map(function(e) {
+          return {
+            from: e.src, to: e.dst, label: e.label || undefined,
+            arrows: "to",
+            dashes: !!e.conditional,
+            color: { color: e.conditional ? "#c76a00" : "rgba(128,128,128,0.5)" },
+            font: { size: 11, color: edgeLabelColor, strokeWidth: 0 },
+          };
+        });
+        var container = document.getElementById("flow-canvas");
+        container.innerHTML = "";
+        _flowNetwork = new vis.Network(container,
+          { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
+          {
+            layout: { hierarchical: { direction: 'LR', sortMethod: "directed",
+                                      levelSeparation: 190, nodeSpacing: 90 } },
+            physics: false,
+            interaction: { hover: true, tooltipDelay: 200 },
+          });
+        _flowNetwork.on("click", function(params) {
+          if (!params.nodes || !params.nodes.length) return;
+          var n = byId[params.nodes[0]];
+          if (!n) return;
+          var knobs = (n.knobs || []).map(function(k) {
+            return "<li><code>" + escapeHtml(k) + "</code></li>";
+          }).join("");
+          detail.innerHTML =
+            "<h3 style='margin:0 0 8px'>" + escapeHtml(n.label) + "</h3>" +
+            "<div style='color:var(--text-muted);font-size:12px'>" + escapeHtml(n.id) + "</div>" +
+            (n.unreachable ? "<p style='margin:10px 0 4px;color:#c76a00'><b>도달 불가</b><br>"
+                             + escapeHtml(n.unreachable) + "</p>" : "") +
+            (n.fn ? "<p style='margin:10px 0 4px'><b>실행 지점</b><br><code>"
+                    + escapeHtml(n.fn) + "</code></p>" : "") +
+            (knobs ? "<p style='margin:10px 0 4px'><b>설정값</b></p><ul>" + knobs + "</ul>" : "") +
+            (n.has_subgraph ? "<p style='color:var(--text-secondary)'>하위 그래프 있음 "
+                              + "(LangGraph 에서 자동 추출)</p>" : "");
+        });
+        detail.innerHTML = "노드를 클릭하세요. (생성 " + escapeHtml(g.generated_at || "") + ")";
+      })
+      .catch(function(e) {
+        detail.innerHTML = "<span style='color:#e05555'>흐름을 불러오지 못했습니다: "
+                           + escapeHtml(String(e)) + "</span>";
+      });
   }
 
   // ── 골든셋 회귀 ──

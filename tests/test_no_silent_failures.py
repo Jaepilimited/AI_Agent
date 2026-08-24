@@ -264,3 +264,77 @@ def test_empty_search_feeds_the_candidate_dictionary():
     from app.core import query_keywords as QK
 
     assert "collect_candidates" in inspect.getsource(QK.log_empty)
+
+
+def test_flow_spec_check_catches_dangling_function_reference():
+    """선언이 없는 함수를 가리키면 그림이 거짓말을 한다 — 반드시 잡혀야 한다."""
+    from app.flow import spec
+    from app.core import static_checks as SC
+
+    bad = spec.Node("ghost", "유령", fn="app.agents.orchestrator._nope_not_here")
+    original = spec.NODES
+    spec.NODES = original + (bad,)
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+        assert ok is False
+        assert "ghost" in detail
+    finally:
+        spec.NODES = original
+
+
+def test_flow_spec_check_catches_missing_at_source_route():
+    """`@@` 소스를 새로 붙였는데 캔버스에 노드가 없으면 잡아야 한다."""
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.core import static_checks as SC
+
+    original = OrchestratorAgent._DB_REGISTRY
+    OrchestratorAgent._DB_REGISTRY = original + [
+        {"key": "테스트소스", "aliases": [], "route": "nowhere",
+         "group": "x", "icon": "chart", "label": "x", "desc": "x"}
+    ]
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+        assert ok is False
+        assert "nowhere" in detail
+    finally:
+        OrchestratorAgent._DB_REGISTRY = original
+
+
+def test_every_static_check_is_registered_in_self_check():
+    """`SC.ALL` 에 검사를 추가해도 `self_check.CHECKS` 는 자동으로 따라오지 않는다.
+
+    ⛔ 2026-08-24 실제 발생 — `static_value_list_dupes` 가 `SC.ALL` 에 추가됐지만
+       (같은 날 커밋 9f39cbf, "손으로 적은 낡은 값 목록을 LLM 이 믿고 0건을 '데이터
+       없음'으로 오답한 사고" 방어) `self_check.CHECKS` 에는 등록되지 않았다. 그 결과
+       이 방어선은 **pytest 에서만 돌고 서버 자가 점검(매일 07:30)에서는 죽어 있었다**
+       — 그 상태로 이미 배포까지 됐다. `CHECKS` 가 `SC.ALL` 을 순회해 자동 생성되는
+       줄 알았던 것 자체가 착각이었다(`_static(id)` 로 하나씩 손으로 매핑하는 구조).
+
+    이 프로젝트가 반복해서 걸리는 "사본이 갈린다" 사고와 같은 종류다
+    (direct 프롬프트 두 벌 / @@ 목록 두 벌 / Continent1 값 두 벌) — 손으로 유지하는
+    거울 목록에 "둘이 일치하는가"를 보는 사람이 아무도 없었다. 이 테스트가 그 사람이다.
+    """
+    from app.core import self_check as SELF
+
+    registered_ids = {c.id for c in SELF.CHECKS}
+    missing = [check_id for check_id, _fn, _label in SC.ALL
+               if check_id not in registered_ids]
+    assert not missing, (
+        f"self_check.CHECKS 에 등록되지 않은 정적 검사: {missing} — "
+        "서버 자가 점검(매일 07:30)에서 돌지 않는다. self_check.py 의 static 카테고리에 "
+        "Check(id, 'static', 심각도, 설명, _static(id)) 를 추가할 것"
+    )
+
+    # ⛔ **반대 방향도 봐야 한다** (2026-08-24 리뷰). `_static(name)` 은 `SC.ALL` 에
+    #    없는 id 를 받으면 예전엔 `CheckResult(True, "검사 정의 없음 — 건너뜀")` 을
+    #    돌려줬다 — id 에 오타가 나거나 `SC.ALL` 에서 함수가 빠지면 **그 검사는
+    #    영원히 초록으로 통과한다.** 방어선이 사라진 것과 없는 것이 화면에서
+    #    똑같이 보인다. 위 사고(dca36c3)의 정확히 반대이고, 이 브랜치가 양쪽
+    #    거울에 항목을 더하면서 그 면적이 늘었다. 거울 목록은 양방향으로 대조한다.
+    known_ids = {check_id for check_id, _fn, _label in SC.ALL}
+    dangling = sorted(c.id for c in SELF.CHECKS
+                      if c.category == "static" and c.id not in known_ids)
+    assert not dangling, (
+        f"static_checks.ALL 에 없는 id 를 self_check 가 등록했다: {dangling} — "
+        "id 오타이거나 검사가 삭제된 것이다. 매일 07:30 에 '통과' 로 세어지고 있었다"
+    )

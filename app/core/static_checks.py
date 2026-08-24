@@ -343,6 +343,120 @@ def prompt_no_handwritten_value_lists() -> Tuple[bool, str]:
     return True, f"손으로 적은 값 목록 없음 ({len(columns)}개 컬럼: {', '.join(columns)})"
 
 
+# ── 9) 흐름 선언 ↔ 코드 일치 ────────────────────────────────────────────────
+
+def classifier_return_routes() -> set:
+    """`_keyword_classify_ex` 본문에서 **실제로 반환하는** 라우트 리터럴을 읽는다.
+
+    ⛔ 이 파싱이 pytest 안에만 있으면 **서버에서는 영원히 안 돈다.** 바로 오늘
+       (2026-08-24) 같은 모양의 사고를 겪었다 — `static_value_list_dupes` 가
+       `SC.ALL` 에는 있는데 `self_check.CHECKS` 에 등록되지 않아, 그날 아침 만든
+       방어가 pytest 에서는 초록인 채 **서버에서는 죽어 있었다**(`dca36c3`).
+       그래서 판정은 여기 한 곳에 두고, 이미 등록된 `flow_spec_matches_code` 가
+       부른다 — 새 검사 id 를 만들지 않으므로 등록을 빠뜨릴 자리 자체가 없다.
+
+    ⚠️ 빈 집합은 "반환이 없다" 가 아니라 **정규식이 낡았다**는 뜻이다. 호출부가
+       빈 집합을 통과시키면 `==` 비교가 공허하게 성립할 수 있으니 반드시 실패로
+       다뤄야 한다.
+    """
+    import inspect
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    src = inspect.getsource(OrchestratorAgent._keyword_classify_ex)
+    return set(re.findall(r'return\s*\(\s*"([a-z_]+)"\s*,', src))
+
+
+def flow_spec_matches_code() -> Tuple[bool, str]:
+    """캔버스가 그리는 흐름이 실제 코드와 같은가.
+
+    ⛔ 이 검사가 죽으면 **기능 전체가 무의미하다.** 그림이 코드와 갈리는 순간
+       캔버스는 이 프로젝트의 네 번째 "사본이 갈린 사고"가 된다
+       (direct 프롬프트 두 벌 / @@ 목록 두 벌 / Continent1 값 두 벌).
+
+    두 방향을 본다:
+      · 선언 → 코드 : 노드가 가리키는 함수가 실제로 있는가
+      · 코드 → 선언 : 코드가 만들 수 있는 **모든 경로**가 캔버스에 노드로 있는가
+
+    ⛔ 예전엔 역방향이 `_DB_REGISTRY` 의 라우트 6종만 봤다 (bigquery·cs·gws·
+       model_rights·notion·report). `direct`·`team`·`multi` 는 `@@` 로 고를 수
+       없는 라우터 전용이라 **이 검사에 아예 안 보였다** — 열 번째 non-`@@` 경로를
+       추가하면 캔버스 어디에도 안 나오는데 검사는 계속 "일치" 라고 답했을 것이다
+       (2026-08-24 리뷰 지적). 지금은 세 출처의 합집합을 본다:
+         · `ROUTER_ROUTES`  — 분류기가 낼 수 있는 값
+         · `HANDLER_ROUTES` — `_handle_*` 실행 핸들러가 있는 값
+         · `_DB_REGISTRY`   — `@@` 로 고를 수 있는 값
+       오늘 이 합집합은 정확히 캔버스의 라우트 노드 집합이라 곧바로 통과하고,
+       **다음에 추가될 경로부터** 잡는다.
+    """
+    try:
+        from app.agents.orchestrator import (HANDLER_ROUTES, ROUTER_ROUTES,
+                                             OrchestratorAgent)
+        from app.flow import graph, spec
+    except Exception as e:
+        return False, f"흐름 모듈 로드 실패: {str(e)[:120]}"
+
+    problems: List[str] = []
+    for node in spec.NODES:
+        for dotted in (node.fn, node.subgraph):
+            if not dotted:
+                continue
+            try:
+                graph.resolve(dotted)
+            except Exception as e:
+                problems.append(f"{node.id}→{dotted} ({type(e).__name__})")
+
+    try:
+        built = graph.build()
+        node_ids = {n["id"] for n in built["nodes"]}
+    except Exception as e:
+        return False, f"그래프 조립 실패: {str(e)[:120]}"
+
+    registry_routes = {e["route"] for e in OrchestratorAgent._DB_REGISTRY}
+    every_route = set(ROUTER_ROUTES) | set(HANDLER_ROUTES) | registry_routes
+    for route in sorted(every_route):
+        if f"route.{route}" not in node_ids:
+            problems.append(f"라우트 '{route}' 노드 없음")
+
+    # 라우터 노드의 나가는 엣지 = 분류기가 낼 수 있는 값. 하나라도 어긋나면
+    # 화면이 "이 질문은 저기로 갈 수 있다"고 없는 길을 알려준다 (13개 거짓 엣지 사고).
+    for router in ("router.keyword", "router.llm"):
+        drawn = {e["dst"][len("route."):] for e in built["edges"]
+                 if e["src"] == router and e["dst"].startswith("route.")}
+        if drawn != set(ROUTER_ROUTES):
+            problems.append(
+                f"{router} 엣지≠분류기 (+{sorted(drawn - set(ROUTER_ROUTES))} "
+                f"−{sorted(set(ROUTER_ROUTES) - drawn)})")
+
+    # 위 검사는 `ROUTER_ROUTES` 상수가 맞다는 전제 위에 있다 — 상수가 코드와 갈리면
+    # 둘이 사이좋게 틀린다. 그래서 분류기 본문에서 직접 읽어 **양방향으로** 대조한다.
+    # ⛔ 부분집합(⊆)으로는 부족하다: 상수 쪽이 더 넓은 방향이 정확히 **거짓 화살표가
+    #    생기는 방향**이다 (라우터의 나가는 엣지를 이 상수에서 부챗살로 뽑기 때문).
+    #    실제로 상수에 없는 라우트를 하나 끼워 넣어도 ⊆ 는 그대로 참이었다.
+    try:
+        returned = classifier_return_routes()
+    except Exception as e:
+        problems.append(f"분류기 반환 리터럴 파싱 실패 ({type(e).__name__})")
+    else:
+        if not returned:
+            problems.append("분류기 반환 리터럴을 하나도 못 읽었다 — 정규식이 낡았다")
+        elif returned != set(ROUTER_ROUTES):
+            problems.append(
+                f"분류기≠ROUTER_ROUTES (상수에만 {sorted(set(ROUTER_ROUTES) - returned)} "
+                f"· 코드에만 {sorted(returned - set(ROUTER_ROUTES))})")
+
+    # 도달 불가로 표시한 노드에 화살표가 붙으면 표시와 그림이 서로 반대말을 한다
+    for node in spec.NODES:
+        if node.unreachable and any(
+                e["src"] == node.id or e["dst"] == node.id for e in built["edges"]):
+            problems.append(f"'{node.id}' 는 도달 불가로 적혔는데 엣지가 있다")
+
+    if problems:
+        return False, ("흐름 선언이 코드와 어긋난다 "
+                       f"{len(problems)}건: " + ", ".join(problems[:4]))
+    return True, f"노드 {len(node_ids)}개 · 선언과 코드 일치"
+
+
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_value_list_dupes", prompt_no_handwritten_value_lists,
@@ -353,4 +467,5 @@ ALL = [
     ("static_cache_version", cache_version_doc, "캐시 버전 문서 일치"),
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
+    ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
 ]
