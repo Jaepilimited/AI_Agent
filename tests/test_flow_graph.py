@@ -153,17 +153,41 @@ def test_keyword_classifier_returns_only_router_routes():
     """⚠️ 위 테스트는 `ROUTER_ROUTES` 상수가 맞다는 전제 위에 있다. 상수가 코드와
     갈리면 둘이 사이좋게 틀린다 — 그래서 **함수 본문에서 직접** 읽어 대조한다.
     `_keyword_classify_ex` 가 돌려주는 `("<route>", bool)` 리터럴이 전부다.
+
+    ⛔ 예전엔 `⊆` 로 봤는데, 정작 **거짓 화살표가 생기는 방향은 반대쪽**이다 —
+       라우터의 나가는 엣지를 `ROUTER_ROUTES` 에서 부챗살로 뽑으므로, 상수가 더
+       넓으면 분류기가 못 내는 경로로 화살표가 그려진다. 상수에 없는 라우트를
+       끼워 넣어도 `⊆` 는 그대로 참이었다 (2026-08-24 재리뷰). 이제 `==` 다.
+    ⛔ 파싱은 **`static_checks` 를 부른다.** 여기서 다시 구현하면 서버(pytest 도
+       tests/ 도 없다)는 이 판정을 영원히 못 돌린다 — 같은 날 `static_value_list_dupes`
+       가 `CHECKS` 등록 누락으로 서버에서만 죽어 있던 사고와 같은 모양이다.
     """
-    import inspect
-    import re
+    from app.core.static_checks import classifier_return_routes
 
-    from app.agents.orchestrator import ROUTER_ROUTES, OrchestratorAgent
+    from app.agents.orchestrator import ROUTER_ROUTES
 
-    src = inspect.getsource(OrchestratorAgent._keyword_classify_ex)
-    returned = set(re.findall(r'return\s*\(\s*"([a-z_]+)"\s*,', src))
+    returned = classifier_return_routes()
     assert returned, "반환 리터럴을 하나도 못 읽었다 — 정규식이 낡았다"
-    assert returned <= set(ROUTER_ROUTES), (
-        f"분류기가 ROUTER_ROUTES 밖의 값을 낸다: {sorted(returned - set(ROUTER_ROUTES))}")
+    assert returned == set(ROUTER_ROUTES), (
+        f"분류기와 ROUTER_ROUTES 가 다르다 — 상수에만 "
+        f"{sorted(set(ROUTER_ROUTES) - returned)} (없는 길로 화살표가 그려진다) / "
+        f"코드에만 {sorted(returned - set(ROUTER_ROUTES))} (그려지지 않는 길이 생긴다)")
+
+
+def test_flow_check_catches_a_phantom_route_in_the_constant():
+    """⛔ 위 판정이 **서버에서도** 도는지를 못질한다. `flow_spec_matches_code` 는
+    자가 점검(`static_flow_spec`)에 이미 등록돼 있어, 여기 걸리면 서버도 걸린다.
+    상수에만 있는 유령 라우트를 끼워 넣어 실제로 실패하는지 확인한다 —
+    부분집합 비교였다면 이 조작이 그대로 통과했다."""
+    from app.core import static_checks as SC
+
+    real = SC.classifier_return_routes
+    SC.classifier_return_routes = lambda: real() - {"cs"}
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+    finally:
+        SC.classifier_return_routes = real
+    assert not ok and "cs" in detail, f"유령 라우트를 못 잡았다: {detail}"
 
 
 def test_pre_router_intercepts_sit_upstream_of_the_router():

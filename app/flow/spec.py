@@ -111,8 +111,26 @@ _CLASSIFIER_ROUTES = ("route.bigquery", "route.notion", "route.gws",
                       "route.cs", "route.multi", "route.direct")
 
 # `@@` 지정·사이드바 단일 소스가 곧장 보내는 경로.
-# `_DB_REGISTRY` 의 라우트 6종 중 report·model_rights 는 위 관문이 이미 채가므로
-# 남는 것이 이 넷이다 (검사가 이 뺄셈을 다시 계산해 대조한다).
+# `_DB_REGISTRY` 의 라우트 6종 중 남는 것이 이 넷인데, **둘의 이유가 서로 다르다.**
+#
+#   · `model_rights` — 위 관문이 정말로 채간다. 관문 조건에
+#     `list(enabled_sources) == ["초상권"]` 이 들어 있어 소스 지정도 거기서 걸린다.
+#   · `report` — 관문이 채가지 **않는다.** 관문은 `db_entry`(질문에 적은 `@@보고서`)와
+#     `wants_report(query)` 문구만 본다 — `enabled_sources` 는 쳐다보지 않는다.
+#     그래서 `/보고서` 로 소스만 지정하고 본문에 '보고서' 를 안 쓰면 관문을 그냥
+#     통과하고, 여기 소스 지정 경로가 `route = "report"` 를 만든다.
+#
+# ⛔ 그런데도 `report` 를 여기 넣지 않는 이유는 **그 경로가 보고서를 만들지 않기
+#    때문**이다. 하류 디스패치 표 어디에도 `report` 가 없어 (`HANDLER_ROUTES` 로
+#    만드는 표·스트리밍 말미의 `{"gws","team"}` 표 둘 다) `handler` 가
+#    `_handle_direct` 로 떨어진다 — 라우트 변수만 `report` 이고 실제로 나가는 것은
+#    평범한 direct 답변이다. `route.report` 노드는 "보고서 생성이 실행된다" 는 뜻이라,
+#    여기에 화살표를 그으면 없는 산출물을 약속하는 거짓 엣지가 하나 더 생긴다.
+#    (핸들러가 direct 로 강등되는 것 자체는 별건의 잠복 결함 — 이 커밋 범위 밖이다.)
+#
+# 2026-08-24 재리뷰: 예전 주석은 이 자리에서 "관문이 이미 채간다" 고 적어
+# `report` 까지 싸잡았는데 그건 사실이 아니었다. 그린 엣지는 지금도 전부 맞지만,
+# **코드가 부정하는 손글씨 근거**는 거짓 엣지 13개를 낳은 것과 같은 부류라 고쳤다.
 _PINNED_ROUTES = ("route.bigquery", "route.notion", "route.cs", "route.gws")
 
 # 직전 경로 상속이 낼 수 있는 값 = `_ROUTE_MARKERS` 의 네 종 (+ 정정 후속 → bigquery)

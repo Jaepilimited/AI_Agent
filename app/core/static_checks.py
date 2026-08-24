@@ -345,6 +345,28 @@ def prompt_no_handwritten_value_lists() -> Tuple[bool, str]:
 
 # ── 9) 흐름 선언 ↔ 코드 일치 ────────────────────────────────────────────────
 
+def classifier_return_routes() -> set:
+    """`_keyword_classify_ex` 본문에서 **실제로 반환하는** 라우트 리터럴을 읽는다.
+
+    ⛔ 이 파싱이 pytest 안에만 있으면 **서버에서는 영원히 안 돈다.** 바로 오늘
+       (2026-08-24) 같은 모양의 사고를 겪었다 — `static_value_list_dupes` 가
+       `SC.ALL` 에는 있는데 `self_check.CHECKS` 에 등록되지 않아, 그날 아침 만든
+       방어가 pytest 에서는 초록인 채 **서버에서는 죽어 있었다**(`dca36c3`).
+       그래서 판정은 여기 한 곳에 두고, 이미 등록된 `flow_spec_matches_code` 가
+       부른다 — 새 검사 id 를 만들지 않으므로 등록을 빠뜨릴 자리 자체가 없다.
+
+    ⚠️ 빈 집합은 "반환이 없다" 가 아니라 **정규식이 낡았다**는 뜻이다. 호출부가
+       빈 집합을 통과시키면 `==` 비교가 공허하게 성립할 수 있으니 반드시 실패로
+       다뤄야 한다.
+    """
+    import inspect
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    src = inspect.getsource(OrchestratorAgent._keyword_classify_ex)
+    return set(re.findall(r'return\s*\(\s*"([a-z_]+)"\s*,', src))
+
+
 def flow_spec_matches_code() -> Tuple[bool, str]:
     """캔버스가 그리는 흐름이 실제 코드와 같은가.
 
@@ -405,6 +427,23 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
             problems.append(
                 f"{router} 엣지≠분류기 (+{sorted(drawn - set(ROUTER_ROUTES))} "
                 f"−{sorted(set(ROUTER_ROUTES) - drawn)})")
+
+    # 위 검사는 `ROUTER_ROUTES` 상수가 맞다는 전제 위에 있다 — 상수가 코드와 갈리면
+    # 둘이 사이좋게 틀린다. 그래서 분류기 본문에서 직접 읽어 **양방향으로** 대조한다.
+    # ⛔ 부분집합(⊆)으로는 부족하다: 상수 쪽이 더 넓은 방향이 정확히 **거짓 화살표가
+    #    생기는 방향**이다 (라우터의 나가는 엣지를 이 상수에서 부챗살로 뽑기 때문).
+    #    실제로 상수에 없는 라우트를 하나 끼워 넣어도 ⊆ 는 그대로 참이었다.
+    try:
+        returned = classifier_return_routes()
+    except Exception as e:
+        problems.append(f"분류기 반환 리터럴 파싱 실패 ({type(e).__name__})")
+    else:
+        if not returned:
+            problems.append("분류기 반환 리터럴을 하나도 못 읽었다 — 정규식이 낡았다")
+        elif returned != set(ROUTER_ROUTES):
+            problems.append(
+                f"분류기≠ROUTER_ROUTES (상수에만 {sorted(set(ROUTER_ROUTES) - returned)} "
+                f"· 코드에만 {sorted(returned - set(ROUTER_ROUTES))})")
 
     # 도달 불가로 표시한 노드에 화살표가 붙으면 표시와 그림이 서로 반대말을 한다
     for node in spec.NODES:
