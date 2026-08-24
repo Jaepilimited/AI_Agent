@@ -33,7 +33,7 @@ except Exception:
 
 PROJ = Path(__file__).resolve().parent.parent
 WAS = "10.1.150.5"
-REMOTE = "/home/jeffrey/ai-craver"
+REMOTE = "/home/jeffrey/AI_Agent"
 WHO = "임재필"
 
 # (붐따 id, 신고일(YYYY-MM-DD), 제보자에게 갈 회신)
@@ -58,8 +58,10 @@ ENTRIES = [
                         "실제 62.2억으로 교정했습니다. (2026-08-18 반영)"),
     (95,  "2026-06-17", "구글 워크스페이스 조회가 프록시를 통과하지 못해 항상 실패하던 "
                         "원인을 제거했습니다. (2026-08-06 반영)"),
-    (55,  "2026-06-04", "메가와리 2026년 1·2분기 기간을 등록했습니다. 이제 분기 일정 "
-                        "기준으로 조회됩니다. (2026-08-18 반영)"),
+    # ⛔ #55 는 뺐다. 프로덕션에서 이미 `ack` 로 "[재현 필요] [기능 요청]" 이라고
+    #    분류돼 있다 — 메가와리 **대시보드의 일정을 가져와 달라**는 기능 요청이고,
+    #    Q2 기간을 프롬프트 표에 등록한 것으로는 그 요청이 끝나지 않는다.
+    #    사람이 내린 판정을 스크립트가 덮어쓰면 처리함이 기록으로서 값을 잃는다.
     (53,  "2026-05-27", "차트가 조용히 사라지던 원인(JSON 응답 깨짐)을 고쳤습니다. "
                         "원형 차트도 정상 생성됩니다. (2026-08-11 반영)"),
     (91,  "2026-05-14", "CBT 는 팀 값이 브랜드 컬럼에 잘못 들어간 것이라, 이제 스킨천사 "
@@ -138,7 +140,7 @@ def run_remote(apply: bool) -> int:
 
 def main() -> int:
     apply = "--apply" in sys.argv
-    where = "프로덕션(WAS 경유)" if "--remote" in sys.argv else "로컬 DB"
+    where = "프로덕션(WAS 경유)" if "--remote" in sys.argv else "이 서버의 DB"
     print(f"===== 붐따 처리 표시 백필 — {where} / {len(ENTRIES)}건 =====\n")
     return run_remote(apply) if "--remote" in sys.argv else run(apply)
 

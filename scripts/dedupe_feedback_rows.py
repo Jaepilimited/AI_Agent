@@ -32,7 +32,7 @@ from pathlib import Path
 
 PROJ = Path(__file__).resolve().parent.parent
 WAS = "10.1.150.5"
-REMOTE = "/home/jeffrey/ai-craver"
+REMOTE = "/home/jeffrey/AI_Agent"
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -137,7 +137,7 @@ def run_remote(apply: bool) -> int:
 
 def main() -> int:
     apply = "--apply" in sys.argv
-    where = "프로덕션(WAS 경유)" if "--remote" in sys.argv else "로컬 DB"
+    where = "프로덕션(WAS 경유)" if "--remote" in sys.argv else "이 서버의 DB"
     print(f"===== 붐따 복제본 정리 — {where} =====\n")
     return run_remote(apply) if "--remote" in sys.argv else run(apply)
 
