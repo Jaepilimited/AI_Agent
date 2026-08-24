@@ -298,3 +298,29 @@ def test_flow_spec_check_catches_missing_at_source_route():
         assert "nowhere" in detail
     finally:
         OrchestratorAgent._DB_REGISTRY = original
+
+
+def test_every_static_check_is_registered_in_self_check():
+    """`SC.ALL` 에 검사를 추가해도 `self_check.CHECKS` 는 자동으로 따라오지 않는다.
+
+    ⛔ 2026-08-24 실제 발생 — `static_value_list_dupes` 가 `SC.ALL` 에 추가됐지만
+       (같은 날 커밋 9f39cbf, "손으로 적은 낡은 값 목록을 LLM 이 믿고 0건을 '데이터
+       없음'으로 오답한 사고" 방어) `self_check.CHECKS` 에는 등록되지 않았다. 그 결과
+       이 방어선은 **pytest 에서만 돌고 서버 자가 점검(매일 07:30)에서는 죽어 있었다**
+       — 그 상태로 이미 배포까지 됐다. `CHECKS` 가 `SC.ALL` 을 순회해 자동 생성되는
+       줄 알았던 것 자체가 착각이었다(`_static(id)` 로 하나씩 손으로 매핑하는 구조).
+
+    이 프로젝트가 반복해서 걸리는 "사본이 갈린다" 사고와 같은 종류다
+    (direct 프롬프트 두 벌 / @@ 목록 두 벌 / Continent1 값 두 벌) — 손으로 유지하는
+    거울 목록에 "둘이 일치하는가"를 보는 사람이 아무도 없었다. 이 테스트가 그 사람이다.
+    """
+    from app.core import self_check as SELF
+
+    registered_ids = {c.id for c in SELF.CHECKS}
+    missing = [check_id for check_id, _fn, _label in SC.ALL
+               if check_id not in registered_ids]
+    assert not missing, (
+        f"self_check.CHECKS 에 등록되지 않은 정적 검사: {missing} — "
+        "서버 자가 점검(매일 07:30)에서 돌지 않는다. self_check.py 의 static 카테고리에 "
+        "Check(id, 'static', 심각도, 설명, _static(id)) 를 추가할 것"
+    )

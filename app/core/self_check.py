@@ -856,6 +856,10 @@ CHECKS: list[Check] = [
     Check("static_assets", "static", SEV_CRITICAL,
           "프론트 자산이 비었거나 잘리지 않았는가 (0바이트면 화면이 백지다)",
           _static("static_assets")),
+    Check("static_value_list_dupes", "static", SEV_WARNING,
+          "자동 주입 컬럼의 값 목록을 프롬프트에 손으로 다시 나열하지 않았는가 "
+          "(낡은 목록을 LLM 이 믿고 0건을 '데이터 없음'으로 오답한 사고)",
+          _static("static_value_list_dupes")),
     Check("static_css_vars", "static", SEV_WARNING,
           "정의되지 않은 CSS 변수를 참조하지 않는가 (폴백이 조용히 먹는다)",
           _static("static_css_vars")),
