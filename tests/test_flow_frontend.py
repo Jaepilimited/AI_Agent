@@ -36,3 +36,18 @@ def test_js_uses_hierarchical_layout_not_physics():
     노드가 뭉쳐서 흐름으로 읽히지 않는다."""
     js = _read("app/frontend/chat.js")
     assert "hierarchical" in js and "'LR'" in js
+
+
+def test_flow_canvas_vis_options_no_css_var():
+    """vis-network 는 <canvas> 에 그린다. canvas 2D 컨텍스트의 fillStyle 은 CSS
+    커스텀 프로퍼티(`var(--...)`)를 해석하지 못해 조용히 무시되고 기본값(검정)으로
+    남는다 — 실제로 한 번 이렇게 새서(엣지 라벨이 다크 모드에서 안 보임) 브라우저로
+    확인 후 고쳤다. 이 검사는 **좁다**: vis 옵션(노드/엣지/Network 생성자) 구간만
+    보고, `detail.innerHTML` 처럼 실제 DOM 에 꽂히는(정상 동작하는) `var(--...)` 는
+    검사 대상에서 뺀다. 이 특정 실수(canvas 옵션에 CSS 변수 문자열)만 잡을 뿐,
+    canvas/CSS 불일치 전체를 보증하지 않는다."""
+    js = _read("app/frontend/chat.js")
+    start = js.index("function loadFlowCanvas")
+    end = js.index('.on("click"', start)
+    vis_options_region = js[start:end]
+    assert "var(--" not in vis_options_region

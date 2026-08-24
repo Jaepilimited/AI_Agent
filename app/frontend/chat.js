@@ -4830,6 +4830,13 @@
     fetch("/api/admin/flow")
       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function(g) {
+        // ⚠️ vis-network 는 <canvas> 에 그린다. canvas 2D 컨텍스트의 fillStyle 은
+        //    CSS 커스텀 프로퍼티 문자열을 해석하지 못해 조용히 무시되고 기본값(검정)
+        //    으로 남는다 — DOM 이 아니라서 undefined_css_vars 정적 검사도 못 잡는다.
+        //    여기서 실제 색상값으로 미리 풀어서 넘긴다 (열 때마다 다시 읽어 현재
+        //    테마를 반영). getComputedStyle 이 실패하면(예: SSR) 무채색 폴백.
+        var _cs = getComputedStyle(document.documentElement);
+        var edgeLabelColor = (_cs.getPropertyValue("--text-muted") || "").trim() || "#8a8a8a";
         var byId = {};
         var nodes = g.nodes.map(function(n) {
           byId[n.id] = n;
@@ -4848,7 +4855,7 @@
             arrows: "to",
             dashes: !!e.conditional,
             color: { color: e.conditional ? "#c76a00" : "rgba(128,128,128,0.5)" },
-            font: { size: 9, color: "var(--text-muted)", strokeWidth: 0 },
+            font: { size: 9, color: edgeLabelColor, strokeWidth: 0 },
           };
         });
         var container = document.getElementById("flow-canvas");
