@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=167">
+  <link rel="stylesheet" href="/static/style.css?v=168">
   <link rel="stylesheet" href="/static/cella-pet.css?v=8">
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
@@ -352,8 +352,12 @@
     <div class="admin-tab-content" id="tab-feedback">
       <div class="admin-toolbar">
         <select id="feedback-filter" class="admin-select">
-          <option value="">전체</option>
-          <option value="new" selected>미확인</option>
+          <!-- ⛔ 기본은 '전체' 다. '미확인' 을 기본으로 두면 완료로 바꾼 항목이 목록에서
+               **사라져** 처리됐다는 표시가 뜨지 않는다 — 방금 한 일이 화면에서 지워지니
+               "처리해도 처리됐다고 안 나온다" 가 된다 (2026-08-25 사용자 제보).
+               처리함은 처리한 결과가 보여야 처리함이다. -->
+          <option value="" selected>전체</option>
+          <option value="new">미확인</option>
           <option value="ack">처리 중</option>
           <option value="done">완료</option>
           <option value="wontfix">보류</option>
@@ -415,7 +419,7 @@
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
   <script src="/frontend/answer-loading.js?v=2"></script>
-  <script src="/frontend/chat.js?v=259"></script>
+  <script src="/frontend/chat.js?v=260"></script>
   <script src="/frontend/cella-pet.js?v=8"></script>
 </body>
 </html>

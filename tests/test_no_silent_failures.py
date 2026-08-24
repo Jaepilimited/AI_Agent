@@ -381,3 +381,22 @@ def test_both_intercepts_are_symmetric_about_enabled_sources():
         assert i > 0, f"{flag} 가 없다"
         assert "enabled_sources" in src[i:i + 400], (
             f"{flag} 가 enabled_sources 를 보지 않는다 — 선택 경로 하나가 새 나간다")
+
+
+def test_feedback_inbox_defaults_to_all_not_unread_only():
+    """⛔ 처리함 기본 필터가 '미확인' 이면 처리한 항목이 목록에서 사라진다.
+
+    완료로 바꾸면 `loadFeedbackInbox()` 가 `status=new` 로 다시 불러오므로 방금 처리한
+    행이 화면에서 지워진다. 에러도 안 나고 성공 표시도 없어서 **처리가 안 된 것처럼
+    보인다** (2026-08-25 사용자 제보: "처리해도 처리됐다고 안나옴").
+    이미 처리해 둔 39건도 기본 화면에서는 통째로 안 보였다.
+    """
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent
+            / "app" / "frontend" / "chat.html").read_text(encoding="utf-8")
+    block = html[html.index('id="feedback-filter"'):]
+    block = block[:block.index("</select>")]
+    selected = [line for line in block.splitlines() if "selected" in line]
+    assert len(selected) == 1, selected
+    assert 'value=""' in selected[0], f"기본 필터가 전체가 아니다: {selected[0]}"
