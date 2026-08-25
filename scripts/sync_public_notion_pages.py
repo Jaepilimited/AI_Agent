@@ -78,6 +78,10 @@ _EXTRACT_CONTENT_JS = """
 _SHRINK_GUARD = 0.7
 # 토글이 더 안 열릴 때까지 반복한다 (중첩 토글 때문에 한 번으로는 부족하다)
 _EXPAND_ROUNDS = 4
+# ⚠️ 한 브라우저 컨텍스트로 18개를 연달아 열면 뒤쪽이 빈 채로 온다 (2026-08-25 실측:
+#    미리보기는 18/18 성공했는데 바로 다음 실행에서 4개가 "본문 없음"). 노션이
+#    조이는 것으로 보인다. **페이지마다 컨텍스트를 새로 열고 사이를 띄운다.**
+_PAGE_GAP_SEC = 3.0
 
 
 def _qdrant():
@@ -145,23 +149,34 @@ def _scrape_once(page, url: str) -> tuple[str, str]:
     return title, body.strip()
 
 
-def scrape(page, url: str, retries: int = 2) -> tuple[str, str]:
+def scrape(browser, url: str, retries: int = 2) -> tuple[str, str]:
     """(제목, 본문) — 가장 길게 읽힌 결과를 쓴다.
 
     ⚠️ 같은 페이지가 한 번은 2,990자, 다음엔 0자로 읽혔다 (2026-08-25 실측).
        렌더가 늦거나 노션이 잠시 막는다. **가장 많이 읽힌 판**을 채택한다 —
        짧게 읽힌 것으로 색인을 덮는 것이 이 작업에서 가장 위험한 실패다.
+    ⚠️ 시도마다 **컨텍스트를 새로 연다.** 한 컨텍스트를 계속 쓰면 뒤쪽 페이지가
+       빈 채로 온다 (미리보기 18/18 성공 직후 실행에서 4개가 "본문 없음").
     """
     best = ("", "")
     for attempt in range(retries + 1):
+        ctx = browser.new_context()
         try:
+            page = ctx.new_page()
             title, body = _scrape_once(page, url)
         except Exception:
             title, body = "", ""
+        finally:
+            try:
+                ctx.close()
+            except Exception:
+                pass
         if len(body) > len(best[1]):
             best = (title or best[0], body)
         if body and attempt >= 1:
             break          # 두 번 이상 읽어 봤고 내용이 있으면 그만
+        if attempt < retries:
+            time.sleep(_PAGE_GAP_SEC)
     return best
 
 
@@ -191,12 +206,11 @@ def main() -> int:
     # ⚠️ 브라우저를 페이지마다 새로 띄우지 않는다 — 21개면 그것만으로 몇 분이 든다
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        page = browser.new_page()
         try:
             for pid, info in sorted(pages.items(), key=lambda kv: -kv[1]["chunks"]):
                 label = "[{}] {:<26}".format(info["team"], info["title"][:26])
                 try:
-                    title, body = scrape(page, info["url"])
+                    title, body = scrape(browser, info["url"])
                 except Exception as e:
                     print("  ERROR   {} {}: {}".format(label, type(e).__name__, str(e)[:60]))
                     stats["error"] += 1
@@ -217,6 +231,7 @@ def main() -> int:
                 _handle(q, COLLECTION, pid, info, title, body, label, apply, force,
                         stats, chunk_text, embed_texts, PointStruct,
                         FieldCondition, Filter, FilterSelector, MatchValue)
+                time.sleep(_PAGE_GAP_SEC)   # 노션이 조이지 않게 사이를 띄운다
         finally:
             browser.close()
 
