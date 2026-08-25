@@ -5,6 +5,7 @@ Stateless functions that accept credentials and call Gmail/Drive/Calendar APIs.
 
 import base64
 import html
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -147,6 +148,101 @@ def search_gmail(
         })
 
     return output
+
+
+def list_gmail_digest(
+    creds: Credentials,
+    start: datetime,
+    end: datetime,
+    max_results: int = 20,
+) -> Dict[str, Any]:
+    """Collect bounded Gmail metadata for the personal briefing.
+
+    This intentionally requests Gmail's ``metadata`` format only.  The
+    welcome briefing may use headers and the Gmail-provided snippet, but must
+    never fetch message bodies or attachments.
+    """
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    start_epoch = int(start.timestamp())
+    end_epoch = math.ceil(end.timestamp())
+    query = (
+        f"after:{start_epoch - 1} before:{end_epoch} "
+        "-in:spam -in:trash -in:drafts -in:sent -from:me"
+    )
+    bounded_max_results = min(max(1, max_results), 20)
+    page = service.users().messages().list(
+        userId="me", q=query, maxResults=bounded_max_results,
+    ).execute()
+
+    items = []
+    for ref in page.get("messages", []):
+        msg = service.users().messages().get(
+            userId="me",
+            id=ref["id"],
+            format="metadata",
+            metadataHeaders=["Subject", "From", "Date"],
+        ).execute()
+        headers = _gmail_part_headers(msg.get("payload", {}))
+        message_id = msg.get("id", ref["id"])
+        thread_id = msg.get("threadId", ref.get("threadId", message_id))
+        try:
+            received_epoch = int(msg.get("internalDate", "0")) / 1000
+        except (TypeError, ValueError):
+            continue
+        if not (start.timestamp() <= received_epoch < end.timestamp()):
+            continue
+        items.append({
+            "id": message_id,
+            "thread_id": thread_id,
+            "subject": headers.get("subject", "(제목 없음)"),
+            "from": headers.get("from", ""),
+            "received_at": datetime.fromtimestamp(
+                received_epoch,
+                timezone.utc,
+            ).isoformat(),
+            "unread": "UNREAD" in msg.get("labelIds", []),
+            "snippet": msg.get("snippet", "")[:500],
+            "url": f"https://mail.google.com/mail/u/0/#all/{message_id}",
+        })
+
+    return {"items": items, "truncated": bool(page.get("nextPageToken"))}
+
+
+def list_calendar_window(
+    creds: Credentials,
+    start: datetime,
+    end: datetime,
+    max_results: int = 50,
+) -> Dict[str, Any]:
+    """Collect primary-calendar events in the exact supplied time window."""
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    page = service.events().list(
+        calendarId="primary",
+        timeMin=start.astimezone(timezone.utc).isoformat(),
+        timeMax=end.astimezone(timezone.utc).isoformat(),
+        maxResults=max_results,
+        singleEvents=True,
+        orderBy="startTime",
+    ).execute()
+
+    return {
+        "items": [
+            {
+                "id": event["id"],
+                "summary": event.get("summary", "(제목 없음)"),
+                "start": event.get("start", {}).get(
+                    "dateTime", event.get("start", {}).get("date", ""),
+                ),
+                "end": event.get("end", {}).get(
+                    "dateTime", event.get("end", {}).get("date", ""),
+                ),
+                "location": event.get("location", ""),
+                "htmlLink": event.get("htmlLink", ""),
+            }
+            for event in page.get("items", [])
+        ],
+        "truncated": bool(page.get("nextPageToken")),
+    }
 
 
 def search_drive(

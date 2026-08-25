@@ -101,6 +101,7 @@ class Settings(BaseSettings):
     # Auth (custom frontend)
     jwt_secret_key: str = ""
     sqlite_db_path: str = "C:/Users/DB_PC/.open-webui/data/skin1004_chat.db"
+    personal_briefing_enabled: bool = True
 
     # Pseudonymization salt for anon_id derivation (hmac-sha256(salt, user_id)[:16]).
     # Set via ANON_SALT env var. Empty default lets the server start in dev, but

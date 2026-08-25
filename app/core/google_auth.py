@@ -10,8 +10,9 @@ import base64
 import hashlib
 import json
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import structlog
 from cryptography.fernet import Fernet
@@ -28,6 +29,28 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
 ]
+
+CredentialLoadStatus = Literal["ready", "disconnected", "invalid", "transient_error"]
+
+
+@dataclass(frozen=True)
+class CredentialLoadOutcome:
+    """Explicit credential state used by destructive personal-data callers."""
+
+    status: CredentialLoadStatus
+    credentials: Optional[Credentials] = None
+    error_code: str = ""
+
+    @property
+    def definitive_disconnect(self) -> bool:
+        return self.status in {"disconnected", "invalid"}
+
+
+def _is_definitive_oauth_error(exc: BaseException) -> bool:
+    """Recognize provider responses that mean retrying the stored grant is unsafe."""
+
+    message = str(exc).casefold()
+    return "invalid_grant" in message or "revoked" in message
 
 
 class GoogleAuthManager:
@@ -89,8 +112,33 @@ class GoogleAuthManager:
         except Exception:
             return ""
 
+    def get_credential_identity(self, user_email: str) -> str:
+        """Return a non-reversible identity for the currently stored credential.
+
+        Access tokens rotate during a normal refresh, so the identity uses only
+        stable credential/account fields.  It is held in memory briefly and is
+        never logged or persisted with briefing content.
+        """
+        token_path = self._token_path(user_email)
+        if not token_path.exists():
+            return ""
+        try:
+            data = json.loads(token_path.read_text(encoding="utf-8"))
+            stable = {
+                "refresh_token": data.get("refresh_token", ""),
+                "client_id": data.get("client_id", ""),
+                "scopes": sorted(data.get("scopes") or []),
+                "google_email": str(data.get("google_email", "")).strip().lower(),
+            }
+            if not stable["refresh_token"]:
+                stable["token"] = data.get("token", "")
+            encoded = json.dumps(stable, sort_keys=True, separators=(",", ":"))
+            return hashlib.sha256(encoded.encode()).hexdigest()
+        except (OSError, TypeError, ValueError):
+            return ""
+
     def get_credentials(self, user_email: str) -> Optional[Credentials]:
-        """Load credentials for a user, trying local file first, then Open WebUI DB.
+        """Backward-compatible credentials-only wrapper.
 
         Args:
             user_email: User's email address.
@@ -98,23 +146,30 @@ class GoogleAuthManager:
         Returns:
             Valid Credentials, or None if not authenticated.
         """
-        # Try 1: Local token file (from separate auth flow)
-        creds = self._get_credentials_from_file(user_email)
-        if creds is not None:
-            return creds
+        credentials = self._get_credentials_from_file(user_email)
+        if credentials is not None:
+            return credentials
+        return self._get_credentials_from_openwebui(user_email)
 
-        # Try 2: Open WebUI's OAuth session DB
-        creds = self._get_credentials_from_openwebui(user_email)
-        if creds is not None:
-            return creds
+    def load_credentials(self, user_email: str) -> CredentialLoadOutcome:
+        """Load credentials without collapsing definitive and retryable failures."""
 
-        return None
+        file_outcome = self._load_credentials_from_file(user_email)
+        if file_outcome.status != "disconnected":
+            return file_outcome
+        return self._load_credentials_from_openwebui(user_email)
 
     def _get_credentials_from_file(self, user_email: str) -> Optional[Credentials]:
-        """Load credentials from local token file."""
+        """Backward-compatible local-file credentials-only wrapper."""
+
+        return self._load_credentials_from_file(user_email).credentials
+
+    def _load_credentials_from_file(self, user_email: str) -> CredentialLoadOutcome:
+        """Load a local credential while retaining failure semantics."""
+
         token_path = self._token_path(user_email)
         if not token_path.exists():
-            return None
+            return CredentialLoadOutcome("disconnected", error_code="oauth_missing")
 
         try:
             creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
@@ -127,24 +182,31 @@ class GoogleAuthManager:
                 self._save_credentials(
                     user_email, creds, google_email=google_email
                 )
-                logger.info("token_refreshed", user_email=user_email, source="file")
-                return creds
+                logger.info("token_refreshed", source="file")
+                return CredentialLoadOutcome("ready", credentials=creds)
             if creds.valid:
-                return creds
-            return None
+                return CredentialLoadOutcome("ready", credentials=creds)
+            return CredentialLoadOutcome("invalid", error_code="oauth_expired")
         except Exception as e:
-            logger.error("token_load_failed", user_email=user_email, error=str(e))
-            return None
+            logger.error("token_load_failed", source="file", error_type=type(e).__name__)
+            if _is_definitive_oauth_error(e):
+                return CredentialLoadOutcome("invalid", error_code="oauth_expired")
+            return CredentialLoadOutcome("transient_error", error_code="google_error")
 
     def _get_credentials_from_openwebui(self, user_email: str) -> Optional[Credentials]:
-        """Load credentials from Open WebUI's Docker container via docker exec.
+        """Backward-compatible Open WebUI credentials-only wrapper."""
+
+        return self._load_credentials_from_openwebui(user_email).credentials
+
+    def _load_credentials_from_openwebui(self, user_email: str) -> CredentialLoadOutcome:
+        """Load credentials from Open WebUI without erasing retryable failures.
 
         Open WebUI stores OAuth tokens encrypted with Fernet in its oauth_session table.
         We extract the token via docker exec to avoid SQLite locking issues.
         """
         secret_key = self.settings.openwebui_secret_key
         if not secret_key:
-            return None
+            return CredentialLoadOutcome("disconnected", error_code="oauth_missing")
 
         try:
             import subprocess
@@ -180,10 +242,13 @@ except:
                 capture_output=True, text=True, timeout=300,
             )
             output = result.stdout.strip()
-            if not output or output in ("NO_USER", "NO_SESSION", "DECRYPT_FAIL"):
+            if output in ("NO_USER", "NO_SESSION"):
+                logger.warning("openwebui_token_extract", result_code=output)
+                return CredentialLoadOutcome("disconnected", error_code="oauth_missing")
+            if result.returncode != 0 or not output or output == "DECRYPT_FAIL":
                 if output:
-                    logger.warning("openwebui_token_extract", result=output, user_email=user_email)
-                return None
+                    logger.warning("openwebui_token_extract", result_code="DECRYPT_FAIL")
+                return CredentialLoadOutcome("transient_error", error_code="google_error")
 
             token_data = json.loads(output)
 
@@ -191,8 +256,8 @@ except:
             refresh_token = token_data.get("refresh_token")
 
             if not access_token:
-                logger.warning("openwebui_token_no_access", user_email=user_email)
-                return None
+                logger.warning("openwebui_token_no_access")
+                return CredentialLoadOutcome("invalid", error_code="oauth_expired")
 
             # Check if token has GWS scopes
             scope_str = token_data.get("scope", "")
@@ -201,12 +266,8 @@ except:
                 for s in ["gmail.readonly", "calendar.readonly", "drive.readonly"]
             )
             if not has_gws_scopes:
-                logger.warning(
-                    "openwebui_token_missing_gws_scopes",
-                    user_email=user_email,
-                    scopes=scope_str,
-                )
-                return None
+                logger.warning("openwebui_token_missing_gws_scopes")
+                return CredentialLoadOutcome("disconnected", error_code="oauth_missing")
 
             # Build credentials
             creds = Credentials(
@@ -222,34 +283,37 @@ except:
             if creds.expired and refresh_token:
                 try:
                     creds.refresh(Request())
-                    logger.info("openwebui_token_refreshed", user_email=user_email)
+                    logger.info("openwebui_token_refreshed")
                 except Exception as e:
-                    logger.warning("openwebui_token_refresh_failed", error=str(e))
-                    return None
+                    logger.warning("openwebui_token_refresh_failed", error_type=type(e).__name__)
+                    if _is_definitive_oauth_error(e):
+                        return CredentialLoadOutcome("invalid", error_code="oauth_expired")
+                    return CredentialLoadOutcome("transient_error", error_code="google_error")
 
             if creds.valid:
-                logger.info("openwebui_token_loaded", user_email=user_email)
-                return creds
+                logger.info("openwebui_token_loaded")
+                return CredentialLoadOutcome("ready", credentials=creds)
 
             # Token might still be valid even if expired flag is uncertain
             # Try returning it and let the API call determine
             if access_token:
-                logger.info("openwebui_token_loaded_unchecked", user_email=user_email)
-                return creds
+                logger.info("openwebui_token_loaded_unchecked")
+                return CredentialLoadOutcome("ready", credentials=creds)
 
-            return None
+            return CredentialLoadOutcome("invalid", error_code="oauth_expired")
 
         except Exception as e:
-            logger.error(
-                "openwebui_token_error", user_email=user_email, error=str(e)
-            )
-            return None
+            logger.error("openwebui_token_error", error_type=type(e).__name__)
+            if _is_definitive_oauth_error(e):
+                return CredentialLoadOutcome("invalid", error_code="oauth_expired")
+            return CredentialLoadOutcome("transient_error", error_code="google_error")
 
-    def get_auth_url(self, user_email: str, redirect_uri: str = "") -> str:
+    def get_auth_url(self, user_email: str, *, state: str, redirect_uri: str = "") -> str:
         """Generate Google OAuth2 authorization URL.
 
         Args:
-            user_email: User's email for state parameter.
+            user_email: User's email used as Google's login hint.
+            state: Signed, single-use state issued by the authenticated application user.
             redirect_uri: Dynamic redirect URI from request host. Falls back to config.
 
         Returns:
@@ -264,7 +328,7 @@ except:
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             prompt="consent",
-            state=user_email,
+            state=state,
             login_hint=user_email,
         )
         return auth_url
@@ -304,7 +368,7 @@ except:
             pass
 
         self._save_credentials(user_email, creds, google_email=google_email)
-        logger.info("token_saved", user_email=user_email, google_email=google_email)
+        logger.info("token_saved")
         return creds
 
     def revoke_credentials(self, user_email: str) -> bool:
@@ -319,7 +383,7 @@ except:
         token_path = self._token_path(user_email)
         if token_path.exists():
             token_path.unlink()
-            logger.info("token_revoked", user_email=user_email)
+            logger.info("token_revoked")
             return True
         return False
 

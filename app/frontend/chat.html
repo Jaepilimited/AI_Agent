@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=168">
+  <link rel="stylesheet" href="/static/style.css?v=170">
   <link rel="stylesheet" href="/static/cella-pet.css?v=8">
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
@@ -154,6 +154,13 @@
             </div>
             <h1 class="welcome-sub">What do you crave?</h1>
           </div>
+          <section class="personal-briefing" id="personal-briefing" aria-labelledby="personal-briefing-title">
+            <div class="personal-briefing-heading">
+              <h2 id="personal-briefing-title">오늘 브리핑</h2>
+              <span class="personal-briefing-updated" id="personal-briefing-updated" aria-live="polite">불러오는 중</span>
+            </div>
+            <div class="personal-briefing-grid" id="personal-briefing-grid" aria-live="polite"></div>
+          </section>
           <div class="suggestions" id="welcome-suggestions">
             <button class="suggestion-chip" data-q="2026년 일본 매출 보고서 만들어줘">📊 일본 매출</button>
             <button class="suggestion-chip" data-q="이번 달 Facebook 광고 ROAS를 국가별로 분석해줘">📣 광고 ROAS</button>
@@ -419,7 +426,8 @@
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
   <script src="/frontend/answer-loading.js?v=2"></script>
-  <script src="/frontend/chat.js?v=260"></script>
+  <script src="/frontend/personal-briefing.js?v=2"></script>
+  <script src="/frontend/chat.js?v=263"></script>
   <script src="/frontend/cella-pet.js?v=8"></script>
 </body>
 </html>
