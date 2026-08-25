@@ -170,3 +170,30 @@ def test_stale_data_is_announced_not_just_footnoted():
     assert "freshness" in handler
     # 경고가 표(헤더) 앞에 삽입되는지 — 위치가 요점이다
     assert handler.index('fresh["note"]') < handler.index("| SKU |")
+
+
+# ── 군더더기 낱말 (2026-08-25 프로덕션 실측) ─────────────────────────────────
+
+def test_question_words_do_not_zero_out_the_search():
+    """⛔ 낱말을 AND 로 걸어 **하나라도 품목에 없으면 통째로 0건**이 난다.
+
+    실측: "센텔라 앰플 재고 얼마나 남았어?" → `센텔라 앰플 얼마나` → **0건**.
+    재고는 넉넉한데 "품목을 찾지 못했습니다" 가 나갔다 — 에러가 아니라 빈손이다.
+
+    ⛔ 그리고 **이 테스트가 원래 이걸 놓쳤다**: 검색어에 '센텔라' 가 들어 있는지만
+       봤지 행이 나오는지는 보지 않았다. 조회 기능의 회귀는 **행 수로** 걸어야 한다.
+    """
+    src = inspect.getsource(inventory.search)
+    assert "_usable_words" in src
+
+    helper = inspect.getsource(inventory._usable_words)
+    # 목록이 아니라 데이터에 물어본다 — 말투가 늘어도 따라갈 필요가 없다
+    assert "op_inventory" in helper and "LIMIT 1" in helper
+    assert "STOPWORDS" not in helper
+
+
+def test_particle_stripping_does_not_break_product_names():
+    """`클레이` 의 끝 '이' 가 조사로 잘려 `클레` 가 된다. 원형이 품목에 있으면
+       원형을 쓴다 — 두 형태를 모두 데이터에 물어본다."""
+    helper = inspect.getsource(inventory._usable_words)
+    assert "w[:-1]" in helper and "len(w) > 2" in helper

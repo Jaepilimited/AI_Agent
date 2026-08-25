@@ -193,6 +193,42 @@ def sync_inventory(dry_run: bool = False) -> Dict[str, Any]:
 
 # ── 조회 ─────────────────────────────────────────────────────────────────────
 
+def _usable_words(words: List[str]) -> tuple[List[str], List[str]]:
+    """품목에 실제로 있는 낱말만 남긴다 — 나머지는 질문의 군더더기다.
+
+    ⛔ 낱말을 AND 로 걸기 때문에 **하나라도 품목에 없으면 통째로 0건**이 난다.
+       실측(2026-08-25 프로덕션): "센텔라 앰플 재고 얼마나 남았어?" 가
+       `센텔라 앰플 얼마나` 로 검색돼 **0건**이었다. 재고는 넉넉히 있는데
+       "품목을 찾지 못했습니다" 가 나갔다 — 에러가 아니라 빈손이라 조용하다.
+
+    ⛔ 불용어 목록을 늘리는 방식으로는 끝이 없다 (얼마나·남았어·몇 개·있나…).
+       대신 **데이터에 물어본다**: 그 낱말이 든 품목이 하나도 없으면 제품 이름이
+       아니라 질문의 말이다. 목록 관리가 필요 없고 새 말투에도 저절로 맞는다.
+
+    조사도 여기서 함께 푼다 — `클레이` 가 `클레` 로 잘려 있어도(끝의 '이' 를 조사로
+    본다) 원형이 맞으면 원형을 쓴다.
+    """
+    ensure_inventory_table()
+    keep: List[str] = []
+    drop: List[str] = []
+    for w in words:
+        if not w:
+            continue
+        chosen = None
+        for cand in (w, w[:-1] if len(w) > 2 else None):
+            if not cand:
+                continue
+            like = f"%{cand}%"
+            hit = fetch_all(
+                "SELECT 1 FROM op_inventory "
+                "WHERE sku LIKE %s OR item_name LIKE %s LIMIT 1", (like, like))
+            if hit:
+                chosen = cand
+                break
+        (keep.append(chosen) if chosen else drop.append(w))
+    return keep, drop
+
+
 def search(term: str, limit: int = 30) -> List[Dict[str, Any]]:
     """제품명·SKU 로 찾아 창고별 수량과 합계를 돌려준다.
 
@@ -205,12 +241,16 @@ def search(term: str, limit: int = 30) -> List[Dict[str, Any]]:
     # ⛔ 품목명이 `마다가스카르센텔라앰플100ml` 처럼 **붙어** 있다. 공백이 든 검색어를
     #    통째로 LIKE 하면 0건이 난다 ("센텔라 앰플" → 0건, 2026-08-25 실측).
     #    낱말마다 조건을 만들어 AND 로 건다 — 드라이브 검색에서 쓴 방식과 같다.
-    words = [w for w in raw.split() if w]
+    words, dropped = _usable_words(raw.split())
+    if not words:
+        return []
     conds, params = [], []
     for w in words:
         like = f"%{w}%"
         conds.append("(sku LIKE %s OR item_name LIKE %s)")
         params += [like, like]
+    if dropped:
+        logger.info("inventory_search_dropped", words=",".join(dropped))
     return fetch_all(
         "SELECT sku, item_name, SUM(qty) AS total_qty, "
         "       GROUP_CONCAT(CONCAT(location, ':', qty) ORDER BY qty DESC "
