@@ -213,3 +213,26 @@ def test_answer_shows_the_words_it_actually_used():
     assert "shown" in src and "dropped" in src
     # 조사는 따옴표가 아니라 마지막 낱말의 받침으로 정한다 ("'얼마나'은(는)" 방지)
     assert "_josa" in src and "dropped[-1]" in src
+
+
+@pytest.mark.parametrize("q", [
+    "마다가스카르 토너 몇 개 있어?",
+    "앰플 몇개나 있어",
+    "토너 재고 있나요?",
+    "센텔라 크림 재고량",
+])
+def test_more_stock_phrasings_are_recognised(q):
+    """실측(2026-08-25 프로덕션): "마다가스카르 토너 몇 개 있어?" 가 어느 말에도
+       안 걸려 재고 경로로 가지 않았다. 재고 질문 말투는 '몇 개 남'만이 아니다."""
+    assert inventory.inventory_intent(q), q
+
+
+@pytest.mark.parametrize("q", [
+    "일본 판매수량 알려줘",
+    "2026년 제품별 판매수량 top10",
+])
+def test_sales_quantity_questions_are_not_hijacked(q):
+    """⛔ `수량` 을 재고 신호어에 넣으면 **`판매수량`(BigQuery)을 가로챈다.**
+       수량은 무조건 `Product.Total_Qty` 로 답해야 하는 규칙이 따로 있다."""
+    assert inventory.inventory_intent(q) is None, q
+    assert "수량" not in inventory._STOCK_WORDS

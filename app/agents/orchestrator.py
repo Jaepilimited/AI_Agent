@@ -2745,6 +2745,8 @@ class OrchestratorAgent:
         from app.core.inventory import (SHEET_URL, freshness, search, status,
                                         usable_words)
 
+        if not term:
+            return None                      # 방어 — 호출부가 판정을 먼저 한다
         try:
             kept, dropped = await _asyncio.to_thread(usable_words, term.split())
             shown = " ".join(kept) or term
