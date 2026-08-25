@@ -1846,6 +1846,85 @@ _MONEY_COLS = ("Sales1_R", "Sales2_R", "Sales1_R_FOC", "Sales2_R_FOC", "FOC",
 _QTY_COLS = ("Total_Qty", "FOC_Qty")
 
 
+# ── 내부 테이블 경로는 답변 본문에 나가지 않는다 (붐따 #147, 2026-08-25) ─────
+# "프로모션 캘린더 경로 알려줘" 에 `skin1004-319714.promotion_calendar.promotion` 을
+# 표로 내놨다. 제보: "빅쿼리 경로를 알려주면안됨. 보안이슈. 내가 말한건 url".
+# ⛔ 프롬프트에는 이미 "테이블명·프로젝트 ID 노출 금지" 가 적혀 있었는데도 샜다 —
+#    프롬프트는 확률이고 보증은 코드다 (FI 방어선과 같은 사상).
+# ⚠️ `실행된 쿼리` 블록과 코드 펜스는 **건드리지 않는다.** 그건 "이 숫자가 어디서
+#    나왔나" 를 확인하는 근거다. 본문에 경로를 **답으로 제시하는 것**이 문제였다.
+_MASKED = "(내부 경로 비공개)"
+# 데이터셋·테이블은 `_`/영문 식별자다. 소수점·버전(3.14.15, v1.2.3)과 섞이지 않도록
+# **각 조각에 영문자가 하나 이상**이고 숫자만으로는 이뤄지지 않을 것을 요구한다.
+_IDENT = r"[A-Za-z][A-Za-z0-9_-]*"
+_RE_INTERNAL_PATH = re.compile(
+    r"`?\b(?:" + _IDENT + r"\.)?" + _IDENT + r"\." + _IDENT + r"\b`?")
+_RE_SAFE_SEGMENT = re.compile(r"(```[\s\S]*?```|<details[\s\S]*?</details>)")
+
+
+def _known_path_parts() -> set:
+    """마스킹 대상 판정에 쓰는 **실재하는** 데이터셋·프로젝트 이름."""
+    parts = set()
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+    except Exception:
+        return parts
+    pid = (getattr(settings, "gcp_project_id", "") or "").strip()
+    if pid:
+        parts.add(pid)
+    try:
+        table_map = _source_table_map(settings) or {}
+    except Exception:
+        table_map = {}
+    for paths in table_map.values():
+        for full in (paths if isinstance(paths, (list, tuple)) else [paths]):
+            for token in str(full).split("."):
+                if token:
+                    parts.add(token)
+    return parts
+
+
+def _mask_internal_paths(text: str) -> str:
+    """본문에 드러난 내부 경로를 가린다 (코드 펜스·실행된 쿼리는 그대로)."""
+    if not text:
+        return text
+    known = _known_path_parts()
+    if not known:
+        return text
+
+    def _mask_one(m: "re.Match") -> str:
+        hit = m.group(0).strip("`")
+        return _MASKED if any(p in hit.split(".") for p in known) else m.group(0)
+
+    out = []
+    for seg in _RE_SAFE_SEGMENT.split(text):
+        if seg.startswith("```") or seg.startswith("<details"):
+            out.append(seg)          # 근거 블록은 손대지 않는다
+        else:
+            out.append(_RE_INTERNAL_PATH.sub(_mask_one, seg))
+    return "".join(out)
+
+
+def _mask_stream(chunks):
+    """스트리밍 청크에도 같은 마스킹을 건다.
+
+    ⚠️ 경로가 청크 경계에서 쪼개질 수 있다 (`…promotion_ca` + `lendar…`).
+       꿀어서 보내면 방어가 절반만 듣는다 — 마지막 줄 조각을 붙잡았다가 다음 청크와
+       이어 붙여 판정한다. 줄 단위로 뮸루므로 첫 토큰 체감은 거의 그대로다.
+    """
+    buf = ""
+    for chunk in chunks:
+        buf += chunk or ""
+        cut = buf.rfind(chr(10))
+        if cut < 0:
+            continue
+        head, buf = buf[:cut + 1], buf[cut + 1:]
+        yield _mask_internal_paths(head)
+    if buf:
+        yield _mask_internal_paths(buf)
+
+
 def _unit_note(sql: str) -> str:
     """SQL 이 고른 컬럼에서 **단위를 결정적으로** 뽑아 서술 단계에 못 박는다."""
     up = (sql or "").upper()
@@ -2261,6 +2340,9 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 - 기간 부족 시 첫 줄에 ⚠️ 표시. 질문 범위와 데이터 범위 불일치 시 명시
 - 비즈니스 인사이트 필수: 비중, 변화율, 추세, 집중도, 비교 관점
 - 조건 설명(브랜드, 기간)은 답변 끝에 짧게 괄호로
+- ⛔ 테이블명·데이터셋·프로젝트 ID 노출 금지. 출처는 '내부 데이터베이스'로만 쓴다.
+  "경로/위치가 어디냐"고 물어도 BigQuery 경로를 답으로 내지 마라 — 보안 이슈다.
+  (코드가 한 번 더 가리지만, 여기서 안 쓰는 것이 먼저다)
 - ⚠️ 불완전 월 데이터 경고 (매우 중요!): 오늘은 {today_kr}입니다. 월별 추이/비교 데이터에 현재 월({today[:7]})이 포함되어 있다면, 해당 월은 아직 진행 중이므로 데이터가 불완전합니다. 반드시 "⚠️ {today[:7]}월 데이터는 {today}까지의 부분 집계입니다"라고 명시하고, 추세 분석에서 현재 월 수치가 낮은 것은 미완료 때문임을 언급하세요. 절대 불완전한 현재 월 데이터를 완성된 과거 월과 동일 선상에서 비교하지 마세요.
 {_brand_warning}
 {_team_warning}
@@ -2317,7 +2399,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
-        answer = answer + _future_period_note(sql)
+        answer = _mask_internal_paths(answer) + _future_period_note(sql)
         return {"answer": answer}
     except Exception as e:
         logger.error("answer_formatting_failed", error=str(e))
@@ -2892,7 +2974,8 @@ SQL 결과 ({len(results)}행):
     llm = get_flash_client()
     _t_ins = _time.perf_counter()
     yield "\n"
-    for chunk in llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500):
+    for chunk in _mask_stream(
+            llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500)):
         yield chunk
     _t_end = _time.perf_counter()
 
@@ -3059,7 +3142,8 @@ def run_sql_agent_stream(
     # Stream answer (chart generates in parallel)
     _t_stream_start = _time.perf_counter()
     _t_first_token = None
-    for chunk in llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000):
+    for chunk in _mask_stream(
+            llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000)):
         if _t_first_token is None:
             _t_first_token = _time.perf_counter()
         yield chunk
