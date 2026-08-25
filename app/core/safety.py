@@ -392,8 +392,10 @@ def get_safety_status() -> dict:
         if _inv.get("rows"):
             services["OP"] = {
                 "status": "ok",
-                "detail": "{:,} SKU · 창고 {}곳 · 유통기한 {:,}건".format(
-                    _inv["skus"], _inv["locations"], _inv.get("expiry_rows") or 0),
+                # ⚠️ 상태 카드 한 줄은 좁다 — 길어지면 이름 칸을 밀어낸다
+                #    (`OP` → `O`, 2026-08-26). 창고 수는 조회 답변에 늘 나오므로 뺀다
+                "detail": "{:,} SKU · 유통기한 {:,}건".format(
+                    _inv["skus"], _inv.get("expiry_rows") or 0),
                 # ⚠️ 답변은 **조회 시점에 시트를 직접 읽는다.** 여기 숫자는 폴백용
                 #    적재본이라, 둘을 같은 것으로 읽지 않게 밝혀 둔다
                 "reason": ("재고 질문은 조회할 때마다 시트를 직접 읽습니다 "

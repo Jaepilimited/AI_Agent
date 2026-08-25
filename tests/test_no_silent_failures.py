@@ -668,3 +668,30 @@ def test_welcome_blocks_share_one_width():
         block = css.split(sel, 1)[1].split("}", 1)[0]
         assert "var(--welcome-width)" in block, (
             f"{sel} 이 --welcome-width 를 쓰지 않는다 — 폭이 다시 갈린다: {block.strip()[:80]}")
+
+
+def test_status_row_name_never_yields_to_detail():
+    """⛔ 상태 카드에서 **이름이 먼저 잘리면 안 된다.**
+
+    `.status-detail-text` 가 `flex-shrink: 0` 이라 줄지 않았다. 상세 문구를 길게
+    고쳤더니 폭을 detail 이 다 먹고 **이름 칸이 0 이 됐다** — `OP` 가 `O` 로 보였다
+    (2026-08-26 사용자 제보). 실측(사이드바 폭 기준, 수정 전):
+
+        340px → 이름 칸 15.5px (필요 18px, 잘림) · 320px → **0px**
+
+    이름은 그 행이 무엇인지 말하는 유일한 글자다. 줄여야 한다면 detail 을 줄인다.
+    ⚠️ **문구를 짧게 고치는 것으로 끝내면 안 된다** — detail 은 서버가 만드는 문자열이라
+       언제든 다시 길어진다. 우선순위를 CSS 로 못박아야 같은 사고가 안 난다.
+    """
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "style.css").read_text(encoding="utf-8")
+
+    name = css.split(".status-item-row .status-name {", 1)[1].split("}", 1)[0]
+    assert "flex: 0 0 auto" in name, f"이름이 줄어들 수 있다: {name.strip()[:80]}"
+
+    detail = css.split(".status-item-row .status-detail-text {", 1)[1].split("}", 1)[0]
+    assert "flex-shrink: 0" not in detail, "detail 이 안 줄면 이름이 대신 줄어든다"
+    assert "min-width: 0" in detail, "min-width 가 없으면 flex 항목은 안 줄어든다"
+    assert "text-overflow: ellipsis" in detail, "잘릴 때 잘렸다고 보여야 한다"
