@@ -188,17 +188,24 @@ def build_priorities(
     """Compose at most one priority per source, never inventing source IDs."""
 
     priorities = []
-    upcoming = [item for item in calendar.get("items", []) if not item.get("ended")]
-    upcoming.sort(key=lambda item: _parse_event_time(item["start"]))
-    if upcoming and _parse_event_time(upcoming[0]["start"]) <= now.astimezone(SEOUL) + timedelta(hours=24):
-        event = upcoming[0]
+    upcoming: list[tuple[datetime, dict[str, Any]]] = []
+    for item in calendar.get("items", []):
+        if item.get("ended") or not item.get("id") or not item.get("title"):
+            continue
+        try:
+            upcoming.append((_parse_event_time(str(item["start"])), item))
+        except (KeyError, TypeError, ValueError):
+            continue
+    upcoming.sort(key=lambda entry: entry[0])
+    if upcoming and upcoming[0][0] <= now.astimezone(SEOUL) + timedelta(hours=24):
+        event = upcoming[0][1]
         priorities.append({
             "source": "calendar", "source_id": event["id"], "title": event["title"],
             "reason": "24시간 안에 시작", "url": event.get("url", ""),
         })
 
     mail_by_id = {item.get("id"): item for item in mail.get("items", [])}
-    if mail.get("action_candidates"):
+    if mail.get("action_candidates") and isinstance(mail["action_candidates"][0], dict):
         candidate = mail["action_candidates"][0]
         message = mail_by_id.get(candidate.get("message_id"))
         if message:
@@ -242,6 +249,15 @@ def _business_for_user(user_id: int) -> dict[str, Any]:
     }}
 
 
+def _safe_business_for_user(user_id: int) -> dict[str, Any]:
+    """Business briefing failures must not hide otherwise safe Google cards."""
+
+    try:
+        return _business_for_user(user_id)
+    except Exception:
+        return {"status": "error", "item": None}
+
+
 def _merge_failed_section(previous: dict[str, Any] | None, error_code: str) -> dict[str, Any]:
     if previous:
         result = dict(previous)
@@ -258,27 +274,47 @@ def _empty_sections(status: str, error_code: str) -> tuple[dict[str, Any], dict[
     )
 
 
+def _snapshot_for_account(snapshot: dict[str, Any] | None, account: str, user_email: str) -> dict[str, Any] | None:
+    """Return a snapshot only when it belongs to the current Google account."""
+
+    if not snapshot:
+        return None
+    expected_hash = _account_hash(account or user_email)
+    return snapshot if snapshot.get("google_account_hash") == expected_hash else None
+
+
+def _visible_priorities(priorities: list[dict[str, Any]], business: dict[str, Any]) -> list[dict[str, Any]]:
+    """An opt-out applies to every business-derived presentation, including cache."""
+
+    if business.get("status") == "disabled":
+        return [priority for priority in priorities if priority.get("source") != "business"]
+    return priorities
+
+
 def get_cached_for_user(user: User, now: datetime | None = None) -> dict[str, Any]:
     current = (now or datetime.now(SEOUL)).astimezone(SEOUL)
     day, _start, _end = briefing_window(current)
     connected = _auth_manager.has_credentials(user.email)
     account = _auth_manager.get_stored_google_email(user.email) if connected else ""
     snapshot = store.get_snapshot(user.id, day)
-    if not connected or (snapshot and snapshot["google_account_hash"] != _account_hash(account or user.email)):
+    if not connected:
         snapshot = None
+    else:
+        snapshot = _snapshot_for_account(snapshot, account, user.email)
     if snapshot:
         calendar, mail, priorities = snapshot["calendar"], snapshot["mail"], snapshot["priorities"]
         generated = snapshot["generated_at"]
     else:
         calendar, mail = _empty_sections("disconnected" if not connected else "empty", "oauth_missing" if not connected else "")
         priorities, generated = [], None
+    business = _safe_business_for_user(user.id)
     return {
         "enabled": True, "for_date": str(day), "timezone": "Asia/Seoul",
         "generated_at": _aware(generated).isoformat() if generated else "",
         "needs_refresh": connected and _needs_refresh(generated, current),
         "google": {"connected": connected, "account": account},
-        "priorities": priorities, "calendar": calendar, "mail": mail,
-        "business": _business_for_user(user.id),
+        "priorities": _visible_priorities(priorities, business), "calendar": calendar, "mail": mail,
+        "business": business,
     }
 
 
@@ -329,7 +365,9 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
             return cached
 
         day, start, end = briefing_window(current)
+        account = _auth_manager.get_stored_google_email(user.email) or user.email
         old = await asyncio.to_thread(store.get_snapshot, user.id, day)
+        old = _snapshot_for_account(old, account, user.email)
         previous_calendar = old.get("calendar") if old else None
         previous_mail = old.get("mail") if old else None
         try:
@@ -340,22 +378,33 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
             calendar_raw = asyncio.TimeoutError()
             mail_raw = asyncio.TimeoutError()
 
-        calendar = (
-            _merge_failed_section(previous_calendar, _error_code(calendar_raw))
-            if isinstance(calendar_raw, BaseException)
-            else _normalize_calendar(calendar_raw, current)
-        )
+        if isinstance(calendar_raw, BaseException):
+            calendar = _merge_failed_section(previous_calendar, _error_code(calendar_raw))
+        else:
+            try:
+                calendar = _normalize_calendar(calendar_raw, current)
+            except Exception:
+                calendar = _merge_failed_section(previous_calendar, "google_error")
         if isinstance(mail_raw, BaseException):
             mail = _merge_failed_section(previous_mail, _error_code(mail_raw))
             defaults = _empty_sections("error", "")[1]
             for key, value in defaults.items():
                 mail.setdefault(key, value)
         else:
-            mail = await _attach_summary(_normalize_mail(mail_raw))
+            try:
+                mail = await _attach_summary(_normalize_mail(mail_raw))
+            except Exception:
+                mail = _merge_failed_section(previous_mail, "google_error")
+                defaults = _empty_sections("error", "")[1]
+                for key, value in defaults.items():
+                    mail.setdefault(key, value)
 
-        business = await asyncio.to_thread(_business_for_user, user.id)
-        priorities = build_priorities(calendar, mail, business, current)
-        account = _auth_manager.get_stored_google_email(user.email) or user.email
+        business = await asyncio.to_thread(_safe_business_for_user, user.id)
+        try:
+            priorities = build_priorities(calendar, mail, business, current)
+        except (KeyError, TypeError, ValueError):
+            priorities = []
+        priorities = _visible_priorities(priorities, business)
         generated_at = current.replace(tzinfo=None)
         await asyncio.to_thread(
             store.put_snapshot, user.id, day, _account_hash(account),

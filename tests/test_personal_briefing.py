@@ -100,3 +100,111 @@ def test_cached_lookup_requests_only_today(monkeypatch):
     user = type("U", (), {"id": 7, "email": "owner@example.com"})()
     pb.get_cached_for_user(user, datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL))
     assert seen == {"uid": 7, "day": date(2026, 8, 25)}
+
+
+@pytest.mark.asyncio
+async def test_account_switch_never_reuses_old_account_sections(monkeypatch):
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    old_snapshot = {
+        "google_account_hash": pb._account_hash("old@example.com"),
+        "calendar": {"status": "ready", "items": [{"id": "old-event"}], "truncated": False, "error_code": ""},
+        "mail": {"status": "ready", "items": [{"id": "old-mail"}], "truncated": False, "error_code": ""},
+        "priorities": [{"source": "calendar", "source_id": "old-event", "title": "old"}],
+        "generated_at": now - timedelta(minutes=11),
+    }
+    persisted = {}
+
+    monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
+    monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "new@example.com")
+    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: old_snapshot)
+    monkeypatch.setattr(pb, "list_calendar_window", lambda *_args: (_ for _ in ()).throw(TimeoutError()))
+    monkeypatch.setattr(pb, "list_gmail_digest", lambda *_args: {"items": [], "truncated": False})
+    monkeypatch.setattr(pb, "_business_for_user", lambda _uid: {"status": "empty", "item": None})
+
+    def put_snapshot(_uid, _day, account_hash, calendar, mail, priorities, _generated):
+        persisted.update(account_hash=account_hash, calendar=calendar, mail=mail, priorities=priorities)
+
+    monkeypatch.setattr(pb.store, "put_snapshot", put_snapshot)
+    result = await pb.refresh_for_user(user, now=now, force=True)
+
+    assert result["calendar"]["status"] == "error"
+    assert result["calendar"]["items"] == []
+    assert persisted["account_hash"] == pb._account_hash("new@example.com")
+    assert persisted["calendar"]["items"] == []
+    assert persisted["priorities"] == []
+    assert "old-event" not in str(persisted)
+    assert "old-mail" not in str(persisted)
+
+
+def test_opted_out_cached_business_priority_is_suppressed(monkeypatch):
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    snapshot = {
+        "google_account_hash": pb._account_hash("owner@example.com"),
+        "calendar": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "mail": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "priorities": [
+            {"source": "business", "source_id": "secret", "title": "old business"},
+            {"source": "mail", "source_id": "m1", "title": "safe"},
+        ],
+        "generated_at": now,
+    }
+    monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
+    monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "owner@example.com")
+    monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: snapshot)
+    monkeypatch.setattr(pb, "_business_for_user", lambda _uid: {"status": "disabled", "item": None})
+
+    result = pb.get_cached_for_user(user, now)
+
+    assert result["business"]["status"] == "disabled"
+    assert result["priorities"] == [{"source": "mail", "source_id": "m1", "title": "safe"}]
+
+
+@pytest.mark.asyncio
+async def test_malformed_calendar_stales_only_calendar_and_keeps_mail(monkeypatch):
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    snapshot = {
+        "google_account_hash": pb._account_hash("owner@example.com"),
+        "calendar": {"status": "ready", "items": [{"id": "prior-event"}], "truncated": False, "error_code": ""},
+        "mail": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "priorities": [],
+        "generated_at": now - timedelta(minutes=11),
+    }
+    persisted = {}
+
+    monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
+    monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "owner@example.com")
+    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: snapshot)
+    monkeypatch.setattr(pb, "list_calendar_window", lambda *_args: {
+        "items": [{"id": "bad", "summary": "bad", "start": "not-a-date", "end": "not-a-date"}], "truncated": False,
+    })
+    monkeypatch.setattr(pb, "list_gmail_digest", lambda *_args: {
+        "items": [{"id": "m1", "thread_id": "t1", "subject": "new mail", "from": "A",
+                   "received_at": "2026-08-25T08:00:00+09:00", "unread": True, "snippet": "preview",
+                   "url": "https://mail.google.com/mail/u/0/#all/m1"}], "truncated": False,
+    })
+    monkeypatch.setattr(pb, "_business_for_user", lambda _uid: {"status": "empty", "item": None})
+
+    async def attach(mail):
+        mail["items"] = [{key: value for key, value in item.items() if key != "snippet"} for item in mail["items"]]
+        return mail
+
+    monkeypatch.setattr(pb, "_attach_summary", attach)
+    monkeypatch.setattr(
+        pb.store, "put_snapshot",
+        lambda _uid, _day, _hash, calendar, mail, priorities, _generated: persisted.update(
+            calendar=calendar, mail=mail, priorities=priorities,
+        ),
+    )
+
+    result = await pb.refresh_for_user(user, now=now, force=True)
+
+    assert result["calendar"]["status"] == "stale"
+    assert result["calendar"]["items"] == [{"id": "prior-event"}]
+    assert result["mail"]["status"] == "ready"
+    assert result["mail"]["items"][0]["id"] == "m1"
+    assert persisted["mail"]["items"][0]["id"] == "m1"
