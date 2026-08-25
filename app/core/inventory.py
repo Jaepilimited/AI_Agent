@@ -494,9 +494,14 @@ def usable_words(words: List[str],
     for w in words:
         if not w:
             continue
+        # 후보는 **긴 것부터**: 원형 → 조사를 뗀 형 → 한 글자 뺀 형.
+        # ⚠️ 원형을 먼저 물어야 `클레이` 가 `클레` 로 잘린 채 남지 않는다
+        #    (조사 규칙상 `이` 가 떨어진다). 뜻은 같아도 답변에 잘린 말이 보인다.
+        from app.core.textmatch import strip_particle
         chosen = None
-        for cand in (w, w[:-1] if len(w) > 2 else None):
-            if cand and _hits(hay, cand):
+        cands = [w, strip_particle(w)] + ([w[:-1]] if len(w) > 2 else [])
+        for cand in dict.fromkeys(c for c in cands if c and len(c) >= 2):
+            if _hits(hay, cand):
                 chosen = cand
                 break
         (keep.append(chosen) if chosen else drop.append(w))
@@ -658,6 +663,23 @@ _STOP = ("재고", "재고량", "잔여수량", "잔고", "잔량", "보유수�
          "있어", "있나", "있나요", "있니", "남았나", "남았니", "몇")
 
 
+def _restore(question: str, words: List[str]) -> List[str]:
+    """`extract` 가 뗀 조사를 **원형이 있으면** 되돌린다.
+
+    ⚠️ `extract` 는 조사를 떼야 제 몫을 한다 (`매출이` → `매출`). 그런데 제품명에는
+       조사처럼 생긴 끝글자가 있다 — `클레이` 가 `클레` 로 잘려 답변에 그대로 보였다
+       (2026-08-25 프로덕션). 결과는 맞는데 **잘린 말을 사용자에게 보여준다.**
+       여기서 원문 토큰을 되살리고, 진짜 조사인지는 `usable_words` 가 데이터에 물어
+       판정한다 — 판정을 한 곳에 모으는 것이 요점이다.
+    """
+    raw = _re.findall(r"[0-9A-Za-z가-힣]+", question or "")
+    out: List[str] = []
+    for w in words:
+        longer = next((t for t in raw if t != w and t.startswith(w)), None)
+        out.append(longer or w)
+    return out
+
+
 def inventory_intent(query: str, explicit: bool = False) -> str | None:
     """재고 질문이면 **찾을 제품어**를 돌려준다. 아니면 None.
 
@@ -673,7 +695,7 @@ def inventory_intent(query: str, explicit: bool = False) -> str | None:
         return None
 
     from app.core.query_keywords import extract
-    words = extract(q, extra_stop=_STOP)
+    words = _restore(q, extract(q, extra_stop=_STOP))
     # 제품어가 안 남으면 전체 재고 요약을 뜻한다
     return " ".join(words) if words else "*"
 
@@ -692,7 +714,7 @@ def expiry_intent(query: str, explicit: bool = False) -> str | None:
     if not any(w in q.lower() for w in _EXPIRY_WORDS):
         return None
     from app.core.query_keywords import extract
-    words = extract(q, extra_stop=_STOP + _EXPIRY_WORDS)
+    words = _restore(q, extract(q, extra_stop=_STOP + _EXPIRY_WORDS))
     return " ".join(words) if words else "*"
 
 

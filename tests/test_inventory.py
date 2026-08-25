@@ -350,3 +350,22 @@ def test_expiry_is_checked_before_stock_in_both_paths():
         src = inspect.getsource(getattr(O, name))
         assert "_expiry_term" in src and "_inventory_term" in src, name
         assert src.index("_expiry_term") < src.index("_inventory_term"), name
+
+
+def test_product_names_that_end_like_a_particle_survive():
+    """⚠️ `extract` 는 조사를 떼야 제 몫을 한다 (`매출이`→`매출`). 그런데 제품명에는
+       조사처럼 생긴 끝글자가 있다 — `클레이` 가 `클레` 로 잘려 **답변에 그대로
+       보였다** (2026-08-25 프로덕션). 결과는 맞아도 잘린 말을 사용자에게 보여준다.
+
+    원형을 되살리고, 진짜 조사인지는 `usable_words` 가 데이터에 물어 판정한다.
+    """
+    assert inventory.inventory_intent("포어마이징 클레이 재고") == "포어마이징 클레이"
+
+    index = {"KRSKM007": {"name": "(KR)스킨1004_마다가스카르센텔라포어마이징퀵클레이스틱마스크27g",
+                          "locs": {}},
+             "KRSKA022": {"name": "(KR)스킨1004_마다가스카르센텔라앰플100ml", "locs": {}}}
+    keep, _ = inventory.usable_words(["포어마이징", "클레이"], index)
+    assert keep == ["포어마이징", "클레이"], keep
+    # 반대 방향 — 진짜 조사는 데이터에 물어 풀린다
+    keep2, _ = inventory.usable_words(["앰플은"], index)
+    assert keep2 == ["앰플"], keep2
