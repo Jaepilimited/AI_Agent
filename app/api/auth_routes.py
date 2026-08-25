@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.api.auth_middleware import get_current_user
 from app.core.google_auth import GoogleAuthManager
 from app.core.google_oauth_state import consume_state, issue_state
+from app.core.personal_briefing_store import delete_for_user
 from app.db.models import User
 
 logger = structlog.get_logger(__name__)
@@ -155,6 +156,7 @@ async def google_auth_status(user: User = Depends(get_current_user)):
 async def google_revoke(user: User = Depends(get_current_user)):
     """Revoke the authenticated user's stored Google OAuth credentials."""
     deleted = _get_auth_manager().revoke_credentials(user.email)
+    await asyncio.to_thread(delete_for_user, user.id)
     return {
         "revoked": deleted,
         "message": "토큰이 삭제되었습니다." if deleted else "저장된 토큰이 없습니다.",
