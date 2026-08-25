@@ -35,13 +35,28 @@ CREATE TABLE IF NOT EXISTS personal_briefing_snapshots (
 # credential or raw message content.
 _TRANSIENT_KEYS = {
     "snippet",
+    "snippettext",
     "body",
+    "bodytext",
+    "bodycontent",
+    "messagebody",
     "payload",
+    "payloaddata",
     "attachment",
     "attachments",
-    "access_token",
-    "refresh_token",
-    "oauth_token",
+    "attachmentid",
+    "attachmentids",
+    "attachmenturl",
+    "attachmenturls",
+    "attachmentname",
+    "attachmentnames",
+    "attachmentdata",
+    "attachmentmetadata",
+    "attachmentmeta",
+    "accesstoken",
+    "refreshtoken",
+    "oauthtoken",
+    "idtoken",
     "token",
 }
 
@@ -59,13 +74,19 @@ def _strip_transient(value: Any) -> Any:
         return {
             key: _strip_transient(item)
             for key, item in value.items()
-            if str(key).lower() not in _TRANSIENT_KEYS
+            if _normalise_key(key) not in _TRANSIENT_KEYS
         }
     if isinstance(value, list):
         return [_strip_transient(item) for item in value]
     if isinstance(value, tuple):
         return [_strip_transient(item) for item in value]
     return value
+
+
+def _normalise_key(key: Any) -> str:
+    """Match snake, kebab, spaced, and camel-case aliases consistently."""
+
+    return "".join(character for character in str(key).lower() if character.isalnum())
 
 
 def _clean_mail(mail: dict[str, Any]) -> dict[str, Any]:
