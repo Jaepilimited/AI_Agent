@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -108,7 +109,12 @@ def test_oauth_state_rejects_tampered_signature(monkeypatch):
         lambda: type("Settings", (), {"jwt_secret_key": "s" * 64})(),
     )
     token = google_oauth_state.issue_state(7, "owner@example.com")
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    header, payload, encoded_signature = token.split(".")
+    padding = "=" * (-len(encoded_signature) % 4)
+    signature = bytearray(base64.urlsafe_b64decode(encoded_signature + padding))
+    signature[0] ^= 0x01
+    tampered_signature = base64.urlsafe_b64encode(bytes(signature)).decode("ascii").rstrip("=")
+    tampered = f"{header}.{payload}.{tampered_signature}"
 
     with pytest.raises(jwt.InvalidTokenError):
         google_oauth_state.consume_state(tampered, 7)
