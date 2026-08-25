@@ -185,3 +185,49 @@ def test_digest_post_filters_exact_kst_half_open_boundary(monkeypatch):
     assert f"after:{int(start.timestamp()) - 1}" in captured["q"]
     assert f"before:{int(end.timestamp())}" in captured["q"]
     assert [item["id"] for item in result["items"]] == ["at-start", "inside"]
+
+
+def test_digest_widens_fractional_exclusive_upper_bound(monkeypatch):
+    """A fractional end must not hide the final partial second from post-filtering."""
+    start = datetime(2026, 8, 25, 0, 0, tzinfo=SEOUL)
+    end = datetime(2026, 8, 25, 0, 0, 10, 500000, tzinfo=SEOUL)
+    millis = {
+        "final-partial-second": int(end.timestamp() * 1000) - 1,
+        "at-end": int(end.timestamp() * 1000),
+    }
+    captured = {}
+
+    class Request:
+        def __init__(self, value):
+            self.value = value
+
+        def execute(self):
+            return self.value
+
+    class Messages:
+        def list(self, **kwargs):
+            captured.update(kwargs)
+            return Request({"messages": [{"id": key} for key in millis]})
+
+        def get(self, **kwargs):
+            message_id = kwargs["id"]
+            return Request({
+                "id": message_id,
+                "internalDate": str(millis[message_id]),
+                "payload": {"headers": []},
+            })
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(google_workspace, "build", lambda *_args, **_kwargs: Service())
+
+    result = google_workspace.list_gmail_digest(object(), start, end)
+
+    assert f"before:{int(end.timestamp()) + 1}" in captured["q"]
+    assert [item["id"] for item in result["items"]] == ["final-partial-second"]

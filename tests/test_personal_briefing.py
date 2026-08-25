@@ -130,7 +130,10 @@ async def test_account_switch_never_reuses_old_account_sections(monkeypatch):
 
     monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
     monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "new@example.com")
-    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(
+        pb._auth_manager, "load_credentials",
+        lambda _email: pb.CredentialLoadOutcome(status="ready", credentials=object()),
+    )
     monkeypatch.setattr(pb._auth_manager, "get_credential_identity", lambda _email: "new-credential")
     monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: old_snapshot)
     monkeypatch.setattr(pb, "list_calendar_window", lambda *_args: (_ for _ in ()).throw(TimeoutError()))
@@ -243,7 +246,10 @@ async def test_malformed_calendar_stales_only_calendar_and_keeps_mail(monkeypatc
 
     monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
     monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "owner@example.com")
-    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(
+        pb._auth_manager, "load_credentials",
+        lambda _email: pb.CredentialLoadOutcome(status="ready", credentials=object()),
+    )
     monkeypatch.setattr(pb._auth_manager, "get_credential_identity", lambda _email: "owner-credential")
     monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: snapshot)
     monkeypatch.setattr(pb, "list_calendar_window", lambda *_args: {
@@ -292,7 +298,10 @@ async def test_expired_credentials_clear_prior_content_and_snapshot(monkeypatch)
     }
     deleted = {}
     monkeypatch.setattr(pb, "get_cached_for_user", lambda *_args: dict(cached))
-    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: None)
+    monkeypatch.setattr(
+        pb._auth_manager, "load_credentials",
+        lambda _email: pb.CredentialLoadOutcome(status="invalid", error_code="oauth_expired"),
+    )
     monkeypatch.setattr(pb._auth_manager, "revoke_credentials", lambda email: deleted.update(email=email) or True)
     monkeypatch.setattr(pb.store, "delete_for_user", lambda user_id: deleted.update(user_id=user_id))
 
@@ -305,6 +314,50 @@ async def test_expired_credentials_clear_prior_content_and_snapshot(monkeypatch)
     assert result["calendar"]["items"] == []
     assert result["mail"]["items"] == []
     assert result["priorities"] == []
+
+
+@pytest.mark.asyncio
+async def test_transient_credential_failure_preserves_snapshot_and_returns_stale(monkeypatch):
+    """Temporary credential failures must not disconnect or erase same-day content."""
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    cached = {
+        "enabled": True, "for_date": "2026-08-25", "needs_refresh": True,
+        "google": {"connected": True, "account": "connected@example.com"},
+        "calendar": {"status": "ready", "items": [{"id": "saved-event"}], "error_code": ""},
+        "mail": {"status": "ready", "items": [{"id": "saved-mail"}], "error_code": ""},
+        "priorities": [{"source": "mail", "source_id": "saved-mail"}],
+        "business": {"status": "empty", "item": None},
+    }
+    destructive_calls = []
+    monkeypatch.setattr(pb, "get_cached_for_user", lambda *_args: dict(cached))
+    monkeypatch.setattr(
+        pb._auth_manager,
+        "load_credentials",
+        lambda _email: pb.CredentialLoadOutcome(status="transient_error", error_code="google_error"),
+    )
+    monkeypatch.setattr(
+        pb._auth_manager,
+        "revoke_credentials",
+        lambda _email: destructive_calls.append("revoke"),
+    )
+    monkeypatch.setattr(
+        pb.store,
+        "delete_for_user",
+        lambda _user_id: destructive_calls.append("delete"),
+    )
+
+    result = await pb.refresh_for_user(user, now=now, force=True)
+
+    assert destructive_calls == []
+    assert result["google"] == cached["google"]
+    assert result["calendar"]["items"] == [{"id": "saved-event"}]
+    assert result["mail"]["items"] == [{"id": "saved-mail"}]
+    assert result["calendar"]["status"] == "stale"
+    assert result["mail"]["status"] == "stale"
+    assert result["calendar"]["error_code"] == "google_error"
+    assert result["mail"]["error_code"] == "google_error"
+    assert result["needs_refresh"] is False
 
 
 @pytest.mark.asyncio
@@ -322,7 +375,10 @@ async def test_refresh_revalidates_credential_identity_before_persistence(monkey
     identities = iter(("credential-a", "credential-b"))
     account_calls = iter(("old-google@example.com", "new-google@example.com"))
     monkeypatch.setattr(pb, "get_cached_for_user", lambda *_args: dict(cached))
-    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(
+        pb._auth_manager, "load_credentials",
+        lambda _email: pb.CredentialLoadOutcome(status="ready", credentials=object()),
+    )
     monkeypatch.setattr(pb._auth_manager, "get_credential_identity", lambda _email: next(identities))
     monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: next(account_calls))
     monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: None)

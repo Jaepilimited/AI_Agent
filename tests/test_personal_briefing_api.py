@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -70,20 +71,20 @@ def test_disabled_flag_short_circuits_core(monkeypatch):
     assert client.post("/api/personal-briefing/refresh").status_code == 404
 
 
-def test_refresh_timeout_returns_same_day_last_known_good_cache(monkeypatch):
-    timeouts = []
+@pytest.mark.asyncio
+async def test_refresh_timeout_returns_same_day_last_known_good_cache(monkeypatch):
+    release = asyncio.Event()
+    finished = asyncio.Event()
 
-    async def timeout(awaitable, timeout):
-        awaitable.cancel()
-        timeouts.append(timeout)
-        raise asyncio.TimeoutError()
+    async def stalled_refresh(_user, *, now):
+        try:
+            await release.wait()
+            return {"for_date": str(now.date())}
+        finally:
+            finished.set()
 
-    async def harmless_refresh(_user, *, now):
-        await asyncio.sleep(0)
-        return {"for_date": str(now.date())}
-
-    monkeypatch.setattr(api.asyncio, "wait_for", timeout)
-    monkeypatch.setattr(api, "refresh_for_user", harmless_refresh)
+    monkeypatch.setattr(api, "refresh_for_user", stalled_refresh)
+    monkeypatch.setattr(api, "_REFRESH_BUDGET_SECONDS", 0.05)
     cached = {
         "enabled": True, "for_date": "2026-08-25", "timezone": "Asia/Seoul",
         "generated_at": "2026-08-25T08:30:00+09:00", "needs_refresh": True,
@@ -95,20 +96,19 @@ def test_refresh_timeout_returns_same_day_last_known_good_cache(monkeypatch):
     }
     monkeypatch.setattr(api, "get_cached_for_user", lambda *_args: cached)
 
-    response = TestClient(_app_for_owner()).post("/api/personal-briefing/refresh")
+    result = await api.refresh_personal_briefing(OWNER)
 
-    assert response.status_code == 200
-    assert response.json()["needs_refresh"] is False
-    assert response.json()["for_date"] == "2026-08-25"
-    assert response.json()["calendar"]["items"] == [{"id": "e1"}]
-    assert response.json()["mail"]["items"] == [{"id": "m1"}]
-    assert response.json()["priorities"][0]["source_id"] == "m1"
-    assert response.json()["calendar"]["status"] == "stale"
-    assert response.json()["mail"]["status"] == "stale"
-    assert response.json()["calendar"]["error_code"] == "google_timeout"
-    assert response.json()["mail"]["error_code"] == "google_timeout"
-    assert len(timeouts) == 1
-    assert 0 < timeouts[0] <= 15.0
+    assert result["needs_refresh"] is False
+    assert result["for_date"] == "2026-08-25"
+    assert result["calendar"]["items"] == [{"id": "e1"}]
+    assert result["mail"]["items"] == [{"id": "m1"}]
+    assert result["priorities"][0]["source_id"] == "m1"
+    assert result["calendar"]["status"] == "stale"
+    assert result["mail"]["status"] == "stale"
+    assert result["calendar"]["error_code"] == "google_timeout"
+    assert result["mail"]["error_code"] == "google_timeout"
+    release.set()
+    await asyncio.wait_for(finished.wait(), timeout=1)
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_timed_out_refresh_keeps_running_under_shared_lock(monkeypatch):
     monkeypatch.setattr(api, "get_settings", lambda: type("S", (), {"personal_briefing_enabled": True})())
     monkeypatch.setattr(api, "get_cached_for_user", lambda *_args: cached)
     monkeypatch.setattr(api, "refresh_for_user", stalled)
-    monkeypatch.setattr(api, "_REFRESH_BUDGET_SECONDS", 0.01)
+    monkeypatch.setattr(api, "_REFRESH_BUDGET_SECONDS", 0.05)
 
     result = await api.refresh_personal_briefing(OWNER)
 
@@ -140,6 +140,40 @@ async def test_timed_out_refresh_keeps_running_under_shared_lock(monkeypatch):
     assert not finished.is_set()
     release.set()
     await asyncio.wait_for(finished.wait(), timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_stalled_cache_read_uses_whole_deadline_and_skips_refresh(monkeypatch):
+    """The initial cache read shares the request budget and cannot launch late refresh work."""
+    release = threading.Event()
+    refresh_started = False
+
+    def stalled_cache(*_args):
+        release.wait(timeout=1)
+        return {"for_date": "2026-08-25"}
+
+    def tracked_refresh(*_args):
+        nonlocal refresh_started
+        refresh_started = True
+        raise AssertionError("refresh started after cache exhausted request budget")
+
+    monkeypatch.setattr(api, "get_settings", lambda: type("S", (), {"personal_briefing_enabled": True})())
+    monkeypatch.setattr(api, "get_cached_for_user", stalled_cache)
+    monkeypatch.setattr(api, "_tracked_refresh", tracked_refresh)
+    monkeypatch.setattr(api, "_REFRESH_BUDGET_SECONDS", 0.02)
+    started = asyncio.get_running_loop().time()
+
+    try:
+        result = await asyncio.wait_for(api.refresh_personal_briefing(OWNER), timeout=0.2)
+    finally:
+        release.set()
+
+    elapsed = asyncio.get_running_loop().time() - started
+    assert elapsed < 0.15
+    assert refresh_started is False
+    assert result["for_date"] == str(datetime.now(api.SEOUL).date())
+    assert result["calendar"]["error_code"] == "google_timeout"
+    assert result["mail"]["error_code"] == "google_timeout"
 
 
 def test_refresh_pins_one_kst_now_across_midnight_fallback(monkeypatch):

@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from app.core import briefing
-from app.core.google_auth import GoogleAuthManager
+from app.core.google_auth import CredentialLoadOutcome, GoogleAuthManager
 from app.core.google_workspace import list_calendar_window, list_gmail_digest
 from app.core.llm import get_flash_client
 from app.core import personal_briefing_store as store
@@ -366,11 +366,34 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
         cached = await asyncio.to_thread(get_cached_for_user, user, current)
         if not force and not cached["needs_refresh"]:
             return cached
-        creds = await asyncio.to_thread(_auth_manager.get_credentials, user.email)
+        credential_outcome: CredentialLoadOutcome = await asyncio.to_thread(
+            _auth_manager.load_credentials, user.email,
+        )
+        creds = credential_outcome.credentials
+        if creds is None and not credential_outcome.definitive_disconnect:
+            same_day = cached.get("for_date") == str(current.date())
+            error_code = credential_outcome.error_code or "google_error"
+            calendar = _merge_failed_section(
+                cached.get("calendar") if same_day else None, error_code,
+            )
+            mail = _merge_failed_section(
+                cached.get("mail") if same_day else None, error_code,
+            )
+            mail_defaults = _empty_sections("error", error_code)[1]
+            for key, value in mail_defaults.items():
+                mail.setdefault(key, value)
+            cached.update(
+                calendar=calendar,
+                mail=mail,
+                priorities=cached.get("priorities", []) if same_day else [],
+                needs_refresh=False,
+            )
+            return cached
         if creds is None:
             await asyncio.to_thread(_auth_manager.revoke_credentials, user.email)
             await asyncio.to_thread(store.delete_for_user, user.id)
-            calendar, mail = _empty_sections("disconnected", "oauth_expired")
+            error_code = credential_outcome.error_code or "oauth_expired"
+            calendar, mail = _empty_sections("disconnected", error_code)
             cached.update(
                 calendar=calendar,
                 mail=mail,

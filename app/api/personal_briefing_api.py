@@ -98,9 +98,16 @@ async def refresh_personal_briefing(user: User = Depends(get_current_user)) -> d
     now = datetime.now(SEOUL)
     deadline = asyncio.get_running_loop().time() + _REFRESH_BUDGET_SECONDS
     try:
-        cached = await asyncio.to_thread(get_cached_for_user, user, now)
+        cached = await asyncio.wait_for(
+            asyncio.to_thread(get_cached_for_user, user, now),
+            timeout=_remaining_seconds(deadline),
+        )
+    except asyncio.TimeoutError:
+        return _minimal_timeout_response(now)
     except Exception:
         cached = None
+    if _remaining_seconds(deadline) <= 0:
+        return _minimal_timeout_response(now)
     refresh_task = _tracked_refresh(user, now)
     try:
         return await asyncio.wait_for(

@@ -207,6 +207,89 @@ def test_google_auth_logs_only_safe_error_metadata(monkeypatch, tmp_path):
     assert calls == [("token_load_failed", {"source": "file", "error_type": "RuntimeError"})]
 
 
+def test_credential_load_outcome_distinguishes_invalid_grant(monkeypatch, tmp_path):
+    """A definitive OAuth revocation is distinguishable without deleting the token here."""
+    token_path = tmp_path / "token.json"
+    token_path.write_text("{}", encoding="utf-8")
+    manager = object.__new__(google_auth.GoogleAuthManager)
+    manager._token_path = lambda _email: token_path
+
+    class RevokedCredentials:
+        refresh_token = "refresh-token"
+
+        def refresh(self, _request):
+            raise RuntimeError("invalid_grant")
+
+    monkeypatch.setattr(
+        google_auth.Credentials,
+        "from_authorized_user_file",
+        lambda *_args, **_kwargs: RevokedCredentials(),
+    )
+
+    outcome = manager.load_credentials("owner@example.com")
+
+    assert outcome.status == "invalid"
+    assert outcome.credentials is None
+    assert outcome.definitive_disconnect is True
+    assert token_path.exists()
+
+
+def test_credential_load_outcome_preserves_transient_failure(monkeypatch, tmp_path):
+    """Transport/temporary refresh errors remain retryable and keep stored credentials."""
+    token_path = tmp_path / "token.json"
+    token_path.write_text("{}", encoding="utf-8")
+    manager = object.__new__(google_auth.GoogleAuthManager)
+    manager._token_path = lambda _email: token_path
+
+    class TemporarilyUnavailableCredentials:
+        refresh_token = "refresh-token"
+
+        def refresh(self, _request):
+            raise TimeoutError("temporary transport failure")
+
+    monkeypatch.setattr(
+        google_auth.Credentials,
+        "from_authorized_user_file",
+        lambda *_args, **_kwargs: TemporarilyUnavailableCredentials(),
+    )
+
+    outcome = manager.load_credentials("owner@example.com")
+
+    assert outcome.status == "transient_error"
+    assert outcome.credentials is None
+    assert outcome.definitive_disconnect is False
+    assert token_path.exists()
+
+
+def test_credential_load_outcome_treats_temporary_parse_failure_as_transient(monkeypatch, tmp_path):
+    """An unreadable token is preserved because a partial/temporary read may recover."""
+    token_path = tmp_path / "token.json"
+    token_path.write_text("partial", encoding="utf-8")
+    manager = object.__new__(google_auth.GoogleAuthManager)
+    manager._token_path = lambda _email: token_path
+    monkeypatch.setattr(
+        google_auth.Credentials,
+        "from_authorized_user_file",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("partial json")),
+    )
+
+    outcome = manager.load_credentials("owner@example.com")
+
+    assert outcome.status == "transient_error"
+    assert outcome.definitive_disconnect is False
+    assert token_path.read_text(encoding="utf-8") == "partial"
+
+
+def test_credentials_only_wrapper_preserves_openwebui_fallback():
+    """Existing GWS callers still try Open WebUI when local credentials are unavailable."""
+    manager = object.__new__(google_auth.GoogleAuthManager)
+    fallback_credentials = object()
+    manager._get_credentials_from_file = lambda _email: None
+    manager._get_credentials_from_openwebui = lambda _email: fallback_credentials
+
+    assert manager.get_credentials("owner@example.com") is fallback_credentials
+
+
 class _FakeAuthManager:
     def __init__(self):
         self.seen_email = ""

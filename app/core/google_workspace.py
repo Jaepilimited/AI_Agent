@@ -5,6 +5,7 @@ Stateless functions that accept credentials and call Gmail/Drive/Calendar APIs.
 
 import base64
 import html
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -163,7 +164,7 @@ def list_gmail_digest(
     """
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
     start_epoch = int(start.timestamp())
-    end_epoch = int(end.timestamp())
+    end_epoch = math.ceil(end.timestamp())
     query = (
         f"after:{start_epoch - 1} before:{end_epoch} "
         "-in:spam -in:trash -in:drafts -in:sent -from:me"
