@@ -286,7 +286,7 @@ def _snapshot_for_account(snapshot: dict[str, Any] | None, account: str, user_em
 def _visible_priorities(priorities: list[dict[str, Any]], business: dict[str, Any]) -> list[dict[str, Any]]:
     """An opt-out applies to every business-derived presentation, including cache."""
 
-    if business.get("status") == "disabled":
+    if business.get("status") != "ready":
         return [priority for priority in priorities if priority.get("source") != "business"]
     return priorities
 

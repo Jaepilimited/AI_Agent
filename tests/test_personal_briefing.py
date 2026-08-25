@@ -162,6 +162,30 @@ def test_opted_out_cached_business_priority_is_suppressed(monkeypatch):
     assert result["priorities"] == [{"source": "mail", "source_id": "m1", "title": "safe"}]
 
 
+def test_business_lookup_error_hides_cached_business_priority(monkeypatch):
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    snapshot = {
+        "google_account_hash": pb._account_hash("owner@example.com"),
+        "calendar": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "mail": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "priorities": [
+            {"source": "business", "source_id": "unknown", "title": "must hide"},
+            {"source": "calendar", "source_id": "e1", "title": "safe"},
+        ],
+        "generated_at": now,
+    }
+    monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
+    monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "owner@example.com")
+    monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: snapshot)
+    monkeypatch.setattr(pb, "_safe_business_for_user", lambda _uid: {"status": "error", "item": None})
+
+    result = pb.get_cached_for_user(user, now)
+
+    assert result["business"]["status"] == "error"
+    assert result["priorities"] == [{"source": "calendar", "source_id": "e1", "title": "safe"}]
+
+
 @pytest.mark.asyncio
 async def test_malformed_calendar_stales_only_calendar_and_keeps_mail(monkeypatch):
     now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
