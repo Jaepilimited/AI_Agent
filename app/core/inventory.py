@@ -223,6 +223,36 @@ def _parse_erp(values: List[List[Any]]) -> Dict[str, Any]:
             "sheet_updated_at": _sheet_stamp(values)}
 
 
+# ⛔ 시트가 **날짜 형식 두 가지를 섞어** 쓴다: `2027-03-18`(2,630건)과
+#    `2029. 6. 14`(567건). 문자열로 정렬하면 같은 해 안에서 순서가 뒤집힌다 —
+#    실측(2026-08-26): **43개 SKU** 에서 `2029. 6. 14` 가 `2029-06-15` 뒤로 밀렸다.
+#    "임박한 순" 이라고 적어 놓고 임박한 순이 아닌 표를 보여주던 셈이다.
+#    ⚠️ 전역 상위 20 은 우연히 맞았다 (점 표기가 전부 2029년이라 위로 안 온다) —
+#       그래서 눈으로 봐서는 안 드러난다. 제품별 조회에서만 틀린다.
+_UNDATED_FROM = "2099-01-01"
+
+
+def norm_expiry(value: Any) -> str:
+    """`2029. 6. 14` · `2027-03-18` → `2029-06-14` · `2027-03-18`. 못 읽으면 ""."""
+    m = _re.match(r"^\s*(\d{4})[-.\s]+(\d{1,2})[-.\s]+(\d{1,2})", str(value or ""))
+    if not m:
+        return ""
+    y, mo, d = (int(g) for g in m.groups())
+    try:
+        return datetime(y, mo, d).strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def is_undated(expiry: str) -> bool:
+    """⛔ `2099-12-31` 은 **날짜가 아니라 '미지정' 자리표시자**다 (901건·736만개).
+
+    실제 유통기한처럼 표에 찍으면 "2099년까지 괜찮다" 로 읽힌다. 성분에서
+    '미상'을 '미포함'으로 쓰면 안 되는 것과 같은 부류 — 모르는 것은 모른다고 적는다.
+    """
+    return bool(expiry) and expiry >= _UNDATED_FROM
+
+
 def _parse_expiry(values: List[List[Any]]) -> Dict[str, Any]:
     """`유통기한` — SKU | 상품명 | 유통기한 | LOT | 수량.
 
@@ -250,8 +280,8 @@ def _parse_expiry(values: List[List[Any]]) -> Dict[str, Any]:
         if not r or len(r) <= i_exp:
             continue
         sku = str(r[i_sku]).strip()
-        exp = str(r[i_exp]).strip()
-        if not sku or not exp or not exp[0].isdigit():
+        exp = norm_expiry(r[i_exp])        # ⛔ 형식이 섞여 있다 — 여기서 통일한다
+        if not sku or not exp:
             continue
         # ⚠️ 같은 SKU 의 둘째 줄부터는 상품명이 비어 있다 — 앞 값을 이어받는다
         name = str(r[i_name]).strip() if len(r) > i_name else ""
@@ -621,8 +651,11 @@ def expiry_search(term: str, limit: int = 40) -> Dict[str, Any]:
         hay = (str(r.get("sku") or "") + " " + str(r.get("item_name") or "")).lower()
         if not lowered or all(w in hay for w in lowered):
             hits.append(r)
-    hits.sort(key=lambda r: str(r.get("expiry_date") or "9999"))
-    return {"rows": hits[:int(limit)], "total": len(hits),
+    # 미지정(2099)은 임박한 것이 아니다 — 맨 뒤로 보낸다
+    hits.sort(key=lambda r: (is_undated(str(r.get("expiry_date") or "")),
+                             str(r.get("expiry_date") or "9999")))
+    undated = sum(1 for r in hits if is_undated(str(r.get("expiry_date") or "")))
+    return {"rows": hits[:int(limit)], "total": len(hits), "undated": undated,
             "shown": " ".join(keep), "dropped": dropped,
             "sheet_updated_at": snap["sheet_updated_at"],
             "live": snap["live"], "note": snap["note"]}

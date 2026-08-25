@@ -2892,15 +2892,24 @@ class OrchestratorAgent:
                 listed, _josa(last, "은는")[len(last):])
         lines += [head, "",
                   "| 유통기한 | SKU | 품목명 | LOT | 수량 |", "|---|---|---|---|---:|"]
+        from app.core.inventory import is_undated
         for r in rows:
             name = str(r.get("item_name") or "").replace("|", "/")[:44]
+            # ⛔ `2099-12-31` 은 날짜가 아니라 **미지정 자리표시자**다.
+            #    그대로 찍으면 "2099년까지 괜찮다" 로 읽힌다
+            when = str(r.get("expiry_date") or "")
             lines.append("| {} | {} | {} | {} | {:,} |".format(
-                r.get("expiry_date"), r.get("sku"), name,
+                "미지정" if is_undated(when) else when, r.get("sku"), name,
                 str(r.get("lot") or "-")[:18], int(r.get("qty") or 0)))
         # ⛔ 총계를 재고와 나란히 두지 않는다 — 세는 기준이 다르다는 말을 함께 적는다
-        lines += ["", "*로트 잔량 합계 {:,}개. 이 수치는 **창고 재고와 세는 기준이 달라**"
-                      " 재고 수량과 더하면 안 됩니다.*".format(
-                          sum(int(r.get("qty") or 0) for r in rows)),
+        foot = "*로트 잔량 합계 {:,}개. 이 수치는 **창고 재고와 세는 기준이 달라**" \
+               " 재고 수량과 더하면 안 됩니다.".format(
+                   sum(int(r.get("qty") or 0) for r in rows))
+        # 미지정을 말없이 섞지 않는다 — 몇 건이 날짜를 모르는지 밝힌다
+        if res.get("undated"):
+            foot += " 찾은 {:,}건 중 {:,}건은 시트에 유통기한이 적혀 있지 않습니다" \
+                    "(2099-12-31 자리표시자).".format(res["total"], res["undated"])
+        lines += ["", foot + "*",
                   "", "---",
                   "*시트 기준: " + stamp + " · 조회 시점에 시트를 직접 읽었습니다 · "
                   "[원본 시트](" + SHEET_URL + ")*"]

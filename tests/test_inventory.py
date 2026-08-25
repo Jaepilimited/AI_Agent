@@ -396,3 +396,47 @@ def test_euro_particle_matches_the_final_consonant():
 
     assert _euro("전체") == "로"           # 받침 없음
     assert _euro("센텔라 앰플") == " 으로"  # 받침 있음
+
+
+# ── 유통기한 날짜 (2026-08-26 데이터 분석에서 발견) ─────────────────────────
+
+def test_mixed_date_formats_are_normalised():
+    """⛔ 시트가 형식 **두 가지를 섞어** 쓴다: `2027-03-18`(2,630건)과
+       `2029. 6. 14`(567건). 문자열로 정렬하면 같은 해 안에서 순서가 뒤집힌다 —
+       실측: **43개 SKU** 에서 `2029. 6. 14` 가 `2029-06-15` 뒤로 밀렸다.
+       "임박한 순" 이라고 적어 놓고 임박한 순이 아닌 표를 보여주던 셈이다.
+
+    ⚠️ 전역 상위 20 은 우연히 맞았다 (점 표기가 전부 2029년이라 위로 안 온다).
+       눈으로 봐서는 안 드러나고 **제품별 조회에서만** 틀린다.
+    """
+    assert inventory.norm_expiry("2029. 6. 14") == "2029-06-14"
+    assert inventory.norm_expiry("2027-03-18") == "2027-03-18"
+    assert inventory.norm_expiry("2029.6.5") == "2029-06-05"
+    assert inventory.norm_expiry("없음") == ""
+    assert inventory.norm_expiry("2027-02-30") == ""       # 없는 날짜
+
+    # 정규화하면 문자열 정렬이 곧 날짜 정렬이다
+    raw = ["2029. 6. 14", "2029-06-15", "2029. 12. 31", "2029-05-01"]
+    assert sorted(inventory.norm_expiry(v) for v in raw) == [
+        "2029-05-01", "2029-06-14", "2029-06-15", "2029-12-31"]
+
+
+def test_placeholder_date_is_not_shown_as_an_expiry():
+    """⛔ `2099-12-31` 은 날짜가 아니라 **'미지정' 자리표시자**다 (901건·736만개).
+       그대로 찍으면 "2099년까지 괜찮다" 로 읽힌다 — 성분에서 '미상'을 '미포함'으로
+       쓰면 안 되는 것과 같은 부류다. 모르는 것은 모른다고 적는다.
+    """
+    assert inventory.is_undated("2099-12-31")
+    assert not inventory.is_undated("2028-01-01")
+
+    from app.agents import orchestrator
+    src = inspect.getsource(orchestrator.OrchestratorAgent._handle_expiry_query)
+    assert "미지정" in src and "is_undated" in src
+    # 몇 건이 미지정인지 밝힌다 — 말없이 섞지 않는다
+    assert 'res.get("undated")' in src
+
+
+def test_undated_lots_sort_last():
+    """미지정은 임박한 것이 아니다 — '임박한 순' 표의 앞자리를 차지하면 안 된다."""
+    src = inspect.getsource(inventory.expiry_search)
+    assert "is_undated" in src and "hits.sort" in src
