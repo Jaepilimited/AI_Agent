@@ -153,11 +153,7 @@ async def google_auth_status(user: User = Depends(get_current_user)):
 
 @auth_router.post("/revoke")
 async def google_revoke(user: User = Depends(get_current_user)):
-    """Revoke (delete) stored Google OAuth credentials for a user.
-
-    Args:
-        user_email: User's email address.
-    """
+    """Revoke the authenticated user's stored Google OAuth credentials."""
     deleted = _get_auth_manager().revoke_credentials(user.email)
     return {
         "revoked": deleted,

@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
 def ensure_oauth_state_table() -> None:
     """Create the state table and remove safely expired nonces."""
     execute(_DDL)
-    execute("DELETE FROM google_oauth_states WHERE expires_at < DATE_SUB(NOW(), INTERVAL 1 DAY)")
+    execute("DELETE FROM google_oauth_states WHERE expires_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)")
 
 
 def issue_state(user_id: int, user_email: str, now: datetime | None = None) -> str:
@@ -67,9 +67,9 @@ def consume_state(token: str, current_user_id: int, now: datetime | None = None)
 
     nonce_hash = hashlib.sha256(str(payload["nonce"]).encode()).hexdigest()
     changed = execute(
-        "UPDATE google_oauth_states SET used_at=NOW() "
+        "UPDATE google_oauth_states SET used_at=UTC_TIMESTAMP() "
         "WHERE nonce_hash=%s AND user_id=%s AND user_email=%s "
-        "AND used_at IS NULL AND expires_at >= NOW()",
+        "AND used_at IS NULL AND expires_at >= UTC_TIMESTAMP()",
         (nonce_hash, int(current_user_id), str(payload["email"])),
     )
     if changed != 1:

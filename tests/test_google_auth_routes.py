@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import jwt
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -49,6 +50,88 @@ def test_oauth_state_rejects_other_user(monkeypatch):
 
     with pytest.raises(ValueError, match="user"):
         google_oauth_state.consume_state(token, 8)
+
+
+def test_oauth_state_replay_is_rejected(monkeypatch):
+    """The database compare-and-set makes the same state unusable after one callback."""
+    updates = iter((1, 0))
+
+    def execute(sql, _params=()):
+        return next(updates) if sql.startswith("UPDATE google_oauth_states") else 1
+
+    monkeypatch.setattr(google_oauth_state, "execute", execute)
+    monkeypatch.setattr(
+        google_oauth_state,
+        "get_settings",
+        lambda: type("Settings", (), {"jwt_secret_key": "s" * 64})(),
+    )
+    now = datetime(2026, 8, 25, 0, 0, tzinfo=UTC)
+    token = google_oauth_state.issue_state(7, "owner@example.com", now=now)
+
+    assert google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=1))["user_id"] == 7
+    with pytest.raises(ValueError, match="already used"):
+        google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=1))
+
+
+def test_oauth_state_expiry_is_rejected_before_consumption(monkeypatch):
+    """An expired signed state cannot be exchanged even when its nonce exists."""
+    writes = []
+    monkeypatch.setattr(
+        google_oauth_state,
+        "execute",
+        lambda sql, params=(): writes.append((sql, params)) or 1,
+    )
+    monkeypatch.setattr(
+        google_oauth_state,
+        "get_settings",
+        lambda: type("Settings", (), {"jwt_secret_key": "s" * 64})(),
+    )
+    now = datetime(2026, 8, 25, 0, 0, tzinfo=UTC)
+    token = google_oauth_state.issue_state(7, "owner@example.com", now=now)
+
+    with pytest.raises(ValueError, match="expired"):
+        google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=11))
+    assert not any(sql.startswith("UPDATE google_oauth_states") for sql, _ in writes)
+
+
+def test_oauth_state_rejects_tampered_signature(monkeypatch):
+    """A state altered after issuance fails signature validation before its nonce is used."""
+    writes = []
+    monkeypatch.setattr(
+        google_oauth_state,
+        "execute",
+        lambda sql, params=(): writes.append((sql, params)) or 1,
+    )
+    monkeypatch.setattr(
+        google_oauth_state,
+        "get_settings",
+        lambda: type("Settings", (), {"jwt_secret_key": "s" * 64})(),
+    )
+    token = google_oauth_state.issue_state(7, "owner@example.com")
+    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+
+    with pytest.raises(jwt.InvalidTokenError):
+        google_oauth_state.consume_state(tampered, 7)
+    assert not any(sql.startswith("UPDATE google_oauth_states") for sql, _ in writes)
+
+
+def test_oauth_state_consumption_uses_database_utc(monkeypatch):
+    """Nonce consumption succeeds only through the UTC database-time comparison."""
+    def execute(sql, _params=()):
+        if sql.startswith("UPDATE google_oauth_states"):
+            return 1 if "UTC_TIMESTAMP()" in sql else 0
+        return 1
+
+    monkeypatch.setattr(google_oauth_state, "execute", execute)
+    monkeypatch.setattr(
+        google_oauth_state,
+        "get_settings",
+        lambda: type("Settings", (), {"jwt_secret_key": "s" * 64})(),
+    )
+    now = datetime(2026, 8, 25, 0, 0, tzinfo=UTC)
+    token = google_oauth_state.issue_state(7, "owner@example.com", now=now)
+
+    assert google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=1))["email"] == "owner@example.com"
 
 
 class _FakeAuthManager:
@@ -110,6 +193,7 @@ def test_oauth_routes_require_auth(anonymous_client):
     assert anonymous_client.get("/auth/google/status").status_code == 401
     assert anonymous_client.get("/auth/google/login").status_code == 401
     assert anonymous_client.post("/auth/google/revoke").status_code == 401
+    assert anonymous_client.get("/auth/google/callback?code=code&state=state").status_code == 401
 
 
 def test_callback_uses_signed_state_email_and_escapes_display(client, fake_manager, monkeypatch):
