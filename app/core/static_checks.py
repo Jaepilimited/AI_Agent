@@ -583,38 +583,58 @@ def qdrant_team_sources() -> Tuple[bool, str]:
 def team_link_coverage() -> Tuple[bool, str]:
     """팀 자료 링크(시트·드라이브)가 벡터 색인에 들어가 있는가.
 
-    ⛔ 원래 상태가 이랬다: DB-HUB 를 두 파이프라인이 각자 긁는데 벡터 쪽은 노션
-       페이지만 수집해, 시트·드라이브 자료 64건 중 44건(69%)이 색인에 이름조차
-       없었다 (2026-08-25 실측). "그 시트 어디 있어" 가 어느 경로로도 답이 안 됐다.
+    ⛔ **클라우드를 센다. 로컬 JSON 이 아니다.** 검색은 Qdrant Cloud 를 조회하는데
+       로컬 JSON 에는 그 일부만 있다 (2026-08-25 실측: 클라우드 1,677 · 로컬 584).
+       파일 이름이 "소스 오브 트루스" 라고 주석에 적혀 있다고 해서 그게 검색이 보는
+       곳은 아니다 — 로컬을 세면 **실제와 다른 커버리지를 자신 있게 보고하게 된다**
+       (이 검사를 처음 쓸 때 내가 그렇게 틀렸다).
 
-    이 단계는 05:00 `qdrant_pipeline_daily` 안에서 돈다. 빠지면 **에러 없이 검색
-       결과만 얇아진다** — 그래서 결과물(색인 안의 링크 카드 수)로 확인한다.
+    링크 카드 단계는 05:00 `qdrant_pipeline_daily` 안에서 돈다. 빠지면 에러 없이
+    검색 결과만 얇아지므로, 결과물(색인 안의 링크 카드 수)로 확인한다.
     """
-    import json
-
-    from app.agents.qdrant_agent import _LOCAL_JSON
-    from app.core.team_link_index import build_link_cards, load_rows, notion_page_id
+    from app.core.team_link_index import _SOURCE, build_link_cards, load_rows, notion_page_id
 
     try:
-        raw = json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        from app.agents.qdrant_agent import COLLECTION, _get_client
+
+        client = _get_client()
+        in_index = client.count(
+            collection_name=COLLECTION,
+            count_filter=Filter(must=[FieldCondition(key="source",
+                                                     match=MatchValue(value=_SOURCE))]),
+            exact=True,
+        ).count
+    except ImportError as exc:
+        # ⚠️ 개발 PC 에는 `qdrant_client` 가 없다. 없는 것을 실패로 세면 **매일 빨간
+        #    줄이 하나 상주해** 진짜 실패가 묻힌다 — 이 파일이 node 검사에 쓰는 것과
+        #    같은 규약으로 건너뛴다 (서버에는 있으므로 거기서는 그대로 돈다).
+        return True, f"qdrant_client 없음 — 건너뜀 ({exc})"
     except Exception as exc:
-        return False, f"벡터 색인 파일을 읽지 못했다: {exc}"
-    points = raw if isinstance(raw, list) else (raw.get("points") or [])
+        return False, f"Qdrant 색인에서 링크 카드를 세지 못했다: {exc}"
 
-    indexed_ids, in_index = set(), 0
-    for pt in points:
-        payload = pt.get("payload", {})
-        if payload.get("source") == "team_resources":
-            in_index += 1
-            continue
-        pid = str(payload.get("page_id", "")).replace("-", "").lower()
-        if pid:
-            indexed_ids.add(pid)
-        nid = notion_page_id(str(payload.get("page_url", "")))
-        if nid:
-            indexed_ids.add(nid)
-
+    # ⚠️ 후보 수는 **파이프라인과 같은 방식**으로 센다. 중복 제거(이미 본문이 색인된
+    #    노션 페이지)를 빼먹으면 후보가 230 으로 부풀어 "53장이 빠졌다" 처럼 읽힌다 —
+    #    빠진 게 아니라 애초에 태우지 않기로 한 것들이다.
     try:
+        import json as _json
+
+        from app.agents.qdrant_agent import _LOCAL_JSON
+
+        local = _json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+        local_points = local if isinstance(local, list) else (local.get("points") or [])
+        indexed_ids = set()
+        for pt in local_points:
+            payload = pt.get("payload", {})
+            if payload.get("source") == _SOURCE:
+                continue
+            pid = str(payload.get("page_id", "")).replace("-", "").lower()
+            if pid:
+                indexed_ids.add(pid)
+            nid = notion_page_id(str(payload.get("page_url", "")))
+            if nid:
+                indexed_ids.add(nid)
         expected = len(build_link_cards(load_rows(), indexed_page_ids=indexed_ids))
     except Exception as exc:
         return False, f"team_resources 를 읽지 못했다: {exc}"

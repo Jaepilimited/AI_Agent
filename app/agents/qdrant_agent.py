@@ -86,6 +86,40 @@ def resolve_team_filter(team_key: Optional[str]) -> Optional[str]:
                    note="TEAM_MAP 에 없어 원문으로 필터한다 (전체 검색 방지)")
     return raw
 
+
+_TEAM_COUNTS: Optional[dict] = None
+
+
+def index_team_counts(refresh: bool = False) -> dict:
+    """색인에 팀별 조각이 몇 개 들어 있나 — 로컬 JSON(소스 오브 트루스) 기준.
+
+    ⛔ 손으로 적은 팀 목록을 두지 않는다. 이 프로젝트가 반복해서 당한 사고가
+       "코드에 적어둔 값 목록이 낡아 조용히 0건" 이다 (Continent1·마케팅 team).
+       여기서도 **색인이 스스로 말하게** 한다.
+
+    `resolve_team_filter()` 가 낸 값으로 조회하면 그 팀이 실제로 검색될 수 있는지
+    바로 알 수 있다 — 0 이면 그 `@@` 칩은 눌러도 빈손이다.
+    """
+    global _TEAM_COUNTS
+    if _TEAM_COUNTS is not None and not refresh:
+        return _TEAM_COUNTS
+    try:
+        raw = json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+        points = raw if isinstance(raw, list) else (raw.get("points") or raw.get("vectors") or [])
+        counts: dict = {}
+        for pt in points:
+            payload = pt.get("payload", pt)
+            team = payload.get("team")
+            if team:
+                counts[team] = counts.get(team, 0) + 1
+        _TEAM_COUNTS = counts
+    except Exception as e:
+        # ⚠️ 삼키지 말 것 — 여기가 조용하면 "자료 없음"과 "파일 못 읽음"이 같아 보인다
+        logger.warning("qdrant_index_counts_failed", error=str(e), path=str(_LOCAL_JSON))
+        _TEAM_COUNTS = {}
+    return _TEAM_COUNTS
+
+
 # ── Qdrant Cloud 설정 (env 우선, 없으면 .env 파일 참조) ──────────────────────
 def _qdrant_url() -> str:
     return os.getenv("QDRANT_URL", "https://bf41bcbe-af68-416f-9d26-1b3d64f7bed0.us-east-1-1.aws.cloud.qdrant.io:6333")
@@ -242,7 +276,27 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
                 top_score=results[0]["score"] if results else 0)
 
     if not results or results[0]["score"] < QUALITY_GATE:
-        # 사내 문서에 없는 질문 → Google Search로 폴백
+        # ⛔ **팀을 지정했으면 구글로 새지 않는다** (2026-08-25).
+        #    `@@JBT`·`@@B2B1` 은 색인 조각이 0건이라 여기로 떨어지는데, 그대로
+        #    Google 검색 답변이 나갔다. 사내 자료를 물었는데 인터넷 글이 답으로
+        #    오는 것이고, 꼬리말의 "사내 문서와 무관" 한 줄로는 그 사실이 읽히지
+        #    않는다 — 잡음은 답처럼 보인다(넓혀 찾기에서 이미 겪은 실패).
+        #    범위를 좁혀 물은 사람에게는 **없다고 말하는 편이 낫다.**
+        if team_filter:
+            indexed = index_team_counts().get(team_filter, 0)
+            logger.warning("qdrant_pinned_empty", team_key=team_key,
+                           team_filter=team_filter, indexed=indexed, query=query[:80])
+            if indexed == 0:
+                return (
+                    f"**{team_filter}** 팀 자료는 사내 문서 색인에 아직 없습니다 (색인 0건).\n\n"
+                    "팀 지정을 빼고 다시 물어보시면 전체 사내 문서에서 찾아드립니다."
+                )
+            return (
+                f"**{team_filter}** 팀 자료 {indexed}건 안에서는 '{query}'와 관련된 문서를 "
+                "찾지 못했습니다.\n\n다른 키워드로 묻거나, 팀 지정을 빼고 전체에서 찾아보세요."
+            )
+
+        # 팀 지정이 없을 때만 → 사내 문서에 없는 질문으로 보고 Google Search 폴백
         try:
             flash = get_flash_client()
             search_prompt = f"""{LANGUAGE_DETECTION_RULE}
@@ -306,7 +360,7 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 
     try:
         answer = await asyncio.to_thread(llm.generate, prompt, None, 0.3, 2048)
-        return answer + _vintage_note(results)
+        return answer + _vintage_note(results, answer)
     except Exception as e:
         logger.error("qdrant_answer_failed", error=str(e))
         return f"답변 생성 중 오류: {e}"
@@ -316,7 +370,7 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 _STALE_DAYS = 365
 
 
-def _vintage_note(results: list[dict]) -> str:
+def _vintage_note(results: list[dict], answer: str = "") -> str:
     """근거 문서가 오래됐으면 **코드가** 연식을 밝힌다.
 
     ⛔ 프롬프트로 시켰더니 LLM 이 그냥 빠뜨렸다 (2026-08-18 실측 — 질문에서 명시적으로
@@ -332,11 +386,25 @@ def _vintage_note(results: list[dict]) -> str:
     """
     from datetime import datetime, timezone
 
-    # ⚠️ **전체 중 최신**으로 판정하면 안 된다 — 상위에 최신 문서가 하나라도 섞이면
-    #    경고가 사라진다. 실측에서 그렇게 놓쳤다: 1순위가 2023 년 FAQ 인데 5·6위에
-    #    2026 년 문서가 있어 경고가 안 붙었다. 답을 지배하는 것은 **상위 문서**다.
+    # ⚠️ 판정 기준은 **답변이 실제로 인용한 문서**다.
+    #    예전엔 "상위 3건 모두 오래됐을 때"만 봤는데, 그러면 상위에 최신 청크가 하나만
+    #    섞여도 경고가 사라진다 — 붐따 #105 가 정확히 그랬다 (2026-08-25 실측).
+    #    답변은 2023-03-31 자 FAQ **하나만** 인용했는데 경고가 안 붙었다.
+    #    검색 상위에 무엇이 걸렸는지가 아니라 **답을 만든 근거**가 낡았는지가 중요하다.
+    #    출처 링크가 없는 답변도 있으므로 그때만 1순위로 되돌아간다.
+    _hex = re.compile(r"[^0-9a-f]")
+    _ans_hex = _hex.sub("", (answer or "").lower())
+    cited = []
+    for r in (results or []):
+        url = str((r.get("payload") or {}).get("page_url") or "")
+        if not url or not answer:
+            continue
+        pid = _hex.sub("", url.split("/")[-1].lower())[-32:]
+        if url in answer or (len(pid) == 32 and pid in _ans_hex):
+            cited.append(r)
+
     top = []
-    for r in (results or [])[:3]:
+    for r in (cited or (results or [])[:1]):
         raw = str((r.get("payload") or {}).get("last_edited_time") or "")[:10]
         if len(raw) == 10:
             try:
@@ -345,7 +413,7 @@ def _vintage_note(results: list[dict]) -> str:
                 pass
     if not top:
         return ""
-    newest = max(top)          # 상위 3건 중 가장 최신 — 셋 다 오래됐을 때만 경고한다
+    newest = max(top)          # 인용한 것 중 가장 최신 — 그것도 낡았을 때만 경고한다
     age = (datetime.now(timezone.utc) - newest).days
     if age < _STALE_DAYS:
         return ""
