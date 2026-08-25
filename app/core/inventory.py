@@ -39,8 +39,29 @@ HEADER_ROW = 2          # 1행은 "마지막 업데이트 일시" 머리말
 DATA_START_ROW = 3
 MAX_ROWS = 8000
 
-# ⛔ 적재하지 않는 컬럼 — 파생 합계다 (위 주석 참조)
-_DERIVED_COLS = {"SF 재고합"}
+# 탭 세 개를 쓴다 (2026-08-25 확장). 범위는 넉넉하되 무한정 읽지는 않는다.
+TAB_ERP = "🐵ERP 코드 통합 재고현황🎀"
+TAB_EXPIRY = "유통기한"
+_RANGES = {SHEET_TAB: f"A1:Z{MAX_ROWS}", TAB_ERP: "A1:U2000", TAB_EXPIRY: "A1:Y8000"}
+
+# ERP 탭 창고명 → SK/HQ_NEW 표기.
+# ⛔ **이름을 눈으로 맞추지 않았다 — 값으로 맞췄다.** 겹치는 730개 SKU 의 창고별
+#    수량을 전부 대조해 6개 모두 **100% 일치**하는 짝만 채택했다 (2026-08-25 실측).
+#    `FBI` 가 `SK_FAST BEAUTY(인도네시아)` 인 것은 이름만 봐서는 알 수 없다.
+# ⛔ 이 대응이 틀리면 겹치는 SKU 가 **창고 둘로 갈려 이중계상**된다. 표기를 통일해
+#    `UNIQUE(sku, location)` 이 자연히 합치게 하는 것이 요점이다.
+_ERP_LOCATIONS = {
+    "B2B": "[현장] SF_B2B",
+    "B2C": "[현장] SF_B2C",
+    "CG ETC(미국)": "[현장] CG ETC(미국)",
+    "FBI": "[현장] SK_FAST BEAUTY(인도네시아)",
+    "플래그십": "[현장] 플래그십 스토어_명동",
+    "특별관리품": "[현장] SF_PQ",
+}
+
+# ⛔ 적재하지 않는 컬럼 — 파생 합계다 (위 주석 참조).
+#    ERP 탭에도 같은 함정이 있다 (`SF가용재고 합계`).
+_DERIVED_COLS = {"SF 재고합", "SF가용재고 합계", "SF가용재고합계"}
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS op_inventory (
@@ -59,12 +80,33 @@ CREATE TABLE IF NOT EXISTS op_inventory (
 """
 
 
+# ⛔ 유통기한은 **재고와 다른 테이블**이다. 로트 단위 잔량이라 창고 재고와 세는
+#    기준이 다르고, 한 테이블에 두면 언젠가 `SUM(qty)` 에 함께 더해져 같은 물건을
+#    두 번 센다 (`SF 재고합`·`Production_Cost2` 와 같은 부류의 함정).
+_DDL_EXPIRY = """
+CREATE TABLE IF NOT EXISTS op_inventory_expiry (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    sku VARCHAR(64) NOT NULL,
+    item_name VARCHAR(255) NOT NULL DEFAULT '',
+    expiry_date VARCHAR(32) NOT NULL DEFAULT '',
+    lot VARCHAR(64) NOT NULL DEFAULT '',
+    qty INT NOT NULL DEFAULT 0,
+    sheet_updated_at VARCHAR(64) NOT NULL DEFAULT '',
+    synced_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_sku_lot_exp (sku, lot, expiry_date),
+    INDEX idx_exp_sku (sku),
+    INDEX idx_exp_date (expiry_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
 def ensure_inventory_table() -> None:
     """테이블 생성 (idempotent — 앱 기동 시 호출)."""
-    try:
-        execute(_DDL)
-    except Exception as e:
-        logger.warning("op_inventory_ddl_failed", error=str(e)[:160])
+    for ddl in (_DDL, _DDL_EXPIRY):
+        try:
+            execute(ddl)
+        except Exception as e:
+            logger.warning("op_inventory_ddl_failed", error=str(e)[:160])
 
 
 def _to_int(v: Any) -> int:
@@ -78,8 +120,7 @@ def _to_int(v: Any) -> int:
         return 0
 
 
-def _read_sheet() -> Dict[str, Any]:
-    """시트를 읽어 (헤더 기준) 긴 형식 행 목록으로 돌려준다."""
+def _sheets_service():
     from google.oauth2.service_account import Credentials
     from googleapiclient.discovery import build
 
@@ -87,44 +128,163 @@ def _read_sheet() -> Dict[str, Any]:
         os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
     )
-    svc = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    values = (
-        svc.spreadsheets().values()
-        .get(spreadsheetId=SHEET_ID, range=f"'{SHEET_TAB}'!A1:Z{MAX_ROWS}")
-        .execute().get("values", [])
-    )
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
+
+
+def _fetch(svc, tab: str) -> List[List[Any]]:
+    return (svc.spreadsheets().values()
+            .get(spreadsheetId=SHEET_ID, range="'{}'!{}".format(tab, _RANGES[tab]))
+            .execute().get("values", []))
+
+
+def _flat(cell: Any) -> str:
+    """헤더 셀에 줄바꿈이 들어 있다 (`SKU.no` + 개행 + `(ERP)`)."""
+    return str(cell).replace(chr(10), " ").strip()
+
+
+def _sheet_stamp(values: List[List[Any]], scan_rows: int = 6) -> str:
+    """머리말 어딘가에 적힌 "마지막 업데이트 일시" 를 찾는다.
+
+    ⚠️ 탭마다 위치가 다르다 — SK/HQ_NEW 는 1행, ERP 는 5행이다. 행을 박아 두면
+       탭이 조금만 바뀌어도 **시각이 빈 문자열이 되고, 그래도 답변은 나간다.**
+    """
+    for row in values[:scan_rows]:
+        for cell in row or []:
+            t = str(cell).strip()
+            if t and t[0].isdigit() and len(t) > 8:
+                return t[:64]
+    return ""
+
+
+def _parse_new(values: List[List[Any]]) -> Dict[str, Any]:
+    """`SK/HQ_NEW` — 헤더 2행, 데이터 3행부터. 0=SKU, 1=품목명, 2~=창고."""
     if len(values) < DATA_START_ROW:
         return {"rows": [], "locations": [], "sheet_updated_at": ""}
-
-    # 1행 어딘가에 "마지막 업데이트 일시" 가 적혀 있다 — 신선도 판정에 쓴다
-    head = values[0] if values else []
-    sheet_updated = ""
-    for cell in head:
-        s = str(cell).strip()
-        if s and s[0].isdigit() and len(s) > 8:
-            sheet_updated = s[:64]
-            break
-
     header = values[HEADER_ROW - 1]
-    # 0=SKU, 1=품목명칭, 나머지가 창고 — 파생 합계는 뺀다
-    locations = [(i, str(h).strip()) for i, h in enumerate(header)
-                 if i >= 2 and str(h).strip() and str(h).strip() not in _DERIVED_COLS]
-
+    locations = [(i, _flat(h)) for i, h in enumerate(header)
+                 if i >= 2 and _flat(h) and _flat(h) not in _DERIVED_COLS]
     rows: List[Dict[str, Any]] = []
     for r in values[DATA_START_ROW - 1:]:
-        if not r:
-            continue
-        sku = str(r[0]).strip() if len(r) > 0 else ""
+        sku = str(r[0]).strip() if r else ""
         if not sku:
             continue
         name = str(r[1]).strip() if len(r) > 1 else ""
         for idx, loc in locations:
-            rows.append({
-                "sku": sku[:64], "item_name": name[:255],
-                "location": loc[:80], "qty": _to_int(r[idx] if len(r) > idx else 0),
-            })
+            rows.append({"sku": sku[:64], "item_name": name[:255],
+                         "location": loc[:80],
+                         "qty": _to_int(r[idx] if len(r) > idx else 0)})
     return {"rows": rows, "locations": [l for _, l in locations],
-            "sheet_updated_at": sheet_updated}
+            "sheet_updated_at": _sheet_stamp(values)}
+
+
+def _parse_erp(values: List[List[Any]]) -> Dict[str, Any]:
+    """`ERP 코드 통합 재고현황` — SKU 를 **560개 더** 갖고 있다.
+
+    ⚠️ 헤더 행을 숫자로 박지 않는다. 머리말 안내문이 한 줄 늘면 통째로 어긋나고,
+       그때 나는 것은 에러가 아니라 **0건**이다 — `SKU.no` 가 있는 행을 찾는다.
+    ⚠️ 키는 **ERP 열**이다. 첫 열은 SCM 코드라 SK/HQ_NEW 와 맞지 않는다.
+    """
+    hdr_idx = None
+    for i, row in enumerate(values[:15]):
+        joined = " ".join(_flat(c) for c in (row or []))
+        if "SKU.no" in joined and "품목명칭" in joined:
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        logger.warning("op_inventory_erp_header_missing")
+        return {"rows": [], "locations": [], "sheet_updated_at": ""}
+
+    header = [_flat(c) for c in values[hdr_idx]]
+    try:
+        sku_col = next(i for i, h in enumerate(header)
+                       if h.startswith("SKU.no") and "ERP" in h)
+        name_col = header.index("품목명칭")
+    except (StopIteration, ValueError):
+        logger.warning("op_inventory_erp_columns_missing", header=header[:8])
+        return {"rows": [], "locations": [], "sheet_updated_at": ""}
+
+    # 창고는 **아는 이름만** 가져온다 — 모르는 컬럼(중복 SKU열·영문명)까지 창고로
+    # 세면 없는 창고가 생기고 합계가 부푼다
+    locs = [(i, _ERP_LOCATIONS[h]) for i, h in enumerate(header)
+            if h in _ERP_LOCATIONS and h not in _DERIVED_COLS]
+    rows: List[Dict[str, Any]] = []
+    for r in values[hdr_idx + 1:]:
+        if not r or len(r) <= sku_col:
+            continue
+        sku = str(r[sku_col]).strip()
+        if not sku or sku.startswith("SKU"):
+            continue
+        name = str(r[name_col]).strip() if len(r) > name_col else ""
+        for idx, loc in locs:
+            rows.append({"sku": sku[:64], "item_name": name[:255],
+                         "location": loc[:80],
+                         "qty": _to_int(r[idx] if len(r) > idx else 0)})
+    return {"rows": rows, "locations": sorted({l for _, l in locs}),
+            "sheet_updated_at": _sheet_stamp(values)}
+
+
+def _parse_expiry(values: List[List[Any]]) -> Dict[str, Any]:
+    """`유통기한` — SKU | 상품명 | 유통기한 | LOT | 수량.
+
+    ⛔ **재고 수량에 절대 합산하지 마라.** 로트 단위 잔량이라 창고 재고와 세는 기준이
+       다르다. 표도 테이블도 따로 두는 이유가 이것이다.
+    """
+    hdr_idx = None
+    for i, row in enumerate(values[:20]):
+        cells = [str(c).strip() for c in (row or [])]
+        if "SKU" in cells and "유통기한" in cells:
+            hdr_idx = i
+            break
+    if hdr_idx is None:
+        logger.warning("op_inventory_expiry_header_missing")
+        return {"rows": [], "sheet_updated_at": ""}
+    header = [str(c).strip() for c in values[hdr_idx]]
+    col = {h: i for i, h in enumerate(header)}
+    i_sku, i_exp = col.get("SKU", 0), col.get("유통기한", 2)
+    i_name, i_lot = col.get("상품명", 1), col.get("LOT", 3)
+    i_qty = i_lot + 1                  # 수량 열에는 머리말이 없다 ('요약' 이 적혀 있다)
+
+    rows: List[Dict[str, Any]] = []
+    last_name = ""
+    for r in values[hdr_idx + 1:]:
+        if not r or len(r) <= i_exp:
+            continue
+        sku = str(r[i_sku]).strip()
+        exp = str(r[i_exp]).strip()
+        if not sku or not exp or not exp[0].isdigit():
+            continue
+        # ⚠️ 같은 SKU 의 둘째 줄부터는 상품명이 비어 있다 — 앞 값을 이어받는다
+        name = str(r[i_name]).strip() if len(r) > i_name else ""
+        last_name = name or last_name
+        rows.append({"sku": sku[:64], "item_name": (name or last_name)[:255],
+                     "expiry_date": exp[:32],
+                     "lot": (str(r[i_lot]).strip() if len(r) > i_lot else "")[:64],
+                     "qty": _to_int(r[i_qty] if len(r) > i_qty else 0)})
+    return {"rows": rows, "sheet_updated_at": _sheet_stamp(values, scan_rows=3)}
+
+
+def _read_sheet() -> Dict[str, Any]:
+    """재고 두 탭을 읽어 **합쳐서** 돌려준다 (SK/HQ_NEW + ERP 통합).
+
+    ⛔ 두 탭은 창고 표기가 다를 뿐 겹치는 SKU 의 값은 같다 (730개 100% 일치, 실측).
+       표기를 통일했으므로 `UNIQUE(sku, location)` 이 자연히 합친다 — 통일하지 않으면
+       같은 재고가 창고 둘로 갈려 **합계가 두 배**가 된다.
+       겹칠 때는 SK/HQ_NEW 가 이긴다 (뒤에 넣어 덮어쓴다).
+    """
+    svc = _sheets_service()
+    erp = _parse_erp(_fetch(svc, TAB_ERP))
+    new = _parse_new(_fetch(svc, SHEET_TAB))
+    return {
+        "rows": erp["rows"] + new["rows"],
+        "locations": sorted(set(erp["locations"]) | set(new["locations"])),
+        "sheet_updated_at": new["sheet_updated_at"] or erp["sheet_updated_at"],
+        "counts": {"new": len(new["rows"]), "erp": len(erp["rows"])},
+    }
+
+
+def read_expiry() -> Dict[str, Any]:
+    """유통기한 탭 원본 — 조회 시점에 읽는다."""
+    return _parse_expiry(_fetch(_sheets_service(), TAB_EXPIRY))
 
 
 def sync_inventory(dry_run: bool = False) -> Dict[str, Any]:
@@ -188,12 +348,132 @@ def sync_inventory(dry_run: bool = False) -> Dict[str, Any]:
 
     logger.info("op_inventory_synced", **{k: v for k, v in stat.items()
                                           if k != "locations"})
+    try:
+        stat["expiry"] = sync_expiry()
+    except Exception as e:
+        # ⚠️ 유통기한이 실패해도 재고 적재는 성공이다 — 서로 다른 데이터다
+        logger.warning("op_expiry_sync_failed", error=str(e)[:160])
     return stat
+
+
+def sync_expiry() -> Dict[str, Any]:
+    """유통기한 탭 → `op_inventory_expiry` (재고 테이블과 **분리**).
+
+    ⛔ 재고와 합치지 마라. 로트 단위 잔량이라 창고 재고와 세는 기준이 다르다.
+    """
+    ensure_inventory_table()
+    data = _parse_expiry(_fetch(_sheets_service(), TAB_EXPIRY))
+    rows = data["rows"]
+    stat = {"rows": len(rows), "skus": len({r["sku"] for r in rows}),
+            "sheet_updated_at": data["sheet_updated_at"], "written": 0}
+    if not rows:
+        logger.warning("op_expiry_empty_sheet")
+        return stat
+
+    now = datetime.now().replace(microsecond=0)      # ⛔ 마이크로초 함정 (위 참조)
+    for i in range(0, len(rows), 500):
+        chunk = rows[i:i + 500]
+        sql = ("INSERT INTO op_inventory_expiry "
+               "(sku, item_name, expiry_date, lot, qty, sheet_updated_at, synced_at) "
+               "VALUES " + ",".join(["(%s,%s,%s,%s,%s,%s,%s)"] * len(chunk))
+               + " ON DUPLICATE KEY UPDATE item_name=VALUES(item_name), "
+                 "qty=VALUES(qty), sheet_updated_at=VALUES(sheet_updated_at), "
+                 "synced_at=VALUES(synced_at)")
+        params: list = []
+        for r in chunk:
+            params += [r["sku"], r["item_name"], r["expiry_date"], r["lot"],
+                       r["qty"], data["sheet_updated_at"], now]
+        execute(sql, tuple(params))
+        stat["written"] += len(chunk)
+
+    try:
+        stale = fetch_one("SELECT COUNT(*) n FROM op_inventory_expiry "
+                          "WHERE synced_at < %s", (now,)) or {}
+        n_stale = int(stale.get("n") or 0)
+        if n_stale >= stat["written"]:
+            logger.error("op_expiry_cleanup_refused", stale=n_stale,
+                         written=stat["written"])
+            stat["cleanup_refused"] = n_stale
+        elif n_stale:
+            execute("DELETE FROM op_inventory_expiry WHERE synced_at < %s", (now,))
+            stat["removed"] = n_stale
+    except Exception as e:
+        logger.warning("op_expiry_cleanup_failed", error=str(e)[:160])
+
+    logger.info("op_expiry_synced", **stat)
+    return stat
+
+
+# ── 조회 시점 실시간 읽기 ────────────────────────────────────────────────────
+# ⛔ **재고는 매 조회마다 시트에서 직접 읽는다** (2026-08-25 사용자 지시:
+#    "op도 숫자가 매일 바뀌므로 빅쿼리처럼 조회해서 답변해야함").
+#    하루 두 번 적재한 사본으로 답하면, 그 사이에 일어난 입출고를 **모른 채**
+#    자신 있게 옛 숫자를 말한다. 재고는 틀리게 답하는 것이 못 답하는 것보다 나쁘다.
+# ⚠️ 실측 지연(프로덕션, 프록시 경유): 재고 두 탭 합쳐 1~2초. 답변 한 번에 한 번만 읽는다.
+# ⚠️ 시트를 못 읽으면 **적재본으로 물러서되 그 사실을 답변에 밝힌다** — 조용히
+#    옛 숫자를 주는 것이 이 기능에서 가장 나쁜 실패다.
+_LIVE_TIMEOUT_SEC = 12.0
+
+
+def live_stock() -> Dict[str, Any]:
+    """지금 시점의 재고. 시트를 직접 읽고, 실패하면 적재본으로 물러선다.
+
+    돌려주는 것: {"rows": [...], "sheet_updated_at": str, "live": bool, "note": str}
+    """
+    import concurrent.futures
+
+    # ⛔ `with` 로 감싸면 블록을 나갈 때 shutdown(wait=True) 가 걸려 **타임아웃이
+    #    무의미해진다** (CLAUDE.md 규칙). 반드시 wait=False 로 내린다.
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        data = pool.submit(_read_sheet).result(timeout=_LIVE_TIMEOUT_SEC)
+        if data.get("rows"):
+            return {"rows": data["rows"], "locations": data["locations"],
+                    "sheet_updated_at": data["sheet_updated_at"],
+                    "live": True, "note": ""}
+        logger.warning("op_inventory_live_empty")
+    except Exception as e:
+        logger.warning("op_inventory_live_failed", error=str(e)[:200])
+    finally:
+        pool.shutdown(wait=False)
+
+    st = status()
+    rows = fetch_all("SELECT sku, item_name, location, qty FROM op_inventory") or []
+    stamp = st.get("sheet_updated_at") or ""
+    last = st.get("last_sync")
+    return {"rows": rows, "locations": [], "sheet_updated_at": stamp, "live": False,
+            "note": ("⚠️ 시트를 지금 읽지 못해 **마지막으로 저장해 둔 재고**로 답합니다"
+                     + (" (적재 {})".format(last.strftime("%m-%d %H:%M")) if last else "")
+                     + ". 그 뒤의 입출고는 반영돼 있지 않습니다.")}
+
+
+def _index(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """긴 형식 행 → {sku: {name, locs{loc: qty}}}.
+
+    ⚠️ 같은 (sku, location) 이 두 탭에서 오면 **덮어쓴다 — 더하지 않는다.**
+       두 탭은 같은 재고를 다른 표기로 적은 것이라 더하면 두 배가 된다 (실측 확인).
+    """
+    idx: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        sku = str(r.get("sku") or "")
+        if not sku:
+            continue
+        e = idx.setdefault(sku, {"name": "", "locs": {}})
+        # ⚠️ 뒤에 오는 이름이 이긴다 — `_read_sheet` 가 ERP 를 먼저, SK/HQ_NEW 를
+        #    뒤에 넣으므로 결과적으로 **원래 탭의 표기**(`(KR)…`)가 남는다.
+        #    시장 접두(KR/GL/US,CA)가 OP 업무에서 의미를 갖는다.
+        name = str(r.get("item_name") or "")
+        if name:
+            e["name"] = name
+        e["locs"][str(r.get("location") or "")] = int(r.get("qty") or 0)
+    return idx
 
 
 # ── 조회 ─────────────────────────────────────────────────────────────────────
 
-def usable_words(words: List[str]) -> tuple[List[str], List[str]]:
+def usable_words(words: List[str],
+                 index: Dict[str, Dict[str, Any]] | None = None
+                 ) -> tuple[List[str], List[str]]:
     """품목에 실제로 있는 낱말만 남긴다 — 나머지는 질문의 군더더기다.
 
     ⛔ 낱말을 AND 로 걸기 때문에 **하나라도 품목에 없으면 통째로 0건**이 난다.
@@ -208,7 +488,7 @@ def usable_words(words: List[str]) -> tuple[List[str], List[str]]:
     조사도 여기서 함께 푼다 — `클레이` 가 `클레` 로 잘려 있어도(끝의 '이' 를 조사로
     본다) 원형이 맞으면 원형을 쓴다.
     """
-    ensure_inventory_table()
+    hay = _haystack(index)
     keep: List[str] = []
     drop: List[str] = []
     for w in words:
@@ -216,49 +496,121 @@ def usable_words(words: List[str]) -> tuple[List[str], List[str]]:
             continue
         chosen = None
         for cand in (w, w[:-1] if len(w) > 2 else None):
-            if not cand:
-                continue
-            like = f"%{cand}%"
-            hit = fetch_all(
-                "SELECT 1 FROM op_inventory "
-                "WHERE sku LIKE %s OR item_name LIKE %s LIMIT 1", (like, like))
-            if hit:
+            if cand and _hits(hay, cand):
                 chosen = cand
                 break
         (keep.append(chosen) if chosen else drop.append(w))
     return keep, drop
 
 
-def search(term: str, limit: int = 30) -> List[Dict[str, Any]]:
+def _haystack(index: Dict[str, Dict[str, Any]] | None) -> List[str]:
+    """낱말 판정에 쓸 문자열 목록 (SKU + 품목명).
+
+    스냅샷이 없으면 적재본에서 만든다 — 배치/테스트 경로용 폴백이다.
+    """
+    if index is None:
+        ensure_inventory_table()
+        rows = fetch_all("SELECT DISTINCT sku, item_name FROM op_inventory") or []
+        index = {str(r["sku"]): {"name": str(r.get("item_name") or ""), "locs": {}}
+                 for r in rows}
+    return [(sku + " " + (e.get("name") or "")).lower() for sku, e in index.items()]
+
+
+def _hits(hay: List[str], word: str) -> bool:
+    w = word.lower()
+    return any(w in h for h in hay)
+
+
+def search(term: str, limit: int = 30,
+           index: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
     """제품명·SKU 로 찾아 창고별 수량과 합계를 돌려준다.
 
-    ⚠️ 합계는 여기서 만든다 — 시트의 `SF 재고합` 은 적재하지 않는다 (파생·부분합).
+    ⚠️ 합계는 **여기서** 만든다 — 시트의 `SF 재고합`·`SF가용재고 합계` 는 파생
+       부분합이라 적재하지 않는다. 저장해 두면 언젠가 함께 더해져 이중계상이 난다.
+    ⛔ 품목명이 `마다가스카르센텔라앰플100ml` 처럼 **붙어** 있다. 공백이 든 검색어를
+       통째로 찾으면 0건이 난다 — 낱말마다 걸어 AND 로 맞춘다.
     """
-    ensure_inventory_table()
     raw = (term or "").strip()
     if not raw:
         return []
-    # ⛔ 품목명이 `마다가스카르센텔라앰플100ml` 처럼 **붙어** 있다. 공백이 든 검색어를
-    #    통째로 LIKE 하면 0건이 난다 ("센텔라 앰플" → 0건, 2026-08-25 실측).
-    #    낱말마다 조건을 만들어 AND 로 건다 — 드라이브 검색에서 쓴 방식과 같다.
-    words, dropped = usable_words(raw.split())
+    if index is None:
+        index = _index(live_stock()["rows"])
+    words, dropped = usable_words(raw.split(), index)
     if not words:
         return []
-    conds, params = [], []
-    for w in words:
-        like = f"%{w}%"
-        conds.append("(sku LIKE %s OR item_name LIKE %s)")
-        params += [like, like]
     if dropped:
         logger.info("inventory_search_dropped", words=",".join(dropped))
-    return fetch_all(
-        "SELECT sku, item_name, SUM(qty) AS total_qty, "
-        "       GROUP_CONCAT(CONCAT(location, ':', qty) ORDER BY qty DESC "
-        "                    SEPARATOR ' | ') AS by_location, "
-        "       MAX(sheet_updated_at) AS sheet_updated_at "
-        "FROM op_inventory WHERE " + " AND ".join(conds) +
-        " GROUP BY sku, item_name ORDER BY total_qty DESC LIMIT %s",
-        (*params, int(limit))) or []
+
+    lowered = [w.lower() for w in words]
+    out: List[Dict[str, Any]] = []
+    for sku, e in index.items():
+        hay = (sku + " " + (e.get("name") or "")).lower()
+        if all(w in hay for w in lowered):
+            locs = e.get("locs") or {}
+            out.append({
+                "sku": sku,
+                "item_name": e.get("name") or "",
+                "total_qty": sum(locs.values()),
+                "by_location": " | ".join(
+                    "{}:{}".format(k, v) for k, v in
+                    sorted(locs.items(), key=lambda kv: -kv[1])),
+            })
+    out.sort(key=lambda r: -r["total_qty"])
+    return out[:int(limit)]
+
+
+# ── 유통기한 ─────────────────────────────────────────────────────────────────
+# ⛔ **재고 수량과 절대 합산하지 않는다.** 로트 단위 잔량이라 창고 재고와 세는
+#    기준이 다르다. 표도 테이블도 함수도 따로 둔다.
+
+def live_expiry() -> Dict[str, Any]:
+    """지금 시점의 유통기한. 실패하면 적재본으로 물러서고 그 사실을 알린다."""
+    import concurrent.futures
+
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        data = pool.submit(read_expiry).result(timeout=_LIVE_TIMEOUT_SEC)
+        if data.get("rows"):
+            return {"rows": data["rows"], "sheet_updated_at": data["sheet_updated_at"],
+                    "live": True, "note": ""}
+        logger.warning("op_expiry_live_empty")
+    except Exception as e:
+        logger.warning("op_expiry_live_failed", error=str(e)[:200])
+    finally:
+        pool.shutdown(wait=False)
+
+    ensure_inventory_table()
+    rows = fetch_all("SELECT sku, item_name, expiry_date, lot, qty, sheet_updated_at "
+                     "FROM op_inventory_expiry") or []
+    stamp = rows[0].get("sheet_updated_at") if rows else ""
+    return {"rows": rows, "sheet_updated_at": stamp or "", "live": False,
+            "note": "⚠️ 시트를 지금 읽지 못해 저장해 둔 유통기한으로 답합니다."}
+
+
+def expiry_search(term: str, limit: int = 40) -> Dict[str, Any]:
+    """제품어로 유통기한 로트를 찾는다 → 임박한 순.
+
+    돌려주는 것: {"rows": [...], "shown": str, "dropped": [...], "live": bool, ...}
+    """
+    snap = live_expiry()
+    rows = snap["rows"]
+    index = {}
+    for r in rows:
+        sku = str(r.get("sku") or "")
+        index.setdefault(sku, {"name": str(r.get("item_name") or ""), "locs": {}})
+    keep, dropped = usable_words((term or "").split(), index)
+    lowered = [w.lower() for w in keep]
+
+    hits = []
+    for r in rows:
+        hay = (str(r.get("sku") or "") + " " + str(r.get("item_name") or "")).lower()
+        if not lowered or all(w in hay for w in lowered):
+            hits.append(r)
+    hits.sort(key=lambda r: str(r.get("expiry_date") or "9999"))
+    return {"rows": hits[:int(limit)], "total": len(hits),
+            "shown": " ".join(keep), "dropped": dropped,
+            "sheet_updated_at": snap["sheet_updated_at"],
+            "live": snap["live"], "note": snap["note"]}
 
 
 def status() -> Dict[str, Any]:
@@ -274,6 +626,8 @@ def status() -> Dict[str, Any]:
         "locations": int(row.get("locs") or 0),
         "last_sync": row.get("last_sync"),
         "sheet_updated_at": row.get("sheet_at") or "",
+        "expiry_rows": int((fetch_one(
+            "SELECT COUNT(*) n FROM op_inventory_expiry") or {}).get("n") or 0),
         "url": SHEET_URL,
     }
 
@@ -324,6 +678,24 @@ def inventory_intent(query: str, explicit: bool = False) -> str | None:
     return " ".join(words) if words else "*"
 
 
+# ⛔ 유통기한은 **재고와 다른 질문**이다. 로트별 잔량이라 합계도 다르고, 답변도
+#    "언제까지" 를 말해야 한다. 신호어가 겹치므로(둘 다 '재고') 먼저 판정한다.
+_EXPIRY_WORDS = ("유통기한", "유통 기한", "소비기한", "소비 기한", "유효기간",
+                 "expiry", "expiration", "임박", "폐기", "shelf life")
+
+
+def expiry_intent(query: str, explicit: bool = False) -> str | None:
+    """유통기한 질문이면 찾을 제품어를 돌려준다. 아니면 None."""
+    q = (query or "").strip()
+    if not q:
+        return None
+    if not any(w in q.lower() for w in _EXPIRY_WORDS):
+        return None
+    from app.core.query_keywords import extract
+    words = extract(q, extra_stop=_STOP + _EXPIRY_WORDS)
+    return " ".join(words) if words else "*"
+
+
 # ── 신선도 ───────────────────────────────────────────────────────────────────
 # ⛔ 재고는 매일 바뀐다. 시각을 **적어 두는 것만으로는 부족하다** — 사람은 표를 보지
 #    각주를 안 본다. 낡았으면 답변이 **먼저 그 사실을 말해야** 한다.
@@ -331,18 +703,45 @@ def inventory_intent(query: str, explicit: bool = False) -> str | None:
 _STALE_HOURS = 20
 
 
-def freshness() -> Dict[str, Any]:
-    """적재가 얼마나 묵었나 → {stale: bool, hours: float, note: str}."""
-    st = status()
-    last = st.get("last_sync")
-    if not last:
-        return {"stale": True, "hours": None,
-                "note": "재고 데이터가 아직 적재되지 않았습니다."}
-    hours = (datetime.now() - last).total_seconds() / 3600
+def parse_stamp(stamp: str):
+    """`2026. 8. 25 오전 10:10:00` → datetime. 못 읽으면 None.
+
+    ⚠️ 시트가 스스로 적어 둔 시각이다. **우리 적재 시각보다 이쪽이 진실에 가깝다** —
+       적재가 제때 돌아도 시트가 안 갱신됐으면 숫자는 낡은 것이다.
+    """
+    m = _re.search(r"(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})"
+                   r"(?:\s*(오전|오후)?\s*(\d{1,2}):(\d{2}))?", str(stamp or ""))
+    if not m:
+        return None
+    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    ampm, hh, mi = m.group(4), m.group(5), m.group(6)
+    hour = int(hh) if hh else 0
+    minute = int(mi) if mi else 0
+    if ampm == "오후" and hour < 12:
+        hour += 12
+    elif ampm == "오전" and hour == 12:
+        hour = 0
+    try:
+        return datetime(y, mo, d, hour, minute)
+    except ValueError:
+        return None
+
+
+def freshness(stamp: str | None = None) -> Dict[str, Any]:
+    """이 숫자가 얼마나 묵었나 → {stale, hours, note}.
+
+    ⛔ 시각을 각주로 적어 두는 것만으로는 부족하다 — 사람은 표를 보지 각주를 안 본다.
+       낡았으면 답변이 **표보다 먼저** 그 사실을 말해야 한다.
+    """
+    if stamp is None:
+        stamp = status().get("sheet_updated_at") or ""
+    at = parse_stamp(stamp)
+    if not at:
+        return {"stale": False, "hours": None, "note": ""}
+    hours = (datetime.now() - at).total_seconds() / 3600
     if hours <= _STALE_HOURS:
         return {"stale": False, "hours": hours, "note": ""}
     return {"stale": True, "hours": hours,
-            "note": ("⚠️ 이 재고는 **{:.0f}시간 전**에 적재된 값입니다 "
-                     "(시트 기준 {}). 그 뒤 입출고가 반영되지 않았을 수 있으니 "
-                     "중요한 건이면 원본 시트를 확인해 주세요.").format(
-                         hours, st.get("sheet_updated_at") or "시점 미상")}
+            "note": ("⚠️ 이 재고는 시트가 **{:.0f}시간 전**({})에 갱신한 값입니다. "
+                     "시트는 하루 한 번(오전 10시경) 갱신되므로 그 뒤의 입출고는 "
+                     "아직 반영돼 있지 않습니다.").format(hours, stamp)}

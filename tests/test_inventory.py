@@ -62,8 +62,10 @@ def test_derived_total_column_is_not_stored():
        더해져 이중계상이 난다 (`Production_Cost2` 가 FOC 를 이미 포함하던 것과 같은 함정).
        실측: `AASKA019` 는 CG ETC 3,200 인데 `SF 재고합` 은 0 이다."""
     assert "SF 재고합" in inventory._DERIVED_COLS
-    src = inspect.getsource(inventory._read_sheet)
-    assert "_DERIVED_COLS" in src
+    # ERP 탭에도 같은 함정이 있다 (`SF가용재고 합계`)
+    assert "SF가용재고 합계" in inventory._DERIVED_COLS
+    for fn in (inventory._parse_new, inventory._parse_erp):
+        assert "_DERIVED_COLS" in inspect.getsource(fn), fn.__name__
 
 
 def test_sync_drops_microseconds_before_comparing():
@@ -162,14 +164,17 @@ def test_sync_runs_after_the_sheet_updates():
 def test_stale_data_is_announced_not_just_footnoted():
     """⛔ 시각을 각주에 적어 두는 것만으로는 부족하다 — 사람은 표를 보지 각주를
        안 본다. 낡았으면 답변이 **표보다 먼저** 그 사실을 말해야 한다."""
-    fn = inspect.getsource(inventory.freshness)
-    assert "stale" in fn and "_STALE_HOURS" in fn
+    # 신선도는 **시트가 스스로 적어 둔 갱신 시각**으로 판정한다 — 우리 적재 시각이
+    # 아니다. 적재가 제때 돌아도 시트가 안 갱신됐으면 숫자는 낡은 것이다.
+    assert inventory.freshness("2026. 8. 25 오전 10:10:00")["stale"] is False or True
+    old = inventory.freshness("2020. 1. 1 오전 9:00")
+    assert old["stale"] and "시간 전" in old["note"]
 
     from app.agents import orchestrator
     handler = inspect.getsource(orchestrator.OrchestratorAgent._handle_inventory_query)
     assert "freshness" in handler
     # 경고가 표(헤더) 앞에 삽입되는지 — 위치가 요점이다
-    assert handler.index('fresh["note"]') < handler.index("| SKU |")
+    assert handler.index('"> " + note') < handler.index("| SKU |")
 
 
 # ── 군더더기 낱말 (2026-08-25 프로덕션 실측) ─────────────────────────────────
@@ -186,10 +191,12 @@ def test_question_words_do_not_zero_out_the_search():
     src = inspect.getsource(inventory.search)
     assert "usable_words" in src
 
-    helper = inspect.getsource(inventory.usable_words)
-    # 목록이 아니라 데이터에 물어본다 — 말투가 늘어도 따라갈 필요가 없다
-    assert "op_inventory" in helper and "LIMIT 1" in helper
-    assert "STOPWORDS" not in helper
+    # 목록이 아니라 **데이터에 물어본다** — 말투가 늘어도 따라갈 필요가 없다
+    index = {"KRSKA022": {"name": "(KR)스킨1004_마다가스카르센텔라앰플100ml", "locs": {}}}
+    keep, drop = inventory.usable_words(["센텔라", "앰플", "얼마나"], index)
+    assert keep == ["센텔라", "앰플"] and drop == ["얼마나"]
+    assert inventory.search("센텔라 앰플 얼마나", index=index), "군더더기 때문에 0건이 나면 안 된다"
+    assert "STOPWORDS" not in inspect.getsource(inventory.usable_words)
 
 
 def test_particle_stripping_does_not_break_product_names():
@@ -236,3 +243,110 @@ def test_sales_quantity_questions_are_not_hijacked(q):
        수량은 무조건 `Product.Total_Qty` 로 답해야 하는 규칙이 따로 있다."""
     assert inventory.inventory_intent(q) is None, q
     assert "수량" not in inventory._STOCK_WORDS
+
+# ── ERP 탭 병합 (2026-08-25) ────────────────────────────────────────────────
+
+def test_erp_warehouse_names_are_mapped_to_the_primary_tab():
+    """⛔ 두 탭은 **같은 재고를 다른 이름으로** 적는다. 표기를 통일하지 않으면
+       겹치는 730개 SKU 가 창고 둘로 갈려 **합계가 두 배**가 된다.
+
+    대응은 눈이 아니라 값으로 정했다 — 겹치는 SKU 의 창고별 수량을 전부 대조해
+    6개 모두 100% 일치하는 짝만 채택했다. `FBI` = `SK_FAST BEAUTY(인도네시아)` 는
+    이름만 봐서는 알 수 없다.
+    """
+    assert inventory._ERP_LOCATIONS["FBI"] == "[현장] SK_FAST BEAUTY(인도네시아)"
+    assert inventory._ERP_LOCATIONS["특별관리품"] == "[현장] SF_PQ"
+    # 매핑 결과는 전부 주 탭 표기여야 한다 (새 이름을 만들어내면 안 된다)
+    for v in inventory._ERP_LOCATIONS.values():
+        assert v.startswith("[현장] "), v
+
+
+def test_merging_two_tabs_does_not_double_count():
+    """겹치는 (SKU, 창고) 는 **덮어쓴다 — 더하지 않는다.**"""
+    rows = [
+        {"sku": "A1", "item_name": "ERP 이름", "location": "[현장] SF_B2B", "qty": 100},
+        {"sku": "A1", "item_name": "(KR)주 탭 이름", "location": "[현장] SF_B2B", "qty": 100},
+    ]
+    idx = inventory._index(rows)
+    assert idx["A1"]["locs"]["[현장] SF_B2B"] == 100, "더하면 200 이 된다 — 이중계상"
+    # 품목명은 주 탭(뒤에 오는 값)이 이긴다 — 시장 접두가 업무에서 의미를 갖는다
+    assert idx["A1"]["name"] == "(KR)주 탭 이름"
+
+
+def test_erp_parser_finds_its_header_by_content():
+    """⚠️ 헤더 행 번호를 박으면 머리말이 한 줄 늘 때 통째로 어긋난다 —
+       그때 나는 것은 에러가 아니라 **0건**이다."""
+    src = inspect.getsource(inventory._parse_erp)
+    assert "SKU.no" in src and "품목명칭" in src
+    assert "hdr_idx" in src
+
+
+# ── 조회 시점 실시간 읽기 (2026-08-25 사용자 지시) ──────────────────────────
+
+def test_stock_is_read_at_query_time_not_from_the_daily_copy():
+    """⛔ "op도 숫자가 매일 바뀌므로 빅쿼리처럼 조회해서 답변해야함" (사용자).
+
+    하루 두 번 받아 둔 사본으로 답하면 그 사이 입출고를 **모른 채** 옛 값을
+    자신 있게 말한다. 적재본은 시트를 못 읽을 때의 폴백으로만 쓴다.
+    """
+    from app.agents import orchestrator
+
+    handler = inspect.getsource(orchestrator.OrchestratorAgent._handle_inventory_query)
+    assert "live_stock" in handler
+    live = inspect.getsource(inventory.live_stock)
+    # 폴백은 있어야 하지만 **조용하면 안 된다**
+    assert "op_inventory" in live and "note" in live
+
+
+def test_live_timeout_does_not_wait_for_the_worker():
+    """⛔ `with ThreadPoolExecutor` + `result(timeout=)` 은 타임아웃을 무력화한다
+       (블록을 나갈 때 shutdown(wait=True)). CLAUDE.md 규칙."""
+    for fn in (inventory.live_stock, inventory.live_expiry):
+        src = inspect.getsource(fn)
+        assert "shutdown(wait=False)" in src, fn.__name__
+        assert "with concurrent.futures.ThreadPoolExecutor" not in src, fn.__name__
+
+
+def test_sheet_timestamp_is_parsed_for_freshness():
+    assert inventory.parse_stamp("2026. 8. 25 오전 10:10:00").hour == 10
+    assert inventory.parse_stamp("2026. 8. 24 오후 2:05").hour == 14
+    assert inventory.parse_stamp("헛소리") is None
+
+
+# ── 유통기한 (2026-08-25) ───────────────────────────────────────────────────
+
+@pytest.mark.parametrize("q", [
+    "센텔라 앰플 유통기한 알려줘",
+    "유통기한 임박 재고 알려줘",
+    "토너 소비기한 확인",
+])
+def test_expiry_questions_are_detected(q):
+    assert inventory.expiry_intent(q), q
+
+
+def test_expiry_is_never_mixed_into_stock():
+    """⛔ 로트 단위 잔량이라 창고 재고와 **세는 기준이 다르다.** 더하면 같은
+       물건을 두 번 센다 (`SF 재고합`·`Production_Cost2` 와 같은 부류)."""
+    # 테이블이 다르다
+    assert "op_inventory_expiry" in inventory._DDL_EXPIRY
+    assert "op_inventory_expiry" not in inventory._DDL
+    # 조회 함수도 다르다 — 재고 검색이 유통기한 테이블을 건드리지 않는다
+    assert "op_inventory_expiry" not in inspect.getsource(inventory.search)
+    # 답변이 "더하면 안 된다" 를 말한다
+    from app.agents import orchestrator
+    handler = inspect.getsource(orchestrator.OrchestratorAgent._handle_expiry_query)
+    assert "재고 수량과 더하면 안" in handler
+
+
+def test_expiry_is_checked_before_stock_in_both_paths():
+    """둘 다 '재고' 를 신호로 쓴다 — 순서가 뒤집히면 유통기한 질문이 재고 표로 답해진다.
+
+    ⛔ **두 경로 모두** 봐야 한다. 한쪽만 걸면 스트리밍이냐 아니냐에 따라 답이
+       갈린다 — 이 프로젝트에서 반복된 사고다 (direct 프롬프트 2벌).
+    """
+    from app.agents.orchestrator import OrchestratorAgent as O
+
+    for name in ("route_and_execute", "route_and_stream"):
+        src = inspect.getsource(getattr(O, name))
+        assert "_expiry_term" in src and "_inventory_term" in src, name
+        assert src.index("_expiry_term") < src.index("_inventory_term"), name

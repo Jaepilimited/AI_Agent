@@ -392,8 +392,13 @@ def get_safety_status() -> dict:
         if _inv.get("rows"):
             services["OP"] = {
                 "status": "ok",
-                "detail": "{:,} SKU · 창고 {}곳".format(_inv["skus"], _inv["locations"]),
-                "reason": "시트 기준 " + (_inv.get("sheet_updated_at") or "시점 미상"),
+                "detail": "{:,} SKU · 창고 {}곳 · 유통기한 {:,}건".format(
+                    _inv["skus"], _inv["locations"], _inv.get("expiry_rows") or 0),
+                # ⚠️ 답변은 **조회 시점에 시트를 직접 읽는다.** 여기 숫자는 폴백용
+                #    적재본이라, 둘을 같은 것으로 읽지 않게 밝혀 둔다
+                "reason": ("재고 질문은 조회할 때마다 시트를 직접 읽습니다 "
+                           "(아래는 시트를 못 읽을 때 쓰는 적재본 · 시트 기준 "
+                           + (_inv.get("sheet_updated_at") or "시점 미상") + ")"),
                 "url": _INV_URL,
             }
         else:

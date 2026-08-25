@@ -957,6 +957,13 @@ class OrchestratorAgent:
                         ingredient=_ing_intent[0], contains=_ing_intent[1])
             return await self._handle_ingredient_query(query, _ing_intent, model_type)
 
+        # 유통기한 — 재고보다 **먼저** 본다. 둘 다 '재고' 를 신호로 쓰는데
+        # 세는 기준이 달라, 뒤에 두면 유통기한 질문이 재고 표로 답해진다
+        _exp_term = self._expiry_term(query, clean_query, db_entry, enabled_sources)
+        if _exp_term:
+            logger.info("expiry_query", path="route_and_execute", term=_exp_term[:60])
+            return await self._handle_expiry_query(_exp_term)
+
         # 재고 — 성분과 같은 이유로 LLM 에 SQL 을 맡기지 않는다 (2026-08-25)
         _inv_term = self._inventory_term(query, clean_query, db_entry, enabled_sources)
         if _inv_term:
@@ -1182,6 +1189,15 @@ class OrchestratorAgent:
                         ingredient=_ing_intent[0], contains=_ing_intent[1])
             _r = await self._handle_ingredient_query(query, _ing_intent, model_type)
             yield ("source", "bigquery")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 유통기한 — 재고보다 먼저 (위 경로와 같은 순서를 지킨다)
+        _exp_term = self._expiry_term(query, clean_query, db_entry, enabled_sources)
+        if _exp_term:
+            logger.info("expiry_query", path="route_and_stream", term=_exp_term[:60])
+            _r = await self._handle_expiry_query(_exp_term)
+            yield ("source", "inventory")
             yield ("done", _r.get("answer", ""))
             return
 
@@ -2731,51 +2747,70 @@ class OrchestratorAgent:
         text = (clean_query or query) if explicit else query
         return inventory_intent(text, explicit=explicit)
 
+    @staticmethod
+    def _expiry_term(query: str, clean_query: str, db_entry, enabled_sources):
+        """유통기한 질문인가 — 재고보다 **먼저** 본다 (둘 다 '재고' 를 신호로 쓴다).
+
+        ⚠️ `db_entry` 는 **딕셔너리일 수도 리스트일 수도** 있다 (`@@` 를 여러 개 붙인
+           경우). `.get()` 을 그냥 부르면 리스트에서 터진다 — `_inventory_term` 과
+           같은 방식으로 정규화한다.
+        """
+        from app.core.inventory import expiry_intent
+
+        entries = db_entry if isinstance(db_entry, list) else (
+            [db_entry] if isinstance(db_entry, dict) else [])
+        explicit = bool(any(e.get("route") == "inventory" for e in entries)
+                        or (enabled_sources and list(enabled_sources) == ["OP"]))
+        text = (clean_query or query) if explicit else query
+        return expiry_intent(text, explicit=explicit)
+
 
     async def _handle_inventory_query(self, term: str) -> dict:
-        """OP 재고 시트 적재분으로 답한다.
+        """OP 재고 — **조회 시점에 시트를 직접 읽어** 답한다.
 
-        ⛔ LLM 이 숫자를 쓰지 않는다. 표는 조회 결과 그대로 찍고 합계도 SQL 이 낸다 —
-           재고는 **틀리게 답하는 것이 못 답하는 것보다 나쁘다** (성분과 같은 사상).
-        ⚠️ 시트가 언제 갱신됐는지 **항상 함께 밝힌다.** 매일 바뀌는 값이라 시점 없이
-           숫자만 주면 어제 값을 오늘 값으로 읽는다.
+        ⛔ LLM 이 숫자를 쓰지 않는다. 표도 합계도 코드가 만든다 — 재고는
+           **틀리게 답하는 것이 못 답하는 것보다 나쁘다** (성분과 같은 사상).
+        ⛔ 적재 사본으로 답하지 않는다 (2026-08-25 사용자 지시). 하루 두 번 받아 둔
+           숫자로 답하면 그 사이 입출고를 모른 채 옛 값을 자신 있게 말한다.
+        ⚠️ 시트가 언제 갱신됐는지 **항상 함께 밝힌다.**
         """
         import asyncio as _asyncio
 
-        from app.core.inventory import (SHEET_URL, freshness, search, status,
-                                        usable_words)
+        from app.core.inventory import (SHEET_URL, _index, freshness, live_stock,
+                                        search, usable_words)
 
         if not term:
             return None                      # 방어 — 호출부가 판정을 먼저 한다
         try:
-            kept, dropped = await _asyncio.to_thread(usable_words, term.split())
+            snap = await _asyncio.to_thread(live_stock)
+            index = _index(snap["rows"])
+            kept, dropped = await _asyncio.to_thread(usable_words, term.split(), index)
             shown = " ".join(kept) or term
-            rows = await _asyncio.to_thread(search, shown, 15)
-            st = await _asyncio.to_thread(status)
-            fresh = await _asyncio.to_thread(freshness)
+            rows = search(shown, 15, index=index)
         except Exception as e:
             logger.error("inventory_query_failed", error=str(e)[:200])
             return {"source": "inventory",
                     "answer": "재고 데이터를 조회하지 못했습니다. 잠시 후 다시 시도해 주세요."}
 
         nl = chr(10)
-        if not st.get("rows"):
+        stamp = snap.get("sheet_updated_at") or "시점 미상"
+        if not index:
             return {"source": "inventory", "answer": (
-                "### 📦 재고" + nl + nl + "재고 데이터가 아직 적재되지 않았습니다." + nl + nl
+                "### 📦 재고" + nl + nl + "재고 데이터를 읽지 못했습니다." + nl + nl
                 + "원본 시트: [OP 재고 확인 시트](" + SHEET_URL + ")")}
 
-        stamp = st.get("sheet_updated_at") or "시점 미상"
         if not rows:
             return {"source": "inventory", "answer": (
                 "### 📦 재고 조회 결과" + nl + nl
                 + "**'" + term + "'** 에 해당하는 품목을 찾지 못했습니다." + nl + nl
-                + "적재된 품목은 {:,}개입니다. 품목명 일부나 SKU 로 다시 물어봐 주세요.".format(st["skus"])
+                + "조회 대상 품목은 {:,}개입니다. 품목명 일부나 SKU 로 다시 물어봐 주세요.".format(len(index))
                 + nl + nl + "---" + nl + "*시트 기준: " + stamp + " · [원본 시트](" + SHEET_URL + ")*")}
 
-        # ⛔ 낡았으면 **표보다 먼저** 말한다 — 각주는 아무도 안 읽는다
+        # ⛔ 못 읽었거나 낡았으면 **표보다 먼저** 말한다 — 각주는 아무도 안 읽는다
         lines = ["### 📦 재고 조회 결과", ""]
-        if fresh.get("note"):
-            lines += ["> " + fresh["note"], ""]
+        for note in (snap.get("note"), freshness(stamp).get("note")):
+            if note:
+                lines += ["> " + note, ""]
         # ⛔ 쓰지 않은 낱말을 쓴 것처럼 보이면 안 된다 — 실제로 찾은 말과
         #    뺀 말을 그대로 적는다 (드라이브 검색을 넓혔을 때와 같은 규칙)
         found = "**'{}'** 으로 {}개 품목을 찾았습니다.".format(shown, len(rows))
@@ -2787,20 +2822,73 @@ class OrchestratorAgent:
             particle = _josa(last, "은는")[len(last):]
             found += " (품목명에 없는 말 {}{} 빼고 찾았습니다.)".format(listed, particle)
         lines += [found, "",
-                 "| SKU | 품목명 | 총 재고 | 창고별 |", "|---|---|---:|---|"]
+                  "| SKU | 품목명 | 총 재고 | 창고별 |", "|---|---|---:|---|"]
         for r in rows:
             name = str(r.get("item_name") or "").replace("|", "/")[:52]
             by = str(r.get("by_location") or "").replace("|", " · ")[:110]
             lines.append("| {} | {} | {:,} | {} |".format(
-                r["sku"], name, int(r["total_qty"] or 0), by))
+                r.get("sku"), name, int(r.get("total_qty") or 0), by))
         lines += ["", "---",
-                  "*시트 기준: {} · 창고 {}곳 · [원본 시트]({})*".format(
-                      stamp, st["locations"], SHEET_URL),
-                  "",
-                  "> ⚠️ 총 재고는 창고별 수량의 합입니다. 시트의 `SF 재고합` 은 SF 계열만 "
-                  "더한 부분합이라 쓰지 않습니다."]
+                  "*시트 기준: " + stamp + " · 조회 시점에 시트를 직접 읽었습니다"
+                  + (" · 대상 {:,}개 품목".format(len(index)))
+                  + " · [원본 시트](" + SHEET_URL + ")*"]
         return {"source": "inventory", "answer": nl.join(lines)}
 
+    async def _handle_expiry_query(self, term: str) -> dict:
+        """OP 유통기한 — 로트별 잔량을 **임박한 순**으로 보여준다.
+
+        ⛔ 재고 수량과 합산하지 않는다. 로트 단위라 창고 재고와 세는 기준이 다르고,
+           더하면 같은 물건을 두 번 센다. 그래서 표도 절도 따로 낸다.
+        """
+        import asyncio as _asyncio
+
+        from app.core.inventory import SHEET_URL, expiry_search
+
+        if not term:
+            return None
+        try:
+            res = await _asyncio.to_thread(expiry_search, term, 20)
+        except Exception as e:
+            logger.error("expiry_query_failed", error=str(e)[:200])
+            return {"source": "inventory",
+                    "answer": "유통기한 데이터를 조회하지 못했습니다. 잠시 후 다시 시도해 주세요."}
+
+        nl = chr(10)
+        rows = res["rows"]
+        stamp = res.get("sheet_updated_at") or "시점 미상"
+        shown = res.get("shown") or term
+        if not rows:
+            return {"source": "inventory", "answer": (
+                "### 📅 유통기한 조회 결과" + nl + nl
+                + "**'" + term + "'** 에 해당하는 로트를 찾지 못했습니다." + nl + nl
+                + "---" + nl + "*시트 기준: " + stamp + " · [원본 시트](" + SHEET_URL + ")*")}
+
+        lines = ["### 📅 유통기한 조회 결과", ""]
+        if res.get("note"):
+            lines += ["> " + res["note"], ""]
+        head = "**'{}'** 으로 로트 {:,}건을 찾았습니다 (임박한 순 {}건 표시).".format(
+            shown, res["total"], len(rows))
+        if res.get("dropped"):
+            from app.reports.blocks import _josa
+            listed = ", ".join("'" + d + "'" for d in res["dropped"])
+            last = res["dropped"][-1]
+            head += " (품목명에 없는 말 {}{} 빼고 찾았습니다.)".format(
+                listed, _josa(last, "은는")[len(last):])
+        lines += [head, "",
+                  "| 유통기한 | SKU | 품목명 | LOT | 수량 |", "|---|---|---|---|---:|"]
+        for r in rows:
+            name = str(r.get("item_name") or "").replace("|", "/")[:44]
+            lines.append("| {} | {} | {} | {} | {:,} |".format(
+                r.get("expiry_date"), r.get("sku"), name,
+                str(r.get("lot") or "-")[:18], int(r.get("qty") or 0)))
+        # ⛔ 총계를 재고와 나란히 두지 않는다 — 세는 기준이 다르다는 말을 함께 적는다
+        lines += ["", "*로트 잔량 합계 {:,}개. 이 수치는 **창고 재고와 세는 기준이 달라**"
+                      " 재고 수량과 더하면 안 됩니다.*".format(
+                          sum(int(r.get("qty") or 0) for r in rows)),
+                  "", "---",
+                  "*시트 기준: " + stamp + " · 조회 시점에 시트를 직접 읽었습니다 · "
+                  "[원본 시트](" + SHEET_URL + ")*"]
+        return {"source": "inventory", "answer": nl.join(lines)}
 
     async def _handle_ingredient_query(self, query: str, intent, model_type: str) -> dict:
         """성분 기준 제품 질문을 전성분 데이터로 답한다.
