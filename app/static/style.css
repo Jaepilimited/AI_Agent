@@ -978,7 +978,10 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 .welcome-greeting {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  /* 인사말은 Today 카드 폭 기준으로 **가운데**에 놓는다 (2026-08-25 사용자 요청).
+     ⚠️ 폭(`--welcome-width`)이 셋 다 같아야 이 가운데가 카드의 가운데와 일치한다. */
+  align-items: center;
+  text-align: center;
   max-width: var(--welcome-width);
   width: 100%;
 }
