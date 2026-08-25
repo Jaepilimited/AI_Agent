@@ -125,3 +125,19 @@ def test_status_exposes_sheet_timestamp():
     assert "sheet_updated_at" in src
     from app.core import safety
     assert 'services["OP"]' in inspect.getsource(safety.get_safety_status)
+
+
+def test_at_source_prefix_is_stripped_before_search():
+    """⛔ `@@OP` 접두사가 검색어에 남으면 0건이 난다.
+
+    실측 (2026-08-25 프로덕션): `@@OP 포어마이징 클레이` 가 `'OP 포어마이징 클레'` 로
+    검색돼 "품목을 찾지 못했습니다" 가 나갔다. `@@Google Workspace` 가 질문에
+    "Workspace" 를 남기던 것과 같은 부류다 — 관문에는 **접두사가 걷힌 문장**을 준다.
+    """
+    from app.agents.orchestrator import OrchestratorAgent as O
+
+    o = O.__new__(O)
+    entry, clean = O.parse_db_prefix("@@OP 포어마이징 클레이")
+    term = o._inventory_term("@@OP 포어마이징 클레이", clean, entry, None)
+    assert term and "OP " not in term, term
+    assert "포어마이징" in term, term

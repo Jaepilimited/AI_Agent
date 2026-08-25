@@ -958,7 +958,7 @@ class OrchestratorAgent:
             return await self._handle_ingredient_query(query, _ing_intent, model_type)
 
         # 재고 — 성분과 같은 이유로 LLM 에 SQL 을 맡기지 않는다 (2026-08-25)
-        _inv_term = self._inventory_term(query, db_entry, enabled_sources)
+        _inv_term = self._inventory_term(query, clean_query, db_entry, enabled_sources)
         if _inv_term:
             logger.info("inventory_query", path="route_and_execute", term=_inv_term[:60])
             return await self._handle_inventory_query(_inv_term)
@@ -1186,7 +1186,7 @@ class OrchestratorAgent:
             return
 
         # 재고 — **두 경로 모두**에 걸어야 한다. 한쪽만 걸면 경로에 따라 답이 갈린다
-        _inv_term = self._inventory_term(query, db_entry, enabled_sources)
+        _inv_term = self._inventory_term(query, clean_query, db_entry, enabled_sources)
         if _inv_term:
             logger.info("inventory_query", path="route_and_stream", term=_inv_term[:60])
             _r = await self._handle_inventory_query(_inv_term)
@@ -2715,15 +2715,21 @@ class OrchestratorAgent:
         return {"source": "model_rights", "answer": answer}
 
     @staticmethod
-    def _inventory_term(query, db_entry, enabled_sources):
-        """재고 질문이면 찾을 제품어를 돌려준다 (`@@OP` 지정이면 낱말을 안 봐도 재고)."""
+    def _inventory_term(query, clean_query, db_entry, enabled_sources):
+        """재고 질문이면 찾을 제품어를 돌려준다 (`@@OP` 지정이면 낱말을 안 봐도 재고).
+
+        ⛔ `@@OP` 로 지정했으면 **접두사가 걷힌 문장**을 써야 한다. 원문을 그대로
+           넘겼다가 검색어가 `'OP 포어마이징 클레'` 가 돼 0건이 났다 (2026-08-25 실측).
+           `@@Google Workspace` 가 질문에 "Workspace" 를 남기던 것과 같은 부류다.
+        """
         from app.core.inventory import inventory_intent
 
         entries = db_entry if isinstance(db_entry, list) else (
             [db_entry] if isinstance(db_entry, dict) else [])
-        explicit = (any(e.get("route") == "inventory" for e in entries)
-                    or (enabled_sources and list(enabled_sources) == ["OP"]))
-        return inventory_intent(query, explicit=bool(explicit))
+        explicit = bool(any(e.get("route") == "inventory" for e in entries)
+                        or (enabled_sources and list(enabled_sources) == ["OP"]))
+        text = (clean_query or query) if explicit else query
+        return inventory_intent(text, explicit=explicit)
 
 
     async def _handle_inventory_query(self, term: str) -> dict:
