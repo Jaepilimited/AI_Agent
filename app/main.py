@@ -14,6 +14,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import structlog
 from fastapi import FastAPI, Request
@@ -30,6 +31,7 @@ from app.api.eval_api import eval_router
 from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
 from app.api.middleware import setup_middleware
+from app.api.personal_briefing_api import router as personal_briefing_router
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
 from app.api.routes import router
@@ -157,6 +159,10 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_model_rights_tables)
         from app.reports.store import ensure_report_tables
         await asyncio.to_thread(ensure_report_tables)
+        from app.core.google_oauth_state import ensure_oauth_state_table
+        await asyncio.to_thread(ensure_oauth_state_table)
+        from app.core.personal_briefing_store import ensure_tables as ensure_personal_briefing_tables
+        await asyncio.to_thread(ensure_personal_briefing_tables)
         from app.core.announcements import ensure_tables as _ensure_announce
         await asyncio.to_thread(_ensure_announce)
         logger.info("mariadb_initialized")
@@ -210,11 +216,13 @@ def create_app() -> FastAPI:
             # 붐따 처리함 — 자가 점검(07:30) 뒤에 둔다. 밤새 들어온 것을 아침에 올린다
             _scheduler.add_job(_feedback_digest_job, "cron", hour=8, minute=0, id="feedback_digest_daily")
             _scheduler.add_job(_briefing_job, "cron", hour=8, minute=20, id="briefing_daily")
+            _scheduler.add_job(_personal_briefing_job, "cron", hour=8, minute=30,
+                               id="personal_briefing_daily", timezone=ZoneInfo("Asia/Seoul"))
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
             _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "golden_05:30", "self_check_07:30"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "golden_05:30", "self_check_07:30", "personal_briefing_08:30"])
         yield
         logger.info("application_shutdown")
 
@@ -261,6 +269,7 @@ def create_app() -> FastAPI:
     app.include_router(router)           # /v1/chat/completions, /dashboard, /health, etc.
     app.include_router(auth_router)      # /auth/google/*
     app.include_router(auth_api_router)  # /api/auth/*
+    app.include_router(personal_briefing_router)  # /api/personal-briefing/*
     app.include_router(conversation_router)  # /api/conversations/*
     app.include_router(admin_router)         # /api/admin/*
     app.include_router(group_router)         # /api/admin/groups/*
@@ -698,6 +707,32 @@ async def _briefing_job():
         logger.info("briefing_done", **result)
     except Exception as e:
         logger.error("briefing_failed", error=str(e))
+
+
+async def _personal_briefing_job():
+    """Daily 08:30 KST: precompute cached login briefings for eligible users."""
+
+    from app.core.self_check import track_job
+
+    try:
+        with track_job("personal_briefing_daily") as jr:
+            if not get_settings().personal_briefing_enabled:
+                jr.set_note("feature disabled")
+                return
+            from app.core.personal_briefing import run_morning_precompute
+
+            result = await run_morning_precompute()
+            jr.set_note(
+                f"selected={result['selected']} succeeded={result['succeeded']} failed={result['failed']}"
+            )
+        logger.info(
+            "personal_briefing_precompute_done",
+            selected=result["selected"],
+            succeeded=result["succeeded"],
+            failed=result["failed"],
+        )
+    except Exception as exc:
+        logger.error("personal_briefing_precompute_failed", error_type=type(exc).__name__)
 
 
 async def _schema_docs_job():
