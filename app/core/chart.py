@@ -99,6 +99,31 @@ def _format_short(val: float) -> str:
         return f"{val:,.0f}"
 
 
+# ── 시리즈 라벨은 측정값을 가리켜야 한다 (붐따 #138) ─────────────────────────
+# Chart.js 는 툴팁·범례를 `<dataset.label>: <값>` 으로 그린다. 거기에 x축이
+# 무엇인지("제품명")를 넣으면 화면에 **"제품명: 25,541,542,845"** 가 뜬다.
+# 그 자리에 와야 할 것은 "총 매출" 이다.
+# ⛔ 코드가 LLM 이 준 `y_label` 을 그대로 믿었다. 라벨은 숫자가 아니라 **말**이라
+#    틀려도 에러가 안 나고, 표는 멀쩡한데 차트만 이상해 보인다.
+# ⚠️ 값 목록이 아니라 **측정값을 뜻하는 낱말**의 목록이다 — 새 지표가 생겨도
+#    "매출·수량·비중…" 중 하나는 들어가므로 값 목록처럼 낡지 않는다.
+_MEASURE_WORDS = (
+    "매출", "금액", "수량", "개수", "건수", "비중", "비율", "증감", "성장",
+    "광고비", "비용", "원가", "이익", "단가", "평균", "합계", "총", "원", "%",
+    "revenue", "sales", "amount", "qty", "quantity", "count", "cost",
+    "spend", "ratio", "share", "rate", "total", "avg", "sum", "profit",
+)
+
+
+def _series_label(y_label: str, y_col) -> str:
+    """단일 시리즈의 이름 — 측정값을 가리키는 말일 때만 LLM 의 라벨을 쓴다."""
+    col = y_col if isinstance(y_col, str) else (y_col[0] if y_col else "")
+    text = (y_label or "").strip()
+    if text and any(w in text.lower() for w in _MEASURE_WORDS):
+        return text
+    return col or text or "값"
+
+
 def _find_numeric_column(data: List[Dict], exclude: List[str]) -> Optional[str]:
     """Find a numeric column in the data, excluding specified columns."""
     if not data:
@@ -405,7 +430,7 @@ def build_chartjs_config(
                     bd = BORDERS[0]
 
                 ds = {
-                    "label": y_label or y_col,
+                    "label": _series_label(y_label, y_col),
                     "data": values,
                     "backgroundColor": bg,
                     "borderColor": bd,
@@ -516,7 +541,10 @@ def build_chartjs_config(
                 "ticks": {"font": {"size": 11}},
             }
             y_axis = {
-                "title": {"display": bool(y_label), "text": y_label, "font": {"size": 13}},
+                # ⚠️ 축 제목도 같다 — 매출 축에 "제품명" 이 붙으면 축이 거짓말을 한다 (#138)
+                "title": {"display": bool(y_label),
+                          "text": _series_label(y_label, y_col),
+                          "font": {"size": 13}},
                 "grid": {"color": "rgba(0,0,0,0.06)"},
                 "ticks": y_ticks,
                 "beginAtZero": True,
