@@ -188,6 +188,36 @@ def test_failed_refresh_keeps_the_cached_cards_visible(page):
     assert "지난 정보" in card.inner_text()
 
 
+def test_disconnected_card_reconnects_without_email_parameter(page):
+    page.set_content('<section id="personal-briefing"></section><textarea id="chat-input"></textarea>')
+    page.add_script_tag(path=str(SCRIPT))
+    disconnected = _fixture()
+    disconnected["calendar"] = {"status": "disconnected", "items": [], "truncated": False}
+    disconnected["mail"] = {
+        "status": "disconnected", "count_label": "0건", "unread": 0, "summary": "",
+        "action_candidates": [], "items": [], "truncated": False,
+    }
+    page.evaluate(
+        """async payload => {
+          window.connectCalls = [];
+          const fetchImpl = async () => ({ok: true, json: async () => payload});
+          const controller = CellaPersonalBriefing.create({
+            root: document.querySelector('#personal-briefing'),
+            input: document.querySelector('#chat-input'),
+            connect: (...args) => window.connectCalls.push(args), fetchImpl
+          });
+          await controller.load();
+        }""",
+        disconnected,
+    )
+    page.locator(".personal-briefing-connect").click()
+    assert page.evaluate("window.connectCalls") == [[]]
+
+    source = (ROOT / "app/frontend/chat.js").read_text(encoding="utf-8")
+    assert 'window.open("/api/auth/google/login", "gws_auth"' in source
+    assert "/api/auth/google/login?" not in source
+
+
 def test_existing_conversation_still_hides_welcome():
     source = (ROOT / "app/frontend/chat.js").read_text(encoding="utf-8")
     briefing_source = SCRIPT.read_text(encoding="utf-8")

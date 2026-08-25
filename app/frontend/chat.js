@@ -4022,7 +4022,7 @@
         .catch(function () {});
     } else {
       // Connect — open in new window
-      window.open("/auth/google/login", "gws_auth", "width=500,height=600");
+      window.open("/api/auth/google/login", "gws_auth", "width=500,height=600");
       // Poll for completion
       var pollInterval = setInterval(function () {
         fetch("/auth/google/status")
