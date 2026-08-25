@@ -2,6 +2,8 @@ import base64
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from app.agents import gws_agent
 from app.core import google_workspace
 
@@ -191,3 +193,18 @@ def test_search_gmail_requests_full_messages_and_returns_body(monkeypatch):
 
     assert result[0]["subject"] == "본문 테스트"
     assert result[0]["body"] == "검색 결과에 포함될 실제 본문"
+
+
+@pytest.mark.asyncio
+async def test_missing_gws_token_uses_authenticated_relative_login_route(monkeypatch):
+    """A missing token directs the browser to the JWT-bound login endpoint only."""
+    class MissingAuth:
+        def get_credentials(self, _email):
+            return None
+
+    monkeypatch.setattr(gws_agent, "_get_auth_manager", lambda: MissingAuth())
+    answer = await gws_agent.GWSAgent().run("오늘 일정", user_email="owner@example.com")
+
+    assert "<!-- gws-auth:/auth/google/login -->" in answer
+    assert "owner@example.com" not in answer
+    assert "accounts.google.com" not in answer

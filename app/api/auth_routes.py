@@ -1,10 +1,17 @@
 """OAuth2 authentication endpoints for Google Workspace."""
 
+import asyncio
+import html
+
+import jwt
 import structlog
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.api.auth_middleware import get_current_user
 from app.core.google_auth import GoogleAuthManager
+from app.core.google_oauth_state import consume_state, issue_state
+from app.db.models import User
 
 logger = structlog.get_logger(__name__)
 
@@ -42,18 +49,13 @@ def _get_redirect_uri(request: Request) -> str:
 @auth_router.get("/login")
 async def google_login(
     request: Request,
-    user_email: str = Query(..., description="사용자 이메일"),
+    user: User = Depends(get_current_user),
 ):
-    """Redirect user to Google OAuth consent screen.
-
-    Args:
-        user_email: User's email address.
-    """
-    if not user_email:
-        raise HTTPException(status_code=400, detail="user_email 파라미터가 필요합니다.")
-
-    redirect_uri = _get_redirect_uri(request)
-    auth_url = _get_auth_manager().get_auth_url(user_email, redirect_uri=redirect_uri)
+    """Redirect the authenticated user to Google OAuth consent."""
+    state = await asyncio.to_thread(issue_state, user.id, user.email)
+    auth_url = _get_auth_manager().get_auth_url(
+        user.email, state=state, redirect_uri=_get_redirect_uri(request)
+    )
     return RedirectResponse(url=auth_url)
 
 
@@ -61,28 +63,27 @@ async def google_login(
 async def google_callback(
     request: Request,
     code: str = Query(..., description="Authorization code from Google"),
-    state: str = Query("", description="User email passed as state"),
+    state: str = Query("", description="Signed OAuth state"),
+    user: User = Depends(get_current_user),
 ):
-    """Handle Google OAuth callback, exchange code for tokens.
+    """Handle an authenticated user's OAuth callback and save their token."""
+    try:
+        payload = await asyncio.to_thread(consume_state, state, user.id)
+    except (jwt.PyJWTError, KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
-    Args:
-        code: Authorization code from Google.
-        state: User email passed via state parameter.
-    """
-    user_email = state
-    if not user_email:
-        raise HTTPException(status_code=400, detail="state 파라미터(user_email)가 없습니다.")
+    user_email = str(payload["email"])
 
     try:
         redirect_uri = _get_redirect_uri(request)
         _get_auth_manager().exchange_code(code, user_email, redirect_uri=redirect_uri)
-        logger.info("oauth_callback_success", user_email=user_email)
+        logger.info("oauth_callback_success", user_id=user.id)
     except Exception as e:
-        logger.error("oauth_callback_failed", user_email=user_email, error=str(e))
-        raise HTTPException(status_code=500, detail=f"토큰 교환 실패: {str(e)}")
+        logger.error("oauth_callback_failed", user_id=user.id, error_type=type(e).__name__)
+        raise HTTPException(status_code=500, detail="Token exchange failed")
 
     # Return success page that auto-closes
-    html = f"""
+    page_html = f"""
     <!DOCTYPE html>
     <html>
     <head>
@@ -115,7 +116,7 @@ async def google_callback(
         <div class="card">
             <div class="check">&#10003;</div>
             <h1>Google 인증 완료</h1>
-            <p><span class="email">{user_email}</span></p>
+            <p><span class="email">{html.escape(user.email)}</span></p>
             <p>Gmail, Drive, Calendar 접근이 연결되었습니다.</p>
             <p class="countdown" id="cd">3초 후 자동으로 닫힙니다...</p>
         </div>
@@ -130,43 +131,35 @@ async def google_callback(
     </body>
     </html>
     """
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=page_html)
 
 
 @auth_router.get("/status")
-async def google_auth_status(user_email: str = Query(..., description="사용자 이메일")):
+async def google_auth_status(user: User = Depends(get_current_user)):
     """Check if user has valid Google OAuth credentials.
 
     Returns authenticated status and the connected Google account email.
     """
-    if not user_email:
-        raise HTTPException(status_code=400, detail="user_email 파라미터가 필요합니다.")
-
     mgr = _get_auth_manager()
     # Fast check: file exists? (no token refresh, instant)
-    authenticated = mgr.has_credentials(user_email)
-    google_email = mgr.get_stored_google_email(user_email) if authenticated else ""
+    authenticated = mgr.has_credentials(user.email)
+    google_email = mgr.get_stored_google_email(user.email) if authenticated else ""
 
     return {
-        "user_email": user_email,
         "authenticated": authenticated,
         "google_email": google_email,
     }
 
 
 @auth_router.post("/revoke")
-async def google_revoke(user_email: str = Query(..., description="사용자 이메일")):
+async def google_revoke(user: User = Depends(get_current_user)):
     """Revoke (delete) stored Google OAuth credentials for a user.
 
     Args:
         user_email: User's email address.
     """
-    if not user_email:
-        raise HTTPException(status_code=400, detail="user_email 파라미터가 필요합니다.")
-
-    deleted = _get_auth_manager().revoke_credentials(user_email)
+    deleted = _get_auth_manager().revoke_credentials(user.email)
     return {
-        "user_email": user_email,
         "revoked": deleted,
         "message": "토큰이 삭제되었습니다." if deleted else "저장된 토큰이 없습니다.",
     }

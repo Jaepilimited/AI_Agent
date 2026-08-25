@@ -1984,10 +1984,10 @@
     var cleanContent = _S.text.replace(/<!-- source:\w+ -->/g, "");
 
     // Auto-open Google OAuth popup if GWS auth required
-    var gwsAuthMatch = cleanContent.match(/<!-- gws-auth:(https?:\/\/[^\s]+) -->/);
+    var gwsAuthMatch = cleanContent.match(/<!-- gws-auth:(\/auth\/google\/login) -->/);
     if (gwsAuthMatch) {
       cleanContent = cleanContent.replace(/<!-- gws-auth:[^\s]+ -->/, "");
-      setTimeout(function() { window.open(gwsAuthMatch[1], "google_auth", "width=500,height=700,left=200,top=100"); }, 500);
+      setTimeout(function() { window.open(gwsAuthMatch[1], "gws_auth", "width=500,height=600"); }, 500);
     }
 
     contentEl.dataset.raw = cleanContent;
@@ -3954,8 +3954,8 @@
   var gwsGoogleEmail = "";
 
   function checkGwsStatus() {
-    if (!currentUser || !currentUser.email) return;
-    fetch("/auth/google/status?user_email=" + encodeURIComponent(currentUser.email))
+    if (!currentUser) return;
+    fetch("/auth/google/status")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         gwsConnected = data.authenticated;
@@ -3987,22 +3987,22 @@
   }
 
   function handleGwsConnect() {
-    if (!currentUser || !currentUser.email) return;
+    if (!currentUser) return;
     if (gwsConnected) {
       // Revoke
       var msg = gwsGoogleEmail
         ? gwsGoogleEmail + " 계정 연결을 해제하시겠습니까?"
         : "Google 계정 연결을 해제하시겠습니까?";
       if (!confirm(msg)) return;
-      fetch("/auth/google/revoke?user_email=" + encodeURIComponent(currentUser.email), { method: "POST" })
+      fetch("/auth/google/revoke", { method: "POST" })
         .then(function () { gwsConnected = false; gwsGoogleEmail = ""; updateGwsButton(); })
         .catch(function () {});
     } else {
       // Connect — open in new window
-      window.open("/auth/google/login?user_email=" + encodeURIComponent(currentUser.email), "gws_auth", "width=500,height=600");
+      window.open("/auth/google/login", "gws_auth", "width=500,height=600");
       // Poll for completion
       var pollInterval = setInterval(function () {
-        fetch("/auth/google/status?user_email=" + encodeURIComponent(currentUser.email))
+        fetch("/auth/google/status")
           .then(function (r) { return r.json(); })
           .then(function (data) {
             if (data.authenticated) {

@@ -288,11 +288,10 @@ class GWSAgent:
 
         # No valid token → auto-connect prompt with auth URL
         if creds is None:
-            auth_url = auth_manager.get_auth_url(user_email)
             return (
                 "Google Workspace에 접근하려면 Google 계정 연결이 필요합니다.\n\n"
                 "잠시 후 Google 로그인 창이 열립니다. 연결 완료 후 같은 질문을 다시 해주세요.\n\n"
-                f"<!-- gws-auth:{auth_url} -->"
+                "<!-- gws-auth:/auth/google/login -->"
             )
 
         # ── 도구 직접 호출 (ReAct 루프 없음) ──────────────────────────────

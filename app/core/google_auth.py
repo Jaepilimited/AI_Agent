@@ -245,11 +245,12 @@ except:
             )
             return None
 
-    def get_auth_url(self, user_email: str, redirect_uri: str = "") -> str:
+    def get_auth_url(self, user_email: str, *, state: str, redirect_uri: str = "") -> str:
         """Generate Google OAuth2 authorization URL.
 
         Args:
-            user_email: User's email for state parameter.
+            user_email: User's email used as Google's login hint.
+            state: Signed, single-use state issued by the authenticated application user.
             redirect_uri: Dynamic redirect URI from request host. Falls back to config.
 
         Returns:
@@ -264,7 +265,7 @@ except:
         auth_url, _ = flow.authorization_url(
             access_type="offline",
             prompt="consent",
-            state=user_email,
+            state=state,
             login_hint=user_email,
         )
         return auth_url
