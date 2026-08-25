@@ -297,12 +297,20 @@ def build_chartjs_config(
         # Wide time-columns on categorical rows (product × quarter 등):
         # x축을 기간으로 전치하고 각 행(제품)을 시리즈로 — 제품명이 x축에
         # 깔려 라벨이 겹치는 차트를 방지한다.
+        # ⛔ **x 컬럼 이름이 기간이면 행이 시간축이다 — 전치하면 축이 뒤집힌다.**
+        #    프로덕션 실측 (2026-08-25): LLM 이 YoY 를 넓은 형태로 뽑아
+        #    `month | south_america_2025_sales | …` 가 왔는데, x 값이 '01'·'08' 같은
+        #    **맨숫자**라 `_TIME_HINTS` 에 안 걸리고 열 이름에는 2025·2026 이 있어
+        #    시간처럼 보였다. 결과: x축이 계열명, **선이 '08'·'07'(월)** 인 차트.
+        #    값이 시간처럼 안 보여도 **컬럼 이름**이 기간이면 전치하지 않는다.
+        x_is_period = bool(_RE_TIME_COL.search(str(x_col)))
         transpose = (
             chart_type in ("line", "grouped_bar")
             and isinstance(y_col, list)
             and len(y_col) >= 2
             and len(data) >= 2
             and all(_RE_TIME_COL.search(str(c)) for c in y_col)
+            and not x_is_period
             and not any(any(h in str(x).lower() for h in _TIME_HINTS) for x in labels)
         )
 

@@ -88,3 +88,43 @@ def test_readability_limit_still_drops_genuinely_huge_charts():
              "revenue": 1.0} for i in range(400)]
     _, out = _build("YoY로", rows)
     assert out is None
+
+
+def test_wide_yoy_table_is_not_transposed():
+    """⛔ 축이 뒤집혀 **월이 선**이 되던 것 (프로덕션 실측, 2026-08-25).
+
+    LLM 이 YoY 를 넓은(wide) 형태로 뽑는 경우가 있다 — 행은 월, 열은 계열:
+
+        month | south_america_2025_sales | south_america_2026_sales | ...
+        '01'  | ...                      | ...
+
+    전치 규칙은 "제품 × 분기" 처럼 **행이 엔티티**인 표를 위한 것인데, 여기서는
+    행이 시간축이다. 그런데 x 값이 `'01'`·`'08'` 같은 **맨숫자**라 시간처럼 안 보였고,
+    열 이름에는 `2025`·`2026` 이 있어 시간처럼 보였다 — 그래서 뒤집혔다.
+    결과: x축이 `['south america 2025', …]`, 선이 `'08'`·`'07'` 인 차트.
+
+    ⚠️ x **컬럼 이름**이 기간을 가리키면(`month`·`분기`·`year`) 행이 시간축이다.
+    """
+    rows = [{"month": f"{m:02d}",
+             "south_america_2025_sales": 1e9 * m,
+             "south_america_2026_sales": 2e9 * m,
+             "central_america_2025_sales": 3e8 * m,
+             "central_america_2026_sales": 4e8 * m} for m in range(1, 13)]
+    cfg = {"chart_type": "line", "x_column": "month",
+           "y_column": ["south_america_2025_sales", "south_america_2026_sales",
+                        "central_america_2025_sales", "central_america_2026_sales"],
+           "title": "t"}
+    out = json.loads(chart.build_chartjs_config(cfg, rows))
+    assert out["data"]["labels"][:3] == ["01", "02", "03"], out["data"]["labels"][:5]
+    labels = [d["label"] for d in out["data"]["datasets"]]
+    assert len(labels) == 4, labels
+    assert all("america" in l.lower() for l in labels), labels
+
+
+def test_entity_by_period_table_is_still_transposed():
+    """⚠️ 원래 의도는 살린다 — 행이 제품이면 전치가 맞다 (제품명이 x축에 깔리면 겹친다)."""
+    rows = [{"product": f"P{i}", "2025 Q1 sales": 1e9, "2025 Q2 sales": 2e9} for i in range(3)]
+    cfg = {"chart_type": "line", "x_column": "product",
+           "y_column": ["2025 Q1 sales", "2025 Q2 sales"], "title": "t"}
+    out = json.loads(chart.build_chartjs_config(cfg, rows))
+    assert [d["label"] for d in out["data"]["datasets"]] == ["P0", "P1", "P2"]

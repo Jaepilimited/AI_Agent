@@ -489,7 +489,7 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
     return True, f"노드 {len(node_ids)}개 · 선언과 코드 일치"
 
 
-# ── 소스에 섮인 제어문자 (2026-08-25) ─────────────────────────
+# ── 소스에 섬이진 제어문자 (2026-08-25) ─────────────────────────
 # ⛔ 정규식을 고치다 `\b`(단어 경계)가 **진짜 백스페이스 문자(0x08)** 로 들어가면
 #    정규식은 에러 없이 컴파일되고 **영우녕 매치하지 않는다.** 화면에도 안 보인다 —
 #    에러가 안 나는 고장의 전형이다. 실제로 두 곳에서 나왔다:
@@ -527,6 +527,105 @@ def stray_control_chars() -> Tuple[bool, str]:
     return True, "제어문자 없음"
 
 
+def qdrant_team_sources() -> Tuple[bool, str]:
+    """`@@팀` 지정이 벡터 색인의 team 값과 실제로 맞물리는가.
+
+    ⛔ 어긋나도 **에러가 아니라 0건**이다 — 그리고 0건은 화면에서 "자료가 없네요"
+       와 똑같이 생겼다. 실제 구조가 그렇다: 레지스트리 키(`GM EAST`)와 색인 값
+       (`[GM]EAST`)이 다르고, 그 사이를 `resolve_team_filter()` 의 손으로 적은
+       `TEAM_MAP` 이 잇는다. 색인 쪽 표기가 바뀌면 그 다리만 조용히 끊긴다.
+
+    그래서 판정은 **키가 아니라 결과**로 한다: `@@` 키를 리졸버에 넣어 나온 값으로
+    색인을 세어 조각이 잡히는지 본다.
+
+    실패로 세는 것은 **다리가 끊긴 경우 하나뿐**이다 (리졸버 결과는 색인에 없는데,
+    이름이 비슷한 값은 색인에 있다 = 표기가 바뀌었거나 TEAM_MAP 이 낡았다).
+    자료가 아예 없는 팀(JBT·B2B1)은 코드 결함이 아니라 데이터 공백이라 detail 로만
+    적는다 — 매일 같은 실패를 울리면 곧 아무도 안 본다.
+    """
+    import re as _re
+
+    from app.agents.qdrant_agent import index_team_counts, resolve_team_filter
+    from app.agents.orchestrator import OrchestratorAgent
+
+    counts = index_team_counts(refresh=True)
+    if not counts:
+        # ⚠️ 못 읽은 것을 통과로 세면 이 검사는 영원히 초록이다 (dangling check 와 같은 함정)
+        return False, "벡터 색인(notion_vectors_gemini.json)에서 팀 값을 하나도 읽지 못했다"
+
+    def _squash(text: str) -> str:
+        return _re.sub(r"[^0-9a-z]", "", text.lower())
+
+    keys = [e["key"] for e in OrchestratorAgent.get_db_registry() if e.get("route") == "notion"]
+    broken, empty, used = [], [], set()
+    for key in keys:
+        value = resolve_team_filter(key)
+        if counts.get(value):
+            used.add(value)
+            continue
+        near = [t for t in counts if _squash(t) == _squash(key) or _squash(key) in _squash(t)]
+        if near:
+            broken.append(f"{key} → '{value}' (색인엔 {near})")
+        else:
+            empty.append(key)
+
+    orphans = [t for t in counts if t not in used]
+    notes = [f"@@ 키 {len(keys)}개 · 색인 팀 {len(counts)}개"]
+    if empty:
+        notes.append(f"자료 0건인 팀: {', '.join(sorted(empty))}")
+    if orphans:
+        notes.append(f"색인엔 있으나 @@ 키가 없는 팀: {', '.join(sorted(orphans))}")
+    if broken:
+        return False, "팀 필터가 색인과 어긋났다 (지정해도 0건): " + " / ".join(broken)
+    return True, " · ".join(notes)
+
+
+def team_link_coverage() -> Tuple[bool, str]:
+    """팀 자료 링크(시트·드라이브)가 벡터 색인에 들어가 있는가.
+
+    ⛔ 원래 상태가 이랬다: DB-HUB 를 두 파이프라인이 각자 긁는데 벡터 쪽은 노션
+       페이지만 수집해, 시트·드라이브 자료 64건 중 44건(69%)이 색인에 이름조차
+       없었다 (2026-08-25 실측). "그 시트 어디 있어" 가 어느 경로로도 답이 안 됐다.
+
+    이 단계는 05:00 `qdrant_pipeline_daily` 안에서 돈다. 빠지면 **에러 없이 검색
+       결과만 얇아진다** — 그래서 결과물(색인 안의 링크 카드 수)로 확인한다.
+    """
+    import json
+
+    from app.agents.qdrant_agent import _LOCAL_JSON
+    from app.core.team_link_index import build_link_cards, load_rows, notion_page_id
+
+    try:
+        raw = json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"벡터 색인 파일을 읽지 못했다: {exc}"
+    points = raw if isinstance(raw, list) else (raw.get("points") or [])
+
+    indexed_ids, in_index = set(), 0
+    for pt in points:
+        payload = pt.get("payload", {})
+        if payload.get("source") == "team_resources":
+            in_index += 1
+            continue
+        pid = str(payload.get("page_id", "")).replace("-", "").lower()
+        if pid:
+            indexed_ids.add(pid)
+        nid = notion_page_id(str(payload.get("page_url", "")))
+        if nid:
+            indexed_ids.add(nid)
+
+    try:
+        expected = len(build_link_cards(load_rows(), indexed_page_ids=indexed_ids))
+    except Exception as exc:
+        return False, f"team_resources 를 읽지 못했다: {exc}"
+
+    if expected and in_index == 0:
+        return False, (f"링크 카드가 색인에 하나도 없다 (태울 것 {expected}장) — "
+                       "05:00 파이프라인의 링크 단계가 돌지 않았다: "
+                       "python -X utf8 scripts/notion_qdrant_pipeline.py --links")
+    return True, f"링크 카드 색인 {in_index}장 · 후보 {expected}장"
+
+
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_value_list_dupes", prompt_no_handwritten_value_lists,
@@ -538,5 +637,7 @@ ALL = [
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
     ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
-    ("static_ctrl_chars", stray_control_chars, "소스에 섮인 제어문자"),
+    ("static_ctrl_chars", stray_control_chars, "소스에 섞인 제어문자"),
+    ("static_qdrant_teams", qdrant_team_sources, "@@팀 ↔ 벡터 색인 팀 값 일치"),
+    ("static_team_links", team_link_coverage, "팀 자료 링크가 벡터 색인에 있는가"),
 ]
