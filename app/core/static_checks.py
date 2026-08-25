@@ -397,7 +397,7 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
         return False, f"흐름 모듈 로드 실패: {str(e)[:120]}"
 
     problems: List[str] = []
-    for node in spec.NODES:
+    for node in spec.all_nodes():
         for dotted in (node.fn, node.subgraph):
             if not dotted:
                 continue
@@ -421,8 +421,17 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
     # 라우터 노드의 나가는 엣지 = 분류기가 낼 수 있는 값. 하나라도 어긋나면
     # 화면이 "이 질문은 저기로 갈 수 있다"고 없는 길을 알려준다 (13개 거짓 엣지 사고).
     for router in ("router.keyword", "router.llm"):
+        router_edges = {e["dst"] for e in built["edges"] if e["src"] == router}
+        expected_edges = (
+            {"router.llm", "route_filter.allowed"}
+            if router == "router.keyword" else {"route_filter.allowed"}
+        )
+        if router_edges != expected_edges:
+            problems.append(
+                f"{router} topology differs (+{sorted(router_edges - expected_edges)} "
+                f"-{sorted(expected_edges - router_edges)})")
         drawn = {e["dst"][len("route."):] for e in built["edges"]
-                 if e["src"] == router and e["dst"].startswith("route.")}
+                 if e["src"] == "route_filter.allowed" and e["dst"].startswith("route.")}
         if drawn != set(ROUTER_ROUTES):
             problems.append(
                 f"{router} 엣지≠분류기 (+{sorted(drawn - set(ROUTER_ROUTES))} "
@@ -433,6 +442,14 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
     # ⛔ 부분집합(⊆)으로는 부족하다: 상수 쪽이 더 넓은 방향이 정확히 **거짓 화살표가
     #    생기는 방향**이다 (라우터의 나가는 엣지를 이 상수에서 부챗살로 뽑기 때문).
     #    실제로 상수에 없는 라우트를 하나 끼워 넣어도 ⊆ 는 그대로 참이었다.
+    direct_filter_edges = [
+        edge for edge in built["edges"]
+        if edge["src"] == "route_filter.allowed" and edge["dst"] == "route.direct"
+    ]
+    if (len(direct_filter_edges) != 1
+            or not spec.direct_filter_label_is_truthful(direct_filter_edges[0]["label"])):
+        problems.append("direct filter label must disclose native direct and disallowed downgrade")
+
     try:
         returned = classifier_return_routes()
     except Exception as e:
@@ -446,7 +463,22 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
                 f"· 코드에만 {sorted(returned - set(ROUTER_ROUTES))})")
 
     # 도달 불가로 표시한 노드에 화살표가 붙으면 표시와 그림이 서로 반대말을 한다
-    for node in spec.NODES:
+    expected_prefix_targets = set(spec.multi_prefix_targets())
+    drawn_prefix_targets = {
+        e["dst"].removeprefix("multi_prefix.branch.") for e in built["edges"]
+        if e["src"] == "multi_prefix.fanout" and e["dst"].startswith("multi_prefix.branch.")
+    }
+    if drawn_prefix_targets != expected_prefix_targets:
+        problems.append(
+            f"@@ fan-out targets differ (+{sorted(drawn_prefix_targets - expected_prefix_targets)} "
+            f"-{sorted(expected_prefix_targets - drawn_prefix_targets)})")
+    for target in expected_prefix_targets:
+        branch = f"multi_prefix.branch.{target}"
+        if not any(e["src"] == branch and e["dst"] == "multi_prefix.merge"
+                   for e in built["edges"]):
+            problems.append(f"@@ fan-out branch '{target}' has no merge edge")
+
+    for node in spec.all_nodes():
         if node.unreachable and any(
                 e["src"] == node.id or e["dst"] == node.id for e in built["edges"]):
             problems.append(f"'{node.id}' 는 도달 불가로 적혔는데 엣지가 있다")
@@ -455,6 +487,44 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
         return False, ("흐름 선언이 코드와 어긋난다 "
                        f"{len(problems)}건: " + ", ".join(problems[:4]))
     return True, f"노드 {len(node_ids)}개 · 선언과 코드 일치"
+
+
+# ── 소스에 섮인 제어문자 (2026-08-25) ─────────────────────────
+# ⛔ 정규식을 고치다 `\b`(단어 경계)가 **진짜 백스페이스 문자(0x08)** 로 들어가면
+#    정규식은 에러 없이 컴파일되고 **영우녕 매치하지 않는다.** 화면에도 안 보인다 —
+#    에러가 안 나는 고장의 전형이다. 실제로 두 곳에서 나왔다:
+#      · `self_check.py` 의 답변 앞부분 유실 감지 정규식 (붐따 #106 과 같은 증상을
+#        잡으려던 검사가 정작 못 잡고 있었다)
+#      · `sql_agent.py` 의 대륙 컴럼 교정 (새로 넣다가 같은 방식으로 깨졌다)
+_CTRL = {8: "BACKSPACE", 7: "BELL", 11: "VTAB", 12: "FORMFEED"}
+_CTRL_SCAN = ("app", "prompts", "scripts", "tests")
+
+
+def stray_control_chars() -> Tuple[bool, str]:
+    """소스에 눈에 안 보이는 제어문자가 섮였는가."""
+    hits = []
+    for top in _CTRL_SCAN:
+        base = os.path.join(ROOT, top)
+        for dirpath, dirnames, names in os.walk(base):
+            dirnames[:] = [d for d in dirnames
+                           if d not in ("__pycache__", "node_modules", "charts")]
+            for n in names:
+                if not n.endswith((".py", ".txt", ".js", ".html")):
+                    continue
+                full = os.path.join(dirpath, n)
+                try:
+                    with io.open(full, encoding="utf-8", errors="strict") as fh:
+                        body = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for code, label in _CTRL.items():
+                    if chr(code) in body:
+                        rel = os.path.relpath(full, ROOT).replace(os.sep, "/")
+                        line = body[:body.index(chr(code))].count(chr(10)) + 1
+                        hits.append(rel + ":" + str(line) + " " + label)
+    if hits:
+        return False, "제어문자가 소스에 섮였다 (정규식이 조용히 매치 안 된다): " + ", ".join(hits[:5])
+    return True, "제어문자 없음"
 
 
 ALL = [
@@ -468,4 +538,5 @@ ALL = [
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
     ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
+    ("static_ctrl_chars", stray_control_chars, "소스에 섮인 제어문자"),
 ]

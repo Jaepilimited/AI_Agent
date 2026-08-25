@@ -731,7 +731,7 @@ def _check_canary_answers() -> CheckResult:
                 problems.append(f"{label}: 답변이 비었거나 너무 짧음 ({len(a)}자 < {min_len})")
             if any(ph in a for ph in _CANARY_ERROR_PHRASES):
                 problems.append(f"{label}: 오류 문구 노출 — {a[:60]!r}")
-            if re.match(r"^\s*(니다|습니다|입니다)|^\s*[.,)\]}]", a):
+            if re.match(r"^\s*(니다|습니다|입니다)\b|^\s*[.,)\]}]", a):
                 problems.append(f"{label}: 앞부분 유실 의심 — {a[:40]!r}")
             if a.count("```") % 2 != 0:
                 problems.append(f"{label}: 코드블록 미닫힘 (뒷부분 잘림 의심)")
@@ -887,6 +887,12 @@ CHECKS: list[Check] = [
     Check("static_flow_spec", "static", SEV_WARNING,
           "흐름 선언(캔버스)이 실제 코드·@@ 라우트와 일치하는가",
           _static("static_flow_spec")),
+    # ⛔ 정규식의 `\b` 가 진짜 백스페이스 문자(0x08)로 들어가면 에러 없이 컴파일되고
+    #    영영 매치하지 않는다. 화면에도 안 보인다 — 이 파일의 "답변 앞부분 유실" 감지가
+    #    실제로 그렇게 죽어 있었다 (2026-08-25 발견).
+    Check("static_ctrl_chars", "static", SEV_WARNING,
+          "소스에 눈에 안 보이는 제어문자가 섞였는가 (정규식이 조용히 안 맞는다)",
+          _static("static_ctrl_chars")),
 ]
 
 

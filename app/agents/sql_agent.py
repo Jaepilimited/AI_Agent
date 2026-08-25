@@ -510,6 +510,50 @@ def _localize_continent_literals(sql: str) -> str:
     return _RE_C1_PREDICATE.sub(_dedupe, sql)
 
 
+# ── 대륙 값이 반대 컴럼에 걸렸을 때 (붐따 #120) ───────────────
+# "유럽" 을 `Continent2` 에 걸어 0건이 나갔고, 답변은 "대륙 필드가 세분화돼 있어서"
+# 라고 설명했다 — 사실이 아니다. `Continent1` 에는 '유럽' 이 있다.
+# ⛔ 값을 손으로 적지 않는다 — 어느 컴럼에 무엇이 있는지는 `value_lists` 가 매일 실측한다.
+# ⚠️ 한쪽에만 있는 값일 때만 옮긴다. 양쪽에 다 있는 값(북미·중동)이나 섞인 조건은
+#    건드리지 않는다 — 통째로 옮기면 절반이 조용히 0건이 된다 (기존 주석과 같은 이유).
+_RE_CONT_PRED = re.compile(
+    r"Continent([12])\s*(?:=|IN)\s*('[^']*'|\([^)]*\))", re.IGNORECASE)
+
+
+def _fix_continent_column(sql: str) -> str:
+    """대륙 값이 반대 컴럼에 걸려 0건이 나는 것을 막는다."""
+    if not sql:
+        return sql
+    preds = _RE_CONT_PRED.findall(sql)
+    if not preds:
+        return sql
+    from app.core import value_lists
+    c1, c2 = value_lists.values("Continent1"), value_lists.values("Continent2")
+    if not c1 or not c2:
+        return sql  # 모르면 건드리지 않는다
+    only1, only2 = set(c1) - set(c2), set(c2) - set(c1)
+    targets = set()
+    for col, blob in preds:
+        vals = [v for _q, v in _RE_QUOTED_VALUE.findall(blob)]
+        if not vals:
+            return sql
+        if col == "2" and all(v in only1 for v in vals):
+            targets.add("1")
+        elif col == "1" and all(v in only2 for v in vals):
+            targets.add("2")
+        else:
+            targets.add(col)
+    if len(targets) != 1:
+        return sql  # 섞여 있다 — 통째로 옮길 수 없다
+    target = targets.pop()
+    other = "2" if target == "1" else "1"
+    if not re.search("Continent" + other + r"\b", sql, re.IGNORECASE):
+        return sql
+    logger.warning("continent_column_fixed", to="Continent" + target, sql=sql[:160])
+    return re.sub("Continent" + other + r"\b", "Continent" + target, sql,
+                  flags=re.IGNORECASE)
+
+
 def _enforce_partition_filter(
     sql: str,
     query: str,
@@ -568,6 +612,7 @@ def _enforce_partition_filter(
         new_sql = _localize_team_literals(new_sql)
         new_sql = _localize_promotion_literals(new_sql)
         new_sql = _normalize_named_period(new_sql, query)
+        new_sql = _fix_continent_column(new_sql)
         new_sql = _strip_unrequested_brand_filter(new_sql, query)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
@@ -1380,6 +1425,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = _localize_country_literals(sql)
             sql = _localize_team_literals(sql)
             sql = _localize_continent_literals(sql)
+            sql = _fix_continent_column(sql)
             sql = _localize_promotion_literals(sql)
             sql = _normalize_named_period(sql, query)
             sql = _strip_unrequested_brand_filter(sql, query)
@@ -1476,6 +1522,7 @@ def _retry_with_stronger_model(
         retry_sql = _localize_team_literals(retry_sql)
         retry_sql = _localize_promotion_literals(retry_sql)
         retry_sql = _normalize_named_period(retry_sql, query)
+        retry_sql = _fix_continent_column(retry_sql)
         retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
         if not retry_sql:
             return None
@@ -1649,6 +1696,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _localize_team_literals(retry_sql)
                 retry_sql = _localize_promotion_literals(retry_sql)
                 retry_sql = _normalize_named_period(retry_sql, query)
+                retry_sql = _fix_continent_column(retry_sql)
                 retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
                 if retry_sql:
                     if (_period_retry_required

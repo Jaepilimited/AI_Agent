@@ -101,6 +101,11 @@ def _cached(name: str) -> Optional[List[str]]:
     return _SEED.get(name)
 
 
+def values(name: str) -> Optional[List[str]]:
+    """실측된 값 목록 (캐시 → 씨앗). 모르면 None — 추측하지 않는다."""
+    return _cached(name)
+
+
 def refresh(name: Optional[str] = None) -> Dict[str, int]:
     """실측 → 캐시. 이름을 주면 그것만, 없으면 전체."""
     ensure_value_cache_table()

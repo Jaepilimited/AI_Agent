@@ -400,3 +400,18 @@ def test_feedback_inbox_defaults_to_all_not_unread_only():
     selected = [line for line in block.splitlines() if "selected" in line]
     assert len(selected) == 1, selected
     assert 'value=""' in selected[0], f"기본 필터가 전체가 아니다: {selected[0]}"
+
+
+def test_no_stray_control_chars_in_source():
+    """⛔ 정규식 안의 `\b` 가 진짜 백스페이스 문자(0x08)로 들어가면 영영 매치되지 않는다.
+
+    에러 없이 컴파일되고 화면에도 안 보인다 — 에러가 안 나는 고장의 전형이다.
+    실제로 두 곳에서 나왔다 (2026-08-25):
+      · `self_check.py` 의 "답변 앞부분 유실" 감지 정규식 — 붐따 #106 과 같은 증상을
+        잡으려던 검사가 정작 못 잡고 있었다
+      · `sql_agent.py` 의 대륙 컬럼 교정 — 새로 넣다가 같은 방식으로 깨졌다
+    """
+    from app.core.static_checks import stray_control_chars
+
+    ok, msg = stray_control_chars()
+    assert ok, msg
