@@ -45,9 +45,19 @@ def test_flow_canvas_vis_options_no_css_var():
     확인 후 고쳤다. 이 검사는 **좁다**: vis 옵션(노드/엣지/Network 생성자) 구간만
     보고, `detail.innerHTML` 처럼 실제 DOM 에 꽂히는(정상 동작하는) `var(--...)` 는
     검사 대상에서 뺀다. 이 특정 실수(canvas 옵션에 CSS 변수 문자열)만 잡을 뿐,
-    canvas/CSS 불일치 전체를 보증하지 않는다."""
+    canvas/CSS 불일치 전체를 보증하지 않는다.
+
+    ⚠️ 앵커는 **vis 옵션을 만드는 함수**다. 2026-08-25 에 `loadFlowCanvas` 가
+       조회만 하고 그리기는 `renderFlowCanvas` 로 갈라지면서 이 검사가
+       `ValueError: substring not found` 로 죽었다 — 검사가 실패한 게 아니라
+       **검사를 못 한 것**이라, 왜 죽었는지 보이게 앵커 부재를 따로 단언한다.
+    """
     js = _read("app/frontend/chat.js")
-    start = js.index("function loadFlowCanvas")
+    assert "function renderFlowCanvas" in js, (
+        "vis 옵션을 만드는 함수를 못 찾았다 — 이름이 바뀌었으면 이 앵커도 함께 옮길 것")
+    start = js.index("function renderFlowCanvas")
+    assert '.on("click"' in js[start:], (
+        "renderFlowCanvas 뒤에 클릭 핸들러가 없다 — 구간을 다시 잡을 것")
     end = js.index('.on("click"', start)
     vis_options_region = js[start:end]
     assert "var(--" not in vis_options_region
