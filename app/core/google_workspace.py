@@ -166,8 +166,9 @@ def list_gmail_digest(
         f"after:{int(start.timestamp())} before:{int(end.timestamp())} "
         "-in:spam -in:trash -in:drafts -in:sent -from:me"
     )
+    bounded_max_results = min(max(1, max_results), 20)
     page = service.users().messages().list(
-        userId="me", q=query, maxResults=max_results,
+        userId="me", q=query, maxResults=bounded_max_results,
     ).execute()
 
     items = []

@@ -65,6 +65,7 @@ def test_digest_uses_metadata_not_full_body(monkeypatch):
     assert "body" not in result["items"][0]
 
     list_call = next(kwargs for kind, kwargs in calls if kind == "list")
+    assert list_call["maxResults"] == 20
     assert "after:1787583600" in list_call["q"]
     assert "before:1787670000" in list_call["q"]
     for exclusion in ("-in:spam", "-in:trash", "-in:drafts", "-in:sent", "-from:me"):
@@ -100,5 +101,38 @@ def test_calendar_window_uses_exact_bounds_and_reports_truncation(monkeypatch):
 
     assert captured["timeMin"].startswith("2026-08-24T15:00:00")
     assert captured["timeMax"].startswith("2026-08-31T15:00:00")
+    assert captured["maxResults"] == 50
     assert captured["singleEvents"] is True
+    assert captured["orderBy"] == "startTime"
     assert result["truncated"] is True
+
+
+def test_digest_clamps_requested_limit_to_twenty(monkeypatch):
+    captured = {}
+
+    class Request:
+        def execute(self):
+            return {"messages": []}
+
+    class Messages:
+        def list(self, **kwargs):
+            captured.update(kwargs)
+            return Request()
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(google_workspace, "build", lambda *_a, **_k: Service())
+    google_workspace.list_gmail_digest(
+        object(),
+        datetime(2026, 8, 25, 0, 0, tzinfo=SEOUL),
+        datetime(2026, 8, 26, 0, 0, tzinfo=SEOUL),
+        max_results=999,
+    )
+
+    assert captured["maxResults"] == 20
