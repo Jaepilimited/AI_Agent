@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=168">
+  <link rel="stylesheet" href="/static/style.css?v=170">
   <link rel="stylesheet" href="/static/cella-pet.css?v=8">
   <!-- Markdown + Code highlighting -->
   <script src="/static/purify.min.js"></script>
@@ -375,13 +375,34 @@
       <div class="admin-drawer-body" id="admin-selfcheck-body"></div>
     </div>
     <!-- Tab: Flow (아키텍처 캔버스) -->
+    <!-- ⚠️ 크기는 CSS 가 정한다 (`.flow-layout`). 인라인으로 되돌리지 마라 —
+         420px 서랍 안에 캔버스+320px 패널을 나란히 놓은 탓에 그림이 30px
+         폭으로 눌려 있었다 (2026-08-25 실측). 이 탭은 `flow-mode` 로 서랍을 넓힌다. -->
     <div class="admin-tab-content" id="tab-flow">
-      <div style="display:flex;gap:12px;height:70vh">
-        <div id="flow-canvas" style="flex:1;min-width:0;border:1px solid var(--border);border-radius:8px"></div>
-        <div id="flow-detail" style="width:320px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:8px;color:var(--text)">
-          노드를 클릭하세요.
+      <div class="flow-layout">
+        <div class="flow-main">
+          <div class="flow-toolbar">
+            <button class="admin-btn-secondary" id="btn-flow-collapse">자세히 보기</button>
+            <button class="admin-btn-secondary" id="btn-flow-fit">전체 보기</button>
+            <button class="admin-btn-secondary" id="btn-flow-zoom-in" aria-label="확대">+</button>
+            <button class="admin-btn-secondary" id="btn-flow-zoom-out" aria-label="축소">−</button>
+            <span class="flow-legend">
+              <span><i class="flow-dot flow-dot-io"></i>입·출력</span>
+              <span><i class="flow-dot flow-dot-main"></i>관문·라우터</span>
+              <span><i class="flow-dot flow-dot-route"></i>경로</span>
+              <span><i class="flow-dot flow-dot-branch"></i>@@ 병렬 가지</span>
+              <span><i class="flow-dot flow-dot-sub"></i>하위 그래프</span>
+              <span><i class="flow-dot flow-dot-dead"></i>도달 불가</span>
+              <span><i class="flow-line flow-line-cond"></i>조건부</span>
+            </span>
+          </div>
+          <div id="flow-canvas"></div>
+          <!-- 상세는 오버레이다. 옆에 나란히 두면 320px 을 캔버스에서 뺏어가는데,
+               가로로 긴 계층 그래프에서 그 폭이 곧 글자 크기다 (2026-08-25 실측). -->
+          <div id="flow-detail" class="flow-side" hidden></div>
         </div>
       </div>
+      <div class="flow-hint" id="flow-hint">노드를 클릭하면 실행 지점·설정값이 나옵니다.</div>
     </div>
     <!-- Tab: Groups -->
     <div class="admin-tab-content active" id="tab-groups">
@@ -419,7 +440,7 @@
   <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
 
   <script src="/frontend/answer-loading.js?v=2"></script>
-  <script src="/frontend/chat.js?v=260"></script>
+  <script src="/frontend/chat.js?v=262"></script>
   <script src="/frontend/cella-pet.js?v=8"></script>
 </body>
 </html>

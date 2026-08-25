@@ -171,7 +171,6 @@ def create_app() -> FastAPI:
         asyncio.create_task(_warmup_notion_titles())
         asyncio.create_task(_warmup_bq_schema())
         asyncio.create_task(_warmup_cs_db())
-        asyncio.create_task(_warmup_team_resources())
         asyncio.create_task(_warmup_qdrant_cache())
         asyncio.create_task(_warmup_llm_clients())
         # face-search 워밍업은 OOM 위험으로 비활성화 (SigLIP+InsightFace+OCR 동시 로드 시 메모리 폭주).
@@ -464,16 +463,6 @@ async def _warmup_cs_db():
                 await asyncio.sleep(5)
 
 
-async def _warmup_team_resources():
-    """Pre-load team resources from MariaDB at startup."""
-    try:
-        from app.agents.team_agent import warmup
-        count = await warmup()
-        logger.info("team_resources_warmup_done", count=count)
-    except Exception as e:
-        logger.warning("team_resources_warmup_failed", error=str(e))
-
-
 async def _warmup_qdrant_cache():
     """Pre-load Qdrant team chunk counts at startup."""
     try:
@@ -519,15 +508,19 @@ async def _warmup_llm_clients():
 
 
 async def _sync_team_resources_job():
-    """Daily 01:00 cron job: Notion → MariaDB sync."""
+    """Daily 01:00: Notion DB-HUB → MariaDB `team_resources`.
+
+    ⛔ **이 잡을 지우지 마라.** 예전에는 팀 자료 전용 에이전트가 이 표를 썼는데 그
+       경로가 죽어 있어 2026-08-25 에 걷어냈다. 표는 남겼다 — 05:00 벡터 파이프라인의
+       **링크 카드**(`app/core/team_link_index.py`)가 이 표를 먹고 산다. 여기가 멈추면
+       시트·드라이브 링크가 색인에서 조용히 낡는다.
+    """
     from app.core.self_check import track_job
     try:
         import asyncio
         with track_job("team_sync_daily") as jr:
             from scripts.sync_team_resources import sync
             count = await asyncio.to_thread(sync, dry_run=False)
-            from app.agents.team_agent import warmup
-            await warmup()
             jr.set_note(f"{count}건 동기화")
         logger.info("team_resources_daily_sync_done", count=count)
     except Exception as e:

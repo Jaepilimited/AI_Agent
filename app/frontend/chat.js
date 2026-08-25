@@ -552,49 +552,6 @@
     return enabledSources.filter(function(k) { return SOURCE_ROUTE_MAP[k] === "bigquery"; });
   }
 
-  // ===== Team Resource Filter (per-resource checkboxes) =====
-  var enabledTeamRes = loadTeamRes();  // { "JBT": ["name1",...], "BCM": [...] } or null=all
-  function loadTeamRes() {
-    try {
-      var s = localStorage.getItem("skin1004_team_resources");
-      if (s) return JSON.parse(s);
-    } catch(e) {}
-    return null;  // null = all enabled (default)
-  }
-  function saveTeamRes() {
-    if (enabledTeamRes === null) localStorage.removeItem("skin1004_team_resources");
-    else localStorage.setItem("skin1004_team_resources", JSON.stringify(enabledTeamRes));
-  }
-  function isTeamResEnabled(team, nodeId) {
-    if (!enabledTeamRes) return true;  // null = all
-    var list = enabledTeamRes[team];
-    if (!list) return true;  // team not filtered
-    return list.indexOf(nodeId) >= 0;
-  }
-  function getEnabledTeamResPayload() {
-    if (!enabledTeamRes) return null;
-    var result = {};
-    Object.keys(enabledTeamRes).forEach(function(team) {
-      var ids = (enabledTeamRes[team] || []).filter(function(id) { return Number.isInteger(id); });
-      if (ids.length > 0) result[team] = ids;
-    });
-    return Object.keys(result).length > 0 ? result : null;
-  }
-  var _allTeamResNames = {};  // Populated from safety/status response
-
-  // Rebuild enabledTeamRes from DOM checkbox states
-  function _rebuildTeamRes(team, container) {
-    if (!enabledTeamRes) enabledTeamRes = {};
-    var item = container.querySelector('[data-team-key="' + team + '"]');
-    if (!item) return;
-    var checkedIds = [];
-    item.querySelectorAll('.tree-cb:checked').forEach(function(cb) {
-      var id = parseInt(cb.getAttribute("data-id"));
-      if (!isNaN(id)) checkedIds.push(id);
-    });
-    enabledTeamRes[team] = checkedIds;
-    saveTeamRes();
-  }
 
   // ===== Image Upload State =====
   var pendingImages = [];  // Array of { file: File, dataUrl: string }
@@ -1859,8 +1816,7 @@
           messages: messages,
           stream: true,
           brand_filter: (currentUser && currentUser.my_brand_filter) || null,
-          enabled_sources: _sendSources,
-          enabled_team_resources: getEnabledTeamResPayload()
+          enabled_sources: _sendSources
         }),
         signal: currentAbortController.signal,
       });
@@ -2053,7 +2009,12 @@
     suggestions.forEach(function (s) {
       var btn = document.createElement("button");
       btn.className = "followup-chip";
-      btn.textContent = s;
+      btn.dataset.tooltip = s;
+      btn.setAttribute("aria-label", s);
+      var label = document.createElement("span");
+      label.className = "followup-chip-label";
+      label.textContent = s;
+      btn.appendChild(label);
       btn.addEventListener("click", function () {
         chatInput.value = s;
         chatInput.dispatchEvent(new Event("input"));
@@ -3597,61 +3558,6 @@
           return h;
         }
 
-        // Helper: render tree node recursively (for team group)
-        function renderTreeNode(node, team, depth) {
-          var ntype = node.type || "text";
-          var kids = node.children || [];
-          var isLeaf = ntype !== "folder" && ntype !== "team";
-          var hasKids = kids.length > 0;
-          var icon = _nodeIcons[ntype] || "•";
-          var checkedAttr = isTeamResEnabled(team, node.id) ? ' checked' : '';
-
-          var h = '<div class="tree-node depth-' + depth + (hasKids ? ' has-kids' : '') + '" data-id="' + node.id + '">';
-          h += '<div class="tree-row">';
-          // Checkbox for all nodes
-          h += '<input type="checkbox" class="tree-cb" data-team="' + team + '" data-id="' + node.id + '"' + checkedAttr + '>';
-          if (hasKids) {
-            h += '<span class="tree-toggle">▶</span>';
-          } else {
-            h += '<span class="tree-toggle-spacer"></span>';
-          }
-          h += '<span class="tree-icon">' + icon + '</span>';
-          h += '<span class="tree-name">' + node.name + '</span>';
-          if (hasKids) {
-            var leafCount = _countLeaves(node);
-            if (leafCount > 0) h += '<span class="tree-count">' + leafCount + '</span>';
-          }
-          h += '</div>';
-          if (hasKids) {
-            h += '<div class="tree-children">';
-            kids.forEach(function(kid) { h += renderTreeNode(kid, team, depth + 1); });
-            h += '</div>';
-          }
-          h += '</div>';
-          return h;
-        }
-
-        function _countLeaves(node) {
-          var kids = node.children || [];
-          if (kids.length === 0) return (node.type !== "folder" && node.type !== "team") ? 1 : 0;
-          var c = 0; kids.forEach(function(k) { c += _countLeaves(k); }); return c;
-        }
-
-        // Collect all leaf IDs for a team tree
-        function _collectLeafIds(node, arr) {
-          var kids = node.children || [];
-          if (kids.length === 0 && node.type !== "folder" && node.type !== "team") {
-            arr.push(node.id);
-          }
-          kids.forEach(function(k) { _collectLeafIds(k, arr); });
-        }
-
-        // Collect all node IDs (including folders) under a node
-        function _collectAllIds(node, arr) {
-          arr.push(node.id);
-          (node.children || []).forEach(function(k) { _collectAllIds(k, arr); });
-        }
-
         // Dynamic team keys: inject team names from API into SOURCE_GROUPS
         SOURCE_GROUPS.forEach(function(grp) {
           if (!grp._dynamic) return;
@@ -3659,7 +3565,9 @@
           var teamKeys = [];
           for (var svcName in data.services) {
             var svc = data.services[svcName];
-            var isNotionTeam = (svc.tree !== undefined) || (typeof svc.detail === "string" && svc.detail.indexOf("chunks") >= 0);
+            // 팀 소스 판정은 상태 응답의 "N chunks" 하나로 한다.
+            // (예전엔 `svc.tree` 도 봤지만 서버는 그 필드를 준 적이 없다 — 2026-08-25 제거)
+            var isNotionTeam = (typeof svc.detail === "string" && svc.detail.indexOf("chunks") >= 0);
             if (isNotionTeam && staticKeys.indexOf(svcName) < 0) {
               teamKeys.push(svcName);
               if (!SOURCE_ROUTE_MAP[svcName]) SOURCE_ROUTE_MAP[svcName] = "notion";
@@ -3700,28 +3608,7 @@
             '<div class="status-group-items">';
           grp.keys.forEach(function(key) {
             var svc = data.services[key] || { status: "ok", detail: "대기" };
-            if (svc.tree && svc.tree.length > 0) {
-              // Team with tree structure
-              var info = SERVICE_ICONS[key] || { label: key, svg: _svgGlobe };
-              var isChecked = enabledSources.indexOf(key) >= 0;
-              html += '<div class="status-item has-expand" data-team-key="' + key + '">' +
-                '<div class="status-item-row">' +
-                '<label class="status-checkbox-label"><input type="checkbox" class="status-source-cb team-select-all" data-source="' + key + '"' + (isChecked ? ' checked' : '') + '></label>' +
-                '<span class="status-dot"></span>' +
-                '<span class="status-icon">' + info.svg + '</span>' +
-                '<span class="status-name">' + info.label + '</span>' +
-                '<span class="status-detail-text">' + svc.detail + '</span>' +
-                '<span class="status-label">정상</span>' +
-                '<span class="status-expand-btn">▶</span>' +
-                '</div>' +
-                '<div class="status-sub-items tree-root">';
-              svc.tree.forEach(function(child) {
-                html += renderTreeNode(child, key, 1);
-              });
-              html += '</div></div>';
-            } else {
-              html += renderItem(key, svc);
-            }
+            html += renderItem(key, svc);
             renderedKeys[key] = true;
           });
           html += '</div></div>';
@@ -3845,49 +3732,6 @@
           row.addEventListener("click", function(e) {
             if (e.target.tagName === "INPUT") return;
             row.parentElement.classList.toggle("expanded");
-          });
-        });
-
-        // Tree node toggle (expand/collapse folder)
-        container.querySelectorAll(".tree-toggle").forEach(function(toggle) {
-          toggle.addEventListener("click", function(e) {
-            e.stopPropagation();
-            var node = toggle.closest(".tree-node");
-            if (node) node.classList.toggle("open");
-          });
-        });
-
-        // Tree checkbox cascade
-        container.querySelectorAll(".tree-cb").forEach(function(cb) {
-          cb.addEventListener("change", function(e) {
-            e.stopPropagation();
-            var team = this.getAttribute("data-team");
-            var nodeId = parseInt(this.getAttribute("data-id"));
-            var checked = this.checked;
-            // Cascade down: check/uncheck all children
-            var parentNode = this.closest(".tree-node");
-            if (parentNode) {
-              parentNode.querySelectorAll(".tree-cb").forEach(function(childCb) {
-                childCb.checked = checked;
-              });
-            }
-            // Update enabledTeamRes
-            _rebuildTeamRes(team, container);
-          });
-        });
-
-        // Team select-all checkbox
-        container.querySelectorAll(".team-select-all").forEach(function(cb) {
-          cb.addEventListener("change", function(e) {
-            e.stopPropagation();
-            var team = this.getAttribute("data-source");
-            var item = this.closest(".status-item");
-            if (item) {
-              item.querySelectorAll(".tree-cb").forEach(function(childCb) {
-                childCb.checked = cb.checked;
-              });
-              _rebuildTeamRes(team, container);
-            }
           });
         });
 
@@ -4072,6 +3916,7 @@
     var activeTab = document.querySelector(".admin-tab.active");
     var activeTabName = activeTab ? activeTab.dataset.tab : "groups";
     drawer.classList.toggle("visitor-mode", activeTabName === "visitors");
+    drawer.classList.toggle("flow-mode", activeTabName === "flow");
     if (activeTabName === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
     // Hide write-actions for non-admin
     document.getElementById("btn-create-group").style.display = isAdmin() ? "" : "none";
@@ -4607,6 +4452,8 @@
       tab.classList.add("active");
       document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
       document.getElementById("skin-admin-drawer").classList.toggle("visitor-mode", tab.dataset.tab === "visitors");
+      // ⚠️ 아키텍처 탭은 서랍을 넓혀야 한다 — 420px 안에서는 캔버스가 30px 폭이다
+      document.getElementById("skin-admin-drawer").classList.toggle("flow-mode", tab.dataset.tab === "flow");
       if (tab.dataset.tab === "users") loadAdminADUsers();
       if (tab.dataset.tab === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
       if (tab.dataset.tab === "growth") loadGrowthReport();
@@ -4821,93 +4668,201 @@
   // ── 아키텍처 캔버스 ──
   // ⛔ 그래프는 서버가 **코드에서 생성**해 준다. 여기서 노드를 손으로 그리지 마라 —
   //    그리는 순간 코드와 갈리고, 그건 이 프로젝트가 세 번 당한 사고다.
+  // ⚠️ 2026-08-25: "아키텍처가 안 보인다" 는 제보. 그래프가 아니라 **자리**가 문제였다 —
+  //    420px 서랍 안에서 캔버스 몫이 30px 이었고(옆에 320px 상세 패널), 서랍을 넓혀도
+  //    노드 31개짜리 계층 그래프는 fit 배율이 0.38 이라 글자가 5px 였다. 셋으로 고쳤다:
+  //      · 이 탭만 서랍을 넓힌다 (`flow-mode`)
+  //      · 상세 패널을 오버레이로 돌려 가로폭을 캔버스에 돌려준다 (폭 = 글자 크기다)
+  //      · 기본은 **간략 보기** — 하위 그래프·@@ 병렬 가지를 접어 배율 0.75 를 만든다
+  //    ⛔ 접을 때 엣지를 지우지 않고 **이어 붙인다**(`_flowContract`). 도달 관계가 그대로
+  //    남아야 접힌 그림도 거짓말을 하지 않는다 — 몇 단계를 접었는지 엣지에 적는다.
   var _flowNetwork = null;
-  function loadFlowCanvas() {
+  var _flowGraph = null;
+  var _flowCollapsed = true;   // 기본 = 간략 보기
+  var _FLOW_HIDDEN_GROUPS = { sub: 1, branch: 1 };
+
+  function _flowNodeColor(group) {
+    // ⚠️ 이 색은 범례(`style.css` 의 `.flow-dot-*`)와 **같은 값**이다.
+    //    한쪽만 바꾸면 범례가 조용히 거짓말을 한다.
+    return group === "route" ? "#e89200"
+         : group === "sub" ? "#5b8def"
+         : group === "branch" ? "#8a63d2"
+         : group === "io" ? "#7a7a7a" : "#3aa675";
+  }
+
+  // 접힌 노드를 건너뛰어 엣지를 **잇는다** — 지우지 않는다. 접힌 구간을 지나는
+  // 경로는 "⋯ N단계 접힘" 으로 적어, 화면이 실제보다 단순한 이유가 접었기
+  // 때문임을 그림 안에서 알 수 있게 한다.
+  function _flowContract(graph, hidden) {
+    var adj = {};
+    graph.edges.forEach(function(e) { (adj[e.src] = adj[e.src] || []).push(e); });
+    var out = [];
+    graph.edges.forEach(function(e) {
+      if (hidden[e.src]) return;              // 접힌 노드가 내는 엣지는 아래 탐색이 잇는다
+      if (!hidden[e.dst]) { out.push(e); return; }
+      var seen = {}, stack = [[e.dst, 1]];
+      while (stack.length) {
+        var cur = stack.pop();
+        (adj[cur[0]] || []).forEach(function(nx) {
+          if (hidden[nx.dst]) {
+            if (!seen[nx.dst]) { seen[nx.dst] = 1; stack.push([nx.dst, cur[1] + 1]); }
+          } else {
+            out.push({ src: e.src, dst: nx.dst, label: "⋯ " + cur[1] + "단계 접힘",
+                       conditional: true, contracted: true });
+          }
+        });
+      }
+    });
+    return out;
+  }
+
+  function renderFlowCanvas() {
+    if (!_flowGraph) return;
+    var container = document.getElementById("flow-canvas");
+    if (!container) return;
+    var hidden = {};
+    if (_flowCollapsed) {
+      _flowGraph.nodes.forEach(function(n) {
+        if (_FLOW_HIDDEN_GROUPS[n.group]) hidden[n.id] = 1;
+      });
+    }
+    // ⚠️ vis-network 는 <canvas> 에 그린다. canvas 2D 의 fillStyle 은 CSS 커스텀
+    //    프로퍼티 문자열을 해석하지 못해 조용히 무시되고 기본값(검정)으로 남는다 —
+    //    DOM 이 아니라서 undefined_css_vars 정적 검사도 못 잡는다. 여기서 실제
+    //    색상값으로 풀어서 넘긴다 (열 때마다 다시 읽어 현재 테마를 반영).
+    var _cs = getComputedStyle(document.documentElement);
+    // ⚠️ --text-muted 는 라이트 모드에서 rgba(0,0,0,0.30) 이라 캔버스 글자로는
+    //    사실상 안 보인다 (2026-08-24 스크린샷) — --text-secondary 를 쓴다.
+    var edgeLabelColor = (_cs.getPropertyValue("--text-secondary") || "").trim() || "#8a8a8a";
+    var byId = {};
+    var nodes = [];
+    _flowGraph.nodes.forEach(function(n) {
+      byId[n.id] = n;
+      if (hidden[n.id]) return;
+      // ⚠️ 화살표 없이 홀로 뜬 노드는 두 가지일 수 있다 — 엣지를 빠뜨렸거나, 정말
+      //    도달할 수 없거나. 서버가 이유 문구를 주면 후자다. 흐릿한 점선 테두리 +
+      //    라벨의 (도달 불가) 로 "그리다 만 것"과 구분한다.
+      if (n.unreachable) {
+        nodes.push({
+          id: n.id, label: n.label + "\n(도달 불가)", shape: "box",
+          color: { background: "rgba(120,120,120,0.18)", border: "#8a8a8a" },
+          shapeProperties: { borderDashes: [4, 4] },
+          font: { color: "#8a8a8a", size: 14 },
+          widthConstraint: { maximum: 130 }
+        });
+        return;
+      }
+      var color = _flowNodeColor(n.group);
+      nodes.push({
+        id: n.id, label: n.label, shape: "box",
+        color: { background: color, border: color },
+        font: { color: "#fff", size: 14 },
+        widthConstraint: { maximum: 130 }
+      });
+    });
+    var rawEdges = _flowCollapsed ? _flowContract(_flowGraph, hidden) : _flowGraph.edges;
+    var edges = rawEdges.map(function(e) {
+      return {
+        from: e.src, to: e.dst, label: e.label || undefined,
+        arrows: "to",
+        dashes: !!e.conditional,
+        color: { color: e.contracted ? "rgba(138,99,210,0.75)"
+                       : e.conditional ? "#c76a00" : "rgba(128,128,128,0.5)" },
+        font: { size: 11, color: edgeLabelColor, strokeWidth: 0 }
+      };
+    });
+    container.innerHTML = "";
+    _flowNetwork = new vis.Network(container,
+      { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
+      {
+        layout: { hierarchical: { direction: 'LR', sortMethod: "directed",
+                                  levelSeparation: 165, nodeSpacing: 80 } },
+        physics: false,
+        interaction: { hover: true, tooltipDelay: 200, navigationButtons: true, keyboard: false }
+      });
+    // ⚠️ 기본 배율은 그래프를 화면 밖으로 밀어낸다 (LR 계층이라 가로가 길다).
+    //    첫 그리기 뒤 한 번 맞춰 넣지 않으면 사용자는 "빈 캔버스" 로 겪는다.
+    _flowNetwork.once("afterDrawing", function() { _flowNetwork.fit({ animation: false }); });
+    _flowNetwork.on("click", function(params) {
+      if (!params.nodes || !params.nodes.length) { hideFlowDetail(); return; }
+      showFlowDetail(byId[params.nodes[0]]);
+    });
+  }
+
+  function hideFlowDetail() {
     var detail = document.getElementById("flow-detail");
+    if (detail) detail.hidden = true;
+  }
+
+  function showFlowDetail(n) {
+    var detail = document.getElementById("flow-detail");
+    if (!detail || !n) return;
+    var knobs = (n.knobs || []).map(function(k) {
+      return "<li><code>" + escapeHtml(k) + "</code></li>";
+    }).join("");
+    detail.innerHTML =
+      "<button class='flow-close' aria-label='닫기'>×</button>" +
+      "<h3 style='margin:0 0 8px;font-size:14px'>" + escapeHtml(n.label) + "</h3>" +
+      "<div style='color:var(--text-muted);font-size:11px'>" + escapeHtml(n.id) + "</div>" +
+      (n.unreachable ? "<p style='margin:10px 0 4px;color:#c76a00'><b>도달 불가</b><br>"
+                       + escapeHtml(n.unreachable) + "</p>" : "") +
+      (n.fn ? "<p style='margin:10px 0 4px'><b>실행 지점</b><br><code>"
+              + escapeHtml(n.fn) + "</code></p>" : "") +
+      (knobs ? "<p style='margin:10px 0 4px'><b>설정값</b></p><ul style='padding-left:18px;margin:0'>"
+               + knobs + "</ul>" : "") +
+      (n.has_subgraph ? "<p style='color:var(--text-secondary)'>하위 그래프 있음 "
+                        + "(LangGraph 에서 자동 추출"
+                        + (_flowCollapsed ? " · '자세히 보기' 에서 펼쳐진다" : "") + ")</p>" : "");
+    detail.hidden = false;
+    var close = detail.querySelector(".flow-close");
+    if (close) close.addEventListener("click", hideFlowDetail);
+  }
+
+  function loadFlowCanvas() {
+    var hint = document.getElementById("flow-hint");
+    hideFlowDetail();
     // ⚠️ 이 앱의 admin fetch 는 **세션 쿠키** 방식이다. 헤더를 직접 붙이지 마라 —
     //    `authHeaders()` 같은 헬퍼는 이 파일에 없다 (2026-08-24 확인).
-    //    다른 admin 로더도 그냥 `fetch("/api/admin/self-check")` 를 쓴다 (chat.js:4745).
     fetch("/api/admin/flow")
       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function(g) {
-        // ⚠️ vis-network 는 <canvas> 에 그린다. canvas 2D 컨텍스트의 fillStyle 은
-        //    CSS 커스텀 프로퍼티 문자열을 해석하지 못해 조용히 무시되고 기본값(검정)
-        //    으로 남는다 — DOM 이 아니라서 undefined_css_vars 정적 검사도 못 잡는다.
-        //    여기서 실제 색상값으로 미리 풀어서 넘긴다 (열 때마다 다시 읽어 현재
-        //    테마를 반영). getComputedStyle 이 실패하면(예: SSR) 무채색 폴백.
-        var _cs = getComputedStyle(document.documentElement);
-        // ⚠️ --text-muted 는 라이트 모드에서 rgba(0,0,0,0.30) 이라 캔버스 9px
-        //    글자로는 사실상 안 보인다 (2026-08-24 스크린샷으로 확인) — --text-secondary
-        //    (0.55) 로 바꾸고 크기도 11 로 키운다.
-        var edgeLabelColor = (_cs.getPropertyValue("--text-secondary") || "").trim() || "#8a8a8a";
-        var byId = {};
-        var nodes = g.nodes.map(function(n) {
-          byId[n.id] = n;
-          var color = n.group === "route" ? "#e89200"
-                    : n.group === "sub" ? "#5b8def"
-                    : n.group === "io" ? "#7a7a7a" : "#3aa675";
-          // ⚠️ 화살표 없이 홀로 뜬 노드는 두 가지일 수 있다 — 엣지를 빠뜨렸거나,
-          //    정말 도달할 수 없거나. 서버가 이유 문구를 주면 후자다. 흐릿한 점선
-          //    테두리 + 라벨에 (도달 불가) 를 붙여 "그리다 만 것"과 구분한다.
-          //    구분이 없으면 다음 사람이 "엣지가 빠졌네" 하고 없는 화살표를 그린다.
-          if (n.unreachable) {
-            return {
-              id: n.id, label: n.label + "\n(도달 불가)", shape: "box",
-              color: { background: "rgba(120,120,120,0.18)", border: "#8a8a8a" },
-              shapeProperties: { borderDashes: [4, 4] },
-              font: { color: "#8a8a8a", size: 12 },
-            };
-          }
-          return {
-            id: n.id, label: n.label, shape: "box",
-            color: { background: color, border: color },
-            font: { color: "#fff", size: 12 },
-          };
-        });
-        var edges = g.edges.map(function(e) {
-          return {
-            from: e.src, to: e.dst, label: e.label || undefined,
-            arrows: "to",
-            dashes: !!e.conditional,
-            color: { color: e.conditional ? "#c76a00" : "rgba(128,128,128,0.5)" },
-            font: { size: 11, color: edgeLabelColor, strokeWidth: 0 },
-          };
-        });
-        var container = document.getElementById("flow-canvas");
-        container.innerHTML = "";
-        _flowNetwork = new vis.Network(container,
-          { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
-          {
-            layout: { hierarchical: { direction: 'LR', sortMethod: "directed",
-                                      levelSeparation: 190, nodeSpacing: 90 } },
-            physics: false,
-            interaction: { hover: true, tooltipDelay: 200 },
-          });
-        _flowNetwork.on("click", function(params) {
-          if (!params.nodes || !params.nodes.length) return;
-          var n = byId[params.nodes[0]];
-          if (!n) return;
-          var knobs = (n.knobs || []).map(function(k) {
-            return "<li><code>" + escapeHtml(k) + "</code></li>";
-          }).join("");
-          detail.innerHTML =
-            "<h3 style='margin:0 0 8px'>" + escapeHtml(n.label) + "</h3>" +
-            "<div style='color:var(--text-muted);font-size:12px'>" + escapeHtml(n.id) + "</div>" +
-            (n.unreachable ? "<p style='margin:10px 0 4px;color:#c76a00'><b>도달 불가</b><br>"
-                             + escapeHtml(n.unreachable) + "</p>" : "") +
-            (n.fn ? "<p style='margin:10px 0 4px'><b>실행 지점</b><br><code>"
-                    + escapeHtml(n.fn) + "</code></p>" : "") +
-            (knobs ? "<p style='margin:10px 0 4px'><b>설정값</b></p><ul>" + knobs + "</ul>" : "") +
-            (n.has_subgraph ? "<p style='color:var(--text-secondary)'>하위 그래프 있음 "
-                              + "(LangGraph 에서 자동 추출)</p>" : "");
-        });
-        detail.innerHTML = "노드를 클릭하세요. (생성 " + escapeHtml(g.generated_at || "") + ")";
+        _flowGraph = g;
+        renderFlowCanvas();
+        if (hint) {
+          hint.textContent = "노드를 클릭하면 실행 지점·설정값이 나옵니다. "
+            + "노드 " + g.nodes.length + "개 · 엣지 " + g.edges.length + "개"
+            + (g.generated_at ? " · 생성 " + g.generated_at : "");
+        }
       })
       .catch(function(e) {
-        detail.innerHTML = "<span style='color:#e05555'>흐름을 불러오지 못했습니다: "
-                           + escapeHtml(String(e)) + "</span>";
+        if (hint) hint.innerHTML = "<span style='color:#e05555'>흐름을 불러오지 못했습니다: "
+                                   + escapeHtml(String(e)) + "</span>";
       });
   }
+
+  // 캔버스 컨트롤 — 휠 확대만 있으면 트랙패드에서 길을 잃는다.
+  function _flowZoom(factor) {
+    if (!_flowNetwork) return;
+    _flowNetwork.moveTo({ scale: _flowNetwork.getScale() * factor, animation: { duration: 150 } });
+  }
+  var _btnFlowCollapse = document.getElementById("btn-flow-collapse");
+  if (_btnFlowCollapse) {
+    _btnFlowCollapse.addEventListener("click", function() {
+      _flowCollapsed = !_flowCollapsed;
+      _btnFlowCollapse.textContent = _flowCollapsed ? "자세히 보기" : "간략 보기";
+      renderFlowCanvas();
+    });
+  }
+  var _btnFlowFit = document.getElementById("btn-flow-fit");
+  if (_btnFlowFit) {
+    _btnFlowFit.addEventListener("click", function() {
+      if (_flowNetwork) _flowNetwork.fit({ animation: { duration: 200 } });
+    });
+  }
+  var _btnFlowIn = document.getElementById("btn-flow-zoom-in");
+  if (_btnFlowIn) _btnFlowIn.addEventListener("click", function() { _flowZoom(1.25); });
+  var _btnFlowOut = document.getElementById("btn-flow-zoom-out");
+  if (_btnFlowOut) _btnFlowOut.addEventListener("click", function() { _flowZoom(0.8); });
 
   // ── 골든셋 회귀 ──
   // 답변 품질을 런 단위로 기록하고, 두 런을 비교해 "무엇이 새로 깨졌나"를 보여준다.

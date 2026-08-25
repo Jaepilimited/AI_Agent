@@ -1888,26 +1888,70 @@ pre:hover .code-copy-btn { opacity: 1; }
   padding: 8px 16px;
   border-radius: var(--radius-full);
   cursor: pointer;
-  transition: background-color var(--duration-normal) ease, color var(--duration-normal) ease, border-color var(--duration-normal) ease;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
   max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   position: relative;
+  overflow: visible;
+  transition: background-color var(--duration-normal) ease, color var(--duration-normal) ease, border-color var(--duration-normal) ease, transform var(--duration-normal) ease;
 }
 
 .followup-chip::before {
   content: "💡";
   margin-right: 5px;
   font-size: var(--text-caption);
+  flex-shrink: 0;
 }
 
-.followup-chip:hover {
+.followup-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.followup-chip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  word-break: keep-all;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 4px);
+  transition: opacity var(--duration-short) ease, transform var(--duration-short) ease, visibility var(--duration-short) ease;
+}
+
+.followup-chip:hover,
+.followup-chip:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--bg-hover);
   box-shadow: 0 2px 8px rgba(232, 146, 0, 0.15);
   transform: translateY(-1px);
+}
+
+.followup-chip:hover::after,
+.followup-chip:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 .followup-chip:active {
@@ -3071,61 +3115,9 @@ html.dark .db-autocomplete-dropdown {
   border-radius: 4px;
 }
 .status-sub-item:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-/* Tree nodes */
-.tree-root { padding: 4px 0; }
-.tree-node { }
-.tree-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 4px;
-  border-radius: 4px;
-  font-size: var(--text-xs, 11px);
-  color: var(--text);
-  cursor: default;
-}
-.tree-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
-.tree-cb {
-  width: 13px; height: 13px;
-  accent-color: var(--accent);
-  cursor: pointer;
-  margin: 0;
-  flex-shrink: 0;
-}
-.tree-toggle {
-  font-size: 8px;
-  color: var(--text-muted);
-  cursor: pointer;
-  width: 14px;
-  text-align: center;
-  flex-shrink: 0;
-  transition: transform 0.15s;
-  user-select: none;
-}
-.tree-node.open > .tree-row .tree-toggle { transform: rotate(90deg); }
-.tree-toggle-spacer { width: 14px; flex-shrink: 0; }
-.tree-icon { font-size: 12px; flex-shrink: 0; }
-.tree-name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-.tree-count {
-  font-size: 10px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  margin-left: 4px;
-}
-.tree-children {
-  display: none;
-  padding-left: 18px;
-}
-.tree-node.open > .tree-children { display: block; }
-
-/* Depth indentation visual guides */
-.tree-children { border-left: 1px solid color-mix(in srgb, var(--border) 50%, transparent); margin-left: 10px; }
+/* 팀 자료 트리 UI 는 2026-08-25 에 제거했다 — 서버가 `tree` 를 준 적이 없어
+   한 번도 렌더되지 않던 화면이고, 그 아래 체크박스가 만들던 필터도 소비처가
+   죽은 경로뿐이었다. 스타일만 남기면 다음 사람이 '어딘가 쓰이겠지' 하고 둔다. */
 
 .sub-cat-tag {
   display: inline-block;
@@ -3330,6 +3322,77 @@ html.dark .db-autocomplete-dropdown {
 #skin-admin-drawer.open { transform: translateX(0); }
 #skin-admin-drawer.closed { transform: translateX(100%); }
 #skin-admin-drawer.visitor-mode { width: min(780px, 96vw); }
+
+/* ── 아키텍처 캔버스 ──
+   ⛔ 이 탭만 서랍을 넓힌다. 기본 420px 서랍에서는 캔버스가 `flex:1` 로 남는 폭
+      = 420 − 320(상세 패널) − 여백 ≈ **30px** 이라, 31개 노드짜리 그래프가
+      세로 사슬 한 줄로 뭉개져 사실상 안 보였다 (2026-08-25 실측 스크린샷).
+      에러가 나지 않아 "그래프가 이상하다" 로만 보이던 부류의 결함이다. */
+#skin-admin-drawer.flow-mode { width: min(1600px, 97vw); }
+
+.flow-layout {
+  display: flex;
+  gap: 12px;
+  height: calc(100vh - 210px);
+  min-height: 420px;
+}
+.flow-main { position: relative; flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.flow-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#flow-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+/* 상세 = 캔버스 위에 뜨는 패널. 자리를 차지하지 않는다 (폭 = 글자 크기다). */
+.flow-side {
+  position: absolute;
+  top: 44px; right: 12px;
+  width: 300px;
+  max-height: calc(100% - 60px);
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-card);
+  color: var(--text);
+  font-size: var(--text-caption, 12px);
+}
+.flow-side[hidden] { display: none; }
+.flow-side .flow-close {
+  position: absolute; top: 6px; right: 8px;
+  background: none; border: 0; cursor: pointer;
+  color: var(--text-muted); font-size: 16px; line-height: 1;
+}
+.flow-hint { margin-top: 6px; font-size: var(--text-2xs, 11px); color: var(--text-muted); }
+
+/* 범례 — 캔버스 노드 색과 같은 값을 쓴다. 색이 무슨 뜻인지 화면에 없으면
+   그래프는 알록달록한 상자 모음이지 아키텍처가 아니다. */
+.flow-legend {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  margin-left: auto;
+  font-size: var(--text-2xs, 11px);
+  color: var(--text-secondary);
+}
+.flow-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.flow-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.flow-dot-io { background: #7a7a7a; }
+.flow-dot-main { background: #3aa675; }
+.flow-dot-route { background: #e89200; }
+.flow-dot-branch { background: #8a63d2; }
+.flow-dot-sub { background: #5b8def; }
+.flow-dot-dead { background: rgba(120,120,120,0.18); border: 1px dashed #8a8a8a; }
+.flow-line { width: 14px; height: 0; border-top: 2px dashed #c76a00; display: inline-block; }
+
+@media (max-width: 900px) {
+  .flow-layout { height: auto; }
+  #flow-canvas { height: 58vh; }
+  .flow-side { position: static; width: auto; max-height: 220px; box-shadow: none; }
+  .flow-legend { margin-left: 0; }
+}
+}
 
 #skin-admin-drawer .drawer-header {
   display: flex;

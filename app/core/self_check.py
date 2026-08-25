@@ -894,6 +894,10 @@ CHECKS: list[Check] = [
     #    "자료가 없네요" 와 구분되지 않는다 (2026-08-25).
     # ⛔ 링크 단계가 빠지면 에러 없이 검색 결과만 얇아진다 (2026-08-25 이전 상태:
     #    시트·드라이브 69%가 색인에 없었다).
+    # ⛔ 낡은 조각은 에러가 아니라 **옛 사실을 자신 있게 답하는 것**으로 드러난다.
+    Check("static_stale_copies", "static", SEV_WARNING,
+          "같은 문서의 옛 조각이 색인에 남아 최신본과 경쟁하는가",
+          _static("static_stale_copies")),
     Check("static_team_links", "static", SEV_WARNING,
           "팀 자료 링크(시트·드라이브)가 벡터 색인에 들어가 있는가",
           _static("static_team_links")),

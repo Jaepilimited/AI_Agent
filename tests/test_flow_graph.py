@@ -129,24 +129,84 @@ def test_build_has_no_orphan_nodes():
 
 
 def test_router_out_edges_equal_the_classifier_route_universe():
-    """⛔ 라우터가 낼 수 없는 경로로 화살표를 그리면 **없는 길을 알려준다.**
-
-    실제 사고: 두 라우터 노드가 라우트 9종 전부로 부챗살을 그렸는데
-    `_keyword_classify_ex` 와 `_classify_with_llm` 은 여섯만 낸다 — 거짓 화살표 6개.
-    `report`·`model_rights` 는 심지어 **분류기보다 위**에서 가로채므로 방향까지
-    거꾸로였다. CLAUDE.md 는 이 화면이 "왜 보고서가 안 만들어지지"에 답하길
-    요구하는데, 그림대로 라우터를 뒤지면 거기엔 아무것도 없다.
-    """
+    """Classifier output is filtered before a handler route is selected."""
     from app.agents.orchestrator import ROUTER_ROUTES
 
     out = graph.build()
+    pairs = {(e["src"], e["dst"]) for e in out["edges"]}
     for router in ("router.keyword", "router.llm"):
-        drawn = {e["dst"][len("route."):] for e in out["edges"]
-                 if e["src"] == router and e["dst"].startswith("route.")}
-        assert drawn == set(ROUTER_ROUTES), (
-            f"{router} 의 나가는 엣지가 분류기와 다르다: "
-            f"더 그림 {sorted(drawn - set(ROUTER_ROUTES))} / "
-            f"빠짐 {sorted(set(ROUTER_ROUTES) - drawn)}")
+        assert (router, "route_filter.allowed") in pairs
+        assert not any(e["src"] == router and e["dst"].startswith("route.")
+                       for e in out["edges"])
+
+    drawn = {e["dst"][len("route."):] for e in out["edges"]
+             if e["src"] == "route_filter.allowed" and e["dst"].startswith("route.")}
+    assert drawn == set(ROUTER_ROUTES)
+    assert any(e["src"] == "route_filter.allowed" and e["dst"] == "route.direct"
+               and "native direct" in e["label"] and "disallowed" in e["label"]
+               for e in out["edges"])
+def test_multi_prefix_fanout_and_merge_are_drawn_from_dispatch_targets():
+    """@@ fan-out is distinct from classifier multi and merges before the response."""
+    from app.agents.orchestrator import multi_prefix_target_routes
+
+    out = graph.build()
+    pairs = {(e["src"], e["dst"]) for e in out["edges"]}
+    assert ("source_pin", "multi_prefix.fanout") in pairs
+    assert ("route.multi", "response") in pairs
+    for target in multi_prefix_target_routes():
+        branch = f"multi_prefix.branch.{target}"
+        assert ("multi_prefix.fanout", branch) in pairs
+        assert (branch, "multi_prefix.merge") in pairs
+    assert ("multi_prefix.merge", "response") in pairs
+
+
+def test_keyword_fallback_reaches_llm_before_allowed_route_filter():
+    """An uncertain keyword classification is reclassified by LLM before filtering."""
+    out = graph.build()
+    pairs = {(edge["src"], edge["dst"]) for edge in out["edges"]}
+
+    assert ("router.keyword", "router.llm") in pairs
+    assert ("router.keyword", "route_filter.allowed") in pairs
+    assert ("router.llm", "route_filter.allowed") in pairs
+    assert not any(edge["src"] == "router.llm" and edge["dst"].startswith("route.")
+                   for edge in out["edges"])
+
+
+def test_flow_check_rejects_missing_keyword_to_llm_fallback():
+    """The production static check must catch an unreachable LLM classifier."""
+    from app.core import static_checks as SC
+
+    original = spec.all_edges
+    spec.all_edges = lambda: tuple(
+        edge for edge in original()
+        if (edge.src, edge.dst) != ("router.keyword", "router.llm")
+    )
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+    finally:
+        spec.all_edges = original
+
+    assert not ok and "router.keyword" in detail and "router.llm" in detail
+
+
+def test_flow_check_rejects_misleading_direct_filter_label():
+    """The direct filter edge must disclose both native and downgraded traffic."""
+    from dataclasses import replace
+
+    from app.core import static_checks as SC
+
+    original = spec.all_edges
+    spec.all_edges = lambda: tuple(
+        replace(edge, label="disallowed → direct")
+        if (edge.src, edge.dst) == ("route_filter.allowed", "route.direct") else edge
+        for edge in original()
+    )
+    try:
+        ok, detail = SC.flow_spec_matches_code()
+    finally:
+        spec.all_edges = original
+
+    assert not ok and "direct" in detail and "label" in detail
 
 
 def test_keyword_classifier_returns_only_router_routes():
@@ -220,19 +280,33 @@ def test_answer_check_hangs_off_bigquery_only():
         f"answer_check 로 들어오는 엣지가 하나가 아니다: {sorted(incoming)}")
 
 
-def test_unreachable_node_is_marked_and_has_no_edges():
-    """`team` 은 `_handle_team` 과 디스패치 배선이 살아 있는데 어떤 진입점도
-    만들지 않는다. 화살표를 그리면 거짓말이고, 노드를 지우면 죽은 배선이 조용히
-    남는다 — 이유를 달아 '도달 불가' 로 표시하는 것이 세 번째 선택지다.
-    표시와 그림이 어긋나지 않는지(엣지 0개)를 여기서 못질한다."""
+def test_unreachable_marking_stays_honest():
+    """도달 불가 표시는 **이유가 붙고 엣지가 0개**여야 한다.
+
+    `team` 이 그 표시의 유일한 주인이었는데 2026-08-25 에 배선째 걷어내면서 노드도
+    사라졌다 (지금은 표시된 노드가 없는 것이 정상이다). 규칙 자체는 남긴다 — 다음에
+    또 '살아 있는데 아무도 안 부르는' 경로가 생기면 같은 방식으로 표시할 것이고,
+    그때 표시와 그림이 어긋나면 그림이 거짓말을 한다.
+    """
     out = graph.build()
-    marked = [n for n in out["nodes"] if n.get("unreachable")]
-    assert [n["id"] for n in marked] == ["route.team"]
-    for n in marked:
+    for n in [x for x in out["nodes"] if x.get("unreachable")]:
         assert n["unreachable"].strip(), "도달 불가면 이유를 적어야 한다"
         touching = [e for e in out["edges"]
                     if e["src"] == n["id"] or e["dst"] == n["id"]]
         assert not touching, f"{n['id']} 는 도달 불가인데 엣지가 있다: {touching}"
+
+
+def test_removed_team_route_left_nothing_behind():
+    """⛔ 배선을 지웠으면 **그림에서도 사라져야 한다.**
+
+    캔버스의 명제가 '그래프는 코드에서 생성된다' 라서, 선언에만 남은 노드는 곧
+    코드가 하지 않는 일을 주장하는 거짓 노드가 된다.
+    """
+    out = graph.build()
+    assert not [n for n in out["nodes"] if n["id"] == "route.team"]
+    from app.agents.orchestrator import HANDLER_ROUTES, ROUTER_ROUTES
+
+    assert "team" not in HANDLER_ROUTES and "team" not in ROUTER_ROUTES
 
 
 def test_every_route_the_code_can_produce_has_a_node():

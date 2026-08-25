@@ -78,6 +78,15 @@ NODES: tuple[Node, ...] = (
     Node("router.llm", "라우터 · LLM 재판정", fn=f"{_ORCH}.OrchestratorAgent._classify_with_llm",
          knobs=("prompts/query_analyzer.txt",)),
 
+    Node("route_filter.allowed", "enabled-source filter",
+         fn=f"{_ORCH}.OrchestratorAgent._allowed_routes",
+         knobs=("orchestrator._SOURCE_ROUTE_MAP",)),
+
+    Node("multi_prefix.fanout", "@@ multi-source parallel fan-out",
+         fn=f"{_ORCH}.OrchestratorAgent._build_multi_prefix_tasks",
+         knobs=("orchestrator.MULTI_PREFIX_ROUTE_TARGETS",)),
+    Node("multi_prefix.merge", "@@ multi-source merge", group="main"),
+
     Node("route.direct", "direct", group="route"),
     Node("route.bigquery", "bigquery", group="route",
          subgraph="app.agents.sql_agent.build_sql_agent_graph"),
@@ -87,14 +96,12 @@ NODES: tuple[Node, ...] = (
     Node("route.multi", "multi", group="route"),
     Node("route.model_rights", "model_rights", group="route"),
     Node("route.report", "report", group="route"),
-    # ⚠️ 화살표 없이 홀로 뜬다 — **그것이 사실이다.** `_handle_team` 과 두 곳의
-    #    디스패치 배선은 살아 있는데, 어떤 진입점도 `team` 을 만들지 않는다
-    #    (분류기 밖 + `_DB_REGISTRY` 에 엔트리 없음). orchestrator.py 안에도 같은
-    #    내용이 주석으로 적혀 있다. 지우면 죽은 배선이 조용히 남고, 화살표를
-    #    그리면 거짓말이 된다 — 세 번째 선택지가 '이유를 달아 도달 불가로 표시' 다.
-    Node("route.team", "team", group="route",
-         unreachable="어떤 진입점도 이 경로를 만들지 않는다 "
-                     "(분류기 밖 · @@ 레지스트리에 엔트리 없음)"),
+    # ⚠️ 여기 있던 `route.team` 은 2026-08-25 에 **배선째 걷어냈다.** 도달 불가 표시는
+    #    "지우지도 화살표를 긋지도 않는" 세 번째 선택지였는데, 코드를 실제로 지운
+    #    다음에는 그 표시 자체가 낡은 사실이 된다. 팀 자료는 이제 벡터 색인의 링크
+    #    카드(`app/core/team_link_index.py`)로 `notion` 경로가 답한다.
+    #    ⛔ 되살릴 생각이면 `team_resources` 표부터 보라 — 그건 지우지 않았고,
+    #       지금 링크 카드가 그 표를 먹고 산다.
 
     # ⛔ 여기 있던 "모든 경로 → 답변 수치검증" 은 거짓이었다. 호출부는 앱 전체에
     #    하나뿐이라(`sql_agent.format_answer` 안) bigquery 하위 그래프의 이탈
@@ -105,10 +112,6 @@ NODES: tuple[Node, ...] = (
 )
 
 _ROUTE_IDS = tuple(n.id for n in NODES if n.group == "route" and not n.unreachable)
-
-# 분류기가 낼 수 있는 여섯 (orchestrator.ROUTER_ROUTES 와 같아야 한다 — 검사가 본다)
-_CLASSIFIER_ROUTES = ("route.bigquery", "route.notion", "route.gws",
-                      "route.cs", "route.multi", "route.direct")
 
 # `@@` 지정·사이드바 단일 소스가 곧장 보내는 경로.
 # `_DB_REGISTRY` 의 라우트 6종 중 남는 것이 이 넷인데, **둘의 이유가 서로 다르다.**
@@ -122,7 +125,7 @@ _CLASSIFIER_ROUTES = ("route.bigquery", "route.notion", "route.gws",
 #
 # ⛔ 그런데도 `report` 를 여기 넣지 않는 이유는 **그 경로가 보고서를 만들지 않기
 #    때문**이다. 하류 디스패치 표 어디에도 `report` 가 없어 (`HANDLER_ROUTES` 로
-#    만드는 표·스트리밍 말미의 `{"gws","team"}` 표 둘 다) `handler` 가
+#    만드는 표 · 스트리밍 말미의 디스패치 둘 다) `handler` 가
 #    `_handle_direct` 로 떨어진다 — 라우트 변수만 `report` 이고 실제로 나가는 것은
 #    평범한 direct 답변이다. `route.report` 노드는 "보고서 생성이 실행된다" 는 뜻이라,
 #    여기에 화살표를 그으면 없는 산출물을 약속하는 거짓 엣지가 하나 더 생긴다.
@@ -135,6 +138,71 @@ _PINNED_ROUTES = ("route.bigquery", "route.notion", "route.cs", "route.gws")
 
 # 직전 경로 상속이 낼 수 있는 값 = `_ROUTE_MARKERS` 의 네 종 (+ 정정 후속 → bigquery)
 _INHERITED_ROUTES = ("route.bigquery", "route.notion", "route.gws", "route.cs")
+
+
+def classifier_routes() -> tuple[str, ...]:
+    """Read the classifier universe at graph-build time, not from a copied list."""
+    from app.agents.orchestrator import ROUTER_ROUTES
+
+    return tuple(f"route.{route}" for route in sorted(ROUTER_ROUTES))
+
+
+_DIRECT_FILTER_LABEL = "native direct or disallowed → direct"
+
+
+def direct_filter_label_is_truthful(label: str) -> bool:
+    """A shared direct edge must describe both ways it receives traffic."""
+    normalized = label.lower()
+    return "native direct" in normalized and "disallowed" in normalized
+
+
+def multi_prefix_targets() -> tuple[str, ...]:
+    """Read @@ fan-out targets from the same map used by orchestrator dispatch."""
+    from app.agents.orchestrator import multi_prefix_target_routes
+
+    return multi_prefix_target_routes()
+
+
+def generated_nodes() -> tuple[Node, ...]:
+    return tuple(
+        Node(f"multi_prefix.branch.{target}", f"@@ branch: {target}", group="branch")
+        for target in multi_prefix_targets()
+    )
+
+
+def generated_edges() -> tuple[Edge, ...]:
+    routes = classifier_routes()
+    return (
+        Edge("router.keyword", "router.llm", label="not confident", conditional=True),
+        Edge("router.keyword", "route_filter.allowed", label="confident", conditional=True),
+        Edge("router.llm", "route_filter.allowed", label="classified", conditional=True),
+        *tuple(
+            Edge("route_filter.allowed", route,
+                 label=_DIRECT_FILTER_LABEL if route == "route.direct" else "allowed",
+                 conditional=True)
+            for route in routes
+        ),
+        Edge("source_pin", "multi_prefix.fanout", label="@@ multi-source", conditional=True),
+        *tuple(
+            Edge("multi_prefix.fanout", f"multi_prefix.branch.{target}",
+                 label="parallel", conditional=True)
+            for target in multi_prefix_targets()
+        ),
+        *tuple(
+            Edge(f"multi_prefix.branch.{target}", "multi_prefix.merge")
+            for target in multi_prefix_targets()
+        ),
+        Edge("multi_prefix.merge", "response"),
+    )
+
+
+def all_nodes() -> tuple[Node, ...]:
+    return NODES + generated_nodes()
+
+
+def all_edges() -> tuple[Edge, ...]:
+    """Graph edges with dynamic classifier and @@ fan-out sections."""
+    return EDGES + generated_edges()
 
 EDGES: tuple[Edge, ...] = (
     Edge("input", "at_parse"),
@@ -155,11 +223,6 @@ EDGES: tuple[Edge, ...] = (
     *tuple(Edge("followup", r, label="직전 경로 상속", conditional=True)
            for r in _INHERITED_ROUTES),
     Edge("followup", "router.keyword", label="후속 아님", conditional=True),
-
-    Edge("router.keyword", "router.llm", label="확신 없음", conditional=True),
-    *tuple(Edge("router.keyword", r, label="확신", conditional=True)
-           for r in _CLASSIFIER_ROUTES),
-    *tuple(Edge("router.llm", r, conditional=True) for r in _CLASSIFIER_ROUTES),
 
     # bigquery 만 하위 그래프를 거친다. `build()` 가 이 직행 엣지를 떼고
     # `route.bigquery → generate_sql … format_answer → answer_check` 로 다시 잇는다.

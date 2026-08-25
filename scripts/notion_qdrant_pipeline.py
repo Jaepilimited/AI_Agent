@@ -39,6 +39,16 @@ NOTION_VERSION = "2022-06-28"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 DB_HUB_ID = "2e12b4283b008011ae32e39bf73b7f7b"
+
+# ⛔ **페이지 안의 페이지를 놓치면 그 자리를 옛 스냅샷이 메운다** (2026-08-25 실측).
+#    예전 크롤은 팀 토글 바로 아래 `child_page`/`child_database`/멘션만 주웠다 —
+#    58페이지. 그런데 Qdrant 에는 그 밖의 101페이지(669조각)가 남아 있었고, 그중
+#    `[GM]WEST` 것들(광고소재 미팅 88조각·콘텐츠 마케팅 대시보드 87·미팅록 62·DMS 61)은
+#    **다른 적재기가 2026-01~04 에 넣은 옛 사본**이었다. 파이프라인이 최신본을 못 만드니
+#    지울 수도 없고, 검색에서는 그 낡은 조각이 최신을 이기기까지 했다
+#    (WEST 질문에서 0.783 vs 0.661). 원인은 낡음이 아니라 **크롤 깊이**였다.
+#    깊이 3 까지 내려가면 58 → 109 페이지가 된다.
+_MAX_PAGE_DEPTH = 3
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 1536
 LOCAL_JSON = _ROOT / "data" / "notion_vectors_gemini.json"
@@ -93,24 +103,41 @@ def _rich_text(content: dict) -> str:
     return "".join(t.get("plain_text", "") for t in content.get("rich_text", []))
 
 
-def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: list):
-    """토글/paragraph/bulleted_list_item 블록에서 child_page, child_database, mention_page 수집."""
+def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: list,
+                       seen: set | None = None, depth: int = 0):
+    """토글/paragraph/list 에서 child_page, child_database, mention_page 수집.
+
+    ⚠️ `child_page` **안쪽으로도** 내려간다 (`_MAX_PAGE_DEPTH` 까지). 안 내려가면
+       페이지 안의 페이지가 통째로 색인 밖에 남는다 — 그 자리를 옛 스냅샷이 메우고
+       있었다. `seen` 은 순환(페이지가 서로를 품는 구조)에서 무한 재귀를 막는다.
+    """
+    if seen is None:
+        seen = set()
     children = _get_block_children(block_id, client)
     for b in children:
         btype = b.get("type", "")
         bid = b.get("id", "")
+        key = str(bid).replace("-", "").lower()
 
         if btype == "child_page":
+            if key in seen:
+                continue
+            seen.add(key)
             title = b.get("child_page", {}).get("title", "")
             pages.append({"page_id": bid, "title": title, "team": team})
+            if depth < _MAX_PAGE_DEPTH:
+                _collect_from_block(bid, team, client, pages, seen, depth + 1)
 
         elif btype == "child_database":
+            if key in seen:
+                continue
+            seen.add(key)
             title = b.get("child_database", {}).get("title", "")
             pages.append({"page_id": bid, "title": title, "team": team, "is_database": True})
 
         elif btype == "toggle":
             sub_team = _rich_text(b["toggle"]) or team
-            _collect_from_block(bid, sub_team, client, pages)
+            _collect_from_block(bid, sub_team, client, pages, seen, depth)
 
         elif btype in ("paragraph", "bulleted_list_item", "numbered_list_item"):
             rich = b.get(btype, {}).get("rich_text", [])
@@ -120,14 +147,23 @@ def _collect_from_block(block_id: str, team: str, client: httpx.Client, pages: l
                     if m.get("type") == "page":
                         pid = m["page"]["id"]
                         text = chunk.get("plain_text", "")
+                        pkey = str(pid).replace("-", "").lower()
+                        if pkey in seen:
+                            continue
+                        seen.add(pkey)
                         pages.append({"page_id": pid, "title": text, "team": team})
+                        # ⚠️ 멘션으로 걸린 페이지도 **안쪽까지** 내려간다. HUB 는 팀 문서를
+                        #    대부분 멘션으로 달아 두는데, 여기서 안 내려가면 그 아래가
+                        #    통째로 색인 밖이다 (WEST 가 정확히 그랬다 — 3페이지만 잡혔다).
+                        if depth < _MAX_PAGE_DEPTH:
+                            _collect_from_block(pid, team, client, pages, seen, depth + 1)
                     elif m.get("type") == "database":
                         did = m["database"]["id"]
                         text = chunk.get("plain_text", "")
                         pages.append({"page_id": did, "title": text, "team": team, "is_database": True})
             # 중첩 멘션(list item 하위 paragraph 등) 재귀 탐색
             if b.get("has_children"):
-                _collect_from_block(bid, team, client, pages)
+                _collect_from_block(bid, team, client, pages, seen, depth)
 
 
 # ── Notion 페이지 조회 ──
@@ -479,8 +515,15 @@ def run_incremental_sync(full: bool = False) -> dict:
                 stats["errors"] += 1
 
     # 로컬에만 있고 HUB에서 사라진 페이지 제거
+    #
+    # ⛔ **링크 카드(`teamres-*`)는 이 계산의 대상이 아니다.** 그건 노션 페이지가
+    #    아니라 `team_resources` 표에서 만든 것이라 HUB 크롤 결과에 있을 리가 없다.
+    #    빼놓지 않으면 매일 밤 177장을 통째로 "사라진 페이지" 로 지운다 —
+    #    실제로 2026-08-25 첫 실행에서 그렇게 지워졌다. 소유자가 다른 포인트를
+    #    한 파일에 담을 때 생기는 전형적인 사고다: 지우는 쪽이 남의 것까지 센다.
     if not full:
-        removed = set(local_page_map.keys()) - notion_page_ids
+        removed = {pid for pid in set(local_page_map.keys()) - notion_page_ids
+                   if not str(pid).startswith("teamres-")}
         stats["deleted"] = len(removed)
         for pid in removed:
             print(f"  DELETED: {pid}")
@@ -499,9 +542,109 @@ def run_incremental_sync(full: bool = False) -> dict:
     return stats
 
 
+def sync_team_links(dry_run: bool = False, force_upload: bool = False) -> dict:
+    """팀 자료 링크 카드 → 로컬 JSON.
+
+    ⛔ 노션을 다시 긁지 않는다. 01:00 `team_sync_daily` 가 이미 같은 DB-HUB 를 긁어
+       MariaDB `team_resources` 에 넣어 뒀다 — 이 단계(05:00)는 그 표를 읽어 벡터로
+       만든다. 크롤 한 번, 사본 하나.
+
+    ⚠️ 임베딩은 **내용이 바뀐 카드만** 한다 (`content_sha256` 비교). 179장을 매일
+       다시 임베딩할 이유가 없다.
+    """
+    from app.core.team_link_index import build_link_cards, load_rows, notion_page_id
+
+    print("\n=== 팀 자료 링크 카드 동기화 ===")
+    existing: list[dict] = []
+    if LOCAL_JSON.exists():
+        with open(LOCAL_JSON, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+
+    # 이미 본문이 색인된 노션 페이지 — 링크 카드로 중복해 넣지 않는다
+    indexed_ids = set()
+    for pt in existing:
+        payload = pt.get("payload", {})
+        if payload.get("source") == "team_resources":
+            continue
+        pid = str(payload.get("page_id", "")).replace("-", "").lower()
+        if pid:
+            indexed_ids.add(pid)
+        nid = notion_page_id(str(payload.get("page_url", "")))
+        if nid:
+            indexed_ids.add(nid)
+
+    cards = build_link_cards(load_rows(), indexed_page_ids=indexed_ids)
+    prev = {
+        pt["payload"]["page_id"]: pt
+        for pt in existing if pt.get("payload", {}).get("source") == "team_resources"
+    }
+    changed = [c for c in cards
+               if c["payload"]["content_sha256"]
+               != prev.get(c["payload"]["page_id"], {}).get("payload", {}).get("content_sha256")]
+    live_ids = {c["payload"]["page_id"] for c in cards}
+    removed = [pid for pid in prev if pid not in live_ids]
+
+    stats = {"cards": len(cards), "embed": len(changed), "removed": len(removed),
+             "unchanged": len(cards) - len(changed)}
+    print(f"  카드 {len(cards)}장 · 임베딩 필요 {len(changed)}장 · "
+          f"변동없음 {stats['unchanged']}장 · 사라진 카드 {len(removed)}장")
+    if dry_run:
+        for c in cards[:10]:
+            print(f"    [{c['payload']['team']}] {c['payload']['page_title'][:50]}")
+        print("  (dry-run — 임베딩·저장 안 함)")
+        return stats
+
+    vectors = {}
+    if changed:
+        embeddings = embed_texts([c["payload"]["text"] for c in changed])
+        for card, emb in zip(changed, embeddings):
+            vectors[card["payload"]["page_id"]] = [{**card, "vector": emb}]
+
+    # 바뀌지 않은 카드는 기존 벡터를 그대로 살린다 (재임베딩 없음)
+    keep_ids = {c["payload"]["page_id"] for c in cards} - set(vectors)
+    for pid in keep_ids:
+        if pid in prev:
+            vectors[pid] = [prev[pid]]
+
+    update_local_json(vectors, set(removed))
+
+    # ⚠️ 검색은 **클라우드**를 본다 — 로컬 JSON 만 고치면 화면에서는 아무것도 안 바뀐다.
+    #    전체 재업로드(reload_vectors)는 로컬에 없는 클라우드 포인트 1,000여 개를
+    #    건드릴 이유가 없으므로, 바뀐 카드만 upsert 한다.
+    changed_shas = {c["payload"]["content_sha256"] for c in changed}
+    if changed or force_upload:
+        try:
+            from app.agents.qdrant_agent import COLLECTION, _get_client
+
+            client = _get_client()
+            # force_upload: 이미 임베딩은 돼 있는데 클라우드에만 없는 상태를 되살릴 때
+            # (로컬 JSON 과 클라우드가 갈려 있을 수 있다 — 실제로 갈려 있었다)
+            points = [pt for pts in vectors.values() for pt in pts
+                      if force_upload or pt["payload"]["content_sha256"] in changed_shas]
+            client.upsert(collection_name=COLLECTION, points=points)
+            stats["uploaded"] = len(points)
+            print(f"  Qdrant Cloud upsert: {len(points)}장")
+        except Exception as e:
+            stats["uploaded"] = 0
+            print(f"  [ERROR] 클라우드 upsert 실패 (로컬은 저장됨): {e}")
+
+    print(f"  링크 카드 반영 완료 (신규·변경 {len(changed)}장)")
+    return stats
+
+
 def run_pipeline(full: bool = False) -> dict:
     """전체 파이프라인: 증분 sync + hot-reload + Notion 학습 현황 업데이트."""
     stats = run_incremental_sync(full=full)
+
+    # ⚠️ 링크 카드는 **본문 sync 뒤, 업로드 앞**이다. 뒤에 두면 그날 만든 카드가
+    #    Qdrant 에 안 올라가 하루 늦게 검색된다 (에러 없이).
+    try:
+        stats["links"] = sync_team_links()
+    except Exception as e:
+        # 링크 카드가 실패해도 본문 색인은 살린다 — 다만 조용히 넘기지 않는다
+        print(f"  팀 링크 카드 실패 (본문 색인은 유지): {e}")
+        stats["links"] = {"error": str(e)}
+
     try:
         from app.agents.qdrant_agent import reload_vectors
         reload_vectors()
@@ -525,34 +668,25 @@ def run_pipeline(full: bool = False) -> dict:
 # ── Qdrant Cloud 백업 (선택) ──
 
 def upload_to_qdrant_cloud() -> int:
-    """로컬 JSON → Qdrant Cloud 전체 업로드 (백업용)."""
+    """로컬 JSON → Qdrant Cloud 업로드.
+
+    ⛔ **id 정규화를 건너뛰지 마라.** 옛 적재기가 남긴 `"1"`·`"6"` 같은 **문자열 정수
+       id** 가 로컬 JSON 에 100개 있는데, Qdrant 는 UUID 나 부호 없는 정수만 받는다 —
+       그 배치는 400 으로 통째로 거절된다. 예전 이 함수는 실패를 세지 않고 마지막에
+       "업로드 완료" 를 찍어서 **100개가 매번 조용히 빠지고 있었다** (2026-08-25 발견).
+
+    ⛔ 그리고 구현을 새로 쓰지 마라. `qdrant_agent._upload_local_to_cloud()` 가 같은
+       일을 하면서 `_normalize_id()` 로 정규화까지 한다 — 사본이 갈리면 한쪽만 고쳐진다.
+    """
     if not LOCAL_JSON.exists():
         print("  [ERROR] 로컬 JSON 없음")
         return 0
-    with open(LOCAL_JSON, "r", encoding="utf-8") as f:
-        all_points = json.load(f)
-    print(f"  Qdrant Cloud 업로드: {len(all_points)} 포인트...")
-    with httpx.Client(timeout=30) as client:
-        # 컬렉션 없으면 생성, 있으면 기존 데이터 보존
-        chk = client.get(f"{QDRANT_URL}/collections/{COLLECTION}", headers=qdrant_headers())
-        if chk.status_code != 200:
-            client.put(
-                f"{QDRANT_URL}/collections/{COLLECTION}",
-                headers=qdrant_headers(),
-                json={"vectors": {"size": EMBEDDING_DIM, "distance": "Cosine"}},
-            )
-    with httpx.Client(timeout=60) as client:
-        for i in range(0, len(all_points), 100):
-            batch = all_points[i:i + 100]
-            resp = client.put(
-                f"{QDRANT_URL}/collections/{COLLECTION}/points",
-                headers=qdrant_headers(),
-                json={"points": batch},
-            )
-            if resp.status_code != 200:
-                print(f"  [ERROR] 업로드 {i}: {resp.status_code}")
-    print(f"  Qdrant Cloud 업로드 완료: {len(all_points)} 포인트")
-    return len(all_points)
+
+    from app.agents.qdrant_agent import _upload_local_to_cloud
+
+    count = _upload_local_to_cloud()
+    print(f"  Qdrant Cloud 업로드 완료: {count} 포인트")
+    return count
 
 
 # ── CLI ──
@@ -562,6 +696,12 @@ def main():
     parser.add_argument("--full",         action="store_true", help="전체 재동기화 (로컬 JSON 기준 무시)")
     parser.add_argument("--upload-cloud", action="store_true", help="로컬 JSON → Qdrant Cloud 업로드")
     parser.add_argument("--status",       action="store_true", help="현황 출력")
+    parser.add_argument("--links",        action="store_true",
+                        help="팀 자료 링크 카드만 동기화 (team_resources → 벡터)")
+    parser.add_argument("--dry-run",      action="store_true",
+                        help="--links 와 함께: 무엇이 색인될지만 출력 (임베딩·저장 없음)")
+    parser.add_argument("--force-upload", action="store_true",
+                        help="--links 와 함께: 변동이 없어도 링크 카드 전부를 클라우드에 다시 올림")
     args = parser.parse_args()
 
     if args.status:
@@ -576,6 +716,10 @@ def main():
 
     if args.upload_cloud:
         upload_to_qdrant_cloud()
+        return
+
+    if args.links:
+        sync_team_links(dry_run=args.dry_run, force_upload=args.force_upload)
         return
 
     run_pipeline(full=args.full)

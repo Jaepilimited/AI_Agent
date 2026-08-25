@@ -23,8 +23,32 @@ ROOT = SC.ROOT
 @pytest.mark.parametrize("check_id,fn,label",
                          SC.ALL, ids=[c[0] for c in SC.ALL])
 def test_static_check(check_id, fn, label):
+    """정적 검사는 여기서, **데이터 상태 검사는 서버 자가 점검에서** 돈다.
+
+    ⛔ 섞으면 개발 테스트가 영구히 빨간 줄이 된다 (`static_notion_dates` 는 노션에서
+       페이지를 공유해야 풀리는 문제다). 상수가 된 경보는 아무도 안 본다 —
+       이 프로젝트가 이미 아는 실패 방식이라 `SC.LIVE_DATA_CHECKS` 로 갈라 둔다.
+    """
+    if check_id in SC.LIVE_DATA_CHECKS:
+        pytest.skip(f"{label}: 살아 있는 데이터 검사 — 서버 자가 점검(07:30)의 몫")
     ok, detail = fn()
     assert ok, f"{label}: {detail}"
+
+
+def test_live_data_checks_still_run_somewhere():
+    """⛔ pytest 에서 뺐으면 **다른 데서는 반드시 돌아야 한다.**
+
+    안 그러면 "건너뛴다" 가 "아무도 안 본다" 가 된다 — 방어선이 사라진 것과 없는 것이
+    화면에서 똑같아 보이는, 이 파일이 반복해서 막는 그 실패다.
+    """
+    from app.core import self_check as SELF
+
+    registered = {c.id for c in SELF.CHECKS}
+    missing = sorted(SC.LIVE_DATA_CHECKS - registered)
+    assert not missing, f"자가 점검에도 없는 데이터 검사: {missing}"
+    known = {cid for cid, _fn, _label in SC.ALL}
+    unknown = sorted(SC.LIVE_DATA_CHECKS - known)
+    assert not unknown, f"ALL 에 없는 id 가 LIVE_DATA_CHECKS 에 있다 (오타?): {unknown}"
 
 
 def test_handwritten_value_list_detector_catches_the_real_incident():
@@ -400,6 +424,211 @@ def test_feedback_inbox_defaults_to_all_not_unread_only():
     selected = [line for line in block.splitlines() if "selected" in line]
     assert len(selected) == 1, selected
     assert 'value=""' in selected[0], f"기본 필터가 전체가 아니다: {selected[0]}"
+
+
+def test_team_filter_check_catches_a_broken_bridge():
+    """⛔ `@@팀` 키와 색인 표기 사이의 다리가 끊기면 **에러가 아니라 0건**이다.
+
+    구조가 그렇다: 레지스트리 키는 `GM EAST`, 색인 payload 는 `[GM]EAST`,
+    그 사이를 `TEAM_MAP`(손으로 적은 표)이 잇는다. 색인 쪽 표기가 바뀌거나 표에서
+    항목이 빠지면 필터가 원문 그대로 들어가 아무것도 안 잡히고, 화면에서는
+    "그 팀 자료가 없나 보다" 와 똑같이 보인다.
+
+    검사가 그 사고를 실제로 잡는지 여기서 확인한다 — 통과만 보고 있으면 검사가
+    죽은 것과 정상인 것을 구분할 수 없다.
+    """
+    from app.agents import qdrant_agent
+    from app.core.static_checks import qdrant_team_sources
+
+    ok, detail = qdrant_team_sources()
+    assert ok, f"지금 상태가 이미 실패다: {detail}"
+
+    original = dict(qdrant_agent.TEAM_MAP)
+    try:
+        # 색인 표기가 바뀐 상황을 흉내낸다 — GM EAST 로 가는 다리를 끊는다
+        for alias in [a for a, v in original.items() if v == "[GM]EAST"]:
+            qdrant_agent.TEAM_MAP.pop(alias, None)
+        broken_ok, broken_detail = qdrant_team_sources()
+    finally:
+        qdrant_agent.TEAM_MAP.clear()
+        qdrant_agent.TEAM_MAP.update(original)
+
+    assert not broken_ok, "다리가 끊겼는데 검사가 통과했다 — 0건이 조용히 지나간다"
+    assert "GM EAST" in broken_detail, broken_detail
+
+    # 원상복구까지 확인 (테스트가 다음 테스트를 오염시키면 그것도 조용한 실패다)
+    assert qdrant_team_sources()[0]
+
+
+def test_pinned_team_search_does_not_fall_back_to_google():
+    """⛔ 팀을 지정했는데 색인에 자료가 없으면 **구글 답변이 나가고 있었다.**
+
+    `@@JBT`·`@@B2B1` 처럼 색인 조각이 적거나 없는 팀은 품질 게이트 아래로 떨어지는데,
+    그 분기가 Google 검색 폴백이었다 — 사내 자료를 물었더니 인터넷 글이 답으로 오고,
+    꼬리말 한 줄("사내 문서와 무관")로는 그 사실이 읽히지 않는다. 범위를 좁혀 물은
+    사람에게는 **없다고 말하는 편이 낫다** (0건일 때 검색어 넓히기를 멈춘 것과 같은 판단).
+
+    ⚠️ 색인 현황에 기대지 않는다 — 팀 자료가 늘면 통과 여부가 흔들리는 테스트는
+       규칙이 아니라 그날의 데이터를 재게 된다 (실제로 링크 카드를 넣자 흔들렸다).
+    """
+    import asyncio
+
+    from app.agents import qdrant_agent
+
+    def _run_with(indexed_counts):
+        async def _fake_embed(_query):
+            return [0.0] * 8
+
+        def _fake_search(_vector, team_filter=None, top_k=8):
+            return []                      # 검색은 빈손
+
+        def _boom(*_a, **_k):
+            raise AssertionError("팀을 지정했는데 Google 폴백이 호출됐다")
+
+        originals = (qdrant_agent._embed_query, qdrant_agent._search,
+                     qdrant_agent.get_flash_client, qdrant_agent.index_team_counts)
+        qdrant_agent._embed_query = _fake_embed
+        qdrant_agent._search = _fake_search
+        qdrant_agent.get_flash_client = _boom
+        qdrant_agent.index_team_counts = lambda refresh=False: indexed_counts
+        try:
+            return asyncio.run(qdrant_agent.run("연차 규정 알려줘", team_key="JBT"))
+        finally:
+            (qdrant_agent._embed_query, qdrant_agent._search,
+             qdrant_agent.get_flash_client, qdrant_agent.index_team_counts) = originals
+
+    # ① 그 팀 자료가 색인에 아예 없을 때 — 없다고 말한다
+    empty = _run_with({})
+    assert "JBT" in empty
+    assert "색인" in empty, empty
+    assert "팀 지정을 빼고" in empty, empty
+
+    # ② 자료는 있는데 질문에 맞는 게 없을 때 — 몇 건 중에서 못 찾았는지 밝힌다
+    some = _run_with({"JBT": 7})
+    assert "7" in some, some
+    assert "팀 지정을 빼고" in some, some
+
+
+def test_incremental_sync_does_not_sweep_link_cards():
+    """⛔ 증분 동기화가 **남의 포인트까지 지운다**.
+
+    로컬 JSON 한 파일에 주인이 둘이다 — 노션 페이지 조각(크롤이 소유)과 팀 자료 링크
+    카드(`team_resources` 가 소유). 삭제 판정은 "HUB 크롤 결과에 없는 page_id" 인데,
+    링크 카드의 id(`teamres-*`)는 노션 페이지가 아니라 **영원히 크롤 결과에 없다.**
+    2026-08-25 첫 실행에서 177장이 그렇게 통째로 지워졌다 (에러 없음, 로그에 DELETED만).
+    """
+    src = SC._read(os.path.join("scripts", "notion_qdrant_pipeline.py"))
+    block = src[src.index("# 로컬에만 있고 HUB에서 사라진 페이지 제거"):]
+    block = block[:block.index("update_local_json")]
+    assert "teamres-" in block, (
+        "삭제 판정이 링크 카드를 걸러내지 않는다 — 매일 밤 링크 카드가 통째로 사라진다"
+    )
+
+
+def test_cloud_upload_has_one_implementation_that_normalizes_ids():
+    """⛔ 업로드가 두 벌이었고, 그중 하나는 **id 정규화를 안 해 100개를 조용히 흘렸다.**
+
+    옛 적재기가 남긴 `"1"`·`"6"` 같은 문자열 정수 id 는 Qdrant 가 400 으로 거절한다.
+    그런데 배치 실패를 세지 않고 마지막에 "업로드 완료" 를 찍어서, 매번 100개가 빠진
+    채 성공으로 보였다 (2026-08-25 발견). 정규화는 `_normalize_id` 한 곳에만 있으므로
+    업로드 경로도 하나여야 한다.
+    """
+    src = SC._read(os.path.join("scripts", "notion_qdrant_pipeline.py"))
+    block = src[src.index("def upload_to_qdrant_cloud"):]
+    block = block[:block.index("\ndef ")]
+    assert "_upload_local_to_cloud" in block, "업로드 구현이 또 하나 생겼다 (정규화가 빠진다)"
+    assert "/points" not in block, (
+        "직접 REST 로 올리고 있다 — `_normalize_id` 를 안 타므로 문자열 정수 id 가 400 난다"
+    )
+
+
+def test_unknown_route_is_not_silently_demoted_to_direct():
+    """⛔ 핸들러 표에 없는 라우트가 **아무 말 없이** 평범한 답변으로 나간다.
+
+    `report` 가 그 상태다 — `_handle_report` 는 있는데 `HANDLER_ROUTES` 에 없어서
+    관문이 놓친 `route="report"` 는 보고서를 만들지 않고 direct 로 나간다. 지금은
+    관문이 두 채널을 다 보게 고쳐져 새는 경로가 안 보이지만, 다음에 라우트를 추가하는
+    사람은 같은 함정에 그대로 빠진다. 답은 나가야 하니 예외를 던지지는 않고, **로그로**
+    드러낸다 (프로덕션은 INFO 를 버리므로 WARNING 이어야 한다).
+
+    ⚠️ 동시에 **정상 동작마다 경고가 찍히면 안 된다.** `notion` 은 일부러 표에 없다 —
+       호출부가 `_handle_qdrant` 를 직접 고르기 때문이다. 이 커밋에서 실제로 그 거짓
+       경고를 한 번 만들었다가 고쳤다. 소음은 진짜 경고를 덮는다.
+    """
+    from app.agents import orchestrator as orc
+    from app.agents.orchestrator import OrchestratorAgent
+
+    agent = OrchestratorAgent.__new__(OrchestratorAgent)
+    warned = []
+
+    class _Capture:
+        def warning(self, event, **kw):
+            warned.append((event, kw.get("route")))
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    original = orc.logger
+    orc.logger = _Capture()
+    try:
+        for route in ("notion", "direct", "bigquery"):
+            agent._resolve_handler(route)
+        assert not warned, f"정상 경로에 경고가 찍혔다: {warned}"
+
+        agent._resolve_handler("report")
+        agent._resolve_handler("만들어낸경로")
+    finally:
+        orc.logger = original
+
+    events = {r for _e, r in warned}
+    assert events == {"report", "만들어낸경로"}, warned
+    assert all(e == "route_demoted_to_direct" for e, _r in warned), warned
+
+
+def test_flow_tab_widens_the_admin_drawer():
+    """⛔ 아키텍처 캔버스가 기본 420px 서랍 안에 있으면 **그림이 안 보인다.**
+
+    서랍은 420px 이고 상세 패널이 320px 이라, `flex:1` 인 캔버스에 남는 폭은 30px
+    이었다 — 노드 31개짜리 그래프가 세로 사슬 한 줄로 뭉개졌다 (2026-08-25 사용자
+    제보 "admin의 아키텍쳐가 잘 안보임", 스크린샷으로 실측). 에러는 없다. 탭도 열리고
+    데이터도 온다 — **사람이 눈으로 볼 때까지 아무도 모르는 부류**다.
+
+    방문자 탭(`visitor-mode`)과 같은 방식으로 이 탭만 서랍을 넓히고, 상세는 오버레이로
+    띄운다. 셋 중 하나만 빠져도 조용히 예전 상태로 돌아가므로 함께 지킨다.
+    """
+    css = SC._read(os.path.join("app", "static", "style.css"))
+    js = SC._read(os.path.join("app", "frontend", "chat.js"))
+    html = SC._read(os.path.join("app", "frontend", "chat.html"))
+
+    assert "#skin-admin-drawer.flow-mode" in css, "아키텍처 탭용 넓힘 규칙이 없다"
+    assert js.count('classList.toggle("flow-mode"') == 2, (
+        "서랍 넓힘 토글은 서랍을 여는 곳과 탭을 바꾸는 곳 두 군데 다 있어야 한다 — "
+        "한쪽만 있으면 그 경로로 들어갔을 때만 그림이 눌린다"
+    )
+    # 상세 패널이 캔버스 옆자리를 다시 차지하면 폭이 그대로 사라진다 (폭 = 글자 크기).
+    side = css[css.index(".flow-side {"):]
+    side = side[:side.index("}")]
+    assert "position: absolute" in side, "상세 패널이 캔버스 폭을 다시 뺏고 있다"
+    assert 'id="flow-detail"' in html and "hidden" in html[html.index('id="flow-detail"'):
+                                                           html.index('id="flow-detail"') + 120], (
+        "상세 패널은 클릭 전까지 접혀 있어야 한다"
+    )
+
+
+def test_collapsed_flow_view_keeps_reachability():
+    """⛔ 접어서 보여주는 그림도 **거짓말을 하면 안 된다.**
+
+    간략 보기는 하위 그래프(`sub`)와 @@ 병렬 가지(`branch`)를 감추는데, 그때 엣지를
+    지우면 `bigquery → 답변 수치검증` 처럼 실제로 있는 연결이 화면에서 사라진다.
+    감추는 대신 **이어 붙이고**(`_flowContract`) 몇 단계를 접었는지 엣지에 적는다.
+    이 파일의 다른 검사들과 같은 이유다 — 틀린 그림은 코드를 안 읽게 만든다.
+    """
+    js = SC._read(os.path.join("app", "frontend", "chat.js"))
+    block = js[js.index("function _flowContract("):js.index("function renderFlowCanvas(")]
+    assert "단계 접힘" in block, "접은 사실을 엣지에 적지 않는다"
+    assert "contracted: true" in block, "이어 붙인 엣지를 원본과 구분하지 않는다"
+    # 접힌 노드를 지나 **다음 보이는 노드**까지 걸어가야 도달 관계가 남는다
+    assert "while (stack.length)" in block, "접힌 구간을 한 칸만 건너뛴다 — 연쇄를 놓친다"
 
 
 def test_no_stray_control_chars_in_source():

@@ -661,8 +661,6 @@ def notion_pages_without_date() -> Tuple[bool, str]:
     ⚠️ `source='google_sheets'` 링크 카드는 원래 노션 수정일이 없다 — 세지 않는다.
     """
     try:
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-
         from app.agents.qdrant_agent import COLLECTION
     except ImportError as exc:
         return True, f"qdrant_client 없음 — 건너뜀 ({exc})"
@@ -671,20 +669,32 @@ def notion_pages_without_date() -> Tuple[bool, str]:
     #    오래 걸린다 — 실제로 타임아웃으로 실패했다 (2026-08-25). **네트워크 지연을
     #    데이터 문제로 보고하면** 잘못된 이유로 매일 빨간 줄이 서고, 진짜 실패가 묻힌다.
     #    전용 클라이언트로 넉넉히 기다리고, 그래도 안 되면 **실패가 아니라 건너뜀**이다.
+    # ⛔ **`last_edited_time` 으로 필터를 걸지 마라.** Qdrant 는 필터 키마다 payload
+    #    인덱스를 요구하는데 이 저장소에는 그걸 만드는 코드가 없어(`create_payload_index`
+    #    호출 0건) 검사가 처음부터 400 으로 실패하고 있었다 (2026-08-25 발견).
+    #    인덱스를 만들어 고치면 **컬렉션을 다시 만들 때 조용히 다시 깨진다** — 인덱스는
+    #    코드가 아니라 서버 상태라 사라져도 아무도 모른다. 포인트가 1,500개 남짓이니
+    #    훑어서 센다 (같은 파일의 `static_team_links`·`static_stale_copies` 도 같은 방식).
     try:
         from qdrant_client import QdrantClient
 
         from app.agents.qdrant_agent import _qdrant_api_key, _qdrant_url
         client = QdrantClient(url=_qdrant_url(), api_key=_qdrant_api_key(), timeout=60)
-        notion_only = FieldCondition(key="source", match=MatchValue(value="notion"))
-        total = client.count(collection_name=COLLECTION,
-                             count_filter=Filter(must=[notion_only]), exact=True).count
-        undated = client.count(
-            collection_name=COLLECTION,
-            count_filter=Filter(must=[notion_only,
-                                      FieldCondition(key="last_edited_time",
-                                                     match=MatchValue(value=""))]),
-            exact=True).count
+        total = undated = 0
+        offset = None
+        while True:
+            batch, offset = client.scroll(collection_name=COLLECTION, limit=500,
+                                          offset=offset, with_payload=True,
+                                          with_vectors=False)
+            for point in batch:
+                payload = point.payload or {}
+                if payload.get("source") != "notion":
+                    continue
+                total += 1
+                if not str(payload.get("last_edited_time") or "").strip():
+                    undated += 1
+            if offset is None:
+                break
     except Exception as exc:
         if "timed out" in str(exc).lower() or "timeout" in type(exc).__name__.lower():
             return True, f"Qdrant 응답 지연 — 건너뜀 ({exc})"
@@ -699,6 +709,77 @@ def notion_pages_without_date() -> Tuple[bool, str]:
                    f"인테그레이션 미공유 페이지다. 낡은 값이 최신을 이긴다. "
                    f"목록: docs/notion_unshared_pages.md")
 
+
+def qdrant_stale_page_copies() -> Tuple[bool, str]:
+    """파이프라인이 소유한 페이지에 **다른 id 의 옛 조각**이 남아 있는가.
+
+    ⛔ 2026-08-25 에 564개가 그렇게 쌓여 있었다. 원인은 두 가지가 겹친 것이다:
+       ① 크롤이 멘션 페이지 안으로 안 내려가 최신본을 못 만들었고(58페이지만 봤다),
+       ② 업로드가 id 정규화를 건너뛴 배치를 "완료" 로 찍어 사본이 갈렸다.
+       그 결과 검색에서 **4개월 된 조각이 최신을 이겼다** (0.783 vs 0.661).
+
+    낡은 조각은 에러를 내지 않는다 — 그냥 옛 사실을 자신 있게 답할 뿐이다.
+    그래서 결과물로 감시한다: 로컬(=파이프라인 산출물)이 소유한 page_id 인데
+    로컬에 없는 id 의 포인트가 클라우드에 있으면 그건 옛 사본이다.
+
+    ⚠️ `page_id` 가 없는 포인트(구글시트 임베딩 등)와 파이프라인이 모르는 페이지는
+       세지 않는다 — 그건 다른 적재기의 몫이고, 여기서 울리면 매일 울린다.
+    """
+    import json as _json
+
+    from app.agents.qdrant_agent import COLLECTION, _LOCAL_JSON, _get_client, _normalize_id
+
+    try:
+        raw = _json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"로컬 색인을 읽지 못했다: {exc}"
+    local = raw if isinstance(raw, list) else (raw.get("points") or [])
+    local_ids = {str(_normalize_id(p.get("id"), p.get("payload", {}))) for p in local}
+    owned = {str(p.get("payload", {}).get("page_id") or "").replace("-", "").lower()
+             for p in local}
+    owned.discard("")
+
+    try:
+        client = _get_client()
+        stale, offset = [], None
+        while True:
+            batch, offset = client.scroll(collection_name=COLLECTION, limit=500,
+                                          offset=offset, with_payload=True,
+                                          with_vectors=False)
+            for pt in batch:
+                if str(pt.id) in local_ids:
+                    continue
+                page = str((pt.payload or {}).get("page_id") or "").replace("-", "").lower()
+                if page and page in owned:
+                    stale.append((pt.payload or {}).get("page_title"))
+            if offset is None:
+                break
+    except Exception as exc:
+        return False, f"Qdrant 를 훑지 못했다: {exc}"
+
+    if stale:
+        from collections import Counter
+
+        top = ", ".join(f"{t}({c})" for t, c in Counter(stale).most_common(3))
+        return False, (f"같은 문서의 옛 조각 {len(stale)}개가 색인에 남아 있다 — "
+                       f"검색에서 최신본과 경쟁한다: {top}")
+    return True, f"옛 사본 없음 (파이프라인 소유 페이지 {len(owned)}개)"
+
+
+# ⛔ 살아 있는 데이터(Qdrant·MariaDB 현재 상태)에 기대는 검사들.
+#
+#    코드가 틀려서 실패하는 게 아니라 **데이터가 그런 상태라서** 실패한다 —
+#    `static_notion_dates` 는 노션에서 페이지 22개를 공유해야 풀리고, `static_team_links`
+#    는 야간 파이프라인이 돌아야 채워진다. 개발 테스트에서 이걸 빨간 줄로 두면 그 줄이
+#    상수가 되고, 상수가 된 경보는 아무도 안 본다.
+#
+#    → pytest 는 건너뛰고, **서버 자가 점검(매일 07:30)이 본다.** 등록 여부는
+#      `test_every_static_check_is_registered_in_self_check` 가 계속 확인한다.
+LIVE_DATA_CHECKS = frozenset({
+    "static_team_links",     # Qdrant 조회
+    "static_stale_copies",   # Qdrant 조회
+    "static_notion_dates",   # Qdrant 조회 + 노션 공유 상태
+})
 
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
@@ -716,4 +797,5 @@ ALL = [
     ("static_team_links", team_link_coverage, "팀 자료 링크가 벡터 색인에 있는가"),
     ("static_notion_dates", notion_pages_without_date,
      "수정일 없이 색인된 노션 문서 (낡은 값이 최신을 이긴다)"),
+    ("static_stale_copies", qdrant_stale_page_copies, "같은 문서의 옛 조각이 남아 있는가"),
 ]
