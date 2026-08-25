@@ -663,12 +663,19 @@ def notion_pages_without_date() -> Tuple[bool, str]:
     try:
         from qdrant_client.models import FieldCondition, Filter, MatchValue
 
-        from app.agents.qdrant_agent import COLLECTION, _get_client
+        from app.agents.qdrant_agent import COLLECTION
     except ImportError as exc:
         return True, f"qdrant_client 없음 — 건너뜀 ({exc})"
 
+    # ⚠️ 공용 클라이언트는 timeout=15 다. WAS→Qdrant Cloud 는 프록시를 타서 그보다
+    #    오래 걸린다 — 실제로 타임아웃으로 실패했다 (2026-08-25). **네트워크 지연을
+    #    데이터 문제로 보고하면** 잘못된 이유로 매일 빨간 줄이 서고, 진짜 실패가 묻힌다.
+    #    전용 클라이언트로 넉넉히 기다리고, 그래도 안 되면 **실패가 아니라 건너뜀**이다.
     try:
-        client = _get_client()
+        from qdrant_client import QdrantClient
+
+        from app.agents.qdrant_agent import _qdrant_api_key, _qdrant_url
+        client = QdrantClient(url=_qdrant_url(), api_key=_qdrant_api_key(), timeout=60)
         notion_only = FieldCondition(key="source", match=MatchValue(value="notion"))
         total = client.count(collection_name=COLLECTION,
                              count_filter=Filter(must=[notion_only]), exact=True).count
@@ -679,6 +686,8 @@ def notion_pages_without_date() -> Tuple[bool, str]:
                                                      match=MatchValue(value=""))]),
             exact=True).count
     except Exception as exc:
+        if "timed out" in str(exc).lower() or "timeout" in type(exc).__name__.lower():
+            return True, f"Qdrant 응답 지연 — 건너뜀 ({exc})"
         return False, f"Qdrant 색인을 세지 못했다: {exc}"
 
     if not total:
