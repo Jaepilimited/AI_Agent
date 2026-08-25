@@ -304,6 +304,44 @@ class QdrantStore:
 
         return result
 
+    def get_page_doc_hashes(self, hub_id_filter: str = None) -> dict[str, str]:
+        """활성 page_id → doc_sha256 맵 (날짜 없는 문서의 증분 판정용).
+
+        ⛔ 공개 notion.site 페이지는 `last_edited_time` 을 알 수 없어 증분 판정을
+           못 했고, 그래서 **한 번 넣으면 다시 안 읽었다.** 색인이 라이브와 벌어져도
+           아무도 몰랐다 (2026-08-25 실측: `복리후생` 사내근로복지기금 라이브 40만원 vs
+           색인 30만원). 날짜가 없어도 **내용이 바뀜 것은 알 수 있다.**
+        """
+        if not self.collection_exists():
+            return {}
+
+        must = [FieldCondition(key="status", match=MatchValue(value="active"))]
+        if hub_id_filter:
+            must.append(FieldCondition(key="hub_id", match=MatchValue(value=hub_id_filter)))
+
+        result: dict[str, str] = {}
+        offset = None
+        while True:
+            points, offset = self._client.scroll(
+                collection_name=self._collection,
+                scroll_filter=Filter(must=must),
+                with_payload=["page_id", "doc_sha256"],
+                with_vectors=False,
+                limit=256,
+                offset=offset,
+            )
+            for point in points:
+                payload = point.payload or {}
+                page_id = payload.get("page_id")
+                doc_hash = payload.get("doc_sha256") or ""
+                # ⚠️ 해시가 없던 시절에 적재된 청크가 섞여 있다 — 빈 값이 이기면 **재수집**이 된다.
+                #    그래야 구본이 한 번은 갱신된다.
+                if page_id and (page_id not in result or not result[page_id]):
+                    result[page_id] = doc_hash
+            if offset is None:
+                break
+        return result
+
     def get_collection_info(self) -> dict:
         info = self._client.get_collection(collection_name=self._collection)
         return {

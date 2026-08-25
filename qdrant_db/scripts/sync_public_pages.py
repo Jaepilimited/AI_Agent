@@ -49,6 +49,10 @@ def sync_public_pages(team_filter: str = None) -> dict:
     logger.info(f"공개 페이지 {len(public_pages)}개 동기화 시작")
     results = {"total": len(public_pages), "ok": 0, "skip": 0, "error": 0}
 
+    # ⚠️ 색인에 저장된 문서 해시를 한 번에 읽어 둔다 — 내용이 그대로면 임베딩·업서트를
+    #    건너뛰기 위해서다. 이게 없으면 매일 전부 다시 임베딩한다.
+    doc_hashes = store.get_page_doc_hashes()
+
     for dp in public_pages:
         logger.info(f"[{dp.team}] 동기화 중: {dp.public_url}")
         result = ingest_page(
@@ -59,6 +63,7 @@ def sync_public_pages(team_filter: str = None) -> dict:
             store=store,
             is_public=True,
             public_url=dp.public_url,
+            existing_doc_hash=doc_hashes.get(dp.page_id, ""),
         )
         status = result.get("status", "error")
         results[status] = results.get(status, 0) + 1

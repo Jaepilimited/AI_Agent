@@ -34,6 +34,8 @@ def ingest_page(
     existing_last_edited: str = None,
     # 공개 페이지 강제 재스크래핑 (daily 스크립트용)
     force_public: bool = False,
+    # 공개 페이지 증분 판정용: 색인에 저장된 문서 해시 ("" 면 무조건 재수집)
+    existing_doc_hash: str = "",
 ) -> dict:
     """
     단일 페이지(또는 인라인 콘텐츠)를 Qdrant에 적재.
@@ -48,10 +50,14 @@ def ingest_page(
 
     # ── 공개 notion.site 페이지 경로 ──────────────────────────────────────
     if is_public:
-        # notion.site는 last_edited_time을 알 수 없으므로 존재 여부만 확인
-        if existing_last_edited is not None:
-            logger.debug(f"[{team}] skip (이미 적재됨): {page_id}")
-            return {"page_id": page_id, "chunks": 0, "status": "skip", "reason": "already indexed"}
+        # ⛔ 예전엔 "적재된 적 있으면 무조건 skip" 이었다. `last_edited_time` 을 알 수
+        #    없으니 증분 판정을 못 한다는 이유였는데, 그래서 **한 번 넣으면 다시는 안
+        #    읽었다.** 색인이 라이브와 벌어져도 아무도 몰랐다 (2026-08-25 실측:
+        #    `복리후생` 의 사내근로복지기금이 라이브 40만원 / 색인 30만원이고,
+        #    야근식대 15,000원 문장은 색인에 아예 없었다).
+        #    야근 식대 답변이 2023년 FAQ 의 10,000원으로 나간 진짜 이유다 (붐따 #105).
+        # ⚠️ 날짜가 없어도 **내용이 바뀐 것은 안다** — 긁어서 문서 해시를 비교한다.
+        #    비싼 것은 임베딩·업서트이지 스크래핑 1회가 아니다.
         return _ingest_public(
             page_id=page_id,
             team=team,
@@ -59,6 +65,7 @@ def ingest_page(
             url=public_url,
             embedder=embedder,
             store=store,
+            existing_doc_hash="" if force_public else existing_doc_hash,
         )
 
     # ── 인라인 콘텐츠 경로 ─────────────────────────────────────────────────
@@ -185,6 +192,8 @@ def _ingest_markdown(
     store: QdrantStore,
 ) -> dict:
     """markdown → chunk → embedding → upsert 공통 처리"""
+    # 문서 단위 해시 — 날짜를 알 수 없는 공개 페이지의 증분 판정 기준
+    doc_hash = sha256(markdown)
 
     # chunking
     chunks = chunk_markdown(
@@ -228,6 +237,7 @@ def _ingest_markdown(
             "chunk_index": chunk.chunk_index,
             "last_edited_time": last_edited_time,
             "content_sha256": content_hash,
+            "doc_sha256": doc_hash,
             "text": chunk.text,
         })
         point_ids.append(point_id)
@@ -245,8 +255,9 @@ def _ingest_public(
     url: str,
     embedder: EmbeddingClient,
     store: QdrantStore,
+    existing_doc_hash: str = "",
 ) -> dict:
-    """notion.site 공개 페이지 Playwright 스크래핑 후 적재"""
+    """notion.site 공개 페이지 스크래핑 후 적재 — **내용이 바뀐 것만**"""
     from app.notion.public_scraper import scrape_notion_public_page
 
     try:
@@ -258,6 +269,14 @@ def _ingest_public(
     if not scraped["text"].strip():
         logger.warning(f"[{team}] 공개 페이지 본문 없음, skip ({url})")
         return {"page_id": page_id, "chunks": 0, "status": "skip", "reason": "empty content"}
+
+    # 내용이 그대로면 임베딩·업서트를 하지 않는다 (스크래핑만 하고 끝).
+    # ⚠️ 해시가 **없던 시절에 적재된 청크**는 빈 값이라 여기서 안 걸리고 재수집된다 —
+    #    구본이 한 번은 갱신돼야 하므로 그게 맞다.
+    doc_hash = sha256(scraped["text"])
+    if existing_doc_hash and existing_doc_hash == doc_hash:
+        logger.debug(f"[{team}] skip (내용 그대로): {url}")
+        return {"page_id": page_id, "chunks": 0, "status": "skip", "reason": "unchanged"}
 
     return _ingest_markdown(
         page_id=page_id,
