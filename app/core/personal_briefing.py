@@ -35,6 +35,12 @@ _locks: dict[int, asyncio.Lock] = {}
 _auth_manager = GoogleAuthManager()
 
 
+def get_user_refresh_lock(user_id: int) -> asyncio.Lock:
+    """Return the single process-local lock for a user's refresh/auth mutations."""
+
+    return _locks.setdefault(int(user_id), asyncio.Lock())
+
+
 def briefing_window(now: datetime | None = None) -> tuple[date, datetime, datetime]:
     """Return the KST day and the exact [today, today+7) calendar window."""
 
@@ -62,9 +68,13 @@ def _safe_google_link(value: str) -> str:
         parsed = urlparse(value)
     except (TypeError, ValueError):
         return ""
-    if parsed.scheme != "https" or parsed.hostname not in _ALLOWED_LINKS:
+    if parsed.scheme != "https":
         return ""
-    return value
+    if parsed.hostname in _ALLOWED_LINKS:
+        return value
+    if parsed.hostname == "www.google.com" and parsed.path.startswith("/calendar/"):
+        return value
+    return ""
 
 
 def _normalize_calendar(raw: dict[str, Any], now: datetime) -> dict[str, Any]:
@@ -286,9 +296,14 @@ def _snapshot_for_account(snapshot: dict[str, Any] | None, account: str, user_em
 def _visible_priorities(priorities: list[dict[str, Any]], business: dict[str, Any]) -> list[dict[str, Any]]:
     """An opt-out applies to every business-derived presentation, including cache."""
 
-    if business.get("status") != "ready":
-        return [priority for priority in priorities if priority.get("source") != "business"]
-    return priorities
+    item = business.get("item") if business.get("status") == "ready" else None
+    current_id = str(item.get("id", "")) if isinstance(item, dict) else ""
+    return [
+        priority
+        for priority in priorities
+        if priority.get("source") != "business"
+        or (current_id and str(priority.get("source_id", "")) == current_id)
+    ]
 
 
 def get_cached_for_user(user: User, now: datetime | None = None) -> dict[str, Any]:
@@ -346,26 +361,32 @@ async def _refresh_sections(creds: Any, start: datetime, end: datetime, current:
 
 async def refresh_for_user(user: User, now: datetime | None = None, force: bool = False) -> dict[str, Any]:
     current = (now or datetime.now(SEOUL)).astimezone(SEOUL)
-    lock = _locks.setdefault(user.id, asyncio.Lock())
+    lock = get_user_refresh_lock(user.id)
     async with lock:
         cached = await asyncio.to_thread(get_cached_for_user, user, current)
         if not force and not cached["needs_refresh"]:
             return cached
         creds = await asyncio.to_thread(_auth_manager.get_credentials, user.email)
         if creds is None:
+            await asyncio.to_thread(_auth_manager.revoke_credentials, user.email)
+            await asyncio.to_thread(store.delete_for_user, user.id)
             calendar, mail = _empty_sections("disconnected", "oauth_expired")
-            if cached["calendar"].get("items"):
-                calendar = _merge_failed_section(cached["calendar"], "oauth_expired")
-            if cached["mail"].get("items"):
-                mail = _merge_failed_section(cached["mail"], "oauth_expired")
-                for key, value in _empty_sections("disconnected", "")[1].items():
-                    mail.setdefault(key, value)
-            cached.update(calendar=calendar, mail=mail, needs_refresh=False)
+            cached.update(
+                calendar=calendar,
+                mail=mail,
+                priorities=[],
+                generated_at="",
+                needs_refresh=False,
+            )
             cached["google"] = {"connected": False, "account": ""}
             return cached
 
         day, start, end = briefing_window(current)
-        account = _auth_manager.get_stored_google_email(user.email) or user.email
+        credential_identity = await asyncio.to_thread(
+            _auth_manager.get_credential_identity, user.email,
+        )
+        account = await asyncio.to_thread(_auth_manager.get_stored_google_email, user.email)
+        account = account or user.email
         old = await asyncio.to_thread(store.get_snapshot, user.id, day)
         old = _snapshot_for_account(old, account, user.email)
         previous_calendar = old.get("calendar") if old else None
@@ -405,6 +426,32 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
         except (KeyError, TypeError, ValueError):
             priorities = []
         priorities = _visible_priorities(priorities, business)
+        final_identity = await asyncio.to_thread(
+            _auth_manager.get_credential_identity, user.email,
+        )
+        final_account = await asyncio.to_thread(
+            _auth_manager.get_stored_google_email, user.email,
+        )
+        final_account = final_account or user.email
+        if (
+            not credential_identity
+            or credential_identity != final_identity
+            or account.strip().casefold() != final_account.strip().casefold()
+        ):
+            await asyncio.to_thread(store.delete_for_user, user.id)
+            calendar, mail = _empty_sections("disconnected", "oauth_expired")
+            return {
+                "enabled": True,
+                "for_date": str(day),
+                "timezone": "Asia/Seoul",
+                "generated_at": "",
+                "needs_refresh": False,
+                "google": {"connected": False, "account": ""},
+                "priorities": [],
+                "calendar": calendar,
+                "mail": mail,
+                "business": business,
+            }
         generated_at = current.replace(tzinfo=None)
         await asyncio.to_thread(
             store.put_snapshot, user.id, day, _account_hash(account),

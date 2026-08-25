@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,12 +16,28 @@ from app.db.models import User
 
 router = APIRouter(prefix="/api/personal-briefing", tags=["personal-briefing"])
 _REFRESH_BUDGET_SECONDS = 15.0
+_ACTIVE_REFRESH_TASKS: set[asyncio.Task] = set()
 
 
 def _remaining_seconds(deadline: float) -> float:
     """Return the remaining request budget from the active event loop clock."""
 
     return max(0.0, deadline - asyncio.get_running_loop().time())
+
+
+def _tracked_refresh(user: User, now: datetime) -> asyncio.Task:
+    """Keep timed-out refreshes alive so their user lock still guards revoke."""
+
+    task = asyncio.create_task(refresh_for_user(user, now=now))
+    _ACTIVE_REFRESH_TASKS.add(task)
+
+    def finish(completed: asyncio.Task) -> None:
+        _ACTIVE_REFRESH_TASKS.discard(completed)
+        if not completed.cancelled():
+            completed.exception()
+
+    task.add_done_callback(finish)
+    return task
 
 
 def _minimal_timeout_response(now: datetime) -> dict:
@@ -43,6 +60,25 @@ def _minimal_timeout_response(now: datetime) -> dict:
     }
 
 
+def _timeout_response_from_cache(cached: dict | None, now: datetime) -> dict:
+    """Keep a same-day last-known-good payload when refresh exhausts its budget."""
+
+    day = str(now.astimezone(SEOUL).date())
+    if not cached or cached.get("for_date") != day:
+        return _minimal_timeout_response(now)
+    result = copy.deepcopy(cached)
+    for key in ("calendar", "mail"):
+        section = result.get(key, {})
+        if section.get("items"):
+            section["status"] = "stale"
+            section["error_code"] = "google_timeout"
+        elif section.get("status") in {"empty", "ready", "stale", "error"}:
+            section["status"] = "error"
+            section["error_code"] = "google_timeout"
+    result["needs_refresh"] = False
+    return result
+
+
 @router.get("")
 async def get_personal_briefing(user: User = Depends(get_current_user)) -> dict:
     """Return only the JWT owner's cached briefing without Google API calls."""
@@ -62,23 +98,13 @@ async def refresh_personal_briefing(user: User = Depends(get_current_user)) -> d
     now = datetime.now(SEOUL)
     deadline = asyncio.get_running_loop().time() + _REFRESH_BUDGET_SECONDS
     try:
+        cached = await asyncio.to_thread(get_cached_for_user, user, now)
+    except Exception:
+        cached = None
+    refresh_task = _tracked_refresh(user, now)
+    try:
         return await asyncio.wait_for(
-            refresh_for_user(user, now=now), timeout=_remaining_seconds(deadline),
+            asyncio.shield(refresh_task), timeout=_remaining_seconds(deadline),
         )
     except asyncio.TimeoutError:
-        remaining = _remaining_seconds(deadline)
-        if remaining <= 0:
-            return _minimal_timeout_response(now)
-        try:
-            cached = await asyncio.wait_for(
-                asyncio.to_thread(get_cached_for_user, user, now), timeout=remaining,
-            )
-        except asyncio.TimeoutError:
-            return _minimal_timeout_response(now)
-        for key in ("calendar", "mail"):
-            section = cached.get(key, {})
-            if section.get("status") in {"empty", "ready"} and not section.get("items"):
-                section["status"] = "error"
-                section["error_code"] = "google_timeout"
-        cached["needs_refresh"] = False
-        return cached
+        return _timeout_response_from_cache(cached, now)

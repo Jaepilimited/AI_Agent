@@ -66,7 +66,7 @@ def test_digest_uses_metadata_not_full_body(monkeypatch):
 
     list_call = next(kwargs for kind, kwargs in calls if kind == "list")
     assert list_call["maxResults"] == 20
-    assert "after:1787583600" in list_call["q"]
+    assert "after:1787583599" in list_call["q"]
     assert "before:1787670000" in list_call["q"]
     for exclusion in ("-in:spam", "-in:trash", "-in:drafts", "-in:sent", "-from:me"):
         assert exclusion in list_call["q"]
@@ -136,3 +136,52 @@ def test_digest_clamps_requested_limit_to_twenty(monkeypatch):
     )
 
     assert captured["maxResults"] == 20
+
+
+def test_digest_post_filters_exact_kst_half_open_boundary(monkeypatch):
+    """Gmail's exclusive after query is widened, then internalDate enforces [start,end)."""
+    start = datetime(2026, 8, 25, 0, 0, tzinfo=SEOUL)
+    end = datetime(2026, 8, 26, 0, 0, tzinfo=SEOUL)
+    millis = {
+        "before": int(start.timestamp() * 1000) - 1,
+        "at-start": int(start.timestamp() * 1000),
+        "inside": int(start.timestamp() * 1000) + 1,
+        "at-end": int(end.timestamp() * 1000),
+    }
+    captured = {}
+
+    class Request:
+        def __init__(self, value):
+            self.value = value
+
+        def execute(self):
+            return self.value
+
+    class Messages:
+        def list(self, **kwargs):
+            captured.update(kwargs)
+            return Request({"messages": [{"id": key} for key in millis]})
+
+        def get(self, **kwargs):
+            message_id = kwargs["id"]
+            return Request({
+                "id": message_id,
+                "internalDate": str(millis[message_id]),
+                "payload": {"headers": []},
+            })
+
+    class Users:
+        def messages(self):
+            return Messages()
+
+    class Service:
+        def users(self):
+            return Users()
+
+    monkeypatch.setattr(google_workspace, "build", lambda *_args, **_kwargs: Service())
+
+    result = google_workspace.list_gmail_digest(object(), start, end)
+
+    assert f"after:{int(start.timestamp()) - 1}" in captured["q"]
+    assert f"before:{int(end.timestamp())}" in captured["q"]
+    assert [item["id"] for item in result["items"]] == ["at-start", "inside"]

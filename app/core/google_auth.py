@@ -89,6 +89,31 @@ class GoogleAuthManager:
         except Exception:
             return ""
 
+    def get_credential_identity(self, user_email: str) -> str:
+        """Return a non-reversible identity for the currently stored credential.
+
+        Access tokens rotate during a normal refresh, so the identity uses only
+        stable credential/account fields.  It is held in memory briefly and is
+        never logged or persisted with briefing content.
+        """
+        token_path = self._token_path(user_email)
+        if not token_path.exists():
+            return ""
+        try:
+            data = json.loads(token_path.read_text(encoding="utf-8"))
+            stable = {
+                "refresh_token": data.get("refresh_token", ""),
+                "client_id": data.get("client_id", ""),
+                "scopes": sorted(data.get("scopes") or []),
+                "google_email": str(data.get("google_email", "")).strip().lower(),
+            }
+            if not stable["refresh_token"]:
+                stable["token"] = data.get("token", "")
+            encoded = json.dumps(stable, sort_keys=True, separators=(",", ":"))
+            return hashlib.sha256(encoded.encode()).hexdigest()
+        except (OSError, TypeError, ValueError):
+            return ""
+
     def get_credentials(self, user_email: str) -> Optional[Credentials]:
         """Load credentials for a user, trying local file first, then Open WebUI DB.
 
@@ -127,13 +152,13 @@ class GoogleAuthManager:
                 self._save_credentials(
                     user_email, creds, google_email=google_email
                 )
-                logger.info("token_refreshed", user_email=user_email, source="file")
+                logger.info("token_refreshed", source="file")
                 return creds
             if creds.valid:
                 return creds
             return None
         except Exception as e:
-            logger.error("token_load_failed", user_email=user_email, error=str(e))
+            logger.error("token_load_failed", source="file", error_type=type(e).__name__)
             return None
 
     def _get_credentials_from_openwebui(self, user_email: str) -> Optional[Credentials]:
@@ -182,7 +207,7 @@ except:
             output = result.stdout.strip()
             if not output or output in ("NO_USER", "NO_SESSION", "DECRYPT_FAIL"):
                 if output:
-                    logger.warning("openwebui_token_extract", result=output, user_email=user_email)
+                    logger.warning("openwebui_token_extract", result_code=output)
                 return None
 
             token_data = json.loads(output)
@@ -191,7 +216,7 @@ except:
             refresh_token = token_data.get("refresh_token")
 
             if not access_token:
-                logger.warning("openwebui_token_no_access", user_email=user_email)
+                logger.warning("openwebui_token_no_access")
                 return None
 
             # Check if token has GWS scopes
@@ -201,11 +226,7 @@ except:
                 for s in ["gmail.readonly", "calendar.readonly", "drive.readonly"]
             )
             if not has_gws_scopes:
-                logger.warning(
-                    "openwebui_token_missing_gws_scopes",
-                    user_email=user_email,
-                    scopes=scope_str,
-                )
+                logger.warning("openwebui_token_missing_gws_scopes")
                 return None
 
             # Build credentials
@@ -222,27 +243,25 @@ except:
             if creds.expired and refresh_token:
                 try:
                     creds.refresh(Request())
-                    logger.info("openwebui_token_refreshed", user_email=user_email)
+                    logger.info("openwebui_token_refreshed")
                 except Exception as e:
-                    logger.warning("openwebui_token_refresh_failed", error=str(e))
+                    logger.warning("openwebui_token_refresh_failed", error_type=type(e).__name__)
                     return None
 
             if creds.valid:
-                logger.info("openwebui_token_loaded", user_email=user_email)
+                logger.info("openwebui_token_loaded")
                 return creds
 
             # Token might still be valid even if expired flag is uncertain
             # Try returning it and let the API call determine
             if access_token:
-                logger.info("openwebui_token_loaded_unchecked", user_email=user_email)
+                logger.info("openwebui_token_loaded_unchecked")
                 return creds
 
             return None
 
         except Exception as e:
-            logger.error(
-                "openwebui_token_error", user_email=user_email, error=str(e)
-            )
+            logger.error("openwebui_token_error", error_type=type(e).__name__)
             return None
 
     def get_auth_url(self, user_email: str, *, state: str, redirect_uri: str = "") -> str:
@@ -305,7 +324,7 @@ except:
             pass
 
         self._save_credentials(user_email, creds, google_email=google_email)
-        logger.info("token_saved", user_email=user_email, google_email=google_email)
+        logger.info("token_saved")
         return creds
 
     def revoke_credentials(self, user_email: str) -> bool:
@@ -320,7 +339,7 @@ except:
         token_path = self._token_path(user_email)
         if token_path.exists():
             token_path.unlink()
-            logger.info("token_revoked", user_email=user_email)
+            logger.info("token_revoked")
             return True
         return False
 

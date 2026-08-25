@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.api.auth_middleware import get_current_user
 from app.core.google_auth import GoogleAuthManager
 from app.core.google_oauth_state import consume_state, issue_state
+from app.core.personal_briefing import get_user_refresh_lock
 from app.core.personal_briefing_store import delete_for_user
 from app.db.models import User
 
@@ -74,10 +75,26 @@ async def google_callback(
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
     user_email = str(payload["email"])
+    if user_email.strip().casefold() != user.email.strip().casefold():
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
     try:
         redirect_uri = _get_redirect_uri(request)
-        _get_auth_manager().exchange_code(code, user_email, redirect_uri=redirect_uri)
+        async with get_user_refresh_lock(user.id):
+            await asyncio.to_thread(
+                _get_auth_manager().exchange_code,
+                code,
+                user_email,
+                redirect_uri,
+            )
+            try:
+                await asyncio.to_thread(delete_for_user, user.id)
+            except Exception as cleanup_error:
+                logger.warning(
+                    "oauth_snapshot_cleanup_failed",
+                    user_id=user.id,
+                    error_type=type(cleanup_error).__name__,
+                )
         logger.info("oauth_callback_success", user_id=user.id)
     except Exception as e:
         logger.error("oauth_callback_failed", user_id=user.id, error_type=type(e).__name__)
@@ -155,8 +172,9 @@ async def google_auth_status(user: User = Depends(get_current_user)):
 @auth_router.post("/revoke")
 async def google_revoke(user: User = Depends(get_current_user)):
     """Revoke the authenticated user's stored Google OAuth credentials."""
-    deleted = _get_auth_manager().revoke_credentials(user.email)
-    await asyncio.to_thread(delete_for_user, user.id)
+    async with get_user_refresh_lock(user.id):
+        deleted = await asyncio.to_thread(_get_auth_manager().revoke_credentials, user.email)
+        await asyncio.to_thread(delete_for_user, user.id)
     return {
         "revoked": deleted,
         "message": "토큰이 삭제되었습니다." if deleted else "저장된 토큰이 없습니다.",

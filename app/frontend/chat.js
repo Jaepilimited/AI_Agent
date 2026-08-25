@@ -699,6 +699,12 @@
           root: document.getElementById("personal-briefing"),
           input: chatInput,
           connect: handleGwsConnect,
+          onGoogleState: function (connected, account) {
+            gwsConnected = connected;
+            gwsGoogleEmail = account || "";
+            gwsStatusKnown = true;
+            updateGwsButton();
+          },
           fetchImpl: window.fetch.bind(window)
         });
         personalBriefingController.load();
@@ -4012,6 +4018,7 @@
         ? gwsGoogleEmail + " 계정 연결을 해제하시겠습니까?"
         : "Google 계정 연결을 해제하시겠습니까?";
       if (!confirm(msg)) return;
+      if (personalBriefingController) personalBriefingController.invalidate();
       fetch("/auth/google/revoke", { method: "POST" })
         .then(function () {
           gwsConnected = false;
@@ -4022,7 +4029,8 @@
         .catch(function () {});
     } else {
       // Connect — open in new window
-      window.open("/api/auth/google/login", "gws_auth", "width=500,height=600");
+      if (personalBriefingController) personalBriefingController.invalidate();
+      window.open("/auth/google/login", "gws_auth", "width=500,height=600");
       // Poll for completion
       var pollInterval = setInterval(function () {
         fetch("/auth/google/status")

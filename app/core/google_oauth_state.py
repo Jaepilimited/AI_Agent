@@ -29,13 +29,22 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
 
 
 def ensure_oauth_state_table() -> None:
-    """Create the state table and remove safely expired nonces."""
+    """Create the state table and remove rows that no longer serve replay defense."""
     execute(_DDL)
-    execute("DELETE FROM google_oauth_states WHERE expires_at < DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY)")
+    _cleanup_states()
+
+
+def _cleanup_states() -> None:
+    """Delete identity-bearing rows once expired or consumed."""
+    execute(
+        "DELETE FROM google_oauth_states "
+        "WHERE expires_at < UTC_TIMESTAMP() OR used_at IS NOT NULL"
+    )
 
 
 def issue_state(user_id: int, user_email: str, now: datetime | None = None) -> str:
     """Issue a signed state token and persist its one-time nonce server-side."""
+    _cleanup_states()
     current = now or datetime.now(timezone.utc)
     nonce = secrets.token_urlsafe(32)
     nonce_hash = hashlib.sha256(nonce.encode()).hexdigest()
@@ -60,6 +69,7 @@ def consume_state(token: str, current_user_id: int, now: datetime | None = None)
     """Validate and atomically consume a state token for its owning JWT user."""
     secret = validate_jwt_secret(get_settings().jwt_secret_key)
     payload = jwt.decode(token, secret, algorithms=["HS256"], options={"verify_exp": now is None})
+    _cleanup_states()
     if now is not None and datetime.fromtimestamp(payload["exp"], timezone.utc) < now:
         raise ValueError("expired oauth state")
     if payload.get("purpose") != PURPOSE or int(payload.get("user_id", 0)) != int(current_user_id):
@@ -67,8 +77,7 @@ def consume_state(token: str, current_user_id: int, now: datetime | None = None)
 
     nonce_hash = hashlib.sha256(str(payload["nonce"]).encode()).hexdigest()
     changed = execute(
-        "UPDATE google_oauth_states SET used_at=UTC_TIMESTAMP() "
-        "WHERE nonce_hash=%s AND user_id=%s AND user_email=%s "
+        "DELETE FROM google_oauth_states WHERE nonce_hash=%s AND user_id=%s AND user_email=%s "
         "AND used_at IS NULL AND expires_at >= UTC_TIMESTAMP()",
         (nonce_hash, int(current_user_id), str(payload["email"])),
     )

@@ -28,7 +28,7 @@ try:
     from langgraph.prebuilt import create_react_agent
     _LANGCHAIN_AVAILABLE = True
 except Exception as e:
-    logger.warning("gws_agent_langchain_import_failed", error=str(e))
+    logger.warning("gws_agent_langchain_import_failed", error_type=type(e).__name__)
     _LANGCHAIN_AVAILABLE = False
 
 from app.config import get_settings
@@ -344,10 +344,10 @@ class GWSAgent:
             )
             return answer or results
         except asyncio.TimeoutError:
-            logger.warning("gws_format_timeout", user_email=user_email)
+            logger.warning("gws_format_timeout")
             return results  # 정리에 실패해도 원본 결과는 돌려준다
         except Exception as e:
-            logger.error("gws_format_failed", error=str(e)[:200], user_email=user_email)
+            logger.error("gws_format_failed", error_type=type(e).__name__)
             return results
 
     def _collect(self, creds, query: str, tool_type: str) -> str:

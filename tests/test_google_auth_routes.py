@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.api import auth_routes
 from app.api.auth_middleware import get_current_user
 from app.core import google_oauth_state
+from app.core import google_auth
 from app.db.models import User
 
 
@@ -35,7 +36,11 @@ def test_oauth_state_is_tied_to_current_user_and_single_use(monkeypatch):
 
     assert payload["user_id"] == 7
     assert payload["email"] == "owner@example.com"
-    assert any("used_at IS NULL" in sql and params[1] == 7 for sql, params in writes)
+    assert any(
+        sql.startswith("DELETE FROM google_oauth_states WHERE nonce_hash")
+        and params[1] == 7
+        for sql, params in writes
+    )
 
 
 def test_oauth_state_rejects_other_user(monkeypatch):
@@ -58,7 +63,7 @@ def test_oauth_state_replay_is_rejected(monkeypatch):
     updates = iter((1, 0))
 
     def execute(sql, _params=()):
-        return next(updates) if sql.startswith("UPDATE google_oauth_states") else 1
+        return next(updates) if sql.startswith("DELETE FROM google_oauth_states WHERE nonce_hash") else 1
 
     monkeypatch.setattr(google_oauth_state, "execute", execute)
     monkeypatch.setattr(
@@ -92,7 +97,7 @@ def test_oauth_state_expiry_is_rejected_before_consumption(monkeypatch):
 
     with pytest.raises(ValueError, match="expired"):
         google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=11))
-    assert not any(sql.startswith("UPDATE google_oauth_states") for sql, _ in writes)
+    assert not any("WHERE nonce_hash" in sql for sql, _ in writes)
 
 
 def test_oauth_state_rejects_tampered_signature(monkeypatch):
@@ -118,13 +123,13 @@ def test_oauth_state_rejects_tampered_signature(monkeypatch):
 
     with pytest.raises(jwt.InvalidTokenError):
         google_oauth_state.consume_state(tampered, 7)
-    assert not any(sql.startswith("UPDATE google_oauth_states") for sql, _ in writes)
+    assert not any("WHERE nonce_hash" in sql for sql, _ in writes)
 
 
 def test_oauth_state_consumption_uses_database_utc(monkeypatch):
     """Nonce consumption succeeds only through the UTC database-time comparison."""
     def execute(sql, _params=()):
-        if sql.startswith("UPDATE google_oauth_states"):
+        if sql.startswith("DELETE FROM google_oauth_states WHERE nonce_hash"):
             return 1 if "UTC_TIMESTAMP()" in sql else 0
         return 1
 
@@ -138,6 +143,68 @@ def test_oauth_state_consumption_uses_database_utc(monkeypatch):
     token = google_oauth_state.issue_state(7, "owner@example.com", now=now)
 
     assert google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=1))["email"] == "owner@example.com"
+
+
+def test_oauth_state_deletes_consumed_identity_and_cleans_old_rows(monkeypatch):
+    """Consumed/expired nonce rows must not retain an internal email in MariaDB."""
+    writes = []
+    monkeypatch.setattr(
+        google_oauth_state,
+        "execute",
+        lambda sql, params=(): writes.append((sql, params)) or 1,
+    )
+    monkeypatch.setattr(
+        google_oauth_state,
+        "get_settings",
+        lambda: type("Settings", (), {"jwt_secret_key": "s" * 64})(),
+    )
+    now = datetime(2026, 8, 25, 0, 0, tzinfo=UTC)
+
+    token = google_oauth_state.issue_state(7, "owner@example.com", now=now)
+    google_oauth_state.consume_state(token, 7, now=now + timedelta(minutes=1))
+
+    cleanup = [sql for sql, _ in writes if "expires_at < UTC_TIMESTAMP()" in sql]
+    consume = [sql for sql, _ in writes if sql.startswith("DELETE FROM google_oauth_states WHERE nonce_hash")]
+    assert len(cleanup) >= 2
+    assert len(consume) == 1
+    assert "used_at IS NOT NULL" in cleanup[0]
+
+
+def test_google_auth_logs_only_safe_error_metadata(monkeypatch, tmp_path):
+    """Credential refresh failures must not log identities, raw errors, or content."""
+    token_path = tmp_path / "token.json"
+    token_path.write_text("{}", encoding="utf-8")
+    manager = object.__new__(google_auth.GoogleAuthManager)
+    manager._token_path = lambda _email: token_path
+
+    class BadCredentials:
+        refresh_token = "refresh-token"
+
+        def refresh(self, _request):
+            raise RuntimeError("raw-secret owner@example.com mail subject")
+
+    calls = []
+
+    class CaptureLogger:
+        def info(self, event, **values):
+            calls.append((event, values))
+
+        warning = info
+        error = info
+
+    monkeypatch.setattr(
+        google_auth.Credentials,
+        "from_authorized_user_file",
+        lambda *_args, **_kwargs: BadCredentials(),
+    )
+    monkeypatch.setattr(google_auth, "logger", CaptureLogger())
+
+    assert manager._get_credentials_from_file("owner@example.com") is None
+    rendered = repr(calls)
+    assert "owner@example.com" not in rendered
+    assert "raw-secret" not in rendered
+    assert "mail subject" not in rendered
+    assert calls == [("token_load_failed", {"source": "file", "error_type": "RuntimeError"})]
 
 
 class _FakeAuthManager:
@@ -158,6 +225,10 @@ class _FakeAuthManager:
 
     def exchange_code(self, _code, user_email, redirect_uri=""):
         self.seen_email = user_email
+
+    def get_auth_url(self, user_email, *, state, redirect_uri=""):
+        self.seen_email = user_email
+        return "https://accounts.google.com/o/oauth2/auth?state=" + state
 
 
 @pytest.fixture
@@ -194,6 +265,16 @@ def test_status_ignores_injected_email(client, fake_manager):
     assert fake_manager.seen_email == "owner@example.com"
 
 
+def test_authenticated_login_route_matches_frontend_contract(client, fake_manager, monkeypatch):
+    monkeypatch.setattr(auth_routes, "issue_state", lambda _uid, _email: "signed")
+
+    response = client.get("/auth/google/login", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"].endswith("state=signed")
+    assert fake_manager.seen_email == "owner@example.com"
+
+
 def test_oauth_routes_require_auth(anonymous_client):
     """Credential-changing or credential-disclosing routes require a JWT user."""
     assert anonymous_client.get("/auth/google/status").status_code == 401
@@ -211,12 +292,26 @@ def test_callback_uses_signed_state_email_and_escapes_display(client, fake_manag
     monkeypatch.setattr(
         auth_routes,
         "consume_state",
-        lambda _state, _user_id: {"email": "credential@example.com"},
+        lambda _state, _user_id: {"email": '<img src=x onerror="alert(1)">'},
     )
 
     response = client.get("/auth/google/callback?code=code&state=signed")
 
     assert response.status_code == 200
-    assert fake_manager.seen_email == "credential@example.com"
+    assert fake_manager.seen_email == "<img src=x onerror=\"alert(1)\">"
     assert '<img src=x onerror="alert(1)">' not in response.text
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in response.text
+
+
+def test_callback_rejects_state_for_prior_application_identity(client, fake_manager, monkeypatch):
+    """The signed state email must still match the active JWT owner at callback time."""
+    monkeypatch.setattr(
+        auth_routes,
+        "consume_state",
+        lambda _state, _user_id: {"email": "prior-owner@example.com"},
+    )
+
+    response = client.get("/auth/google/callback?code=code&state=signed")
+
+    assert response.status_code == 400
+    assert fake_manager.seen_email == ""

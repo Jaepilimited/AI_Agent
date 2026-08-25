@@ -61,6 +61,19 @@ def test_past_today_event_is_marked_ended():
     assert section["items"][0]["ended"] is True
 
 
+def test_calendar_normalization_allows_approved_www_google_calendar_url():
+    raw = {"items": [{
+        "id": "e1", "summary": "회의", "start": "2026-08-25T08:00:00+09:00",
+        "end": "2026-08-25T09:00:00+09:00", "location": "",
+        "htmlLink": "https://www.google.com/calendar/event?eid=e1",
+    }], "truncated": False}
+
+    section = pb._normalize_calendar(raw, datetime(2026, 8, 25, 7, 0, tzinfo=SEOUL))
+
+    assert section["items"][0]["url"] == "https://www.google.com/calendar/event?eid=e1"
+    assert pb._safe_google_link("https://www.google.com/calendar.evil/event") == ""
+
+
 def test_failed_section_reuses_only_same_day_cache_as_stale():
     previous = {"status": "ready", "items": [{"id": "e1"}], "error_code": ""}
     stale = pb._merge_failed_section(previous, "google_timeout")
@@ -118,6 +131,7 @@ async def test_account_switch_never_reuses_old_account_sections(monkeypatch):
     monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
     monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "new@example.com")
     monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(pb._auth_manager, "get_credential_identity", lambda _email: "new-credential")
     monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: old_snapshot)
     monkeypatch.setattr(pb, "list_calendar_window", lambda *_args: (_ for _ in ()).throw(TimeoutError()))
     monkeypatch.setattr(pb, "list_gmail_digest", lambda *_args: {"items": [], "truncated": False})
@@ -186,6 +200,34 @@ def test_business_lookup_error_hides_cached_business_priority(monkeypatch):
     assert result["priorities"] == [{"source": "calendar", "source_id": "e1", "title": "safe"}]
 
 
+def test_cached_business_priority_must_match_current_ready_item(monkeypatch):
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    snapshot = {
+        "google_account_hash": pb._account_hash("owner@example.com"),
+        "calendar": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "mail": {"status": "empty", "items": [], "truncated": False, "error_code": ""},
+        "priorities": [
+            {"source": "business", "source_id": "old", "title": "old business"},
+            {"source": "business", "source_id": "current", "title": "current business"},
+            {"source": "calendar", "source_id": "e1", "title": "safe"},
+        ],
+        "generated_at": now,
+    }
+    monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
+    monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "owner@example.com")
+    monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: snapshot)
+    monkeypatch.setattr(
+        pb,
+        "_safe_business_for_user",
+        lambda _uid: {"status": "ready", "item": {"id": "current", "title": "current business"}},
+    )
+
+    result = pb.get_cached_for_user(user, now)
+
+    assert [item["source_id"] for item in result["priorities"]] == ["current", "e1"]
+
+
 @pytest.mark.asyncio
 async def test_malformed_calendar_stales_only_calendar_and_keeps_mail(monkeypatch):
     now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
@@ -202,6 +244,7 @@ async def test_malformed_calendar_stales_only_calendar_and_keeps_mail(monkeypatc
     monkeypatch.setattr(pb._auth_manager, "has_credentials", lambda _email: True)
     monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: "owner@example.com")
     monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(pb._auth_manager, "get_credential_identity", lambda _email: "owner-credential")
     monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: snapshot)
     monkeypatch.setattr(pb, "list_calendar_window", lambda *_args: {
         "items": [{"id": "bad", "summary": "bad", "start": "not-a-date", "end": "not-a-date"}], "truncated": False,
@@ -232,3 +275,66 @@ async def test_malformed_calendar_stales_only_calendar_and_keeps_mail(monkeypatc
     assert result["mail"]["status"] == "ready"
     assert result["mail"]["items"][0]["id"] == "m1"
     assert persisted["mail"]["items"][0]["id"] == "m1"
+
+
+@pytest.mark.asyncio
+async def test_expired_credentials_clear_prior_content_and_snapshot(monkeypatch):
+    """A stale token file must yield reconnect UI without prior-account content."""
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    cached = {
+        "enabled": True, "for_date": "2026-08-25", "needs_refresh": True,
+        "google": {"connected": True, "account": "old-google@example.com"},
+        "calendar": {"status": "ready", "items": [{"id": "old-event"}], "error_code": ""},
+        "mail": {"status": "ready", "items": [{"id": "old-mail"}], "error_code": ""},
+        "priorities": [{"source": "mail", "source_id": "old-mail"}],
+        "business": {"status": "empty", "item": None},
+    }
+    deleted = {}
+    monkeypatch.setattr(pb, "get_cached_for_user", lambda *_args: dict(cached))
+    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: None)
+    monkeypatch.setattr(pb._auth_manager, "revoke_credentials", lambda email: deleted.update(email=email) or True)
+    monkeypatch.setattr(pb.store, "delete_for_user", lambda user_id: deleted.update(user_id=user_id))
+
+    result = await pb.refresh_for_user(user, now=now, force=True)
+
+    assert deleted == {"email": "owner@example.com", "user_id": 7}
+    assert result["google"] == {"connected": False, "account": ""}
+    assert result["calendar"]["status"] == "disconnected"
+    assert result["mail"]["status"] == "disconnected"
+    assert result["calendar"]["items"] == []
+    assert result["mail"]["items"] == []
+    assert result["priorities"] == []
+
+
+@pytest.mark.asyncio
+async def test_refresh_revalidates_credential_identity_before_persistence(monkeypatch):
+    """An externally switched credential cannot persist data fetched for the prior account."""
+    now = datetime(2026, 8, 25, 9, 0, tzinfo=SEOUL)
+    user = pb.User(id=7, email="owner@example.com")
+    cached = {
+        "enabled": True, "for_date": "2026-08-25", "needs_refresh": True,
+        "google": {"connected": True, "account": "old-google@example.com"},
+        "calendar": {"status": "empty", "items": [], "error_code": ""},
+        "mail": {"status": "empty", "items": [], "error_code": ""},
+        "priorities": [], "business": {"status": "empty", "item": None},
+    }
+    identities = iter(("credential-a", "credential-b"))
+    account_calls = iter(("old-google@example.com", "new-google@example.com"))
+    monkeypatch.setattr(pb, "get_cached_for_user", lambda *_args: dict(cached))
+    monkeypatch.setattr(pb._auth_manager, "get_credentials", lambda _email: object())
+    monkeypatch.setattr(pb._auth_manager, "get_credential_identity", lambda _email: next(identities))
+    monkeypatch.setattr(pb._auth_manager, "get_stored_google_email", lambda _email: next(account_calls))
+    monkeypatch.setattr(pb.store, "get_snapshot", lambda *_args: None)
+    monkeypatch.setattr(pb, "_refresh_sections", lambda *_args: asyncio.sleep(0, result=({"items": []}, {"items": []})))
+    monkeypatch.setattr(
+        pb.store,
+        "put_snapshot",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("prior credential persisted")),
+    )
+    monkeypatch.setattr(pb.store, "delete_for_user", lambda _user_id: None)
+
+    result = await pb.refresh_for_user(user, now=now, force=True)
+
+    assert result["google"]["account"] != "old-google@example.com"
+    assert result["calendar"]["items"] == []

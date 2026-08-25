@@ -220,7 +220,11 @@
           : "오늘 받은 메일이 없습니다."
       );
     }
-    if (statusOf(data.mail) === "disconnected") {
+    if (
+      statusOf(data.mail) === "disconnected"
+      || (data.mail && data.mail.error_code === "oauth_expired")
+      || (data.google && data.google.connected === false)
+    ) {
       var connect = textNode("button", "personal-briefing-connect", "Google 연결");
       connect.type = "button";
       connect.addEventListener("click", function () {
@@ -270,32 +274,93 @@
     if (updated) updated.textContent = "브리핑을 불러오지 못했습니다.";
   }
 
+  function mergeTimeoutEnvelope(previous, fresh) {
+    var sameDay = previous && fresh && previous.for_date === fresh.for_date;
+    var result;
+    var sawTimeout = false;
+
+    if (!sameDay) return fresh;
+    result = Object.assign({}, fresh);
+    ["calendar", "mail"].forEach(function (key) {
+      var nextSection = fresh[key] || {};
+      var oldSection = previous[key] || {};
+      if (nextSection.error_code !== "google_timeout") return;
+      sawTimeout = true;
+      if (!safeItems(nextSection).length && safeItems(oldSection).length) {
+        result[key] = Object.assign({}, oldSection, {
+          status: "stale",
+          error_code: "google_timeout"
+        });
+      }
+    });
+    if (!sawTimeout) return fresh;
+    if (!fresh.generated_at && previous.generated_at) result.generated_at = previous.generated_at;
+    if ((!fresh.priorities || !fresh.priorities.length) && previous.priorities) {
+      result.priorities = previous.priorities;
+    }
+    if (
+      fresh.business && fresh.business.status === "error"
+      && previous.business && previous.business.item
+    ) {
+      result.business = previous.business;
+    }
+    result.google = previous.google;
+    result.needs_refresh = false;
+    return result;
+  }
+
+  function notifyGoogleState(options, data) {
+    if (typeof options.onGoogleState !== "function" || !data || !data.google) return;
+    options.onGoogleState(Boolean(data.google.connected), data.google.account || "");
+  }
+
   function create(options) {
     var root = options.root;
     var state = null;
+    var requestGeneration = 0;
 
     async function load() {
+      var generation = ++requestGeneration;
+      var response;
+      var payload;
       if (!state) renderSkeleton(root);
       try {
-        var response = await options.fetchImpl("/api/personal-briefing");
+        response = await options.fetchImpl("/api/personal-briefing");
+        if (generation !== requestGeneration) return;
         if (!response.ok) throw new Error("briefing get failed");
-        state = await response.json();
+        payload = await response.json();
+        if (generation !== requestGeneration) return;
+        state = payload;
       } catch (_error) {
+        if (generation !== requestGeneration) return;
         if (!state) markLoadFailure(root);
         return;
       }
 
+      notifyGoogleState(options, state);
       render(root, state, options);
       if (!state.enabled || !state.needs_refresh) return;
       try {
         var fresh = await options.fetchImpl("/api/personal-briefing/refresh", { method: "POST" });
+        if (generation !== requestGeneration) return;
         if (!fresh.ok) throw new Error("briefing refresh failed");
-        state = await fresh.json();
+        payload = await fresh.json();
+        if (generation !== requestGeneration) return;
+        state = mergeTimeoutEnvelope(state, payload);
+        notifyGoogleState(options, state);
         render(root, state, options);
       } catch (_error) {
+        if (generation !== requestGeneration) return;
         // Keep the GET cache visible. A stale status is supplied by the server when applicable.
         if (!state) markLoadFailure(root);
       }
+    }
+
+    function invalidate() {
+      requestGeneration += 1;
+      state = null;
+      renderSkeleton(root);
+      notifyGoogleState(options, { google: { connected: false, account: "" } });
     }
 
     return {
@@ -303,7 +368,8 @@
       show: function () {
         if (state) render(root, state, options);
       },
-      refreshAfterConnect: load
+      refreshAfterConnect: load,
+      invalidate: invalidate
     };
   }
 

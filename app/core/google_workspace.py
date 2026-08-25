@@ -162,8 +162,10 @@ def list_gmail_digest(
     never fetch message bodies or attachments.
     """
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    start_epoch = int(start.timestamp())
+    end_epoch = int(end.timestamp())
     query = (
-        f"after:{int(start.timestamp())} before:{int(end.timestamp())} "
+        f"after:{start_epoch - 1} before:{end_epoch} "
         "-in:spam -in:trash -in:drafts -in:sent -from:me"
     )
     bounded_max_results = min(max(1, max_results), 20)
@@ -182,13 +184,19 @@ def list_gmail_digest(
         headers = _gmail_part_headers(msg.get("payload", {}))
         message_id = msg.get("id", ref["id"])
         thread_id = msg.get("threadId", ref.get("threadId", message_id))
+        try:
+            received_epoch = int(msg.get("internalDate", "0")) / 1000
+        except (TypeError, ValueError):
+            continue
+        if not (start.timestamp() <= received_epoch < end.timestamp()):
+            continue
         items.append({
             "id": message_id,
             "thread_id": thread_id,
             "subject": headers.get("subject", "(제목 없음)"),
             "from": headers.get("from", ""),
             "received_at": datetime.fromtimestamp(
-                int(msg.get("internalDate", "0")) / 1000,
+                received_epoch,
                 timezone.utc,
             ).isoformat(),
             "unread": "UNREAD" in msg.get("labelIds", []),
