@@ -652,6 +652,9 @@ class OrchestratorAgent:
         {"key": "KBT", "aliases": ["kbt", "국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
         {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법)"},
         {"key": "PEOPLE", "aliases": ["people", "피플", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지"},
+        # OP — 운영팀 재고. ⚠️ 벡터가 아니라 **표 조회**다 (`route: "inventory"`).
+        #    시트가 SKU × 창고 수량이라 임베딩으로는 숫자를 못 지킨다 (2026-08-25 결정).
+        {"key": "OP", "aliases": ["op", "운영", "운영팀", "재고", "inventory", "stock"], "route": "inventory", "group": "Notion", "icon": "box", "label": "OP", "desc": "재고 (SKU·창고별 수량)"},
         # ── 시스템 ──
         {"key": "gws", "aliases": ["google workspace", "workspace", "워크스페이스", "google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
         # ── 확장 ──
@@ -954,6 +957,12 @@ class OrchestratorAgent:
                         ingredient=_ing_intent[0], contains=_ing_intent[1])
             return await self._handle_ingredient_query(query, _ing_intent, model_type)
 
+        # 재고 — 성분과 같은 이유로 LLM 에 SQL 을 맡기지 않는다 (2026-08-25)
+        _inv_term = self._inventory_term(query, db_entry, enabled_sources)
+        if _inv_term:
+            logger.info("inventory_query", path="route_and_execute", term=_inv_term[:60])
+            return await self._handle_inventory_query(_inv_term)
+
         from app.core.model_rights import model_rights_intent
         _mr_entries = db_entry if isinstance(db_entry, list) else ([db_entry] if isinstance(db_entry, dict) else [])
         _mr_selected = any(e.get("route") == "model_rights" for e in _mr_entries)             or (enabled_sources and list(enabled_sources) == ["초상권"])
@@ -1173,6 +1182,15 @@ class OrchestratorAgent:
                         ingredient=_ing_intent[0], contains=_ing_intent[1])
             _r = await self._handle_ingredient_query(query, _ing_intent, model_type)
             yield ("source", "bigquery")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 재고 — **두 경로 모두**에 걸어야 한다. 한쪽만 걸면 경로에 따라 답이 갈린다
+        _inv_term = self._inventory_term(query, db_entry, enabled_sources)
+        if _inv_term:
+            logger.info("inventory_query", path="route_and_stream", term=_inv_term[:60])
+            _r = await self._handle_inventory_query(_inv_term)
+            yield ("source", "inventory")
             yield ("done", _r.get("answer", ""))
             return
 
@@ -2695,6 +2713,69 @@ class OrchestratorAgent:
         # 원본 확인 경로는 코드가 붙인다. 프롬프트에 맡기면 빠뜨린다 (노션 연식 경고와 같은 결론)
         answer = answer.rstrip() + f"\n\n---\n📄 원본: [모델 초상권 현황 시트]({SHEET_URL}) — 판정이 '불명'이거나 찾는 모델이 없으면 시트에서 직접 확인해 주세요."
         return {"source": "model_rights", "answer": answer}
+
+    @staticmethod
+    def _inventory_term(query, db_entry, enabled_sources):
+        """재고 질문이면 찾을 제품어를 돌려준다 (`@@OP` 지정이면 낱말을 안 봐도 재고)."""
+        from app.core.inventory import inventory_intent
+
+        entries = db_entry if isinstance(db_entry, list) else (
+            [db_entry] if isinstance(db_entry, dict) else [])
+        explicit = (any(e.get("route") == "inventory" for e in entries)
+                    or (enabled_sources and list(enabled_sources) == ["OP"]))
+        return inventory_intent(query, explicit=bool(explicit))
+
+
+    async def _handle_inventory_query(self, term: str) -> dict:
+        """OP 재고 시트 적재분으로 답한다.
+
+        ⛔ LLM 이 숫자를 쓰지 않는다. 표는 조회 결과 그대로 찍고 합계도 SQL 이 낸다 —
+           재고는 **틀리게 답하는 것이 못 답하는 것보다 나쁘다** (성분과 같은 사상).
+        ⚠️ 시트가 언제 갱신됐는지 **항상 함께 밝힌다.** 매일 바뀌는 값이라 시점 없이
+           숫자만 주면 어제 값을 오늘 값으로 읽는다.
+        """
+        import asyncio as _asyncio
+
+        from app.core.inventory import SHEET_URL, search, status
+
+        try:
+            rows = await _asyncio.to_thread(search, term, 15)
+            st = await _asyncio.to_thread(status)
+        except Exception as e:
+            logger.error("inventory_query_failed", error=str(e)[:200])
+            return {"source": "inventory",
+                    "answer": "재고 데이터를 조회하지 못했습니다. 잠시 후 다시 시도해 주세요."}
+
+        nl = chr(10)
+        if not st.get("rows"):
+            return {"source": "inventory", "answer": (
+                "### 📦 재고" + nl + nl + "재고 데이터가 아직 적재되지 않았습니다." + nl + nl
+                + "원본 시트: [OP 재고 확인 시트](" + SHEET_URL + ")")}
+
+        stamp = st.get("sheet_updated_at") or "시점 미상"
+        if not rows:
+            return {"source": "inventory", "answer": (
+                "### 📦 재고 조회 결과" + nl + nl
+                + "**'" + term + "'** 에 해당하는 품목을 찾지 못했습니다." + nl + nl
+                + "적재된 품목은 {:,}개입니다. 품목명 일부나 SKU 로 다시 물어봐 주세요.".format(st["skus"])
+                + nl + nl + "---" + nl + "*시트 기준: " + stamp + " · [원본 시트](" + SHEET_URL + ")*")}
+
+        lines = ["### 📦 재고 조회 결과", "",
+                 "**'{}'** 으로 {}개 품목을 찾았습니다.".format(term, len(rows)), "",
+                 "| SKU | 품목명 | 총 재고 | 창고별 |", "|---|---|---:|---|"]
+        for r in rows:
+            name = str(r.get("item_name") or "").replace("|", "/")[:52]
+            by = str(r.get("by_location") or "").replace("|", " · ")[:110]
+            lines.append("| {} | {} | {:,} | {} |".format(
+                r["sku"], name, int(r["total_qty"] or 0), by))
+        lines += ["", "---",
+                  "*시트 기준: {} · 창고 {}곳 · [원본 시트]({})*".format(
+                      stamp, st["locations"], SHEET_URL),
+                  "",
+                  "> ⚠️ 총 재고는 창고별 수량의 합입니다. 시트의 `SF 재고합` 은 SF 계열만 "
+                  "더한 부분합이라 쓰지 않습니다."]
+        return {"source": "inventory", "answer": nl.join(lines)}
+
 
     async def _handle_ingredient_query(self, query: str, intent, model_type: str) -> dict:
         """성분 기준 제품 질문을 전성분 데이터로 답한다.

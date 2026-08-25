@@ -381,6 +381,26 @@ def get_safety_status() -> dict:
     except: pass
     services["BP"] = {"status": cs_status, "detail": cs_detail}
 
+    # OP 재고 (시트 → MariaDB, 매일 04:10) — 적재량과 **시트 갱신 시점**을 함께 낸다.
+    # ⚠️ 매일 바뀌는 값이라 "언제 것인가" 가 숫자만큼 중요하다.
+    # ⚠️ Qdrant 팀 목록(`_SKIP_TEAMS`)이 아니라 여기서 따로 낸다 — OP 는 벡터가 아니라
+    #    표 조회다 (`route: "inventory"`).
+    try:
+        from app.core.inventory import SHEET_URL as _INV_URL
+        from app.core.inventory import status as _inv_status
+        _inv = _inv_status()
+        if _inv.get("rows"):
+            services["OP"] = {
+                "status": "ok",
+                "detail": "{:,} SKU · 창고 {}곳".format(_inv["skus"], _inv["locations"]),
+                "reason": "시트 기준 " + (_inv.get("sheet_updated_at") or "시점 미상"),
+                "url": _INV_URL,
+            }
+        else:
+            services["OP"] = {"status": "updating", "detail": "적재 대기", "url": _INV_URL}
+    except Exception as _e:
+        services["OP"] = {"status": "error", "detail": str(_e)[:30]}
+
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}
 

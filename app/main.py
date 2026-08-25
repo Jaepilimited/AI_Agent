@@ -149,6 +149,9 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_value_cache_table)
         from app.core.ingredients import ensure_ingredient_tables
         await asyncio.to_thread(ensure_ingredient_tables)
+        # OP 재고 — 시트를 매일 04:10 에 적재해 **표 조회**로 답한다 (벡터 아님)
+        from app.core.inventory import ensure_inventory_table
+        await asyncio.to_thread(ensure_inventory_table)
         from app.core.term_aliases import ensure_term_aliases_table
         await asyncio.to_thread(ensure_term_aliases_table)
         from app.core.usage_meter import ensure_usage_table
@@ -209,6 +212,7 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
             _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
+            _scheduler.add_job(_op_inventory_sync_job, "cron", hour=4, minute=10, id="op_inventory_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
             _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")
@@ -596,6 +600,26 @@ async def _ingredient_sync_job():
         logger.info("ingredient_sync_done", **stats)
     except Exception as e:
         logger.error("ingredient_sync_failed", error=str(e))
+
+
+async def _op_inventory_sync_job():
+    """매일 04:10: OP 재고 시트 → MariaDB 적재.
+
+    ⛔ 재고는 **벡터가 아니라 표**로 답한다 (2026-08-25 결정). 시트가 SKU × 창고
+       수량이라 임베딩으로는 숫자를 지킬 수 없다 — `app/core/inventory.py` 머리말 참조.
+    ⚠️ 적재가 멈추면 재고가 조용히 낡는다. 그래서 `EXPECTED_JOBS` 에 등록해
+       자가 점검이 매일 실행 기록을 본다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("op_inventory_sync_daily") as jr:
+            from app.core.inventory import sync_inventory
+            stats = await asyncio.to_thread(sync_inventory)
+            jr.set_note(str({k: v for k, v in stats.items() if k != "locations"})[:400])
+        logger.info("op_inventory_sync_done",
+                    **{k: v for k, v in stats.items() if k != "locations"})
+    except Exception as e:
+        logger.error("op_inventory_sync_failed", error=str(e))
 
 
 async def _knowledge_map_job():

@@ -258,11 +258,30 @@ def test_pre_router_intercepts_sit_upstream_of_the_router():
     pairs = {(e["src"], e["dst"]) for e in out["edges"]}
     assert ("intercept.model_rights", "route.model_rights") in pairs
     assert ("intercept.report", "route.report") in pairs
-    # 관문 → … → 라우터 순서여야 한다 (라우터가 관문보다 위면 안 된다)
-    assert ("intercept.report", "source_pin") in pairs
+    assert ("intercept.inventory", "route.inventory") in pairs
+
+    # 관문 → … → 라우터 순서여야 한다 (라우터가 관문보다 위면 안 된다).
+    # ⚠️ 관문은 늘어난다 — 2026-08-25 에 재고 관문이 보고서와 `source_pin` 사이에
+    #    끼면서 직결 단언이 깨졌다. 순서가 틀린 게 아니라 사슬이 길어진 것이므로
+    #    **직결이 아니라 도달 가능성**으로 본다.
+    def _reaches(start, goal):
+        seen, stack = set(), [start]
+        while stack:
+            cur = stack.pop()
+            if cur == goal:
+                return True
+            if cur in seen:
+                continue
+            seen.add(cur)
+            stack += [d for s, d in pairs if s == cur]
+        return False
+
+    assert _reaches("intercept.report", "source_pin")
+    assert _reaches("at_parse", "intercept.inventory")
     for router in ("router.keyword", "router.llm"):
         assert (router, "route.report") not in pairs
         assert (router, "route.model_rights") not in pairs
+        assert (router, "route.inventory") not in pairs
 
 
 def test_answer_check_hangs_off_bigquery_only():
