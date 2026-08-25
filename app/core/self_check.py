@@ -890,6 +890,21 @@ CHECKS: list[Check] = [
     # ⛔ 정규식의 `\b` 가 진짜 백스페이스 문자(0x08)로 들어가면 에러 없이 컴파일되고
     #    영영 매치하지 않는다. 화면에도 안 보인다 — 이 파일의 "답변 앞부분 유실" 감지가
     #    실제로 그렇게 죽어 있었다 (2026-08-25 발견).
+    # ⛔ `@@팀` 필터가 색인 표기와 어긋나면 에러 없이 0건이다 — 화면에서는
+    #    "자료가 없네요" 와 구분되지 않는다 (2026-08-25).
+    # ⛔ 링크 단계가 빠지면 에러 없이 검색 결과만 얇아진다 (2026-08-25 이전 상태:
+    #    시트·드라이브 69%가 색인에 없었다).
+    Check("static_team_links", "static", SEV_WARNING,
+          "팀 자료 링크(시트·드라이브)가 벡터 색인에 들어가 있는가",
+          _static("static_team_links")),
+    Check("static_qdrant_teams", "static", SEV_WARNING,
+          "@@팀 지정이 벡터 색인의 team 값과 맞물리는가 (어긋나면 조용히 0건)",
+          _static("static_qdrant_teams")),
+    # ⛔ 수정일 없이 색인된 노션 문서는 "최신 우선" 규칙을 무력화한다 —
+    #    낡은 값이 이기는데 에러는 안 난다 (붐따 #105, 2026-08-25).
+    Check("static_notion_dates", "static", SEV_WARNING,
+          "수정일 없이 색인된 노션 문서가 있는가 (인테그레이션 미공유)",
+          _static("static_notion_dates")),
     Check("static_ctrl_chars", "static", SEV_WARNING,
           "소스에 눈에 안 보이는 제어문자가 섞였는가 (정규식이 조용히 안 맞는다)",
           _static("static_ctrl_chars")),

@@ -646,6 +646,51 @@ def team_link_coverage() -> Tuple[bool, str]:
     return True, f"링크 카드 색인 {in_index}장 · 후보 {expected}장"
 
 
+def notion_pages_without_date() -> Tuple[bool, str]:
+    """수정일 없이 색인된 노션 문서가 있는가 (2026-08-25, 붐따 #105).
+
+    ⛔ `last_edited_time == ""` 는 버그가 아니라 **표식**이다 (`ingest_page.py`):
+       노션 인테그레이션에 공유되지 않아 **공개 링크를 긁어** 넣은 페이지다.
+       그런 문서는 날짜가 없으므로 **"값이 다르면 최신 문서를 따르라" 규칙이 작동하지
+       않는다.** 실제로 야근 식대 답변이 2023년 문서의 10,000원을 골랐고, 15,000원이
+       적힌 `복리후생` 은 날짜가 없어 밀렸다.
+
+    에러가 나지 않는 고장이다 — 검색은 되고 답도 나오는데 **낡은 값이 이긴다.**
+    목록은 `docs/notion_unshared_pages.md`, 해결은 노션에서 인테그레이션 공유다.
+
+    ⚠️ `source='google_sheets'` 링크 카드는 원래 노션 수정일이 없다 — 세지 않는다.
+    """
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        from app.agents.qdrant_agent import COLLECTION, _get_client
+    except ImportError as exc:
+        return True, f"qdrant_client 없음 — 건너뜀 ({exc})"
+
+    try:
+        client = _get_client()
+        notion_only = FieldCondition(key="source", match=MatchValue(value="notion"))
+        total = client.count(collection_name=COLLECTION,
+                             count_filter=Filter(must=[notion_only]), exact=True).count
+        undated = client.count(
+            collection_name=COLLECTION,
+            count_filter=Filter(must=[notion_only,
+                                      FieldCondition(key="last_edited_time",
+                                                     match=MatchValue(value=""))]),
+            exact=True).count
+    except Exception as exc:
+        return False, f"Qdrant 색인을 세지 못했다: {exc}"
+
+    if not total:
+        return False, "notion 소스 청크가 0개다 — 색인이 비었는지 확인할 것"
+    if not undated:
+        return True, f"수정일 없는 노션 청크 없음 (notion {total}개)"
+    pct = undated * 100.0 / total
+    return False, (f"수정일 없이 색인된 노션 청크 {undated}/{total} ({pct:.1f}%) — "
+                   f"인테그레이션 미공유 페이지다. 낡은 값이 최신을 이긴다. "
+                   f"목록: docs/notion_unshared_pages.md")
+
+
 ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_value_list_dupes", prompt_no_handwritten_value_lists,
@@ -660,4 +705,6 @@ ALL = [
     ("static_ctrl_chars", stray_control_chars, "소스에 섞인 제어문자"),
     ("static_qdrant_teams", qdrant_team_sources, "@@팀 ↔ 벡터 색인 팀 값 일치"),
     ("static_team_links", team_link_coverage, "팀 자료 링크가 벡터 색인에 있는가"),
+    ("static_notion_dates", notion_pages_without_date,
+     "수정일 없이 색인된 노션 문서 (낡은 값이 최신을 이긴다)"),
 ]
