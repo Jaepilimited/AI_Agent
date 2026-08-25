@@ -53,3 +53,29 @@ def test_falls_back_to_top_hit_when_nothing_is_cited():
 
 def test_empty_results_say_nothing():
     assert _vintage_note([], "아무거나") == ""
+
+
+# ── 수정 시점을 알 수 없는 문서 (2026-08-25 규명) ────────────────────────────
+# `last_edited_time == ""` 는 버그가 아니라 **표식**이다 (`ingest_page.py`):
+#   "공개 notion.site 는 last_edited_time 을 알 수 없으므로 존재 여부만 확인"
+# 노션 인테그레이션에 **공유되지 않은** 페이지라 API 대신 공개 링크를 긁어 넣은 것.
+# 클라우드 색인 실측 (2026-08-25): 1,854 청크 중 388개(20.9%)가 수정일 없음.
+# 그 22개 페이지에 **복리후생·근태/휴가·보상·채용·퇴사** 같은 인사 규정이 몰려 있다.
+#
+# ⛔ 그래서 "값이 다르면 최신 문서를 따르라"(2026-08-18)가 **그 문서들에서는 작동할 수
+#    없다.** 붐따 #105 가 정확히 그 경우다: 15,000원이 적힌 `복리후생` 은 수정일이 없고,
+#    10,000원이 적힌 FAQ 는 2023-03-31 이라 LLM 이 날짜 있는 쪽을 골랐다.
+# 값을 코드가 고를 수는 없다. 대신 **모른다는 사실을 보이게** 한다.
+
+def test_undated_source_is_disclosed():
+    results = [_r("", URL_OLD, "복리후생")]
+    note = _vintage_note(results, f"...[복리후생]({URL_OLD})")
+    assert note, "수정 시점을 모르는데 아무 말이 없다"
+    assert "알 수 없" in note or "미상" in note, note
+
+
+def test_dated_recent_source_wins_over_undated():
+    """최신 문서를 함께 근거로 썼으면 겁주지 않는다."""
+    results = [_r("", URL_OLD, "복리후생"), _r("2026-08-01", URL_NEW, "최신")]
+    answer = f"...[복리후생]({URL_OLD}) · [최신]({URL_NEW})"
+    assert _vintage_note(results, answer) == ""

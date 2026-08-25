@@ -403,8 +403,9 @@ def _vintage_note(results: list[dict], answer: str = "") -> str:
         if url in answer or (len(pid) == 32 and pid in _ans_hex):
             cited.append(r)
 
+    pool = cited or (results or [])[:1]
     top = []
-    for r in (cited or (results or [])[:1]):
+    for r in pool:
         raw = str((r.get("payload") or {}).get("last_edited_time") or "")[:10]
         if len(raw) == 10:
             try:
@@ -412,6 +413,21 @@ def _vintage_note(results: list[dict], answer: str = "") -> str:
             except ValueError:
                 pass
     if not top:
+        # ⛔ `last_edited_time == ""` 는 버그가 아니라 **표식**이다 (`ingest_page.py`):
+        #    노션 인테그레이션에 공유되지 않아 공개 링크를 긁어 넣은 페이지다.
+        #    실측 (2026-08-25): 색인 1,854 청크 중 388개(20.9%)가 이 상태이고,
+        #    그 22개 페이지에 **복리후생·근태/휴가·보상·채용·퇴사** 가 몰려 있다.
+        #    그래서 "값이 다르면 최신 문서를 따르라" 가 **그 문서들에선 작동할 수 없다**
+        #    — 붐따 #105 가 그 경우다 (15,000원 문서는 날짜가 없고, 10,000원 문서는
+        #    2023-03-31 이라 LLM 이 날짜 있는 쪽을 골랐다).
+        #    값을 코드가 고를 수는 없다. **모른다는 사실을 보이게** 한다.
+        if pool:
+            logger.warning("notion_answer_from_undated_docs",
+                           titles=[str((r.get("payload") or {}).get("page_title"))
+                                   for r in pool][:3])
+            return ("\n\n> ⏳ 참고한 사내 문서의 **수정 시점을 알 수 없습니다** "
+                    "(노션 공개 링크로 수집된 문서). 더 최신 규정이 따로 있을 수 있으니 "
+                    "중요한 건이면 담당 부서에 확인해 주세요.")
         return ""
     newest = max(top)          # 인용한 것 중 가장 최신 — 그것도 낡았을 때만 경고한다
     age = (datetime.now(timezone.utc) - newest).days
