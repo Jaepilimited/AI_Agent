@@ -56,6 +56,13 @@
   --space-xl: 32px;
   --space-2xl: 48px;
   --space-3xl: 64px;
+
+  /* 첫 화면(웰컴)의 블록 폭 — 인사말·Today 카드·추천 칩이 **같은 값**을 써야 한다.
+     ⛔ 부모가 `align-items: center` 라 블록마다 자기 폭 기준으로 가운데 정렬된다.
+        폭이 다르면 왼쪽 끝이 어긋나 "가운데 정렬이 안 된 것처럼" 보인다 —
+        실제로 Today 카드만 960px 이라 양쪽으로 160px 씩 튀어나왔다
+        (2026-08-25 사용자 제보). 값을 여기 하나만 두어 다시 갈리지 않게 한다. */
+  --welcome-width: 640px;
 }
 
 /* Dark theme (default) — warm gray */
@@ -972,7 +979,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  max-width: 640px;
+  max-width: var(--welcome-width);
   width: 100%;
 }
 
@@ -1017,7 +1024,7 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-sm);
-  max-width: 640px;
+  max-width: var(--welcome-width);
   width: 100%;
 }
 
@@ -1049,7 +1056,8 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 /* Personal briefing: the welcome screen's compact, read-only work snapshot. */
 .personal-briefing {
-  width: min(960px, 100%);
+  /* ⛔ 여기만 960px 이라 인사말·칩(640px)과 왼쪽 끝이 어긋났다 (2026-08-25 제보) */
+  width: min(var(--welcome-width), 100%);
   display: flex;
   flex-direction: column;
   gap: 12px;

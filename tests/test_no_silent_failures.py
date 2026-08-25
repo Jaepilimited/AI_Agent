@@ -644,3 +644,27 @@ def test_no_stray_control_chars_in_source():
 
     ok, msg = stray_control_chars()
     assert ok, msg
+
+
+def test_welcome_blocks_share_one_width():
+    """⛔ 첫 화면 블록들의 폭이 갈리면 **가운데 정렬이 깨진 것처럼 보인다.**
+
+    `.chat-welcome` 이 `align-items: center` 라 블록마다 자기 폭 기준으로 중앙에
+    놓인다. 인사말·추천 칩은 640px 인데 Today 카드만 960px 이라 양쪽으로 160px 씩
+    튀어나왔다 — 왼쪽 끝이 안 맞아 사용자가 "가운데 정렬 안 된 것 같다" 고 제보했다
+    (2026-08-25). 에러가 아니라 **보기에만 어긋나는** 부류다.
+
+    폭은 `--welcome-width` 한 곳에서만 정한다.
+    """
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "style.css").read_text(encoding="utf-8")
+    assert "--welcome-width:" in css, "첫 화면 폭 변수가 없다"
+
+    for sel in (".welcome-greeting {", ".chat-welcome .suggestions {",
+                ".personal-briefing {"):
+        assert sel in css, sel
+        block = css.split(sel, 1)[1].split("}", 1)[0]
+        assert "var(--welcome-width)" in block, (
+            f"{sel} 이 --welcome-width 를 쓰지 않는다 — 폭이 다시 갈린다: {block.strip()[:80]}")
