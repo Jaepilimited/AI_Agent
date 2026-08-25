@@ -679,6 +679,7 @@
   var btnAttach = document.getElementById("btn-attach");
   var fileInput = document.getElementById("file-input");
   var chatInputArea = document.getElementById("chat-input-area");
+  var personalBriefingController = null;
 
   // ===== Init =====
   init();
@@ -693,6 +694,15 @@
       userAvatar.textContent = (currentUser.name || "U").charAt(0).toUpperCase();
       var welcomeName = document.getElementById("welcome-user-name");
       if (welcomeName) welcomeName.textContent = currentUser.name;
+      if (window.CellaPersonalBriefing) {
+        personalBriefingController = window.CellaPersonalBriefing.create({
+          root: document.getElementById("personal-briefing"),
+          input: chatInput,
+          connect: handleGwsConnect,
+          fetchImpl: window.fetch.bind(window)
+        });
+        personalBriefingController.load();
+      }
     } catch (e) {
       window.location.href = "/login";
       return;
@@ -2826,6 +2836,7 @@
     chatMessages.innerHTML = "";
     chatMessages.appendChild(chatWelcome);
     chatWelcome.style.display = "flex";
+    if (personalBriefingController) personalBriefingController.show();
   }
 
   var _scrollRafPending = false;
@@ -3952,15 +3963,22 @@
   // ===== GWS Google Account Connection =====
   var gwsConnected = false;
   var gwsGoogleEmail = "";
+  var gwsStatusKnown = false;
 
   function checkGwsStatus() {
     if (!currentUser) return;
     fetch("/auth/google/status")
       .then(function (r) { return r.json(); })
       .then(function (data) {
+        var wasConnected = gwsConnected;
+        var wasKnown = gwsStatusKnown;
         gwsConnected = data.authenticated;
         gwsGoogleEmail = data.google_email || "";
+        gwsStatusKnown = true;
         updateGwsButton();
+        if (wasKnown && !wasConnected && gwsConnected && personalBriefingController) {
+          personalBriefingController.refreshAfterConnect();
+        }
       })
       .catch(function () {});
   }
@@ -3995,7 +4013,12 @@
         : "Google 계정 연결을 해제하시겠습니까?";
       if (!confirm(msg)) return;
       fetch("/auth/google/revoke", { method: "POST" })
-        .then(function () { gwsConnected = false; gwsGoogleEmail = ""; updateGwsButton(); })
+        .then(function () {
+          gwsConnected = false;
+          gwsGoogleEmail = "";
+          updateGwsButton();
+          if (personalBriefingController) personalBriefingController.load();
+        })
         .catch(function () {});
     } else {
       // Connect — open in new window
@@ -4006,9 +4029,14 @@
           .then(function (r) { return r.json(); })
           .then(function (data) {
             if (data.authenticated) {
+              var wasConnected = gwsConnected;
               gwsConnected = true;
               gwsGoogleEmail = data.google_email || "";
+              gwsStatusKnown = true;
               updateGwsButton();
+              if (!wasConnected && personalBriefingController) {
+                personalBriefingController.refreshAfterConnect();
+              }
               clearInterval(pollInterval);
             }
           })
