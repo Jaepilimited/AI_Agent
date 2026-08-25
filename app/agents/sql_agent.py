@@ -8,7 +8,7 @@ import json
 import calendar
 import re
 from collections import OrderedDict
-from datetime import datetime
+from datetime import date as _date, datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -1816,6 +1816,37 @@ def _unit_note(sql: str) -> str:
     return "\n".join(lines)
 
 
+# ── 미래 날짜는 포함한다. 대신 포함했다고 말한다 (2026-08-25 사용자 확정) ────
+# 발주·예정 물량은 미래 날짜가 정상이고 그것이 사용자의 대시보드 기준이다 (붐따 #143·#144).
+# ⛔ 다만 **말없이 포함하면** 매출 추이에 아직 일어나지 않은 달이 섞여도 아무도 모른다 —
+#    말없이 자르던 것과 같은 종류의 조용한 오답이다. 포함은 하되 **공시는 코드가** 한다.
+#    프롬프트에 적으면 확률이고, 확률로는 "안 적힌 답변"이 반드시 나온다.
+_RE_UPPER_BOUND = re.compile(
+    r"(?:<=|<|AND)\s*'(\d{4}-\d{2}-\d{2})(?:[ T][\d:]+)?'", re.IGNORECASE)
+
+
+def _future_period_note(sql: str, today=None) -> str:
+    """조회 상한이 오늘 이후면 그 사실을 한 줄로 돌려준다 (아니면 빈 문자열)."""
+    if not sql:
+        return ""
+    today = today or _date.today()
+    bounds = []
+    for m in _RE_UPPER_BOUND.finditer(sql):
+        try:
+            bounds.append(_date.fromisoformat(m.group(1)))
+        except ValueError:
+            continue
+    future = [b for b in bounds if b > today]
+    if not future:
+        return ""
+    nl = chr(10)
+    return (nl + nl + "> ⚠️ 이 조회 기간은 오늘("
+            + today.strftime("%Y-%m-%d") + ") 이후인 "
+            + max(future).strftime("%Y-%m-%d")
+            + " 까지를 포함합니다. 발주·예정 물량처럼 아직 일어나지 않은 "
+            + "행이 함께 집계될 수 있습니다.")
+
+
 def format_answer(state: AgentState) -> Dict[str, Any]:
     """Format SQL results into a natural language answer with optional chart.
 
@@ -2238,6 +2269,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
+        answer = answer + _future_period_note(sql)
         return {"answer": answer}
     except Exception as e:
         logger.error("answer_formatting_failed", error=str(e))

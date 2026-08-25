@@ -79,3 +79,36 @@ def test_every_sql_generation_path_applies_it():
 
     src = inspect.getsource(sql_agent)
     assert src.count("_normalize_named_period(") == 1 + 4  # 정의 1 + 호출 4
+
+
+# ── 미래 날짜는 포함한다 — 대신 포함했다고 말한다 (2026-08-25 사용자 확정) ──────
+# 발주·예정 물량은 미래 날짜가 정상이고, 그것이 사용자의 대시보드(product metrics)
+# 기준이다. 그래서 자르지 않는다. ⛔ 다만 **말없이 포함하면** 매출 추이에 아직
+# 일어나지 않은 달이 섞여도 아무도 모른다 — 자르는 것과 같은 종류의 조용한 오답이다.
+# 포함은 하되 공시는 코드가 보증한다 (LLM 프롬프트에 맡기지 않는다).
+
+def test_future_period_is_disclosed():
+    from datetime import date, timedelta
+
+    from app.agents.sql_agent import _future_period_note
+    future = (date.today() + timedelta(days=20)).strftime("%Y-%m-%d")
+    note = _future_period_note(
+        f"SELECT 1 FROM t WHERE Date BETWEEN '2026-01-01' AND '{future} 23:59:59'")
+    assert note, "미래까지 조회했는데 아무 말이 없다"
+    assert future[:7] in note or "이후" in note
+
+
+def test_past_only_period_says_nothing():
+    """지난 기간만 봤으면 군더더기를 붙이지 않는다."""
+    from app.agents.sql_agent import _future_period_note
+    assert _future_period_note(
+        "SELECT 1 FROM t WHERE Date BETWEEN '2025-01-01' AND '2025-12-31'") == ""
+
+
+def test_disclosure_is_appended_by_code_not_left_to_the_llm():
+    """⛔ 프롬프트에 맡기면 확률이다 — 답변 문자열에 코드가 붙인다."""
+    import inspect
+
+    from app.agents import sql_agent
+    src = inspect.getsource(sql_agent.format_answer)
+    assert "_future_period_note(" in src
