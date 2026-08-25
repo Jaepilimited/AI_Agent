@@ -1,7 +1,12 @@
+import asyncio
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api import auth_routes
+from app.api import personal_briefing_api as api
 from app.api.auth_middleware import get_current_user
 from app.api.personal_briefing_api import router
 from app.db.models import User
@@ -63,30 +68,69 @@ def test_disabled_flag_short_circuits_core(monkeypatch):
     assert client.post("/api/personal-briefing/refresh").status_code == 404
 
 
-def test_refresh_timeout_returns_safe_cached_sections(monkeypatch):
-    async def timeout(*_args, **_kwargs):
-        _args[0].close()
-        raise TimeoutError()
+def test_refresh_timeout_bounds_stalled_cache_fallback(monkeypatch):
+    timeouts = []
 
-    cached = {
-        "enabled": True,
-        "needs_refresh": True,
-        "calendar": {"status": "ready", "items": [], "error_code": ""},
-        "mail": {"status": "empty", "items": [], "error_code": ""},
-    }
-    monkeypatch.setattr("app.api.personal_briefing_api.asyncio.wait_for", timeout)
-    monkeypatch.setattr("app.api.personal_briefing_api.get_cached_for_user", lambda _user: cached)
+    async def timeout(awaitable, timeout):
+        awaitable.close()
+        timeouts.append(timeout)
+        raise asyncio.TimeoutError()
+
+    remaining = iter((15.0, 0.05))
+    monkeypatch.setattr(api, "_remaining_seconds", lambda _deadline: next(remaining))
+    monkeypatch.setattr(api.asyncio, "wait_for", timeout)
+    monkeypatch.setattr(
+        api, "get_cached_for_user", lambda *_args: (_ for _ in ()).throw(AssertionError("cache ran")),
+    )
 
     response = TestClient(_app_for_owner()).post("/api/personal-briefing/refresh")
 
     assert response.status_code == 200
     assert response.json()["needs_refresh"] is False
-    assert response.json()["calendar"] == {
-        "status": "error", "items": [], "error_code": "google_timeout",
-    }
-    assert response.json()["mail"] == {
-        "status": "error", "items": [], "error_code": "google_timeout",
-    }
+    assert response.json()["for_date"]
+    assert response.json()["calendar"]["error_code"] == "google_timeout"
+    assert response.json()["mail"]["error_code"] == "google_timeout"
+    assert timeouts == [15.0, 0.05]
+
+
+def test_refresh_pins_one_kst_now_across_midnight_fallback(monkeypatch):
+    seoul = ZoneInfo("Asia/Seoul")
+    before_midnight = datetime(2026, 8, 25, 23, 59, 59, tzinfo=seoul)
+    after_midnight = datetime(2026, 8, 26, 0, 0, 1, tzinfo=seoul)
+    seen = {}
+
+    class CrossingClock:
+        calls = 0
+
+        @classmethod
+        def now(cls, _tz):
+            cls.calls += 1
+            return before_midnight if cls.calls == 1 else after_midnight
+
+    async def timed_out_refresh(_user, *, now):
+        seen["refresh_now"] = now
+        raise asyncio.TimeoutError()
+
+    def cached(_user, now):
+        seen["cached_now"] = now
+        return {
+            "enabled": True,
+            "for_date": str(now.date()),
+            "needs_refresh": True,
+            "calendar": {"status": "empty", "items": [], "error_code": ""},
+            "mail": {"status": "empty", "items": [], "error_code": ""},
+        }
+
+    monkeypatch.setattr(api, "datetime", CrossingClock)
+    monkeypatch.setattr(api, "refresh_for_user", timed_out_refresh)
+    monkeypatch.setattr(api, "get_cached_for_user", cached)
+
+    response = TestClient(_app_for_owner()).post("/api/personal-briefing/refresh")
+
+    assert response.status_code == 200
+    assert CrossingClock.calls == 1
+    assert seen == {"refresh_now": before_midnight, "cached_now": before_midnight}
+    assert response.json()["for_date"] == "2026-08-25"
 
 
 def test_personal_briefing_job_is_monitored():
