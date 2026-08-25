@@ -2742,11 +2742,12 @@ class OrchestratorAgent:
         """
         import asyncio as _asyncio
 
-        from app.core.inventory import SHEET_URL, search, status
+        from app.core.inventory import SHEET_URL, freshness, search, status
 
         try:
             rows = await _asyncio.to_thread(search, term, 15)
             st = await _asyncio.to_thread(status)
+            fresh = await _asyncio.to_thread(freshness)
         except Exception as e:
             logger.error("inventory_query_failed", error=str(e)[:200])
             return {"source": "inventory",
@@ -2766,8 +2767,11 @@ class OrchestratorAgent:
                 + "적재된 품목은 {:,}개입니다. 품목명 일부나 SKU 로 다시 물어봐 주세요.".format(st["skus"])
                 + nl + nl + "---" + nl + "*시트 기준: " + stamp + " · [원본 시트](" + SHEET_URL + ")*")}
 
-        lines = ["### 📦 재고 조회 결과", "",
-                 "**'{}'** 으로 {}개 품목을 찾았습니다.".format(term, len(rows)), "",
+        # ⛔ 낡았으면 **표보다 먼저** 말한다 — 각주는 아무도 안 읽는다
+        lines = ["### 📦 재고 조회 결과", ""]
+        if fresh.get("note"):
+            lines += ["> " + fresh["note"], ""]
+        lines += ["**'{}'** 으로 {}개 품목을 찾았습니다.".format(term, len(rows)), "",
                  "| SKU | 품목명 | 총 재고 | 창고별 |", "|---|---|---:|---|"]
         for r in rows:
             name = str(r.get("item_name") or "").replace("|", "/")[:52]

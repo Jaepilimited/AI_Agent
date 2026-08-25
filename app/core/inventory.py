@@ -128,7 +128,12 @@ def _read_sheet() -> Dict[str, Any]:
 
 
 def sync_inventory(dry_run: bool = False) -> Dict[str, Any]:
-    """시트 → `op_inventory`. 매일 04:10 (`op_inventory_sync_daily`)."""
+    """시트 → `op_inventory`. 매일 11:20·16:20 (`op_inventory_sync_daily`).
+
+    ⛔ **갱신 시각 뒤에 돌아야 한다.** 시트는 오전 10시경 갱신되는데 처음엔 04:10 에
+       걸어 **매일 전날 데이터를 읽고 있었다** (2026-08-25). 적재는 성공하고 숫자만
+       하루 낡는다 — 에러가 없어 시트의 `마지막 업데이트 일시` 를 대조하기 전엔 모른다.
+    """
     ensure_inventory_table()
     data = _read_sheet()
     rows, locs = data["rows"], data["locations"]
@@ -271,3 +276,27 @@ def inventory_intent(query: str, explicit: bool = False) -> str | None:
     words = extract(q, extra_stop=_STOP)
     # 제품어가 안 남으면 전체 재고 요약을 뜻한다
     return " ".join(words) if words else "*"
+
+
+# ── 신선도 ───────────────────────────────────────────────────────────────────
+# ⛔ 재고는 매일 바뀐다. 시각을 **적어 두는 것만으로는 부족하다** — 사람은 표를 보지
+#    각주를 안 본다. 낡았으면 답변이 **먼저 그 사실을 말해야** 한다.
+#    시트 안내: "1일 1회 업데이트 (오후 2시 전후)". 적재는 11:20·16:20 에 돈다.
+_STALE_HOURS = 20
+
+
+def freshness() -> Dict[str, Any]:
+    """적재가 얼마나 묵었나 → {stale: bool, hours: float, note: str}."""
+    st = status()
+    last = st.get("last_sync")
+    if not last:
+        return {"stale": True, "hours": None,
+                "note": "재고 데이터가 아직 적재되지 않았습니다."}
+    hours = (datetime.now() - last).total_seconds() / 3600
+    if hours <= _STALE_HOURS:
+        return {"stale": False, "hours": hours, "note": ""}
+    return {"stale": True, "hours": hours,
+            "note": ("⚠️ 이 재고는 **{:.0f}시간 전**에 적재된 값입니다 "
+                     "(시트 기준 {}). 그 뒤 입출고가 반영되지 않았을 수 있으니 "
+                     "중요한 건이면 원본 시트를 확인해 주세요.").format(
+                         hours, st.get("sheet_updated_at") or "시점 미상")}

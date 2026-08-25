@@ -212,7 +212,10 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
             _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
-            _scheduler.add_job(_op_inventory_sync_job, "cron", hour=4, minute=10, id="op_inventory_sync_daily")
+            # ⛔ 시트는 **오전 10시경**에 갱신되고 안내문엔 "오후 2시 전후" 라고 적혀 있다.
+            #    처음에 04:10 에 걸었다가 **매일 전날 데이터를 읽고 있었다** (2026-08-25).
+            #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돌다.
+            _scheduler.add_job(_op_inventory_sync_job, "cron", hour="11,16", minute=20, id="op_inventory_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
             _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")

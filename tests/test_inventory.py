@@ -141,3 +141,32 @@ def test_at_source_prefix_is_stripped_before_search():
     term = o._inventory_term("@@OP 포어마이징 클레이", clean, entry, None)
     assert term and "OP " not in term, term
     assert "포어마이징" in term, term
+
+
+# ── 신선도 (2026-08-25 사용자 지적: "숫자가 매일 바뀐다") ──────────────────────
+
+def test_sync_runs_after_the_sheet_updates():
+    """⛔ 시트는 **오전 10시경** 갱신된다 (안내문은 "오후 2시 전후").
+       처음에 04:10 에 걸어 **매일 전날 데이터를 읽고 있었다** (2026-08-25).
+       적재는 성공하고 숫자만 하루 낡는다 — 에러가 없어 시트의
+       `마지막 업데이트 일시` 를 대조하기 전엔 모른다."""
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent
+           / "app" / "main.py").read_text(encoding="utf-8")
+    line = next(l for l in src.splitlines() if "op_inventory_sync_daily" in l and "add_job" in l)
+    assert "hour=4" not in line, "갱신 전에 돈다: " + line.strip()
+    assert 'hour="11,16"' in line, line.strip()
+
+
+def test_stale_data_is_announced_not_just_footnoted():
+    """⛔ 시각을 각주에 적어 두는 것만으로는 부족하다 — 사람은 표를 보지 각주를
+       안 본다. 낡았으면 답변이 **표보다 먼저** 그 사실을 말해야 한다."""
+    fn = inspect.getsource(inventory.freshness)
+    assert "stale" in fn and "_STALE_HOURS" in fn
+
+    from app.agents import orchestrator
+    handler = inspect.getsource(orchestrator.OrchestratorAgent._handle_inventory_query)
+    assert "freshness" in handler
+    # 경고가 표(헤더) 앞에 삽입되는지 — 위치가 요점이다
+    assert handler.index('fresh["note"]') < handler.index("| SKU |")
