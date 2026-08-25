@@ -541,8 +541,18 @@ def search(term: str, limit: int = 30,
     if index is None:
         index = _index(live_stock()["rows"])
     words, dropped = usable_words(raw.split(), index)
+    # ⚠️ 제품어가 하나도 없으면 **전체에서 많은 순**이다 (`재고 알려줘`·`*`).
+    #    예전엔 빈 목록을 돌려줘 "품목을 찾지 못했습니다" 가 나갔다 — 질문은
+    #    멀쩡한데 답이 없는 것처럼 보인다.
     if not words:
-        return []
+        rows = [{"sku": k, "item_name": e.get("name") or "",
+                 "total_qty": sum((e.get("locs") or {}).values()),
+                 "by_location": " | ".join(
+                     "{}:{}".format(a, b) for a, b in
+                     sorted((e.get("locs") or {}).items(), key=lambda kv: -kv[1]))}
+                for k, e in index.items()]
+        rows.sort(key=lambda r: -r["total_qty"])
+        return rows[:int(limit)]
     if dropped:
         logger.info("inventory_search_dropped", words=",".join(dropped))
 
@@ -660,7 +670,13 @@ _NOT_STOCK = ("재고 관리 방법", "재고관리 방법", "재고 정책", "�
 _STOP = ("재고", "재고량", "잔여수량", "잔고", "잔량", "보유수량", "수량", "현황", "stock",
          "inventory", "얼마", "얼마야", "몇개", "개", "남았어", "남아", "남은",
          "확인", "확인해줘", "알려줘", "보여줘", "조회", "조회해줘", "해줘", "줘",
-         "있어", "있나", "있나요", "있니", "남았나", "남았니", "몇")
+         "있어", "있나", "있나요", "있니", "남았나", "남았니", "몇",
+         # ⛔ 일반 명사는 제품 이름이 아니다. 실측(2026-08-25 프로덕션):
+         #    "유통기한 임박한 제품 알려줘" 가 **품목명에 '제품' 이 든 3건**을
+         #    찾아 왔다 — 전체에서 임박한 순으로 보여줘야 하는 질문이다.
+         #    `usable_words` 는 데이터에 물어 판정하므로 이런 말을 걸러내지 못한다
+         #    (실제로 품목명에 들어 있다). 여기서 미리 뺀다.
+         "제품", "상품", "품목", "아이템", "리스트", "목록", "전체", "종류")
 
 
 def _restore(question: str, words: List[str]) -> List[str]:

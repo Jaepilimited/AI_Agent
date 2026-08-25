@@ -576,6 +576,16 @@ def _scope_sources(enabled_sources, db_entry):
     return [e["key"] for e in db_entry]
 
 
+def _euro(word: str) -> str:
+    """받침에 맞는 `으로`/`로`. "'전체' 으로" 처럼 틀리면 자동 생성 티가 난다."""
+    from app.reports.blocks import _josa
+
+    w = (word or "").rstrip()
+    if not w:
+        return " 으로"
+    return " 으로" if _josa(w, "은는").endswith("은") else "로"
+
+
 class OrchestratorAgent:
     """Orchestrator-Worker pattern conductor.
 
@@ -2813,7 +2823,10 @@ class OrchestratorAgent:
                 lines += ["> " + note, ""]
         # ⛔ 쓰지 않은 낱말을 쓴 것처럼 보이면 안 된다 — 실제로 찾은 말과
         #    뺀 말을 그대로 적는다 (드라이브 검색을 넓혔을 때와 같은 규칙)
-        found = "**'{}'** 으로 {}개 품목을 찾았습니다.".format(shown, len(rows))
+        if not kept:                      # 제품어 없음 → 전체에서 많은 순
+            shown, dropped = "전체", []
+        found = "**'{}'**{} {}개 품목을 찾았습니다.".format(
+            shown, _euro(shown), len(rows))
         if dropped:
             from app.reports.blocks import _josa
             listed = ", ".join("'" + d + "'" for d in dropped)
@@ -2856,7 +2869,10 @@ class OrchestratorAgent:
         nl = chr(10)
         rows = res["rows"]
         stamp = res.get("sheet_updated_at") or "시점 미상"
-        shown = res.get("shown") or term
+        # 제품어가 없으면 전체에서 임박한 순이다 — 검색어 자리에 질문의 말을
+        # 그대로 넣으면 그 말로 찾은 것처럼 보인다
+        shown = res.get("shown") or "전체"
+        dropped_note = res.get("dropped") if res.get("shown") else []
         if not rows:
             return {"source": "inventory", "answer": (
                 "### 📅 유통기한 조회 결과" + nl + nl
@@ -2866,12 +2882,12 @@ class OrchestratorAgent:
         lines = ["### 📅 유통기한 조회 결과", ""]
         if res.get("note"):
             lines += ["> " + res["note"], ""]
-        head = "**'{}'** 으로 로트 {:,}건을 찾았습니다 (임박한 순 {}건 표시).".format(
-            shown, res["total"], len(rows))
-        if res.get("dropped"):
+        head = "**'{}'**{} 로트 {:,}건을 찾았습니다 (임박한 순 {}건 표시).".format(
+            shown, _euro(shown), res["total"], len(rows))
+        if dropped_note:
             from app.reports.blocks import _josa
-            listed = ", ".join("'" + d + "'" for d in res["dropped"])
-            last = res["dropped"][-1]
+            listed = ", ".join("'" + d + "'" for d in dropped_note)
+            last = dropped_note[-1]
             head += " (품목명에 없는 말 {}{} 빼고 찾았습니다.)".format(
                 listed, _josa(last, "은는")[len(last):])
         lines += [head, "",

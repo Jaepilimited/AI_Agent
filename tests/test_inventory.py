@@ -369,3 +369,30 @@ def test_product_names_that_end_like_a_particle_survive():
     # 반대 방향 — 진짜 조사는 데이터에 물어 풀린다
     keep2, _ = inventory.usable_words(["앰플은"], index)
     assert keep2 == ["앰플"], keep2
+
+
+def test_whole_inventory_questions_are_answered_not_refused():
+    """⚠️ 제품어가 없으면 **전체에서 많은 순**이다. 예전엔 빈 목록을 돌려줘
+       "품목을 찾지 못했습니다" 가 나갔다 — 질문은 멀쩡한데 답이 없는 것처럼 보인다."""
+    index = {"A": {"name": "가", "locs": {"L": 5}}, "B": {"name": "나", "locs": {"L": 9}}}
+    rows = inventory.search("*", index=index)
+    assert [r["sku"] for r in rows] == ["B", "A"], rows
+
+
+def test_generic_nouns_are_not_treated_as_product_names():
+    """⛔ 실측(2026-08-25 프로덕션): "유통기한 임박한 제품 알려줘" 가 **품목명에
+       '제품' 이 든 3건**만 찾아 왔다. 전체에서 임박한 순으로 보여줘야 하는 질문이다.
+
+    `usable_words` 는 데이터에 물어 판정하므로 이런 말을 걸러내지 못한다 —
+    실제로 품목명에 들어 있기 때문이다. 불용어에서 미리 뺀다.
+    """
+    for w in ("제품", "상품", "품목", "목록"):
+        assert w in inventory._STOP, w
+    assert inventory.expiry_intent("유통기한 임박한 제품 알려줘") != "제품"
+
+
+def test_euro_particle_matches_the_final_consonant():
+    from app.agents.orchestrator import _euro
+
+    assert _euro("전체") == "로"           # 받침 없음
+    assert _euro("센텔라 앰플") == " 으로"  # 받침 있음
