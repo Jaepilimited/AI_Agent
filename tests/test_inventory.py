@@ -184,9 +184,9 @@ def test_question_words_do_not_zero_out_the_search():
        봤지 행이 나오는지는 보지 않았다. 조회 기능의 회귀는 **행 수로** 걸어야 한다.
     """
     src = inspect.getsource(inventory.search)
-    assert "_usable_words" in src
+    assert "usable_words" in src
 
-    helper = inspect.getsource(inventory._usable_words)
+    helper = inspect.getsource(inventory.usable_words)
     # 목록이 아니라 데이터에 물어본다 — 말투가 늘어도 따라갈 필요가 없다
     assert "op_inventory" in helper and "LIMIT 1" in helper
     assert "STOPWORDS" not in helper
@@ -195,5 +195,21 @@ def test_question_words_do_not_zero_out_the_search():
 def test_particle_stripping_does_not_break_product_names():
     """`클레이` 의 끝 '이' 가 조사로 잘려 `클레` 가 된다. 원형이 품목에 있으면
        원형을 쓴다 — 두 형태를 모두 데이터에 물어본다."""
-    helper = inspect.getsource(inventory._usable_words)
+    helper = inspect.getsource(inventory.usable_words)
     assert "w[:-1]" in helper and "len(w) > 2" in helper
+
+
+def test_answer_shows_the_words_it_actually_used():
+    """⛔ 쓰지 않은 낱말을 쓴 것처럼 보이면 안 된다.
+
+    실측(2026-08-25 프로덕션): `'센텔라 앰플 얼마나'` 로 찾았다고 적으면서 실제로는
+    `센텔라` 로만 조회했다. 넓혀 찾았으면 밝히라는 규칙(드라이브 검색)과 같은 자리다 —
+    좁혀 찾았을 때도 마찬가지다.
+    """
+    from app.agents import orchestrator
+
+    src = inspect.getsource(orchestrator.OrchestratorAgent._handle_inventory_query)
+    assert "usable_words" in src
+    assert "shown" in src and "dropped" in src
+    # 조사는 따옴표가 아니라 마지막 낱말의 받침으로 정한다 ("'얼마나'은(는)" 방지)
+    assert "_josa" in src and "dropped[-1]" in src

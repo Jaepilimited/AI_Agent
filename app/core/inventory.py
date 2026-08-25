@@ -193,7 +193,7 @@ def sync_inventory(dry_run: bool = False) -> Dict[str, Any]:
 
 # ── 조회 ─────────────────────────────────────────────────────────────────────
 
-def _usable_words(words: List[str]) -> tuple[List[str], List[str]]:
+def usable_words(words: List[str]) -> tuple[List[str], List[str]]:
     """품목에 실제로 있는 낱말만 남긴다 — 나머지는 질문의 군더더기다.
 
     ⛔ 낱말을 AND 로 걸기 때문에 **하나라도 품목에 없으면 통째로 0건**이 난다.
@@ -241,7 +241,7 @@ def search(term: str, limit: int = 30) -> List[Dict[str, Any]]:
     # ⛔ 품목명이 `마다가스카르센텔라앰플100ml` 처럼 **붙어** 있다. 공백이 든 검색어를
     #    통째로 LIKE 하면 0건이 난다 ("센텔라 앰플" → 0건, 2026-08-25 실측).
     #    낱말마다 조건을 만들어 AND 로 건다 — 드라이브 검색에서 쓴 방식과 같다.
-    words, dropped = _usable_words(raw.split())
+    words, dropped = usable_words(raw.split())
     if not words:
         return []
     conds, params = [], []

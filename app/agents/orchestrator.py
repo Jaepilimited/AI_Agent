@@ -2742,10 +2742,13 @@ class OrchestratorAgent:
         """
         import asyncio as _asyncio
 
-        from app.core.inventory import SHEET_URL, freshness, search, status
+        from app.core.inventory import (SHEET_URL, freshness, search, status,
+                                        usable_words)
 
         try:
-            rows = await _asyncio.to_thread(search, term, 15)
+            kept, dropped = await _asyncio.to_thread(usable_words, term.split())
+            shown = " ".join(kept) or term
+            rows = await _asyncio.to_thread(search, shown, 15)
             st = await _asyncio.to_thread(status)
             fresh = await _asyncio.to_thread(freshness)
         except Exception as e:
@@ -2771,7 +2774,17 @@ class OrchestratorAgent:
         lines = ["### 📦 재고 조회 결과", ""]
         if fresh.get("note"):
             lines += ["> " + fresh["note"], ""]
-        lines += ["**'{}'** 으로 {}개 품목을 찾았습니다.".format(term, len(rows)), "",
+        # ⛔ 쓰지 않은 낱말을 쓴 것처럼 보이면 안 된다 — 실제로 찾은 말과
+        #    뺀 말을 그대로 적는다 (드라이브 검색을 넓혔을 때와 같은 규칙)
+        found = "**'{}'** 으로 {}개 품목을 찾았습니다.".format(shown, len(rows))
+        if dropped:
+            from app.reports.blocks import _josa
+            listed = ", ".join("'" + d + "'" for d in dropped)
+            # 조사는 **따옴표가 아니라 마지막 낱말**의 받침으로 정한다
+            last = dropped[-1]
+            particle = _josa(last, "은는")[len(last):]
+            found += " (품목명에 없는 말 {}{} 빼고 찾았습니다.)".format(listed, particle)
+        lines += [found, "",
                  "| SKU | 품목명 | 총 재고 | 창고별 |", "|---|---|---:|---|"]
         for r in rows:
             name = str(r.get("item_name") or "").replace("|", "/")[:52]
