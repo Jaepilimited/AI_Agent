@@ -325,3 +325,47 @@ def test_existing_conversation_still_hides_welcome():
     assert "personalBriefingController.show()" not in block
     assert "localStorage" not in briefing_source
     assert "innerHTML" not in briefing_source
+
+
+# ── 메일 읽음/안읽음 · 새로고침 버튼 (2026-08-26 요청) ───────────────────────
+
+def _read(rel: str) -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parent.parent.parent / rel).read_text(encoding="utf-8")
+
+
+def test_mail_rows_show_whether_they_were_read():
+    """⛔ `unread` 값은 처음부터 파이프라인에 있었는데 **화면에만 없었다** —
+       메일이 전부 같은 굵기로 보여서 무엇을 아직 안 봤는지 알 수 없었다.
+
+    ⚠️ 표시는 행 클래스로만 한다. 좁은 칸에 배지 글자를 넣으면 제목을 밀어낸다
+       (`OP` → `O` 사고와 같은 부류).
+    """
+    js = _read("app/frontend/personal-briefing.js")
+    assert "mail-unread" in js and "mail-read" in js
+    assert "item.unread" in js
+
+    css = _read("app/static/style.css")
+    assert ".briefing-doc-row.mail-unread .briefing-doc-row-head" in css
+    assert ".briefing-doc-row.mail-read .briefing-doc-row-head" in css
+
+
+def test_today_has_a_refresh_button_that_always_refetches():
+    """⛔ `load()` 는 서버가 "갱신이 필요하다"(`needs_refresh`)고 할 때만 새로
+       가져온다. 그 경로에 버튼을 걸면 눌러도 캐시가 그대로 보여 **고장 난 것처럼**
+       보인다 — 버튼은 무조건 새로 가져오는 경로여야 한다.
+    """
+    html = _read("app/frontend/chat.html")
+    assert 'id="personal-briefing-refresh"' in html
+
+    js = _read("app/frontend/personal-briefing.js")
+    assert "refreshNow" in js and "refresh: refreshNow" in js
+    body = js.split("async function refreshNow", 1)[1].split("function ", 1)[0]
+    assert "/api/personal-briefing/refresh" in body
+    assert "needs_refresh" not in body, "캐시 조건을 다시 보면 버튼이 안 먹는다"
+    # 연타 방지 + 실패를 말한다 (조용히 넘기면 새로 받은 줄 안다)
+    assert "refreshing" in body and "markRefreshFailed" in body
+
+    chat = _read("app/frontend/chat.js")
+    assert "personal-briefing-refresh" in chat and ".refresh()" in chat
