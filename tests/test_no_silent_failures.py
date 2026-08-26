@@ -738,3 +738,35 @@ def test_feedback_check_counts_open_not_volume():
     # 판정 자체에 기간 창이 걸리면 안 된다 (유입 표시용 7일은 detail 문구에만 쓴다)
     verdict = src.split("return CheckResult", 1)[1]
     assert "week" not in verdict, verdict.strip()[:90]
+
+
+def test_fx_cells_line_up_in_columns():
+    """⛔ 환율 항목을 `flex-wrap` 으로 늘어놓으면 **열이 생기지 않는다.**
+
+    항목마다 폭이 다르다 — 이전값이 있는 것과 없는 것, 자릿수 차이. 그래서 글자처럼
+    흘러 버린다. 실측(2026-08-26, Chrome): 현재값의 왼쪽 좌표가
+    88 / 340 / 580 / 832 / 154px 로 제각각이었고 "정렬이 일정하지 않다" 는 제보를 받았다.
+    격자로 바꾼 뒤에는 9개 값이 정확히 3열(264 / 592 / 921)에 맞는다.
+
+    ⚠️ 이전값·화살표·변동률은 **있을 때도 없을 때도** 있다. 자동 배치에 맡기면 없는
+       항목의 현재값이 앞칸으로 당겨져 또 어긋난다 — 조각마다 `grid-column` 을 못 박는다.
+    ⚠️ `minmax(250px, ...)` 만 쓰면 컨테이너가 그보다 좁을 때 격자가 밖으로 넘친다.
+    """
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "style.css").read_text(encoding="utf-8")
+
+    lst = css.split(".briefing-doc-fx-list {", 1)[1].split("}", 1)[0]
+    assert "display: grid" in lst, f"열이 안 생긴다: {lst.strip()[:80]}"
+    assert "min(250px, 100%)" in lst, "좁은 화면에서 넘친다"
+
+    item = css.split(".briefing-doc-fx-item {", 1)[1].split("}", 1)[0]
+    assert "display: grid" in item
+
+    # 조각마다 자리를 못 박았는가 — 빠진 조각이 있으면 그 항목만 어긋난다
+    for cls, col in ((".briefing-doc-fx-name", "1"), (".briefing-doc-fx-was", "2"),
+                     (".briefing-doc-fx-arrow", "3"), (".briefing-doc-fx-value", "4"),
+                     (".briefing-doc-fx-change", "5")):
+        block = css.split(cls + " {", 1)[1].split("}", 1)[0]
+        assert f"grid-column: {col}" in block, f"{cls} 가 자기 칸을 안 갖는다"
