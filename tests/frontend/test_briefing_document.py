@@ -252,8 +252,13 @@ def _event(event_id, start):
             "location": "", "url": "", "ended": False}
 
 
-def test_cards_hold_only_what_the_document_does_not(page):
-    """오늘 일정과 문서에 실린 메일은 카드에서 빠진다 — 같은 말을 두 번 하지 않는다."""
+def test_mail_lives_in_the_document_not_in_a_second_card(page):
+    """같은 말을 두 번 하지 않는다 — 메일 목록은 **한 곳**에만 있다.
+
+    ⛔ 예전엔 문서가 요약 있는 메일만 싣고 나머지를 `그 밖의 메일` 카드가 받았다.
+       한 화면에 목록이 두 벌이라 **어느 쪽이 전부인지 알 수 없었다** (2026-08-26).
+       이제 문서가 받은 메일을 전부 싣고 절 안에서 스크롤한다 — 카드는 안 만든다.
+    """
     payload = _with_cards(
         _document(),
         [_event("today", "2026-08-25T10:00:00+09:00"), _event("later", "2026-08-27T10:00:00+09:00")],
@@ -264,17 +269,28 @@ def test_cards_hold_only_what_the_document_does_not(page):
     )
     _mount(page, payload)
     names = page.locator(".personal-briefing-card-name").all_inner_texts()
-    counts = page.locator(".personal-briefing-count").all_inner_texts()
-    assert names == ["내일부터", "그 밖의 메일"]
-    assert counts == ["1", "1"]
-    # 카드 항목도 Today 일정과 같은 시간축 행이다 (2026-08-26 사용자 요청).
+    assert names == ["내일부터"], "메일 카드가 또 있으면 목록이 두 벌이다"
     items = page.locator(".personal-briefing-card .briefing-doc-row-head").all_inner_texts()
-    assert "문서가 고르지 않은 메일" in items
-    assert "문서에 실린 메일" not in items
+    assert not any("메일" in text for text in items)
     assert not any("회의 today" in text for text in items)
     assert page.locator(".personal-briefing-item").count() == 0
 
 
+def test_mail_card_is_the_safety_net_when_the_document_has_none(page):
+    """⚠️ 카드를 아예 지우면 **문서가 비었을 때 메일이 통째로 사라진다** —
+       문서 생성이 실패하거나 시간이 초과돼도 `mail.items` 에는 목록이 남는다."""
+    payload = _with_cards(
+        _document(),
+        [],
+        [{"id": "m9", "subject": "문서가 없을 때 보이는 메일", "from_display": "B",
+          "received_at": "2026-08-25T08:00:00+09:00", "unread": True, "url": ""}],
+    )
+    payload["document"]["mail"] = []
+    _mount(page, payload)
+    names = page.locator(".personal-briefing-card-name").all_inner_texts()
+    assert "받은 메일" in names
+    items = page.locator(".personal-briefing-card .briefing-doc-row-head").all_inner_texts()
+    assert "문서가 없을 때 보이는 메일" in items
 def test_a_lone_card_takes_the_full_width(page):
     """2열 그리드에 한 장만 남으면 왼쪽에 붙어 잘린 것처럼 보인다."""
     payload = _with_cards(_document(), [_event("later", "2026-08-27T10:00:00+09:00")], [])

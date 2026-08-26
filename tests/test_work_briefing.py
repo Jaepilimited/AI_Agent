@@ -817,21 +817,6 @@ def test_every_unread_mail_reaches_today():
     assert row["unread"] is True and row["points"] == []
 
 
-def test_read_mail_without_a_summary_stays_out():
-    """읽은 메일까지 전부 올리면 절이 받은편지함이 된다 — 요약거리가 있을 때만 오른다."""
-    events, mails = sample()
-    mails.append({
-        "id": "m8", "from_display": "뉴스레터", "subject": "주간 소식",
-        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
-        "unread": False, "url": "https://mail.google.com/m8",
-    })
-    document = work_briefing.compose(
-        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
-        events=events, mails=mails, window={"label": "어제 18:00 이후"},
-        raw={"mail_points": []})
-    assert "m8" not in [row["id"] for row in document["mail"]]
-
-
 def test_unread_mail_is_never_crowded_out_by_read_mail():
     """⛔ 상한(8건)을 **LLM 이 고른 것이 먼저 다 써버렸다.** 실측(2026-08-26 프로덕션):
        안 읽은 5건 중 3건만 Today 에 올랐다 — 안 읽은 것을 모아 보여주려고 고친 절인데
@@ -948,8 +933,12 @@ def test_summarised_read_mail_is_not_squeezed_out_by_unread():
     assert document["mail_omitted_read"] == 0
 
 
-def test_read_mail_without_a_summary_is_still_left_out():
-    """읽은 메일을 전부 올리면 이 절이 그냥 받은편지함이 된다 — 요약이 있을 때만."""
+def test_all_collected_mail_reaches_today():
+    """⛔ 예전엔 요약이 없는 읽은 메일을 뺐다 ("이 절이 받은편지함이 된다"). 그 결과
+       같은 메일이 아래 `그 밖의 메일` 카드에 다시 나왔고 **한 화면에 목록이 두 벌**이
+       됐다 — 어느 쪽이 전부인지 알 수 없다. 절이 안에서 스크롤하는 지금은 길이가
+       문제가 아니므로 한곳에 다 모은다 (2026-08-26 사용자 확인).
+    """
     events, mails = sample()
     mails.append({
         "id": "rx", "from_display": "뉴스레터", "subject": "주간 소식",
@@ -960,4 +949,55 @@ def test_read_mail_without_a_summary_is_still_left_out():
         day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
         events=events, mails=mails, window={"label": "어제 18:00 이후"},
         raw={"mail_points": []})
-    assert "rx" not in [row["id"] for row in document["mail"]]
+
+    ids = [row["id"] for row in document["mail"]]
+    assert "rx" in ids, "요약이 없다고 빼면 카드에서 다시 보여줘야 한다"
+    assert len(ids) == len(mails), "수집한 메일이 전부 실려야 한다"
+    assert document["mail_omitted_read"] == 0
+
+
+def test_unread_still_comes_first():
+    """전부 싣더라도 순서는 안 읽은 것이 먼저다."""
+    events, mails = sample()
+    mails.append({
+        "id": "rx", "from_display": "뉴스레터", "subject": "주간 소식",
+        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
+        "unread": False, "url": "https://mail.google.com/rx",
+    })
+    mails.append({
+        "id": "ux", "from_display": "동료", "subject": "확인 부탁",
+        "snippet": "", "received_at": "2026-08-25T06:00:00+09:00",
+        "unread": True, "url": "https://mail.google.com/ux",
+    })
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"},
+        raw={"mail_points": []})
+    flags = [row["unread"] for row in document["mail"]]
+    assert flags == sorted(flags, reverse=True), flags
+
+
+def test_rows_within_a_group_are_newest_first():
+    """⚠️ LLM 이 고른 것을 먼저 담고 나머지를 뒤에 붙이므로, 그대로 두면 시간이 튄다
+       (실측 2026-08-26: 15:01 → 12:03 → 14:08). 화면 왼쪽이 시간축이라 거짓말처럼 보인다.
+
+    ⛔ `at`(HH:MM) 으로 정렬하면 안 된다 — 어제 22:16 이 맨 위로 온다.
+    """
+    events, mails = sample()
+    stamps = ["2026-08-24T22:16:00+09:00", "2026-08-25T08:06:00+09:00",
+              "2026-08-25T14:08:00+09:00", "2026-08-25T12:03:00+09:00"]
+    for i, stamp in enumerate(stamps):
+        mails.append({
+            "id": f"u{i}", "from_display": "동료", "subject": f"안 읽은 메일 {i}",
+            "snippet": f"안 읽은 메일 {i} 내용", "received_at": stamp,
+            "unread": True, "url": f"https://mail.google.com/u{i}",
+        })
+    # LLM 은 마지막 것만 골랐다 — 그대로면 그게 맨 앞에 온다
+    raw = {"mail_points": [{"message_id": "u0", "points": ["안 읽은 메일 0 내용"], "request": ""}]}
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T15:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"}, raw=raw)
+
+    unread = [row for row in document["mail"] if row["unread"]]
+    order = [row["id"] for row in unread if row["id"].startswith("u")]
+    assert order == ["u2", "u3", "u1", "u0"], order
