@@ -452,3 +452,17 @@ def test_today_has_a_refresh_button_that_always_refetches():
     assert "force: bool = False" in api, "엔드포인트에 force 가 없다"
     assert "_tracked_refresh(user, now, force=force)" in api
     assert "refresh_for_user(user, now=now, force=force)" in api
+
+
+def test_cut_unread_mail_is_disclosed_on_screen():
+    """⛔ 자리가 모자라 잘렸는데 목록이 멀쩡히 보이면 **그게 전부인 줄 안다.**
+       조용히 자르는 것이 이 화면에서 가장 나쁜 실패다 — 서버가 센 수를 화면이 말한다.
+    """
+    js = _read("app/frontend/personal-briefing.js")
+    assert "mail_omitted_unread" in js
+    section = js.split("function renderMailSection", 1)[1].split(chr(10) + "  }" + chr(10), 1)[0]
+    assert section.index("mail_omitted_unread") > section.index('"안읽음"'), \
+        "안읽음 목록 바로 뒤에 붙어야 무엇이 빠졌는지 이어서 읽힌다"
+
+    server = _read("app/core/work_briefing.py")
+    assert '"mail_omitted_unread": omitted_unread' in server

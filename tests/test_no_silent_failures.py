@@ -816,3 +816,39 @@ def test_fx_cells_line_up_in_columns():
                      (".briefing-doc-fx-change", "5")):
         block = css.split(cls + " {", 1)[1].split("}", 1)[0]
         assert f"grid-column: {col}" in block, f"{cls} 가 자기 칸을 안 갖는다"
+
+
+def test_long_mail_lists_scroll_instead_of_pushing_the_page():
+    """⛔ 자리가 모자라다고 **잘라 버리면** 무엇이 빠졌는지 알 수 없다. 공간은
+       스크롤로 만든다 (2026-08-26 사용자 지시: "카드 내 스크롤을 통해 공간 확보").
+
+    실측(Chrome, 안 읽은 메일 25건): 메일 절이 420px 에 고정되고 내용 1,606px 가
+    안에서 스크롤된다 — 문서 전체는 604px 라 아래 `할 일` 절이 그대로 보인다.
+
+    ⚠️ 제목 줄은 고정한다. 같이 밀려 올라가면 **지금 무엇을 보고 있는지 모른 채**
+       목록만 남는다 (실측: 700px 스크롤에서도 제목이 절 상단에 붙어 있다).
+    """
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "style.css").read_text(encoding="utf-8")
+
+    for sel in (".briefing-doc-mail {", ".personal-briefing-card {"):
+        block = css.split(sel, 1)[1].split("}", 1)[0]
+        assert "overflow-y: auto" in block, sel
+        assert "max-height" in block, sel
+
+    for sel in (".briefing-doc-mail .briefing-doc-section-title {",
+                ".personal-briefing-card .personal-briefing-card-title {"):
+        block = css.split(sel, 1)[1].split("}", 1)[0]
+        assert "position: sticky" in block, sel
+        # ⚠️ 배경이 없으면 스크롤되는 행이 제목 뒤로 비쳐 글자가 겹친다
+        assert "background:" in block, sel
+
+
+def test_chat_body_uses_a_shorter_cap_than_the_screen():
+    """⛔ **채팅 본문에는 스크롤이 없다.** 화면 상한(40)을 그대로 쓰면 잔디에 40줄이
+       밀려 들어가 아무도 안 읽는다 — 자를 따로 둔다."""
+    from app.core import work_briefing
+
+    assert work_briefing.MAX_MAIL_LINES_IN_TEXT < work_briefing.MAX_MAIL_ROWS

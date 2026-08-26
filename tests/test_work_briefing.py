@@ -897,3 +897,149 @@ def test_unread_mail_is_never_crowded_out_by_read_mail():
     for i in range(4):
         assert f"u{i}" in ids, f"안 읽은 메일 u{i} 이 읽은 메일에 밀렸다"
     assert len(ids) <= work_briefing.MAX_MAIL_POINTS
+
+
+def test_every_unread_mail_reaches_today():
+    """⛔ 이 절에 오르는 기준이 **"LLM 이 요약할 거리를 찾았는가"** 하나였다.
+       읽음 여부는 아예 보지 않아서, 안 읽은 5건 중 1건만 Today 에 오르고 나머지는
+       아래 카드에 흩어졌다 — 사용자에게는 규칙이 없어 보인다 (2026-08-26 제보:
+       "안읽은 메일이 나오는 기준을 모르겠다 / 일부여서 이상함").
+
+    Today 의 메일 절은 **아직 안 본 것이 한자리에 모여야** 쓸모가 있다.
+    ⚠️ 요약 없이 제목만 실린다 — 그것이 지어내는 것보다 낫다.
+    """
+    events, mails = sample()
+    mails.append({
+        "id": "m9", "from_display": "OP팀", "subject": "재고 실사 일정",
+        "snippet": "", "received_at": "2026-08-25T09:00:00+09:00",
+        "unread": True, "url": "https://mail.google.com/m9",
+    })
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"},
+        raw={"mail_points": []})
+    ids = [row["id"] for row in document["mail"]]
+    assert "m9" in ids, "안 읽은 메일이 Today 에 없다"
+    row = next(r for r in document["mail"] if r["id"] == "m9")
+    assert row["unread"] is True and row["points"] == []
+
+
+def test_read_mail_without_a_summary_stays_out():
+    """읽은 메일까지 전부 올리면 절이 받은편지함이 된다 — 요약거리가 있을 때만 오른다."""
+    events, mails = sample()
+    mails.append({
+        "id": "m8", "from_display": "뉴스레터", "subject": "주간 소식",
+        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
+        "unread": False, "url": "https://mail.google.com/m8",
+    })
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"},
+        raw={"mail_points": []})
+    assert "m8" not in [row["id"] for row in document["mail"]]
+
+
+def test_unread_mail_is_never_crowded_out_by_read_mail():
+    """⛔ 상한(8건)을 **LLM 이 고른 것이 먼저 다 써버렸다.** 실측(2026-08-26 프로덕션):
+       안 읽은 5건 중 3건만 Today 에 올랐다 — 안 읽은 것을 모아 보여주려고 고친 절인데
+       도로 일부만 나온 셈이다.
+
+    자리가 모자라면 **읽은 것부터** 뺀다.
+    """
+    events, mails = sample()
+    for i in range(9):
+        mails.append({
+            "id": f"r{i}", "from_display": "뉴스", "subject": f"읽은 메일 {i}",
+            "snippet": "", "received_at": "2026-08-25T08:00:00+09:00",
+            "unread": False, "url": f"https://mail.google.com/r{i}",
+        })
+    for i in range(4):
+        mails.append({
+            "id": f"u{i}", "from_display": "동료", "subject": f"안 읽은 메일 {i}",
+            "snippet": "", "received_at": "2026-08-25T08:30:00+09:00",
+            "unread": True, "url": f"https://mail.google.com/u{i}",
+        })
+    raw = {"mail_points": [
+        {"message_id": f"r{i}", "points": [f"읽은 메일 {i}"], "request": ""}
+        for i in range(9)]}
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"}, raw=raw)
+
+    ids = [row["id"] for row in document["mail"]]
+    for i in range(4):
+        assert f"u{i}" in ids, f"안 읽은 메일 u{i} 이 읽은 메일에 밀렸다"
+    # 상한은 둘이다 — 행 수와 **요약이 붙은 행** 수 (LLM 문장이 길다)
+    assert len(ids) <= work_briefing.MAX_MAIL_ROWS
+    summarized = sum(1 for row in document["mail"] if row["points"] or row["request"])
+    assert summarized <= work_briefing.MAX_MAIL_POINTS
+    assert document["mail_omitted_unread"] == 0
+
+
+def _many_unread(count: int):
+    events, mails = sample()
+    for i in range(count):
+        mails.append({
+            "id": f"u{i}", "from_display": "동료", "subject": f"안 읽은 메일 {i}",
+            "snippet": "", "received_at": "2026-08-25T08:30:00+09:00",
+            "unread": True, "url": f"https://mail.google.com/u{i}",
+        })
+    return work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"},
+        raw={"mail_points": []})
+
+
+def test_screen_makes_room_by_scrolling_not_by_cutting():
+    """⛔ 자리가 모자라다고 **잘라 버리면** 무엇이 빠졌는지 알 수 없다.
+       공간은 스크롤로 만든다 (2026-08-26 사용자 지시: "카드 내 스크롤을 통해 공간 확보").
+       그래서 화면 상한은 수집 상한(Gmail 20~40건)만큼 넉넉하다."""
+    document = _many_unread(25)
+    rows = document["mail"]
+    assert len(rows) == 26, "26건(m1 + u0~24)이 전부 실려야 한다"
+    assert document["mail_omitted_unread"] == 0
+
+
+def test_beyond_the_screen_cap_the_cut_is_disclosed():
+    """상한을 넘기면 그때는 잘린다 — 대신 **몇 건이 잘렸는지** 문서가 들고 있어야
+       화면·잔디가 밝힐 수 있다. 조용히 자르는 것이 가장 나쁜 실패다."""
+    document = _many_unread(45)
+    rows = document["mail"]
+    assert len(rows) == work_briefing.MAX_MAIL_ROWS
+    assert all(row["unread"] for row in rows)
+    assert document["mail_omitted_unread"] == 46 - work_briefing.MAX_MAIL_ROWS
+    assert "안 읽은 메일 6건" in document["markdown"]
+
+
+def test_chat_body_is_cut_shorter_than_the_screen():
+    """⛔ **채팅 본문에는 스크롤이 없다.** 잔디에 40줄을 밀어 넣으면 아무도 안 읽는다 —
+       화면과 같은 자를 쓰면 안 된다. 넘치면 "외 N건" 으로 줄이고 어디서 볼 수 있는지 적는다."""
+    document = _many_unread(25)
+    text = document["markdown"]
+    listed = text.count("안 읽은 메일 ")
+    assert listed <= work_briefing.MAX_MAIL_LINES_IN_TEXT + 1
+    assert "외 16건" in text and "안 읽음 16" in text
+    assert "Today" in text
+
+def test_a_summary_is_dropped_before_an_unread_mail_is():
+    """⚠️ 요약 상한에 걸려도 **메일을 버리지 않는다** — 요약만 떼고 제목은 남긴다.
+       안 읽은 메일이 사라지는 것보다 요약이 없는 편이 낫다."""
+    events, mails = sample()
+    for i in range(10):
+        mails.append({
+            "id": f"u{i}", "from_display": "동료", "subject": f"안 읽은 메일 {i}",
+            "snippet": f"안 읽은 메일 {i} 내용", "received_at": "2026-08-25T08:30:00+09:00",
+            "unread": True, "url": f"https://mail.google.com/u{i}",
+        })
+    raw = {"mail_points": [
+        {"message_id": f"u{i}", "points": [f"안 읽은 메일 {i} 내용"], "request": ""}
+        for i in range(10)]}
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"}, raw=raw)
+
+    rows = document["mail"]
+    summarized = [row for row in rows if row["points"]]
+    assert len(summarized) <= work_briefing.MAX_MAIL_POINTS
+    # 요약이 떨어진 행도 목록에는 남는다
+    assert len(rows) > len(summarized)
