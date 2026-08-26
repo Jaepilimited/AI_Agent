@@ -54,8 +54,17 @@ async def create_report(req: CreateReportRequest,
     try:
         result = await asyncio.to_thread(service.run, req.question, user.id, spec_id=req.spec)
     except Exception as e:
-        logger.warning("report_create_failed", error=str(e)[:300], user_id=user.id)
-        raise HTTPException(status_code=500, detail=f"보고서 생성에 실패했습니다: {e}")
+        logger.error(
+            "report_create_failed",
+            error_type=type(e).__name__,
+            error=str(e)[:200],
+            user_id=user.id,
+        )
+        # ⛔ 보고서 엔진의 예외 원문에는 내부 데이터 경로가 섞일 수 있어 응답에 싣지 않는다.
+        raise HTTPException(
+            status_code=500,
+            detail="보고서 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        )
 
     if not result:
         raise HTTPException(

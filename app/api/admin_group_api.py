@@ -336,7 +336,16 @@ async def sync_ad_users(admin: User = Depends(_require_admin)):
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="AD sync timed out")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            "ad_sync_failed",
+            error_type=type(e).__name__,
+            error=str(e)[:200],
+        )
+        # ⛔ 실행 경로·프로세스 오류 원문은 관리자 화면에도 노출하지 않는다.
+        raise HTTPException(
+            status_code=500,
+            detail="AD 동기화 요청 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        )
 
 
 @ad_router.get("/stats")

@@ -16,7 +16,7 @@ import json
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional, Protocol, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Protocol, Union
 
 import structlog
 
@@ -43,10 +43,16 @@ def _is_retryable(error: Exception) -> bool:
     """Check if error is retryable (rate limit, server error, network)."""
     if isinstance(error, (ConnectionError, TimeoutError, OSError)):
         return True
+    status_code = getattr(error, "status_code", None)
+    try:
+        if int(status_code) in {408, 409, 429, 500, 502, 503, 504, 529}:
+            return True
+    except (TypeError, ValueError):
+        pass
     error_str = str(error).lower()
-    if "429" in error_str or "rate" in error_str:
+    if "429" in error_str or "rate" in error_str or "overloaded" in error_str:
         return True
-    if "503" in error_str or "500" in error_str:
+    if any(code in error_str for code in ("500", "502", "503", "504", "529")):
         return True
     if "timeout" in error_str:
         return True
@@ -800,20 +806,16 @@ class ClaudeClient:
         }
         if system_instruction:
             kwargs["system"] = self._wrap_system(system_instruction)
-        with _CLAUDE_SEM:
-            try:
-                with self.client.messages.stream(**self._tune(kwargs)) as stream:
-                    for text in stream.text_stream:
-                        yield text
-                    try:
-                        from app.core.usage_meter import record_claude
-                        record_claude(self.model, "stream",
-                                      getattr(stream.get_final_message(), "usage", None))
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.error("claude_stream_failed", error=str(e))
-                raise
+        yield from self._stream_with_first_token_retry(
+            kwargs,
+            "stream",
+            fallback=lambda: get_flash_client().generate_stream(
+                prompt,
+                system_instruction,
+                temperature,
+                max_output_tokens,
+            ),
+        )
 
     def generate_with_history_stream(
         self,
@@ -863,20 +865,106 @@ class ClaudeClient:
         }
         if system_instruction:
             kwargs["system"] = self._wrap_system(system_instruction)
-        with _CLAUDE_SEM:
+        yield from self._stream_with_first_token_retry(
+            kwargs,
+            "history_stream",
+            fallback=lambda: get_flash_client().generate_with_history_stream(
+                messages,
+                system_instruction,
+                temperature,
+                max_output_tokens,
+            ),
+        )
+
+    def _stream_with_first_token_retry(
+        self,
+        kwargs: Dict[str, Any],
+        usage_kind: str,
+        fallback: Optional[Callable[[], Iterator[str]]] = None,
+    ):
+        """Retry transient stream failures only before any text was emitted.
+
+        Restarting after the first token would duplicate the beginning of an answer
+        and can join two inconsistent generations. Once output has started, the
+        caller receives the partial-output failure and decides how to close safely.
+        """
+        last_error = None
+        for attempt in range(_MAX_RETRIES):
+            emitted = False
             try:
-                with self.client.messages.stream(**self._tune(kwargs)) as stream:
-                    for text in stream.text_stream:
-                        yield text
-                    try:
-                        from app.core.usage_meter import record_claude
-                        record_claude(self.model, "history_stream",
-                                      getattr(stream.get_final_message(), "usage", None))
-                    except Exception:
-                        pass
+                with _CLAUDE_SEM:
+                    with self.client.messages.stream(**self._tune(kwargs)) as stream:
+                        for text in stream.text_stream:
+                            emitted = True
+                            yield text
+                        try:
+                            from app.core.usage_meter import record_claude
+                            record_claude(
+                                self.model,
+                                usage_kind,
+                                getattr(stream.get_final_message(), "usage", None),
+                            )
+                        except Exception:
+                            pass
+                return
             except Exception as e:
-                logger.error("claude_history_stream_failed", error=str(e))
-                raise
+                last_error = e
+                retryable = _is_retryable(e)
+                can_retry = (
+                    not emitted
+                    and attempt < _MAX_RETRIES - 1
+                    and retryable
+                )
+                if (
+                    fallback is not None
+                    and not emitted
+                    and attempt == _MAX_RETRIES - 1
+                    and retryable
+                ):
+                    # ⛔ 첫 토큰 뒤에는 다른 모델을 잇지 않는다. 서로 다른 생성이 합쳐지면
+                    #    완결된 답처럼 보여도 앞뒤 논리가 달라지는 조용한 오답이 된다.
+                    original_error = e
+                    try:
+                        yield from fallback()
+                    except Exception as fallback_error:
+                        # ⚠️ Flash 오류로 덮으면 Claude 과부하가 원인이었다는 사실이 사라진다.
+                        logger.error(
+                            "claude_stream_fallback_failed",
+                            usage_kind=usage_kind,
+                            attempts=attempt + 1,
+                            error_type=type(original_error).__name__,
+                            error=str(original_error)[:200],
+                            fallback_error_type=type(fallback_error).__name__,
+                            fallback_error=str(fallback_error)[:200],
+                        )
+                        raise original_error from None
+                    logger.warning(
+                        "claude_stream_fell_back_to_flash",
+                        usage_kind=usage_kind,
+                        attempts=attempt + 1,
+                    )
+                    return
+                if not can_retry:
+                    logger.error(
+                        "claude_stream_failed",
+                        usage_kind=usage_kind,
+                        emitted=emitted,
+                        attempts=attempt + 1,
+                        error=str(e)[:200],
+                    )
+                    raise
+                delay = _RETRY_DELAYS[attempt]
+                logger.warning(
+                    "claude_stream_retry",
+                    usage_kind=usage_kind,
+                    attempt=attempt + 1,
+                    max_retries=_MAX_RETRIES,
+                    delay=delay,
+                    error=str(e)[:200],
+                )
+                time.sleep(delay)
+        if last_error is not None:  # pragma: no cover - loop always returns/raises
+            raise last_error
 
     def generate_json(
         self,

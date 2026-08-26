@@ -1081,7 +1081,35 @@ async def update_feedback_status(
         await asyncio.to_thread(
             set_status, feedback_id, body.status, admin.email, body.note)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_text = str(e)
+        unknown_status = f"unknown status: {body.status}"
+        encoding_error = "처리 메모 인코딩이 손상되었습니다. UTF-8 입력으로 다시 작성해주세요."
+        safe_detail = None
+        if error_text == unknown_status:
+            safe_detail = unknown_status
+        elif error_text == encoding_error:
+            safe_detail = encoding_error
+
+        if safe_detail is not None:
+            # ⚠️ 이 두 문구는 set_status 가 직접 만든 입력 검증 결과다. 사용자가 고칠 수
+            #    있도록 유지하되, 예외 원문 전달 대신 허용한 문구만 다시 구성한다.
+            logger.warning(
+                "feedback_status_validation_failed",
+                error_type=type(e).__name__,
+                error=error_text[:200],
+            )
+            raise HTTPException(status_code=400, detail=safe_detail)
+
+        # ⛔ DB 드라이버 등에서 ValueError 가 섞여도 내부 원문은 사용자에게 내보내지 않는다.
+        logger.error(
+            "feedback_status_update_failed",
+            error_type=type(e).__name__,
+            error=error_text[:200],
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="요청 처리에 실패했습니다. 입력을 확인한 뒤 다시 시도해 주세요.",
+        )
     return {"ok": True}
 
 

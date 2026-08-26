@@ -201,8 +201,17 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         )
         answer = result.get("answer", "")
     except Exception as e:
-        logger.error("agent_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=f"에이전트 실행 실패: {str(e)}")
+        logger.error(
+            "agent_failed",
+            error_type=type(e).__name__,
+            error=str(e)[:200],
+        )
+        # ⛔ 제공자 응답과 내부 식별자는 서버 로그에만 남긴다. 원문을 detail 로 내보내면
+        #    request_id 같은 운영 정보가 사용자 응답에 그대로 노출된다.
+        raise HTTPException(
+            status_code=500,
+            detail="요청 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        )
 
     response = ChatCompletionResponse(
         model=request.model,
@@ -318,10 +327,27 @@ async def _stream_response(
                         )
                         yield f"data: {sc.model_dump_json()}\n\n"
     except Exception as e:
+        logger.error(
+            "chat_stream_boundary_failed",
+            error_type=type(e).__name__,
+            error=str(e)[:200],
+            route=_detected_route,
+            streamed_live=streamed_live,
+        )
+        # ⛔ 일부 답변 뒤에 재생성 결과를 이어 붙이지 않는다. 이미 보낸 토큰은 되돌릴 수
+        #    없으므로 사용자가 같은 질문을 다시 보내 완결된 답을 받게 해야 한다.
+        error_message = (
+            "\n\n---\n⚠️ 답변이 중간에 끊겼습니다. 위 내용은 완결되지 않았으니 "
+            "같은 질문을 다시 보내 주세요."
+            if streamed_live
+            else "죄송합니다. AI 서비스가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요."
+        )
         err_chunk = ChatCompletionStreamResponse(
             id=response_id, created=created, model=request.model,
             choices=[ChatCompletionStreamChoice(
-                delta=ChatCompletionStreamDelta(content=f"오류가 발생했습니다: {str(e)}"),
+                delta=ChatCompletionStreamDelta(
+                    content=error_message
+                ),
             )],
         )
         yield f"data: {err_chunk.model_dump_json()}\n\n"
