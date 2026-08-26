@@ -4,8 +4,13 @@
 
   var ALLOWED_HOSTS = {
     "mail.google.com": true,
-    "calendar.google.com": true
+    "calendar.google.com": true,
+    "meet.google.com": true
   };
+  /* 접힘 상태는 이 탭에서만 기억한다. ⛔ 브라우저 저장소를 쓰지 않는다 —
+     이 파일은 구글 데이터를 다루므로 영속 저장 경로를 아예 두지 않는 것이 규칙이다
+     (tests/frontend/test_personal_briefing_welcome.py 가 영속 저장소 호출을 막는다). */
+  var docCollapsed = false;
   var STATUS_LABELS = {
     loading: "준비 중",
     ready: "최신",
@@ -44,15 +49,23 @@
     return section && Array.isArray(section.items) ? section.items : [];
   }
 
-  function makeCard(title, section) {
+  function makeCard(title, section, count) {
     var card = document.createElement("article");
     var statusValue = statusOf(section);
-    var status = textNode("span", "personal-briefing-status", STATUS_LABELS[statusValue] || STATUS_LABELS.empty);
+    var heading = textNode("h3", "personal-briefing-card-title", "");
+    var status = textNode("span", "personal-briefing-status",
+      STATUS_LABELS[statusValue] || STATUS_LABELS.empty);
+    var tail = textNode("span", "personal-briefing-card-tail", "");
 
     card.className = "personal-briefing-card";
-    card.appendChild(textNode("h3", "personal-briefing-card-title", title));
+    heading.appendChild(textNode("span", "personal-briefing-card-name", title));
     status.dataset.status = statusValue;
-    card.appendChild(status);
+    tail.appendChild(status);
+    if (typeof count === "number") {
+      tail.appendChild(textNode("span", "personal-briefing-count", String(count)));
+    }
+    heading.appendChild(tail);
+    card.appendChild(heading);
     return card;
   }
 
@@ -86,16 +99,33 @@
     return item;
   }
 
+  /* 8/27(목) — 문서의 기한 표기와 같은 형식이다. 한 화면에 두 어법을 두지 않는다. */
   function formatKstDate(value) {
     var date = /^\d{4}-\d{2}-\d{2}$/.test(value || "")
       ? new Date(value + "T00:00:00+09:00")
       : new Date(value);
+    var parts;
     if (Number.isNaN(date.getTime())) return "일정";
+    parts = new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul", month: "numeric", day: "numeric", weekday: "short"
+    }).formatToParts(date).reduce(function (acc, part) {
+      acc[part.type] = part.value;
+      return acc;
+    }, {});
+    return parts.month + "/" + parts.day + "(" + parts.weekday + ")";
+  }
+
+  function formatKstTime(item) {
+    var value = (item && item.start) || "";
+    var date;
+    if ((item && item.all_day) || /^\d{4}-\d{2}-\d{2}$/.test(value)) return "종일";
+    date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "시간 미정";
     return new Intl.DateTimeFormat("ko-KR", {
       timeZone: "Asia/Seoul",
-      month: "numeric",
-      day: "numeric",
-      weekday: "short"
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
     }).format(date);
   }
 
@@ -103,9 +133,613 @@
     card.appendChild(textNode("p", "personal-briefing-empty", message));
   }
 
+  function isSameKstDay(value, day) {
+    if (!value || !day) return false;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value === day;
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return false;
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit"
+    }).format(date) === day;
+  }
+
+  /* 브리핑 문서. 서버가 준 값만 textContent 로 그린다 — HTML 주입 경로를 두지 않는다. */
+  function docRoot(root) {
+    var node = root.querySelector(".briefing-doc");
+    if (!node) {
+      node = document.createElement("article");
+      node.className = "briefing-doc";
+      root.insertBefore(node, root.querySelector(".personal-briefing-grid"));
+    }
+    return node;
+  }
+
+  /* 헤더 수치. ⛔ 이모지를 붙이지 않는다 — 라벨과 숫자만으로 읽힌다.
+     이모지 헤딩은 이 화면이 "생성된 것"처럼 보이게 만드는 가장 큰 요인이었다. */
+  function statLine(doc) {
+    var stats = [
+      { label: "일정", value: (doc.meetings || []).length },
+      { label: "메일", value: doc.mail_total || 0 }
+    ];
+    if (doc.urgent) stats.push({ label: "긴급", value: doc.urgent, hot: true });
+    if ((doc.deadlines || []).length) stats.push({ label: "기한", value: doc.deadlines.length });
+    return stats;
+  }
+
+  function statNode(stats) {
+    var wrap = textNode("span", "briefing-doc-stats", "");
+    stats.forEach(function (stat) {
+      var item = textNode("span", "briefing-doc-stat" + (stat.hot ? " hot" : ""), "");
+      item.appendChild(textNode("span", "briefing-doc-stat-label", stat.label));
+      item.appendChild(textNode("span", "briefing-doc-stat-value", String(stat.value)));
+      wrap.appendChild(item);
+    });
+    return wrap;
+  }
+
+  function docLine(parent, className, value) {
+    if (!value) return null;
+    return parent.appendChild(textNode("p", className, value));
+  }
+
+  function docSection(body, title, count, extra) {
+    var section = document.createElement("section");
+    var heading = textNode("h4", "briefing-doc-section-title", "");
+
+    section.className = "briefing-doc-section";
+    heading.appendChild(textNode("span", "briefing-doc-section-name", title));
+    if (extra) heading.appendChild(textNode("span", "briefing-doc-badge", extra));
+    if (typeof count === "number") {
+      heading.appendChild(textNode("span", "briefing-doc-count", String(count)));
+    }
+    section.appendChild(heading);
+    body.appendChild(section);
+    return section;
+  }
+
+  /* 왼쪽 고정폭 시간축이 이 화면의 뼈대다.
+     일정은 시작·종료, 메일은 수신 시각, 기한은 날짜 — 모든 항목이 '언제'를 갖는다.
+     그래서 아이콘 없이도 종류가 읽히고, 하루가 위에서 아래로 흐른다.
+     ⚠️ 숫자는 tabular-nums 여야 세로로 맞는다 (style.css). 안 맞으면 축이 성립하지 않는다. */
+  function docRow(section, urgency, label, url, options, question, when) {
+    var row = document.createElement("div");
+    var href = safeUrl(url || "");
+    var head = href ? document.createElement("a") : document.createElement("button");
+    var time = textNode("div", "briefing-doc-time", "");
+    var main = textNode("div", "briefing-doc-main", "");
+    var stamp = when || {};
+
+    row.className = "briefing-doc-row" + (urgency === "high" ? " urgent" : "");
+    time.appendChild(textNode("b", "", stamp.start || "—"));
+    if (stamp.end) time.appendChild(textNode("span", "", stamp.end));
+    row.appendChild(time);
+
+    head.className = "briefing-doc-row-head";
+    head.textContent = label;
+    head.title = label;
+    if (href) {
+      head.href = href;
+      head.target = "_blank";
+      head.rel = "noopener noreferrer";
+    } else {
+      head.type = "button";
+      head.addEventListener("click", function () {
+        putQuestionInInput(question || label, options);
+      });
+    }
+    main.appendChild(head);
+    row.appendChild(main);
+    section.appendChild(row);
+    return main;
+  }
+
+  function splitRange(value) {
+    var parts = String(value || "").split("~");
+    return { start: (parts[0] || "").trim(), end: (parts[1] || "").trim() };
+  }
+
+  /* 일정 한 줄의 '장소 · 참석자'. 문서(오늘)와 카드(내일부터)가 **같은 함수**를 쓴다.
+     ⚠️ `attendee_count` 는 문서 행에만 있다 (카드는 원본 항목이라 배열 길이를 센다).
+        둘 다 서버에서 20명으로 잘려 있어 같은 수를 본다. */
+  function eventDetail(item) {
+    var attendees = item.attendees || [];
+    var total = item.attendee_count || attendees.length;
+    var detail = [];
+    var shown;
+    var more;
+
+    if (item.location) detail.push(item.location);
+    if (total) {
+      shown = attendees.slice(0, 5).join(", ");
+      more = total - Math.min(5, attendees.length);
+      detail.push(shown + (more > 0 ? " 외 " + more + "명" : ""));
+    }
+    return detail.join("  ·  ");
+  }
+
+  function renderMeetings(body, doc, options) {
+    var meetings = doc.meetings || [];
+    var section = docSection(body, "일정", meetings.length);
+    if (!meetings.length) {
+      docLine(section, "briefing-doc-empty", "오늘 등록된 일정이 없습니다.");
+      return;
+    }
+    meetings.forEach(function (item) {
+      var label = item.title + (item.declined ? "  ·  불참 회신함" : "");
+      var main = docRow(section, item.urgency, label, item.url, options,
+        item.title + " 일정 준비사항을 알려줘", splitRange(item.time));
+      var join;
+      docLine(main, "briefing-doc-detail", eventDetail(item));
+      docLine(main, "briefing-doc-prep", item.prep);
+      if (safeUrl(item.conference_url || "")) {
+        join = document.createElement("a");
+        join.className = "briefing-doc-join";
+        join.textContent = "화상 회의 참여";
+        join.href = safeUrl(item.conference_url);
+        join.target = "_blank";
+        join.rel = "noopener noreferrer";
+        main.appendChild(join);
+      }
+      if (item.ended) main.parentNode.classList.add("ended");
+    });
+  }
+
+  function renderMailSection(body, doc, options) {
+    var rows = doc.mail || [];
+    /* ⚠️ 총 건수만 적으면 "몇 개나 안 봤나" 를 알 수 없다 — 둘 다 적는다 */
+    var unread = rows.filter(function (row) { return row.unread; });
+    var read = rows.filter(function (row) { return !row.unread; });
+    var section = docSection(body, "메일", doc.mail_total || 0,
+      unread.length ? "안읽음 " + unread.length : "");
+    var range = doc.window || {};
+
+    docLine(section, "briefing-doc-window", range.label);
+    docLine(section, "briefing-doc-summary", doc.mail_summary);
+    if (!rows.length) {
+      docLine(section, "briefing-doc-empty",
+        doc.mail_total ? "요약할 만한 메일을 고르지 못했습니다." : "새로 온 메일이 없습니다.");
+      return;
+    }
+    /* 안읽음을 **먼저, 따로** 놓는다 (2026-08-26 요청). 한 목록에 굵기로만
+       구분하면 사이에 읽은 메일이 끼어 아직 볼 것이 몇 개인지 세어야 한다.
+       ⚠️ 빈 칸은 만들지 않는다 — "안읽음 0" 은 알려주는 것이 없고 자리만 먹는다. */
+    mailGroup(section, "안읽음", unread, options);
+    mailGroup(section, "읽음", read, options);
+  }
+
+  function mailGroup(section, title, rows, options) {
+    if (!rows.length) return;
+    docLine(section, "briefing-doc-subhead", title + " " + rows.length);
+    rows.forEach(function (item) {
+      var main = docRow(section, item.urgency, item.subject, item.url,
+        options, item.from + "의 " + item.subject + " 메일을 자세히 요약해줘",
+        { start: item.at });
+      /* 칸을 나눠도 행 표시는 남긴다 — 스크롤하다 중간부터 보면 어느 칸인지 모른다.
+         ⚠️ 표시는 **행 클래스**로만 한다. 글자를 덧붙이면 좁은 칸에서 제목을 민다 */
+      if (main.parentElement) {
+        main.parentElement.classList.add(item.unread ? "mail-unread" : "mail-read");
+      }
+      docLine(main, "briefing-doc-detail", item.from);
+      (item.points || []).forEach(function (point) {
+        docLine(main, "briefing-doc-point", point);
+      });
+      docLine(main, "briefing-doc-request",
+        item.request ? "회신 필요 — " + item.request : "");
+    });
+  }
+
+  function renderActions(body, doc, options) {
+    var rows = doc.actions || [];
+    var section = docSection(body, "할 일", rows.length);
+    if (!rows.length) {
+      docLine(section, "briefing-doc-empty", "즉시 조치할 항목을 찾지 못했습니다.");
+      return;
+    }
+    rows.forEach(function (item) {
+      // 할 일 자체에는 시각이 없다. 근거가 도착한 시각을 쓰되,
+      // ⚠️ 그냥 두면 '그 시각에 하는 일' 로 읽힌다 — 무엇에서 나왔는지 함께 적는다.
+      var main = docRow(section, item.urgency, item.text, item.url, options, item.text,
+        { start: item.at });
+      docLine(main, "briefing-doc-detail", item.origin);
+    });
+  }
+
+  function renderDeadlines(body, doc, options) {
+    var rows = doc.deadlines || [];
+    var section = docSection(body, "기한", rows.length);
+    if (!rows.length) {
+      docLine(section, "briefing-doc-empty", "기한이 확인된 항목이 없습니다.");
+      return;
+    }
+    rows.forEach(function (item) {
+      docRow(section, item.urgency, item.text, item.url, options, item.text,
+        { start: item.label });
+    });
+  }
+
+  /* 업무 지표는 BigQuery 알림이라 문서의 숫자 검증을 거치지 않는다 —
+     LLM 이 쓴 문장이 아니라 `briefing.py` 가 조회 결과로 만든 문장이다. */
+  /* 무엇을 놓치고 있는지 말한다 — "연결하세요" 만으로는 왜 해야 하는지 알 수 없다. */
+  function renderConnectPrompt(body, options) {
+    var section = docSection(body, "오늘의 일정과 메일", null);
+    var connect;
+
+    docLine(section, "briefing-doc-empty",
+      "Google Workspace를 연결하면 오늘 일정·받은 메일·할 일·기한이 여기에 함께 나옵니다.");
+    connect = textNode("button", "briefing-doc-action primary", "Google 연결");
+    connect.type = "button";
+    connect.addEventListener("click", function () {
+      if (typeof options.connect === "function") options.connect();
+    });
+    section.appendChild(connect);
+  }
+
+  function renderBusiness(body, data, options) {
+    var rows = (data.business && data.business.items) || [];
+    var section = docSection(body, "지표", null);
+
+    if (!rows.length) {
+      docLine(section, "briefing-doc-empty",
+        statusOf(data.business) === "disabled"
+          ? "업무 지표 자동 브리핑이 꺼져 있습니다."
+          : "새로 확인할 업무 지표가 없습니다.");
+      return;
+    }
+    /* 매출 한 줄 · 마케팅 한 줄 (2026-08-26 사용자 요청).
+       ⚠️ 기준일이 서로 다를 수 있다 — 광고 적재가 매출보다 하루 빠르다.
+          그래서 각자 자기 날짜를 시간축에 세운다. */
+    rows.forEach(function (item) {
+      var main = docRow(section, "normal", item.title || "업무 지표", "", options,
+        item.follow_up || ((item.title || "업무 지표") + "에 대해 자세히 알려줘"),
+        { start: shortDate(item.for_date) });
+      String(item.body || "").split("\n").forEach(function (line) {
+        docLine(main, "briefing-doc-point", line.replace(/^·\s*/, "").trim());
+      });
+    });
+  }
+
+  function clockLabel(value) {
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value || "");
+    return new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul", hour: "numeric", minute: "2-digit"
+    }).format(date);
+  }
+
+  function longDate(doc) {
+    var parts = String(doc.for_date || "").split("-");
+    var weekday = doc.weekday ? doc.weekday + "요일" : "";
+    if (parts.length !== 3) return weekday || "오늘";
+    return Number(parts[1]) + "월 " + Number(parts[2]) + "일 " + weekday;
+  }
+
+  /* 환율. ⛔ 값이 없으면 섹션 자체를 만들지 않는다 — 빈 칸이 0원처럼 읽힌다.
+     ⚠️ 주말·공휴일엔 새 고시가 없다. 그때는 며칠 전 값인지 밝힌다. */
+  function renderFx(body, data) {
+    var fx = data.fx || {};
+    var items = fx.items || [];
+    var section;
+    var note;
+
+    var list;
+
+    if (!items.length) return;
+    /* ⛔ 통화마다 한 줄씩 쌓지 마라 — 9종이면 아홉 줄이 되고 오른쪽이 텅 빈다
+       (2026-08-26 사용자 지적). 환율은 시간축이 필요 없는 유일한 절이라
+       **문서 아래 전체 폭**에서 가로로 흐르게 한다. */
+    section = docSection(body, "환율", null);
+    section.className = "briefing-doc-section briefing-doc-fx";
+    /* ⚠️ 무엇과 견준 변동률인지 밝힌다. 퍼센트만 있으면 전일대비로 읽힌다 */
+    note = fx.for_date + " 기준" + (fx.stale_days > 0 ? " · " + fx.stale_days + "일 전 고시" : "");
+    // ⛔ 여기서 "전월대비" 를 조립하지 마라 — 실제로 한 달 전과 견줬는지는
+    //    서버만 안다 (보유일이 드물면 몇 주 전과 견준다). 서버가 준 문구를 쓴다.
+    if (fx.basis_note) note += " · " + fx.basis_note;
+    docLine(section, "briefing-doc-window", note);
+
+    list = textNode("div", "briefing-doc-fx-list", "");
+    items.forEach(function (item) {
+      var cell = textNode("div", "briefing-doc-fx-item", "");
+      var unit = item.unit && item.unit !== 1 ? "(" + item.unit + ")" : "";
+      var change = fxChange(item.change_pct);
+
+      cell.appendChild(textNode("span", "briefing-doc-fx-name", item.currency + unit));
+      /* 변동률만 있으면 '얼마에서 얼마로' 가 안 보인다 (2026-08-26 사용자 요청).
+         ⚠️ 반올림 후 두 값이 같으면 화살표를 쓰지 않는다 — `1,614 → 1,614원` 은 소음이다. */
+      if (item.was_krw !== null && item.was_krw !== undefined
+          && fxAmount(item.was_krw) !== fxAmount(item.krw)) {
+        cell.appendChild(textNode("span", "briefing-doc-fx-was", fxAmount(item.was_krw)));
+        cell.appendChild(textNode("span", "briefing-doc-fx-arrow", "→"));
+      }
+      cell.appendChild(textNode("span", "briefing-doc-fx-value", fxAmount(item.krw) + "원"));
+      if (change) {
+        cell.appendChild(textNode("span", "briefing-doc-fx-change " + change.tone, change.text));
+      }
+      list.appendChild(cell);
+    });
+    section.appendChild(list);
+  }
+
+  function fxAmount(value) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return "";
+    return n >= 100
+      ? n.toLocaleString("ko-KR", { maximumFractionDigits: 0 })
+      : n.toLocaleString("ko-KR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  /* ⛔ 값이 없을 때 0% 라고 쓰지 마라 — 안 움직인 것과 모르는 것은 다르다. */
+  function fxChange(pct) {
+    if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) return null;
+    var n = Number(pct);
+    if (n > 0) return { text: "▲ " + n.toFixed(2) + "%", tone: "up" };
+    if (n < 0) return { text: "▼ " + Math.abs(n).toFixed(2) + "%", tone: "down" };
+    return { text: "보합", tone: "flat" };
+  }
+
+  function shortDate(value) {
+    var parts = String(value || "").split("-");
+    return parts.length === 3 ? Number(parts[1]) + "/" + Number(parts[2]) : "";
+  }
+
+  /* 접었을 때도 긴급한 것은 보여야 한다 — 숫자만 남기면 무엇이 급한지 알 수 없다. */
+  function urgentTitles(doc) {
+    var titles = [];
+    [doc.meetings, doc.deadlines, doc.actions, doc.mail].forEach(function (rows) {
+      (rows || []).forEach(function (row) {
+        if (row.urgency !== "high") return;
+        if (row.time) titles.push(row.time.split("~")[0] + " " + row.title);
+        else if (row.label) titles.push("[" + row.label + "] " + row.text);
+        else titles.push(row.text || row.subject || row.title || "");
+      });
+    });
+    return titles.filter(Boolean);
+  }
+
+  function docFooter(doc, options) {
+    var footer = document.createElement("div");
+    var copy = textNode("button", "briefing-doc-action", "본문 복사");
+    var jandi = textNode("button", "briefing-doc-action", "잔디로 받기");
+
+    footer.className = "briefing-doc-footer";
+    copy.type = "button";
+    copy.addEventListener("click", function () {
+      if (!doc.markdown || !navigator.clipboard) return;
+      navigator.clipboard.writeText(doc.markdown).then(function () {
+        copy.textContent = "복사됨";
+        window.setTimeout(function () { copy.textContent = "본문 복사"; }, 1500);
+      }, function () {});
+    });
+    jandi.type = "button";
+    jandi.addEventListener("click", function () {
+      openJandiDialog(options);
+    });
+    footer.appendChild(copy);
+    footer.appendChild(jandi);
+    return footer;
+  }
+
+  function renderDocument(root, data, options) {
+    var doc = data.document || {};
+    var node = docRoot(root);
+    var open = !docCollapsed;
+    var head;
+    var body;
+    var strip = null;
+    var urgent;
+    var heading;
+    var columns;
+    var left;
+    var right;
+
+    var connected = doc.status !== "disconnected";
+
+    node.replaceChildren();
+    if (!doc.status) {
+      node.hidden = true;
+      return null;
+    }
+    /* ⛔ 미연결이라고 문서를 통째로 숨기지 마라 — 첫 화면에 "연결하세요" 버튼 하나만
+       남아 다시 오지 않는다. 지표·환율은 **구글과 무관한 데이터**다 (2026-08-26). */
+    node.hidden = false;
+
+    head = document.createElement("button");
+    head.className = "briefing-doc-head";
+    head.type = "button";
+    head.setAttribute("aria-expanded", open ? "true" : "false");
+    // 바깥 제목이 이미 'Today' 다 — 여기서 또 '오늘의 브리핑' 이라고 하지 않는다.
+    heading = textNode("span", "briefing-doc-title", "");
+    heading.appendChild(textNode("span", "briefing-doc-date", longDate(doc)));
+    head.appendChild(heading);
+    head.appendChild(statNode(connected ? statLine(doc) : []));
+    // 화살표 글자 대신 CSS 로 그린다 — 글자는 폰트마다 크기와 무게가 달라진다.
+    head.appendChild(textNode("span", "briefing-doc-caret", ""));
+    node.appendChild(head);
+
+    urgent = urgentTitles(doc);
+    if (urgent.length) {
+      strip = textNode("p", "briefing-doc-urgent", "");
+      strip.appendChild(textNode("span", "briefing-doc-urgent-label", "긴급"));
+      strip.appendChild(textNode("span", "briefing-doc-urgent-list",
+        urgent.slice(0, 2).join("  ·  ")
+        + (urgent.length > 2 ? "  외 " + (urgent.length - 2) + "건" : "")));
+      strip.hidden = open;
+      node.appendChild(strip);
+    }
+
+    body = document.createElement("div");
+    body.className = "briefing-doc-body";
+    body.hidden = !open;
+    node.appendChild(body);
+
+    head.addEventListener("click", function () {
+      var next = body.hidden;
+      body.hidden = !next;
+      // 펼치면 본문에 다 있으므로 급한 것 요약은 접었을 때만 남긴다.
+      if (strip) strip.hidden = next;
+      head.setAttribute("aria-expanded", next ? "true" : "false");
+      docCollapsed = !next;
+    });
+
+    if (doc.status === "error") {
+      docLine(body, "briefing-doc-empty",
+        "브리핑 문장을 만들지 못했습니다. 아래 카드의 원본 목록은 그대로입니다.");
+    }
+
+    /* 두 열로 나눈다 — 왼쪽은 오늘 '일어나는' 것(일정·메일), 오른쪽은 '해야 할' 것과 참고.
+       세로로만 쌓으면 넓은 화면에서 오른쪽이 통째로 비고 스크롤만 길어진다.
+       ⚠️ 좁은 화면에서는 한 열로 접히고, 그때 순서는 DOM 순서 그대로다. */
+    if (!connected) {
+      // 일정·메일은 못 보여주지만 지표·환율은 보여준다. 연결하면 무엇이 더 생기는지도 말한다.
+      renderConnectPrompt(body, options);
+      renderBusiness(body, data, options);
+      renderFx(body, data);
+      body.appendChild(docFooter(doc, options));
+      return null;
+    }
+
+    columns = textNode("div", "briefing-doc-columns", "");
+    left = textNode("div", "briefing-doc-col", "");
+    right = textNode("div", "briefing-doc-col", "");
+    renderMeetings(left, doc, options);
+    renderMailSection(left, doc, options);
+    renderActions(right, doc, options);
+    renderDeadlines(right, doc, options);
+    renderBusiness(right, data, options);
+    columns.appendChild(left);
+    columns.appendChild(right);
+    body.appendChild(columns);
+    // 환율만 두 열 밖에 둔다 — 통화가 가로로 흐르려면 전체 폭이 필요하다.
+    renderFx(body, data);
+
+    if (doc.dropped) {
+      docLine(body, "briefing-doc-note",
+        "※ 근거(원문 숫자·메일)가 확인되지 않아 제외한 문장 " + doc.dropped + "건");
+    }
+    body.appendChild(docFooter(doc, options));
+    return right;
+  }
+
+  /* 잔디 설정. 서버는 잔디에 직접 붙지 못하므로 여기서 등록한 주소로 DB_PC 릴레이가 보낸다. */
+  function jandiHelp(box) {
+    var help = textNode("ol", "briefing-jandi-help", "");
+    [
+      "잔디에서 브리핑을 받을 토픽을 하나 만듭니다 (본인만 있는 토픽을 권장합니다).",
+      "토픽 우측 상단 ⋮ → 커넥트 → 인커밍 웹훅 → 만들기.",
+      "발급된 https://wh.jandi.com/connect-api/webhook/… 주소를 아래에 붙여 넣습니다.",
+      "매일 아침 9시에 만들어진 브리핑이 그 토픽으로 전달됩니다."
+    ].forEach(function (step) {
+      help.appendChild(textNode("li", "", step));
+    });
+    box.appendChild(help);
+  }
+
+  function openJandiDialog(options) {
+    var overlay = document.createElement("div");
+    var box = document.createElement("div");
+    var input = document.createElement("input");
+    var status = textNode("p", "briefing-jandi-status", "불러오는 중…");
+    var row = document.createElement("div");
+    var save = textNode("button", "briefing-doc-action primary", "저장");
+    var test = textNode("button", "briefing-doc-action", "지금 대기열에 넣기");
+    var remove = textNode("button", "briefing-doc-action danger", "해제");
+    var close = textNode("button", "briefing-doc-action", "닫기");
+
+    overlay.className = "briefing-jandi-overlay";
+    box.className = "briefing-jandi-box";
+    box.appendChild(textNode("h3", "briefing-jandi-title", "잔디로 출근 브리핑 받기"));
+    jandiHelp(box);
+    input.type = "url";
+    input.className = "briefing-jandi-input";
+    input.placeholder = "https://wh.jandi.com/connect-api/webhook/…";
+    input.spellcheck = false;
+    box.appendChild(input);
+    box.appendChild(status);
+    row.className = "briefing-jandi-actions";
+    [save, test, remove, close].forEach(function (button) {
+      button.type = "button";
+      row.appendChild(button);
+    });
+    box.appendChild(row);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function shut() {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+    }
+
+    function onKey(event) {
+      if (event.key === "Escape") shut();
+    }
+
+    function paint(state) {
+      if (!state || !state.registered) {
+        status.textContent = "아직 등록된 잔디 토픽이 없습니다.";
+        return;
+      }
+      status.textContent = "등록됨 " + state.masked
+        + (state.last_sent_at ? " · 마지막 발송 " + state.last_sent_at : " · 아직 발송 이력 없음")
+        + (state.last_error ? " · 최근 오류: " + state.last_error : "");
+    }
+
+    async function call(method, payload) {
+      var response = await options.fetchImpl("/api/personal-briefing/jandi", payload
+        ? { method: method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+        : { method: method });
+      var value = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(value.detail || "요청이 실패했습니다.");
+      return value;
+    }
+
+    overlay.addEventListener("click", function (event) {
+      if (event.target === overlay) shut();
+    });
+    document.addEventListener("keydown", onKey);
+    close.addEventListener("click", shut);
+
+    save.addEventListener("click", async function () {
+      status.textContent = "저장 중…";
+      try {
+        paint(await call("PUT", { webhook_url: input.value.trim(), enabled: true }));
+        input.value = "";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    remove.addEventListener("click", async function () {
+      status.textContent = "해제 중…";
+      try {
+        paint(await call("DELETE"));
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    test.addEventListener("click", async function () {
+      status.textContent = "대기열에 넣는 중…";
+      try {
+        var response = await options.fetchImpl("/api/personal-briefing/jandi/test", { method: "POST" });
+        var value = await response.json().catch(function () { return {}; });
+        if (!response.ok) throw new Error(value.detail || "요청이 실패했습니다.");
+        status.textContent = value.queued
+          ? "대기열에 넣었습니다. 릴레이가 도는 시각에 잔디로 전달됩니다."
+          : "오늘 몫은 이미 대기열에 있습니다.";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    call("GET").then(paint, function () {
+      status.textContent = "설정을 불러오지 못했습니다.";
+    });
+    input.focus();
+  }
+
   function renderSkeleton(root) {
     var grid = root.querySelector(".personal-briefing-grid");
-    var titles = ["오늘 우선 확인", "7일 일정", "오늘 메일", "업무 지표"];
+    // ⚠️ 실제로 그릴 카드와 이름이 같아야 한다 — 다르면 로딩 순간에 없는 카드를 약속한다.
+    var titles = ["내일부터", "그 밖의 메일"];
 
     root.hidden = false;
     if (!grid) {
@@ -115,6 +749,9 @@
       root.appendChild(grid);
     }
     grid.replaceChildren();
+    grid.hidden = false;
+    grid.classList.remove("single");
+    docRoot(root).hidden = true;
     titles.forEach(function (title) {
       var card = makeCard(title, { status: "loading" });
       card.appendChild(textNode("div", "personal-briefing-skeleton", ""));
@@ -122,16 +759,98 @@
     });
   }
 
-  function render(root, data, options) {
-    var grid;
-    var priorities;
+  /* 카드는 **문서가 다루지 않는 것**만 맡는다 (2026-08-26).
+     ⛔ 예전엔 `오늘 우선 확인`·`오늘 메일`·`업무 지표` 카드가 문서와 같은 내용을 다시 그렸다 —
+        한 화면에 요약이 세 겹이었고, 메일 요약 문장은 글자 그대로 두 번 나왔다.
+        같은 사실을 두 곳에서 그리면 언젠가 서로 다른 말을 한다 (프롬프트 사본 사고와 같은 부류). */
+  function renderCards(grid, data, options) {
+    var visible = 0;
     var calendar;
     var mail;
-    var business;
-    var updated;
     var calendarItems;
     var mailItems;
-    var lastDate = "";
+    var covered = {};
+    var disconnected = statusOf(data.calendar) === "disconnected"
+      || statusOf(data.mail) === "disconnected"
+      || (data.google && data.google.connected === false);
+
+    // 오늘 일정은 문서가 참석자·장소·준비사항까지 보여준다. 카드는 그 다음날부터.
+    calendarItems = safeItems(data.calendar).filter(function (item) {
+      return !isSameKstDay(item.start, data.for_date);
+    });
+    if (calendarItems.length || disconnected) {
+      calendar = makeCard("내일부터", data.calendar || {}, calendarItems.length);
+      // Today 의 일정과 같은 어법이다 — 날짜/시각이 왼쪽 축에 서고 제목이 본문이 된다.
+      calendarItems.forEach(function (item) {
+        var main = docRow(calendar, "normal", item.title || "(제목 없음)", item.url, options,
+          (item.title || "일정") + " 일정 준비사항을 알려줘",
+          { start: formatKstDate(item.start), end: formatKstTime(item) });
+        docLine(main, "briefing-doc-detail", eventDetail(item));
+        if (item.ended) main.parentNode.classList.add("ended");
+      });
+      if (!calendarItems.length) {
+        appendEmptyMessage(calendar, "Google Workspace를 연결하면 일정이 표시됩니다.");
+      }
+      if (data.calendar && data.calendar.truncated) {
+        calendar.appendChild(textNode("p", "personal-briefing-note", "50건 이상 · Google Calendar에서 전체 보기"));
+      }
+      grid.appendChild(calendar);
+      visible += 1;
+    }
+
+    ((data.document && data.document.mail) || []).forEach(function (row) {
+      covered[row.id] = true;
+    });
+    mailItems = safeItems(data.mail).filter(function (item) { return !covered[item.id]; });
+    /* ⛔ **안 읽은 것을 위로.** 문서 절은 칸을 나눠 뒀는데 이 카드만 도착순이라
+       안읽음·읽음이 섞여 나왔다 (2026-08-26 제보). 첫 화면 어디서든 같은 순서여야 한다.
+       ⚠️ 뒤집지 말고 **안정 정렬**로 옮긴다 — 같은 그룹 안에서는 도착순을 지켜야
+          "방금 온 것" 이 아래로 밀리지 않는다. */
+    mailItems = mailItems.filter(function (item) { return item.unread; })
+      .concat(mailItems.filter(function (item) { return !item.unread; }));
+    if (mailItems.length || disconnected) {
+      mail = makeCard("그 밖의 메일", data.mail || {}, mailItems.length);
+      mailItems.forEach(function (item) {
+        var main = docRow(mail, "normal", item.subject || "(제목 없음)", item.url, options,
+          (item.from_display || "보낸 사람") + "의 " + (item.subject || "메일") + "을 자세히 요약해줘",
+          {
+            start: formatKstTime({ start: item.received_at }),
+            end: isSameKstDay(item.received_at, data.for_date)
+              ? "" : formatKstDate(item.received_at)
+          });
+        /* 문서 절과 같은 표시를 쓴다 — 스크롤하다 보면 어느 영역인지 모른다 */
+        if (main.parentElement) {
+          main.parentElement.classList.add(item.unread ? "mail-unread" : "mail-read");
+        }
+        docLine(main, "briefing-doc-detail", item.from_display);
+      });
+      if (!mailItems.length) {
+        appendEmptyMessage(mail, "Google Workspace를 연결하면 받은 메일이 표시됩니다.");
+      }
+      if (disconnected || (data.mail && data.mail.error_code === "oauth_expired")) {
+        var connect = textNode("button", "personal-briefing-connect", "Google 연결");
+        connect.type = "button";
+        connect.addEventListener("click", function () {
+          if (typeof options.connect === "function") options.connect();
+        });
+        mail.appendChild(connect);
+      }
+      if (data.mail && data.mail.truncated) {
+        mail.appendChild(textNode("p", "personal-briefing-note", "최근 메일만 표시"));
+      }
+      grid.appendChild(mail);
+      visible += 1;
+    }
+
+    // 한 장만 남으면 2열 그리드에서 왼쪽에 붙어 잘린 것처럼 보인다.
+    grid.classList.toggle("single", visible === 1);
+    grid.hidden = visible === 0;
+  }
+
+  function render(root, data, options) {
+    var grid;
+    var updated;
+    var column;
 
     if (!data || data.enabled === false) {
       root.hidden = true;
@@ -146,120 +865,23 @@
       root.appendChild(grid);
     }
     grid.replaceChildren();
-
-    priorities = makeCard("오늘 우선 확인", {
-      status: Array.isArray(data.priorities) && data.priorities.length ? "ready" : "empty"
-    });
-    (Array.isArray(data.priorities) ? data.priorities : []).slice(0, 3).forEach(function (item) {
-      addItem(
-        priorities,
-        item.title,
-        item.url,
-        item.follow_up || (item.title ? item.title + "을 확인할 때 무엇을 먼저 보면 좋을까?" : ""),
-        options
-      );
-    });
-    if (!priorities.querySelector(".personal-briefing-item")) {
-      appendEmptyMessage(priorities, "지금 확인할 항목이 없습니다.");
-    }
-    grid.appendChild(priorities);
-
-    calendar = makeCard("7일 일정", data.calendar || {});
-    calendarItems = safeItems(data.calendar);
-    calendarItems.forEach(function (item) {
-      var dateLabel = formatKstDate(item.start);
-      var eventItem;
-      if (dateLabel !== lastDate) {
-        calendar.appendChild(textNode("h4", "personal-briefing-date", dateLabel));
-        lastDate = dateLabel;
-      }
-      eventItem = addItem(
-        calendar,
-        item.title,
-        item.url,
-        (item.title || "일정") + " 일정 준비사항을 알려줘",
-        options
-      );
-      if (item.ended) eventItem.classList.add("ended");
-    });
-    if (!calendarItems.length) {
-      appendEmptyMessage(
-        calendar,
-        statusOf(data.calendar) === "disconnected"
-          ? "Google Workspace를 연결하면 일정이 표시됩니다."
-          : "앞으로 7일간 등록된 일정이 없습니다."
-      );
-    }
-    if (data.calendar && data.calendar.truncated) {
-      calendar.appendChild(textNode("p", "personal-briefing-note", "50건 이상 · Google Calendar에서 전체 보기"));
-    }
-    grid.appendChild(calendar);
-
-    mail = makeCard(
-      "오늘 메일 · " + ((data.mail && data.mail.count_label) || "0건") + " · 안 읽음 " + ((data.mail && data.mail.unread) || 0),
-      data.mail || {}
-    );
-    if (data.mail && data.mail.summary) {
-      mail.appendChild(textNode("p", "personal-briefing-summary", data.mail.summary));
-    }
-    mailItems = safeItems(data.mail);
-    mailItems.forEach(function (item) {
-      addItem(
-        mail,
-        item.subject,
-        item.url,
-        ((item.from_display || "보낸 사람") + "의 " + (item.subject || "메일") + "을 자세히 요약해줘"),
-        options
-      );
-    });
-    if (!mailItems.length) {
-      appendEmptyMessage(
-        mail,
-        statusOf(data.mail) === "disconnected"
-          ? "Google Workspace를 연결하면 오늘 메일이 표시됩니다."
-          : "오늘 받은 메일이 없습니다."
-      );
-    }
-    if (
-      statusOf(data.mail) === "disconnected"
-      || (data.mail && data.mail.error_code === "oauth_expired")
-      || (data.google && data.google.connected === false)
-    ) {
-      var connect = textNode("button", "personal-briefing-connect", "Google 연결");
-      connect.type = "button";
-      connect.addEventListener("click", function () {
-        if (typeof options.connect === "function") options.connect();
-      });
-      mail.appendChild(connect);
-    }
-    if (data.mail && data.mail.truncated) {
-      mail.appendChild(textNode("p", "personal-briefing-note", "20건 이상 · 최근 메일만 표시"));
-    }
-    grid.appendChild(mail);
-
-    business = makeCard("업무 지표", data.business || {});
-    if (data.business && data.business.item) {
-      var businessItem = data.business.item;
-      if (businessItem.for_date) {
-        business.appendChild(textNode("p", "personal-briefing-date", "기준일 " + businessItem.for_date));
-      }
-      if (businessItem.body) {
-        business.appendChild(textNode("p", "personal-briefing-summary", businessItem.body));
-      }
-      addItem(business, businessItem.title || "자세히 물어보기", "", businessItem.follow_up || "", options);
+    grid.hidden = false;
+    /* ⚠️ 참고 섹션(내일부터·그 밖의 메일)을 문서 오른쪽 열로 올려 봤다가 되돌렸다:
+       오른쪽이 과적재돼 그쪽이 높이를 결정하면서 963 → 1046px 로 **늘었다**.
+       오른쪽 열의 여백은 낭비가 아니라 숨 쉴 자리다. 실측하지 않았으면 반대로 갔다. */
+    renderDocument(root, data, options);
+    if ((data.document || {}).status === "disconnected") {
+      // 문서가 이미 연결 안내를 보여줬다 — 카드에서 또 하면 버튼이 두 곳이 된다.
+      grid.hidden = true;
     } else {
-      appendEmptyMessage(
-        business,
-        statusOf(data.business) === "disabled"
-          ? "업무 지표 자동 브리핑이 꺼져 있습니다."
-          : "새로 확인할 업무 지표가 없습니다."
-      );
+      renderCards(grid, data, options);
     }
-    grid.appendChild(business);
 
     updated = root.querySelector(".personal-briefing-updated") || document.getElementById("personal-briefing-updated");
     if (updated) {
-      updated.textContent = data.generated_at ? "마지막 갱신 " + data.generated_at : "저장된 정보 없음";
+      updated.textContent = data.generated_at
+        ? clockLabel(data.generated_at) + " 기준"
+        : "저장된 정보 없음";
     }
   }
 
@@ -314,10 +936,37 @@
     options.onGoogleState(Boolean(data.google.connected), data.google.account || "");
   }
 
+  /* 새로고침 중/실패를 **버튼과 문구 양쪽**에서 말한다.
+     ⛔ 스피너만 돌리고 끝내면 실패했을 때 아무 말도 안 남는다. */
+  function refreshButton(root) {
+    return (root && root.querySelector(".personal-briefing-refresh"))
+      || document.getElementById("personal-briefing-refresh");
+  }
+
+  function markRefreshing(root, busy) {
+    var button = refreshButton(root);
+    if (!button) return;
+    button.disabled = !!busy;
+    button.classList.toggle("is-busy", !!busy);
+    button.setAttribute("aria-busy", busy ? "true" : "false");
+    if (busy) setUpdatedLabel(root, "새로 불러오는 중…");
+  }
+
+  function markRefreshFailed(root) {
+    setUpdatedLabel(root, "새로 불러오지 못했습니다 — 잠시 후 다시 눌러 주세요");
+  }
+
+  function setUpdatedLabel(root, text) {
+    var node = (root && root.querySelector(".personal-briefing-updated"))
+      || document.getElementById("personal-briefing-updated");
+    if (node) node.textContent = text;
+  }
+
   function create(options) {
     var root = options.root;
     var state = null;
     var requestGeneration = 0;
+    var refreshing = false;
 
     async function load() {
       var generation = ++requestGeneration;
@@ -363,8 +1012,40 @@
       notifyGoogleState(options, { google: { connected: false, account: "" } });
     }
 
+    /* 사용자가 직접 누르는 새로고침. ⛔ `load()` 는 서버가 "갱신이 필요하다"
+       (`needs_refresh`) 고 할 때만 새로 가져온다 — 눌러도 캐시가 그대로 보이면
+       버튼이 고장 난 것처럼 보인다. 여기서는 **무조건** 새로 가져온다.
+       ⚠️ 진행 중 다시 눌리지 않게 막는다. 구글 호출이 여러 번 겹치면 느려진다. */
+    async function refreshNow() {
+      var generation;
+      var response;
+      if (refreshing) return;
+      refreshing = true;
+      generation = ++requestGeneration;
+      markRefreshing(root, true);
+      try {
+        /* ⛔ `force=1` 이 없으면 서버가 캐시(10분)를 그대로 돌려준다 — 눌러도
+           시각이 그대로여서 버튼이 고장 난 것처럼 보였다 (2026-08-26 제보) */
+        response = await options.fetchImpl("/api/personal-briefing/refresh?force=1",
+          { method: "POST" });
+        if (generation !== requestGeneration) return;
+        if (!response.ok) throw new Error("briefing refresh failed");
+        state = mergeTimeoutEnvelope(state, await response.json());
+        if (generation !== requestGeneration) return;
+        notifyGoogleState(options, state);
+        render(root, state, options);
+      } catch (_error) {
+        /* ⛔ 실패를 조용히 넘기지 않는다 — 누른 사람은 새로 받은 줄 안다 */
+        if (generation === requestGeneration) markRefreshFailed(root);
+      } finally {
+        refreshing = false;
+        markRefreshing(root, false);
+      }
+    }
+
     return {
       load: load,
+      refresh: refreshNow,
       show: function () {
         if (state) render(root, state, options);
       },

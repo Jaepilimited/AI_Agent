@@ -9,6 +9,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "app/frontend/personal-briefing.js"
 STYLE = ROOT / "app/static/style.css"
+CHAT_HTML = ROOT / "app/frontend/chat.html"
 
 
 @pytest.fixture(scope="module")
@@ -27,6 +28,12 @@ def page(browser):
     context.close()
 
 
+def test_welcome_briefing_heading_is_today(page):
+    page.set_content(CHAT_HTML.read_text(encoding="utf-8"))
+
+    assert page.locator("#personal-briefing-title").inner_text() == "Today"
+
+
 def _fixture(status="ready", subject="월별로 보았을 때 B2C 매출 갭이 가장 큰 지역", needs_refresh=False):
     return {
         "enabled": True,
@@ -41,8 +48,8 @@ def _fixture(status="ready", subject="월별로 보았을 때 B2C 매출 갭이 
                 {
                     "id": "e1",
                     "title": "이번 주 주간 회의 전체 제목",
-                    "start": "2026-08-25T10:00:00+09:00",
-                    "end": "2026-08-25T11:00:00+09:00",
+                    "start": "2026-08-26T10:00:00+09:00",
+                    "end": "2026-08-26T11:00:00+09:00",
                     "all_day": False,
                     "location": "",
                     "url": "",
@@ -76,6 +83,30 @@ def _fixture(status="ready", subject="월별로 보았을 때 B2C 매출 갭이 
     }
 
 
+def test_todays_events_belong_to_the_document_not_the_card(page):
+    """⛔ 같은 일정을 문서와 카드가 둘 다 그리면 한 화면에서 같은 말을 두 번 한다."""
+    page.set_content(
+        '<section id="personal-briefing"></section><textarea id="chat-input"></textarea>'
+    )
+    page.add_script_tag(path=str(SCRIPT))
+    payload = _fixture()
+    payload["calendar"]["items"][0]["start"] = "2026-08-25T10:00:00+09:00"
+    payload["calendar"]["items"][0]["end"] = "2026-08-25T11:00:00+09:00"
+    page.evaluate(
+        """async payload => {
+            const fetchImpl = async () => ({ok: true, json: async () => payload});
+            const controller = CellaPersonalBriefing.create({
+              root: document.querySelector('#personal-briefing'),
+              input: document.querySelector('#chat-input'), connect: () => {}, fetchImpl
+            });
+            await controller.load();
+        }""",
+        payload,
+    )
+    titles = page.locator(".personal-briefing-card-title").all_inner_texts()
+    assert not any("내일부터" in text for text in titles), titles
+
+
 def test_cached_cards_render_and_long_titles_have_hover_text(page):
     page.set_content(
         '<section id="personal-briefing"></section><textarea id="chat-input"></textarea>'
@@ -93,9 +124,38 @@ def test_cached_cards_render_and_long_titles_have_hover_text(page):
         }""",
         payload,
     )
-    item = page.locator(".personal-briefing-item").first
-    assert item.inner_text() == "이번 주 주간 회의 전체 제목"
-    assert item.get_attribute("title") == "이번 주 주간 회의 전체 제목"
+    # 카드 항목은 Today 일정과 같은 시간축 행이다 — 시각은 왼쪽 축으로 빠지고
+    # 제목만 본문에 남는다. 긴 제목의 hover 텍스트는 그대로 지켜야 한다.
+    row = page.locator(".personal-briefing-card .briefing-doc-row").first
+    head = row.locator(".briefing-doc-row-head")
+    assert head.inner_text() == "이번 주 주간 회의 전체 제목"
+    assert head.get_attribute("title") == "이번 주 주간 회의 전체 제목"
+    assert row.locator(".briefing-doc-time b").inner_text() == "8/26(수)"
+    assert row.locator(".briefing-doc-time span").inner_text() == "10:00"
+
+
+def test_all_day_calendar_item_is_labeled_as_all_day(page):
+    page.set_content('<section id="personal-briefing"></section><textarea id="chat-input"></textarea>')
+    page.add_script_tag(path=str(SCRIPT))
+    payload = _fixture()
+    payload["calendar"]["items"][0].update(
+        start="2026-08-26", end="2026-08-27", all_day=True, title="전사 휴무일",
+    )
+    page.evaluate(
+        """async payload => {
+            const fetchImpl = async () => ({ok: true, json: async () => payload});
+            const controller = CellaPersonalBriefing.create({
+              root: document.querySelector('#personal-briefing'),
+              input: document.querySelector('#chat-input'), connect: () => {}, fetchImpl
+            });
+            await controller.load();
+        }""",
+        payload,
+    )
+
+    row = page.locator(".personal-briefing-card .briefing-doc-row").first
+    assert row.locator(".briefing-doc-row-head").inner_text() == "전사 휴무일"
+    assert row.locator(".briefing-doc-time span").inner_text() == "종일"
 
 
 def test_renderer_treats_google_text_as_text_and_rejects_bad_urls(page):
@@ -345,6 +405,7 @@ def test_mail_rows_show_whether_they_were_read():
     js = _read("app/frontend/personal-briefing.js")
     assert "mail-unread" in js and "mail-read" in js
     assert "item.unread" in js
+
     # ⛔ 칸을 나눈다 (2026-08-26 추가 요청). 한 목록에 굵기로만 구분하면 사이사이
     #    읽은 메일이 끼어 **아직 볼 것이 몇 개인지 세어야** 한다.
     assert "mailGroup" in js
@@ -352,16 +413,12 @@ def test_mail_rows_show_whether_they_were_read():
     assert "if (!rows.length) return;" in group, "빈 칸을 만들면 자리만 먹는다"
     order = js.split("function renderMailSection", 1)[1]
     assert order.index('"안읽음"') < order.index('"읽음"'), "안읽음이 먼저다"
+
     # ⛔ 카드(`그 밖의 메일`)도 같은 순서여야 한다 — 문서 절만 나누고 카드는 도착순이라
     #    안읽음·읽음이 섞여 나왔다 (2026-08-26 제보). 첫 화면 어디서든 같은 순서다.
     cards = js.split("function renderCards", 1)[1]
     assert "item.unread; })" in cards, "카드가 안 읽은 것을 위로 올리지 않는다"
     assert "mail-unread" in cards, "카드 행에 읽음 표시가 없다"
-
-    css = _read("app/static/style.css")
-    assert ".briefing-doc-row.mail-unread .briefing-doc-row-head" in css
-    assert ".briefing-doc-row.mail-read .briefing-doc-row-head" in css
-
 
     css = _read("app/static/style.css")
     assert ".briefing-doc-row.mail-unread .briefing-doc-row-head" in css
@@ -386,3 +443,12 @@ def test_today_has_a_refresh_button_that_always_refetches():
 
     chat = _read("app/frontend/chat.js")
     assert "personal-briefing-refresh" in chat and ".refresh()" in chat
+
+    # ⛔ 서버에도 같은 게이트가 있었다 — `refresh_for_user()` 는 `force` 없이 부르면
+    #    캐시(CACHE_TTL 10분)를 그대로 돌려준다. 버튼이 그 경로를 써서 "눌러도
+    #    시간이 안 바뀐다" 는 제보를 받았다 (2026-08-26). **양쪽 다** 강제해야 한다.
+    assert "force=1" in js, "클라이언트가 강제 갱신을 요청하지 않는다"
+    api = _read("app/api/personal_briefing_api.py")
+    assert "force: bool = False" in api, "엔드포인트에 force 가 없다"
+    assert "_tracked_refresh(user, now, force=force)" in api
+    assert "refresh_for_user(user, now=now, force=force)" in api
