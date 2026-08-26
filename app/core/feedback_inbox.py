@@ -25,7 +25,7 @@
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import structlog
 
@@ -39,6 +39,62 @@ STATUS_ACK = "ack"          # 봤고 처리 대상으로 인정
 STATUS_DONE = "done"        # 고쳤음
 STATUS_WONTFIX = "wontfix"  # 고치지 않기로 함 (사양·오입력·의미 없는 내용)
 _STATUSES = (STATUS_NEW, STATUS_ACK, STATUS_DONE, STATUS_WONTFIX)
+
+
+def _handled_note_has_encoding_loss(note: Optional[str]) -> bool:
+    """Detect a note whose non-ASCII text was replaced by question marks.
+
+    Windows PowerShell 5 uses ``us-ascii`` for native-process pipelines unless
+    explicitly changed.  In #151 that converted most Korean characters to
+    literal ``?`` bytes before Python and MariaDB ever received the note.
+    """
+    compact = "".join(ch for ch in (note or "") if not ch.isspace())
+    question_marks = compact.count("?")
+    return bool(compact) and question_marks >= 8 and question_marks / len(compact) >= 0.25
+
+# 배포된 수정과 피드백 상태를 함께 움직이는 단일 목록.
+#
+# 코드가 고쳐져도 message_feedback.status 는 저절로 바뀌지 않아 이미 해결된 붐따가
+# 계속 미처리로 보였다. 해결한 변경에는 이 목록의 (id, 신고일, 메모)를 함께 넣고,
+# 앱 기동 시 날짜까지 일치하는 행만 done 으로 동기화한다. 날짜 검증은 다른 DB에서
+# 같은 숫자 id 를 가진 피드백을 잘못 닫는 일을 막는다.
+#
+# 2026-08-26 사용자 확인: 당시 미종결 중 #152 만 실제 미해결이었다.
+# #152는 조직 담당국가 결정적 응답을 프로덕션에서 검증한 뒤 아래에 별도로 닫는다.
+_RESOLVED_2026_08_26 = (
+    (34, "2026-05-11"), (35, "2026-05-11"),
+    (36, "2026-05-12"), (37, "2026-05-12"), (38, "2026-05-12"),
+    (39, "2026-05-12"), (40, "2026-05-12"), (42, "2026-05-12"),
+    (43, "2026-05-12"), (44, "2026-05-12"),
+    (45, "2026-05-13"), (46, "2026-05-13"), (47, "2026-05-13"),
+    (48, "2026-05-13"),
+    (55, "2026-06-04"), (57, "2026-06-08"),
+    (66, "2026-04-13"), (68, "2026-04-15"), (69, "2026-04-15"),
+    (70, "2026-04-16"), (75, "2026-04-17"), (76, "2026-04-22"),
+    (77, "2026-04-27"), (81, "2026-04-27"), (82, "2026-04-27"),
+    (83, "2026-04-28"), (85, "2026-04-30"), (86, "2026-04-30"),
+    (88, "2026-05-04"), (89, "2026-05-04"), (90, "2026-05-04"),
+    (105, "2026-07-08"), (110, "2026-07-23"),
+    (112, "2026-07-27"), (113, "2026-07-27"), (115, "2026-07-28"),
+    (136, "2026-08-13"), (150, "2026-08-25"),
+)
+_RESOLUTION_NOTE_2026_08_26 = (
+    "사용자 확인(2026-08-26): 해결 완료. "
+    "배포된 해결 목록과 피드백 상태를 자동 동기화했습니다."
+)
+DEPLOYED_FEEDBACK_RESOLUTIONS = tuple(
+    {"id": feedback_id, "created_on": created_on, "note": _RESOLUTION_NOTE_2026_08_26}
+    for feedback_id, created_on in _RESOLVED_2026_08_26
+) + (
+    {
+        "id": 152,
+        "created_on": "2026-08-25",
+        "note": (
+            "수정 완료(2026-08-26): 동남아시아2팀 담당 국가를 "
+            "말레이시아·싱가포르로 결정적 응답하도록 반영하고 프로덕션에서 검증했습니다."
+        ),
+    },
+)
 
 _COLUMNS = (
     ("status", f"VARCHAR(16) NOT NULL DEFAULT '{STATUS_NEW}'"),
@@ -94,10 +150,14 @@ def list_feedback(status: Optional[str] = None, only_down: bool = True,
 
 
 def set_status(feedback_id: int, status: str, who: str,
-               note: Optional[str] = None) -> bool:
+               note: Optional[str] = None, notify: bool = True) -> bool:
     """처리 상태를 바꾼다. 알 수 없는 상태는 거절한다 (오타로 조용히 사라지지 않게)."""
     if status not in _STATUSES:
         raise ValueError(f"unknown status: {status}")
+    if _handled_note_has_encoding_loss(note):
+        raise ValueError(
+            "처리 메모 인코딩이 손상되었습니다. UTF-8 입력으로 다시 작성해주세요."
+        )
     done = status in (STATUS_DONE, STATUS_WONTFIX)
     execute(
         "UPDATE message_feedback SET status = %s, handled_by = %s, handled_note = %s, "
@@ -108,7 +168,7 @@ def set_status(feedback_id: int, status: str, who: str,
     # 처리를 끝냈으면 제보자에게 메일로도 알린다 — **길이 열려 있을 때만** (기본 꺼짐).
     # 앱 알림(사이드바)은 이미 뜬다. 메일은 "답이 돌아온다"를 확실히 하는 보조 경로다.
     # ⚠️ 메일 실패가 상태 변경을 되돌리면 안 된다 — 여기서 예외를 밖으로 내지 않는다
-    if done:
+    if done and notify:
         try:
             from app.core import mailer
             if mailer.is_enabled():
@@ -125,6 +185,58 @@ def set_status(feedback_id: int, status: str, who: str,
             logger.warning("feedback_mail_failed", id=feedback_id,
                            error=f"{type(e).__name__}: {str(e)[:200]}")
     return True
+
+
+def apply_deployed_resolutions(
+    resolutions: Sequence[Dict[str, Any]] = DEPLOYED_FEEDBACK_RESOLUTIONS,
+    *,
+    fetcher: Optional[Callable[[int, str], Optional[Dict[str, Any]]]] = None,
+    setter: Optional[Callable[[int, str, str, str], Any]] = None,
+) -> Dict[str, int]:
+    """배포된 해결 목록을 피드백 상태에 idempotent하게 반영한다.
+
+    피드백 id 만 믿지 않고 신고일과 rating=-1까지 DB 쿼리 안에서 검증한다. 이미
+    ``done``/``wontfix`` 인 행은 건드리지 않아 프로세스 재기동 때 알림이 반복되지
+    않는다. 자동 동기화는 대량 메일을 보내지 않지만 ``handled_at``은 남기므로 앱의
+    기존 피드백 알림 화면에서는 해결 사실을 확인할 수 있다.
+    """
+    if fetcher is None:
+        def fetcher(feedback_id: int, created_on: str) -> Optional[Dict[str, Any]]:
+            return fetch_one(
+                "SELECT id, status, handled_note FROM message_feedback "
+                "WHERE id = %s AND rating = -1 AND DATE(created_at) = %s",
+                (int(feedback_id), created_on),
+            )
+    if setter is None:
+        def setter(feedback_id: int, status: str, who: str, note: str) -> Any:
+            return set_status(feedback_id, status, who, note, notify=False)
+
+    result = {"done": 0, "already_closed": 0, "missing_or_mismatched": 0}
+    for item in resolutions:
+        feedback_id = int(item["id"])
+        created_on = str(item["created_on"])
+        row = fetcher(feedback_id, created_on)
+        if not row:
+            result["missing_or_mismatched"] += 1
+            logger.info(
+                "deployed_feedback_resolution_not_found",
+                id=feedback_id,
+                created_on=created_on,
+            )
+            continue
+        if (row.get("status") or STATUS_NEW) in (STATUS_DONE, STATUS_WONTFIX):
+            result["already_closed"] += 1
+            continue
+
+        note = str(item.get("note") or "").strip()
+        previous_note = str(row.get("handled_note") or "").strip()
+        if previous_note and previous_note not in note:
+            note = f"{previous_note}\n\n{note}" if note else previous_note
+        setter(feedback_id, STATUS_DONE, "system:deployed-resolution", note)
+        result["done"] += 1
+
+    logger.info("deployed_feedback_resolutions_applied", **result)
+    return result
 
 
 def summary() -> Dict[str, Any]:

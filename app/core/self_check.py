@@ -174,7 +174,9 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "model_rights_sync_daily": (26, "모델 초상권 적재 (04:30)"),
     "feedback_digest_daily": (26, "붐따 처리함 다이제스트 (08:00)"),
     "briefing_daily": (26, "개인화 데일리 브리핑 (08:20)"),
-    "personal_briefing_daily": (26, "로그인 개인 업무 브리핑 사전 집계 (08:30)"),
+    "personal_briefing_daily": (26, "출근 브리핑 생성 + 잔디 대기열 (09:00)"),
+    # ⚠️ 근무일 09~18시에만 돈다 — 주말·야간을 고장으로 세지 않도록 넉넉히 잡는다
+    "jandi_notify_hourly": (80, "셀라 알림 → 잔디 대기열 (평일 매시 :25)"),
     "schema_docs_daily": (26, "정의서 → BigQuery 컬럼 설명 (03:40)"),
     "value_lists_daily": (26, "컬럼 값 목록 실측 갱신 (03:50)"),
 }
@@ -835,6 +837,39 @@ def _static(name: str):
     return run
 
 
+def _check_jandi_relay() -> CheckResult:
+    """잔디 대기열이 밀려 있지 않은가 — 밀렸다면 DB_PC 릴레이가 안 도는 것이다.
+
+    ⛔ 서버는 잔디에 직접 붙지 못한다 (WAS·APP 모두 wh.jandi.com 403, 2026-08-18 실측).
+       그래서 '보냈다'를 서버 로그로는 알 수 없고, **대기열이 비는지**로만 알 수 있다.
+       아무도 등록하지 않았으면 검사할 것이 없다 (기능 미사용은 고장이 아니다).
+    """
+    from app.core import jandi_briefing
+
+    registered = fetch_one(
+        "SELECT COUNT(*) c FROM user_jandi_webhooks WHERE enabled = 1",
+    ) or {}
+    if not int(registered.get("c") or 0):
+        return CheckResult(True, "잔디 브리핑을 등록한 사용자가 없다")
+    stuck = fetch_one(
+        "SELECT COUNT(*) c FROM briefing_jandi_outbox "
+        "WHERE status = 'pending' AND created_at < DATE_SUB(NOW(), INTERVAL 6 HOUR)",
+    ) or {}
+    waiting = int(stuck.get("c") or 0)
+    counts = jandi_briefing.status_counts()
+    if waiting:
+        return CheckResult(
+            False,
+            f"6시간 넘게 대기 중인 브리핑 {waiting}건 — DB_PC 릴레이"
+            f"(scripts/jandi_briefing_relay.py) 예약 작업을 확인하라",
+        )
+    if counts["failed"]:
+        return CheckResult(
+            False, f"최근 7일 발송 실패 {counts['failed']}건 (웹훅 주소가 지워졌을 수 있다)",
+        )
+    return CheckResult(True, f"최근 7일 발송 {counts['sent']}건 · 대기 {counts['pending']}건")
+
+
 CHECKS: list[Check] = [
     Check("ad_sync_fresh", "batch", SEV_CRITICAL,
           "AD 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
@@ -846,6 +881,8 @@ CHECKS: list[Check] = [
           "모든 스케줄 잡이 제 주기 안에 성공했는가", _check_job_heartbeats),
     Check("restart_loop", "batch", SEV_CRITICAL,
           "앱이 재시작을 반복하고 있지 않은가 (크래시 루프)", _check_restart_loop),
+    Check("jandi_relay", "batch", SEV_WARNING,
+          "출근 브리핑 잔디 대기열이 비워지고 있는가 (DB_PC 릴레이)", _check_jandi_relay),
     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
           "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,

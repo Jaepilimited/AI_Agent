@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     sqlite_db_path: str = "C:/Users/DB_PC/.open-webui/data/skin1004_chat.db"
     personal_briefing_enabled: bool = True
 
+    # 출근 브리핑 잔디 전달 — DB_PC 릴레이가 SSH 터널로 꺼내 갈 때 쓰는 토큰.
+    # ⛔ 비어 있으면 /api/internal/briefing-outbox 는 404 다 (기본값으로 열리지 않는다).
+    #    서버는 잔디에 직접 못 붙는다 — WAS·APP 모두 wh.jandi.com 403 (2026-08-18 실측).
+    briefing_relay_token: str = ""
+
     # Pseudonymization salt for anon_id derivation (hmac-sha256(salt, user_id)[:16]).
     # Set via ANON_SALT env var. Empty default lets the server start in dev, but
     # compute_anon_id() raises at call time if salt is missing, so production paths

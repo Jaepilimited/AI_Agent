@@ -32,6 +32,7 @@ from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
 from app.api.middleware import setup_middleware
 from app.api.personal_briefing_api import router as personal_briefing_router
+from app.api.jandi_briefing_api import router as jandi_briefing_router
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
 from app.api.routes import router
@@ -141,8 +142,14 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_self_check_tables)
         # 붐따 처리 상태 컬럼 — 없으면 "처리했다"를 남길 곳이 없어
         # "인입은 됐는데 처리가 안 된 건지"를 영영 답할 수 없다 (2026-08-14)
-        from app.core.feedback_inbox import ensure_feedback_status_columns
+        from app.core.feedback_inbox import (
+            apply_deployed_resolutions,
+            ensure_feedback_status_columns,
+        )
         await asyncio.to_thread(ensure_feedback_status_columns)
+        # 수정 배포와 붐따 상태를 한 흐름으로 묶는다. 해결 목록에 명시된 신고만
+        # 날짜까지 검증한 뒤 done 처리하며, 재기동 시에는 이미 닫힌 행을 건너뛴다.
+        await asyncio.to_thread(apply_deployed_resolutions)
         from app.core.schema_watch import ensure_schema_watch_table
         await asyncio.to_thread(ensure_schema_watch_table)
         from app.core.value_lists import ensure_value_cache_table
@@ -166,6 +173,10 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_oauth_state_table)
         from app.core.personal_briefing_store import ensure_tables as ensure_personal_briefing_tables
         await asyncio.to_thread(ensure_personal_briefing_tables)
+        from app.core.jandi_briefing import ensure_tables as ensure_jandi_tables
+        await asyncio.to_thread(ensure_jandi_tables)
+        from app.core.fx_rates import ensure_tables as ensure_fx_tables
+        await asyncio.to_thread(ensure_fx_tables)
         from app.core.announcements import ensure_tables as _ensure_announce
         await asyncio.to_thread(_ensure_announce)
         logger.info("mariadb_initialized")
@@ -214,7 +225,7 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
             # ⛔ 시트는 **오전 10시경**에 갱신되고 안내문엔 "오후 2시 전후" 라고 적혀 있다.
             #    처음에 04:10 에 걸었다가 **매일 전날 데이터를 읽고 있었다** (2026-08-25).
-            #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돌다.
+            #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돈다.
             _scheduler.add_job(_op_inventory_sync_job, "cron", hour="11,16", minute=20, id="op_inventory_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
@@ -223,13 +234,18 @@ def create_app() -> FastAPI:
             # 붐따 처리함 — 자가 점검(07:30) 뒤에 둔다. 밤새 들어온 것을 아침에 올린다
             _scheduler.add_job(_feedback_digest_job, "cron", hour=8, minute=0, id="feedback_digest_daily")
             _scheduler.add_job(_briefing_job, "cron", hour=8, minute=20, id="briefing_daily")
-            _scheduler.add_job(_personal_briefing_job, "cron", hour=8, minute=30,
+            _scheduler.add_job(_personal_briefing_job, "cron", hour=9, minute=0,
                                id="personal_briefing_daily", timezone=ZoneInfo("Asia/Seoul"))
+            # 셀라 알림 → 잔디 대기열. ⚠️ 근무 시간에만 돈다 — 밤에 밀어 넣어 봐야
+            #    릴레이가 아침에나 보내고, 그 사이 읽음 처리되면 헛수고다.
+            _scheduler.add_job(_jandi_notify_job, "cron", day_of_week="mon-fri",
+                               hour="9-18", minute=25, id="jandi_notify_hourly",
+                               timezone=ZoneInfo("Asia/Seoul"))
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
             _set_scheduler(_scheduler)
-        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "golden_05:30", "self_check_07:30", "personal_briefing_08:30"])
+        logger.info("scheduler_started", jobs=["team_sync_daily_01:00", "wiki_extract_hourly_:15", "qdrant_pipeline_05:00", "quality_snapshot_00:05", "weekly_growth_mon_00:10", "knowledge_map_03:00", "ingredient_sync_04:00", "golden_05:30", "self_check_07:30", "personal_briefing_09:00"])
         yield
         logger.info("application_shutdown")
 
@@ -277,6 +293,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)      # /auth/google/*
     app.include_router(auth_api_router)  # /api/auth/*
     app.include_router(personal_briefing_router)  # /api/personal-briefing/*
+    app.include_router(jandi_briefing_router)  # /api/personal-briefing/jandi, /api/internal/*
     app.include_router(conversation_router)  # /api/conversations/*
     app.include_router(admin_router)         # /api/admin/*
     app.include_router(group_router)         # /api/admin/groups/*
@@ -737,7 +754,7 @@ async def _briefing_job():
 
 
 async def _personal_briefing_job():
-    """Daily 08:30 KST: precompute cached login briefings for eligible users."""
+    """매일 09:00 KST: 출근 브리핑을 만들고 잔디 발송 대기열에 넣는다."""
 
     from app.core.self_check import track_job
 
@@ -750,7 +767,8 @@ async def _personal_briefing_job():
 
             result = await run_morning_precompute()
             jr.set_note(
-                f"selected={result['selected']} succeeded={result['succeeded']} failed={result['failed']}"
+                f"selected={result['selected']} succeeded={result['succeeded']} "
+                f"failed={result['failed']} queued={result.get('queued', 0)}"
             )
         logger.info(
             "personal_briefing_precompute_done",
@@ -760,6 +778,23 @@ async def _personal_briefing_job():
         )
     except Exception as exc:
         logger.error("personal_briefing_precompute_failed", error_type=type(exc).__name__)
+
+
+async def _jandi_notify_job():
+    """셀라 알림을 잔디 대기열에 넣는다 (발송은 DB_PC 릴레이가 한다).
+
+    ⛔ 서버는 `wh.jandi.com` 에 붙지 못한다 — 만들어 두기만 한다.
+    """
+    from app.core.self_check import track_job
+
+    try:
+        with track_job("jandi_notify_hourly") as jr:
+            from app.core.jandi_notify import run
+
+            result = await asyncio.to_thread(run)
+            jr.set_note(f"recipients={result['recipients']} queued={result['queued']}")
+    except Exception as exc:
+        logger.error("jandi_notify_failed", error_type=type(exc).__name__)
 
 
 async def _schema_docs_job():
