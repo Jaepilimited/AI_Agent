@@ -352,6 +352,15 @@ def test_mail_rows_show_whether_they_were_read():
     assert "if (!rows.length) return;" in group, "빈 칸을 만들면 자리만 먹는다"
     order = js.split("function renderMailSection", 1)[1]
     assert order.index('"안읽음"') < order.index('"읽음"'), "안읽음이 먼저다"
+    # ⛔ 카드(`그 밖의 메일`)도 같은 순서여야 한다 — 문서 절만 나누고 카드는 도착순이라
+    #    안읽음·읽음이 섞여 나왔다 (2026-08-26 제보). 첫 화면 어디서든 같은 순서다.
+    cards = js.split("function renderCards", 1)[1]
+    assert "item.unread; })" in cards, "카드가 안 읽은 것을 위로 올리지 않는다"
+    assert "mail-unread" in cards, "카드 행에 읽음 표시가 없다"
+
+    css = _read("app/static/style.css")
+    assert ".briefing-doc-row.mail-unread .briefing-doc-row-head" in css
+    assert ".briefing-doc-row.mail-read .briefing-doc-row-head" in css
 
 
     css = _read("app/static/style.css")
