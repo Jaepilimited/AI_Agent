@@ -345,6 +345,14 @@ def test_mail_rows_show_whether_they_were_read():
     js = _read("app/frontend/personal-briefing.js")
     assert "mail-unread" in js and "mail-read" in js
     assert "item.unread" in js
+    # ⛔ 칸을 나눈다 (2026-08-26 추가 요청). 한 목록에 굵기로만 구분하면 사이사이
+    #    읽은 메일이 끼어 **아직 볼 것이 몇 개인지 세어야** 한다.
+    assert "mailGroup" in js
+    group = js.split("function mailGroup", 1)[1].split(chr(10) + "  }" + chr(10), 1)[0]
+    assert "if (!rows.length) return;" in group, "빈 칸을 만들면 자리만 먹는다"
+    order = js.split("function renderMailSection", 1)[1]
+    assert order.index('"안읽음"') < order.index('"읽음"'), "안읽음이 먼저다"
+
 
     css = _read("app/static/style.css")
     assert ".briefing-doc-row.mail-unread .briefing-doc-row-head" in css
