@@ -713,3 +713,28 @@ def test_admin_badge_says_what_it_counts():
     assert 'badge.textContent = run.failed;' not in fn, "숫자만 찍고 있다"
     assert '"점검 "' in fn, "무엇을 세는지 배지에 적혀 있어야 한다"
     assert 'aria-label' in fn, "스크린리더에도 뜻이 전달돼야 한다"
+
+
+def test_feedback_check_counts_open_not_volume():
+    """⛔ 자가 점검 `feedback` 항목이 **들어온 양**만 세어, 14건을 전부 처리한 뒤에도
+       7일 창이 지나갈 때까지 계속 빨갛게 남았다 (2026-08-26).
+       할 일이 없는데 울리는 알림은 곧 무시당한다 — 이 파일이 지키려는 규칙 그 자체다.
+
+    ⚠️ **주 대비 비율로 미처리를 비교하면 안 된다.** 지난주 것은 대개 처리돼 0 에
+       수렴하므로 이번 주 1건만으로도 비율이 폭발한다. 절대량으로 본다.
+    ⚠️ **최근 N일로 자르지 않는다.** 미처리는 나이와 무관하게 미처리다 — 창이 지나면
+       조용히 사라지는 대기열은 대기열이 아니다.
+    """
+    import inspect
+
+    from app.core import self_check as sc
+
+    ids = [c.id for c in sc.CHECKS if "feedback" in c.id]
+    assert ids == ["feedback_backlog"], ids
+
+    src = inspect.getsource(sc._check_feedback_backlog)
+    assert "open_cnt" in src and "wontfix" in src, "미처리를 세지 않는다"
+    assert "INTERVAL 14 DAY" not in src, "주 대비 비율은 미처리에 쓰면 안 된다"
+    # 판정 자체에 기간 창이 걸리면 안 된다 (유입 표시용 7일은 detail 문구에만 쓴다)
+    verdict = src.split("return CheckResult", 1)[1]
+    assert "week" not in verdict, verdict.strip()[:90]

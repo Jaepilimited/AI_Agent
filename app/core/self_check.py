@@ -770,22 +770,40 @@ def _check_golden_regression() -> CheckResult:
     return CheckResult(True, f"신규 실패 0건 (통과율 {reg.get('pass_rate')}%, 런 {reg['latest_run']})")
 
 
-def _check_feedback_spike() -> CheckResult:
-    """👎 가 급증하지 않았는가 — 절대량이 아니라 직전 주 대비로 본다.
+# 미처리가 이만큼 쌓이면 사람이 봐야 한다. 절대량으로 본다 (아래 주석 참조).
+_FEEDBACK_BACKLOG_LIMIT = 5
 
-    누적 비율(👎 75%)을 임계로 쓰면 평상시에도 계속 울려 알림이 죽는다.
-    스파이크(최근 7일이 직전 7일의 2배 이상 && 5건 이상)만 잡는다.
+
+def _check_feedback_backlog() -> CheckResult:
+    """👎 중 **아직 처리하지 않은 것**이 쌓이지 않았는가.
+
+    ⛔ 예전엔 들어온 **양**만 셌다 (`feedback_spike`: 최근 7일이 직전 주의 2배이고
+       5건 이상). 그래서 **다 고친 뒤에도 7일 창이 지나갈 때까지 계속 빨갛게** 남았다 —
+       2026-08-26 실제로 14건이 전부 `done` 인데 경보가 떠 있었고, 관리자가
+       "admin 에 4로 되어 있는데 그게 뭔지 모르겠다" 고 물었다.
+       **할 일이 없는데 울리는 알림은 곧 무시당한다** (이 파일이 스스로 세운 규칙이다).
+
+    ⚠️ **주 대비 비율로 미처리를 비교하면 안 된다.** 지난주 것은 대개 처리돼 0 에
+       수렴하므로, 이번 주에 하나만 들어와도 비율이 폭발해 매번 울린다. 절대량으로 본다.
+    ⚠️ **최근 7일로 자르지 않는다.** 미처리는 나이와 무관하게 미처리다 — 7일이 지나면
+       조용히 사라지는 대기열은 대기열이 아니다. 진단할 수 없는 건(코멘트 없음)은
+       `wontfix` 로 닫는 것이 정상 흐름이고, 그래야 이 숫자가 진실을 말한다.
     """
-    cur = (fetch_one(
-        "SELECT COUNT(*) c FROM message_feedback "
-        "WHERE rating = -1 AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or {}).get("c", 0)
-    prev = (fetch_one(
-        "SELECT COUNT(*) c FROM message_feedback "
-        "WHERE rating = -1 AND created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY) "
-        "AND created_at < DATE_SUB(NOW(), INTERVAL 7 DAY)") or {}).get("c", 0)
-    spiked = cur >= 5 and cur >= 2 * max(prev, 1)
-    return CheckResult(not spiked, f"최근 7일 👎 {cur}건 / 직전 7일 {prev}건")
+    row = fetch_one(
+        "SELECT COUNT(*) total, "
+        "       SUM(status IS NULL OR status NOT IN ('done','wontfix')) open_cnt, "
+        "       SUM((status IS NULL OR status NOT IN ('done','wontfix')) "
+        "           AND comment IS NOT NULL AND TRIM(comment) <> '') open_comment "
+        "FROM message_feedback WHERE rating = -1") or {}
+    open_cnt = int(row.get("open_cnt") or 0)
+    open_comment = int(row.get("open_comment") or 0)
+    week = int((fetch_one(
+        "SELECT COUNT(*) c FROM message_feedback WHERE rating = -1 "
+        "AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)") or {}).get("c") or 0)
 
+    detail = ("미처리 {}건 (코멘트 있는 것 {}건) · 최근 7일 유입 {}건 · 누적 {}건"
+              .format(open_cnt, open_comment, week, int(row.get("total") or 0)))
+    return CheckResult(open_cnt < _FEEDBACK_BACKLOG_LIMIT, detail)
 
 # ---- 등록 ----
 
@@ -859,8 +877,11 @@ CHECKS: list[Check] = [
           "Qdrant 기본 컬렉션에 데이터가 있는가", _check_qdrant),
     Check("canary_answers", "quality", SEV_WARNING,
           "대표 질문 답변이 구조적으로 온전한가", _check_canary_answers),
-    Check("feedback_spike", "quality", SEV_WARNING,
-          "👎 피드백이 급증하지 않았는가", _check_feedback_spike),
+    # ⚠️ id 를 `feedback_spike` 에서 바꿨다 (2026-08-26). 재는 대상이 달라졌는데
+    #    이름만 남으면 다음 사람이 "급증" 으로 읽는다 — Admin 추세 그래프는
+    #    옛 id 에서 끊기고 새 id 로 다시 쌓인다.
+    Check("feedback_backlog", "quality", SEV_WARNING,
+          "👎 미처리가 쌓이지 않았는가", _check_feedback_backlog),
     Check("golden_regression", "quality", SEV_WARNING,
           "골든셋이 직전 런 대비 회귀하지 않았는가", _check_golden_regression),
     # 정적 검사 — 코드·자산을 읽어 "정상처럼 보이는 고장"을 찾는다
