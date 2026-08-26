@@ -150,6 +150,11 @@ def search_gmail(
     return output
 
 
+#: 월요일·연휴 다음날은 창이 3일 이상이라 20건으로는 앞부분이 통째로 잘린다.
+#: 한 건마다 messages.get 이 한 번씩 나가므로 상한은 여전히 필요하다.
+GMAIL_DIGEST_HARD_CAP = 40
+
+
 def list_gmail_digest(
     creds: Credentials,
     start: datetime,
@@ -169,7 +174,7 @@ def list_gmail_digest(
         f"after:{start_epoch - 1} before:{end_epoch} "
         "-in:spam -in:trash -in:drafts -in:sent -from:me"
     )
-    bounded_max_results = min(max(1, max_results), 20)
+    bounded_max_results = min(max(1, max_results), GMAIL_DIGEST_HARD_CAP)
     page = service.users().messages().list(
         userId="me", q=query, maxResults=bounded_max_results,
     ).execute()
@@ -238,11 +243,83 @@ def list_calendar_window(
                 ),
                 "location": event.get("location", ""),
                 "htmlLink": event.get("htmlLink", ""),
+                "attendees": _event_attendees(event),
+                "organizer": (event.get("organizer") or {}).get(
+                    "displayName", (event.get("organizer") or {}).get("email", ""),
+                ),
+                "conference_url": _event_conference_url(event),
+                "declined": _self_declined(event),
+                # 사전 준비 문장을 만들 때만 쓰는 임시값이다. 저장 전에 벗겨진다.
+                "description": (event.get("description") or "")[:600],
             }
             for event in page.get("items", [])
         ],
         "truncated": bool(page.get("nextPageToken")),
     }
+
+
+def _event_attendees(event: Dict[str, Any]) -> List[str]:
+    """참석자 표시 이름만. 사람이 읽을 목록이라 리소스(회의실)와 본인은 뺀다."""
+    names = []
+    for person in event.get("attendees", []) or []:
+        if person.get("resource") or person.get("self"):
+            continue
+        label = person.get("displayName") or person.get("email") or ""
+        label = label.split("@")[0] if "@" in label and not person.get("displayName") else label
+        if label and label not in names:
+            names.append(label)
+        if len(names) >= 20:
+            break
+    return names
+
+
+def _event_conference_url(event: Dict[str, Any]) -> str:
+    """온라인 회의 링크. Meet 이 없으면 첫 video entry point 를 쓴다."""
+    direct = event.get("hangoutLink") or ""
+    if direct:
+        return direct
+    for entry in (event.get("conferenceData") or {}).get("entryPoints", []) or []:
+        if entry.get("entryPointType") == "video" and entry.get("uri", "").startswith("https://"):
+            return entry["uri"]
+    return ""
+
+
+def _self_declined(event: Dict[str, Any]) -> bool:
+    for person in event.get("attendees", []) or []:
+        if person.get("self"):
+            return person.get("responseStatus") == "declined"
+    return False
+
+
+#: 구글이 관리하는 대한민국 공휴일 캘린더. 손으로 적은 표가 낡는 것을 막는 유일한 이유다.
+KOREA_HOLIDAY_CALENDAR_ID = "ko.south_korea#holiday@group.v.calendar.google.com"
+
+
+def list_korea_holidays(
+    creds: Credentials,
+    start: datetime,
+    end: datetime,
+) -> List[str]:
+    """[start, end) 안의 한국 공휴일 날짜(YYYY-MM-DD).
+
+    ⛔ 실패를 삼키지 않는다 — 호출부가 '확인 실패' 를 브리핑에 적어야 하므로
+    예외를 그대로 올린다.
+    """
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    page = service.events().list(
+        calendarId=KOREA_HOLIDAY_CALENDAR_ID,
+        timeMin=start.astimezone(timezone.utc).isoformat(),
+        timeMax=end.astimezone(timezone.utc).isoformat(),
+        maxResults=60,
+        singleEvents=True,
+        orderBy="startTime",
+    ).execute()
+    days = []
+    for event in page.get("items", []):
+        value = (event.get("start") or {}).get("date", "")
+        if len(value) == 10 and value not in days:
+            days.append(value)
+    return days
 
 
 def search_drive(

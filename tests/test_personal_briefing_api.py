@@ -71,12 +71,20 @@ def test_disabled_flag_short_circuits_core(monkeypatch):
     assert client.post("/api/personal-briefing/refresh").status_code == 404
 
 
+#: 이 파일의 "같은 날" 분기는 코드가 보는 오늘과 맞아야 의미가 있다.
+#: ⛔ 날짜를 손으로 적으면 그날 하루만 검사하고 다음 날 조용히 다른 분기를 탄다
+#:    (2026-08-26 에 실제로 두 문항이 함께 깨졌다).
+def _today() -> str:
+    return str(datetime.now(api.SEOUL).date())
+
+
 @pytest.mark.asyncio
 async def test_refresh_timeout_returns_same_day_last_known_good_cache(monkeypatch):
     release = asyncio.Event()
     finished = asyncio.Event()
+    today = _today()
 
-    async def stalled_refresh(_user, *, now):
+    async def stalled_refresh(_user, *, now, force=False):
         try:
             await release.wait()
             return {"for_date": str(now.date())}
@@ -86,8 +94,8 @@ async def test_refresh_timeout_returns_same_day_last_known_good_cache(monkeypatc
     monkeypatch.setattr(api, "refresh_for_user", stalled_refresh)
     monkeypatch.setattr(api, "_REFRESH_BUDGET_SECONDS", 0.05)
     cached = {
-        "enabled": True, "for_date": "2026-08-25", "timezone": "Asia/Seoul",
-        "generated_at": "2026-08-25T08:30:00+09:00", "needs_refresh": True,
+        "enabled": True, "for_date": today, "timezone": "Asia/Seoul",
+        "generated_at": today + "T08:30:00+09:00", "needs_refresh": True,
         "google": {"connected": True, "account": "connected@example.com"},
         "priorities": [{"source": "mail", "source_id": "m1", "title": "saved"}],
         "calendar": {"status": "ready", "items": [{"id": "e1"}], "error_code": ""},
@@ -99,7 +107,7 @@ async def test_refresh_timeout_returns_same_day_last_known_good_cache(monkeypatc
     result = await api.refresh_personal_briefing(OWNER)
 
     assert result["needs_refresh"] is False
-    assert result["for_date"] == "2026-08-25"
+    assert result["for_date"] == today
     assert result["calendar"]["items"] == [{"id": "e1"}]
     assert result["mail"]["items"] == [{"id": "m1"}]
     assert result["priorities"][0]["source_id"] == "m1"
@@ -116,13 +124,14 @@ async def test_timed_out_refresh_keeps_running_under_shared_lock(monkeypatch):
     """The HTTP budget must not cancel a thread-backed refresh and release its lock early."""
     release = asyncio.Event()
     finished = asyncio.Event()
+    today = _today()
     cached = {
-        "enabled": True, "for_date": "2026-08-25", "needs_refresh": True,
+        "enabled": True, "for_date": today, "needs_refresh": True,
         "calendar": {"status": "empty", "items": []},
         "mail": {"status": "empty", "items": []},
     }
 
-    async def stalled(_user, *, now):
+    async def stalled(_user, *, now, force=False):
         try:
             await release.wait()
             return cached
@@ -136,7 +145,7 @@ async def test_timed_out_refresh_keeps_running_under_shared_lock(monkeypatch):
 
     result = await api.refresh_personal_briefing(OWNER)
 
-    assert result["for_date"] == "2026-08-25"
+    assert result["for_date"] == today
     assert not finished.is_set()
     release.set()
     await asyncio.wait_for(finished.wait(), timeout=1)
@@ -190,7 +199,7 @@ def test_refresh_pins_one_kst_now_across_midnight_fallback(monkeypatch):
             cls.calls += 1
             return before_midnight if cls.calls == 1 else after_midnight
 
-    async def timed_out_refresh(_user, *, now):
+    async def timed_out_refresh(_user, *, now, force=False):
         seen["refresh_now"] = now
         raise asyncio.TimeoutError()
 

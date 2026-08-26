@@ -107,7 +107,7 @@ def test_calendar_window_uses_exact_bounds_and_reports_truncation(monkeypatch):
     assert result["truncated"] is True
 
 
-def test_digest_clamps_requested_limit_to_twenty(monkeypatch):
+def test_digest_clamps_requested_limit_to_the_hard_cap(monkeypatch):
     captured = {}
 
     class Request:
@@ -135,7 +135,9 @@ def test_digest_clamps_requested_limit_to_twenty(monkeypatch):
         max_results=999,
     )
 
-    assert captured["maxResults"] == 20
+    # 상한은 하나의 상수다 — 월요일 창(3일치)을 위해 40 으로 올렸다.
+    # 한 건마다 messages.get 이 한 번씩 나가므로 상한 자체는 계속 필요하다.
+    assert captured["maxResults"] == google_workspace.GMAIL_DIGEST_HARD_CAP
 
 
 def test_digest_post_filters_exact_kst_half_open_boundary(monkeypatch):

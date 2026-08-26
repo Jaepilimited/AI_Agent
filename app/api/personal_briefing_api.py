@@ -10,7 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.auth_middleware import get_current_user
 from app.config import get_settings
-from app.core.personal_briefing import SEOUL, get_cached_for_user, refresh_for_user
+from app.core.personal_briefing import (
+    SEOUL,
+    _blank_document,
+    get_cached_for_user,
+    refresh_for_user,
+)
 from app.db.models import User
 
 
@@ -25,10 +30,10 @@ def _remaining_seconds(deadline: float) -> float:
     return max(0.0, deadline - asyncio.get_running_loop().time())
 
 
-def _tracked_refresh(user: User, now: datetime) -> asyncio.Task:
+def _tracked_refresh(user: User, now: datetime, force: bool = False) -> asyncio.Task:
     """Keep timed-out refreshes alive so their user lock still guards revoke."""
 
-    task = asyncio.create_task(refresh_for_user(user, now=now))
+    task = asyncio.create_task(refresh_for_user(user, now=now, force=force))
     _ACTIVE_REFRESH_TASKS.add(task)
 
     def finish(completed: asyncio.Task) -> None:
@@ -57,6 +62,7 @@ def _minimal_timeout_response(now: datetime) -> dict:
             "action_candidates": [], "items": [], "truncated": False, "error_code": "google_timeout",
         },
         "business": {"status": "error", "item": None},
+        "document": _blank_document(now.astimezone(SEOUL).date(), "error"),
     }
 
 
@@ -76,6 +82,7 @@ def _timeout_response_from_cache(cached: dict | None, now: datetime) -> dict:
             section["status"] = "error"
             section["error_code"] = "google_timeout"
     result["needs_refresh"] = False
+    result.setdefault("document", _blank_document(now.astimezone(SEOUL).date(), "error"))
     return result
 
 
@@ -89,8 +96,18 @@ async def get_personal_briefing(user: User = Depends(get_current_user)) -> dict:
 
 
 @router.post("/refresh")
-async def refresh_personal_briefing(user: User = Depends(get_current_user)) -> dict:
-    """Refresh the JWT owner's briefing within the whole-request budget."""
+async def refresh_personal_briefing(
+    force: bool = False, user: User = Depends(get_current_user),
+) -> dict:
+    """Refresh the JWT owner's briefing within the whole-request budget.
+
+    ⛔ `force` 없이 부르면 **캐시가 유효할 때 그대로 돌려준다** (`CACHE_TTL` 10분).
+       화면의 새로고침 버튼이 그 경로를 쓰다가 "눌러도 시간이 안 바뀐다" 는 제보를
+       받았다 (2026-08-26). 자동 갱신은 그대로 두고, **사람이 누른 것만** 강제한다 —
+       누른 사람에게 캐시를 돌려주면 버튼이 고장 난 것으로 보인다.
+    ⚠️ 강제는 구글을 실제로 호출한다. 연타는 사용자별 락이 직렬화하고, 화면에서도
+       진행 중에는 버튼을 잠근다.
+    """
 
     if not get_settings().personal_briefing_enabled:
         raise HTTPException(status_code=404, detail="Personal briefing disabled")
@@ -108,7 +125,7 @@ async def refresh_personal_briefing(user: User = Depends(get_current_user)) -> d
         cached = None
     if _remaining_seconds(deadline) <= 0:
         return _minimal_timeout_response(now)
-    refresh_task = _tracked_refresh(user, now)
+    refresh_task = _tracked_refresh(user, now, force=force)
     try:
         return await asyncio.wait_for(
             asyncio.shield(refresh_task), timeout=_remaining_seconds(deadline),

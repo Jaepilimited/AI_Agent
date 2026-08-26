@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS personal_briefing_snapshots (
     calendar_json LONGTEXT NOT NULL,
     mail_json LONGTEXT NOT NULL,
     priorities_json LONGTEXT NOT NULL,
+    document_json LONGTEXT NULL,
     generated_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_personal_briefing_date (for_date)
@@ -61,10 +62,22 @@ _TRANSIENT_KEYS = {
 }
 
 
+#: 이미 만들어진 테이블에는 CREATE 문이 닿지 않는다. 새 컬럼은 따로 붙인다.
+_MIGRATIONS = (
+    "ALTER TABLE personal_briefing_snapshots ADD COLUMN document_json LONGTEXT NULL",
+)
+
+
 def ensure_tables() -> None:
-    """Create the snapshot table if it is not already present."""
+    """Create the snapshot table, then add columns introduced after it shipped."""
 
     execute(_DDL)
+    for statement in _MIGRATIONS:
+        try:
+            execute(statement)
+        except Exception:
+            # 이미 있는 컬럼이다. 없는 경우에만 의미가 있고, 실패해도 기존 기능은 산다.
+            pass
 
 
 def _strip_transient(value: Any) -> Any:
@@ -111,7 +124,7 @@ def get_snapshot(user_id: int, for_date: date) -> dict[str, Any] | None:
     """Read exactly the requested user's snapshot for exactly one date."""
 
     row = fetch_one(
-        "SELECT google_account_hash,calendar_json,mail_json,priorities_json,generated_at "
+        "SELECT google_account_hash,calendar_json,mail_json,priorities_json,document_json,generated_at "
         "FROM personal_briefing_snapshots WHERE user_id = %s AND for_date = %s",
         (int(user_id), for_date),
     )
@@ -122,6 +135,7 @@ def get_snapshot(user_id: int, for_date: date) -> dict[str, Any] | None:
         "calendar": json.loads(row["calendar_json"]),
         "mail": json.loads(row["mail_json"]),
         "priorities": json.loads(row["priorities_json"]),
+        "document": json.loads(row["document_json"]) if row.get("document_json") else None,
         "generated_at": row["generated_at"],
     }
 
@@ -134,17 +148,19 @@ def put_snapshot(
     mail: dict[str, Any],
     priorities: list[dict[str, Any]],
     generated_at: datetime,
+    document: dict[str, Any] | None = None,
 ) -> None:
     """Atomically replace one user's snapshot while retaining prior rows on failure."""
 
     execute(
         "INSERT INTO personal_briefing_snapshots "
-        "(user_id,for_date,google_account_hash,calendar_json,mail_json,priorities_json,generated_at) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+        "(user_id,for_date,google_account_hash,calendar_json,mail_json,priorities_json,"
+        "document_json,generated_at) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON DUPLICATE KEY UPDATE for_date=VALUES(for_date),"
         "google_account_hash=VALUES(google_account_hash),calendar_json=VALUES(calendar_json),"
         "mail_json=VALUES(mail_json),priorities_json=VALUES(priorities_json),"
-        "generated_at=VALUES(generated_at)",
+        "document_json=VALUES(document_json),generated_at=VALUES(generated_at)",
         (
             int(user_id),
             for_date,
@@ -152,6 +168,7 @@ def put_snapshot(
             _json_dumps(calendar),
             _json_dumps(_clean_mail(mail)),
             _json_dumps(priorities),
+            _json_dumps(document) if document else None,
             generated_at,
         ),
     )
