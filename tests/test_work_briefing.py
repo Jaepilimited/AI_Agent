@@ -124,7 +124,12 @@ def test_items_without_a_real_source_id_are_dropped():
     })
     assert [row["text"] for row in document["actions"]] == ["시트 입력"]
     assert document["deadlines"] == []
-    assert document["mail"] == []
+    # ⚠️ 안 읽은 메일은 **요약거리가 없어도** 목록에 오른다 (2026-08-26 규칙 변경).
+    #    버려야 하는 것은 LLM 이 지어낸 **문장**이지 실재하는 메일이 아니다 —
+    #    행은 남되 그 안에 LLM 이 쓴 글자는 하나도 없어야 한다.
+    assert [row["id"] for row in document["mail"]] == ["m1"]
+    assert document["mail"][0]["points"] == []
+    assert document["mail"][0]["request"] == ""
     assert document["dropped"] == 3
 
 
@@ -728,3 +733,94 @@ def test_only_handled_feedback_is_pushed():
     source = inspect.getsource(jandi_notify._feedbacks)
     assert 'handled_at' in source
     assert "continue" in source
+
+
+def test_broadcast_announcements_never_reach_jandi():
+    """⛔ 잔디로는 **받는 사람이 특정되는 것만** 보낸다 (2026-08-26 사용자 지시).
+
+    공지는 전원 방송이라 아무에게도 앞으로 오지 않는다. 게다가 알림함을 한 번도
+    안 연 사람은 `announce_seen_at` 이 NULL 이라 **지난 공지가 전부 '안 읽음'** 이다 —
+    개수를 줄이는 걸로는 못 고친다. 종류가 틀린 것이라 목록에서 빼야 한다.
+    """
+    from app.core import jandi_notify
+
+    names = [fn.__name__ for fn in jandi_notify._PERSONAL_SOURCES]
+    assert names == ["_shares", "_feedbacks"], (
+        f"잔디 알림 소스가 바뀌었다: {names}. 새 종류를 넣기 전에 "
+        "'받는 사람이 특정되는가' 를 먼저 물어라 — 방송은 알림함이 맡는다"
+    )
+
+
+def test_stale_notifications_are_not_pushed_but_unknown_dates_are():
+    """묵은 것은 밀지 않되, **시각을 모르면 보낸다** — 모른다고 버리면 새 알림이 사라진다."""
+    from datetime import datetime, timedelta
+
+    from app.core import jandi_notify
+
+    now = datetime(2026, 8, 26, 9, 0)
+    fresh = {"at": now - timedelta(days=jandi_notify.PUSH_WINDOW_DAYS - 1)}
+    stale = {"at": now - timedelta(days=jandi_notify.PUSH_WINDOW_DAYS + 1)}
+
+    assert jandi_notify._fresh(fresh, now)
+    assert not jandi_notify._fresh(stale, now)
+    assert jandi_notify._fresh({}, now)
+    assert jandi_notify._fresh({"at": None}, now)
+
+
+def test_newest_first_when_more_than_the_cap_is_waiting():
+    """넘치면 새것부터. 오래된 쪽을 먼저 울리면 급한 것이 뒤로 밀린다."""
+    from datetime import datetime, timedelta
+
+    from app.core import jandi_notify
+
+    now = datetime(2026, 8, 26, 9, 0)
+    rows = [{"kind": "report_share", "seen": False, "at": now - timedelta(hours=n),
+             "dedup_key": f"report_share:{n}"} for n in range(6)]
+
+    def fake(_user_id):
+        return rows
+
+    original = jandi_notify._PERSONAL_SOURCES
+    jandi_notify._PERSONAL_SOURCES = (fake,)
+    try:
+        got = jandi_notify.pending_items(1, now=now)
+    finally:
+        jandi_notify._PERSONAL_SOURCES = original
+
+    assert len(got) == jandi_notify.MAX_PER_USER
+    assert [row["dedup_key"] for row in got] == [
+        "report_share:0", "report_share:1", "report_share:2"]
+
+
+def test_every_unread_mail_reaches_today():
+    """⛔ 이 절에 오르는 기준이 **"LLM 이 요약할 거리를 찾았는가"** 하나였다.
+       읽음 여부는 아예 보지 않아서, 안 읽은 5건 중 1건만 Today 에 오르고 나머지는
+       아래 카드에 흩어졌다 — 사용자에게는 규칙이 없어 보인다 (2026-08-26 제보:
+       "안읽은 메일이 나오는 기준을 모르겠다 / 일부여서 이상함").
+
+    Today 의 메일 절은 **아직 안 본 것이 한자리에 모여야** 쓸모가 있다.
+    ⚠️ 요약 없이 제목만 실린다 — 그것이 지어내는 것보다 낫다.
+    """
+    events, mails = sample()
+    mails.append({
+        "id": "m9", "from_display": "OP팀", "subject": "재고 실사 일정",
+        "snippet": "", "received_at": "2026-08-25T09:00:00+09:00",
+        "unread": True, "url": "https://mail.google.com/m9",
+    })
+    document = compose({"mail_points": []}, events=events, mails=mails)
+    ids = [row["id"] for row in document["mail"]]
+    assert "m9" in ids, "안 읽은 메일이 Today 에 없다"
+    row = next(r for r in document["mail"] if r["id"] == "m9")
+    assert row["unread"] is True and row["points"] == []
+
+
+def test_read_mail_without_a_summary_stays_out():
+    """읽은 메일까지 전부 올리면 절이 받은편지함이 된다 — 요약거리가 있을 때만 오른다."""
+    events, mails = sample()
+    mails.append({
+        "id": "m8", "from_display": "뉴스레터", "subject": "주간 소식",
+        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
+        "unread": False, "url": "https://mail.google.com/m8",
+    })
+    document = compose({"mail_points": []}, events=events, mails=mails)
+    assert "m8" not in [row["id"] for row in document["mail"]]
