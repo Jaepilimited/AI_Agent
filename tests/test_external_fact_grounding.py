@@ -62,3 +62,53 @@ class TestExistingBehaviourKept:
 
     def test_real_time_topic_still_searches(self, orc):
         assert orc._needs_web_search("오늘 환율 얼마야") is True
+
+
+# ── 존재를 묻는 질문 (2026-08-26 사용자 제보) ────────────────────────────────
+
+@pytest.mark.parametrize("q", [
+    "강남역에 무지개쇼핑센터가 있어?",
+    "판교에 현대백화점 있나요?",
+    "부산에 신세계 센텀시티 있어?",
+])
+def test_existence_questions_about_the_outside_world_are_grounded(q):
+    """⛔ 실제 제보: "강남역에 무지개쇼핑센터가 있어?" 에 **"확인할 수 없습니다"** 로
+       답했다. 지어내지는 않았지만 **확인할 수 있는 것을 확인하지 않고 되물었다.**
+
+    검색을 태우면 5.1초에 정답이 나온다 (대한무지개종합상가 · 서초구 사임당로 151 ·
+    강남역 5번 출구 도보 10분). `~있어?` 형태가 사실 질문 판정에 빠져 있었다.
+    """
+    agent = OrchestratorAgent.__new__(OrchestratorAgent)
+    assert agent._needs_web_search(q), q
+
+
+@pytest.mark.parametrize("q", [
+    "다른 방법 있어?",          # 앞 대화를 가리킨다
+    "혹시 예시 있어?",
+    "또 있어?",
+    "설명해줄 수 있어?",         # 존재가 아니라 요청이다
+    "도와줄 수 있어?",
+    "그런 기능 있나?",           # 어시스턴트 자신
+    "센텔라 앰플 재고 있어?",     # 사내 데이터
+    "매출 테이블에 원가 컬럼 있나요?",
+])
+def test_existence_wording_alone_does_not_trigger_search(q):
+    """⚠️ `있어` 는 흔한 말이다. 전부 검색하면 **5초를 버리고 엉뚱한 웹 문서를
+       근거로** 끌어온다 — 느린 것보다 그쪽이 나쁘다.
+
+    막는 축은 셋이다: 앞 대화를 가리키는 말 · `~할 수 있어`(요청) · 사내/자기 어휘.
+    """
+    agent = OrchestratorAgent.__new__(OrchestratorAgent)
+    assert not agent._needs_web_search(q), q
+
+
+def test_business_vocabulary_has_no_bare_question_endings():
+    """⛔ `_BIZ_CONTEXT` 에 **"있나요"·"존재"** 가 들어 있었다 (2026-08-26 제거).
+
+    업무 어휘가 아니라 의문 어미다. 이것 하나 때문에 "판교에 현대백화점 있나요?" 가
+    **사내 질문으로 분류돼** 검색 그라운딩이 막혔다. `라인` ⊂ `가이드라인` 과 같은 부류 —
+    짧고 흔한 말을 포함 검사에 그대로 두면 뜻이 뒤집힌다.
+    """
+    for w in ("있나요", "있어", "존재", "있습니까"):
+        assert w not in OrchestratorAgent._BIZ_CONTEXT, w
+        assert w not in OrchestratorAgent._DATA_KEYWORDS, w

@@ -586,6 +586,9 @@ def _euro(word: str) -> str:
     return " 으로" if _josa(w, "은는").endswith("은") else "로"
 
 
+import re as _re
+
+
 class OrchestratorAgent:
     """Orchestrator-Worker pattern conductor.
 
@@ -957,6 +960,14 @@ class OrchestratorAgent:
                 logger.info("dashboard_link_answered", path="route_and_execute", query=query[:100])
                 return {"source": "direct", "answer": _dashboard_answer}
 
+            # 검증된 조직 담당국가는 검색 문서보다 우선한다. #152에서 EAST2 질문이
+            # 무관한 Notion 문서를 근거로 인도네시아를 포함한 오답을 낸 재발 방지.
+            from app.core.org_structure import answer_team_country_scope
+            _org_answer = answer_team_country_scope(query)
+            if _org_answer:
+                logger.info("org_structure_answered", path="route_and_execute", query=query[:100])
+                return {"source": "direct", "answer": _org_answer}
+
         if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
             logger.info("fi_access_denied", path="route_and_execute", query=query[:100])
             return {"source": "bigquery", "answer": FI_ACCESS_DENIED_MESSAGE}
@@ -1185,6 +1196,15 @@ class OrchestratorAgent:
                 logger.info("dashboard_link_answered", path="route_and_stream", query=query[:100])
                 yield ("source", "direct")
                 yield ("done", _dashboard_answer)
+                return
+
+            # 비스트리밍 경로와 같은 결정적 조직정보 fast path.
+            from app.core.org_structure import answer_team_country_scope
+            _org_answer = answer_team_country_scope(query)
+            if _org_answer:
+                logger.info("org_structure_answered", path="route_and_stream", query=query[:100])
+                yield ("source", "direct")
+                yield ("done", _org_answer)
                 return
 
         if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
@@ -3522,7 +3542,12 @@ JSON만 반환:
         "별점", "스마트스토어", "네이버스토어", "yesstyle", "재구매율", "순위 상승",
         "순위 변동", "매출원가", "원가율", "광고선전비", "국가별", "월별",
         "팀별", "채널별", "제품별", "브랜드별", "사업부", "데이터",
-        "테이블", "컬럼", "있나요", "존재", "포함", "revenue",
+        # ⛔ 여기에 **"있나요"·"존재" 를 두지 마라** (2026-08-26 제거). 업무 어휘가
+        #    아니라 의문 어미다 — "판교에 현대백화점 있나요?" 처럼 회사와 무관한
+        #    존재 질문까지 전부 "사내 질문" 으로 분류돼 검색 그라운딩이 막혔다.
+        #    스키마 질문("매출 테이블에 원가 컬럼 있나요?")은 테이블·컬럼·매출·원가로
+        #    이미 잡힌다 — 어미까지 넣을 이유가 없다. `라인` ⊂ `가이드라인` 과 같은 부류.
+        "테이블", "컬럼", "포함", "revenue",
         "platform", "campaign", "google ads", "cost", "impression", "conversion",
         "cpc", "cpv", "cpe",
     ]
@@ -3568,14 +3593,38 @@ JSON만 반환:
                  "이름이 뭐", "뭐야", "뭔가요", "무엇", "얼마나", "어느 나라",
                  "데뷔", "출시일", "설립", "창업", "본명", "나이", "생일")
 
+    # 존재·소재를 묻는 형태도 같은 부류다 — 답의 근거가 모델 기억뿐이다.
+    # ⛔ 2026-08-26 실제: "강남역에 무지개쇼핑센터가 있어?" 가 검색을 타지 않아
+    #    "확인할 수 없습니다" 로 나갔다. **검색을 태웠으면 5.1초에 정답이 나온다**
+    #    (대한무지개종합상가 · 서초구 사임당로 151 · 강남역 5번 출구 도보 10분).
+    #    지어내지는 않았지만, 확인할 수 있는 것을 확인하지 않고 되물은 것이다.
+    _EXIST_ASK = ("있어", "있나", "있니", "있습니까", "있는지", "있을까", "있었")
+
+    # 앞 대화를 가리키는 말 — 바깥 사실이 아니라 방금 한 이야기를 가리킨다.
+    # "다른 방법 있어?" 까지 검색하면 5초를 버리고 **엉뚱한 웹 문서를 근거로** 끌어온다.
+    # ⚠️ 이건 *말*에 대한 닫힌 목록이라 세상이 바뀌어도 낡지 않는다 — 아이돌 이름처럼
+    #    끝없이 늘어나는 목록과는 다르다 (그래서 여기에 고유명사를 쌓으면 안 된다).
+    _CONVERSATIONAL = ("다른", "또", "더", "혹시", "그런", "이런", "저런", "예시",
+                       "방법", "그거", "이거", "그것", "이것", "위에", "아까", "방금")
+
     def _is_external_fact_question(self, q: str) -> bool:
         """바깥 고유명사에 대한 사실 질문인가 — 모델 기억으로 답하면 안 되는 부류."""
-        if not any(t in q for t in self._FACT_ASK):
+        from app.core.textmatch import contains_any
+
+        # ⚠️ `~할 수 있어?` 는 존재가 아니라 **가능/요청**이다. `수 있` 이 앞에 붙으면
+        #    존재 질문으로 보지 않는다 ("설명해줄 수 있어?" 가 검색을 탔다)
+        exists = (any(t in q for t in self._EXIST_ASK)
+                  and not _re.search(r"수\s*있", q))
+        asks = any(t in q for t in self._FACT_ASK) or exists
+        if not asks:
             return False
+        # ⚠️ 짧은 낱말은 **경계를 봐야** 한다 — `또` 가 `또는` 에, `더` 가 `더보기` 에
+        #    걸린다 (`라인` ⊂ `가이드라인` 과 같은 함정)
+        if contains_any(q, self._CONVERSATIONAL, guarded=set(self._CONVERSATIONAL)):
+            return False            # 앞 대화를 가리키는 질문이다
         if any(s in q for s in self._SELF_REF):
             return False            # 자기 기능 질문은 검색할 바깥 정보가 없다
         # 업무 어휘가 하나라도 있으면 사내 질문이다 — 여기서 판단하지 않는다
-        from app.core.textmatch import contains_any
         if contains_any(q, self._BIZ_CONTEXT, guarded=self._GUARDED):
             return False
         if contains_any(q, self._DATA_KEYWORDS, guarded=self._GUARDED):
