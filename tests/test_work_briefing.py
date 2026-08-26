@@ -807,40 +807,6 @@ def test_every_unread_mail_reaches_today():
         "snippet": "", "received_at": "2026-08-25T09:00:00+09:00",
         "unread": True, "url": "https://mail.google.com/m9",
     })
-    document = compose({"mail_points": []}, events=events, mails=mails)
-    ids = [row["id"] for row in document["mail"]]
-    assert "m9" in ids, "안 읽은 메일이 Today 에 없다"
-    row = next(r for r in document["mail"] if r["id"] == "m9")
-    assert row["unread"] is True and row["points"] == []
-
-
-def test_read_mail_without_a_summary_stays_out():
-    """읽은 메일까지 전부 올리면 절이 받은편지함이 된다 — 요약거리가 있을 때만 오른다."""
-    events, mails = sample()
-    mails.append({
-        "id": "m8", "from_display": "뉴스레터", "subject": "주간 소식",
-        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
-        "unread": False, "url": "https://mail.google.com/m8",
-    })
-    document = compose({"mail_points": []}, events=events, mails=mails)
-    assert "m8" not in [row["id"] for row in document["mail"]]
-
-
-def test_every_unread_mail_reaches_today():
-    """⛔ 이 절에 오르는 기준이 **"LLM 이 요약할 거리를 찾았는가"** 하나였다.
-       읽음 여부는 아예 보지 않아서, 안 읽은 5건 중 1건만 Today 에 오르고 나머지는
-       아래 카드에 흩어졌다 — 사용자에게는 규칙이 없어 보인다 (2026-08-26 제보:
-       "안읽은 메일이 나오는 기준을 모르겠다 / 일부여서 이상함").
-
-    Today 의 메일 절은 **아직 안 본 것이 한자리에 모여야** 쓸모가 있다.
-    ⚠️ 요약 없이 제목만 실린다 — 그것이 지어내는 것보다 낫다.
-    """
-    events, mails = sample()
-    mails.append({
-        "id": "m9", "from_display": "OP팀", "subject": "재고 실사 일정",
-        "snippet": "", "received_at": "2026-08-25T09:00:00+09:00",
-        "unread": True, "url": "https://mail.google.com/m9",
-    })
     document = work_briefing.compose(
         day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
         events=events, mails=mails, window={"label": "어제 18:00 이후"},
@@ -896,83 +862,7 @@ def test_unread_mail_is_never_crowded_out_by_read_mail():
     ids = [row["id"] for row in document["mail"]]
     for i in range(4):
         assert f"u{i}" in ids, f"안 읽은 메일 u{i} 이 읽은 메일에 밀렸다"
-    assert len(ids) <= work_briefing.MAX_MAIL_POINTS
-
-
-def test_every_unread_mail_reaches_today():
-    """⛔ 이 절에 오르는 기준이 **"LLM 이 요약할 거리를 찾았는가"** 하나였다.
-       읽음 여부는 아예 보지 않아서, 안 읽은 5건 중 1건만 Today 에 오르고 나머지는
-       아래 카드에 흩어졌다 — 사용자에게는 규칙이 없어 보인다 (2026-08-26 제보:
-       "안읽은 메일이 나오는 기준을 모르겠다 / 일부여서 이상함").
-
-    Today 의 메일 절은 **아직 안 본 것이 한자리에 모여야** 쓸모가 있다.
-    ⚠️ 요약 없이 제목만 실린다 — 그것이 지어내는 것보다 낫다.
-    """
-    events, mails = sample()
-    mails.append({
-        "id": "m9", "from_display": "OP팀", "subject": "재고 실사 일정",
-        "snippet": "", "received_at": "2026-08-25T09:00:00+09:00",
-        "unread": True, "url": "https://mail.google.com/m9",
-    })
-    document = work_briefing.compose(
-        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
-        events=events, mails=mails, window={"label": "어제 18:00 이후"},
-        raw={"mail_points": []})
-    ids = [row["id"] for row in document["mail"]]
-    assert "m9" in ids, "안 읽은 메일이 Today 에 없다"
-    row = next(r for r in document["mail"] if r["id"] == "m9")
-    assert row["unread"] is True and row["points"] == []
-
-
-def test_read_mail_without_a_summary_stays_out():
-    """읽은 메일까지 전부 올리면 절이 받은편지함이 된다 — 요약거리가 있을 때만 오른다."""
-    events, mails = sample()
-    mails.append({
-        "id": "m8", "from_display": "뉴스레터", "subject": "주간 소식",
-        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
-        "unread": False, "url": "https://mail.google.com/m8",
-    })
-    document = work_briefing.compose(
-        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
-        events=events, mails=mails, window={"label": "어제 18:00 이후"},
-        raw={"mail_points": []})
-    assert "m8" not in [row["id"] for row in document["mail"]]
-
-
-def test_unread_mail_is_never_crowded_out_by_read_mail():
-    """⛔ 상한(8건)을 **LLM 이 고른 것이 먼저 다 써버렸다.** 실측(2026-08-26 프로덕션):
-       안 읽은 5건 중 3건만 Today 에 올랐다 — 안 읽은 것을 모아 보여주려고 고친 절인데
-       도로 일부만 나온 셈이다.
-
-    자리가 모자라면 **읽은 것부터** 뺀다.
-    """
-    events, mails = sample()
-    for i in range(9):
-        mails.append({
-            "id": f"r{i}", "from_display": "뉴스", "subject": f"읽은 메일 {i}",
-            "snippet": "", "received_at": "2026-08-25T08:00:00+09:00",
-            "unread": False, "url": f"https://mail.google.com/r{i}",
-        })
-    for i in range(4):
-        mails.append({
-            "id": f"u{i}", "from_display": "동료", "subject": f"안 읽은 메일 {i}",
-            "snippet": "", "received_at": "2026-08-25T08:30:00+09:00",
-            "unread": True, "url": f"https://mail.google.com/u{i}",
-        })
-    raw = {"mail_points": [
-        {"message_id": f"r{i}", "points": [f"읽은 메일 {i}"], "request": ""}
-        for i in range(9)]}
-    document = work_briefing.compose(
-        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
-        events=events, mails=mails, window={"label": "어제 18:00 이후"}, raw=raw)
-
-    ids = [row["id"] for row in document["mail"]]
-    for i in range(4):
-        assert f"u{i}" in ids, f"안 읽은 메일 u{i} 이 읽은 메일에 밀렸다"
-    # 상한은 둘이다 — 행 수와 **요약이 붙은 행** 수 (LLM 문장이 길다)
     assert len(ids) <= work_briefing.MAX_MAIL_ROWS
-    summarized = sum(1 for row in document["mail"] if row["points"] or row["request"])
-    assert summarized <= work_briefing.MAX_MAIL_POINTS
     assert document["mail_omitted_unread"] == 0
 
 
@@ -1021,25 +911,53 @@ def test_chat_body_is_cut_shorter_than_the_screen():
     assert "외 16건" in text and "안 읽음 16" in text
     assert "Today" in text
 
-def test_a_summary_is_dropped_before_an_unread_mail_is():
-    """⚠️ 요약 상한에 걸려도 **메일을 버리지 않는다** — 요약만 떼고 제목은 남긴다.
-       안 읽은 메일이 사라지는 것보다 요약이 없는 편이 낫다."""
+def test_summarised_read_mail_is_not_squeezed_out_by_unread():
+    """⛔ 제보(2026-08-26): "13개 중 안읽음 7개는 나오는데 읽음은 한 개만 나온다".
+
+    원인은 **요약이 붙은 행을 통틀어 8개로 묶은 상한**이었다. 안 읽은 7건이 그
+    자리를 먼저 써서 읽은 메일은 1건만 남았다. 화면 자리를 아끼려던 상한인데
+    절이 안에서 스크롤하게 된 뒤로는 아낄 이유가 없다 — 자리는 스크롤이 만든다.
+    """
     events, mails = sample()
-    for i in range(10):
+    for i in range(7):
         mails.append({
             "id": f"u{i}", "from_display": "동료", "subject": f"안 읽은 메일 {i}",
             "snippet": f"안 읽은 메일 {i} 내용", "received_at": "2026-08-25T08:30:00+09:00",
             "unread": True, "url": f"https://mail.google.com/u{i}",
         })
-    raw = {"mail_points": [
-        {"message_id": f"u{i}", "points": [f"안 읽은 메일 {i} 내용"], "request": ""}
-        for i in range(10)]}
+    for i in range(6):
+        mails.append({
+            "id": f"r{i}", "from_display": "협력사", "subject": f"읽은 메일 {i}",
+            "snippet": f"읽은 메일 {i} 내용", "received_at": "2026-08-25T08:00:00+09:00",
+            "unread": False, "url": f"https://mail.google.com/r{i}",
+        })
+    raw = {"mail_points": (
+        [{"message_id": f"u{i}", "points": [f"안 읽은 메일 {i} 내용"], "request": ""}
+         for i in range(7)]
+        + [{"message_id": f"r{i}", "points": [f"읽은 메일 {i} 내용"], "request": ""}
+           for i in range(6)])}
     document = work_briefing.compose(
         day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
         events=events, mails=mails, window={"label": "어제 18:00 이후"}, raw=raw)
 
-    rows = document["mail"]
-    summarized = [row for row in rows if row["points"]]
-    assert len(summarized) <= work_briefing.MAX_MAIL_POINTS
-    # 요약이 떨어진 행도 목록에는 남는다
-    assert len(rows) > len(summarized)
+    ids = [row["id"] for row in document["mail"]]
+    for i in range(7):
+        assert f"u{i}" in ids, f"안 읽은 메일 u{i} 이 빠졌다"
+    for i in range(6):
+        assert f"r{i}" in ids, f"요약이 있는 읽은 메일 r{i} 이 빠졌다"
+    assert document["mail_omitted_read"] == 0
+
+
+def test_read_mail_without_a_summary_is_still_left_out():
+    """읽은 메일을 전부 올리면 이 절이 그냥 받은편지함이 된다 — 요약이 있을 때만."""
+    events, mails = sample()
+    mails.append({
+        "id": "rx", "from_display": "뉴스레터", "subject": "주간 소식",
+        "snippet": "", "received_at": "2026-08-25T07:00:00+09:00",
+        "unread": False, "url": "https://mail.google.com/rx",
+    })
+    document = work_briefing.compose(
+        day=date(2026, 8, 25), now=at("2026-08-25T09:00:00"),
+        events=events, mails=mails, window={"label": "어제 18:00 이후"},
+        raw={"mail_points": []})
+    assert "rx" not in [row["id"] for row in document["mail"]]
