@@ -678,6 +678,19 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
        (WAS·APP 모두 403, 2026-08-18 실측). DB_PC 릴레이가 SSH 터널로 가져간다.
     """
 
+    # ⛔ 주말에는 만들지도 보내지도 않는다. 잡은 매일 09:00 인데 **릴레이는 평일에만
+    #    돈다** — 토·일 몫이 대기열에 쌓였다가 월요일 아침에 세 통이 한꺼번에 나간다.
+    #    그중 둘은 이미 지난 날의 "오늘 일정" 이라 틀린 내용이다.
+    #    출근 브리핑은 출근하는 날의 것이다 (2026-08-26, 공지 전 점검에서 발견).
+    #    ⚠️ 공휴일은 여기서 거르지 않는다 — 판정에 구글 캘린더가 필요해 잡 전체가
+    #       외부 호출에 묶인다. 공휴일 브리핑은 그날 하루 어색할 뿐이고, 메일 구간은
+    #       `mail_window()` 가 이미 연휴를 제대로 처리한다.
+    current = now or datetime.now(ZoneInfo("Asia/Seoul"))
+    if workday.is_weekend(current.date()):
+        logger.info("personal_briefing_skipped_weekend", day=str(current.date()))
+        return {"selected": 0, "succeeded": 0, "failed": 0, "queued": 0,
+                "skipped": "weekend"}
+
     rows = await asyncio.to_thread(
         fetch_all,
         "SELECT u.id,COALESCE(a.email,u.email) email,COALESCE(a.display_name,u.display_name) name,"

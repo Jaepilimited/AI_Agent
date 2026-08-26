@@ -525,3 +525,26 @@ def test_a_dead_model_still_keeps_todays_events():
     )
     assert [row["id"] for row in document["meetings"]] == ["e1"]
     assert document["mail_total"] == 1
+
+
+def test_weekend_briefings_are_not_built_or_queued():
+    """⛔ 주말 몫이 대기열에 쌓이면 월요일 아침에 세 통이 한꺼번에 나간다.
+
+    잡은 매일 09:00 인데 릴레이는 평일에만 돈다 — 토·일 브리핑이 월요일까지 기다렸다가
+    함께 발송되고, 그중 둘은 이미 지난 날의 "오늘 일정" 이라 틀린 내용이다.
+    출근 브리핑은 출근하는 날의 것이다 (2026-08-26, 공지 전 점검에서 발견).
+    """
+    import asyncio
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.core import personal_briefing
+
+    kst = ZoneInfo("Asia/Seoul")
+    for day, label in ((datetime(2026, 8, 29, 9, 0, tzinfo=kst), "토"),
+                       (datetime(2026, 8, 30, 9, 0, tzinfo=kst), "일")):
+        out = asyncio.run(personal_briefing.run_morning_precompute(now=day))
+        assert out["skipped"] == "weekend", f"{label}요일에 브리핑을 만들었다"
+        assert out["queued"] == 0
+        # 호출부가 읽는 키가 정상 경로와 같아야 한다 (set_note 가 깨지면 조용히 로그만 빈다)
+        assert {"selected", "succeeded", "failed", "queued"} <= set(out)
