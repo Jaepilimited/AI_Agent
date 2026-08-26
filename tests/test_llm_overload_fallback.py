@@ -1,7 +1,9 @@
 """Regression coverage for provider overloads on the direct chat stream."""
 
 import ast
+import inspect
 import json
+import textwrap
 from pathlib import Path
 from types import MethodType, SimpleNamespace
 
@@ -56,6 +58,13 @@ class _MessagesAPI:
         self.calls += 1
         return _Stream(action)
 
+    def create(self, **_kwargs):
+        action = self.actions[self.calls]
+        self.calls += 1
+        if isinstance(action, Exception):
+            raise action
+        return action
+
 
 def _claude_client(actions):
     client = object.__new__(ClaudeClient)
@@ -108,6 +117,31 @@ class _StreamingFallback:
         if self.error:
             raise self.error
         yield self.answer
+
+
+class _NonStreamingFallback:
+    def __init__(self, answer="Flash 답변", error=None):
+        self.answer = answer
+        self.error = error
+        self.calls = []
+
+    def _call(self, method, args):
+        self.calls.append((method, args))
+        if self.error:
+            raise self.error
+        return self.answer
+
+    def generate(self, *args):
+        return self._call("generate", args)
+
+    def generate_with_history(self, *args):
+        return self._call("generate_with_history", args)
+
+    def generate_json(self, *args):
+        return self._call("generate_json", args)
+
+    def generate_with_images(self, *args):
+        return self._call("generate_with_images", args)
 
 
 class _CapturingLogger:
@@ -267,6 +301,109 @@ def test_flash_failure_preserves_original_claude_error(monkeypatch):
 
     assert raised.value is OVERLOAD
     assert fallback.calls == [("stream", ("질문", None, 0.3, 8192))]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "original_args"),
+    [
+        ("generate", ("질문", "시스템", 0.7, 1234)),
+        (
+            "generate_with_history",
+            ([{"role": "user", "content": "질문"}], "시스템", 0.7, 1234),
+        ),
+        ("generate_json", ("JSON 질문", "JSON 시스템", 0.0, 2345)),
+        (
+            "generate_with_images",
+            (
+                "이미지 질문",
+                [{"data": b"raw-image-bytes", "mime_type": "image/png"}],
+                "이미지 시스템",
+                0.6,
+                3456,
+            ),
+        ),
+    ],
+)
+def test_claude_non_streaming_exhaustion_falls_back_with_original_arguments(
+    monkeypatch, method_name, original_args
+):
+    client = _claude_client([OVERLOAD] * llm_module._MAX_RETRIES)
+    fallback = _NonStreamingFallback()
+    logger = _CapturingLogger()
+    sleeps = []
+    monkeypatch.setattr(llm_module.time, "sleep", sleeps.append)
+    monkeypatch.setattr(llm_module, "get_flash_client", lambda: fallback)
+    monkeypatch.setattr(llm_module, "logger", logger)
+
+    result = getattr(client, method_name)(*original_args)
+
+    assert result == "Flash 답변"
+    assert fallback.calls == [(method_name, original_args)]
+    assert client.client.messages.calls == llm_module._MAX_RETRIES
+    assert sleeps == [0.5, 1.5, 4.0]
+    assert (
+        "claude_fell_back_to_flash",
+        {"method": method_name, "attempts": llm_module._MAX_RETRIES},
+    ) in logger.warnings
+
+
+@pytest.mark.parametrize(
+    ("method_name", "original_args"),
+    [
+        ("generate", ("질문",)),
+        ("generate_with_history", ([{"role": "user", "content": "질문"}],)),
+        ("generate_json", ("JSON 질문",)),
+        (
+            "generate_with_images",
+            ("이미지 질문", [{"data": b"image", "mime_type": "image/png"}]),
+        ),
+    ],
+)
+def test_non_retryable_non_streaming_error_does_not_fall_back(
+    monkeypatch, method_name, original_args
+):
+    bad_request = ProviderBadRequestError("invalid request")
+    client = _claude_client([bad_request])
+    fallback = _NonStreamingFallback()
+    sleeps = []
+    monkeypatch.setattr(llm_module.time, "sleep", sleeps.append)
+    monkeypatch.setattr(llm_module, "get_flash_client", lambda: fallback)
+
+    with pytest.raises(ProviderBadRequestError) as raised:
+        getattr(client, method_name)(*original_args)
+
+    assert raised.value is bad_request
+    assert client.client.messages.calls == 1
+    assert fallback.calls == []
+    assert sleeps == []
+
+
+def test_non_streaming_flash_failure_preserves_original_claude_error(monkeypatch):
+    client = _claude_client([OVERLOAD] * llm_module._MAX_RETRIES)
+    fallback = _NonStreamingFallback(error=RuntimeError("flash internal failure"))
+    monkeypatch.setattr(llm_module.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(llm_module, "get_flash_client", lambda: fallback)
+
+    with pytest.raises(ProviderOverloadedError) as raised:
+        client.generate("질문")
+
+    assert raised.value is OVERLOAD
+    assert fallback.calls == [("generate", ("질문", None, 0.1, 8192))]
+
+
+def test_streaming_and_non_streaming_share_flash_fallback_eligibility_helper():
+    def called_names(function):
+        source = textwrap.dedent(inspect.getsource(function))
+        tree = ast.parse(source)
+        return {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
+    helper_name = "_should_fall_back_to_flash"
+    assert helper_name in called_names(ClaudeClient._stream_with_first_token_retry)
+    assert helper_name in called_names(ClaudeClient._fallback_to_flash)
 
 
 @pytest.mark.asyncio

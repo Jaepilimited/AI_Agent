@@ -61,6 +61,11 @@ def _is_retryable(error: Exception) -> bool:
     return False
 
 
+def _should_fall_back_to_flash(error: Exception, attempts: int) -> bool:
+    """Allow Flash fallback only after all Claude retries are exhausted."""
+    return attempts == _MAX_RETRIES and _is_retryable(error)
+
+
 def _retry_call(func, *args, **kwargs):
     """Execute func with retry on transient failures.
 
@@ -648,6 +653,35 @@ class ClaudeClient:
             return system_instruction
         return [{"type": "text", "text": system_instruction, "cache_control": {"type": "ephemeral"}}]
 
+    @staticmethod
+    def _fallback_to_flash(
+        original_error: Exception,
+        method: str,
+        fallback: Callable[[], str],
+    ) -> str:
+        """Run an eligible non-streaming Flash fallback without masking Claude."""
+        if not _should_fall_back_to_flash(original_error, _MAX_RETRIES):
+            raise original_error
+        try:
+            result = fallback()
+        except Exception as fallback_error:
+            logger.error(
+                "claude_fallback_failed",
+                method=method,
+                attempts=_MAX_RETRIES,
+                error_type=type(original_error).__name__,
+                error=str(original_error)[:200],
+                fallback_error_type=type(fallback_error).__name__,
+                fallback_error=str(fallback_error)[:200],
+            )
+            raise original_error from None
+        logger.warning(
+            "claude_fell_back_to_flash",
+            method=method,
+            attempts=_MAX_RETRIES,
+        )
+        return result
+
     def generate(
         self,
         prompt: str,
@@ -668,7 +702,19 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
-            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            try:
+                response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            except Exception as original_error:
+                return self._fallback_to_flash(
+                    original_error,
+                    "generate",
+                    lambda: get_flash_client().generate(
+                        prompt,
+                        system_instruction,
+                        temperature,
+                        max_output_tokens,
+                    ),
+                )
             text = self._first_text(response)
             logger.info("claude_response_generated", response_length=len(text))
             return text
@@ -716,7 +762,20 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
-            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            try:
+                response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            except Exception as original_error:
+                return self._fallback_to_flash(
+                    original_error,
+                    "generate_with_images",
+                    lambda: get_flash_client().generate_with_images(
+                        text,
+                        images,
+                        system_instruction,
+                        temperature,
+                        max_output_tokens,
+                    ),
+                )
             result = self._first_text(response)
             logger.info("claude_vision_response_generated", response_length=len(result))
             return result
@@ -784,7 +843,19 @@ class ClaudeClient:
             kwargs["system"] = self._wrap_system(system_instruction)
 
         try:
-            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            try:
+                response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            except Exception as original_error:
+                return self._fallback_to_flash(
+                    original_error,
+                    "generate_with_history",
+                    lambda: get_flash_client().generate_with_history(
+                        messages,
+                        system_instruction,
+                        temperature,
+                        max_output_tokens,
+                    ),
+                )
             return self._first_text(response)
         except Exception as e:
             logger.error("claude_history_failed", error=str(e))
@@ -918,8 +989,7 @@ class ClaudeClient:
                 if (
                     fallback is not None
                     and not emitted
-                    and attempt == _MAX_RETRIES - 1
-                    and retryable
+                    and _should_fall_back_to_flash(e, attempt + 1)
                 ):
                     # ⛔ 첫 토큰 뒤에는 다른 모델을 잇지 않는다. 서로 다른 생성이 합쳐지면
                     #    완결된 답처럼 보여도 앞뒤 논리가 달라지는 조용한 오답이 된다.
@@ -991,7 +1061,19 @@ class ClaudeClient:
         }
 
         try:
-            response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            try:
+                response = _claude_retry(self.client.messages.create, **self._tune(kwargs))
+            except Exception as original_error:
+                return self._fallback_to_flash(
+                    original_error,
+                    "generate_json",
+                    lambda: get_flash_client().generate_json(
+                        prompt,
+                        system_instruction,
+                        temperature,
+                        max_output_tokens,
+                    ),
+                )
             text = self._first_text(response, "{}")
             if "```" in text:
                 match = re.search(r'```(?:json)?\s*\n?(.*?)\n?\s*```', text, re.DOTALL)
