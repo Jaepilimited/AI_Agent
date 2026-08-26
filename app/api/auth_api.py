@@ -342,8 +342,12 @@ async def signup(req: SignupRequest, response: Response):
 
     # Create user
     user_id = await _db_execute_lastid(
-        "INSERT INTO users (email, password_hash, display_name, role, allowed_models, ad_user_id) "
-        "VALUES (%s, %s, %s, %s, %s, %s)",
+        # ⛔ `last_login` 을 비워 두지 마라 — 가입하면 곧바로 로그인 상태가 되므로
+        #    다시 `/signin` 을 타지 않는다. 그러면 영영 NULL 로 남아 **출근 브리핑
+        #    사전 생성에서 통째로 빠진다** (2026-08-26 이해인 님 제보로 발견).
+        "INSERT INTO users "
+        "(email, password_hash, display_name, role, allowed_models, ad_user_id, last_login) "
+        "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
         (user_email, pw_hash, ad_user["display_name"], "user", ALL_MODELS, ad_user["id"]),
     )
 
