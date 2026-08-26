@@ -62,6 +62,118 @@ def test_collect_compares_seven_day_windows():
     assert "2026-08-05" in joined and "2026-08-11" in joined      # 직전 7일
 
 
+def test_collect_marketing_aggregates_the_same_windows_by_supported_scope():
+    class _MarketingBQ:
+        def __init__(self):
+            self.query = ""
+
+        def execute_query(self, sql, **_kw):
+            self.query = sql
+            return [
+                {"team": "EAST1", "country": "일본", "now_cost": 1e8,
+                 "prev_cost": 0.8e8, "now_clicks": 100, "prev_clicks": 80},
+                {"team": "EAST1", "country": "미국", "now_cost": 1.5e8,
+                 "prev_cost": 1.2e8, "now_clicks": 200, "prev_clicks": 150},
+                {"team": "WEST_MKT", "country": "일본", "now_cost": 0.5e8,
+                 "prev_cost": 0.6e8, "now_clicks": 50, "prev_clicks": 60},
+            ]
+
+    bq = _MarketingBQ()
+    result = briefing.collect_marketing(bq, "ad_table", date(2026, 8, 18))
+
+    assert "2026-08-12" in bq.query and "2026-08-18" in bq.query
+    assert "2026-08-05" in bq.query and "2026-08-11" in bq.query
+    assert result["by_team"]["EAST1"]["now_cost"] == 2.5e8
+    assert result["by_country"]["일본"]["now_cost"] == 1.5e8
+    assert result["all"]["now_cost"] == 3e8
+    assert result["all"]["now_clicks"] == 350
+
+
+def test_refresh_marketing_snapshot_persists_without_creating_an_alert(monkeypatch):
+    """로그인 카드용 광고 지표는 매출 알림 생성 여부와 독립적으로 저장한다."""
+    base = date(2026, 8, 18)
+    marketing = {
+        "base": base,
+        "cur_from": date(2026, 8, 12),
+        "prev_from": date(2026, 8, 5),
+        "prev_to": date(2026, 8, 11),
+        "by_team": {}, "by_country": {}, "all": {"now_cost": 1e8},
+    }
+    persisted = []
+    monkeypatch.setattr(briefing, "stable_date", lambda _bq, table: base)
+    monkeypatch.setattr(
+        briefing, "collect_marketing", lambda _bq, table, found_base: marketing,
+    )
+    monkeypatch.setattr(
+        briefing, "save_marketing_snapshot", lambda data: persisted.append(data), raising=False,
+    )
+
+    result = briefing.refresh_marketing_snapshot(object())
+
+    assert result is marketing
+    assert persisted == [marketing]
+
+
+def test_daily_briefing_wires_marketing_snapshot_into_the_saved_business_item(monkeypatch):
+    from app.config import get_settings
+    from app.core import bigquery, mailer, value_lists
+
+    class _DailyBQ:
+        def execute_query(self, sql, **_kw):
+            if "COUNT(*) AS n" in sql:
+                return [{"d": date(2026, 8, 18), "n": 100}]
+            if "cost_krw" in sql:
+                return [{
+                    "team": "EAST1", "country": "인도네시아",
+                    "now_cost": 2.5e8, "prev_cost": 2e8,
+                    "now_clicks": 1_234, "prev_clicks": 1_100,
+                }]
+            if "Country AS country" in sql:
+                return []
+            return [{"team": "EAST1", "now_amt": 20e8, "prev_amt": 10e8}]
+
+    settings = get_settings().model_copy(
+        update={"sales_table_full_path": "sales_table", "public_base_url": "http://example.test"}
+    )
+    monkeypatch.setattr("app.config.get_settings", lambda: settings)
+    monkeypatch.setattr(bigquery, "BigQueryClient", _DailyBQ)
+    monkeypatch.setattr(value_lists, "_cached", lambda _name: [])
+    monkeypatch.setattr(mailer, "is_enabled", lambda: False)
+    monkeypatch.setattr(briefing, "ensure_tables", lambda: None)
+    monkeypatch.setattr(briefing, "ensure_optout_column", lambda: None)
+    monkeypatch.setattr(briefing, "is_repeat", lambda *_a, **_k: False)
+    persisted_marketing = []
+    monkeypatch.setattr(
+        briefing,
+        "save_marketing_snapshot",
+        lambda data: persisted_marketing.append(data),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        briefing,
+        "fetch_all",
+        lambda *_a, **_k: [{
+            "id": 7, "display_name": "테스터", "email": "",
+            "department": "글로벌마케팅본부 > 동남아시아1팀",
+        }],
+    )
+    saved = []
+    monkeypatch.setattr(
+        briefing,
+        "save",
+        lambda user_id, for_date, scope, item, notified=True: (
+            saved.append((item, notified)) or True),
+    )
+
+    result = briefing.run_daily()
+
+    assert result["made"] == 1
+    assert saved and saved[0][1] is True, saved
+    assert persisted_marketing
+    assert "마케팅" in saved[0][0]["body"]
+    assert "광고비 2.5억" in saved[0][0]["body"]
+
+
 def _data(now, prev, countries=()):
     return {
         "base": date(2026, 8, 18), "cur_from": date(2026, 8, 12),
@@ -84,6 +196,48 @@ def test_notable_change_is_sent():
     b = briefing.compose(TEAM, _data(20e8, 10e8))
     assert b and "+100%" in b["title"]
     assert "최근 7일" in b["title"]
+
+
+def test_business_body_includes_scoped_marketing_spend_and_clicks():
+    marketing = {
+        "base": date(2026, 8, 18),
+        "cur_from": date(2026, 8, 12),
+        "prev_from": date(2026, 8, 5),
+        "prev_to": date(2026, 8, 11),
+        "by_team": {
+            "EAST1": {
+                "now_cost": 2.5e8,
+                "prev_cost": 2e8,
+                "now_clicks": 1_234,
+                "prev_clicks": 1_100,
+            }
+        },
+        "by_country": {},
+        "all": {},
+    }
+
+    result = briefing.compose(TEAM, _data(20e8, 10e8), marketing)
+
+    assert "· 마케팅 · 8/12~8/18 광고비 2.5억" in result["body"]
+    assert "직전 7일 대비 +25%" in result["body"]
+    assert "클릭 1,234회" in result["body"]
+    assert "ROAS" not in result["body"]
+    assert "전환매출" not in result["body"]
+
+
+def test_marketing_line_discloses_when_the_scope_has_no_ad_rows():
+    marketing = {
+        "base": date(2026, 8, 18),
+        "cur_from": date(2026, 8, 12),
+        "prev_from": date(2026, 8, 5),
+        "prev_to": date(2026, 8, 11),
+        "by_team": {}, "by_country": {}, "all": {"now_cost": 1e8},
+    }
+    scope = {"kind": "team", "code": "B2B1", "label": "영업1팀"}
+
+    assert briefing._marketing_line(scope, marketing) == (
+        "· 마케팅 · 8/12~8/18 광고 집행 기록 없음"
+    )
 
 
 def test_team_with_no_records_is_skipped():
@@ -113,10 +267,29 @@ def test_body_discloses_the_base_date():
 
 
 def test_repeat_of_the_same_story_is_skipped(monkeypatch):
-    """같은 추세가 이어지면 같은 문장이 매일 간다 — 제목이 같으면 보내지 않는다."""
-    monkeypatch.setattr(briefing, "fetch_one", lambda *a, **k: {"title": "동남아시아1팀 최근 7일 매출 20.0억 · 직전 7일 대비 +100%"})
-    assert briefing.is_repeat(1, "동남아시아1팀 최근 7일 매출 20.0억 · 직전 7일 대비 +100%") is True
-    assert briefing.is_repeat(1, "다른 이야기") is False
+    """숫자가 조금 달라도 같은 축·나라·방향이면 며칠 동안 다시 보내지 않는다."""
+    monkeypatch.setattr(briefing, "fetch_all", lambda *a, **k: [
+        {"title": "동남아시아1팀 주시 · 베트남 매출 8.0억 → 5.0억 (-38%)"},
+    ])
+    assert briefing.is_repeat(
+        1, "동남아시아1팀 주시 · 베트남 매출 7.7억 → 4.6억 (-40%)",
+        date(2026, 8, 18),
+    ) is True
+    assert briefing.is_repeat(
+        1, "동남아시아1팀 주시 · 인도네시아 매출 7.7억 → 4.6억 (-40%)",
+        date(2026, 8, 18),
+    ) is False
+
+
+def test_opposite_direction_is_a_new_story(monkeypatch):
+    """같은 나라라도 하락에서 반등으로 바뀌면 새로 알려야 한다."""
+    monkeypatch.setattr(briefing, "fetch_all", lambda *a, **k: [
+        {"title": "동남아시아1팀 주시 · 베트남 하락 8.0억 → 5.0억 (-38%)"},
+    ])
+    assert briefing.is_repeat(
+        1, "동남아시아1팀 주시 · 베트남 반등 5.0억 → 8.0억 (+60%)",
+        date(2026, 8, 18),
+    ) is False
 
 
 @pytest.mark.parametrize("dep,expected", [
@@ -301,5 +474,44 @@ def test_company_wide_uses_country_totals_not_team_cells():
                        "호주": {"now": 13.8e8, "prev": 1.1e8}},
     }
     b = briefing.compose({"kind": "all", "code": "", "label": "전사"}, data)
-    assert "아랍에미리트" in b["body"]
-    assert "호주" not in b["body"]
+    assert "아랍에미리트" in b["title"]
+    assert b["body"].splitlines()[0].startswith("· 주의: 아랍에미리트")
+    assert "기회: 호주" in b["body"]       # 합산 뒤 두 번째 주시 항목으로는 유효하다
+
+
+# ── 브리핑은 총량 반복이 아니라 지금 주시할 일을 먼저 보여준다 ──────────────
+
+def test_watch_item_leads_the_title_instead_of_the_weekly_total():
+    """알림함에서 제목만 봐도 무엇을 주시해야 하는지 보여야 한다."""
+    data = _data(
+        20e8, 18e8,
+        countries=[("베트남", 3e8, 7e8), ("인도네시아", 12e8, 8e8)],
+    )
+    b = briefing.compose(TEAM, data)
+    assert b["title"].startswith("동남아시아1팀 주시 · 베트남 하락")
+    assert "최근 7일 매출 20.0억" not in b["title"]
+    assert b["body"].splitlines()[0].startswith("· 주의: 베트남")
+
+
+def test_watch_briefing_balances_risk_and_opportunity():
+    """하락만 나열하지 않고, 같은 축의 큰 반등도 함께 보여준다."""
+    data = _data(
+        20e8, 18e8,
+        countries=[("베트남", 3e8, 7e8), ("인도네시아", 12e8, 8e8)],
+    )
+    b = briefing.compose(TEAM, data)
+    lines = b["body"].splitlines()
+    assert lines[0].startswith("· 주의: 베트남")
+    assert lines[1].startswith("· 기회: 인도네시아")
+    assert "동남아시아1팀 전체" in lines[2]
+
+
+def test_material_watch_item_can_trigger_without_large_scope_total_change():
+    """팀 합계가 평평해도 국가별 급락과 반등이 상쇄된 날은 조용한 날이 아니다."""
+    data = _data(
+        20e8, 20e8,
+        countries=[("베트남", 3e8, 7e8), ("인도네시아", 12e8, 8e8)],
+    )
+    b = briefing.compose(TEAM, data)
+    assert b is not None
+    assert "베트남" in b["title"]
