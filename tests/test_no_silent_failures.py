@@ -697,6 +697,52 @@ def test_status_row_name_never_yields_to_detail():
     assert "text-overflow: ellipsis" in detail, "잘릴 때 잘렸다고 보여야 한다"
 
 
+def test_welcome_chips_are_pills_not_a_stretched_grid():
+    """⛔ 추천 칩을 3열 그리드로 두지 마라.
+
+    첫 화면 폭을 640 → 1040px 로 넓히자 칩 하나가 300px 로 늘어났다 (2026-08-26).
+    칩은 글자 폭에 맞아야 칩으로 읽힌다 — 에러가 아니라 **보기에만 어긋나는** 부류다.
+    """
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "style.css").read_text(encoding="utf-8")
+    block = css.split(".chat-welcome .suggestions {", 1)[1].split("}", 1)[0]
+    assert "grid-template-columns" not in block, block.strip()[:120]
+    assert "flex" in block, block.strip()[:120]
+
+
+def test_welcome_chips_sit_between_the_greeting_and_today():
+    """추천 칩은 인사말과 Today 사이에 있다 (2026-08-26 사용자 요청).
+
+    ⚠️ 마크업 순서가 곧 화면 순서다 — 칩 블록을 옮겨 놓고 여기서 확인하지 않으면
+    다음 편집에서 조용히 원래 자리(맨 아래)로 돌아간다.
+    """
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent
+            / "app" / "frontend" / "chat.html").read_text(encoding="utf-8")
+    greeting = html.index('class="welcome-greeting"')
+    chips = html.index('id="welcome-suggestions"')
+    briefing = html.index('id="personal-briefing"')
+    assert greeting < chips < briefing, (greeting, chips, briefing)
+    assert html.count('class="suggestion-chip"') == 7, html.count('class="suggestion-chip"')
+
+
+def test_every_welcome_chip_carries_a_question():
+    """칩이 눌려도 넣을 문장이 없으면 아무 일도 일어나지 않는다 — 조용한 실패다."""
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent
+            / "app" / "frontend" / "chat.html").read_text(encoding="utf-8")
+    chips = re.findall(r'<button class="suggestion-chip" data-q="([^"]*)">([^<]*)</button>', html)
+    assert len(chips) == 7, chips
+    for question, label in chips:
+        assert question.strip(), label
+        assert label.strip(), question
+
+
 def test_admin_badge_says_what_it_counts():
     """⛔ Admin 배지가 **숫자만** 떠 있어 관리자가 "그게 뭔지 모르겠다" 고 했다
        (2026-08-26 제보). `4` 하나로는 자가 점검 실패라는 걸 알 수 없다.
