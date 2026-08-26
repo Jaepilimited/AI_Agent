@@ -104,7 +104,7 @@ def test_todays_events_belong_to_the_document_not_the_card(page):
         payload,
     )
     titles = page.locator(".personal-briefing-card-title").all_inner_texts()
-    assert not any("내일부터" in text for text in titles), titles
+    assert not any("향후 일정" in text for text in titles), titles
 
 
 def test_cached_cards_render_and_long_titles_have_hover_text(page):

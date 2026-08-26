@@ -1106,10 +1106,18 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 
 .personal-briefing-card {
   min-width: 0;
-  padding: 16px 18px 18px;
+  /* ⛔ 위쪽 패딩을 **스크롤 컨테이너에 두지 마라.** sticky 제목의 `top: 0` 은
+     패딩 박스 기준이라, 패딩만큼 아래에 붙고 그 틈으로 행이 지나가 글자가 겹친다
+     (2026-08-26 제보 · 실측: 제목 top 41 vs 카드 top 24). 상단 여백은 제목이 갖는다. */
+  padding: 0 18px 18px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
+  /* ⛔ 목록이 길면 **카드 안에서** 스크롤한다 — 자르지 않는다 (2026-08-26).
+     ⚠️ 같은 셀렉터를 아래에 또 쓰지 마라. 사본이 갈리면 한쪽만 고쳐진다. */
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* 끝에서 페이지가 따라 스크롤되지 않게 */
 }
 
 /* 카드 제목은 문서의 섹션 라벨과 같은 어법을 쓴다 — 한 화면에 두 언어를 두지 않는다. */
@@ -5559,4 +5567,46 @@ html.dark .db-autocomplete-dropdown {
   letter-spacing: .04em;
 }
 .briefing-doc-subhead:first-of-type { margin-top: 8px; }
+
+/* ── 목록이 길면 안에서 스크롤한다 (2026-08-26) ─────────────────────────
+   ⛔ 자리가 모자라다고 **잘라 버리면** 무엇이 빠졌는지 알 수 없다. 공간은
+      스크롤로 만든다 — 안 읽은 메일이 30건이어도 다른 절이 아래로 밀리지 않는다.
+   ⚠️ 제목 줄은 고정한다. 스크롤에 같이 밀려 올라가면 지금 무엇을 보고 있는지
+      모른 채 목록만 남는다. */
+.briefing-doc-mail {
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;   /* 끝에서 페이지가 따라 스크롤되지 않게 */
+}
+
+.briefing-doc-mail .briefing-doc-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-top: 0;
+  background: var(--bg);
+}
+
+/* ⛔ 스크롤되는 카드의 sticky 제목은 **패딩을 상쇄해야** 한다.
+   `top: 0` 은 패딩 박스 기준이라, 카드에 `padding: 16px 18px` 이 있으면 제목이
+   카드 상단에서 **17px 아래**에 붙는다. 그 틈으로 행이 지나가 글자가 겹쳐 보였다
+   (2026-08-26 제보 · 실측: 제목 top 41 vs 카드 top 24).
+   음수 마진으로 제목을 패딩 밖까지 늘리고, 같은 크기의 패딩으로 글자 자리를 되돌린다. */
+.personal-briefing-card .personal-briefing-card-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -18px 2px;      /* 배경이 카드 폭 전체를 덮어야 틈이 안 보인다 */
+  padding: 16px 18px 7px;   /* 카드에서 뺀 상단 여백을 여기서 준다 */
+  background: var(--bg-surface);
+}
+
+/* 스크롤 막대는 조용하게 — 카드 테두리보다 튀면 안 된다 */
+.briefing-doc-mail::-webkit-scrollbar,
+.personal-briefing-card::-webkit-scrollbar { width: 8px; }
+.briefing-doc-mail::-webkit-scrollbar-thumb,
+.personal-briefing-card::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: var(--border-strong);
+}
 

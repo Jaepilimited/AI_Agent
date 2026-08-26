@@ -238,7 +238,7 @@
     return { start: (parts[0] || "").trim(), end: (parts[1] || "").trim() };
   }
 
-  /* 일정 한 줄의 '장소 · 참석자'. 문서(오늘)와 카드(내일부터)가 **같은 함수**를 쓴다.
+  /* 일정 한 줄의 '장소 · 참석자'. 문서(오늘)와 카드(향후 일정)가 **같은 함수**를 쓴다.
      ⚠️ `attendee_count` 는 문서 행에만 있다 (카드는 원본 항목이라 배열 길이를 센다).
         둘 다 서버에서 20명으로 잘려 있어 같은 수를 본다. */
   function eventDetail(item) {
@@ -284,13 +284,16 @@
     });
   }
 
-  function renderMailSection(body, doc, options) {
+  function renderMailSection(body, doc, options, truncated) {
     var rows = doc.mail || [];
     /* ⚠️ 총 건수만 적으면 "몇 개나 안 봤나" 를 알 수 없다 — 둘 다 적는다 */
     var unread = rows.filter(function (row) { return row.unread; });
     var read = rows.filter(function (row) { return !row.unread; });
     var section = docSection(body, "메일", doc.mail_total || 0,
       unread.length ? "안읽음 " + unread.length : "");
+    /* 목록이 길어지면 절 안에서 스크롤한다 — 다른 절을 아래로 밀지 않는다.
+       (2026-08-26 사용자 지시: "카드 내 스크롤을 통해 공간 확보") */
+    section.classList.add("briefing-doc-mail");
     var range = doc.window || {};
 
     docLine(section, "briefing-doc-window", range.label);
@@ -304,6 +307,19 @@
        구분하면 사이에 읽은 메일이 끼어 아직 볼 것이 몇 개인지 세어야 한다.
        ⚠️ 빈 칸은 만들지 않는다 — "안읽음 0" 은 알려주는 것이 없고 자리만 먹는다. */
     mailGroup(section, "안읽음", unread, options);
+    /* ⛔ 자리가 모자라 잘렸으면 **잘렸다고 말한다.** 목록이 멀쩡히 보이면 그게
+       전부인 줄 안다 — 조용히 자르는 것이 이 화면에서 가장 나쁜 실패다.
+       ⚠️ 빠진 메일은 **화면 어디에도 없다.** 예전엔 아래 카드가 받았지만 이제
+          문서가 전부 싣기 때문에, 넘친 것은 Gmail 에서만 볼 수 있다. */
+    if (truncated) {
+      docLine(section, "briefing-doc-empty",
+        "수집 상한에 걸려 최근 메일만 가져왔습니다 — Gmail 에서 전체를 확인해 주세요.");
+    }
+    if (doc.mail_omitted_unread) {
+      docLine(section, "briefing-doc-empty",
+        "안 읽은 메일 " + doc.mail_omitted_unread
+        + "건은 상한을 넘어 실리지 않았습니다 — Gmail 에서 확인해 주세요.");
+    }
     mailGroup(section, "읽음", read, options);
   }
 
@@ -601,7 +617,9 @@
     left = textNode("div", "briefing-doc-col", "");
     right = textNode("div", "briefing-doc-col", "");
     renderMeetings(left, doc, options);
-    renderMailSection(left, doc, options);
+    /* ⚠️ 수집이 상한에 걸렸으면 그 사실은 **목록 옆**에 있어야 한다 —
+       카드로 밀어 두면 목록만 보고 그게 전부인 줄 안다 */
+    renderMailSection(left, doc, options, data.mail && data.mail.truncated);
     renderActions(right, doc, options);
     renderDeadlines(right, doc, options);
     renderBusiness(right, data, options);
@@ -739,7 +757,9 @@
   function renderSkeleton(root) {
     var grid = root.querySelector(".personal-briefing-grid");
     // ⚠️ 실제로 그릴 카드와 이름이 같아야 한다 — 다르면 로딩 순간에 없는 카드를 약속한다.
-    var titles = ["내일부터", "그 밖의 메일"];
+    /* ⚠️ 스켈레톤은 **실제로 뜰 카드만** 약속한다. 메일 카드는 문서가 비었거나
+       연결이 끊겼을 때만 뜨므로(평소엔 없다) 자리를 미리 잡아 두면 빈 칸이 남는다. */
+    var titles = ["향후 일정"];
 
     root.hidden = false;
     if (!grid) {
@@ -769,7 +789,7 @@
     var mail;
     var calendarItems;
     var mailItems;
-    var covered = {};
+    var docMail;
     var disconnected = statusOf(data.calendar) === "disconnected"
       || statusOf(data.mail) === "disconnected"
       || (data.google && data.google.connected === false);
@@ -779,7 +799,7 @@
       return !isSameKstDay(item.start, data.for_date);
     });
     if (calendarItems.length || disconnected) {
-      calendar = makeCard("내일부터", data.calendar || {}, calendarItems.length);
+      calendar = makeCard("향후 일정", data.calendar || {}, calendarItems.length);
       // Today 의 일정과 같은 어법이다 — 날짜/시각이 왼쪽 축에 서고 제목이 본문이 된다.
       calendarItems.forEach(function (item) {
         var main = docRow(calendar, "normal", item.title || "(제목 없음)", item.url, options,
@@ -798,18 +818,22 @@
       visible += 1;
     }
 
-    ((data.document && data.document.mail) || []).forEach(function (row) {
-      covered[row.id] = true;
-    });
-    mailItems = safeItems(data.mail).filter(function (item) { return !covered[item.id]; });
-    /* ⛔ **안 읽은 것을 위로.** 문서 절은 칸을 나눠 뒀는데 이 카드만 도착순이라
-       안읽음·읽음이 섞여 나왔다 (2026-08-26 제보). 첫 화면 어디서든 같은 순서여야 한다.
-       ⚠️ 뒤집지 말고 **안정 정렬**로 옮긴다 — 같은 그룹 안에서는 도착순을 지켜야
-          "방금 온 것" 이 아래로 밀리지 않는다. */
+    /* ⛔ **메일 목록을 두 벌 두지 않는다.** 예전엔 문서가 요약 있는 것만 싣고
+       나머지를 이 카드가 받았다 — 한 화면에 목록이 두 개라 어느 쪽이 전부인지
+       알 수 없었다 (2026-08-26). 이제 Today 의 `메일` 절이 받은 메일을 전부
+       싣고 안에서 스크롤한다.
+       ⚠️ 그렇다고 카드를 지우면 **문서가 비었을 때 메일이 통째로 사라진다** —
+          문서 생성이 실패하거나 시간이 초과돼도 `data.mail` 에는 목록이 남는다.
+          그래서 이 카드는 **문서가 메일을 못 실었을 때의 안전망**으로만 남긴다. */
+    docMail = (data.document && data.document.mail) || [];
+    mailItems = docMail.length ? [] : safeItems(data.mail);
+    /* 안 읽은 것을 위로 — 첫 화면 어디서든 같은 순서여야 한다.
+       ⚠️ 뒤집지 말고 **안정 정렬**로 옮긴다 (같은 그룹 안에서는 도착순). */
     mailItems = mailItems.filter(function (item) { return item.unread; })
       .concat(mailItems.filter(function (item) { return !item.unread; }));
     if (mailItems.length || disconnected) {
-      mail = makeCard("그 밖의 메일", data.mail || {}, mailItems.length);
+      mail = makeCard(docMail.length ? "메일 연결" : "받은 메일",
+        data.mail || {}, mailItems.length || null);
       mailItems.forEach(function (item) {
         var main = docRow(mail, "normal", item.subject || "(제목 없음)", item.url, options,
           (item.from_display || "보낸 사람") + "의 " + (item.subject || "메일") + "을 자세히 요약해줘",
@@ -818,7 +842,6 @@
             end: isSameKstDay(item.received_at, data.for_date)
               ? "" : formatKstDate(item.received_at)
           });
-        /* 문서 절과 같은 표시를 쓴다 — 스크롤하다 보면 어느 영역인지 모른다 */
         if (main.parentElement) {
           main.parentElement.classList.add(item.unread ? "mail-unread" : "mail-read");
         }
@@ -834,9 +857,6 @@
           if (typeof options.connect === "function") options.connect();
         });
         mail.appendChild(connect);
-      }
-      if (data.mail && data.mail.truncated) {
-        mail.appendChild(textNode("p", "personal-briefing-note", "최근 메일만 표시"));
       }
       grid.appendChild(mail);
       visible += 1;
@@ -866,7 +886,7 @@
     }
     grid.replaceChildren();
     grid.hidden = false;
-    /* ⚠️ 참고 섹션(내일부터·그 밖의 메일)을 문서 오른쪽 열로 올려 봤다가 되돌렸다:
+    /* ⚠️ 참고 섹션(향후 일정·메일)을 문서 오른쪽 열로 올려 봤다가 되돌렸다:
        오른쪽이 과적재돼 그쪽이 높이를 결정하면서 963 → 1046px 로 **늘었다**.
        오른쪽 열의 여백은 낭비가 아니라 숨 쉴 자리다. 실측하지 않았으면 반대로 갔다. */
     renderDocument(root, data, options);

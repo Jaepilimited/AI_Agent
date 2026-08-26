@@ -852,3 +852,30 @@ def test_chat_body_uses_a_shorter_cap_than_the_screen():
     from app.core import work_briefing
 
     assert work_briefing.MAX_MAIL_LINES_IN_TEXT < work_briefing.MAX_MAIL_ROWS
+
+
+def test_scrolling_cards_do_not_leave_a_gap_above_the_sticky_title():
+    """⛔ 스크롤되는 컨테이너에 **위쪽 패딩을 두면** sticky 제목이 그만큼 아래에
+       붙고, 그 틈으로 행이 지나가 **글자가 겹쳐 보인다** (2026-08-26 제보).
+
+    실측(Chrome): 카드 `padding: 16px 18px 18px` 일 때 제목 top 41 vs 카드 top 24 —
+    17px 틈. `top: 0` 은 **패딩 박스** 기준이라 음수 마진만으로는 안 붙는다.
+    상단 여백은 스크롤 컨테이너가 아니라 **제목이** 가져야 한다.
+    """
+    from pathlib import Path
+
+    css = (Path(__file__).resolve().parent.parent
+           / "app" / "static" / "style.css").read_text(encoding="utf-8")
+
+    card = css.split(".personal-briefing-card {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in card
+    padding = [line for line in card.splitlines() if "padding:" in line]
+    assert padding, card
+    top = padding[0].split("padding:", 1)[1].strip().rstrip(";").split()[0]
+    assert top == "0", f"스크롤 컨테이너에 상단 패딩이 있으면 제목 위에 틈이 생긴다: {top}"
+
+    title = css.split(".personal-briefing-card .personal-briefing-card-title {", 1)[1] \
+               .split("}", 1)[0]
+    assert "position: sticky" in title and "padding:" in title
+    # 배경이 카드 폭 전체를 덮어야 좌우로도 행이 비치지 않는다
+    assert "margin: 0 -18px" in title and "background:" in title

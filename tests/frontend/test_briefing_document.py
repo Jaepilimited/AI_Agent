@@ -269,7 +269,7 @@ def test_mail_lives_in_the_document_not_in_a_second_card(page):
     )
     _mount(page, payload)
     names = page.locator(".personal-briefing-card-name").all_inner_texts()
-    assert names == ["내일부터"], "메일 카드가 또 있으면 목록이 두 벌이다"
+    assert names == ["향후 일정"], "메일 카드가 또 있으면 목록이 두 벌이다"
     items = page.locator(".personal-briefing-card .briefing-doc-row-head").all_inner_texts()
     assert not any("메일" in text for text in items)
     assert not any("회의 today" in text for text in items)
@@ -358,10 +358,11 @@ def test_skeleton_does_not_promise_cards_that_no_longer_exist(page):
             controller.invalidate();  // 스켈레톤만 그리고 멈추는 유일한 동기 경로
         }"""
     )
-    assert page.locator(".personal-briefing-skeleton").count() == 2
+    assert page.locator(".personal-briefing-skeleton").count() == 1
     names = page.locator(".personal-briefing-card-name").all_inner_texts()
-    assert names == ["내일부터", "그 밖의 메일"]
-    for retired in ("오늘 우선 확인", "7일 일정", "오늘 메일", "업무 지표"):
+    assert names == ["향후 일정"]
+    for retired in ("오늘 우선 확인", "7일 일정", "오늘 메일", "업무 지표",
+                    "내일부터", "그 밖의 메일"):
         assert retired not in names
 
 
@@ -397,7 +398,7 @@ def test_the_columns_stack_on_a_narrow_screen(page):
 
 
 def test_upcoming_events_show_who_is_coming(page):
-    """'내일부터' 도 오늘 일정과 같이 참석자를 보여준다 (2026-08-26 사용자 요청)."""
+    """'향후 일정' 도 오늘 일정과 같이 참석자를 보여준다 (2026-08-26 사용자 요청)."""
     payload = _with_cards(
         _document(),
         [{"id": "later", "title": "주간 실적 리뷰", "start": "2026-08-27T10:00:00+09:00",
@@ -417,7 +418,7 @@ def test_one_builder_makes_the_event_detail_for_both_places():
     """⛔ 장소·참석자 문장을 두 곳에서 따로 만들면 언젠가 서로 다른 말을 한다."""
     source = SCRIPT.read_text(encoding="utf-8")
     assert source.count("function eventDetail(") == 1
-    # 문서(오늘)와 카드(내일부터) 두 곳이 같은 함수로 같은 줄을 만든다.
+    # 문서(오늘)와 카드(향후 일정) 두 곳이 같은 함수로 같은 줄을 만든다.
     assert source.count('docLine(main, "briefing-doc-detail", eventDetail(item))') == 2
 
 

@@ -29,7 +29,21 @@ logger = structlog.get_logger()
 SEOUL = ZoneInfo("Asia/Seoul")
 
 MAX_MEETINGS = 12
-MAX_MAIL_POINTS = 8
+#: LLM 이 돌려준 `mail_points` 를 몇 개까지 훑을지. **행 상한이 아니다** —
+#: 이 값으로 행을 자르면 안 읽은 메일이 읽은 메일의 자리를 먹는다 (2026-08-26).
+#: 폭주한 응답에서 멈추기 위한 안전판일 뿐이라 행 상한보다 넉넉해도 된다.
+MAX_LLM_MAIL_ENTRIES = 60
+#: 절 전체 행 상한. 제목만 있는 행은 한 줄이라 싸다.
+#: ⛔ 안 읽은 메일은 이 상한까지 **요약 없이라도** 자리를 갖는다 — Today 의 이 절은
+#:    "아직 안 본 것" 이 한자리에 모이는 것이 존재 이유다.
+#: ⚠️ 화면은 절 안에서 **스크롤**하므로 길어져도 다른 절을 밀어내지 않는다
+#:    (2026-08-26 사용자 지시: "카드 내 스크롤을 통해 공간 확보"). 그래서 수집 상한
+#:    (Gmail 20~40건) 만큼 넉넉히 잡는다 — 자르는 것보다 스크롤이 낫다.
+MAX_MAIL_ROWS = 40
+
+#: ⛔ **채팅 본문은 스크롤이 없다.** 잔디에 40줄을 밀어 넣으면 아무도 안 읽는다 —
+#:    화면 상한과 같은 자를 쓰면 안 된다. 넘치면 "…외 N건" 으로 줄인다.
+MAX_MAIL_LINES_IN_TEXT = 10
 MAX_ACTIONS = 6
 MAX_DEADLINES = 6
 MAX_URGENT = 5
@@ -275,9 +289,77 @@ def _mail_rows(
             "request": request,
             "urgency": "high" if (request and _urgency(entry.get("urgency")) == "high") else "normal",
         })
-        if len(rows) >= MAX_MAIL_POINTS:
+        # ⚠️ 여기서 자르지 않는다 — 고르는 일은 `_fit` 이 한다 (안 읽은 것 우선).
+        #    여기서 캡을 걸면 LLM 이 고른 순서대로 잘려 규칙이 두 곳으로 흩어진다.
+        if len(rows) >= MAX_LLM_MAIL_ENTRIES:
             break
-    return rows
+
+    # ⛔ **요약거리가 없어도 올린다** (2026-08-26 제보:
+    #    "안읽은 메일이 나오는 기준을 모르겠다 / 일부여서 이상함").
+    #    지금까지 이 절에 오르는 기준은 **LLM 이 요약할 거리를 찾았는가** 하나였고,
+    #    읽음 여부는 아예 보지 않았다. 그래서 안 읽은 5건 중 1건만 Today 에 오르고
+    #    나머지는 아래 카드에 흩어졌다 — 사용자에게는 규칙이 없어 보인다.
+    #    Today 의 메일 절은 "아직 안 본 것" 이 한자리에 모여야 쓸모가 있다.
+    # ⚠️ 요약 없이 제목만 실린다. 그것이 지어내는 것보다 낫다 —
+    #    미리보기에 근거가 없으면 `_verified` 가 어차피 문장을 버린다.
+    listed = {row["id"] for row in rows}
+    for mail in mails:
+        if str(mail.get("id", "")) in listed:
+            continue
+        rows.append({
+            "id": mail["id"],
+            "at": _clock(str(mail.get("received_at", ""))),
+            "from": _clean(mail.get("from_display", ""), 60),
+            "subject": _clean(mail.get("subject", ""), 140) or "(제목 없음)",
+            "url": str(mail.get("url", "")),
+            "unread": bool(mail.get("unread")),
+            "points": [],
+            "request": "",
+            "urgency": "normal",
+        })
+
+    # ⚠️ 그룹 안 순서는 **최신순**이다. 위에서 LLM 이 고른 것을 먼저 담고 나머지를
+    #    뒤에 붙였기 때문에, 그대로 두면 15:01 → 12:03 → 14:08 처럼 시간이 튄다
+    #    (2026-08-26 실측). 화면의 시간축이 거짓말하는 것처럼 보인다.
+    #    ⛔ `at`(HH:MM)으로 정렬하면 안 된다 — 어제 22:16 이 맨 위로 온다.
+    received = {str(mail.get("id", "")): str(mail.get("received_at", "")) for mail in mails}
+    rows.sort(key=lambda row: received.get(str(row["id"]), ""), reverse=True)
+    return _fit(rows)
+
+
+def _fit(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int, int]:
+    """자리에 맞춰 고르고, **잘라낸 수를 함께 돌려준다**.
+
+    ⛔ 예전엔 `rows[:MAX]` 로 조용히 잘랐다. 목록이 멀쩡히 보이므로 **몇 건이
+       빠졌는지 아무도 알 수 없다** — 이 프로젝트에서 반복된 부류의 실패다.
+       그래서 호출부가 그 수를 받아 문서에 싣고, 화면·잔디가 밝힌다.
+
+    규칙 두 줄:
+      1. 안 읽은 것이 먼저 자리를 갖는다.
+      2. 남은 자리는 읽은 것이 도착순으로 채운다 — **요약이 있든 없든** 싣는다.
+
+    ⛔ 예전엔 요약이 없는 읽은 메일을 뺐다 ("이 절이 받은편지함이 된다"). 그 결과
+       같은 메일이 아래 `그 밖의 메일` 카드에 다시 나왔고, **한 화면에 메일 목록이
+       두 벌**이 됐다 — 어느 쪽이 전부인지 알 수 없다. 절이 안에서 스크롤하게
+       된 지금은 길이가 문제가 아니므로, 한곳에 다 모으고 카드를 걷는 편이 낫다
+       (2026-08-26 사용자 확인).
+
+    ⛔ **요약 개수로 행을 자르지 않는다** (2026-08-26 제보: "13개 중 안읽음 7개는
+       나오는데 읽음은 한 개만 나온다"). 예전엔 요약이 붙은 행을 통틀어 8개로
+       묶었는데, 안 읽은 7건이 그 자리를 먼저 써서 **읽은 메일이 1건만 남았다.**
+       화면 자리를 아끼려던 상한인데 이제 절이 **안에서 스크롤**하므로 아낄 이유가
+       없다 — 자리는 스크롤이 만든다. 남는 상한은 행 수(`MAX_MAIL_ROWS`) 하나다.
+    """
+    unread = [row for row in rows if row["unread"]]
+    read = [row for row in rows if not row["unread"]]
+
+    kept: list[dict[str, Any]] = list(unread[:MAX_MAIL_ROWS])
+    kept.extend(read[:max(0, MAX_MAIL_ROWS - len(kept))])
+
+    kept_ids = {row["id"] for row in kept}
+    omitted_unread = sum(1 for row in unread if row["id"] not in kept_ids)
+    omitted_read = sum(1 for row in read if row["id"] not in kept_ids)
+    return kept, omitted_unread, omitted_read
 
 
 def _source_ref(
@@ -411,6 +493,10 @@ def compose(
     if summary and not _verified(summary, haystack, dropped, "summary"):
         summary = ""
 
+    # ⛔ 자리가 모자라 잘린 수를 **문서에 싣는다.** 화면에 몇 줄이 멀쩡히 보이면
+    #    무엇이 빠졌는지 알 수 없다 — 자른 사실은 코드가 공시한다.
+    mail_rows, omitted_unread, omitted_read = _mail_rows(raw, mails, haystack, dropped)
+
     document = {
         "status": "ready" if (today_events or mails) else "empty",
         "for_date": day.isoformat(),
@@ -418,11 +504,13 @@ def compose(
         "window": window,
         "mail_summary": summary,
         "meetings": _meeting_rows(raw, today_events, haystack, current, dropped),
-        "mail": _mail_rows(raw, mails, haystack, dropped),
+        "mail": mail_rows,
         "actions": _action_rows(raw, today_events, mails, haystack, dropped),
         "deadlines": _deadline_rows(raw, today_events, mails, haystack, day, dropped),
         "mail_total": len(mails),
         "mail_unread": sum(1 for mail in mails if mail.get("unread")),
+        "mail_omitted_unread": omitted_unread,
+        "mail_omitted_read": omitted_read,
         "dropped": len(dropped),
     }
     document["urgent"] = _cap_urgent(document)
@@ -481,12 +569,28 @@ def render_markdown(
         lines.append(f"  · 기준: {window['label']}")
     if document.get("mail_summary"):
         lines.append(f"  {document['mail_summary']}")
-    for row in document.get("mail") or []:
+    # ⛔ 채팅 본문에는 스크롤이 없다 — 화면보다 짧게 자르고, 자른 수를 적는다
+    mail_rows = document.get("mail") or []
+    for row in mail_rows[:MAX_MAIL_LINES_IN_TEXT]:
         lines.append(f"  {_mark(row['urgency'])} {row['from']} | {row['subject']}")
         for point in row.get("points", []):
             lines.append(f"      · {point}")
         if row.get("request"):
             lines.append(f"      → 요청: {row['request']}")
+    if len(mail_rows) > MAX_MAIL_LINES_IN_TEXT:
+        rest = len(mail_rows) - MAX_MAIL_LINES_IN_TEXT
+        unread_rest = sum(1 for row in mail_rows[MAX_MAIL_LINES_IN_TEXT:]
+                          if row.get("unread"))
+        tail = f"  · 외 {rest}건"
+        if unread_rest:
+            tail += f" (안 읽음 {unread_rest})"
+        lines.append(tail + " — 첫 화면 Today 에서 전부 볼 수 있습니다.")
+    # ⚠️ 잘렸으면 잘렸다고 적는다 — 목록만 보면 그게 전부인 줄 안다
+    if document.get("mail_omitted_unread"):
+        lines.append(
+            f"  · 안 읽은 메일 {document['mail_omitted_unread']}건은 상한을 넘어 "
+            "실리지 않았습니다 (Gmail 에서 확인해 주세요)."
+        )
     if not (document.get("mail") or document.get("mail_total")):
         lines.append("  · 새로 온 메일이 없습니다.")
     lines.append("")
