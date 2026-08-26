@@ -54,3 +54,46 @@ def test_requested_markets_are_included():
     """사용자가 지정한 시장 (2026-08-26): 동남아 4개국 + 오세아니아."""
     for code in ("SGD", "PHP", "MYR", "IDR", "AUD"):
         assert code in fx_rates.CURRENCIES, code
+
+
+# ── 전월대비 (2026-08-26 사용자 지정) ────────────────────────────────────────
+
+def test_month_before_clamps_to_month_end():
+    """⚠️ `timedelta(days=30)` 으로 때우면 달 길이가 달라 **전월대비가 달마다 다른
+       기간**을 재게 된다. 없는 날짜(3/31 → 2월)는 말일로 당긴다."""
+    from datetime import date
+
+    assert fx_rates.month_before(date(2026, 8, 26)) == date(2026, 7, 26)
+    assert fx_rates.month_before(date(2026, 3, 31)) == date(2026, 2, 28)
+    assert fx_rates.month_before(date(2026, 1, 15)) == date(2025, 12, 15)
+
+
+def test_basis_is_a_month_back_not_the_previous_day():
+    """⛔ 전일대비는 하루 0.1% 수준이라 화면에서 거의 늘 "보합" 이었다.
+       비교 기준을 한 달 전으로 옮겼다 — `latest()` 가 그 날짜를 함께 돌려줘야
+       화면이 "무엇과 견줬는지" 밝힐 수 있다."""
+    import inspect
+
+    src = inspect.getsource(fx_rates.latest)
+    assert "_basis_date" in src, "전일 비교가 남아 있다"
+    assert "for_date < %s" not in src, "직전 보유일과 비교하고 있다"
+    assert "basis_date" in src, "기준일을 안 돌려주면 화면이 밝힐 수 없다"
+
+
+def test_basis_lookup_tolerates_holidays():
+    """⛔ 한 달 전 날짜를 콕 집어 찾으면 주말·공휴일에 **조용히 0건**이 된다."""
+    import inspect
+
+    src = inspect.getsource(fx_rates._basis_date)
+    assert "<=" in src and "MAX(for_date)" in src
+
+
+def test_relay_can_backfill_history():
+    """전월대비는 한 달 전 값이 있어야 성립한다. open.er-api 무료 요금제에는 과거
+    조회가 없어 ECB(frankfurter)로만 채운다 — 그래서 백필 경로가 따로 있다."""
+    relay = _relay()
+    assert hasattr(relay, "fetch_history")
+    import inspect
+    src = inspect.getsource(relay.fetch_history)
+    # ⚠️ 요청한 날짜가 아니라 **응답이 준 날짜**를 써야 한다 (휴일이면 직전 영업일이다)
+    assert 'data.get("date")' in src
