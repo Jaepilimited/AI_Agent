@@ -695,3 +695,21 @@ def test_status_row_name_never_yields_to_detail():
     assert "flex-shrink: 0" not in detail, "detail 이 안 줄면 이름이 대신 줄어든다"
     assert "min-width: 0" in detail, "min-width 가 없으면 flex 항목은 안 줄어든다"
     assert "text-overflow: ellipsis" in detail, "잘릴 때 잘렸다고 보여야 한다"
+
+
+def test_admin_badge_says_what_it_counts():
+    """⛔ Admin 배지가 **숫자만** 떠 있어 관리자가 "그게 뭔지 모르겠다" 고 했다
+       (2026-08-26 제보). `4` 하나로는 자가 점검 실패라는 걸 알 수 없다.
+
+    툴팁(`title`)은 마우스를 올려야 보이고 모바일에는 아예 없다 — 화면에 보이는
+    글자가 스스로 말해야 한다. 폭은 실측했다: 사이드바 280px 에서 `점검 4` 는
+    39.8px 로 `Admin` 글자를 밀지 않는다 (사이드바는 접히면 폭 0 이라 중간 폭이 없다).
+    """
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parent.parent
+          / "app" / "frontend" / "chat.js").read_text(encoding="utf-8")
+    fn = js.split("function refreshSelfCheckBadge", 1)[1].split("\n  }", 1)[0]
+    assert 'badge.textContent = run.failed;' not in fn, "숫자만 찍고 있다"
+    assert '"점검 "' in fn, "무엇을 세는지 배지에 적혀 있어야 한다"
+    assert 'aria-label' in fn, "스크린리더에도 뜻이 전달돼야 한다"

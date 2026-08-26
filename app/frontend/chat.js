@@ -3927,9 +3927,15 @@
         var crit = (d.results || []).filter(function (x) {
           return !x.ok && x.severity === "critical";
         }).length;
-        badge.textContent = run.failed;
-        badge.title = "자가 점검 실패 " + run.failed + "건"
+        // ⛔ **숫자만 두지 마라.** `4` 만 떠 있으니 관리자가 "그게 뭔지 모르겠다" 고
+        //    했다 (2026-08-26 제보). 툴팁은 마우스를 올려야 보이고 모바일엔 없다.
+        //    폭은 실측했다 — 사이드바 280px 에서 `점검 4` 는 39.8px, `Admin` 글자를
+        //    밀지 않는다 (사이드바는 접히면 폭 0 이라 좁아지는 경우가 없다).
+        var tip = "자가 점검 실패 " + run.failed + "건"
           + (crit ? " (심각 " + crit + ")" : "") + " — 클릭해 확인";
+        badge.textContent = "점검 " + run.failed;
+        badge.title = tip;
+        badge.setAttribute("aria-label", tip);
         badge.className = crit ? "sidebar-badge critical" : "sidebar-badge";
         badge.style.display = "";
       })
