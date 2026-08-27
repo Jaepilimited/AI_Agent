@@ -1305,6 +1305,50 @@
         "max_seconds": 60
       },
       "note": "2026-08-25: 팀 지정 + 색인 0건이면 구글 검색 답변이 나갔다. 사내 자료를 물었는데 인터넷 글이 답으로 오는 경로였다"
+    },
+    {
+      "id": "inc_brand_named_not_company_wide",
+      "category": "incident",
+      "freq": "daily",
+      "question": "SKIN1004 상반기 매출액 얼마임? 26년 1월1일부터 6월30일까지",
+      "expect": {
+        "contains_any": [
+          "4,322",
+          "4322",
+          "432,195"
+        ],
+        "not_contains": [
+          "5,577",
+          "5577"
+        ],
+        "sql_contains_any": [
+          "Brand IN ('SK', 'CBT')",
+          "Brand IN ('SK','CBT')",
+          "Brand IN"
+        ],
+        "min_len": 120,
+        "max_seconds": 150
+      },
+      "note": "2026-08-27 (붐따 #100): 'SKIN1004' 를 회사명으로 읽어 브랜드 필터 없이 전사 5,577.5억을 답했다. 스킨천사는 4,322.0억 — 1,255억(29%) 부풀려진 오답. 사용자가 든 기준값 4,282.6억과 0.9% 차이로 브랜드 해석이 맞았다. 붐따는 처리 완료로 닫혀 있었는데 실제로는 고쳐지지 않았다."
+    },
+    {
+      "id": "inc_company_wide_stays_company_wide",
+      "category": "incident",
+      "freq": "daily",
+      "question": "전사 상반기 매출액 얼마임? 26년 1월1일부터 6월30일까지",
+      "expect": {
+        "contains_any": [
+          "5,577",
+          "5577",
+          "557,746"
+        ],
+        "not_contains": [
+          "4,322"
+        ],
+        "min_len": 100,
+        "max_seconds": 150
+      },
+      "note": "2026-08-27: 브랜드 보증을 넣으면서 **반대 방향**을 함께 건다. 전사 질문에 브랜드를 끼우면 그것도 오답이다."
     }
   ]
 }

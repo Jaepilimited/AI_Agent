@@ -659,6 +659,16 @@ def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Opti
     return sql
 
 
+def _cache_forget(query_hash: str) -> None:
+    """캐시에서 지운다 — 규칙 위반이 확인된 SQL 은 남겨 두면 계속 나간다."""
+    _sql_cache.pop(query_hash, None)
+    try:
+        from app.db.mariadb import execute
+
+        execute("DELETE FROM sql_cache WHERE query_hash = %s", (query_hash,))
+    except Exception as e:
+        logger.warning("sql_cache_forget_failed", error=str(e)[:120])
+
 def _cache_store(query_hash: str, query: str, sql: str, brand_filter: Optional[str] = None) -> None:
     """Store in both in-memory and MariaDB."""
     # In-memory LRU: evict least-recently-used if full
@@ -1165,6 +1175,29 @@ def _has_current_date_cap(sql: str) -> bool:
 # --- LangGraph Nodes ---
 
 
+def _brand_named_in(question: str) -> str:
+    """질문이 브랜드를 지목했는가 — 지목했으면 그 이름을 돌려준다.
+
+    ⛔ 어휘는 보고서가 이미 쓰는 `registry._BRAND_FILTERS` 를 **그대로** 쓴다.
+       같은 규칙을 두 곳에서 따로 적으면 언젠가 한쪽만 고쳐진다.
+    """
+    try:
+        from app.reports.registry import _BRAND_FILTERS
+    except Exception:
+        return ""
+    lowered = (question or "").lower().replace(" ", "")
+    for word in _BRAND_FILTERS:
+        if word.replace(" ", "") in lowered:
+            return word
+    return ""
+
+
+def _sql_filters_brand(sql: str) -> bool:
+    """SQL 이 브랜드를 실제로 거르는가 (`SELECT` 목록에만 있는 것은 아니다)."""
+    lowered = (sql or "").lower()
+    return "brand" in lowered and (
+        "where" in lowered or "case when" in lowered or "having" in lowered)
+
 def generate_sql(state: AgentState) -> Dict[str, Any]:
     """Generate SQL from natural language query.
 
@@ -1194,6 +1227,15 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     if not conv_context:  # Only cache standalone questions (not follow-ups)
         cache_key = _cache_key(query, brand_filter)
         cached_sql = _cache_lookup(cache_key, allowed_tables)
+        # ⛔ **캐시에도 같은 보증을 건다.** 브랜드를 지목했는데 브랜드를 안 거르는
+        #    SQL 이 캐시에 남아 있으면, 아래 재생성 보증을 통째로 건너뛴다 —
+        #    실측(2026-08-27): 코드를 고쳐 배포했는데 답이 그대로 5,577.5억이었다.
+        #    "고쳤는데 그대로면 캐시를 의심하라" 는 규칙이 그대로 재현됐다.
+        #    ⚠️ 나쁜 행은 지운다 — 남겨 두면 다음 사람에게 또 나간다.
+        if cached_sql and _brand_named_in(query) and not _sql_filters_brand(cached_sql):
+            logger.warning("sql_cache_brand_filter_missing", query=query[:60])
+            _cache_forget(cache_key)
+            cached_sql = None
         if cached_sql:
             logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
             return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
@@ -1323,6 +1365,33 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     try:
         sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=10000)
         sql = sanitize_sql(sql)
+
+        # ⛔ **브랜드를 지목했는데 브랜드를 안 거르면 전사 매출이 나간다.**
+        #    실측(2026-08-27, 붐따 #100): "SKIN1004 상반기 매출액" 에
+        #    `WHERE Date BETWEEN ...` 만 걸린 SQL 이 나가 **5,577.5억**을 답했다.
+        #    스킨천사 브랜드는 4,322.0억 — **1,255억(29%) 부풀려진 오답**이다.
+        #    붐따는 처리 완료로 닫혀 있었는데 실제로는 고쳐지지 않았다.
+        #    ⚠️ `SKIN1004` 는 **회사명이자 브랜드명**이라 LLM 이 "우리 회사 전체"
+        #       로 읽는다. 프롬프트에 표가 있어도 확률이라 새어 나간다 — 보증은 코드다.
+        _brand_word = _brand_named_in(_resolved_query)
+        if _brand_word and sql and not _sql_filters_brand(sql):
+            logger.warning("sql_brand_filter_missing", brand=_brand_word,
+                           query=query[:80])
+            brand_retry = llm.generate(
+                full_prompt
+                + f"\n\n⛔ 방금 만든 SQL 에 브랜드 조건이 없습니다. 질문은"
+                  f" '{_brand_word}' 라는 **브랜드**를 지목했습니다 (회사 전체가"
+                  f" 아닙니다). 위 브랜드 표의 조건을 `WHERE` 에 반드시 넣어"
+                  f" 다시 만드세요.",
+                temperature=0.0, max_output_tokens=10000)
+            brand_retry = sanitize_sql(brand_retry)
+            if brand_retry and _sql_filters_brand(brand_retry):
+                logger.info("sql_brand_filter_recovered", brand=_brand_word)
+                sql = brand_retry
+            else:
+                # ⚠️ 되살리지 못했으면 **조용히 넘기지 않는다.** 답변 단계가
+                #    전사 집계라는 사실을 밝힐 수 있게 상태에 남긴다.
+                logger.error("sql_brand_filter_unrecovered", brand=_brand_word)
 
         # Retry once if LLM returned text/truncated SQL instead of valid SQL
         if not sql or len(sql) < 10:
@@ -2723,6 +2792,17 @@ def _extract_previous_sql(conversation_context: str) -> str:
     return ""
 
 
+def _prepend_data_update_notice(answer: str, sql: str) -> str:
+    """Put an exact-table refresh disclosure before a BigQuery answer."""
+    from app.core.safety import data_update_notice_for_sql
+
+    notice = data_update_notice_for_sql(sql)
+    if not notice:
+        return answer
+    logger.info("data_update_notice_added", tables=_extract_table_sources(sql))
+    return f"{notice}\n\n{answer}" if answer else notice
+
+
 async def run_sql_agent_unlimited(
     previous_sql: str,
     query: str,
@@ -2798,7 +2878,8 @@ async def run_sql_agent_unlimited(
 
         answer = llm.generate(prompt, temperature=0.05)
         totals_block = _build_table_totals_markdown(results)
-        return _insert_table_totals(answer, totals_block) if totals_block else answer
+        answer = _insert_table_totals(answer, totals_block) if totals_block else answer
+        return _prepend_data_update_notice(answer, unlimited_sql)
 
     except Exception as e:
         logger.error("sql_unlimited_failed", error=str(e))
@@ -2863,7 +2944,9 @@ async def run_sql_agent(
             )
             state.update(execute_sql(state))
         state.update(format_answer(state))
-        return state.get("answer", "")
+        return _prepend_data_update_notice(
+            state.get("answer", ""), state.get("generated_sql", "")
+        )
 
     answer = await asyncio.to_thread(_run_sync)
     logger.info("sql_agent_completed", answer_length=len(answer))
@@ -3355,6 +3438,10 @@ def run_sql_agent_stream(
     sql = state.get("generated_sql", "")
     results = state.get("sql_result")
     error = state.get("error")
+
+    update_notice = _prepend_data_update_notice("", sql)
+    if update_notice:
+        yield update_notice + "\n\n"
 
     # Error / empty → yield full message (no streaming needed)
     if error or not results:
