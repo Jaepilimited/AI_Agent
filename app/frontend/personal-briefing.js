@@ -430,7 +430,27 @@
     }
     // DOM 순서는 왼쪽 → 오른쪽. 행 정렬은 CSS 의 grid-row 가 맡는다.
     leftItems.forEach(function (node, i) { place(node, "left", i + 1); });
-    rightItems.forEach(function (node, i) { place(node, "right", i + 1); });
+
+    /* ⛔ 오른쪽 절마다 새 행을 만들지 마라 — 마지막 왼쪽 절(메일)이 길면 나머지가 그
+       아래로 밀려 **문서가 통째로 길어지고 메일 옆이 텅 빈다** (2026-08-27 사용자
+       지적: "메일 부분에 맞춰 저장한 질문과 지표가 칸에 맞아야 함").
+       왼쪽 행 수까지는 한 행에 하나씩 세워 머리글을 맞추고, **남는 절은 마지막 행에
+       함께 쌓아** 메일 옆을 채운다.
+       ⚠️ 같은 행·같은 열에 둘을 그냥 두면 그리드는 쌓지 않고 **겹친다.** 반드시
+          하나의 상자로 감싸서 그 안에서 세로로 흐르게 한다. */
+    var lastRow = Math.max(leftItems.length, 1);
+    rightItems.forEach(function (node, i) {
+      if (i + 1 < lastRow) { place(node, "right", i + 1); }
+    });
+
+    var rest = rightItems.slice(Math.max(lastRow - 1, 0));
+    if (rest.length === 1) {
+      place(rest[0], "right", lastRow);
+    } else if (rest.length > 1) {
+      var stack = textNode("div", "briefing-doc-stack", "");
+      rest.forEach(function (node) { stack.appendChild(node); });
+      place(stack, "right", lastRow);
+    }
     return rows;
   }
 

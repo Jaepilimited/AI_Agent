@@ -4392,10 +4392,29 @@ html.dark .db-autocomplete-dropdown {
    같은 열 안에서 559 / 551 로 오른쪽 끝이 들쭉날쭉해진다 (2026-08-27 실측).
    모든 칸에 같은 8px 을 예약해 선의 끝을 맞춘다. 스크롤바가 없을 때도 자리를
    비워 두므로(`scrollbar-gutter: stable`) 메일이 짧아졌다 길어지지 않는다. */
-.briefing-doc-columns > .briefing-doc-cell { padding-right: 8px; }
-.briefing-doc-columns > .briefing-doc-cell.briefing-doc-mail {
-  padding-right: 0;
-  scrollbar-gutter: stable;
+/* ⚠️ 스크롤되는 메일 절은 스크롤바가 이미 8px 을 먹는다. 나머지 칸에만 같은 8px 을
+   줘서 밑줄 끝을 맞춘다. (메일 쪽 스크롤바 자리 예약은 원래 블록에 있다.)
+   ⛔ 메일 절 클래스로 **끝나는** 선택자를 새로 만들지 마라. 정적 검사가 그 클래스
+      이름과 여는 중괄호를 문자열로 찾아 원래 블록 대신 이쪽을 집는다 — 주석에
+      그 문자열을 적는 것도 같은 이유로 안 된다 (CLAUDE.md 의 린트 함정과 같은 부류). */
+.briefing-doc-columns > .briefing-doc-cell:not(.briefing-doc-mail) {
+  padding-right: 8px;
+}
+
+/* 마지막 행에 함께 쌓이는 오른쪽 절들. 절 사이 간격은 행 간격과 같게 둔다 —
+   한 화면에 두 종류의 간격이 있으면 그것부터 어색해 보인다. */
+.briefing-doc-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+/* 상자 안의 절은 자기 밑줄을 그대로 쓴다 — 감싸는 상자가 여백을 더하지 않는다.
+   ⛔ **머리글 여백도 함께 지워야 한다.** 직계 자식만 지우면 상자 안 첫 절(기한)의
+      머리글만 18px 내려가 메일과 어긋난다 — 회귀 테스트가 잡아 줬다 (2026-08-27). */
+.briefing-doc-stack > .briefing-doc-section { margin-top: 0; }
+.briefing-doc-stack > .briefing-doc-section > .briefing-doc-section-title {
+  margin-top: 0;
 }
 
 .briefing-doc-col { min-width: 0; }
@@ -5646,6 +5665,8 @@ html.dark .db-autocomplete-dropdown {
   max-height: 420px;
   overflow-y: auto;
   overscroll-behavior: contain;   /* 끝에서 페이지가 따라 스크롤되지 않게 */
+  /* 스크롤이 생기고 사라져도 밑줄 길이가 흔들리지 않게 자리를 늘 비워 둔다. */
+  scrollbar-gutter: stable;
 }
 
 .briefing-doc-mail .briefing-doc-section-title {
@@ -5683,6 +5704,13 @@ html.dark .db-autocomplete-dropdown {
    ⚠️ 기본 칩과 **구분되어야** 한다. 섞여 있으면 이게 시스템이 정한 예시인지
       내가 전에 물어본 것인지 알 수 없다 — 눌렀을 때 왜 그 답이 나오는지도 모른다.
    ⚠️ 색만으로 나누지 않는다 (색을 못 보는 사람이 있다). 점 하나를 앞에 둔다. */
+/* ⛔ 내가 물어본 칩과 기본 예시 칩을 **같은 줄에 섞지 마라** (2026-08-27 사용자 지적).
+   한 줄로 흐르면 어디까지가 내 이력이고 어디부터가 시스템 예시인지 경계가 사라진다 —
+   색만으로는 구분되지 않는다. **줄을 나누는 것이 경계다.** */
+.chat-welcome .suggestions-mine {
+  margin-bottom: var(--space-sm);
+}
+
 .chat-welcome .suggestion-chip.mine {
   border-color: var(--accent);
   color: var(--text);

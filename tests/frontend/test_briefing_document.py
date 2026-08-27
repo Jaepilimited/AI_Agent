@@ -400,11 +400,17 @@ def test_rows_line_up_across_the_two_columns(page):
     #    (2026-08-27 사용자 지적 "그렇게 안 보이는데?"). 원인은 머리글의
     #    `margin-top` 이 절마다 달랐던 것 — 스크롤되는 메일 절만 sticky 때문에 0 이었다.
     #    칸은 같은 높이에서 시작해도 글자는 어긋날 수 있다. 보이는 것을 재야 한다.
-    def name_tops(side):
-        names = page.locator(f".briefing-doc-cell.is-{side} .briefing-doc-section-name")
-        return [round(names.nth(i).bounding_box()["y"]) for i in range(names.count())]
+    # ⚠️ **칸 단위로** 짝을 짓는다. 마지막 오른쪽 칸은 여러 절을 담은 상자라
+    #    절 단위로 세면 개수가 어긋나 엉뚱한 짝이 비교된다.
+    def first_name_tops(side):
+        cells = page.locator(f".briefing-doc-cell.is-{side}")
+        out = []
+        for i in range(cells.count()):
+            name = cells.nth(i).locator(".briefing-doc-section-name").first
+            out.append(round(name.bounding_box()["y"]))
+        return out
 
-    left_tops, right_tops = name_tops("left"), name_tops("right")
+    left_tops, right_tops = first_name_tops("left"), first_name_tops("right")
     assert left_tops and right_tops
     for row, (lt, rt) in enumerate(zip(left_tops, right_tops), start=1):
         assert abs(lt - rt) <= 1, f"{row}행 머리글이 어긋났다: 왼쪽 {lt} vs 오른쪽 {rt}"
@@ -559,19 +565,24 @@ def test_every_section_rule_is_the_same_line(page):
     page.set_viewport_size({"width": 1400, "height": 1400})
     _mount(page, _payload(_document()))
 
-    rules = page.locator(".briefing-doc-cell .briefing-doc-section-title")
+    rules = page.locator(".briefing-doc-columns .briefing-doc-section-title")
     boxes = [rules.nth(i).bounding_box() for i in range(rules.count())]
     assert len(boxes) >= 4
 
     widths = {round(b["width"]) for b in boxes}
     assert len(widths) == 1, f"밑줄 길이가 제각각이다: {sorted(widths)}"
 
-    def rule_y(side):
-        loc = page.locator(f".briefing-doc-cell.is-{side} .briefing-doc-section-title")
-        return [round(loc.nth(i).bounding_box()["y"] + loc.nth(i).bounding_box()["height"])
-                for i in range(loc.count())]
+    # ⚠️ 칸 단위로 짝을 짓는다 — 마지막 오른쪽 칸은 여러 절을 담은 상자다.
+    def first_rule_bottom(side):
+        cells = page.locator(f".briefing-doc-cell.is-{side}")
+        out = []
+        for i in range(cells.count()):
+            box = cells.nth(i).locator(".briefing-doc-section-title").first.bounding_box()
+            out.append(round(box["y"] + box["height"]))
+        return out
 
-    for row, (lt, rt) in enumerate(zip(rule_y("left"), rule_y("right")), start=1):
+    for row, (lt, rt) in enumerate(
+            zip(first_rule_bottom("left"), first_rule_bottom("right")), start=1):
         assert abs(lt - rt) <= 1, f"{row}행 밑줄이 어긋났다: 왼쪽 {lt} vs 오른쪽 {rt}"
 
 
@@ -583,3 +594,36 @@ def test_the_two_columns_are_equal_width(page):
     left = page.locator(".briefing-doc-cell.is-left").first.bounding_box()
     right = page.locator(".briefing-doc-cell.is-right").first.bounding_box()
     assert abs(left["width"] - right["width"]) <= 1, (left["width"], right["width"])
+
+
+def test_surplus_right_sections_sit_beside_the_mail_not_below_it(page):
+    """⛔ 오른쪽 절마다 새 행을 만들면 긴 메일 절 **아래로** 밀린다 (2026-08-27 사용자
+    지적: "메일 부분에 맞춰 저장한 질문과 지표가 칸에 맞아야 함").
+
+    왼쪽 행 수를 넘는 절은 마지막 행에 함께 쌓아 메일 옆을 채운다 — 그래야 메일
+    옆이 비지 않고 문서도 짧아진다 (실측: 1,010 → 750px).
+    ⚠️ 같은 행·같은 열에 둘을 그냥 두면 그리드는 쌓지 않고 **겹친다.** 상자로 감싼다.
+    """
+    page.set_viewport_size({"width": 1400, "height": 1400})
+    document = _document()
+    document["saved"] = [{"question": "쇼피 인도네시아 이번 달 매출",
+                          "answer": "약 28.5억원입니다. (표 1행)",
+                          "last_run_at": "2026-08-27T09:00:00", "link": ""}]
+    _mount(page, _payload(document))
+
+    left_last = page.locator(".briefing-doc-cell.is-left").last
+    right_last = page.locator(".briefing-doc-cell.is-right").last
+    lb, rb = left_last.bounding_box(), right_last.bounding_box()
+
+    # 마지막 왼쪽 절(메일)과 마지막 오른쪽 칸이 **같은 높이에서 시작**해야 한다.
+    assert abs(lb["y"] - rb["y"]) <= 1, (lb["y"], rb["y"])
+
+    # 남는 절이 여럿이면 하나의 상자로 묶여 그 안에서 세로로 흐른다 (겹치지 않는다).
+    stack = page.locator(".briefing-doc-stack")
+    if stack.count():
+        names = stack.locator(".briefing-doc-section-name").all_inner_texts()
+        assert len(names) >= 2, names
+        boxes = [stack.locator(".briefing-doc-section").nth(i).bounding_box()
+                 for i in range(len(names))]
+        ys = [round(b["y"]) for b in boxes]
+        assert ys == sorted(ys) and len(set(ys)) == len(ys), f"절이 겹쳤다: {ys}"

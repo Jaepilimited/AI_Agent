@@ -4081,7 +4081,18 @@
           chip.title = item.text + (item.n > 1 ? " (" + item.n + "번 물어봄)" : "");
           frag.appendChild(chip);
         });
-        box.insertBefore(frag, box.firstChild);
+        /* ⛔ 기본 칩과 **같은 줄에 섞지 마라** (2026-08-27 사용자 지적).
+           같은 상자에 앞으로 끼워 넣으면 두 종류가 한 줄로 흘러, 어디까지가 내가
+           물어본 것이고 어디부터가 시스템 예시인지 경계가 사라진다. 색만으로는
+           구분되지 않는다 — **줄을 나누는 것이 경계다.** */
+        var mineRow = document.getElementById("welcome-suggestions-mine");
+        if (!mineRow) {
+          mineRow = document.createElement("div");
+          mineRow.id = "welcome-suggestions-mine";
+          mineRow.className = "suggestions suggestions-mine";
+          box.parentNode.insertBefore(mineRow, box);
+        }
+        mineRow.replaceChildren(frag);
       })
       .catch(function () {});
   }
