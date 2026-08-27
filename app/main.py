@@ -32,6 +32,7 @@ from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
 from app.api.middleware import setup_middleware
 from app.api.personal_briefing_api import router as personal_briefing_router
+from app.api.personal_profile_api import router as personal_profile_router
 from app.api.saved_questions_api import router as saved_questions_router
 from app.api.jandi_briefing_api import router as jandi_briefing_router
 from app.api.reports_api import router as reports_router
@@ -172,6 +173,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_report_tables)
         from app.core.google_oauth_state import ensure_oauth_state_table
         await asyncio.to_thread(ensure_oauth_state_table)
+        from app.core.query_profile import ensure_tables as ensure_query_profile_tables
+        await asyncio.to_thread(ensure_query_profile_tables)
         from app.core.personal_briefing_store import ensure_tables as ensure_personal_briefing_tables
         await asyncio.to_thread(ensure_personal_briefing_tables)
         from app.core.jandi_briefing import ensure_tables as ensure_jandi_tables
@@ -223,6 +226,10 @@ def create_app() -> FastAPI:
             # deploy/crontab.app-server 에 다시 등록하면 이중 실행이 된다.
             _scheduler.add_job(_knowledge_map_job, "cron", hour=3, minute=0, id="knowledge_map_daily")
             # 정의서 → BigQuery 컬럼 설명 (지식맵 03:00 뒤, 전성분 04:00 앞)
+            # 질문 프로필 — 어제까지의 질문을 훑어 "내가 자주 묻는 것" 을 다시 만든다.
+            # ⚠️ 파생이라 언제든 다시 만들 수 있다. 원본(`audit_logs`)은 건드리지 않는다.
+            _scheduler.add_job(_query_profile_job, "cron", hour=3, minute=20,
+                               id="query_profile_daily")
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
             # ⚠️ 04:00 에 실패하면 **다음 시도가 24시간 뒤**라 성분 데이터가 하루 낡는다.
@@ -300,6 +307,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)      # /auth/google/*
     app.include_router(auth_api_router)  # /api/auth/*
     app.include_router(personal_briefing_router)  # /api/personal-briefing/*
+    app.include_router(personal_profile_router)   # /api/personal/suggestions
     app.include_router(saved_questions_router)  # /api/saved-questions/*
     app.include_router(jandi_briefing_router)  # /api/personal-briefing/jandi, /api/internal/*
     app.include_router(conversation_router)  # /api/conversations/*
@@ -633,6 +641,24 @@ def _ingredients_loaded_today() -> bool:
         # ⚠️ 판정을 못 하면 **돌린다.** 건너뛰는 쪽으로 실패하면 그날이 빈다
         logger.warning("ingredient_sync_guard_failed", error=str(e)[:160])
         return False
+
+
+async def _query_profile_job():
+    """매일 03:20: 질문 이력 → 사용자별 "자주 묻는 것" 프로필.
+
+    ⛔ LLM 을 쓰지 않는다 — 화면의 제안은 사람이 그대로 누르므로, 왜 떴는지
+       설명할 수 있어야 한다 (`app/core/query_profile.py` 머리말 참조).
+    """
+    from app.core.self_check import track_job
+
+    try:
+        with track_job("query_profile_daily") as jr:
+            from app.core.query_profile import rebuild_all
+            stats = await asyncio.to_thread(rebuild_all)
+            jr.set_note(str(stats)[:200])
+        logger.info("query_profile_done", **stats)
+    except Exception as e:
+        logger.error("query_profile_failed", error=str(e))
 
 
 async def _ingredient_sync_job():

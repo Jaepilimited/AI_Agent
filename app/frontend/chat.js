@@ -758,6 +758,7 @@
           fetchImpl: window.fetch.bind(window)
         });
         personalBriefingController.load();
+        loadMySuggestions();
         // 사용자가 직접 누르는 새로고침. ⚠️ 버튼이 없을 수도 있으니 확인하고 건다
         var briefingRefreshBtn = document.getElementById("personal-briefing-refresh");
         if (briefingRefreshBtn) {
@@ -1141,13 +1142,19 @@
     mobileOverlay.addEventListener("click", closeMobileSidebar);
 
     // Suggestion chips (welcome screen)
-    document.querySelectorAll(".suggestion-chip").forEach(function (chip) {
-      chip.addEventListener("click", function () {
-        chatInput.value = this.dataset.q;
+    // ⛔ 칩마다 직접 걸지 마라 — **나중에 추가한 칩은 눌러도 아무 일이 없다.**
+    //    개인 제안은 로그인 뒤에 붙으므로 그때 걸린 칩이 없다 (에러도 안 난다).
+    //    컨테이너에 한 번 걸고 위임한다.
+    var suggestionsBox = document.getElementById("welcome-suggestions");
+    if (suggestionsBox) {
+      suggestionsBox.addEventListener("click", function (event) {
+        var chip = event.target.closest(".suggestion-chip");
+        if (!chip || !chip.dataset.q) return;
+        chatInput.value = chip.dataset.q;
         chatInput.dispatchEvent(new Event("input"));
         sendMessage();
       });
-    });
+    }
 
     // Sidebar collapse/expand
     document.getElementById("btn-collapse-sidebar").addEventListener("click", collapseSidebar);
@@ -4032,6 +4039,35 @@
     }
   }
 
+  /* 내가 자주 묻는 것 — 첫 화면 칩 앞에 붙인다.
+     ⛔ 기본 칩을 **지우지 않는다.** 아직 이력이 없는 사람(신규 입사자)에게 빈 화면을
+        보여주면 무엇을 물어야 할지 알 수 없다. 내 것을 앞에, 기본을 뒤에 둔다.
+     ⚠️ 실패하면 조용히 지나간다 — 제안은 있으면 좋은 것이지 없으면 안 되는 것이
+        아니다. 여기서 화면이 죽으면 본말이 뒤집힌다. */
+  function loadMySuggestions() {
+    var box = document.getElementById("welcome-suggestions");
+    if (!box) return;
+    fetch("/api/personal/suggestions")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var items = (d && d.questions) || [];
+        if (!items.length) return;
+        var frag = document.createDocumentFragment();
+        items.slice(0, 4).forEach(function (item) {
+          var chip = document.createElement("button");
+          chip.className = "suggestion-chip mine";
+          chip.dataset.q = item.text;
+          /* ⚠️ 질문 원문은 칩에 넣기엔 길다. 줄이되 **원문을 툴팁으로** 남긴다 —
+             무엇을 보내는지 모르고 누르게 하면 안 된다. */
+          chip.textContent = item.text.length > 20
+            ? item.text.slice(0, 20) + "…" : item.text;
+          chip.title = item.text + (item.n > 1 ? " (" + item.n + "번 물어봄)" : "");
+          frag.appendChild(chip);
+        });
+        box.insertBefore(frag, box.firstChild);
+      })
+      .catch(function () {});
+  }
   function refreshSelfCheckBadge() {
     var badge = document.getElementById("selfcheck-badge");
     if (!badge) return;
