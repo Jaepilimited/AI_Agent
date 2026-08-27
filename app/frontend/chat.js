@@ -141,6 +141,99 @@
     };
   }
 
+  // ── 저장한 질문 (정기 실행) ──────────────────────────────────────────────
+  // 로그 실측(90일): 같은 질문을 손으로 반복한다 — "쇼피 인도네시아 이번 달 매출"
+  // 8회(3명), "퍼포먼스 마케팅 성과지표 비교" 6회(2명). 저장해 두면 근무일 아침
+  // 브리핑에 답이 실린다. ⚠️ 저장 대상은 답변이 아니라 **질문**이다.
+  var _sqModal = null;
+
+  function _getSqModal() {
+    if (_sqModal) return _sqModal;
+    // ⛔ 테마를 타는 색을 여기 인라인으로 두지 마라 — style.css 의 fb-*/sq-* 를 쓴다.
+    var overlay = document.createElement("div");
+    overlay.className = "fb-overlay";
+    overlay.innerHTML = [
+      '<div class="fb-box">',
+      '<div class="fb-title">이 질문을 정기적으로 받아보기</div>',
+      '<div class="fb-sub">저장하면 근무일 아침 브리핑에 답이 함께 실립니다.</div>',
+      '<textarea id="sq-text" class="fb-text" rows="3"></textarea>',
+      '<select id="sq-cadence" class="sq-select">',
+        '<option value="daily">매일 (근무일)</option>',
+        '<option value="weekly">매주 월요일</option>',
+        '<option value="monthly">매월 첫 근무일</option>',
+      '</select>',
+      '<div class="sq-note" id="sq-note"></div>',
+      '<div class="fb-actions">',
+        '<button id="sq-cancel" class="fb-btn">취소</button>',
+        '<button id="sq-save" class="fb-btn fb-btn-primary">저장</button>',
+      '</div>',
+      '</div>'
+    ].join("");
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) overlay.style.display = "none";
+    });
+    _sqModal = overlay;
+    return overlay;
+  }
+
+  function _openSaveQuestionModal(question) {
+    var modal = _getSqModal();
+    var text = modal.querySelector("#sq-text");
+    var cadence = modal.querySelector("#sq-cadence");
+    var note = modal.querySelector("#sq-note");
+    var save = modal.querySelector("#sq-save");
+
+    text.value = (question || "").trim();
+    note.textContent = "";
+    save.disabled = false;
+    save.textContent = "저장";
+    modal.style.display = "flex";
+    text.focus();
+
+    modal.querySelector("#sq-cancel").onclick = function() {
+      modal.style.display = "none";
+    };
+    save.onclick = function() {
+      var body = (text.value || "").trim();
+      if (!body) { note.textContent = "질문을 입력해 주세요."; return; }
+      save.disabled = true;
+      save.textContent = "저장 중…";
+      fetch("/api/saved-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: body, cadence: cadence.value })
+      }).then(function(r) {
+        return r.json().catch(function() { return {}; });
+      }).then(function(data) {
+        // ⚠️ 서버가 거절한 이유(5개 상한 등)를 삼키지 마라 — 저장된 줄 알면 더 나쁘다.
+        if (data && data.ok === false) {
+          note.textContent = data.reason || "저장하지 못했습니다.";
+          save.disabled = false;
+          save.textContent = "저장";
+          return;
+        }
+        note.textContent = "저장했습니다. 다음 근무일 아침 브리핑부터 실립니다.";
+        save.textContent = "저장됨";
+        setTimeout(function() { modal.style.display = "none"; }, 1200);
+      }).catch(function() {
+        note.textContent = "저장하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+        save.disabled = false;
+        save.textContent = "저장";
+      });
+    };
+  }
+
+  function _addSaveQuestionButton(actionsDiv, question) {
+    if (!question || !String(question).trim()) return;   // 질문이 없으면 버튼도 없다
+    var btn = document.createElement("button");
+    btn.className = "msg-action-btn";
+    btn.title = "이 질문 정기적으로 받아보기";
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>';
+    btn.addEventListener("click", function() { _openSaveQuestionModal(question); });
+    actionsDiv.appendChild(btn);
+  }
+
   function _addFeedbackButtons(actionsDiv, messageId) {
     var thumbUp = document.createElement("button");
     thumbUp.className = "msg-action-btn feedback-btn";
@@ -665,6 +758,13 @@
           fetchImpl: window.fetch.bind(window)
         });
         personalBriefingController.load();
+        // 사용자가 직접 누르는 새로고침. ⚠️ 버튼이 없을 수도 있으니 확인하고 건다
+        var briefingRefreshBtn = document.getElementById("personal-briefing-refresh");
+        if (briefingRefreshBtn) {
+          briefingRefreshBtn.addEventListener("click", function () {
+            personalBriefingController.refresh();
+          });
+        }
       }
     } catch (e) {
       window.location.href = "/login";
@@ -1384,6 +1484,9 @@
       // Load feedback data for this conversation
       await _loadFeedbackForConversation(id);
 
+      // 답변 옆 저장 버튼이 담을 것은 **그 답을 부른 질문**이다. 순서대로 훑으며
+      // 직전 사용자 메시지를 들고 간다.
+      var _lastUserContentForSave = "";
       data.messages.forEach(function (m) {
         var msgEl = appendMessage(m.role, m.content, false, m.created_at);
         currentMessages.push({ role: m.role, content: m.content });
@@ -1396,6 +1499,12 @@
             msgEl.appendChild(actions);
           }
           _addFeedbackButtons(actions, m.id);
+          // ⚠️ 새 대화에만 달면 지난 대화를 다시 열었을 때 버튼이 사라진다 —
+          //    반복해서 묻는 질문일수록 지난 대화에서 저장하고 싶어진다.
+          _addSaveQuestionButton(actions, _lastUserContentForSave);
+        }
+        if (m.role === "user") {
+          _lastUserContentForSave = typeof m.content === "string" ? m.content : "";
         }
       });
 
@@ -1722,6 +1831,11 @@
       }
     }
 
+    // ⚠️ 저장용 질문은 **여기서** 잡는다. 바로 아래에서 `@@` 를 떼며 text 를 덮어쓰는데,
+    //    서버(`route_and_execute` → `parse_db_prefix`)는 질문 문자열의 `@@` 를 직접
+    //    해석한다. 떼고 저장하면 "@@보고서 일본 매출" 이 그냥 조회로 되살아난다.
+    var userQuestionForSave = text;
+
     // Parse @@ source selections from input text (최장 일치 — 공백 포함 키 지원)
     var _parsed = parseSourceTokens(text);
     var atAtKeys = _parsed.keys;
@@ -1984,6 +2098,8 @@
       _copyText(text, this);
     });
     actionsDiv.appendChild(copyBtn);
+    // 저장 대상은 방금 보낸 **질문**이다 (답변이 아니다).
+    _addSaveQuestionButton(actionsDiv, userQuestionForSave);
     aiMsgEl.appendChild(actionsDiv);
 
     if (detectedSource && detectedSource !== "direct") {

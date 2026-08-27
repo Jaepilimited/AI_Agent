@@ -5341,11 +5341,23 @@ html.dark .db-autocomplete-dropdown {
       **사용자가 쓴 글이 보이지 않았다** (2026-08-13 사용자 제보).
       테마를 타야 하는 것은 인라인 스타일로 두지 말 것 — 테마 전환에서 조용히 빠진다.
    ============================================================ */
-#feedback-modal-overlay {
+/* ⚠️ id 로만 쓰면 다른 모달이 같은 껍데기를 재사용할 수 없다. 클래스를 함께 받는다 —
+   ⛔ 새 오버레이를 만들면서 배경색을 JS 인라인으로 두지 마라 (라이트 모드에서
+   어두운 글자가 되는 그 사고가 정확히 그렇게 났다). */
+#feedback-modal-overlay,
+.fb-overlay {
   display: none; position: fixed; inset: 0; z-index: 9999;
   background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
   align-items: center; justify-content: center;
 }
+
+/* 저장한 질문 — 주기 선택. 색은 전부 토큰에서 온다. */
+.sq-select {
+  width: 100%; margin-top: 10px; padding: 9px 12px; border-radius: 10px;
+  background: var(--bg-input); color: var(--text);
+  border: 1px solid var(--border); font-size: var(--text-sm);
+}
+.sq-note { font-size: var(--text-xs); color: var(--text-muted); margin-top: 10px; }
 .fb-box {
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: 16px; padding: 24px 28px; width: 420px; max-width: 90vw;
