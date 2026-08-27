@@ -1080,6 +1080,14 @@ class OrchestratorAgent:
                 logger.info("org_structure_answered", path="route_and_execute", query=query[:100])
                 return {"source": "direct", "answer": _org_answer}
 
+            # 식별번호는 검색할 것이 없다 — 같은 질문이 8명에게서 5~11초씩 걸렸다
+            # (붐따 #154). 결정적으로 답하는 것은 0초다.
+            from app.core.company_facts import answer as _company_answer
+            _fact = _company_answer(query)
+            if _fact:
+                logger.info("company_facts_answered", path="route_and_execute", query=query[:100])
+                return {"source": "direct", "answer": _fact}
+
         if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
             logger.info("fi_access_denied", path="route_and_execute", query=query[:100])
             return {"source": "bigquery", "answer": FI_ACCESS_DENIED_MESSAGE}
@@ -1317,6 +1325,15 @@ class OrchestratorAgent:
                 logger.info("org_structure_answered", path="route_and_stream", query=query[:100])
                 yield ("source", "direct")
                 yield ("done", _org_answer)
+                return
+
+            # 비스트리밍과 같은 관문 — 한쪽만 달면 경로에 따라 답이 갈린다.
+            from app.core.company_facts import answer as _company_answer
+            _fact = _company_answer(query)
+            if _fact:
+                logger.info("company_facts_answered", path="route_and_stream", query=query[:100])
+                yield ("source", "direct")
+                yield ("done", _fact)
                 return
 
         if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
