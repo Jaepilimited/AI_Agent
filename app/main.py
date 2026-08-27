@@ -222,7 +222,11 @@ def create_app() -> FastAPI:
             # 정의서 → BigQuery 컬럼 설명 (지식맵 03:00 뒤, 전성분 04:00 앞)
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
-            _scheduler.add_job(_ingredient_sync_job, "cron", hour=4, minute=0, id="ingredient_sync_daily")
+            # ⚠️ 04:00 에 실패하면 **다음 시도가 24시간 뒤**라 성분 데이터가 하루 낡는다.
+            #    실제로 2026-08-26·27 이틀 연속 구글 쪽 장애로 건너뛰었다. 06:30 에
+            #    한 번 더 걸되, 그날 이미 성공했으면 잡 안에서 건너뛴다.
+            _scheduler.add_job(_ingredient_sync_job, "cron", hour="4,6", minute=0,
+                               id="ingredient_sync_daily")
             # ⛔ 시트는 **오전 10시경**에 갱신되고 안내문엔 "오후 2시 전후" 라고 적혀 있다.
             #    처음에 04:10 에 걸었다가 **매일 전날 데이터를 읽고 있었다** (2026-08-25).
             #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돈다.
@@ -605,6 +609,28 @@ async def _quality_snapshot_job():
         logger.error("quality_snapshot_failed", error=str(e))
 
 
+def _ingredients_loaded_today() -> bool:
+    """오늘 성분 적재가 이미 성공했는가 (`job_runs` 기준).
+
+    ⚠️ 테이블 행 수로 판정하지 않는다 — 어제 것이 남아 있으면 오늘 성공한 것처럼
+       보인다. "할 일이 없어서 안 돈 것" 과 "죽어서 못 돈 것" 을 실행 기록으로
+       가르는 것이 이 프로젝트의 규칙이다.
+    """
+    try:
+        from app.db.mariadb import fetch_one
+
+        row = fetch_one(
+            "SELECT COUNT(*) n FROM job_runs WHERE job_id = %s AND ok = 1 "
+            "AND DATE(started_at) = CURDATE()",
+            ("ingredient_sync_daily",),
+        ) or {}
+        return int(row.get("n") or 0) > 0
+    except Exception as e:
+        # ⚠️ 판정을 못 하면 **돌린다.** 건너뛰는 쪽으로 실패하면 그날이 빈다
+        logger.warning("ingredient_sync_guard_failed", error=str(e)[:160])
+        return False
+
+
 async def _ingredient_sync_job():
     """매일 04:00: 제품 전성분 스프레드시트 → MariaDB 적재.
 
@@ -612,6 +638,13 @@ async def _ingredient_sync_job():
     실제 전성분 데이터로 답하기 위한 적재다. Sheets + BigQuery 를 호출한다.
     """
     from app.core.self_check import track_job
+
+    # ⛔ 오늘 이미 성공했으면 돌지 않는다. 두 번째 실행은 **실패를 메우려는 것**이지
+    #    두 번 적재하려는 것이 아니다 — 성공한 날까지 매번 구글을 두 번 부르면
+    #    없던 실패를 만들 여지만 늘린다.
+    if await asyncio.to_thread(_ingredients_loaded_today):
+        logger.info("ingredient_sync_skipped", reason="already_ok_today")
+        return
     try:
         with track_job("ingredient_sync_daily") as jr:
             from app.core.ingredients import sync_ingredients

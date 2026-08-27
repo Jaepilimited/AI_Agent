@@ -307,41 +307,55 @@ def _check_quality_snapshot_fresh() -> CheckResult:
 #   정상일  8/10 2건 · 8/11 26건 · 8/12 4건
 #   사고중  하루 약 5,300건 (8/13~8/24)
 # 50 이면 가장 바빴던 정상일의 2배, 사고의 1/100 — 사이가 넓어 오탐도 미탐도 어렵다.
-_RESTART_LOOP_DAILY_LIMIT = 50
+#: 그 시간대를 "재시작이 있었다" 로 칠 최소 횟수. 1~2회는 배포·수동 재기동이다.
+_RESTART_LOOP_HOURLY_MIN = 3
+#: 최근 12시간 중 이만큼의 시간대에서 재시작이 이어지면 사람 손으로는 설명되지 않는다.
+_RESTART_LOOP_BUSY_HOURS = 8
 
 
 def _check_restart_loop() -> CheckResult:
-    """앱이 재시작을 반복하고 있지 않은가 — `llm_usage` 로 판정한다.
+    """앱이 재시작을 **반복**하고 있지 않은가 — `llm_usage` 로 판정한다.
 
     `main._warmup_llm_clients()` 가 기동할 때마다 Gemini·Claude 에 `"hi"` 를 한 번씩
-    보낸다. 그래서 **입력 토큰이 극히 작은 호출 수 = 재시작 횟수**다
-    (실측: Claude 쪽은 정확히 8토큰, 55,949건이 전부 이것이었다).
+    보낸다. 그래서 **입력 토큰이 극히 작은 호출 수 = 재시작 횟수**다.
 
     ⛔ 이 검사를 만든 이유 — 2026-08-13~24, PM2 밖 고아 프로세스가 3000/3001 을
-       점유해 PM2 프로세스가 **56,833회** 재시작했다. 그런데 고아가 계속 200 을
-       응답해서 **화면은 멀쩡했고**, 워치독은 자기 부팅 유예 규칙에 갇혀 11일간
-       "부팅 유예 구간"만 적었다. 아무도 몰랐다.
+       점유해 PM2 프로세스가 **56,833회** 재시작했다. 고아가 계속 200 을 응답해서
+       **화면은 멀쩡했고** 아무도 몰랐다.
 
-    ⚠️ pm2 상태는 그 서버 안에서만 보인다. 반면 `llm_usage` 는 DB 에 남으므로
-       **어느 서버에서 돌든 여기서 관측된다** — 그래서 pm2 를 직접 보지 않는다.
+    ⛔ **하루 총량으로 재지 않는다** (2026-08-27 변경). 배포가 많은 날이면 그것만으로
+       상한을 넘는다 — 실제로 개발 이틀에 24시간 55회가 찍혀 경보가 울렸는데,
+       시간대를 보니 **업무 시간(08~16시)에만 몰려 있고 밤새 0회**였다. 배포다.
+       할 일이 없는데 울리는 알림은 곧 무시당한다 (이 파일이 스스로 세운 규칙이다).
+
+    ⚠️ 크래시 루프와 배포를 가르는 것은 **양이 아니라 끈질김**이다. 배포는 사람이
+       일하는 동안 몰렸다 그친다. 루프는 쉬지 않는다 (예전 사고는 11일간 시간당 9회).
+       그래서 **재시작이 있었던 시간대의 수**를 본다 — 최근 12시간 중 8시간 이상에서
+       재시작이 관측되면 사람이 붙어 있는 배포로는 설명되지 않는다.
     """
     try:
-        row = fetch_one(
-            "SELECT COUNT(*) c FROM llm_usage "
+        # ⛔ `DATE_FORMAT(ts, '%Y-%m-%d %H')` 을 쓰지 마라 — pymysql 이 `%` 를 포맷
+        #    지시자로 읽어 터진다. 그러면 아래 `except` 가 삼켜 **검사가 영원히
+        #    "판정 보류" 로 통과한다** (2026-08-27 실제로 그렇게 넣었다가 잡았다).
+        #    `DATE()`·`HOUR()` 로 나누면 `%` 가 아예 없다.
+        rows = fetch_all(
+            "SELECT DATE(ts) d, HOUR(ts) h, COUNT(*) c FROM llm_usage "
             "WHERE provider = 'claude' AND input_tokens BETWEEN 1 AND 20 "
-            "AND ts >= DATE_SUB(NOW(), INTERVAL 24 HOUR)"
-        )
+            "AND ts >= DATE_SUB(NOW(), INTERVAL 12 HOUR) GROUP BY d, h"
+        ) or []
     except Exception as e:  # 계측 테이블이 아직 없을 수 있다
         return CheckResult(True, f"llm_usage 조회 불가 (판정 보류): {str(e)[:80]}")
-    n = (row or {}).get("c", 0) or 0
-    if n > _RESTART_LOOP_DAILY_LIMIT:
+
+    busy_hours = sum(1 for row in rows if int(row.get("c") or 0) >= _RESTART_LOOP_HOURLY_MIN)
+    total = sum(int(row.get("c") or 0) for row in rows)
+    if busy_hours >= _RESTART_LOOP_BUSY_HOURS:
         return CheckResult(
             False,
-            f"24시간 재시작 {n}회 (허용 {_RESTART_LOOP_DAILY_LIMIT}회) — "
+            f"최근 12시간 중 {busy_hours}시간에서 재시작이 이어졌다 (총 {total}회) — "
             "크래시 루프 의심. 포트를 점유한 비-PM2 프로세스부터 확인할 것 "
             "(pm2 ↺ 카운터 · netstat 포트 소유 PID)",
         )
-    return CheckResult(True, f"24시간 재시작 {n}회")
+    return CheckResult(True, f"최근 12시간 재시작 {total}회 · 이어진 시간대 {busy_hours}")
 
 
 # ---- DB 무결성 ----

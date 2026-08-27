@@ -114,13 +114,19 @@ def _read_sheet() -> list[dict]:
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
     )
     svc = build("sheets", "v4", credentials=creds, cache_discovery=False)
-    rows = (
-        svc.spreadsheets()
-        .values()
-        .get(spreadsheetId=SPREADSHEET_ID,
-             range=f"'{SHEET_TAB}'!A{DATA_START_ROW}:AH400")
-        .execute()
-        .get("values", [])
+    # ⛔ 한 번만 부르면 구글 쪽 일시 장애에 하루치가 통째로 날아간다 —
+    #    2026-08-26 503, 08-27 timeout 으로 **이틀 연속** 건너뛰었다.
+    from app.core.retrying import with_retry
+    rows = with_retry(
+        lambda: (
+            svc.spreadsheets()
+            .values()
+            .get(spreadsheetId=SPREADSHEET_ID,
+                 range=f"'{SHEET_TAB}'!A{DATA_START_ROW}:AH400")
+            .execute()
+            .get("values", [])
+        ),
+        what="ingredients_sheet",
     )
 
     def cell(r, key):

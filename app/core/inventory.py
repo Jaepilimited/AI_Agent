@@ -132,9 +132,16 @@ def _sheets_service():
 
 
 def _fetch(svc, tab: str) -> List[List[Any]]:
-    return (svc.spreadsheets().values()
-            .get(spreadsheetId=SHEET_ID, range="'{}'!{}".format(tab, _RANGES[tab]))
-            .execute().get("values", []))
+    # ⛔ 성분 적재와 같은 노출이다 — 구글 쪽 일시 장애(503·timeout)에 한 번 걸리면
+    #    조회가 통째로 실패한다. 재고는 **조회할 때마다** 부르므로 더 자주 걸린다.
+    from app.core.retrying import with_retry
+    return with_retry(
+        lambda: (svc.spreadsheets().values()
+                 .get(spreadsheetId=SHEET_ID, range="'{}'!{}".format(tab, _RANGES[tab]))
+                 .execute().get("values", [])),
+        what="inventory_sheet:" + tab,
+        attempts=2, first_delay=1.0,   # ⚠️ 사용자가 답을 기다린다 — 짧게 한 번만
+    )
 
 
 def _flat(cell: Any) -> str:

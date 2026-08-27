@@ -173,10 +173,17 @@ def test_self_check_watches_restart_loop_independently():
 
 
 def test_self_check_restart_threshold_separates_normal_from_incident():
-    """임계값은 실측 사이에 있어야 한다 — 정상 최대 26건, 사고 약 5,300건.
+    """⛔ **하루 총량으로는 가를 수 없다** (2026-08-27 확인). "정상 최대 26건" 이라는
+    전제가 틀렸다 — 개발이 몰린 하루에 55건이 찍혔고 상한 50을 넘겨 경보가 울렸다.
+    그 55건은 업무 시간에만 몰려 있고 밤새 0회였다. 배포다.
 
-    위로 붙이면 미탐, 아래로 붙이면 배포 잦은 날 오탐이 난다.
+    가르는 것은 양이 아니라 **끈질김**이다: 배포는 그치고, 루프는 쉬지 않는다.
+    (사고 당시 11일간 시간당 약 9회가 이어졌다.)
     """
-    from app.core.self_check import _RESTART_LOOP_DAILY_LIMIT
+    from app.core.self_check import (_RESTART_LOOP_BUSY_HOURS,
+                                     _RESTART_LOOP_HOURLY_MIN)
 
-    assert 26 < _RESTART_LOOP_DAILY_LIMIT < 500
+    # 12시간 창에서 절반을 훌쩍 넘는 시간대가 이어져야 사고로 본다
+    assert 6 <= _RESTART_LOOP_BUSY_HOURS <= 12
+    # 1~2회는 배포·수동 재기동이다 — 그 시간대를 "이어졌다" 로 세면 안 된다
+    assert _RESTART_LOOP_HOURLY_MIN >= 3
