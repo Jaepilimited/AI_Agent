@@ -792,6 +792,32 @@ def _check_golden_regression() -> CheckResult:
 _FEEDBACK_BACKLOG_LIMIT = 5
 
 
+def _check_fixed_bugs_have_a_regression() -> CheckResult:
+    """고쳤다고 닫은 붐따가 **회귀로 지켜지고 있는가**.
+
+    ⛔ 실측(2026-08-27): 👎 74건 중 골든셋에 반영된 것이 **0건**이었다. 처리 완료로
+       닫혔는데 골든에 없는 것이 40건 — **고친 40가지가 재발해도 아무도 모른다.**
+       CLAUDE.md 에 "규칙을 바꿨으면 골든 문항도 같이 추가한다" 고 적혀 있지만
+       손으로 하는 일은 결국 안 된다. 빠진 것을 매일 보이게 만든다.
+
+    ⚠️ 오래된 것까지 매일 세면 첫날부터 40건이 떠서 곧 무시당한다 — **최근에 처리한
+       것**만 경보로 본다. 밀린 것은 문구에 수만 적는다.
+    ⚠️ 코멘트 없는 👎 는 뺀다. 무엇이 틀렸는지 모르면 기대 문구를 쓸 수 없다.
+    """
+    try:
+        from app.core.failure_learning import ALERT_AT, status
+
+        st = status()
+    except Exception as e:
+        return CheckResult(True, f"판정 보류: {str(e)[:80]}")
+
+    detail = (f"최근 {st['window_days']}일에 고쳤는데 회귀가 없는 붐따 {st['recent']}건 "
+              f"(누적 {st['total']}건)")
+    if st["recent"] >= ALERT_AT:
+        sample = " · ".join(st["questions"][:3])
+        return CheckResult(False, detail + (f" — 예: {sample}" if sample else ""))
+    return CheckResult(True, detail)
+
 def _check_feedback_backlog() -> CheckResult:
     """👎 중 **아직 처리하지 않은 것**이 쌓이지 않았는가.
 
@@ -933,6 +959,9 @@ CHECKS: list[Check] = [
     # ⚠️ id 를 `feedback_spike` 에서 바꿨다 (2026-08-26). 재는 대상이 달라졌는데
     #    이름만 남으면 다음 사람이 "급증" 으로 읽는다 — Admin 추세 그래프는
     #    옛 id 에서 끊기고 새 id 로 다시 쌓인다.
+    # ⛔ 고친 것이 재발해도 모르면 고친 것이 아니다 (2026-08-27 추가).
+    Check("fixed_bugs_regression", "quality", SEV_WARNING,
+          "고친 붐따가 골든셋으로 지켜지는가", _check_fixed_bugs_have_a_regression),
     Check("feedback_backlog", "quality", SEV_WARNING,
           "👎 미처리가 쌓이지 않았는가", _check_feedback_backlog),
     Check("golden_regression", "quality", SEV_WARNING,
