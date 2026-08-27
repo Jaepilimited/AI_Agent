@@ -974,6 +974,13 @@ CHECKS: list[Check] = [
           "자동 주입 컬럼의 값 목록을 프롬프트에 손으로 다시 나열하지 않았는가 "
           "(낡은 목록을 LLM 이 믿고 0건을 '데이터 없음'으로 오답한 사고)",
           _static("static_value_list_dupes")),
+    # ⚠️ 프롬프트만 보면 절반이다 — 같은 목록이 파이썬 소스에도 손으로 적혀 있었고
+    #    (0건 진단 힌트) **둘 다 낡아 있었다**: 없는 값(남미·중미·북아프리카)을
+    #    "유효 값" 이라 알려주고 있는 값(중남미)은 빠져 있었다 (2026-08-27 실측).
+    Check("static_value_list_src", "static", SEV_WARNING,
+          "LLM 에 주는 값 목록을 파이썬 소스에 손으로 적어 두지 않았는가 "
+          "(프롬프트 사본만 고치고 소스 사본이 남아 낡은 채로 돌던 사고)",
+          _static("static_value_list_src")),
     Check("static_css_vars", "static", SEV_WARNING,
           "정의되지 않은 CSS 변수를 참조하지 않는가 (폴백이 조용히 먹는다)",
           _static("static_css_vars")),

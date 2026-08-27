@@ -1842,6 +1842,45 @@ def _all_countries() -> list:
         _COUNTRY_VALUES = []
     return _COUNTRY_VALUES
 
+def _continent_hint(column: str) -> str:
+    """대륙 유효 값 힌트 — ⛔ **손으로 적지 않는다. 매일 실측된 목록을 그대로 준다.**
+
+    ⛔ 2026-08-27 실측: 여기에 손으로 적어 둔 목록 두 벌이 **둘 다 낡아 있었다.**
+
+        Continent1 적어둔 것: … 남미 … 중미      실제: … 중남미 …
+        Continent2 적어둔 것: … 북아프리카 …      실제: (없다)
+
+       즉 **없는 값을 "유효 값"이라 알려주고, 있는 값은 빼고** 있었다. 이 힌트는
+       0건일 때 LLM 에게 주는 목록이라, 그대로 2026-08-24 오답이 재현되는 자리다 —
+       그때도 프롬프트의 손 목록(남미·중미)을 믿고 0건을 낸 뒤 **그 목록을 근거로
+       인용하며** "값은 정상 존재하므로 데이터가 없는 것" 이라고 단정했다.
+       조회도 설명도 틀렸는데 둘 다 자신 있었다.
+
+    ⚠️ CLAUDE.md 가 이미 못 박아 둔 규칙이다: "여기에 값을 나열하지 마라. 프롬프트에도
+       마찬가지다. 손으로 적으면 반드시 낡고, 낡으면 **에러가 아니라 0건**이다."
+       그런데 프롬프트만 고치고 이 힌트는 남아 있었다 — 사본은 언제나 한쪽만 고쳐진다.
+
+    ⚠️ 실측 목록을 못 얻으면 **아무 목록도 주지 않는다.** 추측한 목록을 주는 것보다
+       "모른다"가 낫다 — 목록이 있으면 LLM 은 그것을 근거로 단정하기 때문이다.
+    """
+    from app.core.value_lists import values
+
+    vals = values(column)
+    if not vals:
+        return (f"{column} 유효 값을 지금 확인할 수 없다. ⛔ 목록을 추측하지 말고, "
+                f"특정 값이 '존재하지 않는다'고 단정하지도 마라.")
+    line = f"{column} 유효 값: " + ", ".join(vals)
+    if column == "Continent2":
+        # 광역 대륙을 세부 권역 컬럼에서 찾는 오류가 잦다 (유럽 → 0건, 2026-08 실제 발생).
+        # ⚠️ 어느 값이 없는지도 **실측 목록으로 판정**한다 — 이것마저 손으로 적으면
+        #    같은 결함이 한 줄 아래에서 되살아난다.
+        absent = [v for v in ("유럽", "아시아", "동유럽") if v not in vals]
+        if absent:
+            line += (" (⚠️ " + "·".join(absent) + "은 Continent2에 없다. "
+                     "광역 대륙은 Continent1을 써야 한다)")
+    return line
+
+
 def _country_hint(sql: str) -> str:
     """0건일 때 국가 값을 **실제 목록과 대조해** 알려준다 (추측하게 두지 않는다)."""
     import re as _re
@@ -2085,17 +2124,9 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # 광역 대륙명을 Continent2에서 찾는 오류가 잦다 (유럽 → 0건, 2026-08 실제 발생).
         # 유효 값을 그대로 넘겨 LLM이 원인을 추측하지 않고 대조로 짚게 한다.
         if "CONTINENT1" in sql_upper:
-            _value_hints.append(
-                "Continent1 유효 값: CIS, 글로벌, 기타, 남미, 북미, 아시아, 아프리카, "
-                "오세아니아, 유럽, 중동, 중미"
-            )
+            _value_hints.append(_continent_hint("Continent1"))
         if "CONTINENT2" in sql_upper:
-            _value_hints.append(
-                "Continent2 유효 값: CIS, 글로벌_B2B, 글로벌_플랫폼, 기타, 남아메리카, 동남아시아, "
-                "동남유럽, 동아시아, 북미, 북아프리카, 북유럽, 서남아시아, 서유럽, 아프리카, "
-                "오세아니아, 중동, 중앙아메리카 "
-                "(⚠️ '유럽'·'아시아'·'동유럽'은 Continent2에 없다. 광역 대륙은 Continent1을 써야 한다)"
-            )
+            _value_hints.append(_continent_hint("Continent2"))
         # ⛔ **유효 값 목록만으로는 추측을 못 막는다.** 국가 힌트를 전체 목록으로 고쳤더니
         #    같은 질문에서 이번엔 거래처명을 의심했다 (2026-08-14). 목록을 붙일 수 없는
         #    컬럼(거래처·제품)이 늘 남기 때문이다. **필터를 하나씩 빼고 실제로 세어**

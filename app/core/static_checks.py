@@ -357,6 +357,60 @@ def prompt_no_handwritten_value_lists() -> Tuple[bool, str]:
     return True, f"손으로 적은 값 목록 없음 ({len(columns)}개 컬럼: {', '.join(columns)})"
 
 
+#: 값 목록을 코드에서 **만들어** 쓴 표시. 이게 있으면 손 목록이 아니다.
+_DERIVED_MARK = ("join(", "values(", ".items()", "format(")
+
+
+def source_no_handwritten_value_lists() -> Tuple[bool, str]:
+    """LLM 에게 주는 값 목록을 **파이썬 소스에** 손으로 적어 두지 않았는가.
+
+    ⛔ 2026-08-27 실측 — 위 `prompt_no_handwritten_value_lists` 가 프롬프트만 보는
+       사이, `sql_agent.py` 의 0건 진단 힌트에 같은 목록이 손으로 적힌 채 남아
+       **둘 다 낡아 있었다**:
+
+           적어둔 Continent1: … 남미 … 중미        실제: … 중남미 …
+           적어둔 Continent2: … 북아프리카 …        실제: (없다)
+
+       **없는 값을 "유효 값" 이라 알려주고 있는 값은 빼고** 있었다. 이 힌트는 하필
+       0건일 때만 나가므로, 2026-08-24 오답("남미·중미는 정상 존재하므로 데이터가
+       없는 것")이 그대로 재현되는 자리였다.
+
+    ⚠️ 사본을 하나만 지워서 살아남은 것이 이 결함의 본질이다. 그때 프롬프트만
+       고치고 소스는 그대로 뒀다 — 그래서 검사도 두 곳을 함께 봐야 한다.
+
+    판정: 문자열에 `유효 값` 이라 적어 놓고 그 자리에서 쉼표로 값을 늘어놓았는데,
+    그 목록을 코드로 만든 흔적(`join(`·`values(` 등)이 근처에 없으면 손 목록이다.
+    """
+    offenders: List[str] = []
+    scanned = 0
+    for base, _dirs, files in os.walk(os.path.join(ROOT, "app")):
+        if "__pycache__" in base:
+            continue
+        for fn in files:
+            if not fn.endswith(".py"):
+                continue
+            path = os.path.join(base, fn)
+            rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+            scanned += 1
+            with io.open(path, encoding="utf-8", errors="replace") as fh:
+                lines = fh.read().split("\n")
+            for lineno, line in enumerate(lines, 1):
+                if "유효 값" not in line or line.lstrip().startswith("#"):
+                    continue
+                # 값을 코드로 만들었는지는 이어지는 몇 줄까지 본다 (문자열 + join 형태)
+                window = "\n".join(lines[lineno - 1:lineno + 3])
+                if any(mark in window for mark in _DERIVED_MARK):
+                    continue
+                tail = line.split("유효 값", 1)[1]
+                if tail.count(",") >= _ENUMERATION_MIN:
+                    offenders.append(f"{rel}:{lineno}")
+    if offenders:
+        return False, (
+            f"소스에 손으로 적은 값 목록 {len(offenders)}건: " + ", ".join(offenders[:4])
+            + " — 목록은 value_lists.values() 처럼 실측에서 와야 한다")
+    return True, f"소스에 손으로 적은 값 목록 없음 (파이썬 {scanned}개 확인)"
+
+
 # ── 9) 흐름 선언 ↔ 코드 일치 ────────────────────────────────────────────────
 
 def classifier_return_routes() -> set:
@@ -799,6 +853,8 @@ ALL = [
     ("static_assets", asset_sanity, "프론트 자산 온전성"),
     ("static_value_list_dupes", prompt_no_handwritten_value_lists,
      "자동 주입 컬럼 값을 손으로 다시 나열했는가"),
+    ("static_value_list_src", source_no_handwritten_value_lists,
+     "소스에 손으로 적은 값 목록"),
     ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
     ("static_at_sources", at_source_parity, "@@ 데이터소스 프론트/서버 일치"),
     ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),
