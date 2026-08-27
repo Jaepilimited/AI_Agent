@@ -545,3 +545,41 @@ def test_the_connect_prompt_appears_once_not_twice(page):
     assert page.locator(".personal-briefing-grid").is_hidden() is True
     assert page.locator(".personal-briefing-connect").count() == 0
     assert page.locator(".briefing-doc-action.primary").count() == 1
+
+
+def test_every_section_rule_is_the_same_line(page):
+    """⛔ 절 머리글의 **밑줄**이 이 문서의 구조다 — 길이나 높이가 다르면 격자가 깨진다.
+
+    2026-08-27 사용자가 세 번 "조화롭지 않다" 고 한 것의 정체였다. 실측으로 셋이 나왔다:
+      · 열 폭 1.4:1 → 같은 행의 두 선이 559px / 399px
+      · 메일 절 스크롤바 8px → 같은 열 안에서 559 / 551 (오른쪽 끝이 들쭉날쭉)
+      · `안읽음` 배지의 위아래 1px 패딩 → 메일 밑줄만 2px 아래
+    셋 다 에러가 아니라 **눈에만 보이는** 결함이라 테스트가 없으면 다시 들어온다.
+    """
+    page.set_viewport_size({"width": 1400, "height": 1400})
+    _mount(page, _payload(_document()))
+
+    rules = page.locator(".briefing-doc-cell .briefing-doc-section-title")
+    boxes = [rules.nth(i).bounding_box() for i in range(rules.count())]
+    assert len(boxes) >= 4
+
+    widths = {round(b["width"]) for b in boxes}
+    assert len(widths) == 1, f"밑줄 길이가 제각각이다: {sorted(widths)}"
+
+    def rule_y(side):
+        loc = page.locator(f".briefing-doc-cell.is-{side} .briefing-doc-section-title")
+        return [round(loc.nth(i).bounding_box()["y"] + loc.nth(i).bounding_box()["height"])
+                for i in range(loc.count())]
+
+    for row, (lt, rt) in enumerate(zip(rule_y("left"), rule_y("right")), start=1):
+        assert abs(lt - rt) <= 1, f"{row}행 밑줄이 어긋났다: 왼쪽 {lt} vs 오른쪽 {rt}"
+
+
+def test_the_two_columns_are_equal_width(page):
+    """⛔ 폭이 다르면 같은 행의 두 밑줄 길이가 달라진다 — 그것이 부조화의 첫 원인이었다."""
+    page.set_viewport_size({"width": 1400, "height": 1400})
+    _mount(page, _payload(_document()))
+
+    left = page.locator(".briefing-doc-cell.is-left").first.bounding_box()
+    right = page.locator(".briefing-doc-cell.is-right").first.bounding_box()
+    assert abs(left["width"] - right["width"]) <= 1, (left["width"], right["width"])

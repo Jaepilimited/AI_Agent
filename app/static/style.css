@@ -4347,7 +4347,13 @@ html.dark .db-autocomplete-dropdown {
 }
 
 @media (min-width: 1080px) {
-  .briefing-doc-columns { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+  /* ⛔ 폭을 1.4 : 1 로 두지 마라. 이 문서의 구조를 지탱하는 것은 절 머리글의
+     **밑줄**인데, 같은 높이에 길이가 다른 선 두 개(559px / 399px)가 놓이면 격자가
+     깨져 보인다 — 사용자가 "조화롭지 않다" 고 한 것의 정체다 (2026-08-27 실측).
+     폭을 같게 두면 한 행의 두 선이 하나의 띠로 읽힌다.
+     ⚠️ 왼쪽이 80px 좁아져 메일 본문 줄바꿈이 조금 는다. 메일은 자기 스크롤 영역을
+        갖고 있어 감당된다 — 선이 어긋나는 대가보다 싸다. */
+  .briefing-doc-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 
   /* 두 열의 행 머리글을 같은 높이에 세운다. 절마다 열·행을 직접 지정하고,
      `align-items: start` 라 한 행의 두 칸은 같은 지점에서 시작한다.
@@ -4379,6 +4385,17 @@ html.dark .db-autocomplete-dropdown {
    칸 안에서는 머리글을 항상 맨 위에 붙이고, 절 사이 간격은 `row-gap` 이 준다. */
 .briefing-doc-columns > .briefing-doc-cell > .briefing-doc-section-title {
   margin-top: 0;
+}
+
+/* ⛔ 스크롤바 폭이 밑줄 하나만 짧게 만든다. 메일 절은 자기 스크롤 영역이라 머리글이
+   **클라이언트 폭**(칸 폭 − 8px)에 맞춰지고, 옆의 일정 절은 칸 폭 그대로다 —
+   같은 열 안에서 559 / 551 로 오른쪽 끝이 들쭉날쭉해진다 (2026-08-27 실측).
+   모든 칸에 같은 8px 을 예약해 선의 끝을 맞춘다. 스크롤바가 없을 때도 자리를
+   비워 두므로(`scrollbar-gutter: stable`) 메일이 짧아졌다 길어지지 않는다. */
+.briefing-doc-columns > .briefing-doc-cell { padding-right: 8px; }
+.briefing-doc-columns > .briefing-doc-cell.briefing-doc-mail {
+  padding-right: 0;
+  scrollbar-gutter: stable;
 }
 
 .briefing-doc-col { min-width: 0; }
@@ -5566,9 +5583,15 @@ html.dark .db-autocomplete-dropdown {
 }
 
 /* 절 제목 옆 보조 배지 ("안읽음 3") */
+/* ⛔ 배지가 절 머리글의 **줄 높이를 키우면 안 된다.** 위아래 1px 패딩 때문에 배지가
+   18px, 옆 글자는 17px 이라 `메일` 절만 밑줄이 2px 내려갔다 — 같은 행의 두 선이
+   어긋나 보인 마지막 원인이다 (2026-08-27 실측: 메일 670 vs 기한 668).
+   ⚠️ 패딩을 지우면 알약이 답답해진다. 모양은 두고 **음수 마진으로 레이아웃 높이만**
+      상쇄한다. 앞으로 머리글에 무엇을 넣든 이 줄 높이를 넘기지 말 것. */
 .briefing-doc-badge {
   margin-left: auto;
   margin-right: 8px;
+  margin-block: -1px;
   padding: 1px 7px;
   border-radius: 9px;
   background: var(--accent-dim, rgba(232,146,0,.16));
