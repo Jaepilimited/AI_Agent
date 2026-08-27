@@ -459,3 +459,58 @@ def test_saved_questions_job_is_monitored_by_self_check():
     from app.core.self_check import EXPECTED_JOBS
 
     assert "saved_questions_daily" in EXPECTED_JOBS
+
+
+# ── 표로 답한 결과를 사람이 읽을 수 있게 ──────────────────────────────────────
+
+def test_table_answers_collapse_to_lead_sentence_and_row_count():
+    """⛔ 표를 300자로 자르면 파이프 문자 더미가 된다 — 실리지만 읽히지 않는다.
+
+    2026-08-27 프로덕션 실측에서 실제로 이렇게 나갔다:
+        `### 📦 재고 조회 결과 **'센텔라 앰플'** 으로 15개 품목을… | SKU | 품목명 | |---|---|…`
+    반복 질문 상위가 재고·채널별 TOP5·검색 순위라 **대부분 표로 답한다**.
+    쓸모 있는 것은 표 앞 문장 하나뿐이고 전체는 이어보기 링크가 맡는다.
+    """
+    from app.core.work_briefing import summarize_answer
+
+    answer = (
+        "### 📦 재고 조회 결과\n\n"
+        "**'센텔라 앰플'** 으로 15개 품목을 찾았습니다.\n\n"
+        "| SKU | 품목명 | 총 재고 |\n"
+        "|---|---|---:|\n"
+        "| KRSKA022 | 마다가스카르센텔라앰플100ml | 885,075 |\n"
+        "| KRSKA010 | (미니)마다가스카르센텔라앰플30ml | 780,441 |\n"
+    )
+    out = summarize_answer(answer)
+
+    assert "15개 품목을 찾았습니다" in out, "표 앞 문장이 사라졌다"
+    assert "(표 2행)" in out, f"행수를 밝히지 않는다: {out!r}"
+    assert "|" not in out, f"표 조각이 남았다: {out!r}"
+    assert "###" not in out and "**" not in out, "평문 매체에 마크다운 장식이 남았다"
+
+
+def test_sentence_answers_are_left_alone():
+    """⚠️ 문장형 답변까지 건드리지 마라 — 매출·ROAS 답은 지금도 읽힌다."""
+    from app.core.work_briefing import summarize_answer
+
+    plain = "일본 8월 매출은 55.1억으로 전월 대비 12.4% 늘었습니다."
+    assert summarize_answer(plain) == plain
+
+
+def test_table_only_answer_states_the_fact_without_inventing_a_sentence():
+    """⚠️ 앞 문장이 없으면 지어내지 않는다 — 사실만 적는다."""
+    from app.core.work_briefing import summarize_answer
+
+    assert summarize_answer("| A | B |\n|---|---|\n| 1 | 2 |\n") == "(표 1행)"
+    assert summarize_answer("") == ""
+
+
+def test_saved_rows_use_the_summarizer_not_a_raw_slice():
+    """⛔ 화면과 잔디가 **같은 함수**를 쓴다 — 한쪽만 요약하면 매체마다 다른 말을 한다."""
+    import inspect
+
+    from app.core import work_briefing
+
+    src = inspect.getsource(work_briefing._saved_rows)
+    assert "summarize_answer(" in src
+    assert '_clean(row.get("last_answer"' not in src

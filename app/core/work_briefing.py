@@ -472,6 +472,59 @@ def _cap_urgent(document: dict[str, Any]) -> int:
     return min(len(urgent), MAX_URGENT)
 
 
+#: 마크다운 표의 줄. 구분선(`|---|---|`)과 데이터 줄을 함께 잡는다.
+_TABLE_LINE = re.compile(r"^\s*\|.*\|\s*$")
+_TABLE_DIVIDER = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
+#: 평문 매체에서 의미 없는 마크다운 장식 — 잔디는 렌더하지 않는다.
+_MD_NOISE = re.compile(r"(^#{1,6}\s*)|(\*\*)|(__)|(`)", re.MULTILINE)
+
+
+def summarize_answer(text: str, limit: int = 300) -> str:
+    """표로 답한 결과를 사람이 읽을 한 줄로 줄인다.
+
+    ⛔ **표를 그냥 잘라 싣지 마라.** 300자로 자른 마크다운 표는 파이프 문자 더미다 —
+       실리기는 하는데 읽히지 않는다 (2026-08-27 프로덕션 실측):
+
+           ### 📦 재고 조회 결과 **'센텔라 앰플'** 으로 15개 품목을 찾았습니다. | SKU |
+           품목명 | 총 재고 | 창고별 | |---|---|---:|---| | KRSKA022 | (KR)스킨1004_마다…
+
+       쓸모 있는 것은 표 **앞 문장** 하나뿐이다. 나머지는 이어보기 링크가 맡는다.
+       반복 질문 상위가 재고·채널별 TOP5·검색 순위라 **대부분 표로 답한다** — 이걸
+       그대로 두면 저장 질문 절 전체가 읽히지 않는다.
+
+    ⚠️ 표가 없으면 지금까지처럼 앞부분을 그대로 쓴다. 문장형 답변까지 건드리지 않는다.
+    """
+    raw = str(text or "")
+    if not raw.strip():
+        return ""
+
+    lines = raw.splitlines()
+    lead_lines: list[str] = []
+    data_rows = 0
+    seen_table = False
+    for line in lines:
+        if _TABLE_LINE.match(line):
+            seen_table = True
+            if not _TABLE_DIVIDER.match(line):
+                data_rows += 1
+            continue
+        if not seen_table:
+            lead_lines.append(line)
+
+    if not seen_table:
+        return _clean(raw, limit)
+
+    # 표의 첫 줄은 머리글이라 데이터 행이 아니다.
+    data_rows = max(data_rows - 1, 0)
+    lead = _MD_NOISE.sub("", " ".join(lead_lines)).strip()
+    lead = re.sub(r"\s{2,}", " ", lead)
+    note = f"(표 {data_rows}행)" if data_rows else "(표)"
+    if not lead:
+        # ⚠️ 앞 문장이 없으면 표만 있는 답이다 — 없는 문장을 지어내지 않고 사실만 적는다.
+        return note
+    return _clean(f"{lead} {note}", limit)
+
+
 def _saved_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, str]]:
     """저장 질문을 화면·잔디가 함께 쓰는 짧은 문서 행으로 바꾼다."""
 
@@ -488,7 +541,8 @@ def _saved_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, str]]:
         result.append({
             "question": question,
             # ⚠️ 브리핑은 훑어보는 문서다. 답변 전문을 싣지 않아야 매일 읽을 길이를 지킨다.
-            "answer": _clean(row.get("last_answer", ""), 300),
+            #    표는 잘라 봐야 읽히지 않으므로 앞 문장 + 행수로 줄인다 (`summarize_answer`).
+            "answer": summarize_answer(row.get("last_answer", ""), 300),
             "last_run_at": ran_at_text,
             "link": str(row.get("link") or ""),
         })
