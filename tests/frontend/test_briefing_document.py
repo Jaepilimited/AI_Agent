@@ -372,29 +372,57 @@ def test_the_body_splits_into_two_columns_on_a_wide_screen(page):
     """세로로만 쌓으면 넓은 화면에서 오른쪽이 통째로 비고 스크롤만 길어진다."""
     page.set_viewport_size({"width": 1400, "height": 1200})
     _mount(page, _payload(_document()))
-    columns = page.locator(".briefing-doc-col")
-    assert columns.count() == 2
 
-    left = columns.nth(0).locator(".briefing-doc-section-name").all_inner_texts()
-    right = columns.nth(1).locator(".briefing-doc-section-name").all_inner_texts()
+    left = page.locator(".briefing-doc-cell.is-left .briefing-doc-section-name")
+    right = page.locator(".briefing-doc-cell.is-right .briefing-doc-section-name")
     # 왼쪽은 오늘 '일어나는' 것, 오른쪽은 '해야 할' 것과 참고.
-    assert left == ["일정", "메일"]
-    assert right == ["할 일", "기한", "지표"]
+    assert left.all_inner_texts() == ["일정", "메일"]
+    assert right.all_inner_texts() == ["할 일", "기한", "지표"]
 
-    boxes = [columns.nth(i).bounding_box() for i in range(2)]
-    assert boxes[1]["x"] > boxes[0]["x"] + boxes[0]["width"] / 2, boxes
+    lx = page.locator(".briefing-doc-cell.is-left").first.bounding_box()
+    rx = page.locator(".briefing-doc-cell.is-right").first.bounding_box()
+    assert rx["x"] > lx["x"] + lx["width"] / 2, (lx, rx)
+
+
+def test_rows_line_up_across_the_two_columns(page):
+    """⛔ 열마다 따로 쌓으면 1행만 맞고 2행부터 어긋난다 — 오른쪽 절이 짧아 먼저 올라간다.
+
+    2026-08-27 사용자 지적("행 길이가 같아야 함"). 측정으로 확인한 어긋남:
+        1행 일정 top=424 / 할 일 top=424  (맞음)
+        2행 메일 top=508 / 기한 top=420  (어긋남)
+    각 절에 행 번호를 직접 주고 `align-items: start` 로 같은 지점에서 시작시킨다.
+    """
+    page.set_viewport_size({"width": 1400, "height": 1400})
+    _mount(page, _payload(_document()))
+
+    def tops(side):
+        cells = page.locator(f".briefing-doc-cell.is-{side}")
+        return [round(cells.nth(i).bounding_box()["y"]) for i in range(cells.count())]
+
+    left_tops, right_tops = tops("left"), tops("right")
+    assert left_tops and right_tops
+    for row, (lt, rt) in enumerate(zip(left_tops, right_tops), start=1):
+        assert abs(lt - rt) <= 1, f"{row}행이 어긋났다: 왼쪽 {lt} vs 오른쪽 {rt}"
 
 
 def test_the_columns_stack_on_a_narrow_screen(page):
-    """좁아지면 한 열로 접히고, 그때 순서는 DOM 순서 그대로여야 읽힌다."""
-    page.set_viewport_size({"width": 720, "height": 1200})
-    _mount(page, _payload(_document()))
-    boxes = [page.locator(".briefing-doc-col").nth(i).bounding_box() for i in range(2)]
-    assert abs(boxes[0]["x"] - boxes[1]["x"]) < 1, boxes
-    assert boxes[1]["y"] > boxes[0]["y"], boxes
+    """좁아지면 한 열로 접히고, 그때 순서는 DOM 순서 그대로여야 읽힌다.
 
-    names = page.locator(".briefing-doc-section-name").all_inner_texts()
-    assert names == ["일정", "메일", "할 일", "기한", "지표"]
+    ⚠️ DOM 순서는 **왼쪽 전부 → 오른쪽 전부** 다. 행 정렬 때문에 섞어 두면
+       좁은 화면에서 일정 → 할 일 → 메일 순으로 읽혀 흐름이 깨진다.
+    """
+    page.set_viewport_size({"width": 720, "height": 1400})
+    _mount(page, _payload(_document()))
+
+    cells = page.locator(".briefing-doc-cell")
+    xs = [round(cells.nth(i).bounding_box()["x"]) for i in range(cells.count())]
+    assert len(set(xs)) == 1, f"좁은 화면인데 한 줄로 안 접혔다: {xs}"
+
+    names = page.locator(".briefing-doc-cell .briefing-doc-section-name").all_inner_texts()
+    assert names == ["일정", "메일", "할 일", "기한", "지표"], names
+
+    ys = [round(cells.nth(i).bounding_box()["y"]) for i in range(cells.count())]
+    assert ys == sorted(ys), f"한 줄로 접혔는데 순서가 뒤섞였다: {ys}"
 
 
 def test_upcoming_events_show_who_is_coming(page):

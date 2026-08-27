@@ -4348,11 +4348,36 @@ html.dark .db-autocomplete-dropdown {
 
 @media (min-width: 1080px) {
   .briefing-doc-columns { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+
+  /* 두 열의 행 머리글을 같은 높이에 세운다. 절마다 열·행을 직접 지정하고,
+     `align-items: start` 라 한 행의 두 칸은 같은 지점에서 시작한다.
+     ⛔ 여백을 `+ 형제` 규칙으로 주지 마라 — 그리드에서는 그 여백이 **칸 안에** 붙어
+        행이 어긋난다. 행 간격은 `row-gap` 이 준다. */
+  .briefing-doc-columns.is-aligned > .briefing-doc-cell.is-left {
+    grid-column: 1;
+    grid-row: var(--doc-row);
+  }
+  .briefing-doc-columns.is-aligned > .briefing-doc-cell.is-right {
+    grid-column: 2;
+    grid-row: var(--doc-row);
+  }
+  .briefing-doc-columns.is-aligned > .briefing-doc-cell { margin-top: 0; }
 }
+
+.briefing-doc-columns { row-gap: 20px; }
+
+/* ⚠️ 행 번호는 JS(`placeInGrid`)가 넣는다. 기본값을 여기 선언해 두는 이유는 둘이다 —
+   ① 스크립트가 못 돌면 `auto` 로 떨어져 자연 순서대로 쌓인다(깨지지 않는다)
+   ② 정적 검사가 "정의되지 않은 변수" 로 잡지 않는다. 없는 변수는 에러가 아니라
+      폴백이라, 오타를 아무도 못 잡는 것이 이 저장소의 단골 사고다. */
+.briefing-doc-cell { --doc-row: auto; }
 
 .briefing-doc-col { min-width: 0; }
 
+/* ⚠️ 좁은 화면(배치 미적용)에서는 절이 DOM 순서대로 한 줄로 쌓인다 —
+   간격은 위의 `row-gap` 이 준다. */
 .briefing-doc-section + .briefing-doc-section { margin-top: 20px; }
+.briefing-doc-columns > .briefing-doc-section + .briefing-doc-section { margin-top: 0; }
 
 .briefing-doc-section-title {
   display: flex;

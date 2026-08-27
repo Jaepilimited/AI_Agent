@@ -413,6 +413,27 @@
     section.appendChild(connect);
   }
 
+  /* 임시 열 두 개에 담긴 절을 하나의 그리드로 옮겨 **행을 맞춘다.**
+     각 절에 열(1|2)과 행 번호를 직접 지정한다 — `align-items: start` 라서 한 행의
+     두 칸은 같은 높이에서 시작하고, 행 높이는 둘 중 큰 쪽이 정한다.
+     ⚠️ 왼쪽이 먼저 끝나면 남은 오른쪽 절은 자기 행을 계속 이어 간다. */
+  function placeInGrid(columns, left, right) {
+    var leftItems = Array.prototype.slice.call(left.children);
+    var rightItems = Array.prototype.slice.call(right.children);
+    var rows = Math.max(leftItems.length, rightItems.length);
+
+    columns.classList.add("is-aligned");
+    function place(node, side, row) {
+      node.classList.add("briefing-doc-cell", "is-" + side);
+      node.style.setProperty("--doc-row", String(row));
+      columns.appendChild(node);
+    }
+    // DOM 순서는 왼쪽 → 오른쪽. 행 정렬은 CSS 의 grid-row 가 맡는다.
+    leftItems.forEach(function (node, i) { place(node, "left", i + 1); });
+    rightItems.forEach(function (node, i) { place(node, "right", i + 1); });
+    return rows;
+  }
+
   function renderBusiness(body, data, options) {
     var rows = (data.business && data.business.items) || [];
     var section = docSection(body, "지표", null);
@@ -648,8 +669,13 @@
     renderDeadlines(right, doc, options);
     renderSaved(right, doc, options);
     renderBusiness(right, data, options);
-    columns.appendChild(left);
-    columns.appendChild(right);
+    /* 두 열의 **행 머리글을 같은 높이에 세운다** (2026-08-27 사용자 지시).
+       예전엔 열마다 따로 쌓아서 1행(일정/할 일)만 맞고 2행부터 어긋났다 —
+       오른쪽 절이 짧아 먼저 올라가기 때문이다.
+       ⚠️ DOM 순서는 **왼쪽 전부 → 오른쪽 전부** 로 둔다. 좁은 화면에서는 배치를 걸지
+          않아 DOM 순서대로 한 줄로 쌓이는데, 섞어 두면 일정 → 할 일 → 메일 순으로
+          읽혀 흐름이 깨진다. 넓은 화면의 행 정렬은 grid-row 가 따로 잡는다. */
+    placeInGrid(columns, left, right);
     body.appendChild(columns);
     // 환율만 두 열 밖에 둔다 — 통화가 가로로 흐르려면 전체 폭이 필요하다.
     renderFx(body, data);
