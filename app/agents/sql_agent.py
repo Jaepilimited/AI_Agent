@@ -144,31 +144,10 @@ def _localize_country_literals(sql: str) -> str:
 
 
 # ── 팀명 ↔ Team_NEW 코드 (2026-08-11 공식 팀명 확정) ─────────────────────────
+# 회사 구조 질문과 SQL 교정이 같은 원본을 보도록 core의 조직 상수를 재사용한다.
 # 데이터에는 코드(B2B1·JBT…)만 들어 있는데 사내에서는 한글 팀명을 쓴다.
-# 둘 다 통해야 하므로 (1) 질문·SQL 의 한글명은 코드로 교정하고,
-# (2) 답변 표시는 한글명을 쓴다. 국가 리터럴과 같은 이유로 프롬프트만으로는
-# 보증되지 않아 생성 후 결정적으로 교정한다.
-TEAM_CODE2KR = {
-    "B2B1": "영업1팀", "B2B2": "영업2팀",
-    # DT1·DT2 는 팀이고 각각 유통1본부·유통2본부 소속이다. 조직도에는 그 아래
-    # 리테일_UMMA·리테일1~3 / 뉴비즈1·뉴비즈2·코스트코 같은 이름이 더 있지만
-    # Team_NEW 에는 없다 — 그 단위로는 나눌 수 없다 (2026-08-11 조직도 대조).
-    "DT1": "유통1팀", "DT2": "유통2팀",
-    "EAST1": "동남아시아1팀", "EAST2": "동남아시아2팀",
-    "WEST_MKT": "서구권마케팅팀", "WEST_Ecomm": "서구권이커머스팀",
-    "CBT": "중국사업팀", "JBT": "일본사업팀", "KBT": "한국사업팀",
-    "BCM": "브랜드커뮤니케이션팀",
-}
+from app.core.org_structure import TEAM_CODE2KR, TEAM_DIVISIONS
 
-# 본부(Division) → 소속 Team_NEW 코드 (2026-08-11 조직도 확정).
-# "본부별"·"사업부별" 질문은 이 그룹으로 묶는다.
-TEAM_DIVISIONS = {
-    "글로벌마케팅본부": ["CBT", "EAST1", "EAST2", "JBT", "KBT", "WEST_Ecomm", "WEST_MKT"],
-    "영업1본부": ["B2B1", "B2B2"],
-    "유통1본부": ["DT1"],
-    "유통2본부": ["DT2"],
-    "상품본부": ["BCM"],
-}
 TEAM_CODE2DIVISION = {
     code: div for div, codes in TEAM_DIVISIONS.items() for code in codes
 }
@@ -1221,6 +1200,20 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
 
     schema_context = _build_schema_context(query, allowed_tables, conv_context)
 
+    # ── 조직이 이미 검증한 비슷한 질문을 **참고 예시로** 붙인다 (2026-08-27) ──
+    # ⛔ 답을 재생하는 것이 아니다. `sql_cache` 와 달리 SQL 은 여전히 새로 만들어지고,
+    #    검증·실행·후처리 방어선을 하나도 건너뛰지 않는다. 예시는 컬럼 선택과 조인
+    #    방식을 알려줄 뿐이다.
+    # ⚠️ 후속 질문(대화 맥락이 있는 것)에는 붙이지 않는다 — 앞 대화가 진짜 의도이고,
+    #    비슷해 **보이는** 예시가 오히려 방향을 틀 수 있다.
+    example_section = ""
+    if not conv_context:
+        try:
+            from app.core.sql_examples import pick, render
+            example_section = render(pick(query, allowed_tables))
+        except Exception as _e:      # 자산이 없거나 실패해도 생성은 그대로 간다
+            logger.warning("sql_examples_skipped", error=str(_e)[:120])
+
     this_year = datetime.now().year
     this_month = datetime.now().month
     last_month = this_month - 1 if this_month > 1 else 12
@@ -1325,7 +1318,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             "주문 수). 답변 단계가 이 별칭을 보고 한계를 설명할 수 있어야 한다."
         )
 
-    full_prompt = f"{system_prompt}{schema_context}{table_scope_section}{conv_section}{brand_section}{skill_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
+    full_prompt = f"{system_prompt}{schema_context}{table_scope_section}{conv_section}{brand_section}{skill_section}{example_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
 
     try:
         sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=10000)
@@ -1613,6 +1606,15 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
             if escalated is not None:
                 return escalated
 
+        # ⛔ **행이 나온 것만** 자산으로 쌓는다. 0건 SQL 을 예시로 굳히면 다음 사람도
+        #    같은 방향으로 0건을 낸다 (`sql_cache` 가 0건도 재생하던 것과 같은 함정).
+        # ⚠️ 후속 질문은 쌓지 않는다 — 앞 대화 없이는 그 SQL 이 왜 그런지 설명되지 않는다.
+        if results and not state.get("conversation_context"):
+            try:
+                from app.core.sql_examples import record
+                record(state.get("query", ""), sql, len(results))
+            except Exception as _e:   # 자산 축적이 답변을 막으면 본말이 뒤집힌다
+                logger.warning("sql_example_skipped", error=str(_e)[:120])
         return {"sql_result": results, "error": None}
     except Exception as e:
         error_str = str(e)
@@ -2387,6 +2389,13 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
             if not inserted:
                 answer = answer + f"\n\n#### 시각화\n{chart_markdown}"
 
+        # 합계는 답변 작성 LLM에 맡기지 않는다. 표는 잘 만들면서 합계 행만
+        # 빠뜨리는 붐따가 반복됐고, 사용자가 화면의 값을 손으로 더해야 했다.
+        # 조회 원본의 합산 가능한 열만 코드로 계산해 분석 절 앞에 붙인다.
+        totals_block = _build_table_totals_markdown(results)
+        if totals_block:
+            answer = _insert_table_totals(answer, totals_block)
+
         # 답변 속 수치가 조회 결과에서 나온 것인지 확인한다. 보고서는 이 방어선을
         # 갖고 있었지만 **채팅에는 없었다** — 가장 위험한 실패(그럴듯한데 틀린 숫자)가
         # 가장 넓은 경로에서 무방비였다 (2026-08-13).
@@ -2788,7 +2797,8 @@ async def run_sql_agent_unlimited(
 5. 금액: 1억 이상은 "약 OO.O억원", 1억 미만은 천 단위 쉼표."""
 
         answer = llm.generate(prompt, temperature=0.05)
-        return answer
+        totals_block = _build_table_totals_markdown(results)
+        return _insert_table_totals(answer, totals_block) if totals_block else answer
 
     except Exception as e:
         logger.error("sql_unlimited_failed", error=str(e))
@@ -2866,10 +2876,258 @@ _COL_LABELS = {
     "total_revenue": "매출액 (원)", "revenue": "매출액 (원)", "sales": "매출액 (원)",
     "total_quantity": "판매수량 (개)", "total_qty": "판매수량 (개)", "quantity": "판매수량 (개)",
     "total_orders": "주문 건수", "product_name": "제품", "product": "제품",
+    "cost_krw": "광고비 (원)", "ad_spend_krw": "광고비 (원)",
+    "conversion_value_krw": "전환가치 (원)", "impressions": "노출수",
+    "clicks": "클릭수", "conversions": "전환수", "cart_adds": "장바구니 추가수",
+    "op_income": "영업이익 (원)", "operating_income": "영업이익 (원)",
+    "gross_profit": "매출총이익 (원)", "direct_cost": "직접비 (원)",
+    "sales1_r": "매출액 (원)", "change_amount": "증감액 (원)",
     "country": "국가", "month": "월", "quarter": "분기", "year": "연도",
     "mall_classification": "채널", "company_name": "판매처", "team_new": "팀",
     "brand": "브랜드", "line": "라인", "date": "날짜", "continent1": "대륙", "continent2": "권역",
 }
+
+
+# 표의 숫자라고 전부 더할 수 있는 것은 아니다. ROAS·CTR·평균·단가·날짜를
+# 더하면 숫자는 나오지만 의미는 틀린다. 아래 계약은 "합산 가능한 원시/금액/건수"
+# 만 허용하고 파생 비율·시점·식별자는 먼저 제외한다.
+_TOTAL_EXCLUDED_TOKENS = (
+    "rate", "ratio", "share", "percent", "percentage", "pct", "average", "avg",
+    "mean", "median", "roas", "roi", "ctr", "cvr", "cpc", "cpm", "cpa", "cpv",
+    "margin", "growth", "rank", "score", "price", "unit_price", "per_unit", "per",
+    "id", "identifier", "code", "number",
+    "date", "time", "year", "month", "quarter", "week", "day", "hour",
+    "stock", "inventory", "balance",
+    "비율", "비중", "퍼센트", "평균", "단가", "순위", "점수", "성장률", "증감률",
+    "날짜", "일자", "연도", "분기", "시간", "재고", "잔액", "번호", "코드", "식별자",
+)
+_TOTAL_ADDITIVE_TOKENS = (
+    "revenue", "sales", "amount", "cost", "spend", "expense", "fee", "profit",
+    "foc", "discount", "coupon", "qty", "quantity", "count", "order", "orders",
+    "impression", "impressions", "click", "clicks", "conversion", "conversions",
+    "purchase", "purchases", "view", "views", "page_view", "add_to_cart",
+    "cart_add", "cart_adds", "income", "loss", "like", "likes", "comment", "comments",
+    "follower", "followers", "units", "volume", "total", "sum",
+    "매출", "금액", "비용", "광고비", "원가", "이익", "수량", "판매량", "건수",
+    "주문", "노출", "클릭", "전환", "구매", "조회", "장바구니", "합계", "총액", "수수료",
+)
+
+
+def _metric_name_parts(column: str) -> tuple[str, set[str]]:
+    normalized = re.sub(r"[^0-9a-zA-Z가-힣]+", "_", str(column)).strip("_").lower()
+    return normalized, {p for p in normalized.split("_") if p}
+
+
+def _metric_display_label(column: str) -> str:
+    """Translate metric aliases without exposing internal column identifiers."""
+    normalized, parts = _metric_name_parts(column)
+    if normalized in _COL_LABELS:
+        return _COL_LABELS[normalized]
+
+    qualifiers = []
+    year = next((p for p in parts if re.fullmatch(r"20\d{2}", p)), "")
+    if year:
+        qualifiers.append(year + "년")
+    month_names = {
+        "january": "1월", "jan": "1월", "february": "2월", "feb": "2월",
+        "march": "3월", "mar": "3월", "april": "4월", "apr": "4월",
+        "may": "5월", "june": "6월", "jun": "6월", "july": "7월", "jul": "7월",
+        "august": "8월", "aug": "8월", "september": "9월", "sep": "9월",
+        "october": "10월", "oct": "10월", "november": "11월", "nov": "11월",
+        "december": "12월", "dec": "12월",
+    }
+    for token, label in month_names.items():
+        if token in parts:
+            qualifiers.append(label)
+            break
+    qualifier_names = (
+        ({"current", "cur", "now"}, "현재"),
+        ({"previous", "prev"}, "이전"),
+        ({"performance"}, "퍼포먼스"),
+        ({"influencer"}, "인플루언서"),
+        ({"marketing"}, "마케팅"),
+        ({"b2b"}, "B2B"),
+        ({"b2c"}, "B2C"),
+    )
+    for aliases, label in qualifier_names:
+        if parts & aliases and label not in qualifiers:
+            qualifiers.append(label)
+
+    # Specific metrics precede generic cost/count tokens.
+    if "revenue" in parts or "sales" in parts or "매출" in normalized:
+        metric = "매출액 (원)"
+    elif "gross" in parts and "profit" in parts:
+        metric = "매출총이익 (원)"
+    elif parts & {"profit", "income"} or "이익" in normalized:
+        metric = "이익 (원)"
+    elif "loss" in parts:
+        metric = "손실 (원)"
+    elif parts & {"qty", "quantity", "units", "volume"} or any(
+            word in normalized for word in ("수량", "판매량")):
+        metric = "수량 (개)"
+    elif "impression" in parts or "impressions" in parts or "노출" in normalized:
+        metric = "노출수"
+    elif "click" in parts or "clicks" in parts or "클릭" in normalized:
+        metric = "클릭수"
+    elif "conversion" in parts or "conversions" in parts or "전환" in normalized:
+        metric = "전환수"
+    elif "purchase" in parts or "purchases" in parts or "구매" in normalized:
+        metric = "구매수"
+    elif parts & {"view", "views"} or "조회" in normalized:
+        metric = "조회수"
+    elif normalized.startswith("cart_add") or "장바구니" in normalized:
+        metric = "장바구니 추가수"
+    elif parts & {"follower", "followers"}:
+        metric = "팔로워 수"
+    elif parts & {"like", "likes"}:
+        metric = "좋아요 수"
+    elif parts & {"comment", "comments"}:
+        metric = "댓글 수"
+    elif "order" in parts or "orders" in parts or "주문" in normalized:
+        metric = "주문 건수"
+    elif "count" in parts or "건수" in normalized:
+        metric = "건수"
+    elif "foc" in parts:
+        metric = "FOC 합계"
+    elif parts & {"discount", "coupon"} or "할인" in normalized:
+        metric = "할인액 (원)"
+    elif "fee" in parts or "수수료" in normalized:
+        metric = "수수료 (원)"
+    elif "ad" in parts and parts & {"cost", "spend", "expense"}:
+        metric = "광고비 (원)"
+    elif parts & {"cost", "spend", "expense"} or any(
+            word in normalized for word in ("비용", "광고비", "원가")):
+        metric = "비용 (원)"
+    else:
+        # The classifier only calls this for an additive column; keep the label
+        # useful without leaking an unfamiliar SQL alias.
+        metric = "수치 합계"
+    return " ".join(qualifiers + [metric])
+
+
+def _is_additive_metric_column(column: str) -> bool:
+    normalized, parts = _metric_name_parts(column)
+    if not normalized:
+        return False
+
+    # English words use token boundaries so `country` is not mistaken for `count`.
+    # Korean metric names are commonly unseparated, so substring matching is needed.
+    for token in _TOTAL_EXCLUDED_TOKENS:
+        if token.isascii():
+            if token in parts or normalized.startswith(token + "_") or normalized.endswith("_" + token):
+                return False
+        elif token in normalized:
+            return False
+
+    for token in _TOTAL_ADDITIVE_TOKENS:
+        if token.isascii():
+            if token in parts or normalized.startswith(token) or normalized.endswith(token):
+                return True
+        elif token in normalized:
+            return True
+    return False
+
+
+def _is_existing_total_row(row: dict) -> bool:
+    for value in row.values():
+        if not isinstance(value, str):
+            continue
+        label = value.strip().strip("* ").lower()
+        if label in {"합계", "총합", "total", "grand total"}:
+            return True
+    return False
+
+
+def _additive_totals(results: list) -> tuple[list[dict], dict]:
+    """Return detail rows and grounded sums for additive numeric columns."""
+    from decimal import Decimal as _D
+    import math as _math
+
+    if not results or len(results) < 2:
+        return list(results or []), {}
+
+    detail_rows = [row for row in results if not _is_existing_total_row(row)]
+    if not detail_rows:
+        return [], {}
+
+    totals = {}
+    for column in results[0].keys():
+        if not _is_additive_metric_column(column):
+            continue
+        values = []
+        for row in detail_rows:
+            value = row.get(column)
+            if isinstance(value, bool) or not isinstance(value, (int, float, _D)):
+                continue
+            number = float(value)
+            if _math.isfinite(number):
+                values.append(value)
+        if values:
+            totals[column] = sum(values)
+    return detail_rows, totals
+
+
+def _build_table_totals_markdown(results: list) -> str:
+    """Build a deterministic sum table from all returned detail rows.
+
+    Ratios, averages, dates and identifiers are deliberately omitted because their
+    arithmetic sum is not a useful business metric.
+    """
+    detail_rows, totals = _additive_totals(results)
+    if not totals:
+        return ""
+
+    lines = [
+        "#### 합계 (조회 결과 기준)",
+        "",
+        "| 지표 | 합계 |",
+        "|---|---:|",
+    ]
+    for column, total in totals.items():
+        label = _metric_display_label(column)
+        lines.append(f"| {label} | **{_fast_fmt_cell(total)}** |")
+    lines.extend(["", f"*조회 결과 전체 {len(detail_rows)}행 기준*"])
+    return "\n".join(lines)
+
+
+def _insert_table_totals(answer: str, totals_block: str) -> str:
+    """Place the code-calculated totals immediately before narrative analysis."""
+    if not totals_block:
+        return answer
+    for marker in ("#### 분석 및 인사이트", "### 분석 및 인사이트", "#### 분석", "### 분석"):
+        if marker in answer:
+            return answer.replace(marker, totals_block + "\n\n" + marker, 1)
+    return answer.rstrip() + "\n\n" + totals_block
+
+
+def _stream_with_table_totals(chunks, totals_block: str):
+    """Inject totals before the streamed analysis heading without buffering the answer."""
+    if not totals_block:
+        yield from chunks
+        return
+
+    markers = ("#### 분석 및 인사이트", "### 분석 및 인사이트", "#### 분석", "### 분석")
+    keep = max(len(marker) for marker in markers) - 1
+    pending = ""
+    inserted = False
+    for chunk in chunks:
+        if inserted:
+            yield chunk
+            continue
+        pending += chunk
+        matches = [(pending.find(marker), marker) for marker in markers if marker in pending]
+        if matches:
+            index, _ = min(matches, key=lambda item: item[0])
+            yield pending[:index] + totals_block + "\n\n" + pending[index:]
+            pending = ""
+            inserted = True
+        elif len(pending) > keep:
+            yield pending[:-keep]
+            pending = pending[-keep:]
+    if pending:
+        yield pending
+    if not inserted:
+        yield "\n\n" + totals_block
 
 
 def _fast_fmt_cell(v) -> str:
@@ -2893,9 +3151,27 @@ def _fast_table_markdown(results: list, max_rows: int = 15) -> str:
     lines = ["| " + " | ".join(heads) + " |", "|" + "|".join([" :--- "] * len(cols)) + "|"]
     for row in results[:max_rows]:
         lines.append("| " + " | ".join(_fast_fmt_cell(row.get(c)) for c in cols) + " |")
+
+    detail_rows, totals = _additive_totals(results)
+    dimension_cols = [c for c in cols if c not in totals]
+    if totals and dimension_cols:
+        label_col = dimension_cols[0]
+        cells = []
+        for c in cols:
+            if c == label_col:
+                cells.append("**합계**")
+            elif c in totals:
+                cells.append(f"**{_fast_fmt_cell(totals[c])}**")
+            else:
+                cells.append("-")
+        lines.append("| " + " | ".join(cells) + " |")
     table = "\n".join(lines)
     if len(results) > max_rows:
-        table += f"\n\n*(전체 {len(results)}행 중 상위 {max_rows}행 표시)*"
+        table += (
+            f"\n\n*(전체 {len(results)}행 중 상위 {max_rows}행 표시"
+            + (f" · 합계는 전체 {len(detail_rows)}행 기준" if totals else "")
+            + ")*"
+        )
     return table
 
 
@@ -2938,7 +3214,14 @@ def _fast_answer_stream(query, sql, results, wiki_context, _t0, _t_gen, _t_exec_
     summary = _fast_summary_line(results)
     if summary:
         out_head += f"#### 요약\n{summary}\n\n"
-    out_head += f"#### 상세 데이터\n{_fast_table_markdown(results)}\n"
+    fast_table = _fast_table_markdown(results)
+    out_head += f"#### 상세 데이터\n{fast_table}\n"
+    # 차원 열이 전혀 없는 특수한 다중 행 결과는 표 안에 '합계' 라벨을 넣을
+    # 자리가 없다. 이 경우에도 별도 합계 표로 보증한다.
+    if "**합계**" not in fast_table:
+        totals_block = _build_table_totals_markdown(results)
+        if totals_block:
+            out_head += "\n" + totals_block + "\n"
     yield out_head
 
     # Chart in background while insights stream
@@ -3143,8 +3426,11 @@ def run_sql_agent_stream(
     # Stream answer (chart generates in parallel)
     _t_stream_start = _time.perf_counter()
     _t_first_token = None
-    for chunk in _mask_stream(
-            llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000)):
+    totals_block = _build_table_totals_markdown(results)
+    answer_chunks = _mask_stream(
+        llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000)
+    )
+    for chunk in _stream_with_table_totals(answer_chunks, totals_block):
         if _t_first_token is None:
             _t_first_token = _time.perf_counter()
         yield chunk

@@ -211,6 +211,17 @@ def save_negative_skill(message_id: int, conversation_id: str, comment: str = ""
             summary = summary.strip()[:400]
         neg_summary = f"{negative_reason}\n{summary}"
 
+        # ⛔ 👎 가 달린 질문은 **검증된 예시 자산에서도 막는다** (2026-08-27).
+        #    실행이 성공했다고 자동으로 쌓은 것이라, 사람이 틀렸다고 하면 즉시 빼야
+        #    한다 — 안 그러면 틀린 예시가 굳어 다음 사람도 같은 방향으로 만든다.
+        #    ⚠️ 여기서 함께 한다. 별도 배치로 미루면 그 사이 계속 예시로 쓰인다.
+        try:
+            from app.core.sql_examples import block as _block_example
+            if _block_example(query_text, ("👎 " + comment[:80]) if comment else "👎"):
+                logger.info("sql_example_blocked", query=str(query_text)[:60])
+        except Exception as e:
+            logger.warning("sql_example_block_skipped", error=str(e)[:120])
+
         execute(
             "INSERT INTO agent_skills (route, query_text, response_summary, message_id, is_negative) "
             "VALUES (%s, %s, %s, %s, 1)",
