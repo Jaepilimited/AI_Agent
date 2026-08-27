@@ -4372,6 +4372,15 @@ html.dark .db-autocomplete-dropdown {
       폴백이라, 오타를 아무도 못 잡는 것이 이 저장소의 단골 사고다. */
 .briefing-doc-cell { --doc-row: auto; }
 
+/* ⛔ **머리글 여백으로 절 간격을 주지 마라** — 그리드에서 행이 어긋난다.
+   `.briefing-doc-section-title` 은 `margin-top: 18px` 인데, 스크롤되는 메일 절만
+   sticky 머리글을 맨 위에 붙이려고 `margin-top: 0` 이다. 그래서 칸은 같은 높이에서
+   시작하는데 **글자는 18px 어긋나 보였다** (2026-08-27 사용자 지적, 실측 646 vs 664).
+   칸 안에서는 머리글을 항상 맨 위에 붙이고, 절 사이 간격은 `row-gap` 이 준다. */
+.briefing-doc-columns > .briefing-doc-cell > .briefing-doc-section-title {
+  margin-top: 0;
+}
+
 .briefing-doc-col { min-width: 0; }
 
 /* ⚠️ 좁은 화면(배치 미적용)에서는 절이 DOM 순서대로 한 줄로 쌓인다 —

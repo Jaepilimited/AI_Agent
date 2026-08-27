@@ -395,14 +395,19 @@ def test_rows_line_up_across_the_two_columns(page):
     page.set_viewport_size({"width": 1400, "height": 1400})
     _mount(page, _payload(_document()))
 
-    def tops(side):
-        cells = page.locator(f".briefing-doc-cell.is-{side}")
-        return [round(cells.nth(i).bounding_box()["y"]) for i in range(cells.count())]
+    # ⛔ **칸(cell) 위쪽을 재지 마라 — 사람은 머리글 글자를 본다.**
+    #    처음엔 칸만 쟀고 통과했는데, 화면에서는 2행이 18px 어긋나 있었다
+    #    (2026-08-27 사용자 지적 "그렇게 안 보이는데?"). 원인은 머리글의
+    #    `margin-top` 이 절마다 달랐던 것 — 스크롤되는 메일 절만 sticky 때문에 0 이었다.
+    #    칸은 같은 높이에서 시작해도 글자는 어긋날 수 있다. 보이는 것을 재야 한다.
+    def name_tops(side):
+        names = page.locator(f".briefing-doc-cell.is-{side} .briefing-doc-section-name")
+        return [round(names.nth(i).bounding_box()["y"]) for i in range(names.count())]
 
-    left_tops, right_tops = tops("left"), tops("right")
+    left_tops, right_tops = name_tops("left"), name_tops("right")
     assert left_tops and right_tops
     for row, (lt, rt) in enumerate(zip(left_tops, right_tops), start=1):
-        assert abs(lt - rt) <= 1, f"{row}행이 어긋났다: 왼쪽 {lt} vs 오른쪽 {rt}"
+        assert abs(lt - rt) <= 1, f"{row}행 머리글이 어긋났다: 왼쪽 {lt} vs 오른쪽 {rt}"
 
 
 def test_the_columns_stack_on_a_narrow_screen(page):
