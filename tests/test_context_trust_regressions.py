@@ -13,6 +13,7 @@ from app.agents.sql_agent import (
     execute_sql,
     _future_period_note,
     _has_partitioned_period_ranking,
+    _period_rank_truncation_possible,
     _requires_partitioned_period_ranking,
 )
 from app.core.term_aliases import _fuzzy_correct
@@ -140,6 +141,51 @@ def test_period_rank_gate_uses_previous_context_for_correction():
     assert not _has_partitioned_period_ranking(unsafe)
     assert not _has_partitioned_period_ranking(unsafe_rank_only)
     assert _has_partitioned_period_ranking(safe)
+
+
+def test_period_rank_gate_blocks_only_when_the_limit_can_actually_truncate():
+    """기간별 순위 관문은 **실제로 잘릴 때만** 막는다.
+
+    ⛔ 2026-08-27 실측: 이 관문이 14일간 11회 발동해 요청 3건을 죽였는데, 죽은
+       3건을 읽어보니 **전부 잘릴 수가 없는 SQL** 이었다 —
+       프로모션 행 목록(`GROUP BY` 없음) 하나, 월별 추이 둘(축이 기간 하나뿐이라
+       기간당 1행). 그런데도 "요청 기간이 잘릴 수 있습니다" 며 답을 못 받았다.
+
+    ⚠️ 발동 자체는 오탐이 아니다 — 대화 맥락에서 `주요`·`상위` 를 물려받는 것은
+       바로 위 `test_period_rank_gate_uses_previous_context_for_correction` 이
+       지키는 **의도된 설계**다. 트리거를 좁히면 실제 사고가 되살아난다.
+       그래서 고친 곳은 트리거가 아니라 **결과가 요청 사망이라는 쪽**이다.
+
+    ⚠️ 모르면 막는 쪽으로 기운다 (`GROUP BY ALL`). 조용히 잘린 표가 답을 못 주는
+       것보다 나쁘다 — 이 방향을 뒤집지 마라.
+    """
+    # 실제로 죽었던 3건 — 이제 통과해야 한다
+    assert not _period_rank_truncation_possible(
+        "SELECT title, team_id, channel FROM `p.promotion_calendar.promotion` "
+        "WHERE NOT is_deleted AND start_date <= '2026-08-26' LIMIT 1000")
+    assert not _period_rank_truncation_possible(
+        "SELECT FORMAT_DATETIME('%Y-%m', Date) AS month, SUM(Sales1_R) AS r FROM `t` "
+        "WHERE Team_NEW = 'JBT' GROUP BY month ORDER BY month ASC LIMIT 1000")
+
+    # 실제 사고 모양 — 계속 막아야 한다 (기간 × 항목 + 전역 LIMIT)
+    assert _period_rank_truncation_possible(
+        "SELECT FORMAT_DATETIME('%Y-%m', Date) AS month, Company_Name, SUM(Sales1_R) r "
+        "FROM `t` WHERE Sales_Type = 'B2B' GROUP BY month, Company_Name "
+        "ORDER BY month LIMIT 1000")
+    # 축이 하나여도 LIMIT 이 기간 수보다 작으면 잘린다
+    assert _period_rank_truncation_possible(
+        "SELECT month, SUM(r) FROM t GROUP BY month ORDER BY month LIMIT 10")
+    # 셀 수 없으면 막는 쪽
+    assert _period_rank_truncation_possible(
+        "SELECT month, country, SUM(r) FROM t GROUP BY ALL ORDER BY month LIMIT 1000")
+
+    # 자를 것이 없다
+    assert not _period_rank_truncation_possible(
+        "SELECT month, Company_Name, SUM(r) FROM t GROUP BY month, Company_Name")
+    # ⚠️ 함수 인자 안의 쉼표를 축으로 세면 멀쩡한 추이가 다시 막힌다
+    assert not _period_rank_truncation_possible(
+        "SELECT DATE_TRUNC(Date, MONTH) m, SUM(r) FROM t "
+        "GROUP BY DATE_TRUNC(Date, MONTH) ORDER BY m LIMIT 1000")
 
 
 def test_missing_date_cap_never_kills_the_request():

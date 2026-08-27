@@ -1127,6 +1127,76 @@ _PERIOD_RANK_DIM_TERMS = ("업체별", "거래처별", "바이어별", "제품�
 _PERIOD_RANK_TOP_TERMS = (
     "상위", "주요", "핵심", "비중있는", "비중 있는", "비중이 큰", "top", "랭킹",
 )
+#: 기간축 하나로 낼 수 있는 행 수의 현실적 상한 (월 단위 10년치). 전역 LIMIT 이
+#: 이보다 크면 기간을 잘라낼 수가 없다.
+_PERIOD_ROWS_SAFE = 120
+
+_RE_TRAILING_LIMIT = re.compile(r"\bLIMIT\s+(\d+)\s*;?\s*$", re.IGNORECASE)
+_RE_GROUP_BY = re.compile(
+    r"\bGROUP\s+BY\b(.*?)(?=\bHAVING\b|\bQUALIFY\b|\bWINDOW\b|\bORDER\s+BY\b|"
+    r"\bLIMIT\b|\bUNION\b|\)\s*(?:,|AS\b|SELECT\b)|\Z)",
+    re.IGNORECASE | re.DOTALL)
+
+
+def _period_rank_truncation_possible(sql: str) -> bool:
+    """전역 LIMIT 이 **실제로** 기간을 잘라낼 수 있는가.
+
+    ⛔ 왜 필요한가 (2026-08-27 실측). 기간별 순위 관문이 14일간 11회 발동해 요청
+       **3건을 죽였는데, 죽은 3건을 읽어보니 전부 오탐이었다**:
+
+         · 프로모션 캘린더 행 목록 — `GROUP BY` 가 아예 없다 (집계가 아니다)
+         · 월별 JBT 매출 추이 — 축이 기간 하나뿐이라 **기간당 1행**이다
+         · 월별 JBT 아젤라산 매출 추이 — 같다
+
+       셋 다 잘릴 수가 없는 SQL 인데 "요청 기간이 잘릴 수 있다" 며 답을 못 받았다.
+
+    ⚠️ 발동 자체는 오탐이 아니다. 판정(`_requires_partitioned_period_ranking`)이
+       대화 맥락에서 `주요`·`상위` 를 물려받는 것은 **의도된 설계**이고, 실제 사고
+       (B2B 업체별 월 매출이 전역 LIMIT 에 잘린 건)를 막는 방어선이다. 트리거를
+       좁히면 그 사고가 되살아난다. 고칠 곳은 **결과가 요청 사망이라는 쪽**이다.
+
+    그래서 "순위 창이 없다" 가 아니라 **"없는데 실제로 잘린다"** 일 때만 막는다:
+
+      · 끝에 전역 `LIMIT n` 이 없다        → 자를 것이 없다
+      · `GROUP BY` 가 없다                 → 집계가 아니라 행 목록이다
+      · `GROUP BY` 축이 기간 하나뿐이다    → 기간당 1행이라 n 이 기간 수보다 크면 못 자른다
+      · 축이 둘 이상(기간 × 항목)          → **여기가 진짜 위험 구간이다**
+
+    ⚠️ 판정은 **안전한 쪽으로 기운다** — CTE 가 여럿이면 축이 가장 많은 `GROUP BY` 를
+       기준으로 본다. `GROUP BY ALL` 처럼 셀 수 없으면 위험으로 본다.
+       모르면 막는 쪽이 맞다 (조용히 잘린 표가 이 프로젝트에서 가장 나쁜 실패다).
+    """
+    if not sql:
+        return False
+    limit = _RE_TRAILING_LIMIT.search(sql.strip())
+    if not limit:
+        return False
+    groups = _RE_GROUP_BY.findall(sql)
+    if not groups:
+        return False
+    axes = 0
+    for clause in groups:
+        body = clause.strip()
+        if not body:
+            continue
+        if body.upper().startswith("ALL"):
+            return True          # 셀 수 없다 → 막는 쪽으로
+        # ⚠️ 함수 인자 안의 쉼표를 축으로 세면 안 된다 (`DATE_TRUNC(Date, MONTH)`)
+        depth = 0
+        count = 1
+        for ch in body:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                count += 1
+        axes = max(axes, count)
+    if axes >= 2:
+        return True
+    return int(limit.group(1)) < _PERIOD_ROWS_SAFE
+
+
 # ⛔ **여기 있던 `_requires_current_date_cap` / `_has_current_date_cap` 은 걷어냈다**
 #    (2026-08-27). 2026-08-14 에 "과거 실적 질문이면 `Date <= CURRENT_DATETIME()`
 #    상한을 강제한다" 로 넣은 관문인데, **2026-08-25 에 사용자가 규칙을 뒤집었다**:
@@ -1424,7 +1494,16 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
         # 월별 업체 TOP처럼 행이 많은 교차분석은 전역 LIMIT이 앞쪽 기간만 남겨도
         # 문법·보안 검증을 모두 통과한다. 프롬프트만으로는 정정 후 재생성에서 다시
         # 퇴행한 실측이 있어, 실행 전에 구조를 검사하고 한 번 더 생성한다.
-        if sql and _period_rank_required and not _has_partitioned_period_ranking(sql):
+        _rank_missing = bool(sql) and _period_rank_required and not (
+            _has_partitioned_period_ranking(sql))
+        # ⛔ 순위 창이 없다고 바로 막지 않는다 — **실제로 잘릴 때만** 막는다.
+        #    (위 `_period_rank_truncation_possible` 주석: 오탐으로 요청 3건이 죽었다)
+        if _rank_missing and not _period_rank_truncation_possible(sql):
+            # ⚠️ WARNING 으로 남긴다. 프로덕션은 앱 INFO 를 통째로 버려서
+            #    INFO 로 적으면 이 판단이 몇 번 돌았는지 영영 셀 수 없다.
+            logger.warning("sql_period_rank_no_truncation_risk", sql=sql[:200])
+            _rank_missing = False
+        if _rank_missing:
             logger.warning("sql_period_rank_missing_retry", sql=sql[:300])
             rank_retry_prompt = (
                 full_prompt
@@ -1748,7 +1827,8 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
                 if retry_sql:
                     if (_period_retry_required
-                            and not _has_partitioned_period_ranking(retry_sql)):
+                            and not _has_partitioned_period_ranking(retry_sql)
+                            and _period_rank_truncation_possible(retry_sql)):
                         logger.error(
                             "sql_retry_period_rank_missing",
                             sql=retry_sql[:300],
