@@ -1127,12 +1127,25 @@ _PERIOD_RANK_DIM_TERMS = ("업체별", "거래처별", "바이어별", "제품�
 _PERIOD_RANK_TOP_TERMS = (
     "상위", "주요", "핵심", "비중있는", "비중 있는", "비중이 큰", "top", "랭킹",
 )
-_HISTORICAL_METRIC_TERMS = (
-    "매출", "판매", "수량", "주문", "실적", "비용", "광고비", "roas", "revenue",
-)
-_EXPLICIT_FUTURE_TERMS = (
-    "예정", "계획", "전망", "예측", "예상", "미래", "향후", "프로모션 일정",
-)
+# ⛔ **여기 있던 `_requires_current_date_cap` / `_has_current_date_cap` 은 걷어냈다**
+#    (2026-08-27). 2026-08-14 에 "과거 실적 질문이면 `Date <= CURRENT_DATETIME()`
+#    상한을 강제한다" 로 넣은 관문인데, **2026-08-25 에 사용자가 규칙을 뒤집었다**:
+#    "오늘 이후 행을 잘라내지 마라 — 발주·예정 물량은 미래 날짜가 정상 데이터다"
+#    (커밋 99e81b8). 규칙은 뒤집혔는데 이 관문만 남아 **서로 반대되는 규칙 두 벌**이
+#    돌고 있었다.
+#
+#    ⚠️ 게다가 판정이 처음부터 깨져 있었다. 상한 정규식이 따옴표 뒤에 날짜만 오는
+#       형태(`Date <= '2026-08-25'`)만 인정해서, LLM 이 실제로 쓰는 두 가지를
+#       **상한이 있는데도 없다고** 읽었다:
+#         · `Date <= '2026-08-25 23:59:59'`  (시간이 붙었다)
+#         · `date <= DATE('2026-08-27')`      (DATE() 로 감쌌다)
+#       실측(프로덕션 7일): 발동 9회 · **성공 0회** · 요청 사망 5회. 한 사용자는
+#       같은 질문을 5분간 5번 던져 5번 다 "SQL이 생성되지 않았습니다" 를 받았다.
+#       맞은 적이 한 번도 없는 관문이 사용자를 막고만 있었다.
+#
+#    미래 행이 섞이는 것은 **막지 않고 공시한다** — `_future_period_note()` 가
+#    조회 상한이 오늘 이후면 답변 끝에 한 줄을 붙인다 (스트리밍·비스트리밍 공용).
+#    ⛔ 상한을 다시 강제하지 마라. 되살리려면 8/25 결정을 먼저 뒤집어야 한다.
 
 
 def _requires_partitioned_period_ranking(query: str, conversation_context: str = "") -> bool:
@@ -1170,38 +1183,6 @@ def _has_partitioned_period_ranking(sql: str) -> bool:
         sql,
         re.IGNORECASE,
     ))
-
-
-def _requires_current_date_cap(query: str, conversation_context: str = "") -> bool:
-    """과거 실적의 시작점만 지정한 질문은 오늘 이후 행을 포함하지 않는다."""
-    text = f"{conversation_context}\n{query}".lower()
-    has_history_start = bool(
-        re.search(r"20\d{2}\s*년?\s*(?:부터|이후)", text)
-        or re.search(r"date\s*>=\s*['\"]20\d{2}", text, re.IGNORECASE)
-    )
-    return (
-        has_history_start
-        and any(term in text for term in _HISTORICAL_METRIC_TERMS)
-        and not any(term in text for term in _EXPLICIT_FUTURE_TERMS)
-    )
-
-
-def _has_current_date_cap(sql: str) -> bool:
-    """Date에 오늘 이하 상한 또는 명시적 종료일이 있는가."""
-    sql = sql or ""
-    explicit_cap = re.search(
-        r"\b(?:\w+\.)?Date\s*(?:<=|<)\s*(?:CURRENT_(?:DATE|DATETIME)\s*\(\s*\)|"
-        r"DATE\s*\(\s*CURRENT_DATETIME\s*\(\s*\)\s*\)|['\"]20\d{2}-\d{2}-\d{2}['\"])",
-        sql,
-        re.IGNORECASE,
-    )
-    between_cap = re.search(
-        r"\b(?:\w+\.)?Date\s+BETWEEN\s+[^\n]+\s+AND\s+"
-        r"(?:CURRENT_(?:DATE|DATETIME)\s*\(\s*\)|['\"]20\d{2}-\d{2}-\d{2}['\"])",
-        sql,
-        re.IGNORECASE,
-    )
-    return bool(explicit_cap or between_cap)
 
 
 # --- LangGraph Nodes ---
@@ -1323,13 +1304,6 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             "그 뒤 바깥 WHERE rank <= N 또는 QUALIFY ... <= N으로 "
             "각 기간의 TOP N을 실제 필터링하라. 순위 컬럼만 만들고 필터하지 않는 것도 금지한다. "
             "기간 오름차순 + 전역 LIMIT만 둔 SQL은 앞쪽 기간만 남기므로 금지한다."
-        )
-    _current_date_cap_required = _requires_current_date_cap(query, conv_context)
-    if _current_date_cap_required:
-        sql_only_reminder += (
-            "\n⛔ 이 질문은 과거 실적의 시작일만 지정했다. 미래 데이터·예측을 명시적으로 "
-            "요청하지 않았으므로 모든 원본 매출/판매 테이블 스캔에 "
-            "`Date <= CURRENT_DATETIME()` 상한을 넣어 오늘 이후 행을 제외하라."
         )
     # 직전 실행 테이블 앵커 — conv_section 중간의 일반 지시만으론 LLM이 후속
     # 질문에서 매출로 회귀한다(2026-08-10 판매수량·쇼피파이 시나리오 실측).
@@ -1471,34 +1445,6 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
                     "error": (
                         "요청 기간이 잘릴 수 있는 SQL을 안전하게 교정하지 못했습니다. "
                         "기간별 상위 개수를 명시해 다시 질문해 주세요."
-                    ),
-                }
-
-        if sql and _current_date_cap_required and not _has_current_date_cap(sql):
-            logger.warning("sql_current_date_cap_missing_retry", sql=sql[:300])
-            cap_retry_prompt = (
-                full_prompt
-                + f"\n\n⛔ 이전 SQL은 과거 실적 질문인데 오늘 이후 미래 행을 막는 Date "
-                  f"상한이 없어 거부됐다:\n```sql\n{sql}\n```\n"
-                  "모든 원본 매출/판매 테이블 스캔에 Date <= CURRENT_DATETIME()을 넣어 "
-                  "오늘 이후 행을 제외한 완전한 SQL만 다시 출력하라."
-            )
-            cap_retry_sql = sanitize_sql(
-                llm.generate(cap_retry_prompt, temperature=0.0, max_output_tokens=10000)
-            )
-            cap_retry_ok = bool(cap_retry_sql and _has_current_date_cap(cap_retry_sql))
-            if _period_rank_required:
-                cap_retry_ok = cap_retry_ok and _has_partitioned_period_ranking(cap_retry_sql)
-            if cap_retry_ok:
-                sql = cap_retry_sql
-                logger.info("sql_current_date_cap_retry_success", sql=sql[:300])
-            else:
-                logger.error("sql_current_date_cap_retry_failed", sql=(cap_retry_sql or "")[:300])
-                return {
-                    "generated_sql": None,
-                    "error": (
-                        "미래 데이터가 섞일 수 있는 SQL을 안전하게 교정하지 못했습니다. "
-                        "종료일을 명시해 다시 질문해 주세요."
                     ),
                 }
 
@@ -1779,20 +1725,13 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                         "(PARTITION BY 기간별칭 ORDER BY 지표 DESC)를 계산한 뒤 바깥 WHERE "
                         "rank <= N으로 실제 필터링하라."
                     )
-                _cap_retry_required = _requires_current_date_cap(query, _conv_ctx)
-                _cap_retry_rule = ""
-                if _cap_retry_required:
-                    _cap_retry_rule = (
-                        "\n⛔ 과거 실적의 시작일만 지정된 질문이므로 모든 원본 매출/판매 "
-                        "테이블 스캔에 Date <= CURRENT_DATETIME() 상한을 유지하라."
-                    )
                 retry_prompt = (
                     _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
                     + _schema_ctx + _scope + _conv_retry
                     + f"\n\n## 사용자 질문\n{query}"
                     + f"\n\n⛔⛔⛔ 이전 SQL이 다음 오류로 실패했다:\n{error_str[:300]}\n"
                     + "오류 원인을 고쳐 SQL을 다시 작성하라. 컬럼명은 스키마에 있는 정확한 이름만 사용."
-                    + _syntax_rules + _period_retry_rule + _cap_retry_rule
+                    + _syntax_rules + _period_retry_rule
                     + _build_brand_section(state.get("brand_filter"))
                 )
                 retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
@@ -1809,13 +1748,6 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                             and not _has_partitioned_period_ranking(retry_sql)):
                         logger.error(
                             "sql_retry_period_rank_missing",
-                            sql=retry_sql[:300],
-                        )
-                        retry_sql = ""
-                if retry_sql:
-                    if _cap_retry_required and not _has_current_date_cap(retry_sql):
-                        logger.error(
-                            "sql_retry_current_date_cap_missing",
                             sql=retry_sql[:300],
                         )
                         retry_sql = ""
@@ -2055,7 +1987,12 @@ def _unit_note(sql: str) -> str:
 #    말없이 자르던 것과 같은 종류의 조용한 오답이다. 포함은 하되 **공시는 코드가** 한다.
 #    프롬프트에 적으면 확률이고, 확률로는 "안 적힌 답변"이 반드시 나온다.
 _RE_UPPER_BOUND = re.compile(
-    r"(?:<=|<|AND)\s*'(\d{4}-\d{2}-\d{2})(?:[ T][\d:]+)?'", re.IGNORECASE)
+    # ⚠️ LLM 은 상한을 세 가지로 쓴다 — 세 가지 다 읽어야 공시가 맞는다:
+    #      `<= '2026-08-27'` · `<= '2026-08-27 23:59:59'` · `<= DATE('2026-08-27')`
+    #   ⛔ 예전에는 `DATE(...)` 로 감싼 형태를 못 읽어 **미래 행이 섞여도 아무 말도
+    #      안 했다.** 같은 맹점으로 상한 강제 관문이 9회 전부 오탐을 냈다 (2026-08-27).
+    r"(?:<=|<|AND)\s*(?:DATE|DATETIME|TIMESTAMP)?\s*\(?\s*"
+    r"'(\d{4}-\d{2}-\d{2})(?:[ T][\d:]+)?'", re.IGNORECASE)
 
 
 def _future_period_note(sql: str, today=None) -> str:

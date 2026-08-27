@@ -7,11 +7,12 @@ from app.agents.orchestrator import (
     _build_conversation_context,
     _should_continue_bigquery_for_correction,
 )
+from datetime import date
+
 from app.agents.sql_agent import (
     execute_sql,
-    _has_current_date_cap,
+    _future_period_note,
     _has_partitioned_period_ranking,
-    _requires_current_date_cap,
     _requires_partitioned_period_ranking,
 )
 from app.core.term_aliases import _fuzzy_correct
@@ -141,22 +142,42 @@ def test_period_rank_gate_uses_previous_context_for_correction():
     assert _has_partitioned_period_ranking(safe)
 
 
-def test_historical_since_query_excludes_future_rows_in_followup_context():
-    context = _build_conversation_context(_conversation_messages())
+def test_missing_date_cap_never_kills_the_request():
+    """상한이 없다고 요청을 죽이지 않는다 — 미래 행은 막지 말고 **공시**한다.
 
-    assert _requires_current_date_cap(INCIDENT_QUERY)
-    assert _requires_current_date_cap(CORRECTION_QUERY, context)
-    assert not _requires_current_date_cap("2027년 예상 매출 전망")
-    assert not _has_current_date_cap(
-        "SELECT * FROM sales WHERE Date >= '2025-01-01'"
-    )
-    assert _has_current_date_cap(
-        "SELECT * FROM sales WHERE Date >= '2025-01-01' "
-        "AND Date <= CURRENT_DATETIME()"
-    )
-    assert _has_current_date_cap(
-        "SELECT * FROM sales WHERE Date BETWEEN '2025-01-01' AND '2026-08-14'"
-    )
+    ⛔ 이 자리에는 원래 반대 규칙이 있었다. 2026-08-14 에 "과거 실적 질문이면
+       `Date <= CURRENT_DATETIME()` 상한을 강제한다" 는 관문을 넣고 여기서 지켰는데,
+       **2026-08-25 에 사용자가 규칙을 뒤집었다** — 발주·예정 물량은 미래 날짜가
+       정상 데이터고 그것이 사용자 대시보드의 기준이다 (커밋 99e81b8).
+       그런데 관문도 이 테스트도 남아 **서로 반대되는 규칙 두 벌**이 이틀간 돌았다.
+
+    ⚠️ 게다가 그 관문은 판정부터 깨져 있었다. 상한 정규식이 따옴표 뒤에 날짜만 오는
+       꼴만 인정해서, LLM 이 실제로 쓰는 두 가지를 **상한이 있는데도 없다고** 읽었다:
+       시간이 붙은 것과 DATE() 로 감싼 것이다.
+       프로덕션 7일 실측: 발동 9회 · **성공 0회** · 요청 사망 5회. 한 사용자는 같은
+       질문을 5분간 5번 던져 5번 다 "SQL이 생성되지 않았습니다" 를 받았다.
+       맞은 적이 한 번도 없는 관문이 사용자를 막고만 있었다.
+    """
+    src = Path("app/agents/sql_agent.py").read_text(encoding="utf-8")
+    # 관문이 되살아나면 여기서 걸린다 (되살리려면 8/25 결정을 먼저 뒤집어야 한다)
+    assert "_requires_current_date_cap(" not in src
+    assert "_has_current_date_cap(" not in src
+    assert "미래 데이터가 섞일 수 있는 SQL을 안전하게 교정하지 못했습니다" not in src
+
+    # 대신 공시한다 — ⚠️ 상한을 쓰는 **세 가지 표기 전부** 읽어야 한다. 하나라도
+    #    못 읽으면 미래 행이 섞인 채 아무 말도 안 하는 조용한 오답이 된다.
+    today = date(2026, 8, 27)
+    future_caps = [
+        "Date <= '2026-12-31'",
+        "Date <= '2026-12-31 23:59:59'",
+        "date <= DATE('2026-12-31')",
+    ]
+    for cap in future_caps:
+        assert _future_period_note("SELECT 1 FROM t WHERE " + cap, today), cap
+
+    today_caps = ["Date <= '2026-08-27'", "date <= DATE('2026-08-27')"]
+    for cap in today_caps:
+        assert not _future_period_note("SELECT 1 FROM t WHERE " + cap, today), cap
 
 
 def test_grouped_window_bigquery_error_retries_with_context(monkeypatch):
