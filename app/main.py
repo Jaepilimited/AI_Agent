@@ -26,7 +26,7 @@ from app.api.admin_group_api import group_router, ad_router
 from app.api.auth_api import auth_api_router
 from app.api.auth_middleware import get_optional_user
 from app.api.auth_routes import auth_router
-from app.api.conversation_api import conversation_router
+from app.api.conversation_api import conversation_router, ensure_message_columns
 from app.api.eval_api import eval_router
 from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
@@ -183,6 +183,7 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_saved_question_tables)
         from app.core.fx_rates import ensure_tables as ensure_fx_tables
         await asyncio.to_thread(ensure_fx_tables)
+        await asyncio.to_thread(ensure_message_columns)
         from app.core.announcements import ensure_tables as _ensure_announce
         await asyncio.to_thread(_ensure_announce)
         logger.info("mariadb_initialized")

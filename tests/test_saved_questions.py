@@ -256,7 +256,17 @@ async def test_run_limits_concurrent_questions_to_three(monkeypatch):
 
     await saved_questions.run_saved_questions(datetime(2026, 8, 3, 9, 0))
 
-    assert maximum == 3
+    # ⛔ `== 3` 으로 단언하지 마라 — **부하에 따라 흔들린다.** 전체 스위트를 돌릴 때
+    #    이벤트 루프가 바쁘면 먼저 들어간 작업이 끝난 뒤에야 다음이 시작돼 최대 동시
+    #    수가 2나 1로 관측된다 (2026-08-27 실제로 한 번 실패했다). 불안정한 테스트는
+    #    없는 것보다 나쁘다 — 실패를 무시하는 습관이 생기고, 그러면 진짜 회귀도 묻힌다.
+    #    지켜야 할 성질은 "3을 넘지 않는다" 이지 "정확히 3에 닿는다" 가 아니다.
+    assert maximum <= saved_questions.MAX_CONCURRENT_RUNS, (
+        f"동시 실행이 상한을 넘었다: {maximum} > {saved_questions.MAX_CONCURRENT_RUNS}"
+    )
+    assert maximum >= 1
+    # 상한 자체는 타이밍과 무관하게 확인한다.
+    assert saved_questions.MAX_CONCURRENT_RUNS == 3
 
 
 @pytest.mark.asyncio

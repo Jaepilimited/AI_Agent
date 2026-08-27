@@ -1523,7 +1523,7 @@
           _addSaveQuestionButton(actions, _lastUserContentForSave);
         }
         if (m.role === "user") {
-          _lastUserContentForSave = typeof m.content === "string" ? m.content : "";
+          _lastUserContentForSave = m.raw_content || m.content || "";
         }
       });
 
@@ -1618,20 +1618,25 @@
   }
 
   async function saveMessage(role, content) {
-    return saveMessageTo(currentConvoId, role, content);
+    return saveMessageTo(currentConvoId, role, content, null);
   }
 
   // Same as saveMessage but targets an explicit conversation id instead of
   // the global currentConvoId. Needed when the user switches conversations
   // while a save from a previous conversation is still in flight — the save
   // must land on the conversation it belongs to, not whatever is "current" now.
-  async function saveMessageTo(convoId, role, content) {
+  async function saveMessageTo(convoId, role, content, rawContent) {
     if (!convoId) return null;
     try {
+      var body = { role: role, content: content };
+      // ⚠️ 화면에 보이는 content가 기준이다 — 원문이 다를 때만 raw_content를 따로 보낸다.
+      if (typeof rawContent === "string" && rawContent && rawContent !== content) {
+        body.raw_content = rawContent;
+      }
       var resp = await fetch("/api/conversations/" + convoId + "/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role: role, content: content }),
+        body: JSON.stringify(body),
       });
       var data = await resp.json();
       await loadConversations();
@@ -1922,7 +1927,7 @@
     currentMessages.push({ role: "user", content: apiContent });
     // Save only text to DB (no images in SQLite). Target convoIdAtSend
     // explicitly — the user could switch conversations during this await.
-    await saveMessageTo(convoIdAtSend, "user", text || "[Image]");
+    await saveMessageTo(convoIdAtSend, "user", text || "[Image]", userQuestionForSave);
     scrollToBottom();
 
     // Use in-memory messages for API (reliable, no DOM parsing)

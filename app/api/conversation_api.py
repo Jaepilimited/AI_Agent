@@ -18,6 +18,7 @@ from app.db.models import User
 logger = structlog.get_logger(__name__)
 
 conversation_router = APIRouter(prefix="/api/conversations", tags=["conversations"])
+_MAX_RAW_CONTENT_CHARS = 4000
 
 
 # ── Async DB wrappers ──
@@ -41,6 +42,7 @@ class MessageOut(BaseModel):
     id: int
     role: str
     content: str
+    raw_content: str | None = None
     created_at: str
 
 
@@ -70,6 +72,7 @@ class UpdateConversationRequest(BaseModel):
 class AddMessageRequest(BaseModel):
     role: str
     content: str
+    raw_content: str | None = None
 
 
 # ── Helpers ──
@@ -78,6 +81,26 @@ def _fmt_dt(dt) -> str:
     if dt is None:
         return ""
     return str(dt)
+
+
+def _truncate_raw_content(text: str | None) -> str | None:
+    if text is None:
+        return None
+    return text[:_MAX_RAW_CONTENT_CHARS]
+
+
+def ensure_message_columns() -> None:
+    """messages 테이블에 raw_content 컬럼을 안전하게 추가한다."""
+    try:
+        if not fetch_one(
+            "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'messages' "
+            "AND COLUMN_NAME = 'raw_content'"
+        ):
+            execute("ALTER TABLE messages ADD COLUMN raw_content TEXT NULL")
+            logger.info("messages_raw_content_added")
+    except Exception as e:
+        logger.debug("message_column_skip", error=str(e)[:120])
 
 
 # ── Endpoints ──
@@ -138,7 +161,7 @@ async def get_conversation(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     messages = await _db_fetch_all(
-        "SELECT id, role, content, created_at FROM messages "
+        "SELECT id, role, content, raw_content, created_at FROM messages "
         "WHERE conversation_id = %s ORDER BY created_at, id",
         (convo_id,),
     )
@@ -147,7 +170,13 @@ async def get_conversation(
         title=convo["title"],
         model=convo["model"],
         messages=[
-            MessageOut(id=m["id"], role=m["role"], content=m["content"], created_at=_fmt_dt(m["created_at"]))
+            MessageOut(
+                id=m["id"],
+                role=m["role"],
+                content=m["content"],
+                raw_content=m.get("raw_content"),
+                created_at=_fmt_dt(m["created_at"]),
+            )
             for m in messages
         ],
     )
@@ -207,15 +236,25 @@ async def add_message(
     if not convo:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    content = req.content
+    raw_content = req.raw_content
+    # ⚠️ 정제본과 원문이 같으면 content 하나만으로 충분하다 — 차이가 있을 때만 raw를 남긴다.
+    if raw_content == content:
+        raw_content = None
+    else:
+        raw_content = _truncate_raw_content(raw_content)
+
     msg_id = await _db_execute_lastid(
-        "INSERT INTO messages (conversation_id, role, content) VALUES (%s, %s, %s)",
-        (convo_id, req.role, req.content),
+        "INSERT INTO messages (conversation_id, role, content, raw_content) "
+        "VALUES (%s, %s, %s, %s)",
+        (convo_id, req.role, content, raw_content),
     )
 
-    # Auto-title: use first user message as title if still default
+    # ⛔ 자동 제목이 @@ 원문을 먹으면 사이드바 제목까지 소스 토큰으로 오염된다.
+    #    제목은 항상 사용자가 실제로 본 정제 content 기준으로만 만든다.
     if convo["title"] in ("New Chat", "새 대화") and req.role == "user":
-        title = req.content[:60]
-        if len(req.content) > 60:
+        title = content[:60]
+        if len(content) > 60:
             title += "..."
         await _db_execute(
             "UPDATE conversations SET title = %s, updated_at = NOW() WHERE id = %s",
@@ -226,8 +265,17 @@ async def add_message(
             "UPDATE conversations SET updated_at = NOW() WHERE id = %s", (convo_id,)
         )
 
-    msg = await _db_fetch_one("SELECT id, role, content, created_at FROM messages WHERE id = %s", (msg_id,))
-    return MessageOut(id=msg["id"], role=msg["role"], content=msg["content"], created_at=_fmt_dt(msg["created_at"]))
+    msg = await _db_fetch_one(
+        "SELECT id, role, content, raw_content, created_at FROM messages WHERE id = %s",
+        (msg_id,),
+    )
+    return MessageOut(
+        id=msg["id"],
+        role=msg["role"],
+        content=msg["content"],
+        raw_content=msg.get("raw_content"),
+        created_at=_fmt_dt(msg["created_at"]),
+    )
 
 
 # ── Feedback ──
