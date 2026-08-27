@@ -45,10 +45,28 @@ def test_saved_question_keeps_its_at_source_prefix():
 
 
 def test_server_rejection_is_shown_not_swallowed():
-    """⚠️ 5개 상한 등으로 거절되면 이유를 보여준다 — 저장된 줄 알면 더 나쁘다."""
+    """⚠️ 5개 상한 등으로 거절되면 이유를 보여준다 — 저장된 줄 알면 더 나쁘다.
+
+    ⛔ **양쪽 계약을 대조한다.** 처음엔 화면에 `data.ok === false` 가 있는지만 봤고,
+       그 테스트는 통과했는데 실제로는 저장 실패에 "저장했습니다" 가 떴다 —
+       서버가 거절을 `400 + {detail}` 로 주는데 본문에 `ok` 가 없어 그 분기가
+       **영영 참이 아니었다** (2026-08-27 브라우저 실측). 한쪽만 보는 검사는
+       계약 불일치를 통과시킨다.
+    """
+    import inspect
+
+    from app.api import saved_questions_api
+
+    api_src = inspect.getsource(saved_questions_api.add_saved_question)
+    assert "HTTPException" in api_src and "detail=" in api_src, \
+        "서버 거절 방식이 바뀌었다 — 화면의 처리도 함께 고쳐야 한다"
+
     src = _source()
-    assert "data.ok === false" in src
-    assert "data.reason" in src
+    modal = src.split("function _openSaveQuestionModal(", 1)[1].split("function _addSaveQuestionButton", 1)[0]
+    assert "httpOk" in modal or "r.ok" in modal, \
+        "화면이 HTTP 상태를 보지 않는다 — 400 을 성공으로 읽는다"
+    assert "data.detail" in modal, \
+        "서버는 이유를 `detail` 로 준다. 그 필드를 읽지 않으면 이유가 사라진다"
 
 
 def test_empty_question_gets_no_button():
@@ -85,6 +103,31 @@ def test_cadence_options_match_the_server_contract():
     if schema:
         for value in ("daily", "weekly", "monthly"):
             assert value in schema, f"서버 스키마에 {value} 가 없다"
+
+
+def test_weekly_sends_the_weekday_the_server_requires():
+    """⛔ 화면이 서버가 **요구하는 값**을 보내는지 본다 — 값 목록만 대조하면 못 잡는다.
+
+    2026-08-27 브라우저 실측에서 잡혔다: 화면은 `{question, cadence}` 만 보냈고
+    `weekly` 는 서버가 요일을 요구해서 **"매주 월요일" 을 고르면 매번 거절**됐다.
+    라벨은 이미 월요일이라고 약속하고 있었으니 화면이 그 값을 실어야 한다.
+    소스 검사만 하던 회귀가 이 결함을 통과시켰다 — 계약은 값이 아니라 **요구사항**으로 본다.
+    """
+    src = _source()
+    modal = src.split("function _openSaveQuestionModal(", 1)[1].split("function _addSaveQuestionButton", 1)[0]
+    assert "weekday" in modal, "weekly 인데 화면이 weekday 를 보내지 않는다"
+    assert re.search(r'weekly"?\s*\)?\s*payload\.weekday\s*=\s*\d', modal.replace("\n", " ")) or \
+        ("weekly" in modal and "payload.weekday" in modal), \
+        "weekly 일 때 weekday 를 싣는 분기가 없다"
+
+
+def test_weekly_without_weekday_is_rejected_by_the_store():
+    """서버 쪽 계약이 실제로 요일을 요구하는지 — 화면 수정의 근거를 못 박는다."""
+    from app.core import saved_questions as sq
+
+    out = sq.add.__doc__ or ""
+    src = __import__("inspect").getsource(sq.add)
+    assert "weekday" in src, "저장소가 weekday 를 보지 않는다면 화면 수정 근거가 사라진다"
 
 
 def test_cache_version_was_bumped_for_this_change():

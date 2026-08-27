@@ -199,16 +199,28 @@
       if (!body) { note.textContent = "질문을 입력해 주세요."; return; }
       save.disabled = true;
       save.textContent = "저장 중…";
+      // ⛔ `weekly` 는 서버가 **요일을 요구한다.** 안 보내면 "요일을 골라 주세요" 로
+      //    거절되는데, 화면 라벨은 이미 "매주 월요일" 이라고 약속하고 있다 —
+      //    약속한 값을 화면이 직접 실어 보낸다 (2026-08-27 브라우저 실측에서 잡힌 결함).
+      var payload = { question: body, cadence: cadence.value };
+      if (cadence.value === "weekly") payload.weekday = 0;   // 라벨과 같은 월요일
       fetch("/api/saved-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: body, cadence: cadence.value })
+        body: JSON.stringify(payload)
       }).then(function(r) {
-        return r.json().catch(function() { return {}; });
-      }).then(function(data) {
-        // ⚠️ 서버가 거절한 이유(5개 상한 등)를 삼키지 마라 — 저장된 줄 알면 더 나쁘다.
-        if (data && data.ok === false) {
-          note.textContent = data.reason || "저장하지 못했습니다.";
+        // ⛔ **HTTP 상태를 먼저 본다.** 서버는 거절을 400 + `{detail}` 로 준다 —
+        //    본문에 `ok` 가 없어서 `data.ok === false` 만 보면 **영영 참이 아니고
+        //    성공 문구가 뜬다**. 저장 안 됐는데 됐다고 말하는 것이 가장 나쁜 실패다
+        //    (2026-08-27 브라우저 실측에서 잡혔다 — 소스만 보는 테스트는 못 잡았다).
+        var httpOk = r.ok;
+        return r.json().catch(function() { return {}; }).then(function(d) {
+          return { httpOk: httpOk, data: d || {} };
+        });
+      }).then(function(res) {
+        var data = res.data;
+        if (!res.httpOk || data.ok === false) {
+          note.textContent = data.detail || data.reason || "저장하지 못했습니다.";
           save.disabled = false;
           save.textContent = "저장";
           return;
