@@ -516,8 +516,19 @@ def summarize_answer(text: str, limit: int = 300) -> str:
 
     # 표의 첫 줄은 머리글이라 데이터 행이 아니다.
     data_rows = max(data_rows - 1, 0)
-    lead = _MD_NOISE.sub("", " ".join(lead_lines)).strip()
-    lead = re.sub(r"\s{2,}", " ", lead)
+
+    # ⛔ 줄을 합친 **뒤에** 장식을 지우지 마라 — `^#{1,6}` 이 줄머리에서만 맞아
+    #    `#### 요약` 이 그대로 남는다 (2026-08-27 프로덕션 실측).
+    # ⚠️ 제목 줄은 `#` 만 떼지 말고 **통째로 뺀다.** "쇼피 인도네시아 8월 매출 분석
+    #    요약 … 상세 데이터" 처럼 목차가 문장 사이에 끼면 읽는 흐름이 끊긴다.
+    #    사람이 원하는 것은 숫자가 든 문장이다.
+    kept: list[str] = []
+    for line in lead_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        kept.append(_MD_NOISE.sub("", stripped).strip())
+    lead = re.sub(r"\s{2,}", " ", " ".join(part for part in kept if part)).strip()
     note = f"(표 {data_rows}행)" if data_rows else "(표)"
     if not lead:
         # ⚠️ 앞 문장이 없으면 표만 있는 답이다 — 없는 문장을 지어내지 않고 사실만 적는다.

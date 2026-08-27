@@ -514,3 +514,29 @@ def test_saved_rows_use_the_summarizer_not_a_raw_slice():
     src = inspect.getsource(work_briefing._saved_rows)
     assert "summarize_answer(" in src
     assert '_clean(row.get("last_answer"' not in src
+
+
+def test_markdown_headings_are_dropped_not_inlined():
+    """⛔ 목차를 문장 사이에 끼워 넣지 마라 — 읽는 흐름이 끊긴다.
+
+    2026-08-27 프로덕션 실측에서 이렇게 나왔다:
+        `📊 쇼피 인도네시아 8월 매출 분석 #### 요약 2026년 8월 기준 … #### 상세 데이터 (표)`
+    원인 둘: ① 줄을 합친 **뒤에** 장식을 지워 `^#` 이 안 맞았다 ② 제목의 `#` 만 떼고
+    글자는 남겼다. 사람이 원하는 것은 **숫자가 든 문장**이다.
+    """
+    from app.core.work_briefing import summarize_answer
+
+    answer = (
+        "## 📊 쇼피 인도네시아 8월 매출 분석\n\n"
+        "#### 요약\n"
+        "2026년 8월 기준 총매출은 약 28.5억원입니다.\n\n"
+        "#### 상세 데이터\n"
+        "| 국가 | 매출 |\n|---|---:|\n| 인도네시아 | 2,850,000,000 |\n"
+    )
+    out = summarize_answer(answer)
+
+    assert "28.5억원" in out, "숫자가 든 문장이 사라졌다"
+    assert "#" not in out, f"마크다운 제목 기호가 남았다: {out!r}"
+    assert "요약" not in out and "상세 데이터" not in out, \
+        f"목차가 문장 사이에 끼었다: {out!r}"
+    assert out.endswith("(표 1행)")
