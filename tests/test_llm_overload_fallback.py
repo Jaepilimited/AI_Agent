@@ -591,3 +591,37 @@ async def test_route_and_stream_uses_safe_fallback(monkeypatch):
     assert ("source", "direct") in events
     assert "Overloaded" not in answer
     assert "req_sensitive" not in answer
+
+
+def test_every_declared_delay_is_actually_used(monkeypatch):
+    """⛔ 정의와 실제 대기가 어긋나면 안 된다 — 에러가 아니라 오해를 만든다.
+
+    2026-08-27 실측에서 잡혔다: `_RETRY_DELAYS = [0.5, 1.5, 4.0, 10.0]` 에
+    `_MAX_RETRIES = 4` 였는데 **마지막 10.0초는 한 번도 쓰이지 않았다.** 4번째 시도는
+    실패하면 대기 없이 바로 올라오기 때문이다. 코드를 읽으면 16초를 기다릴 것 같은데
+    실제로는 6초였고, 재보기 전까지 아무도 몰랐다.
+    """
+    slept: list[float] = []
+    monkeypatch.setattr(llm_module.time, "sleep", slept.append)
+    monkeypatch.setattr(llm_module, "get_flash_client", lambda: _Fallback())
+
+    client = _claude_client([OVERLOAD] * llm_module._MAX_RETRIES)
+    client.generate("질문")
+
+    assert client.client.messages.calls == llm_module._MAX_RETRIES
+    # 대기는 시도보다 하나 적다. 선언한 값이 전부, 순서대로, 한 번씩 쓰여야 한다.
+    assert slept == llm_module._RETRY_DELAYS, (
+        f"선언 {llm_module._RETRY_DELAYS} 인데 실제로 잔 것은 {slept}"
+    )
+    assert llm_module._MAX_RETRIES == len(llm_module._RETRY_DELAYS) + 1
+
+
+def test_max_retries_is_derived_not_hand_written():
+    """따로 적으면 언젠가 어긋난다 — 파생시켜 구조적으로 막는다."""
+    import inspect
+
+    source = inspect.getsource(llm_module)
+    head = source.split("def _is_retryable")[0]
+    assert "_MAX_RETRIES = len(_RETRY_DELAYS) + 1" in head, (
+        "_MAX_RETRIES 를 손으로 적으면 대기 목록과 어긋난다"
+    )
