@@ -72,8 +72,12 @@ def test_the_question_is_the_one_right_before_the_answer():
     붙어 있었다 — 목록은 그럴듯한데 짝이 틀린, 가장 발견이 늦는 종류의 실패다.
     """
     src = inspect.getsource(fl.golden_candidates)
+    # 직전 질문을 **정확히** 집는가
     assert "SELECT MAX(id) FROM messages" in src
-    assert "u.id < m.id" not in src.replace("id < m.id)", ""), "다시 느슨한 조인으로 돌아갔다"
+    # ⚠️ 느슨한 조인(`u.id < m.id` 를 ON 절에 직접)으로 돌아가면 안 된다.
+    #    서브쿼리 안의 `id < m.id` 는 정상이므로 ON 절만 본다.
+    on_clause = src.split("JOIN messages u ON", 1)[1].split("WHERE", 1)[0]
+    assert "u.id = (" in on_clause, on_clause.strip()[:120]
 
 
 def test_chitchat_feedback_is_not_a_golden_candidate():
