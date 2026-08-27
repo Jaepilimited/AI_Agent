@@ -46,6 +46,21 @@ def _model_display_name() -> str:
             " (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용")
 
 
+def _strip_model_claim(text: str) -> str:
+    """Neutralize the direct prompt before a different provider receives it."""
+    model_claim = (
+        f"당신은 Craver의 AI 어시스턴트입니다. ({_model_display_name()} 기반)"
+    )
+    if model_claim not in text:
+        return text
+    neutral_intro = (
+        "당신은 Craver의 AI 어시스턴트입니다.\n"
+        "어떤 모델로 동작 중인지 답변에서 밝히지 마세요. "
+        "물으면 확인해 드릴 수 없다고 답하세요."
+    )
+    return text.replace(model_claim, neutral_intro)
+
+
 
 def _content_to_text(content) -> str:
     """Extract plain text from content (str or multimodal list)."""
@@ -163,6 +178,103 @@ def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
         break
 
     return anchors + list(reversed(newest))
+
+
+_DIRECT_TEMPORARY_FAILURE = (
+    "죄송합니다. AI 서비스가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요."
+)
+_DIRECT_PARTIAL_FAILURE = (
+    "\n\n> ⚠️ 응답 생성이 일시적으로 중단되었습니다. **다시 시도**해 주세요."
+)
+
+
+def _system_instruction_to_text(system_instruction) -> str:
+    """Flatten Anthropic system blocks for the Gemini fallback."""
+    if isinstance(system_instruction, str):
+        return system_instruction
+    if not isinstance(system_instruction, list):
+        return str(system_instruction or "")
+    return "\n\n".join(
+        str(block.get("text", ""))
+        for block in system_instruction
+        if isinstance(block, dict) and block.get("text")
+    )
+
+
+def _stream_direct_with_fallback(
+    primary_client,
+    query: str,
+    messages=None,
+    system_instruction=None,
+    temperature: float = 0.3,
+    fallback_client=None,
+):
+    """Stream Claude, then use Gemini if Claude fails before the first token.
+
+    Claude performs its own bounded transient retry. The provider switch happens
+    only after those attempts are exhausted and only when no answer text reached
+    the user. A partially delivered answer is never restarted because that would
+    splice two different generations together.
+    """
+    messages = messages or []
+    emitted = False
+    try:
+        if len(messages) > 1 and hasattr(primary_client, "generate_with_history_stream"):
+            stream = primary_client.generate_with_history_stream(
+                messages=_clean_messages_for_history(messages),
+                system_instruction=system_instruction,
+                temperature=temperature,
+            )
+        else:
+            stream = primary_client.generate_stream(
+                query,
+                system_instruction=system_instruction,
+                temperature=temperature,
+            )
+        for chunk in stream:
+            emitted = True
+            yield chunk
+        return
+    except Exception as e:
+        logger.warning(
+            "direct_primary_stream_failed",
+            emitted=emitted,
+            error_type=type(e).__name__,
+        )
+        if emitted:
+            yield _DIRECT_PARTIAL_FAILURE
+            return
+
+    try:
+        fallback = fallback_client or get_flash_client()
+        fallback_system = _strip_model_claim(
+            _system_instruction_to_text(system_instruction)
+        )
+        if len(messages) > 1 and hasattr(fallback, "generate_with_history"):
+            answer = fallback.generate_with_history(
+                messages=_clean_messages_for_history(messages),
+                system_instruction=fallback_system,
+                temperature=temperature,
+            )
+        else:
+            answer = fallback.generate(
+                query,
+                system_instruction=fallback_system,
+                temperature=temperature,
+            )
+        answer = (answer or "").strip()
+        if answer:
+            logger.info("direct_fallback_succeeded", provider="gemini_flash")
+            yield answer
+            return
+        logger.warning("direct_fallback_empty", provider="gemini_flash")
+    except Exception as e:
+        logger.error(
+            "direct_fallback_failed",
+            provider="gemini_flash",
+            error_type=type(e).__name__,
+        )
+    yield _DIRECT_TEMPORARY_FAILURE
 
 
 def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
@@ -1484,19 +1596,19 @@ class OrchestratorAgent:
 
             def _worker():
                 try:
-                    if messages and len(messages) > 1 and hasattr(llm, 'generate_with_history_stream'):
-                        gen = llm.generate_with_history_stream(
-                            messages=_clean_messages_for_history(messages),
-                            system_instruction=final_system, temperature=0.5,
-                        )
-                    else:
-                        gen = llm.generate_stream(
-                            query, system_instruction=final_system, temperature=0.5,
-                        )
-                    for chunk in gen:
+                    for chunk in _stream_direct_with_fallback(
+                        llm,
+                        query,
+                        messages=messages,
+                        system_instruction=final_system,
+                        temperature=0.5,
+                    ):
                         _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
-                except Exception as e:
-                    _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
+                except Exception as e:  # final boundary: never expose provider details
+                    logger.error("direct_stream_boundary_failed", error_type=type(e).__name__)
+                    _loop.call_soon_threadsafe(
+                        _q.put_nowait, ("chunk", _DIRECT_TEMPORARY_FAILURE)
+                    )
                 _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
 
             _loop.run_in_executor(None, _worker)
@@ -3706,6 +3818,9 @@ JSON만 반환:
                     vision_text,
                     images,
                     system_instruction=f"{system}\n\n{date_line}",
+                    fallback_system_instruction=_strip_model_claim(
+                        f"{system}\n\n{date_line}"
+                    ),
                     temperature=0.5,
                 )
                 return {"source": "direct", "answer": answer}
@@ -3730,75 +3845,65 @@ JSON만 반환:
 
             if stream_callback:
                 # Real-time streaming via thread + async queue
-                if messages and len(messages) > 1:
-                    # Multi-turn: use history stream
-                    _q: _aio.Queue = _aio.Queue()
-                    _loop = _aio.get_running_loop()
+                _q: _aio.Queue = _aio.Queue()
+                _loop = _aio.get_running_loop()
 
-                    def _stream_worker():
-                        try:
-                            for chunk in llm.generate_with_history_stream(
-                                messages=_clean_messages_for_history(messages),
-                                system_instruction=final_system, temperature=0.5,
-                            ):
-                                _loop.call_soon_threadsafe(_q.put_nowait, chunk)
-                        except Exception as e:
-                            logger.error("direct_stream_worker_failed", error=str(e))
-                            _loop.call_soon_threadsafe(_q.put_nowait, f"\n\n오류: {e}")
-                        finally:
-                            _loop.call_soon_threadsafe(_q.put_nowait, None)
+                def _stream_worker():
+                    try:
+                        for chunk in _stream_direct_with_fallback(
+                            llm,
+                            query,
+                            messages=messages,
+                            system_instruction=final_system,
+                            temperature=0.5 if len(messages) > 1 else 0.3,
+                        ):
+                            _loop.call_soon_threadsafe(_q.put_nowait, chunk)
+                    except Exception as e:  # final boundary: keep details in logs only
+                        logger.error(
+                            "direct_stream_boundary_failed",
+                            error_type=type(e).__name__,
+                        )
+                        _loop.call_soon_threadsafe(
+                            _q.put_nowait, _DIRECT_TEMPORARY_FAILURE
+                        )
+                    finally:
+                        _loop.call_soon_threadsafe(_q.put_nowait, None)
 
-                    _loop.run_in_executor(None, _stream_worker)
-                    answer = ""
-                    while True:
-                        chunk = await _q.get()
-                        if chunk is None:
-                            break
-                        answer += chunk
-                        await stream_callback(chunk)
-                else:
-                    # Single-turn stream
-                    _q: _aio.Queue = _aio.Queue()
-                    _loop = _aio.get_running_loop()
-
-                    def _stream_worker():
-                        try:
-                            for chunk in llm.generate_stream(
-                                query, system_instruction=final_system, temperature=0.3,
-                            ):
-                                _loop.call_soon_threadsafe(_q.put_nowait, chunk)
-                        except Exception as e:
-                            logger.error("direct_stream_worker_failed", error=str(e))
-                            _loop.call_soon_threadsafe(_q.put_nowait, f"\n\n오류: {e}")
-                        finally:
-                            _loop.call_soon_threadsafe(_q.put_nowait, None)
-
-                    _loop.run_in_executor(None, _stream_worker)
-                    answer = ""
-                    while True:
-                        chunk = await _q.get()
-                        if chunk is None:
-                            break
-                        answer += chunk
-                        await stream_callback(chunk)
+                _loop.run_in_executor(None, _stream_worker)
+                answer = ""
+                while True:
+                    chunk = await _q.get()
+                    if chunk is None:
+                        break
+                    answer += chunk
+                    await stream_callback(chunk)
             else:
                 # Non-streaming fallback
                 if messages and len(messages) > 1:
                     answer = await asyncio.to_thread(
                         llm.generate_with_history,
                         messages=_clean_messages_for_history(messages),
-                        system_instruction=final_system, temperature=0.5,
+                        system_instruction=final_system,
+                        fallback_system_instruction=_strip_model_claim(
+                            f"{system}\n\n{date_line}"
+                        ),
+                        temperature=0.5,
                     )
                 else:
                     answer = await asyncio.to_thread(
                         llm.generate,
-                        query, system_instruction=final_system, temperature=0.5,
+                        query,
+                        system_instruction=final_system,
+                        fallback_system_instruction=_strip_model_claim(
+                            f"{system}\n\n{date_line}"
+                        ),
+                        temperature=0.5,
                     )
 
             return {"source": "direct", "answer": answer}
         except Exception as e:
-            logger.error("direct_llm_failed", error=str(e))
-            return {"source": "direct", "answer": f"죄송합니다. 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n같은 문제가 반복되면 질문을 다른 방식으로 바꿔보세요.\n\n> 기술 참고: {str(e)[:100]}"}
+            logger.error("direct_llm_failed", error_type=type(e).__name__)
+            return {"source": "direct", "answer": _DIRECT_TEMPORARY_FAILURE}
 
     async def _verify_coherence(self, query: str, answer: str, route: str) -> str:
         """Verify the answer actually addresses the user's question.

@@ -538,6 +538,183 @@ def test_direct_stream_falls_back_without_exposing_provider_error():
     assert "req_sensitive" not in answer
 
 
+def test_strip_model_claim_removes_model_and_adds_disclosure_guidance(monkeypatch):
+    monkeypatch.setattr(
+        orchestrator_module, "_model_display_name", lambda: "Claude Opus 5"
+    )
+    prompt = (
+        "당신은 Craver의 AI 어시스턴트입니다. (Claude Opus 5 기반)\n"
+        "다음 지침"
+    )
+
+    result = orchestrator_module._strip_model_claim(prompt)
+
+    assert result.startswith("당신은 Craver의 AI 어시스턴트입니다.\n")
+    assert "Claude Opus 5 기반" not in result
+    assert (
+        "어떤 모델로 동작 중인지 답변에서 밝히지 마세요. "
+        "물으면 확인해 드릴 수 없다고 답하세요."
+    ) in result
+    assert result.endswith("다음 지침")
+
+
+def test_strip_model_claim_leaves_unrelated_prompt_unchanged():
+    prompt = "당신은 다른 업무를 처리하는 도우미입니다.\n원래 지침"
+
+    assert orchestrator_module._strip_model_claim(prompt) == prompt
+
+
+def test_strip_model_claim_removes_current_display_name():
+    model_name = orchestrator_module._model_display_name()
+    prompt = f"당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)"
+
+    result = orchestrator_module._strip_model_claim(prompt)
+
+    assert model_name not in result
+
+
+def test_direct_stream_fallback_receives_neutral_system_prompt(monkeypatch):
+    monkeypatch.setattr(
+        orchestrator_module, "_model_display_name", lambda: "Claude Opus 5"
+    )
+    captured = {}
+
+    class CapturingFallback:
+        def generate(self, *_args, **kwargs):
+            captured.update(kwargs)
+            return "Flash 답변"
+
+    system_instruction = [
+        {
+            "type": "text",
+            "text": "당신은 Craver의 AI 어시스턴트입니다. (Claude Opus 5 기반)",
+        },
+        {"type": "text", "text": "추가 지침"},
+    ]
+
+    answer = "".join(
+        orchestrator_module._stream_direct_with_fallback(
+            SimpleNamespace(generate_stream=_raising_stream()),
+            "질문",
+            system_instruction=system_instruction,
+            fallback_client=CapturingFallback(),
+        )
+    )
+
+    fallback_system = captured["system_instruction"]
+    assert answer == "Flash 답변"
+    assert "Claude Opus 5" not in fallback_system
+    assert "어떤 모델로 동작 중인지 답변에서 밝히지 마세요." in fallback_system
+    assert "추가 지침" in fallback_system
+
+
+@pytest.mark.parametrize(
+    ("method_name", "required_args", "expected_fallback_args"),
+    [
+        ("generate", ("질문",), ("질문", "중립 시스템", 0.1, 8192)),
+        (
+            "generate_with_history",
+            ([{"role": "user", "content": "질문"}],),
+            ([{"role": "user", "content": "질문"}], "중립 시스템", 0.1, 8192),
+        ),
+        ("generate_json", ("JSON 질문",), ("JSON 질문", "중립 시스템", 0.0, 4096)),
+        (
+            "generate_with_images",
+            ("이미지 질문", [{"data": b"image", "mime_type": "image/png"}]),
+            (
+                "이미지 질문",
+                [{"data": b"image", "mime_type": "image/png"}],
+                "중립 시스템",
+                0.3,
+                8192,
+            ),
+        ),
+    ],
+)
+def test_non_streaming_fallback_uses_supplied_system_instruction(
+    monkeypatch, method_name, required_args, expected_fallback_args
+):
+    client = _claude_client([OVERLOAD] * llm_module._MAX_RETRIES)
+    fallback = _NonStreamingFallback()
+    monkeypatch.setattr(llm_module.time, "sleep", lambda _delay: None)
+    monkeypatch.setattr(llm_module, "get_flash_client", lambda: fallback)
+
+    result = getattr(client, method_name)(
+        *required_args,
+        system_instruction="원래 시스템",
+        fallback_system_instruction="중립 시스템",
+    )
+
+    assert result == "Flash 답변"
+    assert fallback.calls == [(method_name, expected_fallback_args)]
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    ["generate", "generate_with_history", "generate_json", "generate_with_images"],
+)
+def test_non_streaming_client_method_signatures_match(method_name):
+    claude_signature = inspect.signature(getattr(llm_module.ClaudeClient, method_name))
+    gemini_signature = inspect.signature(getattr(llm_module.GeminiClient, method_name))
+
+    assert "fallback_system_instruction" in claude_signature.parameters
+    assert claude_signature == gemini_signature
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["generate", "generate_with_history", "generate_with_images"])
+async def test_handle_direct_supplies_neutral_fallback_system(monkeypatch, mode):
+    captured = {}
+
+    class CapturingClient:
+        def _capture(self, method, **kwargs):
+            captured.update(method=method, **kwargs)
+            return "답변"
+
+        def generate(self, _query, **kwargs):
+            return self._capture("generate", **kwargs)
+
+        def generate_with_history(self, **kwargs):
+            return self._capture("generate_with_history", **kwargs)
+
+        def generate_with_images(self, _text, _images, **kwargs):
+            return self._capture("generate_with_images", **kwargs)
+
+    model_name = orchestrator_module._model_display_name()
+    system = f"당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)\n기본 지침"
+    agent = object.__new__(OrchestratorAgent)
+    agent._build_direct_system_prompt = MethodType(lambda _self: system, agent)
+    agent._needs_web_search = MethodType(lambda _self, _query: False, agent)
+    monkeypatch.setattr(
+        orchestrator_module, "get_llm_client", lambda *_args, **_kwargs: CapturingClient()
+    )
+
+    messages = []
+    images = []
+    if mode == "generate_with_history":
+        messages = [
+            {"role": "user", "content": "첫 질문"},
+            {"role": "assistant", "content": "첫 답변"},
+            {"role": "user", "content": "후속 질문"},
+        ]
+    elif mode == "generate_with_images":
+        images = [{"data": b"image", "mime_type": "image/png"}]
+
+    result = await agent._handle_direct(
+        "질문",
+        messages=messages,
+        conversation_context="",
+        model_type="claude",
+        images=images,
+    )
+
+    fallback_system = captured["fallback_system_instruction"]
+    assert result == {"source": "direct", "answer": "답변"}
+    assert captured["method"] == mode
+    assert model_name not in fallback_system
+    assert "어떤 모델로 동작 중인지 답변에서 밝히지 마세요." in fallback_system
+
+
 def test_double_provider_failure_returns_only_safe_message():
     primary = SimpleNamespace(generate_stream=_raising_stream())
     fallback = _Fallback(error=RuntimeError("gemini secret response"))

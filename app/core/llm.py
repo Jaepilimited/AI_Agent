@@ -266,6 +266,7 @@ class GeminiClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
         max_output_tokens: int = 8192,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a response from Gemini."""
         from google.genai import types
@@ -336,6 +337,7 @@ class GeminiClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.3,
         max_output_tokens: int = 8192,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a response from text + images (vision).
 
@@ -379,6 +381,7 @@ class GeminiClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
         max_output_tokens: int = 8192,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a response with conversation history."""
         from google.genai import types
@@ -425,6 +428,7 @@ class GeminiClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.0,
         max_output_tokens: int = 4096,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a JSON response from Gemini (native JSON mode).
 
@@ -696,6 +700,7 @@ class ClaudeClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
         max_output_tokens: int = 8192,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a response from Claude."""
         logger.info("claude_generating", model=self.model, prompt_length=len(prompt))
@@ -718,7 +723,9 @@ class ClaudeClient:
                     "generate",
                     lambda: get_flash_client().generate(
                         prompt,
-                        system_instruction,
+                        fallback_system_instruction
+                        if fallback_system_instruction is not None
+                        else system_instruction,
                         temperature,
                         max_output_tokens,
                     ),
@@ -737,6 +744,7 @@ class ClaudeClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.3,
         max_output_tokens: int = 8192,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a response from text + images (vision).
 
@@ -779,7 +787,9 @@ class ClaudeClient:
                     lambda: get_flash_client().generate_with_images(
                         text,
                         images,
-                        system_instruction,
+                        fallback_system_instruction
+                        if fallback_system_instruction is not None
+                        else system_instruction,
                         temperature,
                         max_output_tokens,
                     ),
@@ -797,6 +807,7 @@ class ClaudeClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.1,
         max_output_tokens: int = 8192,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a response with conversation history."""
         api_messages = []
@@ -859,7 +870,9 @@ class ClaudeClient:
                     "generate_with_history",
                     lambda: get_flash_client().generate_with_history(
                         messages,
-                        system_instruction,
+                        fallback_system_instruction
+                        if fallback_system_instruction is not None
+                        else system_instruction,
                         temperature,
                         max_output_tokens,
                     ),
@@ -1050,6 +1063,7 @@ class ClaudeClient:
         system_instruction: Optional[str] = None,
         temperature: float = 0.0,
         max_output_tokens: int = 4096,
+        fallback_system_instruction: Optional[str] = None,
     ) -> str:
         """Generate a JSON response from Claude.
 
@@ -1077,7 +1091,9 @@ class ClaudeClient:
                     "generate_json",
                     lambda: get_flash_client().generate_json(
                         prompt,
-                        system_instruction,
+                        fallback_system_instruction
+                        if fallback_system_instruction is not None
+                        else system_instruction,
                         temperature,
                         max_output_tokens,
                     ),

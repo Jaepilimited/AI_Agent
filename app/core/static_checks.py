@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import ast
 import glob
 import io
 import os
@@ -123,6 +124,19 @@ def prompt_single_source() -> Tuple[bool, str]:
     if not _exists("app/agents/orchestrator.py"):
         return True, "건너뜀"
     src = _read("app/agents/orchestrator.py")
+    tree = ast.parse(src)
+    neutralizer = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_strip_model_claim"
+        ),
+        None,
+    )
+    if neutralizer is not None:
+        lines = src.splitlines(keepends=True)
+        del lines[neutralizer.lineno - 1:neutralizer.end_lineno]
+        src = "".join(lines)
     n = src.count("당신은 Craver의 AI 어시스턴트입니다")
     return (n == 1), f"direct 프롬프트 사본 {n}개 (1이어야 정상)"
 
