@@ -41,12 +41,19 @@ def main() -> int:
         print("[i] 회귀가 빠진 붐따가 없습니다 — 고친 것이 전부 골든으로 지켜지고 있습니다.")
         return 0
 
-    print(f"[i] 회귀가 빠진 붐따 {len(candidates)}건")
-    for c in candidates:
+    ready = [c for c in candidates if not c.get("needs_history")]
+    later = [c for c in candidates if c.get("needs_history")]
+    print(f"[i] 회귀가 빠진 붐따 {len(candidates)}건 — 바로 가능 {len(ready)} · 맥락 필요 {len(later)}")
+    for c in ready:
         print(f"    #{c['feedback_id']}  {c['question'][:56]}")
         print(f"          왜: {c['why'][:70]}")
+    if later:
+        print()
+        print("[!] 아래는 **후속 질문**이라 앞 대화(`history`)를 채워야 문항이 됩니다:")
+        for c in later:
+            print(f"    #{c['feedback_id']}  {c['question'][:56]}")
 
-    drafts = draft_items(candidates)
+    drafts = draft_items(ready)
     payload = json.dumps({"items": drafts}, ensure_ascii=False, indent=2)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:

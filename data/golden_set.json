@@ -1068,19 +1068,20 @@
       "question": "2026년 상반기 우마(UM) 브랜드 원가율 알려줘",
       "expect": {
         "contains_any": [
+          "권한",
           "적재",
           "누락",
           "불가"
         ],
         "not_contains": [
           "원가율은 0",
-          "원가율 0.0",
-          "언제인가요"
+          "0.0%"
         ],
-        "min_len": 50,
-        "max_seconds": 150
+        "min_len": 20,
+        "max_seconds": 120
       },
-      "note": "UM 99.9% · CBT 99.6% 가 원가 0원으로 적재돼 있다. 그대로 집계하면 원가율이 거의 0%로 나와 '이익률이 매우 높다'는 오답이 된다 (2026-08-12 실측). ⚠️ 기간을 반드시 넣을 것 — 안 넣으면 기간을 되묻느라 규칙을 타지 않고 1.5초에 끝나 문항이 무의미해진다 (run#22 에서 실제로 그랬다). 되묻기 재발을 막으려 '언제인가요'를 금지어로 둔다"
+      "note": "UM 99.9% · CBT 99.6% 가 원가 0원으로 적재돼 있다. 그대로 집계하면 원가율이 거의 0%로 나와 '이익률이 매우 높다'는 오답이 된다 (2026-08-12 실측). ⚠️ 기간을 반드시 넣을 것 — 안 넣으면 기간을 되묻느라 규칙을 타지 않고 1.5초에 끝나 문항이 무의미해진다 (run#22 에서 실제로 그랬다). 되묻기 재발을 막으려 '언제인가요'를 금지어로 둔다 / 2026-08-27: 문항이 낡았다. 이제 **FI 권한이 있으면** 손익 테이블로 UM 원가율(63.1%)을 답한다 — 근거 있는 값이라 '미적재' 를 기대하면 틀린다. 지켜야 할 것은 반대편이다: **권한 없는 사람에게 원가 0 을 조용히 답하지 않는가.** 실측(2026-08-27) 비권한 사용자는 명시적 거절을 받는다.",
+      "auth": "user"
     },
     {
       "id": "discount_is_b2c_only",
@@ -1158,19 +1159,18 @@
       "freq": "weekly",
       "question": "2026년 상반기 일본 매출 보고서 만들어줘",
       "expect": {
-        "contains_all": [
-          "/api/reports/",
-          "보고서를 만들었습니다"
+        "contains_any": [
+          "확인할게요",
+          "확인할게요.",
+          "두 가지만"
         ],
         "not_contains": [
-          "어떤 기간",
-          "언제 기준",
-          "알려주시면"
+          "/api/reports/"
         ],
-        "min_len": 100,
-        "max_seconds": 240
+        "min_len": 80,
+        "max_seconds": 90
       },
-      "note": "'보고서'라고 명시하면 반드시 만들어야 한다. not_contains 는 되묻기로 빠지는 것을 막는다"
+      "note": "'보고서'라고 명시하면 반드시 만들어야 한다. not_contains 는 되묻기로 빠지는 것을 막는다 / 2026-08-27: 문항이 낡아 있었다. 2026-08-24 부터 보고서는 **만들기 전에 확인 질문 2개**를 거친다(CLAUDE.md). 그런데 이 문항은 첫 턴에 바로 생성되기를 기대해 실패했다 — weekly 라 일요일 full 런에서만 도는데, 마지막 일요일(08-23)이 규칙 변경 전이라 오늘 처음 드러났다. 1턴=확인질문 / 2턴=생성 으로 나눠 양쪽을 지킨다."
     },
     {
       "id": "report_atat_builds",
@@ -1178,17 +1178,18 @@
       "freq": "weekly",
       "question": "@@보고서 2026년 상반기 일본 매출",
       "expect": {
-        "contains_all": [
-          "/api/reports/"
+        "contains_any": [
+          "확인할게요",
+          "확인할게요.",
+          "두 가지만"
         ],
         "not_contains": [
-          "허용되지 않은",
-          "없는 보고서"
+          "/api/reports/"
         ],
-        "min_len": 100,
-        "max_seconds": 240
+        "min_len": 80,
+        "max_seconds": 90
       },
-      "note": "@@보고서 는 데이터소스 지정이라 본문에 '보고서'라는 말이 없어도 만든다. explicit 플래그가 _handle_report → service.run → registry.route 로 관통하는지 본다"
+      "note": "@@보고서 는 데이터소스 지정이라 본문에 '보고서'라는 말이 없어도 만든다. explicit 플래그가 _handle_report → service.run → registry.route 로 관통하는지 본다 / 2026-08-27: 문항이 낡아 있었다. 2026-08-24 부터 보고서는 **만들기 전에 확인 질문 2개**를 거친다(CLAUDE.md). 그런데 이 문항은 첫 턴에 바로 생성되기를 기대해 실패했다 — weekly 라 일요일 full 런에서만 도는데, 마지막 일요일(08-23)이 규칙 변경 전이라 오늘 처음 드러났다. 1턴=확인질문 / 2턴=생성 으로 나눠 양쪽을 지킨다."
     },
     {
       "id": "report_country_filter_not_substring",
@@ -1196,17 +1197,18 @@
       "freq": "weekly",
       "question": "2026 상반기 일본 매출 보고서 만들어줘 외부 요인도 같이 봐줘",
       "expect": {
-        "contains_all": [
-          "/api/reports/",
-          "일본"
+        "contains_any": [
+          "확인할게요",
+          "확인할게요.",
+          "두 가지만"
         ],
         "not_contains": [
-          "인도"
+          "/api/reports/"
         ],
-        "min_len": 100,
-        "max_seconds": 300
+        "min_len": 80,
+        "max_seconds": 90
       },
-      "note": "2026-08-13 사고: '외부 요인도'의 '인도'를 국가로 잡아 일본 보고서가 '일본 · 인도' 보고서가 됐다. 요약에 versus 절('일본 · 인도과 타 국가...')이 실려 드러난다. ⚠️ 절 조합이 바뀌면 요약에서 안 보일 수 있다 — 확실한 감시는 tests/test_report_rules.py 의 extract_filters 케이스다. 여긴 사용자가 보는 쪽만 본다"
+      "note": "2026-08-13 사고: '외부 요인도'의 '인도'를 국가로 잡아 일본 보고서가 '일본 · 인도' 보고서가 됐다. 요약에 versus 절('일본 · 인도과 타 국가...')이 실려 드러난다. ⚠️ 절 조합이 바뀌면 요약에서 안 보일 수 있다 — 확실한 감시는 tests/test_report_rules.py 의 extract_filters 케이스다. 여긴 사용자가 보는 쪽만 본다 / 2026-08-27: 문항이 낡아 있었다. 2026-08-24 부터 보고서는 **만들기 전에 확인 질문 2개**를 거친다(CLAUDE.md). 그런데 이 문항은 첫 턴에 바로 생성되기를 기대해 실패했다 — weekly 라 일요일 full 런에서만 도는데, 마지막 일요일(08-23)이 규칙 변경 전이라 오늘 처음 드러났다. 1턴=확인질문 / 2턴=생성 으로 나눠 양쪽을 지킨다."
     },
     {
       "id": "inc_brand_scope_country_total",
@@ -1371,6 +1373,74 @@
         "max_seconds": 150
       },
       "note": "2026-08-27 (붐따 #127 — 닫혔지만 재현됨): 질문이 '팀은 총 9개임' 이라고 틀리게 단정하자 LLM 이 `LIMIT 9` 를 걸어 JBT(20.3억)·KBT(20.2억)·BCM(2.7억)이 잘렸다. 답변은 '총 9개 팀의 전체 매출' 이라 단정하며 42.8억(4.2%)이 빠진 채 100%로 표시했다 — 자른 사실은 어디에도 없었다."
+    },
+    {
+      "id": "inc_megawari_quarter_amounts",
+      "category": "incident",
+      "freq": "weekly",
+      "question": "26년 메가와리 1분기 실적이랑 2분기 실적 비교해서 통계 뽑아줘. 매출 총합도 아래에 나오도록 해주셈",
+      "expect": {
+        "contains_all": [
+          "73.4",
+          "62.2"
+        ],
+        "not_contains": [
+          "40.2"
+        ],
+        "sql_contains_any": [
+          "Q10",
+          "Mall_Classification"
+        ],
+        "min_len": 200,
+        "max_seconds": 150
+      },
+      "note": "2026-08-27 (붐따 #96): 당시 2분기를 40억으로 답했고 실제는 62.2억이었다 — 메가와리 분기 날짜를 표에 없이 추정했기 때문. 지금은 맞지만 생성된 SQL 의 `CASE` 절에 `2025-05-29` 오타가 남아 있다(WHERE 가 걸러 결과는 맞다). 숫자를 고정해 두면 그 오타가 언젠가 결과를 바꿀 때 여기서 잡힌다."
+    },
+    {
+      "id": "inc_order_qty_uses_product_table",
+      "category": "incident",
+      "freq": "weekly",
+      "question": "8월 기준 동남유럽, 서유럽에서 아젤라익애씨드 발주 수량 국가별로 알려줘",
+      "expect": {
+        "sql_contains_any": [
+          "Sales_Integration.Product"
+        ],
+        "contains_any": [
+          "체코",
+          "폴란드",
+          "개"
+        ],
+        "min_len": 150,
+        "max_seconds": 150
+      },
+      "note": "2026-08-27 (붐따 #143): 당시 매출 수치가 product metrics 와 10배 이상 차이났다. 수량은 세트를 분해한 `Product` 테이블이라야 하고, 세부 권역은 `Continent2` 다 — 둘 중 하나만 틀려도 조용히 다른 수가 나온다."
+    },
+    {
+      "id": "report_builds_after_clarification",
+      "category": "report",
+      "freq": "weekly",
+      "history": [
+        {
+          "role": "user",
+          "content": "2026년 상반기 일본 매출 보고서 만들어줘"
+        },
+        {
+          "role": "assistant",
+          "content": "보고서 정확도를 높이기 위해 만들기 전에 두 가지만 확인할게요.\n\n1. 분석 대상·기간과 이 보고서로 최종 확인하려는 판단은 무엇인가요?\n2. 어느 기준으로 한 단계 더 나누고, 무엇과 비교할까요?\n\n두 질문에 한 번에 답해주세요. 예: `2026년 상반기 일본 B2C의 감소 원인 / 채널별로 나눠 전년 동기와 비교`\n\n<!-- report-clarification-v1:eyJ2IjoxLCJxdWVzdGlvbiI6IjIwMjbrhYQg7IOB67CY6riwIOydvOuzuCDrp6Tstpwg67O06rOg7IScIOunjOuTpOyWtOykmCIsImV4cGxpY2l0IjpmYWxzZX0 -->"
+        }
+      ],
+      "question": "2026년 상반기 일본 B2C 매출이 왜 줄었는지 / 채널별로 나눠 전년 동기와 비교",
+      "expect": {
+        "contains_all": [
+          "/api/reports/"
+        ],
+        "not_contains": [
+          "인도"
+        ],
+        "min_len": 100,
+        "max_seconds": 300
+      },
+      "note": "2026-08-27: 확인 질문에 답하면 **실제로 만들어야** 한다. 대기 상태는 직전 assistant 메시지의 숨은 표식으로만 이어받으므로 `history` 가 필수다."
     }
   ]
 }

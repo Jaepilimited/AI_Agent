@@ -78,7 +78,7 @@ def golden_candidates(recent_days: int | None = None) -> List[Dict[str, Any]]:
     params = (recent_days,) if recent_days else ()
     rows = fetch_all(
         "SELECT f.id, f.comment, f.handled_at, f.handled_note, u.content AS question, "
-        "       m.content AS answer "
+        "       m.content AS answer, u.id AS user_msg_id, m.conversation_id AS convo "
         "FROM message_feedback f "
         "JOIN messages m ON m.id = f.message_id "
         # ⛔ `u.id < m.id` 로 조인하고 `GROUP BY` 로 묶으면 **직전 질문이 아니라
@@ -94,6 +94,12 @@ def golden_candidates(recent_days: int | None = None) -> List[Dict[str, Any]]:
         params,
     ) or []
 
+    # 대화의 첫 질문 id — 후속 질문을 가려내는 데 쓴다 (`context_len` 과 같은 규칙)
+    first_user = {
+        str(r["conversation_id"]): str(r["mid"]) for r in
+        (fetch_all("SELECT conversation_id, MIN(id) mid FROM messages "
+                   "WHERE role = 'user' GROUP BY conversation_id") or [])
+    }
     out: List[Dict[str, Any]] = []
     seen = set()
     for row in rows:
@@ -108,6 +114,11 @@ def golden_candidates(recent_days: int | None = None) -> List[Dict[str, Any]]:
             continue
         seen.add(sig)
         out.append({
+            # ⚠️ 후속 질문은 **그대로는 문항이 될 수 없다** — 앞 대화가 진짜 의도라
+            #    혼자 던지면 엉뚱한 답이 나온다. 골든 형식의 `history` 를 채워야
+            #    하는데 그건 사람이 판단할 몫이라, 여기서는 표시만 한다.
+            "needs_history": str(row.get("user_msg_id")) != str(
+                first_user.get(str(row.get("convo")), "")),
             "feedback_id": row["id"],
             "question": question[:300],
             "why": str(row.get("comment") or "")[:200],
@@ -145,6 +156,8 @@ def status() -> Dict[str, Any]:
     return {
         "recent": len(recent),
         "total": len(everything),
+        # 바로 문항으로 만들 수 있는 것 — 후속 질문은 맥락을 채워야 한다
+        "ready": sum(1 for c in recent if not c.get("needs_history")),
         "window_days": RECENT_DAYS,
         "questions": [c["question"][:60] for c in recent[:5]],
     }
