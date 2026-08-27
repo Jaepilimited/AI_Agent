@@ -373,6 +373,29 @@
     });
   }
 
+  function renderSaved(body, doc, options) {
+    var rows = doc.saved || [];
+    var section;
+
+    /* ⛔ 저장 질문이 없으면 절 자체를 만들지 않는다. 빈 절은 첫 화면만 길게 만든다. */
+    if (!rows.length) return;
+    section = docSection(body, "저장한 질문", rows.length);
+    rows.forEach(function (item) {
+      var main = docRow(section, "normal", item.question, "", options, item.question,
+        { start: clockLabel(item.last_run_at) });
+      var continuation;
+
+      /* ⚠️ 서버가 300자로 줄이지만, 오래된 캐시도 전문을 화면에 밀어 넣지 못하게 한 번 더 자른다. */
+      docLine(main, "briefing-doc-point", String(item.answer || "").slice(0, 300));
+      continuation = textNode("button", "briefing-doc-join", "셀라에서 이어보기");
+      continuation.type = "button";
+      continuation.addEventListener("click", function () {
+        putQuestionInInput(item.question, options);
+      });
+      main.appendChild(continuation);
+    });
+  }
+
   /* 업무 지표는 BigQuery 알림이라 문서의 숫자 검증을 거치지 않는다 —
      LLM 이 쓴 문장이 아니라 `briefing.py` 가 조회 결과로 만든 문장이다. */
   /* 무엇을 놓치고 있는지 말한다 — "연결하세요" 만으로는 왜 해야 하는지 알 수 없다. */
@@ -607,6 +630,7 @@
     if (!connected) {
       // 일정·메일은 못 보여주지만 지표·환율은 보여준다. 연결하면 무엇이 더 생기는지도 말한다.
       renderConnectPrompt(body, options);
+      renderSaved(body, doc, options);
       renderBusiness(body, data, options);
       renderFx(body, data);
       body.appendChild(docFooter(doc, options));
@@ -622,6 +646,7 @@
     renderMailSection(left, doc, options, data.mail && data.mail.truncated);
     renderActions(right, doc, options);
     renderDeadlines(right, doc, options);
+    renderSaved(right, doc, options);
     renderBusiness(right, data, options);
     columns.appendChild(left);
     columns.appendChild(right);

@@ -21,6 +21,7 @@ import structlog
 from app.core import briefing
 from app.core import fx_rates
 from app.core import jandi_briefing
+from app.core import saved_questions
 from app.core import work_briefing
 from app.core import workday
 from app.core.google_auth import CredentialLoadOutcome, GoogleAuthManager
@@ -207,6 +208,7 @@ def build_document(
     window_meta: dict[str, Any],
     day: date,
     now: datetime,
+    saved: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """LLM 호출 1회 + 결정적 검증. 이 함수가 브리핑 문장의 **단일 소스**다."""
 
@@ -217,15 +219,16 @@ def build_document(
     )
     return work_briefing.compose(
         day=day, now=now, events=events, mails=mails, window=window_meta, raw=raw,
+        saved=saved,
     )
 
 
 async def _build_document_async(
     calendar: dict[str, Any], mail: dict[str, Any], window_meta: dict[str, Any],
-    day: date, now: datetime,
+    day: date, now: datetime, saved: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return await asyncio.wait_for(
-        asyncio.to_thread(build_document, calendar, mail, window_meta, day, now),
+        asyncio.to_thread(build_document, calendar, mail, window_meta, day, now, saved),
         timeout=SUMMARY_TIMEOUT_SECONDS,
     )
 
@@ -233,6 +236,7 @@ async def _build_document_async(
 def _document_only_facts(
     calendar: dict[str, Any], mail: dict[str, Any],
     window_meta: dict[str, Any], day: date, now: datetime,
+    saved: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """LLM 이 죽어도 문서는 나온다 — 일정·메일 목록은 **조회 결과라 LLM 과 무관하다.**
 
@@ -242,7 +246,7 @@ def _document_only_facts(
 
     return work_briefing.compose(
         day=day, now=now, events=calendar.get("items", []) or [],
-        mails=mail.get("items", []) or [], window=window_meta, raw={},
+        mails=mail.get("items", []) or [], window=window_meta, raw={}, saved=saved,
     )
 
 
@@ -370,6 +374,39 @@ def _safe_business_for_user(user_id: int) -> dict[str, Any]:
         return {"status": "error", "item": None}
 
 
+def _safe_saved_for_user(user_id: int) -> list[dict[str, Any]]:
+    """내 저장 질문만 읽고, 브리핑의 이어보기 문을 함께 붙인다."""
+
+    try:
+        from app.core.jandi_notify import base_url
+
+        link = base_url()
+        return [
+            {**row, "link": link}
+            for row in saved_questions.list_for(int(user_id))
+        ]
+    except Exception as exc:
+        # ⚠️ 저장 질문 조회 실패가 일정·메일 브리핑까지 가리면 아침 문서 전체가 쓸모없어진다.
+        logger.warning("saved_questions_briefing_unavailable", error_type=type(exc).__name__)
+        return []
+
+
+def _with_saved_rows(
+    document: dict[str, Any], rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """캐시 문서에도 현재 저장 질문 결과를 반영한다."""
+
+    result = dict(document)
+    normalized = work_briefing._saved_rows(rows)
+    if normalized:
+        result["saved"] = normalized
+    else:
+        # ⛔ 저장 질문이 사라졌는데 오래된 캐시 절이 남으면 남의 과거 답처럼 보일 수 있다.
+        result.pop("saved", None)
+    result["markdown"] = work_briefing.render_markdown(result)
+    return result
+
+
 def _merge_failed_section(previous: dict[str, Any] | None, error_code: str) -> dict[str, Any]:
     if previous:
         result = dict(previous)
@@ -437,6 +474,7 @@ def get_cached_for_user(user: User, now: datetime | None = None) -> dict[str, An
         calendar, mail = _empty_sections("disconnected" if not connected else "empty", "oauth_missing" if not connected else "")
         document = _blank_document(day, "disconnected" if not connected else "empty")
         priorities, generated = [], None
+    document = _with_saved_rows(document, _safe_saved_for_user(user.id))
     business = _safe_business_for_user(user.id)
     return {
         "enabled": True, "for_date": str(day), "timezone": "Asia/Seoul",
@@ -528,6 +566,7 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
         cached = await asyncio.to_thread(get_cached_for_user, user, current)
         if not force and not cached["needs_refresh"]:
             return cached
+        saved = await asyncio.to_thread(_safe_saved_for_user, user.id)
         credential_outcome: CredentialLoadOutcome = await asyncio.to_thread(
             _auth_manager.load_credentials, user.email,
         )
@@ -561,7 +600,7 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
                 calendar=calendar,
                 mail=mail,
                 priorities=[],
-                document=_blank_document(current.date(), "disconnected"),
+                document=_with_saved_rows(_blank_document(current.date(), "disconnected"), saved),
                 generated_at="",
                 needs_refresh=False,
             )
@@ -614,13 +653,17 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
 
         # 문서 생성이 실패해도 조회 결과는 살린다 — 일정·메일 목록은 LLM 과 무관하다.
         try:
-            document = await _build_document_async(calendar, mail, window_meta, day, current)
+            document = await _build_document_async(
+                calendar, mail, window_meta, day, current, saved,
+            )
         except Exception as exc:
             logger.warning("briefing_document_failed", error_type=type(exc).__name__)
             try:
-                document = _document_only_facts(calendar, mail, window_meta, day, current)
+                document = _document_only_facts(
+                    calendar, mail, window_meta, day, current, saved,
+                )
             except Exception:
-                document = _blank_document(day, "error")
+                document = _with_saved_rows(_blank_document(day, "error"), saved)
             document["status"] = "error"
         calendar, mail = _apply_document(calendar, mail, document)
 
@@ -655,7 +698,7 @@ async def refresh_for_user(user: User, now: datetime | None = None, force: bool 
                 "calendar": calendar,
                 "mail": mail,
                 "business": business,
-                "document": _blank_document(day, "disconnected"),
+                "document": _with_saved_rows(_blank_document(day, "disconnected"), saved),
             }
         generated_at = current.replace(tzinfo=None)
         await asyncio.to_thread(

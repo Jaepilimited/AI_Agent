@@ -387,6 +387,50 @@ def test_existing_conversation_still_hides_welcome():
     assert "innerHTML" not in briefing_source
 
 
+def test_saved_questions_use_the_existing_timeline_rows(page):
+    page.set_content(
+        '<section id="personal-briefing"></section><textarea id="chat-input"></textarea>'
+    )
+    page.add_script_tag(path=str(SCRIPT))
+    payload = _fixture()
+    payload["document"] = {
+        "status": "ready",
+        "for_date": "2026-08-25",
+        "weekday": "화",
+        "meetings": [],
+        "mail": [],
+        "actions": [],
+        "deadlines": [],
+        "mail_total": 0,
+        "saved": [{
+            "question": "Shopee Indonesia sales",
+            "answer": "short answer",
+            "last_run_at": "2026-08-25T08:58:00+09:00",
+            "link": "https://cella.example.test",
+        }],
+    }
+    page.evaluate(
+        """async payload => {
+          const controller = CellaPersonalBriefing.create({
+            root: document.querySelector('#personal-briefing'),
+            input: document.querySelector('#chat-input'), connect: () => {},
+            fetchImpl: async () => ({ok: true, json: async () => payload})
+          });
+          await controller.load();
+        }""",
+        payload,
+    )
+
+    section = page.locator(".briefing-doc-section", has_text="저장한 질문")
+    assert section.count() == 1
+    assert section.locator(".briefing-doc-row").count() == 1
+    assert section.locator(".briefing-doc-time b").inner_text() != "—"
+    assert section.locator(".briefing-doc-row-head").inner_text() == "Shopee Indonesia sales"
+    assert "short answer" in section.inner_text()
+    section.get_by_text("셀라에서 이어보기").click()
+    assert page.locator("#chat-input").input_value() == "Shopee Indonesia sales"
+
+
 # ── 메일 읽음/안읽음 · 새로고침 버튼 (2026-08-26 요청) ───────────────────────
 
 def _read(rel: str) -> str:

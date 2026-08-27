@@ -472,6 +472,29 @@ def _cap_urgent(document: dict[str, Any]) -> int:
     return min(len(urgent), MAX_URGENT)
 
 
+def _saved_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, str]]:
+    """저장 질문을 화면·잔디가 함께 쓰는 짧은 문서 행으로 바꾼다."""
+
+    result: list[dict[str, str]] = []
+    for row in rows or []:
+        question = _clean(row.get("question", ""), 500)
+        if not question:
+            continue
+        ran_at = row.get("last_run_at")
+        if isinstance(ran_at, datetime):
+            ran_at_text = ran_at.isoformat(timespec="seconds")
+        else:
+            ran_at_text = str(ran_at or "")
+        result.append({
+            "question": question,
+            # ⚠️ 브리핑은 훑어보는 문서다. 답변 전문을 싣지 않아야 매일 읽을 길이를 지킨다.
+            "answer": _clean(row.get("last_answer", ""), 300),
+            "last_run_at": ran_at_text,
+            "link": str(row.get("link") or ""),
+        })
+    return result
+
+
 def compose(
     *,
     day: date,
@@ -480,6 +503,7 @@ def compose(
     mails: list[dict[str, Any]],
     window: dict[str, Any],
     raw: dict[str, Any] | None,
+    saved: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """검증을 통과한 항목만으로 브리핑 문서를 만든다."""
 
@@ -513,6 +537,10 @@ def compose(
         "mail_omitted_read": omitted_read,
         "dropped": len(dropped),
     }
+    saved_rows = _saved_rows(saved)
+    # ⛔ 빈 절은 화면만 길게 만든다. 항목이 있을 때만 키를 만들어 모든 렌더러가 같은 규칙을 쓴다.
+    if saved_rows:
+        document["saved"] = saved_rows
     document["urgent"] = _cap_urgent(document)
     if dropped:
         logger.warning(
@@ -609,6 +637,18 @@ def render_markdown(
         lines.append("  · 기한이 확인된 항목이 없습니다.")
     for row in deadlines:
         lines.append(f"  {_mark(row['urgency'])} [{row['label']}] {row['text']}")
+
+    saved = document.get("saved") or []
+    if saved:
+        lines += ["", "저장한 질문"]
+        for row in saved:
+            lines.append(f"  · {row.get('question', '')}")
+            if row.get("answer"):
+                lines.append(f"      {row['answer']}")
+            if row.get("last_run_at"):
+                lines.append(f"      실행 {row['last_run_at']}")
+            if row.get("link"):
+                lines.append(f"      [셀라에서 이어보기]({row['link']})")
 
     lines += _business_lines(business)
     lines += _fx_lines(fx)

@@ -1,0 +1,451 @@
+from __future__ import annotations
+
+import asyncio
+import inspect
+from datetime import date, datetime
+
+import pytest
+
+from app.core import saved_questions
+
+
+def _row(
+    question_id: int,
+    cadence: str,
+    *,
+    user_id: int = 7,
+    weekday: int | None = None,
+    last_run_at: datetime | None = None,
+) -> dict:
+    return {
+        "id": question_id,
+        "user_id": user_id,
+        "question": f"질문 {question_id}",
+        "cadence": cadence,
+        "weekday": weekday,
+        "enabled": 1,
+        "created_at": datetime(2026, 7, 1, 9, 0),
+        "last_run_at": last_run_at,
+        "last_answer": None,
+        "last_error": None,
+        "last_status": None,
+    }
+
+
+def test_add_rejects_the_sixth_question_with_a_reason(monkeypatch):
+    """⛔ 상한 초과가 INSERT까지 가면 아침 조회 비용이 사용자 수와 함께 조용히 불어난다."""
+
+    monkeypatch.setattr(saved_questions, "fetch_one", lambda *_a, **_k: {"c": 5})
+    monkeypatch.setattr(
+        saved_questions,
+        "execute_lastid",
+        lambda *_a, **_k: pytest.fail("상한을 넘은 질문을 INSERT하면 안 된다"),
+    )
+
+    result = saved_questions.add(7, "쇼피 매출 알려줘", "daily")
+
+    assert result["ok"] is False
+    assert result["id"] is None
+    assert "5" in result["reason"]
+
+
+def test_add_inserts_the_fifth_question(monkeypatch):
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(saved_questions, "fetch_one", lambda *_a, **_k: {"c": 4})
+    monkeypatch.setattr(
+        saved_questions,
+        "execute_lastid",
+        lambda sql, params=(): calls.append((sql, params)) or 55,
+    )
+
+    result = saved_questions.add(7, "  이번 달 매출  ", "weekly", weekday=2)
+
+    assert result == {"ok": True, "id": 55, "reason": None}
+    assert calls[-1][1] == (7, "이번 달 매출", "weekly", 2)
+
+
+def test_owner_scope_is_inside_list_delete_and_toggle_sql(monkeypatch):
+    """⛔ 호출부 선확인은 빠질 수 있으므로 쓰기 SQL 자체가 소유자를 증명해야 한다."""
+
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(
+        saved_questions,
+        "fetch_all",
+        lambda sql, params=(): calls.append((sql, params)) or [],
+    )
+    monkeypatch.setattr(
+        saved_questions,
+        "execute",
+        lambda sql, params=(): calls.append((sql, params)) or 0,
+    )
+
+    assert saved_questions.list_for(7) == []
+    assert "WHERE user_id = %s" in calls[-1][0]
+    assert calls[-1][1] == (7,)
+
+    assert saved_questions.remove(7, 91) is False
+    assert "DELETE FROM saved_questions WHERE id = %s AND user_id = %s" in calls[-1][0]
+    assert calls[-1][1] == (91, 7)
+
+    assert saved_questions.set_enabled(7, 91, True) is False
+    assert "WHERE id = %s AND user_id = %s" in calls[-1][0]
+    assert calls[-1][1] == (1, 91, 7)
+
+    source = inspect.getsource(saved_questions)
+    assert "DELETE FROM saved_questions WHERE id = %s AND user_id = %s" in source
+    assert "UPDATE saved_questions SET enabled = %s WHERE id = %s AND user_id = %s" in source
+
+
+@pytest.mark.parametrize(
+    ("today", "expected_ids"),
+    [
+        # 2026-08-01은 토요일이므로 월간 질문은 다음 근무일인 8/3에 실행된다.
+        (date(2026, 8, 3), {1, 2, 4}),
+        # 2026-09-01은 화요일이자 월 첫 근무일이다.
+        (date(2026, 9, 1), {1, 3, 4}),
+    ],
+)
+def test_due_selects_daily_weekly_and_monthly(monkeypatch, today, expected_ids):
+    rows = [
+        _row(1, "daily"),
+        _row(2, "weekly", weekday=0),
+        _row(3, "weekly", weekday=1),
+        _row(4, "monthly"),
+        _row(5, "daily", last_run_at=datetime.combine(today, datetime.min.time())),
+    ]
+    monkeypatch.setattr(saved_questions, "fetch_all", lambda *_a, **_k: rows)
+
+    assert {row["id"] for row in saved_questions.due(today)} == expected_ids
+
+
+def test_due_returns_nothing_on_weekends_without_touching_db(monkeypatch):
+    monkeypatch.setattr(
+        saved_questions,
+        "fetch_all",
+        lambda *_a, **_k: pytest.fail("⚠️ 주말에는 DB 조회 자체가 필요 없다"),
+    )
+
+    assert saved_questions.due(date(2026, 8, 8)) == []
+
+
+def test_ensure_tables_uses_the_declared_idempotent_schema(monkeypatch):
+    statements: list[str] = []
+    monkeypatch.setattr(saved_questions, "execute", lambda sql, params=(): statements.append(sql) or 0)
+
+    saved_questions.ensure_tables()
+
+    ddl = statements[0]
+    assert "CREATE TABLE IF NOT EXISTS saved_questions" in ddl
+    assert "question VARCHAR(500)" in ddl
+    assert "ENUM('daily','weekly','monthly')" in ddl
+    assert "last_answer MEDIUMTEXT" in ddl
+
+
+def test_record_result_persists_success_empty_and_error_status(monkeypatch):
+    calls: list[tuple[str, tuple]] = []
+    monkeypatch.setattr(
+        saved_questions,
+        "execute",
+        lambda sql, params=(): calls.append((sql, params)) or 1,
+    )
+
+    saved_questions.record_result(1, answer="답변")
+    saved_questions.record_result(2, answer="   ")
+    saved_questions.record_result(3, error="RuntimeError: 실패")
+
+    assert calls[0][1] == ("답변", None, "success", 1)
+    assert calls[1][1] == ("", None, "empty", 2)
+    assert calls[2][1] == (None, "RuntimeError: 실패", "error", 3)
+    assert all("last_run_at = NOW()" in sql for sql, _params in calls)
+
+
+@pytest.mark.asyncio
+async def test_run_continues_after_one_failure_and_records_the_error(monkeypatch):
+    rows = [_row(1, "daily", user_id=11), _row(2, "daily", user_id=12), _row(3, "daily", user_id=13)]
+    monkeypatch.setattr(saved_questions, "due", lambda _today: rows)
+    monkeypatch.setattr(
+        saved_questions,
+        "fetch_one",
+        lambda _sql, params=(): {
+            "email": f"user{params[0]}@example.com",
+            "can_view_fi": 1 if params[0] == 13 else 0,
+        },
+    )
+
+    routed: list[tuple[str, dict]] = []
+
+    class FakeOrchestrator:
+        async def route_and_execute(self, query, messages, model, **kwargs):
+            routed.append((query, kwargs))
+            if query == "질문 2":
+                raise RuntimeError("실패" + "x" * 300)
+            return {"answer": "" if query == "질문 3" else "정상 답변"}
+
+    recorded: list[tuple[int, str | None, str | None]] = []
+    monkeypatch.setattr(saved_questions, "_new_orchestrator", lambda: FakeOrchestrator())
+    monkeypatch.setattr(
+        saved_questions,
+        "record_result",
+        lambda question_id, answer=None, error=None: recorded.append((question_id, answer, error)),
+    )
+
+    result = await saved_questions.run_saved_questions(datetime(2026, 8, 3, 9, 0))
+
+    assert {query for query, _kwargs in routed} == {"질문 1", "질문 2", "질문 3"}
+    assert result == {"selected": 3, "succeeded": 2, "failed": 1, "empty": 1}
+    errors = {question_id: error for question_id, _answer, error in recorded if error}
+    assert errors[2].startswith("RuntimeError: 실패")
+    assert len(errors[2].split(": ", 1)[1]) == 200
+    assert (1, "정상 답변", None) in recorded
+    assert (3, "", None) in recorded
+
+
+@pytest.mark.asyncio
+async def test_run_reads_each_users_fi_permission_from_ad_users(monkeypatch):
+    rows = [_row(1, "daily", user_id=21), _row(2, "daily", user_id=22)]
+    monkeypatch.setattr(saved_questions, "due", lambda _today: rows)
+    db_calls: list[tuple[str, tuple]] = []
+
+    def fetch_permission(sql, params=()):
+        db_calls.append((sql, params))
+        return {"email": f"u{params[0]}@example.com", "can_view_fi": params[0] == 22}
+
+    monkeypatch.setattr(saved_questions, "fetch_one", fetch_permission)
+    observed: dict[str, bool] = {}
+
+    class FakeOrchestrator:
+        async def route_and_execute(self, query, messages, model, **kwargs):
+            observed[query] = kwargs["can_view_fi"]
+            return {"answer": "ok"}
+
+    monkeypatch.setattr(saved_questions, "_new_orchestrator", lambda: FakeOrchestrator())
+    monkeypatch.setattr(saved_questions, "record_result", lambda *_a, **_k: None)
+
+    await saved_questions.run_saved_questions(datetime(2026, 8, 3, 9, 0))
+
+    assert observed == {"질문 1": False, "질문 2": True}
+    assert all("ad_users" in sql and "can_view_fi" in sql for sql, _params in db_calls)
+    source = inspect.getsource(saved_questions.run_saved_questions)
+    assert "can_view_fi=False" not in source
+    assert "can_view_fi=permission" in source
+
+
+@pytest.mark.asyncio
+async def test_run_limits_concurrent_questions_to_three(monkeypatch):
+    rows = [_row(question_id, "daily", user_id=question_id) for question_id in range(1, 8)]
+    monkeypatch.setattr(saved_questions, "due", lambda _today: rows)
+    monkeypatch.setattr(
+        saved_questions,
+        "fetch_one",
+        lambda _sql, params=(): {"email": f"u{params[0]}@example.com", "can_view_fi": 0},
+    )
+    active = 0
+    maximum = 0
+
+    class FakeOrchestrator:
+        async def route_and_execute(self, query, messages, model, **kwargs):
+            nonlocal active, maximum
+            active += 1
+            maximum = max(maximum, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return {"answer": "ok"}
+
+    monkeypatch.setattr(saved_questions, "_new_orchestrator", lambda: FakeOrchestrator())
+    monkeypatch.setattr(saved_questions, "record_result", lambda *_a, **_k: None)
+
+    await saved_questions.run_saved_questions(datetime(2026, 8, 3, 9, 0))
+
+    assert maximum == 3
+
+
+@pytest.mark.asyncio
+async def test_run_skips_weekends_before_loading_due_questions(monkeypatch):
+    monkeypatch.setattr(
+        saved_questions,
+        "due",
+        lambda _today: pytest.fail("⛔ 주말 잡은 저장 질문을 조회하지 않는다"),
+    )
+
+    result = await saved_questions.run_saved_questions(datetime(2026, 8, 8, 9, 0))
+
+    assert result == {"selected": 0, "succeeded": 0, "failed": 0, "empty": 0, "skipped": "weekend"}
+
+
+def test_compose_omits_saved_section_when_there_are_no_saved_questions():
+    from app.core import work_briefing
+
+    document = work_briefing.compose(
+        day=date(2026, 8, 3),
+        now=datetime(2026, 8, 3, 9, 0),
+        events=[],
+        mails=[],
+        window={},
+        raw={},
+        saved=[],
+    )
+
+    assert "saved" not in document
+    assert "\uc800\uc7a5\ud55c \uc9c8\ubb38" not in document["markdown"]
+
+
+def test_compose_truncates_saved_answers_and_adds_the_continuation_link():
+    from app.core import work_briefing
+
+    document = work_briefing.compose(
+        day=date(2026, 8, 3),
+        now=datetime(2026, 8, 3, 9, 0),
+        events=[],
+        mails=[],
+        window={},
+        raw={},
+        saved=[{
+            "question": "Shopee Indonesia sales",
+            "last_answer": "a" * 320,
+            "last_run_at": datetime(2026, 8, 3, 8, 58),
+            "link": "https://cella.example.test",
+        }],
+    )
+
+    assert document["saved"] == [{
+        "question": "Shopee Indonesia sales",
+        "answer": "a" * 300,
+        "last_run_at": "2026-08-03T08:58:00",
+        "link": "https://cella.example.test",
+    }]
+    assert "\uc800\uc7a5\ud55c \uc9c8\ubb38" in document["markdown"]
+    assert "[\uc140\ub77c\uc5d0\uc11c \uc774\uc5b4\ubcf4\uae30](https://cella.example.test)" in document["markdown"]
+
+
+def test_personal_briefing_builds_the_document_with_owner_saved_rows():
+    from app.core import personal_briefing
+
+    document = personal_briefing.build_document(
+        {"items": []},
+        {"items": []},
+        {},
+        date(2026, 8, 3),
+        datetime(2026, 8, 3, 9, 0),
+        saved=[{
+            "question": "Channel top five",
+            "last_answer": "answer",
+            "last_run_at": datetime(2026, 8, 3, 8, 59),
+            "link": "https://cella.example.test",
+        }],
+    )
+
+    assert document["saved"][0]["question"] == "Channel top five"
+
+
+def test_personal_briefing_loads_only_the_owners_saved_rows(monkeypatch):
+    from app.core import personal_briefing
+
+    observed: list[int] = []
+    monkeypatch.setattr(
+        personal_briefing.saved_questions,
+        "list_for",
+        lambda user_id: observed.append(user_id) or [{
+            "id": 1,
+            "question": "Monthly sales",
+            "last_answer": "answer",
+        }],
+    )
+    monkeypatch.setattr("app.core.jandi_notify.base_url", lambda: "https://cella.example.test")
+
+    rows = personal_briefing._safe_saved_for_user(77)
+
+    assert observed == [77]
+    assert rows[0]["link"] == "https://cella.example.test"
+
+
+def test_api_uses_the_authenticated_owner_for_listing(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api import saved_questions_api
+    from app.db.models import User
+
+    observed: list[int] = []
+    monkeypatch.setattr(
+        saved_questions_api.saved_questions,
+        "list_for",
+        lambda user_id: observed.append(user_id) or [],
+    )
+    app = FastAPI()
+    app.include_router(saved_questions_api.router)
+    app.dependency_overrides[saved_questions_api.get_current_user] = lambda: User(id=42)
+
+    response = TestClient(app).get("/api/saved-questions")
+
+    assert response.status_code == 200
+    assert response.json() == {"questions": []}
+    assert observed == [42]
+
+
+def test_api_does_not_leak_internal_exception_text(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api import saved_questions_api
+    from app.db.models import User
+
+    monkeypatch.setattr(
+        saved_questions_api.saved_questions,
+        "add",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("database-password-secret")),
+    )
+    app = FastAPI()
+    app.include_router(saved_questions_api.router)
+    app.dependency_overrides[saved_questions_api.get_current_user] = lambda: User(id=42)
+
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/api/saved-questions",
+        json={"question": "sales", "cadence": "daily"},
+    )
+
+    assert response.status_code == 500
+    assert "database-password-secret" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_personal_briefing_job_runs_saved_questions_before_precompute(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from app import main
+    from app.core import personal_briefing, self_check
+
+    events: list[str] = []
+
+    class JobRun:
+        def set_note(self, _note):
+            return None
+
+    @contextmanager
+    def track(job_id):
+        events.append("track:" + job_id)
+        yield JobRun()
+
+    async def run_saved(now=None):
+        events.append("saved")
+        return {"selected": 0, "succeeded": 0, "failed": 0, "empty": 0}
+
+    async def run_briefing(now=None):
+        events.append("briefing")
+        return {"selected": 0, "succeeded": 0, "failed": 0, "queued": 0}
+
+    monkeypatch.setattr(main, "get_settings", lambda: SimpleNamespace(personal_briefing_enabled=True))
+    monkeypatch.setattr(self_check, "track_job", track)
+    monkeypatch.setattr(saved_questions, "run_saved_questions", run_saved)
+    monkeypatch.setattr(personal_briefing, "run_morning_precompute", run_briefing)
+
+    await main._personal_briefing_job()
+
+    assert "track:saved_questions_daily" in events
+    assert events.index("saved") < events.index("briefing")
+
+
+def test_saved_questions_job_is_monitored_by_self_check():
+    from app.core.self_check import EXPECTED_JOBS
+
+    assert "saved_questions_daily" in EXPECTED_JOBS

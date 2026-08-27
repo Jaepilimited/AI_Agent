@@ -32,6 +32,7 @@ from app.api.face_search_routes import router as face_search_router
 from app.api.harness_api import router as harness_router
 from app.api.middleware import setup_middleware
 from app.api.personal_briefing_api import router as personal_briefing_router
+from app.api.saved_questions_api import router as saved_questions_router
 from app.api.jandi_briefing_api import router as jandi_briefing_router
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
@@ -175,6 +176,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_personal_briefing_tables)
         from app.core.jandi_briefing import ensure_tables as ensure_jandi_tables
         await asyncio.to_thread(ensure_jandi_tables)
+        from app.core.saved_questions import ensure_tables as ensure_saved_question_tables
+        await asyncio.to_thread(ensure_saved_question_tables)
         from app.core.fx_rates import ensure_tables as ensure_fx_tables
         await asyncio.to_thread(ensure_fx_tables)
         from app.core.announcements import ensure_tables as _ensure_announce
@@ -297,6 +300,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)      # /auth/google/*
     app.include_router(auth_api_router)  # /api/auth/*
     app.include_router(personal_briefing_router)  # /api/personal-briefing/*
+    app.include_router(saved_questions_router)  # /api/saved-questions/*
     app.include_router(jandi_briefing_router)  # /api/personal-briefing/jandi, /api/internal/*
     app.include_router(conversation_router)  # /api/conversations/*
     app.include_router(admin_router)         # /api/admin/*
@@ -796,6 +800,21 @@ async def _personal_briefing_job():
             if not get_settings().personal_briefing_enabled:
                 jr.set_note("feature disabled")
                 return
+            # ⛔ 답을 먼저 갱신해야 바로 뒤에서 만드는 오늘 브리핑에 같은 날 결과가 실린다.
+            try:
+                with track_job("saved_questions_daily") as saved_jr:
+                    from app.core.saved_questions import run_saved_questions
+
+                    saved_result = await run_saved_questions()
+                    saved_jr.set_note(
+                        f"selected={saved_result['selected']} "
+                        f"succeeded={saved_result['succeeded']} "
+                        f"failed={saved_result['failed']} "
+                        f"empty={saved_result.get('empty', 0)}"
+                    )
+            except Exception as exc:
+                # ⚠️ 저장 질문 잡 전체가 실패해도 기존 일정·메일 브리핑은 계속 만든다.
+                logger.error("saved_questions_daily_failed", error_type=type(exc).__name__)
             from app.core.personal_briefing import run_morning_precompute
 
             result = await run_morning_precompute()

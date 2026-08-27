@@ -175,6 +175,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "feedback_digest_daily": (26, "붐따 처리함 다이제스트 (08:00)"),
     "briefing_daily": (26, "개인화 데일리 브리핑 (08:20)"),
     "personal_briefing_daily": (26, "출근 브리핑 생성 + 잔디 대기열 (09:00)"),
+    "saved_questions_daily": (26, "저장 질문 자동 실행 (출근 브리핑 직전)"),
     # ⚠️ 근무일 09~18시에만 돈다 — 주말·야간을 고장으로 세지 않도록 넉넉히 잡는다
     "jandi_notify_hourly": (80, "셀라 알림 → 잔디 대기열 (평일 매시 :25)"),
     "schema_docs_daily": (26, "정의서 → BigQuery 컬럼 설명 (03:40)"),
