@@ -58,3 +58,32 @@ def test_the_generation_path_retries_once():
     assert "sql_brand_filter_recovered" in src
     # 되살리지 못했으면 조용히 넘기지 않는다
     assert "sql_brand_filter_unrecovered" in src
+
+
+# ── 팀 집계를 조용히 자르지 않는가 (붐따 #127) ────────────────────────────────
+
+def test_a_wrong_team_count_in_the_question_does_not_clip_rows():
+    """⛔ 실측(2026-08-27): 질문이 "팀은 총 9개임" 이라고 **틀리게** 단정하자 LLM 이
+       그 전제를 믿고 `LIMIT 9` 를 걸었다. 실제 팀은 12개라 JBT(20.3억)·KBT(20.2억)·
+       BCM(2.7억)이 잘렸고, 답변은 "총 9개 팀의 전체 매출" 이라 단정했다 —
+       **42.8억(4.2%)이 빠진 채 100%로 표시**됐다. 자른 사실은 어디에도 없었다.
+    """
+    from app.core.org_structure import TEAM_CODE2KR
+
+    sql = "SELECT Team_NEW, SUM(x) FROM t GROUP BY Team_NEW ORDER BY 2 DESC LIMIT 9"
+    fixed = sa._unclip_team_rows(sql, "26년 7월 각 팀 매출 알려줘 팀은 총 9개임.")
+    assert fixed.endswith(f"LIMIT {len(TEAM_CODE2KR)}"), fixed
+
+
+def test_an_explicit_top_n_is_respected():
+    """⚠️ 사용자가 상위 N 을 명시했으면 자르는 것이 **질문의 뜻**이다 —
+       늘리면 묻지 않은 것을 답하게 된다."""
+    sql = "SELECT Team_NEW FROM t GROUP BY Team_NEW LIMIT 3"
+    assert sa._unclip_team_rows(sql, "팀별 매출 TOP 3 알려줘").endswith("LIMIT 3")
+    assert sa._unclip_team_rows(sql, "팀별 매출 상위 3개").endswith("LIMIT 3")
+
+
+def test_other_dimensions_are_untouched():
+    """국가는 191개다 — 팀 규칙을 아무 집계에나 적용하면 안 된다."""
+    sql = "SELECT Country FROM t GROUP BY Country LIMIT 5"
+    assert sa._unclip_team_rows(sql, "국가별 매출 알려줘").endswith("LIMIT 5")

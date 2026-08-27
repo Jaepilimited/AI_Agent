@@ -342,6 +342,38 @@ def _division_codes(literal: str) -> Optional[list]:
     return TEAM_DIVISIONS.get(re.sub(r"\s+", "", literal or ""))
 
 
+def _unclip_team_rows(sql: str, question: str) -> str:
+    """팀별 집계에 걸린 작은 `LIMIT` 을 걷어낸다.
+
+    ⛔ 실측(2026-08-27, 붐따 #127 — 닫혔지만 재현됐다): 질문이 "팀은 총 9개임"
+       이라고 (틀리게) 단정하자 LLM 이 그 전제를 믿고 `LIMIT 9` 를 걸었다.
+       실제 팀은 12개라 **JBT(20.3억)·KBT(20.2억)·BCM(2.7억)이 잘렸고**,
+       답변은 "총 9개 팀의 전체 매출" 이라고 단정했다 — 42.8억(4.2%)이 조용히
+       빠진 채 100%% 로 표시됐다. 자른 사실은 어디에도 없었다.
+
+    ⚠️ **사용자가 상위 N 을 명시했으면 건드리지 않는다** ("팀별 매출 TOP 3").
+       그때는 자르는 것이 질문의 뜻이다 — 늘리면 묻지 않은 것을 답하게 된다.
+    ⚠️ 팀 수는 `TEAM_CODE2KR` 한 곳에서 온다. 새 팀이 생겨도 따라온다.
+    """
+    if not sql or "team_new" not in sql.lower():
+        return sql
+    if not re.search(r"group\s+by", sql, re.IGNORECASE):
+        return sql
+    if re.search(r"top\s*\d|상위\s*\d|top\s*n", question or "", re.IGNORECASE):
+        return sql
+
+    match = re.search(r"\bLIMIT\s+(\d+)\s*$", sql.strip(), re.IGNORECASE)
+    if not match:
+        return sql
+    limit = int(match.group(1))
+    if limit >= len(TEAM_CODE2KR):
+        return sql
+
+    logger.warning("sql_team_rows_clipped", limit=limit, teams=len(TEAM_CODE2KR),
+                   question=(question or "")[:80])
+    return re.sub(r"\bLIMIT\s+\d+\s*$", f"LIMIT {len(TEAM_CODE2KR)}",
+                  sql.strip(), flags=re.IGNORECASE)
+
 def _localize_team_literals(sql: str) -> str:
     """팀 비교의 한글 팀명·본부명을 코드로 교정 (사전에 없는 값은 유지).
 
@@ -1392,6 +1424,9 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
                 # ⚠️ 되살리지 못했으면 **조용히 넘기지 않는다.** 답변 단계가
                 #    전사 집계라는 사실을 밝힐 수 있게 상태에 남긴다.
                 logger.error("sql_brand_filter_unrecovered", brand=_brand_word)
+
+        # ⛔ 팀별 집계를 조용히 자르지 않는다 (위 `_unclip_team_rows` 주석 참조)
+        sql = _unclip_team_rows(sql, _resolved_query)
 
         # Retry once if LLM returned text/truncated SQL instead of valid SQL
         if not sql or len(sql) < 10:
