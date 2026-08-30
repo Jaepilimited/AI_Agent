@@ -207,3 +207,94 @@ def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
                 f"접미 없이 '{head}' 로만 된 파일입니다 — 같은 롯트인지 확인하세요")
 
     return Verdict(NONE, (), "")
+
+
+import concurrent.futures
+import logging
+
+from app.core.google_workspace import search_drive
+
+logger = logging.getLogger(__name__)
+
+# 모든 제품에 공통으로 들어가 변별력이 없는 낱말
+_BRAND_WORDS = {"skin1004", "madagascar", "centella", "cpnp", "twin", "pack"}
+_TERM_SPLIT = re.compile(r"[\s_/,()]+")
+
+
+@dataclass(frozen=True)
+class Result:
+    row: Row
+    coa: Verdict
+    msds: Verdict
+
+
+def product_terms(description: str) -> list[str]:
+    """MSDS 검색에 쓸 제품 고유어. 브랜드어를 빼지 않으면 전 제품이 걸린다."""
+    out = []
+    for token in _TERM_SPLIT.split(description or ""):
+        t = token.strip()
+        if len(t) < 2 or t.casefold() in _BRAND_WORDS:
+            continue
+        out.append(t)
+    return out
+
+
+def _to_files(raw: Iterable[dict]) -> list[DriveFile]:
+    return [
+        DriveFile(id=r.get("id", ""), name=r.get("name", ""),
+                  size=int(r.get("size") or 0), web_link=r.get("webViewLink", ""))
+        for r in raw
+    ]
+
+
+def _one(creds, row: Row, search) -> Result:
+    # COA — 롯트 정확 매칭. exact_name 으로 Drive 의 토큰 매칭 잡음을 걷어낸다
+    if row.lot:
+        try:
+            raw = search(creds, row.lot, max_results=25, exact_name=row.lot)
+            coa = classify_lot(row.lot, _to_files(raw))
+        except Exception as exc:                      # noqa: BLE001
+            # ⚠️ 실패를 삼키지 마라 — 프로덕션은 INFO 를 버린다
+            logger.warning("coa_finder_query_failed",
+                           extra={"lot": row.lot, "error": str(exc)[:200]})
+            coa = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+    else:
+        coa = Verdict(NONE, (), "롯트가 비어 있습니다")
+
+    # MSDS — 롯트가 없다. 제품 고유어 + 'MSDS' 로 찾는다
+    terms = product_terms(row.description)
+    if terms:
+        try:
+            raw = search(creds, " ".join(terms[:4] + ["MSDS"]), max_results=25,
+                         widen=False)
+            files = _dedup(_to_files(raw))
+            if not files:
+                msds = Verdict(NONE, (), "")
+            elif len(files) == 1:
+                msds = Verdict(FOUND, files, "제품명으로 찾았습니다 (롯트 무관)")
+            else:
+                msds = Verdict(MANY, files, "제품명으로 찾았습니다 (롯트 무관)")
+        except Exception as exc:                      # noqa: BLE001
+            logger.warning("msds_finder_query_failed",
+                           extra={"sku": row.sku, "error": str(exc)[:200]})
+            msds = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+    else:
+        msds = Verdict(NONE, (), "제품명이 비어 있습니다")
+
+    return Result(row=row, coa=coa, msds=msds)
+
+
+def find_all(creds, rows: Sequence[Row], search=None, max_workers: int = 8):
+    """행 순서를 지키면서 병렬로 조회한다.
+
+    ⛔ `with ThreadPoolExecutor` 로 감싸지 마라 — 블록을 나갈 때 shutdown(wait=True)
+       가 걸려 타임아웃이 무의미해진다 (프로젝트 규칙).
+    """
+    search = search or search_drive
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        futures = [pool.submit(_one, creds, row, search) for row in rows]
+        for fut in futures:                  # 제출 순서 = 행 순서
+            yield fut.result()
+    finally:
+        pool.shutdown(wait=False)

@@ -220,3 +220,76 @@ def test_delimited_match_wins_over_undelimited_match():
     assert v.status == cf.FOUND
     assert len(v.files) == 1
     assert v.files[0].id == "delimited"
+
+
+def test_product_terms_drops_brand_words():
+    """브랜드어만 남으면 MSDS 검색이 전 제품을 긁는다."""
+    terms = cf.product_terms("SKIN1004 Madagascar Centella Poremizing Fresh Ampoule 50ml")
+    assert "Poremizing" in terms and "Fresh" in terms
+    assert not any(t.lower() in ("skin1004", "madagascar", "centella") for t in terms)
+
+
+def test_product_terms_strips_cpnp_marker():
+    assert "CPNP" not in cf.product_terms("SKIN1004 Madagascar Centella Ampoule 100ml_CPNP")
+
+
+def test_find_all_never_widens_the_query():
+    """⛔ expand()/llm_variants() 를 부르면 이 기능은 오답 생성기가 된다."""
+    rows = [cf.Row("EUSKA032", "SKIN1004 Madagascar Centella Poremizing Fresh Ampoule 50ml",
+                   "E07Z083", 1)]
+    calls = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        calls.append((query, exact_name))
+        return [{"id": "1", "name": "...POREMIZING FRESH AMPOULE COA (E07Z082)",
+                 "size": 100, "webViewLink": "http://d/1"}]
+
+    with patch("app.core.query_keywords.expand") as ex, \
+         patch("app.core.query_keywords.llm_variants") as lv:
+        results = list(cf.find_all(MagicMock(), rows, search=fake_search))
+
+    ex.assert_not_called()
+    lv.assert_not_called()
+    assert results[0].coa.status == cf.NONE
+    assert all(c[1] for c in calls if c[0] == "E07Z083"), "exact_name 을 넘기지 않았다"
+
+
+def test_find_all_keeps_row_order():
+    rows = [cf.Row(f"S{i}", "앰플", f"LOT{i:04d}", i) for i in range(5)]
+
+    def fake_search(*a, **k):
+        return []
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert [r.row.sku for r in got] == [f"S{i}" for i in range(5)]
+
+
+def test_find_all_marks_query_failure_without_killing_the_run():
+    rows = [cf.Row("A", "앰플", "LOT1", 1), cf.Row("B", "앰플", "LOT2", 2)]
+
+    def fake_search(creds, query, **k):
+        if query == "LOT1":
+            raise RuntimeError("drive down")
+        return []
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.CHECK and "조회" in got[0].coa.note
+    assert got[1].coa.status == cf.NONE
+
+
+def test_find_all_disables_internal_widening_for_msds():
+    """⛔ MSDS 는 여러 낱말로 찾으므로 search_drive 내부 확장이 열려 있다."""
+    rows = [cf.Row("EUSKA032", "SKIN1004 Madagascar Centella Poremizing Fresh Ampoule 50ml",
+                   "E07Z083", 1)]
+    seen = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        seen.append((query, kwargs.get("widen")))
+        return []
+
+    list(cf.find_all(MagicMock(), rows, search=fake_search))
+    msds_calls = [s for s in seen if "MSDS" in s[0]]
+    assert msds_calls, "MSDS 조회가 일어나지 않았다"
+    assert all(w is False for _, w in msds_calls), "MSDS 조회가 widen 을 끄지 않았다"
