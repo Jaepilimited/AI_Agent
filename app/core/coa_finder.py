@@ -1,4 +1,4 @@
-"""公有드라이브에서 롯트로 COA·MSDS 를 찾는다.
+"""공유드라이브에서 롯트로 COA·MSDS 를 찾는다.
 
 ⛔ 이 모듈은 LLM 을 부르지 않는다. 파일 선택은 규칙이 한다 — 성분 조회를 LLM 에
    맡기지 않은 것과 같은 이유다. 규제 문서에서 틀린 파일을 주는 것은
@@ -107,3 +107,76 @@ def parse_xlsx(data: bytes) -> list[Row]:
         for row in ws.iter_rows(values_only=True)
     ]
     return _rows_from_cells(table)
+
+
+FOUND = "찾음"
+MANY = "여러건"
+NONE = "없음"
+CHECK = "확인필요"
+
+# 짧은 롯트는 다른 코드의 머리에 걸릴 수 있다 (Drive 는 토큰 앞부분 매칭이다)
+_SHORT_LOT_LEN = 4
+
+# 사본 표기. 원본과 같은 파일인데 이름만 다르다
+_COPY_SUFFIX = re.compile(r"(의\s*사본|\s*\(\d+\)|\s*-\s*복사본)\s*$")
+_EXT = re.compile(r"\.(pdf|xlsx?|docx?)$", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class DriveFile:
+    id: str
+    name: str
+    size: int
+    web_link: str
+
+
+@dataclass(frozen=True)
+class Verdict:
+    status: str
+    files: tuple[DriveFile, ...]
+    note: str = ""
+
+
+def _dedup_key(f: DriveFile) -> tuple:
+    base = _COPY_SUFFIX.sub("", f.name).strip()
+    base = _EXT.sub("", base).strip()
+    return (base.casefold(), f.size)
+
+
+def _dedup(files: Sequence[DriveFile]) -> tuple[DriveFile, ...]:
+    """같은 파일의 사본을 접는다. 먼저 온 것을 남긴다."""
+    seen: dict[tuple, DriveFile] = {}
+    for f in files:
+        seen.setdefault(_dedup_key(f), f)
+    return tuple(seen.values())
+
+
+def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
+    """롯트 하나에 대한 판정.
+
+    ⛔ 넓혀 찾지 않는다. 롯트 문자열이 파일명에 **그대로** 든 것만 받는다 —
+       E07Z083 에 E07Z082 를, 416022 에 416006 을 주는 것이 최악의 실패다.
+    """
+    lot = (lot or "").strip()
+    if not lot:
+        return Verdict(NONE, (), "롯트가 비어 있습니다")
+
+    exact = _dedup([f for f in files if lot in f.name])
+    if exact:
+        if len(exact) > 1:
+            return Verdict(MANY, exact, f"{len(exact)}건 — 어느 것인지 확인이 필요합니다")
+        if len(lot) <= _SHORT_LOT_LEN:
+            return Verdict(CHECK, exact,
+                           f"롯트가 {len(lot)}자로 짧아 다른 코드에 걸렸을 수 있습니다")
+        return Verdict(FOUND, exact)
+
+    # 접미가 붙은 롯트("F31C28 D")인데 접미 없는 파일만 있는 경우
+    head = lot.split()[0]
+    if head != lot:
+        base_hits = _dedup([f for f in files if head in f.name])
+        if base_hits:
+            return Verdict(
+                CHECK, base_hits,
+                f"접미 없이 '{head}' 로만 된 파일입니다 — 같은 롯트인지 확인하세요")
+
+    return Verdict(NONE, (), "")

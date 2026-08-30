@@ -115,3 +115,73 @@ def test_parse_xlsx_uses_the_same_header_logic():
 
     rows = cf.parse_xlsx(buf.getvalue())
     assert rows[0].sku == "EUSKA022" and rows[0].lot == "FE103C"
+
+
+def _f(name, size=1000, fid="x"):
+    return cf.DriveFile(id=fid, name=name, size=size, web_link="http://d/" + fid)
+
+
+def test_near_miss_lot_is_not_a_match():
+    """⛔ E07Z083 을 물었는데 E07Z082 를 주면 규제 문서가 잘못 나간다 (실측값)."""
+    files = [_f("51082SEA-001W SKIN1004 MADAGASCAR CENTELLA "
+                "POREMIZING FRESH AMPOULE COA (E07Z082)")]
+    v = cf.classify_lot("E07Z083", files)
+    assert v.status == cf.NONE
+    assert v.files == ()
+
+
+def test_numeric_near_miss_lot_is_not_a_match():
+    """416022 를 물었는데 416006 을 주면 안 된다 (실측값)."""
+    files = [_f("SKIN1004 Madagascar Centella Cream COA (SKMC) 416006.pdf의 사본")]
+    assert cf.classify_lot("416022", files).status == cf.NONE
+
+
+def test_lot_between_underscores_matches():
+    """FE161 처럼 언더바 사이에 낀 롯트는 정상 매칭이다 (실측값)."""
+    files = [_f("COA_10116720_SCA1-MHWSCM(F)N4(A)_SKIN1004 MADAGASCAR CENTELLA "
+                "HYALU-CICA WATER-FIT SUN SERUM_FE161_15643EA")]
+    v = cf.classify_lot("FE161", files)
+    assert v.status == cf.FOUND and len(v.files) == 1
+
+
+def test_suffixed_lot_without_suffix_in_filename_is_check_needed():
+    """F31C28 D 를 물었는데 접미 없는 파일만 있으면 사람에게 넘긴다."""
+    files = [_f("COA_SKIN1004 ... TONE BRIGHTENING CAPSULE AMPOULE 100ml(N3)_F31C28")]
+    v = cf.classify_lot("F31C28 D", files)
+    assert v.status == cf.CHECK
+    assert "접미" in v.note
+
+
+def test_suffixed_lot_with_exact_filename_is_found():
+    files = [_f("COA_SKIN1004 ... PROBIO-CICA Glow SUN AMPOULE 50ml(N3)_F14D40 D")]
+    assert cf.classify_lot("F14D40 D", files).status == cf.FOUND
+
+
+def test_short_lot_is_check_needed():
+    """4자 이하는 다른 코드의 머리에 걸릴 수 있다."""
+    v = cf.classify_lot("FF21", [_f("COA_...FF21...")])
+    assert v.status == cf.CHECK
+
+
+def test_copies_collapse_to_one_row():
+    """'의 사본' 과 원본, 같은 파일이 두 폴더에 있는 경우를 한 줄로 접는다."""
+    files = [
+        _f("COA (SKMC) 416006.pdf", size=82070, fid="a"),
+        _f("COA (SKMC) 416006.pdf의 사본", size=82070, fid="b"),
+        _f("COA (SKMC) 416006.pdf", size=82070, fid="c"),
+    ]
+    v = cf.classify_lot("416006", files)
+    assert v.status == cf.FOUND
+    assert len(v.files) == 1
+
+
+def test_two_real_candidates_are_all_shown():
+    files = [_f("COA_A_FE103C", size=100, fid="a"),
+             _f("COA_B_FE103C", size=200, fid="b")]
+    v = cf.classify_lot("FE103C", files)
+    assert v.status == cf.MANY and len(v.files) == 2
+
+
+def test_empty_lot_is_not_searched():
+    v = cf.classify_lot("", [_f("아무거나")])
+    assert v.status == cf.NONE and "롯트" in v.note
