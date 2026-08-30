@@ -119,7 +119,6 @@ _SHORT_LOT_LEN = 4
 
 # 사본 표기. 원본과 같은 파일인데 이름만 다르다
 _COPY_SUFFIX = re.compile(r"(의\s*사본|\s*\(\d+\)|\s*-\s*복사본)\s*$")
-_EXT = re.compile(r"\.(pdf|xlsx?|docx?)$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -139,7 +138,6 @@ class Verdict:
 
 def _dedup_key(f: DriveFile) -> tuple:
     base = _COPY_SUFFIX.sub("", f.name).strip()
-    base = _EXT.sub("", base).strip()
     return (base.casefold(), f.size)
 
 
@@ -149,6 +147,25 @@ def _dedup(files: Sequence[DriveFile]) -> tuple[DriveFile, ...]:
     for f in files:
         seen.setdefault(_dedup_key(f), f)
     return tuple(seen.values())
+
+
+def _is_delimited_match(name: str, lot: str) -> bool:
+    """lot 앞뒤가 영숫자와 붙어 있지 않은 매칭이 하나라도 있는가.
+
+    ⛔ 경계를 안 보면 FE161 이 FE1615 에도 걸린다 — 다른 롯트의 증명서를
+       주는 것은 못 찾는 것보다 나쁘다.
+    """
+    start = 0
+    while True:
+        idx = name.find(lot, start)
+        if idx == -1:
+            return False
+        before_ok = idx == 0 or not name[idx - 1].isalnum()
+        after = idx + len(lot)
+        after_ok = after == len(name) or not name[after].isalnum()
+        if before_ok and after_ok:
+            return True
+        start = idx + 1
 
 
 def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
@@ -161,14 +178,24 @@ def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
     if not lot:
         return Verdict(NONE, (), "롯트가 비어 있습니다")
 
-    exact = _dedup([f for f in files if lot in f.name])
-    if exact:
-        if len(exact) > 1:
-            return Verdict(MANY, exact, f"{len(exact)}건 — 어느 것인지 확인이 필요합니다")
-        if len(lot) <= _SHORT_LOT_LEN:
-            return Verdict(CHECK, exact,
-                           f"롯트가 {len(lot)}자로 짧아 다른 코드에 걸렸을 수 있습니다")
-        return Verdict(FOUND, exact)
+    candidates = [f for f in files if lot in f.name]
+    if candidates:
+        delimited = [f for f in candidates if _is_delimited_match(f.name, lot)]
+        if delimited:
+            exact = _dedup(delimited)
+            if len(exact) > 1:
+                return Verdict(MANY, exact, f"{len(exact)}건 — 어느 것인지 확인이 필요합니다")
+            if len(lot) <= _SHORT_LOT_LEN:
+                return Verdict(CHECK, exact,
+                               f"롯트가 {len(lot)}자로 짧아 다른 코드에 걸렸을 수 있습니다")
+            return Verdict(FOUND, exact)
+
+        # 앞뒤가 다른 글자와 붙어 있는 매칭뿐이다 — 더 긴 롯트의 일부일 수 있으니
+        # 없다고 단정하지 않고 사람에게 넘긴다
+        exact = _dedup(candidates)
+        return Verdict(
+            CHECK, exact,
+            "롯트 앞뒤가 다른 글자와 붙어 있습니다 — 더 긴 롯트의 일부일 수 있습니다")
 
     # 접미가 붙은 롯트("F31C28 D")인데 접미 없는 파일만 있는 경우
     head = lot.split()[0]

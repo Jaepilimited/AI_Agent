@@ -185,3 +185,38 @@ def test_two_real_candidates_are_all_shown():
 def test_empty_lot_is_not_searched():
     v = cf.classify_lot("", [_f("아무거나")])
     assert v.status == cf.NONE and "롯트" in v.note
+
+
+def test_substring_lot_without_boundary_is_not_found():
+    """⛔ FE161 이 FE1615 에도 걸리면 다른 롯트의 증명서가 나간다 (경계 없는 매칭)."""
+    files = [_f("COA_10116720_..._FE1615_15643EA")]
+    v = cf.classify_lot("FE161", files)
+    assert v.status != cf.FOUND
+
+
+def test_delimited_real_filename_still_found_with_boundary_check():
+    """경계 검사를 넣은 뒤에도 실제 파일명(언더바로 구분된 롯트)은 그대로 찾는다."""
+    files = [_f("COA_10116720_SCA1-MHWSCM(F)N4(A)_SKIN1004 MADAGASCAR CENTELLA "
+                "HYALU-CICA WATER-FIT SUN SERUM_FE161_15643EA")]
+    v = cf.classify_lot("FE161", files)
+    assert v.status == cf.FOUND and len(v.files) == 1
+
+
+def test_parenthesis_delimited_lot_is_found():
+    """괄호로 감싼 롯트도 경계로 인정한다 (실측값)."""
+    files = [_f("51082SEA-003H SKIN1004 MADAGASCAR CENTELLA "
+                "POREMIZING FRESH AMPOULE COA (E08Z011)")]
+    v = cf.classify_lot("E08Z011", files)
+    assert v.status == cf.FOUND and len(v.files) == 1
+
+
+def test_delimited_match_wins_over_undelimited_match():
+    """경계가 있는 매칭과 없는 매칭이 함께 있으면 경계가 있는 쪽으로 판정한다."""
+    files = [
+        _f("COA_10116720_..._FE1615_15643EA", fid="undelimited"),
+        _f("COA_10116720_..._FE161_15643EA", fid="delimited"),
+    ]
+    v = cf.classify_lot("FE161", files)
+    assert v.status == cf.FOUND
+    assert len(v.files) == 1
+    assert v.files[0].id == "delimited"
