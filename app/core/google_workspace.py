@@ -327,6 +327,8 @@ def search_drive(
     query: str,
     max_results: int = 10,
     mime_contains: Optional[str] = None,
+    exact_name: Optional[str] = None,
+    widen: bool = True,
 ) -> List[Dict[str, Any]]:
     """Search Google Drive files.
 
@@ -337,9 +339,13 @@ def search_drive(
             name contains 로 검색하면 항상 0건이다 (2026-08-07 실동작 테스트에서 발견).
         max_results: Maximum number of files to return.
         mime_contains: mimeType 부분 일치 필터 (예: "image/", "video/", "application/pdf").
+        exact_name: 주어지면 그 문자열이 파일명에 그대로 든 것만 남긴다 (근접 롯트 오검출 방지).
+        widen: False 면 낱말을 줄여 재조회하는 내부 완화(fallback)를 하지 않는다.
+            ⛔ 롯트 조회처럼 **넓히면 안 되는** 호출에서 True(기본값)로 두면 관련 없는
+            파일이 조용히 "찾음" 으로 나간다.
 
     Returns:
-        List of file dicts with name, mimeType, modifiedTime, webViewLink.
+        List of file dicts with name, mimeType, modifiedTime, webViewLink, size, parentId.
     """
     service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
@@ -353,8 +359,15 @@ def search_drive(
         # ⚠️ 검색어가 있으면 **정렬을 지정하지 않는다** — Drive 가 관련도 순으로 준다.
         #    `modifiedTime desc` 로 고정하면 딱 맞는 파일이 최근 파일에 밀려 상위 N 밖으로
         #    나간다. 키워드가 없을 때(최근 파일 보기)만 수정일 순이 맞다.
-        params = dict(q=" and ".join(clauses), pageSize=max_results,
-                      fields="files(id, name, mimeType, modifiedTime, webViewLink)")
+        params = dict(
+            q=" and ".join(clauses), pageSize=max_results,
+            fields="files(id, name, mimeType, modifiedTime, webViewLink, size, parents)",
+            # ⛔ 공유드라이브를 빼면 COA·MSDS 가 통째로 안 보인다. Drive 는 기본값이
+            #    'user' 라 공유드라이브 항목을 조용히 제외한다 — 에러가 아니라 0건이다
+            corpora="allDrives",
+            includeItemsFromAllDrives=True,
+            supportsAllDrives=True,
+        )
         if not kws:
             params["orderBy"] = "modifiedTime desc"
         res = service.files().list(**params).execute()
@@ -369,7 +382,7 @@ def search_drive(
         files = _run([])
     else:
         files = _run(words[:5])
-        if not files and len(words) > 2:
+        if widen and not files and len(words) > 2:
             # 긴 낱말이 더 구체적이고, 한국어는 **뒤에 오는 명사가 머리말**이다
             # ("신규 입사자 교안" → 교안). 길이 우선, 같으면 뒤쪽을 남긴다
             ranked = sorted(enumerate(words), key=lambda kv: (len(kv[1]), kv[0]),
@@ -378,6 +391,10 @@ def search_drive(
         # ⛔ **한 낱말까지 풀지 않는다.** 실제로 "신규 입사자 교안" 을 한 낱말로 넓혔더니
         #    관련 없는 스프레드시트 4건이 나왔고, 답변은 그걸 찾은 것처럼 보여줬다
         #    (2026-08-14). **0건이라고 말하는 편이 낫다** — 잡음은 답처럼 보여서 더 나쁘다
+    # ⛔ Drive 의 `contains` 는 토큰 앞부분 매칭이라 요청하지 않은 파일이 섞일 수 있다.
+    #    롯트 조회는 **넓히면 안 되는** 경로다 — 문자열이 그대로 든 것만 남긴다
+    if exact_name:
+        files = [f for f in files if exact_name in f.get("name", "")]
     return [
         {
             "id": f["id"],
@@ -385,6 +402,8 @@ def search_drive(
             "mimeType": f.get("mimeType", ""),
             "modifiedTime": f.get("modifiedTime", ""),
             "webViewLink": f.get("webViewLink", ""),
+            "size": int(f.get("size") or 0),
+            "parentId": (f.get("parents") or [None])[0],
         }
         for f in files
     ]
