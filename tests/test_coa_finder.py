@@ -1,6 +1,9 @@
 """COA·MSDS 롯트 찾기 — 판정 회귀. 네트워크를 타지 않는다."""
+import io
+import pytest
 from unittest.mock import MagicMock, patch
 
+from app.core import coa_finder as cf
 from app.core.google_workspace import search_drive
 
 
@@ -61,3 +64,54 @@ def test_search_drive_can_disable_internal_widening():
     with patch("app.core.google_workspace.build", return_value=svc):
         search_drive(MagicMock(), "poremizing fresh ampoule MSDS", widen=False)
     assert len(calls) == 1, "widen=False 인데 재조회가 일어났다"
+
+
+PASTED = """이 시트는 OP팀이 관리합니다
+갱신: 2026-08-27
+
+SKU\tDESCRIPTION\tLOT
+EUSKA022\tSKIN1004 Madagascar Centella Ampoule 100ml_CPNP\tFE103C
+EUSKC017\tSKIN1004 Madagascar Centella Cream 75ml_CPNP\t416022
+EUSKA024\tSKIN1004 Madagascar Centella Tone Brightening Capsule Ampoule 100ml_CPNP\tF31C28 D
+"""
+
+
+def test_parse_pasted_finds_header_below_preamble():
+    """⛔ 헤더를 몇 번째 행이라고 박지 마라 — 안내문이 한 줄 늘면 조용히 0건이 난다."""
+    rows = cf.parse_pasted(PASTED)
+    assert [r.sku for r in rows] == ["EUSKA022", "EUSKC017", "EUSKA024"]
+    assert rows[2].lot == "F31C28 D"
+    assert rows[0].line_no == 5
+
+
+def test_parse_pasted_accepts_korean_headers():
+    rows = cf.parse_pasted("품목\t제품명\t롯트\nEUSKA022\t앰플\tFE103C\n")
+    assert rows[0].sku == "EUSKA022" and rows[0].lot == "FE103C"
+
+
+def test_parse_pasted_reports_missing_column_instead_of_guessing():
+    """⛔ 열을 못 찾으면 추측해서 진행하지 않는다."""
+    with pytest.raises(cf.HeaderNotFound) as e:
+        cf.parse_pasted("SKU\tDESCRIPTION\nEUSKA022\t앰플\n")
+    assert "LOT" in e.value.missing
+
+
+def test_parse_pasted_keeps_row_with_empty_lot():
+    """롯트가 비어도 MSDS 는 제품명으로 찾을 수 있다 — 행을 버리지 않는다."""
+    rows = cf.parse_pasted("SKU\tDESCRIPTION\tLOT\nEUSKA022\t앰플\t\n")
+    assert rows[0].lot == ""
+
+
+def test_parse_xlsx_uses_the_same_header_logic():
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["이 시트는 OP팀이 관리합니다"])
+    ws.append([])
+    ws.append(["SKU", "DESCRIPTION", "LOT"])
+    ws.append(["EUSKA022", "앰플 100ml", "FE103C"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    rows = cf.parse_xlsx(buf.getvalue())
+    assert rows[0].sku == "EUSKA022" and rows[0].lot == "FE103C"
