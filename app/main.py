@@ -249,12 +249,17 @@ def create_app() -> FastAPI:
             # 붐따 처리함 — 자가 점검(07:30) 뒤에 둔다. 밤새 들어온 것을 아침에 올린다
             _scheduler.add_job(_feedback_digest_job, "cron", hour=8, minute=0, id="feedback_digest_daily")
             _scheduler.add_job(_briefing_job, "cron", hour=8, minute=20, id="briefing_daily")
-            _scheduler.add_job(_personal_briefing_job, "cron", hour=9, minute=0,
+            # ⚠️ **잔디 발송 시각(08:00)보다 먼저 끝나야 한다** (2026-08-31 사용자 요청).
+            #    DB_PC 릴레이는 만들어 둔 것을 가져갈 뿐이라, 생성이 늦으면 그날 몫이
+            #    통째로 다음 회차(08:30)로 밀린다. 63명 × 동시 3 이면 2~3분이지만
+            #    저장한 질문 실행이 앞에 붙으므로 30분을 비워 둔다.
+            _scheduler.add_job(_personal_briefing_job, "cron", hour=7, minute=30,
                                id="personal_briefing_daily", timezone=ZoneInfo("Asia/Seoul"))
             # 셀라 알림 → 잔디 대기열. ⚠️ 근무 시간에만 돈다 — 밤에 밀어 넣어 봐야
             #    릴레이가 아침에나 보내고, 그 사이 읽음 처리되면 헛수고다.
+            #    ⚠️ 릴레이 첫 회차(08:00)와 맞물리게 8시부터 돈다.
             _scheduler.add_job(_jandi_notify_job, "cron", day_of_week="mon-fri",
-                               hour="9-18", minute=25, id="jandi_notify_hourly",
+                               hour="8-18", minute=25, id="jandi_notify_hourly",
                                timezone=ZoneInfo("Asia/Seoul"))
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
