@@ -61,3 +61,37 @@ def test_page_is_served(client):
     r = client.get("/coa-finder")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
+
+
+def test_download_rejects_too_many_items(client):
+    items = [{"file_id": str(i), "sku": "A", "lot": "L", "name": "x.pdf"}
+             for i in range(201)]
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+    assert r.status_code == 400
+    assert "200" in r.json()["detail"]
+
+
+def test_download_records_files_it_could_not_fetch(client):
+    """⛔ 조용히 빠지면 아무도 모른다 — 못 받은 목록을 ZIP 안에 남긴다."""
+    import io as _io
+    import zipfile
+
+    items = [{"file_id": "ok", "sku": "A", "lot": "FE103C", "name": "a.pdf"},
+             {"file_id": "bad", "sku": "B", "lot": "416022", "name": "b.pdf"}]
+
+    def fake_fetch(creds, file_id):
+        if file_id == "bad":
+            raise RuntimeError("403")
+        return b"%PDF-1.4 fake"
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.api.coa_finder_api._fetch_file", side_effect=fake_fetch):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+
+    assert r.status_code == 200
+    zf = zipfile.ZipFile(_io.BytesIO(r.content))
+    names = zf.namelist()
+    assert "A_FE103C_a.pdf" in names
+    assert "_받지못한_목록.txt" in names
+    assert "416022" in zf.read("_받지못한_목록.txt").decode("utf-8")

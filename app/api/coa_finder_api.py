@@ -4,12 +4,16 @@
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
+import re
+import zipfile
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
 from app.core import coa_finder as cf
@@ -20,6 +24,9 @@ router = APIRouter()
 
 _auth = GoogleAuthManager()
 _MAX_ROWS = 500
+_MAX_DOWNLOAD_ITEMS = 200
+_MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024
+_UNSAFE = re.compile(r'[\\/:*?"<>|\r\n]+')
 
 
 def _credentials(email: str):
@@ -86,3 +93,99 @@ async def coa_finder_search(
 
     return StreamingResponse(_stream(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-store"})
+
+
+class DownloadItem(BaseModel):
+    file_id: str
+    sku: str = ""
+    lot: str = ""
+    name: str = ""
+
+
+class DownloadRequest(BaseModel):
+    items: list[DownloadItem]
+
+
+def _fetch_file(creds, file_id: str) -> bytes:
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseDownload
+
+    svc = build("drive", "v3", credentials=creds, cache_discovery=False)
+    req = svc.files().get_media(fileId=file_id, supportsAllDrives=True)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, req, chunksize=1024 * 1024)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buf.getvalue()
+
+
+def _zip_name(item: DownloadItem) -> str:
+    """어느 롯트 것인지 열어보지 않아도 알게 한다."""
+    parts = [p for p in (item.sku, item.lot, item.name or item.file_id) if p]
+    return _UNSAFE.sub("_", "_".join(parts))[:180]
+
+
+@router.post("/api/coa-finder/download")
+async def coa_finder_download(
+    payload: DownloadRequest,
+    user: object = Depends(get_current_user),
+):
+    items = payload.items
+    if not items:
+        raise HTTPException(400, "받을 파일을 선택해주세요")
+    if len(items) > _MAX_DOWNLOAD_ITEMS:
+        raise HTTPException(
+            400,
+            f"{len(items)}건입니다. 한 번에 {_MAX_DOWNLOAD_ITEMS}건까지 받을 수 있습니다 "
+            f"({len(items) - _MAX_DOWNLOAD_ITEMS}건 초과)")
+
+    creds = _credentials(user.email)
+    if creds is None:
+        raise HTTPException(409, "구글 계정이 연결되어 있지 않습니다. 먼저 연결해주세요")
+
+    buf = io.BytesIO()
+    failed: list[str] = []
+    total = 0
+    cap_hit = False
+    max_mb = _MAX_DOWNLOAD_BYTES // (1024 * 1024)
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        used: set[str] = set()
+        for item in items:
+            label = f"{item.sku} · {item.lot} · {item.name}"
+            if cap_hit:
+                # ⛔ 상한 초과 뒤에도 왜 못 받았는지 목록에 남긴다 — 조용히 빠지지 않게
+                failed.append(f"{label}: 총 용량 상한({max_mb}MB) 초과로 받지 못함")
+                continue
+            try:
+                data = _fetch_file(creds, item.file_id)
+            except Exception as exc:                  # noqa: BLE001
+                logger.warning("coa_download_failed",
+                               extra={"file_id": item.file_id, "error": str(exc)[:200]})
+                failed.append(f"{label}: {str(exc)[:120]}")
+                continue
+
+            if total + len(data) > _MAX_DOWNLOAD_BYTES:
+                over_mb = (total + len(data) - _MAX_DOWNLOAD_BYTES) / (1024 * 1024)
+                failed.append(
+                    f"{label}: 총 용량 상한({max_mb}MB)을 약 {over_mb:.1f}MB 초과해 중단")
+                cap_hit = True
+                continue
+
+            total += len(data)
+            name = _zip_name(item)
+            n, stem = 1, name
+            while name in used:
+                name, n = f"{stem}({n})", n + 1
+            used.add(name)
+            zf.writestr(name, data)
+
+        if failed:
+            # ⛔ 조용히 빠지면 아무도 모른다
+            zf.writestr("_받지못한_목록.txt",
+                        "받지 못한 파일\n\n" + "\n".join(failed))
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="coa_msds.zip"'})
