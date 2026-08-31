@@ -149,17 +149,38 @@ def _match_header(cells: Sequence[str]) -> dict:
     return idx
 
 
-def _looks_like_header(cells: Sequence[str]) -> Optional[dict]:
-    """머리말 낱말로만 이뤄진 행이라야 헤더다.
+# 실제 패킹리스트 머리말의 최장이 21자("TOTAL NET WEIGHT (KG)")다. 넉넉히 잡되
+# 제품명(예: "SKIN1004 Madagascar Centella Tone Brightening…" 71자)보다는 짧게
+_HEADER_CELL_MAX = 40
 
-    ⚠️ 알아보지 못한 칸이 하나라도 있으면 데이터 행으로 본다 — 안 그러면
-       'LOT' 이라는 말이 섞인 데이터 행을 헤더로 삼는다.
+
+def _looks_like_data_cell(cell: str) -> bool:
+    """이 칸이 머리말이 아니라 **값**으로 보이는가."""
+    found, _ = _find_lot(cell.split())
+    return bool(found) or len(cell) > _HEADER_CELL_MAX
+
+
+def _looks_like_header(cells: Sequence[str]) -> Optional[dict]:
+    """머리말 행인가.
+
+    ⛔ "모든 칸이 아는 머리말이어야 한다" 로 하지 마라 — 실제 패킹리스트에는
+       `EAN`·`EXP`·`MFG`·`PLT NO.` 처럼 **우리가 모르는 열**이 늘 있다. 그걸로
+       헤더를 거부했더니 추론 경로로 떨어져 레터헤드(PACKING LIST·SHIPPER·
+       주소 블록)가 데이터 33행이 됐다 (2026-08-31 사용자 제보).
+    ⚠️ 그 규칙이 지키던 성질은 다른 방식으로 지킨다: **값처럼 생긴 칸이 하나라도
+       있으면 데이터 행**이다. 'LOT' 이라는 값이 든 행은 같은 행의 롯트 모양
+       칸 때문에 계속 걸러진다.
     """
     hit = _match_header(cells)
     if not hit:
         return None
-    filled = [c for c in cells if c and c.strip()]
-    return hit if len(hit) >= len(filled) else None
+    filled = [c.strip() for c in cells if c and c.strip()]
+    if any(_looks_like_data_cell(c) for c in filled):
+        return None
+    # 아는 머리말이 둘 이상이거나, 한 열짜리 표(롯트만 붙여넣은 경우)
+    if len(hit) >= 2 or len(filled) == 1:
+        return hit
+    return None
 
 
 def _cell(cells: Sequence[str], col: Optional[int]) -> str:
@@ -475,6 +496,9 @@ def _one(creds, row: Row, search) -> Result:
             coa = Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
         else:
             coa = classify_lot(row.lot, _to_files(raw))
+            if coa.status == NONE:
+                # 파일명에 없으면 본문까지 본다 — 롯트가 PDF 안에만 적힌 COA 가 있다
+                coa = _body_match_coa(creds, row, search) or coa
     else:
         coa = Verdict(NONE, (), "롯트가 비어 있습니다")
 
@@ -504,6 +528,64 @@ def _one(creds, row: Row, search) -> Result:
 
     return Result(row=row, coa=coa, msds=msds,
                   product_coa=_product_coa(creds, row, search, coa))
+
+
+_WORD_SPLIT = re.compile(r"[^0-9A-Za-z]+")
+
+
+def _names_a_different_lot(name: str, lot: str) -> bool:
+    """이 파일 이름이 **다른 롯트**를 자기 롯트로 내걸고 있는가.
+
+    ⛔ 본문 조회에는 `exact_name` 후필터가 없다 — 그것이 근접 롯트를 막던 관문이라
+       그냥 열면 `E07Z083` 을 물었는데 `…COA (E07Z082)` 가 딸려 온다 (회귀 테스트가
+       실제로 잡았다). 이름이 이미 자기 롯트를 밝히고 있고 그것이 우리 롯트가
+       아니면, 본문에 우리 롯트가 스친 것은 비교표 같은 부수적인 등장이다.
+    ⚠️ 접미 없는 표기('F20F04 G' ↔ 파일명 'F20F04')는 같은 롯트로 본다.
+    """
+    folded = lot.strip().casefold()
+    for word in _WORD_SPLIT.split(name):
+        if not word:
+            continue
+        if not (_is_lot(word) or _WEAK_LOT_SHAPE.match(word)):
+            continue
+        low = word.casefold()
+        if low != folded and not folded.startswith(low):
+            return True
+    return False
+
+
+def _body_match_coa(creds, row: Row, search) -> Optional[Verdict]:
+    """파일명에 롯트가 없을 때만 도는 본문 조회.
+
+    사용자 지적 그대로다 (2026-08-31): *"제목에 해당 롯트가 안 써있는게 있어서
+    안 긁어오는 것 같아요."* — 롯트가 PDF 안에만 적힌 COA 가 실제로 있다.
+    `search_drive` 는 원래 `name contains X or fullText contains X` 로 묻고
+    `exact_name` 후필터가 본문 매치를 버려 왔다. 여기서는 그 후필터 없이 다시 묻는다.
+
+    ⛔ **이름에 `coa` 가 든 파일만 받는다.** 이 관문이 없으면 41행이 전부 같은
+       재고 시트(`[SK/CL] 통합 재고 관리 & 유통기한 현황`)를 COA 로 내놓는다 —
+       그 시트가 롯트를 전부 본문에 담고 있기 때문이다. 0건보다 훨씬 나쁘다.
+    ⛔ 본문에 롯트가 있다고 **그 롯트의 증명서라는 뜻이 아니다** (여러 롯트가
+       적힌 표일 수 있다). 그래서 판정은 최대가 확인필요다.
+    """
+    try:
+        raw = search(creds, row.lot, max_results=25, widen=False)
+    except Exception as exc:                          # noqa: BLE001
+        # 보조 조회다 — 실패해도 이름 조회 결과(없음)를 뒤집지 않는다
+        logger.warning("coa_body_search_failed",
+                       extra={"lot": row.lot, "error": str(exc)[:200]})
+        return None
+
+    files = _dedup([f for f in _to_files(raw)
+                    if "coa" in f.name.casefold()
+                    and not _names_a_different_lot(f.name, row.lot)])
+    if not files:
+        return None
+    return Verdict(
+        CHECK, files,
+        f"파일 이름에는 이 롯트가 없고 문서 본문에서 찾았습니다 ({len(files)}건) — "
+        "여러 롯트가 적힌 표일 수 있어 이 롯트의 증명서라고 단정할 수 없습니다. "
+        "열어서 확인하세요")
 
 
 def _product_coa(creds, row: Row, search, coa: Verdict) -> Verdict:

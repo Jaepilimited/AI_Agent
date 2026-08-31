@@ -163,6 +163,40 @@ def test_parse_accepts_a_bare_list_of_lots():
     assert parsed.inferred is True
 
 
+def test_real_packing_list_header_survives_unknown_columns():
+    """⛔ 실제 패킹리스트 회귀 (2026-08-31 사용자 제보, .xlsx 업로드).
+
+    "모든 칸이 아는 머리말이어야 한다" 로 좁혔더니 EAN·EXP·MFG·PLT NO. 같은
+    **모르는 열** 때문에 헤더가 통째로 거부됐고, 그러자 추론 경로로 떨어져
+    레터헤드(PACKING LIST · SHIPPER · CRAVER CORPORATION…)가 데이터 33행이 됐다.
+    """
+    pasted = (
+        "PACKING LIST\n"
+        "SHIPPER\n"
+        "CRAVER CORPORATION_x000D_ ADDRESS : 11F, 12F, 25 Seocho-daero\n"
+        "\n"
+        "EAN\tSKU\tDESCRIPTION\tLOT\tEXP\tMFG\tPLT NO.\tCARTON QTY\t"
+        "QTY (PER CTN)\tWEIGHT (KG)\tTOTAL QTY (EA)\tTOTAL NET WEIGHT (KG)\n"
+        "8809576261234\tEUSKA022\tSKIN1004 Toning Toner 210ml\tF20F04 G\t"
+        "2028-06-01\t2026-06-01\tPLT-1\t10\t24\t12.5\t240\t125.0\n"
+    )
+    parsed = cf.parse_pasted(pasted)
+    assert parsed.inferred is False, "헤더를 못 알아보고 추론으로 떨어졌다"
+    assert len(parsed.rows) == 1, "레터헤드가 데이터로 섞였다"
+    assert parsed.rows[0].sku == "EUSKA022"
+    assert parsed.rows[0].lot == "F20F04 G"
+    assert parsed.rows[0].description == "SKIN1004 Toning Toner 210ml"
+
+
+def test_data_row_containing_the_word_lot_is_not_a_header():
+    """⛔ 좁혔던 규칙이 지키던 성질은 그대로 지킨다 — 'LOT' 이라는 **값**이 든
+    데이터 행을 헤더로 삼으면 그 아래만 읽고 위를 통째로 버린다."""
+    parsed = cf.parse_pasted("EUSKA022\tLOT\tFE103C\nEUSKC017\t크림\t416022\n")
+    assert parsed.inferred is True          # 헤더가 아니라고 봤다
+    assert len(parsed.rows) == 2
+    assert parsed.rows[0].lot == "FE103C"
+
+
 def test_header_row_still_wins_over_inference():
     """⛔ 알아보기가 헤더를 이기면 안 된다 — 헤더가 있으면 그것이 정답이다."""
     parsed = cf.parse_pasted(PASTED)
@@ -516,8 +550,11 @@ def test_find_all_never_widens_the_query():
 
     ex.assert_not_called()
     lv.assert_not_called()
+    # ⛔ 가장 중요한 단정 — 본문 조회를 붙인 뒤에도 근접 롯트는 절대 나오면 안 된다.
+    #    (이 줄이 실제로 결함을 잡았다: 본문 조회에는 exact_name 후필터가 없어
+    #     '…COA (E07Z082)' 가 딸려 왔다. _names_a_different_lot 이 막는다)
     assert results[0].coa.status == cf.NONE
-    assert all(c[1] for c in calls if c[0] == "E07Z083"), "exact_name 을 넘기지 않았다"
+    assert ("E07Z083", "E07Z083") in calls, "이름 조회에 exact_name 을 넘기지 않았다"
 
 
 def test_find_all_keeps_row_order():
@@ -683,9 +720,12 @@ def test_find_all_coa_skips_fallback_when_full_lot_already_matches():
 
 
 def test_find_all_coa_skips_fallback_for_unsuffixed_lot():
-    """공백이 없는 롯트는 접미가 없으므로 재조회 대상이 아니다.
+    """공백이 없는 롯트는 접미가 없으므로 **접미 재조회** 대상이 아니다.
 
-    description 은 비워 둔다 — MSDS 쪽 호출과 섞이지 않게 한다."""
+    description 은 비워 둔다 — MSDS 쪽 호출과 섞이지 않게 한다.
+    ⚠️ 이름 조회가 0건이면 본문 조회가 한 번 더 도는 것은 의도된 동작이다
+    (같은 롯트, exact_name 없이). 여기서 지키는 것은 '다른 검색어로 다시 묻지
+    않는다' 쪽이다."""
     rows = [cf.Row("A", "", "FE103C", 1)]
     calls = []
 
@@ -696,7 +736,8 @@ def test_find_all_coa_skips_fallback_for_unsuffixed_lot():
 
     got = list(cf.find_all(MagicMock(), rows, search=fake_search))
     assert got[0].coa.status == cf.NONE
-    assert len(calls) == 1, "접미 없는 롯트인데 재조회했다"
+    assert {q for q, _ in calls} == {"FE103C"}, "접미 없는 롯트인데 다른 검색어로 재조회했다"
+    assert ("FE103C", "FE103C") in calls          # 이름 조회는 exact_name 을 지킨다
 
 
 def test_find_all_coa_fallback_search_uses_exact_name_on_base_lot():
@@ -715,6 +756,99 @@ def test_find_all_coa_fallback_search_uses_exact_name_on_base_lot():
     assert fallback_calls, "접미 없는 롯트로 재조회하지 않았다"
     assert all(exact == "F31C28" for _, exact in fallback_calls), \
         "재조회에 exact_name 을 넘기지 않았다"
+
+
+def test_body_match_is_used_when_the_filename_has_no_lot():
+    """사용자 지적 (2026-08-31): "제목에 해당 롯트가 안 써있는게 있어서 안 긁어오는 것
+    같아요." 맞다 — 파일명만 봤다. 이름으로 못 찾으면 본문까지 본다."""
+    rows = [cf.Row("EUSKA022", "", "F20F04 G", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if exact_name:
+            return []                       # 파일명에는 롯트가 없다
+        return [{"id": "b", "name": "COA_SKIN1004 TONING TONER 210ml(N7).pdf",
+                 "size": 100, "webViewLink": "http://d/b"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    v = got[0].coa
+    assert v.status == cf.CHECK
+    assert v.status != cf.FOUND             # 본문에 있다고 그 롯트 것은 아니다
+    assert [f.id for f in v.files] == ["b"]
+    assert "본문" in v.note and "이름" in v.note
+
+
+def test_body_match_only_accepts_files_named_coa():
+    """⛔ 이 관문이 없으면 41행이 전부 같은 재고 시트를 'COA' 로 내놓는다 —
+    그 시트가 롯트를 전부 본문에 담고 있기 때문이다 (0건보다 훨씬 나쁘다)."""
+    rows = [cf.Row("EUSKA022", "", "F20F04 G", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if exact_name:
+            return []
+        return [{"id": "sheet", "name": "[SK/CL] 통합 재고 관리 & 유통기한 현황",
+                 "size": 100, "webViewLink": "http://d/s"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.NONE
+    assert got[0].coa.files == ()
+    assert got[0].coa.note, "없음의 근거가 비어 있다"
+
+
+def test_body_match_rejects_a_file_that_names_a_different_lot():
+    """⛔ 본문 조회에는 exact_name 후필터가 없다 — 그것이 근접 롯트를 막던 관문이다.
+
+    이름만으로 'coa 가 들어 있으면 받는다' 로 열었더니 E07Z083 을 물었는데
+    '…COA (E07Z082)' 가 딸려 왔다 (기존 회귀 테스트가 잡았다). 이름이 이미
+    자기 롯트를 밝히고 있고 그게 우리 것이 아니면, 본문 등장은 비교표 같은
+    부수적인 것이다 — 이 기능이 막으려고 존재하는 바로 그 사고다.
+    """
+    rows = [cf.Row("A", "", "E07Z083", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if exact_name:
+            return []
+        return [{"id": "near", "name": "51082SEA-001W ... POREMIZING FRESH "
+                                       "AMPOULE COA (E07Z082)",
+                 "size": 100, "webViewLink": "http://d/1"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.NONE
+    assert got[0].coa.files == ()
+
+
+def test_body_match_accepts_the_same_lot_written_without_its_suffix():
+    """접미 없는 표기는 같은 롯트다 — 'F20F04 G' ↔ 파일명 'F20F04'."""
+    rows = [cf.Row("A", "", "F20F04 G", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if exact_name:
+            return []
+        return [{"id": "same", "name": "COA_TONING TONER 210ml_F20F04.pdf",
+                 "size": 100, "webViewLink": "http://d/1"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.CHECK
+    assert [f.id for f in got[0].coa.files] == ["same"]
+
+
+def test_body_match_is_not_attempted_when_the_filename_matched():
+    """이름으로 찾았으면 본문까지 뒤질 이유가 없다 — 조회를 아낀다."""
+    rows = [cf.Row("EUSKA022", "", "E08Z011", 1)]
+    calls = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        calls.append(exact_name)
+        return [{"id": "1", "name": "COA (E08Z011).pdf", "size": 1,
+                 "webViewLink": "http://d/1"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.FOUND
+    assert calls == ["E08Z011"], "이름으로 찾았는데 본문 조회까지 했다"
 
 
 def _product_coa_search(files):
