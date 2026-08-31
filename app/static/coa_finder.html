@@ -66,6 +66,9 @@
         <thead><tr>
           <th><input type="checkbox" id="cf-all"></th>
           <th>SKU</th><th>제품명</th><th>롯트</th><th>COA</th><th>MSDS</th>
+          <!-- 제품명으로 찾은 COA. ⛔ 이 열은 **다른 롯트**의 증명서라
+               절대 '찾음' 이 되지 않는다 (칸마다 따로 선택해야 받아진다) -->
+          <th>COA(제품)</th>
         </tr></thead>
         <tbody id="cf-body"></tbody>
       </table>

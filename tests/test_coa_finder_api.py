@@ -620,9 +620,13 @@ def test_frontend_states_rows_skipped_for_empty_sku():
 
 
 def test_frontend_renders_the_product_coa_column():
-    src = _js_source()
-    assert "COA(제품)" in src
-    assert "product_coa" in src
+    """⛔ 표 머리글은 마크업에 있어야 한다 — 스크립트가 넣어 주는 머리글은
+    스크립트가 낡거나 죽으면 열이 통째로 사라지고, 그때 에러는 안 난다."""
+    with open("app/static/coa_finder.html", encoding="utf-8") as fh:
+        html = fh.read()
+    assert "COA(제품)" in html
+    assert "COA(제품)" not in _js_source(), "머리글을 JS 가 다시 심고 있다"
+    assert "product_coa" in _js_source()
 
 
 def test_frontend_does_not_let_the_row_checkbox_take_product_coa():

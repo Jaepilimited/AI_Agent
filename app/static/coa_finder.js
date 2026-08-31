@@ -87,18 +87,6 @@
     $("cf-body").appendChild(tr);
   }
 
-  // The table head lives in the HTML, which this change does not own, so the
-  // third column's heading is added here once per run.
-  function ensureProductCoaHeading() {
-    if ($("cf-th-product")) return;
-    const head = document.querySelector("#cf-table thead tr");
-    if (!head) return;
-    const th = document.createElement("th");
-    th.id = "cf-th-product";
-    th.textContent = "COA(제품)";
-    head.appendChild(th);
-  }
-
   // Caps published by the server in the "done" event. The page never keeps
   // its own copy of a server limit -- a duplicate like that drifts silently.
   let caps = null;
@@ -203,7 +191,6 @@
   // response body directly and splits it into SSE frames by hand.
   async function run() {
     $("cf-body").innerHTML = "";
-    ensureProductCoaHeading();
     showError("");
     notice("cf-layout", "");
     showAllNone(false);
