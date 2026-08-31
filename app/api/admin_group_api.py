@@ -1,15 +1,18 @@
 """Admin endpoints: AD user & group management (MariaDB)."""
 
 import asyncio
+import secrets
+import string
 import subprocess
 import sys
 from typing import Optional
 
+import bcrypt as _bcrypt
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.api.auth_middleware import get_current_user
+from app.api.auth_middleware import get_current_user, invalidate_user_cache
 from app.db.models import User
 from app.db.mariadb import fetch_all, fetch_one, execute, execute_lastid
 
@@ -300,6 +303,69 @@ async def update_fi_access(
         "ok": True,
         "ad_user_id": ad_user_id,
         "can_view_fi": req.can_view_fi,
+    }
+
+
+_TEMP_PASSWORD_LENGTH = 14
+# 스크린샷·화면 낭독으로 옮겨 적을 사람을 위해 헷갈리는 글자(0/O, 1/l/I)는 뺀다.
+_TEMP_PASSWORD_ALPHABET = "".join(
+    c for c in (string.ascii_letters + string.digits) if c not in "0O1lI"
+)
+
+
+def _generate_temp_password() -> str:
+    """관리자가 고르지 않는다 — 재사용·추측을 막기 위해 서버가 `secrets` 로 생성한다."""
+    return "".join(secrets.choice(_TEMP_PASSWORD_ALPHABET) for _ in range(_TEMP_PASSWORD_LENGTH))
+
+
+@ad_router.post("/users/{ad_user_id}/reset-password")
+async def reset_password(
+    ad_user_id: int,
+    admin: User = Depends(_require_admin),
+):
+    """관리자가 로컬 로그인 비밀번호를 초기화한다 — 잊어버린 사람의 유일한 복귀 경로.
+
+    비밀번호는 `users` 테이블에 있다 (`can_view_fi` 는 `ad_users` — 혼동 금지).
+    평문은 이 응답에 딱 한 번 실리고, DB·로그 어디에도 남지 않는다.
+    `must_change_password` 를 세워 두면, 로그인은 되지만 본인이 새 비밀번호를
+    정할 때까지(`/api/auth/change-password`) 그 외 어떤 요청도 `get_current_user`
+    관문에서 막힌다 — 그 강제가 없으면 이 임시 비밀번호가 영구 비밀번호가 된다.
+    """
+    target = await _fetch_one(
+        "SELECT u.id AS user_id, u.display_name, a.username "
+        "FROM users u JOIN ad_users a ON u.ad_user_id = a.id "
+        "WHERE a.id = %s",
+        (ad_user_id,),
+    )
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail="가입된 사용자를 찾을 수 없습니다 (AD 사용자만으로는 초기화할 수 없습니다)",
+        )
+
+    temp_password = _generate_temp_password()
+    pw_hash = _bcrypt.hashpw(temp_password.encode(), _bcrypt.gensalt()).decode()
+
+    await _execute(
+        "UPDATE users SET password_hash = %s, must_change_password = 1, updated_at = NOW() "
+        "WHERE id = %s",
+        (pw_hash, target["user_id"]),
+    )
+    invalidate_user_cache(target["user_id"])
+
+    # ⛔ 평문은 여기 로그에도 남기지 않는다 — 관리자가 화면에서 한 번 읽고 전달한다.
+    # INFO 는 프로덕션에서 버려지므로(CLAUDE.md) 실행 기록이 남게 WARNING 으로 남긴다.
+    logger.warning(
+        "admin_password_reset",
+        target_username=target["username"],
+        target_user_id=target["user_id"],
+        target_ad_user_id=ad_user_id,
+        by=admin.email,
+    )
+    return {
+        "ok": True,
+        "ad_user_id": ad_user_id,
+        "temporary_password": temp_password,
     }
 
 

@@ -117,6 +117,30 @@ def ensure_fi_permission_column():
         pass  # column already exists
 
 
+def ensure_must_change_password_column():
+    """Add users.must_change_password if missing (idempotent, startup-time).
+
+    관리자가 발급한 임시 비밀번호는 이 플래그가 없으면 영영 비밀번호로 남는다 —
+    로그인은 되지만 그 뒤 아무것도 할 수 없게 막는 관문(`get_current_user`)이
+    이 컬럼을 읽는다. `announcements.ensure_tables()` 와 같은 패턴: INFORMATION_SCHEMA
+    로 먼저 확인해 재기동마다 반복 실행돼도 안전하다.
+    """
+    try:
+        existing = fetch_one(
+            "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+            "AND COLUMN_NAME = 'must_change_password'"
+        )
+        if not existing:
+            execute(
+                "ALTER TABLE users "
+                "ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0 "
+                "COMMENT '관리자가 비밀번호를 초기화함 — 다음 로그인에 강제 변경'"
+            )
+    except Exception as e:
+        logger.debug("must_change_password_column_skip", error=str(e)[:120])
+
+
 def ensure_user_visits_table():
     """Create the authenticated page-visit ledger used by admin analytics."""
     execute(

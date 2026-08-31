@@ -3990,6 +3990,20 @@ html.dark .db-autocomplete-dropdown {
   flex-shrink: 0;
 }
 .admin-ad-assign:hover { border-color: var(--accent); color: var(--accent); }
+.admin-ad-reset-pw {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-main);
+  font-size: var(--text-caption);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.admin-ad-reset-pw:hover { border-color: var(--warning); color: var(--warning); }
+.admin-ad-reset-pw:disabled { opacity: 0.6; cursor: default; }
 
 /* Modal */
 .admin-modal-overlay {
@@ -4143,6 +4157,33 @@ html.dark .db-autocomplete-dropdown {
   color: var(--success);
   text-align: center;
   margin: 20px 0;
+}
+
+/* Admin password reset result — shown exactly once, never persisted */
+.pw-reset-target {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.pw-reset-value {
+  font-family: var(--font-code);
+  font-size: var(--text-md);
+  letter-spacing: 0.04em;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  text-align: center;
+  user-select: all;
+  word-break: break-all;
+  margin-bottom: var(--space-sm);
+}
+.pw-reset-warning {
+  font-size: var(--text-xs);
+  color: var(--warning);
+  line-height: 1.5;
+  margin: 0 0 var(--space-sm);
 }
 
 /* Admin button accent */

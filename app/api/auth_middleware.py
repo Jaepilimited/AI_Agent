@@ -19,6 +19,16 @@ _ALGORITHM = "HS256"
 _USER_CACHE_TTL = 60.0
 _user_cache: dict[int, tuple[User, float]] = {}
 
+# 관리자가 비밀번호를 초기화한 사용자는 로그인은 되지만 새 비밀번호를 정하기
+# 전까지 그 외 아무것도 못 한다 — 여기 없는 모든 경로가 막힌다. 프론트가 아니라
+# 이 관문(모든 인증 경로가 거치는 get_current_user)에서 막아야 API 를 직접
+# 호출해 우회하는 것도 막는다.
+_MUST_CHANGE_PASSWORD_EXEMPT_PATHS = {
+    "/api/auth/me",
+    "/api/auth/change-password",
+    "/api/auth/logout",
+}
+
 
 def _extract_user_id(request: Request) -> int:
     """Extract user_id from JWT cookie. Raises 401 on failure."""
@@ -60,6 +70,7 @@ async def get_current_user(request: Request) -> User:
         row = await asyncio.to_thread(
             fetch_one,
             "SELECT u.id, u.email, u.display_name, u.role, u.allowed_models, u.ad_user_id, "
+            "u.must_change_password, "
             "a.display_name as ad_name, a.email as ad_email, a.department "
             "FROM users u LEFT JOIN ad_users a ON u.ad_user_id = a.id "
             "WHERE u.id = %s",
@@ -76,13 +87,29 @@ async def get_current_user(request: Request) -> User:
             role=row["role"],
             allowed_models=row.get("allowed_models") or ALL_MODELS,
             ad_user_id=row.get("ad_user_id"),
+            must_change_password=bool(row.get("must_change_password")),
         )
         _user_cache[user_id] = (user, time.monotonic())
 
     # Store on request.state for downstream use
     request.state.user_email = user.email
     request.state.user_id = user.id
+
+    if user.must_change_password and request.url.path not in _MUST_CHANGE_PASSWORD_EXEMPT_PATHS:
+        raise HTTPException(
+            status_code=403,
+            detail="비밀번호가 초기화되었습니다. 계속하려면 먼저 비밀번호를 변경해 주세요.",
+        )
+
     return user
+
+
+def invalidate_user_cache(user_id: int) -> None:
+    """Drop a cached User so the next request re-reads it from MariaDB instead of
+    serving up to `_USER_CACHE_TTL` stale seconds of role/permission/
+    must_change_password state. Call after any write that changes what's cached —
+    e.g. clearing must_change_password on a successful password change."""
+    _user_cache.pop(user_id, None)
 
 
 async def get_optional_user(request: Request) -> Optional[User]:

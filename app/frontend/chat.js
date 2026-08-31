@@ -5546,6 +5546,10 @@
           if (isAdmin()) {
             html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer">';
             html += '<input type="checkbox" class="admin-fi-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_fi ? ' checked' : '') + '> 손익</label>';
+            // 가입한 사람만 로컬 비밀번호가 있다 — 미가입 AD 사용자는 초기화할 것이 없다
+            if (u.user_id) {
+              html += '<button class="admin-ad-reset-pw" data-ad-user-id="' + u.id + '" data-name="' + escapeHtml(u.display_name) + '">비밀번호 초기화</button>';
+            }
             html += '<button class="admin-ad-assign" onclick="adminAssignUser(' + u.id + ', \'' + escapeHtml(u.display_name) + '\')">배정</button>';
           }
           html += '</div>';
@@ -5575,7 +5579,51 @@
             });
           });
         });
+        container.querySelectorAll(".admin-ad-reset-pw").forEach(function(btn) {
+          btn.addEventListener("click", function() {
+            var name = btn.dataset.name;
+            if (!confirm("'" + name + "' 님의 비밀번호를 초기화하시겠습니까?\n임시 비밀번호가 발급되고, 본인이 새 비밀번호로 바꾸기 전까지는 로그인만 되고 앱은 사용할 수 없습니다.")) return;
+            btn.disabled = true;
+            btn.textContent = "초기화 중...";
+            fetch("/api/admin/ad/users/" + btn.dataset.adUserId + "/reset-password", { method: "POST" })
+              .then(function(r) {
+                if (!r.ok) throw new Error("비밀번호 초기화에 실패했습니다.");
+                return r.json();
+              })
+              .then(function(res) {
+                btn.disabled = false;
+                btn.textContent = "비밀번호 초기화";
+                showResetPasswordResultModal(name, res.temporary_password);
+              })
+              .catch(function(e) {
+                btn.disabled = false;
+                btn.textContent = "비밀번호 초기화";
+                alert(e.message || "비밀번호 초기화에 실패했습니다.");
+              });
+          });
+        });
       }).catch(function(e) { console.error("Failed to load AD users:", e); });
+  }
+
+  // 초기화 직후 딱 한 번만 보여주는 임시 비밀번호 — 저장하지 않는다, 다시 열 수 없다
+  function showResetPasswordResultModal(name, tempPassword) {
+    var overlay = document.createElement("div");
+    overlay.className = "admin-modal-overlay";
+    overlay.innerHTML =
+      '<div class="admin-modal pw-modal">' +
+      '<h3>비밀번호 초기화 완료</h3>' +
+      '<p class="pw-reset-target"></p>' +
+      '<div class="pw-reset-value" id="pw-reset-value"></div>' +
+      '<p class="pw-reset-warning">이 화면을 닫으면 다시 볼 수 없습니다 — 지금 본인에게 전달해 주세요. ' +
+      '로그인은 되지만, 이 비밀번호로 새 비밀번호를 정하기 전까지는 앱을 사용할 수 없습니다.</p>' +
+      '<div class="admin-modal-actions">' +
+      '<button class="admin-btn-primary" id="pw-reset-done">확인</button>' +
+      '</div></div>';
+    document.body.appendChild(overlay);
+    // textContent 로 넣는다 — 비밀번호에 HTML 특수문자가 섞여도 그대로, 안전하게 보이도록
+    overlay.querySelector(".pw-reset-target").textContent = name + " 님의 임시 비밀번호";
+    overlay.querySelector("#pw-reset-value").textContent = tempPassword;
+    overlay.querySelector("#pw-reset-done").addEventListener("click", function() { overlay.remove(); });
   }
 
   // Filters

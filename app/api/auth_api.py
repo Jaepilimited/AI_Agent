@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from app.api.auth_middleware import get_current_user
+from app.api.auth_middleware import get_current_user, invalidate_user_cache
 from app.config import ALL_MODELS, get_settings, validate_jwt_secret
 from app.db.mariadb import fetch_all, fetch_one, execute, execute_lastid
 from app.db.models import User
@@ -461,6 +461,7 @@ async def me(response: Response, user: User = Depends(get_current_user)):
         "department": user.department,
         "role": user.role,
         "can_view_fi": can_view_fi,
+        "must_change_password": user.must_change_password,
         "allowed_models": _resolve_models(user.role, user.allowed_models),
         "brand_filters": brand_filters,
         "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,
@@ -489,12 +490,16 @@ async def change_password(req: ChangePasswordRequest, user: User = Depends(get_c
     if not _bcrypt.checkpw(req.current_password.encode(), row["password_hash"].encode()):
         raise HTTPException(status_code=401, detail="현재 비밀번호가 일치하지 않습니다")
 
-    # Hash and update
+    # Hash and update. Clears must_change_password — this is the only path off a
+    # forced reset, so anything else would leave an admin-issued temporary
+    # password standing in permanently.
     new_hash = _bcrypt.hashpw(req.new_password.encode(), _bcrypt.gensalt()).decode()
     await _db_execute(
-        "UPDATE users SET password_hash = %s, updated_at = NOW() WHERE id = %s",
+        "UPDATE users SET password_hash = %s, must_change_password = 0, updated_at = NOW() "
+        "WHERE id = %s",
         (new_hash, user.id),
     )
+    invalidate_user_cache(user.id)
 
     logger.info("password_changed", user_id=user.id, name=user.name)
     return {"ok": True}

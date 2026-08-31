@@ -17,3 +17,4 @@ class User:
     allowed_models: str = ALL_MODELS
     ad_user_id: Optional[int] = None
     password_hash: str = ""
+    must_change_password: bool = False
