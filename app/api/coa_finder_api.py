@@ -166,10 +166,22 @@ def _fetch_file(creds, file_id: str) -> bytes:
     return buf.getvalue()
 
 
+_MAX_ZIP_NAME_BYTES = 180
+
+
+def _truncate_utf8(s: str, max_bytes: int) -> str:
+    """글자 중간을 자르지 않는다 — ext4·macOS 는 이름을 바이트로 센다."""
+    encoded = s.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return s
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
 def _zip_name(item: DownloadItem) -> str:
     """어느 롯트 것인지 열어보지 않아도 알게 한다."""
     parts = [p for p in (item.sku, item.lot, item.name or item.file_id) if p]
-    return _UNSAFE.sub("_", "_".join(parts))[:180]
+    joined = _UNSAFE.sub("_", "_".join(parts))
+    return _truncate_utf8(joined, _MAX_ZIP_NAME_BYTES)
 
 
 @router.post("/api/coa-finder/download")
@@ -185,6 +197,10 @@ async def coa_finder_download(
             400,
             f"{len(items)}건입니다. 한 번에 {_MAX_DOWNLOAD_ITEMS}건까지 받을 수 있습니다 "
             f"({len(items) - _MAX_DOWNLOAD_ITEMS}건 초과)")
+    for i, item in enumerate(items):
+        if not item.file_id.strip():
+            # ⛔ 빈 file_id 를 그냥 넘기면 ZIP 안에 이름 없는 항목이 생긴다
+            raise HTTPException(400, f"{i + 1}번째 항목에 file_id 가 없습니다")
 
     creds = _credentials(user.email)
     if creds is None:

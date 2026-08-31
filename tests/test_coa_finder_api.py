@@ -156,3 +156,56 @@ def test_download_records_files_it_could_not_fetch(client):
     assert "A_FE103C_a.pdf" in names
     assert "_받지못한_목록.txt" in names
     assert "416022" in zf.read("_받지못한_목록.txt").decode("utf-8")
+
+
+def test_download_rejects_empty_file_id(client):
+    """⛔ 빈 file_id 를 그냥 넘기면 ZIP 안에 이름 없는 항목이 생긴다."""
+    items = [{"file_id": "  ", "sku": "A", "lot": "L", "name": "x.pdf"}]
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+    assert r.status_code == 400
+    assert "file_id" in r.json()["detail"]
+
+
+def test_download_reports_cap_and_skips_remaining(client):
+    """⛔ 용량 상한을 넘긴 뒤 남은 항목이 조용히 사라지면 안 된다."""
+    import io as _io
+    import zipfile
+
+    items = [
+        {"file_id": "1", "sku": "A", "lot": "L1", "name": "a.pdf"},
+        {"file_id": "2", "sku": "B", "lot": "L2", "name": "b.pdf"},
+        {"file_id": "3", "sku": "C", "lot": "L3", "name": "c.pdf"},
+    ]
+
+    def fake_fetch(creds, file_id):
+        # 실제로 500MB 를 만들지 않는다 — 상한 자체를 낮춰서 같은 경로를 튄다
+        return b"x" * 40
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.api.coa_finder_api._fetch_file", side_effect=fake_fetch), \
+         patch("app.api.coa_finder_api._MAX_DOWNLOAD_BYTES", 50):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+
+    assert r.status_code == 200
+    zf = zipfile.ZipFile(_io.BytesIO(r.content))
+    names = zf.namelist()
+    assert "A_L1_a.pdf" in names          # 40바이트 — 상한 50 안에 든다
+    assert "B_L2_b.pdf" not in names      # 누적 80 > 50 — 여기서 상한을 넘긴다
+    assert "C_L3_c.pdf" not in names      # 상한 넘긴 뒤라 건드리지 않는다
+    assert "_받지못한_목록.txt" in names
+    note = zf.read("_받지못한_목록.txt").decode("utf-8")
+    assert "L2" in note                   # 상한을 넘긴 항목 자신
+    assert "L3" in note                   # 넘긴 뒤 건너뛴 항목도 각자 한 줄씩
+
+
+def test_zip_name_truncates_by_utf8_bytes_not_characters():
+    """⛔ 180자를 그대로 자르면 ext4·macOS 의 255바이트 상한을 넘을 수 있다."""
+    from app.api.coa_finder_api import DownloadItem, _MAX_ZIP_NAME_BYTES, _zip_name
+
+    item = DownloadItem(file_id="x", sku="A", lot="L", name="가" * 200)
+    name = _zip_name(item)
+    encoded = name.encode("utf-8")
+    assert len(encoded) <= _MAX_ZIP_NAME_BYTES
+    # 글자 중간이 잘렸으면 여기서 디코딩 오류가 나거나 원문과 달라진다
+    assert encoded.decode("utf-8") == name
