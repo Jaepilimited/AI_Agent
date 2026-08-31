@@ -219,6 +219,73 @@ def test_the_cookie_does_not_leak_onto_the_admin_request_endpoint():
     assert pwg.GRANT_COOKIE_PATH == "/api/auth/password-reset"
 
 
+# ────────────────────────── 누가 이 경로를 쓸 수 있나 ──────────────────────────
+# ⛔ `users.email` 만 보면 절반이 영영 못 쓴다 — AD 에 `mail` 속성이 없는 계정이
+#    많아(실측 436명 중 231명) 가입 시 `ad_<id>@noemail.local` 폴백이 박힌다.
+
+def _stub_lookup(monkeypatch, users, linked):
+    """users 표와 '연결해 둔 구글 계정' 을 대신한다."""
+    def fetch_one(sql, params=()):
+        wanted = str(params[0]).casefold()
+        for u in users:
+            if (u.get("email") or "").casefold() == wanted:
+                return u
+        return None
+
+    class FakeManager:
+        def get_stored_google_email(self, user_email):
+            return linked.get(user_email, "")
+
+    monkeypatch.setattr(pwg, "fetch_one", fetch_one)
+    monkeypatch.setattr(pwg, "fetch_all", lambda sql, params=(): users)
+    import app.core.google_auth as ga
+    monkeypatch.setattr(ga, "GoogleAuthManager", FakeManager)
+
+
+def test_the_email_column_is_tried_first(monkeypatch):
+    users = [{"id": 1, "display_name": "본인", "ad_user_id": 11,
+              "email": "me@skin1004korea.com"}]
+    _stub_lookup(monkeypatch, users, linked={})
+
+    assert pwg.find_user_by_google_email("ME@skin1004korea.com")["id"] == 1
+
+
+def test_a_placeholder_email_still_reaches_its_owner_through_the_linked_account(monkeypatch):
+    """AD 에 mail 이 없어 폴백이 박힌 사람도, 앱에서 구글을 연결해 뒀다면 쓸 수 있어야 한다.
+
+    그 연결은 **로그인한 상태로** 본인이 만든 것이라 `users.email` 과 같은 세기의
+    증거다 — 추측이 아니라 그때 인증된 결속이다.
+    """
+    users = [{"id": 7, "display_name": "폴백", "ad_user_id": 77,
+              "email": "ad_77@noemail.local"}]
+    _stub_lookup(monkeypatch, users,
+                 linked={"ad_77@noemail.local": "real@skin1004korea.com"})
+
+    found = pwg.find_user_by_google_email("real@skin1004korea.com")
+    assert found and found["id"] == 7
+
+
+def test_two_accounts_linked_to_one_google_account_pick_nothing(monkeypatch):
+    """⛔ 하나를 고르면 남의 계정 비밀번호를 바꿔 준다 — 모를 때는 멈춘다."""
+    users = [
+        {"id": 1, "display_name": "A", "ad_user_id": 11, "email": "ad_11@noemail.local"},
+        {"id": 2, "display_name": "B", "ad_user_id": 22, "email": "ad_22@noemail.local"},
+    ]
+    _stub_lookup(monkeypatch, users, linked={
+        "ad_11@noemail.local": "shared@skin1004korea.com",
+        "ad_22@noemail.local": "shared@skin1004korea.com",
+    })
+
+    assert pwg.find_user_by_google_email("shared@skin1004korea.com") is None
+
+
+def test_no_link_and_no_matching_email_means_the_admin_path(monkeypatch):
+    users = [{"id": 3, "display_name": "C", "ad_user_id": 33, "email": "ad_33@noemail.local"}]
+    _stub_lookup(monkeypatch, users, linked={})
+
+    assert pwg.find_user_by_google_email("stranger@gmail.com") is None
+
+
 # ────────────────────────── 화면 ──────────────────────────
 
 def _login_html() -> str:

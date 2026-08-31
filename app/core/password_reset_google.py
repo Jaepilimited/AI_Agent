@@ -37,7 +37,7 @@ from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2 import id_token as google_id_token
 
 from app.config import get_settings, validate_jwt_secret
-from app.db.mariadb import execute, fetch_one
+from app.db.mariadb import execute, fetch_all, fetch_one
 
 logger = structlog.get_logger(__name__)
 
@@ -276,7 +276,7 @@ def verified_google_email(code: str, redirect_uri: str) -> str:
 
 
 def find_user_by_google_email(email: str) -> Optional[dict]:
-    """구글 이메일로 가입 계정을 찾는다.
+    """구글 이메일로 가입 계정을 찾는다 — **두 가지 단서**를 차례로 본다.
 
     ⚠️ 여기서 "없다" 고 말하는 것은 정보 유출이 아니다 — 이미 그 구글 계정으로
        인증한 사람에게 **자기 계정** 얘기를 하는 것이다. 오히려 말해 주지 않으면
@@ -284,10 +284,44 @@ def find_user_by_google_email(email: str) -> Optional[dict]:
     """
     if not email:
         return None
-    return fetch_one(
+    row = fetch_one(
         "SELECT id, display_name, ad_user_id FROM users WHERE LOWER(email) = LOWER(%s)",
         (email,),
     )
+    return row or _find_by_linked_google_account(email)
+
+
+def _find_by_linked_google_account(email: str) -> Optional[dict]:
+    """앱에서 **로그인한 상태로 직접 연결해 둔** 구글 계정으로 찾는다.
+
+    ⛔ `users.email` 만 보면 절반이 영영 이 경로를 못 쓴다. AD 에 `mail` 속성이
+       없는 계정이 많아(2026-09-01 실측: 활성 436명 중 **231명**) 가입 시
+       `ad_<id>@noemail.local` 폴백이 박히기 때문이다. 그 사람들도 회사 구글
+       계정은 있고, 실제로 앱에서 연결까지 해 둔 사람이 있다 — 폴백값 18명 중
+       4명이 그렇다. 이메일 컬럼만 보면 그들을 관리자 경로에만 묶어 둔다.
+
+    연결 기록은 **로그인한 상태에서** 본인이 만든 것이므로 `users.email` 과 같은
+    세기의 증거다 (추측이 아니라 그때 인증된 결속이다).
+
+    ⛔ 두 계정이 같은 구글 계정을 연결했다면 **아무것도 고르지 않는다.** 하나를
+       고르면 남의 계정 비밀번호를 바꿔 주게 된다 — 모를 때는 멈추는 쪽이다.
+    """
+    from app.core.google_auth import GoogleAuthManager
+
+    manager = GoogleAuthManager()
+    wanted = email.strip().casefold()
+    matches = []
+    for row in fetch_all("SELECT id, display_name, ad_user_id, email FROM users"):
+        stored = manager.get_stored_google_email(row.get("email") or "")
+        if stored and stored.strip().casefold() == wanted:
+            matches.append(row)
+
+    if len(matches) == 1:
+        return matches[0]
+    if matches:
+        # 사람이 봐야 할 상태다 — 조용히 없는 셈 치면 원인을 영영 모른다.
+        logger.warning("pwreset_google_ambiguous_link", count=len(matches))
+    return None
 
 
 # ────────────────────────────── 비밀번호 설정 ──────────────────────────────
