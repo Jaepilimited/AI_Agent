@@ -46,16 +46,32 @@ async def coa_finder_search(
     user: object = Depends(get_current_user),
 ):
     if file is not None:
-        data = await file.read()
-        if len(data) > _MAX_UPLOAD_BYTES:
+        # ⛔ 읽어서 크기를 재는 것으로는 부족하다 — 다 받은 뒤에 재면 이미 큰 파일을
+        #    통째로 받아 들고 있는 것이다. 받는 도중에 상한을 넘으면 그 자리에서 끊는다
+        chunks: list[bytes] = []
+        received = 0
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            received += len(chunk)
+            if received > _MAX_UPLOAD_BYTES:
+                # 여기서 멈췄으므로 전체 크기는 모른다 — 잰 만큼만 말한다
+                raise HTTPException(
+                    400,
+                    f"파일이 {_MAX_UPLOAD_BYTES // (1024 * 1024)}MB 상한을 넘습니다 "
+                    f"(적어도 {received / (1024 * 1024):.1f}MB)")
+            chunks.append(chunk)
+        rows_source = ("xlsx", b"".join(chunks))
+    elif pasted:
+        pasted_bytes = len(pasted.encode("utf-8"))
+        if pasted_bytes > _MAX_UPLOAD_BYTES:
             max_mb = _MAX_UPLOAD_BYTES // (1024 * 1024)
-            over_mb = (len(data) - _MAX_UPLOAD_BYTES) / (1024 * 1024)
+            over_mb = (pasted_bytes - _MAX_UPLOAD_BYTES) / (1024 * 1024)
             raise HTTPException(
                 400,
-                f"파일이 {max_mb}MB 상한을 약 {over_mb:.1f}MB 초과합니다 "
-                f"(현재 {len(data) / (1024 * 1024):.1f}MB)")
-        rows_source = ("xlsx", data)
-    elif pasted:
+                f"붙여넣은 텍스트가 {max_mb}MB 상한을 약 {over_mb:.1f}MB 초과합니다 "
+                f"(현재 {pasted_bytes / (1024 * 1024):.1f}MB)")
         rows_source = ("pasted", pasted)
     else:
         raise HTTPException(400, "목록을 붙여넣거나 엑셀 파일을 올려주세요")

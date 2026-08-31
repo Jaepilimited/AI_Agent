@@ -87,11 +87,25 @@ def test_search_stream_reports_error_without_a_fake_done(client):
 
 
 def test_search_rejects_oversized_upload(client):
+    """⛔ 상한을 넘는 순간 끊는다 — 다 받은 뒤에 재는 게 아니다.
+
+    그래서 정확한 총량이 아니라 '적어도 이만큼' 이라고만 말한다.
+    """
     oversized = b"x" * (5 * 1024 * 1024 + 1024)
     r = client.post(
         "/api/coa-finder/search",
         files={"file": ("big.xlsx", oversized, "application/octet-stream")},
     )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert "5MB" in detail          # 상한
+    assert "적어도" in detail        # 잰 만큼만 말한다 — 확인 안 된 총량을 주장하지 않는다
+
+
+def test_search_rejects_oversized_pasted_text(client):
+    """⛔ 파일만 막고 붙여넣기는 그대로 두면 같은 구멍이 방식만 바뀌어 남는다."""
+    oversized = "A" * (5 * 1024 * 1024 + 1024)
+    r = client.post("/api/coa-finder/search", data={"pasted": oversized})
     assert r.status_code == 400
     assert "5MB" in r.json()["detail"]
 
