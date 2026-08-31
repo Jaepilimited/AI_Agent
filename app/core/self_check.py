@@ -908,9 +908,16 @@ def _check_jandi_relay() -> CheckResult:
     ) or {}
     if not int(registered.get("c") or 0):
         return CheckResult(True, "잔디 브리핑을 등록한 사용자가 없다")
+    # ⚠️ **도착 시각을 기다리는 중인 것을 밀린 것으로 세지 마라** — 사용자가 18:30 을
+    #    고르면 07:30 에 만든 브리핑이 11시간 대기한다. 그것까지 세면 자가 점검이
+    #    매일 실패하고, 매일 뜨는 경고는 곧 아무도 안 읽는다.
+    #    ⚠️ 두 조건은 **각자의 시계**로 본다: `created_at` 은 DB 가 찍었으니 DB 의
+    #    `NOW()` 로, `send_after` 는 KST 벽시계로 넣었으니 파이썬 KST 로 견준다.
     stuck = fetch_one(
         "SELECT COUNT(*) c FROM briefing_jandi_outbox "
-        "WHERE status = 'pending' AND created_at < DATE_SUB(NOW(), INTERVAL 6 HOUR)",
+        "WHERE status = 'pending' AND created_at < DATE_SUB(NOW(), INTERVAL 6 HOUR) "
+        "  AND (send_after IS NULL OR send_after <= %s)",
+        (jandi_briefing.now_kst() - timedelta(hours=6),),
     ) or {}
     waiting = int(stuck.get("c") or 0)
     counts = jandi_briefing.status_counts()

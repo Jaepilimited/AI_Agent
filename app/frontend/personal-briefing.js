@@ -962,7 +962,7 @@
       "잔디에서 브리핑을 받을 토픽을 하나 만듭니다 (본인만 있는 토픽을 권장합니다).",
       "토픽 우측 상단 ⋮ → 커넥트 → 인커밍 웹훅 → 만들기.",
       "발급된 https://wh.jandi.com/connect-api/webhook/… 주소를 아래에 붙여 넣습니다.",
-      "매일 아침 9시에 만들어진 브리핑이 그 토픽으로 전달됩니다."
+      "받을 시각을 고르면 근무일마다 그 시각에 브리핑이 그 토픽으로 전달됩니다."
     ].forEach(function (step) {
       help.appendChild(textNode("li", "", step));
     });
@@ -973,6 +973,10 @@
     var overlay = document.createElement("div");
     var box = document.createElement("div");
     var input = document.createElement("input");
+    /* ⛔ 선택지 목록을 여기서 만들지 않는다 — 서버가 준 send_time_choices 로만 채운다.
+       릴레이 회차는 DB_PC 예약작업이 정하므로, 사본을 두면 조용히 갈린다. */
+    var timeField = document.createElement("label");
+    var timeSelect = document.createElement("select");
     var status = textNode("p", "briefing-jandi-status", "불러오는 중…");
     var row = document.createElement("div");
     var save = textNode("button", "briefing-doc-action primary", "저장");
@@ -989,6 +993,12 @@
     input.placeholder = "https://wh.jandi.com/connect-api/webhook/…";
     input.spellcheck = false;
     box.appendChild(input);
+    timeField.className = "briefing-jandi-time";
+    timeField.appendChild(textNode("span", "", "받을 시각"));
+    timeSelect.className = "briefing-jandi-select";
+    timeSelect.disabled = true;
+    timeField.appendChild(timeSelect);
+    box.appendChild(timeField);
     box.appendChild(status);
     row.className = "briefing-jandi-actions";
     [save, test, remove, close].forEach(function (button) {
@@ -1008,12 +1018,34 @@
       if (event.key === "Escape") shut();
     }
 
+    function paintTimes(state) {
+      var choices = (state && state.send_time_choices) || [];
+      if (!choices.length) {
+        // 목록을 못 받았으면 고르게 두지 않는다 — 지어낸 시각은 영영 오지 않는다.
+        timeSelect.disabled = true;
+        return;
+      }
+      if (timeSelect.options.length !== choices.length) {
+        timeSelect.replaceChildren();
+        choices.forEach(function (value) {
+          var option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          timeSelect.appendChild(option);
+        });
+      }
+      timeSelect.value = state.send_at || choices[0];
+      timeSelect.disabled = false;
+    }
+
     function paint(state) {
+      paintTimes(state);
       if (!state || !state.registered) {
         status.textContent = "아직 등록된 잔디 토픽이 없습니다.";
         return;
       }
       status.textContent = "등록됨 " + state.masked
+        + " · 매일 " + (state.send_at || "") + " 발송"
         + (state.last_sent_at ? " · 마지막 발송 " + state.last_sent_at : " · 아직 발송 이력 없음")
         + (state.last_error ? " · 최근 오류: " + state.last_error : "");
     }
@@ -1036,7 +1068,13 @@
     save.addEventListener("click", async function () {
       status.textContent = "저장 중…";
       try {
-        paint(await call("PUT", { webhook_url: input.value.trim(), enabled: true }));
+        /* 주소를 비워 두면 서버가 이미 저장된 것을 그대로 쓴다 — 화면에는 가려진
+           주소만 보이므로, 시각만 바꾸려는 사람이 되붙일 방법이 없다. */
+        paint(await call("PUT", {
+          webhook_url: input.value.trim(),
+          send_at: timeSelect.value,
+          enabled: true
+        }));
         input.value = "";
       } catch (error) {
         status.textContent = error.message;
@@ -1400,6 +1438,8 @@
 
   window.CellaPersonalBriefing = {
     create: create,
-    safeUrl: safeUrl
+    safeUrl: safeUrl,
+    // 브라우저 테스트가 첫 화면 전체를 띄우지 않고 이 다이얼로그만 열어 본다.
+    openJandiDialog: openJandiDialog
   };
 })();

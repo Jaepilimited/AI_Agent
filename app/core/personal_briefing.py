@@ -753,7 +753,7 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
     selected = [row for row in rows if _auth_manager.has_credentials(row["email"])]
     try:
         webhooks = {
-            int(entry["user_id"]): str(entry["webhook_url"])
+            int(entry["user_id"]): (str(entry["webhook_url"]), entry.get("send_at"))
             for entry in await asyncio.to_thread(jandi_briefing.enabled_recipients)
         }
     except Exception as exc:
@@ -770,10 +770,11 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
                 allowed_models=row["allowed_models"], ad_user_id=row["ad_user_id"],
             )
             result = await refresh_for_user(user, now=now, force=True)
-            url = webhooks.get(int(row["id"]))
-            if url:
+            recipient = webhooks.get(int(row["id"]))
+            if recipient:
+                url, send_at = recipient
                 if await asyncio.to_thread(
-                    _enqueue_jandi, user, result, url, row.get("name", ""),
+                    _enqueue_jandi, user, result, url, row.get("name", ""), send_at,
                 ):
                     queued += 1
             return result
@@ -788,8 +789,13 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
     }
 
 
-def _enqueue_jandi(user: User, envelope: dict[str, Any], url: str, name: str) -> bool:
-    """문서가 실제로 만들어졌을 때만 대기열에 넣는다 — 빈 브리핑을 보내지 않는다."""
+def _enqueue_jandi(user: User, envelope: dict[str, Any], url: str, name: str,
+                   send_at: Any = None) -> bool:
+    """문서가 실제로 만들어졌을 때만 대기열에 넣는다 — 빈 브리핑을 보내지 않는다.
+
+    `send_at` 은 사용자가 고른 도착 시각이다. 릴레이는 시각이 된 것만 꺼내 가므로
+    여기서 붙이는 값 하나로 사람마다 다른 시각에 도착한다.
+    """
 
     document = envelope.get("document") or {}
     if document.get("status") not in {"ready", "empty"}:
@@ -813,10 +819,21 @@ def _enqueue_jandi(user: User, envelope: dict[str, Any], url: str, name: str) ->
         body += f"\n\n[이어서 물어보기]({link})"
     for_date = date.fromisoformat(str(envelope.get("for_date", "")))
     try:
+        # ⚠️ 시각이 깨져 있어도 브리핑을 버리지 않는다 — 첫 회차로 보낸다.
+        #    설정 하나 때문에 그날 브리핑이 통째로 사라지는 편이 더 나쁘다.
+        try:
+            send_after = jandi_briefing.send_after_for(
+                for_date, send_at if send_at is not None else jandi_briefing.DEFAULT_SEND_AT,
+            )
+        except ValueError:
+            logger.warning("jandi_send_at_invalid", user_id=user.id, value=str(send_at))
+            send_after = jandi_briefing.send_after_for(
+                for_date, jandi_briefing.DEFAULT_SEND_AT,
+            )
         return jandi_briefing.enqueue(
             user.id, for_date, url, body,
             kind="briefing", dedup_key=f"briefing:{for_date}",
-            title="오늘의 출근 브리핑", link=link,
+            title="오늘의 출근 브리핑", link=link, send_after=send_after,
         )
     except Exception as exc:
         logger.warning("jandi_enqueue_failed", user_id=user.id, error_type=type(exc).__name__)

@@ -4853,6 +4853,29 @@ html.dark .db-autocomplete-dropdown {
 
 .briefing-jandi-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* 받을 시각. 목록은 서버가 준 것만 그린다 (프론트에 사본을 두지 않는다). */
+.briefing-jandi-time {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+}
+
+.briefing-jandi-select {
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.briefing-jandi-select:disabled { color: var(--text-muted); }
+.briefing-jandi-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .briefing-jandi-status {
   margin: 10px 0 0;
   color: var(--text-muted);

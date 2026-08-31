@@ -28,14 +28,33 @@ _LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 # ── 사용자 설정 ──────────────────────────────────────────────────────────────
 
+def _send_at_label(value) -> str:
+    """저장된 시각을 화면 표기로. 읽다가 깨져도 첫 회차로 답한다 — 설정 화면이
+    통째로 안 뜨는 것보다 낫다."""
+
+    try:
+        return jandi_briefing.normalize_send_at(value).strftime("%H:%M")
+    except ValueError:
+        return jandi_briefing.DEFAULT_SEND_AT.strftime("%H:%M")
+
+
 @router.get("/api/personal-briefing/jandi")
 async def get_my_webhook(user: User = Depends(get_current_user)) -> dict:
+    # ⛔ 선택지는 **서버가 단일 소스**다. 프론트가 따로 목록을 갖고 있으면 릴레이
+    #    회차가 바뀔 때 조용히 갈린다 (`@@` 데이터소스 목록이 갈렸던 그 사고).
+    base = {
+        "send_time_choices": jandi_briefing.SEND_TIME_CHOICES,
+        "send_at": jandi_briefing.DEFAULT_SEND_AT.strftime("%H:%M"),
+    }
     row = jandi_briefing.get_webhook(user.id)
     if not row:
-        return {"registered": False, "enabled": False, "masked": "", "last_sent_at": "", "last_error": ""}
+        return {**base, "registered": False, "enabled": False, "masked": "",
+                "last_sent_at": "", "last_error": ""}
     return {
+        **base,
         "registered": True,
         "enabled": bool(row["enabled"]),
+        "send_at": _send_at_label(row.get("send_at")),
         # ⛔ 저장된 URL 을 그대로 돌려주지 않는다. 토큰이 곧 발송 권한이다.
         "masked": jandi_briefing.mask(str(row["webhook_url"])),
         "last_sent_at": str(row["last_sent_at"] or ""),
@@ -48,25 +67,65 @@ async def put_my_webhook(
     payload: dict = Body(...), user: User = Depends(get_current_user),
 ) -> dict:
     url = str(payload.get("webhook_url", "")).strip()
+    if not url:
+        # ⛔ 시각만 바꾸려는 사람에게 주소를 다시 붙여넣게 하지 마라 — 서버는 주소를
+        #    가려서 내려주므로(토큰이 곧 발송 권한) 사용자에게는 되붙일 방법이 없다.
+        #    비워서 보내면 이미 저장된 주소를 그대로 쓴다.
+        existing = jandi_briefing.get_webhook(user.id)
+        if not existing:
+            raise HTTPException(
+                status_code=400,
+                detail="먼저 잔디 인커밍 웹훅 주소를 등록해 주세요.",
+            )
+        url = str(existing["webhook_url"])
     if not jandi_briefing.is_valid_webhook(url):
         raise HTTPException(
             status_code=400,
             detail="잔디 인커밍 웹훅 주소만 등록할 수 있습니다 (https://wh.jandi.com/connect-api/webhook/…).",
         )
-    jandi_briefing.set_webhook(user.id, url, enabled=bool(payload.get("enabled", True)))
-    logger.info("jandi_webhook_registered", user_id=user.id)
+    # 시각은 여기서 한 번, `set_webhook` 에서 또 한 번 본다. 방어선을 줄이지 않는다 —
+    # 여기가 있어야 사용자가 읽을 수 있는 이유를 돌려주고, 저쪽이 있어야 검증을
+    # 빠뜨린 다른 호출부가 생겨도 막힌다.
+    send_at = payload.get("send_at")
+    if send_at is not None:
+        try:
+            send_at = jandi_briefing.normalize_send_at(send_at)
+        except ValueError:
+            first = jandi_briefing.SEND_TIME_CHOICES[0]
+            last = jandi_briefing.SEND_TIME_CHOICES[-1]
+            raise HTTPException(
+                status_code=400,
+                detail=f"받을 시각은 {first}~{last} 사이 30분 단위로만 고를 수 있습니다 "
+                       "(그 시각에만 잔디로 꺼내 갑니다).",
+            )
+    jandi_briefing.set_webhook(
+        user.id, url, enabled=bool(payload.get("enabled", True)), send_at=send_at,
+    )
+    if send_at is not None:
+        # 아직 안 나간 오늘 몫도 함께 옮긴다 — 안 그러면 화면이 말하는 시각과
+        # 실제 도착 시각이 오늘 하루 어긋난다.
+        moved = jandi_briefing.reschedule_pending(user.id, send_at)
+        if moved:
+            logger.info("jandi_pending_rescheduled", user_id=user.id, rows=moved)
+    logger.info("jandi_webhook_registered", user_id=user.id, send_at=str(send_at or ""))
     return await get_my_webhook(user)
 
 
 @router.delete("/api/personal-briefing/jandi")
 async def delete_my_webhook(user: User = Depends(get_current_user)) -> dict:
     jandi_briefing.delete_webhook(user.id)
-    return {"registered": False, "enabled": False, "masked": "", "last_sent_at": "", "last_error": ""}
+    # ⚠️ 해제 응답에도 선택지를 담는다 — 안 담으면 해제 직후 시각 선택이 화면에서
+    #    사라진다 (다시 등록하려는 사람이 고를 수단을 잃는다).
+    return await get_my_webhook(user)
 
 
 @router.post("/api/personal-briefing/jandi/test")
 async def queue_test_message(user: User = Depends(get_current_user)) -> dict:
-    """지금 대기열에 한 건 넣는다. 실제 발송은 DB_PC 릴레이가 하므로 즉시 도착하지는 않는다."""
+    """지금 대기열에 한 건 넣는다. 실제 발송은 DB_PC 릴레이가 하므로 즉시 도착하지는 않는다.
+
+    ⛔ 여기에는 사용자가 고른 도착 시각을 붙이지 않는다 — 지금 되는지 보려고 누른
+       것인데 8시간 뒤에 가면 확인이 되지 않는다. 다음 릴레이 회차에 나간다.
+    """
 
     row = jandi_briefing.get_webhook(user.id)
     if not row or not row["enabled"]:

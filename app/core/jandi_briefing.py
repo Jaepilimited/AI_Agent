@@ -13,8 +13,9 @@ DB_PC → 서버는 SSH(:22)만 열려 있다 (:80/:3000/:8000 전부 timeout, 2
 from __future__ import annotations
 
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from app.db.mariadb import execute, fetch_all, fetch_one
 
@@ -26,11 +27,87 @@ WEBHOOK_PATTERN = re.compile(
 
 MAX_ATTEMPTS = 3
 
+KST = ZoneInfo("Asia/Seoul")
+
+#: 릴레이가 실제로 대기열을 꺼내 가는 회차. DB_PC 예약작업 `SKIN1004-Jandi-Briefing`
+#: 이 **08:00 시작 · 30분 간격 · 10h35m** 이라 08:00~18:30 이다.
+#: ⛔ 여기 없는 시각을 고르게 두면 그 사람의 브리핑은 **영영 오지 않는다** (에러도 없다).
+#: ⚠️ 예약작업 주기를 바꾸면 이 셋을 함께 고칠 것 — 프론트는 이 목록을 받아서 그린다.
+RELAY_FIRST_RUN = time(8, 0)
+RELAY_LAST_RUN = time(18, 30)
+RELAY_INTERVAL_MINUTES = 30
+
+
+def _relay_runs() -> list[str]:
+    start = datetime(2000, 1, 1, RELAY_FIRST_RUN.hour, RELAY_FIRST_RUN.minute)
+    end = datetime(2000, 1, 1, RELAY_LAST_RUN.hour, RELAY_LAST_RUN.minute)
+    runs = []
+    while start <= end:
+        runs.append(start.strftime("%H:%M"))
+        start += timedelta(minutes=RELAY_INTERVAL_MINUTES)
+    return runs
+
+
+SEND_TIME_CHOICES = _relay_runs()
+
+#: 바꾼 적 없는 사람은 지금과 똑같이 첫 회차에 받는다.
+DEFAULT_SEND_AT = RELAY_FIRST_RUN
+
+
+def normalize_send_at(value: Any) -> time:
+    """`"09:30"` → `time(9,30)`. 릴레이가 가지 않는 시각은 거부한다.
+
+    DB 는 TIME 을 `datetime.time` 으로도 `"09:30:00"` 으로도 돌려주므로 둘 다 받는다.
+    """
+
+    if isinstance(value, time):
+        candidate = value.replace(second=0, microsecond=0)
+    elif isinstance(value, timedelta):
+        # ⚠️ PyMySQL 은 TIME 컬럼을 `timedelta` 로 돌려준다. str() 이 우연히
+        #    `8:00:00` 으로 찍혀 통과하지만, 우연에 기대지 않고 여기서 받는다.
+        minutes = int(value.total_seconds()) // 60
+        candidate = time(minutes // 60 % 24, minutes % 60)
+    else:
+        text = str(value or "").strip()
+        if not re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", text):
+            raise ValueError(f"send_at must look like HH:MM — got {value!r}")
+        hour, minute = (int(part) for part in text.split(":")[:2])
+        if hour > 23 or minute > 59:
+            raise ValueError(f"send_at is not a real time — got {value!r}")
+        candidate = time(hour, minute)
+    if candidate.strftime("%H:%M") not in SEND_TIME_CHOICES:
+        raise ValueError(
+            f"send_at must be one of {SEND_TIME_CHOICES[0]}~{SEND_TIME_CHOICES[-1]} "
+            f"in {RELAY_INTERVAL_MINUTES}-minute steps — got {value!r}",
+        )
+    return candidate
+
+
+def send_after_for(for_date: date, send_at: Any) -> datetime:
+    """그 날짜의 KST 벽시계 시각. `pending()` 이 같은 시계로 견준다."""
+
+    return datetime.combine(for_date, normalize_send_at(send_at))
+
+
+def now_kst() -> datetime:
+    """도착 시각 비교의 기준 시계.
+
+    ⛔ DB 의 `NOW()` 로 견주지 마라. 실측(2026-09-01)하면 DB 시계는 지금 KST 와
+       같지만 `time_zone` 이 `SYSTEM` 이다 — **호스트 TZ 를 따라가므로** DB VM 이
+       UTC 로 재구축되는 날 9시간 어긋난다. 그때 나는 것은 에러가 아니라
+       **브리핑이 조용히 안 가는 것**이라 아무도 모른다. 여기서 만들어 넘기면
+       DB 호스트가 무엇이든 판정이 같다.
+    """
+
+    return datetime.now(KST).replace(tzinfo=None)
+
+
 _WEBHOOK_DDL = """
 CREATE TABLE IF NOT EXISTS user_jandi_webhooks (
     user_id INT NOT NULL PRIMARY KEY,
     webhook_url VARCHAR(500) NOT NULL,
     enabled TINYINT NOT NULL DEFAULT 1,
+    send_at TIME NOT NULL DEFAULT '08:00:00',
     last_sent_at DATETIME NULL,
     last_error VARCHAR(255) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -50,6 +127,7 @@ CREATE TABLE IF NOT EXISTS briefing_jandi_outbox (
     webhook_url VARCHAR(500) NOT NULL,
     body MEDIUMTEXT NOT NULL,
     status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    send_after DATETIME NULL,
     attempts INT NOT NULL DEFAULT 0,
     last_error VARCHAR(255) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -59,10 +137,16 @@ CREATE TABLE IF NOT EXISTS briefing_jandi_outbox (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 
-#: 이미 만들어진 테이블에는 CREATE 문이 닿지 않는다.
+#: 이미 만들어진 테이블에는 CREATE 문이 닿지 않는다 — 아래가 그 몫이다.
+#: 기본값이 08:00 이라 이미 등록한 사람은 지금과 똑같이 첫 회차에 받는다.
+_WEBHOOK_MIGRATIONS = (
+    "ALTER TABLE user_jandi_webhooks ADD COLUMN send_at TIME NOT NULL DEFAULT '08:00:00'",
+)
+
 #: ⚠️ 유니크 키가 (user_id, for_date) 에서 (user_id, dedup_key) 로 바뀐다 —
 #:    옛 키를 남겨 두면 하루 한 건 제약이 그대로 살아 알림이 조용히 안 나간다.
 _OUTBOX_MIGRATIONS = (
+    "ALTER TABLE briefing_jandi_outbox ADD COLUMN send_after DATETIME NULL",
     "ALTER TABLE briefing_jandi_outbox ADD COLUMN kind VARCHAR(24) NOT NULL DEFAULT 'briefing'",
     "ALTER TABLE briefing_jandi_outbox ADD COLUMN dedup_key VARCHAR(120) NOT NULL DEFAULT ''",
     "ALTER TABLE briefing_jandi_outbox ADD COLUMN title VARCHAR(200) NOT NULL DEFAULT ''",
@@ -77,7 +161,7 @@ _OUTBOX_MIGRATIONS = (
 def ensure_tables() -> None:
     execute(_WEBHOOK_DDL)
     execute(_OUTBOX_DDL)
-    for statement in _OUTBOX_MIGRATIONS:
+    for statement in _WEBHOOK_MIGRATIONS + _OUTBOX_MIGRATIONS:
         try:
             execute(statement)
         except Exception:
@@ -103,24 +187,51 @@ def mask(url: str) -> str:
 
 def get_webhook(user_id: int) -> dict[str, Any] | None:
     return fetch_one(
-        "SELECT user_id,webhook_url,enabled,last_sent_at,last_error "
+        "SELECT user_id,webhook_url,enabled,send_at,last_sent_at,last_error "
         "FROM user_jandi_webhooks WHERE user_id = %s",
         (int(user_id),),
     )
 
 
-def set_webhook(user_id: int, url: str, enabled: bool = True) -> None:
-    """저장 전에 형식을 검증한다 — 호출부가 빠뜨려도 여기서 막힌다."""
+def set_webhook(user_id: int, url: str, enabled: bool = True,
+                send_at: Any = None) -> None:
+    """저장 전에 주소와 시각을 함께 검증한다 — 호출부가 빠뜨려도 여기서 막힌다.
+
+    ⛔ 릴레이가 가지 않는 시각을 저장하면 그 사람의 브리핑은 영영 오지 않는다.
+       API 에서만 막으면 언젠가 검증을 빠뜨린 호출부가 생긴다.
+    """
 
     clean = (url or "").strip()
     if not is_valid_webhook(clean):
         raise ValueError("jandi webhook url is not a wh.jandi.com connect-api address")
+    when = DEFAULT_SEND_AT if send_at is None else normalize_send_at(send_at)
     execute(
-        "INSERT INTO user_jandi_webhooks (user_id,webhook_url,enabled,last_error) "
-        "VALUES (%s,%s,%s,'') "
+        "INSERT INTO user_jandi_webhooks (user_id,webhook_url,enabled,send_at,last_error) "
+        "VALUES (%s,%s,%s,%s,'') "
         "ON DUPLICATE KEY UPDATE webhook_url=VALUES(webhook_url),"
-        "enabled=VALUES(enabled),last_error=''",
-        (int(user_id), clean, 1 if enabled else 0),
+        "enabled=VALUES(enabled),send_at=VALUES(send_at),last_error=''",
+        (int(user_id), clean, 1 if enabled else 0, when),
+    )
+
+
+def reschedule_pending(user_id: int, send_at: Any) -> int:
+    """아직 안 보낸 **브리핑**의 도착 시각을 새로 고른 시각으로 옮긴다.
+
+    ⛔ 이걸 빼면 "고쳤는데 그대로" 가 된다 — 09:00 으로 바꿔도 오늘 몫은 어제 고른
+       18:00 에 그대로 간다. 화면은 `매일 09:00 발송` 이라고 말하는데 실제와 다르다
+       (원인을 고치고 캐시를 안 지워 그대로였던 `sql_cache` 와 같은 부류다).
+    ⚠️ 알림(`kind <> 'briefing'`)은 건드리지 않는다 — 시각을 갖지 않는다.
+    ⚠️ `TIMESTAMP(for_date, %s)` 라 그 날짜의 KST 벽시계다. `NOW()` 를 섞지 않는다.
+    """
+
+    when = normalize_send_at(send_at)
+    return int(
+        execute(
+            "UPDATE briefing_jandi_outbox SET send_after = TIMESTAMP(for_date, %s) "
+            "WHERE user_id = %s AND status = 'pending' AND kind = 'briefing'",
+            (when, int(user_id)),
+        )
+        or 0
     )
 
 
@@ -149,7 +260,7 @@ def drop_pending_for_user(user_id: int) -> int:
 
 def enabled_recipients() -> list[dict[str, Any]]:
     return fetch_all(
-        "SELECT w.user_id,w.webhook_url FROM user_jandi_webhooks w "
+        "SELECT w.user_id,w.webhook_url,w.send_at FROM user_jandi_webhooks w "
         "JOIN users u ON u.id = w.user_id "
         "WHERE w.enabled = 1 AND u.is_active = 1",
     )
@@ -159,11 +270,16 @@ def enabled_recipients() -> list[dict[str, Any]]:
 
 def enqueue(user_id: int, for_date: date, webhook_url: str, body: str,
             kind: str = "briefing", dedup_key: str = "",
-            title: str = "", link: str = "") -> bool:
+            title: str = "", link: str = "",
+            send_after: datetime | None = None) -> bool:
     """한 건 넣는다. **같은 `dedup_key` 는 두 번 들어가지 않는다.**
 
     ⛔ 같은 알림을 두 번 보내면 그 다음부터 아무도 안 읽는다 — 브리핑이 '하루 한 건'
        이던 이유와 같다. 브리핑의 키는 날짜이고, 알림의 키는 그 항목 자신이다.
+
+    `send_after` 는 **브리핑에만** 붙는다 (사용자가 고른 도착 시각). 셀라 알림은
+    None 이라 지금처럼 다음 회차에 그대로 나간다 — 알림은 "지금 봐 달라" 는
+    성격이라 미루면 뜻이 없어진다.
     """
 
     if not body.strip() or not is_valid_webhook(webhook_url):
@@ -171,26 +287,37 @@ def enqueue(user_id: int, for_date: date, webhook_url: str, body: str,
     key = (dedup_key or f"{kind}:{for_date}")[:120]
     changed = execute(
         "INSERT INTO briefing_jandi_outbox "
-        "(user_id,for_date,kind,dedup_key,title,link,webhook_url,body) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+        "(user_id,for_date,kind,dedup_key,title,link,webhook_url,body,send_after) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
         "ON DUPLICATE KEY UPDATE "
         "webhook_url=VALUES(webhook_url),"
         # 이미 보낸 건은 본문을 바꾸지 않는다 (다시 보내지 않으므로 의미도 없다).
         "body=IF(status='pending',VALUES(body),body),"
         "title=IF(status='pending',VALUES(title),title),"
-        "link=IF(status='pending',VALUES(link),link)",
+        "link=IF(status='pending',VALUES(link),link),"
+        "send_after=IF(status='pending',VALUES(send_after),send_after)",
         (int(user_id), for_date, kind[:24], key, title[:200], link[:300],
-         webhook_url, body),
+         webhook_url, body, send_after),
     )
     return bool(changed)
 
 
 def pending(limit: int = 50) -> list[dict[str, Any]]:
+    """릴레이가 꺼내 갈 것. **도착 시각이 된 것만** 낸다.
+
+    ⛔ 기준 시각은 파이썬이 KST 로 만들어 넘긴다 — `NOW()` 를 쓰면 DB 세션
+       타임존이 UTC 일 때 9시간 어긋나고, 그때 나는 것은 에러가 아니라
+       **브리핑이 조용히 안 가는 것**이다.
+    ⚠️ `send_after IS NULL` 을 빼지 마라 — 셀라 알림이 통째로 멈춘다.
+    """
+
     return fetch_all(
         "SELECT id,user_id,for_date,kind,title,link,webhook_url,body,attempts "
         "FROM briefing_jandi_outbox "
-        "WHERE status = 'pending' AND attempts < %s ORDER BY id LIMIT %s",
-        (MAX_ATTEMPTS, int(limit)),
+        "WHERE status = 'pending' AND attempts < %s "
+        "  AND (send_after IS NULL OR send_after <= %s) "
+        "ORDER BY id LIMIT %s",
+        (MAX_ATTEMPTS, now_kst(), int(limit)),
     )
 
 
