@@ -135,7 +135,28 @@ CHECK = "확인필요"
 #    이미 다른 뜻(ZIP 에 경고를 달고 나가는 항목)을 지고 있다
 FAILED = "조회실패"
 
-_QUERY_FAILED_NOTE = "드라이브 조회에 실패했습니다 — 이 행은 판정하지 못했습니다. 다시 시도하세요"
+_QUERY_FAILED_NOTE = "드라이브 조회에 실패했습니다 — 이 행은 판정하지 못했습니다."
+
+
+def _failure_cause(exc: BaseException) -> str:
+    """무엇을 하면 되는지까지 말한다. 한 문장 고정이면 429 와 권한 문제가
+    사용자에게 똑같이 보인다.
+
+    ⛔ 예외 원문을 붙이지 마라 — URL·토큰이 섞여 화면으로 샌다. 판정은
+       HTTP 상태 코드로만 하고, 모르면 **모른다고** 한다 (아는 척이 더 나쁘다).
+    """
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        status = None
+    if status in (401, 403):
+        return " 접근 권한 문제로 보입니다 — 구글 연결과 이 드라이브의 멤버 여부를 확인하세요"
+    if status == 429:
+        return " 요청이 몰려 거절됐습니다 — 잠시 뒤 다시 시도하세요"
+    if status is not None and 500 <= status < 600:
+        return " 드라이브 쪽 일시 오류입니다 — 다시 시도하세요"
+    return " 원인은 특정하지 못했습니다 — 다시 시도해도 같으면 관리자에게 알려주세요"
 
 # 짧은 롯트는 다른 코드의 머리에 걸릴 수 있다 (Drive 는 토큰 앞부분 매칭이다)
 _SHORT_LOT_LEN = 4
@@ -310,9 +331,12 @@ def _one(creds, row: Row, search) -> Result:
     # ⚠️ try 는 네트워크 호출만 감싼다 — classify_lot 은 순수 함수라 여기서
     #    터지면 진짜 버그다. 조회 실패로 위장해 삼키지 않는다
     if row.lot:
+        # ⛔ try 안에서 계산하지 마라 — 공백뿐인 롯트면 `split()[0]` 이 IndexError 를
+        #    내고 그것이 '조회실패' 로 위장된다. try 는 네트워크 호출만 감싼다
+        parts = row.lot.split()
+        head = parts[0] if parts else row.lot
         try:
             raw = search(creds, row.lot, max_results=25, exact_name=row.lot)
-            head = row.lot.split()[0]
             if not raw and head != row.lot:
                 # exact_name=row.lot 은 접미까지 통째로 요구한다 — 접미 없는
                 # 파일도 후보로 올려야 classify_lot 의 확인필요 분기가 실제로
@@ -323,7 +347,7 @@ def _one(creds, row: Row, search) -> Result:
             # ⚠️ 실패를 삼키지 마라 — 프로덕션은 INFO 를 버린다
             logger.warning("coa_finder_query_failed",
                            extra={"lot": row.lot, "error": str(exc)[:200]})
-            coa = Verdict(FAILED, (), _QUERY_FAILED_NOTE)
+            coa = Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
         else:
             coa = classify_lot(row.lot, _to_files(raw))
     else:
@@ -339,7 +363,7 @@ def _one(creds, row: Row, search) -> Result:
         except Exception as exc:                      # noqa: BLE001
             logger.warning("msds_finder_query_failed",
                            extra={"sku": row.sku, "error": str(exc)[:200]})
-            msds = Verdict(FAILED, (), _QUERY_FAILED_NOTE)
+            msds = Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
         else:
             files = _dedup(_filter_msds_candidates(_to_files(raw), query_terms))
             if not files:

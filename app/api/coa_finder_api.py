@@ -138,6 +138,10 @@ async def coa_finder_search(
             "msds_failed": msds_failed,
             # 말없이 버린 행 — 화면이 건수를 밝힌다
             "skipped_no_sku": parsed.skipped_no_sku,
+            # ⛔ 화면이 상한의 사본을 들고 있으면 조용히 어긋난다. 서버가 알려주고,
+            #    못 받으면 화면은 나누지 않는다 (그때도 서버가 사실대로 자른다)
+            "max_download_items": _MAX_DOWNLOAD_ITEMS,
+            "max_download_bytes": _MAX_DOWNLOAD_BYTES,
         }
         yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
 
@@ -222,6 +226,10 @@ _UNCONFIRMED_REASON = {
     cf.MANY: "여러 후보 중 하나입니다 — 어느 것이 맞는지 확인되지 않았습니다",
     cf.CHECK: "확인필요 판정입니다 — 롯트가 정확히 맞는지 열어서 확인하세요",
     cf.NONE: "없음 판정인데 파일이 딸려 왔습니다 — 확인되지 않은 문서입니다",
+    # ⛔ 이 항목이 없으면 조회실패가 "상태가 전달되지 않았습니다" 로 적힌다 —
+    #    전달은 됐고 그 값이 '조회실패' 였으니 그건 사실이 아니다
+    cf.FAILED: ("드라이브 조회가 실패해 이 행은 판정되지 않았습니다 — "
+                "이 파일이 그 롯트 것인지 확인되지 않았습니다"),
 }
 _UNKNOWN_STATUS_REASON = ("판정 상태가 전달되지 않았습니다 — "
                           "확인되지 않은 문서로 취급합니다")
@@ -285,8 +293,11 @@ async def coa_finder_download(
         raise HTTPException(409, "구글 계정이 연결되어 있지 않습니다. 먼저 연결해주세요")
 
     buf = io.BytesIO()
-    failed: list[str] = []
+    failed: list[str] = []          # 조회·다운로드 자체가 안 된 것
+    cap_cause = ""                  # 남은 예산을 바닥낸 그 파일 (원인)
+    displaced: list[str] = []       # 그것 때문에 밀린 파일들 (결과)
     unconfirmed: list[str] = []
+    written = 0
     total = 0
     cap_hit = False
     max_mb = _MAX_DOWNLOAD_BYTES // (1024 * 1024)
@@ -295,8 +306,10 @@ async def coa_finder_download(
         for item in items:
             label = _label(item)
             if cap_hit:
-                # ⛔ 상한 초과 뒤에도 왜 못 받았는지 목록에 남긴다 — 조용히 빠지지 않게
-                failed.append(f"{label}: 총 용량 상한({max_mb}MB) 초과로 받지 못함")
+                # ⛔ 상한 초과 뒤에도 왜 못 받았는지 목록에 남긴다 — 조용히 빠지지 않게.
+                #    ⚠️ 원인이 된 파일과 그 때문에 밀린 파일은 **다른 사실**이라
+                #    문구가 확실히 갈라져야 한다 (예전엔 둘이 거의 같아 보였다)
+                displaced.append(f"{label}: 앞 파일에서 용량이 차서 시도하지 않았습니다")
                 continue
             try:
                 data = _fetch_file(creds, item.file_id, _MAX_DOWNLOAD_BYTES - total)
@@ -306,9 +319,10 @@ async def coa_finder_download(
                 logger.warning("coa_download_budget_exceeded",
                                extra={"file_id": item.file_id,
                                       "received": exc.received})
-                failed.append(
-                    f"{label}: 총 용량 상한({max_mb}MB)의 남은 예산을 넘겨 중단 "
-                    f"(적어도 {exc.received / (1024 * 1024):.1f}MB)")
+                cap_cause = (
+                    f"{label}: 여기서 남은 용량 예산이 바닥났습니다 "
+                    f"— 총 상한 {max_mb}MB 중 적어도 "
+                    f"{exc.received / (1024 * 1024):.1f}MB 를 받다 중단했습니다")
                 cap_hit = True
                 continue
             except Exception as exc:                  # noqa: BLE001
@@ -324,15 +338,28 @@ async def coa_finder_download(
                 name, n = f"{stem}({n})", n + 1
             used.add(name)
             zf.writestr(name, data)
+            written += 1
             if not _is_confirmed(item):
                 reason = _UNCONFIRMED_REASON.get(
                     (item.status or "").strip(), _UNKNOWN_STATUS_REASON)
                 unconfirmed.append(f"{label}\n    → {name}\n    {reason}")
 
-        if failed:
-            # ⛔ 조용히 빠지면 아무도 모른다
-            zf.writestr("_받지못한_목록.txt",
-                        "받지 못한 파일\n\n" + "\n".join(failed))
+        if failed or cap_cause or displaced:
+            # ⛔ 조용히 빠지면 아무도 모른다. 원인(예산을 바닥낸 파일)을 맨 위에 두고
+            #    그것 때문에 밀린 파일들을 그 아래에 둔다 — 읽는 사람이 원인과
+            #    피해자를 구분할 수 있어야 한다
+            body = ["받지 못한 파일", ""]
+            if failed:
+                body += ["[조회·다운로드 실패]"] + failed + [""]
+            if cap_cause:
+                body += ["[용량 상한으로 중단]", cap_cause]
+                if displaced:
+                    body += ["", "그래서 아래 파일들은 시도조차 하지 않았습니다:"]
+                    body += ["  - " + line for line in displaced]
+                body += [""]
+            elif displaced:                      # 이론상 없는 경우지만 삼키지 않는다
+                body += ["[용량 상한으로 중단]"] + displaced + [""]
+            zf.writestr("_받지못한_목록.txt", "\n".join(body))
         if unconfirmed:
             # ⛔ 실패(_받지못한_목록)와 불확실은 다른 것이라 목록도 따로 둔다.
             #    섞으면 "못 받았다" 와 "받았는데 맞는지 모른다" 가 한 덩어리가 된다
@@ -343,6 +370,19 @@ async def coa_finder_download(
                 + "\n\n".join(unconfirmed) + "\n")
 
     buf.seek(0)
+    skipped = len(items) - written
+    if skipped:
+        logger.warning("coa_download_partial",
+                       extra={"requested": len(items), "written": written,
+                              "skipped": skipped})
     return StreamingResponse(
         buf, media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="coa_msds.zip"'})
+        headers={
+            "Content-Disposition": 'attachment; filename="coa_msds.zip"',
+            # ⛔ 반쪽 ZIP 이 평범한 ZIP 과 똑같이 내려온다 — 열어보기 전에는 모른다.
+            #    ZIP **안에만** 진실이 있으면 화면은 성공한 것처럼 보이므로
+            #    밖에도 적는다. 값은 ASCII 숫자만 (헤더에 한글을 넣으면 깨진다)
+            "X-COA-Items-Requested": str(len(items)),
+            "X-COA-Items-Written": str(written),
+            "X-COA-Items-Skipped": str(skipped),
+        })

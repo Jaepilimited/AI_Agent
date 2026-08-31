@@ -336,6 +336,47 @@ def test_msds_query_failure_has_its_own_status():
     assert got[0].msds.status == cf.FAILED
 
 
+def test_whitespace_only_lot_does_not_masquerade_as_a_query_failure():
+    """⛔ try 는 네트워크 호출만 감싼다. 접미 계산(`lot.split()[0]`)이 그 안에 있어
+    공백뿐인 롯트가 IndexError 를 내면 '조회실패' 로 위장된다 — 진짜 결함이
+    실패 뒤에 숨는 그 모양이다."""
+    rows = [cf.Row("A", "", "   ", 1)]
+
+    got = list(cf.find_all(MagicMock(), rows, search=lambda *a, **k: []))
+    assert got[0].coa.status != cf.FAILED
+    assert got[0].coa.status == cf.NONE
+
+
+class _Httpish(Exception):
+    """googleapiclient.HttpError 처럼 resp.status 를 갖는 예외."""
+
+    def __init__(self, status):
+        super().__init__(f"HTTP {status}")
+        self.resp = type("R", (), {"status": status})()
+
+
+def test_query_failure_note_says_what_kind_of_failure():
+    """⛔ 재시도하면 되는 것과 권한 문제가 한 문장으로 똑같이 보이면
+    사용자는 무엇을 해야 할지 알 수 없다."""
+    def _note_for(exc):
+        rows = [cf.Row("A", "", "LOT1", 1)]
+
+        def boom(*a, **k):
+            raise exc
+
+        return list(cf.find_all(MagicMock(), rows, search=boom))[0].coa.note
+
+    assert "잠시" in _note_for(_Httpish(429))
+    assert "권한" in _note_for(_Httpish(403))
+    assert "일시" in _note_for(_Httpish(503))
+    # 원인을 모르면 아는 척하지 않는다
+    unknown = _note_for(RuntimeError("boom"))
+    assert "권한" not in unknown and "잠시" not in unknown
+
+    # ⛔ 예외 원문을 화면에 흘리지 마라 — URL·토큰이 섞여 나온다
+    assert "boom" not in unknown
+
+
 def test_none_verdict_says_what_was_searched():
     """⛔ 빈 note 로 '없음' 만 찍으면 네 가지가 글자 그대로 똑같이 보인다:
     정말 없는 것 · 토큰이 죽은 것 · 드라이브 멤버가 아닌 것 · 롯트를 잘못 적은 것.

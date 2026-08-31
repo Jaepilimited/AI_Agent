@@ -386,6 +386,99 @@ def test_download_records_an_item_that_blew_the_budget(client):
     assert "적어도" in note        # 재지 않은 총 크기를 주장하지 않는다
 
 
+def test_done_payload_publishes_the_download_caps(client):
+    """⛔ 화면이 서버 상한의 사본을 들고 있으면 조용히 어긋난다 — 서버가 알려준다."""
+    from app.api.coa_finder_api import _MAX_DOWNLOAD_BYTES, _MAX_DOWNLOAD_ITEMS
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search",
+                        data={"pasted": "SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\n"})
+
+    done = _done_payload(r.text)
+    assert done["max_download_items"] == _MAX_DOWNLOAD_ITEMS
+    assert done["max_download_bytes"] == _MAX_DOWNLOAD_BYTES
+
+
+def test_download_headers_state_how_much_of_it_arrived(client):
+    """⛔ 반쪽짜리 ZIP 이 평범한 ZIP 과 똑같이 내려온다 — 열어보기 전에는 모른다.
+
+    ZIP **안에만** 진실이 있으면 화면은 성공한 것처럼 보인다. 헤더로 밖에도 적는다.
+    """
+    items = [{"file_id": "ok", "sku": "A", "lot": "L1", "name": "a.pdf",
+              "status": "찾음"},
+             {"file_id": "bad", "sku": "B", "lot": "L2", "name": "b.pdf",
+              "status": "찾음"}]
+
+    def fake_fetch(creds, file_id, budget):
+        if file_id == "bad":
+            raise RuntimeError("403")
+        return b"%PDF"
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.api.coa_finder_api._fetch_file", side_effect=fake_fetch):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+
+    assert r.headers["X-Coa-Items-Requested"] == "2"
+    assert r.headers["X-Coa-Items-Written"] == "1"
+    assert r.headers["X-Coa-Items-Skipped"] == "1"
+    # ⛔ 헤더 값은 ASCII 만 — 비ASCII 는 전송 계층에서 깨진다
+    for k in ("X-Coa-Items-Requested", "X-Coa-Items-Written", "X-Coa-Items-Skipped"):
+        r.headers[k].encode("ascii")
+
+
+def test_download_headers_on_a_whole_archive(client):
+    """반대 방향 — 멀쩡한 ZIP 이 반쪽으로 보이면 그 경고도 소음이 된다."""
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "L1", "name": "a.pdf",
+                           "status": "찾음"}])
+    assert "_받지못한_목록.txt" not in zf.namelist()
+
+
+def test_failure_list_separates_the_cause_from_the_casualties(client):
+    """⛔ '남은 예산을 넘겨 중단' 과 '상한 초과로 받지 못함' 은 읽어서 구분되지 않는다.
+    원인이 된 파일과 그 때문에 밀린 파일은 다른 사실이다."""
+    import io as _io
+    import zipfile
+
+    from app.api import coa_finder_api as api
+
+    items = [
+        {"file_id": "1", "sku": "A", "lot": "L1", "name": "a.pdf", "status": "찾음"},
+        {"file_id": "2", "sku": "B", "lot": "L2", "name": "b.pdf", "status": "찾음"},
+        {"file_id": "3", "sku": "C", "lot": "L3", "name": "c.pdf", "status": "찾음"},
+    ]
+
+    def fake_fetch(creds, file_id, budget):
+        if 40 > budget:
+            raise api._DownloadBudgetExceeded(40)
+        return b"x" * 40
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.api.coa_finder_api._fetch_file", side_effect=fake_fetch), \
+         patch("app.api.coa_finder_api._MAX_DOWNLOAD_BYTES", 50):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+
+    note = zipfile.ZipFile(_io.BytesIO(r.content)).read(
+        "_받지못한_목록.txt").decode("utf-8")
+    cause = note.index("여기서 남은 용량 예산이 바닥났습니다")
+    casualty = note.index("앞 파일에서 용량이 차서 시도하지 않았습니다")
+    assert cause < casualty, "원인이 된 파일이 밀린 파일보다 먼저 나와야 한다"
+    assert note.index("L2") < note.index("L3")
+
+
+def test_unconfirmed_list_describes_a_query_failure_accurately(client):
+    """⛔ 조회실패를 '판정 상태가 전달되지 않았습니다' 라고 적으면 거짓말이다 —
+    전달은 됐고, 그 값이 '조회실패' 였다."""
+    import io as _io
+    import zipfile
+
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "L1", "name": "a.pdf",
+                           "status": "조회실패"}])
+    note = zf.read("_확인필요_목록.txt").decode("utf-8")
+    assert "전달되지 않았습니다" not in note
+    assert "조회" in note
+
+
 _JS = "app/static/coa_finder.js"
 
 
@@ -425,6 +518,100 @@ def test_frontend_states_rows_skipped_for_empty_sku():
     src = _js_source()
     assert "skipped_no_sku" in src
     assert "cf-skipped" in src
+
+
+def test_frontend_carries_file_size_for_batching():
+    """크기를 안 실으면 나눠 받기가 추측이 된다 — 조회 결과에 이미 들어 있다."""
+    assert "dataset.size" in _js_source()
+
+
+def test_frontend_reads_the_partial_archive_headers():
+    """⛔ 반쪽 ZIP 을 성공처럼 보여주면 안 된다 — 헤더를 읽어 화면에 적는다."""
+    src = _js_source()
+    assert "X-COA-Items-Skipped" in src or "x-coa-items-skipped" in src
+    assert "_받지못한_목록.txt" in src
+
+
+def _extract_js_function(src, name):
+    """`function <name>(` 부터 짝이 맞는 닫는 중괄호까지 떼어낸다.
+
+    ⚠️ 이 함수 안에 중괄호가 든 문자열 리터럴을 두지 마라 — 세는 것이 어긋난다.
+    """
+    start = src.index("function " + name + "(")
+    depth, i = 0, src.index("{", start)
+    while True:
+        if src[i] == "{":
+            depth += 1
+        elif src[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return src[start:i + 1]
+        i += 1
+
+
+def _run_batch_plan(items, caps):
+    """planBatches 를 node 로 **실제 실행**한다.
+
+    ⛔ 이 로직은 문자열 검사로 지킬 수 없다. 상한 비교가 하나 어긋나면
+       ① 상한을 넘긴 요청이 나가 서버가 반쪽 ZIP 을 만들거나
+       ② 어떤 배치에도 못 드는 항목에서 **무한 루프**가 돈다 (화면이 멈춘다).
+    """
+    import json as _json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node 없음 — 개발 환경 전용 검사")
+
+    fn = _extract_js_function(_js_source(), "planBatches")
+    driver = (fn + "\nconst out = planBatches("
+              + _json.dumps(items) + ", " + _json.dumps(caps)
+              + ");\nconsole.log(JSON.stringify(out));\n")
+    r = subprocess.run([node, "-e", driver], capture_output=True, text=True,
+                       timeout=20)
+    assert r.returncode == 0, r.stderr
+    return _json.loads(r.stdout)
+
+
+_CAPS = {"items": 3, "bytes": 100}
+
+
+def test_batch_plan_keeps_one_request_when_it_fits():
+    got = _run_batch_plan([{"size": 10}, {"size": 20}], _CAPS)
+    assert len(got) == 1 and len(got[0]) == 2
+
+
+def test_batch_plan_splits_on_the_byte_cap():
+    got = _run_batch_plan([{"size": 60}, {"size": 60}, {"size": 10}], _CAPS)
+    assert [[i["size"] for i in b] for b in got] == [[60], [60, 10]]
+
+
+def test_batch_plan_splits_on_the_item_cap():
+    got = _run_batch_plan([{"size": 1}] * 7, _CAPS)
+    assert [len(b) for b in got] == [3, 3, 1]
+
+
+def test_batch_plan_gives_an_oversized_file_its_own_batch():
+    """⛔ 어떤 배치에도 못 드는 파일을 조용히 버리지 마라 — 혼자 보내서
+    서버가 거절하게 하고, 그 사유는 _받지못한_목록.txt 에 남는다.
+    (여기서 루프가 안 끝나면 화면이 멈춘다 — 그래서 실제로 돌려 본다)"""
+    got = _run_batch_plan([{"size": 10}, {"size": 500}, {"size": 10}], _CAPS)
+    assert [[i["size"] for i in b] for b in got] == [[10], [500], [10]]
+
+
+def test_batch_plan_treats_a_missing_size_as_zero():
+    """Drive 는 구글 문서 형식에 size 를 주지 않는다 — 없다고 멈추면 안 된다.
+    (넘칠 수는 있지만 그건 서버가 자르고 헤더가 알린다)"""
+    got = _run_batch_plan([{"size": None}, {}, {"size": 10}], _CAPS)
+    assert [len(b) for b in got] == [3]
+
+
+def test_batch_plan_falls_back_to_one_request_without_caps():
+    """⛔ 서버가 상한을 안 알려주면 나누지 않는다 — 상한은 서버가 알고,
+    서버는 그 경우에도 사실대로 반쪽 ZIP + 목록을 만든다."""
+    got = _run_batch_plan([{"size": 10}] * 9, None)
+    assert len(got) == 1 and len(got[0]) == 9
 
 
 def test_zip_name_truncates_by_utf8_bytes_not_characters():

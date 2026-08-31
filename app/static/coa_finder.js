@@ -36,6 +36,9 @@
       // reaches a customer.
       a.dataset.status = v.status || "";
       a.dataset.kind = kind;
+      // Sizes come from the search result, so the page can total a
+      // selection before asking the server for any of it.
+      a.dataset.size = f.size == null ? "" : String(f.size);
       line.appendChild(a);
       wrap.appendChild(line);
     });
@@ -65,6 +68,46 @@
     tr.appendChild(cell(d.coa, d.sku, d.lot, "coa"));
     tr.appendChild(cell(d.msds, d.sku, d.lot, "msds"));
     $("cf-body").appendChild(tr);
+  }
+
+  // Caps published by the server in the "done" event. The page never keeps
+  // its own copy of a server limit -- a duplicate like that drifts silently.
+  let caps = null;
+
+  // Split a selection into consecutive batches that each stay under both
+  // caps, so no request is ever made that the server would have to truncate.
+  //
+  // Rules that matter:
+  //  - caps absent  -> one batch. The server still enforces both caps and
+  //    reports a truthful partial archive, so guessing here is worse.
+  //  - a file bigger than the byte cap can never fit anywhere. It gets its
+  //    own batch and the server rejects it, which puts a reason in
+  //    _받지못한_목록.txt. Dropping it here would be silent.
+  //  - a missing size counts as zero. Drive omits size for Google-native
+  //    files; refusing to proceed would be worse, and an overflow is caught
+  //    by the server and announced through the response headers.
+  //
+  // WARNING: tests extract this function by brace matching and run it in
+  // node. Keep it free of closure references and of braces inside strings.
+  function planBatches(items, caps) {
+    if (!caps || !caps.items || !caps.bytes) return items.length ? [items] : [];
+    const batches = [];
+    let current = [];
+    let bytes = 0;
+    for (let i = 0; i < items.length; i++) {
+      const size = Number(items[i] && items[i].size) || 0;
+      const tooManyItems = current.length >= caps.items;
+      const tooManyBytes = current.length > 0 && bytes + size > caps.bytes;
+      if (tooManyItems || tooManyBytes) {
+        batches.push(current);
+        current = [];
+        bytes = 0;
+      }
+      current.push(items[i]);
+      bytes += size;
+    }
+    if (current.length) batches.push(current);
+    return batches;
   }
 
   function setBusy(busy) {
@@ -134,6 +177,9 @@
     showError("");
     showAllNone(false);
     showSkipped(0);
+    notice("cf-batch", "");
+    // A new search invalidates the caps until this run's "done" restates them.
+    caps = null;
     $("cf-table").hidden = false;
     $("cf-download").disabled = true;
     $("cf-progress").textContent = "";
@@ -201,6 +247,11 @@
               " · 조회실패 " + (c["조회실패"] || 0) +
               (msdsFailed ? " · MSDS 조회실패 " + msdsFailed : "") +
               " · COA·MSDS 파일의 파일명으로만 찾았습니다 (파일 본문은 검색하지 않습니다)";
+            // Caps come from the server so the page holds no copy of them.
+            // Absent -> no batching; the server still enforces both.
+            caps = (data.max_download_items && data.max_download_bytes)
+              ? { items: data.max_download_items, bytes: data.max_download_bytes }
+              : null;
             showSkipped(data.skipped_no_sku || 0);
             showAllNone(data.total > 0 && (c["없음"] || 0) === data.total);
             $("cf-download").disabled = false;
@@ -242,6 +293,25 @@
     }
   }
 
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // A partial archive downloads exactly like a whole one. The server states
+  // out of band what it actually wrote, because a count the client computed
+  // can be wrong -- sizes are missing for some Drive files, and files change
+  // between the search and the download.
+  function skippedFromHeaders(res) {
+    return Number(res.headers.get("X-COA-Items-Skipped")) || 0;
+  }
+
   async function download() {
     const items = [];
     document.querySelectorAll("#cf-body tr").forEach((tr) => {
@@ -254,6 +324,7 @@
           name: a.textContent,
           status: a.dataset.status || "",
           kind: a.dataset.kind || "coa",
+          size: Number(a.dataset.size) || 0,
         });
       });
     });
@@ -262,26 +333,47 @@
       return;
     }
 
+    const batches = planBatches(items, caps);
+    const many = batches.length > 1;
+    notice("cf-batch", many
+      ? "선택한 " + items.length + "건이 한 번에 받을 수 있는 양을 넘어 " +
+        batches.length + "개 파일로 나눠 받습니다 — 브라우저가 " +
+        batches.length + "번 저장합니다."
+      : "");
+
     $("cf-download").disabled = true;
+    let skipped = 0;
     try {
-      const res = await fetch("/api/coa-finder/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: items }),
-      });
-      if (!res.ok) {
-        showError(await errMessage(res, "받기에 실패했습니다"));
-        return;
+      for (let i = 0; i < batches.length; i++) {
+        if (many) {
+          notice("cf-batch",
+            batches.length + "개 중 " + (i + 1) + "번째를 받는 중입니다...");
+        }
+        // The size field is for batching only -- the server does not read it.
+        const res = await fetch("/api/coa-finder/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: batches[i] }),
+        });
+        if (!res.ok) {
+          showError(await errMessage(res, "받기에 실패했습니다") +
+            (many ? " (" + batches.length + "개 중 " + (i + 1) + "번째)" : ""));
+          return;
+        }
+        skipped += skippedFromHeaders(res);
+        saveBlob(await res.blob(),
+          many ? "coa_msds_" + (i + 1) + ".zip" : "coa_msds.zip");
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "coa_msds.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      notice("cf-batch", many
+        ? "완료 — " + batches.length + "개 파일로 받았습니다."
+        : "");
+      if (skipped > 0) {
+        // Never let a partial archive pass for a whole one.
+        showError(
+          "받지 못한 파일이 " + skipped + "건 있습니다 — " +
+          "ZIP 안의 _받지못한_목록.txt 에 파일별 사유가 적혀 있습니다."
+        );
+      }
     } catch (err) {
       showError(
         "받는 중 네트워크 오류가 발생했습니다: " +
