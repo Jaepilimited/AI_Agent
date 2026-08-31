@@ -138,8 +138,11 @@ def test_download_records_files_it_could_not_fetch(client):
     import io as _io
     import zipfile
 
-    items = [{"file_id": "ok", "sku": "A", "lot": "FE103C", "name": "a.pdf"},
-             {"file_id": "bad", "sku": "B", "lot": "416022", "name": "b.pdf"}]
+    # status 는 화면의 판정이다 — 확정된 행이라야 이름에 확인필요 접두가 안 붙는다
+    items = [{"file_id": "ok", "sku": "A", "lot": "FE103C", "name": "a.pdf",
+              "status": "찾음", "kind": "coa"},
+             {"file_id": "bad", "sku": "B", "lot": "416022", "name": "b.pdf",
+              "status": "찾음", "kind": "coa"}]
 
     def fake_fetch(creds, file_id):
         if file_id == "bad":
@@ -173,9 +176,9 @@ def test_download_reports_cap_and_skips_remaining(client):
     import zipfile
 
     items = [
-        {"file_id": "1", "sku": "A", "lot": "L1", "name": "a.pdf"},
-        {"file_id": "2", "sku": "B", "lot": "L2", "name": "b.pdf"},
-        {"file_id": "3", "sku": "C", "lot": "L3", "name": "c.pdf"},
+        {"file_id": "1", "sku": "A", "lot": "L1", "name": "a.pdf", "status": "찾음"},
+        {"file_id": "2", "sku": "B", "lot": "L2", "name": "b.pdf", "status": "찾음"},
+        {"file_id": "3", "sku": "C", "lot": "L3", "name": "c.pdf", "status": "찾음"},
     ]
 
     def fake_fetch(creds, file_id):
@@ -197,6 +200,114 @@ def test_download_reports_cap_and_skips_remaining(client):
     note = zf.read("_받지못한_목록.txt").decode("utf-8")
     assert "L2" in note                   # 상한을 넘긴 항목 자신
     assert "L3" in note                   # 넘긴 뒤 건너뛴 항목도 각자 한 줄씩
+
+
+def _zip_of(client, items):
+    import io as _io
+    import zipfile
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.api.coa_finder_api._fetch_file",
+               side_effect=lambda creds, file_id: b"%PDF-1.4 fake"):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+    assert r.status_code == 200
+    return zipfile.ZipFile(_io.BytesIO(r.content))
+
+
+def test_download_marks_unconfirmed_verdict_in_the_zip(client):
+    """⛔ 화면의 '확인필요' 가 ZIP 에서 사라지면 확정 문서로 둔갑한다.
+
+    롯트 FE161 을 물었는데 드라이브 파일은 FE1615 인 실측 사례 — 화면은
+    확인필요라고 말하지만 ZIP 은 그 파일이 FE161 것이라고 주장했다.
+    ZIP 은 그대로 고객에게 전달되는 산출물이라 그 시점에 경고가 없으면 없는 것이다.
+    """
+    zf = _zip_of(client, [{
+        "file_id": "1", "sku": "EUSKA022", "lot": "FE161",
+        "name": "COA_10116720_SUN SERUM_FE1615_15643EA.pdf",
+        "status": "확인필요", "kind": "coa",
+    }])
+    names = zf.namelist()
+    assert "확인필요_EUSKA022_FE161_COA_10116720_SUN SERUM_FE1615_15643EA.pdf" in names
+    assert "_확인필요_목록.txt" in names
+    note = zf.read("_확인필요_목록.txt").decode("utf-8")
+    assert "EUSKA022" in note and "FE161" in note
+    assert "FE1615" in note                     # 원본 파일명
+    assert "확인필요" in note                    # 왜 확정이 아닌지
+    # ⛔ 실패와 불확실은 다른 목록이다 — 섞으면 둘 다 안 읽힌다
+    assert "_받지못한_목록.txt" not in names
+
+
+def test_download_treats_missing_status_as_unconfirmed(client):
+    """⛔ 엔드포인트는 임의 JSON 을 받는다 — 상태가 없으면 확정으로 보면 안 된다."""
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
+                           "name": "a.pdf"}])
+    assert "확인필요_A_FE103C_a.pdf" in zf.namelist()
+    assert "_확인필요_목록.txt" in zf.namelist()
+
+
+def test_download_treats_unknown_status_as_unconfirmed(client):
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
+                           "name": "a.pdf", "status": "OK"}])
+    assert "확인필요_A_FE103C_a.pdf" in zf.namelist()
+
+
+def test_download_keeps_confirmed_items_unprefixed(client):
+    """반대 방향 — 확정된 문서까지 확인필요로 적으면 경고가 소음이 된다."""
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
+                           "name": "a.pdf", "status": "찾음", "kind": "coa"}])
+    names = zf.namelist()
+    assert "A_FE103C_a.pdf" in names
+    assert "_확인필요_목록.txt" not in names
+
+
+def test_download_msds_entry_carries_no_lot(client):
+    """⛔ MSDS 는 제품 단위 문서라 롯트가 없다 — 이름에 롯트를 심으면
+    롯트가 맞는 문서인 것처럼 보인다 (스펙이 명시적으로 금지한 것)."""
+    zf = _zip_of(client, [{
+        "file_id": "1", "sku": "EUSKA022", "lot": "FE103C",
+        "name": "SKIN1004 Madagascar Centella Cream 75ML_MSDS(WERCS).pdf",
+        "status": "찾음", "kind": "msds",
+    }])
+    entry = next(n for n in zf.namelist() if not n.startswith("_"))
+    assert "FE103C" not in entry
+    assert entry.startswith("EUSKA022_MSDS_")
+
+
+def test_download_unknown_kind_is_treated_as_coa(client):
+    """kind 가 없으면 롯트를 지니는 쪽(COA)으로 본다 — C1 규칙이 그대로 지킨다."""
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
+                           "name": "a.pdf", "status": "찾음"}])
+    assert "A_FE103C_a.pdf" in zf.namelist()
+
+
+_JS = "app/static/coa_finder.js"
+
+
+def _js_source():
+    with open(_JS, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_frontend_sends_verdict_status_and_kind_with_each_item():
+    """⛔ 프론트가 판정을 안 실어 보내면 서버는 전부 확인필요로 내보낸다 —
+    맞는 방향으로 무너지지만 확정 문서까지 경고가 붙어 경고가 소음이 된다."""
+    src = _js_source()
+    assert "dataset.status" in src
+    assert "dataset.kind" in src
+    assert "status:" in src and "kind:" in src
+
+
+def test_frontend_summary_states_what_was_searched():
+    """⛔ '없음 41' 만 보이면 사용자는 도구가 고장났다고 읽는다."""
+    src = _js_source()
+    assert "COA" in src                      # 개수가 COA 기준임을 밝힌다
+    assert "파일명" in src and "본문" in src   # 탐색 범위
+
+
+def test_frontend_warns_when_every_row_is_none():
+    """전 행이 없음이면 조용한 전멸을 시끄럽게 만든다."""
+    src = _js_source()
+    assert "cf-allnone" in src
 
 
 def test_zip_name_truncates_by_utf8_bytes_not_characters():

@@ -212,6 +212,16 @@ def test_two_real_candidates_are_all_shown():
     assert v.status == cf.MANY and len(v.files) == 2
 
 
+def test_none_verdict_says_what_was_searched():
+    """⛔ 빈 note 로 '없음' 만 찍으면 네 가지가 글자 그대로 똑같이 보인다:
+    정말 없는 것 · 토큰이 죽은 것 · 드라이브 멤버가 아닌 것 · 롯트를 잘못 적은 것.
+    이 기능의 가치는 '없음' 을 믿어도 된다는 것인데, 믿을 근거를 화면이 줘야 한다."""
+    v = cf.classify_lot("E07Z083", [_f("COA (E07Z082)")])
+    assert v.status == cf.NONE
+    assert v.note, "없음의 근거가 비어 있다"
+    assert "파일명" in v.note and "본문" in v.note
+
+
 def test_empty_lot_is_not_searched():
     v = cf.classify_lot("", [_f("아무거나")])
     assert v.status == cf.NONE and "롯트" in v.note

@@ -8,7 +8,10 @@
     "확인필요": "st-check",
   };
 
-  function cell(v, sku, lot) {
+  // kind: "coa" or "msds". MSDS is a product-level document with no lot --
+  // stamping the row's lot onto it would make it look lot-matched, which is
+  // exactly why the screen keeps it in its own column.
+  function cell(v, sku, lot, kind) {
     const wrap = document.createElement("td");
     const label = document.createElement("div");
     label.className = STATUS_CLASS[v.status] || "";
@@ -24,7 +27,12 @@
       a.className = "cf-file";
       a.dataset.fileId = f.id;
       a.dataset.sku = sku;
-      a.dataset.lot = lot;
+      a.dataset.lot = kind === "msds" ? "" : lot;
+      // The verdict travels with the file all the way into the ZIP -- a
+      // caveat that only exists on screen is gone by the time the archive
+      // reaches a customer.
+      a.dataset.status = v.status || "";
+      a.dataset.kind = kind;
       line.appendChild(a);
       wrap.appendChild(line);
     });
@@ -51,8 +59,8 @@
       td.textContent = t || "";
       tr.appendChild(td);
     });
-    tr.appendChild(cell(d.coa, d.sku, d.lot));
-    tr.appendChild(cell(d.msds, d.sku, d.lot));
+    tr.appendChild(cell(d.coa, d.sku, d.lot, "coa"));
+    tr.appendChild(cell(d.msds, d.sku, d.lot, "msds"));
     $("cf-body").appendChild(tr);
   }
 
@@ -63,6 +71,33 @@
 
   function showError(msg) {
     $("cf-error").textContent = msg || "";
+  }
+
+  // Every row came back "없음". That looks identical whether the documents
+  // really are absent, the Google token died, the user is not a member of
+  // the shared drive, or the lots were typed wrong -- so say so out loud
+  // instead of letting a total miss pass for a finished search.
+  function showAllNone(show) {
+    let el = $("cf-allnone");
+    if (!show) {
+      if (el) el.remove();
+      return;
+    }
+    if (!el) {
+      const scroll = document.querySelector(".cf-scroll");
+      // Never let a missing container throw here -- this runs inside the
+      // frame loop, so an exception would repaint a finished search as a
+      // network failure.
+      if (!scroll || !scroll.parentNode) return;
+      el = document.createElement("div");
+      el.id = "cf-allnone";
+      el.className = "cf-error";
+      scroll.parentNode.insertBefore(el, scroll);
+    }
+    el.textContent =
+      "전 행이 '없음'입니다 — 문서가 정말 없는 것인지 판단하기 전에 " +
+      "구글 계정 연결 상태, 그 공유드라이브의 멤버인지, 롯트 표기(대소문자·공백)를 " +
+      "먼저 확인하세요. 이 셋 중 하나만 어긋나도 화면은 똑같이 '없음' 으로 보입니다.";
   }
 
   function errMessage(res, fallback) {
@@ -77,6 +112,7 @@
   async function run() {
     $("cf-body").innerHTML = "";
     showError("");
+    showAllNone(false);
     $("cf-table").hidden = false;
     $("cf-download").disabled = true;
     $("cf-progress").textContent = "";
@@ -129,11 +165,16 @@
           } else if (kind === "done") {
             finished = true;
             const c = data.counts || {};
+            // The counts are COA verdicts, and the search ran over file
+            // names only -- without saying so, "없음 41" reads as a broken
+            // tool rather than as documents that are not on the drive.
             $("cf-progress").textContent =
-              "완료 — " + data.total + "건 중 찾음 " + (c["찾음"] || 0) +
+              "완료 — " + data.total + "행 · COA 기준 찾음 " + (c["찾음"] || 0) +
               " · 여러건 " + (c["여러건"] || 0) +
               " · 확인필요 " + (c["확인필요"] || 0) +
-              " · 없음 " + (c["없음"] || 0);
+              " · 없음 " + (c["없음"] || 0) +
+              " · COA·MSDS 파일의 파일명으로만 찾았습니다 (파일 본문은 검색하지 않습니다)";
+            showAllNone(data.total > 0 && (c["없음"] || 0) === data.total);
             $("cf-download").disabled = false;
           } else if (kind === "error") {
             finished = true;
@@ -183,6 +224,8 @@
           sku: a.dataset.sku,
           lot: a.dataset.lot,
           name: a.textContent,
+          status: a.dataset.status || "",
+          kind: a.dataset.kind || "coa",
         });
       });
     });

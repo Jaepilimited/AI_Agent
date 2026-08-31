@@ -146,6 +146,13 @@ class DownloadItem(BaseModel):
     sku: str = ""
     lot: str = ""
     name: str = ""
+    # 화면의 판정. ⛔ 없거나 모르는 값이면 **확정으로 보지 않는다** — 이 엔드포인트는
+    #    임의 JSON 을 받으므로 클라이언트가 빠뜨린 것을 '찾음' 으로 읽으면
+    #    확인되지 않은 문서가 확정된 이름으로 고객에게 나간다
+    status: str = ""
+    # "coa" | "msds". MSDS 는 제품 단위라 롯트가 없다. 모르면 롯트를 지니는
+    # 쪽(coa)으로 본다 — 그쪽은 status 규칙이 계속 지킨다
+    kind: str = ""
 
 
 class DownloadRequest(BaseModel):
@@ -177,10 +184,52 @@ def _truncate_utf8(s: str, max_bytes: int) -> str:
     return encoded[:max_bytes].decode("utf-8", errors="ignore")
 
 
+_MSDS_KIND = "msds"
+_UNCONFIRMED_PREFIX = "확인필요_"
+_UNCONFIRMED_LIST = "_확인필요_목록.txt"
+
+# 상태별로 '왜 확정이 아닌가'. 모르는 값은 맨 아래 기본 사유로 떨어진다
+_UNCONFIRMED_REASON = {
+    cf.MANY: "여러 후보 중 하나입니다 — 어느 것이 맞는지 확인되지 않았습니다",
+    cf.CHECK: "확인필요 판정입니다 — 롯트가 정확히 맞는지 열어서 확인하세요",
+    cf.NONE: "없음 판정인데 파일이 딸려 왔습니다 — 확인되지 않은 문서입니다",
+}
+_UNKNOWN_STATUS_REASON = ("판정 상태가 전달되지 않았습니다 — "
+                          "확인되지 않은 문서로 취급합니다")
+
+
+def _is_msds(item: DownloadItem) -> bool:
+    """모르면 COA 로 본다 — 롯트를 지니는 쪽이고, 확정 판정 규칙이 그쪽을 지킨다."""
+    return (item.kind or "").strip().casefold() == _MSDS_KIND
+
+
+def _is_confirmed(item: DownloadItem) -> bool:
+    """⛔ 없거나 모르는 상태는 확정이 아니다. 빠뜨린 클라이언트를 믿지 않는다."""
+    return (item.status or "").strip() == cf.FOUND
+
+
+def _label(item: DownloadItem) -> str:
+    """목록에 적는 사람이 읽는 이름. MSDS 에는 롯트를 붙이지 않는다."""
+    middle = "MSDS (롯트 무관)" if _is_msds(item) else (item.lot or "롯트 없음")
+    return f"{item.sku} · {middle} · {item.name}"
+
+
 def _zip_name(item: DownloadItem) -> str:
-    """어느 롯트 것인지 열어보지 않아도 알게 한다."""
-    parts = [p for p in (item.sku, item.lot, item.name or item.file_id) if p]
-    joined = _UNSAFE.sub("_", "_".join(parts))
+    """어느 롯트 것인지 열어보지 않아도 알게 한다.
+
+    ⛔ 화면의 판정을 여기서 지우지 마라. ZIP 은 그대로 고객에게 전달되는
+       산출물이라, 확인필요·여러건이 확정된 이름으로 나가면 화면에만 있던
+       경고는 그 시점에 사라진다.
+    ⛔ MSDS 에는 롯트를 붙이지 않는다 — 제품 단위 문서라 롯트가 없는데
+       이름이 롯트를 주장하면 롯트가 맞는 문서인 것처럼 보인다.
+    """
+    if _is_msds(item):
+        parts = [item.sku, "MSDS", item.name or item.file_id]
+    else:
+        parts = [item.sku, item.lot, item.name or item.file_id]
+    joined = _UNSAFE.sub("_", "_".join(p for p in parts if p))
+    if not _is_confirmed(item):
+        joined = _UNCONFIRMED_PREFIX + joined
     return _truncate_utf8(joined, _MAX_ZIP_NAME_BYTES)
 
 
@@ -208,13 +257,14 @@ async def coa_finder_download(
 
     buf = io.BytesIO()
     failed: list[str] = []
+    unconfirmed: list[str] = []
     total = 0
     cap_hit = False
     max_mb = _MAX_DOWNLOAD_BYTES // (1024 * 1024)
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         used: set[str] = set()
         for item in items:
-            label = f"{item.sku} · {item.lot} · {item.name}"
+            label = _label(item)
             if cap_hit:
                 # ⛔ 상한 초과 뒤에도 왜 못 받았는지 목록에 남긴다 — 조용히 빠지지 않게
                 failed.append(f"{label}: 총 용량 상한({max_mb}MB) 초과로 받지 못함")
@@ -241,11 +291,23 @@ async def coa_finder_download(
                 name, n = f"{stem}({n})", n + 1
             used.add(name)
             zf.writestr(name, data)
+            if not _is_confirmed(item):
+                reason = _UNCONFIRMED_REASON.get(
+                    (item.status or "").strip(), _UNKNOWN_STATUS_REASON)
+                unconfirmed.append(f"{label}\n    → {name}\n    {reason}")
 
         if failed:
             # ⛔ 조용히 빠지면 아무도 모른다
             zf.writestr("_받지못한_목록.txt",
                         "받지 못한 파일\n\n" + "\n".join(failed))
+        if unconfirmed:
+            # ⛔ 실패(_받지못한_목록)와 불확실은 다른 것이라 목록도 따로 둔다.
+            #    섞으면 "못 받았다" 와 "받았는데 맞는지 모른다" 가 한 덩어리가 된다
+            zf.writestr(
+                _UNCONFIRMED_LIST,
+                "확인이 필요한 파일 (이 롯트 것이라고 확정되지 않았습니다)\n"
+                "⛔ 고객에게 전달하기 전에 사람이 열어서 확인하세요.\n\n"
+                + "\n\n".join(unconfirmed) + "\n")
 
     buf.seek(0)
     return StreamingResponse(

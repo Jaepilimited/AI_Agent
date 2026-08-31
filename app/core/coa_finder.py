@@ -117,6 +117,10 @@ CHECK = "확인필요"
 # 짧은 롯트는 다른 코드의 머리에 걸릴 수 있다 (Drive 는 토큰 앞부분 매칭이다)
 _SHORT_LOT_LEN = 4
 
+# '없음' 이 무엇을 근거로 한 없음인지. 빈 note 는 근거 없는 단정과 같다
+_NONE_NOTE = ("파일명에 이 롯트가 든 파일이 없습니다 "
+              "(파일 본문은 검색하지 않습니다)")
+
 # 사본 표기. 원본과 같은 파일인데 이름만 다르다
 _COPY_SUFFIX = re.compile(r"(의\s*사본|\s*\(\d+\)|\s*-\s*복사본)\s*$")
 
@@ -206,7 +210,10 @@ def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
                 CHECK, base_hits,
                 f"접미 없이 '{head}' 로만 된 파일입니다 — 같은 롯트인지 확인하세요")
 
-    return Verdict(NONE, (), "")
+    # ⛔ note 를 비워 두지 마라 — 화면에 '없음' 세 글자만 남으면 "정말 없다" 와
+    #    "토큰이 죽었다"·"드라이브 멤버가 아니다"·"롯트를 잘못 적었다" 가 글자
+    #    그대로 똑같이 보인다. 이 기능의 가치는 '없음' 을 믿을 수 있다는 것이다
+    return Verdict(NONE, (), _NONE_NOTE)
 
 
 import concurrent.futures
