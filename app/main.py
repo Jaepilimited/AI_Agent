@@ -26,6 +26,7 @@ from app.api.admin_group_api import group_router, ad_router
 from app.api.auth_api import auth_api_router
 from app.api.auth_middleware import get_optional_user
 from app.api.auth_routes import auth_router
+from app.api.coa_finder_api import router as coa_finder_router
 from app.api.conversation_api import conversation_router, ensure_message_columns
 from app.api.eval_api import eval_router
 from app.api.face_search_routes import router as face_search_router
@@ -323,6 +324,7 @@ def create_app() -> FastAPI:
     app.include_router(eval_router)          # /api/admin/eval/*
     app.include_router(harness_router)       # /harness, /api/harness/*
     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
+    app.include_router(coa_finder_router)     # /coa-finder, /api/coa-finder/*
     app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
     app.include_router(notifications_router)   # /api/notifications/*
 
