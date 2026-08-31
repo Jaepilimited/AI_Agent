@@ -40,6 +40,7 @@ from app.api.saved_questions_api import router as saved_questions_router
 from app.api.jandi_briefing_api import router as jandi_briefing_router
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
+from app.api.sql_export_api import router as sql_export_router
 from app.api.routes import router
 from app.config import get_settings, validate_jwt_secret
 from app.core.log_scrub import scrub_identity_processor
@@ -240,8 +241,11 @@ def create_app() -> FastAPI:
                                id="query_profile_daily")
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
-            # ⚠️ 광고 적재가 끝난 뒤에 떠야 한다 — 적재 중에 뜨면 정상 재적재를 유실로 읽는다
-            _scheduler.add_job(_ad_media_snapshot_job, "cron", hour=4, minute=20,
+            # ⚠️ 적재가 **하루 두 번**이라 스냅샷도 두 번 뜬다 (2026-08-31 데이터팀 확인).
+            #    한 번만 뜨면 오후 적재 실패를 다음 날 아침에야 안다 — 실제 사고가
+            #    오후 적재 오류였다. 두 번 연속 안 보일 때만 유실로 확정하므로
+            #    적재 도중에 찍혀도 오탐이 되지 않는다.
+            _scheduler.add_job(_ad_media_snapshot_job, "cron", hour="4,18", minute=20,
                                id="ad_media_snapshot_daily")
             # ⚠️ 04:00 에 실패하면 **다음 시도가 24시간 뒤**라 성분 데이터가 하루 낡는다.
             #    실제로 2026-08-26·27 이틀 연속 구글 쪽 장애로 건너뛰었다. 06:30 에
@@ -357,6 +361,7 @@ def create_app() -> FastAPI:
     app.include_router(coa_finder_router)     # /coa-finder, /api/coa-finder/*
     app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
     app.include_router(notifications_router)   # /api/notifications/*
+    app.include_router(sql_export_router)      # /api/sql-results/*csv — 본인이 조회한 결과만 다운로드
 
     # --- Frontend routes ---
 

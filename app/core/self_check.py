@@ -181,7 +181,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "query_profile_daily": (26, "질문 프로필 갱신 (03:20)"),
     "schema_docs_daily": (26, "정의서 → BigQuery 컬럼 설명 (03:40)"),
     "value_lists_daily": (26, "컬럼 값 목록 실측 갱신 (03:50)"),
-    "ad_media_snapshot_daily": (26, "광고 매체 목록 스냅샷 (04:20)"),
+    "ad_media_snapshot_daily": (14, "광고 매체 목록 스냅샷 (04:20·18:20)"),
 }
 
 
