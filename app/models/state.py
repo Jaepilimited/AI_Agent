@@ -58,3 +58,9 @@ class AgentState(TypedDict):
 
     # Source filter (frontend checkbox selection)
     enabled_sources: Optional[List[str]]
+
+    # Authenticated caller — lets format_answer offer a CSV download of the
+    # full result when the LLM-facing preview had to withhold rows. Optional
+    # because not every caller has an authenticated user (e.g. CLI/report
+    # tooling); when absent, the download offer is simply skipped.
+    user_id: Optional[int]

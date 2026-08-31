@@ -2296,51 +2296,15 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     # Use Flash for answer formatting (faster, 3-5s vs 15-25s with Pro)
     llm = get_flash_client()
 
-    # Limit result preview for prompt — smart strategy based on result size
-    _ts_keywords = ("월별", "주차별", "주별", "일별", "분기별", "추이", "트렌드", "변동")
-    _is_timeseries = any(kw in query for kw in _ts_keywords)
-
-    # Product name columns — convert underscores to spaces for readability
-    def _is_product_col(col_name: str) -> bool:
-        cl = col_name.lower()
-        return any(kw in cl for kw in ("product", "set", "제품", "item_name", "sku_name"))
-
-    def _humanize_row(row, max_text_len=80):
-        humanized = {}
-        for k, v in row.items():
-            if isinstance(v, str) and _is_product_col(k):
-                v = v.replace("_", " ")
-            if isinstance(v, str) and len(v) > max_text_len:
-                humanized[k] = v[:max_text_len] + "..."
-            else:
-                humanized[k] = v
-        return humanized
-
-    if len(results) > 100:
-        try:
-            result_preview = _build_smart_preview(results, query)
-        except Exception as e:
-            logger.warning("smart_preview_failed_fallback", error=str(e))
-            preview_rows = [_humanize_row(r) for r in results[:15]]
-            result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
-    elif _is_timeseries and len(results) <= 60:
-        # Time-series: send ALL rows so LLM can show full table & chart (cap at 60)
-        preview_rows = [_humanize_row(r) for r in results]
-        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
-    elif _is_timeseries and len(results) <= 100:
-        # Grouped time-series (e.g. 월별 몰별): pivot to compact table
-        result_preview = _try_pivot_timeseries(results, query)
-        if not result_preview:
-            preview_rows = [_humanize_row(r) for r in results[:60]]
-            result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
-    else:
-        preview_rows = [_humanize_row(r) for r in results[:15]]
-        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
-
-    # Hard cap on preview size to keep LLM prompt manageable (max ~5KB)
-    if len(result_preview) > 5000:
-        preview_rows = [_humanize_row(r) for r in results[:8]]
-        result_preview = json.dumps(preview_rows, ensure_ascii=False, indent=2, default=str)
+    # Limit result preview for prompt — smart strategy based on result shape.
+    # ⛔ 예전엔 `if len(results) > 100:` 이 `_is_timeseries` 분기보다 먼저 걸려,
+    # 146행짜리 "2020~2026 월별 B2C/B2B 매출" 질문이 순위 질문과 똑같이
+    # `_build_smart_preview` 의 "매출 상위 15행" 표본으로 들어갔다. 매출이
+    # 해가 갈수록 커지니 상위 15행이 전부 2024~2026년이었고, LLM 은 2020~2023년을
+    # 본 적조차 없이 "2025년부터 데이터가 있다"는 답을 냈다 — 총합만 전체
+    # 146행 기준으로 맞았다(2026-08-31 실측 재현). `_bounded_result_preview` 가
+    # 시계열 모양을 행 수보다 먼저 본다 — 상세 설계는 그 함수 docstring 참고.
+    result_preview, _rows_withheld = _bounded_result_preview(results, query)
 
     today = datetime.now().strftime("%Y-%m-%d")
     today_kr = datetime.now().strftime("%Y년 %m월 %d일")
@@ -2360,9 +2324,12 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     data_range_hint = f"데이터에 포함된 날짜/기간 값: {sorted(_date_vals)[:20]}" if _date_vals else ""
 
     # Pre-build conditional warnings (avoid backslash in f-string)
+    # ⚠️ 예전엔 `len(results) > 15` 로 판정했다 — 146행이 피벗으로 전부 표현돼도
+    # "상위 프리뷰"라고 잘못 경고해, LLM이 멀쩡한 전체 데이터를 스스로 또 잘라내는
+    # 원인이 될 수 있었다. 실제로 행이 빠졌는지(`_rows_withheld`)로 판정한다.
     _preview_warning = ""
-    if len(results) > 15:
-        _preview_warning = f"⚠️ 위 JSON은 전체 {len(results)}행 중 상위 프리뷰입니다. 나머지 데이터도 존재하므로 프리뷰 기반으로 데이터 범위를 단정하지 마세요."
+    if _rows_withheld:
+        _preview_warning = f"⚠️ 위 JSON은 전체 {len(results)}행 중 일부만 담은 프리뷰입니다. 나머지 데이터도 존재하므로 프리뷰 기반으로 데이터 범위를 단정하지 마세요."
 
     _limit_warning = ""
     if len(results) >= 1000:
@@ -2437,8 +2404,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         )
 
     _result_header = f"총 {len(results)}행"
-    if len(results) > 15:
-        _result_header += f", 아래는 상위 {min(15, len(results))}건 프리뷰"
+    if _rows_withheld:
+        _result_header += ", 아래는 그중 일부 프리뷰"
 
     prompt = f"""다음은 사용자의 질문과 BigQuery 실행 결과입니다.
 결과를 바탕으로 사용자에게 **구조화된 분석 보고서** 형태로 답변을 작성하세요.
@@ -2489,7 +2456,10 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 - 전체 답변 8000자 이내 (표 포함). 8000자 초과 시 **요약 모드**로 전환:
   - 상위 10건만 표시하고 나머지는 "외 N건" 으로 생략
   - 상세 데이터 대신 집계/요약 통계만 제공
-  - "전체 데이터가 필요하시면 말씀해주세요" 안내
+  - ⛔ "전체 데이터가 필요하시면 말씀해주세요" 같은 안내 문구를 직접 쓰지 마세요.
+    실제로 그렇게 요청해도 아무 일도 일어나지 않던 문제가 있었습니다(2026-08-31).
+    데이터가 생략됐을 때 전체 다운로드 링크는 **시스템이 답변 끝에 자동으로
+    붙입니다** — 당신이 안내 문장을 쓸 필요가 없습니다.
 - 요약은 2문장 이내, 인사이트는 bullet 3개 이내 (각 1줄)
 - 장황한 해석/배경설명/가정 금지. 숫자와 팩트만!
 - SQL FORMAT 이슈 설명 금지 — 데이터 그대로 보여주기만 하면 됨
@@ -2568,6 +2538,12 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         except Exception:
             pass
 
+        # 프리뷰가 일부 행을 못 보여줬으면(_rows_withheld) 전체를 받을 실제
+        # 방법을 답변에 붙인다. LLM이 스스로 "요청해주세요" 라고 써도 그 뒤에
+        # 아무 장치가 없었다(2026-08-31, 같은 질문 재발 사고) — 코드가 실제
+        # 링크로 대체·보증한다.
+        answer = _attach_full_data_download(answer, results, state.get("user_id"), _rows_withheld)
+
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
         answer = _mask_internal_paths(answer) + _future_period_note(sql)
@@ -2578,6 +2554,170 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         return {
             "answer": f"SQL 실행 결과 ({len(results)}행):\n```json\n{result_preview}\n```"
         }
+
+
+# --- LLM-facing result preview — 2026-08-31 (같은 질문 두 번째 사고) ---
+#
+# "인도네시아의 2020년-2026년 현재까지의 B2C, B2B 월별 매출"(146행)이 표에
+# 2025년부터만 보였다. 첫 조치(행 상한 15→200)로는 안 고쳐졌다 — 실측해 보니
+# 146행 전부가 LLM 프롬프트에 들어갔고 총합도 정확했다. 진짜 원인은
+# `_build_smart_preview`가 "매출 상위 15행"을 뽑는데, 그 전략이 **시계열
+# 질문에도 그대로 적용된 것**이었다 (`len(results) > 100` 이 `_is_timeseries`
+# 분기보다 먼저 걸린다). 매출은 해가 갈수록 커지므로 상위 15행이 전부
+# 2024~2026년이었고, LLM은 2020~2023년을 아예 본 적이 없었다.
+#
+# 그래서 시계열 모양은 행 수 판정보다 먼저 시도한다 — 값 기준 표본이 기간을
+# 가리는 것이 원래 사고의 정체이기 때문이다.
+
+_TIMESERIES_KEYWORDS = ("월별", "주차별", "주별", "일별", "분기별", "추이", "트렌드", "변동")
+
+
+def _is_timeseries_query(query: str) -> bool:
+    return any(kw in query for kw in _TIMESERIES_KEYWORDS)
+
+
+def _is_product_col(col_name: str) -> bool:
+    """Product name columns (SET) use underscores instead of spaces."""
+    cl = col_name.lower()
+    return any(kw in cl for kw in ("product", "set", "제품", "item_name", "sku_name"))
+
+
+def _humanize_row(row: dict, max_text_len: int = 80) -> dict:
+    humanized = {}
+    for k, v in row.items():
+        if isinstance(v, str) and _is_product_col(k):
+            v = v.replace("_", " ")
+        if isinstance(v, str) and len(v) > max_text_len:
+            humanized[k] = v[:max_text_len] + "..."
+        else:
+            humanized[k] = v
+    return humanized
+
+
+def _rows_to_json_preview(results: list) -> str:
+    return json.dumps([_humanize_row(r) for r in results], ensure_ascii=False, indent=2, default=str)
+
+
+def _even_span_sample_preview(results: list, limit: int = 40) -> str:
+    """Last-resort preview for a time series too large to pivot or send whole.
+
+    Never sorts by value — that is exactly what hid 2020-2023 behind
+    2024-2026 in production (Indonesia B2C/B2B monthly, 146 rows,
+    2026-08-31). Instead takes an even stride across the *original* row
+    order — BigQuery's own `ORDER BY month`, per
+    `prompts/sql_generator.txt`'s "월별 추이" convention — so both ends of
+    the requested span stay represented even when the whole thing can't
+    fit in the prompt budget.
+    """
+    n = len(results)
+    if n <= limit:
+        sample = results
+    else:
+        step = n / limit
+        idx = sorted({int(i * step) for i in range(limit)} | {0, n - 1})
+        sample = [results[i] for i in idx]
+    preview = {
+        "note": (
+            f"시간순 균등 표본 {len(sample)}행 (전체 {n}행 중 — 값 크기가 아니라 "
+            "기간 전체를 고르게 대표하도록 뽑음. 값 기준으로 뽑으면 최근/큰 값 "
+            "구간만 남아 이전 기간이 없는 것처럼 보인다)"
+        ),
+        "sample": [_humanize_row(r) for r in sample],
+    }
+    return json.dumps(preview, ensure_ascii=False, indent=2, default=str)
+
+
+def _build_result_preview(results: list, query: str) -> "tuple[str, bool]":
+    """Build the LLM-facing preview of SQL results.
+
+    Returns (preview_text, rows_withheld). `rows_withheld` is True only
+    when the preview does NOT represent every row's contribution — e.g. a
+    top-N-by-value sample. A pivoted time series is NOT withheld even
+    though it renders far fewer *lines* than `results` has rows: every
+    row's value is folded into a pivot cell, nothing is dropped, only
+    reshaped (`_try_pivot_timeseries` keeps every time period; only the
+    number of *groups* is capped, and a plain B2C/B2B split has just two).
+    """
+    if not results:
+        return "[]", False
+
+    is_ts = _is_timeseries_query(query)
+
+    if is_ts:
+        if len(results) <= 60:
+            # Small enough to just send every row — nothing withheld.
+            return _rows_to_json_preview(results), False
+
+        pivot = _try_pivot_timeseries(results, query)
+        if pivot and len(pivot) <= 5000:
+            return pivot, False
+
+        if len(results) <= 100:
+            # Pivot didn't apply (e.g. no clear group column) but still
+            # small enough to send whole.
+            return _rows_to_json_preview(results), False
+
+        # Can't pivot, too many rows to send whole. The one case where a
+        # time-series question genuinely can't show every row — but it
+        # still must not be a value-biased slice.
+        return _even_span_sample_preview(results), True
+
+    if len(results) > 100:
+        try:
+            return _build_smart_preview(results, query), True
+        except Exception as e:
+            logger.warning("smart_preview_failed_fallback", error=str(e))
+            return _rows_to_json_preview(results[:15]), True
+
+    if len(results) > 15:
+        return _rows_to_json_preview(results[:15]), True
+
+    return _rows_to_json_preview(results), False
+
+
+def _bounded_result_preview(results: list, query: str, hard_cap: int = 5000) -> "tuple[str, bool]":
+    """`_build_result_preview` plus an absolute size safety net.
+
+    Even a compact preview (pivot, smart-sample) can occasionally exceed
+    the prompt budget. This never re-sorts by value on its own way out —
+    it just takes the first few rows and marks the result as withheld.
+    """
+    preview, withheld = _build_result_preview(results, query)
+    if len(preview) > hard_cap:
+        preview = _rows_to_json_preview(results[:8])
+        withheld = True
+    return preview, withheld
+
+
+# 채팅에 답할 때는 코드가 실제 사실을 판정하고, LLM은 그 사실을 문장으로만
+# 고른다는 이 프로젝트의 원칙과 같다 — "전체 데이터가 필요하시면
+# 말씀해주세요/요청해주세요" 처럼 LLM이 스스로 지어내는 안내는 아무 장치도
+# 없는 빈 약속이었다("RAW 파일을 줘"가 두 번 반복됐다, 2026-08-31). 프롬프트도
+# 이 문구를 쓰지 말라고 지시하지만(확률), 실제로 새어 나온 문장은 여기서
+# 지운다(보증).
+_EMPTY_DOWNLOAD_PROMISE_RE = re.compile(
+    r"[^\n]*전체[^\n]*데이터[^\n]*필요[^\n]*주세요[^\n]*\n?"
+)
+
+
+def _attach_full_data_download(
+    answer: str, results: list, user_id: Optional[int], rows_withheld: bool
+) -> str:
+    """Strip any empty "요청해주세요" promise and, when rows were actually
+    withheld from the LLM, attach a real CSV download of the full result.
+    """
+    answer = _EMPTY_DOWNLOAD_PROMISE_RE.sub("", answer)
+    if not rows_withheld or not user_id or not results:
+        return answer
+    try:
+        from app.core.sql_result_store import save as _save_full_result
+        cols = list(results[0].keys())
+        labels = {c: _COL_LABELS.get(c.lower(), c) for c in cols}
+        token = _save_full_result(user_id, cols, results, labels=labels)
+        answer += f"\n\n> 📄 [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
+    except Exception as e:
+        logger.warning("format_answer_csv_offer_failed", error=str(e)[:150])
+    return answer
 
 
 def _try_pivot_timeseries(results: list, query: str) -> str:
@@ -2598,10 +2738,17 @@ def _try_pivot_timeseries(results: list, query: str) -> str:
         group_col = None
         value_col = None
 
+        # ⚠️ 예전엔 결과 앞 10행 + 하드코딩된 연도(2024~2026)만 봤다. 시계열이
+        # 이른 연도부터 시작하면(예: 2020년) 앞 10행이 전부 2020년이라 아무
+        # 연도도 걸리지 않아 시간 열 자체를 못 찾고 피벗이 조용히 실패했다 —
+        # "이른 기간을 놓친다"는 이 파일 전체가 고치려는 문제와 같은 모양의
+        # 함정이 감지 로직 안에도 있었다(2026-08-31 테스트 작성 중 발견).
+        # 앞·뒤 표본을 함께 보고, 연도는 패턴(20xx)으로 판정한다.
+        _sample_rows = results[:5] + results[-5:] if len(results) > 10 else results
         for k in keys:
-            vals = [str(r.get(k, "")) for r in results[:10]]
+            vals = [str(r.get(k, "")) for r in _sample_rows]
             is_time = any(
-                any(h in v.lower() for h in ("2024", "2025", "2026", "월", "분기", "q1", "q2", "q3", "q4"))
+                re.search(r"20\d{2}", v) or any(h in v for h in ("월", "분기", "Q1", "Q2", "Q3", "Q4"))
                 for v in vals
             )
             if is_time and not time_col:
@@ -2622,6 +2769,12 @@ def _try_pivot_timeseries(results: list, query: str) -> str:
         # Build pivot
         from collections import OrderedDict
         time_order = list(OrderedDict.fromkeys(str(r.get(time_col, "")) for r in results))
+        # ⚠️ 원본 등장 순서에만 기댔었다 — SQL이 `ORDER BY month` 를 안 넣거나
+        # 다른 축으로 먼저 정렬하면 시간 열 순서가 뒤섞일 수 있다. 이 프로젝트
+        # 월/분기/일 표기는 전부 `YYYY-MM`류 ISO 접두 형식이라
+        # (`prompts/sql_generator.txt` "월별: FORMAT_DATETIME('%Y-%m', ...)")
+        # 문자열 정렬만으로 시간순이 보장된다.
+        time_order = sorted(time_order)
         groups = list(OrderedDict.fromkeys(str(r.get(group_col, "")) for r in results))
 
         pivot = {}
@@ -2985,6 +3138,7 @@ async def run_sql_agent(
     brand_filter: Optional[str] = None,
     enabled_sources: Optional[list] = None,
     can_view_fi: bool = False,
+    user_id: Optional[int] = None,
 ) -> str:
     """Run the Text-to-SQL agent on a query.
 
@@ -2994,6 +3148,8 @@ async def run_sql_agent(
         model_type: "gemini" or "claude" — which LLM to use.
         brand_filter: Comma-separated brand codes (e.g. "SK,CL,CBT" or "UM").
         enabled_sources: List of enabled source keys (e.g. ["BigQuery 제품"]) for table filtering.
+        user_id: Authenticated caller — lets `format_answer` offer a CSV
+            download of the full result when its preview had to withhold rows.
 
     Returns:
         Natural language answer based on SQL results.
@@ -3016,6 +3172,7 @@ async def run_sql_agent(
         "brand_filter": brand_filter,
         "can_view_fi": can_view_fi,
         "enabled_sources": enabled_sources,
+        "user_id": user_id,
     }
 
     import asyncio
@@ -3531,6 +3688,7 @@ def run_sql_agent_stream(
         "brand_filter": brand_filter,
         "can_view_fi": can_view_fi,
         "enabled_sources": enabled_sources,
+        "user_id": user_id,
     }
 
     # Run SQL generation + validation + execution (non-streaming)
@@ -3584,9 +3742,12 @@ def run_sql_agent_stream(
     from app.core.llm import get_flash_client
     llm = get_flash_client()
 
-    result_preview = _build_smart_preview(results, query) if len(results) > 100 else json.dumps(
-        results[:50], ensure_ascii=False, indent=2, default=str
-    )
+    # ⛔ 이 경로가 실제 프로덕션 경로다 (`chat.js` 가 `stream: true` 로 호출한다 —
+    # `BQ_FAST_ANSWER` 는 dev 전용). 예전엔 `format_answer` 보다도 더 단순해서
+    # `_is_timeseries` 판정 자체가 없었다 — ">100행이면 매출 상위 15행" 만 있어
+    # 시계열 질문에서도 값 기준 표본을 그대로 썼다. 같은 셋을 쓴다
+    # (`_bounded_result_preview`, docstring에 146행 인도네시아 사고 상세 있음).
+    result_preview, _rows_withheld = _bounded_result_preview(results, query)
     today = datetime.now().strftime("%Y-%m-%d")
     today_kr = datetime.now().strftime("%Y년 %m월 %d일")
     table_source = _extract_table_sources(sql)
@@ -3660,5 +3821,13 @@ def run_sql_agent_stream(
     except (concurrent.futures.TimeoutError, Exception):
         pass
     _chart_executor.shutdown(wait=False)
+
+    # 표에 못 보여준 행이 있었으면(_rows_withheld) 전체를 CSV로 받는 실제 링크를
+    # 붙인다. 이 경로는 이미 스트리밍이 끝난 텍스트를 손볼 수 없으므로(LLM이
+    # 스스로 빈 약속을 썼어도 지울 수 없다) 프롬프트에서 그런 문구를 아예
+    # 지시하지 않는 대신, 여기서 실제 다운로드를 추가로 붙인다.
+    download_note = _attach_full_data_download("", results, user_id, _rows_withheld)
+    if download_note:
+        yield download_note
 
     yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
