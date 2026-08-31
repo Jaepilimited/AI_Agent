@@ -159,6 +159,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(apply_deployed_resolutions)
         from app.core.schema_watch import ensure_schema_watch_table
         await asyncio.to_thread(ensure_schema_watch_table)
+        from app.core.ad_media_watch import ensure_ad_media_table
+        await asyncio.to_thread(ensure_ad_media_table)
         from app.core.value_lists import ensure_value_cache_table
         await asyncio.to_thread(ensure_value_cache_table)
         from app.core.ingredients import ensure_ingredient_tables
@@ -238,6 +240,9 @@ def create_app() -> FastAPI:
                                id="query_profile_daily")
             _scheduler.add_job(_schema_docs_job, "cron", hour=3, minute=40, id="schema_docs_daily")
             _scheduler.add_job(_value_lists_job, "cron", hour=3, minute=50, id="value_lists_daily")
+            # ⚠️ 광고 적재가 끝난 뒤에 떠야 한다 — 적재 중에 뜨면 정상 재적재를 유실로 읽는다
+            _scheduler.add_job(_ad_media_snapshot_job, "cron", hour=4, minute=20,
+                               id="ad_media_snapshot_daily")
             # ⚠️ 04:00 에 실패하면 **다음 시도가 24시간 뒤**라 성분 데이터가 하루 낡는다.
             #    실제로 2026-08-26·27 이틀 연속 구글 쪽 장애로 건너뛰었다. 06:30 에
             #    한 번 더 걸되, 그날 이미 성공했으면 잡 안에서 건너뛴다.
@@ -963,6 +968,26 @@ async def _value_lists_job():
         logger.info("value_lists_job_done", **stats)
     except Exception as e:
         logger.error("value_lists_job_failed", error=str(e))
+
+
+async def _ad_media_snapshot_job():
+    """매일 04:20: 광고 매체 목록 스냅샷 → 사라진 매체 감지.
+
+    ⛔ 2026-08-31 에 `KakaoMoments` 가 하루 사이 통째로 사라졌다 (오전 최신
+       8/27·594,843원 → 오후 매체 19종 어디에도 없음). 스키마는 그대로였고
+       전체 행 수도 임계에 못 미쳐 **기존 감시 어느 것도 못 잡았다.**
+    ⚠️ 적재가 끝난 뒤에 떠야 한다 — 적재 중에 뜨면 정상 재적재를 유실로 읽는다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("ad_media_snapshot_daily") as jr:
+            from app.core.ad_media_watch import run, summarize
+            result = await asyncio.to_thread(run)
+            ok, detail = summarize(result)
+            jr.set_note(detail[:400])
+        logger.info("ad_media_snapshot_done", ok=ok, detail=detail[:200])
+    except Exception as e:
+        logger.error("ad_media_snapshot_failed", error=str(e))
 
 
 async def _weekly_growth_report_job():

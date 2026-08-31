@@ -181,6 +181,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "query_profile_daily": (26, "질문 프로필 갱신 (03:20)"),
     "schema_docs_daily": (26, "정의서 → BigQuery 컬럼 설명 (03:40)"),
     "value_lists_daily": (26, "컬럼 값 목록 실측 갱신 (03:50)"),
+    "ad_media_snapshot_daily": (26, "광고 매체 목록 스냅샷 (04:20)"),
 }
 
 
@@ -647,6 +648,20 @@ def _check_new_log_errors() -> CheckResult:
     return CheckResult(True, f"신규 에러 유형 없음 (어제 {sum(recent.values())}건 / 직전주 {sum(baseline.values())}건)")
 
 
+def _check_ad_media_missing() -> CheckResult:
+    """광고 **매체가 통째로 사라졌는가** (2026-08-31 실측으로 만든 검사).
+
+    ⛔ 실제로 하루 사이에 `KakaoMoments` 가 사라졌다. 오전엔 최신 8/27·594,843원이
+       있었고 오후엔 매체 19종 어디에도 없었다. 셀라는 두 번 다 그 시점의 사실을
+       답했지만, 사람이 두 답을 나란히 놓기 전까지 아무도 몰랐다 — 에러가 없다.
+    ⚠️ `schema_watch` 는 테이블·컬럼을 보고, 점검 감지는 전체 행 수를 본다.
+       **작은 매체가 통째로 빠지는 것은 둘 다 못 잡는다.**
+    """
+    from app.core.ad_media_watch import run, summarize
+    ok, detail = summarize(run())
+    return CheckResult(ok, detail)
+
+
 def _check_schema_changes() -> CheckResult:
     """어제 대비 **앱이 쓰는 테이블**의 스키마가 바뀌었는가.
 
@@ -982,6 +997,9 @@ CHECKS: list[Check] = [
           "프롬프트 값 목록이 최신인가", _check_value_lists),
     Check("schema_changes", "datasource", SEV_WARNING,
           "어제 대비 앱이 쓰는 테이블 스키마가 바뀌었는가", _check_schema_changes),
+    Check("ad_media_missing", "datasource", SEV_WARNING,
+          "광고 매체가 통째로 사라졌는가 (조용한 데이터 유실)",
+          _check_ad_media_missing),
     Check("new_log_errors", "quality", SEV_WARNING,
           "어제 로그에 직전 주에 없던 에러 유형이 있는가", _check_new_log_errors),
     Check("notion_allowlist", "datasource", SEV_WARNING,
