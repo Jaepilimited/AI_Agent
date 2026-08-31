@@ -879,3 +879,33 @@ def test_scrolling_cards_do_not_leave_a_gap_above_the_sticky_title():
     assert "position: sticky" in title and "padding:" in title
     # 배경이 카드 폭 전체를 덮어야 좌우로도 행이 비치지 않는다
     assert "margin: 0 -18px" in title and "background:" in title
+
+
+def test_coa_finder_page_uses_only_defined_css_tokens():
+    """없는 변수는 에러가 아니라 폴백이다 — 라이트 모드에서 안 보이는 그 결함.
+
+    ⚠️ `undefined_css_vars()`(app/core/static_checks.py)는 `app/static/*.html` 을
+    훑지 않는다 — `coa_finder.html` 은 그 목록 밖이라 이 테스트가 유일한 방어선이고,
+    개발 환경에서만 돈다(서버 자가 점검에는 안 걸린다).
+    """
+    import re
+    from pathlib import Path
+
+    css = Path("app/static/style.css").read_text(encoding="utf-8")
+    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", css))
+    html = Path("app/static/coa_finder.html").read_text(encoding="utf-8")
+    used = set(re.findall(r"var\((--[a-z0-9-]+)", html))
+    assert used <= defined, f"style.css 에 없는 토큰: {sorted(used - defined)}"
+
+
+def test_coa_finder_script_parses():
+    """템플릿 스크립트가 깨지면 서버는 200 을 주고 화면만 죽는다."""
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        return  # 서버에는 node 가 없다 — 개발 환경 전용 검사
+    r = subprocess.run([node, "--check", "app/static/coa_finder.js"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

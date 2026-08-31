@@ -1187,6 +1187,11 @@
     document.getElementById("drawer-close").addEventListener("click", closeDashboard);
     document.getElementById("skin-dashboard-overlay").addEventListener("click", closeDashboard);
 
+    // 인증서류 찾기 — 전용 페이지를 새 탭에서 연다
+    document.getElementById("btn-coa-finder").addEventListener("click", () => {
+      window.open("/coa-finder", "_blank", "noopener");
+    });
+
     // System Status drawer
     document.getElementById("btn-system-status").addEventListener("click", openStatusDrawer);
     initNotifications();

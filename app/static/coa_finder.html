@@ -1,1 +1,76 @@
-<!doctype html><title>COA 찾기</title><p>준비 중</p>
+<!DOCTYPE html>
+<html lang="ko" class="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>인증서류 찾기 — 셀라</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/style.css?v=193">
+  <script>
+    if (localStorage.theme === "dark") {
+      document.documentElement.classList.replace("light", "dark");
+    }
+  </script>
+  <style>
+    .cf-wrap { max-width: 1200px; margin: 0 auto; padding: 24px; color: var(--text); }
+    .cf-wrap h1 { font-size: 1.4em; margin-bottom: 8px; }
+    .cf-intro { color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5; }
+    .cf-input { width: 100%; min-height: 140px; background: var(--bg-input);
+                border: 1px solid var(--border); border-radius: 8px;
+                color: var(--text); padding: 12px; font-family: inherit;
+                font-size: 0.92em; resize: vertical; }
+    .cf-input:focus { outline: none; border-color: var(--border-strong); }
+    .cf-bar { display: flex; gap: 12px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+    .cf-bar button { background: var(--bg-elevated); color: var(--text);
+                      border: 1px solid var(--border); border-radius: 6px;
+                      padding: 8px 16px; cursor: pointer; font-family: inherit;
+                      font-size: 0.92em; }
+    .cf-bar button:hover:not(:disabled) { background: var(--bg-hover); }
+    .cf-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cf-summary { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .cf-error { color: var(--text); background: var(--bg-elevated);
+                border: 1px solid var(--border-strong); border-radius: 6px;
+                padding: 8px 12px; margin-bottom: 12px; font-size: 0.9em; }
+    .cf-error:empty { display: none; }
+    table.cf { width: 100%; border-collapse: collapse; }
+    table.cf th, table.cf td { border-bottom: 1px solid var(--border);
+                               padding: 8px 10px; text-align: left; vertical-align: top;
+                               font-size: 0.92em; }
+    table.cf th { color: var(--text-muted); font-weight: 600; }
+    table.cf a.cf-file { color: var(--text); }
+    .cf-scroll { overflow-x: auto; }
+    .st-found { color: var(--text); }
+    .st-none { color: var(--text-muted); }
+    .st-check, .st-many { color: var(--text); font-weight: 600; }
+    .cf-note { color: var(--text-muted); font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <div class="cf-wrap">
+    <h1>인증서류 찾기 (COA · MSDS)</h1>
+    <p class="cf-intro">엑셀에서 SKU · DESCRIPTION · LOT 열을 복사해 붙여넣거나
+      .xlsx 파일을 올리세요. 공유드라이브에서 롯트가 정확히 일치하는 파일만 찾습니다.</p>
+
+    <textarea class="cf-input" id="cf-paste"
+              placeholder="SKU&#9;DESCRIPTION&#9;LOT"></textarea>
+    <div class="cf-bar">
+      <input type="file" id="cf-file" accept=".xlsx">
+      <button id="cf-run" type="button">찾기</button>
+      <button id="cf-download" type="button" disabled>선택한 파일 받기</button>
+      <span class="cf-summary" id="cf-progress"></span>
+    </div>
+    <div id="cf-error" class="cf-error"></div>
+    <div class="cf-scroll">
+      <table class="cf" id="cf-table" hidden>
+        <thead><tr>
+          <th><input type="checkbox" id="cf-all"></th>
+          <th>SKU</th><th>제품명</th><th>롯트</th><th>COA</th><th>MSDS</th>
+        </tr></thead>
+        <tbody id="cf-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="/static/coa_finder.js?v=1"></script>
+</body>
+</html>
