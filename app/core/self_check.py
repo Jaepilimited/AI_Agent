@@ -1164,6 +1164,10 @@ CHECKS: list[Check] = [
     Check("static_ctrl_chars", "static", SEV_WARNING,
           "소스에 눈에 안 보이는 제어문자가 섞였는가 (정규식이 조용히 안 맞는다)",
           _static("static_ctrl_chars")),
+    Check("static_page_scroll", "static", SEV_WARNING,
+          "style.css 를 쓰는 문서 페이지가 스크롤을 되살렸는가 "
+          "(채팅용 overflow:hidden 을 물려받아 화면 밖 내용에 닿지 못하던 사고)",
+          _static("static_page_scroll")),
     # ⛔ 막대 라벨이 플롯 경계에 잘리면 **가장 큰 값부터** 사라진다 (2026-08-31 제보).
     #    캔버스는 에러 없이 그려져서 사람이 볼 때까지 아무도 모른다.
     Check("static_chart_labels", "static", SEV_WARNING,

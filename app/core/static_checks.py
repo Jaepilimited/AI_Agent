@@ -646,6 +646,61 @@ def stray_control_chars() -> Tuple[bool, str]:
     return True, "제어문자 없음"
 
 
+# 화면을 통째로 채우고 **스스로** 스크롤 영역을 갖는 페이지들.
+# style.css 의 `overflow:hidden` 이 여기서는 의도된 것이라 예외로 둔다.
+# 새 페이지를 여기 넣기 전에 **실제로 열어서 끝까지 내려가는지 확인할 것** —
+# 그냥 추가하면 아무것도 안 지키는 목록이 된다.
+_VIEWPORT_LOCKED_PAGES = {
+    "chat.html",       # SPA — 메시지 목록이 style.css 안에서 자체 스크롤한다
+    "login.html",      # 한 화면에 들어간다
+    "dashboard.html",  # 자체 레이아웃 + 내부 overflow-y:auto
+}
+
+
+def page_scroll_restored() -> Tuple[bool, str]:
+    """`style.css` 를 쓰는 문서형 페이지가 스크롤을 되살렸는가.
+
+    `style.css` 는 채팅 SPA 용이라 `html, body { height:100%; overflow:hidden }` 을 건다.
+    테마 토큰(`--bg`·`--text`…)을 쓰려고 그 파일을 링크한 **평범한 문서 페이지**는
+    그 규칙까지 함께 물려받아 **스크롤이 통째로 죽는다.**
+
+    에러도 빈 화면도 아니다 — 첫 화면은 멀쩡히 그려지고 그 아래가 없는 것처럼 보인다.
+    실제로 `coa_finder.html` 이 96행을 찾아 놓고 두 번째 행부터 볼 수 없었다
+    (2026-09-01 사용자 제보). 같은 결함이 `eval_review.html` 에도 있었다.
+    """
+    if not _exists("app/static/style.css"):
+        return True, "style.css 없음 — 건너뜀"
+    if not re.search(r"html,\s*body\s*\{[^}]*overflow\s*:\s*hidden", _read("app/static/style.css")):
+        return True, "style.css 가 더 이상 overflow:hidden 을 걸지 않는다 — 검사 불필요"
+
+    bad: List[str] = []
+    for pat in ("app/static/*.html", "app/frontend/*.html"):
+        for path in glob.glob(os.path.join(ROOT, pat)):
+            name = os.path.basename(path)
+            if name in _VIEWPORT_LOCKED_PAGES:
+                continue
+            with io.open(path, encoding="utf-8", errors="replace") as fh:
+                txt = fh.read()
+            if "/static/style.css" not in txt:
+                continue
+            # body(또는 html, body) 를 고르는 규칙 중 overflow 를 hidden 이 아닌 값으로
+            # 되돌린 것이 하나라도 있으면 통과. 선언 순서상 페이지 <style> 이 나중이라 이긴다.
+            restored = False
+            for sel, body in re.findall(r"([^{}]*)\{([^}]*)\}", txt):
+                if not re.search(r"(^|,)\s*(html\s*,\s*)?body\s*$", sel.strip(), re.M):
+                    continue
+                m = re.search(r"overflow(-y)?\s*:\s*([a-z]+)", body)
+                if m and m.group(2) != "hidden":
+                    restored = True
+                    break
+            if not restored:
+                bad.append(name)
+    if bad:
+        return False, ("style.css 를 쓰면서 스크롤을 되살리지 않았다 "
+                       "(화면 밖 내용에 닿을 수 없다): " + ", ".join(sorted(bad)))
+    return True, "문서형 페이지 스크롤 정상"
+
+
 def qdrant_team_sources() -> Tuple[bool, str]:
     """`@@팀` 지정이 벡터 색인의 team 값과 실제로 맞물리는가.
 
@@ -914,6 +969,8 @@ ALL = [
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
     ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
     ("static_ctrl_chars", stray_control_chars, "소스에 섞인 제어문자"),
+    ("static_page_scroll", page_scroll_restored,
+     "style.css 를 쓰는 문서 페이지가 스크롤을 되살렸는가"),
     ("static_chart_labels", chart_label_bounds, "막대 라벨이 플롯 경계를 보는가"),
     ("static_qdrant_teams", qdrant_team_sources, "@@팀 ↔ 벡터 색인 팀 값 일치"),
     ("static_team_links", team_link_coverage, "팀 자료 링크가 벡터 색인에 있는가"),

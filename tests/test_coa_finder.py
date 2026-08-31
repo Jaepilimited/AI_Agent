@@ -283,6 +283,46 @@ def test_copies_collapse_to_one_row():
     assert len(v.files) == 1
 
 
+def test_numbered_copy_before_the_extension_collapses():
+    """⛔ 사본 표기는 이름 **끝에만** 오지 않는다 — 확장자 바로 앞에 붙는다.
+
+    드라이브에서 같은 파일을 두 번 받으면 `… _F25E06 E (1).pdf` 가 된다. 처음 정규식이
+    `$` 로만 잡아 이 짝을 못 접었고, **같은 파일 둘**이 `여러건 — 어느 것인지 확인이
+    필요합니다` 로 나가 사람이 눈으로 고르게 만들었다 (2026-09-01 실제 화면).
+    조회는 성공하고 답도 그럴듯해서, 세어 보기 전엔 드러나지 않는다.
+    """
+    base = ("COA__SKIN1004 MADAGASCAR CENTELLA LIGHT CLEANSING OIL "
+            "200ML(CPNP)(N4)_F25E06 E")
+    files = [
+        _f(base + " (1).pdf", size=82070, fid="a"),
+        _f(base + ".pdf", size=82070, fid="b"),
+    ]
+    v = cf.classify_lot("F25E06 E", files)
+    assert v.status == cf.FOUND, v.note
+    assert len(v.files) == 1
+
+
+def test_numbered_copy_with_a_different_size_is_kept():
+    """⚠️ 크기가 다르면 접지 않는다 — 이름만 닮은 **다른 내용**일 수 있다.
+
+    다른 롯트의 증명서를 하나로 접어 주는 것은 못 찾는 것보다 나쁘다.
+    """
+    files = [
+        _f("COA_FE200 (1).pdf", size=82070, fid="a"),
+        _f("COA_FE200.pdf", size=91114, fid="b"),
+    ]
+    assert len(cf.classify_lot("FE200", files).files) == 2
+
+
+def test_stacked_copy_markers_collapse():
+    """'의 사본' 과 '(1)' 이 겹쳐 붙은 것도 원본과 같은 파일이다."""
+    files = [
+        _f("COA_FE200.pdf", size=100, fid="a"),
+        _f("COA_FE200의 사본 (1).pdf", size=100, fid="b"),
+    ]
+    assert len(cf.classify_lot("FE200", files).files) == 1
+
+
 def test_different_extensions_are_not_collapsed_as_copies():
     """같은 이름·같은 크기라도 확장자가 다르면 서로 다른 문서다 (dedup 대상 아님).
 

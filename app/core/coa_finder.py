@@ -328,9 +328,34 @@ class Verdict:
     note: str = ""
 
 
+def _strip_copy_markers(text: str) -> str:
+    """더 이상 줄지 않을 때까지 사본 표기를 뗀다."""
+    prev = None
+    while prev != text:
+        prev = text
+        text = _COPY_SUFFIX.sub("", text).strip()
+    return text
+
+
 def _dedup_key(f: DriveFile) -> tuple:
-    base = _COPY_SUFFIX.sub("", f.name).strip()
-    return (base.casefold(), f.size)
+    """사본 표기를 뗀 이름 + 확장자 + 크기.
+
+    ⛔ 사본 표기는 이름 **끝에만** 오지 않는다 — 드라이브에서 같은 파일을 두 번 받으면
+       `… _F25E06 E (1).pdf` 처럼 **확장자 바로 앞**에 붙는다. 처음엔 `$` 로만 잡아서
+       그 짝이 안 접혔고, 같은 파일 두 개가 `여러건 — 어느 것인지 확인이 필요합니다` 로
+       나가 사람이 눈으로 고르게 만들었다 (2026-09-01 사용자 화면에서 확인).
+    ⚠️ 확장자는 키에 남긴다 — 같은 이름의 pdf 와 xlsx 는 다른 파일이다.
+    ⚠️ 크기가 같아야 접는다. 이름만 같고 내용이 다른 것을 하나로 만들면
+       **못 찾는 것보다 나쁜 실패**(다른 롯트의 증명서를 주는 것)에 가까워진다.
+    """
+    # 표기가 확장자 **뒤**에 오기도 하고("X.pdf의 사본") **앞**에 오기도 한다("X (1).pdf").
+    # 그래서 뗀 다음 쪼개고, 쪼갠 뒤 한 번 더 뗀다. 겹쳐 붙는 것("X의 사본 (1).pdf")까지
+    # 잡으려면 더 이상 줄지 않을 때까지 돌려야 한다.
+    name = _strip_copy_markers(f.name)
+    stem, dot, ext = name.rpartition(".")
+    if not dot:  # 확장자가 없는 이름
+        stem, ext = name, ""
+    return (_strip_copy_markers(stem).casefold(), ext.casefold(), f.size)
 
 
 def _dedup(files: Sequence[DriveFile]) -> tuple[DriveFile, ...]:

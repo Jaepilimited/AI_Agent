@@ -6,7 +6,9 @@
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
-    body { padding: 0; margin: 0; }
+    /* style.css 의 `overflow:hidden`(채팅 SPA 전용)을 되살린다 — 이 페이지도
+       평가 목록이 화면 밖으로 자라는 평범한 문서다. coa_finder 와 같은 사고다 */
+    html, body { padding: 0; margin: 0; height: auto; overflow: auto; }
     .eval-root { padding: 16px 20px; max-width: 1600px; margin: 0 auto; }
     .eval-status {
       position: sticky; top: 0; background: var(--bg, #fff);

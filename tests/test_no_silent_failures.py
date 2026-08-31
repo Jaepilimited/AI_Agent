@@ -646,6 +646,54 @@ def test_no_stray_control_chars_in_source():
     assert ok, msg
 
 
+def test_document_pages_restore_scrolling():
+    """⛔ `style.css` 를 링크한 문서형 페이지가 스크롤을 되살렸는가.
+
+    `style.css` 는 채팅 SPA 용이라 `html, body { height:100%; overflow:hidden }` 을 건다.
+    테마 토큰(`--bg`·`--text`…)만 쓰려고 그 파일을 링크한 **평범한 문서 페이지**는
+    그 규칙까지 물려받아 **스크롤이 통째로 죽는다.**
+
+    에러도 빈 화면도 아니다 — 첫 화면은 멀쩡히 그려지고 그 아래가 없는 것처럼 보인다.
+    실제로 `coa_finder.html` 이 96행을 찾아 놓고 **두 번째 행부터 볼 수 없었다**
+    (2026-09-01 사용자 제보: "스크롤이 없는걸까용?? 안내려가서"). 같은 결함이
+    `eval_review.html` 에도 있었다.
+    """
+    from app.core.static_checks import page_scroll_restored
+
+    ok, msg = page_scroll_restored()
+    assert ok, msg
+
+
+def test_scroll_check_actually_fails_when_the_page_regresses(tmp_path, monkeypatch):
+    """검사가 **진짜로 걸러내는지** 확인한다.
+
+    ⛔ 통과만 확인하면 아무것도 안 하는 검사와 구분되지 않는다 — 이 저장소에서
+    "만들어 놓고 배선하지 않아 한 번도 안 돌던" 사고가 이미 두 번 났다.
+    """
+    import re as _re
+    from app.core import static_checks as sc
+
+    page = tmp_path / "app" / "static"
+    page.mkdir(parents=True)
+    (page / "style.css").write_text(
+        "html, body { height: 100%; overflow: hidden; }", encoding="utf-8")
+    (page / "regressed.html").write_text(
+        '<link rel="stylesheet" href="/static/style.css"><body>긴 표</body>',
+        encoding="utf-8")
+    monkeypatch.setattr(sc, "ROOT", str(tmp_path))
+
+    ok, msg = sc.page_scroll_restored()
+    assert not ok, "스크롤을 죽인 페이지를 통과시켰다"
+    assert "regressed.html" in msg
+
+    (page / "regressed.html").write_text(
+        '<link rel="stylesheet" href="/static/style.css">'
+        "<style>html, body { height: auto; overflow: auto; }</style><body>긴 표</body>",
+        encoding="utf-8")
+    ok, msg = sc.page_scroll_restored()
+    assert ok, msg
+
+
 def test_welcome_blocks_share_one_width():
     """⛔ 첫 화면 블록들의 폭이 갈리면 **가운데 정렬이 깨진 것처럼 보인다.**
 
