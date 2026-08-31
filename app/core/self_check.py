@@ -912,6 +912,26 @@ def _check_jandi_relay() -> CheckResult:
     return CheckResult(True, f"최근 7일 발송 {counts['sent']}건 · 대기 {counts['pending']}건")
 
 
+def _check_drive_shared_access() -> CheckResult:
+    """사용자 OAuth 로 공유드라이브가 보이는가 (인증서류 찾기의 전제).
+
+    ⚠️ 토큰이 죽어도 화면은 에러가 아니라 **'전부 없음'** 으로 보인다 — 조용한 실패다.
+       그래서 "몇 건 나왔나"가 아니라 "응답이 왔나"로 판정한다.
+    """
+    from app.core.google_auth import GoogleAuthManager
+    from app.core.google_workspace import search_drive
+
+    email = "jeffrey@skin1004korea.com"
+    creds = GoogleAuthManager().get_credentials(email)
+    if creds is None:
+        return CheckResult(False, f"{email} 구글 미연결 — 인증서류 찾기가 동작하지 않는다")
+    try:
+        files = search_drive(creds, "COA", max_results=1)
+    except Exception as exc:                          # noqa: BLE001
+        return CheckResult(False, f"드라이브 조회 실패: {str(exc)[:200]}")
+    return CheckResult(True, f"공유드라이브 조회 정상 (표본 {len(files)}건)")
+
+
 CHECKS: list[Check] = [
     Check("ad_sync_fresh", "batch", SEV_CRITICAL,
           "AD 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
@@ -954,6 +974,8 @@ CHECKS: list[Check] = [
           "노션 허용 페이지를 인테그레이션이 볼 수 있는가", _check_notion_allowlist),
     Check("qdrant", "datasource", SEV_CRITICAL,
           "Qdrant 기본 컬렉션에 데이터가 있는가", _check_qdrant),
+    Check("drive_shared_access", "datasource", SEV_WARNING,
+          "공유드라이브 조회가 살아 있는가 (인증서류 찾기)", _check_drive_shared_access),
     Check("canary_answers", "quality", SEV_WARNING,
           "대표 질문 답변이 구조적으로 온전한가", _check_canary_answers),
     # ⚠️ id 를 `feedback_spike` 에서 바꿨다 (2026-08-26). 재는 대상이 달라졌는데

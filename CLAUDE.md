@@ -907,9 +907,9 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 - **왜 만들었나**: AD 동기화가 **6일간 매일 밤 실패**했는데 아무도 몰랐다. 크론은 돌았고
   로그도 남았지만 읽는 사람이 없었다. `quality_monitor` 는 답변 품질만 본다 — 배치가 죽었는지,
   데이터가 썩었는지, 권한이 뚫렸는지는 아무도 감시하지 않았다.
-- **검사 39종** (2026-08-27 실측 — 이 줄은 "23종 / static 6" 으로 오래 낡아 있었고,
+- **검사 40종** (2026-08-27 실측 — 이 줄은 "23종 / static 6" 으로 오래 낡아 있었고,
   이틀 만에 또 낡았다. 손으로 센 숫자는 반드시 낡는다: `len(CHECKS)` 로 확인할 것):
-  batch 6 / integrity 4 / permission 4 / datasource 5 / quality 5 / **static 15**
+  batch 6 / integrity 4 / permission 4 / datasource 6 / quality 5 / **static 15**
 - **static 검사는 `app/core/static_checks.py` 가 판정한다** (2026-08-13 추가).
   개발 중에는 `tests/test_no_silent_failures.py` 가, 서버에서는 자가 점검이 **같은 함수**를
   부른다 — ⛔ **서버에는 pytest 도 `tests/` 도 node 도 없다.** 테스트만 만들어 두면

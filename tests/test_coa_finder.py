@@ -189,6 +189,22 @@ def test_copies_collapse_to_one_row():
     assert len(v.files) == 1
 
 
+def test_different_extensions_are_not_collapsed_as_copies():
+    """같은 이름·같은 크기라도 확장자가 다르면 서로 다른 문서다 (dedup 대상 아님).
+
+    ⛔ 확장자를 접었을 때 잃는 것: pdf 와 xlsx 는 진짜 서로 다른 두 증명서일 수 있는데,
+       하나로 접히면 사용자는 하나만 있는 줄 안다 — '의 사본' 접기와 반대로,
+       여기서는 접지 않는 것이 맞는 판정이다.
+    """
+    files = [
+        _f("COA_FE200.pdf", size=82070, fid="a"),
+        _f("COA_FE200.xlsx", size=82070, fid="b"),
+    ]
+    v = cf.classify_lot("FE200", files)
+    assert v.status == cf.MANY
+    assert len(v.files) == 2
+
+
 def test_two_real_candidates_are_all_shown():
     files = [_f("COA_A_FE103C", size=100, fid="a"),
              _f("COA_B_FE103C", size=200, fid="b")]
@@ -400,3 +416,10 @@ def test_msds_note_for_truly_empty_description():
     got = list(cf.find_all(MagicMock(), rows, search=lambda *a, **k: []))
     assert got[0].msds.status == cf.NONE
     assert got[0].msds.note == "제품명이 비어 있습니다"
+
+
+def test_self_check_has_drive_access_probe():
+    """토큰이 만료되면 이 기능은 에러가 아니라 '전부 없음' 으로 보인다."""
+    from app.core.self_check import CHECKS
+
+    assert "drive_shared_access" in {c.id for c in CHECKS}
