@@ -558,6 +558,16 @@ def build_chartjs_config(
                 "beginAtZero": True,
             }
 
+            # 선 그래프는 값 라벨을 점 **위**에 그린다. 축을 데이터에 딱 맞추면
+            # 최고점이 플롯 천장에 붙어 라벨 자리가 없어지고, 그러면 라벨이
+            # 범례 위로 올라가 겹쳐 찍힌다 (2026-09-01 제보).
+            # ⚠️ 이건 자리를 만들어 주는 것일 뿐 **보증이 아니다** — 겹치지 않는다는
+            #    보증은 chat.js 의 경계 판정이 한다. 둘 다 있어야 한다:
+            #    여백만 두면 데이터 모양에 따라 다시 붙고, 경계 판정만 두면
+            #    최고점 라벨이 늘 점 아래로 뒤집혀 읽기 나쁘다.
+            if chart_type == "line":
+                y_axis["grace"] = "8%"
+
             if is_horizontal:
                 config["options"]["indexAxis"] = "y"
                 x_axis, y_axis = y_axis, x_axis

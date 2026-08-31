@@ -646,6 +646,47 @@ def test_no_stray_control_chars_in_source():
     assert ok, msg
 
 
+def test_chart_value_labels_stay_inside_the_plot():
+    """값 라벨이 플롯 경계를 벗어나지 않는가 (막대·선 **둘 다**).
+
+    막대 쪽은 2026-08-31 에 고쳤는데 선 쪽이 빠져 있었다. `chartArea.top` 위는
+    범례 자리라, 최고점 라벨이 거기로 올라가 범례 글자와 그대로 겹쳐 찍혔다
+    (2026-09-01 제보: "차트에 글자가 겹쳐보여 불안해보임" — `3470.4만` 이
+    `total_sales2` 위에 얹혔다).
+
+    ⚠️ 잘리는 게 아니라 **겹친다** — 둘 다 못 읽게 되고 캔버스는 에러 없이 그려진다.
+    """
+    from app.core.static_checks import chart_label_bounds
+
+    ok, msg = chart_label_bounds()
+    assert ok, msg
+
+
+def test_line_charts_leave_headroom_for_value_labels():
+    """선 그래프 y축에 여백이 있는가.
+
+    축을 데이터에 딱 맞추면 최고점이 플롯 천장에 붙어 라벨 자리가 사라진다.
+    ⚠️ 여백은 **보증이 아니다** — 겹치지 않는 보증은 chat.js 의 경계 판정이 한다.
+       여기서 지키는 것은 "보통은 라벨이 점 위에 온다" 는 읽기 쉬움 쪽이다.
+    ⚠️ 막대에는 걸지 않는다 — 막대 라벨은 자리가 없으면 막대 **안쪽**으로 들어간다.
+    """
+    import json
+
+    from app.core.chart import build_chartjs_config
+
+    rows = [{"month": "2026-06", "total_sales1": 33399393},
+            {"month": "2026-07", "total_sales1": 34704000},
+            {"month": "2026-08", "total_sales1": 14769000}]
+    spec = {"chart_type": "line", "x_column": "month", "y_column": "total_sales1",
+            "title": "월별 매출", "x_label": "월", "y_label": "매출액"}
+
+    line = json.loads(build_chartjs_config(spec, rows))
+    assert line["options"]["scales"]["y"].get("grace"), "선 그래프 y축에 여백이 없다"
+
+    bar = json.loads(build_chartjs_config(dict(spec, chart_type="bar"), rows))
+    assert bar["options"]["scales"]["y"].get("grace") is None, "막대에는 여백을 걸지 않는다"
+
+
 def test_document_pages_restore_scrolling():
     """⛔ `style.css` 를 링크한 문서형 페이지가 스크롤을 되살렸는가.
 

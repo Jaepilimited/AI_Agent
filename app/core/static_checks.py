@@ -281,7 +281,26 @@ def chart_label_bounds() -> Tuple[bool, str]:
     # 막대 안쪽에 넣을 땐 글자색을 바꿔야 한다 — 안 바꾸면 묻혀서 잘린 것과 같다.
     if '"#fff"' not in body:
         return False, "막대 안쪽 라벨의 글자색 전환이 없다 (채운 막대에 묻힌다)"
-    return True, "막대 라벨이 플롯 경계를 본다"
+
+    # ⛔ 선 그래프도 같은 경계를 봐야 한다. 막대만 고쳐 두고 선을 빼놨더니
+    #    최고점 라벨이 `chartArea.top` 위(= 범례 자리)로 올라가 범례 글자와
+    #    겹쳐 찍혔다 (2026-09-01 제보). 같은 규칙을 두 경로에 걸어야 한다 —
+    #    이 저장소에서 "한쪽 경로만 고쳐 답이 갈리던" 사고가 이미 여러 번 났다.
+    lstart = js.find('id: "inlineLineLabels"')
+    if lstart < 0:
+        return False, "inlineLineLabels 플러그인을 찾지 못했다"
+    lbody = js[lstart:lstart + 4000]
+    lneed = [
+        ("플롯 영역을 읽지 않는다", r"chartArea"),
+        ("위쪽 경계와 비교하지 않는다", r"<\s*_top\b"),
+        ("아래쪽 경계와 비교하지 않는다", r">\s*_bottom\b"),
+        ("경계에 걸렸을 때 점 아래로 뒤집지 않는다", r"textBaseline\s*=\s*_below"),
+    ]
+    lmissing = [why for why, pat in lneed if not re.search(pat, lbody)]
+    if lmissing:
+        return False, ("선 라벨이 플롯 경계를 안 본다 — 최고점 라벨이 범례와 겹친다: "
+                       + ", ".join(lmissing))
+    return True, "막대·선 라벨이 플롯 경계를 본다"
 
 
 def fi_prompt_masking() -> Tuple[bool, str]:

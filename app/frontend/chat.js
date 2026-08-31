@@ -2899,12 +2899,30 @@
                 var lx = Math.min(Math.max(point.x, chart.chartArea.left + halfW), chart.chartArea.right - halfW);
                 var bx1 = lx - halfW - 2, bx2 = lx + halfW + 2;
                 var by2 = point.y - 4, by1 = by2 - 15;
+                /* ⛔ 위쪽 경계도 봐야 한다. 여긴 좌우만 보고 있었다 — 막대 쪽은 이미
+                   보고 있는데(inlineBarLabels) 선 쪽만 빠져 있었다.
+                   `chartArea.top` **위**는 범례 자리다. 최고점의 라벨이 거기로 올라가
+                   범례 글자와 겹쳐 찍혔다 (2026-09-01 제보: "글자가 겹쳐보여 불안해보임"
+                   — `3470.4만` 이 `total_sales2` 위에 그대로 얹혔다).
+                   ⚠️ 잘리는 게 아니라 **겹쳐서** 둘 다 못 읽게 된다. 캔버스는
+                   에러 없이 그려지므로 사람이 볼 때까지 아무도 모른다.
+                   위가 좁으면 점 **아래**로 뒤집고, 아래도 좁으면 그리지 않는다 —
+                   범례를 덮어쓰는 것보다 한 개를 비우는 편이 낫다 (값은 툴팁에 있다). */
+                var _area = chart.chartArea || {};
+                var _top = _area.top || 0;
+                var _bottom = _area.bottom || chart.height;
+                var _below = false;
+                if (by1 < _top + 2) {
+                  _below = true;
+                  by1 = point.y + 4; by2 = by1 + 15;
+                  if (by2 > _bottom - 2) { ctx.restore(); return; }
+                }
                 if (_collides(bx1, by1, bx2, by2)) { ctx.restore(); return; }
                 drawnRects.push([bx1, by1, bx2, by2]);
                 ctx.fillStyle = labelColor;
                 ctx.textAlign = "center";
-                ctx.textBaseline = "bottom";
-                ctx.fillText(fmt, lx, point.y - 6);
+                ctx.textBaseline = _below ? "top" : "bottom";
+                ctx.fillText(fmt, lx, _below ? point.y + 6 : point.y - 6);
                 ctx.restore();
               });
             });
