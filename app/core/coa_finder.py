@@ -247,37 +247,63 @@ def _to_files(raw: Iterable[dict]) -> list[DriveFile]:
     ]
 
 
+def _msds_name_matches(name: str, terms: Sequence[str]) -> bool:
+    """파일명이 'msds' 와 검색에 쓴 낱말을 전부 담고 있는지 본다.
+
+    ⛔ search_drive 의 fullText 매칭이 열려 있어, 검색어를 본문 어딘가에만
+       가진 무관한 문서(인증 서류 리스트, 등록 현황표 등)가 걸린다. 파일명으로
+       다시 좁혀 그런 잡음을 걷어낸다 — 없다고 답하는 편이 잡음을 답으로 주는
+       것보다 낫다.
+    """
+    lowered = name.casefold()
+    if "msds" not in lowered:
+        return False
+    return all(t.casefold() in lowered for t in terms)
+
+
+def _filter_msds_candidates(files: Iterable[DriveFile],
+                             terms: Sequence[str]) -> list[DriveFile]:
+    return [f for f in files if _msds_name_matches(f.name, terms)]
+
+
 def _one(creds, row: Row, search) -> Result:
     # COA — 롯트 정확 매칭. exact_name 으로 Drive 의 토큰 매칭 잡음을 걷어낸다
+    # ⚠️ try 는 네트워크 호출만 감싼다 — classify_lot 은 순수 함수라 여기서
+    #    터지면 진짜 버그다. 조회 실패로 위장해 삼키지 않는다
     if row.lot:
         try:
             raw = search(creds, row.lot, max_results=25, exact_name=row.lot)
-            coa = classify_lot(row.lot, _to_files(raw))
         except Exception as exc:                      # noqa: BLE001
             # ⚠️ 실패를 삼키지 마라 — 프로덕션은 INFO 를 버린다
             logger.warning("coa_finder_query_failed",
                            extra={"lot": row.lot, "error": str(exc)[:200]})
             coa = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+        else:
+            coa = classify_lot(row.lot, _to_files(raw))
     else:
         coa = Verdict(NONE, (), "롯트가 비어 있습니다")
 
     # MSDS — 롯트가 없다. 제품 고유어 + 'MSDS' 로 찾는다
     terms = product_terms(row.description)
     if terms:
+        query_terms = terms[:4]
         try:
-            raw = search(creds, " ".join(terms[:4] + ["MSDS"]), max_results=25,
+            raw = search(creds, " ".join(query_terms + ["MSDS"]), max_results=25,
                          widen=False)
-            files = _dedup(_to_files(raw))
+        except Exception as exc:                      # noqa: BLE001
+            logger.warning("msds_finder_query_failed",
+                           extra={"sku": row.sku, "error": str(exc)[:200]})
+            msds = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+        else:
+            files = _dedup(_filter_msds_candidates(_to_files(raw), query_terms))
             if not files:
                 msds = Verdict(NONE, (), "")
             elif len(files) == 1:
                 msds = Verdict(FOUND, files, "제품명으로 찾았습니다 (롯트 무관)")
             else:
                 msds = Verdict(MANY, files, "제품명으로 찾았습니다 (롯트 무관)")
-        except Exception as exc:                      # noqa: BLE001
-            logger.warning("msds_finder_query_failed",
-                           extra={"sku": row.sku, "error": str(exc)[:200]})
-            msds = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+    elif row.description:
+        msds = Verdict(NONE, (), "제품명에서 검색에 쓸 낱말을 찾지 못했습니다")
     else:
         msds = Verdict(NONE, (), "제품명이 비어 있습니다")
 

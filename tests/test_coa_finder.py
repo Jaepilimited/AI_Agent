@@ -293,3 +293,96 @@ def test_find_all_disables_internal_widening_for_msds():
     msds_calls = [s for s in seen if "MSDS" in s[0]]
     assert msds_calls, "MSDS 조회가 일어나지 않았다"
     assert all(w is False for _, w in msds_calls), "MSDS 조회가 widen 을 끄지 않았다"
+
+
+def test_msds_search_filters_out_body_only_matches():
+    """실측 사고 (2026-08-31 라이브 조회): 검색어가 본문에만 스친 무관 문서가
+    최상위로 나왔다 — 인증 서류 리스트·등록 현황표는 MSDS 가 아니다."""
+    rows = [cf.Row("EUSKA032", "SKIN1004 Madagascar Centella Ampoule 100ml", "", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if "MSDS" not in query:
+            return []
+        return [
+            {"id": "hit", "name": "MSDS_SKIN1004 MADAGASCAR CENTELLA AMPOULE 100ML.pdf",
+             "size": 100, "webViewLink": "http://d/1"},
+            {"id": "cert-list", "name": "★ [SK] 인증 서류 리스트",
+             "size": 200, "webViewLink": "http://d/2"},
+            {"id": "registration", "name": "Good brands Morocco - Registration.xlsx",
+             "size": 300, "webViewLink": "http://d/3"},
+            {"id": "other-msds", "name": "MSDS_OTHER PRODUCT LINE.pdf",
+             "size": 400, "webViewLink": "http://d/4"},
+        ]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].msds.status == cf.FOUND
+    assert [f.id for f in got[0].msds.files] == ["hit"]
+
+
+def test_msds_search_matches_real_werc_filename():
+    """AMPOULE 100ML 은 잡아야 하는 실제 파일명 (팀 리드 실측)."""
+    rows = [cf.Row("EUSKB050", "SKIN1004 Madagascar Centella Cream 75ml", "", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if "MSDS" not in query:
+            return []
+        return [{"id": "1",
+                 "name": "SKIN1004 Madagascar Centella Cream 75ML_MSDS(WERCS).pdf",
+                 "size": 100, "webViewLink": "http://d/1"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].msds.status == cf.FOUND
+
+
+def test_msds_search_allows_legitimate_ambiguity():
+    """'Cream 75ml' 이 'Soothing Cream 75ml' MSDS 에도 걸리는 것은 정상 여러건이다
+    — 잡음은 걸러도 정당한 모호함까지 지우면 안 된다."""
+    rows = [cf.Row("EUSKB050", "SKIN1004 Madagascar Centella Cream 75ml", "", 1)]
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if "MSDS" not in query:
+            return []
+        return [
+            {"id": "1", "name": "SKIN1004 Madagascar Centella Cream 75ML_MSDS(WERCS).pdf",
+             "size": 100, "webViewLink": "http://d/1"},
+            {"id": "2", "name": "MSDS_SKIN1004 MADAGASCAR CENTELLA SOOTHING CREAM 75ml.pdf",
+             "size": 200, "webViewLink": "http://d/2"},
+        ]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].msds.status == cf.MANY
+    assert len(got[0].msds.files) == 2
+
+
+def test_classify_lot_bug_surfaces_instead_of_masquerading_as_a_network_failure():
+    """⛔ try 를 조회 함수 하나로만 좁혀야 한다 — classify_lot 버그를
+    '조회에 실패했습니다' 로 감추면 진짜 결함이 확인필요 뒤에 숨는다."""
+    rows = [cf.Row("A", "앰플", "LOT1", 1)]
+
+    def fake_search(creds, query, **k):
+        return [{"id": "1", "name": "LOT1.pdf", "size": 1, "webViewLink": "http://d/1"}]
+
+    with patch("app.core.coa_finder.classify_lot", side_effect=AttributeError("boom")):
+        with pytest.raises(AttributeError):
+            list(cf.find_all(MagicMock(), rows, search=fake_search))
+
+
+def test_msds_note_reflects_unusable_description_not_emptiness():
+    """제품명이 브랜드어뿐이라 검색어가 안 나온 것과, 제품명 자체가 빈 것은
+    다른 사실이다 — 사용자가 쓴 제품명을 '비어 있다' 고 답하면 안 된다."""
+    rows = [cf.Row("A", "SKIN1004 Madagascar Centella", "", 1)]
+
+    got = list(cf.find_all(MagicMock(), rows, search=lambda *a, **k: []))
+    assert got[0].msds.status == cf.NONE
+    assert got[0].msds.note == "제품명에서 검색에 쓸 낱말을 찾지 못했습니다"
+
+
+def test_msds_note_for_truly_empty_description():
+    rows = [cf.Row("A", "", "", 1)]
+
+    got = list(cf.find_all(MagicMock(), rows, search=lambda *a, **k: []))
+    assert got[0].msds.status == cf.NONE
+    assert got[0].msds.note == "제품명이 비어 있습니다"
