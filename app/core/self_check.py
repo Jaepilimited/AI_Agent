@@ -916,17 +916,31 @@ def _check_drive_shared_access() -> CheckResult:
     """사용자 OAuth 로 공유드라이브가 보이는가 (인증서류 찾기의 전제).
 
     ⚠️ 토큰이 죽어도 화면은 에러가 아니라 **'전부 없음'** 으로 보인다 — 조용한 실패다.
-       그래서 "몇 건 나왔나"가 아니라 "응답이 왔나"로 판정한다.
+       그래서 "몇 건 나왔나"가 아니라 "응답이 왔나"로 판정한다. **빈 결과(0건)는 고장이
+       아니다** — 검색어에 맞는 파일이 정말 없을 수 있다.
+
+    ⛔ `get_credentials()` 는 미연결·만료·일시 오류를 전부 `None` 하나로 뭉갠다.
+       그러면 "예전에 연결했다가 토큰이 죽은 사람"이 "한 번도 연결한 적 없는 사람"과
+       같은 안내를 받는다 — 운영자가 잘못된 조치(재연결 안내 대신 방치)를 하게 된다.
+       `load_credentials()` 로 원인을 구분해 뭘 해야 하는지 명확히 남긴다.
     """
     from app.core.google_auth import GoogleAuthManager
     from app.core.google_workspace import search_drive
 
     email = "jeffrey@skin1004korea.com"
-    creds = GoogleAuthManager().get_credentials(email)
-    if creds is None:
+    outcome = GoogleAuthManager().load_credentials(email)
+    if outcome.status == "disconnected":
         return CheckResult(False, f"{email} 구글 미연결 — 인증서류 찾기가 동작하지 않는다")
+    if outcome.status == "invalid":
+        return CheckResult(
+            False,
+            f"{email} 구글 인증 만료/무효 — 재연결이 필요하다 "
+            "(인증서류 찾기가 조용히 '전부 없음' 으로 보일 수 있다)",
+        )
+    if outcome.status == "transient_error":
+        return CheckResult(False, f"{email} 구글 인증 조회 일시 실패 — 다음 실행에서 재확인")
     try:
-        files = search_drive(creds, "COA", max_results=1)
+        files = search_drive(outcome.credentials, "COA", max_results=1)
     except Exception as exc:                          # noqa: BLE001
         return CheckResult(False, f"드라이브 조회 실패: {str(exc)[:200]}")
     return CheckResult(True, f"공유드라이브 조회 정상 (표본 {len(files)}건)")

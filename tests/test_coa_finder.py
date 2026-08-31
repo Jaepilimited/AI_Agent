@@ -423,3 +423,79 @@ def test_self_check_has_drive_access_probe():
     from app.core.self_check import CHECKS
 
     assert "drive_shared_access" in {c.id for c in CHECKS}
+
+
+def test_drive_access_probe_reports_disconnected(monkeypatch):
+    """한 번도 연결한 적 없는 사람 — '미연결' 이라고 말해야 한다."""
+    from app.core import google_auth, self_check
+
+    monkeypatch.setattr(
+        google_auth.GoogleAuthManager, "load_credentials",
+        lambda self, email: google_auth.CredentialLoadOutcome(
+            "disconnected", error_code="oauth_missing"),
+    )
+    r = self_check._check_drive_shared_access()
+    assert r.ok is False
+    assert "미연결" in r.detail
+
+
+def test_drive_access_probe_reports_expired_token_distinctly(monkeypatch):
+    """⛔ 예전엔 연결했다가 토큰이 죽은 사람에게 '미연결'이라고 하면 안 된다 —
+    이 검사가 존재하는 이유가 바로 이 구분이다."""
+    from app.core import google_auth, self_check
+
+    monkeypatch.setattr(
+        google_auth.GoogleAuthManager, "load_credentials",
+        lambda self, email: google_auth.CredentialLoadOutcome(
+            "invalid", error_code="oauth_expired"),
+    )
+    r = self_check._check_drive_shared_access()
+    assert r.ok is False
+    assert "미연결" not in r.detail
+    assert "만료" in r.detail or "무효" in r.detail
+
+
+def test_drive_access_probe_reports_transient_error(monkeypatch):
+    """구글 쪽 일시 오류는 재연결 안내가 아니라 '다시 확인' 으로 말해야 한다."""
+    from app.core import google_auth, self_check
+
+    monkeypatch.setattr(
+        google_auth.GoogleAuthManager, "load_credentials",
+        lambda self, email: google_auth.CredentialLoadOutcome(
+            "transient_error", error_code="google_error"),
+    )
+    r = self_check._check_drive_shared_access()
+    assert r.ok is False
+    assert "일시" in r.detail
+
+
+def test_drive_access_probe_search_failure_is_reported(monkeypatch):
+    from app.core import google_auth, google_workspace, self_check
+
+    monkeypatch.setattr(
+        google_auth.GoogleAuthManager, "load_credentials",
+        lambda self, email: google_auth.CredentialLoadOutcome(
+            "ready", credentials=object()),
+    )
+
+    def _boom(*a, **k):
+        raise RuntimeError("timeout talking to drive")
+
+    monkeypatch.setattr(google_workspace, "search_drive", _boom)
+    r = self_check._check_drive_shared_access()
+    assert r.ok is False
+    assert "timeout talking to drive" in r.detail
+
+
+def test_drive_access_probe_empty_result_is_not_a_failure(monkeypatch):
+    """검색어에 맞는 파일이 없는 것은 고장이 아니다 — 응답이 왔으면 통과."""
+    from app.core import google_auth, google_workspace, self_check
+
+    monkeypatch.setattr(
+        google_auth.GoogleAuthManager, "load_credentials",
+        lambda self, email: google_auth.CredentialLoadOutcome(
+            "ready", credentials=object()),
+    )
+    monkeypatch.setattr(google_workspace, "search_drive", lambda *a, **k: [])
+    r = self_check._check_drive_shared_access()
+    assert r.ok is True
