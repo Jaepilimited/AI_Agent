@@ -288,7 +288,68 @@ def find_user_by_google_email(email: str) -> Optional[dict]:
         "SELECT id, display_name, ad_user_id FROM users WHERE LOWER(email) = LOWER(%s)",
         (email,),
     )
-    return row or _find_by_linked_google_account(email)
+    return (row
+            or _find_by_linked_google_account(email)
+            or _find_by_company_local_part(email))
+
+
+#: 로컬파트 매칭을 **절대 적용하면 안 되는** 도메인. 개인 메일 주소의 로컬파트가
+#: 직원 것과 우연히 겹치는 일은 흔하다 (`hong@gmail.com` vs `hong@cravercorp.com`).
+_PUBLIC_MAIL_DOMAINS = frozenset({
+    "gmail.com", "googlemail.com", "naver.com", "daum.net", "hanmail.net",
+    "kakao.com", "nate.com", "outlook.com", "hotmail.com", "live.com",
+    "yahoo.com", "icloud.com", "me.com", "qq.com", "163.com", "proton.me",
+})
+
+
+def company_domains() -> set[str]:
+    """회사 메일 도메인을 **AD 에 실제로 있는 값**으로 판정한다.
+
+    ⛔ 손으로 적으면 반드시 낡고, 낡으면 에러가 아니라 조용한 매칭 실패다
+       (`{{VALUES:Continent1}}` 를 손으로 적었다가 겪은 것과 같은 부류).
+       2026-09-01 실측: skin1004korea.com 112 · cravercorp.com 110 ·
+       umma.io 10 · b2link.co.kr 1 — **회사 도메인이 하나가 아니다.**
+    """
+    rows = fetch_all(
+        "SELECT DISTINCT LOWER(SUBSTRING_INDEX(email, '@', -1)) AS d "
+        "FROM ad_users WHERE email LIKE %s",
+        ("%@%",),
+    )
+    return {r["d"] for r in rows if r["d"] and r["d"] not in _PUBLIC_MAIL_DOMAINS}
+
+
+def _find_by_company_local_part(email: str) -> Optional[dict]:
+    """회사 도메인이 **둘 이상**이라, 구글이 돌려준 대표 주소와 AD 주소가 다를 수 있다.
+
+    실측(2026-09-01): AD 의 `mail` 이 빈 238명은 `userPrincipalName` 이
+    `@cravercorp.com` 인데, 그중 다수가 구글에는 `@skin1004korea.com` 으로
+    로그인한다 (연결 기록 4건 중 3건). 별칭이면 구글은 **대표 주소만** 돌려주므로
+    문자열 비교로는 영원히 안 맞는다.
+
+    이어 붙일 수 있는 근거도 실측했다:
+      · AD 활성 436명의 로컬파트가 436개 — **충돌 0건** (사람을 유일하게 가리킨다)
+      · `mail`·UPN 을 둘 다 가진 198명 전원이 **로컬파트가 동일** (다른 경우 0건)
+
+    ⛔ **회사 도메인일 때만 적용한다.** 개인 메일까지 허용하면 `hong@gmail.com`
+       하나로 `hong@cravercorp.com` 직원의 비밀번호를 바꿀 수 있다 — 구글 인증은
+       통과하므로 방어선이 이 조건뿐이다.
+    ⛔ 둘 이상 걸리면 아무것도 고르지 않는다.
+    """
+    local, _, domain = email.strip().lower().partition("@")
+    if not local or not domain or domain not in company_domains():
+        return None
+
+    rows = fetch_all(
+        "SELECT u.id, u.display_name, u.ad_user_id FROM users u "
+        "JOIN ad_users a ON u.ad_user_id = a.id "
+        "WHERE a.is_active = 1 AND LOWER(SUBSTRING_INDEX(a.email, '@', 1)) = %s",
+        (local,),
+    )
+    if len(rows) == 1:
+        return rows[0]
+    if rows:
+        logger.warning("pwreset_google_ambiguous_local_part", count=len(rows))
+    return None
 
 
 def _find_by_linked_google_account(email: str) -> Optional[dict]:

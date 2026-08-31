@@ -238,6 +238,7 @@ def _stub_lookup(monkeypatch, users, linked):
 
     monkeypatch.setattr(pwg, "fetch_one", fetch_one)
     monkeypatch.setattr(pwg, "fetch_all", lambda sql, params=(): users)
+    monkeypatch.setattr(pwg, "_find_by_company_local_part", lambda email: None)
     import app.core.google_auth as ga
     monkeypatch.setattr(ga, "GoogleAuthManager", FakeManager)
 
@@ -284,6 +285,66 @@ def test_no_link_and_no_matching_email_means_the_admin_path(monkeypatch):
     _stub_lookup(monkeypatch, users, linked={})
 
     assert pwg.find_user_by_google_email("stranger@gmail.com") is None
+
+
+# ─────────────── 회사 도메인이 둘이라 문자열 비교로는 안 맞는다 ───────────────
+# 실측: AD 의 mail 이 빈 238명은 UPN 이 @cravercorp.com 인데, 구글에는 다수가
+# @skin1004korea.com 으로 로그인한다. 별칭이면 구글은 대표 주소만 돌려준다.
+
+def _stub_local_part(monkeypatch, ad_rows, domains=("cravercorp.com", "skin1004korea.com")):
+    monkeypatch.setattr(pwg, "fetch_one", lambda sql, params=(): None)
+    monkeypatch.setattr(pwg, "_find_by_linked_google_account", lambda email: None)
+    monkeypatch.setattr(pwg, "company_domains", lambda: set(domains))
+    monkeypatch.setattr(pwg, "fetch_all", lambda sql, params=(): [
+        r for r in ad_rows if r["_local"] == params[0]
+    ])
+
+
+def test_a_different_company_domain_still_finds_the_same_person(monkeypatch):
+    """AD 는 `hong@cravercorp.com`, 구글은 `hong@skin1004korea.com` — 같은 사람이다.
+    로컬파트는 조직 전체에서 유일하다(실측 436/436, 충돌 0)."""
+    _stub_local_part(monkeypatch, [
+        {"id": 5, "display_name": "홍", "ad_user_id": 55, "_local": "hong"},
+    ])
+
+    found = pwg.find_user_by_google_email("hong@skin1004korea.com")
+    assert found and found["id"] == 5
+
+
+def test_a_personal_account_can_never_borrow_an_employee_local_part(monkeypatch):
+    """⛔ 이 조건이 유일한 방어선이다 — 구글 인증 자체는 통과하기 때문이다.
+    `hong@gmail.com` 으로 `hong@cravercorp.com` 직원 비밀번호를 바꿀 수 있으면 끝이다."""
+    _stub_local_part(monkeypatch, [
+        {"id": 5, "display_name": "홍", "ad_user_id": 55, "_local": "hong"},
+    ])
+
+    assert pwg.find_user_by_google_email("hong@gmail.com") is None
+
+
+@pytest.mark.parametrize("public", ["gmail.com", "naver.com", "outlook.com", "kakao.com"])
+def test_public_providers_are_never_company_domains(public):
+    """AD 에 개인 메일이 한 건 섞여 들어와도 구멍이 되지 않게 한다."""
+    assert public in pwg._PUBLIC_MAIL_DOMAINS
+
+
+def test_company_domains_are_read_from_ad_not_hardcoded():
+    """⛔ 손으로 적으면 낡고, 낡으면 에러가 아니라 조용한 매칭 실패다.
+    회사 도메인은 하나가 아니다 (실측 4개)."""
+    src = inspect.getsource(pwg.company_domains)
+    assert "ad_users" in src, "AD 에서 읽지 않는다"
+    # docstring 의 실측 근거는 남겨도 된다 — 막을 것은 **로직**의 리터럴이다.
+    body = src.split('"""')[-1]
+    for hardcoded in ("skin1004korea.com", "cravercorp.com"):
+        assert hardcoded not in body, "회사 도메인을 로직에 박았다"
+
+
+def test_two_people_sharing_a_local_part_pick_nothing(monkeypatch):
+    _stub_local_part(monkeypatch, [
+        {"id": 5, "display_name": "A", "ad_user_id": 55, "_local": "hong"},
+        {"id": 6, "display_name": "B", "ad_user_id": 66, "_local": "hong"},
+    ])
+
+    assert pwg.find_user_by_google_email("hong@cravercorp.com") is None
 
 
 # ────────────────────────── 화면 ──────────────────────────

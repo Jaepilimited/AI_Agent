@@ -223,7 +223,17 @@ def _entry_to_user(entry) -> dict:
 
     username = entry.sAMAccountName.value
     display = entry.displayName.value if entry.displayName and entry.displayName.value else entry.name.value
+    # ⛔ `mail` 만 보면 절반이 이메일 없는 사람이 된다 (2026-09-01 실측: 활성 436명 중
+    #    238명이 `mail` 공백). 그 238명 **전원에게 `userPrincipalName` 이 있고**
+    #    `@cravercorp.com` 이다 — 회사 메일 도메인이 둘이라 한쪽만 보면 안 된다.
+    #    비어 있으면 가입 시 `ad_<id>@noemail.local` 폴백이 박혀, 그 사람은
+    #    비밀번호를 구글로 되찾는 경로를 **영영** 못 쓴다.
+    # ⚠️ 로컬파트는 두 속성이 항상 같고(198/198) 조직 전체에서 유일하다(충돌 0건) —
+    #    그래서 UPN 을 대체값으로 써도 사람이 뒤바뀌지 않는다.
     email = entry.mail.value if entry.mail and entry.mail.value else None
+    if not email:
+        upn = entry.userPrincipalName.value if "userPrincipalName" in entry else None
+        email = upn or None
 
     return {
         "username": username,
@@ -260,7 +270,8 @@ def fetch_ad_users(retries: int = 3) -> list[dict]:
                     search_base=search_base,
                     search_filter=search_filter,
                     search_scope=SUBTREE,
-                    attributes=["sAMAccountName", "name", "displayName", "mail", "department"],
+                    attributes=["sAMAccountName", "name", "displayName", "mail",
+                                "userPrincipalName", "department"],
                 )
 
                 users = [_entry_to_user(entry) for entry in conn.entries]
