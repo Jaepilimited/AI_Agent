@@ -189,7 +189,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
 
     if request.stream:
         return StreamingResponse(
-            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id),
+            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
         )
@@ -197,7 +197,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     # Non-streaming response (v3.0: Orchestrator)
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id
+            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources
         )
         answer = result.get("answer", "")
     except Exception as e:
@@ -243,7 +243,6 @@ async def _stream_response(
     brand_filter: str = None,
     can_view_fi: bool = False,
     enabled_sources: list = None,
-    user_id: int = None,
 ) -> AsyncGenerator[str, None]:
     """Stream response chunks in SSE format.
 
@@ -286,7 +285,6 @@ async def _stream_response(
         async for msg_type, content in _get_orchestrator().route_and_stream(
             query, messages, model_type, user_email=user_email, images=images or [],
             brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources,
-            user_id=user_id,
         ):
             if msg_type == "source":
                 _detected_route = content

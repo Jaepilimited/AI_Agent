@@ -945,7 +945,7 @@ class OrchestratorAgent:
 
     def _build_multi_prefix_tasks(
         self, entries, query, messages, conversation_context, model_type, user_email,
-        brand_filter=None, can_view_fi=False, enabled_sources=None, user_id=None,
+        brand_filter=None, can_view_fi=False, enabled_sources=None,
     ):
         """Build the shared @@ multi-source parallel fan-out tasks."""
         tasks = []
@@ -957,7 +957,6 @@ class OrchestratorAgent:
                     query, messages, conversation_context, model_type, user_email,
                     brand_filter=brand_filter, can_view_fi=can_view_fi,
                     enabled_sources=scoped_sources, source_explicit=True,
-                    user_id=user_id,
                 )
             elif target == "notion":
                 task = self._handle_qdrant(
@@ -1027,7 +1026,6 @@ class OrchestratorAgent:
         can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
         stream_callback=None,
-        user_id: Optional[int] = None,
     ) -> dict:
         """Main entry point: analyze query -> delegate to Sub Agent -> return result.
 
@@ -1148,9 +1146,7 @@ class OrchestratorAgent:
                 route = entry["route"]
                 logger.info("db_prefix_routed", prefix=entry["key"], route=route, query=query[:80])
                 handler = self._resolve_handler(route)
-                if route == "bigquery":
-                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True, user_id=user_id)
-                elif route == "multi":
+                if route in ("bigquery", "multi"):
                     result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)
                 elif route == "notion":
                     result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])
@@ -1168,7 +1164,7 @@ class OrchestratorAgent:
             tasks = self._build_multi_prefix_tasks(
                 db_entry, query, messages, conversation_context, model_type, user_email,
                 brand_filter=brand_filter, can_view_fi=can_view_fi,
-                enabled_sources=enabled_sources, user_id=user_id,
+                enabled_sources=enabled_sources,
             )
             results = await _aio.gather(*[t[2] for t in tasks], return_exceptions=True)
             combined = self._merge_multi_prefix_results(tasks, results)
@@ -1244,9 +1240,7 @@ class OrchestratorAgent:
 
         # Step 2: Execute via Sub Agent with context
         handler = self._resolve_handler(route)
-        if route == "bigquery":
-            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id)
-        elif route == "multi":
+        if route in ("bigquery", "multi"):
             result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
         elif route == "notion":
             result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email)
@@ -1281,7 +1275,6 @@ class OrchestratorAgent:
         brand_filter=None,
         can_view_fi: bool = False,
         enabled_sources=None,
-        user_id=None,
     ):
         """Async generator: yields (type, data) tuples for real-time streaming.
 
@@ -1449,7 +1442,7 @@ class OrchestratorAgent:
                     _loop = asyncio.get_running_loop()
                     def _bq():
                         try:
-                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi, user_id=user_id):
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi):
                                 _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                         except Exception as e:
                             _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
@@ -1679,7 +1672,6 @@ class OrchestratorAgent:
                         enabled_sources=enabled_sources,
                         wiki_context=wiki_context,
                         can_view_fi=can_view_fi,
-                        user_id=user_id,
                     ):
                         _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                 except Exception as e:
@@ -2525,7 +2517,6 @@ class OrchestratorAgent:
         can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
         source_explicit: bool = False,
-        user_id: Optional[int] = None,
     ) -> dict:
         """BigQuery Agent with conversation context.
 
@@ -2578,7 +2569,6 @@ class OrchestratorAgent:
                 brand_filter=brand_filter,
                 enabled_sources=enabled_sources,
                 can_view_fi=can_view_fi,
-                user_id=user_id,
             )
             # Check if SQL agent returned an error (it returns error as string, not exception)
             if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
@@ -2591,7 +2581,6 @@ class OrchestratorAgent:
                     brand_filter=brand_filter,
                     enabled_sources=enabled_sources,
                     can_view_fi=can_view_fi,
-                    user_id=user_id,
                 )
                 if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
                     logger.warning("bigquery_sql_failed_fallback_to_direct", query=query[:100])
