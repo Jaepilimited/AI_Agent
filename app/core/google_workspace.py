@@ -370,7 +370,10 @@ def search_drive(
         )
         if not kws:
             params["orderBy"] = "modifiedTime desc"
-        res = service.files().list(**params).execute()
+        # ⚠️ 병렬 조회(최대 8개 동시)라 Drive 가 간헐적으로 429/5xx 를 준다 — 사람은
+        #    이걸 "진짜 없음" 과 구분할 수 없다. googleapiclient 의 내장 지수 백오프로
+        #    재시도한다 (직접 루프를 짜지 않는다)
+        res = service.files().list(**params).execute(num_retries=3)
         return res.get("files", [])
 
     # ⛔ **낱말을 통째로 한 조건에 넣지 마라.** `name contains '신규 입사자 교안 자료'` 는

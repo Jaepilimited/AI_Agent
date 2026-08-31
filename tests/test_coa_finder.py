@@ -34,6 +34,20 @@ def test_search_drive_includes_shared_drives():
     assert p.get("corpora") == "allDrives"
 
 
+def test_search_drive_retries_transient_failures():
+    """find_all 은 최대 8개를 동시에 조회한다 - Drive 가 간헐적으로 429/5xx 를
+    주면 사람은 그걸 '진짜 없음' 과 구분할 수 없다 (2026-08-31 실측)."""
+    svc = MagicMock()
+    resp = MagicMock()
+    resp.execute.return_value = {"files": []}
+    svc.files.return_value.list.return_value = resp
+
+    with patch("app.core.google_workspace.build", return_value=svc):
+        search_drive(MagicMock(), "E08Z011")
+
+    resp.execute.assert_called_once_with(num_retries=3)
+
+
 def test_search_drive_exact_name_drops_near_miss():
     """E07Z083 을 물었는데 E07Z082 가 남으면 안 된다."""
     near = {"id": "1", "name": "…POREMIZING FRESH AMPOULE COA (E07Z082)",
