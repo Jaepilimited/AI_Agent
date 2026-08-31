@@ -741,3 +741,79 @@ def test_zip_name_truncates_by_utf8_bytes_not_characters():
     assert len(encoded) <= _MAX_ZIP_NAME_BYTES
     # 글자 중간이 잘렸으면 여기서 디코딩 오류가 나거나 원문과 달라진다
     assert encoded.decode("utf-8") == name
+
+
+# ── "토큰은 살아 있는데 그 드라이브의 멤버가 아니다" 신호 — 2026-08-31 ────────
+#
+# self_check 의 계정별 토큰 점검(`google_account_health`)은 토큰이 죽었는지만
+# 본다. 그런데 토큰이 멀쩡해도 그 계정이 진짜 인증서가 있는 공유드라이브의
+# 멤버가 아니면 검색 결과는 조용히 전부 '없음' 이다 — 이건 로그 신호로만 남긴다
+# (판정을 내리는 검사가 아니다).
+
+
+def _lots_payload(n: int) -> str:
+    lots = ["FE103C", "416022", "F31C28", "MO388", "6752FE", "FE161", "2UE0003"]
+    assert n <= len(lots)
+    lines = ["SKU\tDESCRIPTION\tLOT"]
+    for i in range(n):
+        lines.append(f"SKU{i}\t앰플 {i}\t{lots[i]}")
+    return "\n".join(lines) + "\n"
+
+
+def test_all_none_at_five_lots_logs_a_named_warning(client, caplog):
+    """5행 이상이 전부 '없음' 이면 요청자 이메일을 남긴 경보가 뜬다."""
+    import logging
+    caplog.set_level(logging.WARNING, logger="app.api.coa_finder_api")
+    payload = _lots_payload(5)
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+    assert r.status_code == 200
+    warnings = [rec for rec in caplog.records if rec.message == "coa_finder_all_none"]
+    assert len(warnings) == 1, caplog.text
+    assert warnings[0].user == "tester@skin1004korea.com"
+    assert warnings[0].total == 5
+
+
+def test_all_none_under_five_lots_does_not_warn(client, caplog):
+    """1행이 우연히 '없음' 인 것은 흔하다 — 신호로 보지 않는다."""
+    import logging
+    caplog.set_level(logging.WARNING, logger="app.api.coa_finder_api")
+    payload = _lots_payload(1)
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+    assert r.status_code == 200
+    assert not any(rec.message == "coa_finder_all_none" for rec in caplog.records)
+
+
+def test_four_lots_all_none_does_not_warn(client, caplog):
+    """상한 바로 아래(4행)에서는 아직 신호를 켜지 않는다."""
+    import logging
+    caplog.set_level(logging.WARNING, logger="app.api.coa_finder_api")
+    payload = _lots_payload(4)
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+    assert r.status_code == 200
+    assert not any(rec.message == "coa_finder_all_none" for rec in caplog.records)
+
+
+def test_five_lots_with_one_found_does_not_warn(client, caplog):
+    """하나라도 찾았으면 '멤버가 아니다' 가설이 성립하지 않는다 — 신호를 켜지 않는다."""
+    import logging
+    caplog.set_level(logging.WARNING, logger="app.api.coa_finder_api")
+    payload = _lots_payload(5)
+
+    def _fake_search(creds, query, max_results=25, exact_name=None, widen=True):
+        # FE103C 만 파일명에 정확히 매칭되는 COA 를 준다 — 나머지는 없음
+        if exact_name == "FE103C":
+            return [{"id": "1", "name": "FE103C COA.pdf", "size": 10,
+                     "webViewLink": "http://x"}]
+        return []
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", side_effect=_fake_search):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+    assert r.status_code == 200
+    assert not any(rec.message == "coa_finder_all_none" for rec in caplog.records)

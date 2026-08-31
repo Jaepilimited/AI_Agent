@@ -928,7 +928,7 @@ def _check_jandi_relay() -> CheckResult:
 
 
 def _check_drive_shared_access() -> CheckResult:
-    """사용자 OAuth 로 공유드라이브가 보이는가 (인증서류 찾기의 전제).
+    """드라이브가 **네트워크·프록시·API 수준에서** 살아 있는가 (계정 하나로 찌른다).
 
     ⚠️ 토큰이 죽어도 화면은 에러가 아니라 **'전부 없음'** 으로 보인다 — 조용한 실패다.
        그래서 "몇 건 나왔나"가 아니라 "응답이 왔나"로 판정한다. **빈 결과(0건)는 고장이
@@ -938,6 +938,13 @@ def _check_drive_shared_access() -> CheckResult:
        그러면 "예전에 연결했다가 토큰이 죽은 사람"이 "한 번도 연결한 적 없는 사람"과
        같은 안내를 받는다 — 운영자가 잘못된 조치(재연결 안내 대신 방치)를 하게 된다.
        `load_credentials()` 로 원인을 구분해 뭘 해야 하는지 명확히 남긴다.
+
+    ⚠️ **이 검사는 일부러 계정 하나로만 찌른다** — 목적이 "구글 API 가 살아
+       있는가"(네트워크·프록시·인증서 문제)이지 "누구 토큰이 죽었는가"가 아니다.
+       프로덕션은 연결 계정이 15개다. 나머지 14명의 개별 죽음은 [[google_account_health]]
+       (`_check_google_account_health`) 가 이름을 대며 잡는다 — 하나로 합치면
+       "드라이브가 죽었다"와 "그 사람만 재연결이 필요하다"를 구분할 수 없고,
+       그 둘은 운영자가 해야 할 조치가 다르다.
     """
     from app.core.google_auth import GoogleAuthManager
     from app.core.google_workspace import search_drive
@@ -959,6 +966,80 @@ def _check_drive_shared_access() -> CheckResult:
     except Exception as exc:                          # noqa: BLE001
         return CheckResult(False, f"드라이브 조회 실패: {str(exc)[:200]}")
     return CheckResult(True, f"공유드라이브 조회 정상 (표본 {len(files)}건)")
+
+
+def _stored_google_accounts() -> list[dict]:
+    """구글을 연결한 적 있는 활성 사용자 — 저장된 토큰 파일이 있는 사람만.
+
+    ⛔ **`gws_tokens/*.json` 파일명을 거꾸로 email 로 복원하지 마라.** 그 이름은
+       `email.replace("@","_at_").replace(".","_")` 로 만들어졌는데, 원래 email 에
+       밑줄이 있으면 되돌릴 수 없다 (`_at_` 를 `@` 로, 남은 `_` 를 `.` 로 바꾸는
+       역변환은 추측일 뿐이다 — 잘못 복원한 email 로 `load_credentials()` 를
+       부르면 파일이 안 열려 "죽었다"로 오탐한다). 대신 앱이 이미 아는 사용자
+       이메일마다 `has_credentials()` 로 저장 여부만 물어본다 — 출근 브리핑
+       발송 대상 선정(`personal_briefing.run_morning_precompute`)과 같은 패턴이다.
+    """
+    from app.core.google_auth import GoogleAuthManager
+
+    rows = fetch_all(
+        "SELECT u.id, COALESCE(a.email, u.email) email, "
+        "COALESCE(a.display_name, u.display_name) name "
+        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "WHERE u.is_active = 1"
+    ) or []
+    mgr = GoogleAuthManager()
+    seen: set[str] = set()
+    out: list[dict] = []
+    for r in rows:
+        email = (r.get("email") or "").strip()
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        if mgr.has_credentials(email):
+            out.append({"email": email, "name": r.get("name") or email})
+    return out
+
+
+def _check_google_account_health() -> CheckResult:
+    """저장된 구글 계정 **각각**의 토큰이 살아 있는가 — 죽은 계정의 이름을 남긴다.
+
+    [[drive_shared_access]] 는 계정 하나로 "구글 API 가 살아 있는가"만 본다.
+    이 검사는 **연결된 전 계정**을 돈다 — 프로덕션 연결 계정이 15개인데 고정된
+    하나만 보면 나머지 14개가 죽어도 화면은 계속 초록이다. 인증서류 찾기는 각자
+    자기 OAuth 로 도는 기능이라, 죽은 토큰은 "그 계정을 쓰는 그 사람"에게만
+    조용히 '전부 없음' 으로 보인다 — 화면은 잘못이 없다는 듯 멀쩡하다.
+
+    ⛔ **이 검사는 부작용이 있다 — 이 파일의 다른 검사와 다른, 의도된 예외다.**
+       `load_credentials()` 는 만료된 access token 을 갱신하고 그 결과를 토큰
+       파일에 다시 쓴다. 하지만 그건 **그 사람이 앱을 쓸 때마다 어차피 일어나는
+       것과 같은 갱신**이다 — 상태를 새로 만드는 게 아니라 정상 사용을 하루
+       앞당겨 흉내 낼 뿐이다. 매일 이 검사를 돌리면, 그 사람이 인증서류 찾기를
+       열어 '전부 없음' 을 자신 있게 오답으로 받기 **전에** 죽은 토큰을 먼저
+       찾아낼 수 있다 — 그래서 "검사는 부작용이 없어야 한다" 는 이 파일의
+       원칙을 여기서만 깬다.
+    """
+    accounts = _stored_google_accounts()
+    if not accounts:
+        return CheckResult(True, "구글을 연결한 사용자가 없다")
+
+    from app.core.google_auth import GoogleAuthManager
+
+    mgr = GoogleAuthManager()
+    counts: dict[str, int] = {}
+    dead: list[str] = []
+    for acc in accounts:
+        outcome = mgr.load_credentials(acc["email"])
+        counts[outcome.status] = counts.get(outcome.status, 0) + 1
+        if outcome.status != "ready":
+            dead.append(f"{acc['name']}({acc['email']}): {outcome.status}")
+
+    detail = f"연결 {len(accounts)}명 중 정상 {counts.get('ready', 0)}명"
+    if dead:
+        shown = dead[:10]
+        detail += f" / 재연결 필요 {len(dead)}명 — " + ", ".join(shown)
+        if len(dead) > len(shown):
+            detail += f" 외 {len(dead) - len(shown)}명"
+    return CheckResult(not dead, detail)
 
 
 CHECKS: list[Check] = [
@@ -1007,7 +1088,11 @@ CHECKS: list[Check] = [
     Check("qdrant", "datasource", SEV_CRITICAL,
           "Qdrant 기본 컬렉션에 데이터가 있는가", _check_qdrant),
     Check("drive_shared_access", "datasource", SEV_WARNING,
-          "공유드라이브 조회가 살아 있는가 (인증서류 찾기)", _check_drive_shared_access),
+          "구글 드라이브 API 가 살아 있는가 (계정 1개로 확인 — 네트워크/프록시)",
+          _check_drive_shared_access),
+    Check("google_account_health", "datasource", SEV_WARNING,
+          "연결된 구글 계정마다 토큰이 살아 있는가 (죽은 계정 이름을 남긴다)",
+          _check_google_account_health),
     Check("canary_answers", "quality", SEV_WARNING,
           "대표 질문 답변이 구조적으로 온전한가", _check_canary_answers),
     # ⚠️ id 를 `feedback_spike` 에서 바꿨다 (2026-08-26). 재는 대상이 달라졌는데

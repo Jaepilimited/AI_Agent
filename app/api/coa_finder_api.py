@@ -28,6 +28,8 @@ _MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 _MAX_DOWNLOAD_ITEMS = 200
 _MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024
 _UNSAFE = re.compile(r'[\\/:*?"<>|\r\n]+')
+# 이 아래로는 "우연히 다 없다" 가 흔해 신호로 보지 않는다 (진짜 무롯트일 수 있다)
+_ALL_NONE_WARN_MIN_LOTS = 5
 
 
 def _credentials(email: str):
@@ -152,6 +154,20 @@ async def coa_finder_search(
             }
             yield f"event: error\ndata: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
             return
+
+        # ⛔ 토큰 점검(self_check `google_account_health`)이 못 보는 실패 — 토큰은
+        #    멀쩡한데 그 드라이브의 **멤버가 아닌** 계정이다. 실제로 이 방향으로
+        #    직접 당했다: 내 계정으로는 진짜 인증서가 있는 공유드라이브가 아예
+        #    안 보여서 모든 롯트가 조용히 '없음' 이었다 — 토큰은 정상이었다.
+        #    행이 몇 개 없으면 우연히 다 없을 수도 있어(진짜 무롯트) 신호로
+        #    보지 않는다. 이건 검사가 아니라 로그 신호다 — 판정을 내리지 않고
+        #    이름만 남긴다.
+        if total >= _ALL_NONE_WARN_MIN_LOTS and counts.get(cf.NONE, 0) == total:
+            logger.warning(
+                "coa_finder_all_none",
+                extra={"user": getattr(user, "email", ""), "total": total},
+            )
+
         summary = {
             "total": total, "counts": counts,
             "msds_failed": msds_failed,
