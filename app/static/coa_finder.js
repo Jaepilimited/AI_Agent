@@ -11,14 +11,28 @@
     "조회실패": "st-check",
   };
 
-  // kind: "coa" or "msds". MSDS is a product-level document with no lot --
-  // stamping the row's lot onto it would make it look lot-matched, which is
-  // exactly why the screen keeps it in its own column.
+  // kind: "coa" | "msds" | "product_coa".
+  //  - MSDS is a product-level document with no lot.
+  //  - product_coa is a certificate for a DIFFERENT lot of the same product.
+  // Stamping the row's lot onto either would make it look lot-matched, which
+  // is exactly why the screen keeps them in their own columns.
+  //
+  // product_coa is also the one column the row checkbox must not sweep up: it
+  // is the most dangerous thing on this page, so it opts in per cell and the
+  // header "select all" cannot reach it.
   function cell(v, sku, lot, kind) {
+    const optIn = kind === "product_coa" && (v.files || []).length > 0;
     const wrap = document.createElement("td");
     const label = document.createElement("div");
     label.className = STATUS_CLASS[v.status] || "";
     label.textContent = v.status;
+    if (optIn) {
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.className = "cf-pick-product";
+      box.title = "다른 롯트의 증명서입니다 — 받으려면 직접 선택하세요";
+      label.prepend(box);
+    }
     wrap.appendChild(label);
     (v.files || []).forEach((f) => {
       const line = document.createElement("div");
@@ -30,7 +44,8 @@
       a.className = "cf-file";
       a.dataset.fileId = f.id;
       a.dataset.sku = sku;
-      a.dataset.lot = kind === "msds" ? "" : lot;
+      a.dataset.lot = (kind === "msds" || kind === "product_coa") ? "" : lot;
+      if (optIn) a.dataset.optin = "1";
       // The verdict travels with the file all the way into the ZIP -- a
       // caveat that only exists on screen is gone by the time the archive
       // reaches a customer.
@@ -67,7 +82,21 @@
     });
     tr.appendChild(cell(d.coa, d.sku, d.lot, "coa"));
     tr.appendChild(cell(d.msds, d.sku, d.lot, "msds"));
+    tr.appendChild(cell(d.product_coa || { status: "", files: [] },
+                        d.sku, d.lot, "product_coa"));
     $("cf-body").appendChild(tr);
+  }
+
+  // The table head lives in the HTML, which this change does not own, so the
+  // third column's heading is added here once per run.
+  function ensureProductCoaHeading() {
+    if ($("cf-th-product")) return;
+    const head = document.querySelector("#cf-table thead tr");
+    if (!head) return;
+    const th = document.createElement("th");
+    th.id = "cf-th-product";
+    th.textContent = "COA(제품)";
+    head.appendChild(th);
   }
 
   // Caps published by the server in the "done" event. The page never keeps
@@ -174,7 +203,9 @@
   // response body directly and splits it into SSE frames by hand.
   async function run() {
     $("cf-body").innerHTML = "";
+    ensureProductCoaHeading();
     showError("");
+    notice("cf-layout", "");
     showAllNone(false);
     showSkipped(0);
     notice("cf-batch", "");
@@ -246,7 +277,12 @@
               " · 없음 " + (c["없음"] || 0) +
               " · 조회실패 " + (c["조회실패"] || 0) +
               (msdsFailed ? " · MSDS 조회실패 " + msdsFailed : "") +
+              (data.product_coa_failed
+                ? " · 제품COA 조회실패 " + data.product_coa_failed : "") +
               " · COA·MSDS 파일의 파일명으로만 찾았습니다 (파일 본문은 검색하지 않습니다)";
+            // Never apply an inferred layout silently -- if the wrong column
+            // was read as the lot, only the user can tell.
+            notice("cf-layout", data.layout || "");
             // Caps come from the server so the page holds no copy of them.
             // Absent -> no batching; the server still enforces both.
             caps = (data.max_download_items && data.max_download_bytes)
@@ -315,8 +351,17 @@
   async function download() {
     const items = [];
     document.querySelectorAll("#cf-body tr").forEach((tr) => {
-      if (!tr.querySelector(".cf-pick").checked) return;
+      const rowOn = tr.querySelector(".cf-pick").checked;
       tr.querySelectorAll("a.cf-file").forEach((a) => {
+        // Opt-in files (product COA) follow their own cell's checkbox, never
+        // the row's and never "select all" -- they are other lots' documents.
+        if (a.dataset.optin === "1") {
+          const td = a.closest("td");
+          const box = td && td.querySelector(".cf-pick-product");
+          if (!box || !box.checked) return;
+        } else if (!rowOn) {
+          return;
+        }
         items.push({
           file_id: a.dataset.fileId,
           sku: a.dataset.sku,

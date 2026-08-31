@@ -103,11 +103,71 @@ def test_parse_pasted_accepts_korean_headers():
     assert rows[0].sku == "EUSKA022" and rows[0].lot == "FE103C"
 
 
-def test_parse_pasted_reports_missing_column_instead_of_guessing():
-    """⛔ 열을 못 찾으면 추측해서 진행하지 않는다."""
-    with pytest.raises(cf.HeaderNotFound) as e:
-        cf.parse_pasted("SKU\tDESCRIPTION\nEUSKA022\t앰플\n")
-    assert "LOT" in e.value.missing
+def test_header_without_a_lot_column_is_not_an_error():
+    """⛔ 롯트 열이 없다고 거절하지 마라 — 제품명만 있어도 MSDS·제품 COA 는 찾는다.
+
+    (예전엔 여기서 HeaderNotFound 를 던져 프로덕션에서 400 이 났다)
+    """
+    parsed = cf.parse_pasted("SKU\tDESCRIPTION\nEUSKA022\t앰플\n")
+    assert [r.sku for r in parsed.rows] == ["EUSKA022"]
+    assert parsed.rows[0].lot == ""
+    assert "롯트" in parsed.layout          # 무엇이 없는지 말은 한다
+
+
+def test_parse_infers_columns_when_there_is_no_header():
+    """⛔ 헤더 없이 붙여넣는 것은 흔하다 — 거절하지 말고 알아보고, 알아봤다고 말한다.
+    (프로덕션 400 두 건의 원인)"""
+    parsed = cf.parse_pasted(
+        "EUSKA022\tSKIN1004 Madagascar Centella Ampoule 100ml\tFE103C\n"
+        "EUSKC017\tSKIN1004 Cream 75ml\t416022\n"
+    )
+    assert parsed.inferred is True
+    assert [r.lot for r in parsed.rows] == ["FE103C", "416022"]
+    assert [r.sku for r in parsed.rows] == ["EUSKA022", "EUSKC017"]
+    assert "Ampoule 100ml" in parsed.rows[0].description
+    assert parsed.layout, "무엇을 어떻게 읽었는지 말하지 않았다"
+
+
+def test_parse_infers_a_suffixed_lot():
+    """'F31C28 D' 는 롯트 하나다 — 접미가 떨어져 나가면 안 된다."""
+    parsed = cf.parse_pasted("EUSKA024\t앰플 100ml\tF31C28 D\n")
+    assert parsed.rows[0].lot == "F31C28 D"
+
+
+def test_parse_accepts_comma_separated():
+    parsed = cf.parse_pasted("SKU,DESCRIPTION,LOT\nEUSKA022,앰플 100ml,FE103C\n")
+    assert parsed.rows[0].sku == "EUSKA022"
+    assert parsed.rows[0].lot == "FE103C"
+    assert parsed.rows[0].description == "앰플 100ml"
+
+
+def test_parse_accepts_runs_of_spaces():
+    parsed = cf.parse_pasted("EUSKA022   Ampoule 100ml   FE103C\n")
+    assert parsed.rows[0].sku == "EUSKA022"
+    assert parsed.rows[0].lot == "FE103C"
+    # ⛔ 홑 공백으로 쪼개면 제품명이 토막 난다
+    assert parsed.rows[0].description == "Ampoule 100ml"
+
+
+def test_parse_accepts_a_lot_only_column_with_a_header():
+    """롯트만 있어도 COA 는 찾을 수 있다 — 이것이 이 기능의 핵심 입력이다."""
+    parsed = cf.parse_pasted("LOT\nFE103C\nE08Z011\n")
+    assert [r.lot for r in parsed.rows] == ["FE103C", "E08Z011"]
+    assert all(r.sku == "" for r in parsed.rows)
+    assert parsed.skipped_no_sku == 0      # SKU 열이 아예 없는 것은 유실이 아니다
+
+
+def test_parse_accepts_a_bare_list_of_lots():
+    parsed = cf.parse_pasted("FE103C\nE08Z011\nF31C28 D\n")
+    assert [r.lot for r in parsed.rows] == ["FE103C", "E08Z011", "F31C28 D"]
+    assert parsed.inferred is True
+
+
+def test_header_row_still_wins_over_inference():
+    """⛔ 알아보기가 헤더를 이기면 안 된다 — 헤더가 있으면 그것이 정답이다."""
+    parsed = cf.parse_pasted(PASTED)
+    assert parsed.inferred is False
+    assert [r.sku for r in parsed.rows] == ["EUSKA022", "EUSKC017", "EUSKA024"]
 
 
 def test_parse_pasted_keeps_row_with_empty_lot():
@@ -655,6 +715,80 @@ def test_find_all_coa_fallback_search_uses_exact_name_on_base_lot():
     assert fallback_calls, "접미 없는 롯트로 재조회하지 않았다"
     assert all(exact == "F31C28" for _, exact in fallback_calls), \
         "재조회에 exact_name 을 넘기지 않았다"
+
+
+def _product_coa_search(files):
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        if "COA" in query:
+            return files
+        return []
+    return fake_search
+
+
+def test_product_coa_is_never_found_only_check_needed():
+    """⛔ 이 열이 이 기능에서 가장 위험한 자리다 — 다른 롯트의 증명서를 내놓는다.
+
+    실측: 요청자의 41행은 롯트로는 COA 0건인데, 34개 제품 중 33개는 COA 가
+    드라이브에 있다. 다만 **다른 생산분의 것**이다. 그러니 이 열은 아무리
+    많이 맞아도 '찾음' 일 수 없다.
+    """
+    rows = [cf.Row("EUSKA022", "SKIN1004 Madagascar Centella Ampoule 100ml",
+                   "F31C28 D", 1)]
+    files = [{"id": "1", "name": "COA_SKIN1004 MADAGASCAR CENTELLA AMPOULE 100ML_F11C05 C.pdf",
+              "size": 100, "webViewLink": "http://d/1"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=_product_coa_search(files)))
+    v = got[0].product_coa
+    assert v.status == cf.CHECK
+    assert v.status != cf.FOUND
+    assert len(v.files) == 1
+    assert "롯트" in v.note and "확인" in v.note
+
+
+def test_product_coa_stays_check_needed_even_with_many_hits():
+    rows = [cf.Row("EUSKA022", "SKIN1004 Ampoule 100ml", "F31C28 D", 1)]
+    files = [{"id": str(i), "name": f"COA_SKIN1004 AMPOULE 100ML_LOT{i}.pdf",
+              "size": 100 + i, "webViewLink": f"http://d/{i}"} for i in range(3)]
+
+    got = list(cf.find_all(MagicMock(), rows, search=_product_coa_search(files)))
+    assert got[0].product_coa.status == cf.CHECK
+    assert len(got[0].product_coa.files) == 3
+
+
+def test_product_coa_requires_coa_in_the_filename():
+    """⛔ MSDS 가 COA 열에 섞이면 안 된다 — 같은 후검증을 표식만 바꿔 쓴다."""
+    rows = [cf.Row("EUSKA022", "SKIN1004 Ampoule 100ml", "F31C28 D", 1)]
+    files = [{"id": "m", "name": "MSDS_SKIN1004 AMPOULE 100ML.pdf",
+              "size": 100, "webViewLink": "http://d/m"},
+             {"id": "x", "name": "인증 서류 리스트.xlsx",
+              "size": 100, "webViewLink": "http://d/x"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=_product_coa_search(files)))
+    assert got[0].product_coa.status == cf.NONE
+    assert got[0].product_coa.note, "없음의 근거가 비어 있다"
+
+
+def test_product_coa_is_skipped_when_the_lot_itself_was_found():
+    """롯트로 찾았으면 다른 생산분 증명서는 필요 없다 — 조회를 아끼되
+    ⛔ 말없이 건너뛰지는 않는다."""
+    rows = [cf.Row("EUSKA022", "SKIN1004 Ampoule 100ml", "E08Z011", 1)]
+    queries = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        queries.append(query)
+        if exact_name:
+            return [{"id": "1", "name": "COA (E08Z011).pdf", "size": 1,
+                     "webViewLink": "http://d/1"}]
+        return []
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.FOUND
+    assert got[0].product_coa.status == cf.NONE
+    assert "롯트" in got[0].product_coa.note      # 왜 안 찾았는지 적는다
+    assert not [q for q in queries if "COA" in q and "E08Z011" not in q], \
+        "롯트로 찾았는데도 제품명으로 또 조회했다"
 
 
 def test_msds_note_reflects_unusable_description_not_emptiness():

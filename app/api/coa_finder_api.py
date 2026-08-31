@@ -89,15 +89,17 @@ async def coa_finder_search(
     else:
         raise HTTPException(400, "목록을 붙여넣거나 엑셀 파일을 올려주세요")
 
-    try:
-        parsed = (cf.parse_xlsx(rows_source[1]) if rows_source[0] == "xlsx"
-                  else cf.parse_pasted(rows_source[1]))
-    except cf.HeaderNotFound as exc:
-        raise HTTPException(400, str(exc)) from exc
+    parsed = (cf.parse_xlsx(rows_source[1]) if rows_source[0] == "xlsx"
+              else cf.parse_pasted(rows_source[1]))
     rows = parsed.rows
 
     if not rows:
-        raise HTTPException(400, "행을 찾지 못했습니다 — 헤더 아래에 데이터가 있는지 확인하세요")
+        # ⛔ 무엇이 없는지가 아니라 **무엇을 하면 되는지** 말한다
+        raise HTTPException(
+            400,
+            "읽을 행을 찾지 못했습니다. 엑셀에서 SKU·제품명·롯트 열을 복사해 "
+            "붙여넣거나, 롯트만 한 줄에 하나씩 붙여넣어도 됩니다 "
+            "(탭·쉼표·여러 칸 띄어쓰기 모두 됩니다. 머리글 행은 없어도 됩니다)")
     if len(rows) > _MAX_ROWS:
         raise HTTPException(
             400, f"{len(rows)}행입니다. 한 번에 {_MAX_ROWS}행까지 처리합니다")
@@ -119,6 +121,7 @@ async def coa_finder_search(
         counts = {cf.FOUND: 0, cf.MANY: 0, cf.NONE: 0, cf.CHECK: 0, cf.FAILED: 0}
         # ⛔ MSDS 쪽 실패는 counts 가 세지 않는다 (COA 상태만 센다) — 따로 센다
         msds_failed = 0
+        product_coa_failed = 0
         total = len(rows)
         completed = 0
         try:
@@ -126,11 +129,14 @@ async def coa_finder_search(
                 counts[res.coa.status] = counts.get(res.coa.status, 0) + 1
                 if res.msds.status == cf.FAILED:
                     msds_failed += 1
+                if res.product_coa.status == cf.FAILED:
+                    product_coa_failed += 1
                 payload = {
                     "index": i, "total": total,
                     "sku": res.row.sku, "description": res.row.description,
                     "lot": res.row.lot,
                     "coa": _verdict(res.coa), "msds": _verdict(res.msds),
+                    "product_coa": _verdict(res.product_coa),
                 }
                 yield f"event: row\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
                 completed = i
@@ -149,8 +155,12 @@ async def coa_finder_search(
         summary = {
             "total": total, "counts": counts,
             "msds_failed": msds_failed,
+            "product_coa_failed": product_coa_failed,
             # 말없이 버린 행 — 화면이 건수를 밝힌다
             "skipped_no_sku": parsed.skipped_no_sku,
+            # ⛔ 헤더 없이 알아봤으면 알아봤다고 말한다 (어느 칸을 롯트로 봤는지)
+            "inferred": parsed.inferred,
+            "layout": parsed.layout,
             # ⛔ 화면이 상한의 사본을 들고 있으면 조용히 어긋난다. 서버가 알려주고,
             #    못 받으면 화면은 나누지 않는다 (그때도 서버가 사실대로 자른다)
             "max_download_items": _MAX_DOWNLOAD_ITEMS,
@@ -231,6 +241,11 @@ def _truncate_utf8(s: str, max_bytes: int) -> str:
 
 
 _MSDS_KIND = "msds"
+_PRODUCT_COA_KIND = "product_coa"
+# 롯트를 이름에 붙이면 안 되는 종류. MSDS 는 롯트가 없고, 제품 COA 는
+# **다른 롯트**의 것이다 — 둘 다 이 행의 롯트를 주장하면 거짓이 된다
+_LOTLESS_KINDS = {_MSDS_KIND, _PRODUCT_COA_KIND}
+_KIND_TAG = {_MSDS_KIND: "MSDS", _PRODUCT_COA_KIND: "제품COA"}
 _UNCONFIRMED_PREFIX = "확인필요_"
 _UNCONFIRMED_LIST = "_확인필요_목록.txt"
 
@@ -246,21 +261,38 @@ _UNCONFIRMED_REASON = {
 }
 _UNKNOWN_STATUS_REASON = ("판정 상태가 전달되지 않았습니다 — "
                           "확인되지 않은 문서로 취급합니다")
+_PRODUCT_COA_REASON = ("제품명으로만 찾은 COA 입니다 — 이 롯트의 것이 아니라 "
+                       "다른 생산분의 증명서입니다. 고객에게 보내기 전에 "
+                       "롯트가 맞는지 반드시 확인하세요")
 
 
-def _is_msds(item: DownloadItem) -> bool:
+def _kind_of(item: DownloadItem) -> str:
     """모르면 COA 로 본다 — 롯트를 지니는 쪽이고, 확정 판정 규칙이 그쪽을 지킨다."""
-    return (item.kind or "").strip().casefold() == _MSDS_KIND
+    kind = (item.kind or "").strip().casefold()
+    return kind if kind in _LOTLESS_KINDS else "coa"
 
 
 def _is_confirmed(item: DownloadItem) -> bool:
-    """⛔ 없거나 모르는 상태는 확정이 아니다. 빠뜨린 클라이언트를 믿지 않는다."""
+    """⛔ 없거나 모르는 상태는 확정이 아니다. 빠뜨린 클라이언트를 믿지 않는다.
+
+    ⛔ 제품 COA 는 **구조적으로** 확정될 수 없다 (다른 생산분의 문서다).
+       클라이언트가 '찾음' 이라고 주장해도 서버가 받아주지 않는다 —
+       프롬프트가 아니라 코드가 보증한다는 그 사상이다.
+    """
+    if _kind_of(item) == _PRODUCT_COA_KIND:
+        return False
     return (item.status or "").strip() == cf.FOUND
 
 
 def _label(item: DownloadItem) -> str:
-    """목록에 적는 사람이 읽는 이름. MSDS 에는 롯트를 붙이지 않는다."""
-    middle = "MSDS (롯트 무관)" if _is_msds(item) else (item.lot or "롯트 없음")
+    """목록에 적는 사람이 읽는 이름. 롯트 없는 종류에는 롯트를 붙이지 않는다."""
+    kind = _kind_of(item)
+    if kind == _MSDS_KIND:
+        middle = "MSDS (롯트 무관)"
+    elif kind == _PRODUCT_COA_KIND:
+        middle = "제품COA (롯트 다름)"
+    else:
+        middle = item.lot or "롯트 없음"
     return f"{item.sku} · {middle} · {item.name}"
 
 
@@ -273,8 +305,9 @@ def _zip_name(item: DownloadItem) -> str:
     ⛔ MSDS 에는 롯트를 붙이지 않는다 — 제품 단위 문서라 롯트가 없는데
        이름이 롯트를 주장하면 롯트가 맞는 문서인 것처럼 보인다.
     """
-    if _is_msds(item):
-        parts = [item.sku, "MSDS", item.name or item.file_id]
+    kind = _kind_of(item)
+    if kind in _LOTLESS_KINDS:
+        parts = [item.sku, _KIND_TAG[kind], item.name or item.file_id]
     else:
         parts = [item.sku, item.lot, item.name or item.file_id]
     joined = _UNSAFE.sub("_", "_".join(p for p in parts if p))
@@ -353,8 +386,12 @@ async def coa_finder_download(
             zf.writestr(name, data)
             written += 1
             if not _is_confirmed(item):
-                reason = _UNCONFIRMED_REASON.get(
-                    (item.status or "").strip(), _UNKNOWN_STATUS_REASON)
+                if _kind_of(item) == _PRODUCT_COA_KIND:
+                    # 상태와 무관하게 이 종류는 사유가 하나다 — 롯트가 다르다
+                    reason = _PRODUCT_COA_REASON
+                else:
+                    reason = _UNCONFIRMED_REASON.get(
+                        (item.status or "").strip(), _UNKNOWN_STATUS_REASON)
                 unconfirmed.append(f"{label}\n    → {name}\n    {reason}")
 
         if failed or cap_cause or displaced:

@@ -29,23 +29,113 @@ class Row:
 
 @dataclass(frozen=True)
 class ParsedList:
-    """읽어들인 행과, **말없이 버린 행의 수**.
+    """읽어들인 행과, **말없이 버린 행의 수**, 그리고 **어떻게 읽었는지**.
 
     ⛔ 버릴 거면 버렸다고 말해야 한다. 40행을 넣고 38행을 받아도 사용자는
        세어보지 않으면 모른다 — 에러가 아니라 조용한 유실이다.
+    ⛔ 헤더 없이 알아본 경우도 마찬가지다. 어느 칸을 롯트로 봤는지 말하지 않으면
+       틀리게 읽어도 아무도 모른다 (`layout`).
     """
     rows: tuple[Row, ...]
     skipped_no_sku: int = 0
+    inferred: bool = False
+    layout: str = ""
 
 
-class HeaderNotFound(Exception):
-    def __init__(self, found: Sequence[str], missing: Sequence[str]) -> None:
-        self.found = tuple(found)
-        self.missing = tuple(missing)
-        super().__init__(
-            f"헤더를 찾지 못했습니다. 찾은 열: {', '.join(found) or '없음'} / "
-            f"없는 열: {', '.join(missing)}"
-        )
+# 롯트 생김새 (실측 표본: F31C28 D · E08Z011 · FE103C · FE161 · MO388 · 2UE0003 · 6752FE)
+_LOT_SHAPES = (
+    re.compile(r"^[A-Za-z]\d{2}[A-Za-z]\d{2,3}$"),   # F31C28 · E08Z011 · C24Z068
+    re.compile(r"^[A-Za-z]{2}\d{3}[A-Za-z]?$"),      # FE103C · FE161 · MO388
+    re.compile(r"^\d[A-Za-z]{2}\d{4}$"),             # 2UE0003
+    re.compile(r"^\d{4}[A-Za-z]{2}$"),               # 6752FE
+)
+# ⚠️ 순수 숫자는 수량·단가일 수도 있다 — 그 행에 더 나은 후보가 없을 때만 쓴다
+_WEAK_LOT_SHAPE = re.compile(r"^\d{6}$")             # 416022 · 416006
+_SKU_SHAPE = re.compile(r"^[A-Za-z]{3,6}\d{2,4}$")   # EUSKA022 · KRSKS003
+# 2칸 이상 띄어쓰기만 칸을 가른다. ⛔ 홑 공백으로 쪼개면 제품명이 토막 난다
+# ("Poremizing Fresh Ampoule 50ml")
+_WIDE_GAP = re.compile(r" {2,}|\t")
+
+
+def _is_lot(word: str) -> bool:
+    return any(p.match(word) for p in _LOT_SHAPES)
+
+
+def _find_lot(words: Sequence[str]) -> tuple[str, Optional[tuple[int, int]]]:
+    """낱말들 속의 롯트와 그것이 차지한 구간. 접미('F31C28 D')를 함께 집는다."""
+    for i, w in enumerate(words):
+        if _is_lot(w):
+            nxt = words[i + 1] if i + 1 < len(words) else ""
+            if len(nxt) == 1 and nxt.isalpha():
+                return f"{w} {nxt}", (i, i + 1)
+            return w, (i, i)
+    for i, w in enumerate(words):
+        if _WEAK_LOT_SHAPE.match(w):
+            return w, (i, i)
+    return "", None
+
+
+def _split_table(text: str) -> tuple[list[list[str]], str]:
+    """구분자를 알아내 표로 쪼갠다. 엑셀 밖에서 복사한 것도 받는다."""
+    lines = (text or "").splitlines()
+    if any("\t" in ln for ln in lines):
+        return [ln.split("\t") for ln in lines], "탭"
+    filled = [ln for ln in lines if ln.strip()]
+    if filled and all("," in ln for ln in filled):
+        # "일관되게 쪼개질" 때만 쉼표로 본다 — 제품명에 쉼표가 있으면 칸 수가 흔들린다
+        if len({ln.count(",") for ln in filled}) == 1:
+            return [ln.split(",") for ln in lines], "쉼표"
+    return [_WIDE_GAP.split(ln) for ln in lines], "띄어쓰기"
+
+
+def _infer_row(cells: Sequence[str], line_no: int) -> Optional[Row]:
+    """헤더가 없을 때 생김새로 열을 알아본다.
+
+    ⛔ 알아본 결과를 조용히 쓰지 마라 — 무엇을 롯트로 봤는지 화면이 말한다
+       (`ParsedList.layout`).
+    """
+    cells = [c.strip() for c in cells if c and c.strip()]
+    if not cells:
+        return None
+
+    lot = sku = ""
+    rest: list[str] = []
+    for c in cells:
+        words = c.split()
+        found, span = _find_lot(words)
+        whole = span is not None and span[0] == 0 and span[1] == len(words) - 1
+        if not lot and whole:
+            lot = found
+            continue
+        if not sku and _SKU_SHAPE.match(c):
+            sku = c
+            continue
+        rest.append(c)
+
+    # 칸이 홑 공백으로 붙어 온 경우에만 칸 **안**을 들여다본다
+    if not lot:
+        for i, c in enumerate(rest):
+            words = c.split()
+            found, span = _find_lot(words)
+            if found and span is not None:
+                lot = found
+                rest[i] = " ".join(words[:span[0]] + words[span[1] + 1:])
+                break
+    if not sku:
+        for i, c in enumerate(rest):
+            words = c.split()
+            for j, w in enumerate(words):
+                if _SKU_SHAPE.match(w):
+                    sku = w
+                    rest[i] = " ".join(words[:j] + words[j + 1:])
+                    break
+            if sku:
+                break
+
+    description = max((r for r in rest if r), key=len, default="")
+    if not (lot or sku or description):
+        return None
+    return Row(sku=sku, description=description, lot=lot, line_no=line_no)
 
 
 def _match_header(cells: Sequence[str]) -> dict:
@@ -59,58 +149,91 @@ def _match_header(cells: Sequence[str]) -> dict:
     return idx
 
 
+def _looks_like_header(cells: Sequence[str]) -> Optional[dict]:
+    """머리말 낱말로만 이뤄진 행이라야 헤더다.
+
+    ⚠️ 알아보지 못한 칸이 하나라도 있으면 데이터 행으로 본다 — 안 그러면
+       'LOT' 이라는 말이 섞인 데이터 행을 헤더로 삼는다.
+    """
+    hit = _match_header(cells)
+    if not hit:
+        return None
+    filled = [c for c in cells if c and c.strip()]
+    return hit if len(hit) >= len(filled) else None
+
+
 def _cell(cells: Sequence[str], col: Optional[int]) -> str:
     if col is None or col >= len(cells):
         return ""
     return (cells[col] or "").strip()
 
 
-def _rows_from_cells(table: Iterable[Sequence[str]]) -> ParsedList:
-    """헤더 행을 찾고 그 아래를 읽는다.
+def _rows_from_cells(table: Iterable[Sequence[str]],
+                     sep_label: str = "") -> ParsedList:
+    """헤더 행을 찾고 그 아래를 읽는다. 헤더가 없으면 생김새로 알아본다.
 
     ⛔ 헤더를 몇 번째 행이라고 박지 마라. 머리말 안내문이 한 줄만 늘어도 어긋나고,
        그때 나는 것은 에러가 아니라 **0건**이다 (OP 재고 적재에서 겪은 함정).
+    ⛔ 알아볼 수 있는 것을 거절하지 마라 — 헤더 없이 붙여넣는 것도, 롯트만
+       붙여넣는 것도 사람이 할 만한 일이다 (프로덕션 400 두 건의 원인).
     """
+    table = [list(cells) for cells in table]
     header: Optional[dict] = None
-    best_partial: dict = {}          # 무엇을 못 찾았는지 알려주기 위해 기억한다
+    header_at = -1
+    for i, cells in enumerate(table):
+        hit = _looks_like_header(cells)
+        if hit is not None:
+            header, header_at = hit, i
+            break
+
     rows: list[Row] = []
     skipped_no_sku = 0
 
-    for line_no, cells in enumerate(table, start=1):
-        if header is None:
-            hit = _match_header(cells)
-            if "sku" in hit and "lot" in hit:
-                header = hit
-            elif len(hit) > len(best_partial):
-                best_partial = hit
-            continue
+    if header is None:
+        # 헤더가 없다 — 생김새로 알아본다
+        for line_no, cells in enumerate(table, start=1):
+            row = _infer_row(cells, line_no)
+            if row is not None:
+                rows.append(row)
+        layout = ""
+        if rows:
+            layout = (
+                f"헤더 행이 없어 열을 알아봤습니다({sep_label or '자동'} 구분) — "
+                f"롯트 {sum(1 for r in rows if r.lot)}건 · "
+                f"SKU {sum(1 for r in rows if r.sku)}건 · "
+                f"제품명 {sum(1 for r in rows if r.description)}건. "
+                "다르게 읽혔으면 SKU·제품명·롯트 머리글을 붙여 다시 넣어주세요")
+        return ParsedList(rows=tuple(rows), inferred=True, layout=layout)
 
-        sku = _cell(cells, header["sku"])
-        if not sku:
+    has_sku = "sku" in header
+    for offset, cells in enumerate(table[header_at + 1:], start=1):
+        sku = _cell(cells, header.get("sku"))
+        lot = _cell(cells, header.get("lot"))
+        description = _cell(cells, header.get("description"))
+        if has_sku and not sku:
             # ⛔ 빈 줄을 거르는 가드가 "SKU 만 빈 행" 까지 삼켰다. 내용이 있는
             #    행을 버릴 때는 **세어서 알린다** — 빈 줄은 원래대로 조용히 버린다
             #    (그것까지 세면 숫자가 소음이 되어 아무도 안 본다)
-            if _cell(cells, header["lot"]) or _cell(cells, header.get("description")):
+            if lot or description:
                 skipped_no_sku += 1
             continue
-        rows.append(Row(
-            sku=sku,
-            description=_cell(cells, header.get("description")),
-            lot=_cell(cells, header["lot"]),
-            line_no=line_no,
-        ))
+        if not (sku or lot or description):
+            continue
+        rows.append(Row(sku=sku, description=description, lot=lot,
+                        line_no=header_at + 1 + offset))
 
-    if header is None:
-        found = [f.upper() for f in sorted(best_partial)]
-        missing = [f for f in ("SKU", "DESCRIPTION", "LOT") if f not in found]
-        raise HeaderNotFound(found=found, missing=missing)
-    return ParsedList(rows=tuple(rows), skipped_no_sku=skipped_no_sku)
+    layout = ""
+    if "lot" not in header:
+        # ⛔ 조용히 진행하지 마라 — 롯트 열이 없으면 COA 롯트 매칭 자체가 불가능하다
+        layout = ("붙여넣은 표에 롯트 열이 없습니다 — COA 는 롯트로 찾으므로 "
+                  "이 목록은 제품명 기준으로만 조회합니다")
+    return ParsedList(rows=tuple(rows), skipped_no_sku=skipped_no_sku, layout=layout)
 
 
 def parse_pasted(text: str) -> ParsedList:
-    """엑셀에서 복사한 탭 구분 텍스트."""
-    table = [line.split("\t") for line in (text or "").splitlines()]
-    return _rows_from_cells(table)
+    """엑셀에서 복사한 표. 탭·쉼표·여러 칸 띄어쓰기를 모두 받는다."""
+    table, sep_label = _split_table(text)
+    return _rows_from_cells(table, sep_label=sep_label)
 
 
 def parse_xlsx(data: bytes) -> ParsedList:
@@ -286,6 +409,8 @@ class Result:
     row: Row
     coa: Verdict
     msds: Verdict
+    # 제품명으로 찾은 COA. ⛔ 이 열은 **다른 롯트**의 증명서다 — 절대 FOUND 가 아니다
+    product_coa: Verdict
 
 
 def product_terms(description: str) -> list[str]:
@@ -307,8 +432,8 @@ def _to_files(raw: Iterable[dict]) -> list[DriveFile]:
     ]
 
 
-def _msds_name_matches(name: str, terms: Sequence[str]) -> bool:
-    """파일명이 'msds' 와 검색에 쓴 낱말을 전부 담고 있는지 본다.
+def _doc_name_matches(name: str, terms: Sequence[str], marker: str) -> bool:
+    """파일명이 표식(msds·coa)과 검색에 쓴 낱말을 전부 담고 있는지 본다.
 
     ⛔ search_drive 의 fullText 매칭이 열려 있어, 검색어를 본문 어딘가에만
        가진 무관한 문서(인증 서류 리스트, 등록 현황표 등)가 걸린다. 파일명으로
@@ -316,14 +441,14 @@ def _msds_name_matches(name: str, terms: Sequence[str]) -> bool:
        것보다 낫다.
     """
     lowered = name.casefold()
-    if "msds" not in lowered:
+    if marker not in lowered:
         return False
     return all(t.casefold() in lowered for t in terms)
 
 
-def _filter_msds_candidates(files: Iterable[DriveFile],
-                             terms: Sequence[str]) -> list[DriveFile]:
-    return [f for f in files if _msds_name_matches(f.name, terms)]
+def _filter_by_name(files: Iterable[DriveFile], terms: Sequence[str],
+                    marker: str) -> list[DriveFile]:
+    return [f for f in files if _doc_name_matches(f.name, terms, marker)]
 
 
 def _one(creds, row: Row, search) -> Result:
@@ -365,7 +490,7 @@ def _one(creds, row: Row, search) -> Result:
                            extra={"sku": row.sku, "error": str(exc)[:200]})
             msds = Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
         else:
-            files = _dedup(_filter_msds_candidates(_to_files(raw), query_terms))
+            files = _dedup(_filter_by_name(_to_files(raw), query_terms, "msds"))
             if not files:
                 msds = Verdict(NONE, (), "")
             elif len(files) == 1:
@@ -377,7 +502,48 @@ def _one(creds, row: Row, search) -> Result:
     else:
         msds = Verdict(NONE, (), "제품명이 비어 있습니다")
 
-    return Result(row=row, coa=coa, msds=msds)
+    return Result(row=row, coa=coa, msds=msds,
+                  product_coa=_product_coa(creds, row, search, coa))
+
+
+def _product_coa(creds, row: Row, search, coa: Verdict) -> Verdict:
+    """제품명으로 COA 를 찾는다 — 이 롯트의 것이 **아닌** 증명서를 보여주는 열이다.
+
+    ⛔ 절대 FOUND 를 내지 않는다. 실측(2026-08-31): 요청자의 41행은 롯트로는
+       COA 0건인데 34개 제품 중 33개는 COA 가 드라이브에 있다 — 전부 **다른
+       생산분**의 것이다. 그러니 아무리 잘 맞아도 "찾았다" 가 될 수 없고,
+       가장 세게 말할 수 있는 것이 '확인필요' 다.
+    ⚠️ 이 열이 이 기능에서 가장 위험한 자리다. 화면에서 가장 도움이 되어
+       보이는 것이 아니라 **가장 조심스러운 것**이어야 한다.
+    """
+    if coa.status == FOUND:
+        # 롯트로 찾았으면 다른 생산분은 필요 없다 — 조회를 아끼되 말은 한다
+        return Verdict(NONE, (), "롯트로 COA 를 찾았으므로 제품명으로는 조회하지 않았습니다")
+
+    terms = product_terms(row.description)
+    if not terms:
+        return Verdict(NONE, (), "제품명이 없어 제품 단위로는 찾을 수 없습니다"
+                       if not row.description
+                       else "제품명에서 검색에 쓸 낱말을 찾지 못했습니다")
+
+    query_terms = terms[:4]
+    try:
+        raw = search(creds, " ".join(query_terms + ["COA"]), max_results=25,
+                     widen=False)
+    except Exception as exc:                          # noqa: BLE001
+        logger.warning("product_coa_query_failed",
+                       extra={"sku": row.sku, "error": str(exc)[:200]})
+        return Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
+
+    files = _dedup(_filter_by_name(_to_files(raw), query_terms, "coa"))
+    if not files:
+        return Verdict(NONE, (), "이 제품 이름으로도 COA 를 찾지 못했습니다 "
+                                 "(파일명 기준 · 파일 본문은 검색하지 않습니다)")
+    lot_label = f"({row.lot})" if row.lot else ""
+    return Verdict(
+        CHECK, files,
+        f"제품명으로만 찾은 COA {len(files)}건입니다 — 이 롯트{lot_label}의 것이 "
+        "아니라 다른 생산분의 증명서입니다. 쓰기 전에 반드시 열어서 확인하세요")
 
 
 def find_all(creds, rows: Sequence[Row], search=None, max_workers: int = 8):

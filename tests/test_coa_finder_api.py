@@ -67,7 +67,8 @@ def test_search_stream_reports_error_without_a_fake_done(client):
     def _dies_after_one_row(creds, rows, search=None, max_workers=8):
         row = cf.Row(sku="A", description="앰플", lot="FE103C", line_no=2)
         yield cf.Result(row=row, coa=cf.Verdict(cf.FOUND, (), ""),
-                        msds=cf.Verdict(cf.NONE, (), ""))
+                        msds=cf.Verdict(cf.NONE, (), ""),
+                        product_coa=cf.Verdict(cf.NONE, (), ""))
         raise RuntimeError("drive timeout")
 
     with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
@@ -110,12 +111,47 @@ def test_search_rejects_oversized_pasted_text(client):
     assert "5MB" in r.json()["detail"]
 
 
-def test_search_reports_missing_header_column(client):
+def test_search_accepts_a_paste_with_no_header_row(client):
+    """⛔ 프로덕션 400 두 건의 원인 — 헤더 없이 붙여넣으면 조회가 아예 안 됐다."""
+    payload = "EUSKA022\tSKIN1004 Ampoule 100ml\tFE103C\nEUSKC017\t크림 75ml\t416022\n"
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+    assert r.status_code == 200
+    assert r.text.count("event: row") == 2
+    done = _done_payload(r.text)
+    assert done["inferred"] is True
+    assert done["layout"], "무엇을 어떻게 읽었는지 알려주지 않았다"
+
+
+def test_search_accepts_a_bare_list_of_lots(client):
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search", data={"pasted": "FE103C\nE08Z011\n"})
+    assert r.status_code == 200
+    assert r.text.count("event: row") == 2
+
+
+def test_unparsable_paste_says_what_shapes_are_accepted(client):
+    """⛔ 무엇이 없는지가 아니라 무엇을 하면 되는지 말한다."""
     with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()):
-        r = client.post("/api/coa-finder/search",
-                        data={"pasted": "SKU\tDESCRIPTION\nA\t앰플\n"})
+        r = client.post("/api/coa-finder/search", data={"pasted": "   \n\n"})
     assert r.status_code == 400
-    assert "LOT" in r.json()["detail"]
+    detail = r.json()["detail"]
+    assert "롯트" in detail          # 최소 입력이 무엇인지
+    assert "엑셀" in detail or "쉼표" in detail
+
+
+def test_search_stream_carries_the_product_coa_column(client):
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search",
+                        data={"pasted": "SKU\tDESCRIPTION\tLOT\nA\t앰플 100ml\tFE103C\n"})
+    row_line = next(ln for ln in r.text.splitlines()
+                    if ln.startswith("data: ") and "product_coa" in ln)
+    row = json.loads(row_line[len("data: "):])
+    assert row["product_coa"]["status"]
+    assert row["coa"]["status"] and row["msds"]["status"]
 
 
 @pytest.fixture
@@ -312,6 +348,32 @@ def test_download_msds_entry_carries_no_lot(client):
     entry = next(n for n in zf.namelist() if not n.startswith("_"))
     assert "FE103C" not in entry
     assert entry.startswith("EUSKA022_MSDS_")
+
+
+def test_download_product_coa_entry_carries_no_lot(client):
+    """⛔ 제품명으로 찾은 COA 는 **다른 롯트**의 것이다 — 이름에 이 행의 롯트를
+    붙이면 그 롯트 증명서라고 주장하게 된다 (MSDS 와 같은 이유, 위험은 더 크다)."""
+    zf = _zip_of(client, [{
+        "file_id": "1", "sku": "EUSKA022", "lot": "F31C28 D",
+        "name": "COA_AMPOULE 100ML_F11C05 C.pdf",
+        "status": "확인필요", "kind": "product_coa",
+    }])
+    entry = next(n for n in zf.namelist() if not n.startswith("_"))
+    assert "F31C28" not in entry
+    assert entry.startswith("확인필요_EUSKA022_")
+    note = zf.read("_확인필요_목록.txt").decode("utf-8")
+    assert "롯트" in note
+
+
+def test_download_never_treats_product_coa_as_confirmed(client):
+    """⛔ 서버가 막는다 — 클라이언트가 '찾음' 이라고 주장해도 확정이 아니다.
+    이 열은 구조적으로 확정될 수 없다 (다른 생산분의 문서다)."""
+    zf = _zip_of(client, [{
+        "file_id": "1", "sku": "A", "lot": "L1", "name": "coa.pdf",
+        "status": "찾음", "kind": "product_coa",
+    }])
+    assert all(n.startswith("확인필요_") or n.startswith("_") for n in zf.namelist())
+    assert "_확인필요_목록.txt" in zf.namelist()
 
 
 def test_download_unknown_kind_is_treated_as_coa(client):
@@ -555,6 +617,20 @@ def test_frontend_states_rows_skipped_for_empty_sku():
     src = _js_source()
     assert "skipped_no_sku" in src
     assert "cf-skipped" in src
+
+
+def test_frontend_renders_the_product_coa_column():
+    src = _js_source()
+    assert "COA(제품)" in src
+    assert "product_coa" in src
+
+
+def test_frontend_does_not_let_the_row_checkbox_take_product_coa():
+    """⛔ 이 열은 화면에서 가장 조심스러운 것이어야 한다 — 가장 도움이 되어
+    보이는 것이 아니라. 행 체크·전체선택으로 딸려 나가면 안 된다."""
+    src = _js_source()
+    assert "cf-pick-product" in src
+    assert "dataset.optin" in src or "dataset.optIn" in src
 
 
 def test_frontend_carries_file_size_for_batching():
