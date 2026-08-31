@@ -756,32 +756,68 @@
       userAvatar.textContent = (currentUser.name || "U").charAt(0).toUpperCase();
       var welcomeName = document.getElementById("welcome-user-name");
       if (welcomeName) welcomeName.textContent = currentUser.name;
-      if (window.CellaPersonalBriefing) {
-        personalBriefingController = window.CellaPersonalBriefing.create({
-          root: document.getElementById("personal-briefing"),
-          input: chatInput,
-          connect: handleGwsConnect,
-          onGoogleState: function (connected, account) {
-            gwsConnected = connected;
-            gwsGoogleEmail = account || "";
-            gwsStatusKnown = true;
-            updateGwsButton();
-          },
-          fetchImpl: window.fetch.bind(window)
-        });
-        personalBriefingController.load();
-        loadMySuggestions();
-        // 사용자가 직접 누르는 새로고침. ⚠️ 버튼이 없을 수도 있으니 확인하고 건다
-        var briefingRefreshBtn = document.getElementById("personal-briefing-refresh");
-        if (briefingRefreshBtn) {
-          briefingRefreshBtn.addEventListener("click", function () {
-            personalBriefingController.refresh();
-          });
-        }
+
+      if (currentUser.must_change_password) {
+        // 관리자가 비밀번호를 초기화한 계정 — 새 비밀번호를 정하기 전까지는
+        // 이 화면 하나만 빼고 서버(app/api/auth_middleware.py)가 나머지 요청을
+        // 전부 403 으로 막는다. 그래서 여기서도 나머지 초기화(대화 목록·브리핑
+        // 등)를 시작하지 않는다 — 어차피 403 뿐이고, 이유를 모르면 "고장난 것
+        // 같다"로 읽힌다. 닫기·바깥 클릭으로는 못 벗어난다.
+        showChangePasswordModal({ forced: true, onSuccess: _completeInitAfterForcedPasswordChange });
+        return;
       }
     } catch (e) {
       window.location.href = "/login";
       return;
+    }
+
+    await _finishInit();
+  }
+
+  // 강제 비밀번호 변경이 성공한 뒤 — 세션(쿠키)은 비밀번호와 무관하게 그대로
+  // 유효하므로 재로그인 없이 이어서 초기화한다. 다만 서버가 실제로 플래그를
+  // 지웠는지 /me 로 다시 확인한 뒤 진행한다 (클라이언트가 지레짐작하지 않는다).
+  function _completeInitAfterForcedPasswordChange() {
+    fetch("/api/auth/me")
+      .then(function (r) { if (!r.ok) throw new Error("me failed"); return r.json(); })
+      .then(function (freshUser) {
+        currentUser = freshUser;
+        if (currentUser.must_change_password) {
+          // 서버가 아직 플래그를 지운 것으로 안 보인다 — 앱을 반쯤 켜인 채로
+          // 두는 대신 다시 로그인 경로로 보내 확실한 상태에서 다시 시작한다.
+          window.location.href = "/login";
+          return;
+        }
+        _finishInit();
+      })
+      .catch(function () {
+        window.location.href = "/login";
+      });
+  }
+
+  async function _finishInit() {
+    if (window.CellaPersonalBriefing) {
+      personalBriefingController = window.CellaPersonalBriefing.create({
+        root: document.getElementById("personal-briefing"),
+        input: chatInput,
+        connect: handleGwsConnect,
+        onGoogleState: function (connected, account) {
+          gwsConnected = connected;
+          gwsGoogleEmail = account || "";
+          gwsStatusKnown = true;
+          updateGwsButton();
+        },
+        fetchImpl: window.fetch.bind(window)
+      });
+      personalBriefingController.load();
+      loadMySuggestions();
+      // 사용자가 직접 누르는 새로고침. ⚠️ 버튼이 없을 수도 있으니 확인하고 건다
+      var briefingRefreshBtn = document.getElementById("personal-briefing-refresh");
+      if (briefingRefreshBtn) {
+        briefingRefreshBtn.addEventListener("click", function () {
+          personalBriefingController.refresh();
+        });
+      }
     }
 
     setupEventListeners();
@@ -6070,30 +6106,54 @@
     });
   }
 
-  // Password change modal
-  function showChangePasswordModal() {
+  // Password change modal. `opts.forced` = 관리자가 초기화해서 강제로 온 경우 —
+  // 취소·바깥 클릭으로 못 닫는다 (그러면 이유도 모른 채 나머지 요청이 전부
+  // 403 나는 화면에 혼자 남는다). 이유를 설명하고, "현재 비밀번호" 자리가
+  // 사실은 방금 전달받은 임시 비밀번호라는 것을 밝힌다. `opts.onSuccess` 는
+  // 변경이 실제로 성공했을 때만 호출된다 — 실패로는 닫히지 않는다.
+  function showChangePasswordModal(opts) {
+    opts = opts || {};
+    var forced = !!opts.forced;
     var overlay = document.createElement("div");
     overlay.className = "admin-modal-overlay";
+
+    var reasonHtml = forced
+      ? '<p class="pw-forced-reason">관리자가 비밀번호를 초기화했습니다. 계속하려면 새 비밀번호를 정해 주세요.</p>'
+      : '';
+    var currentLabel = forced ? '임시 비밀번호' : '현재 비밀번호';
+    var currentHelpHtml = forced
+      ? '<p class="pw-current-help">관리자에게 전달받은 임시 비밀번호입니다 — 본인이 정했던 비밀번호가 아닙니다.</p>'
+      : '';
+    var currentPlaceholder = forced ? '전달받은 임시 비밀번호 입력' : '현재 비밀번호 입력';
+    var actionsHtml = forced
+      ? '<div class="admin-modal-actions"><button class="admin-btn-primary" id="pw-submit">변경</button></div>'
+      : '<div class="admin-modal-actions">' +
+        '<button class="admin-btn-secondary" id="pw-cancel">취소</button>' +
+        '<button class="admin-btn-primary" id="pw-submit">변경</button>' +
+        '</div>';
+
     overlay.innerHTML =
       '<div class="admin-modal pw-modal">' +
       '<h3>비밀번호 변경</h3>' +
-      '<label class="pw-label">현재 비밀번호</label>' +
-      '<input type="password" id="pw-current" placeholder="현재 비밀번호 입력">' +
+      reasonHtml +
+      '<label class="pw-label">' + currentLabel + '</label>' +
+      currentHelpHtml +
+      '<input type="password" id="pw-current" placeholder="' + currentPlaceholder + '">' +
       '<label class="pw-label">새 비밀번호</label>' +
       '<input type="password" id="pw-new" placeholder="새 비밀번호 (4자 이상)">' +
       '<label class="pw-label">새 비밀번호 확인</label>' +
       '<input type="password" id="pw-confirm" placeholder="새 비밀번호 다시 입력">' +
       '<div class="pw-error" id="pw-error"></div>' +
-      '<div class="admin-modal-actions">' +
-      '<button class="admin-btn-secondary" id="pw-cancel">취소</button>' +
-      '<button class="admin-btn-primary" id="pw-submit">변경</button>' +
-      '</div></div>';
+      actionsHtml +
+      '</div>';
     document.body.appendChild(overlay);
     overlay.querySelector("#pw-current").focus();
 
     var close = function () { overlay.remove(); };
-    overlay.querySelector("#pw-cancel").addEventListener("click", close);
-    overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+    if (!forced) {
+      overlay.querySelector("#pw-cancel").addEventListener("click", close);
+      overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+    }
 
     overlay.querySelector("#pw-submit").addEventListener("click", async function () {
       var cur = overlay.querySelector("#pw-current").value;
@@ -6102,7 +6162,7 @@
       var errEl = overlay.querySelector("#pw-error");
       errEl.textContent = "";
 
-      if (!cur) { errEl.textContent = "현재 비밀번호를 입력하세요"; return; }
+      if (!cur) { errEl.textContent = forced ? "임시 비밀번호를 입력하세요" : "현재 비밀번호를 입력하세요"; return; }
       if (nw.length < 4) { errEl.textContent = "새 비밀번호는 4자 이상이어야 합니다"; return; }
       if (nw !== cf) { errEl.textContent = "새 비밀번호가 일치하지 않습니다"; return; }
 
@@ -6124,12 +6184,15 @@
           return;
         }
         overlay.querySelector(".pw-modal").innerHTML =
-          '<h3>비밀번호 변경</h3>' +
-          '<p class="pw-success">비밀번호가 변경되었습니다.</p>' +
+          '<h3>비밀번호 변경 완료</h3>' +
+          '<p class="pw-success">새 비밀번호로 변경되었습니다.</p>' +
           '<div class="admin-modal-actions">' +
-          '<button class="admin-btn-primary" id="pw-done">확인</button>' +
+          '<button class="admin-btn-primary" id="pw-done">' + (forced ? '계속하기' : '확인') + '</button>' +
           '</div>';
-        overlay.querySelector("#pw-done").addEventListener("click", close);
+        overlay.querySelector("#pw-done").addEventListener("click", function () {
+          close();
+          if (opts.onSuccess) opts.onSuccess();
+        });
       } catch (e) {
         errEl.textContent = "서버 연결 오류";
         btn.disabled = false;
