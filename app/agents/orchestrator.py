@@ -1275,6 +1275,7 @@ class OrchestratorAgent:
         brand_filter=None,
         can_view_fi: bool = False,
         enabled_sources=None,
+        user_id=None,
     ):
         """Async generator: yields (type, data) tuples for real-time streaming.
 
@@ -1442,7 +1443,7 @@ class OrchestratorAgent:
                     _loop = asyncio.get_running_loop()
                     def _bq():
                         try:
-                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi):
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi, user_id=user_id):
                                 _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                         except Exception as e:
                             _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
@@ -1672,6 +1673,7 @@ class OrchestratorAgent:
                         enabled_sources=enabled_sources,
                         wiki_context=wiki_context,
                         can_view_fi=can_view_fi,
+                        user_id=user_id,
                     ):
                         _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                 except Exception as e:

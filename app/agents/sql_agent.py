@@ -3325,12 +3325,14 @@ def _fast_fmt_cell(v) -> str:
 # 좌우된 끝에 "2025년부터 데이터가 있다"는 잘못된 결론으로 이어졌다(2026-08-31).
 # 200이면 다년 월별 리포트(예: 7년×12개월×2 구분 = 168행) 정도는 통째로 보이면서도
 # BigQuery 실행 자체의 상한(1000행, `execute_sql`)보다는 충분히 낮게 유지된다.
-# 그래도 잘리는 결과는 각주가 남는다(아래) — 잘린 나머지를 받을 수 있게 하는 것은
-# 다음 커밋에서 다루는 별도 작업이다.
+# 그래도 잘리는 결과는 각주가 남고(아래), 잘린 나머지는 CSV 다운로드로 받는다
+# (`user_id` 가 있을 때만 — `app/core/sql_result_store.py`).
 _FAST_TABLE_MAX_ROWS = 200
 
 
-def _fast_table_markdown(results: list, max_rows: int = _FAST_TABLE_MAX_ROWS) -> str:
+def _fast_table_markdown(
+    results: list, max_rows: int = _FAST_TABLE_MAX_ROWS, user_id: Optional[int] = None
+) -> str:
     cols = list(results[0].keys())
     heads = [_COL_LABELS.get(c.lower(), c) for c in cols]
     lines = ["| " + " | ".join(heads) + " |", "|" + "|".join([" :--- "] * len(cols)) + "|"]
@@ -3352,11 +3354,22 @@ def _fast_table_markdown(results: list, max_rows: int = _FAST_TABLE_MAX_ROWS) ->
         lines.append("| " + " | ".join(cells) + " |")
     table = "\n".join(lines)
     if len(results) > max_rows:
-        table += (
+        note = (
             f"\n\n*(전체 {len(results)}행 중 상위 {max_rows}행 표시"
             + (f" · 합계는 전체 {len(detail_rows)}행 기준" if totals else "")
             + ")*"
         )
+        # 잘린 나머지를 실제로 받을 방법을 준다 — 각주만 있고 손에 쥘 게 없으면
+        # "RAW 파일을 줘"가 반복된다(2026-08-31 실사용자 재질문).
+        if user_id:
+            try:
+                from app.core.sql_result_store import save as _save_full_result
+                labels = {c: h for c, h in zip(cols, heads)}
+                token = _save_full_result(user_id, cols, results, labels=labels)
+                note += f" · [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
+            except Exception as _e:
+                logger.warning("sql_result_csv_offer_failed", error=str(_e)[:150])
+        table += note
     return table
 
 
@@ -3381,7 +3394,10 @@ def _fast_summary_line(results: list) -> str:
     return " · ".join(parts)
 
 
-def _fast_answer_stream(query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end):
+def _fast_answer_stream(
+    query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end,
+    user_id: Optional[int] = None,
+):
     """Yield template-rendered table instantly, then short LLM insights.
 
     Removes the 3-4s full-answer LLM generation from the critical path: the
@@ -3399,7 +3415,7 @@ def _fast_answer_stream(query, sql, results, wiki_context, _t0, _t_gen, _t_exec_
     summary = _fast_summary_line(results)
     if summary:
         out_head += f"#### 요약\n{summary}\n\n"
-    fast_table = _fast_table_markdown(results)
+    fast_table = _fast_table_markdown(results, user_id=user_id)
     out_head += f"#### 상세 데이터\n{fast_table}\n"
     # 차원 열이 전혀 없는 특수한 다중 행 결과는 표 안에 '합계' 라벨을 넣을
     # 자리가 없다. 이 경우에도 별도 합계 표로 보증한다.
@@ -3477,6 +3493,7 @@ def run_sql_agent_stream(
     enabled_sources: Optional[list] = None,
     wiki_context: str = "",
     can_view_fi: bool = False,
+    user_id: Optional[int] = None,
 ):
     """Streaming version of run_sql_agent. Yields text chunks during format_answer.
 
@@ -3558,7 +3575,8 @@ def run_sql_agent_stream(
     # instantly from rows, LLM only for short insights.
     if os.getenv("BQ_FAST_ANSWER") == "1":
         yield from _fast_answer_stream(
-            query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end
+            query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end,
+            user_id=user_id,
         )
         return
 
