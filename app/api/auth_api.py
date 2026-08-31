@@ -43,10 +43,12 @@ _AD_CACHE_TTL = 300  # 5 minutes
 # background before answering the failing request.
 #
 # ⛔ This must NEVER be awaited on the request path. A live full resync (fetch_ad_users
-#    + sync_to_db over ~362 accounts) measured ~135.9s in production (2026-08-27) —
-#    the WAS host most likely can't even reach the AD server at all (LDAP is only open
-#    to the APP host, per CLAUDE.md), so the attempt probably just burns a multi-minute
-#    TCP timeout before failing. A user who picked the wrong team from the dropdown was
+#    + sync_to_db over ~362 accounts) measured ~135.9s in production (2026-09-01).
+#    Probed from the WAS afterwards: 10.1.150.5 -> 172.16.1.13:389 is CLOSED, so those
+#    135s were a firewall timeout and this self-heal has NEVER actually healed anything
+#    on the WAS — it cannot reach AD at all. Leaving it wired anyway: it is harmless
+#    off the request path, and it starts working the day LDAP is opened (or if this
+#    ever runs somewhere that can reach AD). A user who picked the wrong team was
 #    made to stare at a spinner for over two minutes for what should be a ~1s "not
 #    found." The resync can only ever help the *next* attempt (the user retries once
 #    they're actually in AD, or a real same-day hire tries again a bit later) — this

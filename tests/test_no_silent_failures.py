@@ -918,3 +918,139 @@ def test_coa_finder_script_parses():
     r = subprocess.run([node, "--check", "app/static/coa_finder.js"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# -- 답변 수치 검증이 **실제 사용자 경로에** 붙어 있는가 (2026-08-31) ------------
+#
+# 검증은 2026-08-13 에 만들어져 있었지만 호출부가 `format_answer`(비스트리밍)
+# 하나뿐이었다. 채팅은 `run_sql_agent_stream` 으로 나가므로(chat.js 가
+# stream: true) 실사용 트래픽에서는 **계측조차 한 번도 돌지 않았다** —
+# "미검증률 0%" 는 아무도 안 쓰는 경로에서 잰 값이었다.
+# 그 사이 8,287만원짜리 3개월 매출이 "약 828.7억원"(정확히 1,000배)으로 나갔다.
+
+_JD_ROWS = [
+    {"month": "2026-06", "Sales1_Amount": 33399393.5798, "Sales2_Amount": 15245175.4328},
+    {"month": "2026-07", "Sales1_Amount": 34703583.2884, "Sales2_Amount": 14970989.5268},
+    {"month": "2026-08", "Sales1_Amount": 14768741.80, "Sales2_Amount": 14768741.80},
+]
+
+
+def test_the_streaming_answer_is_number_checked():
+    """⛔ 안전장치를 만들어 두고 **실제 경로에 배선하지 않는 것**이 이 프로젝트가
+    반복하는 사고다. 프로덕션 채팅은 스트리밍 경로로 나간다."""
+    import inspect
+
+    from app.agents import sql_agent
+
+    src = inspect.getsource(sql_agent.run_sql_agent_stream)
+    assert "_number_check_notice" in src, (
+        "스트리밍(실사용) 경로가 답변 수치를 검증하지 않는다 — "
+        "비스트리밍에만 붙여 두면 계측조차 돌지 않는다")
+    assert "_number_check_notice" in inspect.getsource(sql_agent.format_answer)
+
+
+def test_display_rounded_numbers_reach_the_model():
+    """⛔ `33399393.5798` 을 그대로 넘기면 소수점이 자릿수 구분의 미끼가 된다 —
+    Flash 가 표에 `33,399,393,579.80` 을 적었다. 원 단위 소수점은 뜻이 없다."""
+    from app.agents.sql_agent import _rows_to_json_preview
+
+    preview = _rows_to_json_preview(_JD_ROWS)
+    assert "33399394" in preview
+    assert "33399393.5798" not in preview, "소수점이 그대로 프롬프트에 들어간다"
+    # 비율·배수는 소수점이 뜻을 가지므로 남긴다
+    assert "3.42" in _rows_to_json_preview([{"roas": 3.4234}])
+
+
+def test_an_inflated_number_is_corrected_in_front_of_the_user():
+    """미검증 수치를 로그로만 남기면 사용자는 틀린 값을 그대로 받는다."""
+    from app.agents.sql_agent import _number_check_notice
+
+    inflated = ("총 약 828.7억원입니다.\n"
+                "| 2026-06 | 33,399,393,579.80 | 15,245,175,432.80 |\n")
+    note = _number_check_notice(inflated, _JD_ROWS, "징동 3개월 매출")
+    assert "확인하지 못했습니다" in note, "1,000배 오답이 조용히 나갔다"
+    assert "82,871,719" in note, "실제 조회된 값을 보여줘야 정정이다"
+
+
+def test_a_correct_answer_gets_no_correction_block():
+    """⚠️ 매번 뜨는 경고는 곧 아무도 안 읽는다 — 파생값은 정상이다."""
+    from app.agents.sql_agent import _number_check_notice
+
+    fine = ("총 8,287만원입니다. 6월 33,399,394원 · 7월 34,703,583원으로 "
+            "7월이 1,304,190원 많고 전체의 41.9%를 차지합니다.")
+    assert _number_check_notice(fine, _JD_ROWS, "징동 3개월 매출") == ""
+
+
+def test_totals_rows_say_which_column_they_are():
+    """⛔ 합계표에 같은 라벨이 두 줄 나가면 어느 열의 합인지 말하지 못한다 —
+    실제로 "수치 합계" 두 줄이 나란히 나갔다."""
+    from app.agents.sql_agent import _build_table_totals_markdown
+
+    block = _build_table_totals_markdown(_JD_ROWS)
+    labels = [ln.split("|")[1].strip() for ln in block.splitlines()
+              if ln.startswith("| ") and "**" in ln]
+    assert len(labels) == len(set(labels)), f"합계 라벨이 겹친다: {labels}"
+    assert all("수치 합계" not in x for x in labels), (
+        "Sales1_Amount 같은 일련번호 붙은 금액 열을 지표로 알아보지 못한다")
+
+
+# -- 금액 단위 환산은 코드가 한다 (2026-08-31, 같은 사고 2회차) ------------------
+#
+# 1회차를 고친 뒤 표는 맞게 나왔는데 **요약 문장만** 틀렸다:
+#   "총 매출은 약 828.7억원" — 실제는 82,871,719원(=8,287만원). 10만으로 나눴다.
+# 사용자: "표와 시각화는 값이 맞는데 ... 이부분이 안맞음"
+
+def test_a_misscaled_amount_is_rewritten_to_the_real_value():
+    from app.core.answer_check import grounded_amounts, repair_money_scale
+
+    known = grounded_amounts(_JD_ROWS)
+    out, fixed = repair_money_scale(
+        "Sales1 기준 총 매출은 약 828.7억원을 기록하였습니다.", known)
+    assert "8,287만원" in out, f"배율 오류를 못 고쳤다: {out}"
+    assert "828.7억원" not in out
+    assert fixed
+
+
+@pytest.mark.parametrize("text", [
+    "일본은 1,135.0억원으로 1위입니다.",          # 맞는 표기 (다른 데이터셋)
+    "총 3만 개가 팔렸습니다.",                    # 수량 — '원' 이 없다
+    "광고비는 412.7억원입니다.",                  # 조회에 없는 값 = 확정 못 한다
+])
+def test_the_repair_keeps_its_hands_off_when_unsure(text):
+    """⛔ 고쳐 쓰는 것은 되돌릴 수 없다 — 확정 못 하면 손대지 않는다.
+    (그때는 `significant` 공시가 받는다.)"""
+    from app.core.answer_check import grounded_amounts, repair_money_scale
+
+    rows = [{"c": "일본", "rev": 113_500_000_000}, {"c": "미국", "rev": 55_100_000_000}]
+    out, fixed = repair_money_scale(text, grounded_amounts(rows))
+    assert out == text and not fixed, f"건드리면 안 되는 것을 고쳤다: {fixed}"
+
+
+def test_the_repair_survives_chunk_boundaries():
+    """⚠️ 스트리밍은 `828.` + `7억원` 으로 쪼개진다 — 줄 단위로 모아 판정해야 한다."""
+    from app.agents.sql_agent import _mask_stream
+    from app.core.answer_check import money_scale_repairer
+
+    text = "요약\n총 매출은 약 828.7억원입니다.\n"
+    chunks = iter([text[i:i + 5] for i in range(0, len(text), 5)])
+    out = "".join(_mask_stream(chunks, transform=money_scale_repairer(_JD_ROWS)))
+    assert "8,287만원" in out and "828.7억원" not in out
+
+
+def test_both_chat_paths_repair_the_units():
+    """⛔ 한 경로에만 붙이면 경로에 따라 답이 갈린다 — 이미 겪은 사고다."""
+    import inspect
+
+    from app.agents import sql_agent
+
+    for fn in (sql_agent.run_sql_agent_stream, sql_agent.format_answer):
+        assert "money_scale_repairer" in inspect.getsource(fn), fn.__name__
+
+
+def test_the_prompt_hands_over_converted_amounts():
+    """환산 문자열을 미리 주면 LLM 이 할 일은 복사뿐이다 (보증은 교정이 한다)."""
+    from app.agents.sql_agent import _amount_note
+
+    note = _amount_note(_JD_ROWS)
+    assert "8,287만원" in note and "82,871,719원" in note
+    assert "1억 미만에 '억'을 쓰지 마라" in note

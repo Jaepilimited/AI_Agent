@@ -227,29 +227,75 @@ def _mm():
     return MaintenanceManager()
 
 
-def test_a_just_loaded_table_is_called_out():
+def _loading(label="광고", *, ago=120):
+    """적재가 **진행 중인** 감시 상태 — 폴링 사이에 수정 시각이 앞으로 갔다.
+
+    ⚠️ 한 번만 기록하면 '적재 중' 이 아니다. 그건 "최근에 수정됐다" 까지만
+       말해 주고, 그 사실은 적재가 **끝난 뒤에도** 한동안 참이다.
+    """
+    mm = _mm()
+    mm.note_table_modified(label, ago + 90)   # 폴링 1회차
+    mm.note_table_modified(label, ago)        # 폴링 2회차 — 값이 움직였다
+    return mm
+
+
+def test_a_table_being_written_right_now_is_called_out():
     from app.core.safety import recent_load_notice_for_sql
 
-    mm = _mm()
-    mm.note_table_modified("광고", 120)          # 2분 전
+    mm = _loading(ago=120)                     # 2분 전 수정, 그 사이 계속 움직였다
     note = recent_load_notice_for_sql(_OLD_AD, mm)
     assert "지금 적재 중입니다" in note
     assert "틀린 값이 아니라" in note, "왜 알리는지가 빠지면 사용자가 오답으로 읽는다"
     assert "광고(2분 전)" in note
 
 
+def test_a_finished_load_does_not_claim_to_be_loading():
+    """⛔ 2026-08-31 사용자 제보: *"지금 적재중입니다는 맞는 표현이 아님.
+    이미 업데이트가 되어있음"* — 11분 전에 **끝난** 적재였다.
+
+    수정 시각만 보면 적재가 끝난 뒤에도 창이 닫힐 때까지 계속 참이다. 쓰는 중이면
+    폴링마다 값이 앞으로 가고, 끝났으면 굳는다 — 굳었으면 말하지 않는다.
+    """
+    from app.core.safety import recent_load_notice_for_sql
+
+    mm = _mm()
+    for ago in (660, 720, 780):               # 11분 → 12분 → 13분: 값이 굳었다
+        mm.note_table_modified("광고", ago)
+    assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
+
+    # 한 번 움직인 뒤에도 그 창을 넘기면 조용해진다 (적재가 끝난 것이다)
+    mm = _mm()
+    mm.note_table_modified("광고", 600)
+    mm.note_table_modified("광고", 400)       # 움직였다 — 그러나 그 뒤로 잠잠하다
+    import time
+
+    from app.core.safety import _LOAD_IN_PROGRESS_SECONDS
+    mm.tables["광고"]["moved_ts"] = time.time() - _LOAD_IN_PROGRESS_SECONDS - 30
+    assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
+
+
 def test_other_tables_and_settled_data_stay_quiet():
     """⚠️ 매번 뜨는 경고는 곧 아무도 안 읽는다."""
     from app.core.safety import recent_load_notice_for_sql
 
-    mm = _mm()
-    mm.note_table_modified("광고", 120)
+    mm = _loading(ago=120)
     assert recent_load_notice_for_sql(_SALES, mm) == "", "다른 테이블 질문에 붙었다"
 
     mm.note_table_modified("광고", 3600)         # 1시간 전 = 적재가 끝났다
     assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
     assert recent_load_notice_for_sql(_OLD_AD, _mm()) == "", "아는 게 없으면 말하지 않는다"
     assert recent_load_notice_for_sql("", mm) == ""
+
+
+def test_polling_jitter_is_not_mistaken_for_a_write():
+    """⚠️ 경과 초는 정수로 오고 왕복 지연도 매번 다르다. 1~2초 흔들림을 쓰기로
+    읽으면 **가만히 있는 테이블이 영원히 적재 중**이 된다."""
+    from app.core.safety import recent_load_notice_for_sql
+
+    mm = _mm()
+    for ago in (120, 179, 241, 299):          # 60초 간격 폴링의 자연스러운 흔들림
+        mm.note_table_modified("광고", ago)
+    assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
 
 
 def test_a_dead_monitor_turns_the_notice_off_by_itself():
@@ -259,8 +305,7 @@ def test_a_dead_monitor_turns_the_notice_off_by_itself():
 
     from app.core.safety import _ACTIVE_LOAD_SECONDS, recent_load_notice_for_sql
 
-    mm = _mm()
-    mm.note_table_modified("광고", 60)
+    mm = _loading(ago=60)
     mm.tables["광고"]["modified_ts"] = time.time() - _ACTIVE_LOAD_SECONDS - 10
     assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
 
@@ -269,8 +314,7 @@ def test_the_three_notices_have_a_fixed_priority():
     """점검 중 > 방금 적재 > 최근 날짜. 한 번에 하나만 붙는다."""
     from app.core.safety import data_update_notice_for_sql
 
-    mm = _mm()
-    mm.note_table_modified("광고", 60)
+    mm = _loading(ago=60)
     mm.auto_activate_table("광고", "테이블 적재 중 (row 1 < 기준 2)")
     assert "데이터 업데이트 중" in data_update_notice_for_sql(_OLD_AD, mm)
 

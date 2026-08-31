@@ -286,9 +286,11 @@ def test_pre_router_intercepts_sit_upstream_of_the_router():
 
 def test_answer_check_hangs_off_bigquery_only():
     """⛔ 안전장치가 덮지 않는 경로를 덮는다고 주장하는 것이 이 기능이 낼 수 있는
-    최악의 사고다. `answer_check` 의 호출부는 앱 전체에 **하나뿐**이다
-    (`sql_agent.format_answer` 안, 2026-08-24 전수 확인) — 그런데 캔버스는 7개
-    경로가 전부 수치검증을 거친다고 그렸다.
+    최악의 사고다. 캔버스는 7개 경로가 전부 수치검증을 거친다고 그렸지만,
+    `answer_check` 는 bigquery 경로에만 붙는다 (2026-08-24 전수 확인).
+
+    ⚠️ 2026-08-31 부터 스트리밍 경로도 같은 검증을 부르지만 그건 LangGraph 노드가
+       아니라 여기 엣지가 늘지 않는다 — **덜 그리는 것은 괜찮다.**
 
     ⚠️ `multi` 도 `_multi_prepare` 로 sql_agent 를 부르지만, 그 답은 Flash 합성을
        한 번 더 거쳐 나가므로 **최종 답변이 검증된 것이 아니다** — 그리지 않는다.

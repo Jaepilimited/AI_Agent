@@ -32,6 +32,12 @@ logger = structlog.get_logger(__name__)
 # MaintenanceManager
 # ---------------------------------------------------------------------------
 
+#: 폴링으로 읽은 수정 시각이 이만큼 넘게 앞으로 갔을 때만 **새 쓰기**로 본다.
+#: ⚠️ 0 으로 두지 마라 — 경과 초는 정수로 오고 폴링 간격·왕복 지연이 매번 다르므로,
+#:    가만히 있는 테이블도 1~2초씩 흔들려 **매 폴링이 '방금 썼다'** 가 된다.
+_LOAD_MOVE_EPSILON_SECONDS = 10
+
+
 class MaintenanceManager:
     """Tracks BigQuery table update state and blocks queries during maintenance.
 
@@ -67,7 +73,8 @@ class MaintenanceManager:
     def _table_entry(self, table_key: str) -> dict:
         return self.tables.setdefault(
             table_key,
-            {"active": False, "reason": "", "baseline_rows": None, "modified_ts": None})
+            {"active": False, "reason": "", "baseline_rows": None,
+             "modified_ts": None, "moved_ts": None})
 
     def note_table_modified(self, table_key: str, modified_ago_seconds) -> None:
         """테이블이 마지막으로 **수정된 시각**을 절대값으로 기록한다.
@@ -75,14 +82,32 @@ class MaintenanceManager:
         ⛔ 경과 초를 그대로 저장하면 안 된다 — 감시 루프가 멈추면 그 값이 얼어붙어
            **영원히 "방금 적재됨"** 이 된다. 절대 시각으로 두면 루프가 죽어도
            경과가 자연히 커져 공시가 스스로 꺼진다 (안전한 쪽으로 실패한다).
+
+        ⛔ **"최근에 수정됐다" 와 "지금 쓰고 있다" 는 다른 사실이다.** 수정 시각만
+           보면 적재가 **끝난 뒤에도** 창이 닫힐 때까지 계속 "적재 중" 이라고
+           말한다 — 실제로 11분 전에 끝난 적재를 두고 그렇게 나갔다
+           (2026-08-31 사용자 제보: *"지금 적재중입니다는 맞는 표현이 아님.
+           이미 업데이트가 되어있음"*). 쓰는 중이면 폴링마다 수정 시각이 **앞으로
+           간다**. 그래서 값이 실제로 움직인 순간(`moved_ts`)을 따로 남기고,
+           공시는 그것만 근거로 삼는다.
         """
         if modified_ago_seconds is None:
             return
-        self._table_entry(table_key)["modified_ts"] = time.time() - float(modified_ago_seconds)
+        entry = self._table_entry(table_key)
+        stamp = time.time() - float(modified_ago_seconds)
+        previous = entry.get("modified_ts")
+        if previous is not None and stamp > previous + _LOAD_MOVE_EPSILON_SECONDS:
+            entry["moved_ts"] = time.time()
+        entry["modified_ts"] = stamp
 
     def table_modified_ago(self, table_key: str):
         """마지막 수정 이후 경과(초). 모르면 None."""
         ts = self.tables.get(table_key, {}).get("modified_ts")
+        return None if ts is None else max(0.0, time.time() - ts)
+
+    def table_load_moved_ago(self, table_key: str):
+        """수정 시각이 **실제로 앞으로 간 것을 본** 이후 경과(초). 못 봤으면 None."""
+        ts = self.tables.get(table_key, {}).get("moved_ts")
         return None if ts is None else max(0.0, time.time() - ts)
 
     def _recompute_aggregate(self) -> None:
@@ -553,12 +578,18 @@ def data_update_notice_for_sql(
     )
 
 
-#: 이 시간 안에 수정됐으면 **지금 적재 중이거나 방금 끝난 것**으로 본다.
+#: 수정 시각이 이보다 오래됐으면 무슨 일이 있어도 조용하다 (바깥 울타리).
 #: ⚠️ 넓히지 마라 — 적재가 끝난 뒤에도 계속 붙으면 매번 뜨는 경고가 되고,
-#:    매번 뜨는 경고는 곧 아무도 안 읽는다. 실측(2026-08-31): 이 테이블의
-#:    `last_modified` 경과는 단조 증가한다(1376초 → 1418초). 상시 수정이 아니라
-#:    하루 두 번이므로, 좁게 잡아도 진짜 적재 구간은 잡힌다.
+#:    매번 뜨는 경고는 곧 아무도 안 읽는다.
 _ACTIVE_LOAD_SECONDS = 15 * 60
+
+#: **지금 쓰는 중**으로 볼 기간 — 수정 시각이 실제로 앞으로 간 것을 본 뒤 이만큼.
+#: 감시 루프가 60초마다 도니 폴링 3회 분량이다. 적재가 진행 중이면 폴링마다 값이
+#: 다시 움직여 창이 계속 갱신되고, 적재가 끝나면 값이 굳어 공시가 스스로 꺼진다.
+#: ⛔ 이것을 `_ACTIVE_LOAD_SECONDS` 로 되돌리지 마라 — 그러면 **끝난 적재를 15분
+#:    내내 "지금 적재 중" 이라고 말한다.** 실제로 11분 전에 끝난 적재를 두고
+#:    그렇게 나갔다 (2026-08-31 사용자 제보).
+_LOAD_IN_PROGRESS_SECONDS = 3 * 60
 
 
 def recent_load_notice_for_sql(sql: str,
@@ -571,6 +602,12 @@ def recent_load_notice_for_sql(sql: str,
     ⛔ 점검 감지(`maintenance_auto_detect_loop`)는 행이 **줄어드는 것**만 본다.
        실제 사고는 append 중이었고, 그래서 화면도 답변도 아무 말이 없었다 —
        8/30 KBT 광고비가 91.5만원(실제 571.9만원)으로 나갔다.
+
+    ⛔ **"최근에 수정됨" 을 "적재 중" 이라고 말하지 마라** (2026-08-31 사용자 제보:
+       *"지금 적재중입니다는 맞는 표현이 아님. 이미 업데이트가 되어있음"*).
+       처음엔 수정 시각이 15분 안이면 무조건 붙였는데, 그건 적재가 **끝난 뒤에도**
+       15분 내내 참이다. 판정은 `moved_ts` 로 한다 — 폴링 사이에 수정 시각이
+       실제로 앞으로 갔는가. 쓰는 중이면 계속 움직이고, 끝났으면 굳는다.
     ⚠️ 조회를 늘리지 않는다. 감시 루프가 60초마다 이미 읽어 둔 값을 쓴다.
     """
     if not (sql or "").strip():
@@ -583,8 +620,13 @@ def recent_load_notice_for_sql(sql: str,
         if not re.search(rf"(?<![\w]){re.escape(qualified)}(?![\w])", normalized):
             continue
         ago = mm.table_modified_ago(label)
-        if ago is not None and ago <= _ACTIVE_LOAD_SECONDS:
-            fresh.append((label, int(ago // 60)))
+        moved_ago = mm.table_load_moved_ago(label)
+        if ago is None or ago > _ACTIVE_LOAD_SECONDS:
+            continue
+        # 움직인 것을 본 적이 없으면 적재 중인지 알 수 없다 — 모르면 말하지 않는다.
+        if moved_ago is None or moved_ago > _LOAD_IN_PROGRESS_SECONDS:
+            continue
+        fresh.append((label, int(ago // 60)))
     if not fresh:
         return ""
     parts = "·".join(f"{label}({mins}분 전)" for label, mins in fresh)

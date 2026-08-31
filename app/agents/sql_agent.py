@@ -2144,13 +2144,20 @@ def _mask_internal_paths(text: str) -> str:
     return "".join(out)
 
 
-def _mask_stream(chunks):
+def _mask_stream(chunks, transform=None):
     """스트리밍 청크에도 같은 마스킹을 건다.
+
+    `transform` 은 완성된 줄에만 걸리는 추가 교정이다 (금액 단위 되돌리기).
+    같은 줄 버퍼를 쓰므로 스트리밍 지연이 늘지 않는다.
 
     ⚠️ 경로가 청크 경계에서 쪼개질 수 있다 (`…promotion_ca` + `lendar…`).
        꿀어서 보내면 방어가 절반만 듣는다 — 마지막 줄 조각을 붙잡았다가 다음 청크와
        이어 붙여 판정한다. 줄 단위로 뮸루므로 첫 토큰 체감은 거의 그대로다.
     """
+    def _clean(text: str) -> str:
+        out = _mask_internal_paths(text)
+        return transform(out) if transform else out
+
     buf = ""
     for chunk in chunks:
         buf += chunk or ""
@@ -2158,9 +2165,9 @@ def _mask_stream(chunks):
         if cut < 0:
             continue
         head, buf = buf[:cut + 1], buf[cut + 1:]
-        yield _mask_internal_paths(head)
+        yield _clean(head)
     if buf:
-        yield _mask_internal_paths(buf)
+        yield _clean(buf)
 
 
 def _unit_note(sql: str) -> str:
@@ -2521,7 +2528,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
-{_unit_note(sql)}
+{_unit_note(sql)}{_amount_note(results)}
 ⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
 
 ⚠️ **분량 제한 (최우선)**:
@@ -2599,16 +2606,18 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         if totals_block:
             answer = _insert_table_totals(answer, totals_block)
 
-        # 답변 속 수치가 조회 결과에서 나온 것인지 확인한다. 보고서는 이 방어선을
-        # 갖고 있었지만 **채팅에는 없었다** — 가장 위험한 실패(그럴듯한데 틀린 숫자)가
-        # 가장 넓은 경로에서 무방비였다 (2026-08-13).
-        # ⛔ 지금은 답변을 손대지 않는다 — 채팅의 수치는 상당수가 파생값이라 발생률을
-        #    먼저 재고 다음 단계를 정한다. 기록은 WARNING 으로 남는다.
+        # 배율만 틀린 금액 표기는 되돌린다 (스트리밍 경로와 같은 함수를 쓴다).
+        _repair = None
         try:
-            from app.core.answer_check import log_verification
-            log_verification(answer, results, query, route="bigquery")
+            from app.core.answer_check import money_scale_repairer
+            _repair = money_scale_repairer(results)
         except Exception:
             pass
+        if _repair:
+            answer = _repair(answer)
+
+        # 답변 속 수치가 조회 결과에서 나온 것인지 확인한다 (아래 함수 주석 참고).
+        answer += _number_check_notice(answer, results, query)
 
         # 프리뷰가 일부 행을 못 보여줬으면(_rows_withheld) 전체를 받을 실제
         # 방법을 답변에 붙인다. LLM이 스스로 "요청해주세요" 라고 써도 그 뒤에
@@ -2654,6 +2663,31 @@ def _is_product_col(col_name: str) -> bool:
     return any(kw in cl for kw in ("product", "set", "제품", "item_name", "sku_name"))
 
 
+def _display_round(v):
+    """프롬프트에 넣는 수치를 **화면에 찍힐 정밀도로 미리 줄인다.**
+
+    ⛔ 원화 매출을 `33399393.5798` 로 넘기지 마라. 소수점 네 자리가 자릿수 구분의
+       미끼가 된다 — 실제로 Flash 가 표에 `33,399,393,579.80`(정확히 1,000배)을
+       적었고 요약은 "약 828.7억원"이 됐다. 진짜 값은 **8,287만원**이었다
+       (2026-08-31 사용자 제보: *"억대가 아닌데 억대로 나옴"*). 코드가 계산한
+       합계표는 옆에서 8,403만원이라고 맞게 적고 있었는데도 아무도 못 봤다.
+    ⚠️ 표를 그리는 `_fast_fmt_cell` 과 **같은 규칙**을 쓴다. 어긋나면 LLM 이 받은
+       값과 코드가 찍는 값이 달라져, 본문과 합계표가 서로 다른 숫자를 말한다.
+    ⚠️ 비율·배수(ROAS 3.42 등)는 소수점이 뜻을 가지므로 두 자리까지 남긴다.
+    """
+    import math as _math
+    from decimal import Decimal as _D
+
+    if isinstance(v, bool) or not isinstance(v, (float, _D)):
+        return v
+    f = float(v)
+    if not _math.isfinite(f):
+        return v
+    if f == int(f) or abs(f) >= 10000:
+        return int(round(f))
+    return round(f, 2)
+
+
 def _humanize_row(row: dict, max_text_len: int = 80) -> dict:
     humanized = {}
     for k, v in row.items():
@@ -2662,7 +2696,7 @@ def _humanize_row(row: dict, max_text_len: int = 80) -> dict:
         if isinstance(v, str) and len(v) > max_text_len:
             humanized[k] = v[:max_text_len] + "..."
         else:
-            humanized[k] = v
+            humanized[k] = _display_round(v)
     return humanized
 
 
@@ -2965,16 +2999,11 @@ def _build_smart_preview(results: list, query: str) -> str:
         sorted_rows = results
     top_rows = sorted_rows[:15]
 
-    # Truncate long text fields in preview rows
-    truncated_rows = []
-    for row in top_rows:
-        tr = {}
-        for k, v in row.items():
-            if isinstance(v, str) and len(v) > 80:
-                tr[k] = v[:80] + "..."
-            else:
-                tr[k] = v
-        truncated_rows.append(tr)
+    # ⛔ 여기 있던 것은 `_humanize_row` 의 **사본**이었다 — 긴 문자열만 자르고
+    #    수치는 원본 그대로 넘겼다. 그래서 100행 넘는 결과에서는 `_display_round`
+    #    가 걸리지 않아 1,000배 사고의 미끼(원 단위 소수점)가 그대로 남았다.
+    #    제품명 언더스코어 처리도 이쪽에만 빠져 있었다. 한 곳을 쓴다.
+    truncated_rows = [_humanize_row(row) for row in top_rows]
 
     preview = {
         "summary": "\n".join(summary_parts),
@@ -3341,7 +3370,14 @@ _TOTAL_ADDITIVE_TOKENS = (
 
 def _metric_name_parts(column: str) -> tuple[str, set[str]]:
     normalized = re.sub(r"[^0-9a-zA-Z가-힣]+", "_", str(column)).strip("_").lower()
-    return normalized, {p for p in normalized.split("_") if p}
+    parts = {p for p in normalized.split("_") if p}
+    # `sales1`·`revenue2` 처럼 지표어에 일련번호가 붙으면 낱말이 통째로 달라져
+    # 지표를 못 알아본다. `Sales1_Amount`·`Sales2_Amount` 두 열이 나란히
+    # **"수치 합계"** 로 나와 어느 쪽이 어느 값인지 알 수 없었다 (2026-08-31 실제
+    # 답변). 숫자를 뗀 형태도 함께 본다 — 세 글자 이상만 (q1·h1 은 지표어가 아니다).
+    parts |= {m.group(1) for p in list(parts)
+              if (m := re.fullmatch(r"([a-z]{3,})(\d+)", p))}
+    return normalized, parts
 
 
 def _metric_display_label(column: str) -> str:
@@ -3431,6 +3467,58 @@ def _metric_display_label(column: str) -> str:
     return " ".join(qualifiers + [metric])
 
 
+def _distinct_metric_labels(columns) -> list:
+    """지표 라벨을 **서로 구분되게** 만든다.
+
+    ⛔ 라벨이 겹치면 합계표가 어느 열의 합인지 말하지 못한다 — 실제 답변에
+       "수치 합계 84,034,602 / 수치 합계 45,464,682" 두 줄이 나란히 나갔다.
+       열 이름의 일련번호(`Sales1_Amount` → 1)로 가르고, 그것도 겹치면 순번으로 민다.
+    ⚠️ 합계표와 프롬프트의 금액 환산 문구가 **같은 라벨**을 써야 한다. 갈라 두면
+       한쪽만 고쳐진다.
+    """
+    columns = list(columns)
+    base = [_metric_display_label(c) for c in columns]
+    out, used = [], set()
+    for index, column in enumerate(columns):
+        label = base[index]
+        if base.count(label) > 1:
+            serial = re.search(r"[a-z]{3,}(\d+)", str(column).lower())
+            label = f"{label} #{serial.group(1) if serial else index + 1}"
+            bump = index + 1
+            while label in used:
+                bump += 1
+                label = f"{base[index]} #{bump}"
+        used.add(label)
+        out.append(label)
+    return out
+
+
+def _amount_note(results: list) -> str:
+    """합계를 **코드가 환산해서** 프롬프트에 박는다 — 환산은 산술이라 맡기면 틀린다.
+
+    실제 사고(2026-08-31): 표는 `82,871,719` 로 맞게 적어 놓고 요약 문장에만
+    "약 828.7억원" 이라고 썼다 (10만으로 나눴다). 1억 미만이라 '억'을 쓰면 안 되는
+    값이었다. 문자열을 미리 주면 LLM 이 할 일은 **복사**뿐이다.
+    ⚠️ 보증은 여전히 코드가 한다 (`answer_check.repair_money_scale`) — 이건 확률을
+       높이는 쪽이고, 배선이 아니라 프롬프트라는 것을 잊지 마라.
+    """
+    from app.core.answer_check import render_amount
+
+    _, totals = _additive_totals(results)
+    if not totals:
+        return ""
+    lines = ["", "⚠️ **금액 환산 (코드가 계산한 확정값 — 직접 나누지 마라)**:"]
+    for label, total in zip(_distinct_metric_labels(totals), totals.values()):
+        try:
+            value = float(total)
+        except (TypeError, ValueError):
+            continue
+        lines.append(f"- {label} 합계 = **{render_amount(value)}** ({round(value):,}원)")
+    lines.append("- 위에 없는 금액은 **원 단위 숫자에 쉼표만** 찍어 써라. "
+                 "1억 미만에 '억'을 쓰지 마라 (8,287만원을 828.7억원이라 쓴 사고가 있었다)")
+    return "\n".join(lines)
+
+
 def _is_additive_metric_column(column: str) -> bool:
     normalized, parts = _metric_name_parts(column)
     if not normalized:
@@ -3509,8 +3597,7 @@ def _build_table_totals_markdown(results: list) -> str:
         "| 지표 | 합계 |",
         "|---|---:|",
     ]
-    for column, total in totals.items():
-        label = _metric_display_label(column)
+    for label, total in zip(_distinct_metric_labels(totals), totals.values()):
         lines.append(f"| {label} | **{_fast_fmt_cell(total)}** |")
     lines.extend(["", f"*조회 결과 전체 {len(detail_rows)}행 기준*"])
     return "\n".join(lines)
@@ -3524,6 +3611,47 @@ def _insert_table_totals(answer: str, totals_block: str) -> str:
         if marker in answer:
             return answer.replace(marker, totals_block + "\n\n" + marker, 1)
     return answer.rstrip() + "\n\n" + totals_block
+
+
+#: 정정 표에 실을 행 수. 원본을 다시 보여주는 것이 목적이라 길 필요는 없다.
+_CORRECTION_MAX_ROWS = 30
+
+
+def _number_check_notice(answer: str, results: list, query: str,
+                         route: str = "bigquery") -> str:
+    """답변 속 **금액급 수치가 조회 결과로 설명되지 않으면** 원본을 덧붙인다.
+
+    ⛔ 이 검증은 2026-08-13 에 만들어 놓고 **프로덕션 경로에 붙이질 않았다.**
+       호출부가 `format_answer`(비스트리밍) 한 곳뿐이었는데, 채팅은
+       `run_sql_agent_stream` 으로 나간다 (`chat.js` 가 `stream: true`). 그래서
+       계측조차 실사용 트래픽에서는 한 번도 돌지 않았고, "미검증률 0%" 는
+       **아무도 안 쓰는 경로에서 잰 값**이었다.
+       그 사이 실제 사고가 났다 — 8,287만원짜리 3개월 매출을 표에 정확히
+       1,000배로 적고 요약에 "약 828.7억원" 이라고 썼다 (2026-08-31 사용자 제보:
+       *"억대가 아닌데 억대로 나옴"*). 같은 답변 안의 코드 계산 합계표는
+       8,403만원이라고 맞게 적혀 있었다. 검증을 돌려 보면 이 답변은 미검증률
+       91.7% 로 걸린다 — **잡을 수 있었는데 배선이 없었다.**
+
+    ⚠️ **문장을 버리지는 않는다.** 채팅 수치는 상당수가 파생값(비중·증감률·평균·
+       차이)이라 폐기는 과하다. 대신 **조회 원본을 나란히 붙여** 사용자가 대조할
+       수 있게 한다 — 숫자를 만드는 것은 끝까지 코드다.
+    ⚠️ 보여주는 것은 `significant`(금액 단위를 달았거나 1만 이상)뿐이다. 반올림된
+       퍼센트까지 들고 나오면 매번 뜨는 경고가 되고, 그러면 아무도 안 읽는다.
+    """
+    try:
+        from app.core.answer_check import log_verification
+        res = log_verification(answer, results, query, route=route)
+        if not res.get("significant"):
+            return ""
+        table = _fast_table_markdown(results, max_rows=_CORRECTION_MAX_ROWS)
+        return (
+            "\n\n> ⚠️ **본문 수치 중 일부를 조회 결과로 확인하지 못했습니다** — "
+            "아래가 실제 조회된 값입니다. 본문과 다르면 **아래 값이 맞습니다.**\n\n"
+            "#### 조회 결과 원본\n" + table
+        )
+    except Exception as e:            # 검증 실패가 답변을 막으면 안 된다
+        logger.warning("answer_number_check_skipped", error=str(e)[:150])
+        return ""
 
 
 def _stream_with_table_totals(chunks, totals_block: str):
@@ -3710,8 +3838,10 @@ SQL 결과 ({len(results)}행):
     llm = get_flash_client()
     _t_ins = _time.perf_counter()
     yield "\n"
+    from app.core.answer_check import money_scale_repairer
     for chunk in _mask_stream(
-            llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500)):
+            llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500),
+            transform=money_scale_repairer(results)):
         yield chunk
     _t_end = _time.perf_counter()
 
@@ -3876,7 +4006,7 @@ def run_sql_agent_stream(
 
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
-{_unit_note(sql)}
+{_unit_note(sql)}{_amount_note(results)}
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
 {TEAM_DISPLAY_RULE}"""
 
@@ -3890,14 +4020,28 @@ def run_sql_agent_stream(
     _t_stream_start = _time.perf_counter()
     _t_first_token = None
     totals_block = _build_table_totals_markdown(results)
+    # ⛔ 억·만 환산을 LLM 에게 시키지 마라 — 산술이고, LLM 의 산술은 확률이다.
+    #    표가 맞는데 요약만 "82,871,719원 → 약 828.7억원"으로 나간 적이 있다
+    #    (2026-08-31 2회차 제보). 배율만 틀린 표기는 코드가 되돌린다.
+    from app.core.answer_check import money_scale_repairer
     answer_chunks = _mask_stream(
-        llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000)
+        llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000),
+        transform=money_scale_repairer(results),
     )
+    # ⛔ 흘려보낸 답변을 그냥 버리지 마라 — 수치 검증이 이 경로에 없어서 1,000배
+    #    오답이 그대로 나갔다 (`_number_check_notice` 주석). 이미 나간 글자를
+    #    되돌릴 수는 없으므로 **모아 두었다가 끝에 원본을 붙인다.**
+    _streamed = []
     for chunk in _stream_with_table_totals(answer_chunks, totals_block):
         if _t_first_token is None:
             _t_first_token = _time.perf_counter()
+        _streamed.append(chunk)
         yield chunk
     _t_stream_end = _time.perf_counter()
+
+    check_notice = _number_check_notice("".join(_streamed), results, query)
+    if check_notice:
+        yield check_notice
     logger.info(
         "bq_stage_timing",
         sql_gen_ms=round((_t_gen - _t0) * 1000),

@@ -109,9 +109,13 @@ NODES: tuple[Node, ...] = (
     #    ⛔ 되살릴 생각이면 `team_resources` 표부터 보라 — 그건 지우지 않았고,
     #       지금 링크 카드가 그 표를 먹고 산다.
 
-    # ⛔ 여기 있던 "모든 경로 → 답변 수치검증" 은 거짓이었다. 호출부는 앱 전체에
-    #    하나뿐이라(`sql_agent.format_answer` 안) bigquery 하위 그래프의 이탈
-    #    노드에만 붙는다 — `build()` 가 이탈점을 읽어 잇는다.
+    # ⛔ 여기 있던 "모든 경로 → 답변 수치검증" 은 거짓이었다. bigquery 하위 그래프의
+    #    이탈 노드에만 붙는다 — `build()` 가 이탈점을 읽어 잇는다.
+    # ⚠️ 2026-08-31 부터 스트리밍 경로(`sql_agent.run_sql_agent_stream`)도 같은
+    #    검증을 부른다(`_number_check_notice`). 그건 LangGraph 노드가 아니라 여기
+    #    엣지로 그릴 자리가 없다 — **덜 그리는 것은 괜찮고, 없는 화살표를 그리는
+    #    것만 안 된다.** (배선이 `format_answer` 하나뿐이던 시절, 실사용 채팅은
+    #    스트리밍이라 검증이 통째로 안 돌았다. 이 그림은 그때도 맞았다.)
     Node("answer_check", "답변 수치검증 (bigquery 전용)",
          fn="app.core.answer_check.log_verification"),
     Node("response", "응답", group="io"),
