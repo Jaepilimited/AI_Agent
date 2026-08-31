@@ -130,3 +130,33 @@ def test_probe_measures_the_loaded_maximum_in_the_same_query():
     from app.core import zero_row
     src = inspect.getsource(zero_row.diagnose)
     assert "loaded_max" in src and src.count("bq.execute_query") == 1
+
+
+# ── BETWEEN 의 AND 로 자르면 진단이 통째로 죽는다 (2026-08-31 실측) ──────────
+#
+# ⛔ `date BETWEEN 'a' AND 'b'` 가 두 조각으로 갈려 `date BETWEEN 'a'` 라는
+#    **깨진 SQL** 이 됐다. 프로브가 BigQuery 에서 실패하면 진단은 빈 문자열을
+#    돌려주므로(WARNING 만 남는다) **기간을 BETWEEN 으로 쓴 질문은 0행 진단이
+#    늘 죽어 있었다.** 에러가 안 나서 오래 안 드러났다.
+
+def test_between_keeps_its_own_and():
+    from app.core.zero_row import split_and
+
+    got = split_and("date BETWEEN '2026-08-01' AND '2026-08-31' AND media = 'X'")
+    assert got == ["date BETWEEN '2026-08-01' AND '2026-08-31'", "media = 'X'"], got
+
+    assert split_and("date BETWEEN '2026-08-01' AND '2026-08-31'") == [
+        "date BETWEEN '2026-08-01' AND '2026-08-31'"]
+
+    got = split_and("team = 'KBT' AND date BETWEEN '2026-01-01' AND '2026-06-30' AND m = 'Y'")
+    assert len(got) == 3, got
+
+
+def test_ordinary_and_splitting_still_works():
+    """⚠️ 반대 방향 — BETWEEN 을 살리려다 평범한 AND 를 안 자르면 진단이 무의미해진다."""
+    from app.core.zero_row import split_and
+
+    assert split_and("a = 1 AND (b = 2 OR c = 3) AND d = 'x AND y'") == [
+        "a = 1", "(b = 2 OR c = 3)", "d = 'x AND y'"]
+    assert split_and("date = '2026-08-30' AND team = 'KBT'") == [
+        "date = '2026-08-30'", "team = 'KBT'"]

@@ -32,6 +32,18 @@ _MIN_CONDS, _MAX_CONDS = 2, 6
 _TAIL = re.compile(r"\b(GROUP\s+BY|ORDER\s+BY|HAVING|LIMIT|WINDOW|QUALIFY)\b", re.I)
 
 
+_BETWEEN = re.compile(r"\bBETWEEN\b", re.I)
+
+
+def _pending_between(fragment: str) -> bool:
+    """지금까지 모은 조각이 `BETWEEN` 의 짝을 **아직 기다리는** 상태인가.
+
+    `BETWEEN` 은 자기 몫의 `AND` 를 하나 갖는다. 그 `AND` 를 최상위 구분자로
+    쓰면 조건이 반토막 난다 — 여기서 세는 것은 "짝을 못 채운 BETWEEN 의 개수" 다.
+    """
+    return len(_BETWEEN.findall(fragment)) > len(re.findall(r"\bAND\b", fragment, re.I))
+
+
 def split_and(clause: str) -> List[str]:
     """WHERE 절을 **최상위 AND** 로 자른다 (괄호·따옴표 안의 AND 는 건드리지 않는다).
 
@@ -59,11 +71,20 @@ def split_and(clause: str) -> List[str]:
         elif ch in ")]":
             depth -= 1
             buf.append(ch)
-        elif depth == 0 and clause[i:i + 5].upper() == " AND " :
-            out.append("".join(buf).strip())
-            buf = []
-            i += 5
-            continue
+        elif depth == 0 and clause[i:i + 5].upper() == " AND ":
+            # ⛔ **`BETWEEN a AND b` 의 AND 로 자르면 안 된다** (2026-08-31 실측).
+            #    `date BETWEEN '2026-08-01' AND '2026-08-31'` 이 두 조각으로 갈려
+            #    `date BETWEEN '2026-08-01'` 이라는 **깨진 SQL** 이 됐고, 프로브가
+            #    BigQuery 에서 실패하면 진단은 **빈 문자열**을 돌려준다.
+            #    → 기간을 BETWEEN 으로 쓴 질문은 **0행 진단이 통째로 죽어 있었다.**
+            #    에러가 안 나서(WARNING 만 남는다) 오래 안 드러났다.
+            if _pending_between("".join(buf)):
+                buf.append(ch)
+            else:
+                out.append("".join(buf).strip())
+                buf = []
+                i += 5
+                continue
         else:
             buf.append(ch)
         i += 1
