@@ -144,7 +144,7 @@ def test_download_records_files_it_could_not_fetch(client):
              {"file_id": "bad", "sku": "B", "lot": "416022", "name": "b.pdf",
               "status": "찾음", "kind": "coa"}]
 
-    def fake_fetch(creds, file_id):
+    def fake_fetch(creds, file_id, budget):
         if file_id == "bad":
             raise RuntimeError("403")
         return b"%PDF-1.4 fake"
@@ -181,8 +181,12 @@ def test_download_reports_cap_and_skips_remaining(client):
         {"file_id": "3", "sku": "C", "lot": "L3", "name": "c.pdf", "status": "찾음"},
     ]
 
-    def fake_fetch(creds, file_id):
-        # 실제로 500MB 를 만들지 않는다 — 상한 자체를 낮춰서 같은 경로를 튄다
+    def fake_fetch(creds, file_id, budget):
+        # 실제로 500MB 를 만들지 않는다 — 상한 자체를 낮춰서 같은 경로를 튄다.
+        # 예산은 진짜 _fetch_file 처럼 청크 사이에서 본다 (다 받은 뒤가 아니다)
+        from app.api.coa_finder_api import _DownloadBudgetExceeded
+        if 40 > budget:
+            raise _DownloadBudgetExceeded(40)
         return b"x" * 40
 
     with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
@@ -208,7 +212,7 @@ def _zip_of(client, items):
 
     with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
          patch("app.api.coa_finder_api._fetch_file",
-               side_effect=lambda creds, file_id: b"%PDF-1.4 fake"):
+               side_effect=lambda creds, file_id, budget: b"%PDF-1.4 fake"):
         r = client.post("/api/coa-finder/download", json={"items": items})
     assert r.status_code == 200
     return zipfile.ZipFile(_io.BytesIO(r.content))
@@ -280,6 +284,108 @@ def test_download_unknown_kind_is_treated_as_coa(client):
     assert "A_FE103C_a.pdf" in zf.namelist()
 
 
+def _done_payload(body):
+    block = next(b for b in body.split("\n\n") if b.startswith("event: done"))
+    line = next(ln for ln in block.splitlines() if ln.startswith("data: "))
+    return json.loads(line[len("data: "):])
+
+
+def test_summary_reports_rows_skipped_for_empty_sku(client):
+    """⛔ 버릴 거면 버렸다고 말해야 한다 — 화면에 아무 표시가 없었다."""
+    payload = ("SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\n\t크림\t416022\n")
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=[]):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+    assert r.status_code == 200
+    assert r.text.count("event: row") == 1
+    assert _done_payload(r.text)["skipped_no_sku"] == 1
+
+
+def test_summary_counts_query_failures_separately(client):
+    """⛔ 100행 중 8행이 조회 실패했는데 '확인필요 8' 로만 보이면 사용자는
+    그것이 애매한 매칭인지 조회가 안 된 것인지 알 수 없다."""
+    payload = "SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\nB\t크림\t416022\n"
+
+    def dying_search(creds, query, **k):
+        raise RuntimeError("drive down")
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", side_effect=dying_search):
+        r = client.post("/api/coa-finder/search", data={"pasted": payload})
+
+    done = _done_payload(r.text)
+    assert done["counts"]["조회실패"] == 2      # COA 쪽
+    assert done["counts"].get("확인필요", 0) == 0
+    assert done["msds_failed"] == 2             # ⛔ MSDS 실패도 세지 않고 있었다
+
+
+def test_fetch_file_aborts_between_chunks_once_the_budget_is_gone():
+    """⛔ 다 받은 뒤에 재면 이미 통째로 메모리에 들고 있는 것이다. file_id 는
+    클라이언트가 주는 임의 값이라 '실측 COA 는 350KB' 라는 전제가 성립하지 않는다."""
+    from app.api import coa_finder_api as api
+
+    class _Downloader:
+        """청크마다 40바이트씩 준다. 예산을 안 보면 200바이트를 다 받는다."""
+        def __init__(self, buf, req, chunksize=None):
+            self._buf, self._n = buf, 0
+
+        def next_chunk(self):
+            self._n += 1
+            self._buf.write(b"x" * 40)
+            return None, self._n >= 5
+
+    with patch("googleapiclient.discovery.build", return_value=MagicMock()), \
+         patch("googleapiclient.http.MediaIoBaseDownload", _Downloader):
+        with pytest.raises(api._DownloadBudgetExceeded) as e:
+            api._fetch_file(MagicMock(), "huge", 50)
+
+    # 잰 만큼만 말한다 — 확인하지 않은 총 크기를 주장하지 않는다
+    assert e.value.received == 80
+
+
+def test_fetch_file_returns_a_file_that_fits_the_budget():
+    """반대 방향 — 예산 안에 드는 파일까지 끊으면 기능이 죽는다."""
+    from app.api import coa_finder_api as api
+
+    class _Downloader:
+        def __init__(self, buf, req, chunksize=None):
+            self._buf, self._n = buf, 0
+
+        def next_chunk(self):
+            self._n += 1
+            self._buf.write(b"x" * 40)
+            return None, self._n >= 2
+
+    with patch("googleapiclient.discovery.build", return_value=MagicMock()), \
+         patch("googleapiclient.http.MediaIoBaseDownload", _Downloader):
+        assert api._fetch_file(MagicMock(), "ok", 500) == b"x" * 80
+
+
+def test_download_records_an_item_that_blew_the_budget(client):
+    """중단한 항목이 조용히 빠지면 안 된다 — 못 받은 목록에 사유가 남아야 한다."""
+    import io as _io
+    import zipfile
+
+    from app.api import coa_finder_api as api
+
+    items = [{"file_id": "huge", "sku": "A", "lot": "L1", "name": "big.pdf",
+              "status": "찾음"}]
+
+    def fake_fetch(creds, file_id, budget):
+        raise api._DownloadBudgetExceeded(80)
+
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.api.coa_finder_api._fetch_file", side_effect=fake_fetch):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+
+    assert r.status_code == 200
+    zf = zipfile.ZipFile(_io.BytesIO(r.content))
+    assert zf.namelist() == ["_받지못한_목록.txt"]
+    note = zf.read("_받지못한_목록.txt").decode("utf-8")
+    assert "L1" in note
+    assert "적어도" in note        # 재지 않은 총 크기를 주장하지 않는다
+
+
 _JS = "app/static/coa_finder.js"
 
 
@@ -308,6 +414,17 @@ def test_frontend_warns_when_every_row_is_none():
     """전 행이 없음이면 조용한 전멸을 시끄럽게 만든다."""
     src = _js_source()
     assert "cf-allnone" in src
+
+
+def test_frontend_knows_the_query_failure_status():
+    """⛔ 상태 표에 없으면 조회실패 행이 아무 표시 없이 그려진다."""
+    assert "조회실패" in _js_source()
+
+
+def test_frontend_states_rows_skipped_for_empty_sku():
+    src = _js_source()
+    assert "skipped_no_sku" in src
+    assert "cf-skipped" in src
 
 
 def test_zip_name_truncates_by_utf8_bytes_not_characters():

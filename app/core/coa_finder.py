@@ -27,6 +27,17 @@ class Row:
     line_no: int
 
 
+@dataclass(frozen=True)
+class ParsedList:
+    """읽어들인 행과, **말없이 버린 행의 수**.
+
+    ⛔ 버릴 거면 버렸다고 말해야 한다. 40행을 넣고 38행을 받아도 사용자는
+       세어보지 않으면 모른다 — 에러가 아니라 조용한 유실이다.
+    """
+    rows: tuple[Row, ...]
+    skipped_no_sku: int = 0
+
+
 class HeaderNotFound(Exception):
     def __init__(self, found: Sequence[str], missing: Sequence[str]) -> None:
         self.found = tuple(found)
@@ -54,7 +65,7 @@ def _cell(cells: Sequence[str], col: Optional[int]) -> str:
     return (cells[col] or "").strip()
 
 
-def _rows_from_cells(table: Iterable[Sequence[str]]) -> list[Row]:
+def _rows_from_cells(table: Iterable[Sequence[str]]) -> ParsedList:
     """헤더 행을 찾고 그 아래를 읽는다.
 
     ⛔ 헤더를 몇 번째 행이라고 박지 마라. 머리말 안내문이 한 줄만 늘어도 어긋나고,
@@ -63,6 +74,7 @@ def _rows_from_cells(table: Iterable[Sequence[str]]) -> list[Row]:
     header: Optional[dict] = None
     best_partial: dict = {}          # 무엇을 못 찾았는지 알려주기 위해 기억한다
     rows: list[Row] = []
+    skipped_no_sku = 0
 
     for line_no, cells in enumerate(table, start=1):
         if header is None:
@@ -75,6 +87,11 @@ def _rows_from_cells(table: Iterable[Sequence[str]]) -> list[Row]:
 
         sku = _cell(cells, header["sku"])
         if not sku:
+            # ⛔ 빈 줄을 거르는 가드가 "SKU 만 빈 행" 까지 삼켰다. 내용이 있는
+            #    행을 버릴 때는 **세어서 알린다** — 빈 줄은 원래대로 조용히 버린다
+            #    (그것까지 세면 숫자가 소음이 되어 아무도 안 본다)
+            if _cell(cells, header["lot"]) or _cell(cells, header.get("description")):
+                skipped_no_sku += 1
             continue
         rows.append(Row(
             sku=sku,
@@ -87,16 +104,16 @@ def _rows_from_cells(table: Iterable[Sequence[str]]) -> list[Row]:
         found = [f.upper() for f in sorted(best_partial)]
         missing = [f for f in ("SKU", "DESCRIPTION", "LOT") if f not in found]
         raise HeaderNotFound(found=found, missing=missing)
-    return rows
+    return ParsedList(rows=tuple(rows), skipped_no_sku=skipped_no_sku)
 
 
-def parse_pasted(text: str) -> list[Row]:
+def parse_pasted(text: str) -> ParsedList:
     """엑셀에서 복사한 탭 구분 텍스트."""
     table = [line.split("\t") for line in (text or "").splitlines()]
     return _rows_from_cells(table)
 
 
-def parse_xlsx(data: bytes) -> list[Row]:
+def parse_xlsx(data: bytes) -> ParsedList:
     """.xlsx 업로드. 첫 시트만 읽는다."""
     from openpyxl import load_workbook
 
@@ -113,6 +130,12 @@ FOUND = "찾음"
 MANY = "여러건"
 NONE = "없음"
 CHECK = "확인필요"
+# ⛔ 조회 실패는 판정이 아니다. 확인필요로 뭉개면 "애매한 매칭 8건" 과
+#    "조회가 아예 안 된 8건" 이 화면에서 똑같이 보인다 — 게다가 확인필요는
+#    이미 다른 뜻(ZIP 에 경고를 달고 나가는 항목)을 지고 있다
+FAILED = "조회실패"
+
+_QUERY_FAILED_NOTE = "드라이브 조회에 실패했습니다 — 이 행은 판정하지 못했습니다. 다시 시도하세요"
 
 # 짧은 롯트는 다른 코드의 머리에 걸릴 수 있다 (Drive 는 토큰 앞부분 매칭이다)
 _SHORT_LOT_LEN = 4
@@ -158,7 +181,11 @@ def _is_delimited_match(name: str, lot: str) -> bool:
 
     ⛔ 경계를 안 보면 FE161 이 FE1615 에도 걸린다 — 다른 롯트의 증명서를
        주는 것은 못 찾는 것보다 나쁘다.
+    ⛔ 한쪽만 casefold 하지 마라 — 자릿수 계산이 **검색한 그 문자열** 위에서
+       돌아야 경계 판정이 맞는다. 둘 다 접어서 같은 문자열을 본다
     """
+    name = name.casefold()
+    lot = lot.casefold()
     start = 0
     while True:
         idx = name.find(lot, start)
@@ -182,7 +209,11 @@ def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
     if not lot:
         return Verdict(NONE, (), "롯트가 비어 있습니다")
 
-    candidates = [f for f in files if lot in f.name]
+    # ⛔ 대소문자를 가리지 마라 — Drive 의 contains 는 무시하므로 조회는 파일을
+    #    찾아오는데 여기서 도로 버린다. 롯트는 사람이 엑셀에 적은 값이라
+    #    소문자로 적었다는 이유로 '없음' 이 나오면 그게 조용한 오답이다
+    folded = lot.casefold()
+    candidates = [f for f in files if folded in f.name.casefold()]
     if candidates:
         delimited = [f for f in candidates if _is_delimited_match(f.name, lot)]
         if delimited:
@@ -204,7 +235,8 @@ def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
     # 접미가 붙은 롯트("F31C28 D")인데 접미 없는 파일만 있는 경우
     head = lot.split()[0]
     if head != lot:
-        base_hits = _dedup([f for f in files if head in f.name])
+        head_folded = head.casefold()
+        base_hits = _dedup([f for f in files if head_folded in f.name.casefold()])
         if base_hits:
             return Verdict(
                 CHECK, base_hits,
@@ -291,7 +323,7 @@ def _one(creds, row: Row, search) -> Result:
             # ⚠️ 실패를 삼키지 마라 — 프로덕션은 INFO 를 버린다
             logger.warning("coa_finder_query_failed",
                            extra={"lot": row.lot, "error": str(exc)[:200]})
-            coa = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+            coa = Verdict(FAILED, (), _QUERY_FAILED_NOTE)
         else:
             coa = classify_lot(row.lot, _to_files(raw))
     else:
@@ -307,7 +339,7 @@ def _one(creds, row: Row, search) -> Result:
         except Exception as exc:                      # noqa: BLE001
             logger.warning("msds_finder_query_failed",
                            extra={"sku": row.sku, "error": str(exc)[:200]})
-            msds = Verdict(CHECK, (), "조회에 실패했습니다 — 다시 시도하세요")
+            msds = Verdict(FAILED, (), _QUERY_FAILED_NOTE)
         else:
             files = _dedup(_filter_msds_candidates(_to_files(raw), query_terms))
             if not files:

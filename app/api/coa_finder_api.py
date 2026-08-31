@@ -77,10 +77,11 @@ async def coa_finder_search(
         raise HTTPException(400, "목록을 붙여넣거나 엑셀 파일을 올려주세요")
 
     try:
-        rows = (cf.parse_xlsx(rows_source[1]) if rows_source[0] == "xlsx"
-                else cf.parse_pasted(rows_source[1]))
+        parsed = (cf.parse_xlsx(rows_source[1]) if rows_source[0] == "xlsx"
+                  else cf.parse_pasted(rows_source[1]))
     except cf.HeaderNotFound as exc:
         raise HTTPException(400, str(exc)) from exc
+    rows = parsed.rows
 
     if not rows:
         raise HTTPException(400, "행을 찾지 못했습니다 — 헤더 아래에 데이터가 있는지 확인하세요")
@@ -102,12 +103,16 @@ async def coa_finder_search(
         }
 
     def _stream():
-        counts = {cf.FOUND: 0, cf.MANY: 0, cf.NONE: 0, cf.CHECK: 0}
+        counts = {cf.FOUND: 0, cf.MANY: 0, cf.NONE: 0, cf.CHECK: 0, cf.FAILED: 0}
+        # ⛔ MSDS 쪽 실패는 counts 가 세지 않는다 (COA 상태만 센다) — 따로 센다
+        msds_failed = 0
         total = len(rows)
         completed = 0
         try:
             for i, res in enumerate(cf.find_all(creds, rows), start=1):
                 counts[res.coa.status] = counts.get(res.coa.status, 0) + 1
+                if res.msds.status == cf.FAILED:
+                    msds_failed += 1
                 payload = {
                     "index": i, "total": total,
                     "sku": res.row.sku, "description": res.row.description,
@@ -128,7 +133,12 @@ async def coa_finder_search(
             }
             yield f"event: error\ndata: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
             return
-        summary = {"total": total, "counts": counts}
+        summary = {
+            "total": total, "counts": counts,
+            "msds_failed": msds_failed,
+            # 말없이 버린 행 — 화면이 건수를 밝힌다
+            "skipped_no_sku": parsed.skipped_no_sku,
+        }
         yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
@@ -159,7 +169,22 @@ class DownloadRequest(BaseModel):
     items: list[DownloadItem]
 
 
-def _fetch_file(creds, file_id: str) -> bytes:
+class _DownloadBudgetExceeded(Exception):
+    """예산을 넘겨 중단했다. `received` 는 **잰 만큼**이지 파일 크기가 아니다."""
+
+    def __init__(self, received: int) -> None:
+        self.received = received
+        super().__init__(f"용량 예산 초과 (적어도 {received} 바이트)")
+
+
+def _fetch_file(creds, file_id: str, budget: int) -> bytes:
+    """⛔ 다 받은 뒤에 크기를 재지 마라 — 그때는 이미 통째로 메모리에 들고 있다.
+
+    `file_id` 는 매칭 결과가 아니라 **클라이언트가 주는 임의 값**이다.
+    사용자가 읽을 수 있는 큰 파일 id 하나면 WAS 메모리가 그만큼 올라간다.
+    1MB 청크 사이에서 예산을 넘으면 그 자리에서 끊고 받은 것을 버린다
+    (업로드 상한을 받는 도중에 끊는 것과 같은 방식).
+    """
     from googleapiclient.discovery import build
     from googleapiclient.http import MediaIoBaseDownload
 
@@ -170,6 +195,10 @@ def _fetch_file(creds, file_id: str) -> bytes:
     done = False
     while not done:
         _, done = downloader.next_chunk()
+        if buf.tell() > budget:
+            received = buf.tell()
+            buf.close()                   # 부분 수신분을 들고 있지 않는다
+            raise _DownloadBudgetExceeded(received)
     return buf.getvalue()
 
 
@@ -270,18 +299,22 @@ async def coa_finder_download(
                 failed.append(f"{label}: 총 용량 상한({max_mb}MB) 초과로 받지 못함")
                 continue
             try:
-                data = _fetch_file(creds, item.file_id)
+                data = _fetch_file(creds, item.file_id, _MAX_DOWNLOAD_BYTES - total)
+            except _DownloadBudgetExceeded as exc:
+                # ⛔ 재지 않은 총 크기를 주장하지 않는다 — 받다 끊었으므로
+                #    이 파일이 얼마나 큰지는 모른다 (업로드 상한과 같은 규칙)
+                logger.warning("coa_download_budget_exceeded",
+                               extra={"file_id": item.file_id,
+                                      "received": exc.received})
+                failed.append(
+                    f"{label}: 총 용량 상한({max_mb}MB)의 남은 예산을 넘겨 중단 "
+                    f"(적어도 {exc.received / (1024 * 1024):.1f}MB)")
+                cap_hit = True
+                continue
             except Exception as exc:                  # noqa: BLE001
                 logger.warning("coa_download_failed",
                                extra={"file_id": item.file_id, "error": str(exc)[:200]})
                 failed.append(f"{label}: {str(exc)[:120]}")
-                continue
-
-            if total + len(data) > _MAX_DOWNLOAD_BYTES:
-                over_mb = (total + len(data) - _MAX_DOWNLOAD_BYTES) / (1024 * 1024)
-                failed.append(
-                    f"{label}: 총 용량 상한({max_mb}MB)을 약 {over_mb:.1f}MB 초과해 중단")
-                cap_hit = True
                 continue
 
             total += len(data)

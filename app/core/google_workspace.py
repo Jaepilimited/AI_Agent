@@ -397,7 +397,12 @@ def search_drive(
     # ⛔ Drive 의 `contains` 는 토큰 앞부분 매칭이라 요청하지 않은 파일이 섞일 수 있다.
     #    롯트 조회는 **넓히면 안 되는** 경로다 — 문자열이 그대로 든 것만 남긴다
     if exact_name:
-        files = [f for f in files if exact_name in f.get("name", "")]
+        # ⚠️ 대소문자는 가리지 않는다 — Drive 의 contains 가 무시하므로 조회는
+        #    파일을 찾아오는데 여기서 버리면 에러가 아니라 **0건**이 난다
+        #    (롯트를 소문자로 적은 목록이 통째로 '없음' 이 됐다). 걸러내는
+        #    기준은 그대로다: 문자열이 이름에 통으로 들어 있어야 한다
+        folded = exact_name.casefold()
+        files = [f for f in files if folded in f.get("name", "").casefold()]
     return [
         {
             "id": f["id"],

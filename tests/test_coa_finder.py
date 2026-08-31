@@ -92,14 +92,14 @@ EUSKA024\tSKIN1004 Madagascar Centella Tone Brightening Capsule Ampoule 100ml_CP
 
 def test_parse_pasted_finds_header_below_preamble():
     """⛔ 헤더를 몇 번째 행이라고 박지 마라 — 안내문이 한 줄 늘면 조용히 0건이 난다."""
-    rows = cf.parse_pasted(PASTED)
+    rows = cf.parse_pasted(PASTED).rows
     assert [r.sku for r in rows] == ["EUSKA022", "EUSKC017", "EUSKA024"]
     assert rows[2].lot == "F31C28 D"
     assert rows[0].line_no == 5
 
 
 def test_parse_pasted_accepts_korean_headers():
-    rows = cf.parse_pasted("품목\t제품명\t롯트\nEUSKA022\t앰플\tFE103C\n")
+    rows = cf.parse_pasted("품목\t제품명\t롯트\nEUSKA022\t앰플\tFE103C\n").rows
     assert rows[0].sku == "EUSKA022" and rows[0].lot == "FE103C"
 
 
@@ -112,7 +112,7 @@ def test_parse_pasted_reports_missing_column_instead_of_guessing():
 
 def test_parse_pasted_keeps_row_with_empty_lot():
     """롯트가 비어도 MSDS 는 제품명으로 찾을 수 있다 — 행을 버리지 않는다."""
-    rows = cf.parse_pasted("SKU\tDESCRIPTION\tLOT\nEUSKA022\t앰플\t\n")
+    rows = cf.parse_pasted("SKU\tDESCRIPTION\tLOT\nEUSKA022\t앰플\t\n").rows
     assert rows[0].lot == ""
 
 
@@ -127,7 +127,7 @@ def test_parse_xlsx_uses_the_same_header_logic():
     buf = io.BytesIO()
     wb.save(buf)
 
-    rows = cf.parse_xlsx(buf.getvalue())
+    rows = cf.parse_xlsx(buf.getvalue()).rows
     assert rows[0].sku == "EUSKA022" and rows[0].lot == "FE103C"
 
 
@@ -210,6 +210,130 @@ def test_two_real_candidates_are_all_shown():
              _f("COA_B_FE103C", size=200, fid="b")]
     v = cf.classify_lot("FE103C", files)
     assert v.status == cf.MANY and len(v.files) == 2
+
+
+def test_lot_matching_ignores_case():
+    """⛔ 입력은 사람이 엑셀에 적은 값이다 — 소문자로 적었다고 없는 문서가 되면 안 된다.
+
+    Drive 의 contains 는 대소문자를 무시하므로 조회는 파일을 찾아온다. 우리 필터가
+    파이썬 `in` 이라 그 파일을 도로 버렸다 (실측: E08Z011 찾음 / e08z011 없음).
+    """
+    files = [_f("51082SEA-003H SKIN1004 MADAGASCAR CENTELLA "
+                "POREMIZING FRESH AMPOULE COA (E08Z011)")]
+    assert cf.classify_lot("e08z011", files).status == cf.FOUND
+    assert cf.classify_lot("E08z011", files).status == cf.FOUND
+    assert cf.classify_lot("E08Z011", files).status == cf.FOUND
+
+
+def test_case_insensitive_matching_keeps_the_boundary_rule():
+    """⛔ 대소문자를 무시하면서 경계 검사가 느슨해지면 FE161 이 FE1615 에 걸린다 —
+    C4 를 고치다 이 기능의 존재 이유를 되돌리는 것이 가장 나쁜 결과다."""
+    assert cf.classify_lot("fe161", [_f("COA_10116720_..._FE1615_15643EA")]).status \
+        != cf.FOUND
+    assert cf.classify_lot("fe161", [_f("COA_10116720_..._FE161_15643EA")]).status \
+        == cf.FOUND
+
+
+def test_case_insensitive_matching_keeps_near_miss_rejection():
+    """소문자로 적어도 E07Z082 를 E07Z083 이라고 주면 안 된다."""
+    assert cf.classify_lot("e07z083", [_f("... COA (E07Z082)")]).status == cf.NONE
+
+
+def test_suffix_fallback_ignores_case_too():
+    """접미 롯트의 기저 비교도 같은 규칙을 따라야 한다."""
+    v = cf.classify_lot("f31c28 d", [_f("COA_..._F31C28")])
+    assert v.status == cf.CHECK and "접미" in v.note
+
+
+def test_search_drive_exact_name_filter_ignores_case():
+    """⛔ 조회는 파일을 찾아왔는데 우리 후필터가 대소문자로 버리면 조용한 0건이다."""
+    hit = {"id": "1", "name": "... COA (E08Z011)", "mimeType": "application/pdf",
+           "modifiedTime": "", "webViewLink": ""}
+    svc = MagicMock()
+    resp = MagicMock()
+    resp.execute.return_value = {"files": [hit]}
+    svc.files.return_value.list.return_value = resp
+
+    with patch("app.core.google_workspace.build", return_value=svc):
+        got = search_drive(MagicMock(), "e08z011", exact_name="e08z011")
+
+    assert [f["id"] for f in got] == ["1"]
+
+
+def test_search_drive_exact_name_still_drops_near_miss_when_case_folded():
+    """⛔ 반대 방향 — casefold 를 넣다 근접 롯트 거절이 풀리면 C4 수정이 사고가 된다."""
+    near = {"id": "1", "name": "... COA (E07Z082)", "mimeType": "application/pdf",
+            "modifiedTime": "", "webViewLink": ""}
+    svc = MagicMock()
+    resp = MagicMock()
+    resp.execute.return_value = {"files": [near]}
+    svc.files.return_value.list.return_value = resp
+
+    with patch("app.core.google_workspace.build", return_value=svc):
+        got = search_drive(MagicMock(), "e07z083", exact_name="e07z083")
+
+    assert got == []
+
+
+def test_rows_with_empty_sku_are_counted_not_silently_dropped():
+    """⛔ 40행을 넣고 38행을 받아도 세어보지 않으면 모른다 (재현: 4행 입력 → 3행)."""
+    parsed = cf.parse_pasted(
+        "SKU\tDESCRIPTION\tLOT\n"
+        "A\t앰플\tFE103C\n"
+        "\t크림\t416022\n"          # SKU 만 비었다 — 버릴 거면 버렸다고 말해야 한다
+        "C\t로션\tE08Z011\n"
+    )
+    assert [r.sku for r in parsed.rows] == ["A", "C"]
+    assert parsed.skipped_no_sku == 1
+
+
+def test_entirely_blank_rows_are_not_counted_as_skipped():
+    """빈 줄은 원래 거르던 것이다 — 그것까지 세면 숫자가 소음이 된다."""
+    parsed = cf.parse_pasted("SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\n\t\t\n\n")
+    assert len(parsed.rows) == 1
+    assert parsed.skipped_no_sku == 0
+
+
+def test_parse_xlsx_counts_skipped_rows_too():
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["SKU", "DESCRIPTION", "LOT"])
+    ws.append(["A", "앰플", "FE103C"])
+    ws.append([None, "크림", "416022"])
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    parsed = cf.parse_xlsx(buf.getvalue())
+    assert [r.sku for r in parsed.rows] == ["A"]
+    assert parsed.skipped_no_sku == 1
+
+
+def test_query_failure_has_its_own_status():
+    """⛔ 조회실패를 확인필요로 뭉개면 '애매한 매칭 8건' 과 '조회가 안 된 8건' 이
+    화면에서 구분되지 않는다. C1 수정 이후 확인필요는 이미 다른 뜻을 지고 있다."""
+    rows = [cf.Row("A", "앰플", "LOT1", 1), cf.Row("B", "앰플", "LOT2", 2)]
+
+    def fake_search(creds, query, **k):
+        if query == "LOT1":
+            raise RuntimeError("drive down")
+        return []
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert cf.FAILED == "조회실패"
+    assert got[0].coa.status == cf.FAILED and "조회" in got[0].coa.note
+    assert got[0].coa.files == ()          # 실패 행은 파일을 달고 나가지 않는다
+    assert got[1].coa.status == cf.NONE    # 나머지 행은 계속 진행한다
+
+
+def test_msds_query_failure_has_its_own_status():
+    rows = [cf.Row("A", "SKIN1004 Madagascar Centella Ampoule 100ml", "", 1)]
+
+    def fake_search(creds, query, **k):
+        raise RuntimeError("drive down")
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].msds.status == cf.FAILED
 
 
 def test_none_verdict_says_what_was_searched():
@@ -306,6 +430,11 @@ def test_find_all_keeps_row_order():
 
 
 def test_find_all_marks_query_failure_without_killing_the_run():
+    """한 행의 조회가 죽어도 나머지 행은 계속 간다.
+
+    ⚠️ 상태는 확인필요가 아니라 조회실패다 — 판정과 실패는 다른 것이다
+    (C6). 이 테스트가 지키는 사실은 '런이 안 죽는다' 쪽이다.
+    """
     rows = [cf.Row("A", "앰플", "LOT1", 1), cf.Row("B", "앰플", "LOT2", 2)]
 
     def fake_search(creds, query, **k):
@@ -314,7 +443,7 @@ def test_find_all_marks_query_failure_without_killing_the_run():
         return []
 
     got = list(cf.find_all(MagicMock(), rows, search=fake_search))
-    assert got[0].coa.status == cf.CHECK and "조회" in got[0].coa.note
+    assert got[0].coa.status == cf.FAILED and "조회" in got[0].coa.note
     assert got[1].coa.status == cf.NONE
 
 

@@ -6,6 +6,9 @@
     "없음": "st-none",
     "여러건": "st-many",
     "확인필요": "st-check",
+    // A query that never completed is not a verdict. Without its own entry
+    // here it would render unstyled and read as an ordinary result.
+    "조회실패": "st-check",
   };
 
   // kind: "coa" or "msds". MSDS is a product-level document with no lot --
@@ -73,13 +76,12 @@
     $("cf-error").textContent = msg || "";
   }
 
-  // Every row came back "없음". That looks identical whether the documents
-  // really are absent, the Google token died, the user is not a member of
-  // the shared drive, or the lots were typed wrong -- so say so out loud
-  // instead of letting a total miss pass for a finished search.
-  function showAllNone(show) {
-    let el = $("cf-allnone");
-    if (!show) {
+  // A line above the table. Empty text removes it -- .cf-error already
+  // hides when empty, but leaving a stale node behind would carry the last
+  // run's warning into the next one.
+  function notice(id, text) {
+    let el = $(id);
+    if (!text) {
       if (el) el.remove();
       return;
     }
@@ -90,14 +92,32 @@
       // network failure.
       if (!scroll || !scroll.parentNode) return;
       el = document.createElement("div");
-      el.id = "cf-allnone";
+      el.id = id;
       el.className = "cf-error";
       scroll.parentNode.insertBefore(el, scroll);
     }
-    el.textContent =
-      "전 행이 '없음'입니다 — 문서가 정말 없는 것인지 판단하기 전에 " +
-      "구글 계정 연결 상태, 그 공유드라이브의 멤버인지, 롯트 표기(대소문자·공백)를 " +
-      "먼저 확인하세요. 이 셋 중 하나만 어긋나도 화면은 똑같이 '없음' 으로 보입니다.";
+    el.textContent = text;
+  }
+
+  // Every row came back "없음". That looks identical whether the documents
+  // really are absent, the Google token died, the user is not a member of
+  // the shared drive, or the lots were typed wrong -- so say so out loud
+  // instead of letting a total miss pass for a finished search.
+  function showAllNone(show) {
+    notice("cf-allnone", show
+      ? "전 행이 '없음'입니다 — 문서가 정말 없는 것인지 판단하기 전에 " +
+        "구글 계정 연결 상태, 그 공유드라이브의 멤버인지, 롯트 표기(대소문자·공백)를 " +
+        "먼저 확인하세요. 이 셋 중 하나만 어긋나도 화면은 똑같이 '없음' 으로 보입니다."
+      : "");
+  }
+
+  // Rows whose SKU cell was empty are dropped. Someone pasting 40 rows and
+  // getting 38 back will not notice unless the page counts them out loud.
+  function showSkipped(n) {
+    notice("cf-skipped", n > 0
+      ? "SKU 칸이 비어 건너뛴 행 " + n + "건 — 이 행들은 조회하지 않았습니다. " +
+        "SKU 를 채워 다시 올리세요."
+      : "");
   }
 
   function errMessage(res, fallback) {
@@ -113,6 +133,7 @@
     $("cf-body").innerHTML = "";
     showError("");
     showAllNone(false);
+    showSkipped(0);
     $("cf-table").hidden = false;
     $("cf-download").disabled = true;
     $("cf-progress").textContent = "";
@@ -168,12 +189,19 @@
             // The counts are COA verdicts, and the search ran over file
             // names only -- without saying so, "없음 41" reads as a broken
             // tool rather than as documents that are not on the drive.
+            // A failed query is not a verdict -- it gets its own count, and
+            // MSDS failures are counted separately because `counts` only
+            // tallies the COA column.
+            const msdsFailed = data.msds_failed || 0;
             $("cf-progress").textContent =
               "완료 — " + data.total + "행 · COA 기준 찾음 " + (c["찾음"] || 0) +
               " · 여러건 " + (c["여러건"] || 0) +
               " · 확인필요 " + (c["확인필요"] || 0) +
               " · 없음 " + (c["없음"] || 0) +
+              " · 조회실패 " + (c["조회실패"] || 0) +
+              (msdsFailed ? " · MSDS 조회실패 " + msdsFailed : "") +
               " · COA·MSDS 파일의 파일명으로만 찾았습니다 (파일 본문은 검색하지 않습니다)";
+            showSkipped(data.skipped_no_sku || 0);
             showAllNone(data.total > 0 && (c["없음"] || 0) === data.total);
             $("cf-download").disabled = false;
           } else if (kind === "error") {
