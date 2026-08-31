@@ -400,6 +400,83 @@ def test_classify_lot_bug_surfaces_instead_of_masquerading_as_a_network_failure(
             list(cf.find_all(MagicMock(), rows, search=fake_search))
 
 
+def test_find_all_coa_fallback_reaches_the_check_needed_branch():
+    """⛔ exact_name=row.lot 이 접미까지 통째로 요구해, classify_lot 의 확인필요
+    분기(접미 없는 파일)가 실제 흐름에서는 죽어 있었다 (2026-08-31 실측).
+    이 테스트는 고치기 전엔 없음(NONE)을 내야 실패한다."""
+    rows = [cf.Row("A", "앰플", "F31C28 D", 1)]
+    calls = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        calls.append((query, exact_name))
+        if query == "F31C28 D":
+            return []
+        if query == "F31C28":
+            return [{"id": "1", "name": "COA_10116720_F31C28", "size": 1,
+                     "webViewLink": "http://d/1"}]
+        return []
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.CHECK
+    assert "접미" in got[0].coa.note
+    assert ("F31C28", "F31C28") in calls, "접미 없는 롯트로 재조회하지 않았다"
+
+
+def test_find_all_coa_skips_fallback_when_full_lot_already_matches():
+    """접미가 붙은 롯트 그대로 찾아지면 재조회할 필요가 없다.
+
+    description 은 비워 둔다 — MSDS 쪽도 같은 fake_search 를 부르므로,
+    채우면 COA 재조회 여부와 무관하게 호출 수가 2가 된다."""
+    rows = [cf.Row("A", "", "F31C28 D", 1)]
+    calls = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        calls.append((query, exact_name))
+        return [{"id": "1", "name": "COA_10116720_F31C28 D", "size": 1,
+                 "webViewLink": "http://d/1"}]
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.FOUND
+    assert len(calls) == 1, "찾았는데도 재조회했다"
+
+
+def test_find_all_coa_skips_fallback_for_unsuffixed_lot():
+    """공백이 없는 롯트는 접미가 없으므로 재조회 대상이 아니다.
+
+    description 은 비워 둔다 — MSDS 쪽 호출과 섞이지 않게 한다."""
+    rows = [cf.Row("A", "", "FE103C", 1)]
+    calls = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        calls.append((query, exact_name))
+        return []
+
+    got = list(cf.find_all(MagicMock(), rows, search=fake_search))
+    assert got[0].coa.status == cf.NONE
+    assert len(calls) == 1, "접미 없는 롯트인데 재조회했다"
+
+
+def test_find_all_coa_fallback_search_uses_exact_name_on_base_lot():
+    """⛔ 재조회에 exact_name 이 없으면 본문에만 롯트가 스친 문서(재고 현황표 등)가
+    확인필요 후보로 올라온다 — 팀 리드 실측."""
+    rows = [cf.Row("A", "앰플", "F31C28 D", 1)]
+    calls = []
+
+    def fake_search(creds, query, max_results=10, mime_contains=None,
+                    exact_name=None, **kwargs):
+        calls.append((query, exact_name))
+        return []
+
+    list(cf.find_all(MagicMock(), rows, search=fake_search))
+    fallback_calls = [c for c in calls if c[0] == "F31C28"]
+    assert fallback_calls, "접미 없는 롯트로 재조회하지 않았다"
+    assert all(exact == "F31C28" for _, exact in fallback_calls), \
+        "재조회에 exact_name 을 넘기지 않았다"
+
+
 def test_msds_note_reflects_unusable_description_not_emptiness():
     """제품명이 브랜드어뿐이라 검색어가 안 나온 것과, 제품명 자체가 빈 것은
     다른 사실이다 — 사용자가 쓴 제품명을 '비어 있다' 고 답하면 안 된다."""

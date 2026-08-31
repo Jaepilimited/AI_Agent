@@ -273,6 +273,13 @@ def _one(creds, row: Row, search) -> Result:
     if row.lot:
         try:
             raw = search(creds, row.lot, max_results=25, exact_name=row.lot)
+            head = row.lot.split()[0]
+            if not raw and head != row.lot:
+                # exact_name=row.lot 은 접미까지 통째로 요구한다 — 접미 없는
+                # 파일도 후보로 올려야 classify_lot 의 확인필요 분기가 실제로
+                # 동작한다. 여기서도 exact_name 을 넘겨 본문에만 롯트가 스친
+                # 무관 문서(재고 현황표 등)를 걸러낸다
+                raw = search(creds, head, max_results=25, exact_name=head)
         except Exception as exc:                      # noqa: BLE001
             # ⚠️ 실패를 삼키지 마라 — 프로덕션은 INFO 를 버린다
             logger.warning("coa_finder_query_failed",
