@@ -806,7 +806,11 @@ def _enqueue_jandi(user: User, envelope: dict[str, Any], url: str, name: str) ->
 
     link = base_url()
     if link:
-        body += f"\n\n이어서 물어보기 · {link}"
+        # ⛔ 주소를 평문으로 두지 마라 — **잔디는 자동으로 링크를 걸지 않는다.**
+        #    네 형태를 실제로 보내 확인했다 (2026-08-31): 마크다운 `[글](주소)` 만
+        #    눌리고, 평문·꺾쇠·주소만은 전부 그냥 글자로 남는다.
+        #    눌리지 않는 주소는 "돌아올 문" 이 아니라 그냥 소음이다.
+        body += f"\n\n[이어서 물어보기]({link})"
     for_date = date.fromisoformat(str(envelope.get("for_date", "")))
     try:
         return jandi_briefing.enqueue(

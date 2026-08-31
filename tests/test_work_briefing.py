@@ -1026,3 +1026,26 @@ def test_rows_within_a_group_are_newest_first():
     unread = [row for row in document["mail"] if row["unread"]]
     order = [row["id"] for row in unread if row["id"].startswith("u")]
     assert order == ["u2", "u3", "u1", "u0"], order
+
+
+# ── 잔디 링크 표기 (2026-08-31 실측) ─────────────────────────────────────────
+
+def test_jandi_links_use_markdown_form_only():
+    """⛔ 주소를 평문으로 싣지 마라 — **잔디는 자동으로 링크를 걸지 않는다.**
+
+    네 형태를 실제 토픽으로 보내 확인했다 (2026-08-31):
+        [글](주소)  → 눌린다
+        평문 · 주소 / <주소> / 주소만 → 전부 그냥 글자
+    눌리지 않는 주소는 "돌아올 문" 이 아니라 소음이다. 도달이 병목이라 이 한 줄이
+    브리핑을 읽고 끝낼지 셀라로 올지를 가른다.
+    """
+    import inspect
+
+    from app.core import jandi_notify, personal_briefing
+
+    for module, where in ((personal_briefing, "브리핑 본문"),
+                          (jandi_notify, "알림 본문")):
+        source = inspect.getsource(module)
+        assert "]({link})" in source, f"{where}: 마크다운 링크 표기가 아니다"
+        assert "물어보기 · {link}" not in source, f"{where}: 평문 주소로 되돌아갔다"
+        assert "보기 · {link}" not in source, f"{where}: 평문 주소로 되돌아갔다"

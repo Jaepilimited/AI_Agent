@@ -187,7 +187,10 @@ def enqueue_for_user(user_id: int, webhook_url: str, today: date | None = None) 
         title, body = render(item)
         link = link_for(item["kind"], item)
         if link:
-            body += f"\n\n  이어서 물어보기 · {link}"
+            # ⛔ 브리핑 본문과 **같은 표기**를 쓴다 — 잔디는 마크다운 링크만 눌린다
+            #    (2026-08-31 네 형태를 실제로 보내 확인). 한쪽만 고치면 알림에서만
+            #    주소가 글자로 남아 눌리지 않는다.
+            body += f"\n\n[셀라에서 이어서 보기]({link})"
         if jandi_briefing.enqueue(
             user_id, day, webhook_url, body,
             kind=item["kind"], dedup_key=item["dedup_key"], title=title, link=link,
