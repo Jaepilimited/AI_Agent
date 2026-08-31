@@ -197,7 +197,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     # Non-streaming response (v3.0: Orchestrator)
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources
+            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id
         )
         answer = result.get("answer", "")
     except Exception as e:
