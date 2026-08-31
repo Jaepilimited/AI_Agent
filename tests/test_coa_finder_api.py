@@ -118,10 +118,47 @@ def test_search_reports_missing_header_column(client):
     assert "LOT" in r.json()["detail"]
 
 
+@pytest.fixture
+def anon_client():
+    """로그인 안 된 브라우저 — get_current_user 오버라이드를 걸지 않는다."""
+    from app.config import get_settings
+    os.environ["MIGRATED_REDIRECT_URL"] = ""
+    get_settings.cache_clear()
+    from app.main import create_app
+    yield TestClient(create_app())
+
+
 def test_page_is_served(client):
+    client.cookies.set("token", "session")
     r = client.get("/coa-finder")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
+
+
+def test_page_redirects_to_login_without_a_session(anon_client):
+    """⛔ 브라우저 주소로 여는 화면이 원시 401 JSON 을 보여주면 안 된다.
+
+    요청자가 링크를 처음 여는데 세션이 끊겨 있으면 로그인 화면이 나와야 한다
+    (구글 OAuth 콜백 사고에서 정한 규칙과 같다). `/` 가 하는 그대로 한다.
+    """
+    r = anon_client.get("/coa-finder", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
+
+
+def test_api_endpoints_keep_returning_json_401(anon_client):
+    """⛔ 반대 방향 — API 를 로그인 페이지로 리다이렉트하면 fetch 가 HTML 을
+    결과로 읽는다. 화면 경로와 API 경로는 실패하는 방식이 달라야 한다."""
+    r = anon_client.post("/api/coa-finder/search",
+                         data={"pasted": "SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\n"},
+                         follow_redirects=False)
+    assert r.status_code == 401
+    assert r.headers["content-type"].startswith("application/json")
+
+    r2 = anon_client.post("/api/coa-finder/download",
+                          json={"items": [{"file_id": "1"}]}, follow_redirects=False)
+    assert r2.status_code == 401
+    assert r2.headers["content-type"].startswith("application/json")
 
 
 def test_download_rejects_too_many_items(client):

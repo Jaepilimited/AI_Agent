@@ -11,8 +11,8 @@ import re
 import zipfile
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
@@ -35,7 +35,20 @@ def _credentials(email: str):
 
 
 @router.get("/coa-finder")
-async def coa_finder_page(_: object = Depends(get_current_user)):
+async def coa_finder_page(request: Request):
+    """⛔ 브라우저 주소로 여는 화면이다 — 세션이 없으면 로그인으로 보낸다.
+
+    `Depends(get_current_user)` 를 걸면 로그아웃 상태의 브라우저가
+    `{"detail":"Not authenticated"}` 원시 JSON 을 본다. 구글 OAuth 콜백에서
+    같은 실수를 한 적이 있고, 그때 정한 규칙이 "읽을 수 있는 안내를 보여준다" 였다.
+    판정 방식은 `/`(main.py) 와 **같은 것**을 쓴다 — 새로 만들지 않는다.
+
+    ⚠️ API 엔드포인트(`/api/coa-finder/*`)는 그대로 401/409 JSON 을 낸다.
+       fetch 로 부르는 경로라, 로그인 HTML 로 리다이렉트하면 프론트가
+       그 페이지를 조회 결과로 읽는다.
+    """
+    if not request.cookies.get("token"):
+        return RedirectResponse(url="/login", status_code=302)
     return FileResponse("app/static/coa_finder.html", media_type="text/html")
 
 
