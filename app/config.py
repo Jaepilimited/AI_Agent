@@ -142,7 +142,14 @@ class Settings(BaseSettings):
     #    HTTP 전용이라 릴레이 불가. IT 가 방화벽을 열고 발신 계정을 주면 아래 네 줄만
     #    .env 에 넣고 재기동한다 — 코드 배포 없이 켜진다.
     # 메일 본문에 넣을 접속 주소 (사내). 비어 있으면 상대 경로만 나간다
-    public_base_url: str = "http://10.1.100.5"
+    # 잔디·알림에 싣는 "이어서 물어보기" 주소. 사용자 브라우저가 여는 값이라
+    # **서버가 닿는지와 무관하다** — WAS 는 Web 계층으로 되돌아가지 못한다.
+    # ⚠️ 사내 DNS 에만 있는 이름이다 (WAS 에서 `ai.cravercorp.internal → 10.1.100.5`
+    #    로 해석되는 것을 확인했다. DB_PC 는 외부 DNS 를 써서 못 푼다 — 그건 그 장비가
+    #    다른 망에 있다는 뜻이지 도메인이 틀렸다는 뜻이 아니다).
+    # ⚠️ 스킴은 이전에 동작하던 값(`http://10.1.100.5`)을 따라 http 로 둔다.
+    #    TLS 를 붙였다면 여기만 https 로 바꾸면 된다.
+    public_base_url: str = "http://ai.cravercorp.internal"
     mail_enabled: bool = False
     smtp_host: str = ""
     smtp_port: int = 587
