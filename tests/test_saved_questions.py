@@ -323,8 +323,16 @@ def test_compose_truncates_saved_answers_and_adds_the_continuation_link():
         "last_run_at": "2026-08-03T08:58:00",
         "link": "https://cella.example.test",
     }]
-    assert "\uc800\uc7a5\ud55c \uc9c8\ubb38" in document["markdown"]
-    assert "[\uc140\ub77c\uc5d0\uc11c \uc774\uc5b4\ubcf4\uae30](https://cella.example.test)" in document["markdown"]
+    # \uc81c\ubaa9\uc740 "\ub0b4\uac00 \uc800\uc7a5\ud55c \ubcf4\uace0" \ub2e4 (2026-08-31 \uc0ac\uc6a9\uc790 \uc9c0\uc815). \ub2e4\ub978 \uc808\uacfc \uac19\uc774 \uc774\ubaa8\uc9c0\ub85c \uc5f0\ub2e4.
+    assert "\ub0b4\uac00 \uc800\uc7a5\ud55c \ubcf4\uace0" in document["markdown"]
+
+    # \u26d4 \ud56d\ubaa9\ub9c8\ub2e4 \ub9c1\ud06c\ub97c \ubc18\ubcf5\ud558\uc9c0 \uc54a\ub294\ub2e4 \u2014 \uc794\ub514 \ubcf8\ubb38 **\ub9e8 \uc544\ub798\uc5d0 \ud55c \ubc88**\ub9cc \ubd99\ub294\ub2e4
+    #    (`personal_briefing._enqueue_jandi`). \ub2e4\uc12f \uac1c\ub97c \uc800\uc7a5\ud558\uba74 \uac19\uc740 \uc8fc\uc18c\uac00 \ub2e4\uc12f \ubc88
+    #    \ucc0d\ud600 \ubcf8\ubb38\uc774 \ub9c1\ud06c\ub85c \ub4a4\ub36e\uc778\ub2e4 (2026-08-31 \uac00\ub3c5\uc131 \uc815\ub9ac).
+    assert "[\uc140\ub77c\uc5d0\uc11c \uc774\uc5b4\ubcf4\uae30]" not in document["markdown"]
+
+    # \uc2e4\ud589 \uc2dc\uac01\uc740 \uc0ac\ub78c\uc774 \uc77d\ub294 \ud615\uc2dd\uc774\ub2e4 \u2014 ISO \uc6d0\ubb38\uc744 \uadf8\ub300\ub85c \uc2e3\uc9c0 \uc54a\ub294\ub2e4.
+    assert "2026-08-03T08:58:00" not in document["markdown"]
 
 
 def test_personal_briefing_builds_the_document_with_owner_saved_rows():

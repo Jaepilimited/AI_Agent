@@ -421,7 +421,8 @@ def test_saved_questions_use_the_existing_timeline_rows(page):
         payload,
     )
 
-    section = page.locator(".briefing-doc-section", has_text="저장한 질문")
+    # 제목은 "내가 저장한 보고" 다 (2026-08-31 사용자 지정 — 화면·잔디 같은 말을 쓴다).
+    section = page.locator(".briefing-doc-section", has_text="내가 저장한 보고")
     assert section.count() == 1
     assert section.locator(".briefing-doc-row").count() == 1
     assert section.locator(".briefing-doc-time b").inner_text() != "—"

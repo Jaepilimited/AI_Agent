@@ -194,7 +194,21 @@
     }
     section.appendChild(heading);
     body.appendChild(section);
+    section._heading = heading;      // 절 제목 줄에 동작을 얹을 수 있게 열어 둔다
     return section;
+  }
+
+  /* 절 제목 오른쪽에 다는 작은 동작. ⚠️ 개수 배지와 같은 줄 높이를 지켜야 한다 —
+     여기서 줄이 커지면 옆 열과 밑줄이 어긋난다 (2026-08-27 에 고친 그 함정). */
+  function sectionAction(section, label, onClick) {
+    var button = textNode("button", "briefing-doc-section-action", label);
+    button.type = "button";
+    button.addEventListener("click", function (event) {
+      event.stopPropagation();
+      onClick();
+    });
+    (section._heading || section).appendChild(button);
+    return button;
   }
 
   /* 왼쪽 고정폭 시간축이 이 화면의 뼈대다.
@@ -373,13 +387,238 @@
     });
   }
 
+  /* ── 내가 저장한 보고 (설정) ───────────────────────────────────────────────
+     매일 아침 자동으로 돌려 브리핑·잔디에 실을 질문을 **사용자가 직접** 고른다.
+     ⛔ 채팅에서 저장하는 길만 두면 "무엇이 걸려 있는지" 를 볼 수 없다 — 매일 오는
+        것을 스스로 바꿀 수 없으면 결국 안 보게 된다 (2026-08-31 사용자 요청).
+     ⚠️ 이 파일은 브라우저 저장소를 쓰지 않는다 (구글 데이터를 다루는 파일 규칙).
+        목록은 열 때마다 서버에서 받는다. */
+  var SAVED_TITLE = "내가 저장한 보고";
+  var SAVED_CADENCE = [
+    { value: "daily", label: "매일 (근무일)" },
+    { value: "weekly", label: "매주 월요일" },
+    { value: "monthly", label: "매월 첫 근무일" }
+  ];
+  var savedManagerBox = null;
+
+  function cadenceLabel(value, weekday) {
+    var found = SAVED_CADENCE.filter(function (c) { return c.value === value; })[0];
+    if (!found) return String(value || "");
+    /* ⚠️ 주간은 요일을 함께 보여준다 — "매주" 만 적으면 언제 오는지 알 수 없다. */
+    if (value === "weekly" && typeof weekday === "number") {
+      return "매주 " + ["월", "화", "수", "목", "금", "토", "일"][weekday] + "요일";
+    }
+    return found.label;
+  }
+
+  function savedStatusText(row) {
+    if (!row.last_run_at) return "아직 실행 전";
+    var when = clockLabel(row.last_run_at);
+    if (row.last_status === "error") return when + " · 실패";
+    if (row.last_status === "empty") return when + " · 결과 없음";
+    return when + " · 정상";
+  }
+
+  function openSavedManager(options) {
+    var overlay = savedManagerBox;
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "fb-overlay saved-manager";
+      /* ⛔ **이 파일은 HTML 문자열로 화면을 만들지 않는다.** 구글 데이터를 그리므로
+         주입 경로를 아예 두지 않는 것이 규칙이고, 테스트가 소스를 훑어 강제한다
+         (tests/frontend/test_personal_briefing_welcome.py).
+         ⚠️ "지금은 상수만 넣으니 괜찮다" 가 위험하다 — 다음 사람이 그 틀에 변수를
+            하나 끼워 넣는 순간 주입구가 된다. 처음부터 DOM 으로 짓는다.
+         ⚠️ 금지된 속성 이름을 **주석에도 적지 마라** — 가드가 소스를 문자열로 보므로
+            설명만으로도 걸린다 (오늘 CSS·정규식에서도 같은 함정을 밟았다). */
+      var box = textNode("div", "fb-box saved-box", "");
+      var addWrap = textNode("div", "saved-add", "");
+      var actions = textNode("div", "fb-actions", "");
+      var list = textNode("div", "saved-list", "");
+      var note = textNode("div", "sq-note", "");
+      var input = document.createElement("textarea");
+      var select = document.createElement("select");
+      var close = textNode("button", "fb-btn", "닫기");
+      var add = textNode("button", "fb-btn fb-btn-primary", "추가");
+
+      list.id = "saved-list";
+      note.id = "saved-note";
+      input.id = "saved-new";
+      input.className = "fb-text";
+      input.rows = 2;
+      input.placeholder = "예: 쇼피 인도네시아 이번 달 매출 알려줘";
+      select.id = "saved-new-cadence";
+      select.className = "sq-select";
+      close.id = "saved-close";
+      close.type = "button";
+      add.id = "saved-add";
+      add.type = "button";
+
+      box.appendChild(textNode("div", "fb-title", SAVED_TITLE));
+      box.appendChild(textNode("div", "fb-sub",
+        "여기 담아 두면 근무일 아침에 자동으로 돌려 브리핑과 잔디에 함께 보내 드립니다."));
+      box.appendChild(list);
+      addWrap.appendChild(input);
+      addWrap.appendChild(select);
+      box.appendChild(addWrap);
+      box.appendChild(note);
+      actions.appendChild(close);
+      actions.appendChild(add);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) overlay.style.display = "none";
+      });
+      SAVED_CADENCE.forEach(function (c) {
+        var opt = document.createElement("option");
+        opt.value = c.value;
+        opt.textContent = c.label;
+        select.appendChild(opt);
+      });
+      overlay.querySelector("#saved-close").addEventListener("click", function () {
+        overlay.style.display = "none";
+        /* 설정을 바꿨으면 첫 화면도 따라와야 한다 — 닫을 때 한 번 새로 그린다. */
+        if (typeof options.reload === "function") options.reload();
+      });
+      overlay.querySelector("#saved-add").addEventListener("click", function () {
+        savedAdd(overlay, options);
+      });
+      savedManagerBox = overlay;
+    }
+    overlay.style.display = "flex";
+    overlay.querySelector("#saved-note").textContent = "";
+    savedLoad(overlay, options);
+  }
+
+  function savedNote(overlay, text) {
+    overlay.querySelector("#saved-note").textContent = text || "";
+  }
+
+  function savedLoad(overlay, options) {
+    var list = overlay.querySelector("#saved-list");
+    list.textContent = "불러오는 중…";
+    fetch("/api/saved-questions")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        var rows = (data && data.questions) || [];
+        list.replaceChildren();
+        if (!rows.length) {
+          /* ⚠️ 빈 화면은 안내가 아니라 **다음 행동**을 준다. */
+          list.appendChild(textNode("p", "briefing-doc-empty",
+            "아직 담아 둔 보고가 없습니다. 아래에 질문을 적고 추가해 보세요."));
+          return;
+        }
+        rows.forEach(function (row) { list.appendChild(savedRow(row, overlay, options)); });
+      })
+      .catch(function () {
+        list.replaceChildren();
+        list.appendChild(textNode("p", "briefing-doc-empty",
+          "목록을 불러오지 못했습니다. 잠시 후 다시 열어 주세요."));
+      });
+  }
+
+  function savedRow(row, overlay, options) {
+    var item = textNode("div", "saved-item" + (row.enabled ? "" : " off"), "");
+    var head = textNode("div", "saved-item-head", "");
+    var meta = textNode("div", "saved-item-meta", "");
+    var actions = textNode("div", "saved-item-actions", "");
+
+    head.appendChild(textNode("span", "saved-item-q", row.question));
+    meta.appendChild(textNode("span", "", cadenceLabel(row.cadence, row.weekday)));
+    meta.appendChild(textNode("span", "saved-item-dot", "·"));
+    meta.appendChild(textNode("span", "", savedStatusText(row)));
+    /* ⛔ 실패 이유를 숨기지 마라 — 왜 안 오는지 모르면 고칠 수도 없다. */
+    if (row.last_status === "error" && row.last_error) {
+      meta.appendChild(textNode("span", "saved-item-dot", "·"));
+      meta.appendChild(textNode("span", "saved-item-error", String(row.last_error).slice(0, 60)));
+    }
+
+    var toggle = textNode("button", "briefing-doc-action", row.enabled ? "중지" : "다시 켜기");
+    toggle.type = "button";
+    toggle.addEventListener("click", function () {
+      savedPatch(row.id, !row.enabled, overlay, options);
+    });
+    var remove = textNode("button", "briefing-doc-action danger", "삭제");
+    remove.type = "button";
+    remove.addEventListener("click", function () {
+      savedDelete(row.id, overlay, options);
+    });
+    actions.appendChild(toggle);
+    actions.appendChild(remove);
+
+    item.appendChild(head);
+    item.appendChild(meta);
+    item.appendChild(actions);
+    return item;
+  }
+
+  /* 서버 응답은 거절을 `400 + {detail}` 로 준다 — 본문에 `ok` 가 없으므로
+     **HTTP 상태를 먼저 본다** (2026-08-27 에 저장 실패를 성공이라 표시한 그 함정). */
+  function savedRequest(url, init, overlay, options, okText) {
+    return fetch(url, init)
+      .then(function (r) {
+        var httpOk = r.ok;
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return { httpOk: httpOk, data: d || {} }; });
+      })
+      .then(function (res) {
+        if (!res.httpOk) {
+          savedNote(overlay, res.data.detail || res.data.reason || "처리하지 못했습니다.");
+          return false;
+        }
+        savedNote(overlay, okText);
+        savedLoad(overlay, options);
+        return true;
+      })
+      .catch(function () {
+        savedNote(overlay, "처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return false;
+      });
+  }
+
+  function savedAdd(overlay, options) {
+    var text = overlay.querySelector("#saved-new");
+    var cadence = overlay.querySelector("#saved-new-cadence");
+    var question = (text.value || "").trim();
+    if (!question) { savedNote(overlay, "질문을 입력해 주세요."); return; }
+
+    var payload = { question: question, cadence: cadence.value };
+    /* ⚠️ 주간은 서버가 요일을 요구한다 — 화면 라벨이 약속한 월요일을 실어 보낸다. */
+    if (cadence.value === "weekly") payload.weekday = 0;
+    savedRequest("/api/saved-questions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }, overlay, options, "추가했습니다.").then(function (ok) {
+      if (ok) text.value = "";
+    });
+  }
+
+  function savedPatch(id, enabled, overlay, options) {
+    savedRequest("/api/saved-questions/" + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: enabled })
+    }, overlay, options, enabled ? "다시 켰습니다." : "중지했습니다.");
+  }
+
+  function savedDelete(id, overlay, options) {
+    savedRequest("/api/saved-questions/" + id, { method: "DELETE" },
+      overlay, options, "삭제했습니다.");
+  }
+
   function renderSaved(body, doc, options) {
     var rows = doc.saved || [];
     var section;
 
-    /* ⛔ 저장 질문이 없으면 절 자체를 만들지 않는다. 빈 절은 첫 화면만 길게 만든다. */
+    /* ⛔ 저장 질문이 없으면 절 자체를 만들지 않는다. 빈 절은 첫 화면만 길게 만든다.
+       ⚠️ 대신 **설정으로 들어갈 입구가 사라지면 안 된다** — 처음 쓰는 사람은 저장된
+          것이 없어서 이 절을 볼 수 없다. 입구는 아래 `renderBusiness` 옆이 아니라
+          지표 절 제목에 단다 (`openSavedManager`). */
     if (!rows.length) return;
-    section = docSection(body, "저장한 질문", rows.length);
+    section = docSection(body, SAVED_TITLE, rows.length);
+    sectionAction(section, "관리", function () { openSavedManager(options); });
     rows.forEach(function (item) {
       var main = docRow(section, "normal", item.question, "", options, item.question,
         { start: clockLabel(item.last_run_at) });
@@ -593,7 +832,15 @@
     jandi.addEventListener("click", function () {
       openJandiDialog(options);
     });
+    /* ⚠️ **저장된 것이 없어도 들어갈 수 있어야 한다.** 위 절은 비면 그려지지 않으므로
+       처음 쓰는 사람에게는 입구가 사라진다. 잔디 설정 옆에 두면 "매일 무엇을 받을지"
+       를 정하는 두 가지가 한자리에 모인다. */
+    var manage = textNode("button", "briefing-doc-action", SAVED_TITLE + " 설정");
+    manage.type = "button";
+    manage.addEventListener("click", function () { openSavedManager(options); });
+
     footer.appendChild(copy);
+    footer.appendChild(manage);
     footer.appendChild(jandi);
     return footer;
   }
@@ -1133,6 +1380,12 @@
         markRefreshing(root, false);
       }
     }
+
+    /* 설정 화면이 무언가를 바꾸면 첫 화면도 따라와야 한다. 렌더 함수들은 `options`
+       하나만 들고 다니므로 거기에 다시 그릴 방법을 열어 둔다.
+       ⚠️ 서버 재조회가 아니라 **저장된 것을 다시 읽는** 것이다 — 설정 한 번에
+          구글·LLM 을 다시 돌리면 느리고 비싸다. */
+    options.reload = load;
 
     return {
       load: load,

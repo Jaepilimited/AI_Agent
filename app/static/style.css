@@ -5421,6 +5421,65 @@ html.dark .db-autocomplete-dropdown {
   align-items: center; justify-content: center;
 }
 
+/* 절 제목 오른쪽의 작은 동작. ⛔ **줄 높이를 키우면 안 된다** — 커지면 옆 열과
+   밑줄이 어긋난다 (2026-08-27 배지에서 겪은 그 함정). 배지처럼 음수 마진으로 상쇄. */
+.briefing-doc-section-action {
+  margin-left: 8px;
+  margin-block: -1px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+.briefing-doc-section-action:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* ── 내가 저장한 보고 (설정) ────────────────────────────────────────────────
+   ⛔ 색을 인라인으로 두지 마라 — 없는 변수는 에러가 아니라 폴백이라, 라이트 모드에서
+      어두운 글자가 돼도 아무도 못 잡는다 (2026-08-13 실제 사고). 전부 토큰에서 온다. */
+.saved-box { width: 560px; }
+
+.saved-list {
+  max-height: 280px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  margin: 12px 0 4px;
+}
+
+.saved-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+/* 중지된 것은 지우지 않고 **흐리게** 남긴다 — 껐다는 사실 자체가 정보다. */
+.saved-item.off { opacity: .55; }
+
+.saved-item-q {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.saved-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.saved-item-dot { color: var(--border-strong); }
+.saved-item-error { color: var(--accent); }
+
+.saved-item-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+.saved-add { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+
 /* 저장한 질문 — 주기 선택. 색은 전부 토큰에서 온다. */
 .sq-select {
   width: 100%; margin-top: 10px; padding: 9px 12px; border-radius: 10px;

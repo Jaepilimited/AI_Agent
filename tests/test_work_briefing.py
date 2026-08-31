@@ -179,11 +179,36 @@ def test_urgent_marks_are_capped_so_they_keep_meaning():
     assert len(high) == work_briefing.MAX_URGENT - 1
 
 
-def test_markdown_carries_every_section_even_when_empty():
-    text = work_briefing.render_markdown(compose({}))
+def test_markdown_carries_every_section_that_has_content():
+    """절이 **버그로** 사라지지 않는지 본다 (원래 이 테스트의 의도).
+
+    ⛔ 빈 절까지 싣도록 못 박지 않는다 — 잔디는 스크롤이 없는 평문 매체라
+       "없습니다" 네 줄이면 정작 볼 것이 화면 밖으로 밀린다 (2026-08-31 사용자 요청:
+       "잔디에서 받는 양식을 좀 가독성 있게"). 실측으로 30줄 중 8줄이 빈 절이었다.
+       첫 화면에는 이미 같은 규칙이 있었고 본문에만 빠져 있었다.
+    """
+    filled = compose({
+        "actions": [{"text": "예산 시트 입력", "source": "mail",
+                     "source_id": "m1", "urgency": "high"}],
+        "deadlines": [{"date": "2026-08-28", "text": "시트 제출",
+                       "source": "mail", "source_id": "m1", "urgency": "normal"}],
+    })
+    text = work_briefing.render_markdown(filled)
     for heading in ("오늘의 일정", "수신 메일", "Action Item", "마감·기한"):
-        assert heading in text
+        assert heading in text, heading
     assert "어제 18:00 이후" in text
+
+
+def test_empty_sections_are_left_out_of_the_message():
+    """⚠️ 내용이 없으면 제목도 싣지 않는다 — 빈 줄과 제목이 본문을 밀어낸다."""
+    text = work_briefing.render_markdown(compose({}))
+    assert "오늘의 일정" in text          # 내용이 있는 절은 그대로
+    assert "Action Item" not in text     # 없는 절은 통째로 빠진다
+    assert "마감·기한" not in text
+    assert "없습니다" not in text
+    # 조건부 절이 남긴 빈 줄도 한 줄로 접힌다 — 평문 매체에서 빈 줄은 위계를 만드는
+    # 유일한 수단이라 낭비하면 안 된다.
+    assert chr(10) * 3 not in text
 
 
 def test_document_survives_a_dead_model():

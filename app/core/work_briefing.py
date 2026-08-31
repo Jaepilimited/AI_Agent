@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -621,6 +622,20 @@ def _mark(urgency: str) -> str:
     return "🔴" if urgency == "high" else "🟡"
 
 
+def _run_label(value: Any) -> str:
+    """실행 시각을 사람이 읽는 형식으로. ⛔ ISO 원문(`2026-08-28T09:00:06`)을 그대로
+    싣지 마라 — 읽는 값이 아니다. 날짜가 오늘이 아니면 날짜까지 밝힌다 (주말을 건너뛰면
+    금요일 값이 월요일 아침에 실린다 — 언제 것인지 모르면 낡은 줄도 모른다)."""
+
+    parsed = _parse(str(value or ""))
+    if not parsed:
+        return ""
+    today = datetime.now(SEOUL).date()
+    if parsed.date() == today:
+        return parsed.strftime("%H:%M")
+    return parsed.strftime("%-m/%-d %H:%M") if sys.platform != "win32"         else parsed.strftime("%m/%d %H:%M").lstrip("0").replace("/0", "/")
+
+
 def render_markdown(
     document: dict[str, Any], name: str = "", fx: dict[str, Any] | None = None,
     business: dict[str, Any] | None = None,
@@ -632,9 +647,11 @@ def render_markdown(
     lines = [f"☀️ 오늘의 출근 브리핑 ({day} {document.get('weekday','')}요일){who}", ""]
 
     meetings = document.get("meetings") or []
-    lines.append(f"📅 오늘의 일정 · {len(meetings)}건")
-    if not meetings:
-        lines.append("  · 등록된 일정이 없습니다.")
+    # ⛔ **빈 절을 그리지 마라.** 잔디는 스크롤이 없는 평문 매체라, "없습니다" 네 줄이면
+    #    정작 볼 것이 화면 밖으로 밀린다. 첫 화면에는 이미 같은 규칙이 있는데
+    #    본문에만 빠져 있었다 (2026-08-31 실측: 30줄 중 8줄이 빈 절이었다).
+    if meetings:
+        lines.append(f"📅 오늘의 일정 · {len(meetings)}건")
     for row in meetings:
         head = f"  {_mark(row['urgency'])} {row['time']} | {row['title']}"
         if row.get("declined"):
@@ -651,14 +668,18 @@ def render_markdown(
             lines.append("      " + " · ".join(detail))
         if row.get("prep"):
             lines.append(f"      💡 {row['prep']}")
-    lines.append("")
+    if meetings:
+        lines.append("")
 
     window = document.get("window") or {}
-    lines.append(
-        f"✉️ 수신 메일 · {document.get('mail_total', 0)}건"
-        f" (안 읽음 {document.get('mail_unread', 0)})"
-    )
-    if window.get("label"):
+    mail_rows_all = document.get("mail") or []
+    has_mail = bool(mail_rows_all or document.get("mail_total"))
+    if has_mail:
+        lines.append(
+            f"✉️ 수신 메일 · {document.get('mail_total', 0)}건"
+            f" (안 읽음 {document.get('mail_unread', 0)})"
+        )
+    if has_mail and window.get("label"):
         lines.append(f"  · 기준: {window['label']}")
     if document.get("mail_summary"):
         lines.append(f"  {document['mail_summary']}")
@@ -684,43 +705,43 @@ def render_markdown(
             f"  · 안 읽은 메일 {document['mail_omitted_unread']}건은 상한을 넘어 "
             "실리지 않았습니다 (Gmail 에서 확인해 주세요)."
         )
-    if not (document.get("mail") or document.get("mail_total")):
-        lines.append("  · 새로 온 메일이 없습니다.")
-    lines.append("")
+    if has_mail:
+        lines.append("")
 
     actions = document.get("actions") or []
-    lines.append(f"✅ 우선순위 Action Item · {len(actions)}건")
-    if not actions:
-        lines.append("  · 즉시 조치할 항목을 찾지 못했습니다.")
-    for row in actions:
-        lines.append(f"  {_mark(row['urgency'])} {row['text']}")
-    lines.append("")
+    if actions:
+        lines.append(f"✅ 우선순위 Action Item · {len(actions)}건")
+        for row in actions:
+            lines.append(f"  {_mark(row['urgency'])} {row['text']}")
+        lines.append("")
 
     deadlines = document.get("deadlines") or []
-    lines.append(f"⏰ 마감·기한 · {len(deadlines)}건")
-    if not deadlines:
-        lines.append("  · 기한이 확인된 항목이 없습니다.")
-    for row in deadlines:
-        lines.append(f"  {_mark(row['urgency'])} [{row['label']}] {row['text']}")
+    if deadlines:
+        lines.append(f"⏰ 마감·기한 · {len(deadlines)}건")
+        for row in deadlines:
+            lines.append(f"  {_mark(row['urgency'])} [{row['label']}] {row['text']}")
 
     saved = document.get("saved") or []
     if saved:
-        lines += ["", "저장한 질문"]
+        # ⚠️ 다른 절은 전부 이모지로 시작한다 — 여기만 없으면 절로 안 읽힌다.
+        lines += ["", f"📌 내가 저장한 보고 · {len(saved)}건"]
         for row in saved:
             lines.append(f"  · {row.get('question', '')}")
             if row.get("answer"):
                 lines.append(f"      {row['answer']}")
-            if row.get("last_run_at"):
-                lines.append(f"      실행 {row['last_run_at']}")
-            if row.get("link"):
-                lines.append(f"      [셀라에서 이어보기]({row['link']})")
+            # ⛔ ISO 원문을 그대로 싣지 마라 — `2026-08-28T09:00:06` 은 읽는 값이 아니다.
+            ran = _run_label(row.get("last_run_at"))
+            if ran:
+                lines.append(f"      ({ran} 기준)")
 
     lines += _business_lines(business)
     lines += _fx_lines(fx)
 
     if document.get("dropped"):
         lines += ["", f"※ 근거가 확인되지 않아 제외한 문장 {document['dropped']}건"]
-    return "\n".join(lines).strip()
+    # ⚠️ 절을 조건부로 그리면 빈 줄이 겹쳐 남는다 — 두 줄 이상은 한 줄로 접는다.
+    #    평문 매체에서 빈 줄은 위계를 만드는 유일한 수단이라 낭비하면 안 된다.
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines).strip())
 
 
 def _business_lines(business: dict[str, Any] | None) -> list[str]:
@@ -760,4 +781,9 @@ def _fx_lines(fx: dict[str, Any] | None) -> list[str]:
     if int(fx.get("stale_days") or 0) > 0:
         # 주말·공휴일에는 새 값이 안 들어온다. 며칠 전 값인지 밝힌다.
         head += f" ({fx['stale_days']}일 전 고시)"
-    return ["", head, "  " + "  ·  ".join(parts)]
+    # ⛔ **아홉 통화를 한 줄에 잇지 마라 — 270자짜리 벽이 된다** (2026-08-31 실측).
+    #    잔디는 폭이 좁아 저절로 접히고, 접힌 줄은 어디가 어느 통화인지 알 수 없다.
+    #    화면(가로 한 줄)과 달리 여기서는 **세 개씩 끊어** 쌓는다 — 같은 사실을
+    #    매체에 맞게 다르게 그리는 것이지, 다른 값을 보여주는 것이 아니다.
+    rows = ["  " + "  ·  ".join(parts[i:i + 3]) for i in range(0, len(parts), 3)]
+    return ["", head] + rows
