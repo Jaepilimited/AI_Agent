@@ -24,6 +24,7 @@ router = APIRouter()
 
 _auth = GoogleAuthManager()
 _MAX_ROWS = 500
+_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 _MAX_DOWNLOAD_ITEMS = 200
 _MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024
 _UNSAFE = re.compile(r'[\\/:*?"<>|\r\n]+')
@@ -45,7 +46,15 @@ async def coa_finder_search(
     user: object = Depends(get_current_user),
 ):
     if file is not None:
-        rows_source = ("xlsx", await file.read())
+        data = await file.read()
+        if len(data) > _MAX_UPLOAD_BYTES:
+            max_mb = _MAX_UPLOAD_BYTES // (1024 * 1024)
+            over_mb = (len(data) - _MAX_UPLOAD_BYTES) / (1024 * 1024)
+            raise HTTPException(
+                400,
+                f"파일이 {max_mb}MB 상한을 약 {over_mb:.1f}MB 초과합니다 "
+                f"(현재 {len(data) / (1024 * 1024):.1f}MB)")
+        rows_source = ("xlsx", data)
     elif pasted:
         rows_source = ("pasted", pasted)
     else:
@@ -79,20 +88,41 @@ async def coa_finder_search(
     def _stream():
         counts = {cf.FOUND: 0, cf.MANY: 0, cf.NONE: 0, cf.CHECK: 0}
         total = len(rows)
-        for i, res in enumerate(cf.find_all(creds, rows), start=1):
-            counts[res.coa.status] = counts.get(res.coa.status, 0) + 1
-            payload = {
-                "index": i, "total": total,
-                "sku": res.row.sku, "description": res.row.description,
-                "lot": res.row.lot,
-                "coa": _verdict(res.coa), "msds": _verdict(res.msds),
+        completed = 0
+        try:
+            for i, res in enumerate(cf.find_all(creds, rows), start=1):
+                counts[res.coa.status] = counts.get(res.coa.status, 0) + 1
+                payload = {
+                    "index": i, "total": total,
+                    "sku": res.row.sku, "description": res.row.description,
+                    "lot": res.row.lot,
+                    "coa": _verdict(res.coa), "msds": _verdict(res.msds),
+                }
+                yield f"event: row\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                completed = i
+        except Exception as exc:                      # noqa: BLE001
+            # ⛔ 여기서 그냥 끊으면 12행에서 죽은 조회가 "12행 완료"로 보인다.
+            #    끝났다는 신호(done)와 죽었다는 신호(error)는 다르게 보내야 한다
+            logger.warning("coa_search_stream_failed",
+                           extra={"completed": completed, "total": total,
+                                  "error": str(exc)[:200]})
+            error_payload = {
+                "message": f"조회 중 오류가 발생했습니다: {str(exc)[:200]}",
+                "completed": completed, "total": total,
             }
-            yield f"event: row\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            yield f"event: error\ndata: {json.dumps(error_payload, ensure_ascii=False)}\n\n"
+            return
         summary = {"total": total, "counts": counts}
         yield f"event: done\ndata: {json.dumps(summary, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(_stream(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-store"})
+    return StreamingResponse(
+        _stream(), media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-store",
+            # nginx 가 이 응답을 버퍼링하면 진행률을 보여준다는 이 엔드포인트의
+            # 존재 이유가 프로덕션에서만 조용히 죽는다 (테스트에선 안 걸린다)
+            "X-Accel-Buffering": "no",
+        })
 
 
 class DownloadItem(BaseModel):
