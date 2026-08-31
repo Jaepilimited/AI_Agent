@@ -71,6 +71,10 @@ class FiAccessUpdate(BaseModel):
     can_view_fi: bool
 
 
+class VisitorAnalyticsAccessUpdate(BaseModel):
+    can_view_visitor_analytics: bool
+
+
 # ── Group CRUD ──
 
 @group_router.get("")
@@ -239,6 +243,7 @@ async def list_ad_users(
     group_id: Optional[int] = Query(None, description="Filter by group"),
     unassigned: bool = Query(False, description="Only unassigned users"),
     fi_only: bool = Query(False, description="Only FI-enabled users"),
+    visitor_only: bool = Query(False, description="Only visitor analytics-enabled users"),
 ):
     """List AD users with optional filters."""
     conditions = ["a.is_active = 1"]
@@ -262,11 +267,14 @@ async def list_ad_users(
     if fi_only:
         conditions.append("a.can_view_fi = 1")
 
+    if visitor_only:
+        conditions.append("a.can_view_visitor_analytics = 1")
+
     where = " AND ".join(conditions)
 
     sql = f"""
         SELECT a.id, a.username, a.display_name, a.email, a.department,
-               a.can_view_fi, u.id AS user_id,
+               a.can_view_fi, a.can_view_visitor_analytics, u.id AS user_id,
                GROUP_CONCAT(g.name SEPARATOR ', ') as group_names
         FROM ad_users a
         LEFT JOIN users u ON u.ad_user_id = a.id
@@ -303,6 +311,41 @@ async def update_fi_access(
         "ok": True,
         "ad_user_id": ad_user_id,
         "can_view_fi": req.can_view_fi,
+    }
+
+
+@ad_router.put("/users/{ad_user_id}/visitor-analytics")
+async def update_visitor_analytics_access(
+    ad_user_id: int,
+    req: VisitorAnalyticsAccessUpdate,
+    admin: User = Depends(_require_admin),
+):
+    """Grant or revoke the visitor analytics tab for one AD user."""
+    target = await _fetch_one(
+        "SELECT a.id, a.username, a.display_name, u.id AS user_id "
+        "FROM ad_users a LEFT JOIN users u ON u.ad_user_id = a.id "
+        "WHERE a.id = %s",
+        (ad_user_id,),
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="AD user not found")
+
+    await _execute(
+        "UPDATE ad_users SET can_view_visitor_analytics = %s WHERE id = %s",
+        (1 if req.can_view_visitor_analytics else 0, ad_user_id),
+    )
+    if target.get("user_id"):
+        invalidate_user_cache(target["user_id"])
+    logger.info(
+        "admin_update_visitor_analytics_access",
+        target=target["username"],
+        allowed=req.can_view_visitor_analytics,
+        by=admin.email,
+    )
+    return {
+        "ok": True,
+        "ad_user_id": ad_user_id,
+        "can_view_visitor_analytics": req.can_view_visitor_analytics,
     }
 
 
@@ -362,11 +405,36 @@ async def reset_password(
         target_ad_user_id=ad_user_id,
         by=admin.email,
     )
+    # ⛔ **초기화와 요청 닫기는 한 동작이다.** 따로 두면 관리자가 초기화만 하고
+    #    요청은 계속 대기로 남아 다음에 볼 때도 맨 앞에 뜬다 — 붐따가 정확히
+    #    그렇게 36건 쌓였다 (CLAUDE.md 붐따 규칙: "수정과 표시는 한 작업이다").
+    from app.core import password_reset
+    await asyncio.to_thread(password_reset.close_for_ad_user, ad_user_id, admin.id)
     return {
         "ok": True,
         "ad_user_id": ad_user_id,
         "temporary_password": temp_password,
     }
+
+
+@ad_router.get("/password-reset-requests")
+async def list_password_reset_requests(admin: User = Depends(_require_admin)):
+    """대기 중인 비밀번호 재설정 요청 — 로그인 화면에서 본인이 남긴 것.
+
+    ⚠️ `registered` 가 거짓이면 **초기화가 아니라 가입 안내**를 해야 한다
+       (AD 에는 있지만 셀라 가입 전이라 초기화할 대상이 없다).
+    """
+    from app.core import password_reset
+    rows = await asyncio.to_thread(password_reset.open_requests)
+    return {"requests": [{
+        "id": r["id"],
+        "ad_user_id": r["ad_user_id"],
+        "name": r.get("display_name"),
+        "department": r.get("department"),
+        "note": r.get("note") or "",
+        "registered": bool(r.get("registered")),
+        "created_at": str(r.get("created_at") or ""),
+    } for r in rows]}
 
 
 @ad_router.get("/departments")

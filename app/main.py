@@ -113,6 +113,7 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(_ensure_audit_table)
         from app.db.mariadb import (
             ensure_fi_permission_column,
+            ensure_visitor_analytics_permission_column,
             ensure_must_change_password_column,
             ensure_user_visits_table,
             ensure_knowledge_wiki_table,
@@ -131,6 +132,7 @@ def create_app() -> FastAPI:
         # so we preserve original ordering rather than gathering concurrently.
         for _ensure_fn in (
             ensure_fi_permission_column,
+            ensure_visitor_analytics_permission_column,
             ensure_must_change_password_column,
             ensure_user_visits_table,
             ensure_knowledge_wiki_table,
@@ -162,6 +164,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_schema_watch_table)
         from app.core.ad_media_watch import ensure_ad_media_table
         await asyncio.to_thread(ensure_ad_media_table)
+        from app.core.password_reset import ensure_password_reset_table
+        await asyncio.to_thread(ensure_password_reset_table)
         from app.core.value_lists import ensure_value_cache_table
         await asyncio.to_thread(ensure_value_cache_table)
         from app.core.ingredients import ensure_ingredient_tables

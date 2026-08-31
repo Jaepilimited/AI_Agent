@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user, invalidate_user_cache
 from app.config import ALL_MODELS, get_settings, validate_jwt_secret
+from app.core.visitor_access import can_view_visitor_analytics
 from app.db.mariadb import fetch_all, fetch_one, execute, execute_lastid
 from app.db.models import User
 
@@ -461,11 +462,21 @@ async def me(response: Response, user: User = Depends(get_current_user)):
         "department": user.department,
         "role": user.role,
         "can_view_fi": can_view_fi,
+        "can_view_visitor_analytics": can_view_visitor_analytics(
+            user.role, user.can_view_visitor_analytics,
+        ),
         "must_change_password": user.must_change_password,
         "allowed_models": _resolve_models(user.role, user.allowed_models),
         "brand_filters": brand_filters,
         "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,
     }
+
+
+class PasswordResetRequestIn(BaseModel):
+    department: str = ""
+    name: str = ""
+    note: str = ""
+    id: int | None = None  # ad_user_id (검색 결과에서 오면 이쪽이 정확하다)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -503,6 +514,39 @@ async def change_password(req: ChangePasswordRequest, user: User = Depends(get_c
 
     logger.info("password_changed", user_id=user.id, name=user.name)
     return {"ok": True}
+
+
+@auth_api_router.post("/password-reset-request")
+async def password_reset_request(req: PasswordResetRequestIn):
+    """로그인 못 하는 사람이 **관리자에게 요청만** 남긴다 (로그인 불필요).
+
+    ⛔ **여기서 계정을 건드리지 않는다.** 부서·이름은 로그인 화면이 이미 목록으로
+       보여 주므로, 그것만으로 재설정까지 되면 누구나 남의 계정을 초기화할 수 있다.
+       셀라에는 재무 손익(FI) 데이터가 있다 — 판단은 사람이 한다
+       (2026-08-31 사용자 결정: "관리자 요청 접수만").
+
+    ⚠️ 응답은 **찾았든 못 찾았든 같다.** 여기서 존재 여부를 알려 주면 이 엔드포인트가
+       재직자 조회기가 된다. (부서·이름 목록 자체는 로그인 화면이 이미 주지만,
+       그것과 "가입해서 계정이 있다" 는 다른 정보다.)
+    """
+    from app.core import password_reset
+
+    same = {"ok": True, "message": "요청이 접수되었습니다. 관리자가 확인 후 연락드립니다."}
+    ad_user = await _lookup_ad_user(req.department, req.name, req.id)
+    if not ad_user:
+        # ⚠️ 조용히 넘기지 말고 로그에는 남긴다 — 이름이 안 맞아 못 찾는 경우가
+        #    실제로 있고, 그때 사용자는 접수됐다고 믿고 기다린다. 다만 공개
+        #    엔드포인트의 이름·부서·메모는 운영 로그에 남기지 않는다.
+        logger.warning("password_reset_request_no_match")
+        return same
+
+    result = await asyncio.to_thread(
+        password_reset.create, int(ad_user["id"]), req.note or "")
+    # ⛔ WARNING 이어야 한다 — 프로덕션은 앱 INFO 를 통째로 버린다 (CLAUDE.md).
+    logger.warning("password_reset_requested",
+                   ad_user_id=int(ad_user["id"]),
+                   duplicate=bool(result.get("duplicate")))
+    return same
 
 
 @auth_api_router.post("/logout")

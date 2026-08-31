@@ -3445,7 +3445,7 @@
 
   function loadVisitorAnalytics(days) {
     var section = document.getElementById("visitor-analytics");
-    if (!section || section.hidden || !currentUser || currentUser.role !== "admin") return;
+    if (!section || section.hidden || !canViewVisitorAnalytics()) return;
     var requestId = ++_visitorAnalyticsRequest;
     section.setAttribute("aria-busy", "true");
     fetch("/api/admin/visitor-analytics?days=" + encodeURIComponent(days))
@@ -4114,8 +4114,10 @@
   };
 
   function showAdminButton() {
-    if (currentUser && currentUser.role === "admin") {
+    if (canViewVisitorAnalytics()) {
       document.getElementById("admin-btn-wrap").style.display = "";
+    }
+    if (currentUser && currentUser.role === "admin") {
       var wb = document.getElementById("wiki-btn-wrap");
       if (wb) wb.style.display = "";
       // 자가 점검 실패를 관리자 눈에 띄게 — 잔디 알림을 쓰지 않으므로
@@ -4195,15 +4197,37 @@
     return currentUser && currentUser.role === "admin";
   }
 
+  function canViewVisitorAnalytics() {
+    return !!(currentUser && (isAdmin() || currentUser.can_view_visitor_analytics === true));
+  }
+
   // ===== Admin Drawer =====
   var _adminGroups = [];
   var _adminDepts = [];
 
   function openAdminDrawer() {
+    if (!canViewVisitorAnalytics()) return;
     document.getElementById("skin-admin-overlay").className = "open";
     var drawer = document.getElementById("skin-admin-drawer");
     drawer.classList.remove("closed");
     drawer.classList.add("open");
+    var visitorOnly = !isAdmin();
+    document.querySelectorAll(".admin-tab").forEach(function(tab) {
+      var visible = !visitorOnly || tab.dataset.tab === "visitors";
+      tab.style.display = visible ? "" : "none";
+      if (visitorOnly) tab.classList.toggle("active", tab.dataset.tab === "visitors");
+    });
+    if (visitorOnly) {
+      document.querySelectorAll(".admin-tab-content").forEach(function(content) {
+        content.classList.toggle("active", content.id === "tab-visitors");
+      });
+    }
+    var statsBar = document.getElementById("admin-stats-bar");
+    if (statsBar) statsBar.style.display = visitorOnly ? "none" : "";
+    var visitorPermissionAccess = document.getElementById("visitor-permission-access");
+    if (visitorPermissionAccess) visitorPermissionAccess.hidden = !isAdmin();
+    var visitorPermissionReadonlyHint = document.getElementById("visitor-permission-readonly-hint");
+    if (visitorPermissionReadonlyHint) visitorPermissionReadonlyHint.hidden = isAdmin();
     var activeTab = document.querySelector(".admin-tab.active");
     var activeTabName = activeTab ? activeTab.dataset.tab : "groups";
     drawer.classList.toggle("visitor-mode", activeTabName === "visitors");
@@ -4212,6 +4236,7 @@
     // Hide write-actions for non-admin
     document.getElementById("btn-create-group").style.display = isAdmin() ? "" : "none";
     document.getElementById("btn-sync-ad").style.display = isAdmin() ? "" : "none";
+    if (visitorOnly) return;
     // Load all data in parallel
     Promise.all([
       fetch("/api/admin/ad/stats").then(function(r) { return r.json(); }),
@@ -4752,9 +4777,17 @@
       if (tab.dataset.tab === "golden") loadGolden();
       if (tab.dataset.tab === "feedback") loadFeedbackInbox();
       if (tab.dataset.tab === "flow") loadFlowCanvas();
-      if (tab.dataset.tab !== "selfcheck") refreshSelfCheckBadge();
+      if (tab.dataset.tab !== "selfcheck" && isAdmin()) refreshSelfCheckBadge();
     });
   });
+
+  var manageVisitorAccessButton = document.getElementById("btn-manage-visitor-access");
+  if (manageVisitorAccessButton) {
+    manageVisitorAccessButton.addEventListener("click", function() {
+      var usersTab = document.querySelector('.admin-tab[data-tab="users"]');
+      if (usersTab) usersTab.click();
+    });
+  }
 
 
 
@@ -5541,6 +5574,9 @@
 
   // AD users list
   function loadAdminADUsers() {
+    // 요청 목록은 사용자 조회 실패와 무관하게 먼저 보인다. 그렇지 않으면 관리자에게
+    // 가장 중요한 재설정 요청이 목록 API의 일시 장애에 가려진다.
+    renderPasswordResetRequests();
     var dept = document.getElementById("admin-dept-filter").value;
     var groupFilter = document.getElementById("admin-group-filter").value;
     var search = document.getElementById("admin-search").value;
@@ -5550,6 +5586,7 @@
     if (search) params.set("search", search);
     if (groupFilter === "unassigned") params.set("unassigned", "true");
     else if (groupFilter === "fi_allowed") params.set("fi_only", "true");
+    else if (groupFilter === "visitor_allowed") params.set("visitor_only", "true");
     else if (groupFilter) params.set("group_id", groupFilter);
 
     fetch("/api/admin/ad/users?" + params.toString())
@@ -5582,6 +5619,8 @@
           if (isAdmin()) {
             html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer">';
             html += '<input type="checkbox" class="admin-fi-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_fi ? ' checked' : '') + '> 손익</label>';
+            html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer">';
+            html += '<input type="checkbox" class="admin-visitor-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_visitor_analytics ? ' checked' : '') + '> 방문자</label>';
             // 가입한 사람만 로컬 비밀번호가 있다 — 미가입 AD 사용자는 초기화할 것이 없다
             if (u.user_id) {
               html += '<button class="admin-ad-reset-pw" data-ad-user-id="' + u.id + '" data-name="' + escapeHtml(u.display_name) + '">비밀번호 초기화</button>';
@@ -5615,30 +5654,105 @@
             });
           });
         });
-        container.querySelectorAll(".admin-ad-reset-pw").forEach(function(btn) {
-          btn.addEventListener("click", function() {
-            var name = btn.dataset.name;
-            if (!confirm("'" + name + "' 님의 비밀번호를 초기화하시겠습니까?\n임시 비밀번호가 발급되고, 본인이 새 비밀번호로 바꾸기 전까지는 로그인만 되고 앱은 사용할 수 없습니다.")) return;
-            btn.disabled = true;
-            btn.textContent = "초기화 중...";
-            fetch("/api/admin/ad/users/" + btn.dataset.adUserId + "/reset-password", { method: "POST" })
-              .then(function(r) {
-                if (!r.ok) throw new Error("비밀번호 초기화에 실패했습니다.");
-                return r.json();
-              })
-              .then(function(res) {
-                btn.disabled = false;
-                btn.textContent = "비밀번호 초기화";
-                showResetPasswordResultModal(name, res.temporary_password);
-              })
-              .catch(function(e) {
-                btn.disabled = false;
-                btn.textContent = "비밀번호 초기화";
-                alert(e.message || "비밀번호 초기화에 실패했습니다.");
-              });
+        container.querySelectorAll(".admin-visitor-toggle").forEach(function(checkbox) {
+          checkbox.addEventListener("change", function() {
+            var requested = checkbox.checked;
+            checkbox.disabled = true;
+            fetch("/api/admin/ad/users/" + checkbox.dataset.adUserId + "/visitor-analytics", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ can_view_visitor_analytics: requested })
+            }).then(function(r) {
+              if (!r.ok) throw new Error("방문자 권한 변경에 실패했습니다.");
+              return r.json();
+            }).then(function() {
+              checkbox.disabled = false;
+            }).catch(function(e) {
+              checkbox.checked = !requested;
+              checkbox.disabled = false;
+              alert(e.message || "방문자 권한 변경에 실패했습니다.");
+            });
           });
         });
+        container.querySelectorAll(".admin-ad-reset-pw").forEach(function(btn) {
+          btn.addEventListener("click", function() { resetPasswordFor(btn); });
+        });
       }).catch(function(e) { console.error("Failed to load AD users:", e); });
+  }
+
+  // ── 비밀번호 재설정 요청 (로그인 화면 → 관리자) ──────────────────────────
+  // 이름·팀은 이미 로그인 화면에 노출되므로, 이것은 본인 확인이나 자동 초기화가
+  // 아니다. 관리자가 확인 후 임시 비밀번호를 한 번 발급하는 접수함이다.
+  function renderPasswordResetRequests() {
+    var list = document.getElementById("admin-user-list");
+    if (!list || !list.parentNode) return;
+    var box = document.getElementById("admin-pw-requests");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "admin-pw-requests";
+      list.parentNode.insertBefore(box, list);
+    }
+    fetch("/api/admin/ad/password-reset-requests")
+      .then(function(r) { return r.ok ? r.json() : { requests: [] }; })
+      .then(function(data) {
+        var rows = (data && data.requests) || [];
+        if (!rows.length) { box.innerHTML = ""; return; }
+        var h = '<div class="admin-pw-req-card"><div class="admin-pw-req-head">'
+              + '<span>비밀번호 재설정 요청 ' + rows.length + '건</span>'
+              + '<button type="button" class="admin-pw-req-refresh">새로고침</button></div>';
+        rows.forEach(function(r) {
+          var dept = (r.department || "").split(" > ").slice(-1)[0];
+          h += '<div class="admin-pw-req-row"><div>';
+          h += '<strong>' + escapeHtml(r.name || "") + '</strong> ';
+          h += '<span class="admin-pw-req-dept">' + escapeHtml(dept) + '</span>';
+          if (r.note) h += '<div class="admin-pw-req-note">' + escapeHtml(r.note) + '</div>';
+          if (r.created_at) h += '<div class="admin-pw-req-note">접수: ' + escapeHtml(r.created_at) + '</div>';
+          // ⚠️ 가입 전이면 초기화할 대상이 없다 — 안내가 달라야 한다.
+          if (!r.registered) {
+            h += '<div class="admin-pw-req-note">아직 셀라 가입 전입니다 — 초기화가 아니라 가입을 안내해 주세요.</div>';
+          }
+          h += '</div>';
+          if (r.registered) {
+            h += '<button class="admin-ad-reset-pw" data-ad-user-id="' + r.ad_user_id
+               + '" data-name="' + escapeHtml(r.name || "") + '">비밀번호 초기화</button>';
+          }
+          h += '</div>';
+        });
+        box.innerHTML = h + '</div>';
+        box.querySelectorAll(".admin-pw-req-refresh").forEach(function(btn) {
+          btn.addEventListener("click", renderPasswordResetRequests);
+        });
+        box.querySelectorAll(".admin-ad-reset-pw").forEach(function(btn) {
+          btn.addEventListener("click", function() { resetPasswordFor(btn); });
+        });
+      })
+      .catch(function() { box.innerHTML = ""; });
+  }
+
+  // ⛔ 초기화 동작은 **한 벌**이다. 목록과 요청 배너가 같은 함수를 쓴다 —
+  //    사본을 만들면 언젠가 한쪽만 고쳐진다 (direct 프롬프트가 두 벌이던 사고와 같다).
+  function resetPasswordFor(btn) {
+    var name = btn.dataset.name;
+    if (!confirm("'" + name + "' 님의 비밀번호를 초기화하시겠습니까?\n임시 비밀번호가 발급되고, 본인이 새 비밀번호로 바꾸기 전까지는 로그인만 되고 앱은 사용할 수 없습니다.")) return;
+    btn.disabled = true;
+    btn.textContent = "초기화 중...";
+    fetch("/api/admin/ad/users/" + btn.dataset.adUserId + "/reset-password", { method: "POST" })
+      .then(function(r) {
+        if (!r.ok) throw new Error("비밀번호 초기화에 실패했습니다.");
+        return r.json();
+      })
+      .then(function(res) {
+        btn.disabled = false;
+        btn.textContent = "비밀번호 초기화";
+        showResetPasswordResultModal(name, res.temporary_password);
+        // 서버가 초기화와 함께 요청을 닫는다 — 화면도 즉시 맞춘다
+        renderPasswordResetRequests();
+      })
+      .catch(function(e) {
+        btn.disabled = false;
+        btn.textContent = "비밀번호 초기화";
+        alert(e.message || "비밀번호 초기화에 실패했습니다.");
+      });
   }
 
   // 초기화 직후 딱 한 번만 보여주는 임시 비밀번호 — 저장하지 않는다, 다시 열 수 없다

@@ -310,6 +310,18 @@
             </div>
           </div>
 
+          <div class="visitor-permission-access" id="visitor-permission-access" hidden>
+            <div>
+              <strong>방문자 권한 대상 관리</strong>
+              <span>AD 사용자에서 사람별로 방문자 열람 권한을 부여하거나 회수할 수 있습니다.</span>
+            </div>
+            <button type="button" class="admin-btn-secondary" id="btn-manage-visitor-access">권한 대상 관리</button>
+          </div>
+          <div class="visitor-permission-readonly" id="visitor-permission-readonly-hint" hidden>
+            <strong>방문자 분석 열람 권한이 있습니다.</strong>
+            <span>권한 대상 변경은 관리자 계정에서 할 수 있습니다.</span>
+          </div>
+
           <div class="visitor-collection-note" id="visitor-collection-note">
             <span class="visitor-live-dot" aria-hidden="true"></span>
             <strong>8월 11일부터 수집 중</strong>
@@ -443,6 +455,7 @@
           <option value="">전체 그룹</option>
           <option value="unassigned">미배정</option>
           <option value="fi_allowed">손익 허용</option>
+          <option value="visitor_allowed">방문자 허용</option>
         </select>
         <input type="text" id="admin-search" class="admin-input" placeholder="이름/이메일 검색">
       </div>

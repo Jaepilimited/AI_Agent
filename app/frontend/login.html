@@ -88,6 +88,20 @@
 
       <div class="error-msg" id="error-msg"></div>
       <div class="toggle-link" id="toggle-link">계정이 없으신가요? 회원가입</div>
+      <div class="toggle-link" id="forgot-link">비밀번호를 잊으셨나요? 관리자에게 요청</div>
+
+      <!-- 비밀번호 재설정 요청 — 계정은 여기서 바뀌지 않는다. 관리자가 판단한다.
+           부서·이름만으로 재설정되면 누구나 남의 계정을 초기화할 수 있고,
+           셀라에는 재무 손익 데이터가 있다 (2026-08-31). -->
+      <div class="forgot-box" id="forgot-box" hidden>
+        <p class="forgot-help">
+          이름과 소속 팀을 고른 뒤 요청해 주세요. 관리자가 확인 후 임시 비밀번호를 발급합니다.
+        </p>
+        <input type="text" id="forgot-note" maxlength="200"
+               placeholder="관리자에게 남길 메모 (선택)">
+        <button type="button" class="btn-primary" id="forgot-submit">관리자에게 요청 보내기</button>
+        <div class="forgot-msg" id="forgot-msg"></div>
+      </div>
     </div>
   </div>
 
