@@ -39,24 +39,54 @@ _AD_CACHE_TTL = 300  # 5 minutes
 # hire whose AD account was created *today* is invisible to signup/signin until then,
 # which turns into a same-day "I can't find my name / it says user not found" incident
 # every time someone onboards mid-day. Self-heal: when a lookup against the local
-# ad_users cache/table comes up empty, do one live AD fetch + upsert before giving up,
-# then retry. Cooldown guards against hammering the AD server on repeated typos.
-_last_ad_resync_attempt: float = 0
-_AD_RESYNC_COOLDOWN = 120  # seconds
+# ad_users cache/table comes up empty, kick off one live AD fetch + upsert in the
+# background before answering the failing request.
+#
+# ⛔ This must NEVER be awaited on the request path. A live full resync (fetch_ad_users
+#    + sync_to_db over ~362 accounts) measured ~135.9s in production (2026-08-27) —
+#    the WAS host most likely can't even reach the AD server at all (LDAP is only open
+#    to the APP host, per CLAUDE.md), so the attempt probably just burns a multi-minute
+#    TCP timeout before failing. A user who picked the wrong team from the dropdown was
+#    made to stare at a spinner for over two minutes for what should be a ~1s "not
+#    found." The resync can only ever help the *next* attempt (the user retries once
+#    they're actually in AD, or a real same-day hire tries again a bit later) — this
+#    request's own miss has to answer fast regardless of whether the resync helps or not.
+_resync_in_progress = False
+_last_ad_resync_finished: float = 0
+_AD_RESYNC_COOLDOWN = 120  # seconds since the last resync FINISHED (not started)
 
 
-async def _maybe_ad_fallback_resync() -> bool:
-    """On a lookup miss, try one live AD fetch+upsert (rate-limited). Returns True if it ran."""
-    global _last_ad_resync_attempt
-    now = time.time()
-    if (now - _last_ad_resync_attempt) < _AD_RESYNC_COOLDOWN:
-        return False
-    _last_ad_resync_attempt = now
+def _trigger_ad_fallback_resync() -> None:
+    """Fire-and-forget: schedule a background AD resync if one isn't already running
+    and the cooldown (measured from when the *last one finished*) has elapsed.
+
+    Never awaited by callers — call this and move on. The previous version stamped
+    the cooldown when a resync *started*, so a resync that itself takes longer than
+    the cooldown (measured: 135s sync vs a 120s cooldown) left no rate limit at all —
+    the very next miss started another full resync the instant the first one returned.
+    Gating on an in-progress flag plus a completion-timestamped cooldown means at most
+    one resync is ever in flight, and none pile up right after one finishes either.
+    """
+    global _resync_in_progress
+    if _resync_in_progress:
+        return
+    if (time.time() - _last_ad_resync_finished) < _AD_RESYNC_COOLDOWN:
+        return
+    _resync_in_progress = True
+    asyncio.create_task(_run_ad_fallback_resync())
+
+
+async def _run_ad_fallback_resync() -> None:
+    """Background body of the fallback resync. Always clears the in-progress flag and
+    stamps the completion time on the way out — success, failure, or skipped-locked
+    all count as "done" for cooldown purposes."""
+    global _resync_in_progress, _last_ad_resync_finished, _ad_cache, _ad_cache_ts
 
     def _do_resync() -> bool:
         from scripts.sync_ad_users import fetch_ad_users, sync_to_db, _acquire_lock, _release_lock
-        # If the nightly cron (or another request) is already syncing, don't collide —
-        # that run will cover this lookup anyway once it finishes.
+        # Local file lock — guards against overlapping resyncs from this process.
+        # (It does not see the nightly cron, which runs as a separate process on the
+        # APP host with its own local lock file; that path is out of scope here.)
         if not _acquire_lock():
             logger.info("ad_fallback_resync_skipped_locked")
             return False
@@ -69,15 +99,14 @@ async def _maybe_ad_fallback_resync() -> bool:
 
     try:
         ran = await asyncio.to_thread(_do_resync)
+        if ran:
+            _ad_cache, _ad_cache_ts = [], 0  # force _get_ad_cache() to reload from DB
+            logger.info("ad_fallback_resync_completed")
     except Exception as e:
         logger.warning("ad_fallback_resync_failed", error=str(e))
-        return False
-
-    if ran:
-        global _ad_cache, _ad_cache_ts
-        _ad_cache, _ad_cache_ts = [], 0  # force _get_ad_cache() to reload from DB
-        logger.info("ad_fallback_resync_completed")
-    return ran
+    finally:
+        _last_ad_resync_finished = time.time()
+        _resync_in_progress = False
 
 # ── /me sliding-refresh debounce ──
 # Avoid re-issuing a cookie (and re-querying brand_filter) on every /me call.
@@ -280,15 +309,16 @@ async def search_by_name(
     """Find AD users by name (searches display_name, ad_name, username).
 
     Self-heals on a miss: a brand-new hire may not be in ad_users yet if they're
-    signing up before tonight's scheduled sync — try one live AD resync before
-    reporting no results, so onboarding never blocks on the cron schedule.
+    signing up before tonight's scheduled sync — kick off one live AD resync in the
+    background so onboarding never blocks on the cron schedule. This call itself does
+    not wait for it (see `_trigger_ad_fallback_resync`); if it lands, the *next*
+    keystroke's search picks up the refreshed cache on its own.
     """
     cache = await _get_ad_cache()
     q = name.lower()
     results = _match_cache(cache, q)
-    if not results and await _maybe_ad_fallback_resync():
-        cache = await _get_ad_cache()
-        results = _match_cache(cache, q)
+    if not results:
+        _trigger_ad_fallback_resync()
     return results
 
 
@@ -297,25 +327,46 @@ async def search_by_name(
 async def _lookup_ad_user(department: str, name: str, ad_user_id: int | None) -> dict | None:
     """Look up an ad_users row by id (preferred) or department+display_name.
 
-    Self-heals on a miss: retries once after a live AD resync, so a same-day
-    hire isn't blocked by the nightly-only sync schedule.
+    Self-heals on a miss: kicks off a background AD resync so a same-day hire's
+    *next* attempt isn't blocked by the nightly-only sync schedule — but does not
+    retry inline and does not wait for it. A miss must answer as fast as the DB
+    query does, not however long a live AD round-trip takes.
     """
-    async def _query() -> dict | None:
-        if ad_user_id:
-            return await _db_fetch_one(
-                "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
-                (ad_user_id,),
-            )
-        return await _db_fetch_one(
+    if ad_user_id:
+        ad_user = await _db_fetch_one(
+            "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
+            (ad_user_id,),
+        )
+    else:
+        ad_user = await _db_fetch_one(
             "SELECT id, display_name, email, department FROM ad_users "
             "WHERE is_active = 1 AND department = %s AND display_name = %s",
             (department, name),
         )
-
-    ad_user = await _query()
-    if not ad_user and await _maybe_ad_fallback_resync():
-        ad_user = await _query()
+    if not ad_user:
+        _trigger_ad_fallback_resync()
     return ad_user
+
+
+_WRONG_TEAM_HINT = "그 팀에서 이 이름을 찾지 못했습니다. 다른 팀 소속이 아닌지 확인해 주세요."
+
+
+async def _not_found_detail(department: str, name: str, ad_user_id: int | None, fallback: str) -> str:
+    """Build the error message for a signin/signup lookup miss.
+
+    A miss on the department+name path is very often the '동남아시아팀' vs
+    '동남아시아1팀' dropdown mismatch — the name is right, the picked team is wrong.
+    A single fast, local, indexed DB lookup (no AD network call) tells us whether the
+    name exists under *some other* department; if so, say that instead of the generic
+    "not found". Only applies when no id was supplied — an id miss means the account
+    itself is gone/inactive, and there's no "other department" to point at.
+    """
+    if not ad_user_id and await _db_fetch_one(
+        "SELECT 1 FROM ad_users WHERE is_active = 1 AND display_name = %s AND department != %s LIMIT 1",
+        (name, department),
+    ):
+        return _WRONG_TEAM_HINT
+    return fallback
 
 
 @auth_api_router.post("/signup")
@@ -326,7 +377,10 @@ async def signup(req: SignupRequest, response: Response):
 
     ad_user = await _lookup_ad_user(req.department, req.name, req.id)
     if not ad_user:
-        raise HTTPException(status_code=404, detail="해당 부서/이름의 AD 사용자를 찾을 수 없습니다")
+        detail = await _not_found_detail(
+            req.department, req.name, req.id, "해당 부서/이름의 AD 사용자를 찾을 수 없습니다"
+        )
+        raise HTTPException(status_code=404, detail=detail)
 
     # Check if already registered
     existing = await _db_fetch_one(
@@ -372,7 +426,8 @@ async def signin(req: SigninRequest, response: Response):
     """Sign in with department + name + password."""
     ad_user = await _lookup_ad_user(req.department, req.name, req.id)
     if not ad_user:
-        raise HTTPException(status_code=401, detail="사용자를 찾을 수 없습니다")
+        detail = await _not_found_detail(req.department, req.name, req.id, "사용자를 찾을 수 없습니다")
+        raise HTTPException(status_code=401, detail=detail)
 
     # Find registered user
     user = await _db_fetch_one(
