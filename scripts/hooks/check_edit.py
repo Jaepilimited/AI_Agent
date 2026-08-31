@@ -134,7 +134,7 @@ def _static(rel: str) -> list[str]:
 
     wanted = []
     if rel.endswith((".css", ".js", ".html")):
-        wanted += [static_checks.undefined_css_vars, static_checks.cache_version_doc]
+        wanted += [static_checks.undefined_css_vars, static_checks.asset_stamping_wired]
     if rel.endswith(".py"):
         wanted.append(static_checks.stray_control_chars)
     if "prompts/" in rel:

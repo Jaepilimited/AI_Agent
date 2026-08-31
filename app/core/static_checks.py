@@ -151,19 +151,35 @@ def prompt_single_source() -> Tuple[bool, str]:
     return (n == 1), f"direct 프롬프트 사본 {n}개 (1이어야 정상)"
 
 
-# ── 4) 캐시 버전 문서 ↔ 실제 ─────────────────────────────────────────────────
+# ── 4) 자산 캐시 지문이 실제로 켜져 있는가 ────────────────────────────────────
 
-def cache_version_doc() -> Tuple[bool, str]:
-    """문서가 한 칸 뒤처지면 다음 사람이 잘못된 번호에서 올린다 (실제로 그랬다)."""
-    if not (_exists("app/frontend/chat.html") and _exists("CLAUDE.md")):
-        return True, "파일 없음 — 건너뜀 (배포본에는 CLAUDE.md 가 없다)"
-    real = dict(re.findall(r"(style\.css|chat\.js)\?v=(\d+)", _read("app/frontend/chat.html")))
-    doc = re.search(r"현재: style\.css\?v=(\d+), chat\.js\?v=(\d+)", _read("CLAUDE.md"))
-    if not doc:
-        return True, "CLAUDE.md 에 버전 줄 없음 — 건너뜀"
-    ok = (real.get("style.css"), real.get("chat.js")) == (doc.group(1), doc.group(2))
-    return ok, (f"실제 style={real.get('style.css')} chat={real.get('chat.js')} / "
-                f"문서 style={doc.group(1)} chat={doc.group(2)}")
+def asset_stamping_wired() -> Tuple[bool, str]:
+    """`?v=` 는 이제 **서빙할 때 내용 해시로 붙는다** (2026-08-31).
+
+    ⛔ 손으로 번호를 세던 시절로 돌아가지 않게 두 가지를 함께 본다:
+       1. HTML 에 **손으로 적은 `?v=<숫자>`** 가 없어야 한다 — 남아 있으면 다음 사람이
+          그걸 보고 또 올린다. 지문이 덮어쓰므로 숫자는 죽은 값이다
+       2. 지문을 붙이는 자리(`asset_version` 미들웨어)와 캐시를 켜는 자리
+          (`VersionedStaticFiles`)가 `main.py` 에 살아 있어야 한다
+    ⚠️ 배선이 끊기면 나는 것은 에러가 아니라 **캐시가 조용히 안 켜지는 것**이다.
+       실제로 마운트 경로를 잘못 이어 붙여 한 번 그랬다.
+    """
+    problems = []
+    for rel in ("app/frontend/chat.html", "app/frontend/login.html",
+                "app/frontend/eval_review.html", "app/static/coa_finder.html"):
+        if not _exists(rel):
+            continue
+        hand = re.findall(r"/(?:frontend|static)/[\w./-]+\.(?:js|css)\?v=(\d+)", _read(rel))
+        if hand:
+            problems.append(f"{rel} 에 손으로 적은 ?v={','.join(hand[:3])}")
+    main = _read("app/main.py") if _exists("app/main.py") else ""
+    for needle, what in (("asset_version.rewrite_html", "HTML 지문 주입"),
+                         ("VersionedStaticFiles", "지문 일치 시 장기 캐시"),
+                         ("asset_version.matches", "낡은 URL 은 캐시 금지")):
+        if needle not in main:
+            problems.append(f"main.py 에 {what}({needle}) 배선 없음")
+    return (not problems), ("; ".join(problems) if problems
+                            else "자산 캐시 지문 배선 정상")
 
 
 # ── 5) 라우팅 키워드 삼킴 충돌 (경로가 갈리는 것만) ──────────────────────────
@@ -893,7 +909,7 @@ ALL = [
     ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
     ("static_at_sources", at_source_parity, "@@ 데이터소스 프론트/서버 일치"),
     ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),
-    ("static_cache_version", cache_version_doc, "캐시 버전 문서 일치"),
+    ("static_asset_stamp", asset_stamping_wired, "자산 캐시 지문 배선"),
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
     ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),

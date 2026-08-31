@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/style.css?v=115">
+  <link rel="stylesheet" href="/static/style.css">
   <script>
     // Apply saved theme before paint
     if (localStorage.theme === "dark") {
@@ -120,7 +120,7 @@
       update();
     })();
   </script>
-  <script src="/frontend/auth.js?v=23"></script>
+  <script src="/frontend/auth.js"></script>
   <script>
     fetch("/api/auth/me").then(function(r) {
       if (r.ok) window.location.href = "/";

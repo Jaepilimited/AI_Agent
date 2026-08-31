@@ -21,6 +21,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.core import asset_version
+
 from app.api.admin_api import admin_router
 from app.api.admin_group_api import group_router, ad_router
 from app.api.auth_api import auth_api_router
@@ -282,6 +284,27 @@ def create_app() -> FastAPI:
     # Setup middleware (CORS, logging)
     setup_middleware(app)
 
+    # --- 자산 캐시 지문 (2026-08-31) ---
+    # 손으로 세던 `?v=` 번호를 **내용 해시**로 갈아 끼운다. 한 곳에서 하는 이유는
+    # 화면이 여럿(`/`·`/login`·`/coa-finder`·`/dashboard`…)이고, 새 화면을 붙인
+    # 사람이 여기 넣는 것을 잊으면 그 화면만 조용히 캐시가 안 되기 때문이다.
+    # ⚠️ HTML 만 건드린다 — SSE(`text/event-stream`)·JSON 은 그대로 흘려보낸다.
+    @app.middleware("http")
+    async def _stamp_assets(request: Request, call_next):
+        response = await call_next(request)
+        if "text/html" not in response.headers.get("content-type", ""):
+            return response
+        from starlette.responses import Response as _Response
+        body = b"".join([chunk async for chunk in response.body_iterator])
+        try:
+            stamped = asset_version.rewrite_html(body.decode("utf-8")).encode("utf-8")
+        except Exception:  # noqa: BLE001 - 못 고치면 원본을 그대로 내보낸다
+            stamped = body
+        headers = dict(response.headers)
+        headers.pop("content-length", None)
+        return _Response(content=stamped, status_code=response.status_code,
+                         headers=headers, media_type=response.media_type)
+
     # --- 서버 이관 리다이렉트 (2026-07-30) ---
     # MIGRATED_REDIRECT_URL 이 설정돼 있으면 모든 사용자 요청을 신규 서버로 넘긴다.
     # 이관 후 기존 주소(172.16.1.250:3000)로 들어오는 접속 때문에 대화가 구 DB에만
@@ -360,18 +383,37 @@ def create_app() -> FastAPI:
     from starlette.middleware import Middleware
     from starlette.responses import Response
 
-    class NoCacheStaticFiles(StaticFiles):
+    class VersionedStaticFiles(StaticFiles):
+        """`?v=<지금 파일의 지문>` 으로 들어온 요청만 1년 캐시한다.
+
+        ⛔ 지문이 안 맞으면 예전처럼 `no-store` 다. 낡은 URL 은 굳지 않으므로
+           **"영영 낡은 파일에 갇히는"** 경로가 구조적으로 없다 (asset_version 참조).
+        """
+
         async def __call__(self, scope, receive, send):
+            # ⚠️ Starlette 1.x 의 `scope["path"]` 는 **이미 전체 경로**이고
+            #    `root_path` 에도 마운트 접두가 들어 있다 — 이어 붙이면
+            #    `/frontend/frontend/chat.js` 가 돼 파일을 못 찾고, 그때 나는 것은
+            #    에러가 아니라 **캐시가 조용히 안 켜지는 것**이다 (실측 후 수정).
+            url_path = asset_version.normalize_path(
+                scope.get("path", ""), scope.get("root_path", ""))
+            version = asset_version.parse_version(
+                scope.get("query_string", b"").decode("latin-1"))
+            fresh = asset_version.matches(url_path, version)
+            value = (b"public, max-age=31536000, immutable" if fresh
+                     else b"no-store, no-cache, must-revalidate, max-age=0")
+
             async def _send(msg):
                 if msg.get("type") == "http.response.start":
-                    headers = list(msg.get("headers", []))
-                    headers.append([b"cache-control", b"no-store, no-cache, must-revalidate, max-age=0"])
+                    headers = [h for h in msg.get("headers", [])
+                               if h[0].lower() != b"cache-control"]
+                    headers.append([b"cache-control", value])
                     msg["headers"] = headers
                 await send(msg)
             await super().__call__(scope, receive, _send)
 
-    app.mount("/frontend", NoCacheStaticFiles(directory=str(_FRONTEND_DIR)), name="frontend")
-    app.mount("/static", NoCacheStaticFiles(directory=str(_STATIC_DIR)), name="static")
+    app.mount("/frontend", VersionedStaticFiles(directory=str(_FRONTEND_DIR)), name="frontend")
+    app.mount("/static", VersionedStaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     return app
 

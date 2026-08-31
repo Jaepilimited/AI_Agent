@@ -130,9 +130,13 @@ def test_weekly_without_weekday_is_rejected_by_the_store():
     assert "weekday" in src, "저장소가 weekday 를 보지 않는다면 화면 수정 근거가 사라진다"
 
 
-def test_cache_version_was_bumped_for_this_change():
-    """⚠️ CSS/JS 를 고치면 `?v=` 를 올려야 한다 — 안 올리면 사용자는 옛 파일을 본다."""
+def test_assets_carry_no_handwritten_cache_number():
+    """`?v=` 는 이제 서빙할 때 **내용 해시**로 붙는다 (2026-08-31).
+
+    손으로 적은 번호가 남아 있으면 다음 사람이 그걸 보고 또 올린다 — 지문이
+    덮어쓰므로 아무 효과가 없는데 시간만 든다.
+    """
     with io.open(os.path.join(REPO, "app", "frontend", "chat.html"), encoding="utf-8") as fh:
         html = fh.read()
-    version = re.search(r"chat\.js\?v=(\d+)", html)
-    assert version and int(version.group(1)) >= 266
+    hand = re.findall(r"/(?:frontend|static)/[\w./-]+\.(?:js|css)\?v=(\d+)", html)
+    assert not hand, f"손으로 적은 캐시 번호가 남아 있다: {hand}"

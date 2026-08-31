@@ -133,42 +133,6 @@ def test_scoped_git_is_not_blocked(command):
     assert guard.check("Bash", {"command": command}) is None, f"정상 작업을 막았다: {command}"
 
 
-# ── 캐시 번호를 안 올린 프론트 자산 커밋 ────────────────────────────────────
-#
-# ⛔ 2026-08-31 실측: 다른 세션이 09:24 에 `chat.js?v=270 → 271` 을 올렸고, 몇 시간 뒤
-#    다른 수정도 **같은 271** 로 커밋됐다. 271 을 이미 받아 둔 브라우저는 뒤 수정을
-#    영영 안 받는다 — 배포는 성공하고 서버는 새 파일을 주므로 아무도 모른다.
-
-_HTML = ('<link href="/static/style.css?v=193">'
-         '<script src="/frontend/chat.js?v=271"></script>')
-
-
-def test_same_cache_version_for_a_changed_asset_is_caught():
-    guard = _load("guard_destructive")
-    stale = guard.stale_cache_versions(["app/frontend/chat.js"], _HTML, _HTML)
-    assert stale == ["chat.js?v=271"], stale
-    # 자산이 여럿이면 여럿 다 짚는다
-    both = guard.stale_cache_versions(
-        ["app/frontend/chat.js", "app/static/style.css"], _HTML, _HTML)
-    assert both == ["chat.js?v=271", "style.css?v=193"], both
-
-
-def test_bumped_version_and_unrelated_files_pass():
-    """⚠️ 반대 방향이 없으면 이 검사는 커밋을 통째로 막는 장애물이 된다."""
-    guard = _load("guard_destructive")
-    bumped = _HTML.replace("chat.js?v=271", "chat.js?v=272")
-    assert guard.stale_cache_versions(["app/frontend/chat.js"], _HTML, bumped) == []
-    assert guard.stale_cache_versions(["app/core/safety.py"], _HTML, _HTML) == []
-    assert guard.stale_cache_versions([], _HTML, _HTML) == []
-
-
-def test_cache_version_check_only_looks_at_commits():
-    """조회 명령까지 git 을 세 번 부르면 훅이 느려진다."""
-    guard = _load("guard_destructive")
-    assert guard.check_cache_version("git status") is None
-    assert guard.check_cache_version("ls -al") is None
-
-
 def test_talking_about_a_rule_is_not_doing_it():
     """⛔ **글을 명령으로 읽지 마라.** 훅을 붙인 첫날 바로 걸린 오탐이다 —
     커밋 메시지 heredoc 안에 규칙을 설명하며 스크립트 이름을 적었더니 막혔다.

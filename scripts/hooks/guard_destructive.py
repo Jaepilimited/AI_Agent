@@ -12,7 +12,6 @@
     3. `pm2 reload`                           — Windows fork 모드에서 고아 프로세스 (2026-07-06 장애)
     4. 작업트리 **전체**를 담거나 되돌리는 git — 남의 미커밋 변경을 쓸어가거나 지운다
     5. `.env` 편집                             — 배포 제외 대상이라 서버와 조용히 어긋난다
-    6. 캐시 번호를 안 올린 프론트 자산 커밋    — 브라우저가 옛 파일을 계속 쓴다
 
 ⛔ 여기에 "위험해 보이는 것" 을 쌓지 마라. 막을 것의 기준은 위험도가 아니라
    **되돌릴 수 있는가** 다. 되돌릴 수 있는 실수는 사람이 고치면 되고, 목록이 길어지면
@@ -30,9 +29,7 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
-from pathlib import Path
 
 
 def _force_utf8_stderr() -> None:
@@ -216,74 +213,6 @@ def check_worktree_wide_git(command: str) -> str | None:
     return None
 
 
-# ── 캐시 번호를 안 올린 프론트 자산 커밋 ────────────────────────────────────────
-#
-# ⛔ 2026-08-31 실측: 다른 세션이 09:24 에 `chat.js?v=270 → 271` 을 올렸고, 몇 시간 뒤
-#    내 차트 수정도 **같은 271** 로 커밋됐다. 이미 271 을 받아 둔 브라우저는 뒤 수정을
-#    **영영 안 받는다** — 서버는 새 파일을 주고 배포도 성공이라 아무도 모른다.
-#    최근 chat.js 커밋 18건 중 5건이 이렇게 번호를 나눠 쓰고 있었다.
-#
-# ⚠️ 감시는 `chat.html` 하나만 본다 (CLAUDE.md 가 세는 그 번호다). `login.html`·
-#    `eval_review.html`·`coa_finder.html` 은 각자 번호를 따로 쓰므로 여기서 강제하면
-#    안 건드린 화면까지 올리게 돼 오탐이 된다 — 대신 메시지로 알린다.
-
-_CACHE_HTML = "app/frontend/chat.html"
-_ASSET_VER = re.compile(r"([A-Za-z0-9_.-]+\.(?:js|css))\?v=(\d+)")
-_GIT_TIMEOUT = 4.0
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
-def _git(*args: str) -> str | None:
-    """git 출력을 돌려준다. 실패하면 None — **훅은 모르면 통과시킨다.**"""
-    try:
-        proc = subprocess.run(["git", *args], cwd=str(_repo_root()),
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=_GIT_TIMEOUT)
-    except Exception:  # noqa: BLE001 - git 이 없거나 느리면 통과
-        return None
-    return proc.stdout if proc.returncode == 0 else None
-
-
-def stale_cache_versions(staged: list[str], head_html: str,
-                         index_html: str) -> list[str]:
-    """커밋될 자산 중 **번호가 그대로인** 것들. 순수 함수라 테스트가 쉽다."""
-    head = {m.group(1): m.group(2) for m in _ASSET_VER.finditer(head_html)}
-    index = {m.group(1): m.group(2) for m in _ASSET_VER.finditer(index_html)}
-    stale = []
-    for path in staged:
-        name = path.replace("\\", "/").rsplit("/", 1)[-1]
-        if name in index and name in head and index[name] == head[name]:
-            stale.append(f"{name}?v={index[name]}")
-    return stale
-
-
-def check_cache_version(command: str) -> str | None:
-    if not re.search(r"\bgit\s+commit\b", command):
-        return None
-    staged_out = _git("diff", "--cached", "--name-only")
-    if not staged_out:
-        return None  # 스테이징이 비었으면(메시지만 고치는 --amend 등) 볼 것이 없다
-    staged = [line.strip() for line in staged_out.splitlines() if line.strip()]
-    head_html = _git("show", f"HEAD:{_CACHE_HTML}")
-    index_html = _git("show", f":{_CACHE_HTML}")
-    if head_html is None or index_html is None:
-        return None
-    stale = stale_cache_versions(staged, head_html, index_html)
-    if not stale:
-        return None
-    return (
-        f"캐시 번호를 안 올리고 프론트 자산을 커밋하려 합니다: {', '.join(stale)} — "
-        f"직전 커밋과 **같은 번호**입니다. 그 번호를 이미 받아 둔 브라우저는 이 수정을 "
-        f"영영 안 받습니다 (배포는 성공하고 서버는 새 파일을 주므로 아무도 모릅니다). "
-        f"{_CACHE_HTML} 의 `?v=` 를 올리고 CLAUDE.md '캐시 버전' 줄도 함께 고치세요. "
-        f"login.html·eval_review.html·coa_finder.html 은 번호가 따로이니 "
-        f"그 화면을 건드렸으면 그쪽도 올리세요."
-    )
-
-
 def check(tool_name: str, tool_input: dict) -> str | None:
     """막아야 하면 이유를, 통과면 None 을 돌려준다."""
 
@@ -292,10 +221,7 @@ def check(tool_name: str, tool_input: dict) -> str | None:
         for pattern, reason in _BASH_RULES:
             if pattern.search(command):
                 return reason
-        wide = check_worktree_wide_git(command)
-        if wide:
-            return wide
-        return check_cache_version(command)
+        return check_worktree_wide_git(command)
 
     if tool_name in ("Edit", "Write", "NotebookEdit"):
         path = str(tool_input.get("file_path") or "")
