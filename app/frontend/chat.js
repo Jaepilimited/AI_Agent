@@ -2902,24 +2902,52 @@
                 ctx.font = "bold 11px Segoe UI, Arial, sans-serif";
                 var w = ctx.measureText(fmt).width;
                 var bx1, by1, bx2, by2;
+                /* ⛔ 막대 **바깥**에만 그리면 가장 긴 막대의 라벨이 잘린다 —
+                   플롯 오른쪽 끝까지 찬 막대는 라벨 자리가 없다 (2026-08-31 제보:
+                   `69.9억` 이 `6` 으로 잘렸다). 겹침만 보고 **경계는 안 봤다.**
+                   ⚠️ 값이 큰 막대일수록 잘린다 — 즉 **가장 중요한 숫자가 사라진다.**
+                   자리가 없으면 막대 안쪽에 오른쪽 정렬로 넣는다. */
+                var area = chart.chartArea || {};
+                var _inBar = false;
                 if (_isHoriz) {
-                  bx1 = props.x + 5; bx2 = bx1 + w;
+                  var edge = area.right || chart.width;
+                  _inBar = (props.x + 5 + w) > (edge - 2);
+                  if (_inBar) { bx2 = props.x - 5; bx1 = bx2 - w; }
+                  else { bx1 = props.x + 5; bx2 = bx1 + w; }
                   by1 = props.y - 7; by2 = props.y + 7;
                 } else {
+                  // 세로 막대도 같다 — 키 큰 막대는 위쪽 경계에 라벨이 잘린다.
+                  var top = area.top || 0;
+                  _inBar = (props.y - 3 - 11) < (top + 2);
                   bx1 = props.x - w / 2 - 2; bx2 = props.x + w / 2 + 2;
-                  by2 = props.y - 1; by1 = by2 - 15;
+                  if (_inBar) { by1 = props.y + 2; by2 = by1 + 15; }
+                  else { by2 = props.y - 1; by1 = by2 - 15; }
                 }
                 if (_collides(bx1, by1, bx2, by2)) { ctx.restore(); return; }
                 drawnRects.push([bx1, by1, bx2, by2]);
                 ctx.fillStyle = labelColor;
                 if (_isHoriz) {
-                  ctx.textAlign = "left";
                   ctx.textBaseline = "middle";
-                  ctx.fillText(fmt, props.x + 5, props.y);
+                  if (_inBar) {
+                    /* ⚠️ 막대 위에 얹으므로 **글자색을 바꿔야 한다** — 어두운 글자를
+                       그대로 두면 채워진 막대에 묻혀 안 보인다. 잘린 것과 다를 바 없다. */
+                    ctx.fillStyle = "#fff";
+                    ctx.textAlign = "right";
+                    ctx.fillText(fmt, props.x - 5, props.y);
+                  } else {
+                    ctx.textAlign = "left";
+                    ctx.fillText(fmt, props.x + 5, props.y);
+                  }
                 } else {
                   ctx.textAlign = "center";
-                  ctx.textBaseline = "bottom";
-                  ctx.fillText(fmt, props.x, props.y - 3);
+                  if (_inBar) {
+                    ctx.fillStyle = "#fff";
+                    ctx.textBaseline = "top";
+                    ctx.fillText(fmt, props.x, props.y + 3);
+                  } else {
+                    ctx.textBaseline = "bottom";
+                    ctx.fillText(fmt, props.x, props.y - 3);
+                  }
                 }
                 ctx.restore();
               });

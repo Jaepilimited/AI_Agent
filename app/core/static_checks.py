@@ -243,6 +243,31 @@ def asset_sanity() -> Tuple[bool, str]:
     return (not bad), ("; ".join(bad) if bad else "프론트 자산 크기 정상")
 
 
+def chart_label_bounds() -> Tuple[bool, str]:
+    """막대 라벨이 **플롯 경계**를 보는가.
+
+    2026-08-31 제보: `69.9억` 이 `6` 으로 잘렸다. 라벨을 막대 바깥에만 그렸는데
+    플롯 오른쪽 끝까지 찬 막대는 그 자리가 없다. 겹침(`_collides`)만 보고
+    **경계는 안 봤다.**
+
+    나쁜 점은 방향이다 — 값이 클수록 막대가 길고, 길수록 잘린다.
+    즉 **가장 중요한 숫자가 사라지고**, 캔버스는 에러 없이 그려진다.
+    """
+    js = _read("app/frontend/chat.js")
+    start = js.find('id: "inlineBarLabels"')
+    if start < 0:
+        return False, "inlineBarLabels 플러그인을 찾지 못했다"
+    body = js[start:start + 4000]
+    missing = [name for name in ("chartArea", "area.right", "area.top")
+               if name not in body]
+    if missing:
+        return False, "막대 라벨이 경계를 안 본다 (없는 참조: " + ", ".join(missing) + ")"
+    # 막대 안쪽에 넣을 땐 글자색을 바꿔야 한다 — 안 바꾸면 묻혀서 잘린 것과 같다.
+    if '"#fff"' not in body:
+        return False, "막대 안쪽 라벨의 글자색 전환이 없다 (채운 막대에 묻힌다)"
+    return True, "막대 라벨이 플롯 경계를 본다"
+
+
 def fi_prompt_masking() -> Tuple[bool, str]:
     """권한 없는 사용자용 프롬프트에서 손익(FI) 섹션이 **실제로** 지워지는가.
 
@@ -873,6 +898,7 @@ ALL = [
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
     ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
     ("static_ctrl_chars", stray_control_chars, "소스에 섞인 제어문자"),
+    ("static_chart_labels", chart_label_bounds, "막대 라벨이 플롯 경계를 보는가"),
     ("static_qdrant_teams", qdrant_team_sources, "@@팀 ↔ 벡터 색인 팀 값 일치"),
     ("static_team_links", team_link_coverage, "팀 자료 링크가 벡터 색인에 있는가"),
     ("static_notion_dates", notion_pages_without_date,
