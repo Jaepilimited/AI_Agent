@@ -65,7 +65,25 @@ class MaintenanceManager:
             logger.info("maintenance_deactivated")
 
     def _table_entry(self, table_key: str) -> dict:
-        return self.tables.setdefault(table_key, {"active": False, "reason": "", "baseline_rows": None})
+        return self.tables.setdefault(
+            table_key,
+            {"active": False, "reason": "", "baseline_rows": None, "modified_ts": None})
+
+    def note_table_modified(self, table_key: str, modified_ago_seconds) -> None:
+        """테이블이 마지막으로 **수정된 시각**을 절대값으로 기록한다.
+
+        ⛔ 경과 초를 그대로 저장하면 안 된다 — 감시 루프가 멈추면 그 값이 얼어붙어
+           **영원히 "방금 적재됨"** 이 된다. 절대 시각으로 두면 루프가 죽어도
+           경과가 자연히 커져 공시가 스스로 꺼진다 (안전한 쪽으로 실패한다).
+        """
+        if modified_ago_seconds is None:
+            return
+        self._table_entry(table_key)["modified_ts"] = time.time() - float(modified_ago_seconds)
+
+    def table_modified_ago(self, table_key: str):
+        """마지막 수정 이후 경과(초). 모르면 None."""
+        ts = self.tables.get(table_key, {}).get("modified_ts")
+        return None if ts is None else max(0.0, time.time() - ts)
 
     def _recompute_aggregate(self) -> None:
         active_tables = [k for k, v in self.tables.items() if v.get("active")]
@@ -522,12 +540,58 @@ def data_update_notice_for_sql(
             active_labels.append(label)
 
     if not active_labels:
-        return loading_edge_notice_for_sql(sql)
+        # ⛔ **점검 감지에만 기대면 "적재 중" 을 거의 못 말한다.** 그 판정은 행이
+        #    줄어드는 것(truncate)만 보는데, 실제 사고는 append 중이었다.
+        #    아래 둘이 순서대로 받는다 — 실제로 방금 적재됐는가 → 최근 날짜인가.
+        return (recent_load_notice_for_sql(sql, mm)
+                or loading_edge_notice_for_sql(sql))
     labels = "·".join(active_labels)
     return (
         f"> ⚠️ **데이터 업데이트 중**: 이 질문이 조회한 **{labels}** 데이터가 "
         "현재 업데이트되고 있습니다. 조회 결과가 일시적으로 불완전할 수 있으니 "
         "업데이트 완료 후 다시 확인해 주세요."
+    )
+
+
+#: 이 시간 안에 수정됐으면 **지금 적재 중이거나 방금 끝난 것**으로 본다.
+#: ⚠️ 넓히지 마라 — 적재가 끝난 뒤에도 계속 붙으면 매번 뜨는 경고가 되고,
+#:    매번 뜨는 경고는 곧 아무도 안 읽는다. 실측(2026-08-31): 이 테이블의
+#:    `last_modified` 경과는 단조 증가한다(1376초 → 1418초). 상시 수정이 아니라
+#:    하루 두 번이므로, 좁게 잡아도 진짜 적재 구간은 잡힌다.
+_ACTIVE_LOAD_SECONDS = 15 * 60
+
+
+def recent_load_notice_for_sql(sql: str,
+                               manager: Optional[MaintenanceManager] = None) -> str:
+    """이 질문이 조회한 테이블이 **방금 적재됐으면** 답변에 그렇게 적는다.
+
+    사용자 지시(2026-08-31): *"데이터가 적재중이면 답변에 적재중이라고 표기해야함.
+    그래야 사람들이 이게 오답이 아니구나라고 판단함."*
+
+    ⛔ 점검 감지(`maintenance_auto_detect_loop`)는 행이 **줄어드는 것**만 본다.
+       실제 사고는 append 중이었고, 그래서 화면도 답변도 아무 말이 없었다 —
+       8/30 KBT 광고비가 91.5만원(실제 571.9만원)으로 나갔다.
+    ⚠️ 조회를 늘리지 않는다. 감시 루프가 60초마다 이미 읽어 둔 값을 쓴다.
+    """
+    if not (sql or "").strip():
+        return ""
+    mm = manager or get_maintenance_manager()
+    normalized = re.sub(r"[`\"]", "", sql).lower()
+    fresh = []
+    for label, (dataset, table_id) in _MONITORED_TABLES.items():
+        qualified = f"{dataset}.{table_id}".lower()
+        if not re.search(rf"(?<![\w]){re.escape(qualified)}(?![\w])", normalized):
+            continue
+        ago = mm.table_modified_ago(label)
+        if ago is not None and ago <= _ACTIVE_LOAD_SECONDS:
+            fresh.append((label, int(ago // 60)))
+    if not fresh:
+        return ""
+    parts = "·".join(f"{label}({mins}분 전)" for label, mins in fresh)
+    return (
+        f"> ⚠️ **지금 적재 중입니다** — 이 답이 쓴 {parts} 데이터가 방금 갱신됐습니다. "
+        "**틀린 값이 아니라 아직 다 채워지지 않은 값**일 수 있습니다. "
+        "잠시 뒤 다시 물으면 수치가 달라질 수 있습니다."
     )
 
 
@@ -609,6 +673,10 @@ async def maintenance_auto_detect_loop(interval: float = 60.0) -> None:
 
                 row_count = info["row_count"]
                 modified_ago = info["modified_ago_seconds"]
+                # ⛔ 점검 판정과 **별개로** 항상 기록한다. 점검(truncate) 판정은
+                #    append 를 안전하다고 넘기지만, 날짜를 지목한 질문에는 append 도
+                #    위험하다 — 답변 공시가 이 값을 읽는다 (2026-08-31 사용자 지시).
+                mm.note_table_modified(label, modified_ago)
 
                 # Set baseline on first successful read
                 if mm.table_baseline(label) is None:

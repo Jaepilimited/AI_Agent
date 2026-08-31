@@ -207,3 +207,84 @@ def test_the_disclosure_rides_the_existing_answer_hook():
     src = inspect.getsource(safety.data_update_notice_for_sql)
     assert "loading_edge_notice_for_sql(sql)" in src, \
         "업데이트 중이 아닐 때 최전선 공시로 넘어가지 않는다"
+
+
+# ── "지금 적재 중" 은 실제 수정 시각으로 판정한다 (2026-08-31 사용자 지시) ────
+#
+# 사용자: "데이터가 적재중이면 답변에 적재중이라고 표기해야함. 그래야 사람들이
+#          이게 오답이 아니구나라고 판단함."
+#
+# ⛔ 점검 감지(`maintenance_auto_detect_loop`)는 행이 **줄어드는 것**만 본다.
+#    실제 사고는 append 중이었고 그래서 화면도 답변도 아무 말이 없었다 —
+#    8/30 KBT 광고비가 91.5만원(실제 571.9만원)으로 나갔다.
+
+_SALES = "SELECT 1 FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date='2026-06-01'"
+_OLD_AD = "SELECT 1 FROM `skin1004-319714.marketing_analysis.integrated_ad` WHERE date='2026-06-01'"
+
+
+def _mm():
+    from app.core.safety import MaintenanceManager
+    return MaintenanceManager()
+
+
+def test_a_just_loaded_table_is_called_out():
+    from app.core.safety import recent_load_notice_for_sql
+
+    mm = _mm()
+    mm.note_table_modified("광고", 120)          # 2분 전
+    note = recent_load_notice_for_sql(_OLD_AD, mm)
+    assert "지금 적재 중입니다" in note
+    assert "틀린 값이 아니라" in note, "왜 알리는지가 빠지면 사용자가 오답으로 읽는다"
+    assert "광고(2분 전)" in note
+
+
+def test_other_tables_and_settled_data_stay_quiet():
+    """⚠️ 매번 뜨는 경고는 곧 아무도 안 읽는다."""
+    from app.core.safety import recent_load_notice_for_sql
+
+    mm = _mm()
+    mm.note_table_modified("광고", 120)
+    assert recent_load_notice_for_sql(_SALES, mm) == "", "다른 테이블 질문에 붙었다"
+
+    mm.note_table_modified("광고", 3600)         # 1시간 전 = 적재가 끝났다
+    assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
+    assert recent_load_notice_for_sql(_OLD_AD, _mm()) == "", "아는 게 없으면 말하지 않는다"
+    assert recent_load_notice_for_sql("", mm) == ""
+
+
+def test_a_dead_monitor_turns_the_notice_off_by_itself():
+    """⛔ 경과 초를 그대로 저장하면 루프가 멈출 때 그 값이 얼어붙어 **영원히
+    '방금 적재됨'** 이 된다. 절대 시각으로 두면 경과가 자연히 커져 꺼진다."""
+    import time
+
+    from app.core.safety import _ACTIVE_LOAD_SECONDS, recent_load_notice_for_sql
+
+    mm = _mm()
+    mm.note_table_modified("광고", 60)
+    mm.tables["광고"]["modified_ts"] = time.time() - _ACTIVE_LOAD_SECONDS - 10
+    assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
+
+
+def test_the_three_notices_have_a_fixed_priority():
+    """점검 중 > 방금 적재 > 최근 날짜. 한 번에 하나만 붙는다."""
+    from app.core.safety import data_update_notice_for_sql
+
+    mm = _mm()
+    mm.note_table_modified("광고", 60)
+    mm.auto_activate_table("광고", "테이블 적재 중 (row 1 < 기준 2)")
+    assert "데이터 업데이트 중" in data_update_notice_for_sql(_OLD_AD, mm)
+
+    mm.auto_deactivate_table("광고")
+    note = data_update_notice_for_sql(_OLD_AD, mm)
+    assert "지금 적재 중입니다" in note and "채워지는 중" not in note
+
+
+def test_the_monitor_records_on_every_poll_not_only_on_truncate():
+    """⛔ 점검 판정 안에 기록을 두면 append 때는 기록이 안 남아 공시도 못 한다."""
+    import inspect
+
+    from app.core import safety
+    src = inspect.getsource(safety.maintenance_auto_detect_loop)
+    before_detect = src.split("Detection 1")[0]
+    assert "note_table_modified" in before_detect, \
+        "판정보다 먼저, 조건 없이 기록해야 한다"
