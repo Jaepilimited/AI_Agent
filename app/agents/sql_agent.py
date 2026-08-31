@@ -36,31 +36,85 @@ logger = structlog.get_logger(__name__)
 # Caches (query → SQL) to skip LLM generation for repeated questions.
 # In-memory LRU + MariaDB persistence.
 
-_sql_cache: OrderedDict = OrderedDict()  # query_hash → {sql, tables} (LRU order)
+_sql_cache: OrderedDict = OrderedDict()  # query_hash → (sql, cached_at) (LRU order)
 _SQL_CACHE_MAX = 500
 
+# ⛔ 실측(2026-08-31): 프로덕션 762건 중 589건(77%)이 7일을 넘겼고, 가장 오래된
+#    것은 3개월 전이었다. 가장 많이 재사용된 항목(66회)이 "2026년 월별 매출 추이"
+#    — **매달 정답이 바뀌는 질문**이었다. 7일을 넘긴 SQL 은 서빙하지 않고 다시 만든다.
+_SQL_CACHE_TTL_DAYS = 7
 
-# Queries containing any of these get today's date folded into their cache key
-# (see _cache_key) so "이번 달 매출" doesn't replay June's SQL after the month
-# rolls over to July. Absolute-date queries ("2025년 3월 매출") don't need this.
+
+# 질문이 상대 기간을 담고 있으면 **캐시에 쓰지도, 캐시에서 읽지도 않는다**
+# (`_is_relative_period_query` 가 호출부에서 lookup/store 를 통째로 건너뛴다 — 아래
+# `_cache_key`/`_cache_lookup`/`_cache_store` 호출부 참고). 예전엔 오늘 날짜를 캐시
+# 키에 접어 넣어 "하루 단위로만" 갱신했는데, **그 하루 안에서는 여전히 캐시가
+# 정답을 대신했다** — 규칙을 뒤집었으므로 그 방식은 걷어낸다.
 _RELATIVE_DATE_KEYWORDS = (
     "이번 달", "이번달", "지난 달", "지난달", "올해", "작년", "어제", "오늘",
     "최근", "요즘", "이번 주", "이번주", "지난 주", "지난주", "this month", "last month",
+    "현재까지", "지금까지",
 )
+
+# 올해 연도가 구체적 하위 기간(월·분기·반기)과 함께 쓰이면, 그 하위 기간이
+# **이미 끝났는지**로 상대/절대를 가른다 — "2026년 상반기"는 반기가 끝난 뒤엔
+# 절대 기간이지만 "2026년 하반기"는 지금(하반기 중)은 여전히 진행 중이다.
+# 하위 기간이 아예 없는 맨 연도("2026년 매출")는 항상 상대 기간으로 본다.
+_QUARTER_END_MONTH = {1: 3, 2: 6, 3: 9, 4: 12}
+_RE_YEAR_QUALIFIER = re.compile(
+    r"(?P<year>\d{4})년\s*"
+    r"(?:(?P<month>\d{1,2})\s*월"
+    r"|(?P<quarter>[1-4])\s*분기"
+    r"|Q(?P<quarterq>[1-4])"
+    r"|(?P<half1>상반기)"
+    r"|(?P<half2>하반기))?"
+)
+
+
+def _is_relative_period_query(query: str) -> bool:
+    """질문의 정답이 오늘 날짜에 따라 바뀌는가 — 그렇다면 캐시 대상이 아니다.
+
+    ⚠️ 올해 연도를 부분일치로만 찾으면 이미 끝난 "2026년 상반기"까지 걸려
+       멀쩡히 절대 기간인 질문을 캐시에서 빼는 과잉 매칭이 된다. 구체적 하위
+       기간이 붙어 있으면 그 기간이 끝났는지 계산해서 판정한다.
+    """
+    if not query:
+        return False
+    normalized = re.sub(r"\s+", " ", query.strip().lower())
+    if any(kw.lower() in normalized for kw in _RELATIVE_DATE_KEYWORDS):
+        return True
+
+    today = _date.today()
+    for m in _RE_YEAR_QUALIFIER.finditer(query):
+        year = int(m.group("year"))
+        if year != today.year:
+            continue  # 올해가 아니면(과거 연도) 늘 절대 기간이다
+        month = m.group("month")
+        quarter = m.group("quarter") or m.group("quarterq")
+        if month:
+            end_month = int(month)
+        elif quarter:
+            end_month = _QUARTER_END_MONTH[int(quarter)]
+        elif m.group("half1"):
+            end_month = 6
+        elif m.group("half2"):
+            end_month = 12
+        else:
+            return True  # 하위 기간 없는 맨 연도 — 항상 진행 중
+        end_day = calendar.monthrange(year, end_month)[1]
+        if _date(year, end_month, end_day) >= today:
+            return True  # 그 하위 기간이 아직 안 끝났다 — 진행 중
+    return False
 
 
 def _cache_key(query: str, brand_filter: Optional[str] = None) -> str:
     """Normalize query and build cache key hash.
 
-    Relative-date queries (오늘 날짜 기준) fold today's date into the key so
-    the cached SQL expires across day/month boundaries; date-free queries
-    keep a stable key so they can be reused indefinitely (subject to TTL).
+    ⚠️ 상대 기간 질문은 여기 오기 전에 호출부가 걸러낸다
+       (`_is_relative_period_query`) — 이 함수는 이미 캐시해도 되는 질문만 받는다.
     """
     normalized = re.sub(r"\s+", " ", query.strip().lower())
-    date_component = datetime.now().strftime("%Y-%m-%d") if any(
-        kw in normalized for kw in _RELATIVE_DATE_KEYWORDS
-    ) else ""
-    raw = f"{normalized}|{brand_filter or ''}|{date_component}"
+    raw = f"{normalized}|{brand_filter or ''}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -649,23 +703,32 @@ def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Opti
     """Check cache, then validate cached SQL only uses allowed tables."""
     sql = None
 
-    # 1. In-memory (move to end for LRU tracking)
+    # 1. In-memory (age-check *before* trusting it — LRU order alone doesn't
+    #    expire a hot entry. A popular stale row is exactly the failure mode
+    #    that slipped past the old code: 66 hits kept it resident forever.)
     if query_hash in _sql_cache:
-        _sql_cache.move_to_end(query_hash)
-        sql = _sql_cache[query_hash]
+        cached_sql, cached_at = _sql_cache[query_hash]
+        if (datetime.now() - cached_at).days >= _SQL_CACHE_TTL_DAYS:
+            _sql_cache.pop(query_hash, None)  # stale — fall through, don't serve
+        else:
+            _sql_cache.move_to_end(query_hash)
+            sql = cached_sql
 
-    # 2. MariaDB persistent cache (30-day TTL — stale rows are treated as a miss)
+    # 2. MariaDB persistent cache — TTL by `created_at`, NOT `last_used_at`.
+    #    `last_used_at` gets bumped on every hit, so a popular-but-stale entry
+    #    (the actual 66-hit incident) would never age out under that column.
+    #    `created_at` only changes when `_cache_store` regenerates the row.
     if sql is None:
         try:
             from app.db.mariadb import fetch_one
             row = fetch_one(
                 "SELECT generated_sql FROM sql_cache "
-                "WHERE query_hash = %s AND last_used_at > NOW() - INTERVAL 30 DAY",
-                (query_hash,),
+                "WHERE query_hash = %s AND created_at > NOW() - INTERVAL %s DAY",
+                (query_hash, _SQL_CACHE_TTL_DAYS),
             )
             if row:
                 sql = row["generated_sql"]
-                _sql_cache[query_hash] = sql  # warm in-memory
+                _sql_cache[query_hash] = (sql, datetime.now())  # warm in-memory
         except Exception as e:
             logger.debug("sql_cache_db_miss", error=str(e))
 
@@ -682,8 +745,9 @@ def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Opti
             return None  # Cache hit but targets disallowed table → skip
 
     # Real hit (survived the table-filter check) → bump hit metric, fire-and-forget.
-    # (In-memory OrderedDict entries carry no timestamp, so they aren't TTL-filtered;
-    # a process restart naturally bounds their lifetime.)
+    # ⚠️ This intentionally does NOT touch `created_at` — bumping it here would
+    #    let a popular stale entry keep resetting its own freshness clock on
+    #    every hit, which is the exact bug being fixed (see TTL comment above).
     try:
         from app.db.mariadb import execute
         execute(
@@ -709,21 +773,25 @@ def _cache_forget(query_hash: str) -> None:
 
 def _cache_store(query_hash: str, query: str, sql: str, brand_filter: Optional[str] = None) -> None:
     """Store in both in-memory and MariaDB."""
+    now = datetime.now()
     # In-memory LRU: evict least-recently-used if full
     if query_hash in _sql_cache:
         _sql_cache.move_to_end(query_hash)
     elif len(_sql_cache) >= _SQL_CACHE_MAX:
         _sql_cache.popitem(last=False)  # Remove LRU entry
-    _sql_cache[query_hash] = sql
+    _sql_cache[query_hash] = (sql, now)
 
-    # MariaDB
+    # MariaDB — regenerating a stale row resets `created_at` too. Without that
+    # the row would stay "born 3 months ago" forever and _cache_lookup would
+    # call it stale again on the very next request, regenerating every time
+    # instead of caching the freshly-generated SQL.
     try:
         from app.db.mariadb import execute
         execute(
             "INSERT INTO sql_cache (query_hash, query_text, generated_sql, brand_filter) "
             "VALUES (%s, %s, %s, %s) "
             "ON DUPLICATE KEY UPDATE generated_sql = VALUES(generated_sql), "
-            "last_used_at = NOW()",
+            "created_at = NOW(), last_used_at = NOW()",
             (query_hash, query[:500], sql, brand_filter),
         )
     except Exception as e:
@@ -1316,7 +1384,9 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
 
     # ── SQL Cache: skip LLM if cached SQL uses only allowed tables ──
     conv_context = state.get("conversation_context", "")
-    if not conv_context:  # Only cache standalone questions (not follow-ups)
+    # Only cache standalone questions (not follow-ups) whose answer doesn't
+    # move with the calendar ("이번 달", bare current-year, ...).
+    if not conv_context and not _is_relative_period_query(query):
         cache_key = _cache_key(query, brand_filter)
         cached_sql = _cache_lookup(cache_key, allowed_tables)
         # ⛔ **캐시에도 같은 보증을 건다.** 브랜드를 지목했는데 브랜드를 안 거르는
@@ -1602,10 +1672,12 @@ def validate_sql_node(state: AgentState) -> Dict[str, Any]:
     logger.info("sql_validation_passed", sql=sql[:200])
 
     # Cache only SQL that has passed validation (Fix D — avoid caching broken
-    # SQL). Skip when it was already served from cache (already stored) or
-    # this is a conversational follow-up (same condition as generate_sql used).
-    if not state.get("_sql_from_cache") and not state.get("conversation_context"):
-        _query = state.get("query", "")
+    # SQL). Skip when it was already served from cache (already stored), this
+    # is a conversational follow-up, or the question's answer moves with the
+    # calendar (same conditions as generate_sql used).
+    _query = state.get("query", "")
+    if (not state.get("_sql_from_cache") and not state.get("conversation_context")
+            and not _is_relative_period_query(_query)):
         _brand_filter = state.get("brand_filter")
         _cache_store(_cache_key(_query, _brand_filter), _query, sql, _brand_filter)
 
@@ -1854,7 +1926,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                         logger.info("sql_retry_success", row_count=len(results))
                         conv_ctx = state.get("conversation_context", "")
                         retry_brand_filter = state.get("brand_filter")
-                        if not conv_ctx:
+                        if not conv_ctx and not _is_relative_period_query(query):
                             _ck = _cache_key(query, retry_brand_filter)
                             _cache_store(_ck, query, retry_sql, retry_brand_filter)
                         return {"sql_result": results, "error": None, "generated_sql": retry_sql}
@@ -2700,21 +2772,42 @@ _EMPTY_DOWNLOAD_PROMISE_RE = re.compile(
 )
 
 
+# "몇십 행이면 이미 스프레드시트다" — 130행짜리 월별 표가 피벗으로 프롬프트에
+# 전부 들어가면(rows_withheld=False) 예전엔 링크가 아예 없었다. 사용자 반응:
+# "csv로 준다며? 행이 많으면"(2026-08-31). 2행짜리 답에는 달지 않는다 — 잡음이다.
+_CSV_OFFER_MIN_ROWS = 20
+
+
 def _attach_full_data_download(
     answer: str, results: list, user_id: Optional[int], rows_withheld: bool
 ) -> str:
-    """Strip any empty "요청해주세요" promise and, when rows were actually
-    withheld from the LLM, attach a real CSV download of the full result.
+    """Strip any empty "요청해주세요" promise and attach a real CSV download.
+
+    ⛔ 예전엔 `rows_withheld`(LLM 프리뷰에서 실제로 빠진 행이 있었는가)일 때만
+       링크를 달았다 — 프리뷰가 전부 담았으면(피벗 등) 결과가 몇 백 행이어도
+       내려받을 방법이 없었다. 지금은 두 조건 중 하나면 단다:
+         ① 실제로 숨긴 게 있다(rows_withheld) — 크기와 무관하다, 화면 밖에
+            있는 것 자체가 이유다
+         ② 숨긴 건 없지만 결과가 `_CSV_OFFER_MIN_ROWS` 이상 — 화면에 다
+            보여줬어도 몇십 행이면 엑셀로 옮기고 싶을 만하다
+    ⚠️ 문구를 갈라 둔다. "전체"는 **화면에 없는 것까지 준다**는 주장이라
+       rows_withheld 일 때만 쓴다 — 아닐 땐 이미 다 보여준 것을 내려받는
+       것뿐이라 "전체"를 붙이면 숨긴 걸 더 주는 것처럼 거짓 주장이 된다.
     """
     answer = _EMPTY_DOWNLOAD_PROMISE_RE.sub("", answer)
-    if not rows_withheld or not user_id or not results:
+    if not user_id or not results:
+        return answer
+    if not rows_withheld and len(results) < _CSV_OFFER_MIN_ROWS:
         return answer
     try:
         from app.core.sql_result_store import save as _save_full_result
         cols = list(results[0].keys())
         labels = {c: _COL_LABELS.get(c.lower(), c) for c in cols}
         token = _save_full_result(user_id, cols, results, labels=labels)
-        answer += f"\n\n> 📄 [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
+        if rows_withheld:
+            answer += f"\n\n> 📄 [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
+        else:
+            answer += f"\n\n> 📄 [CSV로 다운로드 (총 {len(results)}행)](/api/sql-results/{token}/csv)"
     except Exception as e:
         logger.warning("format_answer_csv_offer_failed", error=str(e)[:150])
     return answer
@@ -3184,7 +3277,8 @@ async def run_sql_agent(
         state.update(validate_sql_node(state))
         if state.get("sql_valid"):
             conv_ctx = state.get("conversation_context", "")
-            ck = _cache_key(query, brand_filter) if not conv_ctx else None
+            ck = (_cache_key(query, brand_filter)
+                  if not conv_ctx and not _is_relative_period_query(query) else None)
             state["generated_sql"] = _enforce_partition_filter(
                 state.get("generated_sql", ""), query,
                 cache_key=ck, brand_filter=brand_filter,
@@ -3701,7 +3795,8 @@ def run_sql_agent_stream(
     _t_exec_start = _t_exec_end = _time.perf_counter()
     if state.get("sql_valid"):
         conv_ctx = state.get("conversation_context", "")
-        ck = _cache_key(query, brand_filter) if not conv_ctx else None
+        ck = (_cache_key(query, brand_filter)
+              if not conv_ctx and not _is_relative_period_query(query) else None)
         state["generated_sql"] = _enforce_partition_filter(
             state.get("generated_sql", ""), query,
             cache_key=ck, brand_filter=brand_filter,

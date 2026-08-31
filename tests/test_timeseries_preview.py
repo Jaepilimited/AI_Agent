@@ -15,6 +15,7 @@
 """
 from __future__ import annotations
 
+from app.agents import sql_agent as sa
 from app.agents.sql_agent import (
     _attach_full_data_download,
     _bounded_result_preview,
@@ -113,7 +114,8 @@ def test_attach_full_data_download_strips_the_empty_promise_and_adds_a_real_link
     assert entry is not None and len(entry["rows"]) == 1
 
 
-def test_attach_full_data_download_no_link_when_nothing_was_withheld():
+def test_attach_full_data_download_no_link_when_nothing_was_withheld_and_result_is_small():
+    """2행짜리 답에는 달지 않는다 -- withheld 도 아니고 클 것도 없으니 잡음이다."""
     rows = [{"month": "2020-01", "revenue": 100}]
     answer = "### 결과\n\n표 전체 표시"
 
@@ -131,3 +133,42 @@ def test_attach_full_data_download_strips_promise_even_without_user_id():
 
     assert "필요하시면" not in out
     assert "/api/sql-results/" not in out
+
+
+def test_attach_full_data_download_offers_csv_for_a_large_result_even_when_nothing_withheld():
+    """⛔ 실사용자 제보(2026-08-31): "csv로 준다며? 행이 많으면" -- 130행짜리
+    월별 표가 피벗으로 프롬프트에 전부 들어가면(rows_withheld=False) 예전엔
+    링크가 아예 없었다. 몇십 행이면 이미 엑셀로 옮기고 싶을 만하다."""
+    from app.core import sql_result_store
+
+    rows = [{"month": f"2020-{i:02d}", "revenue": i} for i in range(1, 30)]
+    assert len(rows) >= sa._CSV_OFFER_MIN_ROWS
+    answer = "### 결과\n\n표 전체 표시"
+
+    out = sa._attach_full_data_download(answer, rows, user_id=9, rows_withheld=False)
+
+    assert "/api/sql-results/" in out
+    import re
+    m = re.search(r"/api/sql-results/([^)\s]+)/csv", out)
+    entry = sql_result_store.get(m.group(1), 9)
+    assert entry is not None and len(entry["rows"]) == len(rows)
+
+
+def test_attach_full_data_download_wording_distinguishes_hidden_from_shown():
+    """⚠️ "전체" 는 화면에 없는 것까지 준다는 주장이다 -- withheld 가 아닐 땐
+    이미 다 보여준 것을 내려받는 것뿐이라 같은 말을 쓰면 거짓 주장이 된다."""
+    rows = [{"month": f"2020-{i:02d}", "revenue": i} for i in range(1, 30)]
+
+    withheld_out = sa._attach_full_data_download("본문", rows, user_id=9, rows_withheld=True)
+    shown_out = sa._attach_full_data_download("본문", rows, user_id=9, rows_withheld=False)
+
+    assert "전체" in withheld_out.split("본문", 1)[1]
+    assert "전체" not in shown_out.split("본문", 1)[1]
+
+
+def test_attach_full_data_download_offers_csv_regardless_of_size_when_rows_were_withheld():
+    """⚠️ rows_withheld 면 크기와 무관하게 단다 -- 기존 동작을 유지한다
+    (실제로 숨긴 게 있으면 그 자체가 이유이지, 행 수 문턱과는 별개다)."""
+    rows = [{"month": "2020-01", "revenue": 100}]  # 1행 -- 문턱보다 한참 작다
+    out = sa._attach_full_data_download("본문", rows, user_id=9, rows_withheld=True)
+    assert "/api/sql-results/" in out
