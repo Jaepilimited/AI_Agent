@@ -112,3 +112,35 @@ def test_disclosure_is_appended_by_code_not_left_to_the_llm():
     from app.agents import sql_agent
     src = inspect.getsource(sql_agent.format_answer)
     assert "_future_period_note(" in src
+
+
+# ── DATE 컬럼에 시각을 만들어 붙이면 요청이 죽는다 (2026-08-31 사용자 제보) ──
+#
+# ⛔ 상한을 늘리면서 `23:59:59` 를 **무조건** 덧붙이고 있었다. 매출 `Date` 는
+#    DATETIME 이라 5개월간 아무 일도 없었지만, 광고 `integrated_ad.date` 는
+#    **DATE** 라 BigQuery 가 캐스팅을 거부한다:
+#      400 Could not cast literal "2026-08-31 23:59:59" to type DATE
+#    사용자는 답이 아니라 **에러**를 받았다 (같은 사용자가 연달아 2건).
+#
+# ⚠️ 늘리는 것은 **날짜의 몫이지 표기의 몫이 아니다.** 원본이 쓴 표기를 그대로 둔다.
+
+def test_date_only_bounds_stay_date_only():
+    """DATE 컬럼 — 없던 시각을 만들어 붙이면 안 된다."""
+    from app.agents.sql_agent import _normalize_named_period
+
+    out = _normalize_named_period(
+        "SELECT SUM(cost_krw) FROM ad WHERE date BETWEEN '2026-08-01' AND '2026-08-30'",
+        "8월 30일기준 26년 8월 집행금액 집계해줘")
+    assert "'2026-08-31'" in out, f"말일까지 늘리지 못했다: {out}"
+    assert "23:59:59" not in out, f"DATE 컬럼에 시각을 붙였다 (캐스팅 실패로 요청이 죽는다): {out}"
+
+
+def test_datetime_bounds_keep_their_time():
+    """반대 방향 — 원래 시각이 있었으면 그대로 살려 둔다 (매출 경로 회귀)."""
+    from app.agents.sql_agent import _normalize_named_period
+
+    out = _normalize_named_period(
+        "SELECT SUM(Sales1_R) FROM s "
+        "WHERE Date BETWEEN '2026-08-01 00:00:00' AND '2026-08-24 23:59:59'",
+        "8월 매출 알려줘")
+    assert "'2026-08-31 23:59:59'" in out, f"매출 상한의 시각이 사라졌다: {out}"

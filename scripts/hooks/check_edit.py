@@ -113,13 +113,28 @@ def _executor_trap(path: str, rel: str) -> list[str]:
     source = code_only(_read(path))
     if "ThreadPoolExecutor" not in source or "timeout=" not in source:
         return []
-    if re.search(r"with\s+(concurrent\.futures\.)?ThreadPoolExecutor", source) and \
-            re.search(r"\.result\(\s*timeout\s*=", source):
-        return [
-            f"{rel}: `with ThreadPoolExecutor` + `.result(timeout=)` 는 블록을 빠져나갈 때 "
-            "shutdown(wait=True) 가 걸려 **타임아웃이 무의미해집니다** (CLAUDE.md 코드 규칙). "
-            "pool 을 직접 만들고 `finally: pool.shutdown(wait=False)` 를 쓰세요."
-        ]
+    # ⛔ **파일 전체에서 둘을 찾으면 안 된다** (2026-08-31 실측). `sql_agent.py` 는
+    #    `with` 블록 하나(타임아웃 없음)와, **직접 만든 pool** 을 쓰는 올바른
+    #    `.result(timeout=)` 다섯 곳을 함께 갖고 있다. 둘을 엮으면 관계없는 코드가
+    #    위반이 되고, 그러면 이 프로젝트에서 가장 큰 파일을 **편집할 때마다 막힌다.**
+    #    방해물이 된 훅은 그날로 꺼지고, 꺼진 훅은 아무것도 안 지킨다.
+    #    → 같은 `with` 블록 **안**에 있을 때만 잡는다 (들여쓰기로 블록 끝을 판정).
+    lines = source.splitlines()
+    for i, line in enumerate(lines):
+        opener = re.search(r"^(\s*)with\s+(concurrent\.futures\.)?ThreadPoolExecutor", line)
+        if not opener:
+            continue
+        indent = len(opener.group(1))
+        for body in lines[i + 1:]:
+            if body.strip() and (len(body) - len(body.lstrip())) <= indent:
+                break  # 들여쓰기가 돌아왔다 = 블록 끝
+            if re.search(r"\.result\(\s*timeout\s*=", body):
+                return [
+                    f"{rel}: `with ThreadPoolExecutor` + `.result(timeout=)` 는 블록을 "
+                    "빠져나갈 때 shutdown(wait=True) 가 걸려 **타임아웃이 무의미해집니다** "
+                    "(CLAUDE.md 코드 규칙). pool 을 직접 만들고 "
+                    "`finally: pool.shutdown(wait=False)` 를 쓰세요."
+                ]
     return []
 
 

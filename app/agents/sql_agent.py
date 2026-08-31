@@ -462,8 +462,14 @@ def _normalize_named_period(sql: str, query: str) -> str:
         logger.warning("named_period_extended", month=f"{y1}-{mo1}",
                        clamped_to=f"{y1}-{mo1}-{d1}", extended_to=f"{y1}-{mo1}-{last:02d}",
                        query=query[:80])
+        # ⛔ **시각을 만들어 붙이지 마라 — 원본 표기를 그대로 쓴다** (2026-08-31 실측).
+        #    여기서 `23:59:59` 를 무조건 덧붙이고 있었다. 매출 `Date` 는 DATETIME 이라
+        #    괜찮았지만 광고 `integrated_ad.date` 는 **DATE** 라 캐스팅이 안 돼
+        #    "Could not cast literal ... to type DATE" 로 **요청이 죽었다.**
+        #    ⚠️ 늘리는 것은 날짜의 몫이지 표기의 몫이 아니다. 상한이 원래
+        #       `23:59:59` 였으면 group(10) 이 그것을 그대로 갖고 있다.
         return (f"{m.group(1)}{y0}-{mo0}-{d0}{m.group(5)}{m.group(6)}"
-                f"{y1}-{mo1}-{last:02d} 23:59:59{m.group(11)}")
+                f"{y1}-{mo1}-{last:02d}{m.group(10)}{m.group(11)}")
 
     return _RE_BETWEEN_DATES.sub(_fix, sql)
 

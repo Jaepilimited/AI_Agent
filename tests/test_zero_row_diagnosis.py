@@ -87,3 +87,46 @@ class TestParse:
     def test_skips_when_unsure(self, sql):
         """확신이 없으면 진단을 건너뛴다 — 틀린 진단보다 없는 게 낫다."""
         assert _parse(sql) is None
+
+
+# ── "없다" 와 "아직 안 들어왔다" 는 다르다 (2026-08-31 사용자 제보) ───────────
+#
+# ⛔ 8/30 KBT 광고를 물었을 때 NaverGFA·NaverSearch 가 빠진 채 답이 나갔고,
+#    이유를 "해당 조건의 데이터가 존재하지 않습니다" 라고 단정했다. 실제로는
+#    그 시각에 아직 적재 전이었고 지금은 각각 72만원·66만원이 들어 있다.
+#    같은 사용자가 30분 사이 같은 질문에 8/26 → 8/30 으로 갈린 답을 받았다.
+#    성분의 '미상'을 '미포함'으로 쓰던 오답과 같은 부류다.
+
+def test_date_axis_is_picked_from_the_conditions():
+    from app.core.zero_row import _date_axis
+
+    assert _date_axis(["date = '2026-08-30'", "team = 'KBT'"]) == ("date", "2026-08-30")
+    col, asked = _date_axis(["Date BETWEEN '2026-08-01' AND '2026-08-31'"])
+    assert (col, asked) == ("Date", "2026-08-31"), "가장 늦은 날짜를 골라야 한다"
+    # 날짜가 없는 조건만 있으면 축이 없다
+    assert _date_axis(["team = 'KBT'", "media = 'NaverGFA'"]) == (None, None)
+    # 날짜 리터럴이 있어도 컬럼 이름이 날짜가 아니면 축으로 삼지 않는다
+    assert _date_axis(["memo = '2026-08-30 메모'"]) == (None, None)
+
+
+def test_lag_is_called_out_only_when_the_question_is_ahead():
+    """⚠️ 반대 방향이 없으면 멀쩡한 0행에도 '적재 시차' 를 붙여 새 오답이 된다."""
+    from app.core.zero_row import _loading_lag_note
+
+    note = _loading_lag_note("date", "2026-08-30", "2026-08-26")
+    assert "적재 시차" in note and "2026-08-26" in note and "2026-08-30" in note
+    assert "존재하지 않는다" in note, "단정하지 말라는 지시가 빠지면 LLM 이 되돌아간다"
+
+    assert _loading_lag_note("date", "2026-08-26", "2026-08-30") == "", "최신인데 시차라 했다"
+    assert _loading_lag_note("date", "2026-08-30", "2026-08-30") == "", "같은 날은 시차가 아니다"
+    assert _loading_lag_note("date", "2026-08-30", None) == ""
+    assert _loading_lag_note(None, None, None) == ""
+
+
+def test_probe_measures_the_loaded_maximum_in_the_same_query():
+    """⚠️ 0행 경로에 조회를 더 늘리지 않는다 — 기존 프로브에 열 하나를 더할 뿐이다."""
+    import inspect
+
+    from app.core import zero_row
+    src = inspect.getsource(zero_row.diagnose)
+    assert "loaded_max" in src and src.count("bq.execute_query") == 1

@@ -109,6 +109,18 @@ def diagnose(sql: str, bq) -> str:
         #    (206행 존재. LLM 은 "등록 명칭이 다를 것" 이라고 답했다). 그래서 **그 조건
         #    하나만으로도** 세어 값의 실재 여부를 따로 판정한다.
         cols.append(f"COUNTIF({c}) AS a{i}")
+    # ⛔ **"없다" 와 "아직 안 들어왔다" 를 섞지 마라** (2026-08-31 사용자 제보).
+    #    8/30 KBT 광고를 물었을 때 NaverGFA·NaverSearch 가 빠진 채 답이 나갔고,
+    #    이유를 "해당 조건의 데이터가 존재하지 않습니다" 라고 단정했다. 실제로는
+    #    **그 시각에 아직 적재 전**이었고 지금은 72만원·66만원이 들어 있다.
+    #    같은 사용자가 30분 사이 같은 질문에 8/26 → 8/30 으로 갈린 답을 받았다.
+    #    성분의 '미상'을 '미포함'으로 쓰던 오답과 **같은 부류**다.
+    #    ⚠️ 조회를 늘리지 않는다 — 위 프로브에 열 하나를 더할 뿐이다.
+    date_col, asked_date = _date_axis(conds)
+    if date_col:
+        others = [c for c in conds if date_col.lower() not in c.lower()]
+        scope = " AND ".join(f"({o})" for o in others) if others else "TRUE"
+        cols.append(f"MAX(CASE WHEN {scope} THEN {date_col} END) AS loaded_max")
     probe = f"SELECT {', '.join(cols)} FROM {parsed['table']}"
     try:
         row = (bq.execute_query(probe) or [{}])[0]
@@ -142,4 +154,47 @@ def diagnose(sql: str, bq) -> str:
     if narrow and not missing:
         lines.append("  - 참고로 `" + narrow[0][0] + "` 를 빼면 "
                      + f"{narrow[0][1]:,}행이 나온다 (범위를 넓힐 때 제안할 만한 축)")
+    lag = _loading_lag_note(date_col, asked_date, row.get("loaded_max"))
+    if lag:
+        lines.append(lag)
     return head + "\n".join(lines)
+
+
+#: 날짜 축으로 볼 컬럼 이름과, 그 조건이 요구한 가장 늦은 날짜.
+_DATE_LIKE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_.]*)\s*(?:=|>=|<=|>|<|BETWEEN|IN)", re.I)
+_DATE_LIT = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def _date_axis(conds: List[str]) -> tuple[Optional[str], Optional[str]]:
+    """조건들 중 날짜 축을 고르고, 요구한 가장 늦은 날짜를 함께 돌려준다."""
+    latest: Optional[str] = None
+    column: Optional[str] = None
+    for cond in conds:
+        found = _DATE_LIT.findall(cond)
+        if not found:
+            continue
+        name = _DATE_LIKE.search(cond)
+        if not name or "date" not in name.group(1).lower():
+            continue
+        column = column or name.group(1)
+        top = max(found)
+        latest = top if latest is None else max(latest, top)
+    return column, latest
+
+
+def _loading_lag_note(date_col, asked_date, loaded_max) -> str:
+    """물어본 날이 **적재된 마지막 날보다 뒤**면 그것이 0행의 원인이다.
+
+    ⛔ 이 구분이 없으면 답변이 "그 날 집행이 없었다" 로 읽힌다 — 실제로는 아직 안
+       들어온 것이다. 매체마다 적재 시각이 달라 하루 이틀씩 벌어진다 (실측).
+    """
+    if not (date_col and asked_date and loaded_max):
+        return ""
+    loaded = str(loaded_max)[:10]
+    if not _DATE_LIT.fullmatch(loaded) or loaded >= asked_date:
+        return ""
+    return (f"  - ⚠️ **적재 시차다.** 이 조건 조합에 실제로 적재된 마지막 날짜는 "
+            f"**{loaded}** 인데 질문은 **{asked_date}** 를 물었다. 즉 **집행이 없었던 "
+            f"것이 아니라 아직 들어오지 않은 것**이다. 반드시 이렇게 구분해서 안내하고, "
+            f"'존재하지 않는다'·'집행하지 않았다' 로 단정하지 마라. "
+            f"{loaded} 까지로 다시 조회할 것을 제안하라")
