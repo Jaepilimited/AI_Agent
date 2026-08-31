@@ -912,9 +912,9 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 - **왜 만들었나**: AD 동기화가 **6일간 매일 밤 실패**했는데 아무도 몰랐다. 크론은 돌았고
   로그도 남았지만 읽는 사람이 없었다. `quality_monitor` 는 답변 품질만 본다 — 배치가 죽었는지,
   데이터가 썩었는지, 권한이 뚫렸는지는 아무도 감시하지 않았다.
-- **검사 39종** (2026-08-27 실측 — 이 줄은 "23종 / static 6" 으로 오래 낡아 있었고,
+- **검사 40종** (2026-08-27 실측 — 이 줄은 "23종 / static 6" 으로 오래 낡아 있었고,
   이틀 만에 또 낡았다. 손으로 센 숫자는 반드시 낡는다: `len(CHECKS)` 로 확인할 것):
-  batch 6 / integrity 4 / permission 4 / datasource 5 / quality 5 / **static 15**
+  batch 6 / integrity 4 / permission 4 / datasource 6 / quality 5 / **static 15**
 - **static 검사는 `app/core/static_checks.py` 가 판정한다** (2026-08-13 추가).
   개발 중에는 `tests/test_no_silent_failures.py` 가, 서버에서는 자가 점검이 **같은 함수**를
   부른다 — ⛔ **서버에는 pytest 도 `tests/` 도 node 도 없다.** 테스트만 만들어 두면
@@ -1281,10 +1281,33 @@ pm2 restart skin1004-prod                  # 리다이렉트 껍데기(172.16.1.
 ## 캐시 버전
 
 - CSS/JS 변경 시 `chat.html`의 `?v=` 번호 증가 필수
-- 현재: style.css?v=193, personal-briefing.js?v=26, chat.js?v=270 (2026-08-27 기준 — 올릴 때 이 줄도 같이 갱신할 것)
+- 현재: style.css?v=193, personal-briefing.js?v=26, chat.js?v=272 (2026-08-31 기준 — 올릴 때 이 줄도 같이 갱신할 것)
 - `login.html`·`eval_review.html` 은 별도 번호를 쓴다. 해당 화면 CSS 를 건드렸으면 그쪽도 올릴 것
 - ⚠️ **이 줄이 실제와 어긋나면 테스트가 실패한다** (`test_cache_version_doc_matches_reality`).
   실제로 한 번 어긋나 있었다 — 문서가 한 칸 뒤처지면 다음 사람이 잘못된 번호에서 올린다
+- ⛔ **번호를 두 세션이 나눠 쓰면 뒤 수정이 영영 안 나간다** (2026-08-31 실측).
+  한 세션이 09:24 에 `chat.js?v=270 → 271` 을 올렸고, 몇 시간 뒤 차트 수정도 **같은 271**
+  로 커밋됐다. 271 을 이미 받아 둔 브라우저는 뒤 수정을 **영영 안 받는다** — 서버는 새
+  파일을 주고 배포도 성공하므로 아무도 모른다. 최근 chat.js 커밋 18건 중 **5건**이 그랬다
+  - 보증은 훅이 한다 (`scripts/hooks/guard_destructive.py::check_cache_version`):
+    커밋에 프론트 자산이 들어 있는데 `chat.html` 의 `?v=` 가 **직전 커밋과 같으면 막는다**
+  - ⚠️ 감시는 `chat.html` 하나만 본다. `login.html`·`eval_review.html`·`coa_finder.html`
+    은 번호가 따로라 여기서 강제하면 **안 건드린 화면까지 올리게 돼 오탐**이 된다
+  - 💡 번호를 올리기 전에 `git log -1 --format=%h -- app/frontend/chat.html` 로 남이
+    방금 올렸는지 보라 — 올렸으면 그 다음 번호다 (같은 번호로 되돌리는 것이 이 사고다)
+
+## 작업트리를 다른 세션과 공유한다 — 전체를 건드리는 git 금지
+
+- ⛔ `git commit -a` 뿐 아니라 **`git add -A`·`git add .`·`git add -u`** 도 남의 미완성
+  파일을 내 커밋에 담는다. **`git reset --hard`·`git checkout -- .`·`git restore .`·
+  `git clean -fd`·`git stash`(경로 없이)** 는 아예 **지운다** — 다른 세션은 자기 파일이
+  사라진 줄도 모르고 계속 편집한다
+  - 2026-08-31 실측: `commit -a` 만 막혀 있었고 **나머지 일곱 가지가 전부 통과**했다.
+    한 철자만 막는 것은 규칙이 아니다. 지금은 훅이 여덟 가지를 함께 막는다
+  - 내 것만 지목하라: `git add <경로>` · `git restore <경로>` · `git stash push -- <경로>`
+  - ⚠️ 범위를 지목한 형태(`git add -A -- app/frontend`)와 브랜치 전환(`git checkout master`)
+    은 그대로 통과한다 — 정상 작업을 막는 훅은 그날로 꺼지고, 꺼진 훅은 아무것도 안 지킨다
+- 회귀는 `tests/test_claude_hooks.py` 가 **양방향**으로 지킨다 (막을 것 17 · 통과할 것 13)
 
 ## AD 동기화 규칙
 
