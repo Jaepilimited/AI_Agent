@@ -166,6 +166,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_ad_media_table)
         from app.core.password_reset import ensure_password_reset_table
         await asyncio.to_thread(ensure_password_reset_table)
+        from app.core.password_reset_google import ensure_google_reset_tables
+        await asyncio.to_thread(ensure_google_reset_tables)
         from app.core.value_lists import ensure_value_cache_table
         await asyncio.to_thread(ensure_value_cache_table)
         from app.core.ingredients import ensure_ingredient_tables

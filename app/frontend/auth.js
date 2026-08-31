@@ -294,6 +294,85 @@
     });
   }
 
+  // ── 구글로 본인 확인을 마치고 돌아온 화면 ─────────────────────────────────
+  // 서버가 증표를 HttpOnly 쿠키에 담아 보냈으므로 이 화면은 값을 들고 있지 않다.
+  // 여기서 하는 일은 새 비밀번호를 받아 넘기는 것뿐이다.
+  var resetBox = document.getElementById("reset-box");
+  var resetHelp = document.getElementById("reset-help");
+  var resetPw1 = document.getElementById("reset-pw1");
+  var resetPw2 = document.getElementById("reset-pw2");
+  var resetSubmit = document.getElementById("reset-submit");
+  var resetMsg = document.getElementById("reset-msg");
+
+  function resetSay(text, isError) {
+    resetMsg.textContent = text;
+    resetMsg.classList.toggle("is-error", !!isError);
+  }
+
+  function showResetPanel(state) {
+    if (!resetBox) return;
+    if (state === "expired") {
+      // ⚠️ 조용히 로그인 화면만 보여 주면 왜 안 됐는지 알 수 없어 같은 시도를 반복한다.
+      forgotBox.hidden = false;
+      forgotSay("본인 확인이 만료되었습니다. 다시 시도해 주세요.", true);
+      return;
+    }
+    form.hidden = true;
+    toggleLink.hidden = true;
+    forgotLink.hidden = true;
+    formTitle.textContent = "새 비밀번호 설정";
+    resetBox.hidden = false;
+    resetPw1.focus();
+  }
+
+  if (resetSubmit) {
+    resetSubmit.addEventListener("click", async function () {
+      var pw1 = resetPw1.value || "";
+      if (pw1.length < 4) {
+        resetSay("새 비밀번호는 4자 이상이어야 합니다.", true);
+        return;
+      }
+      if (pw1 !== (resetPw2.value || "")) {
+        resetSay("두 입력이 서로 다릅니다.", true);
+        return;
+      }
+      resetSubmit.disabled = true;
+      resetSay("변경하는 중…", false);
+      try {
+        var res = await fetch("/api/auth/password-reset/google/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_password: pw1 })
+        });
+        // ⛔ `data.ok` 만 보면 실패가 성공으로 보인다 — 상태 코드를 먼저 본다.
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(data.detail || "변경하지 못했습니다.");
+        resetBox.hidden = true;
+        form.hidden = false;
+        toggleLink.hidden = false;
+        forgotLink.hidden = false;
+        formTitle.textContent = "Welcome Back";
+        errorMsg.textContent = data.message || "비밀번호를 변경했습니다.";
+        errorMsg.classList.remove("is-error");
+        passwordInput.focus();
+      } catch (err) {
+        resetSay(err.message || "변경하지 못했습니다.", true);
+      } finally {
+        resetSubmit.disabled = false;
+        resetPw1.value = "";
+        resetPw2.value = "";
+      }
+    });
+  }
+
+  (function handleResetReturn() {
+    var state = new URLSearchParams(window.location.search).get("reset");
+    if (!state) return;
+    // 주소창을 정리한다 — 새로고침이 이 화면을 다시 열지 않게 한다.
+    window.history.replaceState({}, "", window.location.pathname);
+    showResetPanel(state);
+  })();
+
   function escapeHtml(s) {
     var div = document.createElement("div");
     div.textContent = s;

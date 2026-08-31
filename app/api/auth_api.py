@@ -44,10 +44,14 @@ _AD_CACHE_TTL = 300  # 5 minutes
 #
 # ⛔ This must NEVER be awaited on the request path. A live full resync (fetch_ad_users
 #    + sync_to_db over ~362 accounts) measured ~135.9s in production (2026-09-01).
-#    Probed from the WAS afterwards: 10.1.150.5 -> 172.16.1.13:389 is CLOSED, so those
-#    135s were a firewall timeout and this self-heal has NEVER actually healed anything
-#    on the WAS — it cannot reach AD at all. Leaving it wired anyway: it is harmless
-#    off the request path, and it starts working the day LDAP is opened (or if this
+#    Probed from the WAS afterwards: 10.1.150.5 -> 172.16.1.13 is CLOSED on BOTH 389
+#    and **636**, so those 135s were a firewall timeout and this self-heal has NEVER
+#    actually healed anything on the WAS — it cannot reach AD at all. (Same probe from
+#    the APP host 10.1.150.105: both ports OPEN — that is why the nightly sync lives
+#    there.) ⚠️ Name 636 when asking IT to open access: `scripts/sync_ad_users.py`
+#    connects with `port=636, use_ssl=True` (LDAPS). Opening only 389 would look like
+#    a fix and change nothing. Leaving it wired anyway: it is harmless
+#    off the request path, and it starts working the day LDAPS is opened (or if this
 #    ever runs somewhere that can reach AD). A user who picked the wrong team was
 #    made to stare at a spinner for over two minutes for what should be a ~1s "not
 #    found." The resync can only ever help the *next* attempt (the user retries once
@@ -604,6 +608,96 @@ async def password_reset_request(req: PasswordResetRequestIn):
                    ad_user_id=int(ad_user["id"]),
                    duplicate=bool(result.get("duplicate")))
     return same
+
+
+class GoogleResetCompleteIn(BaseModel):
+    new_password: str
+
+
+@auth_api_router.get("/password-reset/google/start")
+async def password_reset_google_start(request: Request):
+    """구글 계정으로 **본인이** 확인하고 스스로 비밀번호를 정하는 경로의 시작.
+
+    관리자 요청 경로와 나란히 선다 — 이쪽은 신원을 구글이 서명으로 보증하므로
+    계정을 바꿔도 된다. 부서·이름만 아는 사람은 그 보증을 만들 수 없다.
+    """
+    from app.api.auth_routes import _get_redirect_uri
+    from app.core import password_reset_google
+
+    try:
+        state = await asyncio.to_thread(password_reset_google.issue_state)
+        url = password_reset_google.build_auth_url(_get_redirect_uri(request), state)
+    except password_reset_google.ResetUnavailable as unavailable:
+        raise HTTPException(status_code=503, detail=unavailable.body)
+    return RedirectResponse(url=url, status_code=302)
+
+
+@auth_api_router.get("/password-reset/google/land")
+async def password_reset_google_land(request: Request, rc: str = Query("")):
+    """확인 증표를 **주소창에서 쿠키로 옮긴다.**
+
+    ⚠️ 증표가 URL 에 남으면 방문기록·리퍼러·화면 공유에 그대로 실린다. 여기서
+       한 번 받아 HttpOnly 쿠키로 옮기고 깨끗한 주소로 되돌린다 (증표 자체는
+       일회용이고 5분이지만, 남길 이유가 없는 것은 남기지 않는다).
+    """
+    from app.core import password_reset_google
+
+    if await asyncio.to_thread(password_reset_google.peek_grant, rc) is None:
+        return RedirectResponse(url="/login?reset=expired", status_code=303)
+
+    response = RedirectResponse(url="/login?reset=1", status_code=303)
+    response.set_cookie(
+        key=password_reset_google.GRANT_COOKIE,
+        value=rc,
+        max_age=int(password_reset_google.GRANT_TTL.total_seconds()),
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+        path=password_reset_google.GRANT_COOKIE_PATH,
+    )
+    return response
+
+
+@auth_api_router.post("/password-reset/google/complete")
+async def password_reset_google_complete(
+    req: GoogleResetCompleteIn, request: Request, response: Response
+):
+    """구글로 확인된 사람이 새 비밀번호를 정한다."""
+    from app.core import password_reset, password_reset_google
+
+    # ⛔ 길이 검사를 **증표를 태우기 전에** 한다. 뒤에 두면 짧게 한 번 눌렀다가
+    #    증표가 소모돼 처음부터 다시 해야 한다.
+    if len(req.new_password) < password_reset_google.MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"새 비밀번호는 {password_reset_google.MIN_PASSWORD_LEN}자 이상이어야 합니다",
+        )
+
+    code = request.cookies.get(password_reset_google.GRANT_COOKIE, "")
+    try:
+        user_id = await asyncio.to_thread(password_reset_google.consume_grant, code)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="확인이 만료되었습니다. 로그인 화면에서 다시 시도해 주세요.",
+        )
+
+    await asyncio.to_thread(password_reset_google.set_password, user_id, req.new_password)
+    invalidate_user_cache(user_id)
+
+    # ⛔ 대기 중이던 관리자 요청을 함께 닫는다 — 본인이 이미 해결했는데 대기열에
+    #    남아 있으면 관리자가 쓸데없이 임시 비밀번호를 발급하고, 그 순간 방금
+    #    정한 비밀번호가 무효가 된다 ("수정과 표시는 한 작업이다").
+    row = await _db_fetch_one("SELECT ad_user_id FROM users WHERE id = %s", (user_id,))
+    if row and row.get("ad_user_id"):
+        await asyncio.to_thread(password_reset.close_for_ad_user, int(row["ad_user_id"]))
+
+    response.delete_cookie(
+        key=password_reset_google.GRANT_COOKIE,
+        path=password_reset_google.GRANT_COOKIE_PATH,
+    )
+    logger.warning("pwreset_google_completed", user_id=user_id)
+    return {"ok": True, "message": "비밀번호를 변경했습니다. 새 비밀번호로 로그인해 주세요."}
 
 
 @auth_api_router.post("/logout")

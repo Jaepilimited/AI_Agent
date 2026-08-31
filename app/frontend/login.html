@@ -94,6 +94,24 @@
            부서·이름만으로 재설정되면 누구나 남의 계정을 초기화할 수 있고,
            셀라에는 재무 손익 데이터가 있다 (2026-08-31). -->
       <div class="forgot-box" id="forgot-box" hidden>
+        <!-- 기다리지 않아도 되는 길을 먼저 보여준다. 구글이 신원을 서명으로
+             보증하므로 이쪽은 그 자리에서 본인이 끝낼 수 있다. -->
+        <a class="btn-google" id="forgot-google"
+           href="/api/auth/password-reset/google/start">
+          <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.02-3.7H.96v2.34A9 9 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.98 10.72a5.4 5.4 0 0 1 0-3.44V4.94H.96a9 9 0 0 0 0 8.12l3.02-2.34z"/>
+            <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.46 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0A9 9 0 0 0 .96 4.94l3.02 2.34C4.68 5.16 6.66 3.58 9 3.58z"/>
+          </svg>
+          구글 계정으로 본인 확인
+        </a>
+        <p class="forgot-help">
+          회사 구글 계정으로 확인하면 기다리지 않고 바로 새 비밀번호를 정할 수 있습니다.
+        </p>
+
+        <div class="forgot-divider"><span>구글 계정을 쓸 수 없다면</span></div>
+
         <p class="forgot-help">
           이름과 소속 팀을 고른 뒤 요청해 주세요. 관리자가 확인 후 임시 비밀번호를 발급합니다.
         </p>
@@ -101,6 +119,22 @@
                placeholder="관리자에게 남길 메모 (선택)">
         <button type="button" class="btn-primary" id="forgot-submit">관리자에게 요청 보내기</button>
         <div class="forgot-msg" id="forgot-msg"></div>
+      </div>
+
+      <!-- 구글 확인을 마치고 돌아온 사람이 새 비밀번호를 정하는 자리.
+           증표는 HttpOnly 쿠키에 있어 이 화면은 값을 들고 있지 않다. -->
+      <div class="forgot-box" id="reset-box" hidden>
+        <p class="forgot-help" id="reset-help">
+          본인 확인이 끝났습니다. 새 비밀번호를 정해 주세요.
+        </p>
+        <label for="reset-pw1">새 비밀번호</label>
+        <input type="password" id="reset-pw1" autocomplete="new-password"
+               placeholder="4자 이상">
+        <label for="reset-pw2">새 비밀번호 확인</label>
+        <input type="password" id="reset-pw2" autocomplete="new-password"
+               placeholder="한 번 더 입력">
+        <button type="button" class="btn-primary" id="reset-submit">비밀번호 변경</button>
+        <div class="forgot-msg" id="reset-msg"></div>
       </div>
     </div>
   </div>
