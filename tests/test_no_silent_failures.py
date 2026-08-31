@@ -881,21 +881,30 @@ def test_scrolling_cards_do_not_leave_a_gap_above_the_sticky_title():
     assert "margin: 0 -18px" in title and "background:" in title
 
 
-def test_coa_finder_page_uses_only_defined_css_tokens():
+def test_coa_finder_css_vars_checked_by_shared_function():
     """없는 변수는 에러가 아니라 폴백이다 — 라이트 모드에서 안 보이는 그 결함.
 
-    ⚠️ `undefined_css_vars()`(app/core/static_checks.py)는 `app/static/*.html` 을
-    훑지 않는다 — `coa_finder.html` 은 그 목록 밖이라 이 테스트가 유일한 방어선이고,
-    개발 환경에서만 돈다(서버 자가 점검에는 안 걸린다).
-    """
-    import re
-    from pathlib import Path
+    판정은 여기서 다시 만들지 않는다 — `SC.undefined_css_vars()` 를 그대로 부른다.
+    `static_css_vars` 는 이미 `SC.ALL` 에 등록돼 서버 자가 점검도 매일 같은 함수를
+    돈다(2026-08-31, `app/static/*.html` 을 glob 에 추가해 이 페이지를 포함시켰다).
+    같은 규칙을 여기서 다시 구현하면 CLAUDE.md 가 반복해서 경고하는 "한쪽만 고쳐지는"
+    사고가 재발한다.
 
-    css = Path("app/static/style.css").read_text(encoding="utf-8")
-    defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", css))
-    html = Path("app/static/coa_finder.html").read_text(encoding="utf-8")
-    used = set(re.findall(r"var\((--[a-z0-9-]+)", html))
-    assert used <= defined, f"style.css 에 없는 토큰: {sorted(used - defined)}"
+    ⚠️ **"통과"만으로는 안심할 수 없다** — glob 이 이 파일을 애초에 안 보고 있어도
+    통과로 보인다(빈 검사). 그래서 `coa_finder.html` 이 실제로 스캔 대상인지도 같이
+    확인한다.
+    """
+    import glob
+    import os
+
+    matched = {os.path.basename(p)
+               for p in glob.glob(os.path.join(SC.ROOT, "app/static/*.html"))}
+    assert "coa_finder.html" in matched, (
+        "coa_finder.html 이 undefined_css_vars() 의 glob 대상 밖이다 — "
+        "이 검사가 아무것도 지키지 못하고 있다")
+
+    ok, detail = SC.undefined_css_vars()
+    assert ok, detail
 
 
 def test_coa_finder_script_parses():

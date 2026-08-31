@@ -38,16 +38,26 @@ def undefined_css_vars() -> Tuple[bool, str]:
 
     피드백 입력창이 `--panel`·`--input-bg`(존재한 적 없는 이름)를 써서 라이트 모드에서
     어두운 배경에 어두운 글자가 됐던 사고를 잡는다 (2026-08-13 사용자 제보).
+
+    ⚠️ `app/static/*.html` 도 훑는다(2026-08-31 추가 — `coa_finder.html` 이 이 목록
+    밖이라 개발 테스트에서만 지켜지고 있었다). `dashboard.html`·`ai_harness.html`·
+    `presentation.html` 처럼 **자기 완결형**으로 자체 `--db-*`·`--blue` 같은 변수를
+    스스로 정의해 쓰는 페이지가 이미 있다 — 아래 `local` 이 파일 자신이 정의한
+    변수를 예외로 봐 주기 때문에 style.css 밖의 변수를 써도 오탐이 나지 않는다.
+    이 예외가 없으면 그 세 파일에서만 28건이 조용히 걸린다(2026-08-31 실측).
     """
     if not _exists("app/static/style.css"):
         return True, "style.css 없음 — 건너뜀"
     defined = set(re.findall(r"(--[a-zA-Z0-9_-]+)\s*:", _read("app/static/style.css")))
     bad: List[str] = []
     for pat in ("app/static/*.css", "app/static/*.js",
-                "app/frontend/*.html", "app/frontend/*.js"):
+                "app/frontend/*.html", "app/frontend/*.js",
+                "app/static/*.html"):
         for path in glob.glob(os.path.join(ROOT, pat)):
             with io.open(path, encoding="utf-8", errors="replace") as fh:
                 txt = fh.read()
+            # 그 파일 자신이 정의한 변수는 style.css 에 없어도 예외로 본다
+            # (자기 완결형 페이지는 style.css 를 쓰지 않는다)
             local = set(re.findall(r"(--[a-zA-Z0-9_-]+)\s*:", txt))
             for i, line in enumerate(txt.splitlines(), 1):
                 for m in re.finditer(r"var\(\s*(--[a-zA-Z0-9_-]+)\s*[,)]", line):
