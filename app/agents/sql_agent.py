@@ -3320,7 +3320,17 @@ def _fast_fmt_cell(v) -> str:
     return str(v)
 
 
-def _fast_table_markdown(results: list, max_rows: int = 15) -> str:
+# 채팅 표 기본 행 상한. 15는 너무 낮았다 — "인도네시아 2020~2026 월별 B2C/B2B
+# 매출"이 146행을 돌려받고도 15행만 보여, 어느 15행이 남을지가 SQL의 ORDER BY에
+# 좌우된 끝에 "2025년부터 데이터가 있다"는 잘못된 결론으로 이어졌다(2026-08-31).
+# 200이면 다년 월별 리포트(예: 7년×12개월×2 구분 = 168행) 정도는 통째로 보이면서도
+# BigQuery 실행 자체의 상한(1000행, `execute_sql`)보다는 충분히 낮게 유지된다.
+# 그래도 잘리는 결과는 각주가 남는다(아래) — 잘린 나머지를 받을 수 있게 하는 것은
+# 다음 커밋에서 다루는 별도 작업이다.
+_FAST_TABLE_MAX_ROWS = 200
+
+
+def _fast_table_markdown(results: list, max_rows: int = _FAST_TABLE_MAX_ROWS) -> str:
     cols = list(results[0].keys())
     heads = [_COL_LABELS.get(c.lower(), c) for c in cols]
     lines = ["| " + " | ".join(heads) + " |", "|" + "|".join([" :--- "] * len(cols)) + "|"]
