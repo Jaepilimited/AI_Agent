@@ -317,9 +317,11 @@ def test_compose_truncates_saved_answers_and_adds_the_continuation_link():
         }],
     )
 
+    # ⛔ 자른 것은 **자른 티가 나야 한다** (2026-09-02). 표시 없이 끊으면 읽는 사람은
+    #    그게 답의 전부인 줄 안다 — 실제로 잔디에 `2. 원인 분석 * *` 이 그대로 나갔다.
     assert document["saved"] == [{
         "question": "Shopee Indonesia sales",
-        "answer": "a" * 300,
+        "answer": "a" * 299 + "…",
         "last_run_at": "2026-08-03T08:58:00",
         "link": "https://cella.example.test",
     }]
@@ -548,3 +550,83 @@ def test_markdown_headings_are_dropped_not_inlined():
     assert "요약" not in out and "상세 데이터" not in out, \
         f"목차가 문장 사이에 끼었다: {out!r}"
     assert out.endswith("(표 1행)")
+
+
+# ── 잔디에서 답변이 문장 중간에 끊기던 것 (2026-09-02 사용자 제보) ────────────
+#
+# 실제로 나간 줄:
+#   > ⚠️ 최근 날짜는 아직 채워지는 중일 수 있습니다 — … 확정 수치가 필요하면 하루 뒤에
+#   다시 확인해 주세요. 요청하신 조건에 대한 분석 결과입니다. 1. 데이터 조회 결과
+#   선택하신 조건(…)에 해당하는 데이터가 존재하지 않습니다. 2. 원인 분석 * *
+#
+# 세 가지가 겹쳤다:
+#   ① 표가 없는 답변은 `_clean(raw, limit)` 로 **손질 없이 통째로 하드 슬라이스**됐다
+#   ② 코드가 붙인 공시(`> ⚠️ …`) 167자가 300자 예산을 먹어 답은 116자만 남았다
+#   ③ 남은 자리마저 낱말 중간에서 **표시 없이** 끊겨 `* *` 부스러기로 끝났다
+
+_ZERO_ROW_ANSWER = "\n".join([
+    "> ⚠️ **최근 날짜는 아직 채워지는 중일 수 있습니다** — 이 답은 최근 2일 이내를 "
+    "포함합니다. 매출 데이터는 매체·채널마다 적재 시각이 달라 마지막 1~2일치가 나중에 "
+    "더 늘어날 수 있습니다 (실제로 하루 뒤 값이 8배가 된 사례가 있습니다). 확정 수치가 "
+    "필요하면 하루 뒤에 다시 확인해 주세요.",
+    "",
+    "요청하신 조건에 대한 분석 결과입니다.",
+    "",
+    "### 1. 데이터 조회 결과",
+    "선택하신 조건(국가: 인도네시아, 몰 구분: Shopee, 기간: 2026년 9월)에 해당하는 "
+    "데이터가 존재하지 않습니다.",
+    "",
+    "### 2. 원인 분석",
+    "*   **적재 시점**: 9월 매출은 아직 집계 전일 수 있습니다.",
+    "*   **몰 구분 표기**: Shopee 표기가 다를 수 있습니다.",
+])
+
+
+def test_a_notice_block_does_not_eat_the_answers_budget():
+    """⛔ 공시는 답이 아니다 — 담으면 정작 답이 밀려 나간다."""
+    from app.core.work_briefing import summarize_answer
+
+    out = summarize_answer(_ZERO_ROW_ANSWER, 300)
+
+    assert "채워지는 중" not in out and ">" not in out, f"공시가 실렸다: {out!r}"
+    assert "데이터가 존재하지 않습니다" in out, f"정작 답이 빠졌다: {out!r}"
+    assert "적재 시점" in out, "공시가 예산을 먹어 원인 분석이 잘렸다"
+
+
+def test_a_table_less_answer_is_cleaned_like_every_other():
+    """⛔ 표가 없다고 손질을 건너뛰지 마라 — 0건 답변이 그 경로였다."""
+    from app.core.work_briefing import summarize_answer
+
+    out = summarize_answer(_ZERO_ROW_ANSWER, 300)
+
+    assert "#" not in out and "**" not in out, f"마크다운이 남았다: {out!r}"
+    assert "* " not in out and not out.rstrip().endswith("*"), \
+        f"목록 표식 부스러기가 남았다: {out!r}"
+    assert "1. 데이터 조회 결과" not in out, "목차가 문장 사이에 끼었다"
+
+
+def test_truncation_is_visible_and_lands_on_a_boundary():
+    """⛔ 표시 없이 끊으면 읽는 사람은 **그게 답의 전부인 줄 안다.**"""
+    from app.core.work_briefing import summarize_answer
+
+    long_answer = ("첫 문장입니다. " + "가나다라마바사아자차 " * 40).strip()
+    out = summarize_answer(long_answer, 120)
+
+    assert len(out) <= 120, f"상한을 넘었다: {len(out)}"
+    assert out.endswith("…"), f"잘린 티가 없다: {out!r}"
+    assert not out.rstrip("…").endswith(" "), "낱말 중간/공백에서 끊겼다"
+
+    # ⚠️ 상한 안에 들면 아무것도 붙이지 않는다 — 안 자른 것을 자른 척하지 않는다.
+    assert not summarize_answer("일본 8월 매출은 55.1억입니다.", 300).endswith("…")
+
+
+def test_the_row_count_survives_truncation():
+    """⚠️ 잘릴 때 `(표 N행)` 부터 날아가면 표가 있었다는 사실이 사라진다."""
+    from app.core.work_briefing import summarize_answer
+
+    answer = ("가나다라마바사아자차 " * 60).strip() + "\n\n| A | B |\n|---|---|\n| 1 | 2 |\n"
+    out = summarize_answer(answer, 150)
+
+    assert out.endswith("(표 1행)"), f"행수가 잘려 나갔다: {out!r}"
+    assert "…" in out, "앞 문장이 잘렸는데 표시가 없다"
+    assert len(out) <= 150

@@ -118,7 +118,7 @@ def diff(prev: Dict[str, Dict[str, Any]],
 
     ⛔ **"최신일이 안 움직인 매체" 는 세지 않는다.** 그 매체에 집행이 없던 날은
        정상이라 매일 대부분의 매체가 걸린다 — 매일 뜨는 경보는 곧 아무도 안 본다.
-       적재 시차 자체는 답변에서 공시하고(`safety.loading_edge_notice_for_sql`),
+       적재 시차 자체는 실제로 쓰는 중일 때만 공시하고(`safety.recent_load_notice_for_sql`),
        질문별 원인은 `zero_row.diagnose()` 가 짚는다. 여기는 **유실**만 본다.
     """
     def _label(name: str, info: Dict[str, Any]) -> str:

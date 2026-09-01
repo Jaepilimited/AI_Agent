@@ -18,7 +18,6 @@ import re
 import time
 from enum import Enum
 from pathlib import Path
-from datetime import date, timedelta
 from typing import Dict, Optional
 
 import structlog
@@ -567,9 +566,13 @@ def data_update_notice_for_sql(
     if not active_labels:
         # ⛔ **점검 감지에만 기대면 "적재 중" 을 거의 못 말한다.** 그 판정은 행이
         #    줄어드는 것(truncate)만 보는데, 실제 사고는 append 중이었다.
-        #    아래 둘이 순서대로 받는다 — 실제로 방금 적재됐는가 → 최근 날짜인가.
-        return (recent_load_notice_for_sql(sql, mm)
-                or loading_edge_notice_for_sql(sql))
+        #    그래서 수정 시각이 지금 움직이는가를 한 번 더 본다.
+        #
+        # ⛔ **질문이 최근 날짜를 포함한다는 이유만으로는 공시하지 않는다**
+        #    (2026-09-02 사용자 지시). 그것은 적재 상태를 본 것이 아니라 날짜만 본
+        #    추측이라, 적재가 진작 끝난 뒤에도 어제·오늘을 물을 때마다 붙었다 —
+        #    매번 뜨는 경고는 곧 아무도 안 읽는다. 공시는 **실제로 쓰는 중일 때**만 한다.
+        return recent_load_notice_for_sql(sql, mm)
     labels = "·".join(active_labels)
     return (
         f"> ⚠️ **데이터 업데이트 중**: 이 질문이 조회한 **{labels}** 데이터가 "
@@ -634,48 +637,6 @@ def recent_load_notice_for_sql(sql: str,
         f"> ⚠️ **지금 적재 중입니다** — 이 답이 쓴 {parts} 데이터가 방금 갱신됐습니다. "
         "**틀린 값이 아니라 아직 다 채워지지 않은 값**일 수 있습니다. "
         "잠시 뒤 다시 물으면 수치가 달라질 수 있습니다."
-    )
-
-
-#: 적재 최전선으로 볼 기간. 오늘·어제는 소스별로 아직 채워지는 중일 수 있다.
-_LOADING_EDGE_DAYS = 2
-_SQL_DATE_LITERAL = re.compile(r"'(\d{4}-\d{2}-\d{2})")
-
-
-def loading_edge_notice_for_sql(sql: str, today: Optional[date] = None) -> str:
-    """최근 1~2일을 물었으면 **적재가 끝나지 않았을 수 있다고 답변에 적는다.**
-
-    ⛔ **행이 줄어드는 것(truncate)만 감지하면 이 사고를 못 잡는다** (2026-08-31 제보).
-       `maintenance_auto_detect_loop` 은 append 를 "조회해도 안전" 하다고 보고 넘긴다.
-       전체 추이라면 맞지만, **날짜를 지목한 질문에는 틀리다** — 8/30 KBT 광고비를
-       물었을 때 그 날짜가 아직 채워지는 중이라 NaverGFA·NaverSearch 가 통째로 빠지고
-       Google 이 447,791원(실제 3,863,561원, 8.6배)으로 나갔다. **에러도 경고도 없었다.**
-       같은 사용자가 30분 사이 8/26 → 8/30 으로 갈린 답을 받았다.
-
-    ⚠️ 조회를 더 하지 않는다 — SQL 의 날짜 리터럴만 보고 판정한다. 성공 경로에
-       BigQuery 를 한 번 더 태우면 모든 답변이 느려진다.
-    ⚠️ 지난 기간만 물었으면 아무 말도 하지 않는다. 매번 붙는 경고는 곧 안 읽힌다.
-    """
-    if not (sql or "").strip():
-        return ""
-    normalized = re.sub(r"[`\"]", "", sql).lower()
-    touched = [label for label, (dataset, table_id) in _MONITORED_TABLES.items()
-               if re.search(rf"(?<![\w]){re.escape(f'{dataset}.{table_id}'.lower())}(?![\w])",
-                            normalized)]
-    if not touched:
-        return ""
-    asked = _SQL_DATE_LITERAL.findall(sql)
-    if not asked:
-        return ""
-    edge = (today or date.today()) - timedelta(days=_LOADING_EDGE_DAYS)
-    if max(asked) < edge.isoformat():
-        return ""
-    return (
-        f"> ⚠️ **최근 날짜는 아직 채워지는 중일 수 있습니다** — 이 답은 최근 "
-        f"{_LOADING_EDGE_DAYS}일 이내를 포함합니다. **{'·'.join(touched)}** 데이터는 "
-        "매체·채널마다 적재 시각이 달라 마지막 1~2일치가 나중에 더 늘어날 수 있습니다 "
-        "(실제로 하루 뒤 값이 8배가 된 사례가 있습니다). 확정 수치가 필요하면 "
-        "하루 뒤에 다시 확인해 주세요."
     )
 
 

@@ -502,6 +502,38 @@ _TABLE_DIVIDER = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
 #: 평문 매체에서 의미 없는 마크다운 장식 — 잔디는 렌더하지 않는다.
 _MD_NOISE = re.compile(r"(^#{1,6}\s*)|(\*\*)|(__)|(`)", re.MULTILINE)
 
+#: 목록 표식. ⛔ 지우지 않으면 잔디에 `2. 원인 분석 * *` 같은 부스러기가 남는다
+#:    (2026-09-02 프로덕션 실측). `_MD_NOISE` 는 `**`·`#` 만 봐서 불릿을 놓쳤다.
+_LIST_MARK = re.compile(r"^\s*(?:[*+•-]|\d+[.)])\s+")
+
+#: 답변 앞머리의 인용 블록 = 코드가 붙인 **공시**(적재 중·미래 기간·수치 검증)다.
+#: ⛔ 요약에 담지 마라 — 답이 아니라 답에 대한 안내라서, 300자 예산을 먹고 정작
+#:    답을 밀어낸다. 실측(2026-09-02): 공시 167자가 실려 답은 116자만 남고 잘렸다.
+_QUOTE_LINE = re.compile(r"^\s*>")
+
+#: 문장 끝. 숫자 뒤 마침표(`1.` `2.`)는 제외한다 — 목록 번호에서 끊기면 더 이상하다.
+_SENTENCE_END = re.compile(r"(?<![0-9])[.!?。](?=\s|$)")
+
+
+def _shorten(text: str, limit: int) -> str:
+    """상한을 넘으면 **문장 경계에서 끊고 잘린 티를 낸다.**
+
+    ⛔ `[:limit]` 하드 슬라이스로 자르지 마라. 잘렸다는 표시가 없으면 읽는 사람은
+       **그게 답의 전부인 줄 안다** — 실제로 잔디 브리핑에 `2. 원인 분석 * *` 이
+       그대로 나갔다 (2026-09-02 사용자 제보). 조용히 잘린 것은 오답과 구분되지 않는다.
+    """
+
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(text) <= limit:
+        return text
+    head = text[:limit - 1]
+    ends = [m.end() for m in _SENTENCE_END.finditer(head)]
+    # ⚠️ 문장 끝이 너무 앞이면 쓰지 않는다 — 반 토막만 싣느니 낱말 경계가 낫다.
+    cut = ends[-1] if ends and ends[-1] >= limit // 2 else head.rfind(" ")
+    if cut <= 0:
+        cut = len(head)
+    return head[:cut].rstrip(" ,·-*") + "…"
+
 
 def summarize_answer(text: str, limit: int = 300) -> str:
     """표로 답한 결과를 사람이 읽을 한 줄로 줄인다.
@@ -535,11 +567,8 @@ def summarize_answer(text: str, limit: int = 300) -> str:
         if not seen_table:
             lead_lines.append(line)
 
-    if not seen_table:
-        return _clean(raw, limit)
-
     # 표의 첫 줄은 머리글이라 데이터 행이 아니다.
-    data_rows = max(data_rows - 1, 0)
+    data_rows = max(data_rows - 1, 0) if seen_table else 0
 
     # ⛔ 줄을 합친 **뒤에** 장식을 지우지 마라 — `^#{1,6}` 이 줄머리에서만 맞아
     #    `#### 요약` 이 그대로 남는다 (2026-08-27 프로덕션 실측).
@@ -551,13 +580,25 @@ def summarize_answer(text: str, limit: int = 300) -> str:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        # ⛔ 공시(`> ⚠️ …`)는 답이 아니다 — 담으면 예산을 먹고 답을 밀어낸다.
+        if _QUOTE_LINE.match(stripped):
+            continue
+        stripped = _LIST_MARK.sub("", stripped)
         kept.append(_MD_NOISE.sub("", stripped).strip())
     lead = re.sub(r"\s{2,}", " ", " ".join(part for part in kept if part)).strip()
+    # ⛔ **표가 없는 답변도 같은 손질을 거친다** (2026-09-02 프로덕션 실측).
+    #    예전엔 여기서 `_clean(raw, limit)` 로 통째로 하드 슬라이스했다 — 그래서
+    #    0건 답변(표가 없다)이 잔디에 `… 2. 원인 분석 * *` 로 나갔다. 공시 167자가
+    #    300자 예산을 먹고, 남은 116자가 낱말 중간에서 표시 없이 끊긴 것이다.
+    if not seen_table:
+        return _shorten(lead, limit)
     note = f"(표 {data_rows}행)" if data_rows else "(표)"
     if not lead:
         # ⚠️ 앞 문장이 없으면 표만 있는 답이다 — 없는 문장을 지어내지 않고 사실만 적는다.
         return note
-    return _clean(f"{lead} {note}", limit)
+    # ⚠️ 행수는 **끝에 반드시 남긴다** — 자를 때 note 부터 날아가면 표가 있었다는
+    #    사실이 사라진다. 그래서 note 자리를 먼저 빼고 앞 문장을 줄인다.
+    return f"{_shorten(lead, max(limit - len(note) - 1, 40))} {note}"
 
 
 def _saved_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, str]]:

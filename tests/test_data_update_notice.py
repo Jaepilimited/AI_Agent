@@ -157,56 +157,38 @@ async def test_orchestrator_does_not_add_aggregate_warning_for_unrelated_table(
     assert "업데이트" not in answer
 
 
-# ── 적재 최전선(최근 1~2일)은 답변에 공시한다 (2026-08-31 사용자 제보) ──────
+# ── 날짜만 보고 하는 공시는 하지 않는다 (2026-09-02 사용자 지시) ────────────
 #
-# ⛔ 감지가 **truncate(행 줄어듦)만** 봤다. `maintenance_auto_detect_loop` 주석에
-#    "단순 append 는 조회해도 안전" 이라고 적혀 있는데, **날짜를 지목한 질문에는
-#    틀리다.** 8/30 KBT 광고비를 물었을 때 그 날짜가 아직 채워지는 중이라
-#    NaverGFA·NaverSearch 가 통째로 빠지고 Google 이 447,791원(실제 3,863,561원,
-#    8.6배)으로 나갔다. 에러도 경고도 없었다.
+# 한때 "질문이 최근 2일을 포함하면" 무조건 한 줄을 붙였다(`loading_edge_notice_for_sql`).
+# 그건 적재 상태를 **본 것이 아니라 추측한 것**이라, 적재가 진작 끝난 뒤에도 어제·오늘을
+# 물을 때마다 붙었다. 사용자 지시: *"이거는 안내하지말고 데이터가 업데이트 중일때만
+# 안내해."*
 #
-# ⚠️ 반대 방향이 없으면 모든 답변에 경고가 붙고, 매번 붙는 경고는 곧 안 읽힌다.
+# ⛔ 되살리지 마라 — 매번 뜨는 경고는 곧 아무도 안 읽고, 그러면 **진짜 적재 중**일 때의
+#    공시(점검 감지 · 수정 시각이 지금 움직임)까지 함께 무시당한다.
 
 _AD = "`skin1004-319714.marketing_analysis.integrated_ad`"
 
 
-def _note(sql: str):
-    from datetime import date
+def test_a_recent_date_alone_says_nothing():
+    """어제·오늘을 물었어도 **적재 중이 아니면** 아무 말도 하지 않는다."""
+    from app.core.safety import data_update_notice_for_sql
 
-    from app.core.safety import loading_edge_notice_for_sql
-    return loading_edge_notice_for_sql(sql, today=date(2026, 8, 31))
-
-
-def test_recent_dates_are_disclosed():
+    mm = _mm()
     for asked in ("2026-08-31", "2026-08-30", "2026-08-29"):
-        note = _note(f"SELECT 1 FROM {_AD} WHERE date = '{asked}'")
-        assert note, f"{asked} 를 물었는데 아무 말이 없다"
-        assert "채워지는 중" in note
+        sql = f"SELECT 1 FROM {_AD} WHERE date = '{asked}'"
+        assert data_update_notice_for_sql(sql, mm) == "", f"{asked} 에 공시가 붙었다"
+    assert data_update_notice_for_sql(
+        f"SELECT 1 FROM {_AD} WHERE date BETWEEN '2026-08-01' AND '2026-08-31'", mm) == ""
 
 
-def test_a_month_range_touching_today_is_disclosed():
-    """말일이 오늘이면 그 달 전체 집계도 아직 안 끝났다."""
-    note = _note(f"SELECT 1 FROM {_AD} WHERE date BETWEEN '2026-08-01' AND '2026-08-31'")
-    assert note and "광고" in note
-
-
-def test_past_only_and_unmonitored_stay_quiet():
-    """⚠️ 매번 붙는 경고는 곧 안 읽힌다 — 지난 기간엔 아무 말도 하지 않는다."""
-    assert _note(f"SELECT 1 FROM {_AD} WHERE date = '2026-08-20'") == ""
-    assert _note(f"SELECT 1 FROM {_AD} WHERE date BETWEEN '2026-01-01' AND '2026-06-30'") == ""
-    assert _note("SELECT 1 FROM `p.d.not_monitored` WHERE date = '2026-08-30'") == ""
-    assert _note(f"SELECT 1 FROM {_AD}") == "", "날짜를 안 물었으면 최전선도 없다"
-    assert _note("") == ""
-
-
-def test_the_disclosure_rides_the_existing_answer_hook():
-    """공시는 코드가 붙인다 — 프롬프트에 맡기면 확률이다."""
+def test_the_date_only_disclosure_is_gone_for_good():
+    """⛔ 문구도 함수도 남기지 마라 — 남으면 다음 사람이 다시 배선한다."""
     import inspect
 
     from app.core import safety
-    src = inspect.getsource(safety.data_update_notice_for_sql)
-    assert "loading_edge_notice_for_sql(sql)" in src, \
-        "업데이트 중이 아닐 때 최전선 공시로 넘어가지 않는다"
+    assert not hasattr(safety, "loading_edge_notice_for_sql")
+    assert "채워지는 중" not in inspect.getsource(safety)
 
 
 # ── "지금 적재 중" 은 실제 수정 시각으로 판정한다 (2026-08-31 사용자 지시) ────
@@ -310,8 +292,8 @@ def test_a_dead_monitor_turns_the_notice_off_by_itself():
     assert recent_load_notice_for_sql(_OLD_AD, mm) == ""
 
 
-def test_the_three_notices_have_a_fixed_priority():
-    """점검 중 > 방금 적재 > 최근 날짜. 한 번에 하나만 붙는다."""
+def test_the_two_notices_have_a_fixed_priority():
+    """점검 중 > 방금 적재. 한 번에 하나만 붙고, 날짜만 보는 공시는 없다."""
     from app.core.safety import data_update_notice_for_sql
 
     mm = _loading(ago=60)
