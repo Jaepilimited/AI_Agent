@@ -27,7 +27,7 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import bcrypt
 import jwt
@@ -217,6 +217,32 @@ def consume_grant(code: str) -> int:
 
 
 # ────────────────────────────── 구글 왕복 ──────────────────────────────
+
+def is_available(redirect_uri: str) -> bool:
+    """이 서버에서 구글 확인이 **실제로 성립하는지** 본다.
+
+    ⛔ 구글 정책: 리다이렉트 URI 는 **https 여야 하고 예외는 localhost 뿐이다.**
+       (https://developers.google.com/identity/protocols/oauth2/policies)
+       우리 콜백이 `http://10.1.100.5.nip.io/...` 라, 구글은 계정을 고른 뒤
+       "액세스 차단됨 · 400 invalid_request" 로 막는다 — **기존 GWS 연결도
+       똑같이 막힌다** (2026-09-01 사용자 확인. 기존 사용자는 토큰이 갱신만 되니
+       아무도 몰랐다).
+
+    ⚠️ 그래서 조건이 안 되면 **버튼을 아예 보여 주지 않는다.** 눌러도 막다른 길인
+       입구를 두면 "되는 줄 알고 눌렀다가 안 되는" 경험만 남는다 — 관리자 요청
+       경로가 그 사람들에게는 유일한 길이고, 그쪽은 지금도 정상이다.
+
+    ⚠️ 판정을 코드가 하므로 **HTTPS 를 켜는 날 저절로 다시 나타난다.** 손으로
+       켜고 끄는 플래그를 두면 그날 아무도 기억하지 못한다.
+    """
+    if not get_settings().google_oauth_client_id:
+        return False
+    parsed = urlparse(redirect_uri or "")
+    if parsed.scheme == "https":
+        return True
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
+
 
 def build_auth_url(redirect_uri: str, state: str) -> str:
     """구글 동의 화면 주소. scope 는 신원 확인에 필요한 최소치뿐이다."""

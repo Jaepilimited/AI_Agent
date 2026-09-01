@@ -375,6 +375,28 @@ async def _not_found_detail(department: str, name: str, ad_user_id: int | None, 
     return fallback
 
 
+def _decode_escaped_name(raw: str) -> str:
+    r"""가입할 때 `이주원` 같은 이스케이프를 되돌린다.
+
+    ⛔ 가입은 `ad_users.display_name` 을 **복사**한다. 그 순간 깨져 있으면 사본이
+       `users` 에 굳고, `ad_users` 가 나중에 고쳐져도 사본은 그대로다 — 로그인
+       자동완성은 `COALESCE(u.display_name, ad.display_name)` 이라 깨진 사본이
+       이긴다. 그러면 사람은 자기 이름을 못 찾고, 그 행을 클릭하지 못하면
+       프론트에서 막혀 **서버에는 기록조차 남지 않는다** (2026-09-01 실제 사고).
+    ⚠️ 되돌릴 수 없으면 원본을 그대로 둔다 — 지어내지 않는다.
+    """
+    text = raw or ""
+    if "\\u" not in text:
+        return text
+    try:
+        decoded = text.encode("utf-8").decode("unicode_escape")
+    except Exception:
+        return text
+    if not decoded or "\\u" in decoded:
+        return text
+    return decoded
+
+
 @auth_api_router.post("/signup")
 async def signup(req: SignupRequest, response: Response):
     """Create a new user account linked to an AD user."""
@@ -409,7 +431,8 @@ async def signup(req: SignupRequest, response: Response):
         "INSERT INTO users "
         "(email, password_hash, display_name, role, allowed_models, ad_user_id, last_login) "
         "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
-        (user_email, pw_hash, ad_user["display_name"], "user", ALL_MODELS, ad_user["id"]),
+        (user_email, pw_hash, _decode_escaped_name(ad_user["display_name"]),
+         "user", ALL_MODELS, ad_user["id"]),
     )
 
     bf = await asyncio.to_thread(_lookup_brand_filter, user_id)
@@ -614,6 +637,21 @@ class GoogleResetCompleteIn(BaseModel):
     new_password: str
 
 
+@auth_api_router.get("/password-reset/options")
+async def password_reset_options(request: Request):
+    """어떤 복구 경로가 **지금 이 서버에서** 실제로 되는지 화면에 알려 준다.
+
+    ⛔ 되지 않는 경로의 버튼을 보여 주면 안 된다 — 눌러도 구글이 막는 막다른 길이다
+       (리다이렉트가 http 라 정책 위반. 2026-09-01 실사용자 차단).
+    ⚠️ 코드가 판정하므로 HTTPS 를 켜는 날 버튼이 **저절로** 돌아온다.
+    """
+    from app.api.auth_routes import _get_redirect_uri
+    from app.core import password_reset_google
+
+    return {"google": password_reset_google.is_available(_get_redirect_uri(request)),
+            "admin_request": True}
+
+
 @auth_api_router.get("/password-reset/google/start")
 async def password_reset_google_start(request: Request):
     """구글 계정으로 **본인이** 확인하고 스스로 비밀번호를 정하는 경로의 시작.
@@ -625,6 +663,15 @@ async def password_reset_google_start(request: Request):
     from app.core import password_reset_google
 
     redirect_uri = _get_redirect_uri(request)
+    # ⛔ 화면에서 숨기는 것만으로는 부족하다 — 주소를 직접 치면 구글의 차단 화면을
+    #    보게 된다. 서버가 같은 판정을 하고 사람이 읽을 수 있는 안내를 준다.
+    if not password_reset_google.is_available(redirect_uri):
+        logger.warning("pwreset_google_unavailable", redirect_uri=redirect_uri)
+        raise HTTPException(
+            status_code=503,
+            detail="이 서버에서는 구글 확인을 쓸 수 없습니다(보안 연결 필요). "
+                   "로그인 화면에서 관리자에게 재설정을 요청해 주세요.",
+        )
     try:
         state = await asyncio.to_thread(password_reset_google.issue_state)
         url = password_reset_google.build_auth_url(redirect_uri, state)

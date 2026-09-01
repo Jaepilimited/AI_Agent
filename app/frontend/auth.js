@@ -294,6 +294,28 @@
     });
   }
 
+  // ── 되는 경로만 보여준다 ──────────────────────────────────────────────────
+  // ⛔ 구글 확인은 리다이렉트가 https 여야 성립한다(구글 정책). 이 서버가 http 면
+  //    눌러도 구글 차단 화면으로 끝나므로 **입구를 아예 두지 않는다.**
+  // ⚠️ 판정은 서버가 한다 — HTTPS 를 켜는 날 버튼이 저절로 돌아온다.
+  (async function hideDeadEnds() {
+    var googleLink = document.getElementById("forgot-google");
+    if (!googleLink) return;
+    try {
+      var res = await fetch("/api/auth/password-reset/options");
+      if (!res.ok) throw new Error("unavailable");
+      var opts = await res.json();
+      if (opts.google) return;
+    } catch (err) {
+      // 못 물어봤으면 숨긴다 — 되는지 모르는 버튼을 보여 주는 쪽이 더 나쁘다.
+    }
+    googleLink.hidden = true;
+    var help = googleLink.nextElementSibling;
+    if (help && help.classList.contains("forgot-help")) help.hidden = true;
+    var divider = document.querySelector("#forgot-box .forgot-divider");
+    if (divider) divider.hidden = true;
+  })();
+
   // ── 구글로 본인 확인을 마치고 돌아온 화면 ─────────────────────────────────
   // 서버가 증표를 HttpOnly 쿠키에 담아 보냈으므로 이 화면은 값을 들고 있지 않다.
   // 여기서 하는 일은 새 비밀번호를 받아 넘기는 것뿐이다.
