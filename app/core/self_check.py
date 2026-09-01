@@ -399,41 +399,84 @@ _ESCAPED_NAME_COND = "LOCATE(CONCAT(CHAR(92), 'u'), display_name) > 0"
 
 
 def _check_name_encoding() -> CheckResult:
-    r"""`\uXXXX` 로 이스케이프된 채 저장된 이름을 찾는다.
+    r"""`\uXXXX` 로 이스케이프된 채 저장된 이름을 찾는다. **두 표를 다 본다.**
 
-    AD 에서 삭제된(비활성) 계정에만 남아 있는 레거시라 자동 복원이 안전하다.
-    활성 계정은 다음 AD sync 가 덮어쓰므로 손대지 않는다 (CLAUDE.md 규칙).
+    ⛔ 예전엔 `ad_users` 만 봤다. 그런데 로그인 자동완성이 실제로 그리는 값은
+       `COALESCE(u.display_name, ad.display_name)` 이라 **`users` 쪽이 이긴다** —
+       `ad_users` 가 멀쩡해도 `users` 가 깨져 있으면 사람은 자기 이름을 못 찾고,
+       그 행을 클릭하지 못하면 `auth.js` 가 프론트에서 막아 **서버 기록이 아예 없다**.
+       2026-09-01 이주원 님(users.id=68)이 그랬고 2개월간 검사 밖이었다.
+
+    치유 범위가 표마다 다르다:
+      - `ad_users` : **비활성만**. 활성은 다음 AD sync 가 덮어쓴다 (CLAUDE.md 규칙)
+      - `users`    : **전부**. 덮어써 주는 것이 없어 여기서 안 고치면 영영 그대로다
     """
-    rows = fetch_all(
+    ad_rows = fetch_all(
         "SELECT id, username, display_name, is_active FROM ad_users "
         f"WHERE {_ESCAPED_NAME_COND}"
     )
-    inactive = [r for r in rows if not r["is_active"]]
-    return CheckResult(
-        not rows,
-        f"이스케이프된 이름 {len(rows)}건 (비활성 {len(inactive)}건)",
-        repairable=bool(inactive),
-        repair_payload={"ids": [r["id"] for r in inactive]},
+    user_rows = fetch_all(
+        "SELECT id, display_name, email FROM users "
+        f"WHERE {_ESCAPED_NAME_COND}"
     )
+    inactive = [r for r in ad_rows if not r["is_active"]]
+    total = len(ad_rows) + len(user_rows)
+    detail = (
+        f"이스케이프된 이름 {total}건 "
+        f"(users {len(user_rows)}건 · ad_users {len(ad_rows)}건 중 비활성 {len(inactive)}건)"
+    )
+    if user_rows:
+        # ⚠️ 어느 계정인지 적는다 — 로그인 화면에서만 드러나는 결함이라
+        #    "몇 건" 만으로는 누구를 도와야 하는지 알 수 없다.
+        detail += " · users id=" + ",".join(str(r["id"]) for r in user_rows)
+    return CheckResult(
+        not (ad_rows or user_rows),
+        detail,
+        repairable=bool(inactive or user_rows),
+        repair_payload={
+            "ids": [r["id"] for r in inactive],
+            "user_ids": [r["id"] for r in user_rows],
+        },
+    )
+
+
+def _decode_escaped(raw: str) -> str | None:
+    r"""`이주원` → `이주원`. 되돌릴 수 없는 쓰기라 **확신할 때만** 값을 낸다.
+
+    ⛔ 디코딩 결과가 비었거나 여전히 이스케이프면 None 이다 — 덮어쓰면 더 나쁜 값이
+       굳고, 원본이 사라져 되돌릴 수도 없다.
+    """
+    text = raw or ""
+    if "\\u" not in text:
+        return None
+    try:
+        decoded = text.encode("utf-8").decode("unicode_escape")
+    except Exception:
+        return None
+    if not decoded or "\\u" in decoded:
+        return None
+    return decoded
 
 
 def _repair_name_encoding(payload: dict) -> str:
     fixed = 0
     for uid in payload.get("ids", []):
         row = fetch_one("SELECT display_name FROM ad_users WHERE id = %s", (uid,))
-        raw = (row or {}).get("display_name") or ""
-        if "\\u" not in raw:
-            continue
-        try:
-            decoded = raw.encode("utf-8").decode("unicode_escape")
-        except Exception:
-            continue
-        # 복원 결과가 여전히 이스케이프거나 비어 있으면 건드리지 않는다
-        if not decoded or "\\u" in decoded:
+        decoded = _decode_escaped((row or {}).get("display_name") or "")
+        if decoded is None:
             continue
         execute("UPDATE ad_users SET display_name = %s WHERE id = %s", (decoded, uid))
         fixed += 1
-    return f"비활성 계정 이름 {fixed}건 복원"
+    # `users` 는 활성 여부와 무관하게 고친다 — 덮어써 주는 sync 가 없다.
+    healed = 0
+    for uid in payload.get("user_ids", []):
+        row = fetch_one("SELECT display_name FROM users WHERE id = %s", (uid,))
+        decoded = _decode_escaped((row or {}).get("display_name") or "")
+        if decoded is None:
+            continue
+        execute("UPDATE users SET display_name = %s WHERE id = %s", (decoded, uid))
+        healed += 1
+    return f"AD 비활성 계정 {fixed}건 · 가입 사용자 {healed}건 이름 복원"
 
 
 # ---- 권한 불변식 ----

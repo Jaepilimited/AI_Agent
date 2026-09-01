@@ -140,6 +140,27 @@ async def _db_execute_lastid(sql: str, params: tuple = ()) -> int:
     return await asyncio.to_thread(execute_lastid, sql, params)
 
 
+def _decode_escaped_name(raw: str) -> str:
+    r"""가입할 때 `이주원` 같은 이스케이프를 되돌린다.
+
+    ⛔ 가입은 `ad_users.display_name` 을 **복사**한다. 그 순간 깨져 있으면 사본이
+       `users` 에 굳고, `ad_users` 가 나중에 고쳐져도 사본은 그대로다 — 로그인
+       자동완성은 `COALESCE(u.display_name, ad.display_name)` 이라 깨진 사본이
+       이긴다. 그러면 사람은 자기 이름을 못 찾고, 그 행을 클릭하지 못하면
+       프론트에서 막혀 **서버에는 기록조차 남지 않는다** (2026-09-01 실제 사고).
+    ⚠️ 되돌릴 수 없으면 원본을 그대로 둔다 — 지어내지 않는다.
+    """
+    text = raw or ""
+    if "\\u" not in text:
+        return text
+    try:
+        decoded = text.encode("utf-8").decode("unicode_escape")
+    except Exception:
+        return text
+    if not decoded or "\\u" in decoded:
+        return text
+    return decoded
+
 # ── Schemas ──
 
 class SignupRequest(BaseModel):
@@ -409,7 +430,8 @@ async def signup(req: SignupRequest, response: Response):
         "INSERT INTO users "
         "(email, password_hash, display_name, role, allowed_models, ad_user_id, last_login) "
         "VALUES (%s, %s, %s, %s, %s, %s, NOW())",
-        (user_email, pw_hash, ad_user["display_name"], "user", ALL_MODELS, ad_user["id"]),
+        (user_email, pw_hash, _decode_escaped_name(ad_user["display_name"]),
+         "user", ALL_MODELS, ad_user["id"]),
     )
 
     bf = await asyncio.to_thread(_lookup_brand_filter, user_id)
