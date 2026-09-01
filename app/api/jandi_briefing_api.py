@@ -42,11 +42,18 @@ def _send_at_label(value) -> str:
 async def get_my_webhook(user: User = Depends(get_current_user)) -> dict:
     # ⛔ 선택지는 **서버가 단일 소스**다. 프론트가 따로 목록을 갖고 있으면 릴레이
     #    회차가 바뀔 때 조용히 갈린다 (`@@` 데이터소스 목록이 갈렸던 그 사고).
+    row = jandi_briefing.get_webhook(user.id)
+    # ⛔ 항목 목록도 **서버가 단일 소스**다. 프론트에 사본을 두면 절이 하나 늘 때
+    #    화면에서 통째로 사라진다 (`@@` 목록이 갈렸던 그 사고와 같은 부류).
+    muted = jandi_briefing.parse_muted(row.get("muted_sections") if row else "")
     base = {
         "send_time_choices": jandi_briefing.SEND_TIME_CHOICES,
         "send_at": jandi_briefing.DEFAULT_SEND_AT.strftime("%H:%M"),
+        "sections": [
+            {"key": key, "label": label, "group": group, "enabled": key not in muted}
+            for key, label, group in jandi_briefing.SECTIONS
+        ],
     }
-    row = jandi_briefing.get_webhook(user.id)
     if not row:
         return {**base, "registered": False, "enabled": False, "masked": "",
                 "last_sent_at": "", "last_error": ""}
@@ -98,8 +105,20 @@ async def put_my_webhook(
                 detail=f"받을 시각은 {first}~{last} 사이 30분 단위로만 고를 수 있습니다 "
                        "(그 시각에만 잔디로 꺼내 갑니다).",
             )
+    # ⚠️ 키가 아예 없으면 **안 바꾼다** (None). 빈 목록을 보내는 것은 "전부 받기" 라
+    #    뜻이 다르다 — 시각만 저장하는 호출이 설정을 지우면 안 된다.
+    muted = payload.get("muted_sections")
+    if muted is not None:
+        unknown = [str(k) for k in muted
+                   if str(k) not in jandi_briefing.SECTION_KEYS]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"받지 않을 항목에 모르는 값이 있습니다: {', '.join(unknown[:3])}",
+            )
     jandi_briefing.set_webhook(
         user.id, url, enabled=bool(payload.get("enabled", True)), send_at=send_at,
+        muted=muted,
     )
     if send_at is not None:
         # 아직 안 나간 오늘 몫도 함께 옮긴다 — 안 그러면 화면이 말하는 시각과

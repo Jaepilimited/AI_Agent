@@ -54,6 +54,60 @@ SEND_TIME_CHOICES = _relay_runs()
 DEFAULT_SEND_AT = RELAY_FIRST_RUN
 
 
+# ── 무엇을 받을지 (사용자별) ─────────────────────────────────────────────────
+#: 잔디로 나가는 것들. `(키, 화면 이름, 묶음)`.
+#: ⚠️ 브리핑 절 키는 `work_briefing` 문서의 키와 **같아야** 한다 — 다르면
+#:    끈 줄 알았는데 그대로 나간다 (에러 없이).
+SECTIONS: tuple[tuple[str, str, str], ...] = (
+    ("meetings", "오늘의 일정", "브리핑"),
+    ("mail", "수신 메일", "브리핑"),
+    ("actions", "우선순위 Action Item", "브리핑"),
+    ("deadlines", "마감·기한", "브리핑"),
+    ("saved", "내가 저장한 보고", "브리핑"),
+    ("business", "업무 지표", "브리핑"),
+    ("fx", "오늘의 환율", "브리핑"),
+    ("report_share", "보고서 공유 알림", "알림"),
+    ("feedback", "의견(붐따) 회신 알림", "알림"),
+)
+
+SECTION_KEYS = frozenset(key for key, _, _ in SECTIONS)
+
+#: 브리핑 본문을 이루는 절만. 이것이 전부 꺼지면 보낼 것이 없다.
+BRIEFING_SECTION_KEYS = frozenset(
+    key for key, _, group in SECTIONS if group == "브리핑"
+)
+
+
+def parse_muted(value: Any) -> frozenset[str]:
+    """저장된 문자열 → 끈 항목 집합. 모르는 키는 조용히 버린다.
+
+    ⛔ **끈 것**을 저장한다 (켠 것이 아니라). 켠 목록으로 두면 나중에 절이 하나
+       늘었을 때 **이미 설정을 저장해 둔 사람에게는 영영 안 보인다** — 에러도 없고
+       화면에도 흔적이 없다. 끈 목록이면 새 절은 모두에게 기본으로 켜진다.
+    """
+
+    if value is None:
+        return frozenset()
+    if isinstance(value, (set, frozenset, list, tuple)):
+        raw = [str(item) for item in value]
+    else:
+        raw = str(value).split(",")
+    return frozenset(item.strip() for item in raw if item.strip() in SECTION_KEYS)
+
+
+def serialize_muted(value: Any) -> str:
+    """집합 → 저장 문자열. SECTIONS 순서로 적어 사람이 읽을 수 있게 둔다."""
+
+    muted = parse_muted(value)
+    return ",".join(key for key, _, _ in SECTIONS if key in muted)
+
+
+def wants(muted: Any, key: str) -> bool:
+    """그 사람이 이 항목을 받기로 했는가. 모르는 키는 **받는 쪽**으로 답한다."""
+
+    return key not in parse_muted(muted)
+
+
 def normalize_send_at(value: Any) -> time:
     """`"09:30"` → `time(9,30)`. 릴레이가 가지 않는 시각은 거부한다.
 
@@ -108,6 +162,7 @@ CREATE TABLE IF NOT EXISTS user_jandi_webhooks (
     webhook_url VARCHAR(500) NOT NULL,
     enabled TINYINT NOT NULL DEFAULT 1,
     send_at TIME NOT NULL DEFAULT '08:00:00',
+    muted_sections VARCHAR(255) NOT NULL DEFAULT '',
     last_sent_at DATETIME NULL,
     last_error VARCHAR(255) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -141,6 +196,9 @@ CREATE TABLE IF NOT EXISTS briefing_jandi_outbox (
 #: 기본값이 08:00 이라 이미 등록한 사람은 지금과 똑같이 첫 회차에 받는다.
 _WEBHOOK_MIGRATIONS = (
     "ALTER TABLE user_jandi_webhooks ADD COLUMN send_at TIME NOT NULL DEFAULT '08:00:00'",
+    # 기본값이 빈 문자열이라 이미 등록한 사람은 지금과 똑같이 전부 받는다.
+    "ALTER TABLE user_jandi_webhooks ADD COLUMN muted_sections VARCHAR(255) "
+    "NOT NULL DEFAULT ''",
 )
 
 #: ⚠️ 유니크 키가 (user_id, for_date) 에서 (user_id, dedup_key) 로 바뀐다 —
@@ -187,14 +245,15 @@ def mask(url: str) -> str:
 
 def get_webhook(user_id: int) -> dict[str, Any] | None:
     return fetch_one(
-        "SELECT user_id,webhook_url,enabled,send_at,last_sent_at,last_error "
+        "SELECT user_id,webhook_url,enabled,send_at,muted_sections,"
+        "last_sent_at,last_error "
         "FROM user_jandi_webhooks WHERE user_id = %s",
         (int(user_id),),
     )
 
 
 def set_webhook(user_id: int, url: str, enabled: bool = True,
-                send_at: Any = None) -> None:
+                send_at: Any = None, muted: Any = None) -> None:
     """저장 전에 주소와 시각을 함께 검증한다 — 호출부가 빠뜨려도 여기서 막힌다.
 
     ⛔ 릴레이가 가지 않는 시각을 저장하면 그 사람의 브리핑은 영영 오지 않는다.
@@ -205,12 +264,19 @@ def set_webhook(user_id: int, url: str, enabled: bool = True,
     if not is_valid_webhook(clean):
         raise ValueError("jandi webhook url is not a wh.jandi.com connect-api address")
     when = DEFAULT_SEND_AT if send_at is None else normalize_send_at(send_at)
+    # ⚠️ `muted=None` 은 "안 바꾼다" 다 (빈 목록 = "전부 받기" 와 뜻이 다르다).
+    # ⛔ 읽고-고쳐-쓰지 마라 — 저장 한 번에 조회가 딸려 들어가면 두 요청이 겹쳤을 때
+    #    한쪽 설정이 조용히 사라진다. SQL 안에서 고른다 (outbox 의 `body=IF(...)` 와 같다).
+    keep = 0 if muted is not None else 1
+    muted_text = "" if muted is None else serialize_muted(muted)
     execute(
-        "INSERT INTO user_jandi_webhooks (user_id,webhook_url,enabled,send_at,last_error) "
-        "VALUES (%s,%s,%s,%s,'') "
+        "INSERT INTO user_jandi_webhooks "
+        "(user_id,webhook_url,enabled,send_at,muted_sections,last_error) "
+        "VALUES (%s,%s,%s,%s,%s,'') "
         "ON DUPLICATE KEY UPDATE webhook_url=VALUES(webhook_url),"
-        "enabled=VALUES(enabled),send_at=VALUES(send_at),last_error=''",
-        (int(user_id), clean, 1 if enabled else 0, when),
+        "enabled=VALUES(enabled),send_at=VALUES(send_at),"
+        "muted_sections=IF(%s,muted_sections,VALUES(muted_sections)),last_error=''",
+        (int(user_id), clean, 1 if enabled else 0, when, muted_text, keep),
     )
 
 
@@ -260,7 +326,8 @@ def drop_pending_for_user(user_id: int) -> int:
 
 def enabled_recipients() -> list[dict[str, Any]]:
     return fetch_all(
-        "SELECT w.user_id,w.webhook_url,w.send_at FROM user_jandi_webhooks w "
+        "SELECT w.user_id,w.webhook_url,w.send_at,w.muted_sections "
+        "FROM user_jandi_webhooks w "
         "JOIN users u ON u.id = w.user_id "
         "WHERE w.enabled = 1 AND u.is_active = 1",
     )

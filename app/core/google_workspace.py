@@ -155,6 +155,29 @@ def search_gmail(
 GMAIL_DIGEST_HARD_CAP = 40
 
 
+_ADDRESS_RE = re.compile(r"[\w.+-]+@[\w.-]+\.\w+")
+
+
+def _addresses(header: str) -> set:
+    """헤더 문자열에서 메일 주소만 뽑아 소문자로."""
+    return {match.group(0).lower() for match in _ADDRESS_RE.finditer(header or "")}
+
+
+def _mailbox_address(service) -> str:
+    """이 자격증명이 보고 있는 사서함의 실제 주소.
+
+    ⚠️ 로그인 계정(`user.email`)과 다를 수 있어 서버에 직접 묻는다. 실패하면 빈
+    문자열을 돌려주고, 호출부는 **아무것도 참조로 판정하지 않는다** — 모르면
+    지우지 않는 쪽이 맞다.
+    """
+    try:
+        return str(service.users().getProfile(userId="me").execute()
+                   .get("emailAddress", "")).lower()
+    except Exception as exc:  # noqa: BLE001 - 진단은 남기고 기능은 살린다
+        logger.warning("gmail_profile_unavailable", error_type=type(exc).__name__)
+        return ""
+
+
 def list_gmail_digest(
     creds: Credentials,
     start: datetime,
@@ -174,6 +197,7 @@ def list_gmail_digest(
         f"after:{start_epoch - 1} before:{end_epoch} "
         "-in:spam -in:trash -in:drafts -in:sent -from:me"
     )
+    me = _mailbox_address(service)
     bounded_max_results = min(max(1, max_results), GMAIL_DIGEST_HARD_CAP)
     page = service.users().messages().list(
         userId="me", q=query, maxResults=bounded_max_results,
@@ -185,7 +209,7 @@ def list_gmail_digest(
             userId="me",
             id=ref["id"],
             format="metadata",
-            metadataHeaders=["Subject", "From", "Date"],
+            metadataHeaders=["Subject", "From", "Date", "To", "Cc"],
         ).execute()
         headers = _gmail_part_headers(msg.get("payload", {}))
         message_id = msg.get("id", ref["id"])
@@ -206,6 +230,14 @@ def list_gmail_digest(
                 timezone.utc,
             ).isoformat(),
             "unread": "UNREAD" in msg.get("labelIds", []),
+            # 참조로만 온 메일인가. ⛔ **양성으로 확인될 때만** True 다 —
+            # 받는 사람 칸에서 내 주소가 안 보이는 경우(메일링 그룹으로 온 메일)는
+            # 참조가 아니다. 모르면서 참조로 찍으면 진짜 내 할 일이 조용히 사라진다.
+            "cc_only": bool(
+                me
+                and me in _addresses(headers.get("cc", ""))
+                and me not in _addresses(headers.get("to", ""))
+            ),
             "snippet": msg.get("snippet", "")[:500],
             "url": f"https://mail.google.com/mail/u/0/#all/{message_id}",
         })

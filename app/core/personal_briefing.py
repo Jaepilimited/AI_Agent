@@ -753,7 +753,8 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
     selected = [row for row in rows if _auth_manager.has_credentials(row["email"])]
     try:
         webhooks = {
-            int(entry["user_id"]): (str(entry["webhook_url"]), entry.get("send_at"))
+            int(entry["user_id"]): (str(entry["webhook_url"]), entry.get("send_at"),
+                                    entry.get("muted_sections"))
             for entry in await asyncio.to_thread(jandi_briefing.enabled_recipients)
         }
     except Exception as exc:
@@ -772,9 +773,10 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
             result = await refresh_for_user(user, now=now, force=True)
             recipient = webhooks.get(int(row["id"]))
             if recipient:
-                url, send_at = recipient
+                url, send_at, muted = recipient
                 if await asyncio.to_thread(
                     _enqueue_jandi, user, result, url, row.get("name", ""), send_at,
+                    muted,
                 ):
                     queued += 1
             return result
@@ -790,19 +792,34 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
 
 
 def _enqueue_jandi(user: User, envelope: dict[str, Any], url: str, name: str,
-                   send_at: Any = None) -> bool:
+                   send_at: Any = None, muted: Any = None) -> bool:
     """문서가 실제로 만들어졌을 때만 대기열에 넣는다 — 빈 브리핑을 보내지 않는다.
 
     `send_at` 은 사용자가 고른 도착 시각이다. 릴레이는 시각이 된 것만 꺼내 가므로
     여기서 붙이는 값 하나로 사람마다 다른 시각에 도착한다.
+
+    `muted` 는 그 사람이 잔디로 안 받겠다고 고른 절이다. ⛔ **여기서만** 적용한다 —
+    첫 화면 문서(`envelope["document"]`)는 손대지 않는다. 끈 것은 "잔디로 안 받는다"
+    이지 "안 본다" 가 아니다.
     """
 
     document = envelope.get("document") or {}
     if document.get("status") not in {"ready", "empty"}:
         return False
+    fx, business = envelope.get("fx"), envelope.get("business")
+    off = jandi_briefing.parse_muted(muted)
+    # ⛔ 오늘 실릴 것을 **전부** 끈 사람에게 머리말만 보내지 마라 — 매일 오는 빈 알림은
+    #    곧 무시당하고, 그러면 안 끈 사람의 브리핑까지 같이 안 읽힌다.
+    #    ⚠️ 원래도 빈 날에는 머리말만 나간다. 그건 그대로 둔다 — 여기서 막는 것은
+    #       "실을 것이 있었는데 사용자가 다 껐다" 는 경우다.
+    present = work_briefing.content_sections(document, fx, business)
+    if present and present <= off:
+        logger.info("jandi_briefing_all_sections_muted",
+                    user_id=user.id, muted=len(off))
+        return False
     body = work_briefing.render_markdown(
-        document, name=name or user.name or "", fx=envelope.get("fx"),
-        business=envelope.get("business"),
+        document, name=name or user.name or "", fx=fx, business=business,
+        muted=off,
     )
     if not body.strip():
         return False

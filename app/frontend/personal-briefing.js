@@ -978,6 +978,7 @@
     var timeField = document.createElement("label");
     var timeSelect = document.createElement("select");
     var status = textNode("p", "briefing-jandi-status", "불러오는 중…");
+    var sectionBox = document.createElement("div");
     var row = document.createElement("div");
     var save = textNode("button", "briefing-doc-action primary", "저장");
     var test = textNode("button", "briefing-doc-action", "지금 대기열에 넣기");
@@ -999,6 +1000,10 @@
     timeSelect.disabled = true;
     timeField.appendChild(timeSelect);
     box.appendChild(timeField);
+    /* 받을 항목. ⛔ 목록을 여기서 만들지 않는다 — 서버가 준 sections 로만 그린다.
+       사본을 두면 절이 하나 늘 때 화면에서 통째로 사라진다 (에러 없이). */
+    sectionBox.className = "briefing-jandi-sections";
+    box.appendChild(sectionBox);
     box.appendChild(status);
     row.className = "briefing-jandi-actions";
     [save, test, remove, close].forEach(function (button) {
@@ -1038,8 +1043,51 @@
       timeSelect.disabled = false;
     }
 
+    function paintSections(state) {
+      var items = (state && state.sections) || [];
+      if (!items.length) {
+        sectionBox.replaceChildren();
+        return;
+      }
+      sectionBox.replaceChildren();
+      sectionBox.appendChild(textNode("span", "briefing-jandi-sections-title",
+        "잔디로 받을 항목"));
+      var groups = [];
+      items.forEach(function (item) {
+        var found = groups.filter(function (g) { return g.name === item.group; })[0];
+        if (!found) { found = { name: item.group, rows: [] }; groups.push(found); }
+        found.rows.push(item);
+      });
+      groups.forEach(function (group) {
+        var wrap = document.createElement("div");
+        wrap.className = "briefing-jandi-group";
+        wrap.appendChild(textNode("span", "briefing-jandi-group-name", group.name));
+        group.rows.forEach(function (item) {
+          var label = document.createElement("label");
+          var box2 = document.createElement("input");
+          box2.type = "checkbox";
+          box2.checked = item.enabled !== false;
+          box2.dataset.sectionKey = item.key;
+          label.appendChild(box2);
+          label.appendChild(textNode("span", "", item.label));
+          wrap.appendChild(label);
+        });
+        sectionBox.appendChild(wrap);
+      });
+    }
+
+    function mutedSections() {
+      /* 체크가 **꺼진** 것을 보낸다 — 서버도 끈 것을 저장한다. 켠 목록으로 주고받으면
+         나중에 항목이 늘 때 이미 저장해 둔 사람에게 영영 안 보인다. */
+      return Array.prototype.slice
+        .call(sectionBox.querySelectorAll("input[type=checkbox]"))
+        .filter(function (input) { return !input.checked; })
+        .map(function (input) { return input.dataset.sectionKey; });
+    }
+
     function paint(state) {
       paintTimes(state);
+      paintSections(state);
       if (!state || !state.registered) {
         status.textContent = "아직 등록된 잔디 토픽이 없습니다.";
         return;
@@ -1073,6 +1121,7 @@
         paint(await call("PUT", {
           webhook_url: input.value.trim(),
           send_at: timeSelect.value,
+          muted_sections: mutedSections(),
           enabled: true
         }));
         input.value = "";

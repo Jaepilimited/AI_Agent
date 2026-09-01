@@ -4876,6 +4876,47 @@ html.dark .db-autocomplete-dropdown {
 .briefing-jandi-select:disabled { color: var(--text-muted); }
 .briefing-jandi-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* 잔디로 받을 항목 — 체크가 꺼진 것이 '안 받음' 이다.
+   ⚠️ 색은 style.css 상단에 정의된 토큰만 쓴다. 없는 이름은 에러가 아니라
+      폴백이라 라이트 모드에서 조용히 안 보이게 된다 (2026-08-13 사고). */
+.briefing-jandi-sections {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.briefing-jandi-sections-title {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+}
+
+.briefing-jandi-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-bottom: 8px;
+}
+
+.briefing-jandi-group-name {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-caption);
+}
+
+.briefing-jandi-group label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.briefing-jandi-group input[type="checkbox"] { cursor: pointer; }
+
 .briefing-jandi-status {
   margin: 10px 0 0;
   color: var(--text-muted);

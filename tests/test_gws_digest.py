@@ -59,10 +59,15 @@ def test_digest_uses_metadata_not_full_body(monkeypatch):
 
     get_call = next(kwargs for kind, kwargs in calls if kind == "get")
     assert get_call["format"] == "metadata"
-    assert get_call["metadataHeaders"] == ["Subject", "From", "Date"]
+    # To/Cc 는 2026-09-01 에 더했다 — 참조로만 온 메일을 할 일에서 빼려면
+    # 받는 사람 칸을 봐야 한다. 여전히 **헤더뿐**이고 본문/첨부는 받지 않는다.
+    assert get_call["metadataHeaders"] == ["Subject", "From", "Date", "To", "Cc"]
+    assert get_call["format"] != "full", "본문을 받으면 이 브리핑의 전제가 깨진다"
     assert result["truncated"] is True
     assert result["items"][0]["unread"] is True
     assert "body" not in result["items"][0]
+    # 사서함 주소를 못 구하면 아무것도 참조로 찍지 않는다 — 모르면 지우지 않는다.
+    assert result["items"][0]["cc_only"] is False
 
     list_call = next(kwargs for kind, kwargs in calls if kind == "list")
     assert list_call["maxResults"] == 20

@@ -178,12 +178,20 @@ def render(item: dict[str, Any]) -> tuple[str, str]:
     return item["title"], "\n".join(lines).strip()
 
 
-def enqueue_for_user(user_id: int, webhook_url: str, today: date | None = None) -> int:
-    """안 읽은 알림을 대기열에 넣는다. 이미 넣은 것은 `dedup_key` 가 막는다."""
+def enqueue_for_user(user_id: int, webhook_url: str, today: date | None = None,
+                     muted: Any = None) -> int:
+    """안 읽은 알림을 대기열에 넣는다. 이미 넣은 것은 `dedup_key` 가 막는다.
+
+    `muted` 는 그 사람이 잔디로 안 받겠다고 고른 종류다. ⛔ 여기서 거른 알림도
+    **알림함에는 그대로 남는다** — 끈 것은 "잔디로 안 받는다" 이지 "안 받는다" 가
+    아니다. 회신이 영영 안 닿으면 그게 여기서 가장 나쁜 실패다.
+    """
 
     day = today or date.today()
     queued = 0
     for item in pending_items(user_id):
+        if not jandi_briefing.wants(muted, item["kind"]):
+            continue
         title, body = render(item)
         link = link_for(item["kind"], item)
         if link:
@@ -206,7 +214,10 @@ def run() -> dict[str, int]:
     queued = 0
     for row in recipients:
         try:
-            queued += enqueue_for_user(int(row["user_id"]), str(row["webhook_url"]))
+            queued += enqueue_for_user(
+                int(row["user_id"]), str(row["webhook_url"]),
+                muted=row.get("muted_sections"),
+            )
         except Exception as exc:
             logger.warning("jandi_notify_user_failed", user_id=row.get("user_id"),
                            error_type=type(exc).__name__)

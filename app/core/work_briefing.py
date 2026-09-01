@@ -18,6 +18,7 @@ import json
 import re
 import sys
 from datetime import date, datetime, timedelta
+from collections.abc import Collection
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -142,6 +143,8 @@ def _haystack(events: list[dict[str, Any]], mails: list[dict[str, Any]]) -> str:
 # ── LLM ──────────────────────────────────────────────────────────────────────
 
 _PROMPT = """너는 출근 직후 5분 안에 오늘을 파악하게 돕는 비서다.
+- `cc_only: true` 인 메일은 **참조로만 받은 것**이다. actions 로 만들지 마라
+  (받는 사람이 따로 있다). 메일 요약에는 그대로 써도 된다.
 아래 '오늘 일정'과 '받은 메일 미리보기'만 근거로 JSON 을 만들어라.
 
 ⛔ 절대 규칙
@@ -184,6 +187,7 @@ def _llm_payload(events: list[dict[str, Any]], mails: list[dict[str, Any]], day:
             "subject": mail.get("subject", ""),
             "received": mail.get("received_at", ""),
             "preview": str(mail.get("snippet", ""))[:500],
+            "cc_only": bool(mail.get("cc_only")),
         } for mail in mails],
     }, ensure_ascii=False)
 
@@ -386,6 +390,15 @@ def _source_ref(
     return None
 
 
+def _is_cc_only(source_id: str, mails: list[dict[str, Any]]) -> bool:
+    """그 메일이 **참조로만** 온 것인가. 모르면 False — 모른다고 지우지 않는다."""
+
+    for mail in mails:
+        if str(mail.get("id", "")) == source_id:
+            return bool(mail.get("cc_only"))
+    return False
+
+
 def _action_rows(
     raw: dict[str, Any], events: list[dict[str, Any]], mails: list[dict[str, Any]],
     haystack: str, dropped: list[str],
@@ -400,6 +413,16 @@ def _action_rows(
         ref = _source_ref(source, source_id, events, mails)
         if not text or ref is None:
             dropped.append("action:unknown_id" if text else "action:empty")
+            continue
+        # ⛔ **참조(CC)로만 온 메일은 내 할 일이 아니다** (2026-09-01 사용자 지시).
+        #    받는 사람이 따로 있고 나는 알고만 있으라고 걸린 메일이라, 여기에 섞이면
+        #    진짜 내 일이 뒤로 밀린다.
+        #    ⚠️ 판정은 `cc_only` 가 **양성으로 확인했을 때만** 참이다 — 메일링 그룹으로
+        #       와서 내 주소가 어느 칸에도 없는 메일은 참조가 아니므로 그대로 남는다.
+        #    ⚠️ 메일 목록 자체에서는 빼지 않는다. 안 읽은 메일이 조용히 사라지면
+        #       "왜 이 메일이 브리핑에 없지" 가 된다 — 뺀 것은 할 일뿐이다.
+        if source == "mail" and _is_cc_only(source_id, mails):
+            dropped.append("action:cc_only")
             continue
         if not _verified(text, haystack, dropped, "action"):
             continue
@@ -636,17 +659,49 @@ def _run_label(value: Any) -> str:
     return parsed.strftime("%-m/%-d %H:%M") if sys.platform != "win32"         else parsed.strftime("%m/%d %H:%M").lstrip("0").replace("/0", "/")
 
 
+def content_sections(
+    document: dict[str, Any], fx: dict[str, Any] | None = None,
+    business: dict[str, Any] | None = None,
+) -> set[str]:
+    """오늘 실제로 **실릴 내용이 있는** 절의 키.
+
+    끄기 설정이 "보낼 것을 다 껐는가" 를 판단하는 데 쓴다. 비어 있는 날의
+    머리말만 있는 브리핑은 원래도 나가므로(그건 정상이다), 여기서는
+    **내용이 있었는데 사용자가 껐다** 를 구분하려는 것이다.
+    """
+
+    present: set[str] = set()
+    for key in ("meetings", "mail", "actions", "deadlines", "saved"):
+        if document.get(key):
+            present.add(key)
+    if document.get("mail_summary") or document.get("mail_total"):
+        present.add("mail")
+    if (business or {}).get("items"):
+        present.add("business")
+    if (fx or {}).get("items"):
+        present.add("fx")
+    return present
+
+
 def render_markdown(
     document: dict[str, Any], name: str = "", fx: dict[str, Any] | None = None,
     business: dict[str, Any] | None = None,
+    muted: Collection[str] = (),
 ) -> str:
-    """잔디 본문 겸 복사용 텍스트. 잔디는 마크다운을 거의 안 그리므로 평문으로 쓴다."""
+    """잔디 본문 겸 복사용 텍스트. 잔디는 마크다운을 거의 안 그리므로 평문으로 쓴다.
+
+    `muted` 는 그 사람이 **잔디로는 안 받겠다** 고 고른 절이다.
+    ⛔ 첫 화면 문서에는 적용하지 않는다 — 끈 것은 "잔디로 안 받는다" 이지
+       "안 본다" 가 아니다. 화면에서까지 지우면 어디서도 볼 수 없게 된다.
+    """
+
+    off = set(muted or ())
 
     day = document.get("for_date", "")
     who = f" — {name}" if name else ""
     lines = [f"☀️ 오늘의 출근 브리핑 ({day} {document.get('weekday','')}요일){who}", ""]
 
-    meetings = document.get("meetings") or []
+    meetings = [] if "meetings" in off else (document.get("meetings") or [])
     # ⛔ **빈 절을 그리지 마라.** 잔디는 스크롤이 없는 평문 매체라, "없습니다" 네 줄이면
     #    정작 볼 것이 화면 밖으로 밀린다. 첫 화면에는 이미 같은 규칙이 있는데
     #    본문에만 빠져 있었다 (2026-08-31 실측: 30줄 중 8줄이 빈 절이었다).
@@ -672,8 +727,10 @@ def render_markdown(
         lines.append("")
 
     window = document.get("window") or {}
-    mail_rows_all = document.get("mail") or []
-    has_mail = bool(mail_rows_all or document.get("mail_total"))
+    mail_off = "mail" in off
+    mail_rows_all = [] if mail_off else (document.get("mail") or [])
+    has_mail = (not mail_off) and bool(
+        mail_rows_all or document.get("mail_total"))
     if has_mail:
         lines.append(
             f"✉️ 수신 메일 · {document.get('mail_total', 0)}건"
@@ -681,10 +738,10 @@ def render_markdown(
         )
     if has_mail and window.get("label"):
         lines.append(f"  · 기준: {window['label']}")
-    if document.get("mail_summary"):
+    if has_mail and document.get("mail_summary"):
         lines.append(f"  {document['mail_summary']}")
     # ⛔ 채팅 본문에는 스크롤이 없다 — 화면보다 짧게 자르고, 자른 수를 적는다
-    mail_rows = document.get("mail") or []
+    mail_rows = mail_rows_all
     for row in mail_rows[:MAX_MAIL_LINES_IN_TEXT]:
         lines.append(f"  {_mark(row['urgency'])} {row['from']} | {row['subject']}")
         for point in row.get("points", []):
@@ -700,7 +757,7 @@ def render_markdown(
             tail += f" (안 읽음 {unread_rest})"
         lines.append(tail + " — 첫 화면 Today 에서 전부 볼 수 있습니다.")
     # ⚠️ 잘렸으면 잘렸다고 적는다 — 목록만 보면 그게 전부인 줄 안다
-    if document.get("mail_omitted_unread"):
+    if has_mail and document.get("mail_omitted_unread"):
         lines.append(
             f"  · 안 읽은 메일 {document['mail_omitted_unread']}건은 상한을 넘어 "
             "실리지 않았습니다 (Gmail 에서 확인해 주세요)."
@@ -708,20 +765,20 @@ def render_markdown(
     if has_mail:
         lines.append("")
 
-    actions = document.get("actions") or []
+    actions = [] if "actions" in off else (document.get("actions") or [])
     if actions:
         lines.append(f"✅ 우선순위 Action Item · {len(actions)}건")
         for row in actions:
             lines.append(f"  {_mark(row['urgency'])} {row['text']}")
         lines.append("")
 
-    deadlines = document.get("deadlines") or []
+    deadlines = [] if "deadlines" in off else (document.get("deadlines") or [])
     if deadlines:
         lines.append(f"⏰ 마감·기한 · {len(deadlines)}건")
         for row in deadlines:
             lines.append(f"  {_mark(row['urgency'])} [{row['label']}] {row['text']}")
 
-    saved = document.get("saved") or []
+    saved = [] if "saved" in off else (document.get("saved") or [])
     if saved:
         # ⚠️ 다른 절은 전부 이모지로 시작한다 — 여기만 없으면 절로 안 읽힌다.
         lines += ["", f"📌 내가 저장한 보고 · {len(saved)}건"]
@@ -734,8 +791,8 @@ def render_markdown(
             if ran:
                 lines.append(f"      ({ran} 기준)")
 
-    lines += _business_lines(business)
-    lines += _fx_lines(fx)
+    lines += [] if "business" in off else _business_lines(business)
+    lines += [] if "fx" in off else _fx_lines(fx)
 
     if document.get("dropped"):
         lines += ["", f"※ 근거가 확인되지 않아 제외한 문장 {document['dropped']}건"]

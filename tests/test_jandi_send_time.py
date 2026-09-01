@@ -289,8 +289,8 @@ def test_put_can_change_only_the_time_without_resending_the_secret(monkeypatch):
     })
     monkeypatch.setattr(
         jandi_briefing, "set_webhook",
-        lambda user_id, url, enabled=True, send_at=None: saved.update(
-            url=url, send_at=send_at),
+        lambda user_id, url, enabled=True, send_at=None, muted=None: saved.update(
+            url=url, send_at=send_at, muted=muted),
     )
     monkeypatch.setattr(jandi_briefing, "reschedule_pending", lambda *a, **k: 0)
 
@@ -298,7 +298,9 @@ def test_put_can_change_only_the_time_without_resending_the_secret(monkeypatch):
         "/api/personal-briefing/jandi", json={"send_at": "10:00"})
 
     assert response.status_code == 200
-    assert saved == {"url": stored, "send_at": time(10, 0)}
+    # ⛔ `muted=None` 이어야 한다 — 시각만 바꾸는 저장이 받을 항목 설정을 지우면 안 된다.
+    #    빈 목록(`[]`)은 "전부 받기" 라 뜻이 완전히 다르다.
+    assert saved == {"url": stored, "send_at": time(10, 0), "muted": None}
 
 
 def test_put_without_an_address_or_a_registration_says_so(monkeypatch):
