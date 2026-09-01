@@ -6,12 +6,12 @@
 남긴다. 하나만 두면 각각 "관리자가 올 때까지 못 들어감" 이거나 "구글 없는 사람은
 영영 못 들어감" 이 된다.
 
-⛔ **신원은 구글이 서명한 `id_token` 의 이메일로만 판정한다.** 이름·부서는 로그인
+⛔ **신원은 우리가 구글에 직접 물어서 받은 이메일로만 판정한다.** 이름·부서는 로그인
    화면이 이미 목록으로 보여 주므로 신원 증거가 될 수 없다 (그래서 관리자 요청
-   경로는 계정을 건드리지 않는다). 여기서만 계정을 바꾸는 이유가 그 서명이다.
+   경로는 계정을 건드리지 않는다). 여기서만 계정을 바꾸는 이유가 그 보증이다.
 
 ⛔ **구글 토큰을 저장하지 않는다.** 신원 확인 한 번이면 끝이라 scope 가
-   `openid email` 뿐이다 — Gmail·Drive·Calendar 를 요구하지 않는다. 비밀번호를
+   `userinfo.email` 뿐이다 — Gmail·Drive·Calendar 를 요구하지 않는다. 비밀번호를
    찾으려는 사람에게 메일 열람 동의를 물으면 그것 자체가 이상한 화면이다.
 
 ⚠️ **리다이렉트 URI 는 새로 만들 수 없다.** 구글 콘솔에 등록된 것만 쓸 수 있어
@@ -33,8 +33,6 @@ import bcrypt
 import jwt
 import requests
 import structlog
-from google.auth.transport.requests import Request as GoogleRequest
-from google.oauth2 import id_token as google_id_token
 
 from app.config import get_settings, validate_jwt_secret
 from app.db.mariadb import execute, fetch_all, fetch_one
@@ -54,9 +52,17 @@ GRANT_TTL = timedelta(minutes=5)
 GRANT_COOKIE = "cella_pw_reset"
 GRANT_COOKIE_PATH = "/api/auth/password-reset"
 
-_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
+# ⛔ **`openid` 를 넣지 마라 — 구글이 정책 위반으로 막는다** (2026-09-01 실사용자 차단).
+#    `openid` 가 있으면 OIDC 규칙이 적용돼 리다이렉트가 **https 여야 한다.** 우리 콜백은
+#    `http://10.1.100.5.nip.io/...` 라 "액세스 차단됨 · 400 invalid_request ·
+#    doesn't comply with Google's OAuth 2.0 policy" 가 뜬다. **계정을 고른 뒤에** 뜨므로
+#    URL 만 열어 보는 검사로는 안 잡힌다 (로그인 화면까지는 멀쩡히 나온다).
+#    기존 GWS 연결 흐름에는 `openid` 가 없어서 같은 리다이렉트로 잘 동작한다
+#    (2026-08-25 실제 연결 성공 기록). 그 모양에 맞춘다 — 엔드포인트도 같은 것을 쓴다.
+_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/auth"
 _TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
-_SCOPE = "openid email"
+_USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v2/userinfo"
+_SCOPE = "https://www.googleapis.com/auth/userinfo.email"
 
 MIN_PASSWORD_LEN = 4
 
@@ -117,7 +123,7 @@ def issue_state(now: Optional[datetime] = None) -> str:
 
     ⚠️ 로그인 전 경로라 사용자에 묶을 수 없다 — 묶을 신원이 아직 없다.
        그래서 이 state 는 "이 왕복을 우리가 시작했다" 만 보증한다. 신원 보증은
-       구글이 서명한 `id_token` 이 한다.
+       구글에 직접 물어 받은 이메일이 한다.
     """
     _cleanup()
     current = now or datetime.now(timezone.utc)
@@ -233,13 +239,19 @@ def build_auth_url(redirect_uri: str, state: str) -> str:
 
 
 def verified_google_email(code: str, redirect_uri: str) -> str:
-    """인가 코드를 구글이 서명한 신원으로 바꾼다.
+    """인가 코드를 **구글이 확인해 준** 신원으로 바꾼다.
 
-    ⛔ 토큰 응답의 이메일을 그냥 믿지 않고 `id_token` 서명을 검증한다.
-    ⛔ 확인되지 않은 이메일(`email_verified=false`)은 신원이 아니다.
+    ⛔ 신원을 클라이언트가 준 값에서 읽지 않는다. 우리가 직접 구글의 userinfo 를
+       TLS 로 호출해 받은 값만 쓴다 — 중간에서 바꿔치기할 자리가 없다.
+    ⛔ `verified_email` 이 아니면 신원이 아니다.
+
+    ⚠️ `id_token` 서명 검증이 아니라 userinfo 호출인 이유는 `openid` 를 요구할 수
+       없기 때문이다 (위 `_AUTH_ENDPOINT` 주석 참조 — OIDC 는 https 리다이렉트를
+       요구하는데 우리 콜백은 http 다). 보증의 세기는 같다: 두 값 모두 구글이
+       우리 요청에 직접 답한 것이다.
     """
     settings = get_settings()
-    response = requests.post(
+    token_response = requests.post(
         _TOKEN_ENDPOINT,
         data={
             "code": code,
@@ -250,24 +262,35 @@ def verified_google_email(code: str, redirect_uri: str) -> str:
         },
         timeout=15,
     )
-    if response.status_code != 200:
-        logger.warning("pwreset_google_token_exchange_failed", status=response.status_code)
+    if token_response.status_code != 200:
+        logger.warning("pwreset_google_token_exchange_failed",
+                       status=token_response.status_code)
         raise ResetUnavailable(
             "구글 확인에 실패했습니다",
-            "잠시 후 다시 시도하거나, 관리자에게 요청을 남겨 주세요.",
+            "잠시 후 다시 시도하거나, 로그인 화면에서 관리자에게 요청을 남겨 주세요.",
         )
 
-    raw_id_token = response.json().get("id_token", "")
-    if not raw_id_token:
+    access_token = token_response.json().get("access_token", "")
+    if not access_token:
         raise ResetUnavailable(
             "구글 확인에 실패했습니다",
             "구글이 신원 정보를 돌려주지 않았습니다. 관리자에게 요청을 남겨 주세요.",
         )
 
-    claims = google_id_token.verify_oauth2_token(
-        raw_id_token, GoogleRequest(), settings.google_oauth_client_id
+    info_response = requests.get(
+        _USERINFO_ENDPOINT,
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=15,
     )
-    if not claims.get("email_verified"):
+    if info_response.status_code != 200:
+        logger.warning("pwreset_google_userinfo_failed", status=info_response.status_code)
+        raise ResetUnavailable(
+            "구글 확인에 실패했습니다",
+            "잠시 후 다시 시도하거나, 로그인 화면에서 관리자에게 요청을 남겨 주세요.",
+        )
+
+    claims = info_response.json()
+    if not claims.get("verified_email"):
         raise ResetUnavailable(
             "구글 확인에 실패했습니다",
             "이 구글 계정은 이메일이 확인되지 않은 상태입니다.",

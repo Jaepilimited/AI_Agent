@@ -157,7 +157,11 @@ def test_identity_check_asks_for_nothing_but_identity(monkeypatch, db):
 
     for privileged in ("gmail", "drive", "calendar"):
         assert privileged not in url, f"신원 확인에 {privileged} 권한을 요구한다"
-    assert "scope=openid+email" in url or "scope=openid%20email" in url
+    # ⛔ `openid` 가 들어가면 구글이 OIDC 규칙을 적용해 **http 리다이렉트를 거부한다**
+    #    (2026-09-01 실사용자 차단: "액세스 차단됨 · 400 invalid_request"). 계정을
+    #    고른 뒤에 뜨므로 URL 만 열어 보는 검사로는 안 잡힌다.
+    assert "openid" not in url, "openid 는 http 콜백에서 구글이 막는다"
+    assert "userinfo.email" in url
     assert "state=STATE" in url
     # 회사 계정과 개인 계정이 함께 로그인돼 있으면 말없이 개인 계정으로 확인된다.
     assert "prompt=select_account" in url
@@ -170,11 +174,13 @@ def test_the_module_never_stores_google_tokens():
         assert forbidden not in src, f"구글 토큰을 다룬다: {forbidden}"
 
 
-def test_identity_comes_from_a_verified_signature_not_the_token_response():
-    """⛔ 토큰 응답 본문의 이메일은 신원이 아니다 — id_token 서명을 검증해야 한다."""
+def test_identity_is_fetched_from_google_not_taken_from_the_request():
+    """⛔ 신원을 클라이언트가 준 값에서 읽으면 안 된다 — 우리가 구글에 직접 물어야 한다."""
     src = inspect.getsource(pwg.verified_google_email)
-    assert "verify_oauth2_token" in src
-    assert "email_verified" in src, "확인되지 않은 이메일을 신원으로 받는다"
+    # 신원은 **우리가** 구글에 물어서 받는다 — 클라이언트가 준 값을 읽지 않는다.
+    assert "_USERINFO_ENDPOINT" in src
+    assert "Authorization" in src and "Bearer" in src
+    assert "verified_email" in src, "확인되지 않은 이메일을 신원으로 받는다"
 
 
 # ────────────────────────── 비밀번호 설정 ──────────────────────────
