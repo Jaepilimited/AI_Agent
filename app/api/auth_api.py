@@ -624,11 +624,23 @@ async def password_reset_google_start(request: Request):
     from app.api.auth_routes import _get_redirect_uri
     from app.core import password_reset_google
 
+    redirect_uri = _get_redirect_uri(request)
     try:
         state = await asyncio.to_thread(password_reset_google.issue_state)
-        url = password_reset_google.build_auth_url(_get_redirect_uri(request), state)
+        url = password_reset_google.build_auth_url(redirect_uri, state)
     except password_reset_google.ResetUnavailable as unavailable:
         raise HTTPException(status_code=503, detail=unavailable.body)
+
+    # ⛔ 여기서 구글로 넘어간 뒤 막히면 **우리 쪽에는 아무 흔적도 안 남는다** —
+    #    사용자가 눌렀는지조차 알 수 없어 원인을 추측하게 된다 (2026-09-01 실제로
+    #    그렇게 두 번 헛짚었다). 어느 호스트로 접속해 어떤 리다이렉트 주소가
+    #    나갔는지를 남긴다. 개인 정보는 없다 — 호스트와 리다이렉트 주소뿐이다.
+    # ⚠️ INFO 는 프로덕션에서 통째로 버려진다 (CLAUDE.md) — WARNING 이어야 남는다.
+    logger.warning(
+        "pwreset_google_start",
+        browsing_host=request.headers.get("host", ""),
+        redirect_uri=redirect_uri,
+    )
     return RedirectResponse(url=url, status_code=302)
 
 
