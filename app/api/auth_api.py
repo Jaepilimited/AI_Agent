@@ -647,6 +647,20 @@ async def password_reset_google_start(request: Request):
     from app.core import password_reset_google
 
     redirect_uri = _get_redirect_uri(request)
+    # ⛔ 구글에 등록할 수 없는 사내 주소로 보내면 "액세스 차단됨" 으로 끝난다
+    #    (2026-09-02 실사용자: `http://ai.cravercorp.internal/...`).
+    from app.api.auth_routes import _canonical_browsing_url, _redirect_uri_is_usable
+    if not _redirect_uri_is_usable(redirect_uri):
+        logger.warning("pwreset_google_unusable_redirect",
+                       host=request.headers.get("host", ""), redirect_uri=redirect_uri)
+        canonical = _canonical_browsing_url()
+        raise HTTPException(
+            status_code=400,
+            detail=(f"이 주소에서는 구글 확인을 할 수 없습니다. {canonical} 로 접속해 "
+                    f"다시 시도하거나, 관리자에게 재설정을 요청해 주세요."
+                    if canonical else
+                    "이 주소에서는 구글 확인을 할 수 없습니다. 관리자에게 요청해 주세요."),
+        )
     try:
         state = await asyncio.to_thread(password_reset_google.issue_state)
         url = password_reset_google.build_auth_url(redirect_uri, state)

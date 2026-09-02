@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.auth_middleware import get_current_user, get_optional_user
+from app.config import get_settings
 from app.core.google_auth import GoogleAuthManager
 from app.core.google_oauth_state import consume_state, issue_state
 from app.core import password_reset_google
@@ -48,6 +49,45 @@ def _get_redirect_uri(request: Request) -> str:
         ip, port = m.group(1), m.group(2) or ""
         host = f"{ip}.nip.io{port}"
     return f"{scheme}://{host}/auth/google/callback"
+
+
+#: 구글에 **등록돼 있고** 구글이 정책상 받아 주는 콜백 호스트만 통과시킨다.
+#: 원시 IP 를 바꾼 `<ip>.nip.io` 형태와 localhost 가 그것이다.
+_USABLE_HOST_RE = re.compile(r'^(?:\d+\.\d+\.\d+\.\d+\.nip\.io|localhost|127\.0\.0\.1)(?::\d+)?$')
+
+
+def _redirect_uri_is_usable(redirect_uri: str) -> bool:
+    """이 콜백 주소로 구글에 보내도 되는지 본다.
+
+    ⛔ **Host 헤더를 그대로 믿으면 안 된다** (2026-09-02 실사용자 차단). 사내 DNS
+       이름으로 접속한 사람에게는 `http://ai.cravercorp.internal/auth/google/callback`
+       이 만들어져 나갔다. 그 주소는 ① 콘솔에 등록돼 있지 않고 ② `.internal` 은
+       구글이 금지하는 사설 도메인이다. 구글이 준 사유가 정확히 그것이었다:
+       `invalid_request … redirect_uri=http://ai.cravercorp.internal/…`
+
+    ⚠️ 그런데 **에러가 우리 쪽으로 돌아오지 않는다.** 구글 화면에서 끝나므로
+       서버 로그에는 콜백이 0건이고, 사용자는 "액세스 차단됨" 만 본다 — 원인을
+       추측하게 되는 전형적인 조용한 실패다. 그래서 **보내기 전에** 막고 말한다.
+
+    ⚠️ `_get_redirect_uri` 는 원시 IP 만 `<ip>.nip.io` 로 바꾼다. 호스트명은 그대로
+       통과하므로, 새 DNS 이름이 생길 때마다 같은 일이 반복된다.
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(redirect_uri or "").netloc or "").lower()
+    if _USABLE_HOST_RE.match(host):
+        return True
+    registered = urlparse(get_settings().google_oauth_redirect_uri or "").netloc.lower()
+    return bool(registered) and host == registered
+
+
+def _canonical_browsing_url() -> str:
+    """구글 연결이 되는 주소 — 사람에게 알려 줄 값이다."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(get_settings().google_oauth_redirect_uri or "")
+    host = _browsing_host(parsed.netloc) or parsed.netloc
+    return f"{parsed.scheme or 'http'}://{host}" if host else ""
 
 
 def _notice_page(title: str, body: str) -> str:
@@ -138,9 +178,25 @@ async def google_login(
     user: User = Depends(get_current_user),
 ):
     """Redirect the authenticated user to Google OAuth consent."""
+    # ⛔ 쓸 수 없는 콜백 주소로 구글에 보내면 사용자는 "액세스 차단됨" 만 보고,
+    #    에러는 구글 화면에서 끝나 **우리 로그에는 아무것도 남지 않는다.**
+    #    보내기 전에 막고, 무엇을 하면 되는지 말해 준다.
+    redirect_uri = _get_redirect_uri(request)
+    if not _redirect_uri_is_usable(redirect_uri):
+        logger.warning("google_login_unusable_redirect",
+                       host=request.headers.get("host", ""), redirect_uri=redirect_uri)
+        canonical = _canonical_browsing_url()
+        return HTMLResponse(status_code=400, content=_notice_page(
+            "이 주소에서는 구글 연결을 할 수 없습니다",
+            f"지금 접속하신 주소는 구글에 등록할 수 없는 사내 전용 주소입니다. "
+            f"{canonical} 로 접속해 다시 로그인한 뒤 연결해 주세요."
+            if canonical else
+            "지금 접속하신 주소는 구글에 등록할 수 없는 사내 전용 주소입니다. "
+            "관리자에게 문의해 주세요."))
+
     state = await asyncio.to_thread(issue_state, user.id, user.email)
     auth_url = _get_auth_manager().get_auth_url(
-        user.email, state=state, redirect_uri=_get_redirect_uri(request)
+        user.email, state=state, redirect_uri=redirect_uri
     )
     return RedirectResponse(url=auth_url)
 

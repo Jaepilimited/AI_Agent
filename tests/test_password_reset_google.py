@@ -379,3 +379,39 @@ def test_the_new_password_form_does_not_carry_the_grant():
     html = _login_html()
     assert "?rc=" not in html, "증표가 화면 주소에 실려 있다"
     assert 'name="rc"' not in html and 'id="rc"' not in html, "화면이 증표를 담고 있다"
+
+
+# ─────────── 사내 DNS 이름으로 접속하면 콜백 주소가 쓸 수 없게 만들어진다 ───────────
+# 2026-09-02 실사용자 차단. 구글이 준 사유가 정확히 그것이었다:
+#   invalid_request … redirect_uri=http://ai.cravercorp.internal/auth/google/callback
+# `.internal` 은 구글이 금지하는 사설 도메인이고 콘솔에 등록할 수도 없다.
+
+@pytest.mark.parametrize("uri,usable", [
+    ("http://10.1.100.5.nip.io/auth/google/callback", True),
+    ("http://172.16.1.250.nip.io:3000/auth/google/callback", True),
+    ("http://localhost:3000/auth/google/callback", True),
+    ("http://ai.cravercorp.internal/auth/google/callback", False),   # 실제 사고
+    ("http://cella.example.com/auth/google/callback", False),
+])
+def test_only_registered_callback_hosts_are_sent_to_google(uri, usable):
+    from app.api.auth_routes import _redirect_uri_is_usable
+
+    assert _redirect_uri_is_usable(uri) is usable
+
+
+def test_both_google_entry_points_check_before_sending():
+    """⛔ 막지 않으면 사용자는 '액세스 차단됨' 만 보고, 에러는 구글 화면에서 끝나
+    **우리 로그에 아무것도 남지 않는다** — 원인을 추측하게 되는 조용한 실패다."""
+    from app.api import auth_api, auth_routes
+
+    for fn in (auth_routes.google_login, auth_api.password_reset_google_start):
+        src = inspect.getsource(fn)
+        assert "_redirect_uri_is_usable" in src, f"{fn.__name__} 이 확인하지 않는다"
+
+
+def test_the_message_names_the_address_that_works():
+    """⚠️ '안 됩니다' 만 말하면 무엇을 해야 할지 알 수 없다."""
+    from app.api import auth_routes
+
+    src = inspect.getsource(auth_routes.google_login)
+    assert "_canonical_browsing_url" in src
