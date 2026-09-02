@@ -49,20 +49,34 @@
     .st-none { color: var(--text-muted); }
     .st-check, .st-many { color: var(--text); font-weight: 600; }
     .cf-note { color: var(--text-muted); font-size: 0.85em; }
+    .cf-toggle { display: inline-flex; align-items: center; gap: 6px;
+                 color: var(--text-secondary); font-size: 0.92em; cursor: pointer; }
+    .cf-toggle .cf-note { font-size: 0.85em; }
   </style>
 </head>
 <body>
   <div class="cf-wrap">
     <h1>인증서류 찾기 (COA · MSDS)</h1>
     <p class="cf-intro">엑셀에서 SKU · DESCRIPTION · LOT 열을 복사해 붙여넣거나
-      .xlsx 파일을 올리세요. 공유드라이브에서 롯트가 정확히 일치하는 파일만 찾습니다.</p>
+      .xlsx 파일을 올리세요. 공유드라이브에서 롯트가 정확히 일치하는 파일만 찾습니다.<br>
+      받은 ZIP 안은 <code>COA/</code> · <code>MSDS/</code> · <code>제품COA/</code> 폴더로 나뉘고,
+      한 종류만 따로 받을 수도 있습니다.</p>
 
     <textarea class="cf-input" id="cf-paste"
               placeholder="SKU&#9;DESCRIPTION&#9;LOT"></textarea>
     <div class="cf-bar">
       <input type="file" id="cf-file" accept=".xlsx">
       <button id="cf-run" type="button">찾기</button>
-      <button id="cf-download" type="button" disabled>선택한 파일 받기</button>
+      <!-- 종류별 받기. ⛔ 버튼을 JS 가 만들게 하지 마라 — 스크립트가 낡거나
+           죽으면 버튼이 통째로 사라지고 그때 에러는 안 난다 (COA(제품) 열과 같은 규칙) -->
+      <button id="cf-dl-coa" type="button" disabled>COA만 받기</button>
+      <button id="cf-dl-msds" type="button" disabled>MSDS만 받기</button>
+      <button id="cf-download" type="button" disabled>선택 전체 받기</button>
+      <button id="cf-dl-none" type="button" disabled>COA 없는 목록 받기</button>
+      <label class="cf-toggle" for="cf-only-none">
+        <input type="checkbox" id="cf-only-none"> 없음만 보기
+        <span class="cf-note">(화면만 가립니다 · 받기는 체크한 행 전체가 대상입니다)</span>
+      </label>
       <span class="cf-summary" id="cf-progress"></span>
     </div>
     <div id="cf-error" class="cf-error"></div>

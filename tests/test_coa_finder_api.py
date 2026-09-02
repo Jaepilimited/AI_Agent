@@ -229,7 +229,7 @@ def test_download_records_files_it_could_not_fetch(client):
     assert r.status_code == 200
     zf = zipfile.ZipFile(_io.BytesIO(r.content))
     names = zf.namelist()
-    assert "A_FE103C_a.pdf" in names
+    assert "COA/A_FE103C_a.pdf" in names
     assert "_받지못한_목록.txt" in names
     assert "416022" in zf.read("_받지못한_목록.txt").decode("utf-8")
 
@@ -270,9 +270,9 @@ def test_download_reports_cap_and_skips_remaining(client):
     assert r.status_code == 200
     zf = zipfile.ZipFile(_io.BytesIO(r.content))
     names = zf.namelist()
-    assert "A_L1_a.pdf" in names          # 40바이트 — 상한 50 안에 든다
-    assert "B_L2_b.pdf" not in names      # 누적 80 > 50 — 여기서 상한을 넘긴다
-    assert "C_L3_c.pdf" not in names      # 상한 넘긴 뒤라 건드리지 않는다
+    assert "COA/A_L1_a.pdf" in names      # 40바이트 — 상한 50 안에 든다
+    assert "COA/B_L2_b.pdf" not in names  # 누적 80 > 50 — 여기서 상한을 넘긴다
+    assert "COA/C_L3_c.pdf" not in names  # 상한 넘긴 뒤라 건드리지 않는다
     assert "_받지못한_목록.txt" in names
     note = zf.read("_받지못한_목록.txt").decode("utf-8")
     assert "L2" in note                   # 상한을 넘긴 항목 자신
@@ -304,7 +304,8 @@ def test_download_marks_unconfirmed_verdict_in_the_zip(client):
         "status": "확인필요", "kind": "coa",
     }])
     names = zf.namelist()
-    assert "확인필요_EUSKA022_FE161_COA_10116720_SUN SERUM_FE1615_15643EA.pdf" in names
+    assert ("COA/확인필요_EUSKA022_FE161_"
+            "COA_10116720_SUN SERUM_FE1615_15643EA.pdf") in names
     assert "_확인필요_목록.txt" in names
     note = zf.read("_확인필요_목록.txt").decode("utf-8")
     assert "EUSKA022" in note and "FE161" in note
@@ -318,14 +319,14 @@ def test_download_treats_missing_status_as_unconfirmed(client):
     """⛔ 엔드포인트는 임의 JSON 을 받는다 — 상태가 없으면 확정으로 보면 안 된다."""
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf"}])
-    assert "확인필요_A_FE103C_a.pdf" in zf.namelist()
+    assert "COA/확인필요_A_FE103C_a.pdf" in zf.namelist()
     assert "_확인필요_목록.txt" in zf.namelist()
 
 
 def test_download_treats_unknown_status_as_unconfirmed(client):
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf", "status": "OK"}])
-    assert "확인필요_A_FE103C_a.pdf" in zf.namelist()
+    assert "COA/확인필요_A_FE103C_a.pdf" in zf.namelist()
 
 
 def test_download_keeps_confirmed_items_unprefixed(client):
@@ -333,7 +334,7 @@ def test_download_keeps_confirmed_items_unprefixed(client):
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf", "status": "찾음", "kind": "coa"}])
     names = zf.namelist()
-    assert "A_FE103C_a.pdf" in names
+    assert "COA/A_FE103C_a.pdf" in names
     assert "_확인필요_목록.txt" not in names
 
 
@@ -347,7 +348,7 @@ def test_download_msds_entry_carries_no_lot(client):
     }])
     entry = next(n for n in zf.namelist() if not n.startswith("_"))
     assert "FE103C" not in entry
-    assert entry.startswith("EUSKA022_MSDS_")
+    assert entry.startswith("MSDS/EUSKA022_MSDS_")
 
 
 def test_download_product_coa_entry_carries_no_lot(client):
@@ -360,7 +361,7 @@ def test_download_product_coa_entry_carries_no_lot(client):
     }])
     entry = next(n for n in zf.namelist() if not n.startswith("_"))
     assert "F31C28" not in entry
-    assert entry.startswith("확인필요_EUSKA022_")
+    assert entry.startswith("제품COA/확인필요_EUSKA022_")
     note = zf.read("_확인필요_목록.txt").decode("utf-8")
     assert "롯트" in note
 
@@ -372,15 +373,78 @@ def test_download_never_treats_product_coa_as_confirmed(client):
         "file_id": "1", "sku": "A", "lot": "L1", "name": "coa.pdf",
         "status": "찾음", "kind": "product_coa",
     }])
-    assert all(n.startswith("확인필요_") or n.startswith("_") for n in zf.namelist())
+    assert all(n.startswith("제품COA/확인필요_") or n.startswith("_")
+               for n in zf.namelist())
     assert "_확인필요_목록.txt" in zf.namelist()
+
+
+# ── COA 와 MSDS 를 섞지 않는다 — 2026-09-02 사용자 문의 ──────────────────────
+#
+# *"자료 다운로드 시 COA와 MSDS가 섞여서 다운 되는데, 따로 다운로드 가능할까요?"*
+# 이름으로는 갈렸지만 한 폴더에 쏟아져서, 받은 사람이 파일명을 읽어 골라내야 했다.
+
+
+def test_download_sorts_each_kind_into_its_own_folder(client):
+    """섞어서 받아도 폴더로 갈린다 — 종류별 버튼을 안 쓴 사람도 이득을 본다."""
+    zf = _zip_of(client, [
+        {"file_id": "1", "sku": "A", "lot": "FE103C", "name": "coa.pdf",
+         "status": "찾음", "kind": "coa"},
+        {"file_id": "2", "sku": "A", "lot": "FE103C", "name": "msds.pdf",
+         "status": "찾음", "kind": "msds"},
+        {"file_id": "3", "sku": "A", "lot": "FE103C", "name": "other.pdf",
+         "status": "확인필요", "kind": "product_coa"},
+    ])
+    names = [n for n in zf.namelist() if not n.startswith("_")]
+    assert sorted(n.split("/")[0] for n in names) == ["COA", "MSDS", "제품COA"]
+    # 폴더 깊이는 언제나 하나다 — 파일명의 `/` 는 `_UNSAFE` 가 이미 지웠다
+    assert all(n.count("/") == 1 for n in names)
+
+
+def test_zip_folder_does_not_swallow_the_unconfirmed_prefix(client):
+    """⛔ 폴더가 종류를 말한다고 경고를 폴더로 옮기지 마라 — 파일 하나만 꺼내면
+    폴더 이름은 따라오지 않아 경고가 그 시점에 사라진다."""
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE161",
+                           "name": "a.pdf", "status": "확인필요", "kind": "coa"}])
+    entry = next(n for n in zf.namelist() if not n.startswith("_"))
+    assert entry == "COA/확인필요_A_FE161_a.pdf"
+
+
+def _disposition(client, items):
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()),          patch("app.api.coa_finder_api._fetch_file",
+               side_effect=lambda creds, file_id, budget: b"%PDF-1.4 fake"):
+        r = client.post("/api/coa-finder/download", json={"items": items})
+    assert r.status_code == 200
+    return r.headers["content-disposition"]
+
+
+def test_single_kind_archive_is_not_named_coa_msds(client):
+    """⛔ MSDS 만 받았는데 파일 이름이 `coa_msds.zip` 이면 이름이 거짓말을 한다."""
+    only_msds = [{"file_id": "1", "sku": "A", "lot": "", "name": "m.pdf",
+                  "status": "찾음", "kind": "msds"}]
+    assert "msds.zip" in _disposition(client, only_msds)
+    assert "coa_msds.zip" not in _disposition(client, only_msds)
+
+    only_coa = [{"file_id": "1", "sku": "A", "lot": "FE103C", "name": "c.pdf",
+                 "status": "찾음", "kind": "coa"}]
+    assert 'filename="coa.zip"' in _disposition(client, only_coa)
+
+
+def test_mixed_archive_keeps_the_combined_name(client):
+    """반대 방향 — 섞여 있으면 섞였다고 이름이 말해야 한다."""
+    mixed = [
+        {"file_id": "1", "sku": "A", "lot": "FE103C", "name": "c.pdf",
+         "status": "찾음", "kind": "coa"},
+        {"file_id": "2", "sku": "A", "lot": "", "name": "m.pdf",
+         "status": "찾음", "kind": "msds"},
+    ]
+    assert 'filename="coa_msds.zip"' in _disposition(client, mixed)
 
 
 def test_download_unknown_kind_is_treated_as_coa(client):
     """kind 가 없으면 롯트를 지니는 쪽(COA)으로 본다 — C1 규칙이 그대로 지킨다."""
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf", "status": "찾음"}])
-    assert "A_FE103C_a.pdf" in zf.namelist()
+    assert "COA/A_FE103C_a.pdf" in zf.namelist()
 
 
 def _done_payload(body):
@@ -649,6 +713,144 @@ def test_frontend_reads_the_partial_archive_headers():
     assert "_받지못한_목록.txt" in src
 
 
+def test_frontend_offers_a_download_per_document_kind():
+    """⛔ 버튼은 마크업에 있어야 한다 — JS 가 심으면 스크립트가 낡을 때
+    버튼이 통째로 사라지고 그때 에러는 안 난다 (COA(제품) 열과 같은 규칙)."""
+    with open("app/static/coa_finder.html", encoding="utf-8") as fh:
+        html = fh.read()
+    assert "cf-dl-coa" in html and "COA만 받기" in html
+    assert "cf-dl-msds" in html and "MSDS만 받기" in html
+    assert "cf-dl-none" in html
+    assert "cf-only-none" in html
+
+
+def test_frontend_passes_an_explicit_kind_to_download():
+    """⛔ `addEventListener("click", download)` 로 넘기면 이벤트 객체가
+    kindFilter 자리에 들어간다 — truthy 라 **모든 파일이 걸러져 0건**이 되고,
+    화면엔 "받을 파일을 선택해주세요" 만 뜬다 (에러가 아니다)."""
+    src = _js_source()
+    assert 'download(null)' in src
+    assert 'download("coa")' in src
+    assert 'download("msds")' in src
+    assert 'addEventListener("click", download)' not in src
+
+
+def test_frontend_states_what_a_kind_filter_left_out():
+    """⛔ 선택한 것보다 적게 받으면 그 사실을 말해야 한다 — 조용히 작아진
+    ZIP 은 이 페이지가 막으려는 바로 그 실패다."""
+    src = _js_source()
+    assert "cf-kind" in src
+    assert "제외했습니다" in src
+
+
+def test_frontend_names_a_single_kind_archive_after_its_contents():
+    """서버의 Content-Disposition 과 같은 규칙 — 두 곳이 갈리면 안 된다."""
+    src = _js_source()
+    assert "ZIP_BASE" in src
+    assert '"coa_msds"' in src
+
+
+def test_none_filter_only_hides_and_says_so():
+    """⛔ 필터가 받기 대상까지 조용히 바꾸면 안 된다 — 화면이 그렇게 말한다."""
+    with open("app/static/coa_finder.html", encoding="utf-8") as fh:
+        html = fh.read()
+    assert "화면만 가립니다" in html
+    src = _js_source()
+    # 받기는 여전히 표의 모든 행을 훑는다 (hidden 을 보지 않는다)
+    assert "hidden" not in src.split("async function download(")[1].split("planBatches")[0]
+
+
+def _run_none_list(rows):
+    """noneListCsv 를 node 로 **실제 실행**한다.
+
+    ⛔ 문자열 검사로는 못 지킨다. 조건 하나가 뒤집히면 조회실패 행이
+       'COA 없음' 목록에 실려 나가는데, 그건 에러가 아니라 **사람이 그 목록을
+       믿고 움직이는** 조용한 오답이다.
+    """
+    import json as _json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node 없음 — 개발 환경 전용 검사")
+
+    fn = _extract_js_function(_js_source(), "noneListCsv")
+    driver = (fn + "\nconst out = noneListCsv(" + _json.dumps(rows)
+              + ");\nconsole.log(JSON.stringify(out));\n")
+    r = subprocess.run([node, "-e", driver], capture_output=True, text=True,
+                       timeout=20, encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    return _json.loads(r.stdout)
+
+
+def _row(sku, lot, status, note="", description="앰플"):
+    return {"sku": sku, "description": description, "lot": lot,
+            "coa": {"status": status, "note": note}}
+
+
+def test_none_list_holds_only_the_rows_with_no_coa():
+    got = _run_none_list([
+        _row("A", "FE103C", "없음", "파일명에 이 롯트가 든 파일이 없습니다"),
+        _row("B", "F31C28", "찾음"),
+        _row("C", "MO388", "확인필요"),
+        _row("D", "6752FE", "여러건"),
+    ])
+    assert got["none"] == 1
+    assert "FE103C" in got["csv"]
+    for other in ("F31C28", "MO388", "6752FE"):
+        assert other not in got["csv"]
+
+
+def test_none_list_never_counts_a_failed_query_as_missing():
+    """⛔ 조회실패는 판정이 아니다 — '모른다' 를 '없다' 로 바꾸면, 사람이
+    그 목록을 근거로 재발급을 요청하거나 있는 서류를 없다고 보고한다."""
+    got = _run_none_list([
+        _row("A", "FE103C", "없음"),
+        _row("B", "F31C28", "조회실패", "드라이브 조회에 실패했습니다"),
+        _row("C", "MO388", "조회실패"),
+    ])
+    assert got["none"] == 1 and got["failed"] == 2
+    assert "F31C28" not in got["csv"] and "MO388" not in got["csv"]
+    # ⛔ 화면에만 있는 경고는 파일이 손을 떠나는 순간 사라진다 — 파일 안에 적는다
+    assert "조회실패 2건" in got["csv"]
+
+
+def test_none_list_has_no_footer_when_nothing_failed():
+    """매번 붙는 경고는 곧 아무도 안 읽는다."""
+    got = _run_none_list([_row("A", "FE103C", "없음")])
+    assert "조회실패" not in got["csv"]
+
+
+def test_none_list_quotes_cells_so_a_comma_cannot_shift_a_column():
+    """제품명·사유에는 쉼표가 흔하다 — 안 감싸면 열이 밀려 롯트 칸에 설명이 들어간다."""
+    got = _run_none_list([
+        _row("A", "FE103C", "없음", '없습니다, 본문은 "검색"하지 않습니다',
+             description="앰플, 100ml"),
+    ])
+    line = got["csv"].splitlines()[1]
+    assert line.startswith('"A","앰플, 100ml","FE103C","없음",')
+    assert '""검색""' in line          # 따옴표는 겹쳐서 이스케이프한다
+
+
+def test_none_list_is_empty_when_every_row_has_a_coa():
+    got = _run_none_list([_row("A", "FE103C", "찾음")])
+    assert got["none"] == 0
+
+
+def test_frontend_refuses_to_hand_over_an_empty_none_list():
+    """⛔ 빈 파일이 답처럼 보이면 안 된다 — '없음이 없다' 와 '조회를 안 했다' 는
+    다른 사실이라 문구도 갈린다."""
+    src = _js_source()
+    assert "먼저 조회를 실행해주세요" in src
+    assert "내려받을 목록이 비어 있습니다" in src
+
+
+def test_none_list_csv_carries_a_bom_for_excel():
+    """⛔ BOM 이 없으면 엑셀이 한글을 깨서 연다 — 내보내기가 고장난 것처럼 보인다."""
+    assert "ufeff" in _js_source()
+
+
 def _extract_js_function(src, name):
     """`function <name>(` 부터 짝이 맞는 닫는 중괄호까지 떼어낸다.
 
@@ -737,10 +939,14 @@ def test_zip_name_truncates_by_utf8_bytes_not_characters():
 
     item = DownloadItem(file_id="x", sku="A", lot="L", name="가" * 200)
     name = _zip_name(item)
-    encoded = name.encode("utf-8")
+    # ⛔ 폴더까지 넣어 재지 마라 — 255바이트 상한은 경로가 아니라 **이름 성분**의
+    #    것이다. 그리고 자르기가 폴더를 먹으면 그 파일만 조용히 다른 곳에 떨어진다
+    folder, _, base = name.partition("/")
+    assert folder == "COA"
+    encoded = base.encode("utf-8")
     assert len(encoded) <= _MAX_ZIP_NAME_BYTES
     # 글자 중간이 잘렸으면 여기서 디코딩 오류가 나거나 원문과 달라진다
-    assert encoded.decode("utf-8") == name
+    assert encoded.decode("utf-8") == base
 
 
 # ── "토큰은 살아 있는데 그 드라이브의 멤버가 아니다" 신호 — 2026-08-31 ────────

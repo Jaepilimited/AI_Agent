@@ -66,8 +66,16 @@
     return wrap;
   }
 
+  // Every row payload, in arrival order. The CSV of missing COAs is built
+  // from this rather than from the DOM: the table can be filtered, and a
+  // list built from what happens to be visible would quietly change size.
+  let rowData = [];
+
   function addRow(d) {
     const tr = document.createElement("tr");
+    // The filter reads this, so it must be set before the row is appended --
+    // rows keep streaming in while the toggle is already on.
+    tr.dataset.coaStatus = (d.coa && d.coa.status) || "";
     const pick = document.createElement("td");
     const box = document.createElement("input");
     box.type = "checkbox";
@@ -84,7 +92,59 @@
     tr.appendChild(cell(d.msds, d.sku, d.lot, "msds"));
     tr.appendChild(cell(d.product_coa || { status: "", files: [] },
                         d.sku, d.lot, "product_coa"));
+    if ($("cf-only-none").checked && tr.dataset.coaStatus !== "없음") {
+      tr.hidden = true;
+    }
     $("cf-body").appendChild(tr);
+    rowData.push(d);
+  }
+
+  // Hide everything that is not a COA "없음". This only hides -- the download
+  // buttons still act on every checked row, which the label next to the
+  // toggle says out loud. A filter that silently changed what a download
+  // contains would be the worst kind of quiet.
+  function applyNoneFilter(on) {
+    document.querySelectorAll("#cf-body tr").forEach((tr) => {
+      tr.hidden = on && tr.dataset.coaStatus !== "없음";
+    });
+  }
+
+  // The list of lots with no COA, as CSV.
+  //
+  // ⛔ 조회실패 is NOT folded in. A query that never completed says nothing
+  // about whether the certificate exists -- putting it in a list titled
+  // "COA 없음" would turn "we do not know" into "it is not there", and this
+  // list is one someone acts on. It is counted and stated in a footer row
+  // instead, so the caveat travels with the file rather than living only on
+  // the screen that produced it.
+  //
+  // WARNING: tests extract this function by brace matching and run it in
+  // node. Keep it free of closure references and of braces inside strings.
+  function noneListCsv(rows) {
+    const lines = ["SKU,제품명,롯트,COA 판정,사유"];
+    let none = 0;
+    let failed = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || {};
+      const coa = r.coa || {};
+      const status = coa.status || "";
+      if (status === "조회실패") failed++;
+      if (status !== "없음") continue;
+      none++;
+      const cells = [r.sku, r.description, r.lot, status, coa.note];
+      const quoted = [];
+      for (let j = 0; j < cells.length; j++) {
+        const text = cells[j] == null ? "" : String(cells[j]);
+        quoted.push('"' + text.split('"').join('""') + '"');
+      }
+      lines.push(quoted.join(","));
+    }
+    if (failed > 0) {
+      lines.push("");
+      lines.push('"# 조회실패 ' + failed +
+                 '건은 드라이브 조회가 실패해 판정되지 않았습니다 — 이 목록에 없습니다"');
+    }
+    return { csv: lines.join("\r\n"), none: none, failed: failed };
   }
 
   // Caps published by the server in the "done" event. The page never keeps
@@ -125,6 +185,16 @@
     }
     if (current.length) batches.push(current);
     return batches;
+  }
+
+  const KIND_LABEL = { coa: "COA", msds: "MSDS" };
+  const ZIP_BASE = { coa: "coa", msds: "msds" };
+  // ⛔ 목록에서 버튼 하나가 빠지면 그 버튼만 조회 전에 눌리는 상태로 남는다 —
+  //    빈 표에서 눌러도 에러가 아니라 "받을 파일을 선택해주세요" 로 보인다
+  const DOWNLOAD_BUTTONS = ["cf-dl-coa", "cf-dl-msds", "cf-download", "cf-dl-none"];
+
+  function setDownloadsEnabled(on) {
+    DOWNLOAD_BUTTONS.forEach((id) => { $(id).disabled = !on; });
   }
 
   function setBusy(busy) {
@@ -196,10 +266,14 @@
     showAllNone(false);
     showSkipped(0);
     notice("cf-batch", "");
+    notice("cf-kind", "");
     // A new search invalidates the caps until this run's "done" restates them.
     caps = null;
+    // ⛔ 지난 조회의 행을 남기면 'COA 없는 목록' 이 이번 조회에 없는 롯트를
+    //    싣는다 — 표는 비워졌는데 목록만 옛것인 조용한 어긋남이다
+    rowData = [];
     $("cf-table").hidden = false;
-    $("cf-download").disabled = true;
+    setDownloadsEnabled(false);
     $("cf-progress").textContent = "";
     setBusy(true);
 
@@ -277,7 +351,7 @@
               : null;
             showSkipped(data.skipped_no_sku || 0);
             showAllNone(data.total > 0 && (c["없음"] || 0) === data.total);
-            $("cf-download").disabled = false;
+            setDownloadsEnabled(true);
           } else if (kind === "error") {
             finished = true;
             lastIndex = data.completed;
@@ -335,8 +409,18 @@
     return Number(res.headers.get("X-COA-Items-Skipped")) || 0;
   }
 
-  async function download() {
+  // kindFilter: null = everything selected, or "coa" / "msds" for one kind.
+  //
+  // 제품COA is deliberately in neither single-kind download: it is a different
+  // lot's certificate, so it never rides along with a button someone presses
+  // to get "the COAs". It still goes out under 선택 전체 받기, where its own
+  // cell checkbox is the thing that put it there.
+  async function download(kindFilter) {
     const items = [];
+    // Files the filter removed from a selection the user had already made.
+    // An archive quietly smaller than the selection is the failure this page
+    // exists to avoid, so the count is stated on screen.
+    let dropped = 0;
     document.querySelectorAll("#cf-body tr").forEach((tr) => {
       const rowOn = tr.querySelector(".cf-pick").checked;
       tr.querySelectorAll("a.cf-file").forEach((a) => {
@@ -347,6 +431,10 @@
           const box = td && td.querySelector(".cf-pick-product");
           if (!box || !box.checked) return;
         } else if (!rowOn) {
+          return;
+        }
+        if (kindFilter && (a.dataset.kind || "coa") !== kindFilter) {
+          dropped++;
           return;
         }
         items.push({
@@ -361,9 +449,15 @@
       });
     });
     if (!items.length) {
-      showError("받을 파일을 선택해주세요");
+      showError(kindFilter
+        ? "선택한 행에 " + (KIND_LABEL[kindFilter] || kindFilter) + " 파일이 없습니다"
+        : "받을 파일을 선택해주세요");
       return;
     }
+    notice("cf-kind", dropped > 0
+      ? (KIND_LABEL[kindFilter] || kindFilter) + "만 받습니다 — 선택한 것 중 " +
+        dropped + "건(다른 종류)은 이번 받기에서 제외했습니다."
+      : "");
 
     const batches = planBatches(items, caps);
     const many = batches.length > 1;
@@ -373,7 +467,9 @@
         batches.length + "번 저장합니다."
       : "");
 
-    $("cf-download").disabled = true;
+    // ⛔ 누른 버튼 하나만 잠그면 나머지 셋은 그대로다 — 받는 도중에 다른
+    //    종류를 또 누르면 같은 ZIP 이름으로 두 저장이 겹친다
+    setDownloadsEnabled(false);
     let skipped = 0;
     try {
       for (let i = 0; i < batches.length; i++) {
@@ -393,8 +489,11 @@
           return;
         }
         skipped += skippedFromHeaders(res);
+        // ⛔ A single-kind archive named coa_msds.zip lies about itself. The
+        //    server derives the same name from the items it received.
+        const base = ZIP_BASE[kindFilter] || "coa_msds";
         saveBlob(await res.blob(),
-          many ? "coa_msds_" + (i + 1) + ".zip" : "coa_msds.zip");
+          many ? base + "_" + (i + 1) + ".zip" : base + ".zip");
       }
       notice("cf-batch", many
         ? "완료 — " + batches.length + "개 파일로 받았습니다."
@@ -412,13 +511,45 @@
         (err && err.message ? err.message : String(err))
       );
     } finally {
-      $("cf-download").disabled = false;
+      setDownloadsEnabled(true);
     }
+  }
+
+  // The list of lots that came back with no COA, as a file someone can open
+  // in Excel and work from. UTF-8 with a BOM: without it Excel reads the
+  // Korean columns as mojibake, which looks like a broken export.
+  function downloadNoneList() {
+    const built = noneListCsv(rowData);
+    if (!built.none) {
+      // ⛔ Never hand over an empty file that looks like an answer. "없음이
+      //    없다" and "조회를 안 했다" must not look the same.
+      showError(rowData.length
+        ? "COA '없음' 판정인 행이 없습니다 — 내려받을 목록이 비어 있습니다."
+        : "먼저 조회를 실행해주세요.");
+      return;
+    }
+    showError("");
+    notice("cf-nonelist", "COA 없는 목록 " + built.none + "행을 내려받았습니다" +
+      (built.failed
+        ? " · 조회실패 " + built.failed + "건은 판정되지 않아 목록에 없습니다 (파일 끝에 함께 적었습니다)"
+        : "") + ".");
+    saveBlob(new Blob(["\ufeff" + built.csv],
+                      { type: "text/csv;charset=utf-8" }),
+             "coa_없는_목록.csv");
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     $("cf-run").addEventListener("click", run);
-    $("cf-download").addEventListener("click", download);
+    // ⛔ download 를 핸들러로 **바로** 넘기지 마라 — 이벤트 객체가 kindFilter
+    //    자리에 들어가고, truthy 라 모든 파일이 걸러져 0건이 된다 (에러는 안 난다).
+    //    ⚠️ 이 주석에 그 호출 모양을 그대로 적지 마라 — 회귀가 코드로 읽는다
+    $("cf-download").addEventListener("click", () => download(null));
+    $("cf-dl-coa").addEventListener("click", () => download("coa"));
+    $("cf-dl-msds").addEventListener("click", () => download("msds"));
+    $("cf-dl-none").addEventListener("click", downloadNoneList);
+    $("cf-only-none").addEventListener("change", (e) => {
+      applyNoneFilter(e.target.checked);
+    });
     $("cf-all").addEventListener("change", (e) => {
       document.querySelectorAll(".cf-pick").forEach((b) => {
         b.checked = e.target.checked;

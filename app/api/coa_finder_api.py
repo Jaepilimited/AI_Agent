@@ -258,6 +258,11 @@ def _truncate_utf8(s: str, max_bytes: int) -> str:
 
 _MSDS_KIND = "msds"
 _PRODUCT_COA_KIND = "product_coa"
+# ZIP 안의 폴더. ⛔ 한 폴더에 쏟아부으면 COA 와 MSDS 가 섞여 나간다 — 이름으로는
+# 갈리지만 사람이 파일명을 읽어 골라내야 한다 (2026-09-02 사용자 문의).
+# ⚠️ 폴더가 종류를 말하므로 **이름의 경고 접두는 그대로 둔다** — 폴더로 옮기면
+#    확인필요가 폴더 이름에 묻혀 파일 하나만 꺼냈을 때 경고가 사라진다
+_ZIP_FOLDER = {"coa": "COA", _MSDS_KIND: "MSDS", _PRODUCT_COA_KIND: "제품COA"}
 # 롯트를 이름에 붙이면 안 되는 종류. MSDS 는 롯트가 없고, 제품 COA 는
 # **다른 롯트**의 것이다 — 둘 다 이 행의 롯트를 주장하면 거짓이 된다
 _LOTLESS_KINDS = {_MSDS_KIND, _PRODUCT_COA_KIND}
@@ -320,6 +325,9 @@ def _zip_name(item: DownloadItem) -> str:
        경고는 그 시점에 사라진다.
     ⛔ MSDS 에는 롯트를 붙이지 않는다 — 제품 단위 문서라 롯트가 없는데
        이름이 롯트를 주장하면 롯트가 맞는 문서인 것처럼 보인다.
+    ⛔ **자르는 것은 파일 이름만이다.** 폴더까지 붙여 놓고 자르면 긴 이름에서
+       폴더가 잘려 나가 그 파일만 조용히 다른 곳에 떨어진다 — 에러가 아니라
+       "COA 폴더에 몇 개가 비는" 형태로 나타나 찾기가 늦다.
     """
     kind = _kind_of(item)
     if kind in _LOTLESS_KINDS:
@@ -329,7 +337,8 @@ def _zip_name(item: DownloadItem) -> str:
     joined = _UNSAFE.sub("_", "_".join(p for p in parts if p))
     if not _is_confirmed(item):
         joined = _UNCONFIRMED_PREFIX + joined
-    return _truncate_utf8(joined, _MAX_ZIP_NAME_BYTES)
+    # `_UNSAFE` 가 `/` 를 이미 지웠으므로 폴더 깊이는 언제나 하나다
+    return f"{_ZIP_FOLDER[kind]}/{_truncate_utf8(joined, _MAX_ZIP_NAME_BYTES)}"
 
 
 @router.post("/api/coa-finder/download")
@@ -437,6 +446,15 @@ async def coa_finder_download(
 
     buf.seek(0)
     skipped = len(items) - written
+    # ⛔ 한 종류만 받았는데 이름이 `coa_msds.zip` 이면 파일 이름이 거짓말을 한다.
+    #    받는 쪽 화면도 같은 규칙으로 저장한다 — 두 곳이 갈리면 안 된다
+    kinds = {_kind_of(i) for i in items}
+    if kinds == {"coa"}:
+        zip_filename = "coa.zip"
+    elif kinds == {_MSDS_KIND}:
+        zip_filename = "msds.zip"
+    else:
+        zip_filename = "coa_msds.zip"
     if skipped:
         logger.warning("coa_download_partial",
                        extra={"requested": len(items), "written": written,
@@ -444,7 +462,7 @@ async def coa_finder_download(
     return StreamingResponse(
         buf, media_type="application/zip",
         headers={
-            "Content-Disposition": 'attachment; filename="coa_msds.zip"',
+            "Content-Disposition": f'attachment; filename="{zip_filename}"',
             # ⛔ 반쪽 ZIP 이 평범한 ZIP 과 똑같이 내려온다 — 열어보기 전에는 모른다.
             #    ZIP **안에만** 진실이 있으면 화면은 성공한 것처럼 보이므로
             #    밖에도 적는다. 값은 ASCII 숫자만 (헤더에 한글을 넣으면 깨진다)
