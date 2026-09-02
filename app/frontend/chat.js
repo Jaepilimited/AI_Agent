@@ -70,6 +70,137 @@
     document.body.removeChild(ta);
   }
 
+  // ── 만족도 설문(별점) ──
+  // 접속일수 10·50·100일차에 한 번 묻는다. 노출 여부는 서버가 정하고
+  // (`/api/auth/me` 의 `survey_prompt`), 여기서는 **답변을 한 번 받은 뒤** 띄운다 —
+  // 진입하자마자 막아서면 만족도를 묻는 팝업이 그 자체로 불만이 된다.
+  // ⛔ 별점과 무관하게 코멘트를 받는다 (2026-09-02 사용자 지시).
+  var _surveyPrompt = null;        // {milestone, visit_days} | null
+  var _surveyShown = false;        // 이 세션에 이미 띄웠나
+  var _surveyModal = null;
+
+  var SURVEY_LABELS = ["", "많이 부족해요", "아쉬워요", "보통이에요", "만족해요", "아주 좋아요"];
+
+  function _getSurveyModal() {
+    if (_surveyModal) return _surveyModal;
+    var overlay = document.createElement("div");
+    overlay.className = "fb-overlay";
+    overlay.id = "survey-modal-overlay";
+    var stars = "";
+    for (var i = 1; i <= 5; i++) {
+      stars += '<button type="button" class="sv-star" data-star="' + i
+        + '" aria-label="' + i + '점">★</button>';
+    }
+    overlay.innerHTML = [
+      '<div class="fb-box" role="dialog" aria-modal="true" aria-labelledby="survey-title">',
+      '<div class="fb-title" id="survey-title"></div>',
+      '<div class="fb-sub" id="survey-sub"></div>',
+      '<div class="sv-stars">', stars, '</div>',
+      '<div class="sv-scale"><span>부족해요</span><span>좋아요</span></div>',
+      '<div class="sv-picked" id="survey-picked"></div>',
+      '<textarea id="survey-comment" class="fb-text" rows="3" ',
+        'placeholder="좋았던 점이나 아쉬운 점을 남겨주세요. 개선에 그대로 반영합니다. (선택)"></textarea>',
+      '<div class="fb-actions">',
+        '<button type="button" id="survey-later" class="fb-btn">나중에</button>',
+        '<button type="button" id="survey-send" class="fb-btn fb-btn-primary">보내기</button>',
+      '</div>',
+      '</div>'
+    ].join("");
+    document.body.appendChild(overlay);
+    _surveyModal = overlay;
+    return overlay;
+  }
+
+  function _postSurvey(milestone, rating, comment) {
+    // 실패해도 사용자를 붙잡지 않는다 — 설문은 부가 기능이다
+    return fetch("/api/survey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ milestone: milestone, rating: rating, comment: comment || "" })
+    }).catch(function () {});
+  }
+
+  // 테스트용 — 주소에 `?survey=test` 를 붙이면 답변을 기다리지 않고 바로 띄운다.
+  // `?survey=reset` 은 **내 설문 기록만** 지우고 다시 띄운다 (여러 번 확인할 때).
+  // ⚠️ 여기서 임계를 만들어내지 않는다 — 대상이 아니면 그 사실을 말한다.
+  //    화면이 지어낸 임계로 저장하면 그 행은 아무 뜻도 없는 데이터가 된다.
+  function _handleSurveyTestParam() {
+    var mode = new URLSearchParams(window.location.search).get("survey");
+    if (!mode) return;
+    if (mode === "reset") {
+      fetch("/api/survey/reset", { method: "POST" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) {
+          _surveyPrompt = (d && d.survey_prompt) || null;
+          _surveyShown = false;
+          _showSurveyOrExplain();
+        })
+        .catch(function () { showToast("설문 기록을 지우지 못했습니다"); });
+      return;
+    }
+    _showSurveyOrExplain();
+  }
+
+  function _showSurveyOrExplain() {
+    if (_surveyPrompt) { maybeShowSatisfactionSurvey(); return; }
+    showToast("지금은 설문 대상이 아닙니다 (이미 응답했거나 다음 지점 전)");
+  }
+
+  function maybeShowSatisfactionSurvey() {
+    if (!_surveyPrompt || _surveyShown) return;
+    _surveyShown = true;   // 이 세션에는 다시 띄우지 않는다
+    var prompt = _surveyPrompt;
+    _surveyPrompt = null;
+
+    var modal = _getSurveyModal();
+    var picked = 0;
+    var title = modal.querySelector("#survey-title");
+    var sub = modal.querySelector("#survey-sub");
+    var pickedEl = modal.querySelector("#survey-picked");
+    var comment = modal.querySelector("#survey-comment");
+    var starEls = modal.querySelectorAll(".sv-star");
+
+    title.textContent = "셀라를 " + prompt.visit_days + "일째 쓰고 계세요";
+    sub.textContent = "그동안 얼마나 도움이 되었나요? 별점과 한마디를 남겨주시면 개선에 반영합니다.";
+    comment.value = "";
+    pickedEl.textContent = "";
+
+    function paint(upTo) {
+      for (var i = 0; i < starEls.length; i++) {
+        starEls[i].classList.toggle("on", i < upTo);
+      }
+    }
+    paint(0);
+
+    starEls.forEach(function (el) {
+      var n = parseInt(el.dataset.star, 10);
+      el.onmouseenter = function () { paint(n); };
+      el.onmouseleave = function () { paint(picked); };
+      el.onclick = function () {
+        picked = n;
+        paint(n);
+        pickedEl.textContent = n + "점 · " + SURVEY_LABELS[n];
+      };
+    });
+
+    function close() { modal.style.display = "none"; }
+
+    modal.querySelector("#survey-send").onclick = function () {
+      if (!picked) { pickedEl.textContent = "별점을 골라주세요"; return; }
+      close();
+      _postSurvey(prompt.milestone, picked, comment.value.trim());
+      showToast("소중한 의견 감사합니다");
+    };
+    // '나중에' 도 서버에 남긴다 — 안 남기면 다음 접속마다 다시 뜬다
+    modal.querySelector("#survey-later").onclick = function () {
+      close();
+      _postSurvey(prompt.milestone, null, "");
+    };
+    modal.onclick = function (e) { if (e.target === modal) { /* 바깥 클릭으로는 닫지 않는다 */ } };
+
+    modal.style.display = "flex";
+  }
+
   // ── Feedback buttons (thumbs up/down) ──
   var _feedbackCache = {};  // {messageId: 1|-1}
 
@@ -751,6 +882,8 @@
       var resp = await fetch("/api/auth/me");
       if (!resp.ok) { window.location.href = "/login"; return; }
       currentUser = await resp.json();
+      // 만족도 설문 — 띄울지는 서버가 정한다 (접속일수 10일차부터 20일 간격)
+      _surveyPrompt = currentUser.survey_prompt || null;
       _applyFiSourceVisibility();
       userName.textContent = currentUser.name;
       userAvatar.textContent = (currentUser.name || "U").charAt(0).toUpperCase();
@@ -796,6 +929,8 @@
   }
 
   async function _finishInit() {
+    // ?survey=test / ?survey=reset — 대상인지 판정은 서버가 한 그대로 쓴다
+    setTimeout(_handleSurveyTestParam, 0);
     if (window.CellaPersonalBriefing) {
       personalBriefingController = window.CellaPersonalBriefing.create({
         root: document.getElementById("personal-briefing"),
@@ -1193,7 +1328,15 @@
     // ⛔ 칩마다 직접 걸지 마라 — **나중에 추가한 칩은 눌러도 아무 일이 없다.**
     //    개인 제안은 로그인 뒤에 붙으므로 그때 걸린 칩이 없다 (에러도 안 난다).
     //    컨테이너에 한 번 걸고 위임한다.
-    var suggestionsBox = document.getElementById("welcome-suggestions");
+    // ⛔ **위임은 `#chat-welcome` 에 건다 — `#welcome-suggestions` 가 아니다.**
+    //    (2026-09-02 사용자 제보: "체크해놓은 라인은 클릭시 아무런 반응이 없습니다")
+    //    `내가 자주 묻는 것` 줄은 `loadMySuggestions()` 가 **형제 요소**로 만들어
+    //    `#welcome-suggestions` **바깥**에 넣는다(줄을 나누라는 2026-08-27 지적 때문이다).
+    //    그래서 기본 칩 줄에 위임을 걸면 개인 제안 줄은 위임이 닿지 않아 눌러도
+    //    아무 일이 없다 — 위 주석이 경고하던 바로 그 실패가 형태만 바꿔 되살아났다.
+    //    공통 조상에 걸면 줄을 몇 개로 나누든 다시 끊기지 않는다.
+    var suggestionsBox = document.getElementById("chat-welcome")
+      || document.getElementById("welcome-suggestions");
     if (suggestionsBox) {
       suggestionsBox.addEventListener("click", function (event) {
         var chip = event.target.closest(".suggestion-chip");
@@ -2191,6 +2334,8 @@
       clearActiveSourceChips();  // Clear @@ chips after response complete
       showFollowups(text, cleanContent);
       scrollToBottom();
+      // 답변을 한 번 받은 뒤에 묻는다 (해당하는 사람에게만, 세션 1회)
+      maybeShowSatisfactionSurvey();
     }
 
     isStreaming = false;
@@ -4173,7 +4318,10 @@
         /* ⛔ 기본 칩과 **같은 줄에 섞지 마라** (2026-08-27 사용자 지적).
            같은 상자에 앞으로 끼워 넣으면 두 종류가 한 줄로 흘러, 어디까지가 내가
            물어본 것이고 어디부터가 시스템 예시인지 경계가 사라진다. 색만으로는
-           구분되지 않는다 — **줄을 나누는 것이 경계다.** */
+           구분되지 않는다 — **줄을 나누는 것이 경계다.**
+           ⚠️ 이 줄은 `#welcome-suggestions` **바깥**(형제)에 놓인다. 클릭 위임은
+              그래서 공통 조상인 `#chat-welcome` 에 걸려 있다 — 위임 대상을 다시
+              좁히면 이 줄의 칩이 **에러 없이 안 눌린다** (2026-09-02 실제 발생). */
         var mineRow = document.getElementById("welcome-suggestions-mine");
         if (!mineRow) {
           mineRow = document.createElement("div");
@@ -4871,7 +5019,22 @@
     var sum = document.getElementById("feedback-summary");
     if (!d) { el.innerHTML = "<p style='padding:12px'>불러오지 못했습니다</p>"; return; }
     var s = d.summary || {};
-    sum.textContent = "미처리 " + (s.open || 0) + "건 (코멘트 " + (s.open_with_comment || 0) + "건)";
+    var line = "미처리 " + (s.open || 0) + "건 (코멘트 " + (s.open_with_comment || 0) + "건)";
+    // ⛔ 설문 팝업이 안 뜨는 것은 에러가 아니라 침묵이다 — 대상 인원과 응답 수를
+    //    화면에 적어 사람이 이상을 눈치챌 수 있게 한다.
+    var sv = s.survey;
+    if (sv) {
+      var el2 = sv.eligible || {};
+      line += " · 설문 응답 " + (sv.answered || 0) + "건";
+      if (sv.avg_rating !== null && sv.avg_rating !== undefined) {
+        line += " (평균 ★" + sv.avg_rating + ")";
+      }
+      if (el2.pending_now !== null && el2.pending_now !== undefined) {
+        line += " · 대기 중인 대상 " + el2.pending_now + "명";
+      }
+      if (sv.skipped) line += " · 나중에 " + sv.skipped + "건";
+    }
+    sum.textContent = line;
     var items = d.items || [];
     if (!items.length) {
       el.innerHTML = "<p style='padding:12px;color:var(--text-secondary)'>해당 상태의 붐따가 없습니다.</p>";
@@ -4879,10 +5042,17 @@
     }
     el.innerHTML = items.map(function(it) {
       var meta = FEEDBACK_STATUS[it.status] || FEEDBACK_STATUS.new;
+      // 설문 행은 별점과 며칠째인지를 함께 보여준다 (붐따와 읽는 법이 다르다)
+      var src = it.source === "survey"
+        ? "<span class='admin-user-email'>★" + (it.rating || "?") + " · "
+            + (it.milestone || "?") + "일차 설문</span>"
+        : "<span class='admin-user-email'>👎 붐따</span>";
       // ⚠️ 코멘트는 사용자가 쓴 글이다 — 반드시 이스케이프한다 (HTML 주입 방지)
       var body = it.comment
         ? "<div style='margin:6px 0;white-space:pre-wrap'>" + escapeHtml(it.comment) + "</div>"
-        : "<div style='margin:6px 0;color:var(--text-muted)'>(코멘트 없음 — 👎만 눌림)</div>";
+        : "<div style='margin:6px 0;color:var(--text-muted)'>"
+            + (it.source === "survey" ? "(코멘트 없음 — 별점만)" : "(코멘트 없음 — 👎만 눌림)")
+            + "</div>";
       var note = it.handled_note
         ? "<div style='color:var(--text-muted);font-size:12px'>메모: " + escapeHtml(it.handled_note) + "</div>"
         : "";
@@ -4893,9 +5063,11 @@
       return "<div style='padding:10px 12px;border-bottom:1px solid var(--border)'>"
         + "<div style='display:flex;gap:8px;align-items:center;flex-wrap:wrap'>"
         + "<strong style='color:" + meta[1] + "'>" + meta[0] + "</strong>"
+        + src
         + "<span class='admin-user-email'>" + escapeHtml(it.user_name || "(알 수 없음)") + "</span>"
         + "<span class='admin-user-email'>" + String(it.created_at || "").slice(0, 16) + "</span>"
-        + "<select class='admin-select' data-fb-id='" + it.id + "' style='margin-left:auto'>" + opts + "</select>"
+        + "<select class='admin-select' data-fb-id='" + it.id + "' data-fb-source='"
+          + (it.source === "survey" ? "survey" : "thumbs") + "' style='margin-left:auto'>" + opts + "</select>"
         + "</div>" + body + note + "</div>";
     }).join("");
 
@@ -4913,7 +5085,11 @@
         fetch("/api/admin/feedback/" + sel.dataset.fbId, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: sel.value, note: note || null })
+          body: JSON.stringify({
+            status: sel.value, note: note || null,
+            // ⛔ 소스를 빼먹으면 설문 id 로 붐따 행을 고친다 (조용한 오작동)
+            source: sel.dataset.fbSource || "thumbs"
+          })
         }).then(function(r) {
           if (!r.ok) { alert("상태 변경 실패"); return; }
           loadFeedbackInbox();
