@@ -199,10 +199,71 @@ def test_data_questions_about_a_country_are_not_hijacked(query):
     assert _org_module().answer_team_country_scope(query) is None
 
 
-def test_a_region_word_is_not_a_team():
-    """⛔ '서구권' 은 팀 이름이 아니다 — 지어내지 말고 원래 경로로 보낸다."""
-    assert _org_module().answer_team_country_scope("서구권은 어느 나라 담당해?") is None
-    assert _org_module().answer_team_country_scope("동남아는 어느 팀이 담당해?") is None
+def test_an_ambiguous_region_asks_back_instead_of_guessing_or_leaking():
+    """⛔ `서구권`·`동남아` 는 팀이 아니라 권역이다 — 지어내지도, 흘리지도 않고 되묻는다.
+
+    예전엔 그냥 통과시켰다. 그러면 관문을 못 넘고 **검색 경로로 새서** 무관한 Notion
+    문서가 나온다 — 이 관문이 애초에 막으려던 바로 그 실패다 (EAST2 에 인도네시아를
+    넣었던 오답). 사용자 지시(2026-09-02): *"서구권, 동남아 이렇게 애매하게 말하면
+    되물어야지"*.
+
+    ⚠️ 되묻되 **후보를 담당 국가까지 붙여서** 준다. "어느 팀인가요?" 만 던지면
+       사용자가 팀 이름을 몰라 한 턴을 더 버린다.
+    """
+    org = _org_module()
+
+    west = org.answer_team_country_scope("서구권은 어느 나라 담당해?")
+    assert west is not None, "권역명을 흘려보내면 검색 경로로 샌다"
+    assert "어느 팀을 말씀하시나요?" in west
+    assert "서구권마케팅팀(WEST_MKT)" in west and "서구권이커머스팀(WEST_Ecomm)" in west
+    assert "미국과 호주" in west, "후보에 담당 국가가 없으면 한 턴을 더 버린다"
+
+    east = org.answer_team_country_scope("동남아는 어느 팀이 담당해?")
+    assert east is not None
+    assert "동남아시아1팀(EAST1)" in east and "동남아시아2팀(EAST2)" in east
+
+
+@pytest.mark.parametrize(
+    ("query", "word"),
+    [
+        ("서구권은 어느 나라 담당해?", "서구권"),
+        ("동남아는 어느 팀이 담당해?", "동남아"),
+        ("동남아시아 담당 국가 알려줘", "동남아시아"),
+    ],
+)
+def test_the_clarification_names_the_word_the_user_used(query, word):
+    """⚠️ `동남아` 가 `동남아시아` 안에 들어 있다 — 짧은 쪽이 먼저 맞으면
+    사용자가 쓰지도 않은 낱말로 되묻게 된다."""
+    answer = _org_module().answer_team_country_scope(query)
+
+    assert answer.startswith(f"**{word}**")
+    assert "은(는)" not in answer, "조사를 받침으로 고르지 않았다"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "서구권이커머스팀은 어느 나라 담당해?",
+        "동남아시아2팀이 담당하는 국가가 어디지?",
+        "동남아1팀은 어느 나라를 담당해?",
+    ],
+)
+def test_a_named_team_is_answered_not_asked_back(query):
+    """⛔ 팀을 정확히 댔는데 되물으면 아는 것을 안 알려주는 것이다."""
+    answer = _org_module().answer_team_country_scope(query)
+
+    assert answer is not None
+    assert "어느 팀을 말씀하시나요?" not in answer
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["서구권 2026년 국가별 매출 알려줘", "동남아 매출 보고서 만들어줘",
+     "동남아시아 광고비 추이 보여줘"],
+)
+def test_region_data_questions_still_go_to_the_data_path(query):
+    """⚠️ 되묻기가 데이터 질문까지 가로채면 답이 아예 안 나온다."""
+    assert _org_module().answer_team_country_scope(query) is None
 
 
 # ── 조사 ────────────────────────────────────────────────────────────────────

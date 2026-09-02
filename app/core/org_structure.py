@@ -65,6 +65,17 @@ _SCOPE_NOTES = {
 }
 
 
+#: 권역명 — **여러 팀에 걸치는 말**이라 담당을 특정할 수 없다.
+#: ⛔ 그냥 통과시키지 마라. 팀 이름이 아니니 관문을 못 넘고 검색 경로로 새서
+#:    무관한 Notion 문서가 나온다 — 이 관문이 막으려던 바로 그 실패다.
+#:    모르면 지어내지도 말고 흘리지도 말고 **되묻는다** (2026-09-02 사용자 지시).
+_AMBIGUOUS_REGION_TEAMS = {
+    "서구권": ("WEST_MKT", "WEST_Ecomm"),
+    "동남아시아": ("EAST1", "EAST2"),
+    "동남아": ("EAST1", "EAST2"),
+}
+
+
 _TEAM_SCOPE_ALIASES = {
     "EAST1": ("EAST1", "동남아시아1팀", "동남아시아 1팀", "동남아1팀", "동남아 1팀"),
     "EAST2": ("EAST2", "동남아시아2팀", "동남아시아 2팀", "동남아2팀", "동남아 2팀"),
@@ -139,6 +150,19 @@ def _join_ko(items, bases=None) -> str:
     return out + items[-1]
 
 
+def _ambiguous_region(query: str) -> tuple[str, tuple[str, ...]] | None:
+    """질문이 팀 대신 **권역**을 댔으면 (권역명, 그 안의 팀들) 을 돌려준다.
+
+    ⚠️ 긴 것부터 본다 — `동남아` 가 `동남아시아` 안에 들어 있어, 짧은 쪽이 먼저
+       맞으면 되묻는 문장에 엉뚱한 낱말이 실린다.
+    """
+    normalized = _normalize(query)
+    for word in sorted(_AMBIGUOUS_REGION_TEAMS, key=len, reverse=True):
+        if _normalize(word) in normalized:
+            return word, _AMBIGUOUS_REGION_TEAMS[word]
+    return None
+
+
 def _teams_for_country(query: str) -> tuple[str, list[str]] | None:
     """질문에 등록된 국가가 있으면 (국가, 담당 팀 코드들) 을 돌려준다."""
     normalized = _normalize(query)
@@ -202,6 +226,25 @@ def answer_team_country_scope(query: str) -> str | None:
                     "한 나라를 두 팀이 함께 맡습니다."
                 )
             return f"**{country} 담당 팀**\n\n{line}\n\n{tail}"
+
+    # ── 권역명은 팀이 아니다 — 되묻는다 ───────────────────────
+    # ⚠️ 되묻되 **후보를 담당 국가까지 붙여서** 보여준다. 그냥 "어느 팀인가요?" 만
+    #    던지면 사용자가 팀 이름을 몰라 한 턴을 더 버린다.
+    if _SCOPE_INTENT_RE.search(normalized) or _TEAM_LOOKUP_RE.search(normalized):
+        region = _ambiguous_region(text)
+        if region:
+            word, codes = region
+            lines = [
+                f"**{word}**{_josa(word, '은', '는')} 팀 이름이 아니라 권역이라 "
+                f"담당을 특정할 수 없습니다. {word}에는 팀이 {len(codes)}개 있습니다 — "
+                "어느 팀을 말씀하시나요?",
+                "",
+            ]
+            for code in codes:
+                scope = VERIFIED_TEAM_COUNTRY_SCOPES.get(code) or ()
+                scope_text = _join_ko(scope) if scope else "담당 국가 미등록"
+                lines.append(f"- **{TEAM_CODE2KR[code]}({code})** — {scope_text}")
+            return "\n".join(lines)
 
     return None
 
