@@ -71,6 +71,16 @@
       <h1 id="form-title">Welcome Back</h1>
       <p class="subtitle">Cella Enterprise AI</p>
 
+      <!-- 회사 계정(Entra ID) 로그인 — 사내 계정 통합.
+           ⚠️ 설정이 없으면 서버가 꺼졌다고 알려주고, 이 블록은 숨겨진다.
+              프론트에 조건을 박으면 IT 가 값을 준 날 아무도 기억하지 못한다. -->
+      <div id="entra-box" hidden>
+        <a class="btn-primary btn-entra" id="entra-login" href="/auth/entra/login">
+          회사 계정으로 로그인
+        </a>
+        <div class="forgot-divider"><span>또는</span></div>
+      </div>
+
       <form id="auth-form" autocomplete="on">
         <label for="input-name">이름</label>
         <input type="text" id="input-name" placeholder="이름을 입력하세요" autocomplete="name" required>

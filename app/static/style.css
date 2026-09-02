@@ -543,6 +543,17 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 .login-card .forgot-msg.is-error { color: #e5534b; }
 
+/* 회사 계정 로그인 — 전환기에는 기존 로그인 폼 위에 선다. */
+.login-card .btn-entra {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 4px;
+  text-align: center;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
 /* 구글 본인 확인 — 기다리지 않아도 되는 길이라 요청 양식보다 위에 둔다.
    ⚠️ 구글 브랜드 버튼은 흰 바탕·짙은 글자가 규정이라 테마 토큰을 쓰지 않는다.
       테두리를 따로 주지 않으면 라이트 모드에서 카드와 구분되지 않는다. */

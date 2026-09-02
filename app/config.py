@@ -84,6 +84,14 @@ class Settings(BaseSettings):
     google_oauth_redirect_uri: str = "http://localhost:3000/auth/google/callback"
     gws_default_email: str = ""
 
+    # Microsoft Entra ID (OIDC 사내 계정 통합 — 2026-09-02 IT 요청)
+    # ⚠️ 비어 있으면 그 로그인 경로는 통째로 꺼진다. IT 가 값을 주면 켜진다.
+    # ⛔ redirect_uri 는 https 여야 한다 (예외 localhost) — Entra 규칙이다.
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_client_secret: str = ""
+    entra_redirect_uri: str = ""
+
     # Open WebUI integration (read OAuth tokens from its DB)
     openwebui_db_path: str = ""
     openwebui_secret_key: str = ""

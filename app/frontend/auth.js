@@ -294,6 +294,21 @@
     });
   }
 
+  // ── 회사 계정(Entra ID) 로그인 ────────────────────────────────────────────
+  // 전환기에는 기존 ID/PW 와 나란히 둔다. 켤지 말지는 **서버가** 판단한다.
+  (async function showEntraIfEnabled() {
+    var box = document.getElementById("entra-box");
+    if (!box) return;
+    try {
+      var res = await fetch("/auth/entra/status");
+      if (!res.ok) return;
+      var data = await res.json();
+      if (data.enabled) box.hidden = false;
+    } catch (err) {
+      // 못 물어봤으면 숨긴 채로 둔다 — 눌러도 안 되는 버튼보다 낫다.
+    }
+  })();
+
   // ── 구글로 본인 확인을 마치고 돌아온 화면 ─────────────────────────────────
   // 서버가 증표를 HttpOnly 쿠키에 담아 보냈으므로 이 화면은 값을 들고 있지 않다.
   // 여기서 하는 일은 새 비밀번호를 받아 넘기는 것뿐이다.

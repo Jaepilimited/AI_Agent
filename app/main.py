@@ -28,6 +28,7 @@ from app.api.admin_group_api import group_router, ad_router
 from app.api.auth_api import auth_api_router
 from app.api.auth_middleware import get_optional_user
 from app.api.auth_routes import auth_router
+from app.api.entra_routes import entra_router
 from app.api.coa_finder_api import router as coa_finder_router
 from app.api.conversation_api import conversation_router, ensure_message_columns
 from app.api.eval_api import eval_router
@@ -168,6 +169,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_password_reset_table)
         from app.core.password_reset_google import ensure_google_reset_tables
         await asyncio.to_thread(ensure_google_reset_tables)
+        from app.core.entra_auth import ensure_entra_tables
+        await asyncio.to_thread(ensure_entra_tables)
         from app.core.value_lists import ensure_value_cache_table
         await asyncio.to_thread(ensure_value_cache_table)
         from app.core.ingredients import ensure_ingredient_tables
@@ -352,6 +355,7 @@ def create_app() -> FastAPI:
     # --- API routes ---
     app.include_router(router)           # /v1/chat/completions, /dashboard, /health, etc.
     app.include_router(auth_router)      # /auth/google/*
+    app.include_router(entra_router)     # /auth/entra/*  (설정 없으면 503)
     app.include_router(auth_api_router)  # /api/auth/*
     app.include_router(personal_briefing_router)  # /api/personal-briefing/*
     app.include_router(personal_profile_router)   # /api/personal/suggestions
