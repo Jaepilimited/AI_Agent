@@ -1463,6 +1463,91 @@
         "max_seconds": 90
       },
       "note": "2026-08-27 실측: 2026-08-25 에 뒤집힌 CURRENT_DATE 상한 규칙의 잔재 관문이 `date <= DATE('2026-08-27')` 를 상한이 없다고 읽어 이 질문을 두 번 죽였다 (사용자 제보). 프로덕션 14일 — 발동 10회 중 9회가 오탐(거부당한 SQL 에 상한이 실제로 있었다)이고 요청 5건이 죽었다. `SQL이 생성되지 않았습니다` 가 다시 나오면 관문이 되살아난 것이다."
+    },
+    {
+      "id": "log_team_spelling_scatter",
+      "category": "logistics",
+      "freq": "daily",
+      "question": "2026년 상반기(1~6월) 영업1팀이 발주한 수출 물류 건수 알려줘",
+      "expect": {
+        "contains_any": [
+          "789"
+        ],
+        "not_contains": [
+          "어느 기간",
+          "언제인가요",
+          "데이터가 없습니다",
+          "연동되어 있지 않"
+        ],
+        "min_len": 40,
+        "max_seconds": 90
+      },
+      "note": "2026-09-03 LOG 연동. order_team 이 한 팀당 최대 4표기로 흩어져 있어 order_team='B2B1' 로만 걸면 2건이 나온다(실제 789건). 0건이 아니라 그럴듯한 소수라 티가 안 나므로 숫자로 감시한다"
+    },
+    {
+      "id": "log_amount_currency_mixed",
+      "category": "logistics",
+      "freq": "daily",
+      "question": "2026년 상반기(1~6월) 수출 금액을 통화별로 나눠서 알려줘",
+      "expect": {
+        "contains_all": [
+          "USD"
+        ],
+        "contains_any": [
+          "1,142",
+          "1142"
+        ],
+        "not_contains": [
+          "어느 기간",
+          "언제인가요",
+          "연동되어 있지 않"
+        ],
+        "min_len": 60,
+        "max_seconds": 90
+      },
+      "note": "2026-09-03 LOG 연동. amount 는 USD·EUR·KRW·JPY·CNY 가 섞여 있고 통화 미상이 348건이다 — 통화 구분 없이 SUM 하면 숫자는 나오는데 뜻이 없다"
+    },
+    {
+      "id": "log_routing_not_missing_data",
+      "category": "logistics",
+      "freq": "daily",
+      "question": "2026년 상반기(1~6월) 운송방식별 수출 물류 건수 알려줘",
+      "expect": {
+        "contains_all": [
+          "해상"
+        ],
+        "contains_any": [
+          "930"
+        ],
+        "not_contains": [
+          "연동되어 있지 않",
+          "어떤 테이블에도 없",
+          "보유하지 않"
+        ],
+        "min_len": 40,
+        "max_seconds": 90
+      },
+      "note": "2026-09-03 LOG 연동. 예전 프롬프트는 '물류/발주 데이터는 어떤 테이블에도 없다' 고 단언했다 — 그 문장이 되살아나면 여기서 걸린다"
+    },
+    {
+      "id": "cs_centella_teca_features",
+      "category": "cs",
+      "freq": "daily",
+      "question": "센텔라 테카 앰플의 특징을 알려줘.",
+      "expect": {
+        "contains_any": [
+          "PDRN",
+          "TECA",
+          "테카"
+        ],
+        "not_contains": [
+          "등록되어 있지 않습니다",
+          "CS 데이터베이스에 등록"
+        ],
+        "min_len": 200,
+        "max_seconds": 90
+      },
+      "note": "2026-09-01 붐따 #155: 자료가 없어 '등록되어 있지 않습니다' 로 답했다. 2026-09-03 CS 시트에 센텔라테카 26건이 들어와 해결. ⛔ 라인 바꿔치기(붐따 #111)는 여기서 막지 않는다 — 다른 라인 이름을 금지어로 넣으면 '센텔라 앰플과 뭐가 다른가요' 같은 정상 비교 답변이 실패한다. 그건 코드(`product_lines` 필터)와 전용 테스트가 지킨다. 기대어는 실패 답변에 없는 값으로 잡았다 — '센텔라'·'앰플' 은 '등록되어 있지 않습니다' 문장에도 그대로 나온다"
     }
   ]
 }
