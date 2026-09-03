@@ -2247,6 +2247,13 @@ class OrchestratorAgent:
     _INLINE_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.M)
     _INLINE_TSV_ROW = re.compile(r"^[^\n\t]+\t[^\n\t]+\t", re.M)
 
+    # "문서 찾아줘" · "자료 좀 공유해줘" — 문서를 **달라는** 요청의 모양.
+    # ⛔ `문서`·`자료` 만 보면 "자료가 부족하다" 같은 말이 걸린다. 달라는
+    #    동사가 붙어야 요청이다 (붐따 #153).
+    _DOC_REQUEST_RE = re.compile(
+        r"(?:문서|자료)\s*(?:를|을|은|는|좀|들)?\s*"
+        r"(?:찾아|찾을|찾는|검색|공유|보여|올려|알려|주세요|줘|줄래|있나|있어|있을까)")
+
     def _has_pasted_data(self, query: str) -> bool:
         """질문 안에 **사용자가 가져온 데이터 덩어리**가 있는가.
 
@@ -2388,7 +2395,14 @@ class OrchestratorAgent:
         has_data = self._has(q, _DATA_OVERRIDE)
         if has_team and not has_data:
             return ("notion", True)
-        if self._has(q, _DOC_WORD) and not self._has(q, _QTY_INTENT):
+        # ⛔ `_DOC_WORD` 에 **`문서`·`자료` 자체가 없었다** — "문서 어디 있어" 는
+        #    있는데 "문서 찾아줘" 는 없어서, "…글로벌e 전환 관련해서 문서
+        #    찾아줘" 가 **확신을 갖고 bigquery** 로 갔다 (붐따 #153, 2026-08-26).
+        #    확신 분류라 LLM 재판정도 못 탄다.
+        #    ⚠️ 낱말을 하나씩 늘리지 않고 **「문서/자료를 달라」는 모양**으로 본다.
+        #       `_QTY_INTENT` 가드는 그대로다 — "매출 자료 보여줘" 는 조회다
+        if (self._has(q, _DOC_WORD) or self._DOC_REQUEST_RE.search(q)) \
+                and not self._has(q, _QTY_INTENT):
             return ("notion", True)
 
         # How-to / guide questions about platforms → Notion (not BigQuery)

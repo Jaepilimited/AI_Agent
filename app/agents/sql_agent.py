@@ -2416,6 +2416,17 @@ def _future_period_note(sql: str, today=None) -> str:
             + "행이 함께 집계될 수 있습니다.")
 
 
+def _notice_result_answer(results) -> str:
+    """조회 결과가 안내문 한 줄이면 그대로 보여줄 문자열, 아니면 빈 문자열."""
+    try:
+        from app.core.notice_result import extract, render
+        text = extract(results)
+        return render(text) if text else ""
+    except Exception as e:                    # noqa: BLE001
+        logger.warning("notice_result_failed", error=str(e)[:160])
+        return ""
+
+
 def format_answer(state: AgentState) -> Dict[str, Any]:
     """Format SQL results into a natural language answer with optional chart.
 
@@ -2450,6 +2461,13 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         results = None
 
     results = _relabel_team_values(results)
+
+    # ⛔ 안내문 한 줄짜리 결과는 **LLM 을 태우지 않는다** — 태웠더니 없는 표를
+    #    지어내 "내부 데이터베이스에서 확인할 수 있는 지표" 라고 소개했다
+    #    (붐따 #153). 지어낼 여지를 남기지 않는 것이 이 처리의 전부다.
+    _notice_only = _notice_result_answer(results)
+    if _notice_only:
+        return {"answer": _notice_only}
 
     if not results:
         # 0건 질문에서 미인식 용어를 후보로 수집 (백그라운드 — 응답을 늦추지 않는다).
@@ -4264,6 +4282,13 @@ def run_sql_agent_stream(
 
     # 팀 코드 → 한글 팀명 (fast-answer 의 결정적 표까지 함께 적용된다)
     results = _relabel_team_values(results)
+
+    # ⛔ 안내문 한 줄이면 여기서 끝낸다 (붐따 #153). 두 경로에 **함께** 걸어야
+    #    한다 — 채팅은 스트리밍으로 나가므로 한쪽만 고치면 실사용에서 빠진다
+    _notice_only = _notice_result_answer(results)
+    if _notice_only:
+        yield _notice_only
+        return
 
     # Fast-answer experiment (dev A/B: BQ_FAST_ANSWER=1): template table
     # instantly from rows, LLM only for short insights.
