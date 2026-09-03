@@ -76,6 +76,43 @@ def collect() -> list[Path]:
     return files
 
 
+def preflight(skip: bool = False) -> bool:
+    """보내기 전에 트리가 성한지 본다. 문제가 있으면 **보내지 않는다**.
+
+    ⛔ **왜 있나** (2026-09-03): 같은 작업트리를 쓰는 다른 세션의 편집 중간
+       상태가 배포됐다. 클래스에서 메서드 5개가 빠져나가 direct 라우트가 전부
+       `AttributeError` 였는데 — 파일은 문법이 멀쩡했고, 서비스는 `active`,
+       `/health` 는 **200**, 이 스크립트도 "기동 에러 0건" 이라고 찍었다.
+       13분간 아무 신호도 없었다.
+    ⚠️ 이 작업트리는 여러 세션이 함께 쓴다. 내 변경이 성해도 **트리가 성한지는
+       별개**다 — 보내는 것은 트리 전체이기 때문이다.
+    ⛔ 비상 우회로(`--skip-preflight`)를 둔다. 게이트가 롤백을 막으면 그때
+       필요한 것은 게이트가 아니다. 대신 **크게 찍는다**.
+    """
+    sys.path.insert(0, str(PROJ))
+    try:
+        from app.core.deploy_preflight import run
+    except Exception as e:                    # noqa: BLE001
+        print(f"  [점검] 불러오지 못했습니다 ({str(e)[:80]}) - 건너뜁니다")
+        return True
+    ok, problems = run(PROJ)
+    if ok:
+        print("  [점검] 통과")
+        return True
+    print(f"  [점검] !! 문제 {len(problems)}건 - 보내지 않습니다")
+    for line in problems[:15]:
+        # ⚠️ 콘솔이 cp949 라 비ASCII 기호에서 죽는다 (CLAUDE.md). 진단이 죽으면
+        #    "왜 막혔는지" 를 못 보고, 그러면 다음 사람은 그냥 우회한다
+        print("        ", line.encode("cp949", "replace").decode("cp949"))
+    if len(problems) > 15:
+        print(f"         ... 외 {len(problems) - 15}건")
+    if skip:
+        print("  [점검] --skip-preflight 로 무시하고 보냅니다 !! 이 상태가 그대로 뜹니다")
+        return True
+    print("  고친 뒤 다시 실행하세요. 정말 이대로 보내야 하면 --skip-preflight")
+    return False
+
+
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1] not in HOSTS:
         print(__doc__)
@@ -83,6 +120,9 @@ def main() -> int:
     target = sys.argv[1]
     host = HOSTS[target]
     dry = "--dry" in sys.argv
+
+    if not dry and not preflight("--skip-preflight" in sys.argv):
+        return 1
 
     files = collect()
     total = sum(f.stat().st_size for f in files)
