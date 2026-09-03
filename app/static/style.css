@@ -2410,6 +2410,42 @@ pre:hover .code-copy-btn { opacity: 1; }
 }
 .image-preview-strip::-webkit-scrollbar { height: 3px; }
 
+/* 올린 엑셀·CSV 를 무엇으로 읽었는지 보여주는 칩 (붐따 #161).
+   ⛔ 색은 반드시 style.css 상단의 실제 토큰만 쓴다 — 없는 변수는 에러가
+      아니라 폴백이라 테마 전환에서 조용히 빠진다 */
+.table-preview-strip {
+  max-width: 800px;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: 4px 0;
+}
+.table-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  line-height: 1.35;
+}
+.table-chip.loading { opacity: 0.6; }
+.table-chip-remove {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.1em;
+  line-height: 1;
+  padding: 0 2px;
+}
+.table-chip-remove:hover { color: var(--text); }
+
 .image-preview-item {
   position: relative;
   width: 72px; height: 72px;
@@ -4785,15 +4821,6 @@ html.dark .db-autocomplete-dropdown {
 
 .briefing-doc-join:hover { text-decoration: underline; }
 
-/* 동작은 조용하게 — pill 버튼을 늘어놓지 않는다. */
-.briefing-doc-footer {
-  display: flex;
-  gap: 18px;
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
 .briefing-doc-action {
   padding: 0;
   border: 0;
@@ -4843,6 +4870,86 @@ html.dark .db-autocomplete-dropdown {
   font-size: var(--text-lg);
   font-weight: 600;
 }
+
+/* ── 브리핑 통합 설정 ─────────────────────────────────────────────────────── */
+.briefing-settings-box {
+  width: min(720px, 100%);
+  padding: 0;
+}
+
+.briefing-settings-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.briefing-settings-title {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.briefing-settings-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.briefing-settings-close:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.briefing-settings-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.briefing-settings-content { padding: 0 24px 24px; }
+
+.briefing-settings-section { padding: 22px 0; }
+
+.briefing-settings-section + .briefing-settings-section {
+  border-top: 1px solid var(--border);
+}
+
+.briefing-settings-section-title {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.briefing-settings-section-copy {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+
+.briefing-settings-saved .saved-list { max-height: 240px; }
 
 .briefing-jandi-help {
   margin: 0 0 16px;
@@ -4947,6 +5054,18 @@ html.dark .db-autocomplete-dropdown {
 .briefing-jandi-actions .briefing-doc-action.danger { color: var(--error); }
 
 @media (max-width: 480px) {
+  .briefing-settings-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .briefing-settings-box {
+    width: 100%;
+    max-height: 94vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .briefing-settings-header { padding: 18px 20px; }
+  .briefing-settings-content { padding: 0 20px 20px; }
+
   .craver-line { font-size: 18vw; }
   .craver-track { font-size: 14vw; }
   .craver-track img { width: 25vw; }
@@ -5750,6 +5869,31 @@ html.dark .db-autocomplete-dropdown {
   border: none; padding: 7px 18px; background: var(--accent); color: #fff; font-weight: 600;
 }
 .fb-btn-primary:hover { filter: brightness(1.06); }
+
+/* ── 만족도 설문(별점) ────────────────────────────────────────────────
+   ⛔ 색·배경을 JS 인라인으로 두지 마라 — 테마 전환에서 조용히 빠진다.
+      실제로 있는 토큰만 쓴다 (--panel 같은 이름은 없다). */
+.sv-stars {
+  display: flex; gap: 4px; justify-content: center; margin: 4px 0 14px;
+}
+.sv-star {
+  background: none; border: none; cursor: pointer; padding: 2px 4px;
+  font-size: 30px; line-height: 1; color: var(--border-strong);
+  transition: color .12s ease, transform .12s ease;
+}
+/* 채워진 별 — 마우스를 올린 지점까지 함께 물든다 (고르기 전에도 무엇을 고르는지 보인다) */
+.sv-star.on { color: #f5a524; }
+.sv-star:hover { transform: translateY(-1px); }
+.sv-star:focus-visible { outline: 2px solid var(--border-focus); border-radius: 6px; }
+/* 고른 점수를 말로도 적는다 — 별 개수만으로는 3점이 좋은지 나쁜지 모른다 */
+.sv-scale {
+  display: flex; justify-content: space-between;
+  font-size: var(--text-xs); color: var(--text-muted); margin: -10px 2px 12px;
+}
+.sv-picked {
+  text-align: center; font-size: var(--text-xs); color: var(--text-secondary);
+  margin: -8px 0 12px; min-height: 1em;
+}
 
 
 /* ── 내 피드백 회신 알림 ──────────────────────────────────────────────

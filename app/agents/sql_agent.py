@@ -2815,7 +2815,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # 방법을 답변에 붙인다. LLM이 스스로 "요청해주세요" 라고 써도 그 뒤에
         # 아무 장치가 없었다(2026-08-31, 같은 질문 재발 사고) — 코드가 실제
         # 링크로 대체·보증한다.
-        answer = _attach_full_data_download(answer, results, state.get("user_id"), _rows_withheld)
+        answer = _attach_full_data_download(
+            answer, results, state.get("user_id"), _rows_withheld, query)
 
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
@@ -3023,7 +3024,8 @@ _CSV_OFFER_MIN_ROWS = 20
 
 
 def _attach_full_data_download(
-    answer: str, results: list, user_id: Optional[int], rows_withheld: bool
+    answer: str, results: list, user_id: Optional[int], rows_withheld: bool,
+    query: str = "",
 ) -> str:
     """Strip any empty "요청해주세요" promise and attach a real CSV download.
 
@@ -3039,9 +3041,17 @@ def _attach_full_data_download(
        것뿐이라 "전체"를 붙이면 숨긴 걸 더 주는 것처럼 거짓 주장이 된다.
     """
     answer = _EMPTY_DOWNLOAD_PROMISE_RE.sub("", answer)
+    # ⛔ 있는 기능을 없다고 쓴 문장을 지운다 (붐따 #161) — "엑셀 파일 생성은
+    #    지원하지 않습니다" 가 실제로 나갔고, 사용자는 그 말을 믿고 물러섰다
+    from app.core.file_request import strip_denials, wants_file
+    answer = strip_denials(answer)
     if not user_id or not results:
         return answer
-    if not rows_withheld and len(results) < _CSV_OFFER_MIN_ROWS:
+    # ⛔ **달라고 했으면 행 수를 따지지 않는다.** 8행짜리 결과가 두 조건 어디에도
+    #    안 걸려 "엑셀로 뽑아줘" 에 아무것도 안 붙었다 (붐따 #161). 잡음을
+    #    걱정한 조건이었는데, 사용자가 요청했을 때는 그게 잡음이 아니다
+    asked = wants_file(query)
+    if not asked and not rows_withheld and len(results) < _CSV_OFFER_MIN_ROWS:
         return answer
     try:
         from app.core.sql_result_store import save as _save_full_result
@@ -3052,6 +3062,11 @@ def _attach_full_data_download(
             answer += f"\n\n> 📄 [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
         else:
             answer += f"\n\n> 📄 [CSV로 다운로드 (총 {len(results)}행)](/api/sql-results/{token}/csv)"
+        if asked:
+            # ⚠️ 우리가 주는 것은 CSV 다 — 엑셀에서 바로 열리지만 .xlsx 는 아니다.
+            #    "엑셀 파일" 이라고 부르면 확장자가 다른 것을 숨기게 된다
+            answer += ("\n> (엑셀에서 바로 열리는 CSV 입니다 — .xlsx 파일 자체를 "
+                       "만들지는 못합니다)")
     except Exception as e:
         logger.warning("format_answer_csv_offer_failed", error=str(e)[:150])
     return answer
@@ -4373,7 +4388,8 @@ def run_sql_agent_stream(
     # 붙인다. 이 경로는 이미 스트리밍이 끝난 텍스트를 손볼 수 없으므로(LLM이
     # 스스로 빈 약속을 썼어도 지울 수 없다) 프롬프트에서 그런 문구를 아예
     # 지시하지 않는 대신, 여기서 실제 다운로드를 추가로 붙인다.
-    download_note = _attach_full_data_download("", results, user_id, _rows_withheld)
+    download_note = _attach_full_data_download(
+        "", results, user_id, _rows_withheld, query)
     if download_note:
         yield download_note
 

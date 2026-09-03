@@ -615,16 +615,32 @@ _EXCLUSION_TERMS = (
     "없는", "미포함", "불포함", "제외한", "제외하고", "빼고", "뺀", "무첨가", "프리", "free",
 )
 
+def _line_names_for_help() -> str:
+    """안내문에 쓸 제품 라인 이름 — 단일 소스는 프롬프트의 `### 제품 라인` 표다."""
+    try:
+        from app.core import product_lines
+        names = sorted(product_lines.known_lines())
+        if names:
+            return " · ".join(names)
+    except Exception:
+        pass
+    return "센텔라, 히알루시카, 톤브라이트닝, 포어마이징 등"
+
+
 INGREDIENT_EXCLUSION_MESSAGE = (
     "**성분 미포함 기준으로는 순위를 낼 수 없습니다.**\n\n"
-    "제품별 **전성분 데이터를 시스템이 보유하고 있지 않습니다.** "
-    "지금 조회 가능한 것은 매출·수량과 제품명·라인뿐이라, "
+    # ⛔ 예전엔 "전성분 데이터를 보유하고 있지 않습니다" 였다 — 2026-08-06 에
+    #    전성분을 적재한 뒤로 **사실이 아니다** (2026-09-03 정정). 커버리지가
+    #    전 제품을 덮지 못할 뿐이라, 없는 것은 "미포함 순위" 지 데이터가 아니다.
+    "제품별 전성분은 보유하고 있지만 **전 제품을 덮지는 못합니다** "
+    "(시트에 없는 제품은 성분을 *모르는* 것이지 *안 들어간* 것이 아닙니다). "
     "특정 성분이 **들어있지 않다**는 것은 확인할 방법이 없습니다.\n"
     "(제품명에 성분이 안 적혀 있다고 해서 실제로 안 들어간 것은 아닙니다. "
     "이 방식으로 답하면 해당 성분이 든 제품이 '미포함 1위'로 올라오는 오답이 납니다.)\n\n"
     "**대신 이렇게 하실 수 있습니다**\n"
-    "- **제품 라인 기준**으로 물어보시면 정확합니다 — 센텔라, 히알루시카, 톤브라이트닝, "
-    "포어마이징, 프로바이오시카, 티트리카, 랩인네이처 등\n"
+    # ⛔ 라인 목록을 손으로 적지 마라 — 단일 소스는 프롬프트의 `### 제품 라인` 표다
+    #    (여기 적어 둔 탓에 센텔라테카·히알루테카가 빠져 있었다, 2026-09-03)
+    "- **제품 라인 기준**으로 물어보시면 정확합니다 — " + _line_names_for_help() + "\n"
     "  예) \"센텔라 라인 제외한 제품 판매량 순위\"\n"
     "- **개별 제품의 전성분**은 `@@BP` (제품 Q&A)를 선택해 물어보시면 확인됩니다\n"
     "  예) \"@@BP 센텔라 앰플 전성분 알려줘\""
@@ -701,6 +717,24 @@ def _euro(word: str) -> str:
 import re as _re
 
 
+def _product_catalog_section() -> str:
+    """대표 제품 목록 — **실측 주입** (2026-09-03).
+
+    ⛔ 예전엔 여기에 목록을 손으로 적어 뒀다. 그래서 2026-01 출시해 36만 개 팔린
+       **센텔라 테카 앰플**을 *"공식 제품 목록에서 확인되지 않습니다"* 라고 답했다
+       (사용자 제보). 데이터에는 다 있었고 **프롬프트만 낡아 있었다.**
+    ⚠️ 조회 실패로 목록이 비어도 답변이 죽으면 안 된다 — 그때는 "목록 없음 +
+       단정 금지" 문구가 대신 들어간다 (`product_catalog.section()`).
+    """
+    try:
+        from app.core.product_catalog import section
+        return section()
+    except Exception as e:  # 캐시 테이블 부재·DB 순단 등
+        logger.warning("product_catalog_section_failed", error=str(e)[:140])
+        return ("## 대표 제품\n⚠️ 제품 목록을 불러오지 못했습니다. 제품명을 지어내지 말고,"
+                " 목록에 없다는 이유로 **없는 제품이라고 단정하지 마세요.**")
+
+
 class OrchestratorAgent:
     """Orchestrator-Worker pattern conductor.
 
@@ -763,6 +797,13 @@ class OrchestratorAgent:
         {"key": "국내몰 리뷰", "aliases": ["스마트스토어 리뷰", "smartstore review", "네이버 리뷰", "올리브영 리뷰", "무신사 리뷰", "국내 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "국내몰 리뷰", "desc": "스마트스토어·올리브영·무신사 등 8채널"},
         {"key": "해외몰 리뷰", "aliases": ["아마존 리뷰", "amazon review", "큐텐 리뷰", "qoo10 review", "쿠텐 리뷰", "쇼피 리뷰", "shopee review", "해외 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "해외몰 리뷰", "desc": "Qoo10·Shopee·Amazon·해외 자사몰"},
         {"key": "매장 리뷰", "aliases": ["플래그십 리뷰", "오프라인 리뷰", "스토어 리뷰", "구글맵 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "매장 리뷰", "desc": "명동·뉴욕 플래그십 (구글맵·네이버 플레이스)"},
+        # ── BigQuery 물류 ──
+        # ⚠️ 키는 사용자가 부르는 이름(`물류`)이다. `LOG` 는 별칭으로 남겼다
+        #    (2026-09-03 사용자 요청으로 `LOG` → `물류` 변경).
+        # ⚠️ Qdrant `TEAM_MAP` 에 `물류 → LOG`(물류팀 노션 문서)가 이미 있다.
+        #    그 팀은 아직 `_DB_REGISTRY` 에 없어 지금은 충돌하지 않지만,
+        #    노출한다면 이름을 갈라야 한다 (`물류 문서` 등)
+        {"key": "물류", "aliases": ["log", "수출물류", "물류관리", "선적", "출고", "logistics", "export"], "route": "bigquery", "group": "물류 데이터", "icon": "box", "label": "물류", "desc": "수출 물류 — 발주·선적·출고·ETD/ETA·포워더"},
         {"key": "초상권", "aliases": ["모델", "모델사진", "모델초상권", "rights", "bc"], "route": "model_rights", "group": "BC", "icon": "users", "label": "초상권", "desc": "모델 사진 사용 가능 여부·기한 ([BC] 모델 초상권 현황)"},
         # ── Notion (팀별자료 — 벡터 검색, 알파벳순) ──
         {"key": "B2B1", "aliases": ["b2b1", "국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 (매출/거래처/재고)"},
@@ -945,7 +986,7 @@ class OrchestratorAgent:
 
     def _build_multi_prefix_tasks(
         self, entries, query, messages, conversation_context, model_type, user_email,
-        brand_filter=None, can_view_fi=False, enabled_sources=None,
+        brand_filter=None, can_view_fi=False, enabled_sources=None, user_id=None,
     ):
         """Build the shared @@ multi-source parallel fan-out tasks."""
         tasks = []
@@ -957,6 +998,7 @@ class OrchestratorAgent:
                     query, messages, conversation_context, model_type, user_email,
                     brand_filter=brand_filter, can_view_fi=can_view_fi,
                     enabled_sources=scoped_sources, source_explicit=True,
+                    user_id=user_id,
                 )
             elif target == "notion":
                 task = self._handle_qdrant(
@@ -1026,6 +1068,7 @@ class OrchestratorAgent:
         can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
         stream_callback=None,
+        user_id: Optional[int] = None,
     ) -> dict:
         """Main entry point: analyze query -> delegate to Sub Agent -> return result.
 
@@ -1146,7 +1189,9 @@ class OrchestratorAgent:
                 route = entry["route"]
                 logger.info("db_prefix_routed", prefix=entry["key"], route=route, query=query[:80])
                 handler = self._resolve_handler(route)
-                if route in ("bigquery", "multi"):
+                if route == "bigquery":
+                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True, user_id=user_id)
+                elif route == "multi":
                     result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)
                 elif route == "notion":
                     result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])
@@ -1164,7 +1209,7 @@ class OrchestratorAgent:
             tasks = self._build_multi_prefix_tasks(
                 db_entry, query, messages, conversation_context, model_type, user_email,
                 brand_filter=brand_filter, can_view_fi=can_view_fi,
-                enabled_sources=enabled_sources,
+                enabled_sources=enabled_sources, user_id=user_id,
             )
             results = await _aio.gather(*[t[2] for t in tasks], return_exceptions=True)
             combined = self._merge_multi_prefix_results(tasks, results)
@@ -1177,7 +1222,8 @@ class OrchestratorAgent:
                 query, messages, conversation_context, model_type, user_email, images=images
             )
             if "answer" in result:
-                result["answer"] = ensure_formatting(result["answer"], domain="direct")
+                result["answer"] = (ensure_formatting(result["answer"], domain="direct")
+                                    + self._image_data_notice(query))
             return result
 
         # Fast path: if enabled_sources maps to a single route, skip classification entirely (like @@)
@@ -1240,7 +1286,9 @@ class OrchestratorAgent:
 
         # Step 2: Execute via Sub Agent with context
         handler = self._resolve_handler(route)
-        if route in ("bigquery", "multi"):
+        if route == "bigquery":
+            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id)
+        elif route == "multi":
             result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
         elif route == "notion":
             result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email)
@@ -1275,6 +1323,7 @@ class OrchestratorAgent:
         brand_filter=None,
         can_view_fi: bool = False,
         enabled_sources=None,
+        user_id=None,
     ):
         """Async generator: yields (type, data) tuples for real-time streaming.
 
@@ -1435,14 +1484,12 @@ class OrchestratorAgent:
                         yield ("chunk", f"**데이터 점검 중입니다** — 관리자가 수동으로 점검을 활성화했습니다. 잠시 후 다시 시도해 주세요.\n\n*사유: {_mm2.reason}*")
                         yield ("done", "")
                         return
-                    _sp_maint_warn = ("\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
-                                      if (_mm2.active and not _mm2.manual) else "")
                     from app.agents.sql_agent import run_sql_agent_stream
                     _q = asyncio.Queue()
                     _loop = asyncio.get_running_loop()
                     def _bq():
                         try:
-                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi):
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi, user_id=user_id):
                                 _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                         except Exception as e:
                             _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
@@ -1453,8 +1500,6 @@ class OrchestratorAgent:
                         if mt == "end":
                             break
                         yield ("chunk", data)
-                    if _sp_maint_warn:
-                        yield ("chunk", _sp_maint_warn)
                     yield ("done", "")
                     return
 
@@ -1503,7 +1548,8 @@ class OrchestratorAgent:
                 query, messages, conversation_context, model_type, user_email, images=images
             )
             yield ("source", "direct")
-            yield ("done", ensure_formatting(result.get("answer", ""), domain="direct"))
+            yield ("done", ensure_formatting(result.get("answer", ""), domain="direct")
+                   + self._image_data_notice(query))
             return
 
         is_system_task = query.strip().startswith("### Task:")
@@ -1654,10 +1700,6 @@ class OrchestratorAgent:
                 yield ("chunk", f"**데이터 점검 중입니다** — 관리자가 수동으로 점검을 활성화했습니다. 잠시 후 다시 시도해 주세요.\n\n*사유: {_mm.reason}*")
                 yield ("done", "")
                 return
-            _stream_maintenance_warning = (
-                "\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
-                if (_mm.active and not _mm.manual) else ""
-            )
 
             _q: _aio.Queue = _aio.Queue()
             _loop = _aio.get_running_loop()
@@ -1672,6 +1714,7 @@ class OrchestratorAgent:
                         enabled_sources=enabled_sources,
                         wiki_context=wiki_context,
                         can_view_fi=can_view_fi,
+                        user_id=user_id,
                     ):
                         _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
                 except Exception as e:
@@ -1695,8 +1738,6 @@ class OrchestratorAgent:
                     break
                 yield ("chunk", data)
 
-            if _stream_maintenance_warning:
-                yield ("chunk", _stream_maintenance_warning)
             yield ("done", "")
             return
 
@@ -1876,6 +1917,16 @@ class OrchestratorAgent:
         "foc", "무상출고", "무상 출고", "바우처", "원가", "광고비", "roas", "객단가",
         # 구어체로 물어도 데이터다 — 이것들이 없어 LLM 재판정으로 넘어가 왕복이 늘었다
         "메가와리", "신제품", "할인", "팔렸", "잘나가", "잘 나가",
+        # 수출 물류(@@물류) — ⚠️ 짧고 뜻이 겹치는 낱말(`출고`·`발주`·`통관`)은
+        #    `_GUARDED` 에서 낱말 경계를 확인한다 (`무상출고`·`재발주` 오탐 방지)
+        # ⛔ `eta`·`etd` 를 맨 낱말로 넣지 마라 — **`meta`·`retail`·`beta` 안에 들어 있고**
+        #    `_GUARDED` 도 못 막는다 (`standalone()` 은 앞 글자가 한글일 때만 본다).
+        "물류", "선적", "포워더", "인코텀즈", "컨테이너", "팔레트", "출항",
+        "수출신고", "유니패스", "선하증권", "리드타임", "출고일", "도착예정",
+        # ⚠️ 사람이 실제로 쓰는 말 (붐따 #161) — `면장` 은 수출신고필증의
+        #    현장 용어이고, `세일즈운영팀` 은 OP 담당자를 가리킨다.
+        #    ⛔ `운영팀` 만 넣지 마라 — `@@OP`(재고) 별칭과 겹친다
+        "면장", "수출신고필증", "세일즈운영팀", "세일즈 운영팀",
         "데이터", "조회", "집계", "합계", "평균",
         "분석", "추이", "증감", "성장률",
         "top", "순위", "랭킹",
@@ -2059,6 +2110,20 @@ class OrchestratorAgent:
     #    새 충돌은 tests/test_no_silent_failures.py 의 충돌 검출기가 알려준다.
     _GUARDED = {"환율", "라인", "단가", "성과", "현황", "경쟁", "인도", "행사", "티어"}
 
+    def _image_data_notice(self, query: str) -> str:
+        """이미지가 붙은 **데이터 질문**이면 조회를 안 했다고 공시한다 (붐따 #161).
+
+        ⛔ 이미지가 붙으면 vision 경로로 강제되는데, 그 경로는 BigQuery 스키마를
+           아예 받지 않는다. 그래서 "면장 정보가 없습니다"·"담당자 데이터가 조회
+           대상에 없습니다" 라고 **단정**했고 둘 다 사실이 아니었다.
+        """
+        try:
+            from app.core.image_route_notice import notice
+            return notice(query, True, self._has(query.lower(), self._DATA_KEYWORDS))
+        except Exception as e:                # noqa: BLE001
+            logger.warning("image_data_notice_failed", error=str(e)[:160])
+            return ""
+
     def _has(self, q: str, words) -> bool:
         """키워드 포함 검사 — `_GUARDED` 낱말만 경계를 본다."""
         from app.core.textmatch import contains_any
@@ -2188,6 +2253,14 @@ class OrchestratorAgent:
         마크다운 표 4행 이상, 또는 탭 구분 3행 이상이면 붙여넣은 데이터로 본다
         (3행 이하는 예시로 든 것일 수 있어 조회를 막지 않는다).
         """
+        # ⛔ 파일로 올린 표는 **크기와 무관하게** 붙여넣은 표다. 200자 문턱은
+        #    "예시로 두어 줄 적은 것" 을 거르려는 것인데, 8행 × 3열짜리 첨부는
+        #    그 문턱에 걸려 **조회로 새고 묻지도 않은 데이터가 답으로 나간다**.
+        #    표식은 서버가 붙이므로(`table_attachment.to_block`) 사용자가 흉내낼
+        #    일도 없다
+        from app.core.table_attachment import ATTACHMENT_MARKER
+        if ATTACHMENT_MARKER in (query or ""):
+            return True
         if len(query or "") < 200:
             return False
         if len(self._INLINE_TABLE_ROW.findall(query)) >= 4:
@@ -2517,6 +2590,7 @@ class OrchestratorAgent:
         can_view_fi: bool = False,
         enabled_sources: Optional[List[str]] = None,
         source_explicit: bool = False,
+        user_id: Optional[int] = None,
     ) -> dict:
         """BigQuery Agent with conversation context.
 
@@ -2543,7 +2617,6 @@ class OrchestratorAgent:
             )
 
         # Maintenance check: warn but don't block (production-ready)
-        _maintenance_warning = ""
         from app.core.safety import get_maintenance_manager
         mm = get_maintenance_manager()
         if mm.active and mm.manual:
@@ -2557,10 +2630,6 @@ class OrchestratorAgent:
                     f"*사유: {mm.reason}*"
                 ),
             }
-        elif mm.active:
-            # Auto-detected update = soft warning, still execute query
-            _maintenance_warning = f"\n\n> ⚠️ 참고: 데이터 테이블이 업데이트 중일 수 있습니다. 수치가 부정확하면 잠시 후 다시 조회해주세요."
-            logger.info("maintenance_soft_warning", reason=mm.reason)
         try:
             answer = await run_sql_agent(
                 query,
@@ -2569,6 +2638,7 @@ class OrchestratorAgent:
                 brand_filter=brand_filter,
                 enabled_sources=enabled_sources,
                 can_view_fi=can_view_fi,
+                user_id=user_id,
             )
             # Check if SQL agent returned an error (it returns error as string, not exception)
             if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
@@ -2581,6 +2651,7 @@ class OrchestratorAgent:
                     brand_filter=brand_filter,
                     enabled_sources=enabled_sources,
                     can_view_fi=can_view_fi,
+                    user_id=user_id,
                 )
                 if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
                     logger.warning("bigquery_sql_failed_fallback_to_direct", query=query[:100])
@@ -2591,7 +2662,7 @@ class OrchestratorAgent:
             _bq_task = asyncio.create_task(self._capture_bq_facts(query, answer))
             self._bg_tasks.add(_bq_task)
             _bq_task.add_done_callback(self._bg_tasks.discard)
-            return {"source": "bigquery", "answer": answer + _maintenance_warning}
+            return {"source": "bigquery", "answer": answer}
         except Exception as e:
             logger.error("orchestrator_bigquery_failed", error=str(e))
             return await self._handle_bigquery_fallback(
@@ -3547,20 +3618,7 @@ JSON만 반환:
 - **성장 전략**: 카테고리 확장·신제품 고도화, 글로벌 리테일 확장, 국가별 현지화, 인재 투자
 "우리 회사" = Craver Corporation / SKIN1004. 회사 질문은 이 정보로 답변(웹검색 불필요).
 
-## 대표 제품 (공식 제품명 — 제품 질문 시 이 목록의 명칭만 사용)
-- **마다가스카르 센텔라 100 앰플** (100ml/55ml) — 시그니처 베스트셀러
-- 마다가스카르 센텔라 토닝 토너 (210ml)
-- 마다가스카르 센텔라 라이트 클렌징 오일
-- 마다가스카르 센텔라 수딩 크림 (75ml)
-- 마다가스카르 센텔라 앰플 폼 (클렌저)
-- 마다가스카르 센텔라 퀵 카밍 패드
-- 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 (50ml)
-- 센텔라 에어핏 선크림 라이트/플러스 (무기자차)
-- 마다가스카르 센텔라 톤 브라이트닝 캡슐 앰플 / 톤 브라이트닝 크림
-- 포어마이징 라인: 퀵 클레이 스틱 마스크, 프레시 앰플, 딥 클렌징 폼, 라이트 젤 크림
-- 랩인네이처 라인: 레티놀/나이아신아마이드/마트릭실 부스팅 샷 앰플
-- 기타 라인: 프로바이오시카, 티트리카, 히알루테카, 센텔라테카
-⛔ **제품명 창작 금지**: 위 목록에 없는 제품명을 임의로 조합·생성하지 마세요. 확실하지 않으면 라인 이름까지만 언급하고, 정확한 제품 목록·매출은 데이터 조회(BigQuery)를 제안하세요.
+{_product_catalog_section()}
 
 ## 시스템 기능
 사용자가 "이 시스템/셀라가 뭘 할 수 있냐"고 물으면 **아래 목록으로 답하세요.**
@@ -3682,6 +3740,7 @@ JSON만 반환:
         #    존재 질문까지 전부 "사내 질문" 으로 분류돼 검색 그라운딩이 막혔다.
         #    스키마 질문("매출 테이블에 원가 컬럼 있나요?")은 테이블·컬럼·매출·원가로
         #    이미 잡힌다 — 어미까지 넣을 이유가 없다. `라인` ⊂ `가이드라인` 과 같은 부류.
+        "물류", "선적", "포워더", "인코텀즈", "통관", "수출신고", "컨테이너",
         "테이블", "컬럼", "포함", "revenue",
         "platform", "campaign", "google ads", "cost", "impression", "conversion",
         "cpc", "cpv", "cpe",
@@ -3836,14 +3895,18 @@ JSON만 반환:
             # Vision mode: images present → use generate_with_images
             if images:
                 vision_text = query or "이 이미지에 대해 설명해주세요."
+                # ⛔ 이 경로는 BigQuery 스키마를 받지 않는다 — 사내에 무엇이
+                #    있는지 모른다. 모르는 것을 "없습니다" 라고 쓰지 못하게 한다
+                #    (붐따 #161: 실제로 있는 수출신고번호·OP담당자를 없다고
+                #    답해 사용자가 물러섰다). 보증은 답변 뒤 공시다
+                from app.core.image_route_notice import PROMPT_RULE as _img_rule
+                _vision_system = f"{system}\n\n{date_line}\n{_img_rule}"
                 answer = await asyncio.to_thread(
                     llm.generate_with_images,
                     vision_text,
                     images,
-                    system_instruction=f"{system}\n\n{date_line}",
-                    fallback_system_instruction=_strip_model_claim(
-                        f"{system}\n\n{date_line}"
-                    ),
+                    system_instruction=_vision_system,
+                    fallback_system_instruction=_strip_model_claim(_vision_system),
                     temperature=0.5,
                 )
                 return {"source": "direct", "answer": answer}

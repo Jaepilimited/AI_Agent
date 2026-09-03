@@ -29,6 +29,7 @@ from app.api.auth_api import auth_api_router
 from app.api.auth_middleware import get_optional_user
 from app.api.auth_routes import auth_router
 from app.api.entra_routes import entra_router
+from app.api.attachment_api import router as attachment_router
 from app.api.coa_finder_api import router as coa_finder_router
 from app.api.conversation_api import conversation_router, ensure_message_columns
 from app.api.eval_api import eval_router
@@ -38,6 +39,7 @@ from app.api.middleware import setup_middleware
 from app.api.personal_briefing_api import router as personal_briefing_router
 from app.api.personal_profile_api import router as personal_profile_router
 from app.api.saved_questions_api import router as saved_questions_router
+from app.api.survey_api import survey_router
 from app.api.jandi_briefing_api import router as jandi_briefing_router
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
@@ -161,6 +163,9 @@ def create_app() -> FastAPI:
         # 수정 배포와 붐따 상태를 한 흐름으로 묶는다. 해결 목록에 명시된 신고만
         # 날짜까지 검증한 뒤 done 처리하며, 재기동 시에는 이미 닫힌 행을 건너뛴다.
         await asyncio.to_thread(apply_deployed_resolutions)
+        # 만족도 설문 — 접속일수 10·50·100일차에 별점을 한 번 묻는다 (2026-09-02)
+        from app.core.satisfaction import ensure_survey_table
+        await asyncio.to_thread(ensure_survey_table)
         from app.core.schema_watch import ensure_schema_watch_table
         await asyncio.to_thread(ensure_schema_watch_table)
         from app.core.ad_media_watch import ensure_ad_media_table
@@ -265,6 +270,9 @@ def create_app() -> FastAPI:
             #    처음에 04:10 에 걸었다가 **매일 전날 데이터를 읽고 있었다** (2026-08-25).
             #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돈다.
             _scheduler.add_job(_op_inventory_sync_job, "cron", hour="11,16", minute=20, id="op_inventory_sync_daily")
+            # CS/BP 제품 Q&A 시트 — ⛔ 기동 시 한 번만 읽던 것을 매시 갱신으로 바꿨다
+            #    (2026-09-03). 없으면 시트를 고쳐도 재기동 전까지 반영되지 않는다
+            _scheduler.add_job(_cs_cache_job, "cron", minute=40, id="cs_cache_hourly")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
             _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")
@@ -360,6 +368,7 @@ def create_app() -> FastAPI:
     app.include_router(personal_briefing_router)  # /api/personal-briefing/*
     app.include_router(personal_profile_router)   # /api/personal/suggestions
     app.include_router(saved_questions_router)  # /api/saved-questions/*
+    app.include_router(survey_router)         # /api/survey — 만족도 설문
     app.include_router(jandi_briefing_router)  # /api/personal-briefing/jandi, /api/internal/*
     app.include_router(conversation_router)  # /api/conversations/*
     app.include_router(admin_router)         # /api/admin/*
@@ -369,6 +378,7 @@ def create_app() -> FastAPI:
     app.include_router(harness_router)       # /harness, /api/harness/*
     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
     app.include_router(coa_finder_router)     # /coa-finder, /api/coa-finder/*
+    app.include_router(attachment_router)     # /api/attachments/table — 엑셀·CSV → 표 텍스트
     app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
     app.include_router(notifications_router)   # /api/notifications/*
     app.include_router(sql_export_router)      # /api/sql-results/*csv — 본인이 조회한 결과만 다운로드
@@ -733,6 +743,32 @@ async def _query_profile_job():
         logger.error("query_profile_failed", error=str(e))
 
 
+async def _cs_cache_job():
+    """매시 :40 — CS/BP 제품 Q&A 스프레드시트를 다시 읽는다.
+
+    ⛔ **없어서 조용히 낡아 있었다** (2026-09-03 사용자 제보). `warmup()` 이
+       서버 기동 시에만 불렸고 TTL 도 없어, 시트를 고쳐도 **재기동 전까지**
+       옛 답을 자신 있게 내놨다. 실측: 시트 최종수정 09-03 09:41 /
+       그 직전 재기동 **09-02 16:18** — 그 사이 편집은 전부 안 보였다.
+    ⚠️ 매시로 둔 이유는 호출이 싸기 때문이다 (탭 목록 1회 + batchGet 1회).
+       하루 두 번으로 줄이면 오전에 고친 문구가 오후까지 안 보인다.
+    """
+    from app.agents.cs_agent import refresh
+    from app.core.self_check import track_job
+
+    try:
+        with track_job("cs_cache_hourly") as jr:
+            n = await refresh()
+            # ⚠️ `refresh()` 는 실패해도 **옛 캐시를 지키고** -1 을 준다.
+            #    그것을 성공으로 기록하면 자가 점검이 영영 못 잡는다.
+            if n < 0:
+                raise RuntimeError("cs 시트 재로딩 실패 — 옛 캐시 유지")
+            jr["detail"] = f"CS Q&A {n}건"
+        logger.info("cs_cache_job_done", qa_count=n)
+    except Exception as e:
+        logger.error("cs_cache_job_failed", error=str(e)[:200])
+
+
 async def _ingredient_sync_job():
     """매일 04:00: 제품 전성분 스프레드시트 → MariaDB 적재.
 
@@ -981,6 +1017,13 @@ async def _value_lists_job():
             stats = await asyncio.to_thread(refresh)
             jr.set_note(f"{len(stats)}개 목록 갱신")
         logger.info("value_lists_job_done", **stats)
+        # ⛔ 대표 제품 목록도 **실측**이다 (2026-09-03). 손으로 적어 두었다가
+        #    36만 개 팔린 센텔라 테카 앰플을 "없는 제품" 이라고 답한 사고가 있었다.
+        try:
+            from app.core.product_catalog import refresh as _catalog_refresh
+            logger.info("product_catalog_job_done", products=_catalog_refresh())
+        except Exception as _e:
+            logger.error("product_catalog_job_failed", error=str(_e)[:200])
     except Exception as e:
         logger.error("value_lists_job_failed", error=str(e))
 

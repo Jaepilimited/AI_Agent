@@ -1599,7 +1599,7 @@ GROUP BY team_id ORDER BY promo_count DESC
 | country | STRING | 국가 ✅ **매출 테이블과 같은 한글 국가명** (실측 124개) |
 | consignee | STRING | CNEE(수하인/거래처, 536곳) |
 | log_manager | STRING | LOG 담당자 (6명) |
-| op_manager | STRING | OP 담당자 ⚠️ **같은 사람이 두 표기** (아래) |
+| op_manager | STRING | OP 담당자 = **세일즈운영팀 담당자** ⚠️ **같은 사람이 두 표기** (아래) |
 | incoterms | STRING | 인코텀즈 — 실제 값: {{VALUES:LogIncoterms}} |
 | transport_mode | STRING | 운송방식 — 실제 값: {{VALUES:LogTransport}} |
 | forwarder | STRING | 포워더 ⚠️ **390종·표기 혼재** (아래) |
@@ -1651,6 +1651,11 @@ GROUP BY team_id ORDER BY promo_count DESC
 
 ### ⚠️ 사람·업체 이름은 표기가 흩어져 있다
 
+- ⚠️ **`OP` 와 `세일즈운영팀`·`세일즈 운영팀`·`운영팀` 은 같은 뜻이다** (2026-09-03 사용자 확인, 붐따 #161).
+  어느 쪽으로 물어도 `op_manager` 로 답한다 — 사용자가 「OP라고 하면 안 되고 세일즈 운영팀이라고 해야 하나 봐요」라고 물은 적이 있다.
+  ⛔ 물류 담당자를 묻는 것이지 **재고(`@@OP`)가 아니다** — 이 표의 `op_manager` 로 답한다
+- ⚠️ **`면장`·`면장번호`·`수출신고필증` 은 `export_declaration_number` 다.**
+  "면장 정보는 없습니다" 라고 답한 적이 있는데 사실이 아니다 (89.7% 채워져 있다)
 - **`op_manager` 는 같은 사람이 두 이름으로 들어 있다**:
   `나영`(574)/`안나영`(275) · `다운`(440)/`정다운`(141) · `주영`(396)/`서주영`(123) ·
   `민재`(30)/`정민재`(24) · `윤아`(17)/`정윤아`(17)

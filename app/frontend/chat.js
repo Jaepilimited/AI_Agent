@@ -605,6 +605,8 @@
       keys: [] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
       keys: [] },
+    { id: "logistics", label: "물류 데이터", emoji: "\uD83D\uDEA2",
+      keys: [] },
     { id: "bc", label: "BC", emoji: "\uD83D\uDCF8",
       keys: [] },
     { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
@@ -621,6 +623,7 @@
   //    위에 남은 것은 **표현**뿐이다 (그룹 순서·이모지·링크).
   var GROUP_BY_NAME = {
     "보고서": "report", "매출 데이터": "sales", "마케팅 데이터": "marketing",
+    "물류 데이터": "logistics",
     "BC": "bc", "Notion": "notion", "시스템": "system"
   };
   var SOURCE_LABELS = {};   // key -> 화면에 쓸 이름 (gws -> Google Workspace)
@@ -734,11 +737,25 @@
   function clearActiveSourceChips() {
     if (_sourceChipsContainer) { _sourceChipsContainer.innerHTML = ""; _sourceChipsContainer.style.display = "none"; }
   }
+  var _SOURCES_STORAGE_KEY = "skin1004_enabled_sources";
+  var _KNOWN_SOURCES_KEY = "skin1004_known_sources";
+  var _LOGISTICS_MIGRATION_KEY = "skin1004_logistics_source_default_v1";
   var enabledSources = loadEnabledSources();
+
+  // ⛔ **빈 선택은 "고르지 않음" 이 아니라 "전부 끄기" 다.**
+  //    개수로 가르면 `전체 해제` 가 새로고침마다 되살아난다
+  //    (2026-09-03 사용자 제보). 저장된 키가 **있느냐**로 가른다.
+  function _hasSavedSourcePrefs() {
+    try {
+      return localStorage.getItem(_SOURCES_STORAGE_KEY) !== null;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function loadEnabledSources() {
     try {
-      var saved = localStorage.getItem("skin1004_enabled_sources");
+      var saved = localStorage.getItem(_SOURCES_STORAGE_KEY);
       if (saved) {
         var parsed = JSON.parse(saved);
         // ⚠️ 소스 목록이 **아직 안 온 상태**(비동기 로드)에서는 검증하지 마라.
@@ -746,10 +763,15 @@
         //    목록이 비어 있으니 **항상 참**이 돼 사용자의 선택이 통째로 날아가고
         //    `0/30` 이 됐다 (2026-08-14 사용자 제보 — 내가 만든 회귀).
         //    검증은 목록이 도착한 뒤 `_reconcileEnabledSources()` 가 한다.
+        if (!Array.isArray(parsed)) throw new Error("not an array");
         if (!DATA_SOURCE_KEYS.length) return parsed;
         var hasOld = parsed.some(function(k) { return DATA_SOURCE_KEYS.indexOf(k) < 0; });
-        if (!hasOld && parsed.length > 0) return parsed;
-        localStorage.removeItem("skin1004_enabled_sources");
+        // ⛔ 예전엔 "저장분이 비어 있지 않을 것" 을 함께 요구해서
+        //    **저장된 빈 목록(전체 해제)을 통째로 버렸다.**
+        //    ⚠ 이 줄을 설명하는 주석에 그 조건식을 그대로 적지 마라 —
+        //    회귀가 코드로 읽어 스스로 걸린다.
+        if (!hasOld) return parsed;
+        localStorage.removeItem(_SOURCES_STORAGE_KEY);
       }
     } catch (e) {}
     // Default: all enabled (목록이 아직 없으면 빈 배열 — 도착 후 전체로 채운다)
@@ -760,15 +782,95 @@
   function _reconcileEnabledSources() {
     if (!DATA_SOURCE_KEYS.length) return;
     var before = enabledSources.length;
-    enabledSources = enabledSources.filter(function(k) {
-      return DATA_SOURCE_KEYS.indexOf(k) >= 0;
-    });
-    // 저장된 것이 없거나(첫 로그인) 전부 무효면 **전체 선택**이 기본값이다
-    if (!enabledSources.length) enabledSources = DATA_SOURCE_KEYS.slice();
+    // ⛔ **아직 안 온 소스를 없어진 소스로 세지 마라.** Notion 팀 키는 상태 응답
+    //    (`pollSystemStatus`)이 도착해야 목록에 생긴다 — 그전에 잘라내면 사용자가
+    //    골라 둔 팀이 새로고침마다 지워진다. 한 번이라도 본 키(대장)는 남긴다.
+    //    ⚠️ 대장이 아예 없으면(이 판이 배포되기 전부터 쓰던 사람) 판단 근거가 없다 —
+    //       그때는 **아무것도 버리지 않는다**. 다음 폴링이 대장을 남긴다.
+    var seen = _loadKnownSourceKeys();
+    if (seen !== null) {
+      enabledSources = enabledSources.filter(function(k) {
+        return DATA_SOURCE_KEYS.indexOf(k) >= 0 || seen.indexOf(k) >= 0;
+      });
+    }
+    var hadPrefs = _hasSavedSourcePrefs();
+    // 첫 로그인(저장된 것이 없다)과 저장분이 통째로 낡은 경우에만
+    // **전체 선택**으로 되돌린다.
+    // ⛔ 그냥 "비었으면 전체" 로 두면 사용자의 `전체 해제` 가
+    //    새로고침마다 조용히 되살아난다 (2026-09-03 사용자 제보).
+    if (!enabledSources.length && (before > 0 || !hadPrefs)) {
+      enabledSources = DATA_SOURCE_KEYS.slice();
+    }
+    // 처음 온 사람은 "아직 아무 소스도 본 적 없다"로 대장을 연다. ⛔ 이 줄이 없으면
+    // 뒤늦게 오는 Notion 팀 소스가 **첫 방문자에게 전부 꺼진 채로** 보인다
+    // (대장이 없을 때는 아무것도 켜지 않는 것이 배포 직후를 지키는 규칙이라서다).
+    if (!hadPrefs) _saveKnownSourceKeys([]);
+    _migrateLogisticsSourceDefault();
     if (enabledSources.length !== before) saveEnabledSources();
   }
   function saveEnabledSources() {
-    localStorage.setItem("skin1004_enabled_sources", JSON.stringify(enabledSources));
+    localStorage.setItem(_SOURCES_STORAGE_KEY, JSON.stringify(enabledSources));
+  }
+
+  // 물류 소스가 처음 추가되기 전에 기존 소스를 전부 켜 둔 브라우저만 1회 보정한다.
+  // 전체 해제·부분 선택은 사용자의 결정이므로 건드리지 않고, 이후 수동 해제도 유지한다.
+  function _migrateLogisticsSourceDefault() {
+    try {
+      if (localStorage.getItem(_LOGISTICS_MIGRATION_KEY) !== null) return;
+      if (DATA_SOURCE_KEYS.indexOf("물류") < 0) return;
+      var allPreviousSourcesEnabled = DATA_SOURCE_KEYS.every(function(k) {
+        return k === "물류" || enabledSources.indexOf(k) >= 0;
+      });
+      if (enabledSources.length > 0 &&
+          enabledSources.indexOf("물류") < 0 &&
+          allPreviousSourcesEnabled) {
+        enabledSources.push("물류");
+      }
+      localStorage.setItem(_LOGISTICS_MIGRATION_KEY, "1");
+    } catch (e) {}
+  }
+
+  // 새로 발견된 소스(Notion 팀)를 켜줄지 정한다.
+  // ⛔ **이미 본 적 있는 소스는 다시 켜지 않는다.** 예전엔 폴링할
+  //    때마다 발견한 팀 키를 무조건 되집어넣어, `전체 해제` 가 30초마다는커녕
+  //    **누른 그 자리에서** 되살아났다 (해제 핸들러가 스스로 폴링을 부른다).
+  // ⚠ 목록을 **처음 보는 순간**(대장 없음)에는 아무것도 켜지 않는다 —
+  //    그때 전부를 '새것' 으로 세면 배포 직후 한 번 꺼 둔 것이 통째로 되살아난다.
+  function _adoptNewSourceKeys(allKeys, known, selected) {
+    if (known === null) return [];
+    return allKeys.filter(function(k) {
+      return known.indexOf(k) < 0 && selected.indexOf(k) < 0;
+    });
+  }
+  function _loadKnownSourceKeys() {
+    try {
+      var raw = localStorage.getItem(_KNOWN_SOURCES_KEY);
+      if (!raw) return null;   // null = 아직 목록을 본 적이 없다
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function _saveKnownSourceKeys(keys) {
+    try {
+      localStorage.setItem(_KNOWN_SOURCES_KEY, JSON.stringify(keys));
+    } catch (e) {}
+  }
+  // 질문과 함께 보낼 소스 목록을 정한다. `null` 은 "서버 기본값"(BQ+GWS+Direct)이다.
+  //
+  // ⛔ **전부 켜져 있을 때는 보내지 않는다.** 통째로 보내면 notion·cs 경로가 기본으로
+  //    열려 아무도 손대지 않은 사람의 라우팅까지 바뀐다 — 기본 상태는 서버가 정한다.
+  // ⛔ **빈 배열은 `null` 이 아니다.** 서버(`_allowed_routes`)가 빈 목록을
+  //    `직접 대화만` 으로 읽는다 — 그게 `전체 해제` 의 뜻이다. 여기서 `null` 로
+  //    뭉개면 화면은 `0/N 소스 활성` 이라고 말하는데 답변은 전부 조회한다
+  //    (2026-09-03: 체크박스가 오래 화면 표시 전용이었다).
+  // ⚠️ 목록이 아직 안 왔으면(`allKeys` 비어 있음) 좁힌 것인지 알 수 없다 → 서버 기본값.
+  function _sourcesForSend(atAtKeys, slashOverride, selected, allKeys) {
+    if (atAtKeys && atAtKeys.length > 0) return atAtKeys;   // @@ 로 직접 지정
+    if (slashOverride) return slashOverride;
+    if (allKeys.length && selected.length < allKeys.length) return selected.slice();
+    return null;
   }
   function toggleSource(key) {
     var idx = enabledSources.indexOf(key);
@@ -791,6 +893,10 @@
 
   // ===== Image Upload State =====
   var pendingImages = [];  // Array of { file: File, dataUrl: string }
+  // 올린 엑셀·CSV 를 표 텍스트로 바꾼 것 (붐따 #161).
+  // ⛔ 이미지와 달리 **본문에 실려 대화에 남는다** — 잘못 읽혔으면 사용자가
+  //    화면에서 바로 본다. 사진으로 찍어 올렸을 때는 없던 성질이다.
+  var pendingTables = [];  // { name, tsv, note }
   var MAX_IMAGE_SIZE = 10 * 1024 * 1024;  // 10MB
   var ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -942,7 +1048,8 @@
           gwsStatusKnown = true;
           updateGwsButton();
         },
-        fetchImpl: window.fetch.bind(window)
+        fetchImpl: window.fetch.bind(window),
+        changePassword: function () { showChangePasswordModal(); }
       });
       personalBriefingController.load();
       loadMySuggestions();
@@ -1303,11 +1410,12 @@
       closeMobileSidebar();
     });
 
-    // Change password
-    var btnChangePw = document.getElementById("btn-change-pw");
-    if (btnChangePw) {
-      btnChangePw.addEventListener("click", function () {
-        showChangePasswordModal();
+    // User settings — briefing delivery, saved reports and account live together.
+    var btnBriefingSettings = document.getElementById("btn-briefing-settings");
+    if (btnBriefingSettings) {
+      btnBriefingSettings.addEventListener("click", function () {
+        if (personalBriefingController) personalBriefingController.openSettings();
+        closeMobileSidebar();
       });
     }
 
@@ -1832,14 +1940,30 @@
 
   // ===== Image Helpers =====
   function updateSendButton() {
-    btnSend.disabled = !(chatInput.value.trim() || pendingImages.length > 0);
+    btnSend.disabled = !(chatInput.value.trim() || pendingImages.length > 0
+                         || pendingTables.length > 0);
+  }
+
+  // 엑셀·CSV 로 보이는가. ⚠️ 브라우저가 type 을 못 채우는 경우가 흔해
+  //    이름(확장자)도 함께 본다 — type 만 보면 판정이 조용히 빗나간다
+  var SPREADSHEET_RE = /\.(xlsx|xls|xlsm|csv|tsv|ods)$/i;
+  function isSpreadsheet(file) {
+    return SPREADSHEET_RE.test(file.name || "") ||
+      (file.type || "").indexOf("spreadsheet") !== -1 ||
+      (file.type || "").indexOf("excel") !== -1 ||
+      (file.type || "") === "text/csv";
   }
 
   function addImageFiles(fileList) {
     for (var i = 0; i < fileList.length; i++) {
       var file = fileList[i];
       if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
-        alert("지원되지 않는 이미지 형식입니다: " + file.name + "\nPNG, JPEG, GIF, WebP만 가능합니다.");
+        // 엑셀·CSV 는 서버가 읽어 표 텍스트로 돌려준다 (붐따 #161).
+        // ⛔ 표를 사진으로 찍어 올리면 vision 이 눈으로 읽는데, 그 값이
+        //    맞았는지 아무도 대조하지 않는다
+        if (isSpreadsheet(file)) { addTableFile(file); continue; }
+        alert("지원되지 않는 형식입니다: " + file.name + "\n\n"
+          + "이미지는 PNG, JPEG, GIF, WebP, 표는 .xlsx · .csv · .tsv 만 됩니다.");
         continue;
       }
       if (file.size > MAX_IMAGE_SIZE) {
@@ -1857,6 +1981,77 @@
         reader.readAsDataURL(f);
       })(file);
     }
+  }
+
+  async function addTableFile(file) {
+    var fd = new FormData();
+    fd.append("file", file);
+    // 읽는 동안 자리를 잡아 둔다 — 큰 파일에서 아무 반응이 없으면 안 눌린 줄 안다
+    var slot = { name: file.name, block: "", note: "읽는 중...", loading: true };
+    pendingTables.push(slot);
+    renderTableChips();
+    updateSendButton();
+    try {
+      var res = await fetch("/api/attachments/table", { method: "POST", body: fd });
+      if (!res.ok) {
+        var detail = await res.json().then(
+          function (b) { return (b && b.detail) || "파일을 읽지 못했습니다"; },
+          function () { return "파일을 읽지 못했습니다"; });
+        throw new Error(detail);
+      }
+      var data = await res.json();
+      // ⛔ 본문에 붙일 덩어리는 서버가 만든 것을 그대로 쓴다 — 여기서 다시
+      //    조립하면 표식이 사본이 되고, 갈리는 순간 붙여넣은 표 판정이 풀린다
+      slot.block = data.block;
+      slot.note = data.note;
+      slot.loading = false;
+    } catch (err) {
+      // ⛔ 조용히 빼지 마라 — 올린 사람은 붙은 줄 안다
+      pendingTables.splice(pendingTables.indexOf(slot), 1);
+      alert((err && err.message) || "파일을 읽지 못했습니다");
+    }
+    renderTableChips();
+    updateSendButton();
+  }
+
+  function renderTableChips() {
+    var strip = document.getElementById("table-preview-strip");
+    if (!strip) return;
+    if (pendingTables.length === 0) {
+      strip.style.display = "none";
+      strip.innerHTML = "";
+      return;
+    }
+    strip.style.display = "flex";
+    strip.innerHTML = "";
+    pendingTables.forEach(function (t, idx) {
+      var chip = document.createElement("div");
+      chip.className = "table-chip" + (t.loading ? " loading" : "");
+      var label = document.createElement("span");
+      // ⛔ 무엇을 읽었는지(행·열·시트·자른 만큼) 그대로 보여준다
+      label.textContent = t.note;
+      chip.appendChild(label);
+      var rm = document.createElement("button");
+      rm.className = "table-chip-remove";
+      rm.innerHTML = "&times;";
+      rm.title = "제거";
+      rm.addEventListener("click", function () {
+        pendingTables.splice(idx, 1);
+        renderTableChips();
+        updateSendButton();
+      });
+      chip.appendChild(rm);
+      strip.appendChild(chip);
+    });
+  }
+
+  // 보낼 때 본문 앞에 붙는 표 블록. ⚠️ **탭 구분이어야 한다** — 서버의
+  //    `_has_pasted_data` 가 탭을 보고 "사용자가 가져온 표" 로 판정하고,
+  //    그 판정이 조회로 덮어쓰는 것을 막는다
+  function tableBlockForSend() {
+    var ready = pendingTables.filter(function (t) { return t.block; });
+    if (ready.length === 0) return "";
+    return ready.map(function (t) { return t.block; }).join("\n\n") + "\n\n";
   }
 
   function renderImagePreviews() {
@@ -1893,7 +2088,9 @@
 
   function clearPendingImages() {
     pendingImages = [];
+    pendingTables = [];
     renderImagePreviews();
+    renderTableChips();
   }
 
   function _resetSendBtn() {
@@ -2026,7 +2223,14 @@
   async function sendMessage() {
     var text = chatInput.value.trim();
     var hasImages = pendingImages.length > 0;
-    if ((!text && !hasImages) || isStreaming) return;
+    // ⛔ 아직 읽는 중인 표가 있으면 기다린다 — 지금 보내면 그 표 없이 나가고,
+    //    보낸 사람은 붙은 줄 안다 (조용한 유실)
+    if (pendingTables.some(function (t) { return t.loading; })) {
+      alert("첨부한 표를 아직 읽는 중입니다. 잠시 뒤 다시 보내주세요.");
+      return;
+    }
+    var tableBlock = tableBlockForSend();
+    if ((!text && !hasImages && !tableBlock) || isStreaming) return;
 
     // "1번", "2번", "3번", "1", "2", "3" → 후속 질문 칩 텍스트로 대체
     var numMatch = text.match(/^(\d)번?$/);
@@ -2053,6 +2257,12 @@
       showActiveSourceChips(atAtKeys);
     }
 
+    // ⛔ 표는 **본문 앞에** 붙인다. 뒤에 붙이면 질문이 표 수백 줄 뒤로 밀려
+    //    라우터가 먼저 보는 문장이 표가 된다
+    if (tableBlock) {
+      text = tableBlock + text;
+      userQuestionForSave = tableBlock + userQuestionForSave;
+    }
     lastUserQuery = text;
     var imagesToSend = pendingImages.slice();  // snapshot
     hideFollowups();
@@ -2075,13 +2285,9 @@
     chatInput.style.height = "auto";
     clearPendingImages();
     btnSend.disabled = true;
-    // Determine sources: @@ explicit > slash override > null (server default: BQ+GWS+Direct)
-    var _sendSources = null;  // null = server decides (BQ+GWS+Direct only)
-    if (atAtKeys.length > 0) {
-      _sendSources = atAtKeys;  // @@ explicitly selected
-    } else if (slashOverrideSource) {
-      _sendSources = slashOverrideSource;
-    }
+    // Determine sources: @@ explicit > slash override > 좁혀 둔 선택 > null
+    var _sendSources = _sourcesForSend(
+      atAtKeys, slashOverrideSource, enabledSources, DATA_SOURCE_KEYS);
     // Clear one-time slash override after snapshot
     if (slashOverrideSource) {
       slashOverrideSource = null;
@@ -3665,6 +3871,8 @@
     "해외몰 리뷰":     { label: "해외몰 리뷰", svg: _svgStar },
     "매장 리뷰":       { label: "매장 리뷰", svg: _svgStar },
     "프로모션":        { label: "프로모션", svg: _svgCalendar },
+    // 물류
+    "물류":            { label: "물류", svg: _svgBox },
     // 팀별 자료
     "Craver":         { label: "Craver", svg: _svgGlobe },
     "DB":             { label: "DB", svg: _svgBar },
@@ -3699,6 +3907,7 @@
     { cmd: "매출", label: "매출 데이터", keys: ["매출", "제품"] },
     { cmd: "광고", label: "광고 데이터", keys: ["광고", "메타광고"] },
     { cmd: "프로모션", label: "프로모션 캘린더", keys: ["프로모션"] },
+    { cmd: "물류", label: "수출 물류", keys: ["물류"] },
     { cmd: "리뷰", label: "리뷰 전체", keys: ["국내몰 리뷰", "해외몰 리뷰", "매장 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
     { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
@@ -3966,10 +4175,19 @@
           teamKeys.sort();
           grp.keys = teamKeys.concat(staticKeys);
           _rebuildDataSourceKeys();
-          teamKeys.forEach(function(k) {
-            if (enabledSources.indexOf(k) < 0) enabledSources.push(k);
-          });
         });
+
+        // 새로 생긴 소스만 켜서 온다. ⛔ **이미 본 소스는 다시 켜지 않는다** —
+        // 예전엔 발견한 팀 키를 폴링마다 무조건 되집어넣어, `전체 해제` 가
+        // 30초마다는커녕 **누른 그 자리에서** 되살아났다
+        // (해제 핸들러가 스스로 이 함수를 다시 부른다 — 2026-09-03 사용자 제보).
+        var _adopted = _adoptNewSourceKeys(
+          DATA_SOURCE_KEYS, _loadKnownSourceKeys(), enabledSources);
+        if (_adopted.length) {
+          _adopted.forEach(function(k) { enabledSources.push(k); });
+          saveEnabledSources();
+        }
+        _saveKnownSourceKeys(DATA_SOURCE_KEYS);
 
         // Toolbar
         var html = '<div class="status-section-heading"><span>DATA SOURCES</span><strong>데이터 소스 상태</strong></div>' +
