@@ -23,7 +23,7 @@
 
 ## ⚠️ 테이블 선택 규칙
 
-14개 테이블 중 질문에 맞는 테이블 선택:
+질문에 맞는 테이블 하나를 고른다:
 
 | 질문 유형 | 사용 테이블 |
 |-----------|-----------|
@@ -41,14 +41,19 @@
 | **리뷰** (아마존/큐텐/쇼피/스마트스토어) | `Review_Data.*` |
 | **메타 광고 라이브러리** (페이스북/인스타 광고) | `` `ad_data.meta data_test` `` |
 | **재구매** (재구매율, 리텐션, 코호트) | `SALES_ALL_Backup` (ID 컬럼으로 고객 식별) |
+| **프로모션 일정** (어느 팀이 언제 어느 몰에서) | `promotion_calendar.promotion` (테이블 15) |
+| **수출 물류** (발주·선적·출고일·ETD/ETA·포워더·인코텀즈·컨테이너·통관·물류비) | `Export_control.export_logistics` ⭐ 테이블 16 |
 
 - Product 테이블: 매출 없음! 수량만!
 - SALES_ALL_Backup: SET 컬럼은 세트 묶음 포함 → **Total_Qty가 세트를 1개로 세어 수량이 부정확**. 수량 답변에 SALES_ALL_Backup.Total_Qty 사용 절대 금지 (2026-07-15 실제 오답 발생)
 
 ## ⛔ 보유하지 않은 데이터 (다른 데이터로 대체 생성 금지!)
 
-- **재고/현재고/입출고/창고/물류/발주 데이터는 어떤 테이블에도 없다.**
+- **현재고(창고별 보유 수량) 데이터는 BigQuery 에 없다.** (OP팀 시트 기반 `@@OP` 가 따로 답한다)
 - 재고 질문에 판매량·주문량 SQL로 몰래 대체하지 마라 (사용자가 재고로 오해함).
+- ⚠️ **수출 물류(발주·선적·출고·ETD/ETA·포워더·통관)는 `export_logistics` 에 있다** —
+  2026-09-03 연동. "물류 데이터는 없다"고 답하지 마라 (테이블 16 참조).
+  다만 그것은 **수출 선적 관리대장**이지 창고 재고가 아니다.
 - 재고 질문이면 아래 SQL을 그대로 생성하라 (답변 포맷터가 이 notice를 보고 안내함):
 ```sql
 SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판매량 데이터가 필요하시면 "판매량"으로 다시 질문해 주세요.' AS notice LIMIT 1
@@ -1533,6 +1538,209 @@ SELECT team_id, COUNT(*) AS promo_count
 FROM `skin1004-319714.promotion_calendar.promotion`
 WHERE NOT is_deleted AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM CURRENT_DATE())
 GROUP BY team_id ORDER BY promo_count DESC
+```
+
+---
+
+## 테이블 16: export_logistics (수출 물류 — LOG) ⭐ 선적 관리대장
+
+테이블: `skin1004-319714.Export_control.export_logistics`
+
+**발주 한 건이 나가서 현지 창고에 들어갈 때까지**를 담은 수출 관리대장이다.
+한 행 = 수출 건 1건(주문번호/ERP번호 단위). 매출 테이블과 달리 **금액이 아니라
+"언제 무엇이 어떻게 나갔는가"** 가 본체다.
+
+- 실측 2,527행 · `order_date` **2025-12 ~ 현재** (2025-06/10/11 에 5건이 흩어져 있으나
+  사실상 2025-12부터, 2026-01 이후가 촘촘하다)
+- ⛔ **보유 구간 밖을 "수출이 없었다"로 읽지 마라** — 기록이 없는 것이다
+  (프로모션 캘린더와 같은 함정)
+
+### ⛔ 필수 규칙 — 어기면 에러가 아니라 조용한 오답이다
+
+1. **`WHERE NOT is_deleted` 를 항상 건다** (삭제분 40건)
+2. **`SUM(amount)` 를 통화 구분 없이 하지 마라.** `unit` 이 통화 코드다:
+   `USD` 1,668건 · `EUR` 97 · `KRW` 76 · `JPY` 18 · `CNY` 9 —
+   **그리고 통화가 비어 있는 행이 384건(15%)** 이다. 다 더하면 달러와 원이 섞인
+   무의미한 숫자가 나온다. 금액을 물으면 **`GROUP BY unit` 으로 통화별로 나누고,
+   통화 미상 건수를 답변에 함께 적는다**.
+   ⛔ **통화별로 나눈 뒤 그 금액들을 다시 더하지 마라.** 달러·엔·원을 더한 값은
+   뜻이 없다. 환율 환산도 하지 마라 — 이 시스템에 환율 데이터가 없다.
+   합쳐서 말해도 되는 것은 **건수·수량**뿐이다
+   (실측 사고 2026-09-03: 표는 통화별로 맞게 냈는데 요약이 전부 더해
+   "총 수출 금액 약 266.8억원" 이라고 썼다. 표가 옆에 맞게 있어서 더 믿긴다)
+3. ⛔ **금액은 `amount` 가 아니라 유상+무상이다** (2026-09-03 붐따 #159).
+   `amount` 만 쓰면 무상분이 통째로 빠진다 — 실측 `202606010105`: 유상 7,555.72 +
+   무상 1,108.40 = **8,664.12** 인데 답변은 7,555.72 만 냈다.
+   **금액을 낼 때는 반드시 이 식을 쓴다**:
+   ```
+   IFNULL(total_amount, amount + IFNULL(free_amount, 0)) AS amount
+   ```
+   ⚠️ `total_amount` 만 쓰면 안 된다 — **`amount` 는 있는데 `total_amount` 가 빈 행이
+   1,220건(전체의 절반)** 이라 그 금액이 통째로 사라진다. 반대로 `amount+free_amount`
+   만 쓰면 `total_amount` 만 있는 35건이 빠진다. `IFNULL` 로 둘 다 살린다
+4. **`cost_total_krw` 에 부분비용을 더하지 마라.** 부분합(`forwarder_cost_krw` +
+   `duty_vat_krw` + …)과 `cost_total_krw` 가 일치하는 행은 1,660건 중 696건뿐이다.
+   둘 중 하나만 쓴다 (`Production_Cost2` 가 FOC 를 이미 포함하던 것과 같은 함정)
+5. **아래 "쓰지 마라" 목록의 컬럼을 쓰지 마라** — 같은 값을 담은 옛 사본이다
+
+### ⭐ 쓰는 컬럼
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| order_date | DATE | **발주일** ⭐ 기간 기준은 보통 이것 (100% 채워짐) |
+| log_work_completed_date | DATE | 물류 작업완료일 (96.6%) |
+| log_shipped_date | DATE | **물류 출고일** (91.8%) |
+| etd | DATE | 출항 예정일 (90.1%) |
+| eta | DATE | 도착 예정일 (74.6%) ⚠️ **미래 날짜가 정상** |
+| local_warehouse_received_date | DATE | 현지창고 입고완료일 ⚠️ **4.4%만 채워짐** — 이걸로 집계하면 대부분이 사라진다 |
+| order_number | STRING | 주문번호 |
+| erp_number | STRING | ERP번호(SB번호) |
+| order_team | STRING | 발주팀 ⚠️ **표기가 흩어져 있다 — 아래 표 필수** |
+| country | STRING | 국가 ✅ **매출 테이블과 같은 한글 국가명** (실측 124개) |
+| consignee | STRING | CNEE(수하인/거래처, 536곳) |
+| log_manager | STRING | LOG 담당자 (6명) |
+| op_manager | STRING | OP 담당자 ⚠️ **같은 사람이 두 표기** (아래) |
+| incoterms | STRING | 인코텀즈 — 실제 값: {{VALUES:LogIncoterms}} |
+| transport_mode | STRING | 운송방식 — 실제 값: {{VALUES:LogTransport}} |
+| forwarder | STRING | 포워더 ⚠️ **390종·표기 혼재** (아래) |
+| bl_number | STRING | B/L 번호 (76.6%) |
+| export_declaration_number | STRING | 수출신고번호 (89.7%) |
+| fta | STRING | `자율` `FTA` `자율(OP)` `CO` `비특혜` (41%만 채워짐) |
+| container_20ft_count / container_40ft_count | INT | 컨테이너 수 (53% / 55%) |
+| pallet_count / carton_count | INT | 팔레트 · 카톤 수 |
+| quantity_ea | INT | 수량(ea) (89.8%) |
+| weight_kg | NUMERIC | 무게(KG) |
+| cbm | FLOAT | 부피 (33.5%) |
+| amount | NUMERIC | **유상** 금액 ⚠️ 통화는 `unit` — ⛔ 이것만 쓰면 무상분이 빠진다 |
+| free_amount | NUMERIC | **무상** 금액 |
+| total_amount | FLOAT | **유상+무상 합계** ⭐ 금액은 이것 기준 (42%만 채워짐 — 아래 규칙) |
+| unit | STRING | **금액의 통화 코드** (USD/EUR/KRW/JPY/CNY, 26%는 빈 값) |
+| status | STRING | `종결`(1,700) · `진행중`(827) — 이 둘뿐이다 |
+| is_shipped_out | BOOL | 출항 완료 여부 |
+| is_frozen | BOOL | 프리징(마감 확정) 여부 — `종결` 과 사실상 같이 움직인다 |
+| is_deleted | BOOL | 삭제 여부 ⭐ **항상 걸러라** |
+| forwarder_cost_krw | INT | 포워더 비용(원) |
+| duty_vat_krw | INT | 관세·부가세(원) |
+| domestic_shipping_fee_krw | INT | 국내 운송비(원) |
+| export_clearance_fee_krw | INT | 수출통관 수수료(원) |
+| origin_certificate_fee_krw | INT | 원산지증명 수수료(원) |
+| cost_total_krw | INT | 물류비 합계(원) ⚠️ 부분합과 안 맞는다 |
+| combined_shipment_id | STRING | 합적(合積) 묶음 ID ⚠️ 아래 |
+| unipass_shipment_confirmed / unipass_shipment_date | BOOL/STRING | 유니패스 선적 확인 |
+| created_at / updated_at | TIMESTAMP | 생성/수정 시각 |
+
+### ⛔ 쓰지 마라 — 같은 값이 든 옛 컬럼 사본 (실측 전 행 일치)
+
+`sb_no` `order_no` `erp_no` `cnee` `buyer_name` `bl_no` `log_owner` `op_owner`
+`sales_team` `transport_method` `export_declaration_no` `container_20ft`
+`container_40ft` `plt` `carton` `quantity` `departure_date` `work_complete_date`
+`logistics_complete_date` `unit_price`
+
+- 값은 같지만 **타입이 STRING 으로 뭉개진 것**이 섞여 있다 (`departure_date` 등).
+  날짜 계산·정렬이 문자열로 돌아 조용히 틀린다 — **왼쪽 표의 컬럼만 쓴다**
+- `unit_price` 는 이름과 달리 **단가가 아니라 통화 코드**다 (`unit` 과 동일)
+- ⛔ **`total_amount` 는 옛 사본이 아니다 — 금지 목록에서 뺐다** (2026-09-03 붐따 #159,
+  전휘빈 제보). `amount` 와 다른 이유는 낡아서가 아니라 **무상 금액을 포함하기**
+  때문이다: `total_amount = amount + free_amount`. 아래 금액 규칙을 따를 것
+- `updated_by` `forwarder_note` `remittance_note` `sensitive_note` `etc_note` 는 **전부 빈 값**이다
+
+{{LOG_TEAM_SECTION}}
+
+- 지금 데이터에 실제로 들어 있는 `order_team` 값 전부: {{VALUES:LogTeam}}
+  ⚠️ 위 표에 없는 값이 여기 보이면 **새 표기가 생긴 것**이다 — `미분류` 로 떨어진다
+
+### ⚠️ 사람·업체 이름은 표기가 흩어져 있다
+
+- **`op_manager` 는 같은 사람이 두 이름으로 들어 있다**:
+  `나영`(574)/`안나영`(275) · `다운`(440)/`정다운`(141) · `주영`(396)/`서주영`(123) ·
+  `민재`(30)/`정민재`(24) · `윤아`(17)/`정윤아`(17)
+  → 담당자별로 셀 때는 **성을 뗀 이름으로 묶는다**:
+  `IF(LENGTH(op_manager)=3, SUBSTR(op_manager,2), op_manager)`
+  그리고 **묶었다는 사실을 답변에 적는다**
+- `log_manager` 는 6명, 표기 흩어짐 없음
+- **`forwarder` 는 390종에 표기가 혼재한다** — `머스크`/`MAERSK`/`한국머스크물류서비스`,
+  `DHL`/`디에이치엘글로벌포워딩코리아` 가 따로 센다. 특정 포워더를 물으면 `LIKE` 로
+  변형을 함께 잡고, **순위표는 표기 혼재를 본문에 밝힌다**
+
+### ⛔ 이 테이블로 **답할 수 없는 것** (다른 데이터로 대체 생성 금지)
+
+- **제품(SKU)별로 나눌 수 없다** — 이 테이블에는 SKU·품목명·바코드 컬럼이 **하나도 없다**
+  (실측 확인). "제품별 수출 물량"·"어떤 제품이 많이 나갔나" 는 답할 수 없다.
+  ⛔ `memo` 같은 자유 텍스트에서 제품명을 뽑아 만들어 내지 마라 — 거기 든 것은
+  업체 번호·PO 번호·요청 메모다
+- **창고 보유 재고가 아니다** — 여기 있는 것은 **나간 것(수출 건)** 이다.
+  "지금 창고에 얼마 있나" 는 OP팀 재고(`@@OP`)가 답한다. 두 데이터는 **조인할 키도 없다**
+  (여긴 SKU 가 없고, 저긴 주문번호가 없다). 재고를 물으면 이 테이블로 답하지 말 것
+- **매출액이 아니다** — `amount` 는 수출 신고/인보이스 금액이고 통화가 섞여 있다.
+  매출은 `SALES_ALL_Backup.Sales1_R` 이다. 두 값을 같은 것으로 놓고 비교하지 마라
+- ⛔ **`quantity_ea` 는 판매수량이 아니다.** 이건 **그 선적에 실린 개수**다.
+  "판매수량·몇 개 팔렸나" 는 **무조건 `Product.Total_Qty`** 로 답한다 (테이블 2).
+  두 값은 같은 나라·같은 해에도 다르다 (실측 2026 인도네시아: 수출 6,001,001ea /
+  판매 6,545,865개 — 판 시점과 실은 시점이 다르고, 재고로 남은 것도 있다).
+  ⚠️ 이 테이블로 수량을 답할 때는 **"수출 선적 수량"** 이라고 밝혀라 —
+  그냥 "수량" 이라고 쓰면 판매수량으로 읽힌다
+- ⛔ **`quantity_ea` 합계가 1,000만을 넘으면 이상치가 섞인 것이다.**
+  한 선적의 실측 최대는 **1,332,166개**다. 수량 칸에 주문번호(`202602190028`)를
+  잘못 적은 행이 실제로 있었고, 그 한 행이 2026년 총계를 **3,492배**로 부풀렸다
+  (58,038,175 → 202,660,228,203). 억 단위 수량이 나오면 그대로 답하지 말고
+  **이상치가 섞였을 수 있다고 답변에 적어라** (자가 점검 `logistics_quantity_outlier` 가
+  매일 감시한다)
+
+### ⚠️ 그 밖에 조용히 틀리는 곳
+
+- **미래 날짜가 정상이다** — `eta` 가 오늘 이후인 행이 266건 있다(운송 중).
+  `Date <= CURRENT_DATE()` 같은 상한을 붙이지 마라
+- **합적(`combined_shipment_id`)** — 371건이 101개 묶음으로 함께 실려 나간다.
+  건수를 셀 때 행 수는 발주 건수이지 선적 건수가 아니다. 선적 단위로 세려면
+  `COUNT(DISTINCT IFNULL(NULLIF(combined_shipment_id,''), order_number))`
+- **`local_warehouse_received_date` 는 4.4%만 있다** — "현지 입고까지 며칠"을
+  이걸로 내면 대부분이 빠진다. 낼 거면 **모수(건수)를 함께 적는다**
+- 리드타임은 날짜 두 개의 차로 낸다: `DATE_DIFF(eta, order_date, DAY)`,
+  출고까지는 `DATE_DIFF(log_shipped_date, order_date, DAY)`.
+  ⚠️ 한쪽이 NULL 인 행은 자동으로 빠진다 — **모수를 함께 적을 것**
+
+### 예시
+
+```sql
+-- 2026년 8월 국가별 수출 건수·수량 (상위 10)
+SELECT country,
+       COUNT(*) AS shipments,
+       SUM(quantity_ea) AS qty_ea
+FROM `skin1004-319714.Export_control.export_logistics`
+WHERE NOT is_deleted
+  AND order_date BETWEEN '2026-08-01' AND '2026-08-31'
+GROUP BY country
+ORDER BY shipments DESC
+LIMIT 10
+```
+```sql
+-- 팀별 발주 건수 (올해) — 표기 흩어짐을 CASE 로 묶는다
+SELECT CASE
+         WHEN order_team IN ('영업1','영업1팀','B2B1') THEN '영업1팀(B2B1)'
+         WHEN order_team IN ('영업2','영업2팀','B2B2') THEN '영업2팀(B2B2)'
+         ELSE '미분류'
+       END AS team,
+       COUNT(*) AS shipments
+FROM `skin1004-319714.Export_control.export_logistics`
+WHERE NOT is_deleted AND EXTRACT(YEAR FROM order_date) = 2026
+GROUP BY team ORDER BY shipments DESC
+```
+```sql
+-- 금액은 반드시 통화별로 나눈다 (통화 미상도 함께 보인다)
+SELECT IFNULL(NULLIF(TRIM(unit),''), '통화미상') AS currency,
+       COUNT(*) AS shipments,
+       SUM(IFNULL(total_amount, amount + IFNULL(free_amount, 0))) AS amount
+FROM `skin1004-319714.Export_control.export_logistics`
+WHERE NOT is_deleted AND EXTRACT(YEAR FROM order_date) = 2026
+GROUP BY currency ORDER BY shipments DESC
+```
+```sql
+-- 진행 중인 수출 건 (아직 출항 안 함)
+SELECT order_date, order_number, country, consignee, transport_mode, etd, eta, forwarder
+FROM `skin1004-319714.Export_control.export_logistics`
+WHERE NOT is_deleted AND status = '진행중' AND NOT is_shipped_out
+ORDER BY IFNULL(etd, order_date)
+LIMIT 200
 ```
 
 ---

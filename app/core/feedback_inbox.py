@@ -107,6 +107,74 @@ DEPLOYED_FEEDBACK_RESOLUTIONS = tuple(
             "검색합니다. 좋은 지적 감사합니다."
         ),
     },
+    # ⛔ 수량이 없는 것을 `0` 으로 적던 건 (2026-09-02 제보). 두 건이 같은 원인이라
+    #    회신도 같다 — #157 은 코멘트가 없지만 대화가 남아 있어 진단이 됐다.
+    {
+        "id": 156,
+        "created_on": "2026-09-02",
+        "note": (
+            "수정 완료(2026-09-03): 지적하신 대로였습니다. 우마(UM) 제품은 수량이 "
+            "적재돼 있지 않은데, 답변이 그것을 「판매수량 0개」라고 적어 팔리지 않은 "
+            "것처럼 보였습니다. 확인해 보니 2026년 UM 94,250행의 수량이 전부 0이고 "
+            "수량 테이블에는 UM 행이 아예 없었습니다. 이제 이런 경우 0을 답으로 내지 "
+            "않고 「집계할 수 없습니다 — 팔리지 않았다는 뜻이 아니라 수량을 모른다는 "
+            "뜻입니다」라고 안내합니다. 매출 금액은 종전대로 정상입니다. "
+            "덧붙여, 비교하신 물류 수량은 발주·출고 기준이라 판매 수량과는 다른 "
+            "값입니다. 발주·출고 수량은 `@@물류` 로 물어보시면 됩니다. "
+            "좋은 지적 감사합니다."
+        ),
+    },
+    {
+        "id": 157,
+        "created_on": "2026-09-02",
+        "note": (
+            "수정 완료(2026-09-03): 같은 주문번호 조회에서 우마(UM) 수량이 「0개」로 "
+            "나가던 문제를 고쳤습니다. 수량이 적재되지 않은 데이터는 0 대신 "
+            "「집계할 수 없습니다」라고 안내합니다. 매출 금액은 정상입니다."
+        ),
+    },
+    # ⛔ 표가 조회 결과 전체가 아닌데 "총 N건" 이라고 단정하던 건. 두 건이 같은 원인이다
+    {
+        "id": 158,
+        "created_on": "2026-09-02",
+        "note": (
+            "수정 완료(2026-09-03): 「왜 5월만 보여줘?」라고 물어보신 그 건입니다. "
+            "조회는 86건을 다 가져왔는데 답변 표에는 상위 15건만 실렸고, 잘렸다는 "
+            "말이 어디에도 없었습니다. 이제 표가 전체가 아니면 답변 맨 위에 "
+            "「실제로는 총 N행입니다 · 건수·합계·순위를 이 표만 보고 판단하지 "
+            "마세요」라고 코드가 먼저 알려드립니다. 전체는 CSV로 받으실 수 "
+            "있습니다. 지적해 주셔서 감사합니다."
+        ),
+    },
+    {
+        "id": 159,
+        "created_on": "2026-09-03",
+        "note": (
+            "수정 완료(2026-09-03): 짚어 주신 대로 amount(유상)만 나가고 있었습니다. "
+            "202606010105 로 확인하니 유상 7,555.72 + 무상 1,108.40 = 8,664.12 로 "
+            "말씀하신 값과 정확히 같았습니다. 이제 금액은 "
+            "IFNULL(total_amount, amount + free_amount) 로 조회합니다. "
+            "제안해 주신 두 방법 중 하나만 쓰지 않고 둘을 합친 이유는, 실측해 보니 "
+            "total_amount 만 쓰면 그 값이 비어 있는 1,220건(전체의 절반)의 금액이 "
+            "통째로 사라지고, amount+free_amount 만 쓰면 total_amount 만 있는 35건이 "
+            "빠지기 때문입니다. 둘 다 있는 행에서는 total_amount 를 씁니다. "
+            "혹시 고쳐 쓰지 못한 경우에는 답변에 「유상분만입니다」라고 표시됩니다. "
+            "정확한 제보 감사합니다."
+        ),
+    },
+    {
+        "id": 160,
+        "created_on": "2026-09-03",
+        "note": (
+            "수정 완료(2026-09-03): 두 가지가 있었습니다. ① 표에는 8건만 실렸는데 "
+            "실제 조회 결과는 16건이었습니다(영국 7건이 통째로 빠졌습니다). 이제 "
+            "표가 전체가 아니면 답변 맨 위에 총 몇 행인지 먼저 알려드립니다. "
+            "② CSV 링크가 눌러도 받아지지 않던 것은, 받은 결과를 메모리에만 "
+            "두고 있어서 그 사이 서버가 재기동되면 링크가 죽었기 때문입니다. "
+            "이제 디스크에 보관해 재기동을 견디고, 유효 시간도 1시간에서 24시간으로 "
+            "늘렸습니다. 알려 주셔서 감사합니다."
+        ),
+    },
 )
 
 _COLUMNS = (
@@ -160,6 +228,63 @@ def list_feedback(status: Optional[str] = None, only_down: bool = True,
         # ⚠️ 오래된 행은 status 가 기본값이라 NULL 이 아니지만, 컬럼 추가 직후를 대비
         r["status"] = r.get("status") or STATUS_NEW
     return rows
+
+
+# ── 처리함 = 붐따 + 만족도 설문 ────────────────────────────────────────────
+# ⛔ 처리 동선은 **하나**다. 설문을 별도 탭으로 갈라 두면 "붐따처럼 개선에 반영"이
+#    흐려진다 — 두 대기열은 언젠가 한쪽만 읽힌다. 행마다 `source` 로 구분한다.
+SOURCE_THUMBS = "thumbs"
+SOURCE_SURVEY = "survey"
+_SOURCES = (SOURCE_THUMBS, SOURCE_SURVEY)
+
+
+def list_inbox(status: Optional[str] = None, limit: int = 200) -> List[Dict[str, Any]]:
+    """붐따와 설문을 합쳐 돌려준다. 코멘트 있는 것 → 미처리 → 최신 순."""
+    rows = list_feedback(status=status, only_down=True, limit=limit)
+    for r in rows:
+        r["source"] = SOURCE_THUMBS
+    try:
+        from app.core.satisfaction import list_surveys
+        rows = rows + list_surveys(status=status, limit=limit)
+    except Exception as e:   # 설문 테이블이 아직 없어도 붐따는 보여야 한다
+        logger.warning("survey_list_failed", error=str(e)[:160])
+
+    # 최신순으로 먼저 세운 뒤, 안정 정렬로 "코멘트 있는 것 → 미처리" 를 앞으로 올린다
+    # (같은 순위 안에서는 최신순이 그대로 유지된다)
+    rows.sort(key=lambda r: str(r.get("created_at") or ""), reverse=True)
+    rows.sort(key=lambda r: (
+        0 if (r.get("comment") or "").strip() else 1,
+        0 if (r.get("status") or STATUS_NEW) == STATUS_NEW else 1,
+    ))
+    return rows[:int(limit)]
+
+
+def inbox_summary() -> Dict[str, Any]:
+    """붐따 집계 + 설문 현황. **응답률과 대상 인원을 함께 낸다** — 팝업이 안 뜨는
+    것은 에러가 아니라 침묵이라, 화면이 그것을 말할 수 있어야 한다."""
+    base = summary()
+    try:
+        from app.core.satisfaction import eligible_users, survey_summary
+        sv = survey_summary()
+        base["survey"] = sv
+        base["survey"]["eligible"] = eligible_users()
+        base["open"] = int(base.get("open", 0)) + int(sv.get("open", 0))
+    except Exception as e:
+        logger.warning("survey_summary_failed", error=str(e)[:160])
+        base["survey"] = None
+    return base
+
+
+def set_inbox_status(source: str, item_id: int, status: str, who: str,
+                     note: Optional[str] = None, notify: bool = True) -> bool:
+    """상태 변경을 소스별로 보낸다. 모르는 소스는 거절한다 (조용히 무시하면
+    관리자가 바꾼 것이 사라진 것처럼 보인다)."""
+    if source not in _SOURCES:
+        raise ValueError(f"unknown source: {source}")
+    if source == SOURCE_SURVEY:
+        from app.core.satisfaction import set_survey_status
+        return set_survey_status(item_id, status, who, note)
+    return set_status(item_id, status, who, note, notify=notify)
 
 
 def set_status(feedback_id: int, status: str, who: str,

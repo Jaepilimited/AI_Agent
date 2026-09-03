@@ -7,10 +7,17 @@
 사용자는 2분 뒤 "RAW 파일을 줘"라고 다시 물었다 (2026-08-31). 이 저장소가 그 요청에
 답한다 — 표가 자른 것과 무관하게 항상 **조회 결과 전체**를 들고 있는다.
 
-메모리 인메모리 저장이다. 프로세스가 systemd 단일 워커로 도는 것을 전제한다
-(`deploy/ai-craver.service` — uvicorn 기본 워커 1개). ThreadPoolExecutor 스레드는
-같은 프로세스 메모리를 공유하므로 문제 없다. **다중 워커로 바뀌면 이 저장소도
-공유 저장소(Redis 등)로 옮겨야 한다.**
+메모리 + **디스크**다. 메모리는 빠른 길이고, 디스크가 진짜 보관이다.
+
+⛔ **인메모리만이던 시절, 재기동 한 번에 링크가 전부 죽었다** (붐따 #160,
+   2026-09-03). 사용자는 표 8행 옆에서 `CSV로 전체 16행 받기` 를 눌렀는데
+   받아지지 않았다 — 그 사이(09:44:59) 앱이 재기동됐기 때문이다. TTL 은 1시간
+   이라고 적혀 있었지만 **실제 수명은 「다음 배포까지」** 였고, 그건 개발이
+   활발한 날엔 몇 분이다. 게다가 실패 화면은 원시 404 JSON 이라 사용자는
+   무엇이 잘못됐는지도 알 수 없었다.
+
+⚠️ 단일 워커 전제는 그대로다(`deploy/ai-craver.service` — uvicorn 워커 1개).
+   다만 이제 **워커가 늘어도 디스크를 함께 보므로 조용히 깨지지는 않는다.**
 
 경계(무한정 쌓이지 않게):
 - TTL `_TTL_SECONDS` — 채팅 세션 동안 클릭할 시간은 충분하고, 그 이상은 버린다.
@@ -24,18 +31,108 @@ from __future__ import annotations
 
 import csv
 import io
+import json as _json
+import os as _os
+import re as _re
 import secrets
 import threading
 import time
+from pathlib import Path as _Path
 from typing import Any, Optional
 
-logger_name = __name__
+import structlog
 
-_TTL_SECONDS = 3600.0   # 1시간 — 세션 동안 클릭하기엔 충분, 무한정 쌓이지 않는다
-_MAX_ENTRIES = 300      # 절대 상한 — TTL 전에도 메모리를 못 박는다
+logger_name = __name__
+_log = structlog.get_logger(__name__)
+
+# ⚠️ 1시간이던 것을 늘렸다 — 재기동으로 죽던 시절엔 TTL 이 수명을 정하지 않았다.
+#    이제는 정말 이 시간만큼 산다. 아침에 받은 링크를 오후에 눌러도 열린다
+_TTL_SECONDS = 24 * 3600.0
+_MAX_ENTRIES = 300      # 절대 상한 — TTL 전에도 메모리·디스크를 못 박는다
+
+# 디스크 보관 위치. ⛔ 토큰이 파일 이름이 되므로 **반드시 형식을 검사**한다 —
+#    검사 없이 쓰면 `../../` 이 든 토큰으로 아무 파일이나 읽힌다
+_DIR = _Path(_os.getenv("SQL_RESULT_DIR", "data/sql_results"))
+_TOKEN_RE = _re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 
 _lock = threading.Lock()
 _store: dict[str, dict[str, Any]] = {}  # token -> {user_id, columns, rows, labels, saved_at}
+
+
+def _path(token: str) -> Optional[_Path]:
+    """토큰이 형식에 맞을 때만 경로를 준다. 아니면 None — 파일을 만지지 않는다."""
+    if not _TOKEN_RE.match(token or ""):
+        return None
+    return _DIR / (token + ".json")
+
+
+def _persist(token: str, entry: dict) -> None:
+    """디스크에 굳힌다. 실패해도 메모리 사본은 살아 있으므로 답변을 막지 않는다.
+
+    ⚠️ 값은 `_csv_cell` 로 미리 정규화해서 넣는다 — Decimal·date 는 JSON 이
+       모르는 타입이고, 그대로 `str()` 로 굳히면 엑셀에서 **숫자가 문자열이 된다**
+       (이 저장소가 "RAW 데이터" 로서 쓸모 있으려면 계산이 돼야 한다).
+    """
+    path = _path(token)
+    if path is None:
+        return
+    cols = entry["columns"]
+    payload = {
+        "user_id": entry["user_id"],
+        "columns": cols,
+        "labels": entry["labels"],
+        "saved_at": entry["saved_at"],
+        # 열 순서로 눕혀 저장한다 — 행마다 컬럼 이름을 반복하지 않는다
+        "rows": [[_csv_cell(r.get(c)) for c in cols] for r in entry["rows"]],
+    }
+    try:
+        _DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            _json.dump(payload, fh, ensure_ascii=False)
+        # ⛔ 부분 기록된 파일을 남기지 않는다 — 다음에 읽을 때 조용히 깨진다
+        _os.replace(tmp, path)
+    except Exception as e:                    # noqa: BLE001
+        _log.warning("sql_result_persist_failed", error=str(e)[:160])
+
+
+def _load(token: str) -> Optional[dict]:
+    """디스크에서 되살린다. 없거나 깨졌으면 None."""
+    path = _path(token)
+    if path is None or not path.exists():
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = _json.load(fh)
+        cols = list(payload["columns"])
+        return {
+            "user_id": payload["user_id"],
+            "columns": cols,
+            "labels": dict(payload.get("labels") or {}),
+            "saved_at": float(payload["saved_at"]),
+            "rows": [dict(zip(cols, row)) for row in payload["rows"]],
+        }
+    except Exception as e:                    # noqa: BLE001
+        _log.warning("sql_result_load_failed", error=str(e)[:160])
+        return None
+
+
+def _sweep_disk(now: float) -> None:
+    """만료된 파일을 지운다. 상한을 넘으면 오래된 것부터."""
+    try:
+        files = sorted(_DIR.glob("*.json"), key=lambda f: f.stat().st_mtime)
+    except Exception:                         # noqa: BLE001
+        return
+    doomed = [f for f in files if now - f.stat().st_mtime > _TTL_SECONDS]
+    keep = [f for f in files if f not in doomed]
+    overflow = len(keep) - _MAX_ENTRIES
+    if overflow > 0:
+        doomed += keep[:overflow]
+    for f in doomed:
+        try:
+            f.unlink()
+        except OSError:
+            pass
 
 
 def _sweep_locked(now: float) -> None:
@@ -64,23 +161,37 @@ def save(
     """
     token = secrets.token_urlsafe(24)
     now = time.time()
+    entry = {
+        "user_id": user_id,
+        "columns": list(columns),
+        "rows": rows,
+        "labels": dict(labels or {}),
+        "saved_at": now,
+    }
     with _lock:
         _sweep_locked(now)
-        _store[token] = {
-            "user_id": user_id,
-            "columns": list(columns),
-            "rows": rows,
-            "labels": dict(labels or {}),
-            "saved_at": now,
-        }
+        _store[token] = entry
+    # ⛔ 락 밖에서 쓴다 — 큰 결과의 파일 쓰기가 다른 요청을 막으면 안 된다
+    _persist(token, entry)
+    _sweep_disk(now)
     return token
 
 
 def get(token: str, user_id: int) -> Optional[dict]:
     """소유자만 결과를 꺼낼 수 있다. 없음·만료·남의 토큰은 모두 None."""
+    now = time.time()
     with _lock:
-        _sweep_locked(time.time())
+        _sweep_locked(now)
         entry = _store.get(token)
+    if entry is None:
+        # ⛔ 메모리에 없다고 없는 게 아니다 — 재기동하면 메모리만 비어 있다.
+        #    디스크를 보고 살아 있으면 메모리에도 되살린다
+        entry = _load(token)
+        if entry is not None and now - entry["saved_at"] <= _TTL_SECONDS:
+            with _lock:
+                _store[token] = entry
+        elif entry is not None:
+            entry = None                      # 만료분은 없는 것으로 본다
     if not entry or entry["user_id"] != user_id:
         return None
     return entry

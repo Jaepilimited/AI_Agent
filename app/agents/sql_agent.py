@@ -391,6 +391,133 @@ def _localize_promotion_literals(sql: str) -> str:
     return sql
 
 
+# ── LOG(Export_control.export_logistics) 전용 값 체계 ────────────────────────
+# ⛔ **이 테이블의 `order_team` 은 세 번째 값 체계다** (2026-09-03 실측 2,527행).
+#    `Team_NEW` 코드도, promotion 의 소문자·하이픈도 아니다 — 사람이 손으로 적어
+#    넣은 값이 그대로 쌓여 **한 팀이 최대 4가지 표기**로 흩어져 있다:
+#
+#        영업1(934) · 영업1팀(328)              ← 같은 팀. 둘 다 세지 않으면 26%가 빠진다
+#        GMWM(65) · GM WEST MKT(5) · 서구권마케팅팀(11)
+#        BCM_플래그십 파트 · BCM_플래그십 · BCM_플 · 브랜드커뮤니케이션팀_플래그십
+#
+#    `order_team = 'B2B1'` 로 물으면 **2건**이 나온다 (실제 1,262건). 에러가 아니라
+#    조용한 오답이다 — 그래서 국가·팀·프로모션 리터럴과 같은 방식으로 코드가 보증한다.
+# ⚠️ 값은 **실측으로** 채웠다. 새 표기가 생기면 `미분류` 로 떨어져 눈에 보인다
+#    (조용히 사라지지 않는다 — CASE 의 ELSE 를 없애지 마라).
+_LOG_TEAM_VARIANTS: dict = {
+    "B2B1":       ["영업1", "영업1팀", "B2B1"],
+    "B2B2":       ["영업2", "영업2팀", "B2B2"],
+    "CBT":        ["CBT", "GM CBT", "중국사업팀"],
+    "JBT":        ["JBT", "GM JBT", "일본사업팀"],
+    "KBT":        ["KBT", "GM KBT", "한국사업팀"],
+    "EAST1":      ["GME1", "GM EAST1", "동남아시아1팀"],
+    "EAST2":      ["GME2", "GM EAST2", "동남아시아2팀"],
+    "WEST_MKT":   ["GMWM", "GM WEST MKT", "서구권마케팅팀"],
+    "WEST_Ecomm": ["GMWE", "GM WEST ECOMM", "서구권이커머스팀"],
+    "BCM":        ["BCM_플래그십 파트", "BCM_플래그십", "BCM_플",
+                   "브랜드커뮤니케이션팀_플래그십"],
+}
+# 어느 표기로 물어도 같은 팀으로 읽는다 (공백·대소문자 무시)
+_LOG_TEAM_LOOKUP: dict = {}
+for _code, _vals in _LOG_TEAM_VARIANTS.items():
+    for _v in _vals:
+        _LOG_TEAM_LOOKUP[re.sub(r"\s+", "", _v).upper()] = _code
+    _LOG_TEAM_LOOKUP[re.sub(r"\s+", "", TEAM_CODE2KR[_code]).upper()] = _code
+
+_re_log_team = re.compile(
+    r"(\border_team\b\s*)(=|!=|<>)\s*'([^']*)'", re.IGNORECASE)
+_re_log_team_in = re.compile(
+    r"(\border_team\b\s+)(NOT\s+)?IN\s*\(((?:'[^']*'|[^)])*)\)", re.IGNORECASE)
+
+
+def _log_team_variants(literal: str) -> Optional[list]:
+    """LOG `order_team` 리터럴 → 그 팀의 실제 표기 전부. 모르는 값이면 None."""
+    code = _LOG_TEAM_LOOKUP.get(re.sub(r"\s+", "", literal or "").upper())
+    return list(_LOG_TEAM_VARIANTS[code]) if code else None
+
+
+def _localize_logistics_literals(sql: str) -> str:
+    """LOG 테이블 전용 리터럴 교정 — `order_team` 표기 흩어짐을 IN 목록으로 편다.
+
+    ⚠️ 국가(`country`)는 매출과 **같은 한글 국가명**이라 손대지 않는다 (실측 124개).
+    """
+    if not sql or "order_team" not in sql.lower():
+        return sql
+
+    def _one(m):
+        variants = _log_team_variants(m.group(3))
+        if not variants:
+            return m.group(0)
+        vals = ", ".join("'" + v.replace("'", "''") + "'" for v in variants)
+        neg = "NOT " if m.group(2) in ("!=", "<>") else ""
+        # ⚠️ `order_team='영업1팀'` 처럼 등호에 공백이 없으면 group(1) 끝에 공백이
+        #    없다 — 그대로 이으면 `order_teamIN (...)` 이 되어 SQL 이 깨진다
+        return f"{m.group(1).rstrip()} {neg}IN ({vals})"
+
+    def _in(m):
+        out, changed = [], False
+        for lit in re.findall(r"'([^']*)'", m.group(3)):
+            variants = _log_team_variants(lit)
+            if variants and variants != [lit]:
+                changed = True
+                out.extend(variants)
+            else:
+                out.append(lit)
+        if not changed:
+            return m.group(0)
+        seen, uniq = set(), []
+        for v in out:
+            if v not in seen:
+                seen.add(v)
+                uniq.append(v)
+        vals = ", ".join("'" + v.replace("'", "''") + "'" for v in uniq)
+        return f"{m.group(1).rstrip()} {m.group(2) or ''}IN ({vals})"
+
+    fixed = _re_log_team.sub(_one, sql)
+    fixed = _re_log_team_in.sub(_in, fixed)
+    if fixed != sql:
+        logger.info("logistics_team_literals_expanded")
+    return fixed
+
+
+def build_logistics_team_section() -> str:
+    """LOG `order_team` 정규화 표·CASE 를 코드 상수에서 만든다.
+
+    ⛔ 프롬프트에 같은 표를 손으로 또 적지 마라 — 두 벌이 되면 반드시 갈린다
+    (`build_team_section()` 과 같은 사상).
+    """
+    rows = "\n".join(
+        f"| {TEAM_CODE2KR[code]} | `{code}` | "
+        + " · ".join(f"`{v}`" for v in vals) + " |"
+        for code, vals in _LOG_TEAM_VARIANTS.items()
+    )
+    case_lines = "\n".join(
+        "    WHEN order_team IN ("
+        + ", ".join(f"'{v}'" for v in vals)
+        + f") THEN '{TEAM_CODE2KR[code]}({code})'"
+        for code, vals in _LOG_TEAM_VARIANTS.items()
+    )
+    return f"""#### ⛔ `order_team` 은 한 팀이 여러 표기로 흩어져 있다 (실측)
+
+| 공식 팀명 | 코드 | 이 테이블에 실제로 들어 있는 표기 |
+|---|---|---|
+{rows}
+
+- ❌ `WHERE order_team = 'B2B1'` → **2건**. 실제 영업1팀은 1,262건이다
+- ✅ `WHERE order_team IN ('영업1','영업1팀','B2B1')`
+- **팀별로 나눌 때는 반드시 아래 CASE 로 묶는다.** 그냥 `GROUP BY order_team` 하면
+  같은 팀이 여러 줄로 쪼개져 순위가 통째로 틀린다:
+  ```sql
+  CASE
+{case_lines}
+    ELSE '미분류'
+  END AS team
+  ```
+- ⚠️ `ELSE '미분류'` 를 지우지 마라 — 새 표기(`'서구권이커머스팀, 서구권마케팅팀'`
+  처럼 두 팀이 함께 적힌 값·빈 값)가 **조용히 사라지는** 대신 눈에 보여야 한다
+- 유통1/2팀(`DT1`·`DT2`)은 이 테이블에 발주가 없다"""
+
+
 def _division_codes(literal: str) -> Optional[list]:
     """본부명 리터럴 → 소속 팀 코드 목록. 본부명이 아니면 None."""
     return TEAM_DIVISIONS.get(re.sub(r"\s+", "", literal or ""))
@@ -427,6 +554,20 @@ def _unclip_team_rows(sql: str, question: str) -> str:
                    question=(question or "")[:80])
     return re.sub(r"\bLIMIT\s+\d+\s*$", f"LIMIT {len(TEAM_CODE2KR)}",
                   sql.strip(), flags=re.IGNORECASE)
+
+def _fix_logistics_amount(sql: str) -> str:
+    """수출 물류 금액을 유상+무상으로 고친다 (붐따 #159).
+
+    ⚠️ 고쳐 쓰는 것은 **집계 안뿐**이다 — 그 밖은 `logistics_amount.notice()` 가
+       고치지 않고 공시한다. 이유는 그 모듈 머리말에 있다 (별칭·파서 없음).
+    """
+    try:
+        from app.core.logistics_amount import fix_sql
+        return fix_sql(sql)
+    except Exception as e:                    # noqa: BLE001
+        logger.warning("logistics_amount_fix_failed", error=str(e)[:160])
+        return sql
+
 
 def _localize_team_literals(sql: str) -> str:
     """팀 비교의 한글 팀명·본부명을 코드로 교정 (사전에 없는 값은 유지).
@@ -682,6 +823,8 @@ def _enforce_partition_filter(
         new_sql = _localize_country_literals(new_sql)
         new_sql = _localize_team_literals(new_sql)
         new_sql = _localize_promotion_literals(new_sql)
+        new_sql = _localize_logistics_literals(new_sql)
+        new_sql = _fix_logistics_amount(new_sql)
         new_sql = _normalize_named_period(new_sql, query)
         new_sql = _fix_continent_column(new_sql)
         new_sql = _strip_unrequested_brand_filter(new_sql, query)
@@ -874,6 +1017,19 @@ MARKETING_TABLES = [
      ["프로모션", "promotion", "행사", "이벤트", "프로모", "기획전",
       "캘린더", "일정", "스케줄", "schedule", "언제 하", "예정",
       "블랙프라이데이", "black friday", "메가와리 일정", "런칭", "launch"]),
+    # ⚠️ 짧고 흔한 낱말(`발주`·`출고`·`수출`)만으로는 트리거하지 않는다 —
+    #    "발주 수량"·"수출 매출" 은 매출/제품 질문이다. 물류 축 낱말과 함께일 때만 건다
+    #    (`("플래그십","리뷰")` 튜플 규칙과 같은 계열).
+    ("skin1004-319714.Export_control.export_logistics", "수출 물류",
+     ["물류", "선적", "출고일", "포워더", "forwarder", "인코텀즈", "incoterms",
+      # ⛔ 맨 `eta`·`etd` 금지 — `meta`(메타 광고)·`retail` 안에 들어 있어
+      #    광고 질문마다 이 스키마가 함께 실린다 (에러가 아니라 프롬프트 낭비다)
+      "도착예정", "출항", "출항일", "b/l", "bl no", "선하증권", "컨테이너", "팔레트", "cbm",
+      "통관", "수출신고", "유니패스", "unipass", "cnee", "consignee",
+      "관세", "부가세", "운송비", "특송", "해상운송", "항공운송", "fta",
+      ("발주", "물류"), ("발주", "선적"), ("발주", "출고"), ("발주", "건수"),
+      ("수출", "건수"), ("수출", "진행"), ("수출", "일정"), ("수출", "현황"),
+      ("출고", "지연"), ("납기", "지연")]),
 ]
 
 # Backward-compatible flat schema cache (filled on first full load)
@@ -955,6 +1111,8 @@ def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
         prompt_path = PROMPTS_DIR / filename
         prompt = prompt_path.read_text(encoding="utf-8")
         prompt = prompt.replace("{{TEAM_SECTION}}", build_team_section())
+        prompt = prompt.replace("{{LOG_TEAM_SECTION}}",
+                                build_logistics_team_section())
         # ⛔ 손으로 적은 값 목록은 **반드시 낡는다.** `{{VALUES:이름}}` 을 실측으로 채운다.
         #    2026-08-18 실측: Continent1 의 `남미`·`중미` 가 **`중남미` 로 통합**됐는데
         #    프롬프트만 옛 값을 들고 있었다 → "남미 매출" 은 0건이 난다.
@@ -989,6 +1147,7 @@ def _source_table_map(settings) -> dict:
         "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
         "아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
         "프로모션": ["skin1004-319714.promotion_calendar.promotion"],
+        "물류": ["skin1004-319714.Export_control.export_logistics"],
         # ⛔ 리뷰는 국내/해외/매장 **통합 3종**이 정본이다 (2026-08-18 확정).
         #    구 몰별 소스(아마존·큐텐·쇼피·스마트스토어)를 남겨 두면 화이트리스트에
         #    없는 테이블을 가리켜 "허용되지 않은 테이블" 로 막힌다 — @@ 로만 쓰면
@@ -1628,6 +1787,8 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = _localize_continent_literals(sql)
             sql = _fix_continent_column(sql)
             sql = _localize_promotion_literals(sql)
+            sql = _localize_logistics_literals(sql)
+            sql = _fix_logistics_amount(sql)
             sql = _normalize_named_period(sql, query)
             sql = _strip_unrequested_brand_filter(sql, query)
 
@@ -1724,6 +1885,7 @@ def _retry_with_stronger_model(
         retry_sql = _localize_country_literals(retry_sql)
         retry_sql = _localize_team_literals(retry_sql)
         retry_sql = _localize_promotion_literals(retry_sql)
+        retry_sql = _localize_logistics_literals(retry_sql)
         retry_sql = _normalize_named_period(retry_sql, query)
         retry_sql = _fix_continent_column(retry_sql)
         retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
@@ -1900,6 +2062,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _localize_country_literals(retry_sql)
                 retry_sql = _localize_team_literals(retry_sql)
                 retry_sql = _localize_promotion_literals(retry_sql)
+                retry_sql = _localize_logistics_literals(retry_sql)
                 retry_sql = _normalize_named_period(retry_sql, query)
                 retry_sql = _fix_continent_column(retry_sql)
                 retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
@@ -2186,6 +2349,35 @@ def _unit_note(sql: str) -> str:
     if qty:
         lines.append("- " + ", ".join(qty) + " 만 **수량(개)** 이다")
     return "\n".join(lines)
+
+
+def _qty_coverage_fact(sql: str, results: list) -> str:
+    """수량을 셀 수 없는 브랜드가 걸렸으면 그 사실을 서술 단계에 못 박는다.
+
+    ⚠️ 보증은 `qty_coverage.notice()` 가 한다 — 이건 공시와 **어긋난 문장**
+       ("총 판매수량 0개")이 나가는 것을 줄이려는 것이다.
+    """
+    try:
+        from app.core.qty_coverage import prompt_fact
+        return prompt_fact(sql, results)
+    except Exception as e:                    # noqa: BLE001
+        # ⚠️ 프롬프트를 조립하는 중이다 — 여기서 터지면 답변 자체가 죽는다.
+        #    공시는 `notice()` 가 따로 하므로 사실이 통째로 사라지지는 않는다
+        logger.warning("qty_coverage_fact_failed", error=str(e)[:160])
+        return ""
+
+
+def _truncation_fact(results: list, rows_withheld: bool) -> str:
+    """표가 전체가 아니라는 사실을 서술 단계에 못 박는다.
+
+    ⚠️ 보증은 `result_truncation.notice()` 가 한다.
+    """
+    try:
+        from app.core.result_truncation import prompt_fact
+        return prompt_fact(results, rows_withheld)
+    except Exception as e:                    # noqa: BLE001
+        logger.warning("truncation_fact_failed", error=str(e)[:160])
+        return ""
 
 
 # ── 미래 날짜는 포함한다. 대신 포함했다고 말한다 (2026-08-25 사용자 확정) ────
@@ -2528,7 +2720,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
-{_unit_note(sql)}{_amount_note(results)}
+{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
 ⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
 
 ⚠️ **분량 제한 (최우선)**:
@@ -2627,7 +2819,25 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
         answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
-        answer = _mask_internal_paths(answer) + _future_period_note(sql)
+        # ⛔ 물류 수량 이상치는 **코드가 공시한다.** 프롬프트에 규칙을 넣고 배포한
+        #    뒤에도 "총 202,602,265,193개 · 압도적인 수출 규모" 가 그대로 나갔다
+        #    (2026-09-03 실측). 프롬프트는 확률이고 보증은 코드다.
+        # ⛔ **표보다 먼저 말한다** — 맨 뒤에 붙였더니 후속 질문 제안·실행된 쿼리
+        #    뒤로 밀려 정작 숫자를 읽는 사람 눈에 닿지 않았다 (2026-09-03 실측).
+        #    OP 재고 신선도 공시와 같은 규칙이다.
+        from app.core.logistics_quality import notice_for_sql as _log_qty_notice
+        # ⛔ 수량을 셀 수 없는 브랜드(UM·CBT)의 `0` 도 같은 자리에서 공시한다 —
+        #    표의 0 은 "안 팔렸다" 로 읽히는데 실제로는 **모르는 것**이다
+        #    (붐따 #156·#157). 물류 공시와 나란히 둬서 순서가 갈리지 않게 한다.
+        from app.core.qty_coverage import notice as _qty_cov_notice
+        # ⛔ 표가 전체가 아니면 그렇다고 말한다 — 프롬프트가 이미 알려주는데도
+        #    "총 8건" 이라고 단정한 사고가 두 번 났다 (붐따 #158·#160).
+        from app.core.result_truncation import notice as _trunc_notice
+        from app.core.logistics_amount import notice as _log_amt_notice
+        answer = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                  + _qty_cov_notice(sql, results)
+                  + _trunc_notice(results, _rows_withheld)
+                  + _mask_internal_paths(answer) + _future_period_note(sql))
         return {"answer": answer}
     except Exception as e:
         logger.error("answer_formatting_failed", error=str(e))
@@ -3504,7 +3714,15 @@ def _amount_note(results: list) -> str:
     """
     from app.core.answer_check import render_amount
 
-    _, totals = _additive_totals(results)
+    detail_rows, totals = _additive_totals(results)
+    # ⛔ 통화가 섞였으면 **합계를 주지 않고, 내지 말라고 말한다** (2026-09-03 실측).
+    #    코드가 안 주면 LLM 이 스스로 더한다 — USD+KRW+JPY 를 더해 "총 수출 금액
+    #    약 266.8억원" 이라고 쓴 답변이 실제로 나갔다. 표는 옆에 맞게 있었다.
+    if _mixed_currency_axis(detail_rows):
+        return ("\n⚠️ **통화가 여러 개다 — 금액을 합치지 마라.** 서로 다른 통화를"
+                " 더한 값은 뜻이 없다. 환율 환산도 하지 마라 (환율 데이터가 없다)."
+                " 요약에도 '총 금액' 을 쓰지 말고 **통화별로 각각** 말해라."
+                " 합계를 말해도 되는 것은 건수·수량뿐이다.")
     if not totals:
         return ""
     lines = ["", "⚠️ **금액 환산 (코드가 계산한 확정값 — 직접 나누지 마라)**:"]
@@ -3542,6 +3760,63 @@ def _is_additive_metric_column(column: str) -> bool:
     return False
 
 
+# ⛔ **통화가 섞인 표에서 금액을 더하지 마라** (2026-09-03 프로덕션 실측).
+#    수출 물류(@@물류)의 `amount` 는 통화가 `unit` 에 따로 있다. "통화별로 나눠서"
+#    라고 물어 표는 **맞게** 나왔는데, 코드가 만든 `합계 (조회 결과 기준)` 가
+#    USD 90,992,472 + KRW 17,449,032,193 + JPY 571,831,029 … 를 그냥 더해
+#    **26,677,833,361** 을 찍었고, 요약은 그걸 받아 "총 수출 금액 약 266.8억원"
+#    이라고 썼다. 달러와 엔과 원을 더한 숫자다 — **에러가 아니라 조용한 오답**이고,
+#    표가 옆에 맞게 있어서 오히려 더 믿긴다.
+# ⚠️ 건수·수량은 통화와 무관하게 더해도 된다 — **금액 컬럼만** 뺀다.
+_CURRENCY_AXIS_TOKENS = ("currency", "curr", "unit", "통화", "화폐")
+_MONEY_TOKENS = (
+    "amount", "revenue", "sales", "cost", "spend", "expense", "fee", "profit",
+    "discount", "coupon", "income", "loss", "price", "krw", "usd",
+    "금액", "매출", "비용", "원가", "이익", "광고비", "총액", "수수료", "단가",
+)
+# 통화 코드처럼 보이는 값 (ISO 4217 3글자 + 우리가 실제로 쓰는 표기)
+_re_currency_value = re.compile(r"^[A-Z]{3}$")
+
+
+def _is_money_column(column: str) -> bool:
+    normalized, parts = _metric_name_parts(column)
+    for token in _MONEY_TOKENS:
+        if token.isascii():
+            if token in parts or normalized.startswith(token) or normalized.endswith(token):
+                return True
+        elif token in normalized:
+            return True
+    return False
+
+
+def _mixed_currency_axis(rows: list) -> Optional[str]:
+    """행이 **여러 통화로 쪼개져 있으면** 그 축 컬럼 이름을 돌려준다.
+
+    이름만으로 정하지 않는다 — `unit`(단위)은 통화가 아닌 뜻으로도 쓰인다.
+    **값이 통화 코드처럼 생겼고 두 종류 이상**일 때만 통화 축으로 본다.
+    """
+    if not rows:
+        return None
+    for column in rows[0].keys():
+        _, parts = _metric_name_parts(column)
+        if not any(t in parts or t in str(column).lower()
+                   for t in _CURRENCY_AXIS_TOKENS):
+            continue
+        seen = set()
+        for row in rows:
+            value = row.get(column)
+            if isinstance(value, str) and value.strip():
+                seen.add(value.strip())
+        if len(seen) < 2:
+            continue
+        # 통화 코드로 읽히는 값이 절반을 넘어야 통화 축이다 (`통화미상` 같은
+        # 라벨이 섞여도 통과하지만, `개`·`박스` 같은 단위 표는 걸리지 않는다)
+        codes = sum(1 for v in seen if _re_currency_value.match(v.upper()))
+        if codes * 2 > len(seen):
+            return str(column)
+    return None
+
+
 def _is_existing_total_row(row: dict) -> bool:
     for value in row.values():
         if not isinstance(value, str):
@@ -3564,9 +3839,16 @@ def _additive_totals(results: list) -> tuple[list[dict], dict]:
     if not detail_rows:
         return [], {}
 
+    # 통화가 섞여 있으면 금액 합계는 뜻이 없다 (위 주석의 실제 사고)
+    currency_axis = _mixed_currency_axis(detail_rows)
+
     totals = {}
     for column in results[0].keys():
         if not _is_additive_metric_column(column):
+            continue
+        if currency_axis and _is_money_column(column):
+            logger.info("totals_skipped_mixed_currency",
+                        column=str(column)[:40], axis=currency_axis[:40])
             continue
         values = []
         for row in detail_rows:
@@ -3588,7 +3870,17 @@ def _build_table_totals_markdown(results: list) -> str:
     arithmetic sum is not a useful business metric.
     """
     detail_rows, totals = _additive_totals(results)
+    currency_axis = _mixed_currency_axis(detail_rows)
+    money_skipped = bool(currency_axis) and any(
+        _is_additive_metric_column(c) and _is_money_column(c)
+        for c in (results[0].keys() if results else []))
     if not totals:
+        # ⚠️ 금액만 있는 표였다면 블록이 통째로 사라진다 — 그건 조용한 실패다.
+        #    왜 합계가 없는지 한 줄로 밝힌다
+        if money_skipped:
+            return ("#### 합계 (조회 결과 기준)\n\n"
+                    "⚠️ 통화가 여러 개라 금액 합계를 내지 않았습니다 — "
+                    "서로 다른 통화를 더한 값은 뜻이 없습니다. 통화별 금액은 위 표를 보세요.")
         return ""
 
     lines = [
@@ -3600,6 +3892,10 @@ def _build_table_totals_markdown(results: list) -> str:
     for label, total in zip(_distinct_metric_labels(totals), totals.values()):
         lines.append(f"| {label} | **{_fast_fmt_cell(total)}** |")
     lines.extend(["", f"*조회 결과 전체 {len(detail_rows)}행 기준*"])
+    if money_skipped:
+        lines.append("")
+        lines.append("⚠️ 통화가 여러 개라 **금액 합계는 내지 않았습니다** — "
+                     "서로 다른 통화를 더한 값은 뜻이 없습니다.")
     return "\n".join(lines)
 
 
@@ -4006,7 +4302,7 @@ def run_sql_agent_stream(
 
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
-{_unit_note(sql)}{_amount_note(results)}
+{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
 {TEAM_DISPLAY_RULE}"""
 
@@ -4031,6 +4327,18 @@ def run_sql_agent_stream(
     # ⛔ 흘려보낸 답변을 그냥 버리지 마라 — 수치 검증이 이 경로에 없어서 1,000배
     #    오답이 그대로 나갔다 (`_number_check_notice` 주석). 이미 나간 글자를
     #    되돌릴 수는 없으므로 **모아 두었다가 끝에 원본을 붙인다.**
+    # ⛔ 수량 이상치 공시는 **답변보다 먼저** 흘린다 (비스트리밍과 같은 순서).
+    # ⚠️ 두 경로에 **함께** 걸어야 한다 — 한쪽만 고치면 경로에 따라 답이 갈린다
+    from app.core.logistics_quality import notice_for_sql as _log_qty_notice
+    from app.core.qty_coverage import notice as _qty_cov_notice
+    from app.core.result_truncation import notice as _trunc_notice
+    from app.core.logistics_amount import notice as _log_amt_notice
+    _qty_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                   + _qty_cov_notice(sql, results)
+                   + _trunc_notice(results, _rows_withheld))
+    if _qty_notice:
+        yield _qty_notice
+
     _streamed = []
     for chunk in _stream_with_table_totals(answer_chunks, totals_block):
         if _t_first_token is None:

@@ -44,7 +44,10 @@ EXCLUDE_DIRS = {
 # app/static/charts 는 서버사이드 차트 시절 PNG 5천여개(687MB) 잔재. 현재 미사용.
 #   - data/reports: 채팅으로 생성된 보고서 HTML(원가·마진·거래처명 포함). 서버마다 따로
 #     쌓이는 산출물이고 DB payload 로 재생성되므로 올리지 않는다.
-EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports"}
+#   - data/sql_results: 사용자별 조회 결과 CSV 보관분(매출·원가 포함). 서버마다
+#     따로 쌓이는 산출물이고 TTL 로 스스로 지워진다 — 올리지 않는다
+EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports",
+                 "data/sql_results"}
 EXCLUDE_EXT = {".pyc", ".pyo", ".log", ".sql", ".pdf", ".xlsx"}
 # .env 는 서버별 값이 다르므로 덮어쓰지 않는다 (최초 1회만 수동 구성)
 EXCLUDE_FILES = {".env"}
@@ -62,7 +65,7 @@ def collect() -> list[Path]:
             continue
         for n in names:
             p = Path(root) / n
-            if p.suffix in EXCLUDE_EXT or n in EXCLUDE_FILES:
+            if n.startswith(".") or p.suffix in EXCLUDE_EXT or n in EXCLUDE_FILES:
                 continue
             try:
                 if p.stat().st_size > 40 * 1024 * 1024:
