@@ -27,6 +27,24 @@ _TIME_HINTS = {"월", "년", "분기", "주차", "week", "month", "quarter",
 _RE_TIME_COL = re.compile(r"(20\d{2}|q[1-4]|분기|월|주차|quarter|month|week)", re.IGNORECASE)
 _RE_YEAR_MONTH = re.compile(r"^(20\d{2})[-/.](0?[1-9]|1[0-2])(?:[-/.]\d{1,2})?$")
 
+# 한 차트에 그릴 계열 수의 상한. 색이 12개뿐이라 이보다 많으면 색이 되풀이돼
+# 범례가 어느 선을 가리키는지 알 수 없게 된다.
+MAX_SERIES = 10
+# x축(기간) 상한 — 이쪽은 접을 수 없다. 기간을 합치면 그건 다른 질문의 답이다.
+MAX_PERIODS = 36
+
+# ⛔ 접는 것이 늘 이득은 아니다. 상위 계열이 전체의 10% 도 안 되면 그 차트는
+#    상위를 보여주는 것이 아니라 **'기타' 하나를 보여주는 것**이다. 그럴 땐
+#    그리지 않고 이유를 말한다 (400개 계열을 9개 + 기타로 접으면 기타가 97%다).
+_FOLD_MIN_TOP_SHARE = 0.10
+
+# ⛔ 더하면 안 되는 지표. '기타' 로 묶는 것은 **합치는 것**이라, 비율·평균을
+#    묶으면 통계처럼 생긴 거짓말이 된다 (`insight.py` 가 숫자를 못 쓰게 한 것과
+#    같은 이유). 판정이 애매하면 묶지 않는 쪽으로 기운다 — 안전한 쪽 실패다.
+_RE_NON_ADDITIVE = re.compile(
+    r"(률|율|비중|비율|평균|중앙|rate|ratio|pct|percent|avg|mean|share|margin|roas)",
+    re.IGNORECASE)
+
 
 # 연도를 **나눠 달라**는 표현 / 기간 **범위**를 잇는 표현.
 # ⛔ 연도가 둘 보인다고 YoY 로 보면 "2025년 1월부터 2026년 6월까지" 같은 범위까지
@@ -155,15 +173,86 @@ def _pivot_grouped_data(data: List[Dict], x_col: str, y_col: str, group_col: str
         pivot[x][g] = v
         group_totals[g] += v
 
-    # Sort groups by total (descending), limit to top 10 for chart readability
-    groups = sorted(groups, key=lambda g: group_totals[g], reverse=True)[:10]
+    # ⛔ 여기서 `[:10]` 으로 잘라내던 자리다. 상한을 통과한 11~15개짜리 차트에서
+    #    **시리즈가 말없이 사라졌다** — 범례에도 안 남으니 아무도 모른다.
+    #    개수는 `_fold_series()` 가 위에서 정하고, 여기서는 정렬만 한다.
+    groups = sorted(groups, key=lambda g: group_totals[g], reverse=True)
 
     return x_order, groups, pivot
+
+
+def _note(notes: Optional[List[str]], text: str) -> None:
+    """차트가 온전하지 않은 이유를 호출부로 올린다.
+
+    ⛔ 이 자리에서 조용히 `return None` 하면 화면에는 **아무 말도 없이** 차트만
+       사라진다 (붐따 #145·#165). 사유는 사용자에게 닿아야 한다.
+    """
+    if notes is not None and text and text not in notes:
+        notes.append(text)
+
+
+def _fold_series(
+    data: List[Dict[str, Any]], x_col: str, y_col: str, group_col: str,
+    y_label: str = "",
+) -> tuple:
+    """계열이 너무 많으면 상위만 남기고 나머지를 하나로 접는다.
+
+    ⛔ 예전에는 계열이 15개를 넘으면 **차트를 통째로 버렸다**(`return None`).
+       19개 제품의 월별 매출을 물은 사용자는 표만 받고 아무 설명도 못 들었다.
+
+    Returns:
+        (rows, folded, dropped) — folded 는 '기타' 로 합친 계열 수,
+        dropped 는 합칠 수 없어 **뺀** 계열 수. 둘 다 0이면 손대지 않은 것이다.
+    """
+    groups, totals = [], {}
+    for row in data:
+        g = str(row.get(group_col, ""))
+        if g not in totals:
+            totals[g] = 0.0
+            groups.append(g)
+        totals[g] += float(row.get(y_col, 0) or 0)
+    if len(groups) <= MAX_SERIES:
+        return data, 0, 0
+
+    ranked = sorted(groups, key=lambda g: totals[g], reverse=True)
+    additive = not _RE_NON_ADDITIVE.search(f"{y_col} {y_label}")
+    keep = MAX_SERIES - 1 if additive else MAX_SERIES
+    top = set(ranked[:keep])
+    rest = len(ranked) - len(top)
+
+    # 너무 잘게 흩어져 있으면 접어도 읽을 것이 없다 — 상한에 맡기고 이유를 말한다.
+    grand = sum(totals.values())
+    if grand > 0:
+        top_share = sum(totals[g] for g in top) / grand
+        if top_share < _FOLD_MIN_TOP_SHARE:
+            logger.info("chart_fold_declined", groups=len(ranked),
+                        top_share=round(top_share, 4))
+            return data, 0, 0
+
+    x_order = list(OrderedDict.fromkeys(str(r.get(x_col, "")) for r in data))
+    by_x: Dict[str, List[Dict[str, Any]]] = {}
+    for row in data:
+        by_x.setdefault(str(row.get(x_col, "")), []).append(row)
+
+    out: List[Dict[str, Any]] = []
+    for x in x_order:
+        rest_sum, has_rest = 0.0, False
+        for row in by_x.get(x, []):
+            if str(row.get(group_col, "")) in top:
+                out.append(row)
+            else:
+                rest_sum += float(row.get(y_col, 0) or 0)
+                has_rest = True
+        if additive and has_rest:
+            # ⚠️ 합계를 보존한다 — '기타' 는 버린 것이 아니라 합친 것이다.
+            out.append({x_col: x, group_col: f"기타 {rest}개", y_col: rest_sum})
+    return out, (rest if additive else 0), (0 if additive else rest)
 
 
 def build_chartjs_config(
     chart_config: Dict[str, Any],
     data: List[Dict[str, Any]],
+    notes: Optional[List[str]] = None,
 ) -> Optional[str]:
     """Build a Chart.js configuration JSON string.
 
@@ -185,6 +274,7 @@ def build_chartjs_config(
             #    남겨야 고칠 수 있다 — 이 저장소의 "조용한 실패" 원칙과 같다.
             logger.warning("chart_skipped", reason="missing_columns",
                            rows=len(data or []), x_col=x_col, y_col=y_col)
+            _note(notes, "그릴 축을 정하지 못해 차트는 생략했습니다.")
             return None
 
         # Validate x_column exists in data — auto-fix if not found
@@ -230,6 +320,7 @@ def build_chartjs_config(
                     else:
                         logger.warning("chart_skipped", reason="no_numeric_column",
                                        x_col=x_col, y_col=y_col, rows=len(data))
+                        _note(notes, "그릴 수 있는 숫자 열이 없어 차트는 생략했습니다.")
                         return None
 
         # ⛔ **정규화가 상한 검사보다 먼저다.** 예전엔 순서가 반대였고, 그래서
@@ -260,6 +351,21 @@ def build_chartjs_config(
                 group_col = "__yoy_series"
                 x_label = x_label or "월"
 
+        # ⛔ **계열이 많다고 차트를 통째로 버리지 않는다** (붐따 #165, 2026-09-04).
+        #    "랩인네이처 월별 매출, 제품별로도" → 월 10 × 제품 19 였는데, 계열 상한
+        #    15 에 걸려 `return None` 이 났다. 화면에는 표만 남고 **아무 말도 없어서**
+        #    사용자는 같은 질문을 세 번 다시 물었다. 이제 상위 계열만 남기고
+        #    나머지는 '기타 N개' 로 **합쳐서** 그린다 — 합계는 보존된다.
+        if group_col and isinstance(y_col, str):
+            data, folded, dropped = _fold_series(
+                data, x_col, y_col, group_col, y_label=y_label)
+            if folded:
+                logger.info("chart_series_folded", folded=folded)
+            if dropped:
+                # 비율·평균은 합칠 수 없다. 뺐으면 뺐다고 적는다.
+                _note(notes, f"계열이 많아 상위 {MAX_SERIES}개만 그렸습니다 — "
+                             f"나머지 {dropped}개는 합산할 수 없는 지표라 제외했습니다.")
+
         # Readability limits
         max_items = {"bar": 15, "horizontal_bar": 20, "pie": 12, "line": 36}
         limit = max_items.get(chart_type, 20)
@@ -268,10 +374,19 @@ def build_chartjs_config(
         if group_col and chart_type in ("line", "stacked_bar", "grouped_bar"):
             unique_x = len(set(str(row.get(x_col, "")) for row in data))
             unique_g = len(set(str(row.get(group_col, "")) for row in data))
-            if unique_x > 36 or unique_g > 15:
+            # 계열은 위에서 접혔다. 여기 남는 것은 **기간**이다 — 기간은 접을 수
+            # 없다 (합치면 그건 다른 질문의 답이다).
+            if unique_x > MAX_PERIODS or unique_g > MAX_SERIES:
                 logger.warning("chart_skipped", reason="too_many_series",
                                unique_x=unique_x, unique_groups=unique_g,
                                chart_type=chart_type)
+                _note(notes, (
+                    f"기간이 {unique_x}개로 많아 차트는 생략했습니다 — "
+                    f"기간을 좁혀 다시 물어보시면 그려 드립니다."
+                    if unique_x > MAX_PERIODS else
+                    f"계열이 {unique_g}개로 많고 고르게 흩어져 있어 차트는 "
+                    f"생략했습니다 — 상위 몇 개만 보여 달라고 하시면 "
+                    f"그려 드립니다."))
                 return None  # Too many periods or groups
         elif chart_type == "pie" and len(data) > 10:
             _pie_y = y_col if isinstance(y_col, str) else y_col[0]
@@ -288,6 +403,8 @@ def build_chartjs_config(
             else:
                 logger.warning("chart_skipped", reason="too_many_items",
                                rows=len(data), limit=limit, chart_type=chart_type)
+                _note(notes, f"항목이 {len(data)}개로 많아 차트는 생략했습니다 — "
+                             f"상위 몇 개만 보여 달라고 하시면 그려 드립니다.")
                 return None
 
         # --- Build Chart.js config ---

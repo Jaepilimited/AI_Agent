@@ -1160,6 +1160,33 @@ def _source_table_map(settings) -> dict:
     }
 
 
+def _canonical_source(name: str) -> str:
+    """저장된 소스 이름을 **현재 키**로 옮긴다 (별칭·옛 이름 흡수).
+
+    ⛔ **실사용 장애 (2026-09-04)**: `@@` 키를 `LOG` → `물류` 로 바꿨더니,
+       브라우저(localStorage)에 `LOG` 를 저장해 둔 사용자가 물류 질문마다
+       *"허용되지 않은 테이블입니다"* 를 받았다. 로그 실측: 16:56·16:58·16:59
+       세 요청이 그렇게 죽었다.
+       ⚠️ **에러 화면도 아니고 조회 실패로 보인다** — 사용자는 데이터가 없는 줄 안다.
+    ⚠️ 이름을 바꿀 때마다 같은 일이 난다. 한 번 겪었으니 **키가 아니라 별칭까지**
+       보고 옮긴다 — 앞으로의 개명도 여기서 흡수된다.
+    ⚠️ 프론트 저장분은 서버가 고칠 수 없다. 보정은 **서버에서** 해야 한다.
+    """
+    if not name:
+        return name
+    try:
+        from app.agents.orchestrator import OrchestratorAgent
+        target = str(name).strip().lower()
+        for entry in OrchestratorAgent.get_db_registry():
+            if str(entry.get("key", "")).lower() == target:
+                return entry["key"]
+            if any(str(a).lower() == target for a in entry.get("aliases", [])):
+                return entry["key"]
+    except Exception as e:
+        logger.warning("canonical_source_failed", name=str(name)[:40], error=str(e)[:120])
+    return name
+
+
 def _allowed_tables_from_sources(
     enabled_sources,
     can_view_fi: bool = False,
@@ -1177,7 +1204,7 @@ def _allowed_tables_from_sources(
     else:
         allowed_tables = set()
         for src in enabled_sources:
-            for tp in _SOURCE_TABLE_MAP.get(src, []):
+            for tp in _SOURCE_TABLE_MAP.get(_canonical_source(src), []):
                 allowed_tables.add(tp)
     if not can_view_fi:
         allowed_tables.discard("skin1004-319714.Sales_Integration.FI_LLM_Flat")
@@ -2853,7 +2880,11 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         #    "총 8건" 이라고 단정한 사고가 두 번 났다 (붐따 #158·#160).
         from app.core.result_truncation import notice as _trunc_notice
         from app.core.logistics_amount import notice as _log_amt_notice
+        # ⛔ 한화 환산은 하지 않고, **못 한다고 말한다** — 그러지 않으면 LLM 이
+        #    물류비를 「한화 수출금액」이라고 내놓는다 (붐따 #162)
+        from app.core.logistics_amount import krw_notice as _log_krw_notice
         answer = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                  + _log_krw_notice(sql, query)
                   + _qty_cov_notice(sql, results)
                   + _trunc_notice(results, _rows_withheld)
                   + _mask_internal_paths(answer) + _future_period_note(sql))
@@ -3300,11 +3331,18 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
         logger.info("chart_requested", chart_type=config.get("chart_type"), group_column=config.get("group_column"))
 
         # Build Chart.js config JSON (rendered interactively by frontend)
-        chartjs_json = build_chartjs_config(config, results)
+        # ⛔ 차트를 못 그리면 **말한다.** 예전엔 빈 문자열을 돌려줘 화면에
+        #    아무 흔적도 남지 않았다 — 붐따 #145 「차트가 안나옴」 · #165
+        #    「월별인데 시각화를 못나타냄」 이 둘 다 이 침묵이었다. 사용자는
+        #    자기가 잘못 물은 줄 알고 같은 질문을 되풀이한다 (#165 는 3회).
+        # ⚠️ 차트가 나와도 온전하지 않으면(계열 제외) 같은 줄로 알린다.
+        chart_notes = []
+        chartjs_json = build_chartjs_config(config, results, notes=chart_notes)
+        note = ("\n\n> ⚠️ " + chart_notes[0]) if chart_notes else ""
         if chartjs_json:
-            return f"\n\n```chart-config\n{chartjs_json}\n```"
-        logger.warning("chartjs_config_returned_none")
-        return ""
+            return f"\n\n```chart-config\n{chartjs_json}\n```" + note
+        logger.warning("chartjs_config_returned_none", note=chart_notes[:1])
+        return note
     except Exception as e:
         logger.error("chart_generation_skipped", error=str(e), error_type=type(e).__name__,
                      raw=config_json[:600], raw_len=len(config_json), query=query[:80])
@@ -3755,7 +3793,12 @@ def _amount_note(results: list) -> str:
         return ("\n⚠️ **통화가 여러 개다 — 금액을 합치지 마라.** 서로 다른 통화를"
                 " 더한 값은 뜻이 없다. 환율 환산도 하지 마라 (환율 데이터가 없다)."
                 " 요약에도 '총 금액' 을 쓰지 말고 **통화별로 각각** 말해라."
-                " 합계를 말해도 되는 것은 건수·수량뿐이다.")
+                " 합계를 말해도 되는 것은 건수·수량뿐이다."
+                # ⛔ 2026-09-04 실측: 합계는 안 냈는데 표에서 달러 값에
+                #    원화 표기를 붙였다 — 환산이 아니라 라벨이 거짓말이다
+                " ⛔ 외화 금액에 '원'·'만원'·'억원' 을 붙이지 마라 —"
+                " 통화 코드를 그대로 쓴다 (USD 8,322,054 를 '약 832만원'"
+                " 이라고 쓴 답변이 실제로 나갔다).")
     if not totals:
         return ""
     lines = ["", "⚠️ **금액 환산 (코드가 계산한 확정값 — 직접 나누지 마라)**:"]
@@ -3802,24 +3845,15 @@ def _is_additive_metric_column(column: str) -> bool:
 #    표가 옆에 맞게 있어서 오히려 더 믿긴다.
 # ⚠️ 건수·수량은 통화와 무관하게 더해도 된다 — **금액 컬럼만** 뺀다.
 _CURRENCY_AXIS_TOKENS = ("currency", "curr", "unit", "통화", "화폐")
-_MONEY_TOKENS = (
-    "amount", "revenue", "sales", "cost", "spend", "expense", "fee", "profit",
-    "discount", "coupon", "income", "loss", "price", "krw", "usd",
-    "금액", "매출", "비용", "원가", "이익", "광고비", "총액", "수수료", "단가",
-)
 # 통화 코드처럼 보이는 값 (ISO 4217 3글자 + 우리가 실제로 쓰는 표기)
 _re_currency_value = re.compile(r"^[A-Z]{3}$")
 
 
 def _is_money_column(column: str) -> bool:
-    normalized, parts = _metric_name_parts(column)
-    for token in _MONEY_TOKENS:
-        if token.isascii():
-            if token in parts or normalized.startswith(token) or normalized.endswith(token):
-                return True
-        elif token in normalized:
-            return True
-    return False
+    """⛔ 판정은 `answer_check` 한 곳에서만 한다 — 금액 배율 교정이 같은 목록을
+    본다. 여기에 사본을 두면 한쪽만 고쳐진다 (이 프로젝트의 단골 함정)."""
+    from app.core.answer_check import is_money_column
+    return is_money_column(column)
 
 
 def _mixed_currency_axis(rows: list) -> Optional[str]:
@@ -4373,7 +4407,9 @@ def run_sql_agent_stream(
     from app.core.qty_coverage import notice as _qty_cov_notice
     from app.core.result_truncation import notice as _trunc_notice
     from app.core.logistics_amount import notice as _log_amt_notice
+    from app.core.logistics_amount import krw_notice as _log_krw_notice
     _qty_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                   + _log_krw_notice(sql, query)
                    + _qty_cov_notice(sql, results)
                    + _trunc_notice(results, _rows_withheld))
     if _qty_notice:
