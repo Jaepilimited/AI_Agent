@@ -48,7 +48,14 @@ EXCLUDE_DIRS = {
 #     따로 쌓이는 산출물이고 TTL 로 스스로 지워진다 — 올리지 않는다
 EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports",
                  "data/sql_results"}
-EXCLUDE_EXT = {".pyc", ".pyo", ".log", ".sql", ".pdf", ".xlsx"}
+# 영상은 코드가 아니다 — 배포 전송에 끼면 **매번** 함께 올라간다.
+#   셀라 기원 MV 는 720p 로 줄여도 40MB 다 (전체 전송량이 37.8MB 다).
+#   서버에는 한 번만 올린다: python scripts/upload_media.py
+#   원본에서 다시 만들려면 (ffmpeg):
+#     -vf scale=-2:720 -c:v libx264 -crf 24 -preset medium
+#     -c:a aac -b:a 128k -movflags +faststart
+EXCLUDE_EXT = {".pyc", ".pyo", ".log", ".sql", ".pdf", ".xlsx",
+               ".mp4", ".mov", ".webm", ".mkv"}
 # .env 는 서버별 값이 다르므로 덮어쓰지 않는다 (최초 1회만 수동 구성)
 EXCLUDE_FILES = {".env"}
 

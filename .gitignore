@@ -189,3 +189,6 @@ scripts/_run_*.cmd
 
 # SQL 조회 결과 CSV 임시 보관 (TTL 로 스스로 지워진다)
 data/sql_results/
+
+# 셀라 기원 MV — 40MB 바이너리는 저장소에 두지 않는다 (서버에 한 번만 올린다)
+app/static/media/*.mp4

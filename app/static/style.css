@@ -6212,3 +6212,126 @@ html.dark .db-autocomplete-dropdown {
   line-height: 1.5;
   color: var(--text-secondary);
 }
+
+/* ── 셀라의 기원 (아바타 클릭 · 첫 방문 1회 초대) ─────────────────────────
+   ⛔ 색은 style.css 상단의 실제 토큰만 쓴다 — 없는 변수는 에러가 아니라
+      폴백이라 테마 전환에서 조용히 빠진다 */
+/* ⛔ `.cella-static-avatar` 는 건드리지 않는다 — `cella-pet.css` 에서
+   `position:absolute; inset:0` 이다. 여기서 `relative` 로 덮으면 아바타
+   배치가 통째로 무너진다 (그 파일은 다른 세션 것이다). */
+.cella-origin-hotspot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  /* ⛔ 부모가 `pointer-events: none` 이라 이걸 되살리지 않으면 **눌리지
+     않는다**. 화면에는 멀쩡히 보이고 커서도 안 바뀌니 알아채기 어렵다 —
+     브라우저 테스트가 이걸 잡았다. */
+  pointer-events: auto;
+  /* 아바타 이미지가 `z-index: 1` 이다 — 그 위로 올라와야 손이 닿는다 */
+  z-index: 2;
+}
+.cella-origin-hotspot:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.cella-origin-invite {
+  /* 말풍선 카드는 아바타 **위**(238px)에 있다 — 초대는 아바타 **왼쪽**
+     빈자리에 세워 겹치지 않게 한다 */
+  position: absolute;
+  right: calc(100% + 10px);
+  bottom: 10px;
+  z-index: 3;
+  /* ⛔ `#cella-pet-layer` 와 `.cella-guide` 가 `pointer-events: none` 이다 —
+     되살리지 않으면 「보기」 버튼이 **눌리지 않는다** (보이기는 한다) */
+  pointer-events: auto;
+  width: max-content;
+  max-width: min(280px, 55vw);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 0.86em;
+  line-height: 1.35;
+  box-shadow: var(--shadow-card);
+}
+.cella-origin-invite-open {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text);
+  padding: 3px 10px;
+  font-size: 0.95em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cella-origin-invite-open:hover { background: var(--bg-hover); }
+.cella-origin-invite-close {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.15em;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.cella-origin-invite-close:hover { color: var(--text); }
+
+.cella-origin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.72);
+}
+.cella-origin-overlay[hidden] { display: none; }
+.cella-origin-card {
+  width: min(880px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+.cella-origin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.cella-origin-close {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.4em;
+  line-height: 1;
+  cursor: pointer;
+}
+.cella-origin-close:hover { color: var(--text); }
+.cella-origin-video {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+}
+.cella-origin-note {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
