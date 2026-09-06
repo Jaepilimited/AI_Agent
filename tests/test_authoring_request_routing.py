@@ -124,3 +124,30 @@ def test_출근브리핑이_기능_목록에_있다():
         assert word in prompt, f"기능 목록에 {word!r} 가 없다"
     # 없는 연동을 있다고 답하지 않도록 한계도 함께 적혀 있어야 한다
     assert "노션·슬랙" in prompt
+
+
+# ── 「낱말이 없다」는 확신의 근거가 아니다 ─────────────────────────────────
+# 실측(2026-09-07, 실사용 60일 1,295건): `노션` + 데이터 낱말 **부재** 만으로
+# confident=True 를 주던 가지가 결정한 것은 9건뿐이었고 그중 7건이 오분류였다.
+# 제대로 맞힌 1건은 위쪽 `_DOC_WORD` 관문이 이미 잡는다.
+AMBIGUOUS = [
+    "셀라야 지금까지는 우리팀 노션이엇구, 이제 내 개인노션 만들고야",
+    "연동된 Notion 페이지 리스트 모두 알려줘",
+    "그 내 일간 업무 지메일 연동해서 정리하는거 노션으로 바로 쏠수있어?",
+]
+
+
+@pytest.mark.parametrize("question", AMBIGUOUS)
+def test_부재를_근거로_확신하지_않는다(question, route):
+    """확신을 뺀다 = LLM 이 다시 본다. 값은 notion 그대로라 실패해도 안전하다."""
+    _, confident = route(question)
+    assert not confident, f"{question!r} 를 확신으로 끝냈다 (LLM 재판정을 건너뛴다)"
+
+
+def test_진짜_문서_요청은_여전히_확신한다(route):
+    """확신을 뺀 대가로 잃는 것이 없어야 한다 — `_DOC_WORD` 가 위에서 잡는다."""
+    for q in ("SKIN1004의 PETA 인증 명칭을 사내 문서에서 찾아줘",
+              "반품 정책 문서 찾아줘",
+              "출장 보고서 양식 어디 있어?"):
+        got, confident = route(q)
+        assert (got, confident) == ("notion", True), f"{q!r} → {got}/{confident}"
