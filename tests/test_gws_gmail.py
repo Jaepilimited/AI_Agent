@@ -51,8 +51,19 @@ def test_build_gmail_query_handles_recent_unread_mail():
 
 
 def test_build_gmail_query_drops_colloquial_what_is_it_suffix():
-    assert gws_agent.build_gmail_query("최신메일이머야", now=NOW) == ""
-    assert gws_agent.build_gmail_query("최신 메일이 뭐야?", now=NOW) == ""
+    """구어체 꼬리는 떼되, **질의를 통째로 비우지는 않는다.**
+
+    ⛔ 이 테스트는 원래 결과가 `""` 이기를 기대했다. 그런데 빈 질의는 아예
+       보내지지 않아 **언제나 0건**이고, 그 0건은 "메일이 없다" 와 똑같이 보인다.
+       실제로 프로덕션에서 `최신메일이머야`(2026-08-13)가 "검색 결과가 없습니다"
+       로 끝났다. `최신` 은 최근성 표현이므로 연산자로 번역돼야 한다
+       (2026-09-07 실측 후 기대값 정정 — 같은 질문이 이제 10건을 돌려준다).
+    """
+    for question in ("최신메일이머야", "최신 메일이 뭐야?"):
+        got = gws_agent.build_gmail_query(question, now=NOW)
+        assert got == "newer_than:7d", got
+        # 구어체 꼬리가 검색어로 남지 않는다 (이 테스트의 원래 목적)
+        assert not [t for t in got.split() if ":" not in t], got
 
 
 def test_build_gmail_query_keeps_today_filter_with_colloquial_suffix():
@@ -139,7 +150,9 @@ def test_agent_collect_uses_compiled_query_and_full_body(monkeypatch):
         }]
 
     monkeypatch.setattr(gws_agent, "search_gmail", fake_search)
-    result = gws_agent.GWSAgent()._collect(object(), "오늘 메일 요약", "gmail")
+    # ⚠️ `_collect` 는 (결과, 공지) 를 돌려준다 — 넓혀 찾은 사실을 결과 텍스트에만
+    #    적으면 정리 LLM 이 지운다 (붐따 #148)
+    result, notices = gws_agent.GWSAgent()._collect(object(), "오늘 메일 요약", "gmail")
 
     assert captured == {
         "query": gws_agent.build_gmail_query("오늘 메일 요약"),
@@ -147,6 +160,7 @@ def test_agent_collect_uses_compiled_query_and_full_body(monkeypatch):
     }
     assert "미리보기에 없던 실제 본문 내용" in result
     assert "짧은 미리보기" not in result
+    assert notices == [], "정확히 맞은 검색을 넓혔다고 말하면 안 된다"
 
 
 def test_search_gmail_requests_full_messages_and_returns_body(monkeypatch):

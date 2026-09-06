@@ -35,6 +35,8 @@ from app.config import get_settings
 from app.core.google_auth import GoogleAuthManager
 from app.core import query_keywords
 from app.core.google_workspace import list_calendar_events, search_drive, search_gmail
+from app.core.query_keywords import BASE_STOP
+from app.core.textmatch import strip_particle
 
 _auth_manager = None
 _SEOUL = ZoneInfo("Asia/Seoul")
@@ -53,6 +55,32 @@ _GMAIL_OPERATOR_RE = re.compile(
     r'after|before|older|newer|newer_than|older_than):(?:"[^"]*"|\S+)',
     re.IGNORECASE,
 )
+
+# "Christopher 로부터" · "김대리에게서" · "Chris가 보낸" → `from:` (붐따 #148·#149)
+# ⛔ 사람 이름을 **본문 검색어**로 넣으면 못 찾는다. 이름은 보낸사람 헤더에 있지
+#    메일 본문에 있는 게 아니다. 게다가 AND 라 다른 낱말까지 같이 죽는다.
+# ⚠️ 잘못 잡을 수 있다("고객사로부터"). 그래서 `from:` 은 **되돌릴 수 있는 층**으로
+#    둔다 — 0건이면 좁혀 찾기 사다리(`run_gmail_search`)가 이 조건도 떼고 다시 본다.
+_SENDER_RE = re.compile(
+    r"([A-Za-z][A-Za-z0-9._'-]+|[가-힣]{2,4})\s*"
+    r"(?:으로부터|로부터|에게서|한테서|(?:가|이|께서)\s*보낸)"
+)
+
+# "과거 1년 이내" · "최근 3개월" · "지난 2주" → newer_than: (붐따 #149)
+# ⛔ "약 1년 **전**" 은 여기 걸리면 안 된다 — 1년 안쪽이 아니라 그 무렵이라, 기간을
+#    걸면 정작 찾던 그 메일이 빠진다. 연산자를 안 붙이는 편이 옳다.
+_REL_PERIOD_RE = re.compile(
+    r"(?:(최근|지난|과거)\s*)?(\d+)\s*(년|개월|달|주|일)\s*(이내|이후|동안|간|내)?(?!\s*전)"
+)
+_PERIOD_UNIT = {"년": "y", "개월": "m", "달": "m", "일": "d"}
+
+# 메일 요청에만 나오는 말 — 뜻을 좁히지 못한다. 나머지 일반 불용어는 공용
+# `query_keywords.BASE_STOP` 이 맡는다 (⛔ 여기에 사본을 만들지 말 것)
+_MAIL_STOP = {
+    "로부터", "으로부터", "에게서", "한테서", "보낸", "왔는데", "왔어", "왔습니다",
+    "왔다", "온", "참고해서", "참고", "이내", "이후", "동안", "모두", "전부",
+    "과거", "지난", "최근", "약",
+}
 
 
 def build_gmail_query(query: str, now: datetime | None = None) -> str:
@@ -77,10 +105,22 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
         for name in ("after", "before", "older", "newer", "newer_than", "older_than")
     )
 
+    # 보낸사람 — 이미 `from:`/`to:` 를 직접 쓴 질문은 건드리지 않는다
+    sender = ""
+    sender_tokens: set = set()
+    if "from:" not in operators_lower:
+        found = _SENDER_RE.search(_GMAIL_OPERATOR_RE.sub(" ", question))
+        if found:
+            sender = found.group(1)
+            sender_tokens.add(sender.lower())
+
     generated: List[str] = []
     if not has_date_operator:
         start = end = None
-        if any(word in lowered for word in ("어제", "yesterday")):
+        window = _relative_window(lowered)
+        if window:
+            generated.append(window)
+        elif any(word in lowered for word in ("어제", "yesterday")):
             start, end = today - timedelta(days=1), today
         elif any(word in lowered for word in ("오늘", "today")):
             start, end = today, today + timedelta(days=1)
@@ -100,7 +140,9 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
             end = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
         elif any(word in lowered for word in ("방금", "just arrived", "just received")):
             generated.append("newer_than:1d")
-        elif any(word in lowered for word in ("최근", "latest", "recent")):
+        # ⚠️ `최신` 이 빠져 있어 "최신메일이 뭐지?" 가 **빈 질의**가 됐다
+        #    (2026-09-07 실측). 빈 질의는 아무것도 안 보내므로 0건이다.
+        elif any(word in lowered for word in ("최근", "최신", "latest", "recent")):
             generated.append("newer_than:7d")
 
         if start is not None and end is not None:
@@ -166,20 +208,80 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
             cleaned = cleaned.replace(phrase, " ")
         stripped = bool(cleaned.strip() != word.strip())
         for token in re.sub(r"[^0-9a-zA-Z가-힣@._+-]+", " ", cleaned).split():
-            if len(token) < 2:
+            # ⚠️ **조사를 떼고 나서** 불용어를 본다 — 순서를 바꾸면 `이메일이`·`구독을`
+            #    이 그대로 남는다. 규칙은 공용 추출기(`query_keywords`)의 것을 쓴다:
+            #    메일만 따로 갖고 있다가 문장 전체가 검색어가 됐다 (붐따 #148·#149)
+            # ⚠️ 문장부호가 붙은 채로는 불용어에 걸리지 않는다 — `왔어.` 가 그렇게
+            #    살아남아 검색어가 됐다. 안쪽 점은 남긴다 (`report.pdf`·`a.com`)
+            token = strip_particle(token.strip("._-"))
+            low = token.lower()
+            if len(token) < 2 or low in sender_tokens:
                 continue
             # ⚠️ **불용어를 뗀 자리에 2글자 이하가 남으면 어미 오타다** (`해조`·`해줭`).
             #    뗀 것이 없는 어절은 그대로 둔다 — `환율`·`면세` 처럼 짧아도 뜻이 있다
             if stripped and len(token) <= 2:
                 continue
-            keywords.append(token)
+            if low in _MAIL_STOP or low in BASE_STOP:
+                continue
+            # "1년"·"3개월" 은 기간이지 내용이 아니다. 연산자로 번역됐거나
+            # (`newer_than:`) 번역할 수 없었거나, 어느 쪽이든 본문엔 없다
+            # ⛔ `주일`·`주간` 이 빠져 있어 **`1주일` 이 검색어로 남았다**
+            #    (2026-09-07 실측). 게다가 숫자가 섞여 `_rank_keywords` 가
+            #    고유명사로 보고 **맨 앞에 세워서**, 좁혀 찾기 사다리가
+            #    정작 뜻이 있는 `미팅` 을 먼저 떼고 `1주일` 을 끝까지 남겼다.
+            #    ⚠️ 긴 것부터 적는다 — `주` 가 먼저 맞으면 `주일` 의 `일` 이 남는다
+            if re.fullmatch(r"\d+\s*(년|개월|달|주일|주간|주|일)", token):
+                continue
+            if low not in {k.lower() for k in keywords}:
+                keywords.append(token)
 
     # 한글 낱자(ㄱ~ㅎ·ㅏ~ㅣ)가 섞인 어절은 **오타가 확실하다.** 완성형이 아니다
     if re.search(r"[ㄱ-ㆎ]", question):
         keywords = [k for k in keywords
                     if not re.search(r"[ㄱ-ㆎ]", _jamo_source(question, k))]
 
+    # ⛔ **문장을 통째로 AND 하지 않는다.** Gmail 은 낱말을 AND 로 묶으므로 낱말이
+    #    늘수록 0건에 가까워진다. 신호가 센 것부터 남긴다 — 0건일 때 좁혀 찾기
+    #    사다리가 앞에서부터 잘라 쓰기 때문에, 이 순서가 곧 검색 품질이다.
+    keywords = _rank_keywords(keywords)[:_MAX_KEYWORDS]
+
+    if sender:
+        generated.append(f"from:{sender}")
     return " ".join([*explicit_operators, *generated, *keywords]).strip()
+
+
+_MAX_KEYWORDS = 4
+
+
+def _rank_keywords(keywords: List[str]) -> List[str]:
+    """고유명사(영문·숫자)를 앞으로, 그다음 긴 낱말 순.
+
+    `Exolyt` 처럼 영문/숫자가 섞인 말은 그 메일에만 있는 이름일 확률이 높다.
+    반대로 `구독`·`갱신` 같은 한국어 일반명사는 **영문 메일 본문에 아예 없다** —
+    이런 말이 AND 에 남아 있으면 찾을 수 있는 메일도 못 찾는다.
+    """
+    return sorted(keywords,
+                  key=lambda t: (0 if re.search(r"[A-Za-z0-9]", t) else 1, -len(t)))
+
+
+def _relative_window(lowered: str) -> str | None:
+    """"과거 1년 이내"·"최근 3개월" → `newer_than:` (없으면 None).
+
+    ⛔ "약 1년 **전**" 은 기간이 아니다. 1년 안쪽으로 자르면 정작 찾던 그 메일이
+       빠진다 — 연산자를 안 붙이고 전체에서 찾는 편이 옳다.
+    """
+    found = _REL_PERIOD_RE.search(lowered or "")
+    if not found:
+        return None
+    prefix, count, unit, suffix = found.groups()
+    if not prefix and not suffix:
+        return None            # 맨 숫자 — 기간을 뜻한다고 볼 근거가 없다
+    number = int(count)
+    if number <= 0:
+        return None
+    if unit == "주":
+        return f"newer_than:{number * 7}d"
+    return f"newer_than:{number}{_PERIOD_UNIT[unit]}"
 
 
 def _jamo_source(question: str, token: str) -> str:
@@ -195,31 +297,71 @@ def _jamo_source(question: str, token: str) -> str:
 
 
 def run_gmail_search(creds, question: str, max_results: int):
-    """Gmail 조회 — **0건이면 검색어를 빼고 한 번 더** 본다. (메일, 넓혔는지 여부)
+    """Gmail 조회 — **0건이면 좁혀 가며 다시 본다.** (메일, 넓혔는지 여부)
 
-    ⛔ 위의 어절 규칙으로도 **완성형 오타는 못 잡는다** (`요약`→`유약`). 그때 남는
-       검색어 하나가 조용히 0건을 만들고, 사용자는 "오늘 메일이 없구나" 로 읽는다.
-       날짜·상태 연산자가 이미 의도를 담고 있으므로 검색어만 빼고 다시 본다.
+    ⛔ Gmail 은 낱말을 **AND** 로 묶는다. 질문이 길수록 0건에 가까워지고, 그 0건은
+       "메일이 없다" 와 똑같이 생겼다 (붐따 #148·#149 — 세 번 물어 세 번 다 0건).
+       그래서 한 번에 포기하지 않고 **신호가 약한 낱말부터 떼며** 다시 본다:
 
+           from:Christopher newer_than:1y exolyt 구독 갱신   ← 질문 그대로
+           from:Christopher newer_than:1y exolyt 구독
+           from:Christopher newer_than:1y exolyt            ← 보통 여기서 찾는다
+           from:Christopher newer_than:1y                   ← 그 사람 메일 전부
+           newer_than:1y exolyt                             ← from 을 잘못 잡았을 때
+
+    ⚠️ 마지막 층(연산자만)은 예전부터 있던 완화다 — 완성형 오타(`요약`→`유약`)로
+       검색어 하나가 통째로 어긋난 경우를 위한 것이다.
     ⚠️ 드라이브에서는 같은 완화를 **하지 않았다** — 거기서 넓히면 관련 없는 파일이
-       답처럼 보인다. 메일은 다르다: 넓힌 결과가 "오늘 받은 메일 전부" 라 사용자가
+       답처럼 보인다. 메일은 다르다: 넓힌 결과가 "그 기간 메일 전부" 라 사용자가
        무엇을 보고 있는지 안다. 대신 **넓혔다는 사실을 반드시 밝힌다.**
+    ⛔ 빈 검색어는 보내지 않는다 — 메일함 전체가 답처럼 보인다.
     """
     q = build_gmail_query(question)
-    messages = search_gmail(creds, q, max_results=max_results)
-    if messages:
-        return messages, ""
-    operators = " ".join(t for t in q.split() if ":" in t)
-    dropped = " ".join(t for t in q.split() if ":" not in t)
-    if not operators or not dropped:
-        query_keywords.log_empty("gmail", question, dropped.split())
-        return [], ""
-    logger.warning("gmail_empty_relaxed", question=(question or "")[:120],
-                   gmail_query=q, dropped=dropped)
-    messages = search_gmail(creds, operators, max_results=max_results)
-    if not messages:
-        return [], ""
-    return messages, f"(검색어 '{dropped}' 로는 결과가 없어 해당 기간 전체를 보여줍니다)"
+    terms = q.split()
+    sender = [t for t in terms if t.lower().startswith("from:")]
+    hard_ops = [t for t in terms if ":" in t and t not in sender]
+    keywords = [t for t in terms if ":" not in t]
+
+    ladder: List[List[str]] = []
+    for cut in range(len(keywords), 0, -1):
+        ladder.append([*hard_ops, *sender, *keywords[:cut]])
+    ladder.append([*hard_ops, *sender])
+    if sender:
+        # `from:` 은 우리가 문장에서 추측한 것이라 틀릴 수 있다 ("고객사로부터").
+        # 마지막에는 그 추측을 걷어내고 가장 센 검색어 하나로 본다
+        ladder.append([*hard_ops, *keywords[:1]])
+    ladder.append(hard_ops)
+
+    tried: List[str] = []
+    for rung in ladder:
+        candidate = " ".join(rung).strip()
+        if not candidate or candidate in tried:
+            continue
+        tried.append(candidate)
+        messages = search_gmail(creds, candidate, max_results=max_results)
+        if not messages:
+            continue
+        if candidate == q:
+            return messages, ""
+        logger.warning("gmail_empty_narrowed", question=(question or "")[:120],
+                       gmail_query=q, used=candidate, tried=len(tried))
+        return messages, (f"(검색어를 넓혀 찾음: 원래 조건으로는 결과가 없어 "
+                          f"'{candidate}' 로 조회했습니다)")
+
+    query_keywords.log_empty("gmail", question, keywords)
+    return [], ""
+
+
+def _with_notices(answer: str, notices: List[str]) -> str:
+    """넓혀 찾은 사실을 **답변 맨 앞에 코드가 붙인다.**
+
+    ⛔ 정리 LLM 에게 맡기면 지워진다 — 실제로 지웠다. 넓혀 얻은 결과를 손에 쥔 채
+       "검색 결과가 없습니다" 라고 답했고, 사용자는 그걸 세 번 봤다 (붐따 #148).
+       프롬프트는 확률이고 보증은 코드다 (FI 마스킹과 같은 사상).
+    """
+    text = answer or ""
+    keep = [n for n in notices if n and n not in text]
+    return "\n\n".join([*keep, text]).strip() if keep else text
 
 
 def gmail_result_limit(query: str) -> int:
@@ -306,7 +448,7 @@ class GWSAgent:
         # 한 번만 부를 거면 ReAct 루프가 필요 없다 — 분류해서 직접 부르고 결과를
         # 정리만 시키는 편이 빠르고 결과도 예측 가능하다.
         tool_type = self._classify_tool(query)
-        results = await asyncio.to_thread(self._collect, creds, query, tool_type)
+        results, notices = await asyncio.to_thread(self._collect, creds, query, tool_type)
 
         if not results.strip():
             return "검색 결과가 없습니다."
@@ -336,23 +478,35 @@ class GWSAgent:
             "- 결과가 비어 있으면 '검색 결과가 없습니다'라고만 답하세요\n"
             "- **조회하지 않은 종류(메일·파일 등)를 언급하지 마세요.** "
             "사용자가 묻지 않은 것을 '포함되어 있지 않다'고 덧붙이지 말 것"
+            # 넓혀 찾았으면 결과가 질문과 딱 맞지 않는다. 그걸 "없음" 으로 뭉개던
+            # 것이 붐따 #148 의 세 번째 턴이다 — 있는 것을 보여주고 사실을 밝힌다
+            + ("\n- 아래 결과는 **검색 조건을 넓혀** 얻은 것입니다. 질문과 정확히 "
+               "일치하지 않더라도 조회된 것을 그대로 정리해 보여주고, 넓혀 찾았다는 "
+               "사실을 첫 줄에 적으세요. '검색 결과가 없습니다' 라고 답하지 마세요."
+               if notices else "")
         )
         try:
             llm = get_flash_client()
             answer = await asyncio.wait_for(
                 asyncio.to_thread(llm.generate, prompt, None, 0.2), timeout=40.0
             )
-            return answer or results
+            return _with_notices(answer or results, notices)
         except asyncio.TimeoutError:
             logger.warning("gws_format_timeout")
-            return results  # 정리에 실패해도 원본 결과는 돌려준다
+            return _with_notices(results, notices)  # 정리에 실패해도 원본은 돌려준다
         except Exception as e:
             logger.error("gws_format_failed", error_type=type(e).__name__)
-            return results
+            return _with_notices(results, notices)
 
-    def _collect(self, creds, query: str, tool_type: str) -> str:
-        """분류된 도구를 직접 호출해 원본 결과 텍스트를 모은다 (블로킹 — to_thread 로 부를 것)."""
+    def _collect(self, creds, query: str, tool_type: str):
+        """분류된 도구를 직접 호출해 원본 결과를 모은다 (블로킹 — to_thread 로 부를 것).
+
+        Returns:
+            (결과 텍스트, 공지 목록). **공지는 결과와 따로 올린다** — 넓혀 찾은 사실을
+            결과 텍스트에만 적으면 정리하는 LLM 이 지운다. 실제로 지웠다 (붐따 #148).
+        """
         parts = []
+        notices: List[str] = []
         current_query = _current_question(query)
 
         def _calendar():
@@ -390,6 +544,8 @@ class GWSAgent:
                 return f"[메일 오류] {str(e)[:200]}"
             if not ms:
                 return "[메일] 검색 결과가 없습니다."
+            if widened:
+                notices.append(widened)
             lines = [f"[메일] {widened}".rstrip()]
             for m in ms:
                 content = m.get("body") or m.get("snippet", "")
@@ -475,7 +631,7 @@ class GWSAgent:
                 parts.append(fn())
             except Exception as e:
                 parts.append(f"[{fn.__name__} 실패] {str(e)[:150]}")
-        return "\n\n".join(parts)
+        return "\n\n".join(parts), notices
 
     @staticmethod
     def _classify_tool(query: str) -> str:
