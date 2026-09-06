@@ -420,9 +420,17 @@ def multi_prefix_target_routes() -> tuple[str, ...]:
     return tuple(sorted(set(MULTI_PREFIX_ROUTE_TARGETS.values()) | {"direct"}))
 
 # 직전 답변에 남는 경로 표지 (답변 형식이 경로마다 다르다)
+# ⛔ **표지는 그 경로에서만 나오는 문자열이어야 한다** (2026-09-04 실사용 제보).
+#    notion 표지에 일반적인 `"출처:"` 가 들어 있었는데, CS 답변 꼬리가
+#    `*출처: CS 제품 Q&A 데이터베이스*` 라서 **CS 답변이 notion 으로 읽혔다.**
+#    notion 이 cs 보다 먼저 검사되므로 아래 `cs` 항목까지 가지도 못한다.
+#    결과: 제품 Q&A 로 잘 답한 다음 턴에 "히알루-테카 퍼밍 크림은?" 이 notion 을
+#    물려받아 **경로와 링크만** 답했다. 골든셋 기대어 규칙과 같은 사상 —
+#    *실패 답변에도 들어가는 낱말은 표지가 될 수 없다.*
+# ⚠️ 순서로 때우지 마라 (cs 를 앞에 두는 식). 표지 자체가 고유해야 한다.
 _ROUTE_MARKERS = (
     ("bigquery", ("[직전 실행 SQL", "내부 데이터베이스", "```chart-config")),
-    ("notion", ("Notion 사내 문서 검색", "사내 문서에서", "출처:")),
+    ("notion", ("Notion 사내 문서 검색", "사내 문서에서")),
     ("gws", ("[메일]", "[일정]", "구글 캘린더", "드라이브")),
     ("cs", ("CS 데이터", "제품 Q&A")),
 )
@@ -717,6 +725,15 @@ def _euro(word: str) -> str:
 import re as _re
 
 
+def _product_line_named(question: str) -> set:
+    """질문이 제품 라인을 지목했는가. 어휘 단일 소스는 프롬프트의 `### 제품 라인` 표다."""
+    try:
+        from app.core import product_lines
+        return product_lines.mentioned(question or "")
+    except Exception:
+        return set()
+
+
 def _product_catalog_section() -> str:
     """대표 제품 목록 — **실측 주입** (2026-09-03).
 
@@ -926,6 +943,25 @@ class OrchestratorAgent:
             return entries[0], clean
         return entries, clean
 
+    @classmethod
+    def _single_enabled_source_entry(cls, enabled_sources):
+        """Resolve one client-selected source to its registry entry.
+
+        The browser removes the visible ``@@source`` token before sending the
+        question and carries the selection in ``enabled_sources`` instead.
+        Treat exactly one selected source like the server-side @@ fast path;
+        two or more selections must keep the existing discovery flow.
+        """
+        if not enabled_sources or len(enabled_sources) != 1:
+            return None
+
+        selected = str(enabled_sources[0]).strip().casefold()
+        for entry in cls._DB_REGISTRY:
+            names = (entry["key"], entry.get("label", ""), *entry.get("aliases", []))
+            if any(selected == str(name).strip().casefold() for name in names if name):
+                return entry
+        return None
+
     def _allowed_routes(self, enabled_sources: Optional[List[str]]) -> Optional[set]:
         """Derive the set of allowed routes from enabled_sources.
 
@@ -1106,9 +1142,15 @@ class OrchestratorAgent:
         if db_entry and not isinstance(db_entry, list):
             db_entry = [db_entry]
 
+        # 브라우저는 @@ 토큰을 지우고 enabled_sources 만 보낸다. 단 하나를 골랐다면
+        # raw @@ 와 같은 확정 라우트로 취급한다. 여러 소스는 기존 분류 흐름을 유지한다.
+        single_source_entry = (
+            None if db_entry else self._single_enabled_source_entry(enabled_sources)
+        )
+
         # Dashboard 탭의 URL은 화면과 같은 JSON 카탈로그에서 결정적으로 답한다.
         # "프로모션 일정" 같은 데이터 질문은 링크 의도가 없으므로 기존 BQ 경로를 탄다.
-        if not db_entry:
+        if not db_entry and single_source_entry is None:
             from app.core.dashboard_links import answer_dashboard_link_query
             _dashboard_answer = answer_dashboard_link_query(query)
             if _dashboard_answer:
@@ -1226,10 +1268,20 @@ class OrchestratorAgent:
                                     + self._image_data_notice(query))
             return result
 
-        # Fast path: if enabled_sources maps to a single route, skip classification entirely (like @@)
+        # Fast path: one selected source is authoritative. In particular, a
+        # BigQuery source must not lose this path merely because `multi` is also
+        # an allowed classifier outcome.
         allowed = self._allowed_routes(enabled_sources)
-        _single_route = None
-        if allowed is not None:
+        _single_route = (
+            single_source_entry["route"] if single_source_entry is not None else None
+        )
+        if _single_route:
+            logger.info(
+                "single_source_fast_path",
+                route=_single_route,
+                source=single_source_entry["key"],
+            )
+        elif allowed is not None:
             _data_routes = allowed - {"direct"}
             if len(_data_routes) == 1:
                 _single_route = next(iter(_data_routes))
@@ -1291,7 +1343,10 @@ class OrchestratorAgent:
         elif route == "multi":
             result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
         elif route == "notion":
-            result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email)
+            result = await self._handle_qdrant(
+                query, messages, conversation_context, model_type, user_email,
+                team_key=(single_source_entry["key"] if single_source_entry else None),
+            )
         elif route == "direct" or handler == self._handle_direct:
             result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback, skill_context=_skill_ctx)
         else:
@@ -1357,8 +1412,14 @@ class OrchestratorAgent:
         if db_entry and not isinstance(db_entry, list):
             db_entry = [db_entry]
 
+        # chat.js 는 @@ 토큰을 질문에서 제거하므로 enabled_sources 가 브라우저
+        # 단일 선택의 유일한 근거다. 복수 선택에는 이 fast path 를 적용하지 않는다.
+        single_source_entry = (
+            None if db_entry else self._single_enabled_source_entry(enabled_sources)
+        )
+
         # 비스트리밍 경로와 동일한 공유 카탈로그 fast path.
-        if not db_entry:
+        if not db_entry and single_source_entry is None:
             from app.core.dashboard_links import answer_dashboard_link_query
             _dashboard_answer = answer_dashboard_link_query(query)
             if _dashboard_answer:
@@ -1554,10 +1615,19 @@ class OrchestratorAgent:
 
         is_system_task = query.strip().startswith("### Task:")
 
-        # Fast path: single route from enabled_sources → skip classification (like @@)
+        # Fast path: exactly one selected source fixes the route before any
+        # keyword/LLM classification. Multiple selections retain the old flow.
         allowed = self._allowed_routes(enabled_sources)
-        _single_route = None
-        if allowed is not None:
+        _single_route = (
+            single_source_entry["route"] if single_source_entry is not None else None
+        )
+        if _single_route:
+            logger.info(
+                "stream_single_source_fast_path",
+                route=_single_route,
+                source=single_source_entry["key"],
+            )
+        elif allowed is not None:
             _data_routes = allowed - {"direct"}
             if len(_data_routes) == 1:
                 _single_route = next(iter(_data_routes))
@@ -1581,13 +1651,14 @@ class OrchestratorAgent:
 
         # Wiki lookup runs AFTER source yield — loading indicator shows first.
         wiki_context = ""
-        try:
-            from app.knowledge.wiki_search import search_with_pages
-            wiki_context = await search_with_pages(query, limit=4)
-            if wiki_context:
-                logger.info("wiki_context_injected", length=len(wiki_context))
-        except Exception as e:
-            logger.warning("wiki_lookup_failed", error=str(e)[:200])
+        if single_source_entry is None:
+            try:
+                from app.knowledge.wiki_search import search_with_pages
+                wiki_context = await search_with_pages(query, limit=4)
+                if wiki_context:
+                    logger.info("wiki_context_injected", length=len(wiki_context))
+            except Exception as e:
+                logger.warning("wiki_lookup_failed", error=str(e)[:200])
 
         # Skill memory: few-shot examples from 👍 feedback (direct route only)
         _stream_skill_ctx = ""
@@ -1799,7 +1870,10 @@ class OrchestratorAgent:
             try:
                 if route == "notion":
                     result = await asyncio.wait_for(
-                        self._handle_qdrant(query, messages, conversation_context, model_type, user_email),
+                        self._handle_qdrant(
+                            query, messages, conversation_context, model_type, user_email,
+                            team_key=(single_source_entry["key"] if single_source_entry else None),
+                        ),
                         timeout=20.0,
                     )
                 else:
@@ -2129,7 +2203,14 @@ class OrchestratorAgent:
         from app.core.textmatch import contains_any
         return contains_any(q, words, self._GUARDED)
 
-    _CAPABILITY_PATTERNS = ["가능해", "가능한가", "가능하나", "수 있어", "뭐할 수", "뭐 할 수"]
+    # ⚠️ **부정형이 통째로 빠져 있었다** — `수 있어` 만 있고 `수 없나` 가 없어서,
+    #    "여기 Today 에 뜨는 내용을 노션에 자동화해서 뜨게 할 수 없나?" 가
+    #    `노션` 때문에 사내 문서 검색으로 갔다 (붐따 #164, 2026-09-04).
+    #    답변은 "[영업2팀] 타 팀 협업 요청" 문서였다 — 자기 기능을 물은 질문에.
+    #    되는지 묻는 말과 안 되는지 묻는 말은 **같은 질문**이다.
+    _CAPABILITY_PATTERNS = ["가능해", "가능한가", "가능하나", "수 있어",
+                            "수 없나", "수 없을까", "수는 없나", "수는 없을까",
+                            "뭐할 수", "뭐 할 수"]
 
     # ── 이 서비스 자신의 기능을 묻는 질문 ────────────────────────────────────
     # ⛔ 이런 질문은 **사내 문서에도 CS Q&A 에도 답이 없다.** 실측(2026-08-13):
@@ -2187,6 +2268,37 @@ class OrchestratorAgent:
         조회로 새고, 집계만 보면 "성분 몇 개 들어가?" 가 샌다.
         """
         return self._has(q, self._PERIOD_PAT) and self._has(q, self._AGG_INTENT)
+
+    # ── 찾아 달라는 것 vs 만들어 달라는 것 ────────────────────────────────
+    # ⛔ 붐따 #163 (2026-09-04). "나 개인 업무 노션 페이지 구성할건데
+    #    제안해달라고!!!" 가 `노션` 때문에 **확신을 갖고 notion** 으로 갔다.
+    #    사내 문서를 세 번 뒤져 CS 티트리카 · 영업2팀 신규 입사자 · ERP 기안
+    #    가이드를 내놓았고, 제보자는 "너 진자 붐따임" 이라고 썼다. 바로 다음
+    #    턴에 검색 없이 답하자 원하던 구성안이 나왔다 — **자료가 없어서가
+    #    아니라 찾아 달라는 것과 만들어 달라는 것을 못 가른 것**이다.
+    # ⚠️ 대응은 `노션` 을 키워드에서 빼는 게 아니다 — "노션 사용법 알려줘" 는
+    #    계속 문서여야 한다. **질문의 모양**으로 가른다 (`_DOC_WORD` 와 같은 계열).
+    _RE_AUTHORING = re.compile(
+        r"(제안|추천|구성|구성안|작성|기획|설계|구상|초안|템플릿|만들어|짜|써)"
+        r"\s*(해\s*줘|해\s*주|해\s*달|해\s*줄|줘|주세요|주라|줄래|달라|"
+        r"할\s*건데|하려고|하고\s*싶)")
+    # 있는 것을 **찾아** 달라는 말. 하나라도 있으면 생성 요청이 아니다
+    _LOOKUP_WORD = ["찾아", "어디 있", "어디있", "어디서", "링크", "url",
+                    "주소", "있나요", "검색"]
+
+    def _is_authoring_request(self, q: str) -> bool:
+        """문서를 **찾아** 달라는 것이 아니라 **만들어** 달라는 것인가.
+
+        ⚠️ 데이터·보고서는 각자 경로가 따로 있다. 여기서 가로채면 조회가 죽는다
+           — "매출 보고서 만들어줘" 는 `wants_report()` 가 먼저 가져간다.
+        """
+        if not self._RE_AUTHORING.search(q):
+            return False
+        if self._has(q, self._DATA_KEYWORDS):
+            return False
+        if any(w in q for w in ("보고서", "리포트", "report")):
+            return False
+        return not any(w in q for w in self._LOOKUP_WORD)
 
     def _is_self_feature_question(self, q: str) -> bool:
         """우리 서비스 자신의 기능을 설명해 달라는 질문인가.
@@ -2346,6 +2458,10 @@ class OrchestratorAgent:
         if self._is_self_feature_question(q):
             return ("direct", True)
 
+        # 만들어 달라는 요청 → direct. 사내 문서를 뒤져도 나올 것이 없다
+        if self._is_authoring_request(q):
+            return ("direct", True)
+
         # 지표·용어의 **뜻**을 묻는 질문 → direct (SQL 을 만들 대상이 아니다)
         if self._is_definition_question(q):
             return ("direct", True)
@@ -2417,9 +2533,22 @@ class OrchestratorAgent:
 
         # Notion check — but defer to bigquery when strong data keywords present
         if self._has(q, self._NOTION_KEYWORDS):
-            if any(kw in q for kw in self._COMPOUND_NOTION):
+            # ⛔ **제품 라인을 지목했으면 노션 문서가 아니라 제품 Q&A(BP)다**
+            #    (2026-09-04 실사용 제보). `제품 정보` 가 노션 확신어라서
+            #    "히알루테카 제품 정보 알려줘" 가 notion 으로 갔고, 답변은
+            #    **경로와 링크만** 주고 "상세 텍스트는 포함되어 있지 않습니다" 로 끝났다.
+            #    CS 시트에는 그 라인 Q&A 가 있었고 전성분 테이블에도 있었다 —
+            #    **데이터가 없어서가 아니라 엉뚱한 곳을 뒤져서** 못 답한 것이다.
+            #    ⚠️ 후속 발화("히알루-테카 퍼밍 크림은?")는 직전 경로를 물려받으므로
+            #       첫 질문이 틀리면 대화 전체가 함께 틀린다.
+            #    ⚠️ 노션을 명시했으면("노션에서 …") 그대로 노션이다.
+            _named_line = bool(_product_line_named(q))
+            _explicit_notion = any(k in q for k in ("노션", "notion", "사내 문서", "위키"))
+            if _named_line and not _explicit_notion:
+                pass  # 아래 CS 판정으로 넘긴다
+            elif any(kw in q for kw in self._COMPOUND_NOTION):
                 return ("notion", True)
-            if not has_data:
+            elif not has_data:
                 return ("notion", True)
 
         # GWS check — highest priority for personal workspace queries
@@ -3648,6 +3777,13 @@ JSON만 반환:
     지목하지 않은 사람은 링크를 알아도 열리지 않습니다.
   - 숫자는 전부 조회 결과에서 나오고 검산용 쿼리가 함께 저장됩니다.
   - 예: "2026년 일본 매출 보고서 만들어줘" / "우마 브랜드 매출 보고서" / "@@보고서 미국 B2C 채널별 매출"
+- **출근 브리핑(첫 화면의 `Today`)** — 오늘 일정·메일 요약·할 일·마감·업무 지표를
+  매일 아침 07:30에 만들어 첫 화면에 띄웁니다.
+  - **잔디로 받기**를 등록하면 같은 내용을 매일 잔디로 보내드립니다. 받는 시각은
+    08:00~18:30 사이에서 30분 단위로 고르고, 절(일정·메일·할 일·기한·지표·환율)마다
+    끄고 켤 수 있습니다. 등록은 첫 화면 브리핑의 `잔디로 받기` 에서 합니다.
+  - ⛔ **노션·슬랙 등 다른 도구로 자동 연동하는 기능은 없습니다.** 지금 내보낼 수
+    있는 곳은 잔디뿐입니다. 물어보시면 있는 것처럼 답하지 말고 이렇게 안내하세요.
 - **@@ 데이터소스 지정** — 입력창에 `@@`를 치면 어떤 데이터를 뒤질지 직접 고를 수 있습니다.
 - 사이드바: Dashboard(사내 대시보드) · System Status(데이터 상태) · Knowledge Wiki(축적된 사내 지식)
 
