@@ -2,6 +2,7 @@
 """2단계 게이트 배선 — LLM 을 **언제 부르는지**가 핵심이다."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -290,13 +291,21 @@ def test_사내데이터로_확인해_드릴까요_한_줄():
     assert "조회해 드립니다" not in footer
 
 
-def test_돌아갈_문이_평문이_아니라_후속_칩이_된다():
-    """⛔ `chat.js` 가 칩으로 만드는 것은 **머리말이 걸릴 때뿐**이다.
+def test_돌아갈_문이_후속_칩_헤더_정규식에_걸리지_않는다():
+    """⛔ 반대다 — 지금은 **일부러** 걸리지 않아야 한다.
 
-    처음 문안("💡 사내 데이터로 확인해 드릴까요?")은 그 정규식 어디에도 안 걸려
-    답변 **맨 끝의 평문**으로 렌더됐다 — 이 저장소가 두 번 "거기는 아무도 안
-    읽는다" 고 결론 낸 자리다. 그래서 정규식을 `chat.js` 에서 **직접 읽어** 맞춘다
-    (여기 손으로 베껴 적으면 프론트가 바뀔 때 조용히 어긋난다).
+    처음 문안("💡 **이런 것도 물어보세요**\n> - 사내 데이터로 다시 확인해줘")은
+    그 정규식에 걸려서 오히려 사고였다: `chat.js.extractFollowupsFromAnswer()`
+    는 **마지막** 💡 헤더 블록만 읽는데, direct 답변은 이미 모델이 만든 자기
+    자신의 `이런 것도 물어보세요` 블록(문항 2~3개)을 답변 끝에 갖고 있다.
+    이 footer 가 그 뒤에 붙으면서 마지막 자리를 빼앗았고, 불릿이 하나뿐이라
+    `pickFollowups()` 의 `length >= 2` 문턱도 못 넘어 — 모델의 진짜 제안은
+    사라지고 이 footer 도 칩이 되지 못한 채 무관한 키워드 풀로 떨어졌다.
+
+    그래서 지금 문구는 그 정규식에 안 걸려야 맞다 — 정규식을 `chat.js` 에서
+    **직접 읽어** 맞춘다 (여기 손으로 베껴 적으면 프론트가 바뀔 때 조용히
+    어긋난다). 실제로 모델 블록이 살아남는지는
+    `test_돌아갈_문이_모델의_후속_제안을_가로채지_않는다` (node 구동)가 본다.
     """
     import re
 
@@ -308,14 +317,89 @@ def test_돌아갈_문이_평문이_아니라_후속_칩이_된다():
     header_re = re.compile(m.group(1), re.IGNORECASE)
 
     lines = [ln.strip() for ln in source_free_footer().split("\n") if ln.strip()]
+    assert len(lines) == 1, "이제 불릿을 따로 두지 않는다 — 한 줄이어야 한다"
     header = lines[0]
-    assert "💡" in header                       # 💡 없는 줄은 아예 후보가 아니다
-    assert header_re.search(header), (header, m.group(1))
+    assert "💡" in header
+    assert not header_re.search(header), (
+        "footer 가 후속 칩 헤더로 인식된다 — 모델의 마지막 💡 블록을 다시 가로챌 것이다",
+        header,
+    )
 
-    # 머리말 다음 줄이 실제로 칩 문구로 뽑히는 모양이어야 한다
-    item = re.match(r"^>?\s*[-*]\s*(.+?)\s*$", lines[1])
-    assert item, lines[1]
-    assert 5 < len(item.group(1)) < 120
+
+def test_돌아갈_문이_모델의_후속_제안을_가로채지_않는다():
+    """⛔ 회귀 배경 — 이 테스트가 없어서 실제 사고를 못 잡았다.
+
+    기존 검사는 footer 문자열만 정규식과 대조했을 뿐, `chat.js` 의 실제
+    `extractFollowupsFromAnswer`/`pickFollowups` 를 구동해 **모델 블록이
+    정말 살아남는지**는 본 적이 없다. 그래서 이 테스트는 `app/frontend/chat.js`
+    에서 두 함수를 그대로 떼어내 node 로 실행한다
+    (`tests/test_source_selection.py`·`tests/test_coa_finder_api.py` 와 같은 패턴).
+
+    구성: 모델이 만든 실제 모양의 `💡 이런 것도 물어보세요` 블록(2~3개 불릿)
+    뒤에 `source_free_footer()` 를 그대로 이어 붙인 합성 답변을 만들고,
+    두 함수를 실행해 **모델의 제안이 그대로 반환되는지**를 확인한다.
+    """
+    import shutil
+    import subprocess
+
+    from app.core.route_intent import source_free_footer
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node 없음 — 개발 환경 전용 검사")
+
+    js = open("app/frontend/chat.js", encoding="utf-8").read()
+
+    def extract_fn(name):
+        marker = "function " + name + "("
+        assert marker in js, "chat.js 에 " + name + " 이(가) 없다"
+        start = js.index(marker)
+        depth, i = 0, js.index("{", start)
+        while True:
+            if js[i] == "{":
+                depth += 1
+            elif js[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return js[start:i + 1]
+            i += 1
+
+    extract_followups_src = extract_fn("extractFollowupsFromAnswer")
+    pick_followups_src = extract_fn("pickFollowups")
+
+    model_suggestions = [
+        "2026년 8월 일본 매출 얼마나 늘었어?",
+        "같은 기간 우마 브랜드는 어때?",
+        "채널별로도 쪼개서 보여줘",
+    ]
+    model_block = (
+        "본문 답변입니다.\n\n"
+        "> 💡 **이런 것도 물어보세요**\n"
+        + "\n".join("> - " + s for s in model_suggestions)
+    )
+    composite_answer = model_block + source_free_footer()
+
+    driver = (
+        extract_followups_src
+        + "\n"
+        + pick_followups_src
+        + "\n"
+        + "var answer = " + json.dumps(composite_answer) + ";\n"
+        + "var result = pickFollowups('아무 질문', answer);\n"
+        + "console.log(JSON.stringify(result));\n"
+    )
+
+    r = subprocess.run(
+        [node, "-e", driver], capture_output=True, text=True, timeout=20,
+        encoding="utf-8",
+    )
+    assert r.returncode == 0, r.stderr
+    picked = json.loads(r.stdout)
+
+    # 모델의 제안이 그대로 살아남아야 한다 — footer 가 마지막 💡 블록 자리를
+    # 빼앗아 무관한 FOLLOWUP_POOLS 로 떨어지면 이 목록이 model_suggestions 와
+    # 달라진다 (혹은 footer 의 단일 불릿만 남는다)
+    assert picked == model_suggestions, picked
 
 
 def test_한_줄이_두_경로에_모두_걸려_있다():
