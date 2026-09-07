@@ -52,3 +52,39 @@ def test_부정만_하고_정보가_없으면_bare(text):
 @pytest.mark.parametrize("text", NONE)
 def test_좁혀_묻기는_부정이_아니다(text):
     assert rejection_kind(text) == "none", text
+
+
+from app.core.route_intent import SOURCE_GATE_PROMPT, parse_gate
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("SELF", "SELF"),
+    ("self", "SELF"),
+    ("  SELF  ", "SELF"),
+    ("SELF — 만들어 달라는 요청입니다", "SELF"),
+    ("NEED", "NEED"),
+    ("need", "NEED"),
+])
+def test_판정_문자열을_읽는다(raw, want):
+    assert parse_gate(raw) == want
+
+
+@pytest.mark.parametrize("raw", ["", None, "   ", "글쎄요", "NEED 또는 SELF"])
+def test_모르면_뒤지는_쪽이다(raw):
+    """⛔ 사내 데이터 우선 — 읽을 수 없으면 NEED 다. 안전한 쪽 실패."""
+    assert parse_gate(raw) == "NEED"
+
+
+def test_프롬프트가_사내데이터_우선을_못박는다():
+    """이 줄이 「애매하면 뒤진다」를 보증하는 유일한 자리다."""
+    assert "애매하면 NEED" in SOURCE_GATE_PROMPT
+    assert "SELF" in SOURCE_GATE_PROMPT and "NEED" in SOURCE_GATE_PROMPT
+
+
+def test_경계_4자까지는_정보가_없는_것으로_본다():
+    """스펙이 「4자 이하」로 못박은 계약 — 경계가 움직이면 되묻기 범위가 달라진다.
+
+    ⚠️ 실사용 표본이 아니라 **명시된 임계값**을 고정하는 테스트다.
+    """
+    assert rejection_kind("아니 가나다라") == "bare"        # 남는 글자 4
+    assert rejection_kind("아니 가나다라마") == "informative"  # 남는 글자 5
