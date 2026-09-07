@@ -36,3 +36,56 @@ def test_extract_url_finds_the_notion_link():
 
 def test_extract_url_returns_empty_without_a_link():
     assert ns.extract_url("그냥 아무 말") == ""
+
+
+def _msgs(*pairs):
+    return [{"role": role, "content": text} for role, text in pairs]
+
+
+def test_prompt_asks_for_url_and_explains_the_connection():
+    prompt = ns.build_prompt()
+    assert "URL" in prompt or "주소" in prompt
+    assert "연결" in prompt          # ⛔ 404 의 실제 원인을 함께 알려준다
+    assert ns._MARKER.search(prompt)
+
+
+def test_pending_reads_the_marker_from_the_previous_assistant():
+    messages = _msgs(
+        ("user", "이 답변 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/x"),
+    )
+    assert ns.pending(messages)["kind"] == "답변"
+
+
+def test_pending_is_none_when_the_last_assistant_has_no_marker():
+    """⛔ 오래된 요청이 나중의 일반 대화를 가로채면 안 된다."""
+    messages = _msgs(
+        ("user", "이 답변 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "아니 됐고 매출 알려줘"),
+        ("assistant", "2026년 매출은 …"),
+        ("user", "고마워"),
+    )
+    assert ns.pending(messages) is None
+
+
+def test_target_answer_is_the_message_before_the_question():
+    messages = _msgs(
+        ("user", "2026년 일본 매출은?"),
+        ("assistant", "일본 매출은 55.1억원입니다."),
+        ("user", "이거 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/x"),
+    )
+    assert ns.target_answer(messages) == "일본 매출은 55.1억원입니다."
+
+
+def test_target_answer_empty_when_history_is_trimmed():
+    """⛔ 못 찾으면 빈 문자열이다 — 엉뚱한 것을 저장하지 않는다."""
+    messages = _msgs(
+        ("user", "이거 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/x"),
+    )
+    assert ns.target_answer(messages) == ""
