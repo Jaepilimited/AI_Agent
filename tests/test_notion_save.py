@@ -2,6 +2,7 @@
 """노션 저장 관문 회귀 — 저장과 검색을 **양방향**으로 지킨다."""
 import pytest
 
+from app.core import notion_export as nx
 from app.core import notion_save as ns
 
 
@@ -126,3 +127,88 @@ def test_undecodable_marker_leaves_a_trace(monkeypatch):
     )
     assert ns.pending(messages) is None
     assert "notion_save_marker_undecodable" in warnings
+
+
+@pytest.fixture
+def fake_engine(monkeypatch):
+    state = {"saved": None, "target": nx.Target("db-1", "ds-1", {"제목": "title"})}
+
+    def resolve(user_id, url):
+        if "boom" in url:
+            raise nx.NotionError("not_connected", "", 404)
+        return state["target"]
+
+    def save(target, title, text, kind="답변", link=""):
+        state["saved"] = {"title": title, "text": text, "kind": kind}
+        return nx.SaveResult(url="https://notion.so/row-1",
+                             created_database=target.created, skipped=[])
+
+    monkeypatch.setattr(nx, "is_enabled", lambda: True)
+    monkeypatch.setattr(nx, "resolve_target", resolve)
+    monkeypatch.setattr(nx, "save", save)
+    return state
+
+
+def test_handle_ignores_unrelated_questions(fake_engine):
+    assert ns.handle("2026년 일본 매출 알려줘", [], 7) is None
+
+
+def test_handle_asks_back_when_no_url(fake_engine):
+    answer = ns.handle("이 답변 노션에 넣어줘", _msgs(
+        ("user", "매출은?"), ("assistant", "55.1억원입니다."),
+        ("user", "이 답변 노션에 넣어줘")), 7)
+    assert ns._MARKER.search(answer)
+
+
+def test_handle_saves_when_the_url_arrives(fake_engine):
+    messages = _msgs(
+        ("user", "매출은?"),
+        ("assistant", "일본 매출은 55.1억원입니다."),
+        ("user", "이 답변 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert "https://notion.so/row-1" in answer
+    assert fake_engine["saved"]["text"] == "일본 매출은 55.1억원입니다."
+
+
+def test_handle_saves_immediately_when_url_is_in_the_request(fake_engine):
+    messages = _msgs(
+        ("user", "매출은?"), ("assistant", "55.1억원입니다."),
+        ("user", "이거 노션에 넣어줘 https://www.notion.so/"
+                 "24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert "https://notion.so/row-1" in answer
+    assert fake_engine["saved"]["text"] == "55.1억원입니다."
+
+
+def test_handle_explains_a_404_instead_of_saying_it_just_failed(fake_engine):
+    messages = _msgs(
+        ("user", "매출은?"), ("assistant", "55.1억원입니다."),
+        ("user", "이거 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/boom1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert "연결" in answer          # ⛔ 원인을 갈라서 말한다
+
+
+def test_handle_says_nothing_to_save_when_history_is_gone(fake_engine):
+    messages = _msgs(
+        ("user", "이거 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert "저장할" in answer
+    assert fake_engine["saved"] is None
+
+
+def test_handle_tells_the_user_when_the_feature_is_off(monkeypatch):
+    monkeypatch.setattr(nx, "is_enabled", lambda: False)
+    answer = ns.handle("이 답변 노션에 넣어줘", _msgs(
+        ("user", "매출은?"), ("assistant", "55.1억"),
+        ("user", "이 답변 노션에 넣어줘")), 7)
+    assert "관리자" in answer

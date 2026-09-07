@@ -119,6 +119,120 @@ def pending(messages: list[dict] | None) -> dict | None:
     return None
 
 
+_ERROR_MESSAGE = {
+    "not_connected": (
+        "그 페이지를 열지 못했습니다. 둘 중 하나입니다 — 주소가 다르거나, "
+        "그 페이지에 **연결**이 없습니다.\n\n"
+        "노션에서 `페이지 우상단 ⋯ > 연결 > 셀라 추가` 를 한 번 해주신 뒤 "
+        "다시 말씀해 주세요."),
+    "forbidden": (
+        "노션이 접근을 거부했습니다. 워크스페이스 설정에서 `셀라` 연결이 "
+        "허용되어 있는지 관리자에게 확인해 주세요."),
+    "bad_property": (
+        "그 데이터베이스의 속성과 맞지 않아 저장하지 못했습니다. "
+        "제목 속성이 있는 데이터베이스인지 확인해 주세요."),
+    "bad_request": (
+        "노션 주소를 읽지 못했습니다. 페이지나 데이터베이스 주소를 "
+        "그대로 붙여넣어 주세요."),
+    "unavailable": "노션에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+    "disabled": (
+        "노션 저장이 아직 켜져 있지 않습니다. 관리자에게 노션 연동 설정을 "
+        "요청해 주세요."),
+}
+
+
+def _title_from(text: str) -> str:
+    for line in (text or "").split("\n"):
+        cleaned = re.sub(r"^[#>\-\*\s]+", "", line).strip()
+        if cleaned:
+            return cleaned[:60]
+    return "셀라 저장"
+
+
+def _do_save(user_id: int | None, url: str, body: str, kind: str) -> str:
+    from app.core import notion_export as nx
+
+    if not nx.is_enabled():
+        return _ERROR_MESSAGE["disabled"]
+    if not body.strip():
+        return ("저장할 내용을 찾지 못했습니다. 저장하고 싶은 답변 바로 다음에 "
+                "다시 말씀해 주세요.")
+    try:
+        target = nx.resolve_target(int(user_id or 0), url)
+        result = nx.save(target, _title_from(body), body, kind=kind,
+                         link=_sella_link())
+    except nx.NotionError as exc:
+        logger.info("notion_save_failed", kind=exc.kind, user_id=user_id)
+        return _ERROR_MESSAGE.get(exc.kind, _ERROR_MESSAGE["unavailable"])
+
+    lines = [f"노션에 저장했습니다 → {result.url}"]
+    if result.created_database:
+        lines.append("그 페이지 아래에 `셀라` 데이터베이스를 새로 만들었습니다. "
+                     "다음부터는 여기에 쌓입니다.")
+    if result.skipped:
+        lines.append("이 데이터베이스에 " + "·".join(result.skipped) +
+                     " 속성이 없어 본문에만 담았습니다.")
+    return "\n\n".join(lines)
+
+
+def _sella_link() -> str:
+    try:
+        from app.core.jandi_notify import base_url
+
+        return base_url() or ""
+    except Exception:
+        return ""
+
+
+def handle(query: str, messages: list[dict] | None,
+          user_id: int | None) -> str | None:
+    """관문. 해당 없으면 None 을 돌려 평소 라우팅으로 흘려보낸다.
+
+    ⚠️ 네트워크를 탄다 — 부르는 쪽은 `asyncio.to_thread` 로 감싼다.
+    """
+    from app.core import notion_export as nx
+
+    waiting = pending(messages)
+    if waiting:
+        url = extract_url(query)
+        if not url:
+            # ⚠️ 마음이 바뀐 것일 수 있다 — 저장 요청이 아니면 놓아준다.
+            if not notion_save_intent(query):
+                return None
+            # ⛔ 여기서도 꺼져 있으면 URL 을 또 물을 이유가 없다 (기능부터 밝힌다).
+            if not nx.is_enabled():
+                return _ERROR_MESSAGE["disabled"]
+            return build_prompt(waiting.get("kind", "답변"))
+        return _do_save(user_id, url, target_answer(messages),
+                        waiting.get("kind", "답변"))
+
+    if not notion_save_intent(query):
+        return None
+
+    # ⛔ **URL 을 묻기 전에 기능이 켜져 있는지부터 본다.** 브리프 원안은 이 확인 없이
+    #    바로 `build_prompt()` 로 갔다 — 꺼진 상태에서도 URL 을 물어보고, 사용자가
+    #    URL 을 주고 나서야(=_do_save 안에서) "꺼져 있다" 는 것을 알게 된다.
+    #    한 턴 앞당겨 알려준다 (`test_handle_tells_the_user_when_the_feature_is_off`).
+    if not nx.is_enabled():
+        return _ERROR_MESSAGE["disabled"]
+
+    url = extract_url(query)
+    if not url:
+        return build_prompt()
+    return _do_save(user_id, url, _previous_assistant(messages), "답변")
+
+
+def _previous_assistant(messages: list[dict] | None) -> str:
+    history = (messages or [])[:-1]
+    for message in reversed(history):
+        if message.get("role") not in ("assistant", "model"):
+            continue
+        text = _text_of(message.get("content", "")).strip()
+        if text:
+            return text
+    return ""
+
+
 def target_answer(messages: list[dict] | None) -> str:
     """되묻기 **바로 앞** assistant 본문. 못 찾으면 빈 문자열이다.
 
