@@ -504,3 +504,170 @@ def test_enabled_sources_pinned_to_awards_alone_counts_as_explicit():
     o = O.__new__(O)
     term = o._awards_term("아무 낱말도 없음", "아무 낱말도 없음", None, ["수상"])
     assert term is not None
+
+
+# ── Task 5: 잡과 자가 점검 ────────────────────────────────────────────────────
+
+
+def test_the_job_is_registered_and_watched():
+    main = open("app/main.py", encoding="utf-8").read()
+    assert "awards_sync_daily" in main and 'track_job("awards_sync_daily")' in main
+    sc = open("app/core/self_check.py", encoding="utf-8").read()
+    assert "awards_sync_daily" in sc
+
+
+def test_both_self_checks_are_registered_in_the_checks_list():
+    """함수만 만들고 CHECKS 에 안 넣으면 아무 일도 일어나지 않는다."""
+    sc = open("app/core/self_check.py", encoding="utf-8").read()
+    for cid in ("awards_unknown_usage", "awards_sheet_freshness"):
+        assert f'Check("{cid}"' in sc, f"{cid} 가 CHECKS 에 등록되지 않았다"
+
+
+def test_zero_rows_is_recorded_as_a_failure_not_a_success():
+    """0행을 성공으로 적으면 자가 점검이 영영 못 잡는다."""
+    main = open("app/main.py", encoding="utf-8").read()
+    i = main.index('track_job("awards_sync_daily")')
+    body = main[i:i + 800]
+    assert "empty" in body and "raise" in body
+
+
+def test_both_checks_are_actually_registered_in_the_checks_list_object():
+    """문자열 존재만이 아니라 실제 `self_check.CHECKS` 리스트에 id 가 들어 있는지 본다."""
+    from app.core.self_check import CHECKS
+
+    ids = {c.id for c in CHECKS}
+    assert "awards_unknown_usage" in ids
+    assert "awards_sheet_freshness" in ids
+
+
+def test_awards_checks_return_a_check_result_not_a_dict(monkeypatch):
+    """`Check.fn` 은 `CheckResult` 를 돌려줘야 한다 — dict 를 주면 자가 점검
+    실행기가 `.ok`/`.detail` 속성 접근에서 `AttributeError` 를 낸다."""
+    from app.core import self_check as sc
+    from app.core.self_check import CheckResult
+
+    monkeypatch.setattr(sc, "fetch_all", lambda *a, **kw: [{"f": "O"}])
+    monkeypatch.setattr(sc, "fetch_one",
+                        lambda *a, **kw: {"s": datetime.now(), "n": 3})
+
+    r1 = sc._check_awards_unknown_usage()
+    r2 = sc._check_awards_sheet_freshness()
+    assert isinstance(r1, CheckResult)
+    assert isinstance(r2, CheckResult)
+    assert r1.ok is True  # "O" 는 USAGE_LEGEND 에 등록돼 있다
+    assert r2.ok is True
+
+
+def test_awards_unknown_usage_catches_a_new_symbol(monkeypatch):
+    """새 표기가 조용히 늘어나는 것을 사람이 보게 한다."""
+    from app.core import self_check as sc
+
+    monkeypatch.setattr(sc, "fetch_all",
+                        lambda *a, **kw: [{"f": "O"}, {"f": "★신규표기★"}])
+
+    result = sc._check_awards_unknown_usage()
+    assert result.ok is False
+    assert "★신규표기★" in result.detail
+
+
+def test_awards_sheet_freshness_fails_on_zero_rows_and_says_why(monkeypatch):
+    """0행이면 먼저 그것부터 말한다 — 권한·탭 이름이 원인일 가능성이 크다."""
+    from app.core import self_check as sc
+
+    monkeypatch.setattr(sc, "fetch_one", lambda *a, **kw: {"s": None, "n": 0})
+
+    result = sc._check_awards_sheet_freshness()
+    assert result.ok is False
+    assert "권한" in result.detail and "탭" in result.detail
+
+
+def test_awards_sheet_freshness_fails_when_stale(monkeypatch):
+    from datetime import timedelta
+
+    from app.core import self_check as sc
+
+    old = datetime.now() - timedelta(hours=40)
+    monkeypatch.setattr(sc, "fetch_one", lambda *a, **kw: {"s": old, "n": 120})
+
+    result = sc._check_awards_sheet_freshness()
+    assert result.ok is False
+
+
+@pytest.mark.asyncio
+async def test_the_job_raises_on_empty_and_is_recorded_as_failed(monkeypatch):
+    """0행이면 `track_job` 블록 안에서 예외가 나야 실패로 기록된다.
+
+    ⛔ `stat.get("empty")` 를 보고도 조용히 return 하면 `job_runs` 에는 '성공' 이
+    남아 자가 점검이 영영 못 잡는다 — 그래서 여기서는 예외가 **밖으로 전파**되는지
+    (즉 `track_job` 이 실패로 기록할 기회를 얻는지)까지 확인한다.
+    """
+    from contextlib import contextmanager
+
+    # ⚠️ 이 워크트리는 커밋되지 않은 `app.core.visitor_access` 부재로 `app.main`
+    #    import 자체가 기준선부터 깨져 있다(Task 5 와 무관) — 그 상태에서는
+    #    실패가 아니라 건너뛴다. 고쳐지면 이 테스트가 자동으로 돈다.
+    main = pytest.importorskip("app.main")
+    from app.core import awards as awards_mod
+    from app.core import self_check as sc
+
+    events: list[str] = []
+
+    class JobRun:
+        def set_note(self, _note):
+            events.append("note_set")
+
+    @contextmanager
+    def fake_track_job(job_id):
+        events.append("start:" + job_id)
+        try:
+            yield JobRun()
+        except Exception:
+            events.append("failed")
+            raise
+        else:
+            events.append("succeeded")
+
+    monkeypatch.setattr(sc, "track_job", fake_track_job)
+    monkeypatch.setattr(awards_mod, "sync_awards", lambda: {"rows": 0, "written": 0, "empty": True})
+
+    # 잡 자체는 예외를 삼켜 로그로만 남긴다 (스케줄러가 죽지 않도록) — 그래도
+    # `track_job` 블록 안에서는 실패로 기록됐어야 한다.
+    await main._awards_sync_job()
+
+    assert "start:awards_sync_daily" in events
+    assert "failed" in events
+    assert "succeeded" not in events
+    assert "note_set" not in events  # 예외가 jr.set_note() 줄보다 먼저 났다
+
+
+@pytest.mark.asyncio
+async def test_the_job_succeeds_and_notes_the_stat_on_nonempty_rows(monkeypatch):
+    from contextlib import contextmanager
+
+    # ⚠️ 이 워크트리는 커밋되지 않은 `app.core.visitor_access` 부재로 `app.main`
+    #    import 자체가 기준선부터 깨져 있다(Task 5 와 무관) — 그 상태에서는
+    #    실패가 아니라 건너뛴다. 고쳐지면 이 테스트가 자동으로 돈다.
+    main = pytest.importorskip("app.main")
+    from app.core import awards as awards_mod
+    from app.core import self_check as sc
+
+    events: list[str] = []
+
+    class JobRun:
+        def set_note(self, note):
+            events.append("note:" + note)
+
+    @contextmanager
+    def fake_track_job(job_id):
+        events.append("start:" + job_id)
+        yield JobRun()
+        events.append("succeeded")
+
+    monkeypatch.setattr(sc, "track_job", fake_track_job)
+    monkeypatch.setattr(awards_mod, "sync_awards",
+                        lambda: {"rows": 5, "written": 5, "empty": False})
+
+    await main._awards_sync_job()
+
+    assert "succeeded" in events
+    assert any(e.startswith("note:") and "written" in e for e in events)
