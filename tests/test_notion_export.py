@@ -229,3 +229,104 @@ def test_long_table_says_it_was_cut():
 def test_short_table_gets_no_note():
     """자르지 않았으면 아무 말도 붙이지 않는다 — 매번 뜨는 안내는 곧 무시당한다."""
     assert _types(nx.markdown_to_blocks(_TABLE_MD)) == ["table"]
+
+
+# Task 6: 목적지 해석 — DB 인가 페이지인가
+def _stub_requests(monkeypatch, handler):
+    calls = []
+
+    def fake(method, path, body=None):
+        calls.append((method, path, body))
+        return handler(method, path, body)
+
+    monkeypatch.setattr(nx, "_request", fake)
+    return calls
+
+
+@pytest.fixture
+def no_cache(monkeypatch):
+    """DB 는 테스트에서 타지 않는다 — 캐시 함수만 갈아 끼운다."""
+    store = {}
+    monkeypatch.setattr(nx, "_cached_database",
+                        lambda uid, pid: store.get((uid, pid)))
+    monkeypatch.setattr(
+        nx, "_remember_database",
+        lambda uid, pid, target: store.__setitem__(
+            (uid, pid), {"database_id": target.database_id,
+                         "data_source_id": target.data_source_id}))
+    return store
+
+
+def test_db_url_is_used_as_is(monkeypatch, no_cache):
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            return {"id": _UUID, "data_sources": [{"id": "ds-1", "name": "셀라"}],
+                    "properties": {"이름": {"type": "title"}}}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert (target.database_id, target.data_source_id) == (_UUID, "ds-1")
+    assert target.created is False
+    assert target.properties == {"이름": "title"}
+
+
+def test_page_url_creates_the_database_once(monkeypatch, no_cache):
+    created = {"count": 0}
+
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            raise nx.NotionError("not_connected", "not a database", 404)
+        if path == f"/v1/pages/{_UUID}":
+            return {"id": _UUID, "object": "page"}
+        if path == f"/v1/blocks/{_UUID}/children":
+            return {"results": []}
+        if method == "POST" and path == "/v1/databases":
+            created["count"] += 1
+            # ⚠️ 노션 응답의 속성 형태는 `{이름: {"type": "title", ...}}` 다.
+            #    `DB_PROPERTIES` 의 요청 형태(`{"title": {}}`)와 다르다.
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
+                    "properties": {name: {"type": list(spec)[0]}
+                                   for name, spec in nx.DB_PROPERTIES.items()}}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    first = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert first.created is True
+    assert created["count"] == 1
+
+    # ⛔ 두 번째 저장에서 DB 가 또 생기면 안 된다 — 가장 흔할 실수다.
+    second = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert created["count"] == 1
+    assert second.database_id == "db-new"
+    assert second.created is False
+
+
+def test_existing_child_database_is_reused_without_cache(monkeypatch, no_cache):
+    """캐시가 비어도 부모에서 찾는다 — 사용자가 DB 를 옮겨도 회복한다."""
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            raise nx.NotionError("not_connected", "", 404)
+        if path == f"/v1/pages/{_UUID}":
+            return {"id": _UUID}
+        if path == f"/v1/blocks/{_UUID}/children":
+            return {"results": [
+                {"type": "child_page", "child_page": {"title": "셀라"}},
+                {"id": "db-old", "type": "child_database",
+                 "child_database": {"title": "셀라"}},
+            ]}
+        if path == "/v1/databases/db-old":
+            return {"id": "db-old", "data_sources": [{"id": "ds-old"}],
+                    "properties": {"제목": {"type": "title"}}}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert (target.database_id, target.created) == ("db-old", False)
+
+
+def test_bad_url_raises_before_any_call(monkeypatch, no_cache):
+    _stub_requests(monkeypatch, lambda *a, **k: pytest.fail("호출하면 안 된다"))
+    with pytest.raises(nx.NotionError) as exc:
+        nx.resolve_target(7, "https://example.com/x")
+    assert exc.value.kind == "bad_request"

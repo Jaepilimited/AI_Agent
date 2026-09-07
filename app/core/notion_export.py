@@ -306,3 +306,163 @@ def _request(method: str, path: str, body: dict | None = None) -> dict:
         )
         raise error
     return payload
+
+
+# Task 6: 목적지 해석 — DB 인가 페이지인가
+DB_TITLE = "셀라"
+
+#: 우리가 만드는 DB 의 속성. ⛔ 사용자가 만든 DB 에는 이것을 강요하지 않는다.
+DB_PROPERTIES = {
+    "제목": {"title": {}},
+    "날짜": {"date": {}},
+    "종류": {"select": {"options": [{"name": "브리핑"}, {"name": "답변"}]}},
+    "셀라 링크": {"url": {}},
+}
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS user_notion_databases (
+    user_id INT NOT NULL,
+    parent_id VARCHAR(40) NOT NULL,
+    database_id VARCHAR(40) NOT NULL,
+    data_source_id VARCHAR(40) NOT NULL DEFAULT '',
+    title VARCHAR(120) NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, parent_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+
+def ensure_tables() -> None:
+    from app.db.mariadb import execute
+
+    try:
+        execute(_DDL)
+    except Exception as exc:                      # 기동을 막지 않는다
+        logger.warning("notion_tables_error", error=str(exc)[:160])
+
+
+@dataclass
+class Target:
+    database_id: str
+    data_source_id: str
+    properties: dict = field(default_factory=dict)   # {이름: 타입}
+    created: bool = False
+
+
+def _cached_database(user_id: int, parent_id: str) -> dict | None:
+    ensure_tables()
+    from app.db.mariadb import fetch_one
+
+    try:
+        return fetch_one(
+            "SELECT database_id, data_source_id FROM user_notion_databases "
+            "WHERE user_id=%s AND parent_id=%s", (user_id, parent_id))
+    except Exception as exc:
+        logger.warning("notion_cache_read_failed", error=str(exc)[:160])
+        return None
+
+
+def _remember_database(user_id: int, parent_id: str, target: Target) -> None:
+    ensure_tables()
+    from app.db.mariadb import execute
+
+    try:
+        execute(
+            "INSERT INTO user_notion_databases "
+            "(user_id, parent_id, database_id, data_source_id, title) "
+            "VALUES (%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
+            "database_id=VALUES(database_id), data_source_id=VALUES(data_source_id)",
+            (user_id, parent_id, target.database_id, target.data_source_id, DB_TITLE))
+    except Exception as exc:
+        logger.warning("notion_cache_write_failed", error=str(exc)[:160])
+
+
+def _schema(payload: dict) -> dict:
+    return {name: (value or {}).get("type", "")
+            for name, value in (payload.get("properties") or {}).items()}
+
+
+def _first_data_source(payload: dict) -> str:
+    sources = payload.get("data_sources") or []
+    return str(sources[0].get("id", "")) if sources else ""
+
+
+def _load_database(database_id: str, created: bool = False) -> Target:
+    payload = _request("GET", f"/v1/databases/{database_id}")
+    return Target(database_id=str(payload.get("id", database_id)),
+                  data_source_id=_first_data_source(payload),
+                  properties=_schema(payload), created=created)
+
+
+def _find_child_database(parent_id: str) -> str:
+    """부모의 자식 블록에서 제목이 `셀라` 인 DB 를 찾는다.
+
+    ⛔ 캐시가 없다고 곧바로 만들지 마라 — 사용자 페이지에 DB 가 여러 개 생긴다.
+    ⚠️ 첫 호출은 쿼리스트링 없는 맨 경로다 (`page_size` 를 안 붙여도 노션 기본값이
+       100 이라 `MAX_BLOCKS_PER_REQUEST` 와 같다) — 다음 페이지가 있을 때만 커서를 붙인다.
+    """
+    cursor, guard = None, 0
+    while guard < 10:
+        guard += 1
+        path = f"/v1/blocks/{parent_id}/children"
+        if cursor:
+            path += f"?start_cursor={cursor}"
+        payload = _request("GET", path)
+        for block in payload.get("results") or []:
+            if block.get("type") != "child_database":
+                continue
+            title = (block.get("child_database") or {}).get("title", "")
+            if title.strip() == DB_TITLE:
+                return str(block.get("id", ""))
+        if not payload.get("has_more"):
+            break
+        cursor = payload.get("next_cursor")
+    return ""
+
+
+def resolve_target(user_id: int, url: str) -> Target:
+    """준 URL 이 DB 면 그대로, 페이지면 그 아래 `셀라` DB 를 한 번 만든다.
+
+    ⛔ **URL 문자열만으로는 DB 와 페이지를 구분할 수 없다** — 둘 다 32자 id 하나다.
+       추측하지 말고 물어서 확인한다.
+    """
+    page_id = parse_page_url(url)
+    if not page_id:
+        raise NotionError("bad_request", "노션 주소를 읽지 못했다")
+
+    try:
+        return _load_database(page_id)
+    except NotionError as exc:
+        if exc.kind != "not_connected":
+            raise                                  # 403 은 그대로 올린다
+
+    # ⚠️ 캐시를 그대로 믿는다 — 여기서 한 번 더 살아있는지 확인하려 들면
+    #    (`_load_database` 재호출) 캐시 히트마다 매번 API 를 한 번 더 태우는 셈이라
+    #    캐시를 둔 의미가 없어진다. 사용자가 그 DB 를 지웠다면 실제로 그 DB 에
+    #    쓰려고 할 때(다음 단계) 실패가 그 자리에서 드러난다 — 여기서 미리
+    #    감지하지는 않는다.
+    cached = _cached_database(user_id, page_id)
+    if cached and cached.get("database_id"):
+        return Target(database_id=str(cached["database_id"]),
+                      data_source_id=str(cached.get("data_source_id") or ""),
+                      created=False)
+
+    _request("GET", f"/v1/pages/{page_id}")        # 페이지가 맞는지·닿는지 확인
+    found = _find_child_database(page_id)
+    if found:
+        target = _load_database(found)
+        _remember_database(user_id, page_id, target)
+        return target
+
+    payload = _request("POST", "/v1/databases", {
+        "parent": {"type": "page_id", "page_id": page_id},
+        "title": [{"type": "text", "text": {"content": DB_TITLE}}],
+        "initial_data_source": {"properties": DB_PROPERTIES},
+    })
+    target = Target(database_id=str(payload.get("id", "")),
+                    data_source_id=_first_data_source(payload),
+                    properties=_schema(payload) or {
+                        name: list(spec)[0] for name, spec in DB_PROPERTIES.items()},
+                    created=True)
+    _remember_database(user_id, page_id, target)
+    return target
