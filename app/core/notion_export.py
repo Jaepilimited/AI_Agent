@@ -413,8 +413,13 @@ def _find_child_database(parent_id: str) -> str:
             if title.strip() == DB_TITLE:
                 return str(block.get("id", ""))
         if not payload.get("has_more"):
-            break
+            return ""                     # 끝까지 봤는데 없다 — 정상이다
         cursor = payload.get("next_cursor")
+
+    # ⛔ 여기 닿았다는 것은 1,000블록을 다 보고도 못 찾았다는 뜻이다. 그대로 "" 를
+    #    주면 부르는 쪽이 DB 를 새로 만들어 **중복이 생긴다** — 흔적을 반드시 남긴다.
+    #    (이 저장소는 프로덕션에서 INFO 를 버리므로 WARNING 이어야 한다)
+    logger.warning("notion_child_scan_truncated", parent_id=parent_id, pages=guard)
     return ""
 
 

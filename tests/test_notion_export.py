@@ -359,3 +359,39 @@ def test_bad_url_raises_before_any_call(monkeypatch, no_cache):
     with pytest.raises(nx.NotionError) as exc:
         nx.resolve_target(7, "https://example.com/x")
     assert exc.value.kind == "bad_request"
+
+
+def test_forbidden_is_not_mistaken_for_a_page(monkeypatch, no_cache):
+    """⛔ 403 을 404 처럼 삼키면 권한 문제가 '페이지인가 보다' 로 둔갑한다."""
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            raise nx.NotionError("forbidden", "no access", 403)
+        raise AssertionError(f"403 뒤로 더 진행하면 안 된다: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    with pytest.raises(nx.NotionError) as exc:
+        nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert exc.value.kind == "forbidden"
+
+
+def test_child_scan_truncation_leaves_a_warning(monkeypatch, no_cache):
+    """⛔ 1,000블록을 다 보고도 못 찾으면 DB 를 새로 만든다 — 흔적 없이 그러지 않는다."""
+    warnings = []
+    monkeypatch.setattr(nx.logger, "warning",
+                        lambda event, **kw: warnings.append(event))
+
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            raise nx.NotionError("not_connected", "", 404)
+        if path == f"/v1/pages/{_UUID}":
+            return {"id": _UUID}
+        if path.startswith(f"/v1/blocks/{_UUID}/children"):
+            return {"results": [], "has_more": True, "next_cursor": "c"}
+        if method == "POST" and path == "/v1/databases":
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
+                    "properties": {"제목": {"type": "title"}}}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert "notion_child_scan_truncated" in warnings
