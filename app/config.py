@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Gemini
     gemini_model: str = "gemini-3.1-pro-preview"
-    gemini_flash_model: str = "gemini-3.5-flash"
+    gemini_flash_model: str = "gemini-3.8-flash"
     gemini_api_key: str = ""
 
     # BigQuery - Sales

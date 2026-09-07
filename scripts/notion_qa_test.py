@@ -35,7 +35,7 @@ if env_path.exists():
 GEMINI_API_KEY = env.get("GEMINI_API_KEY", "")
 # 손으로 적은 모델명은 반드시 낡는다 — 앱과 같은 .env 값을 쓴다 (2026-08-19: 여기만
 # gemini-2.5-flash 로 굳어 있었다). 앱 기본값은 app/config.py 의 gemini_flash_model.
-GEMINI_FLASH_MODEL = env.get("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
+GEMINI_FLASH_MODEL = env.get("GEMINI_FLASH_MODEL", "gemini-3.8-flash")
 NOTION_TOKEN = env.get("NOTION_MCP_TOKEN", "")
 NOTION_PAGE_ID = "3032b4283b0080ae8241cedef71fc3be"  # AI 사람만들기 로그
 

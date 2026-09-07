@@ -1192,7 +1192,7 @@ def get_llm_client(model_type: str = MODEL_GEMINI) -> Any:
 def get_flash_client() -> GeminiClient:
     """Get Gemini Flash client for fast, lightweight tasks (routing, grading).
 
-    Uses settings.gemini_flash_model (gemini-3.5-flash) — much faster than Pro for simple tasks.
+    Uses settings.gemini_flash_model (gemini-3.8-flash) — much faster than Pro for simple tasks.
     """
     global _gemini_flash_client
     if _gemini_flash_client is None:
@@ -1202,6 +1202,18 @@ def get_flash_client() -> GeminiClient:
         # Flash defaults to dynamic thinking, which adds seconds per call.
         # All flash tasks here (SQL gen, formatting, charts, routing) run
         # with thinking off; zero-result SQL already escalates to Claude.
+        #
+        # ⛔ 모델을 올리기 전에 **이 줄이 지켜지는지 먼저 찔러 볼 것.**
+        # 모든 flash 모델이 `thinkingBudget=0` 을 받아주지 않는다
+        # (2026-09-07 프로덕션 API 키로 실측):
+        #   • `gemini-3.6-flash` — **HTTP 400** INVALID_ARGUMENT. `thinkingLevel`
+        #     (low/minimal) 만 받는다. 갈아끼우면 flash 호출이 전부 즉사한다
+        #   • `gemini-3.7-flash` — **200 을 주면서 조용히 무시한다**
+        #     (thoughts 58~261 토큰). 에러도 경고도 없이 지연과 비용만 늘어
+        #     아무도 못 알아채는다 — 둘 중 이쪽이 더 나쁘다
+        #   • `gemini-3.5-flash`(직전)·`gemini-3.8-flash`(현재) — 지킨다
+        # 3.8 로 올린 근거: 생각 끄기 지키면서 라우팅 1.37→1.19s·
+        # SQL 생성 1.57→1.39s, 요율은 입력 1/2·출력 1/2.4 (usage_meter._PRICING 참조).
         _gemini_flash_client.thinking_budget = 0
         logger.info("gemini_flash_client_initialized", model=_gemini_flash_client.model)
     return _gemini_flash_client
