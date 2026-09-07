@@ -14,8 +14,13 @@
 """
 import io
 import sys
+from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+# ⚠️ `python scripts/notion_write_probe.py` 로 바로 돌릴 수 있어야 한다 —
+#    저장소 루트가 sys.path 에 없으면 `No module named 'app'` 로 죽는다 (2026-09-08 실측).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core import notion_export as nx  # noqa: E402
 
@@ -28,6 +33,16 @@ _BODY = (
 
 
 def main() -> int:
+    try:
+        return _run()
+    except nx.NotionError as exc:
+        # ⚠️ 트레이스백 대신 읽을 수 있는 한 줄로 끝낸다 — 이 스크립트는 사람이
+        #    직접 돌려 보는 진단 도구다.
+        print(f"⛔ {exc.kind}: {exc}")
+        return 1
+
+
+def _run() -> int:
     if len(sys.argv) < 2:
         print("사용법: python scripts/notion_write_probe.py <노션_페이지_URL>")
         return 2

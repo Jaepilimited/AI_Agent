@@ -402,6 +402,41 @@ def test_forbidden_is_not_mistaken_for_a_page(monkeypatch, no_cache):
     assert exc.value.kind == "forbidden"
 
 
+def test_page_url_survives_the_400_notion_actually_returns(monkeypatch, no_cache):
+    """⛔ 노션은 "이건 페이지다" 를 404 가 아니라 **400** 으로 답한다 (2026-09-08 실측).
+
+    404 만 보고 넘어가면 페이지 주소를 준 사용자가 그 자리에서 죽는다.
+    """
+    schema = {name: {"type": list(spec)[0]} for name, spec in nx.DB_PROPERTIES.items()}
+    created = {"count": 0}
+
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            raise nx.NotionError(
+                "bad_request",
+                f"Provided database_id {_UUID} is a page, not a database. "
+                "Use the pages API instead, or pass the ID of the database itself.",
+                400)
+        if path == "/v1/databases/db-new":
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}], "properties": schema}
+        if path == "/v1/data_sources/ds-new":
+            return {"id": "ds-new", "properties": schema}
+        if path == f"/v1/pages/{_UUID}":
+            return {"id": _UUID, "object": "page"}
+        if path.startswith(f"/v1/blocks/{_UUID}/children"):
+            return {"results": []}
+        if method == "POST" and path == "/v1/databases":
+            created["count"] += 1
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}], "properties": schema}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert created["count"] == 1
+    assert target.created is True
+    assert target.properties.get("제목") == "title"
+
+
 def test_child_scan_truncation_leaves_a_warning(monkeypatch, no_cache):
     """⛔ 1,000블록을 다 보고도 못 찾으면 DB 를 새로 만든다 — 흔적 없이 그러지 않는다."""
     warnings = []

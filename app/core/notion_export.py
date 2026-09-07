@@ -452,6 +452,18 @@ def _find_child_database(parent_id: str) -> str:
     return ""
 
 
+#: `GET /v1/databases/{id}` 가 "이건 페이지다" 라고 답하는 두 가지 방식.
+#: ⚠️ 404 는 "연결이 안 붙었다" 일 수도 있는데, 그때도 아래 페이지 경로가
+#:    `GET /v1/pages/{id}` 로 다시 확인하므로 여기서 넘어가도 안전하다.
+def _looks_like_a_page(exc: NotionError) -> bool:
+    if exc.kind == "not_connected":
+        return True
+    message = str(exc).lower()
+    return exc.kind in ("bad_request", "bad_property") and (
+        "is a page" in message or "not a database" in message
+    )
+
+
 def resolve_target(user_id: int, url: str) -> Target:
     """준 URL 이 DB 면 그대로, 페이지면 그 아래 `셀라` DB 를 한 번 만든다.
 
@@ -465,8 +477,11 @@ def resolve_target(user_id: int, url: str) -> Target:
     try:
         return _load_database(page_id)
     except NotionError as exc:
-        if exc.kind != "not_connected":
-            raise                                  # 403 은 그대로 올린다
+        # ⛔ 노션은 "이건 DB 가 아니라 페이지다" 를 **404 가 아니라 400** 으로 답한다
+        #    (2026-09-08 실측: "Provided database_id … is a page, not a database").
+        #    404 만 보고 넘어가면 **페이지 주소가 통째로 죽는다** — 실제로 그랬다.
+        if not _looks_like_a_page(exc):
+            raise                                  # 403 등 진짜 오류는 그대로 올린다
 
     cached = _cached_database(user_id, page_id)
     if cached and cached.get("database_id"):
