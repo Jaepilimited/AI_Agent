@@ -395,3 +395,97 @@ def test_child_scan_truncation_leaves_a_warning(monkeypatch, no_cache):
     _stub_requests(monkeypatch, handler)
     nx.resolve_target(7, f"https://www.notion.so/{_ID}")
     assert "notion_child_scan_truncated" in warnings
+
+
+# Task 7: 저장 — 행 생성과 속성 채우기
+@pytest.fixture
+def our_target():
+    return nx.Target(database_id="db-1", data_source_id="ds-1",
+                     properties={"제목": "title", "날짜": "date",
+                                 "종류": "select", "셀라 링크": "url"})
+
+
+@pytest.fixture
+def user_made_target():
+    """사용자가 직접 만든 DB — 이름이 다르고 속성이 적다."""
+    return nx.Target(database_id="db-2", data_source_id="ds-2",
+                     properties={"Name": "title", "Tags": "multi_select"})
+
+
+def test_save_creates_a_row_under_the_data_source(monkeypatch, our_target):
+    def handler(method, path, body=None):
+        if path == "/v1/pages":
+            assert body["parent"] == {"type": "data_source_id",
+                                      "data_source_id": "ds-1"}
+            return {"id": "row-1", "url": "https://notion.so/row-1"}
+        raise AssertionError(path)
+
+    _stub_requests(monkeypatch, handler)
+    result = nx.save(our_target, "2026년 일본 매출", "본문입니다", kind="답변",
+                     link="http://ai.example/chat")
+    assert result.url == "https://notion.so/row-1"
+    assert result.skipped == []
+
+
+def test_save_fills_our_properties(monkeypatch, our_target):
+    seen = {}
+
+    def handler(method, path, body=None):
+        seen.update(body["properties"])
+        return {"id": "row-1", "url": "u"}
+
+    _stub_requests(monkeypatch, handler)
+    nx.save(our_target, "제목입니다", "본문", kind="브리핑", link="http://x")
+    assert seen["제목"]["title"][0]["text"]["content"] == "제목입니다"
+    assert seen["종류"]["select"]["name"] == "브리핑"
+    assert seen["셀라 링크"]["url"] == "http://x"
+    assert "date" in seen["날짜"]
+
+
+def test_user_made_db_gets_only_its_title_property(monkeypatch, user_made_target):
+    """⛔ 남의 DB 스키마를 고치지 않는다. 모르는 속성을 보내면 400 이 난다."""
+    seen = {}
+
+    def handler(method, path, body=None):
+        seen.update(body["properties"])
+        return {"id": "row-1", "url": "u"}
+
+    _stub_requests(monkeypatch, handler)
+    result = nx.save(user_made_target, "제목입니다", "본문", kind="답변")
+    assert list(seen) == ["Name"]                       # 이름이 달라도 찾는다
+    assert seen["Name"]["title"][0]["text"]["content"] == "제목입니다"
+    assert set(result.skipped) == {"날짜", "종류", "셀라 링크"}
+
+
+def test_save_appends_blocks_beyond_the_first_hundred(monkeypatch, our_target):
+    appended = []
+
+    def handler(method, path, body=None):
+        if path == "/v1/pages":
+            assert len(body["children"]) == 100
+            return {"id": "row-1", "url": "u"}
+        if path == "/v1/blocks/row-1/children":
+            appended.append(len(body["children"]))
+            return {}
+        raise AssertionError(path)
+
+    _stub_requests(monkeypatch, handler)
+    nx.save(our_target, "긴 답변", "\n".join(f"- 줄 {i}" for i in range(250)))
+    assert appended == [100, 50]
+
+
+def test_save_cleans_the_body_before_writing(monkeypatch, our_target):
+    """⛔ 내부 테이블 경로가 노션 페이지에 남으면 안 된다."""
+    captured = {}
+
+    def handler(method, path, body=None):
+        captured["children"] = body.get("children", [])
+        return {"id": "row-1", "url": "u"}
+
+    _stub_requests(monkeypatch, handler)
+    nx.save(our_target, "t",
+            "값 1,234억\n\n<details><summary>실행된 쿼리</summary>\n"
+            "`skin1004-319714.x.y`\n</details>\n")
+    dumped = str(captured["children"])
+    assert "1,234억" in dumped
+    assert "skin1004-319714" not in dumped

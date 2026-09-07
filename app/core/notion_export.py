@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date as _date
 
 import httpx
 import structlog
@@ -469,3 +470,65 @@ def resolve_target(user_id: int, url: str) -> Target:
                     created=True)
     _remember_database(user_id, page_id, target)
     return target
+
+
+# Task 7: 저장 — 행 생성과 속성 채우기
+@dataclass
+class SaveResult:
+    url: str
+    created_database: bool = False
+    skipped: list = field(default_factory=list)
+
+
+def _title_property_name(properties: dict) -> str:
+    """⛔ 이름이 무엇이든 `type == "title"` 인 속성을 찾는다.
+
+    사용자가 만든 DB 는 `Name`·`이름`·`문서명` 무엇이든 될 수 있다.
+    """
+    for name, kind in (properties or {}).items():
+        if kind == "title":
+            return name
+    return ""
+
+
+def _properties_for(target: Target, title: str, kind: str,
+                    link: str) -> tuple[dict, list]:
+    """있는 것만 채운다. 없는 속성은 **보내지 않고** 이름만 돌려준다."""
+    schema = target.properties or {}
+    title_name = _title_property_name(schema)
+    if not title_name:
+        raise NotionError("bad_request", "제목 속성이 없는 DB 다")
+
+    props = {title_name: {"title": [{"type": "text",
+                                     "text": {"content": (title or "제목 없음")[:200]}}]}}
+    wanted = {
+        "날짜": ("date", {"date": {"start": _date.today().isoformat()}}),
+        "종류": ("select", {"select": {"name": kind}}),
+        "셀라 링크": ("url", {"url": link or None}),
+    }
+    skipped = []
+    for name, (want_type, value) in wanted.items():
+        if schema.get(name) == want_type:
+            props[name] = value
+        else:
+            skipped.append(name)
+    return props, skipped
+
+
+def save(target: Target, title: str, text: str, kind: str = "답변",
+         link: str = "") -> SaveResult:
+    """DB 에 행 하나를 만들고 본문 블록을 넣는다."""
+    blocks = markdown_to_blocks(clean_for_notion(text))
+    props, skipped = _properties_for(target, title, kind, link)
+
+    row = _request("POST", "/v1/pages", {
+        "parent": {"type": "data_source_id", "data_source_id": target.data_source_id},
+        "properties": props,
+        "children": blocks[:MAX_BLOCKS_PER_REQUEST],
+    })
+    row_id = str(row.get("id", ""))
+    for chunk in chunk_blocks(blocks[MAX_BLOCKS_PER_REQUEST:]):
+        _request("PATCH", f"/v1/blocks/{row_id}/children", {"children": chunk})
+
+    return SaveResult(url=str(row.get("url", "")),
+                      created_database=target.created, skipped=skipped)
