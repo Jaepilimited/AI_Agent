@@ -392,7 +392,11 @@ def format_answer(result: Dict[str, Any]) -> str:
 _STRONG = ("수상", "어워드", "awards", "수상이력", "수상 이력")
 #: ⛔ `랭킹`·`순위` 는 매출 질문에도 흔하다. **축 낱말과 함께**일 때만 켠다
 #:    (물류가 `발주` 를 단독으로 쓰지 않고 튜플로 건 것과 같은 방식).
-_WEAK = ("랭킹", "순위", "1위", "top")
+#: ⛔ `"top"` 을 라틴 세 글자 단독으로 넣지 마라 — `desktop`·`laptop`·`stop` 안에
+#:    그대로 걸린다 (`eta` 가 `meta`·`beta` 안에 걸린 사고와 같은 패턴. 낱말 경계
+#:    방어 `textmatch.standalone()` 은 **앞 글자가 한글일 때만** 본다). 뺐다 —
+#:    "쇼피 Top Item 랭킹" 은 `랭킹` 한글 낱말만으로 이미 잡힌다.
+_WEAK = ("랭킹", "순위", "1위")
 _AXIS = ("화해", "글로우픽", "picky", "쇼피", "올리브영 글로벌", "주최사", "어워드",
          "수상", "한국소비자포럼", "female daily", "예스스타일")
 #: 이 낱말이 있으면 매출·재고 질문이다 — 켜지 않는다.
@@ -407,15 +411,26 @@ def awards_intent(query: str, explicit: bool = False) -> Optional[str]:
     ⛔ `explicit=True` 는 빈 문자열을 돌려줄 수 있다 — 빈 문자열은 falsy 라
        호출부가 `if _awd_term:` 로 받으면 `@@수상` 만 찍은 사용자가 경로를 못 타고
        **에러 없이 일반 답변**을 받는다. 호출부는 반드시 `is not None` 으로 볼 것.
+
+    ⛔ **`_STRONG` 이 `_BLOCK` 을 이긴다 — 그 반대가 아니다** (2026-09-07 리뷰 실측
+       사고: `"판매 1위 수상 이력 알려줘"`·`"매출 1위 어워드 받았어?"` 가 `_BLOCK`
+       의 `판매`·`매출` 에 먼저 걸려 `None` 이 됐고, 그 질문은 BigQuery 로 새서
+       **엉뚱한 매출 숫자로 자신 있게** 답했다 — 여기서 막는 것보다 나쁜 실패다.
+       `수상`·`어워드` 라는 말 자체가 이 질문의 주제를 결정적으로 밝히므로
+       매출 낱말이 같이 있어도 이 경로를 켠다.
+    ⚠️ **`_WEAK + _AXIS` 경로에서는 `_BLOCK` 이 그대로 이긴다** — 비대칭이 핵심이다.
+       축 낱말이 판매 채널과 겹친다 (`쇼피`·`올리브영 글로벌` 은 수상 주최사이면서
+       판매 채널이다). `"쇼피 매출 순위"` 는 `수상`·`어워드` 가 없으니 계속 매출
+       질문으로 남아야 한다 — `_WEAK` 만으로 `_BLOCK` 을 이기게 하면 그 반대가 샌다.
     """
     q = (query or "").strip()
     if explicit:
         return _search_term(q)
     low = q.lower()
-    if any(b in low for b in _BLOCK):
-        return None
     if any(s in low for s in _STRONG):
         return _search_term(q)
+    if any(b in low for b in _BLOCK):
+        return None
     if any(w in low for w in _WEAK) and any(a in low for a in _AXIS):
         return _search_term(q)
     return None

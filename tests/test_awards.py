@@ -397,6 +397,45 @@ def test_sales_and_stock_questions_do_not_reach_this_route(q):
     assert awards_intent(q) is None
 
 
+# ── Fix round 1, Finding 1: `_STRONG` 이 `_BLOCK` 을 이겨야 한다 ──────────────
+# 실측 사고: "판매 1위 수상 이력 알려줘" 가 `_BLOCK`(판매) 에 먼저 걸려 None 이
+# 됐고, 그 질문은 BigQuery 로 새서 **엉뚱한 매출 숫자로 자신 있게** 답했다.
+# `수상`·`어워드` 라는 말 자체가 주제를 결정적으로 밝히므로 매출 낱말이 같이
+# 있어도 이 경로를 켜야 한다.
+
+@pytest.mark.parametrize("q", [
+    "판매 1위 수상 이력 알려줘",
+    "매출 1위 어워드 받았어?",
+])
+def test_strong_award_words_win_over_block_words(q):
+    assert awards_intent(q) is not None
+
+
+@pytest.mark.parametrize("q", [
+    "쇼피 매출 순위 알려줘",
+    "올리브영 매출 랭킹",
+    "제품별 판매 순위 알려줘",
+])
+def test_block_still_wins_when_strong_words_are_absent(q):
+    """⚠️ 비대칭이 핵심이다 — `_WEAK`+`_AXIS` 만으로 `_BLOCK` 을 이기게 하면
+    `쇼피 매출 순위`(축 낱말 `쇼피` 가 판매 채널이기도 하다) 가 조용히 샌다."""
+    assert awards_intent(q) is None
+
+
+# ── Fix round 1, Finding 2: `top` 라틴 세 글자 부분일치 금지 ──────────────────
+# `_WEAK` 에 `"top"` 이 들어 있으면 `desktop`·`laptop`·`stop` 안에 그대로 걸린다
+# (`eta` 가 `meta`·`beta` 안에 걸린 사고와 같은 패턴).
+
+def test_top_does_not_partial_match_inside_a_latin_word():
+    assert awards_intent("데스크톱 판매 1위 매장") is None
+    assert awards_intent("노트북 laptop 판매량") is None
+
+
+def test_shopee_top_item_ranking_still_reaches_this_route_without_the_word_top():
+    """`top` 을 뺐어도 한글 낱말(`랭킹`)+축 낱말(`쇼피`)만으로 계속 잡혀야 한다."""
+    assert awards_intent("쇼피 Top Item 랭킹 뭐 있어?") is not None
+
+
 def test_explicit_source_selection_always_reaches_this_route():
     assert awards_intent("아무거나", explicit=True) is not None
 
@@ -410,11 +449,23 @@ def test_explicit_source_selection_with_no_words_returns_empty_string_not_none()
 
 
 def test_the_registry_has_the_awards_entry_and_the_front_knows_its_group():
+    """⛔ '그룹 라벨이 chat.js 어딘가에 있다' 만으로는 부족하다 — `SOURCE_GROUPS`
+    의 `label` 에만 있고 `GROUP_BY_NAME` 에 없어도 통과해 버린다. 그런데 그게 바로
+    이 테스트가 막으려던 조용한 실패다 (`fillSourceGroups()` 의 `if (!gid) return;`
+    가 매핑이 없는 그룹의 소스를 화면에서 통째로 건너뛴다). 그래서 **`GROUP_BY_NAME`
+    객체 리터럴 안에서만** 라벨을 찾는다."""
     src = open("app/agents/orchestrator.py", encoding="utf-8").read()
     assert '"key": "수상"' in src and '"route": "awards"' in src
     group = _re.search(r'"key": "수상".*?"group": "([^"]+)"', src, _re.S).group(1)
     js = open("app/frontend/chat.js", encoding="utf-8").read()
-    assert group in js, f"{group} 그룹이 chat.js 에 없다 — 화면에서 통째로 사라진다"
+    m = _re.search(r"var GROUP_BY_NAME = \{(.*?)\};", js, _re.S)
+    assert m, "chat.js 에서 GROUP_BY_NAME 을 찾지 못했다"
+    body = m.group(1)
+    assert f'"{group}"' in body, (
+        f"'{group}' 이 GROUP_BY_NAME 매핑 안에 없다 — SOURCE_GROUPS 의 label 에만 "
+        "있으면 fillSourceGroups() 가 if (!gid) return; 로 건너뛰어 "
+        "이 그룹의 소스가 화면에서 통째로 사라진다"
+    )
 
 
 def test_both_routing_paths_are_wired():
