@@ -65,3 +65,41 @@ def test_parse_page_url_takes_the_id_not_the_view():
     """⚠️ `?v=` 뒤에도 32자 hex 가 있다 — 뷰 id 를 페이지로 읽으면 404 가 난다."""
     url = f"https://www.notion.so/{_ID}?v=99991111222233334444555566667777"
     assert nx.parse_page_url(url) == _UUID
+
+
+# Task 3: clean_for_notion
+def test_clean_drops_the_query_details_block():
+    """⛔ 노션에서는 평문으로 펼쳐져 내부 테이블 경로가 페이지에 남는다."""
+    text = (
+        "2026년 매출은 1,234억원입니다.\n\n"
+        "<details><summary>실행된 쿼리</summary>\n\n"
+        "```sql\nSELECT SUM(Sales1_R) FROM `skin1004-319714.SALES_ALL_Backup.x`\n```\n\n"
+        "</details>\n"
+    )
+    cleaned = nx.clean_for_notion(text)
+    assert "1,234억원" in cleaned
+    assert "skin1004-319714" not in cleaned
+    assert "실행된 쿼리" not in cleaned
+
+
+def test_clean_drops_chart_config_fence_and_orphan_heading():
+    text = (
+        "## 시각화\n"
+        "```chart\n{\"type\": \"bar\", \"labels\": [1, 2]}\n```\n"
+        "## 요약\n본문\n"
+    )
+    cleaned = nx.clean_for_notion(text)
+    assert "chart" not in cleaned
+    assert "시각화" not in cleaned   # 차트를 뺐으면 홀로 남는 제목도 걷는다
+    assert "## 요약" in cleaned
+
+
+def test_clean_keeps_sql_fence_that_is_not_a_query_block():
+    """코드 자체를 물어본 답변까지 지우면 안 된다."""
+    text = "이렇게 쓰세요:\n```python\nprint(1)\n```\n"
+    assert "print(1)" in nx.clean_for_notion(text)
+
+
+def test_clean_drops_followup_chips():
+    text = "본문입니다.\n\n<!-- followup: [\"다음 질문\"] -->\n"
+    assert "followup" not in nx.clean_for_notion(text)

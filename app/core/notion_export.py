@@ -35,6 +35,30 @@ MAX_TEXT_CHARS = 2000
 _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
 
 
+# Task 3: 본문 정제
+_DETAILS = re.compile(r"<details\b.*?</details\s*>", re.IGNORECASE | re.DOTALL)
+_CHART_FENCE = re.compile(r"```chart\b.*?```", re.IGNORECASE | re.DOTALL)
+_FOLLOWUP = re.compile(r"<!--\s*followup:.*?-->", re.IGNORECASE | re.DOTALL)
+_ORPHAN_VIZ = re.compile(r"^#{1,6}\s*시각화\s*$\n?", re.MULTILINE)
+
+
+def clean_for_notion(text: str) -> str:
+    """노션에 실을 수 없거나 실으면 안 되는 것을 걷는다.
+
+    ⛔ `<details>실행된 쿼리</details>` 는 앱에서는 접힌 근거지만 노션에서는
+       **평문으로 펼쳐져 내부 테이블 경로가 페이지에 남는다.** 노션 페이지는
+       공유가 쉽다 — 잔디 규칙과 같은 이유다.
+    ⚠️ 차트를 뺐으면 홀로 남는 `시각화` 제목도 함께 걷는다.
+    """
+    out = _DETAILS.sub("", text or "")
+    out = _CHART_FENCE.sub("", out)
+    out = _FOLLOWUP.sub("", out)
+    out = _ORPHAN_VIZ.sub("", out)
+    # ⚠️ 빈 줄만 걷는다. `.strip()` 은 첫 줄의 들여쓰기까지 걷어 표 정렬이 깨진다
+    #    (잔디 글자 막대에서 실제로 겪었다).
+    return re.sub(r"\n{3,}", "\n\n", out).strip("\n")
+
+
 def parse_page_url(url: str | None) -> str | None:
     """노션 URL(또는 맨 id)에서 32자 id 를 뽑아 UUID 형식으로 돌려준다.
 
