@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date as _date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
@@ -25,6 +26,10 @@ settings = get_settings()
 NOTION_API = "https://api.notion.com"
 NOTION_VERSION = "2025-09-03"
 _TIMEOUT = 20.0
+
+#: ⚠️ 서버 로컬 시간으로 날짜를 찍지 마라 — 호스트 TZ 가 바뀌면 하루가 어긋난다
+#:    (이 저장소는 DB `time_zone` 이 SYSTEM 이라 같은 사고를 이미 겪었다).
+KST = ZoneInfo("Asia/Seoul")
 
 #: 노션이 한 요청에 받아 주는 블록 수. 넘기면 400 이 난다.
 MAX_BLOCKS_PER_REQUEST = 100
@@ -502,7 +507,7 @@ def _properties_for(target: Target, title: str, kind: str,
     props = {title_name: {"title": [{"type": "text",
                                      "text": {"content": (title or "제목 없음")[:200]}}]}}
     wanted = {
-        "날짜": ("date", {"date": {"start": _date.today().isoformat()}}),
+        "날짜": ("date", {"date": {"start": datetime.now(KST).date().isoformat()}}),
         "종류": ("select", {"select": {"name": kind}}),
         "셀라 링크": ("url", {"url": link or None}),
     }

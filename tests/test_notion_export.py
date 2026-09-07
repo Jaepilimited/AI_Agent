@@ -489,3 +489,30 @@ def test_save_cleans_the_body_before_writing(monkeypatch, our_target):
     dumped = str(captured["children"])
     assert "1,234억" in dumped
     assert "skin1004-319714" not in dumped
+
+
+def test_save_refuses_a_database_without_a_title_property(monkeypatch):
+    """⛔ 제목 속성이 없으면 **API 를 부르기 전에** 멈춘다 — 조용히 빈 행을 만들지 않는다."""
+    target = nx.Target(database_id="db-3", data_source_id="ds-3",
+                       properties={"Tags": "multi_select"})
+    _stub_requests(monkeypatch, lambda *a, **k: pytest.fail("호출하면 안 된다"))
+    with pytest.raises(nx.NotionError) as exc:
+        nx.save(target, "제목", "본문")
+    assert exc.value.kind == "bad_request"
+
+
+def test_date_property_is_korea_time(monkeypatch, our_target):
+    """⚠️ 호스트 TZ 가 KST 가 아니어도 한국 날짜를 찍는다."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    seen = {}
+
+    def handler(method, path, body=None):
+        seen.update(body["properties"])
+        return {"id": "row-1", "url": "u"}
+
+    _stub_requests(monkeypatch, handler)
+    nx.save(our_target, "t", "본문")
+    expected = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
+    assert seen["날짜"]["date"]["start"] == expected
