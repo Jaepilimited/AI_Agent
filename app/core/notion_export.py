@@ -31,6 +31,33 @@ MAX_BLOCKS_PER_REQUEST = 100
 MAX_TEXT_CHARS = 2000
 
 
+#: 32자 이상 이어지는 hex 덩어리. 슬러그(`회의록-24f1…`)에 붙어 있어도 잡힌다.
+_HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
+
+
+def parse_page_url(url: str | None) -> str | None:
+    """노션 URL(또는 맨 id)에서 32자 id 를 뽑아 UUID 형식으로 돌려준다.
+
+    ⛔ **추측하지 않는다.** 못 뽑으면 None 을 주고 부르는 쪽이 되묻는다 —
+       엉뚱한 페이지에 쓰는 것이 못 쓰는 것보다 나쁘다.
+    ⛔ `*.notion.site` 는 외부 공개 사이트라 인테그레이션으로 쓸 수 없다.
+       그대로 두면 404 만 반복한다 (2026-09-04 학습 쪽에서 이미 겪었다).
+    """
+    raw = (url or "").strip()
+    if not raw or "notion.site" in raw.lower():
+        return None
+
+    # ⚠️ 쿼리(`?v=` 뷰 id)와 앵커를 먼저 버린다 — 거기에도 32자 hex 가 있다.
+    path = raw.split("?", 1)[0].split("#", 1)[0].rstrip("/")
+    tail = path.rsplit("/", 1)[-1].replace("-", "")
+    runs = _HEX_RUN.findall(tail)
+    if not runs:
+        return None
+    compact = runs[-1][-32:]
+    return (f"{compact[:8]}-{compact[8:12]}-{compact[12:16]}"
+            f"-{compact[16:20]}-{compact[20:]}")
+
+
 class NotionError(Exception):
     """사용자에게 **원인을 갈라서** 말하기 위한 예외.
 
