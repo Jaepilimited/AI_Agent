@@ -29,6 +29,12 @@ for item in questions:
     conf[bool(confident)] += 1
 
 total = sum(routes.values())
+
+if not total:
+    print(f"질문 {len(questions)}건을 읽었지만 **한 건도 분류되지 않았다** — "
+          f"입력 형식이나 임포트를 확인할 것")
+    sys.exit(1)
+
 print(f"질문 {total}건")
 print("경로 :", dict(routes))
 print(f"확신 : {conf[True]}건 ({conf[True] / total * 100:.1f}%) · "
