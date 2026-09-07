@@ -89,3 +89,40 @@ def test_target_answer_empty_when_history_is_trimmed():
         ("user", "https://www.notion.so/x"),
     )
     assert ns.target_answer(messages) == ""
+
+
+@pytest.mark.parametrize("query", [
+    "노션 페이지 링크 좀 보내줘",
+    "노션 주소 알려줘",
+    "노션 DB url 공유해줘",
+])
+def test_asking_for_a_link_is_not_a_save(query):
+    """⛔ 달라는 요청을 저장으로 읽으면, 링크를 물었는데 되묻기가 나간다."""
+    assert ns.notion_save_intent(query) is False
+
+
+def test_search_wins_when_both_verbs_appear():
+    """⛔ 이 규칙이 이 관문의 존재 이유다 — 애매하면 검색이다.
+
+    저장은 다시 시키면 되지만, 검색을 가로채면 사내 문서 검색이 통째로 죽는다.
+    """
+    assert ns.notion_save_intent("노션에서 찾아서 저장해줘") is False
+
+
+def test_send_verb_still_means_save_when_notion_is_the_destination():
+    """⚠️ 오탐을 막느라 정상 표현까지 죽이면 안 된다."""
+    assert ns.notion_save_intent("이거 노션에 보내줘") is True
+
+
+def test_undecodable_marker_leaves_a_trace(monkeypatch):
+    """⛔ 실패를 삼키는 except 에는 흔적을 남긴다 (이 저장소의 규칙)."""
+    warnings = []
+    monkeypatch.setattr(ns.logger, "warning",
+                        lambda event, **kw: warnings.append(event))
+    messages = _msgs(
+        ("user", "이 답변 노션에 넣어줘"),
+        ("assistant", "<!-- notion-save-v1:zzzz -->"),
+        ("user", "https://www.notion.so/x"),
+    )
+    assert ns.pending(messages) is None
+    assert "notion_save_marker_undecodable" in warnings

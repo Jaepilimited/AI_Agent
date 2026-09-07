@@ -23,6 +23,10 @@ _SAVE_VERB = re.compile(
     r"(넣어|넣자|넣어줘|저장|올려|올려줘|추가해|추가하|기록해|보내줘|옮겨)")
 #: ⛔ `정리`·`찾아` 는 저장 동사가 아니다 — "노션 정리 잘 돼 있나" 를 가로챈다.
 _SEARCH_VERB = re.compile(r"(찾아|검색|어디\s*있|뭐\s*있|알려줘|보여줘|조회)")
+#: ⛔ "노션 페이지 링크 좀 보내줘" 는 **달라는 요청**이지 저장이 아니다.
+#:    `보내`·`줘` 는 양쪽 뜻을 다 가지므로, 무엇을 달라는지(링크·주소·URL)가
+#:    함께 있으면 저장으로 보지 않는다.
+_GIVE_ME = re.compile(r"(링크|주소|url|경로)\s*(좀\s*)?(보내|알려|줘|공유)", re.IGNORECASE)
 
 _URL = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
@@ -34,6 +38,8 @@ def notion_save_intent(query: str) -> bool:
     if not _NOTION_WORD.search(text):
         return False
     if not _SAVE_VERB.search(text):
+        return False
+    if _GIVE_ME.search(text):
         return False
     # ⚠️ "노션에서 찾아서 저장해줘" 처럼 둘 다 있으면 검색으로 둔다 — 저장은
     #    되돌리기 쉽지만, 검색을 가로채면 사내 문서가 통째로 안 나온다.
@@ -57,7 +63,11 @@ def _decode(token: str) -> dict | None:
     try:
         padded = token + "=" * (-len(token) % 4)
         data = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-    except (binascii.Error, ValueError, UnicodeDecodeError):
+    except (binascii.Error, ValueError, UnicodeDecodeError) as exc:
+        # ⛔ 조용히 삼키지 않는다 — 마커가 깨지면 되묻기가 이어지지 않는데,
+        #    흔적이 없으면 "왜 URL 을 줬는데 저장이 안 되지" 가 영영 안 잡힌다.
+        logger.warning("notion_save_marker_undecodable",
+                       error_type=type(exc).__name__, token=token[:40])
         return None
     if not isinstance(data, dict) or data.get("v") != 1:
         return None
