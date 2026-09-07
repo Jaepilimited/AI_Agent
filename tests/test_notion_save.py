@@ -316,6 +316,19 @@ def test_title_never_comes_from_the_query_details_block(fake_engine):
     assert "55.1억" in fake_engine["saved"]["title"]
 
 
+def test_body_that_is_only_a_details_block_saves_nothing(fake_engine):
+    """⛔ 정제하면 빈 본문이 되는 답변으로 빈 행을 만들지 않는다."""
+    messages = _msgs(
+        ("user", "매출은?"),
+        ("assistant", "<details><summary>실행된 쿼리</summary>\nSELECT 1\n</details>"),
+        ("user", "이거 노션에 넣어줘 https://www.notion.so/"
+                 "24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert fake_engine["saved"] is None
+    assert "찾지 못했습니다" in answer
+
+
 def test_one_off_briefing_save_is_not_mistaken_for_recurring(fake_engine):
     """⚠️ '브리핑' 이나 '매일' 이 있어도 **둘 다** 있을 때만 가로챈다."""
     messages = _msgs(
