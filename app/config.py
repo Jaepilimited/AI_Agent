@@ -77,6 +77,9 @@ class Settings(BaseSettings):
 
     # Notion MCP (v3.0)
     notion_mcp_token: str = ""
+    # 노션 쓰기 전용 인테그레이션 (읽기용 notion_mcp_token 과 분리한다 —
+    # 크롤러 토큰이 개인 페이지 쓰기 권한을 갖는 구조를 만들지 않는다)
+    notion_write_token: str = ""
 
     # Google OAuth (GWS per-user auth)
     google_oauth_client_id: str = ""
@@ -224,6 +227,10 @@ class Settings(BaseSettings):
             "skin1004-319714.ad_data.meta data_test",
             # Promotion calendar (실행 일정 — 팀·몰별 프로모션 스케줄)
             "skin1004-319714.promotion_calendar.promotion",
+            # Export logistics (LOG — 수출 발주·선적·운송 관리대장)
+            "skin1004-319714.Export_control.export_logistics",
+            # 월말환율 (수출 물류 금액을 한화로 환산할 때만 쓴다 — 사내 확정 고시)
+            "skin1004-319714.Sales_Integration.Exchange_Rate",
             # Financial P&L (FI Dashboard — monthly consolidated income statement)
             "skin1004-319714.Sales_Integration.FI_LLM_Flat",
         ]
