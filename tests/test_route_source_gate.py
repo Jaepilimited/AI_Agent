@@ -56,6 +56,49 @@ def test_게이트가_두_경로에_모두_걸려_있다():
     src = open("app/agents/orchestrator.py", encoding="utf-8").read()
     assert src.count("_needs_source(") >= 3   # 정의 1 + 호출 2
     assert src.count("source_gate_self") == 2
+    # ⛔ SELF 만 세면 **분자만 있고 분모가 없다** — SELF 가 두 배로 는 것과
+    #    트래픽이 두 배가 된 것을 구분할 수 없다. NEED 도 같은 자리에서 센다.
+    assert src.count("source_gate_need") == 2
+
+
+def test_게이트가_오래_걸리면_상한에서_끊고_뒤지는_쪽으로_간다(agent):
+    """⛔ 상한이 없으면 `_gemini_retry` 4회(0.5·1.5·4.0초 백오프)를 다 태우고,
+       NEED 면 `_classify_with_llm` 이 **같은 예산을 한 번 더** 태운다.
+       둘 다 사용자가 첫 글자를 보기 전이다. 실측 중앙값은 1.38초다.
+    """
+    import time
+
+    from app.agents import orchestrator as orch_module
+
+    class Slow:
+        def generate(self, *a, **k):
+            time.sleep(1.0)
+            return "SELF"          # 제때 왔다면 SELF 였을 것
+
+    async def _run():
+        # ⚠️ 시간은 **코루틴 안에서** 잰다. `asyncio.run` 은 나갈 때 기본
+        #    executor 를 기다리므로(그 안에서 스레드가 sleep 을 마저 끝낸다)
+        #    바깥에서 재면 상한이 들었는데도 1초가 나온다.
+        started = time.monotonic()
+        got = await agent._needs_source("아무 질문", Slow())
+        return got, time.monotonic() - started
+
+    orig = orch_module._SOURCE_GATE_TIMEOUT_SECONDS
+    try:
+        orch_module._SOURCE_GATE_TIMEOUT_SECONDS = 0.05
+        got, waited = asyncio.run(_run())
+    finally:
+        orch_module._SOURCE_GATE_TIMEOUT_SECONDS = orig
+
+    assert got is True        # 시간이 다하면 안전한 쪽 = 뒤진다
+    assert waited < 0.9       # 실제로 기다리지 않고 끊었다
+
+
+def test_상한이_실측_중앙값보다_넉넉하다():
+    """⚠️ 상한을 중앙값(1.38초) 가까이 조이면 멀쩡한 판정이 잘려 나간다."""
+    from app.agents.orchestrator import _SOURCE_GATE_TIMEOUT_SECONDS
+
+    assert 3.0 <= _SOURCE_GATE_TIMEOUT_SECONDS <= 10.0
 
 
 def test_노션_사용법은_1단계가_확신으로_잡는다(agent):
@@ -243,6 +286,36 @@ def test_사내데이터로_확인해_드릴까요_한_줄():
     footer = source_free_footer()
     assert "사내 데이터" in footer
     assert footer.startswith("\n")          # 본문과 붙지 않는다
+    # ⛔ 지키지 못할 약속을 하지 않는다 — 원 질문을 다음 턴으로 나르는 코드가 없다
+    assert "조회해 드립니다" not in footer
+
+
+def test_돌아갈_문이_평문이_아니라_후속_칩이_된다():
+    """⛔ `chat.js` 가 칩으로 만드는 것은 **머리말이 걸릴 때뿐**이다.
+
+    처음 문안("💡 사내 데이터로 확인해 드릴까요?")은 그 정규식 어디에도 안 걸려
+    답변 **맨 끝의 평문**으로 렌더됐다 — 이 저장소가 두 번 "거기는 아무도 안
+    읽는다" 고 결론 낸 자리다. 그래서 정규식을 `chat.js` 에서 **직접 읽어** 맞춘다
+    (여기 손으로 베껴 적으면 프론트가 바뀔 때 조용히 어긋난다).
+    """
+    import re
+
+    from app.core.route_intent import source_free_footer
+
+    js = open("app/frontend/chat.js", encoding="utf-8").read()
+    m = re.search(r"if \(/([^/]+)/i\.test\(ltrim\)\)", js)
+    assert m, "chat.js 의 후속 질문 머리말 판정 정규식을 찾지 못했다"
+    header_re = re.compile(m.group(1), re.IGNORECASE)
+
+    lines = [ln.strip() for ln in source_free_footer().split("\n") if ln.strip()]
+    header = lines[0]
+    assert "💡" in header                       # 💡 없는 줄은 아예 후보가 아니다
+    assert header_re.search(header), (header, m.group(1))
+
+    # 머리말 다음 줄이 실제로 칩 문구로 뽑히는 모양이어야 한다
+    item = re.match(r"^>?\s*[-*]\s*(.+?)\s*$", lines[1])
+    assert item, lines[1]
+    assert 5 < len(item.group(1)) < 120
 
 
 def test_한_줄이_두_경로에_모두_걸려_있다():
@@ -315,3 +388,108 @@ def test_게이트가_SELF면_route_and_stream_이_돌아갈_문_청크를_방�
 
     chunks = [data for kind, data in events if kind == "chunk"]
     assert any("사내 데이터" in c for c in chunks)
+
+
+# ── F2: 사고 때의 레버 — 코드 수정·재배포 없이 끌 수 있어야 한다 (설계 §6) ──
+#    ⛔ 꺼졌을 때의 동작은 **도입 이전과 정확히 같다**: 곧바로 6지선다로 간다.
+
+def _disable_source_gate(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "source_gate_enabled", False)
+
+
+def test_게이트를_끄면_route_and_execute가_바로_재분류로_간다(monkeypatch):
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+    _disable_source_gate(monkeypatch)
+
+    flash = FakeFlash("SELF")      # 켜져 있었다면 SELF 로 direct 가 됐을 것
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: flash)
+    agent._keyword_classify_ex = lambda query: ("bigquery", False)
+
+    async def fake_classify(*a, **k):
+        return "notion"
+
+    agent._classify_with_llm = fake_classify
+
+    async def fake_notion(*a, **k):
+        return {"source": "notion", "answer": "sentinel"}
+
+    agent._handle_qdrant = fake_notion
+
+    result = asyncio.run(agent.route_and_execute(_SELF_LOOKING_QUERY))
+
+    assert result["source"] == "notion"
+    assert flash.calls == 0                 # 게이트 LLM 호출 자체가 없다
+    assert "사내 데이터" not in result["answer"]   # 돌아갈 문도 안 붙는다
+
+
+def test_게이트를_끄면_route_and_stream도_바로_재분류로_간다(monkeypatch):
+    """⛔ 한쪽만 끄면 그것도 경로에 따라 답이 갈린다."""
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+    _disable_source_gate(monkeypatch)
+
+    flash = FakeFlash("SELF")
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: flash)
+    monkeypatch.setattr("app.knowledge.wiki_search.search_with_pages", _no_wiki)
+    agent._keyword_classify_ex = lambda query: ("bigquery", False)
+
+    async def fake_classify(*a, **k):
+        return "notion"
+
+    agent._classify_with_llm = fake_classify
+
+    async def fake_qdrant(*a, **k):
+        return {"answer": "sentinel"}
+
+    agent._handle_qdrant = fake_qdrant
+
+    events = asyncio.run(_collect(agent.route_and_stream(_SELF_LOOKING_QUERY)))
+
+    assert ("source", "notion") in events
+    assert flash.calls == 0
+
+
+def test_끄는_설정이_두_경로에_모두_걸려_있다():
+    src = open("app/agents/orchestrator.py", encoding="utf-8").read()
+    assert src.count("source_gate_enabled") == 2
+    assert src.count("bare_rejection_clarify_enabled") == 2
+
+
+# ── F6: 👍 few-shot 예시를 두 경로가 **같은 시점**에 읽는다 ────────────────
+#    스트리밍이 재분류 **전에** 읽고 있었다. 게이트가 direct 로 뒤집은 요청은
+#    비스트리밍에서만 예시를 받았고, 프로덕션은 스트리밍이라 늘 지는 쪽이었다.
+
+def test_게이트가_direct로_뒤집어도_스트리밍이_few_shot_을_읽는다(monkeypatch):
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: FakeFlash("SELF"))
+    monkeypatch.setattr("app.knowledge.wiki_search.search_with_pages", _no_wiki)
+    monkeypatch.setattr(
+        "app.agents.skill_memory.load_skill_context",
+        lambda route, query: "SKILL_EXAMPLES" if route == "direct" else "",
+    )
+    agent._keyword_classify_ex = lambda query: ("bigquery", False)   # 처음엔 direct 가 아니다
+    agent._needs_web_search = lambda query: False
+    agent._build_direct_system_prompt = lambda: "SYS"
+    monkeypatch.setattr(orch_module, "get_llm_client", lambda model_type: object())
+
+    seen = {}
+
+    def fake_stream_direct(llm, query, messages=None, system_instruction=None, **k):
+        seen["system"] = system_instruction
+        yield "ok"
+
+    monkeypatch.setattr(orch_module, "_stream_direct_with_fallback", fake_stream_direct)
+
+    asyncio.run(_collect(agent.route_and_stream(_SELF_LOOKING_QUERY)))
+
+    blocks = [b["text"] for b in seen["system"]]
+    assert any("SKILL_EXAMPLES" in b for b in blocks), blocks
+
+
+def test_few_shot_은_재분류가_끝난_뒤에_읽는다():
+    """⛔ 자리가 곧 계약이다 — 앞으로 옮기면 위 테스트가 아니라 이 테스트가 먼저 말한다."""
+    src = open("app/agents/orchestrator.py", encoding="utf-8").read()
+    stream_at = src.index("_stream_skill_ctx = await asyncio.to_thread")
+    gate_at = src.index('logger.warning("source_gate_self", path="route_and_stream"')
+    assert gate_at < stream_at, "스트리밍 few-shot 로드가 재분류보다 앞에 있다"

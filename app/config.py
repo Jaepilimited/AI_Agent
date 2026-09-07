@@ -75,6 +75,21 @@ class Settings(BaseSettings):
     # 올릴 땐 반드시 다시 재고 올릴 것 (SDK 단독 측정은 앱 지연과 다르다).
     anthropic_effort: str = "medium"
 
+    # 라우터 2단계 — "사내 자료를 뒤져야 하는가" 예/아니오 게이트 (2026-09-07)
+    # 확신 없는 분류(실사용 22.6%)에만 도는 추가 LLM 호출이다. 껐을 때의 동작은
+    # **도입 이전과 정확히 같다** — 바로 6지선다(`_classify_with_llm`)로 간다.
+    # ⛔ 이것이 사고 시의 레버다. 이 게이트가 SELF 를 틀리면 사내 자료가 필요한
+    #    질문에 자료 없이 답한다 — 그때 코드 수정·재배포 없이 끌 수 있어야 한다.
+    # ⚠️ `.env` 는 이 프로젝트의 배포에서 **제외된다**. 끄려면 WAS(10.1.150.5) 의
+    #    `.env` 에 `SOURCE_GATE_ENABLED=false` 를 직접 넣고 `sudo systemctl restart
+    #    ai-craver` 로 재기동한다 (모델명이 `.env` 때문에 안 바뀌던 것과 같은 함정).
+    source_gate_enabled: bool = True
+    # 4단계 — 첫머리 부정 + 정보 없음("아니 ;;")일 때의 고정 되묻기.
+    # ⛔ 2단계와 **독립**이다. 한쪽을 끄려고 다른 쪽을 끄지 않아도 되게 따로 둔다.
+    #    끄면 그 발화도 평소처럼 라우팅된다. 같은 방식으로 `.env` 에
+    #    `BARE_REJECTION_CLARIFY_ENABLED=false` + 재기동.
+    bare_rejection_clarify_enabled: bool = True
+
     # Notion MCP (v3.0)
     notion_mcp_token: str = ""
     # 노션 쓰기 전용 인테그레이션 (읽기용 notion_mcp_token 과 분리한다 —

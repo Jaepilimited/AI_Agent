@@ -187,6 +187,14 @@ _DIRECT_PARTIAL_FAILURE = (
     "\n\n> ⚠️ 응답 생성이 일시적으로 중단되었습니다. **다시 시도**해 주세요."
 )
 
+# 2단계 게이트 한 번에 허용하는 시간. 실측 중앙값 1.38초(gemini-3.8-flash)이므로
+# 6초는 넉넉하다.
+# ⛔ 상한이 없으면 `_gemini_retry` 가 4회(백오프 0.5·1.5·4.0초)를 다 태우고,
+#    NEED 면 그 뒤에 `_classify_with_llm` 이 **같은 예산을 한 번 더** 태운다.
+#    둘 다 사용자가 첫 글자를 보기 전이다.
+# ⚠️ 시간이 다하면 다른 실패와 똑같이 **NEED** 로 떨어진다 (안전한 쪽 실패).
+_SOURCE_GATE_TIMEOUT_SECONDS = 6.0
+
 
 def _system_instruction_to_text(system_instruction) -> str:
     """Flatten Anthropic system blocks for the Gemini fallback."""
@@ -1169,11 +1177,16 @@ class OrchestratorAgent:
             # 부정만 하고 정보가 없으면 되묻는다 (실측 1,393건 중 2건).
             # ⛔ SELF 판정 전반에 걸지 마라 — "파이썬 코드 짜줘" 에 되물으면
             #    그 자체가 불편이다. `bare` 에서만 뜬다.
+            # ⚠️ 끌 수 있어야 한다 — 2단계 게이트와 **독립**이다 (설계 §6).
+            from app.config import get_settings as _get_settings
             from app.core.route_intent import clarify_message, rejection_kind
-            if rejection_kind(query) == "bare":
+            if (_get_settings().bare_rejection_clarify_enabled
+                    and rejection_kind(query) == "bare"):
                 _ask = clarify_message(_previous_route(conversation_context))
                 if _ask:
-                    logger.info("clarify_asked_bare_rejection", path="route_and_execute")
+                    # ⛔ INFO 로 남기지 마라 — 프로덕션은 앱 INFO 를 통째로 버린다
+                    #    (14일간 0건). 배포 후 발동 여부를 볼 수 있는 유일한 자리다.
+                    logger.warning("clarify_asked_bare_rejection", path="route_and_execute")
                     return {"source": "direct", "answer": _ask}
 
             # 식별번호는 검색할 것이 없다 — 같은 질문이 8명에게서 5~11초씩 걸렸다
@@ -1317,9 +1330,18 @@ class OrchestratorAgent:
             # 명백한 케이스(확신 분류·직접 잠금·시스템 태스크)만 키워드로 끝낸다.
             if not _confident and not is_system_task and not _is_direct_locked:
                 if len(query.strip()) <= 300:
+                    from app.config import get_settings as _get_settings
                     flash = get_flash_client()
                     # 2단계: **소스가 필요한가**를 먼저 묻는다 (예/아니오)
-                    if await self._needs_source(query, flash):
+                    # ⚠️ 꺼져 있으면 게이트를 통째로 건너뛴다 = 도입 이전 동작.
+                    if not _get_settings().source_gate_enabled:
+                        route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif await self._needs_source(query, flash):
+                        # ⛔ SELF 만 세면 분자만 있고 분모가 없다 — SELF 가 두 배로
+                        #    늘어난 것과 트래픽이 두 배가 된 것을 구분할 수 없다.
+                        logger.warning("source_gate_need", path="route_and_execute",
+                                       query=query[:80])
                         route = await self._classify_with_llm(
                             query, conversation_context, flash)
                     else:
@@ -1462,11 +1484,15 @@ class OrchestratorAgent:
                 return
 
             # ⚠️ 비스트리밍과 **같은 관문** — 한쪽만 달면 경로에 따라 답이 갈린다.
+            #    끄는 설정도 함께 본다 (한쪽만 끄면 그것도 경로에 따라 갈린다).
+            from app.config import get_settings as _get_settings
             from app.core.route_intent import clarify_message, rejection_kind
-            if rejection_kind(query) == "bare":
+            if (_get_settings().bare_rejection_clarify_enabled
+                    and rejection_kind(query) == "bare"):
                 _ask = clarify_message(_previous_route(conversation_context))
                 if _ask:
-                    logger.info("clarify_asked_bare_rejection", path="route_and_stream")
+                    # ⛔ INFO 는 프로덕션에서 버려진다 — 비스트리밍과 같은 레벨로 남긴다
+                    logger.warning("clarify_asked_bare_rejection", path="route_and_stream")
                     yield ("source", "direct")
                     yield ("done", _ask)
                     return
@@ -1694,23 +1720,22 @@ class OrchestratorAgent:
             except Exception as e:
                 logger.warning("wiki_lookup_failed", error=str(e)[:200])
 
-        # Skill memory: few-shot examples from 👍 feedback (direct route only)
-        _stream_skill_ctx = ""
-        if route == "direct":
-            try:
-                from app.agents.skill_memory import load_skill_context
-                _stream_skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
-            except Exception:
-                pass
-
         if not _single_route:
             # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
             _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
             # LLM 우선 하이브리드: 확신 없는 분류는 LLM 판정이 기본값 (비스트리밍과 동일)
             if not _confident and not is_system_task and not _is_direct_locked:
                 if len(query.strip()) <= 300:
+                    from app.config import get_settings as _get_settings
                     flash = get_flash_client()
-                    if await self._needs_source(query, flash):
+                    # ⚠️ 꺼져 있으면 게이트를 건너뛴다 = 도입 이전 동작 (비스트리밍과 동일)
+                    if not _get_settings().source_gate_enabled:
+                        new_route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif await self._needs_source(query, flash):
+                        # ⛔ 분모다 — SELF 만 세면 비율을 낼 수 없다
+                        logger.warning("source_gate_need", path="route_and_stream",
+                                       query=query[:80])
                         new_route = await self._classify_with_llm(
                             query, conversation_context, flash)
                     else:
@@ -1732,6 +1757,19 @@ class OrchestratorAgent:
                     if route != "direct":
                         route = "direct"
                         yield ("source", route)
+
+        # Skill memory: few-shot examples from 👍 feedback (direct route only)
+        # ⛔ **재분류가 끝난 뒤에** 읽는다. 앞에 두면 게이트가 direct 로 뒤집은
+        #    요청이 비스트리밍에서는 예시를 받고 스트리밍에서는 못 받는다 —
+        #    프로덕션은 스트리밍이라 늘 지는 쪽이었다. 비스트리밍(`_skill_ctx`)도
+        #    최종 route 로 읽는다. 한쪽만 고치면 경로에 따라 답이 갈린다.
+        _stream_skill_ctx = ""
+        if route == "direct":
+            try:
+                from app.agents.skill_memory import load_skill_context
+                _stream_skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
+            except Exception:
+                pass
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:
@@ -1972,10 +2010,14 @@ class OrchestratorAgent:
         """
         from app.core.route_intent import SOURCE_GATE_PROMPT, parse_gate
         try:
-            raw = await asyncio.to_thread(
-                llm.generate, f"{SOURCE_GATE_PROMPT}\n\n질문: {query}",
-                temperature=0.0)
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(
+                    llm.generate, f"{SOURCE_GATE_PROMPT}\n\n질문: {query}",
+                    temperature=0.0),
+                timeout=_SOURCE_GATE_TIMEOUT_SECONDS)
         except Exception as exc:                      # noqa: BLE001
+            # ⚠️ `asyncio.TimeoutError` 도 여기로 온다 — 다른 실패와 **같이** 다룬다
+            #    (NEED 로 떨어진다. 안전한 쪽 실패다).
             logger.warning("source_gate_failed", error_type=type(exc).__name__,
                            error=str(exc)[:200])
             return True
