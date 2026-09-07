@@ -13,6 +13,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-07-router-source-gate-design.md`
 
+> ⚠️ **Task 3 은 취소되었다** (착수 전 실측). 실행 순서는
+> **T1 → T2 → T4 → T5 → T6 → T7** 이다.
+
 ## Global Constraints
 
 - **스트리밍·비스트리밍 두 경로에 함께 걸어야 한다.** `route_and_execute` 와
@@ -273,7 +276,21 @@ git commit -m "feat(routing): 「사내 자료를 뒤져야 하나」 게이트 
 
 ---
 
-### Task 3: 부정하면 경로 상속을 끊는다
+### Task 3: ~~부정하면 경로 상속을 끊는다~~ — **취소됨 (YAGNI)**
+
+> ⛔ **이 태스크는 실행하지 않는다.** 착수 전 실측(2026-09-07): 실사용 60일에서
+> 뽑은 첫머리 부정 **15건 중 상속이 실제로 걸리는 것이 0건**이다. 그 발화들은
+> `_is_followup_utterance()` 가 False 라 애초에 상속되지 않는다.
+>
+> 스펙 §3.3 의 인과 서술(「김미이 님이 세 번 연속 받은 이유는 상속」)이 틀렸고
+> 스펙을 정정했다. 아래 테스트도 둘 다 결함이었다 — 하나는 이미 통과해 아무것도
+> 증명하지 않고, 하나는 거짓을 단정한다(`"막대표 말고 원형 그래프로"` 는 실제로
+> 상속되지 않는데 `notion` 을 기대).
+>
+> `rejection_kind()`(Task 1)는 **Task 4 가 쓰므로 그대로 만든다.**
+> 아래 원문은 기록으로 남긴다.
+
+<details><summary>취소된 원안</summary>
 
 김미이 님이 notion 을 세 번 연속 받은 원인. `_inherit_route_for_followup()` 이
 후속 발화에 직전 경로를 그대로 물려주는데, **부정하는 발화에도** 물려준다.
@@ -359,6 +376,8 @@ Expected: PASS (2,362 + 신규)
 git add app/agents/orchestrator.py tests/test_route_intent.py
 git commit -m "fix(routing): 직전 답변을 부정하면 경로 상속을 끊는다 — 붐따 #163"
 ```
+
+</details>
 
 ---
 
