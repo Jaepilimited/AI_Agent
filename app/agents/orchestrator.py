@@ -1322,8 +1322,8 @@ class OrchestratorAgent:
                         route = await self._classify_with_llm(
                             query, conversation_context, flash)
                     else:
-                        logger.info("source_gate_self", path="route_and_execute",
-                                    query=query[:80])
+                        logger.warning("source_gate_self", path="route_and_execute",
+                                       query=query[:80])
                         route = "direct"
             # Apply enabled_sources filter — redirect to direct if route is disabled
             # Exception: keyword-classified notion/cs/team routes bypass the default filter
@@ -1707,8 +1707,8 @@ class OrchestratorAgent:
                         new_route = await self._classify_with_llm(
                             query, conversation_context, flash)
                     else:
-                        logger.info("source_gate_self", path="route_and_stream",
-                                    query=query[:80])
+                        logger.warning("source_gate_self", path="route_and_stream",
+                                       query=query[:80])
                         new_route = "direct"
                     if new_route != route:
                         route = new_route
@@ -1964,7 +1964,8 @@ class OrchestratorAgent:
                 llm.generate, f"{SOURCE_GATE_PROMPT}\n\n질문: {query}",
                 temperature=0.0)
         except Exception as exc:                      # noqa: BLE001
-            logger.warning("source_gate_failed", error_type=type(exc).__name__)
+            logger.warning("source_gate_failed", error_type=type(exc).__name__,
+                           error=str(exc)[:200])
             return True
         return parse_gate(raw) == "NEED"
 
