@@ -535,6 +535,198 @@ def _shorten(text: str, limit: int) -> str:
     return head[:cut].rstrip(" ,·-*") + "…"
 
 
+#: 잔디에 싣는 저장 보고 한 건의 상한. 잔디 본문 전체 상한(9,000)보다 넉넉히 작다.
+_JANDI_ANSWER_LIMIT = 2500
+
+
+#: 잔디 막대의 칸 수. **모든 막대가 이 폭을 채운다** — 찬 칸과 빈 칸으로.
+#: ⛔ **빈 칸을 공백으로 두지 마라** (2026-09-07 잔디 실측). 처음엔 찬 칸만 그리고
+#:    줄 맨 앞에 세우면 시작점이 맞을 줄 알았는데, 실제 잔디 화면에서 **막대 왼쪽 끝이
+#:    줄마다 어긋났다** — 잔디는 본문을 고정폭으로도, 앞쪽 공백을 그대로도 그리지 않는다.
+#:    같은 유니코드 블록의 문자(U+2588·U+2591)는 폭이 서로 같으므로, 빈 칸까지 문자로
+#:    채우면 **글꼴이 무엇이든·정렬이 어떻든** 찬 칸의 경계가 같은 자리에서 비교된다.
+_BAR_WIDTH = 20
+_BAR_CHAR = "█"
+_BAR_EMPTY = "░"
+
+#: 합계 행. ⛔ **축척에서 빼야 한다** — 합계가 최댓값이 되면 나머지가 전부 한 칸이 되어
+#: 그림이 아무것도 말하지 않는다.
+_TOTAL_LABEL = re.compile(r"합\s*계|총\s*계|소\s*계|누\s*계|^전체$|total", re.I)
+
+#: 표에 적힌 자릿수 단위. ⛔ **반드시 환산한다** — `212.4억` 과 `4,860만` 을 적힌 그대로
+#: 세면 만 쪽이 더 긴 막대가 된다. 표의 숫자는 맞는데 그림만 뒤집히므로, 숫자보다 먼저
+#: 읽히는 그림이 조용히 거짓말을 한다 (통화 혼재 합계 사고와 같은 계열).
+_UNIT_SCALE = (("조", 1e12), ("억", 1e8), ("만", 1e4))
+
+
+def _cell_amount(raw):
+    """표 셀 → 막대를 그릴 수 있는 숫자. 못 그리면 None.
+
+    ⛔ **퍼센트는 그리지 않는다.** 비중과 증감률이 표에서 같은 모양이라, 섞이면
+       음수와 100% 초과가 함께 들어온다.
+    """
+    text = str(raw).strip().replace("**", "").replace(",", "").replace(" ", "")
+    if not text or "%" in text:
+        return None
+    scale = 1.0
+    for unit, mul in _UNIT_SCALE:
+        if unit in text:
+            scale = mul
+            text = text.replace(unit, "")
+            break
+    for noise in ("원", "개", "건", "ea", "EA"):
+        text = text.replace(noise, "")
+    if not re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text):
+        return None
+    return float(text) * scale
+
+
+def _barrable_column(header, rows):
+    """막대를 그릴 열을 고른다. 없으면 None — **안 그리는 쪽으로 기운다.**
+
+    막대는 틀려도 그럴듯해 보이고 숫자보다 먼저 읽힌다. 그래서 넷 중 하나라도
+    걸리면 그리지 않는다:
+
+    ⛔ **통화가 섞인 표** — USD 와 KRW 를 한 축에 세우면 거짓말이다
+       (실측 사고: USD+KRW+JPY 를 더해 "266.8억원" 이 나갔다)
+    ⛔ **음수가 있는 열** — 막대 길이로는 방향을 말할 수 없다
+    ⛔ **숫자가 아닌 셀이 섞인 열** — 빠진 칸이 0으로 보인다
+    ⚠️ **본문 3행 미만** — 두 줄짜리는 그림이 아니라 그냥 숫자 둘이다
+    """
+    body = [c for c in rows if c and not _TOTAL_LABEL.search(c[0])]
+    if len(body) < 3:
+        return None
+
+    width = max([len(header)] + [len(c) for c in rows])
+    for idx in range(width):
+        codes = {c[idx].strip() for c in rows
+                 if idx < len(c) and re.fullmatch(r"[A-Z]{3}", c[idx].strip())}
+        if len(codes) >= 2:
+            return None
+
+    for idx in range(1, width):
+        vals = [_cell_amount(c[idx]) if idx < len(c) else None for c in body]
+        if any(v is None or v < 0 for v in vals) or max(vals) <= 0:
+            continue
+        return idx
+    return None
+
+
+def _table_to_lines(header, rows):
+    """마크다운 표 → 사람이 읽는 줄. 잔디는 표를 그리지 않는다.
+
+    ⛔ 파이프째 실으면 `| SKU | 품목명 | …` 더미가 된다 (2026-08-27 실측).
+       첫 칸을 이름으로 세우고 나머지는 `머리말 값` 으로 붙인다.
+
+    ⚠️ **막대는 줄 맨 앞에 세우고, 빈 칸까지 문자로 채운다** (2026-09-07 잔디 실측).
+       처음엔 찬 칸만 그렸는데 실제 화면에서 **막대 왼쪽 끝이 줄마다 어긋났다** —
+       잔디는 앞쪽 공백을 그대로 그리지 않는다. 폭이 같은 블록 문자로 트랙을 채우면
+       글꼴·정렬과 무관하게 경계가 같은 자리에서 비교된다.
+    ⚠️ 그림으로 보내지 못하는 자리라서 글자로 그린다 — 잔디는 이미지를 URL 로만
+       받고 그 URL 은 잔디 쪽에서 열려야 하는데, 우리 앱은 내부 전용이다.
+       공개 자리에 올리면 매출 차트가 링크 하나로 새어 나간다.
+    """
+    bar_idx = _barrable_column(header, rows)
+    peak = 0.0
+    if bar_idx is not None:
+        peak = max((_cell_amount(c[bar_idx]) or 0.0) for c in rows
+                   if c and not _TOTAL_LABEL.search(c[0]) and bar_idx < len(c))
+
+    out = []
+    for cells in rows:
+        if not cells:
+            continue
+        # ⚠️ 표 셀에도 `**` 가 있다 (합계 행이 `**합계**` 로 나온다) — 여기서도 걷는다
+        label = cells[0].strip().replace("**", "")
+        rest = []
+        for idx, cell in enumerate(cells[1:], start=1):
+            val = cell.strip().replace("**", "")
+            if not val:
+                continue
+            head = header[idx].strip() if idx < len(header) else ""
+            rest.append((head + " " + val).strip())
+
+        bar = ""
+        if (bar_idx is not None and peak > 0 and bar_idx < len(cells)
+                and not _TOTAL_LABEL.search(label)):
+            value = _cell_amount(cells[bar_idx])
+            if value is not None and value > 0:
+                # ⚠️ 0칸으로 사라지지 않게 최소 한 칸은 남긴다 — 작아서 안 보이는
+                #    것과 값이 없는 것은 다르다
+                filled = max(1, int(round(value / peak * _BAR_WIDTH)))
+                bar = (_BAR_CHAR * filled) + (_BAR_EMPTY * (_BAR_WIDTH - filled))
+
+        head_mark = bar + " " if bar else "· "
+        out.append("      " + head_mark + label + (" — " + " · ".join(rest) if rest else ""))
+    return out
+
+
+def full_answer_for_jandi(text: str, limit: int = _JANDI_ANSWER_LIMIT) -> str:
+    """저장한 보고의 **전문**을 잔디에서 읽히는 평문으로 바꾼다 (2026-09-07 요청).
+
+    사용자 제보: *"잔디에서 내가 저장한 보고 전체를 보고싶은데 잘려서 나와"*.
+    실측: 전문 1,091자가 요약 123자로 줄어 **표가 통째로 사라졌다.**
+
+    ⛔ **`<details>실행된 쿼리</details>` 는 반드시 뺀다.** 그 안에는 내부 테이블
+       경로(`프로젝트.데이터셋.테이블`)가 들어 있다. 앱 화면에서는 접힌 근거지만
+       잔디에서는 **평문으로 펼쳐져 채널에 그대로 노출된다** (내부 경로 마스킹 규칙).
+    ⛔ `이런 것도 물어보세요` 도 뺀다 — 앱에서는 누르는 칩이고 잔디에서는 그냥 글자다.
+    ⚠️ 표는 파이프째 싣지 않고 줄로 편다 (`_table_to_lines`).
+    ⚠️ 그래도 길면 **자른 사실을 적는다** — 조용히 자르는 것이 원래 불만이었다.
+    ⚠️ 이모지로 정규식을 만들지 마라 — raw 문자열 안의 유니코드 이스케이프는
+       리터럴 백슬래시가 되어 영영 매치하지 않는다. **문구**로 찾는다.
+    """
+    raw = str(text or "")
+    if not raw.strip():
+        return ""
+
+    raw = re.sub(r"<details>.*?</details>", "", raw, flags=re.S)
+    # ⛔ 차트 설정 JSON 을 그대로 실으면 수백 자가 글자 더미로 나간다 — 잔디는
+    #    차트를 그리지 않는다 (실측: 전사 매출 답변에서 chart-config 가 통째로 실렸다).
+    #    코드펜스 전부와, 그 앞에 홀로 남는 `시각화` 제목을 함께 걷는다.
+    raw = re.sub(r"```.*?```", "", raw, flags=re.S)
+    raw = re.sub(r"(?m)^#{1,6}\s*시각화\s*$", "", raw)
+    raw = re.sub(r"(?m)^>.*이런 것도 물어보세요.*(?:\n>.*)*", "", raw)
+    raw = re.sub(r"(?m)^\*(.+)\*$", r"\1", raw)
+
+    lines_in = raw.splitlines()
+    out = []
+    i = 0
+    while i < len(lines_in):
+        stripped = lines_in[i].strip()
+
+        if (stripped.startswith("|") and i + 1 < len(lines_in)
+                and set(lines_in[i + 1].replace("|", "").replace(" ", "")) <= set("-:")):
+            header = stripped.strip("|").split("|")
+            i += 2
+            rows = []
+            while i < len(lines_in) and lines_in[i].strip().startswith("|"):
+                rows.append(lines_in[i].strip().strip("|").split("|"))
+                i += 1
+            out += _table_to_lines(header, rows)
+            continue
+
+        if not stripped or stripped in ("---", "***"):
+            i += 1
+            continue
+        stripped = re.sub(r"^#{1,6}\s*", "", stripped)
+        stripped = stripped.replace("**", "").replace("`", "")
+        stripped = re.sub(r"^[*-]\s+", "· ", stripped)
+        stripped = re.sub(r"^>\s*", "", stripped)
+        if stripped:
+            out.append("      " + stripped)
+        i += 1
+
+    # ⛔ `.strip()` 을 쓰지 마라 — **본문 첫 줄의 들여쓰기까지 걷는다.**
+    #    표가 답변 맨 앞에 오면 첫 막대만 왼쪽으로 튀어나가 정렬이 깨진다
+    #    (2026-09-07 회귀로 발견). 빈 줄만 걷는다.
+    body = "\n".join(out).strip("\n")
+    if len(body) > limit:
+        body = (body[:limit].rstrip()
+                + "\n      … (전문 " + str(len(body)) + "자 중 앞부분만 실었습니다)")
+    return body
+
+
 def summarize_answer(text: str, limit: int = 300) -> str:
     """표로 답한 결과를 사람이 읽을 한 줄로 줄인다.
 
@@ -618,7 +810,12 @@ def _saved_rows(rows: list[dict[str, Any]] | None) -> list[dict[str, str]]:
             "question": question,
             # ⚠️ 브리핑은 훑어보는 문서다. 답변 전문을 싣지 않아야 매일 읽을 길이를 지킨다.
             #    표는 잘라 봐야 읽히지 않으므로 앞 문장 + 행수로 줄인다 (`summarize_answer`).
+            # ⚠️ 화면 카드는 훑어보는 자리라 요약을 쓴다 (긴 답을 그대로 부으면
+            #    첫 화면이 스크롤 지옥이 된다 — 2026-08-26 정리와 같은 이유).
             "answer": summarize_answer(row.get("last_answer", ""), 300),
+            # ⛔ 잔디는 **전문**을 원한다 (2026-09-07 제보). 요약만 두면 표가
+            #    통째로 사라진다 (실측: 1,091자 → 123자).
+            "answer_full": full_answer_for_jandi(row.get("last_answer", "")),
             "last_run_at": ran_at_text,
             "link": str(row.get("link") or ""),
         })
@@ -825,8 +1022,12 @@ def render_markdown(
         lines += ["", f"📌 내가 저장한 보고 · {len(saved)}건"]
         for row in saved:
             lines.append(f"  · {row.get('question', '')}")
-            if row.get("answer"):
-                lines.append(f"      {row['answer']}")
+            # ⛔ 잔디에는 **전문**을 싣는다 — 요약만 실어 표가 사라진다는
+            #    제보를 받았다 (2026-09-07). 화면 카드는 계속 `answer` 를 쓴다.
+            detail = row.get("answer_full") or row.get("answer")
+            if detail:
+                lines.append(detail if detail.startswith("      ")
+                             else f"      {detail}")
             # ⛔ ISO 원문을 그대로 싣지 마라 — `2026-08-28T09:00:06` 은 읽는 값이 아니다.
             ran = _run_label(row.get("last_run_at"))
             if ran:
