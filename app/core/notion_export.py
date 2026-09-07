@@ -65,6 +65,54 @@ _SECTION_EMOJI = ("📅", "✉️", "✅", "⏰", "📊", "💱", "📌")
 _SUN = "☀️"
 
 
+# Task 5: 마크다운 표 → 노션 표 블록
+_SEPARATOR = re.compile(r"^\|?[\s:\-|]+\|?$")
+
+
+def _cells(line: str) -> list[str]:
+    """표 줄을 파싱하여 셀 목록으로 돌린다."""
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _is_table_start(lines: list[str], index: int) -> bool:
+    """머리행 **다음 줄이 구분선**일 때만 표로 본다."""
+    if index + 1 >= len(lines):
+        return False
+    head, sep = lines[index].strip(), lines[index + 1].strip()
+    if not head.startswith("|") or not sep.startswith("|"):
+        return False
+    return bool(_SEPARATOR.match(sep)) and "-" in sep
+
+
+def _table_block(lines: list[str], index: int) -> tuple[dict, int]:
+    """마크다운 표를 파싱하여 노션 표 블록으로 만든다."""
+    header = _cells(lines[index])
+    width = len(header)
+    rows = [header]
+    cursor = index + 2                       # 머리행 + 구분선을 건너뛴다
+    while cursor < len(lines) and lines[cursor].strip().startswith("|"):
+        if _SEPARATOR.match(lines[cursor].strip()):
+            cursor += 1
+            continue
+        rows.append(_cells(lines[cursor]))
+        cursor += 1
+
+    children = []
+    for row in rows[:MAX_BLOCKS_PER_REQUEST]:
+        # ⚠️ 셀 수가 table_width 와 다르면 400 이 난다.
+        cells = (row + [""] * width)[:width]
+        children.append({
+            "object": "block", "type": "table_row",
+            "table_row": {"cells": [rich_text(cell) or [] for cell in cells]},
+        })
+    block = {
+        "object": "block", "type": "table",
+        "table": {"table_width": width, "has_column_header": True,
+                  "has_row_header": False, "children": children},
+    }
+    return block, cursor
+
+
 def rich_text(text: str) -> list[dict]:
     """⚠️ 한 조각이 2,000자를 넘으면 400 이 난다 — 넘기지 말고 쪼갠다."""
     body = text or ""
@@ -83,7 +131,7 @@ def _block(kind: str, text: str) -> dict:
 def markdown_to_blocks(text: str) -> list[dict]:
     """마크다운(과 브리핑 평문)을 노션 블록 목록으로 만든다.
 
-    ⚠️ 표는 `_table_blocks()` 가 맡는다 (Task 5).
+    ⚠️ 표는 `_table_block()` 가 맡는다 (Task 5).
     """
     blocks: list[dict] = []
     lines = (text or "").split("\n")
@@ -109,6 +157,11 @@ def markdown_to_blocks(text: str) -> list[dict]:
                 "code": {"language": _notion_language(language),
                          "rich_text": rich_text("\n".join(body))},
             })
+            continue
+
+        if stripped.startswith("|") and _is_table_start(lines, index):
+            table, index = _table_block(lines, index)
+            blocks.append(table)
             continue
 
         index += 1

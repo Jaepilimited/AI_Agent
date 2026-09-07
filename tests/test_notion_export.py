@@ -172,3 +172,43 @@ def test_chunk_blocks_respects_the_100_limit():
 def test_blank_lines_do_not_become_blocks():
     assert nx.markdown_to_blocks("첫 줄\n\n\n둘째 줄\n") == nx.markdown_to_blocks(
         "첫 줄\n둘째 줄\n")
+
+
+# Task 5: 마크다운 표를 노션 표 블록으로
+_TABLE_MD = (
+    "| 국가 | 매출 |\n"
+    "|---|---|\n"
+    "| 일본 | 55.1억 |\n"
+    "| 미국 | 32.0억 |\n"
+)
+
+
+def test_table_becomes_a_notion_table_block():
+    """⛔ 표가 코드블록으로 들어가면 노션에서 정렬도 복사도 안 되는 글자 더미다."""
+    blocks = nx.markdown_to_blocks(_TABLE_MD)
+    assert _types(blocks) == ["table"]
+    table = blocks[0]["table"]
+    assert table["table_width"] == 2
+    assert table["has_column_header"] is True
+    rows = table["children"]
+    assert len(rows) == 3                      # 머리행 + 본문 2행
+    assert rows[0]["table_row"]["cells"][0][0]["text"]["content"] == "국가"
+    assert rows[2]["table_row"]["cells"][1][0]["text"]["content"] == "32.0억"
+
+
+def test_table_rows_are_padded_to_the_declared_width():
+    """⚠️ 셀 수가 table_width 와 다르면 400 이 난다 — 채우거나 자른다."""
+    blocks = nx.markdown_to_blocks(
+        "| a | b | c |\n|---|---|---|\n| 1 |\n| 1 | 2 | 3 | 4 |\n")
+    rows = blocks[0]["table"]["children"]
+    assert all(len(r["table_row"]["cells"]) == 3 for r in rows)
+
+
+def test_text_around_a_table_is_kept():
+    blocks = nx.markdown_to_blocks("앞 문단\n" + _TABLE_MD + "뒤 문단\n")
+    assert _types(blocks) == ["paragraph", "table", "paragraph"]
+
+
+def test_separator_line_alone_is_not_a_table():
+    """구분선처럼 생긴 줄 하나로 표를 만들지 않는다."""
+    assert _types(nx.markdown_to_blocks("|---|\n")) == ["paragraph"]
