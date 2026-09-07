@@ -289,3 +289,82 @@ def test_dropped_words_are_disclosed_in_the_answer_body():
     text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
                                  "dropped": ["어워드에서"]})
     assert "어워드에서" in text
+
+
+# tests/test_awards.py 에 이어서 — fix round 1
+# Finding 1 (Critical): 일반명사가 _word_exists 를 통과해 정답 10행을 1행으로 줄인다.
+# 실측: "화해 뷰티 어워드에서 1위 한 우리 제품 알려줘" 에서 `제품` 은 206행 중
+# 6행에만("신제품" 안에) 있어 데이터 확인은 통과하지만, 필터로 쓰면 화해 rank1
+# 10행 중 9행이 사라진다. 데이터 확인 전에 일반명사를 먼저 뗀다.
+
+def test_a_generic_noun_is_not_used_as_a_filter_even_though_the_data_contains_it(monkeypatch):
+    """`제품` 은 '신제품' 안에 있어 _word_exists 를 통과하지만 필터로 쓰면 안 된다."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: True)  # 데이터엔 다 있다고 가정
+    captured = {}
+
+    def fake_fetch_all(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [ROW]
+
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    result = awards.search("화해 제품")
+
+    assert "제품" in result["dropped"]
+    assert not any("%제품%" in str(p) for p in captured["params"])
+
+
+def test_meaningful_category_words_are_still_used_as_filters(monkeypatch):
+    """`수상`·`랭킹` 은 `구분` 을 고르는 뜻 있는 낱말이라 빼면 안 된다."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    captured = {}
+
+    def fake_fetch_all(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [ROW]
+
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    result = awards.search("수상 랭킹")
+
+    assert result["dropped"] == []
+    assert any("%수상%" in str(p) for p in captured["params"])
+    assert any("%랭킹%" in str(p) for p in captured["params"])
+
+
+def test_generic_nouns_are_never_checked_against_the_data(monkeypatch):
+    """데이터 확인(_word_exists) 이전에 뗀다 — 통과 여부와 무관하게 무조건 뺀다."""
+    checked = []
+    monkeypatch.setattr(awards, "_word_exists", lambda w: checked.append(w) or True)
+    monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [ROW])
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "-"})
+
+    awards.search("브랜드 화해")
+
+    assert "브랜드" not in checked
+    assert "화해" in checked
+
+
+# Finding 2 (Minor): rank_filter 가 걸린 사실도 dropped 처럼 답변에 공시한다.
+
+def test_the_answer_discloses_a_rank_filter_when_one_was_applied():
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
+                                 "rank_filter": 1})
+    assert "1위" in text and "좁혔습니다" in text
+
+
+def test_the_answer_says_nothing_about_rank_when_no_rank_filter_was_applied():
+    """매번 뜨는 안내는 곧 아무도 안 읽는다 — 필터가 없으면 문구도 없다."""
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
+                                 "rank_filter": None})
+    assert "좁혔습니다" not in text

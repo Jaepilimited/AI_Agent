@@ -264,6 +264,20 @@ _SEARCH_COLS = ("title", "product", "organizer", "country", "detail", "brand", "
 # 표기가 갈려, 문자열 AND 로는 화해 84행 중 정답 10행 중 1행만 걸린다 (실측).
 _RANK_TOKEN = re.compile(r"(\d+)\s*위")
 
+# ⛔ 데이터에는 있지만 필터로 쓰면 답을 망가뜨리는 일반 명사 (2026-09-07 controller
+#    ruling — 실측 사고).
+#    `_word_exists` 는 "이 낱말이 든 행이 하나라도 있는가" 만 본다. `제품` 은
+#    206행 중 6행에만("신제품" 안에) 들어 있어서 그 검사를 **통과한다** — 그런데
+#    AND 필터로 쓰면 화해 1위 10행 중 9행을 날린다("화해 뷰티 어워드에서 1위 한
+#    우리 제품 알려줘" → 정답 10행이 1행으로 줄었다). OP 재고의 `usable_words` 가
+#    막던 것과 같은 함정("유통기한 임박한 제품" 이 품목명에 '제품' 든 3건만 찾음).
+#    ⚠️ **`_STOP`(질문 형태 낱말, 예: OP 재고의 "얼마나"·"남았어") 과는 목적이
+#    다르다.** `_STOP` 류는 "질문투라 애초에 검색어가 아니다" 이고, 이 목록은
+#    "데이터에 실제로 있지만(다른 낱말 **안에** 우연히 끼어) 필터로 쓰면 위험하다"
+#    는 뜻이라 `_word_exists` 검사 **전에** 뗀다 — 검사 결과와 무관하게 무조건 뺀다.
+#    ⛔ `수상`·`랭킹` 은 넣지 마라 — 그건 `구분` 을 고르는 뜻 있는 낱말이다.
+_GENERIC_NOUNS = frozenset({"제품", "상품", "브랜드", "회사", "자사"})
+
 
 def _extract_rank_filter(term: str) -> "tuple[Optional[int], str]":
     """`N위` 를 뽑아 숫자 필터로 돌려주고, 그 토큰은 텍스트 검색 대상에서 뗀다."""
@@ -289,9 +303,13 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
     """낱말을 AND 로 걸되, 데이터에 없는 낱말은 빼고 건다.
 
     ⛔ 전부 AND 로 걸면 "화해 뷰티 어워드에서 1위 한 제품" 같은 흔한 말투가
-       `어워드에서`·`1위` 때문에 0건이 된다 (실측). 대응은 둘:
+       `어워드에서`·`1위` 때문에 0건이 된다 (실측). 대응은 셋:
        1. `N위` 는 `rank_value` 숫자 필터로 뺀다 (`_extract_rank_filter`).
-       2. 남은 낱말은 데이터에 실제로 있는 것만 남긴다 (`_word_exists`).
+       2. **일반 명사**(`_GENERIC_NOUNS`)는 데이터 확인 없이 먼저 뗀다 — 다른
+          낱말 안에 우연히 끼어 있어 `_word_exists` 를 통과해 버리기 때문이다
+          (`제품` 이 6/206행에서 "신제품" 안에 있어 필터로 쓰면 정답의 90%가 날아간
+          실측 사고, 2026-09-07). "화해"·"뷰티" 처럼 남은 진짜 검색어만 거른다.
+       3. 나머지 낱말은 데이터에 실제로 있는 것만 남긴다 (`_word_exists`).
        쓸 낱말이 하나도 안 남고 순위 필터도 없으면 조건 없이(=기본 목록,
        최근·상위 순) 돌려준다 — 빈 결과보다 낫다.
     """
@@ -301,7 +319,12 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
     kept: List[str] = []
     dropped: List[str] = []
     for w in words[:8]:
-        (kept if _word_exists(w) else dropped).append(w)
+        if w in _GENERIC_NOUNS:
+            dropped.append(w)
+        elif _word_exists(w):
+            kept.append(w)
+        else:
+            dropped.append(w)
 
     where = "1=1"
     params: List[Any] = []
@@ -349,6 +372,11 @@ def format_answer(result: Dict[str, Any]) -> str:
             "⚠️ 위 표기는 **시트에 적힌 원문**입니다. 실제 사용 가부는 담당자 확인이 필요합니다."]
     if notes:
         out += ["", "조건:"] + notes
+    # ⛔ 조용히 좁히지 마라 — rank_value 필터가 걸린 사실도 dropped 만큼 공시한다.
+    #    없으면(None) 아무 문구도 만들지 않는다 — 매번 뜨는 안내는 곧 아무도 안 읽는다.
+    rank_filter = result.get("rank_filter")
+    if rank_filter is not None:
+        out.append(f"\n순위 {rank_filter}위로 좁혔습니다.")
     # ⛔ 안 쓴 말로 찾은 결과를 그대로 주면 사용자가 그 조건까지 맞는 줄 읽는다.
     dropped = result.get("dropped") or []
     if dropped:
