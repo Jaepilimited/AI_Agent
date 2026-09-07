@@ -103,3 +103,72 @@ def test_clean_keeps_sql_fence_that_is_not_a_query_block():
 def test_clean_drops_followup_chips():
     text = "본문입니다.\n\n<!-- followup: [\"다음 질문\"] -->\n"
     assert "followup" not in nx.clean_for_notion(text)
+
+
+# Task 4: markdown_to_blocks
+def _types(blocks):
+    return [b["type"] for b in blocks]
+
+
+def _plain(block):
+    key = block["type"]
+    return "".join(r["text"]["content"] for r in block[key]["rich_text"])
+
+
+def test_markdown_maps_headings_lists_and_quote():
+    blocks = nx.markdown_to_blocks(
+        "# 제목\n## 소제목\n본문 문단\n- 첫째\n- 둘째\n1. 하나\n> 인용\n"
+    )
+    assert _types(blocks) == [
+        "heading_1", "heading_2", "paragraph",
+        "bulleted_list_item", "bulleted_list_item",
+        "numbered_list_item", "quote",
+    ]
+    assert _plain(blocks[0]) == "제목"
+    assert _plain(blocks[3]) == "첫째"
+
+
+def test_markdown_keeps_code_fence_as_code_block():
+    blocks = nx.markdown_to_blocks("```python\nprint(1)\nprint(2)\n```\n")
+    assert _types(blocks) == ["code"]
+    assert "print(1)\nprint(2)" == _plain(blocks[0])
+
+
+def test_briefing_plaintext_becomes_headings_and_bullets():
+    """`render_markdown()` 산출물은 이름과 달리 **평문**이다.
+
+    ⛔ 노션용 렌더러를 따로 만들면 사본이 갈린다 — 변환기가 흡수한다.
+    """
+    blocks = nx.markdown_to_blocks(
+        "☀️ 오늘의 출근 브리핑 (2026-09-07 월요일)\n"
+        "\n"
+        "📅 오늘의 일정 · 2건\n"
+        "  10:00 | 주간 회의\n"
+        "      장소 3층\n"
+    )
+    assert _types(blocks) == [
+        "heading_2", "heading_3", "bulleted_list_item", "bulleted_list_item",
+    ]
+    assert _plain(blocks[1]) == "📅 오늘의 일정 · 2건"
+
+
+def test_rich_text_splits_at_2000_chars():
+    parts = nx.rich_text("가" * 4500)
+    assert [len(p["text"]["content"]) for p in parts] == [2000, 2000, 500]
+
+
+def test_long_paragraph_stays_one_block_with_split_rich_text():
+    blocks = nx.markdown_to_blocks("나" * 3000)
+    assert len(blocks) == 1
+    assert len(blocks[0]["paragraph"]["rich_text"]) == 2
+
+
+def test_chunk_blocks_respects_the_100_limit():
+    blocks = nx.markdown_to_blocks("\n".join(f"- 줄 {i}" for i in range(250)))
+    chunks = nx.chunk_blocks(blocks)
+    assert [len(c) for c in chunks] == [100, 100, 50]
+
+
+def test_blank_lines_do_not_become_blocks():
+    assert nx.markdown_to_blocks("첫 줄\n\n\n둘째 줄\n") == nx.markdown_to_blocks(
+        "첫 줄\n둘째 줄\n")

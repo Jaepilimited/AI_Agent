@@ -59,6 +59,100 @@ def clean_for_notion(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", out).strip("\n")
 
 
+# Task 4: 마크다운 → 노션 블록
+#: 브리핑 평문의 절 머리말. 이 글자로 시작하는 줄은 소제목으로 올린다.
+_SECTION_EMOJI = ("📅", "✉️", "✅", "⏰", "📊", "💱", "📌")
+_SUN = "☀️"
+
+
+def rich_text(text: str) -> list[dict]:
+    """⚠️ 한 조각이 2,000자를 넘으면 400 이 난다 — 넘기지 말고 쪼갠다."""
+    body = text or ""
+    if not body:
+        return []
+    return [
+        {"type": "text", "text": {"content": body[i:i + MAX_TEXT_CHARS]}}
+        for i in range(0, len(body), MAX_TEXT_CHARS)
+    ]
+
+
+def _block(kind: str, text: str) -> dict:
+    return {"object": "block", "type": kind, kind: {"rich_text": rich_text(text)}}
+
+
+def markdown_to_blocks(text: str) -> list[dict]:
+    """마크다운(과 브리핑 평문)을 노션 블록 목록으로 만든다.
+
+    ⚠️ 표는 `_table_blocks()` 가 맡는다 (Task 5).
+    """
+    blocks: list[dict] = []
+    lines = (text or "").split("\n")
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+
+        if not stripped:
+            index += 1
+            continue
+
+        if stripped.startswith("```"):
+            language = stripped[3:].strip() or "plain text"
+            body: list[str] = []
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("```"):
+                body.append(lines[index])
+                index += 1
+            index += 1
+            blocks.append({
+                "object": "block", "type": "code",
+                "code": {"language": _notion_language(language),
+                         "rich_text": rich_text("\n".join(body))},
+            })
+            continue
+
+        index += 1
+        if stripped.startswith("### "):
+            blocks.append(_block("heading_3", stripped[4:].strip()))
+        elif stripped.startswith("## "):
+            blocks.append(_block("heading_2", stripped[3:].strip()))
+        elif stripped.startswith("# "):
+            blocks.append(_block("heading_1", stripped[2:].strip()))
+        elif stripped.startswith("> "):
+            blocks.append(_block("quote", stripped[2:].strip()))
+        elif stripped[:2] in ("- ", "* "):
+            blocks.append(_block("bulleted_list_item", stripped[2:].strip()))
+        elif re.match(r"^\d+\.\s", stripped):
+            blocks.append(_block("numbered_list_item",
+                                 re.sub(r"^\d+\.\s*", "", stripped)))
+        elif stripped.startswith(_SUN):
+            blocks.append(_block("heading_2", stripped))
+        elif stripped.startswith(_SECTION_EMOJI):
+            # 브리핑 평문의 절 머리말 — 소제목으로 올려야 하루가 위에서 아래로 읽힌다
+            blocks.append(_block("heading_3", stripped))
+        elif line.startswith("  "):
+            # 브리핑 평문은 들여쓰기로 항목을 나타낸다
+            blocks.append(_block("bulleted_list_item", stripped))
+        else:
+            blocks.append(_block("paragraph", stripped))
+    return blocks
+
+
+#: 노션 code 블록이 받는 언어 이름은 정해져 있다. 모르는 것은 통째로 거절당한다.
+_LANGUAGES = {"python", "sql", "javascript", "typescript", "json", "bash",
+              "shell", "html", "css", "markdown", "yaml", "java", "go"}
+
+
+def _notion_language(name: str) -> str:
+    lowered = (name or "").strip().lower()
+    return lowered if lowered in _LANGUAGES else "plain text"
+
+
+def chunk_blocks(blocks: list[dict],
+                 size: int = MAX_BLOCKS_PER_REQUEST) -> list[list[dict]]:
+    return [blocks[i:i + size] for i in range(0, len(blocks), size)]
+
+
 def parse_page_url(url: str | None) -> str | None:
     """노션 URL(또는 맨 id)에서 32자 id 를 뽑아 UUID 형식으로 돌려준다.
 
