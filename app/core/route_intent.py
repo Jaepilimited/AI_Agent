@@ -74,3 +74,28 @@ def parse_gate(raw) -> str:
     up = str(raw or "").upper()
     has_self, has_need = "SELF" in up, "NEED" in up
     return "SELF" if (has_self and not has_need) else "NEED"
+
+
+# 사람이 읽는 경로 이름. ⛔ 내부 경로명("bigquery")을 그대로 보여주지 않는다
+_ROUTE_LABEL = {
+    "bigquery": "사내 데이터",
+    "notion": "사내 문서",
+    "cs": "제품 Q&A",
+    "gws": "내 메일·드라이브·캘린더",
+    "multi": "복합 분석",
+    "direct": "일반 답변",
+}
+
+
+def clarify_message(prev_route) -> str:
+    """부정만 하고 정보가 없을 때 되묻는 **고정 문구**.
+
+    ⛔ LLM 을 부르지 않는다 (보증은 코드다).
+    ⛔ 직전에 무엇을 했는지 **밝힌 뒤** 묻는다. 그냥 "무엇을 원하세요?" 라고만
+       하면 사용자는 무엇을 고쳐 말해야 할지 모른다.
+    """
+    label = _ROUTE_LABEL.get(str(prev_route or ""), "")
+    if not label:
+        return ""
+    return (f"방금은 **{label}** 에서 찾아 답했습니다. "
+            f"어떤 걸 원하셨는지 한 줄만 더 알려주시겠어요?")

@@ -88,3 +88,37 @@ def test_경계_4자까지는_정보가_없는_것으로_본다():
     """
     assert rejection_kind("아니 가나다라") == "bare"        # 남는 글자 4
     assert rejection_kind("아니 가나다라마") == "informative"  # 남는 글자 5
+
+
+from app.core.route_intent import clarify_message
+
+
+def test_되묻는_문장은_직전에_무엇을_했는지_밝힌다():
+    """무엇을 고쳐 말해야 할지 알려면 직전 경로를 알아야 한다."""
+    msg = clarify_message("notion")
+    assert "사내 문서" in msg
+    assert "?" in msg or "까요" in msg
+
+
+def test_직전_경로를_모르면_되묻지_않는다():
+    """고칠 대상이 없다 — 그냥 정상 라우팅한다."""
+    assert clarify_message("") == ""
+    assert clarify_message(None) == ""
+
+
+@pytest.mark.parametrize("route,label", [
+    ("bigquery", "사내 데이터"),
+    ("notion", "사내 문서"),
+    ("cs", "제품 Q&A"),
+    ("gws", "메일"),
+])
+def test_경로마다_사람이_읽는_이름이_있다(route, label):
+    assert label in clarify_message(route)
+
+
+def test_되묻기가_두_경로에_모두_걸려_있다():
+    """⛔ 한쪽만 달면 스트리밍이냐에 따라 답이 갈린다 (이 저장소의 단골 사고)."""
+    src = open("app/agents/orchestrator.py", encoding="utf-8").read()
+    assert src.count("clarify_asked_bare_rejection") == 2, "두 경로에 걸려야 한다"
+    assert 'path="route_and_execute"' in src
+    assert 'path="route_and_stream"' in src

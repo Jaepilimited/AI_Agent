@@ -1165,6 +1165,16 @@ class OrchestratorAgent:
                 logger.info("org_structure_answered", path="route_and_execute", query=query[:100])
                 return {"source": "direct", "answer": _org_answer}
 
+            # 부정만 하고 정보가 없으면 되묻는다 (실측 1,393건 중 2건).
+            # ⛔ SELF 판정 전반에 걸지 마라 — "파이썬 코드 짜줘" 에 되물으면
+            #    그 자체가 불편이다. `bare` 에서만 뜬다.
+            from app.core.route_intent import clarify_message, rejection_kind
+            if rejection_kind(query) == "bare":
+                _ask = clarify_message(_previous_route(conversation_context))
+                if _ask:
+                    logger.info("clarify_asked_bare_rejection", path="route_and_execute")
+                    return {"source": "direct", "answer": _ask}
+
             # 식별번호는 검색할 것이 없다 — 같은 질문이 8명에게서 5~11초씩 걸렸다
             # (붐따 #154). 결정적으로 답하는 것은 0초다.
             from app.core.company_facts import answer as _company_answer
@@ -1436,6 +1446,16 @@ class OrchestratorAgent:
                 yield ("source", "direct")
                 yield ("done", _org_answer)
                 return
+
+            # ⚠️ 비스트리밍과 **같은 관문** — 한쪽만 달면 경로에 따라 답이 갈린다.
+            from app.core.route_intent import clarify_message, rejection_kind
+            if rejection_kind(query) == "bare":
+                _ask = clarify_message(_previous_route(conversation_context))
+                if _ask:
+                    logger.info("clarify_asked_bare_rejection", path="route_and_stream")
+                    yield ("source", "direct")
+                    yield ("done", _ask)
+                    return
 
             # 비스트리밍과 같은 관문 — 한쪽만 달면 경로에 따라 답이 갈린다.
             from app.core.company_facts import answer as _company_answer
