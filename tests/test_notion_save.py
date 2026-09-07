@@ -212,3 +212,32 @@ def test_handle_tells_the_user_when_the_feature_is_off(monkeypatch):
         ("user", "매출은?"), ("assistant", "55.1억"),
         ("user", "이 답변 노션에 넣어줘")), 7)
     assert "관리자" in answer
+
+
+def test_gate_is_wired_into_both_orchestrator_paths():
+    """⛔ 한쪽만 달면 경로에 따라 답이 갈린다.
+
+    채팅은 **스트리밍**으로 나간다 — `answer_check` 를 만들어 놓고 비스트리밍에만
+    배선해 실트래픽에서 한 번도 돌지 않았던 사고가 있었다.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "agents" / "orchestrator.py").read_text(encoding="utf-8")
+    body = source.split("async def route_and_execute", 1)[1]
+    non_stream, stream = body.split("async def route_and_stream", 1)
+    assert "notion_save" in non_stream, "비스트리밍 경로에 관문이 없다"
+    assert "notion_save" in stream, "스트리밍 경로에 관문이 없다"
+
+
+def test_gate_runs_before_the_source_fast_path():
+    """⛔ `@@물류` 를 켠 채로도 저장이 돼야 한다 — db_entry 판정보다 앞에 둔다."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "agents" / "orchestrator.py").read_text(encoding="utf-8")
+    for chunk in source.split("async def route_and_")[1:]:
+        gate = chunk.find("notion_save")
+        parse = chunk.find("self.parse_db_prefix")
+        assert gate > 0 and parse > 0
+        assert gate < parse, "관문이 @@ 소스 판정보다 뒤에 있다"

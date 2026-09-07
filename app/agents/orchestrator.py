@@ -1134,6 +1134,17 @@ class OrchestratorAgent:
         conversation_context = _build_conversation_context(messages)
         _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
 
+        # ═══ 노션 저장 관문 ═══
+        # ⛔ 라우터보다, 그리고 @@ 소스 판정보다 **먼저** 돈다 — `@@물류` 를 켠 채로
+        #    "이 답변 노션에 넣어줘" 라고 해도 저장돼야 한다.
+        # ⚠️ 스트리밍 경로에도 **같은 관문**이 있다. 한쪽만 고치면 답이 갈린다.
+        from app.core import notion_save
+        _notion_answer = await asyncio.to_thread(
+            notion_save.handle, query, messages, user_id)
+        if _notion_answer:
+            logger.info("notion_save_handled", path="route_and_execute")
+            return {"source": "direct", "answer": _notion_answer}
+
         # ═══ @@ 데이터소스 직접 지정 ═══
         # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
         from app.core.term_aliases import expand_aliases
@@ -1438,6 +1449,16 @@ class OrchestratorAgent:
         images = images or []
         conversation_context = _build_conversation_context(messages)
         _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
+
+        # ⚠️ 비스트리밍과 **같은 관문** — 한쪽만 달면 경로에 따라 답이 갈린다.
+        from app.core import notion_save
+        _notion_answer = await asyncio.to_thread(
+            notion_save.handle, query, messages, user_id)
+        if _notion_answer:
+            logger.info("notion_save_handled", path="route_and_stream")
+            yield ("source", "direct")
+            yield ("done", _notion_answer)
+            return
 
         # ═══ @@ 데이터소스 직접 지정 (streaming) ═══
         # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
