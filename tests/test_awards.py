@@ -147,3 +147,145 @@ def test_row_key_distinguishes_rows_that_differ_only_in_detail():
     rec_a, rec_b = rows[-2], rows[-1]
     assert rec_a["detail"] != rec_b["detail"]
     assert awards._row_key(rec_a) != awards._row_key(rec_b)
+
+
+# tests/test_awards.py 에 이어서 — Task 3: 조회와 표시
+# ⚠️ 브리프의 search() 본문은 두 가지 controller ruling 으로 대체됐다(task-3-brief.md 참고):
+#    Ruling 1 — 데이터에 없는 낱말은 빼고 건다. Ruling 2 — `N위` 는 숫자 필터로 읽는다.
+
+ROW = {"category": "랭킹", "brand": "좀비뷰티", "organizer": "화해",
+       "title": "2021 화해 뷰티 어워드", "award_date": "2021-11-24",
+       "award_start": "2020-11-01", "country": "대한민국",
+       "product": "누에고치 모공팩", "detail": "클렌징 비누 부문 1위",
+       "rank_raw": "1", "rank_value": 1, "paid": "무료", "amount_raw": "-",
+       "usage_flag": "O", "usage_start": "무기한", "usage_end": "무기한",
+       "usage_region": "국내", "source_url": ""}
+
+
+def test_the_answer_never_asserts_that_an_award_may_be_used():
+    """법적 판단이다. 못 쓰는 수상을 '쓸 수 있다' 고 답하면 실제 문제가 된다."""
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "2026-09-07"})
+    for banned in ("사용 가능합니다", "사용하실 수 있습니다", "활용 가능합니다", "써도 됩니다"):
+        assert banned not in text
+
+
+def test_the_answer_shows_the_raw_usage_symbol_and_its_legend():
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-"})
+    assert "O" in text and awards.USAGE_LEGEND["O"] in text
+    assert "담당자 확인" in text
+
+
+def test_a_conditional_usage_note_is_carried_into_the_answer():
+    row = dict(ROW, usage_flag="△", usage_region="국문 엠블럼만, 화해 검수 필요")
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    assert "화해 검수 필요" in text
+
+
+def test_unparsed_rank_is_shown_as_raw_not_dropped():
+    row = dict(ROW, rank_raw="97%", rank_value=None)
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    assert "97%" in text
+
+
+def test_answer_says_how_many_were_omitted_when_the_list_is_cut():
+    text = awards.format_answer({"rows": [ROW], "total": 25, "synced_at": "-"})
+    assert "25" in text
+
+
+def test_empty_result_says_so_instead_of_returning_an_empty_table():
+    assert "찾지 못했" in awards.format_answer({"rows": [], "total": 0, "synced_at": "-"})
+
+
+# Ruling 2 — `N위` 를 숫자 필터로 뽑는다 (텍스트 검색 대상에서는 뗀다)
+
+def test_extract_rank_filter_pulls_the_digit_and_drops_the_token_from_the_text():
+    rank, remaining = awards._extract_rank_filter("화해 1위 제품")
+    assert rank == 1
+    assert "1위" not in remaining
+    assert "화해" in remaining and "제품" in remaining
+
+
+def test_extract_rank_filter_is_none_when_there_is_no_rank_token():
+    rank, remaining = awards._extract_rank_filter("화해 제품")
+    assert rank is None
+    assert remaining == "화해 제품"
+
+
+def test_a_rank_number_in_the_question_becomes_a_numeric_filter_not_a_text_term(monkeypatch):
+    """실측: '1위' 를 텍스트로 걸면 표기가 갈려(1위 선정/TOP10 진입) 화해 10행 중
+    1행만 걸린다. rank_value 숫자 필터라야 표기와 무관하게 맞는다."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    captured = {}
+
+    def fake_fetch_all(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [ROW]
+
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    result = awards.search("화해 1위")
+
+    assert result["rank_filter"] == 1
+    assert "rank_value = %s" in captured["sql"]
+    assert 1 in captured["params"]
+    assert not any("1위" in str(p) for p in captured["params"])
+
+
+# Ruling 1 — 데이터에 없는 낱말은 빼고 건다
+
+def test_a_word_missing_from_every_row_does_not_zero_out_the_results(monkeypatch):
+    """OP 재고와 같은 실패: 통째로 AND 로 걸면 한 낱말 때문에 0건이 된다."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: w == "화해")
+    captured = {}
+
+    def fake_fetch_all(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [ROW]
+
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    result = awards.search("화해 어워드에서")
+
+    assert result["rows"] == [ROW]
+    assert result["dropped"] == ["어워드에서"]
+    # 남은(=있는) 낱말만 필터에 실제로 걸린다
+    assert captured["params"].count("%화해%") == len(awards._SEARCH_COLS)
+    assert "%어워드에서%" not in captured["params"]
+
+
+def test_when_no_word_is_usable_the_default_listing_is_returned_instead_of_empty(monkeypatch):
+    """쓸 낱말이 하나도 안 남으면 빈 결과가 아니라 기본 목록(조건 없음)을 돌려준다."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: False)
+    captured = {}
+
+    def fake_fetch_all(sql, params):
+        captured["sql"] = sql
+        captured["params"] = params
+        return [ROW]
+
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    result = awards.search("전혀없는말 아무말")
+
+    assert result["dropped"] == ["전혀없는말", "아무말"]
+    assert result["rows"] == [ROW]
+    # 조건 없는 조회 — WHERE 에 거는 파라미터가 없다 (남는 것은 LIMIT 뿐)
+    assert captured["params"] == (40,)
+
+
+def test_dropped_words_are_disclosed_in_the_answer_body():
+    """안 쓴 말로 찾은 결과를 그대로 주면 그 조건까지 맞는 줄 읽는다."""
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
+                                 "dropped": ["어워드에서"]})
+    assert "어워드에서" in text

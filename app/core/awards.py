@@ -245,3 +245,115 @@ def sync_awards(dry_run: bool = False) -> Dict[str, Any]:
     except Exception as e:
         logger.warning("awards_cleanup_failed", error=str(e)[:160])
     return stat
+
+
+# app/core/awards.py 에 이어서 — 조회와 표시
+
+#: ⛔ 기호를 문장으로 바꾸지 않는다 — **뜻풀이**만 붙인다. 판단은 사람이 한다.
+USAGE_LEGEND = {
+    "O": "사용 승인 표기",
+    "△": "조건부 표기 — 조건을 확인해야 한다",
+    "X": "사용 불가 표기",
+    "논의중": "논의중 표기",
+    "": "표기 없음",
+}
+
+_SEARCH_COLS = ("title", "product", "organizer", "country", "detail", "brand", "category")
+
+# `N위` 는 텍스트가 아니라 숫자 필터다 — 시트마다 '1위 선정'·'TOP10 진입' 처럼
+# 표기가 갈려, 문자열 AND 로는 화해 84행 중 정답 10행 중 1행만 걸린다 (실측).
+_RANK_TOKEN = re.compile(r"(\d+)\s*위")
+
+
+def _extract_rank_filter(term: str) -> "tuple[Optional[int], str]":
+    """`N위` 를 뽑아 숫자 필터로 돌려주고, 그 토큰은 텍스트 검색 대상에서 뗀다."""
+    m = _RANK_TOKEN.search(term or "")
+    if not m:
+        return None, term or ""
+    return int(m.group(1)), (term[:m.start()] + " " + term[m.end():])
+
+
+def _word_exists(word: str) -> bool:
+    """이 낱말이 든 행이 하나라도 있는가 — 없으면 검색어가 아니라 질문의 군더더기다.
+
+    ⛔ 불용어 목록을 늘리는 방식(에서·한·우리…)은 끝이 없다. OP 재고와 같은 해법:
+       **데이터에 물어본다.** 낱말당 SELECT 1 LIMIT 1 이라 비싸지 않다.
+    """
+    where = " OR ".join(f"{c} LIKE %s" for c in _SEARCH_COLS)
+    params = tuple(f"%{word}%" for _ in _SEARCH_COLS)
+    row = fetch_one(f"SELECT 1 n FROM awards_rankings WHERE {where} LIMIT 1", params)
+    return bool(row)
+
+
+def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
+    """낱말을 AND 로 걸되, 데이터에 없는 낱말은 빼고 건다.
+
+    ⛔ 전부 AND 로 걸면 "화해 뷰티 어워드에서 1위 한 제품" 같은 흔한 말투가
+       `어워드에서`·`1위` 때문에 0건이 된다 (실측). 대응은 둘:
+       1. `N위` 는 `rank_value` 숫자 필터로 뺀다 (`_extract_rank_filter`).
+       2. 남은 낱말은 데이터에 실제로 있는 것만 남긴다 (`_word_exists`).
+       쓸 낱말이 하나도 안 남고 순위 필터도 없으면 조건 없이(=기본 목록,
+       최근·상위 순) 돌려준다 — 빈 결과보다 낫다.
+    """
+    rank_filter, text = _extract_rank_filter(term)
+    words = [w for w in re.split(r"\s+", (text or "").strip()) if len(w) >= 2]
+
+    kept: List[str] = []
+    dropped: List[str] = []
+    for w in words[:8]:
+        (kept if _word_exists(w) else dropped).append(w)
+
+    where = "1=1"
+    params: List[Any] = []
+    if rank_filter is not None:
+        where += " AND rank_value = %s"
+        params.append(rank_filter)
+    for w in kept[:5]:
+        where += " AND (" + " OR ".join(f"{c} LIKE %s" for c in _SEARCH_COLS) + ")"
+        params += [f"%{w}%"] * len(_SEARCH_COLS)
+
+    total = int((fetch_one(f"SELECT COUNT(*) n FROM awards_rankings WHERE {where}",
+                           tuple(params)) or {}).get("n") or 0)
+    rows = fetch_all(
+        f"SELECT * FROM awards_rankings WHERE {where} "
+        "ORDER BY (rank_value IS NULL), rank_value ASC, award_date DESC LIMIT %s",
+        tuple(params) + (limit,))
+    stamp = (fetch_one("SELECT MAX(synced_at) s FROM awards_rankings") or {}).get("s")
+    return {"rows": rows or [], "total": total, "synced_at": str(stamp or "-"),
+            "dropped": dropped, "rank_filter": rank_filter}
+
+
+def format_answer(result: Dict[str, Any]) -> str:
+    """표 + 활용 표기. ⛔ '사용 가능합니다' 같은 단정을 만들지 않는다."""
+    rows = result.get("rows") or []
+    if not rows:
+        return "조건에 맞는 수상·랭킹 기록을 찾지 못했습니다."
+    out = ["| 구분 | 브랜드 | 주최사 | 수상명 | 제품 | 순위 | 국가 | 일자 | 활용 표기 |",
+           "|---|---|---|---|---|---:|---|---|---|"]
+    notes: List[str] = []
+    for r in rows:
+        flag = (r.get("usage_flag") or "").strip()
+        out.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+            r.get("category", ""), r.get("brand", ""), r.get("organizer", ""),
+            r.get("title", ""), r.get("product", ""), r.get("rank_raw") or "-",
+            r.get("country", ""), r.get("award_date") or r.get("award_start") or "",
+            flag or "표기 없음"))
+        cond = " ".join(x for x in (r.get("usage_region"), r.get("usage_start"),
+                                    r.get("usage_end")) if x and x != "-")
+        if cond:
+            notes.append(f"- {r.get('title', '')}: {cond}")
+
+    seen = {(r.get("usage_flag") or "").strip() for r in rows}
+    legend = " · ".join(f"`{k or '빈칸'}` {v}" for k, v in USAGE_LEGEND.items() if k in seen)
+    out += ["", f"활용 표기: {legend}",
+            "⚠️ 위 표기는 **시트에 적힌 원문**입니다. 실제 사용 가부는 담당자 확인이 필요합니다."]
+    if notes:
+        out += ["", "조건:"] + notes
+    # ⛔ 안 쓴 말로 찾은 결과를 그대로 주면 사용자가 그 조건까지 맞는 줄 읽는다.
+    dropped = result.get("dropped") or []
+    if dropped:
+        out.append("\n검색어 중 자료에 없는 낱말은 빼고 찾았습니다: " + ", ".join(dropped))
+    if result.get("total", 0) > len(rows):
+        out.append(f"\n총 {result['total']}건 중 {len(rows)}건만 표시했습니다.")
+    out.append(f"\n*기준: {result.get('synced_at', '-')} 적재분*")
+    return "\n".join(out)
