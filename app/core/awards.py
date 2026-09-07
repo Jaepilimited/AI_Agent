@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -178,11 +179,26 @@ def _read_sheet() -> List[List[Any]]:
 
 
 def _row_key(rec: Dict[str, Any]) -> str:
-    """같은 행을 다시 넣을 때 겹치게 하는 키. 180자를 넘지 않게 자른다."""
-    raw = "|".join((rec["brand"], rec["organizer"], rec["title"],
-                    rec["product"], rec["award_date"] or rec["award_start"],
-                    rec["rank_raw"]))
-    return raw[:180]
+    """같은 행을 다시 넣을 때 겹치게 하는 키.
+
+    ⛔ 자연키(브랜드·주최사·타이틀·제품·일자·순위)로는 **35/206(17%)이 충돌한다**
+       (2026-09-07 실측, 라이브 시트). 원인 둘:
+       - `country` 를 빼서 겹침: 쇼피 Top Item 같은 제품·같은 10위가
+         말레이시아/글로벌/대만 3개 국가로 나뉜 3행 → 1행으로 뭉개짐
+       - `detail` 을 빼서 겹침: 화해 대한민국 1위가 "저자극 스킨케어"·
+         "비건 스킨케어" 두 부문인데 부문 구분이 없어 2행 → 1행으로 뭉개짐
+       `+country` 만 추가해도 174/206 로 여전히 부족하다. `detail` 을 자연키에
+       더하면 되지만 한 행이 1,900자가 넘어 180자 절단에서 다시 충돌이 되살아난다.
+       그래서 **`_HEADER_ORDER` 전 컬럼**을 해시한다 — 실측으로 206/206(전 행 유일)
+       확인했고, 전 컬럼이 완전히 같은 행은 0건이다 (진짜 중복이 없다는 뜻).
+       sha256 hex 64자는 기존 `row_key VARCHAR(180)` 그대로 들어간다.
+    ⚠️ 트레이드오프: 셀 하나만 고쳐도 키가 바뀌어 update 대신 delete+insert 가 된다
+       (기능적으로는 같다 — `cleanup_refused` 가 대량 삭제를 계속 막아 준다).
+    ⚠️ `\x1f`(cell 에 나올 수 없는 제어문자)로 이어붙인다 — `|` 같은 일반 문자는
+       셀 값 안에 그대로 나올 수 있어 다른 행이 같은 문자열로 뭉개질 수 있다.
+    """
+    raw = "\x1f".join(str(rec.get(k, "")) for _, k in _HEADER_ORDER)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def sync_awards(dry_run: bool = False) -> Dict[str, Any]:

@@ -114,3 +114,36 @@ def test_sync_drops_microseconds_before_comparing(monkeypatch):
     awards.sync_awards()
     stamps = [v for v in seen["p"] if isinstance(v, datetime)]
     assert stamps and all(s.microsecond == 0 for s in stamps)
+
+
+# 실측(2026-09-07, 라이브 시트): 자연키(브랜드·주최사·타이틀·제품·일자·순위)로는
+# 35/206(17%)행이 충돌한다 — country 만 다른 행, detail 만 다른 행이 실제로 있다.
+# `+country` 를 더해도 174/206 로 부족해 `_HEADER_ORDER` 전 컬럼 해시로 바꿨다.
+
+def test_row_key_distinguishes_rows_that_differ_only_in_country():
+    """실측: 쇼피 Top Item 처럼 같은 제품·같은 순위가 국가만 다른 행이 여러 개 있다.
+    country 를 안 보면 말레이시아/글로벌 두 행이 하나로 뭉개져 한 행이 사라진다."""
+    base = ["", "랭킹", "스킨천사", "쇼피", "Top Item", "", "", "2026-01-01",
+            "말레이시아", "센텔라 앰플", "설명", "10", "무료", "-", "O", "", "", "", ""]
+    row_my = list(base)
+    row_global = list(base)
+    row_global[8] = "글로벌"
+    rows = parse_rows(SHEET + [row_my, row_global])
+    rec_my, rec_global = rows[-2], rows[-1]
+    assert rec_my["country"] != rec_global["country"]
+    assert awards._row_key(rec_my) != awards._row_key(rec_global)
+
+
+def test_row_key_distinguishes_rows_that_differ_only_in_detail():
+    """실측: 화해 대한민국 1위가 부문(저자극/비건)만 다른 두 행으로 있다.
+    detail 을 안 보면 두 부문이 한 행으로 뭉개진다."""
+    base = ["", "랭킹", "스킨천사", "화해", "2023 화해 뷰티 어워드", "", "", "2023-01-01",
+            "대한민국", "제품", "", "1", "무료", "-", "O", "", "", "", ""]
+    row_a = list(base)
+    row_a[10] = "2023 저자극 스킨케어"
+    row_b = list(base)
+    row_b[10] = "2023 비건 스킨케어"
+    rows = parse_rows(SHEET + [row_a, row_b])
+    rec_a, rec_b = rows[-2], rows[-1]
+    assert rec_a["detail"] != rec_b["detail"]
+    assert awards._row_key(rec_a) != awards._row_key(rec_b)
