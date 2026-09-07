@@ -59,7 +59,7 @@ def test_non_admin_refused(monkeypatch):
     assert not touched  # a non-admin's request never reaches the DB
 
 
-def test_unregistered_ad_user_is_404(monkeypatch):
+def test_unregistered_ad_user_is_404(monkeypatch, password_login_on):
     """An AD user with no `users` row (never signed up) has no password to reset."""
     monkeypatch.setattr(admin_group_api, "fetch_one", lambda *a, **k: None)
 
@@ -68,7 +68,7 @@ def test_unregistered_ad_user_is_404(monkeypatch):
     assert resp.status_code == 404
 
 
-def test_admin_reset_stores_bcrypt_hash_and_returns_plaintext_once(monkeypatch):
+def test_admin_reset_stores_bcrypt_hash_and_returns_plaintext_once(monkeypatch, password_login_on):
     target_row = {"user_id": 42, "display_name": "Kim", "username": "kim.kim"}
     monkeypatch.setattr(admin_group_api, "fetch_one", lambda *a, **k: target_row)
 
@@ -98,7 +98,7 @@ def test_admin_reset_stores_bcrypt_hash_and_returns_plaintext_once(monkeypatch):
     assert _bcrypt.checkpw(plaintext.encode(), stored_hash.encode())
 
 
-def test_two_consecutive_resets_differ(monkeypatch):
+def test_two_consecutive_resets_differ(monkeypatch, password_login_on):
     monkeypatch.setattr(
         admin_group_api, "fetch_one",
         lambda *a, **k: {"user_id": 42, "display_name": "Kim", "username": "kim.kim"},
@@ -112,7 +112,7 @@ def test_two_consecutive_resets_differ(monkeypatch):
     assert p1 != p2
 
 
-def test_reset_action_is_logged_without_the_plaintext(monkeypatch):
+def test_reset_action_is_logged_without_the_plaintext(monkeypatch, password_login_on):
     monkeypatch.setattr(
         admin_group_api, "fetch_one",
         lambda *a, **k: {"user_id": 42, "display_name": "Kim", "username": "kim.kim"},

@@ -29,6 +29,32 @@ _ALGORITHM = "HS256"
 _TOKEN_EXPIRE_DAYS = 7
 _ALL_MODELS = ALL_MODELS
 
+# ── 로컬 ID/PW 로그인 차단 (기본 꺼짐 — 2026-09-08) ──────────────────────────
+# 회사 계정(Entra ID)으로 옮기면서 로컬 비밀번호 경로를 닫았다.
+# ⛔ **코드를 지우지 않았다.** 되돌릴 길이 30초 안에 있어야 한다 —
+#    WAS 의 `.env` 에 `PASSWORD_LOGIN_ENABLED=true` 를 넣고 재기동하면 그대로
+#    살아난다 (`app/config.py`의 `password_login_enabled` 주석 참조).
+# ⚠️ 관문은 **DB 조회·bcrypt 해싱보다 먼저** 선다. 뒤에 두면 꺼진 경로가
+#    계속 사용자 조회와 해시 계산을 태우고, 응답 시간으로 존재 여부가 샌다.
+PASSWORD_LOGIN_DISABLED_MESSAGE = (
+    "아이디·비밀번호 로그인은 더 이상 사용하지 않습니다. 회사 계정으로 로그인해 주세요."
+)
+
+
+def password_login_enabled() -> bool:
+    """로컬 ID/PW 경로가 켜져 있나. 설정 하나가 단일 소스다."""
+    return bool(getattr(get_settings(), "password_login_enabled", False))
+
+
+def require_password_login() -> None:
+    """꺼져 있으면 **읽을 수 있는 한국어**로 403 을 준다.
+
+    ⛔ 맨 에러(500·404)로 막지 마라 — 못 들어오는 사람이 무엇을 해야 하는지
+       알 수 없어 관리자에게 "로그인이 고장났다" 로 접수된다.
+    """
+    if not password_login_enabled():
+        raise HTTPException(status_code=403, detail=PASSWORD_LOGIN_DISABLED_MESSAGE)
+
 # ── AD user cache (avoid DB hit on every keystroke) ──
 _ad_cache: list[dict] = []
 _ad_cache_ts: float = 0
@@ -264,6 +290,23 @@ async def _record_authenticated_visit(user_id: int) -> None:
 
 # ── Public endpoints (no auth required, for login form) ──
 
+@auth_api_router.get("/methods")
+async def auth_methods(request: Request):
+    """로그인 화면이 **무엇을 보여줄지 서버에 묻는다.**
+
+    ⚠️ 프론트에 조건을 박으면 설정을 되돌린 날 화면이 따라오지 않는다 —
+       Entra 버튼을 서버에 물어보게 한 것과 같은 이유다.
+    ⛔ `entra` 판정을 여기서 새로 적지 않는다. `/auth/entra/status` 와 **같은
+       함수**를 부른다 (`entra_routes.is_available`) — 두 벌이 되면 갈린다.
+    """
+    from app.api.entra_routes import is_available as _entra_available
+
+    return {
+        "password": password_login_enabled(),
+        "entra": _entra_available(request),
+    }
+
+
 @auth_api_router.get("/departments")
 async def list_departments():
     """List all departments with user counts (from cache)."""
@@ -399,6 +442,7 @@ async def _not_found_detail(department: str, name: str, ad_user_id: int | None, 
 @auth_api_router.post("/signup")
 async def signup(req: SignupRequest, response: Response):
     """Create a new user account linked to an AD user."""
+    require_password_login()  # ⛔ DB 조회·해싱보다 먼저
     if len(req.password) < 4:
         raise HTTPException(status_code=400, detail="비밀번호는 4자 이상이어야 합니다")
 
@@ -452,6 +496,7 @@ async def signup(req: SignupRequest, response: Response):
 @auth_api_router.post("/signin")
 async def signin(req: SigninRequest, response: Response):
     """Sign in with department + name + password."""
+    require_password_login()  # ⛔ DB 조회·bcrypt 검증보다 먼저
     ad_user = await _lookup_ad_user(req.department, req.name, req.id)
     if not ad_user:
         detail = await _not_found_detail(req.department, req.name, req.id, "사용자를 찾을 수 없습니다")
@@ -489,6 +534,12 @@ async def signin(req: SigninRequest, response: Response):
     }
 
 
+def _survey_prompt_for(user_id: int):
+    """지금 물어볼 만족도 설문 임계 (없으면 None)."""
+    from app.core.satisfaction import pending_milestone
+    return pending_milestone(user_id)
+
+
 @auth_api_router.get("/me")
 async def me(response: Response, user: User = Depends(get_current_user)):
     """Get current authenticated user. Refreshes cookie (sliding session)."""
@@ -505,6 +556,12 @@ async def me(response: Response, user: User = Depends(get_current_user)):
             _me_last_refresh.popitem(last=False)
 
     await _record_authenticated_visit(user.id)
+
+    # 만족도 설문 — 접속일수 10·50·100일차에 한 번 묻는다 (2026-09-02).
+    # ⚠️ 방문을 기록하는 바로 이 자리에서 판정한다. 별도 엔드포인트를 두면 왕복이
+    #    늘고, 프론트가 그 호출을 빠뜨려도 아무 에러 없이 팝업만 사라진다.
+    # ⚠️ 실패해도 로그인·채팅을 막지 않는다 (pending_milestone 이 예외를 삼킨다).
+    survey_prompt = await asyncio.to_thread(_survey_prompt_for, user.id)
 
     can_view_fi = user.role == "admin"
     if not can_view_fi and user.ad_user_id:
@@ -552,6 +609,8 @@ async def me(response: Response, user: User = Depends(get_current_user)):
         "allowed_models": _resolve_models(user.role, user.allowed_models),
         "brand_filters": brand_filters,
         "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,
+        # {"milestone": 10, "visit_days": 12} 또는 None
+        "survey_prompt": survey_prompt,
     }
 
 
@@ -612,6 +671,9 @@ async def password_reset_request(req: PasswordResetRequestIn):
        재직자 조회기가 된다. (부서·이름 목록 자체는 로그인 화면이 이미 주지만,
        그것과 "가입해서 계정이 있다" 는 다른 정보다.)
     """
+    # ⛔ 쓸 수 없는 비밀번호를 되찾아 주는 접수창은 **덫**이다 — 사람은 기다리고
+    #    관리자는 발급하는데 그 비밀번호로는 로그인이 안 된다.
+    require_password_login()
     from app.core import password_reset
 
     same = {"ok": True, "message": "요청이 접수되었습니다. 관리자가 확인 후 연락드립니다."}
@@ -643,6 +705,7 @@ async def password_reset_google_start(request: Request):
     관리자 요청 경로와 나란히 선다 — 이쪽은 신원을 구글이 서명으로 보증하므로
     계정을 바꿔도 된다. 부서·이름만 아는 사람은 그 보증을 만들 수 없다.
     """
+    require_password_login()  # ⛔ 구글까지 보낸 뒤에 막으면 사유를 말할 자리가 없다
     from app.api.auth_routes import _get_redirect_uri
     from app.core import password_reset_google
 
@@ -688,6 +751,7 @@ async def password_reset_google_land(request: Request, rc: str = Query("")):
        한 번 받아 HttpOnly 쿠키로 옮기고 깨끗한 주소로 되돌린다 (증표 자체는
        일회용이고 5분이지만, 남길 이유가 없는 것은 남기지 않는다).
     """
+    require_password_login()  # ⛔ 증표를 쿠키로 옮겨 봐야 완료가 403 이다
     from app.core import password_reset_google
 
     if await asyncio.to_thread(password_reset_google.peek_grant, rc) is None:
@@ -711,6 +775,8 @@ async def password_reset_google_complete(
     req: GoogleResetCompleteIn, request: Request, response: Response
 ):
     """구글로 확인된 사람이 새 비밀번호를 정한다."""
+    # ⛔ 증표를 태우기 전에 막는다 — 뒤에 두면 일회용 증표만 소모되고 끝난다.
+    require_password_login()
     from app.core import password_reset, password_reset_google
 
     # ⛔ 길이 검사를 **증표를 태우기 전에** 한다. 뒤에 두면 짧게 한 번 눌렀다가

@@ -294,18 +294,45 @@
     });
   }
 
-  // ── 회사 계정(Entra ID) 로그인 ────────────────────────────────────────────
-  // 전환기에는 기존 ID/PW 와 나란히 둔다. 켤지 말지는 **서버가** 판단한다.
-  (async function showEntraIfEnabled() {
+  // ── 무엇으로 로그인할 수 있는지 **서버에 묻는다** ─────────────────────────
+  // 회사 계정(Entra ID)과 로컬 ID/PW 를 한 번에 물어본다.
+  // ⛔ 두 번 물어보지 마라 — 응답이 엇갈리면 두 수단이 동시에 숨거나 동시에 뜬다.
+  //
+  // 실패했을 때 어느 쪽으로 기울지는 **수단마다 반대다**:
+  //   · 회사 계정 버튼 → 숨긴 채로 둔다 (눌러도 안 되는 버튼보다 낫다)
+  //   · ID/PW 폼      → **보인 채로 둔다**. 여기서 닫는 쪽으로 실패하면
+  //                     아무도 로그인할 수 없다. 열어 두면 최악이라야
+  //                     "눌렀더니 안내 문구가 뜨는" 되돌릴 수 있는 실패다.
+  // 그래서 폼은 서버가 **명시적으로 `password: false`** 라고 답했을 때만 숨긴다.
+  (async function showAvailableLoginMethods() {
     var box = document.getElementById("entra-box");
-    if (!box) return;
+    var divider = document.getElementById("entra-divider");
     try {
-      var res = await fetch("/auth/entra/status");
+      var res = await fetch("/api/auth/methods");
       if (!res.ok) return;
       var data = await res.json();
-      if (data.enabled) box.hidden = false;
+
+      if (data.entra === true && box) box.hidden = false;
+
+      // ⛔ **거짓 같은 값**이 아니라 `false` 자체를 본다. 부정 연산으로 쓰면
+      //    응답에 그 필드가 아예 없을 때(구버전 서버·프록시가 자른 응답)도
+      //    참이 돼 폼이 조용히 사라진다.
+      //    ⚠️ 회귀가 이 파일을 **글자로** 읽는다 — 금지된 표현을 주석에 예시로
+      //       적으면 그것까지 코드로 읽혀 스스로 걸린다 (실제로 한 번 걸렸다).
+      if (data.password !== false) return;
+
+      // ⛔ 대신할 수단이 실제로 떠 있을 때만 닫는다. 회사 계정까지 꺼져 있으면
+      //    폼을 숨기는 순간 로그인 카드가 빈 화면이 된다 — 그건 되돌릴 수 없다.
+      if (data.entra !== true) return;
+
+      if (form) form.hidden = true;
+      if (toggleLink) toggleLink.hidden = true;
+      if (forgotLink) forgotLink.hidden = true;
+      if (forgotBox) forgotBox.hidden = true;
+      if (divider) divider.hidden = true;
+      if (errorMsg) errorMsg.textContent = "";
     } catch (err) {
-      // 못 물어봤으면 숨긴 채로 둔다 — 눌러도 안 되는 버튼보다 낫다.
+      // 못 물어봤다 — 아무것도 바꾸지 않는다 (폼은 보인 채, 버튼은 숨긴 채).
     }
   })();
 

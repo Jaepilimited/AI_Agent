@@ -73,12 +73,15 @@
 
       <!-- 회사 계정(Entra ID) 로그인 — 사내 계정 통합.
            ⚠️ 설정이 없으면 서버가 꺼졌다고 알려주고, 이 블록은 숨겨진다.
-              프론트에 조건을 박으면 IT 가 값을 준 날 아무도 기억하지 못한다. -->
+              프론트에 조건을 박으면 IT 가 값을 준 날 아무도 기억하지 못한다.
+           ⚠️ 로컬 ID/PW 가 꺼지면 이것이 **유일한** 로그인 수단이 된다
+              (`/api/auth/methods`). 그때는 아래 "또는" 구분선도 함께 숨긴다 —
+              이어질 것이 없는데 "또는" 이 남으면 무언가 빠진 화면으로 읽힌다. -->
       <div id="entra-box" hidden>
         <a class="btn-primary btn-entra" id="entra-login" href="/auth/entra/login">
           회사 계정으로 로그인
         </a>
-        <div class="forgot-divider"><span>또는</span></div>
+        <div class="forgot-divider" id="entra-divider"><span>또는</span></div>
       </div>
 
       <form id="auth-form" autocomplete="on">

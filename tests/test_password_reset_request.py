@@ -49,7 +49,7 @@ def _public_auth_client() -> TestClient:
     return TestClient(app, raise_server_exceptions=False)
 
 
-def test_request_keeps_personal_details_out_of_logs(monkeypatch):
+def test_request_keeps_personal_details_out_of_logs(monkeypatch, password_login_on):
     """공개 엔드포인트의 이름·부서·메모는 운영 로그에 남기지 않는다."""
     from app.api import auth_api
 
@@ -79,7 +79,8 @@ def test_request_keeps_personal_details_out_of_logs(monkeypatch):
         assert personal_value not in logged
 
 
-def test_unknown_person_gets_the_same_response_without_leaking_their_input(monkeypatch):
+def test_unknown_person_gets_the_same_response_without_leaking_their_input(
+        monkeypatch, password_login_on):
     from app.api import auth_api
 
     events = []

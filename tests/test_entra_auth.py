@@ -182,7 +182,13 @@ def test_the_login_screen_asks_the_server_whether_to_show_the_button():
     js = io.open(os.path.join(root, "app", "frontend", "auth.js"), encoding="utf-8").read()
     html = io.open(os.path.join(root, "app", "frontend", "login.html"),
                    encoding="utf-8").read()
-    assert "/auth/entra/status" in js
+    # ⚠️ 2026-09-08: 묻는 자리가 `/auth/entra/status` 에서 `/api/auth/methods`
+    #    로 옮겨졌다. 회사 계정과 로컬 ID/PW 를 **한 번에** 묻는다 — 두 번 물으면
+    #    응답이 엇갈렸을 때 두 수단이 동시에 숨거나 동시에 뜬다.
+    #    `/auth/entra/status` 는 그대로 살아 있고 **같은 판정 함수**를 쓴다
+    #    (`entra_routes.is_available`).
+    assert "/api/auth/methods" in js
+    assert "data.entra === true" in js, "버튼을 서버 응답으로 켜지 않는다"
     assert 'id="entra-box"' in html and "hidden" in html
 
 

@@ -373,7 +373,16 @@ async def reset_password(
     `must_change_password` 를 세워 두면, 로그인은 되지만 본인이 새 비밀번호를
     정할 때까지(`/api/auth/change-password`) 그 외 어떤 요청도 `get_current_user`
     관문에서 막힌다 — 그 강제가 없으면 이 임시 비밀번호가 영구 비밀번호가 된다.
+
+    ⛔ 로컬 ID/PW 가 꺼져 있으면 **발급 자체를 막는다** (2026-09-08). 여기서
+       발급하면 두 가지가 한꺼번에 나쁘다: ① 관리자가 건넨 비밀번호로는
+       로그인이 403 이고 ② `must_change_password` 가 서서 그 사람은 회사
+       계정으로 들어와도 **모든 요청이 막힌다**. 못 쓰는 열쇠를 주면서 문까지
+       잠그는 셈이다.
     """
+    from app.api.auth_api import require_password_login
+    require_password_login()
+
     target = await _fetch_one(
         "SELECT u.id AS user_id, u.display_name, a.username "
         "FROM users u JOIN ad_users a ON u.ad_user_id = a.id "

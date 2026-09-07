@@ -129,6 +129,18 @@ class Settings(BaseSettings):
     sqlite_db_path: str = "C:/Users/DB_PC/.open-webui/data/skin1004_chat.db"
     personal_briefing_enabled: bool = True
 
+    # 로컬 ID/PW 로그인 — signup·signin·비밀번호 재설정 2경로·관리자 임시
+    # 비밀번호 발급을 한꺼번에 켜고 끈다. 회사 계정(Entra ID)으로 옮기면서
+    # **기본을 꺼짐으로** 두되 코드는 지우지 않았다 (2026-09-08).
+    # ⛔ **지우지 말고 이 값으로만 끈다.** 85명 중 회사 계정을 연결한 사람이
+    #    아직 1명이라 못 들어오는 사람이 나올 수 있다 — 그때 30초 안에 되돌릴
+    #    길이 있어야 한다.
+    # ⚠️ `.env` 는 배포에서 제외된다 (`EXCLUDE_FILES`). 되살리는 방법은
+    #    **WAS 의 `.env` 에 `PASSWORD_LOGIN_ENABLED=true` 를 넣고 재기동**하는
+    #    것이다 (`sudo systemctl restart ai-craver`). 코드 배포가 필요 없는
+    #    것이 요점이다 — 이것이 장애 중에 당길 수 있는 유일한 레버다.
+    password_login_enabled: bool = False
+
     # 출근 브리핑 잔디 전달 — DB_PC 릴레이가 SSH 터널로 꺼내 갈 때 쓰는 토큰.
     # ⛔ 비어 있으면 /api/internal/briefing-outbox 는 404 다 (기본값으로 열리지 않는다).
     #    서버는 잔디에 직접 못 붙는다 — WAS·APP 모두 wh.jandi.com 403 (2026-08-18 실측).

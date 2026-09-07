@@ -129,7 +129,22 @@ async def _handle_password_reset_callback(request: Request, code: str, state: st
 
     ⚠️ 이 분기는 쿠키를 보지 않는다 — state 가 서버에 있어서 `session_hop` 왕복이
        필요 없다. 쿠키 없는 호스트로 돌아오던 그 사고를 구조적으로 비켜간다.
+
+    ⛔ 로컬 ID/PW 가 꺼져 있으면 여기서 끝낸다 (2026-09-08). 시작 지점
+       (`/api/auth/password-reset/google/start`)이 이미 403 이라 정상 경로로는
+       올 수 없지만, 구글 화면을 띄워 둔 채 오래 있다 돌아오는 사람이 있다 —
+       그때 증표를 발급하면 마지막 단계에서 403 을 만난다.
+    ⚠️ 여기서는 **HTML 안내**로 답한다. 브라우저 최상위 이동이라 JSON 403 을
+       주면 사용자는 날것의 `{"detail":...}` 을 보게 된다.
     """
+    from app.api.auth_api import PASSWORD_LOGIN_DISABLED_MESSAGE, password_login_enabled
+
+    if not password_login_enabled():
+        logger.warning("pwreset_oauth_password_login_disabled")
+        return HTMLResponse(status_code=403, content=_notice_page(
+            "비밀번호 재설정은 더 이상 사용하지 않습니다",
+            PASSWORD_LOGIN_DISABLED_MESSAGE))
+
     try:
         await asyncio.to_thread(password_reset_google.consume_state, state)
     except Exception:

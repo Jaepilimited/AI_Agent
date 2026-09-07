@@ -55,15 +55,24 @@ def _notice(title: str, body: str, status: int = 400) -> HTMLResponse:
     return HTMLResponse(status_code=status, content=_notice_page(title, body))
 
 
+def is_available(request: Request) -> bool:
+    """회사 계정 로그인이 지금 **실제로 되는가.**
+
+    ⛔ 판정은 여기 한 곳이다. `/auth/entra/status` 와 `/api/auth/methods` 가
+       각자 같은 식을 적으면 언젠가 갈리고, 갈리면 화면은 버튼을 보여주는데
+       눌러도 안 되거나 그 반대가 된다 (사본이 갈리는 이 프로젝트의 단골 사고).
+    """
+    return bool(entra_auth.is_configured()
+                and entra_auth.redirect_uri_is_usable(_redirect_uri(request)))
+
+
 @entra_router.get("/status")
 async def entra_status(request: Request):
     """로그인 화면이 이 버튼을 보여줄지 **서버에 묻는다.**
 
     ⚠️ 프론트에 조건을 박으면 IT 가 값을 준 날 아무도 기억하지 못한다.
     """
-    usable = entra_auth.is_configured() and entra_auth.redirect_uri_is_usable(
-        _redirect_uri(request))
-    return {"enabled": bool(usable)}
+    return {"enabled": is_available(request)}
 
 
 @entra_router.get("/login")

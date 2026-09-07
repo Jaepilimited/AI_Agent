@@ -58,8 +58,13 @@ class _FakeSyncModule(types.ModuleType):
 
 
 @pytest.fixture(autouse=True)
-def _reset_resync_state(monkeypatch):
-    """모듈 전역 상태(진행 중 플래그·쿨다운 시각)를 매 테스트마다 초기화한다."""
+def _reset_resync_state(monkeypatch, password_login_on):
+    """모듈 전역 상태(진행 중 플래그·쿨다운 시각)를 매 테스트마다 초기화한다.
+
+    ⚠️ `password_login_on` 도 함께 받는다 — 2026-09-08 부터 로컬 ID/PW 는 기본
+       꺼짐이라, 켜 두지 않으면 `signin` 이 관문에서 403 으로 끝나 **여기서
+       재려는 지연을 아예 재지 못한다** (통과가 아니라 무의미해진다).
+    """
     monkeypatch.setattr(auth_api, "_resync_in_progress", False)
     monkeypatch.setattr(auth_api, "_last_ad_resync_finished", 0.0)
     yield
