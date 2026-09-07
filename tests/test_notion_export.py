@@ -212,3 +212,20 @@ def test_text_around_a_table_is_kept():
 def test_separator_line_alone_is_not_a_table():
     """구분선처럼 생긴 줄 하나로 표를 만들지 않는다."""
     assert _types(nx.markdown_to_blocks("|---|\n")) == ["paragraph"]
+
+
+def test_long_table_says_it_was_cut():
+    """⛔ 조용히 자르지 않는다 — 이 저장소가 최악으로 치는 실패 유형이다."""
+    md = "| 국가 | 매출 |\n|---|---|\n" + "\n".join(
+        f"| 국가{i} | {i}억 |" for i in range(150))
+    blocks = nx.markdown_to_blocks(md)
+    assert _types(blocks) == ["table", "paragraph"]
+    assert len(blocks[0]["table"]["children"]) == 100
+    note = _plain(blocks[1])
+    assert "100" in note
+    assert "151" in note          # 머리행 1 + 데이터 150
+
+
+def test_short_table_gets_no_note():
+    """자르지 않았으면 아무 말도 붙이지 않는다 — 매번 뜨는 안내는 곧 무시당한다."""
+    assert _types(nx.markdown_to_blocks(_TABLE_MD)) == ["table"]

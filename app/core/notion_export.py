@@ -84,8 +84,12 @@ def _is_table_start(lines: list[str], index: int) -> bool:
     return bool(_SEPARATOR.match(sep)) and "-" in sep
 
 
-def _table_block(lines: list[str], index: int) -> tuple[dict, int]:
-    """마크다운 표를 파싱하여 노션 표 블록으로 만든다."""
+def _table_block(lines: list[str], index: int) -> tuple[dict, int, int]:
+    """마크다운 표를 파싱하여 노션 표 블록으로. 세 번째 반환값은 **버린 행 수**다.
+
+    ⛔ 노션은 한 요청에 블록 100개까지만 받는다. 넘치는 행은 자를 수밖에 없지만
+       **조용히 자르지 않는다** — 부르는 쪽이 그 사실을 본문에 적는다.
+    """
     header = _cells(lines[index])
     width = len(header)
     rows = [header]
@@ -97,8 +101,11 @@ def _table_block(lines: list[str], index: int) -> tuple[dict, int]:
         rows.append(_cells(lines[cursor]))
         cursor += 1
 
+    shown = rows[:MAX_BLOCKS_PER_REQUEST]
+    dropped = len(rows) - len(shown)
+
     children = []
-    for row in rows[:MAX_BLOCKS_PER_REQUEST]:
+    for row in shown:
         # ⚠️ 셀 수가 table_width 와 다르면 400 이 난다.
         cells = (row + [""] * width)[:width]
         children.append({
@@ -110,7 +117,7 @@ def _table_block(lines: list[str], index: int) -> tuple[dict, int]:
         "table": {"table_width": width, "has_column_header": True,
                   "has_row_header": False, "children": children},
     }
-    return block, cursor
+    return block, cursor, dropped
 
 
 def rich_text(text: str) -> list[dict]:
@@ -160,8 +167,14 @@ def markdown_to_blocks(text: str) -> list[dict]:
             continue
 
         if stripped.startswith("|") and _is_table_start(lines, index):
-            table, index = _table_block(lines, index)
+            table, index, dropped = _table_block(lines, index)
             blocks.append(table)
+            if dropped:
+                # ⛔ 조용히 자르지 않는다 — 사람은 표를 보지 각주를 안 본다.
+                blocks.append(_block(
+                    "paragraph",
+                    f"표가 길어 앞의 {MAX_BLOCKS_PER_REQUEST}행만 실었습니다 "
+                    f"(머리행 포함 전체 {MAX_BLOCKS_PER_REQUEST + dropped}행)."))
             continue
 
         index += 1
