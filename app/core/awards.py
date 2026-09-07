@@ -103,3 +103,129 @@ def parse_rows(values: List[List[Any]]) -> List[Dict[str, Any]]:
         rec["rank_value"] = parse_rank(rec["rank_raw"])
         rows.append(rec)
     return rows
+
+
+# app/core/awards.py 에 이어서
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS awards_rankings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(40) NOT NULL DEFAULT '',
+    brand VARCHAR(40) NOT NULL DEFAULT '',
+    organizer VARCHAR(80) NOT NULL DEFAULT '',
+    title VARCHAR(255) NOT NULL DEFAULT '',
+    award_start VARCHAR(20) NOT NULL DEFAULT '',
+    award_end VARCHAR(20) NOT NULL DEFAULT '',
+    award_date VARCHAR(20) NOT NULL DEFAULT '',
+    country VARCHAR(60) NOT NULL DEFAULT '',
+    product VARCHAR(255) NOT NULL DEFAULT '',
+    detail TEXT,
+    rank_raw VARCHAR(40) NOT NULL DEFAULT '',
+    rank_value INT NULL,
+    paid VARCHAR(20) NOT NULL DEFAULT '',
+    amount_raw VARCHAR(60) NOT NULL DEFAULT '',
+    usage_flag VARCHAR(20) NOT NULL DEFAULT '',
+    usage_start VARCHAR(20) NOT NULL DEFAULT '',
+    usage_end VARCHAR(20) NOT NULL DEFAULT '',
+    usage_region VARCHAR(80) NOT NULL DEFAULT '',
+    source_url VARCHAR(500) NOT NULL DEFAULT '',
+    row_key VARCHAR(180) NOT NULL,
+    synced_at DATETIME NOT NULL,
+    UNIQUE KEY uq_row (row_key),
+    INDEX idx_rank (rank_value),
+    INDEX idx_brand (brand)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
+_FIELDS = [k for _, k in _HEADER_ORDER] + ["rank_value"]
+
+
+def ensure_awards_table() -> None:
+    try:
+        execute(_DDL)
+    except Exception as e:
+        logger.warning("awards_ddl_failed", error=str(e)[:160])
+
+
+def _sheets_service():
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+
+    creds = Credentials.from_service_account_file(
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
+    )
+    return build("sheets", "v4", credentials=creds, cache_discovery=False)
+
+
+def _fetch(svc, tab: str) -> List[List[Any]]:
+    # ⛔ 허용 탭만 읽는다. 범위 상수의 KeyError 에 기대지 않는다 — 왜 막혔는지가 보여야 한다.
+    if tab not in ALLOWED_TABS:
+        raise ValueError(
+            f"허용되지 않은 시트 탭: {tab!r}. 지정한 탭만 학습한다 "
+            f"(허용: {sorted(ALLOWED_TABS)})")
+    from app.core.retrying import with_retry
+    return with_retry(
+        lambda: (svc.spreadsheets().values()
+                 .get(spreadsheetId=SHEET_ID, range=f"'{tab}'!{_RANGE}")
+                 .execute().get("values", [])),
+        what="awards_sheet:" + tab, attempts=2, first_delay=1.0,
+    )
+
+
+def _read_sheet() -> List[List[Any]]:
+    return _fetch(_sheets_service(), SHEET_TAB)
+
+
+def _row_key(rec: Dict[str, Any]) -> str:
+    """같은 행을 다시 넣을 때 겹치게 하는 키. 180자를 넘지 않게 자른다."""
+    raw = "|".join((rec["brand"], rec["organizer"], rec["title"],
+                    rec["product"], rec["award_date"] or rec["award_start"],
+                    rec["rank_raw"]))
+    return raw[:180]
+
+
+def sync_awards(dry_run: bool = False) -> Dict[str, Any]:
+    """시트 → `awards_rankings`. 매일 1회 (`awards_sync_daily`)."""
+    ensure_awards_table()
+    values = _read_sheet()
+    rows = parse_rows(values) if values else []
+    stat: Dict[str, Any] = {"rows": len(rows), "written": 0,
+                            "empty": not rows, "dry_run": dry_run}
+    # ⛔ 0행이면 아무것도 지우지 않는다 — 권한 만료·탭 이름 변경이 정확히 이렇게 온다.
+    if not rows:
+        logger.warning("awards_empty_sheet", tab=SHEET_TAB)
+        return stat
+    if dry_run:
+        return stat
+
+    # ⛔ 마이크로초를 버린다 (MariaDB DATETIME 은 초 단위 — OP 재고에서 겪은 함정).
+    now = datetime.now().replace(microsecond=0)
+    cols = _FIELDS + ["row_key", "synced_at"]
+    placeholder = "(" + ",".join(["%s"] * len(cols)) + ")"
+    for i in range(0, len(rows), 200):
+        chunk = rows[i:i + 200]
+        sql = ("INSERT INTO awards_rankings (" + ",".join(cols) + ") VALUES "
+               + ",".join([placeholder] * len(chunk))
+               + " ON DUPLICATE KEY UPDATE "
+               + ",".join(f"{c}=VALUES({c})" for c in _FIELDS + ["synced_at"]))
+        params: list = []
+        for r in chunk:
+            params += [r[c] for c in _FIELDS] + [_row_key(r), now]
+        execute(sql, tuple(params))
+        stat["written"] += len(chunk)
+
+    # 시트에서 사라진 행 정리 — ⛔ 정리 대상이 적재분 이상이면 지우지 않는다.
+    try:
+        stale = fetch_one("SELECT COUNT(*) n FROM awards_rankings WHERE synced_at < %s",
+                          (now,)) or {}
+        n_stale = int(stale.get("n") or 0)
+        if n_stale >= stat["written"]:
+            logger.error("awards_cleanup_refused", stale=n_stale, written=stat["written"])
+            stat["cleanup_refused"] = n_stale
+        elif n_stale:
+            execute("DELETE FROM awards_rankings WHERE synced_at < %s", (now,))
+            stat["deleted"] = n_stale
+    except Exception as e:
+        logger.warning("awards_cleanup_failed", error=str(e)[:160])
+    return stat

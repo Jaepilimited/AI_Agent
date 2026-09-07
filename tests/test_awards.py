@@ -77,3 +77,40 @@ def test_hidden_tab_names_are_not_present_in_the_source():
     src = open("app/core/awards.py", encoding="utf-8").read()
     for hidden in ("매출,손익", "실적공유용", "대표제품 지역별 판매량", "미중일 매출비중"):
         assert hidden not in src
+
+
+# tests/test_awards.py 에 이어서
+from unittest.mock import MagicMock
+
+from app.core import awards
+
+
+def test_fetch_refuses_a_tab_that_is_not_allowed_and_says_why():
+    with pytest.raises(ValueError) as e:
+        awards._fetch(MagicMock(), "다른탭")
+    msg = str(e.value)
+    assert "다른탭" in msg and "허용" in msg
+
+
+def test_sync_does_not_wipe_existing_data_when_the_sheet_reads_empty(monkeypatch):
+    """0행은 권한 만료·탭 이름 변경으로 온다. 성공으로 적으면 영영 못 잡는다."""
+    monkeypatch.setattr(awards, "ensure_awards_table", lambda: None)
+    monkeypatch.setattr(awards, "_read_sheet", lambda: [])
+    calls = []
+    monkeypatch.setattr(awards, "execute", lambda *a, **k: calls.append(a))
+    stat = awards.sync_awards()
+    assert stat["rows"] == 0 and stat["empty"] is True
+    assert calls == []
+
+
+def test_sync_drops_microseconds_before_comparing(monkeypatch):
+    """마이크로초가 남으면 방금 넣은 행이 전부 'synced_at < now' 에 걸려 지워진다."""
+    monkeypatch.setattr(awards, "ensure_awards_table", lambda: None)
+    monkeypatch.setattr(awards, "_read_sheet", lambda: SHEET)
+    seen = {}
+    monkeypatch.setattr(awards, "execute",
+                        lambda sql, params=None: seen.setdefault("p", params))
+    monkeypatch.setattr(awards, "fetch_one", lambda *a, **k: {"n": 0})
+    awards.sync_awards()
+    stamps = [v for v in seen["p"] if isinstance(v, datetime)]
+    assert stamps and all(s.microsecond == 0 for s in stamps)
