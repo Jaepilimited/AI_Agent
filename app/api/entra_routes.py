@@ -24,6 +24,16 @@ logger = structlog.get_logger(__name__)
 
 entra_router = APIRouter(prefix="/auth/entra", tags=["auth"])
 
+# ⛔ **회신 URL 은 우리가 고르는 것이 아니라 Entra 앱 등록에 적힌 값이다.**
+#    IT 가 등록한 값이 `/users/auth/openid_connect/callback` 이다 — GitLab
+#    (OmniAuth) 의 관례적 경로이고 우리 앱의 경로 체계가 아니다. 그런데
+#    Entra 는 요청의 redirect_uri 가 등록값과 **정확히 일치**해야만 코드를
+#    돌려준다 (2026-09-07 실측: 우리 경로로 보내니 AADSTS50011).
+#    그래서 등록값 그대로 한 자리를 더 연다. 두 경로 모두 **같은 핸들러**다.
+# ⚠️ 셀라 전용 앱 등록을 새로 받게 되면 그때 `/auth/entra/callback` 하나로
+#    되돌리고 이 별칭을 지운다 — 남의 관례가 우리 URL 체계에 남을 이유가 없다.
+entra_alias_router = APIRouter(tags=["auth"])
+
 
 def _redirect_uri(request: Request) -> str:
     """회신 URL 은 **설정값이 이긴다.**
@@ -70,6 +80,7 @@ async def entra_login(request: Request, next: str = Query("/")):
 
 
 @entra_router.get("/callback")
+@entra_alias_router.get("/users/auth/openid_connect/callback")
 async def entra_callback(
     request: Request,
     response: Response,

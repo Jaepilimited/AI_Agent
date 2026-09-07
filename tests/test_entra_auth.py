@@ -192,3 +192,18 @@ def test_the_login_start_refuses_open_redirects():
 
     src = inspect.getsource(entra_routes.entra_login)
     assert 'startswith("//")' in src
+
+
+def test_회신_URL_경로가_두_자리_모두_열려_있다():
+    """⛔ 회신 URL 은 우리가 고르는 것이 아니라 Entra 앱 등록에 적힌 값이다.
+
+    IT 가 등록한 값이 `/users/auth/openid_connect/callback` 이고, Entra 는
+    요청의 redirect_uri 가 등록값과 **정확히 일치**해야 코드를 돌려준다
+    (2026-09-07 실측: 우리 경로로 보내니 AADSTS50011 로 거절당했다).
+    두 경로가 **같은 핸들러**여야 하고, 한쪽이 사라지면 로그인이 통째로 막힌다.
+    """
+    from app.main import create_app
+
+    paths = {r.path for r in create_app().routes if hasattr(r, "path")}
+    assert "/auth/entra/callback" in paths
+    assert "/users/auth/openid_connect/callback" in paths

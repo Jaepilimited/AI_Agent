@@ -28,7 +28,7 @@ from app.api.admin_group_api import group_router, ad_router
 from app.api.auth_api import auth_api_router
 from app.api.auth_middleware import get_optional_user
 from app.api.auth_routes import auth_router
-from app.api.entra_routes import entra_router
+from app.api.entra_routes import entra_alias_router, entra_router
 from app.api.attachment_api import router as attachment_router
 from app.api.coa_finder_api import router as coa_finder_router
 from app.api.conversation_api import conversation_router, ensure_message_columns
@@ -273,6 +273,9 @@ def create_app() -> FastAPI:
             # CS/BP 제품 Q&A 시트 — ⛔ 기동 시 한 번만 읽던 것을 매시 갱신으로 바꿨다
             #    (2026-09-03). 없으면 시트를 고쳐도 재기동 전까지 반영되지 않는다
             _scheduler.add_job(_cs_cache_job, "cron", minute=40, id="cs_cache_hourly")
+            # 제품정보(노션 제품 스펙) — 전성분 적재(04:00) 뒤에 둔다
+            _scheduler.add_job(_product_info_sync_job, "cron", hour=4, minute=20,
+                               id="product_info_sync_daily")
             _scheduler.add_job(_self_check_job, "cron", hour=7, minute=30, id="self_check_daily")
             # 골든셋 회귀 — 자가 점검(07:30)이 결과를 보게 그 전에 돈다. 일요일은 전체 런.
             _scheduler.add_job(_golden_job, "cron", hour=5, minute=30, id="golden_daily")
@@ -364,6 +367,9 @@ def create_app() -> FastAPI:
     app.include_router(router)           # /v1/chat/completions, /dashboard, /health, etc.
     app.include_router(auth_router)      # /auth/google/*
     app.include_router(entra_router)     # /auth/entra/*  (설정 없으면 503)
+    # ⚠️ Entra 앱 등록에 적힌 회신 URL 경로. 같은 핸들러를 한 자리 더 연다
+    #    (등록값과 정확히 일치해야 코드가 돌아온다 — entra_routes.py 주석 참조)
+    app.include_router(entra_alias_router)
     app.include_router(auth_api_router)  # /api/auth/*
     app.include_router(personal_briefing_router)  # /api/personal-briefing/*
     app.include_router(personal_profile_router)   # /api/personal/suggestions
@@ -767,6 +773,27 @@ async def _cs_cache_job():
         logger.info("cs_cache_job_done", qa_count=n)
     except Exception as e:
         logger.error("cs_cache_job_failed", error=str(e)[:200])
+
+
+async def _product_info_sync_job():
+    """매일 04:20 — 노션 제품정보(제품 스펙) → MariaDB.
+
+    ⛔ 제품 Q&A(시트)와 **다른 소스**다. Q&A 는 문의 대응 기록, 이건 제품 스펙이다.
+    ⚠️ 노션 4단 깊이를 훑어 37초쯤 걸린다 — 질문 경로가 아니라 배치에서만 돈다.
+    """
+    from app.core.self_check import track_job
+
+    try:
+        with track_job("product_info_sync_daily") as jr:
+            from app.core.product_info import sync
+            stats = await asyncio.to_thread(sync)
+            if not stats.get("written"):
+                # ⚠️ 0건은 성공이 아니다 — 권한·구조 변경이면 이렇게 온다
+                raise RuntimeError(f"제품정보 적재 0건 (수집 {stats.get('collected')})")
+            jr["detail"] = f"제품 {stats['written']}종"
+        logger.info("product_info_job_done", **stats)
+    except Exception as e:
+        logger.error("product_info_job_failed", error=str(e)[:200])
 
 
 async def _ingredient_sync_job():
