@@ -1124,6 +1124,7 @@ class OrchestratorAgent:
         messages = messages or []
         images = images or []
         conversation_context = _build_conversation_context(messages)
+        _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
 
         # ═══ @@ 데이터소스 직접 지정 ═══
         # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
@@ -1324,6 +1325,7 @@ class OrchestratorAgent:
                     else:
                         logger.warning("source_gate_self", path="route_and_execute",
                                        query=query[:80])
+                        _source_free = True
                         route = "direct"
             # Apply enabled_sources filter — redirect to direct if route is disabled
             # Exception: keyword-classified notion/cs/team routes bypass the default filter
@@ -1383,6 +1385,10 @@ class OrchestratorAgent:
         if "answer" in result:
             result["answer"] = ensure_formatting(result["answer"], domain=route)
 
+        if _source_free and isinstance(result, dict) and result.get("answer"):
+            from app.core.route_intent import source_free_footer
+            result["answer"] = result["answer"] + source_free_footer()
+
         return result
 
     async def route_and_stream(
@@ -1409,6 +1415,7 @@ class OrchestratorAgent:
         messages = messages or []
         images = images or []
         conversation_context = _build_conversation_context(messages)
+        _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
 
         # ═══ @@ 데이터소스 직접 지정 (streaming) ═══
         # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
@@ -1709,6 +1716,7 @@ class OrchestratorAgent:
                     else:
                         logger.warning("source_gate_self", path="route_and_stream",
                                        query=query[:80])
+                        _source_free = True
                         new_route = "direct"
                     if new_route != route:
                         route = new_route
@@ -1787,6 +1795,10 @@ class OrchestratorAgent:
                     break
                 full_answer += data
                 yield ("chunk", data)
+
+            if _source_free:
+                from app.core.route_intent import source_free_footer
+                yield ("chunk", source_free_footer())
 
             # Streaming complete — signal done (content already sent via chunks)
             yield ("done", "")
@@ -3877,8 +3889,8 @@ JSON만 반환:
   - **잔디로 받기**를 등록하면 같은 내용을 매일 잔디로 보내드립니다. 받는 시각은
     08:00~18:30 사이에서 30분 단위로 고르고, 절(일정·메일·할 일·기한·지표·환율)마다
     끄고 켤 수 있습니다. 등록은 첫 화면 브리핑의 `잔디로 받기` 에서 합니다.
-  - ⛔ **노션·슬랙 등 다른 도구로 자동 연동하는 기능은 없습니다.** 지금 내보낼 수
-    있는 곳은 잔디뿐입니다. 물어보시면 있는 것처럼 답하지 말고 이렇게 안내하세요.
+  - 지금 브리핑을 자동으로 내보낼 수 있는 곳은 **잔디**입니다. 다른 도구 연동이
+    추가되면 이 목록에 함께 적힙니다. 목록에 없는 연동을 있는 것처럼 답하지 마세요.
 - **@@ 데이터소스 지정** — 입력창에 `@@`를 치면 어떤 데이터를 뒤질지 직접 고를 수 있습니다.
 - 사이드바: Dashboard(사내 대시보드) · System Status(데이터 상태) · Knowledge Wiki(축적된 사내 지식)
 

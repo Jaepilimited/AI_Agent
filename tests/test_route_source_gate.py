@@ -233,3 +233,85 @@ def test_게이트가_NEED면_route_and_stream이_새_소스를_방출한다(mon
 
 async def _collect(stream):
     return [event async for event in stream]
+
+
+# ── Task 7: SELF 로 답했으면 「사내 데이터로 확인해 드릴까요?」 한 줄을 붙인다 ──
+
+def test_사내데이터로_확인해_드릴까요_한_줄():
+    from app.core.route_intent import source_free_footer
+
+    footer = source_free_footer()
+    assert "사내 데이터" in footer
+    assert footer.startswith("\n")          # 본문과 붙지 않는다
+
+
+def test_한_줄이_두_경로에_모두_걸려_있다():
+    """⛔ 한쪽만 달면 스트리밍이냐에 따라 답이 갈린다."""
+    src = open("app/agents/orchestrator.py", encoding="utf-8").read()
+    assert src.count("source_free_footer()") == 2
+
+
+def test_게이트가_SELF면_route_and_execute_답변에_돌아갈_문이_붙는다(monkeypatch):
+    """게이트가 SELF 였다는 사실이 실제로 footer 로 전달되는지 실행해서 본다."""
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: FakeFlash("SELF"))
+    agent._keyword_classify_ex = lambda query: ("bigquery", False)
+
+    async def fake_direct(query, messages, conversation_context, model_type,
+                           user_email, **kwargs):
+        return {"source": "direct", "answer": "sentinel"}
+
+    agent._classify_with_llm = None  # 불리면 안 된다 — 안 부르므로 그대로 둠
+    agent._handle_direct = fake_direct
+
+    result = asyncio.run(agent.route_and_execute(_SELF_LOOKING_QUERY))
+
+    assert result["answer"].startswith("sentinel")
+    assert "사내 데이터" in result["answer"]
+
+
+def test_게이트가_NEED면_route_and_execute_답변에_돌아갈_문이_안_붙는다(monkeypatch):
+    """반대 방향 — 정말로 소스를 뒤졌으면 되돌아갈 문을 붙이지 않는다."""
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: FakeFlash("NEED"))
+    agent._keyword_classify_ex = lambda query: ("bigquery", False)
+
+    async def fake_classify(*a, **k):
+        return "notion"
+
+    agent._classify_with_llm = fake_classify
+
+    async def fake_notion(*a, **k):
+        return {"source": "notion", "answer": "sentinel"}
+
+    agent._handle_qdrant = fake_notion
+
+    result = asyncio.run(agent.route_and_execute(_SELF_LOOKING_QUERY))
+
+    assert result["answer"] == "sentinel"
+    assert "사내 데이터" not in result["answer"]
+
+
+def test_게이트가_SELF면_route_and_stream_이_돌아갈_문_청크를_방출한다(monkeypatch):
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: FakeFlash("SELF"))
+    monkeypatch.setattr(
+        "app.knowledge.wiki_search.search_with_pages", _no_wiki
+    )
+    agent._keyword_classify_ex = lambda query: ("bigquery", False)
+    agent._needs_web_search = lambda query: False
+    agent._build_direct_system_prompt = lambda: "SYS"
+    monkeypatch.setattr(orch_module, "get_llm_client", lambda model_type: object())
+
+    def fake_stream_direct(*a, **k):
+        yield "ok"
+
+    monkeypatch.setattr(orch_module, "_stream_direct_with_fallback", fake_stream_direct)
+
+    events = asyncio.run(_collect(agent.route_and_stream(_SELF_LOOKING_QUERY)))
+
+    chunks = [data for kind, data in events if kind == "chunk"]
+    assert any("사내 데이터" in c for c in chunks)
