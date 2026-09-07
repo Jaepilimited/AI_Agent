@@ -1317,7 +1317,14 @@ class OrchestratorAgent:
             if not _confident and not is_system_task and not _is_direct_locked:
                 if len(query.strip()) <= 300:
                     flash = get_flash_client()
-                    route = await self._classify_with_llm(query, conversation_context, flash)
+                    # 2단계: **소스가 필요한가**를 먼저 묻는다 (예/아니오)
+                    if await self._needs_source(query, flash):
+                        route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    else:
+                        logger.info("source_gate_self", path="route_and_execute",
+                                    query=query[:80])
+                        route = "direct"
             # Apply enabled_sources filter — redirect to direct if route is disabled
             # Exception: keyword-classified notion/cs/team routes bypass the default filter
             # (these are confidently classified by specific keywords, not ambiguous)
@@ -1696,7 +1703,13 @@ class OrchestratorAgent:
             if not _confident and not is_system_task and not _is_direct_locked:
                 if len(query.strip()) <= 300:
                     flash = get_flash_client()
-                    new_route = await self._classify_with_llm(query, conversation_context, flash)
+                    if await self._needs_source(query, flash):
+                        new_route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    else:
+                        logger.info("source_gate_self", path="route_and_stream",
+                                    query=query[:80])
+                        new_route = "direct"
                     if new_route != route:
                         route = new_route
                         yield ("source", route)
@@ -1934,6 +1947,26 @@ class OrchestratorAgent:
                 pos = end
                 await _aio.sleep(0.015)  # 15ms — smooth, fast delivery
         yield ("done", "")
+
+    async def _needs_source(self, query: str, llm) -> bool:
+        """이 질문은 사내 자료를 뒤져야 답할 수 있는가.
+
+        ⛔ "어느 소스냐"(6지선다)를 묻기 **전에** 이것을 먼저 묻는다. 6지선다는
+           "소스 중 하나여야 한다"를 전제하고 있어서, 소스가 필요 없는 질문에
+           답이 없다 — `노션` 낱말 하나에 끌려 문서 검색으로 갔다 (붐따 #164).
+           실측(2026-09-07, 16문항): 6지선다는 #164 오답, 예/아니오는 14/16.
+        ⛔ 실패하면 **True(뒤진다)** 다. 사내 데이터 우선 — 뒤져 보고 없다고
+           말하는 편이, 뒤지지 않고 지어내는 것보다 낫다.
+        """
+        from app.core.route_intent import SOURCE_GATE_PROMPT, parse_gate
+        try:
+            raw = await asyncio.to_thread(
+                llm.generate, f"{SOURCE_GATE_PROMPT}\n\n질문: {query}",
+                temperature=0.0)
+        except Exception as exc:                      # noqa: BLE001
+            logger.warning("source_gate_failed", error_type=type(exc).__name__)
+            return True
+        return parse_gate(raw) == "NEED"
 
     async def _classify_with_llm(self, query: str, conversation_context: str, llm) -> str:
         """LLM-based classification (used only when keyword match is ambiguous).
