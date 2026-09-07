@@ -32,6 +32,19 @@ _URL = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
 _MARKER = re.compile(r"<!--\s*notion-save-v1:([A-Za-z0-9_-]{1,4000})\s*-->")
 
+#: 2단계(브리핑 정기 배송)에서 다룬다. 지금 한 건 저장하고 성공이라 답하면
+#: 사용자는 구독을 걸었다고 믿는다.
+_RECURRING = re.compile(r"(매일|매번|정기|자동으로|앞으로|계속)")
+_BRIEFING = re.compile(r"(브리핑|briefing)")
+
+#: ⛔ 우리가 만든 말은 저장 대상이 아니다 — 연속 저장에서 확인 메시지가 저장된다.
+_OURS = ("노션에 저장했습니다", "어느 노션 페이지에 넣을까요", "노션 저장이 아직")
+
+
+def _is_ours(text: str) -> bool:
+    body = (text or "").strip()
+    return bool(_MARKER.search(body)) or body.startswith(_OURS)
+
 
 def notion_save_intent(query: str) -> bool:
     text = query or ""
@@ -162,7 +175,9 @@ def _do_save(user_id: int | None, url: str, body: str, kind: str) -> str:
         result = nx.save(target, _title_from(body), body, kind=kind,
                          link=_sella_link())
     except nx.NotionError as exc:
-        logger.info("notion_save_failed", kind=exc.kind, user_id=user_id)
+        # ⛔ 프로덕션은 앱 INFO 를 통째로 버린다 — 로컬 실패(`disabled`·`bad_property`)가
+        #    흔적 없이 사라지지 않도록 WARNING 으로 남긴다.
+        logger.warning("notion_save_failed", kind=exc.kind, user_id=user_id)
         return _ERROR_MESSAGE.get(exc.kind, _ERROR_MESSAGE["unavailable"])
     except Exception as exc:
         # ⛔ 예상 못한 예외를 그대로 올리면 API 경계의 일반 핸들러가 잡아
@@ -217,6 +232,13 @@ def handle(query: str, messages: list[dict] | None,
     if not notion_save_intent(query):
         return None
 
+    if _RECURRING.search(query) and _BRIEFING.search(query):
+        # ⛔ 정기 발송은 2단계 기능이다. 한 건 저장하고 성공이라 답하면
+        #    사용자는 구독을 걸었다고 믿는다 — 저장을 실행하기 전에 가로챈다.
+        return ("브리핑을 매일 노션으로 보내는 기능은 아직 준비 중입니다. "
+                "지금은 답변을 하나씩 저장하는 것만 됩니다 — "
+                "저장할 답변 다음에 `노션에 넣어줘` 라고 말씀해 주세요.")
+
     # ⛔ **URL 을 묻기 전에 기능이 켜져 있는지부터 본다.** 브리프 원안은 이 확인 없이
     #    바로 `build_prompt()` 로 갔다 — 꺼진 상태에서도 URL 을 물어보고, 사용자가
     #    URL 을 주고 나서야(=_do_save 안에서) "꺼져 있다" 는 것을 알게 된다.
@@ -236,7 +258,9 @@ def _previous_assistant(messages: list[dict] | None) -> str:
         if message.get("role") not in ("assistant", "model"):
             continue
         text = _text_of(message.get("content", "")).strip()
-        if text:
+        # ⛔ 연속 저장에서 우리 확인 메시지("노션에 저장했습니다 → …")를 건너뛴다 —
+        #    안 그러면 두 번째 저장이 첫 번째 저장의 확인 메시지를 노션에 싣는다.
+        if text and not _is_ours(text):
             return text
     return ""
 
@@ -264,6 +288,6 @@ def target_answer(messages: list[dict] | None) -> str:
         if message.get("role") not in ("assistant", "model"):
             continue
         text = _text_of(message.get("content", "")).strip()
-        if text:
+        if text and not _is_ours(text):
             return text
     return ""

@@ -101,8 +101,18 @@ def test_clean_keeps_sql_fence_that_is_not_a_query_block():
 
 
 def test_clean_drops_followup_chips():
-    text = "본문입니다.\n\n<!-- followup: [\"다음 질문\"] -->\n"
-    assert "followup" not in nx.clean_for_notion(text)
+    """⛔ 실제 후속 제안 칩 형식(`work_briefing.py` 가 잔디 본문에서 걷어내는 것과 같다)이다.
+
+    예전 정규식(`<!-- followup: -->`)은 이 앱이 한 번도 내지 않는 형식이라
+    칩이 그대로 노션 페이지에 실렸다.
+    """
+    text = ("본문입니다.\n\n"
+            "> 💡 **이런 것도 물어보세요**\n"
+            "> - 월별 추이는?\n")
+    cleaned = nx.clean_for_notion(text)
+    assert "본문입니다" in cleaned
+    assert "이런 것도 물어보세요" not in cleaned
+    assert "월별 추이" not in cleaned
 
 
 # Task 4: markdown_to_blocks
@@ -260,14 +270,30 @@ def no_cache(monkeypatch):
 def test_db_url_is_used_as_is(monkeypatch, no_cache):
     def handler(method, path, body=None):
         if path == f"/v1/databases/{_UUID}":
-            return {"id": _UUID, "data_sources": [{"id": "ds-1", "name": "셀라"}],
-                    "properties": {"이름": {"type": "title"}}}
+            # ⛔ 2025-09-03 에서 DB 객체에는 스키마가 없다 — 여기 `properties` 를 두지 않는다.
+            return {"id": _UUID, "data_sources": [{"id": "ds-1", "name": "셀라"}]}
+        if path == "/v1/data_sources/ds-1":
+            return {"id": "ds-1", "properties": {"이름": {"type": "title"}}}
         raise AssertionError(f"불필요한 호출: {method} {path}")
 
     _stub_requests(monkeypatch, handler)
     target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
     assert (target.database_id, target.data_source_id) == (_UUID, "ds-1")
     assert target.created is False
+    assert target.properties == {"이름": "title"}
+
+
+def test_schema_comes_from_the_data_source_not_the_database(monkeypatch, no_cache):
+    """⛔ 2025-09-03 에서 DB 객체에는 스키마가 없다 — 여기서 틀리면 저장이 전부 죽는다."""
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            return {"id": _UUID, "data_sources": [{"id": "ds-1"}]}   # properties 없음
+        if path == "/v1/data_sources/ds-1":
+            return {"id": "ds-1", "properties": {"이름": {"type": "title"}}}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
     assert target.properties == {"이름": "title"}
 
 
@@ -279,16 +305,16 @@ def test_page_url_creates_the_database_once(monkeypatch, no_cache):
         if path == f"/v1/databases/{_UUID}":
             raise nx.NotionError("not_connected", "not a database", 404)
         if path == "/v1/databases/db-new":
-            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
-                    "properties": schema}
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}]}
+        if path == "/v1/data_sources/ds-new":
+            return {"id": "ds-new", "properties": schema}
         if path == f"/v1/pages/{_UUID}":
             return {"id": _UUID, "object": "page"}
         if path.startswith(f"/v1/blocks/{_UUID}/children"):
             return {"results": []}
         if method == "POST" and path == "/v1/databases":
             created["count"] += 1
-            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
-                    "properties": schema}
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}]}
         raise AssertionError(f"불필요한 호출: {method} {path}")
 
     _stub_requests(monkeypatch, handler)
@@ -319,8 +345,9 @@ def test_existing_child_database_is_reused_without_cache(monkeypatch, no_cache):
                  "child_database": {"title": "셀라"}},
             ]}
         if path == "/v1/databases/db-old":
-            return {"id": "db-old", "data_sources": [{"id": "ds-old"}],
-                    "properties": {"제목": {"type": "title"}}}
+            return {"id": "db-old", "data_sources": [{"id": "ds-old"}]}
+        if path == "/v1/data_sources/ds-old":
+            return {"properties": {"제목": {"type": "title"}}}
         raise AssertionError(f"불필요한 호출: {method} {path}")
 
     _stub_requests(monkeypatch, handler)
@@ -344,8 +371,9 @@ def test_cached_database_that_was_deleted_falls_through_to_create(monkeypatch, n
             return {"results": []}
         if method == "POST" and path == "/v1/databases":
             created["count"] += 1
-            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
-                    "properties": {"제목": {"type": "title"}}}
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}]}
+        if path == "/v1/data_sources/ds-new":
+            return {"properties": {"제목": {"type": "title"}}}
         raise AssertionError(f"불필요한 호출: {method} {path}")
 
     _stub_requests(monkeypatch, handler)
@@ -388,8 +416,9 @@ def test_child_scan_truncation_leaves_a_warning(monkeypatch, no_cache):
         if path.startswith(f"/v1/blocks/{_UUID}/children"):
             return {"results": [], "has_more": True, "next_cursor": "c"}
         if method == "POST" and path == "/v1/databases":
-            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
-                    "properties": {"제목": {"type": "title"}}}
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}]}
+        if path == "/v1/data_sources/ds-new":
+            return {"properties": {"제목": {"type": "title"}}}
         raise AssertionError(f"불필요한 호출: {method} {path}")
 
     _stub_requests(monkeypatch, handler)
@@ -492,13 +521,17 @@ def test_save_cleans_the_body_before_writing(monkeypatch, our_target):
 
 
 def test_save_refuses_a_database_without_a_title_property(monkeypatch):
-    """⛔ 제목 속성이 없으면 **API 를 부르기 전에** 멈춘다 — 조용히 빈 행을 만들지 않는다."""
+    """⛔ 제목 속성이 없으면 **API 를 부르기 전에** 멈춘다 — 조용히 빈 행을 만들지 않는다.
+
+    ⚠️ `bad_property` 다 (`bad_request` 가 아니다) — "노션 주소를 읽지 못했습니다" 문구가
+       붙으면 사용자는 멀쩡한 URL 을 영원히 다시 붙여넣는다.
+    """
     target = nx.Target(database_id="db-3", data_source_id="ds-3",
                        properties={"Tags": "multi_select"})
     _stub_requests(monkeypatch, lambda *a, **k: pytest.fail("호출하면 안 된다"))
     with pytest.raises(nx.NotionError) as exc:
         nx.save(target, "제목", "본문")
-    assert exc.value.kind == "bad_request"
+    assert exc.value.kind == "bad_property"
 
 
 def test_date_property_is_korea_time(monkeypatch, our_target):

@@ -262,3 +262,52 @@ def test_unexpected_engine_failure_is_contained(monkeypatch, fake_engine):
     assert answer is not None                 # 관문이 놓아주면 검색 결과가 나간다
     assert "다시" in answer                    # 저장 실패라고 말한다
     assert "notion_save_unexpected" in warnings
+
+
+def test_second_save_does_not_store_our_own_confirmation(fake_engine):
+    """⛔ 연속 저장에서 우리 확인 메시지가 노션에 실리면 안 된다."""
+    messages = _msgs(
+        ("user", "매출은?"),
+        ("assistant", "일본 매출은 55.1억원입니다."),
+        ("user", "이거 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+        ("assistant", "노션에 저장했습니다 → https://notion.so/row-1"),
+        ("user", "이것도 노션에 넣어줘 https://www.notion.so/"
+                 "24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    ns.handle(messages[-1]["content"], messages, 7)
+    assert fake_engine["saved"]["text"] == "일본 매출은 55.1억원입니다."
+
+
+def test_recurring_briefing_request_is_declined_with_guidance(fake_engine):
+    """⛔ 정기 발송은 2단계 기능이다 — 한 건 저장하고 성공이라 답하면 안 된다."""
+    answer = ns.handle("브리핑 매일 노션에 넣어줘",
+                       _msgs(("user", "브리핑 매일 노션에 넣어줘")), 7)
+    assert "준비 중" in answer
+    assert fake_engine["saved"] is None
+
+
+@pytest.mark.parametrize("query", [
+    "브리핑 매일 노션에 넣어줘",
+    "브리핑 매번 자동으로 노션에 올려줘",
+    "앞으로 브리핑 계속 노션에 저장해줘",
+])
+def test_recurring_briefing_variants_are_all_declined(fake_engine, query):
+    answer = ns.handle(query, _msgs(("user", query)), 7)
+    assert "준비 중" in answer
+    assert fake_engine["saved"] is None
+
+
+def test_one_off_briefing_save_is_not_mistaken_for_recurring(fake_engine):
+    """⚠️ '브리핑' 이나 '매일' 이 있어도 **둘 다** 있을 때만 가로챈다."""
+    messages = _msgs(
+        ("user", "오늘 브리핑 요약해줘"),
+        ("assistant", "오늘의 브리핑입니다."),
+        ("user", "이 답변 노션에 넣어줘"),
+        ("assistant", ns.build_prompt()),
+        ("user", "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert "https://notion.so/row-1" in answer
+    assert fake_engine["saved"]["text"] == "오늘의 브리핑입니다."

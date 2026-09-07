@@ -2,7 +2,11 @@
 """노션 쓰기 관통 확인 — 수동 실행.
 
 이 프로젝트는 `2025-09-03` 을 써 본 적이 없다(전부 `2022-06-28` 읽기 전용).
-DB 생성 → data_source_id 획득 → 행 생성까지 한 번 관통시켜 본 뒤 나머지를 짓는다.
+
+⛔ **실제 사용 경로(`resolve_target`·`save`)를 그대로 태운다.** 예전 버전은 DB 생성만
+   직접 호출해 "관통 성공"을 찍었는데, 그러면 스키마를 데이터 소스가 아니라 DB 객체에서
+   읽던 결함이 있어도 통과한다 — **기존 DB 에 대한 두 번째 저장부터 전부 실패하는** 결함이
+   실제로 있었다(`_load_database`). 이 스크립트는 그 결함이 있으면 두 번째 저장에서 죽는다.
 
     python scripts/notion_write_probe.py <노션_페이지_URL>
 
@@ -15,6 +19,13 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from app.core import notion_export as nx  # noqa: E402
 
+_BODY = (
+    "관통 확인 본문입니다.\n\n"
+    "| 국가 | 매출 |\n"
+    "|---|---|\n"
+    "| 일본 | 55.1억 |\n"
+)
+
 
 def main() -> int:
     if len(sys.argv) < 2:
@@ -24,33 +35,37 @@ def main() -> int:
         print("NOTION_WRITE_TOKEN 이 비어 있다. .env 에 넣고 다시 실행할 것.")
         return 2
 
-    page_id = nx.parse_page_url(sys.argv[1])
+    url = sys.argv[1]
+    page_id = nx.parse_page_url(url)
     print(f"page_id = {page_id}")
     if not page_id:
         return 2
 
-    created = nx._request("POST", "/v1/databases", {
-        "parent": {"type": "page_id", "page_id": page_id},
-        "title": [{"type": "text", "text": {"content": "셀라 (probe)"}}],
-        "initial_data_source": {"properties": nx.DB_PROPERTIES},
-    })
-    print(f"database_id      = {created.get('id')}")
-    sources = created.get("data_sources") or []
-    print(f"data_sources     = {sources}")
-    if not sources:
-        print("⛔ data_sources 가 비었다 — 응답 형태를 확인할 것")
+    # 1) DB 를 만든다 (또는 이미 있으면 그대로 쓴다) — 실제 사용 경로와 같다.
+    target = nx.resolve_target(0, url)
+    print(f"database_id      = {target.database_id}")
+    print(f"data_source_id   = {target.data_source_id}")
+    print(f"created          = {target.created}")
+
+    # 2) 그 DB 의 URL 로 **다시** resolve — 여기서 스키마가 비면 결함이다.
+    db_url = f"https://www.notion.so/{target.database_id.replace('-', '')}"
+    reread = nx.resolve_target(0, db_url)
+    print(f"properties (재조회) = {reread.properties}")
+    if not reread.properties:
+        print("⛔ 스키마가 비었다 — _load_database 가 데이터 소스가 아니라 "
+              "데이터베이스에서 스키마를 읽고 있을 가능성이 크다")
         return 1
 
-    row = nx._request("POST", "/v1/pages", {
-        "parent": {"type": "data_source_id", "data_source_id": sources[0]["id"]},
-        "properties": {"제목": {"title": [{"type": "text",
-                                          "text": {"content": "관통 확인"}}]}},
-        "children": [{"object": "block", "type": "paragraph",
-                      "paragraph": {"rich_text": [{"type": "text",
-                                                   "text": {"content": "성공"}}]}}],
-    })
-    print(f"row url          = {row.get('url')}")
-    print("✅ 관통 성공 — 만들어진 probe DB 는 노션에서 지워도 된다")
+    # 3) 첫 저장.
+    first = nx.save(reread, "관통 확인 1회차", _BODY)
+    print(f"row url (1회차)   = {first.url}")
+
+    # 4) 두 번째 저장 — 이 결함의 증상이 여기서 나타난다("제목 속성이 없는 DB").
+    second = nx.save(reread, "관통 확인 2회차", _BODY)
+    print(f"row url (2회차)   = {second.url}")
+
+    print("✅ 관통 성공 — 위 두 URL 을 열어 표가 표로 보이는지 눈으로 확인할 것. "
+          "만들어진 `셀라` DB 는 노션에서 지워도 된다")
     return 0
 
 

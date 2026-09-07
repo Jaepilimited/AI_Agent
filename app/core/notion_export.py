@@ -44,7 +44,9 @@ _HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
 # Task 3: 본문 정제
 _DETAILS = re.compile(r"<details\b.*?</details\s*>", re.IGNORECASE | re.DOTALL)
 _CHART_FENCE = re.compile(r"```chart\b.*?```", re.IGNORECASE | re.DOTALL)
-_FOLLOWUP = re.compile(r"<!--\s*followup:.*?-->", re.IGNORECASE | re.DOTALL)
+#: 실제 후속 제안 칩 형식 (`work_briefing.py` 가 잔디 본문에서 걷어내는 것과 같다).
+#: ⛔ 예전 정규식(`<!-- followup: -->`)은 앱이 내지 않는 형식이라 칩이 그대로 노션에 실렸다.
+_FOLLOWUP = re.compile(r"(?m)^>.*이런 것도 물어보세요.*(?:\n>.*)*")
 _ORPHAN_VIZ = re.compile(r"^#{1,6}\s*시각화\s*$\n?", re.MULTILINE)
 
 
@@ -393,11 +395,32 @@ def _first_data_source(payload: dict) -> str:
     return str(sources[0].get("id", "")) if sources else ""
 
 
+def _fetch_schema(data_source_id: str, fallback_payload: dict) -> dict:
+    """데이터 소스에서 스키마를 읽는다. 실패하거나 비면 DB payload 의 것으로 물러선다.
+
+    ⛔ **스키마는 데이터베이스가 아니라 데이터 소스에 있다** (`2025-09-03`).
+       DB 객체의 `properties` 를 믿으면 빈 스키마를 받아 저장이 "제목 속성이 없는 DB"
+       로 죽는다 — 기존 DB 에 대한 저장이 **전부** 실패한다.
+    ⚠️ 폴백을 남긴다: 데이터 소스 조회가 실패하거나 비면 DB payload 의 properties 를 쓴다.
+    """
+    if not data_source_id:
+        return _schema(fallback_payload)
+    schema = {}
+    try:
+        schema = _schema(_request("GET", f"/v1/data_sources/{data_source_id}"))
+    except NotionError as exc:
+        logger.warning("notion_data_source_read_failed",
+                       kind=exc.kind, data_source_id=data_source_id)
+    return schema or _schema(fallback_payload)
+
+
 def _load_database(database_id: str, created: bool = False) -> Target:
+    """DB 를 읽어 Target 을 만든다. 스키마는 `_fetch_schema()` 가 데이터 소스에서 얻는다."""
     payload = _request("GET", f"/v1/databases/{database_id}")
+    data_source_id = _first_data_source(payload)
     return Target(database_id=str(payload.get("id", database_id)),
-                  data_source_id=_first_data_source(payload),
-                  properties=_schema(payload), created=created)
+                  data_source_id=data_source_id,
+                  properties=_fetch_schema(data_source_id, payload), created=created)
 
 
 def _find_child_database(parent_id: str) -> str:
@@ -468,10 +491,15 @@ def resolve_target(user_id: int, url: str) -> Target:
         "title": [{"type": "text", "text": {"content": DB_TITLE}}],
         "initial_data_source": {"properties": DB_PROPERTIES},
     })
+    # ⚠️ 생성 응답에도 스키마는 데이터 소스에 있다 — `_load_database` 와 같은 경로로
+    #    읽는다. 데이터 소스 조회가 비거나 실패하면 우리가 요청한 `DB_PROPERTIES` 로
+    #    물러선다 (방금 만든 DB 이므로 이 폴백은 실제 스키마와 같다).
+    data_source_id = _first_data_source(payload)
+    schema = _fetch_schema(data_source_id, payload) or {
+        name: list(spec)[0] for name, spec in DB_PROPERTIES.items()}
     target = Target(database_id=str(payload.get("id", "")),
-                    data_source_id=_first_data_source(payload),
-                    properties=_schema(payload) or {
-                        name: list(spec)[0] for name, spec in DB_PROPERTIES.items()},
+                    data_source_id=data_source_id,
+                    properties=schema,
                     created=True)
     _remember_database(user_id, page_id, target)
     return target
@@ -502,7 +530,9 @@ def _properties_for(target: Target, title: str, kind: str,
     schema = target.properties or {}
     title_name = _title_property_name(schema)
     if not title_name:
-        raise NotionError("bad_request", "제목 속성이 없는 DB 다")
+        # ⛔ `bad_request` 로 나가면 "노션 주소를 읽지 못했습니다" 문구가 붙어
+        #    사용자는 멀쩡한 URL 을 영원히 다시 붙여넣는다. 원인이 다르므로 문구도 갈랐다.
+        raise NotionError("bad_property", "제목 속성이 없는 DB 다")
 
     props = {title_name: {"title": [{"type": "text",
                                      "text": {"content": (title or "제목 없음")[:200]}}]}}
