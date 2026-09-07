@@ -273,21 +273,22 @@ def test_db_url_is_used_as_is(monkeypatch, no_cache):
 
 def test_page_url_creates_the_database_once(monkeypatch, no_cache):
     created = {"count": 0}
+    schema = {name: {"type": list(spec)[0]} for name, spec in nx.DB_PROPERTIES.items()}
 
     def handler(method, path, body=None):
         if path == f"/v1/databases/{_UUID}":
             raise nx.NotionError("not_connected", "not a database", 404)
+        if path == "/v1/databases/db-new":
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
+                    "properties": schema}
         if path == f"/v1/pages/{_UUID}":
             return {"id": _UUID, "object": "page"}
-        if path == f"/v1/blocks/{_UUID}/children":
+        if path.startswith(f"/v1/blocks/{_UUID}/children"):
             return {"results": []}
         if method == "POST" and path == "/v1/databases":
             created["count"] += 1
-            # ⚠️ 노션 응답의 속성 형태는 `{이름: {"type": "title", ...}}` 다.
-            #    `DB_PROPERTIES` 의 요청 형태(`{"title": {}}`)와 다르다.
             return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
-                    "properties": {name: {"type": list(spec)[0]}
-                                   for name, spec in nx.DB_PROPERTIES.items()}}
+                    "properties": schema}
         raise AssertionError(f"불필요한 호출: {method} {path}")
 
     _stub_requests(monkeypatch, handler)
@@ -300,6 +301,8 @@ def test_page_url_creates_the_database_once(monkeypatch, no_cache):
     assert created["count"] == 1
     assert second.database_id == "db-new"
     assert second.created is False
+    # ⛔ 스키마가 비면 저장 단계가 "제목 속성이 없는 DB" 로 죽는다.
+    assert second.properties.get("제목") == "title"
 
 
 def test_existing_child_database_is_reused_without_cache(monkeypatch, no_cache):
@@ -309,7 +312,7 @@ def test_existing_child_database_is_reused_without_cache(monkeypatch, no_cache):
             raise nx.NotionError("not_connected", "", 404)
         if path == f"/v1/pages/{_UUID}":
             return {"id": _UUID}
-        if path == f"/v1/blocks/{_UUID}/children":
+        if path.startswith(f"/v1/blocks/{_UUID}/children"):
             return {"results": [
                 {"type": "child_page", "child_page": {"title": "셀라"}},
                 {"id": "db-old", "type": "child_database",
@@ -323,6 +326,32 @@ def test_existing_child_database_is_reused_without_cache(monkeypatch, no_cache):
     _stub_requests(monkeypatch, handler)
     target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
     assert (target.database_id, target.created) == ("db-old", False)
+
+
+def test_cached_database_that_was_deleted_falls_through_to_create(monkeypatch, no_cache):
+    """캐시가 가리키는 DB 를 사용자가 지웠으면 다시 만든다 — 캐시를 맹신하지 않는다."""
+    no_cache[(7, _UUID)] = {"database_id": "db-gone", "data_source_id": "ds-gone"}
+    created = {"count": 0}
+
+    def handler(method, path, body=None):
+        if path == f"/v1/databases/{_UUID}":
+            raise nx.NotionError("not_connected", "", 404)
+        if path == "/v1/databases/db-gone":
+            raise nx.NotionError("not_connected", "", 404)
+        if path == f"/v1/pages/{_UUID}":
+            return {"id": _UUID}
+        if path.startswith(f"/v1/blocks/{_UUID}/children"):
+            return {"results": []}
+        if method == "POST" and path == "/v1/databases":
+            created["count"] += 1
+            return {"id": "db-new", "data_sources": [{"id": "ds-new"}],
+                    "properties": {"제목": {"type": "title"}}}
+        raise AssertionError(f"불필요한 호출: {method} {path}")
+
+    _stub_requests(monkeypatch, handler)
+    target = nx.resolve_target(7, f"https://www.notion.so/{_ID}")
+    assert created["count"] == 1
+    assert target.database_id == "db-new"
 
 
 def test_bad_url_raises_before_any_call(monkeypatch, no_cache):

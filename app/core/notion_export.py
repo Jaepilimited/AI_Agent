@@ -398,15 +398,13 @@ def _find_child_database(parent_id: str) -> str:
     """부모의 자식 블록에서 제목이 `셀라` 인 DB 를 찾는다.
 
     ⛔ 캐시가 없다고 곧바로 만들지 마라 — 사용자 페이지에 DB 가 여러 개 생긴다.
-    ⚠️ 첫 호출은 쿼리스트링 없는 맨 경로다 (`page_size` 를 안 붙여도 노션 기본값이
-       100 이라 `MAX_BLOCKS_PER_REQUEST` 와 같다) — 다음 페이지가 있을 때만 커서를 붙인다.
     """
     cursor, guard = None, 0
     while guard < 10:
         guard += 1
-        path = f"/v1/blocks/{parent_id}/children"
+        path = f"/v1/blocks/{parent_id}/children?page_size=100"
         if cursor:
-            path += f"?start_cursor={cursor}"
+            path += f"&start_cursor={cursor}"
         payload = _request("GET", path)
         for block in payload.get("results") or []:
             if block.get("type") != "child_database":
@@ -436,16 +434,16 @@ def resolve_target(user_id: int, url: str) -> Target:
         if exc.kind != "not_connected":
             raise                                  # 403 은 그대로 올린다
 
-    # ⚠️ 캐시를 그대로 믿는다 — 여기서 한 번 더 살아있는지 확인하려 들면
-    #    (`_load_database` 재호출) 캐시 히트마다 매번 API 를 한 번 더 태우는 셈이라
-    #    캐시를 둔 의미가 없어진다. 사용자가 그 DB 를 지웠다면 실제로 그 DB 에
-    #    쓰려고 할 때(다음 단계) 실패가 그 자리에서 드러난다 — 여기서 미리
-    #    감지하지는 않는다.
     cached = _cached_database(user_id, page_id)
     if cached and cached.get("database_id"):
-        return Target(database_id=str(cached["database_id"]),
-                      data_source_id=str(cached.get("data_source_id") or ""),
-                      created=False)
+        try:
+            # ⛔ 캐시에는 **스키마가 없다.** 스키마 없이 돌려주면 저장 단계가
+            #    "제목 속성이 없는 DB" 로 죽는다 — 첫 저장만 되고 그 뒤로 전부 실패한다.
+            #    이 함수는 어차피 위에서 한 번 API 를 타므로 한 번 더 읽어도 된다.
+            #    캐시가 막는 것은 호출 수가 아니라 **DB 중복 생성과 자식 전수 스캔**이다.
+            return _load_database(str(cached["database_id"]))
+        except NotionError:
+            pass                                   # 지워졌다 — 아래에서 다시 찾거나 만든다
 
     _request("GET", f"/v1/pages/{page_id}")        # 페이지가 맞는지·닿는지 확인
     found = _find_child_database(page_id)
