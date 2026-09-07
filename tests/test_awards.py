@@ -421,3 +421,35 @@ def test_both_routing_paths_are_wired():
     """⚠️ 한쪽만 고치면 경로에 따라 답이 갈린다 — 이 저장소에서 이미 겪은 사고다."""
     src = open("app/agents/orchestrator.py", encoding="utf-8").read()
     assert src.count("_awards_term(") >= 3   # 정의 1 + 호출 2(비스트리밍·스트리밍)
+
+
+# ── Correction C: db_entry 정규화 (팀 리더 피드백, `_inventory_term` 과 같은 방식) ──
+
+def test_awards_term_normalizes_a_list_db_entry_without_crashing():
+    """⛔ `db_entry` 는 `@@` 를 여러 개 붙이면 **리스트**로 온다.
+    `.get()` 을 그냥 부르면 리스트에서 터진다."""
+    from app.agents.orchestrator import OrchestratorAgent as O
+
+    o = O.__new__(O)
+    db_entry = [{"route": "awards"}, {"route": "bigquery"}]
+    term = o._awards_term("아무거나", "아무거나", db_entry, None)
+    assert term is not None
+
+
+def test_awards_term_handles_a_none_db_entry_without_crashing():
+    """`@@` 를 하나도 안 붙였을 때 `db_entry` 는 `None` 으로 온다."""
+    from app.agents.orchestrator import OrchestratorAgent as O
+
+    o = O.__new__(O)
+    term = o._awards_term("화해 어워드 1위", "화해 어워드 1위", None, None)
+    assert term is not None
+
+
+def test_enabled_sources_pinned_to_awards_alone_counts_as_explicit():
+    """소스 선택기에서 `수상` 하나만 남기는 것은 `@@수상` 과 같은 뜻이다
+    (재고가 `["OP"]` 에 대해 이미 그렇게 한다)."""
+    from app.agents.orchestrator import OrchestratorAgent as O
+
+    o = O.__new__(O)
+    term = o._awards_term("아무 낱말도 없음", "아무 낱말도 없음", None, ["수상"])
+    assert term is not None
