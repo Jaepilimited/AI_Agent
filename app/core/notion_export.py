@@ -553,6 +553,10 @@ def _properties_for(target: Target, title: str, kind: str,
 def save(target: Target, title: str, text: str, kind: str = "답변",
          link: str = "") -> SaveResult:
     """DB 에 행 하나를 만들고 본문 블록을 넣는다."""
+    if not target.data_source_id:
+        # ⛔ 빈 값으로 POST 하면 400 이 나고, 그 문구가 "제목 속성이 없는 DB" 처럼
+        #    오해하기 좋게 나간다 — API 를 부르기 전에 막는다.
+        raise NotionError("bad_property", "데이터 소스를 찾지 못했다")
     blocks = markdown_to_blocks(clean_for_notion(text))
     props, skipped = _properties_for(target, title, kind, link)
 

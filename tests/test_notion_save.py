@@ -299,6 +299,23 @@ def test_recurring_briefing_variants_are_all_declined(fake_engine, query):
     assert fake_engine["saved"] is None
 
 
+def test_title_never_comes_from_the_query_details_block(fake_engine):
+    """⛔ 본문에서 걷어낸 내부 경로가 **제목**으로 새면 안 된다."""
+    messages = _msgs(
+        ("user", "매출은?"),
+        ("assistant",
+         "<details><summary>실행된 쿼리</summary>\n\n"
+         "`skin1004-319714.SALES_ALL_Backup.x`\n</details>\n\n"
+         "일본 매출은 55.1억원입니다."),
+        ("user", "이거 노션에 넣어줘 https://www.notion.so/"
+                 "24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    ns.handle(messages[-1]["content"], messages, 7)
+    assert "실행된 쿼리" not in fake_engine["saved"]["title"]
+    assert "skin1004-319714" not in fake_engine["saved"]["title"]
+    assert "55.1억" in fake_engine["saved"]["title"]
+
+
 def test_one_off_briefing_save_is_not_mistaken_for_recurring(fake_engine):
     """⚠️ '브리핑' 이나 '매일' 이 있어도 **둘 다** 있을 때만 가로챈다."""
     messages = _msgs(

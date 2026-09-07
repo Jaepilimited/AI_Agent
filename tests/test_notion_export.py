@@ -534,6 +534,16 @@ def test_save_refuses_a_database_without_a_title_property(monkeypatch):
     assert exc.value.kind == "bad_property"
 
 
+def test_save_refuses_when_data_source_id_is_empty(monkeypatch):
+    """⛔ 빈 data_source_id 로 POST 하면 400 이 오해하기 좋은 문구로 나간다 — 미리 막는다."""
+    target = nx.Target(database_id="db-4", data_source_id="",
+                       properties={"제목": "title"})
+    _stub_requests(monkeypatch, lambda *a, **k: pytest.fail("호출하면 안 된다"))
+    with pytest.raises(nx.NotionError) as exc:
+        nx.save(target, "제목", "본문")
+    assert exc.value.kind == "bad_property"
+
+
 def test_date_property_is_korea_time(monkeypatch, our_target):
     """⚠️ 호스트 TZ 가 KST 가 아니어도 한국 날짜를 찍는다."""
     from datetime import datetime

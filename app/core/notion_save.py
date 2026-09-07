@@ -167,12 +167,18 @@ def _do_save(user_id: int | None, url: str, body: str, kind: str) -> str:
 
     if not nx.is_enabled():
         return _ERROR_MESSAGE["disabled"]
-    if not body.strip():
+    # ⛔ 제목은 **정제된** 본문에서 뽑는다. 원본에서 뽑으면 답변이
+    #    `<details>실행된 쿼리</details>` 로 시작할 때 "실행된 쿼리" 가 그대로
+    #    노션 행 제목이 된다 — 본문에서 내부 테이블 경로를 걷어내는 방어를 해 놓고
+    #    제목으로 새는 셈이다. `save()` 안에서 또 `clean_for_notion` 을 걸지만
+    #    그 함수는 멱등이라(이미 지운 것을 다시 지워도 같은 결과) 두 번 걸어도 안전하다.
+    cleaned = nx.clean_for_notion(body)
+    if not cleaned.strip():
         return ("저장할 내용을 찾지 못했습니다. 저장하고 싶은 답변 바로 다음에 "
                 "다시 말씀해 주세요.")
     try:
         target = nx.resolve_target(int(user_id or 0), url)
-        result = nx.save(target, _title_from(body), body, kind=kind,
+        result = nx.save(target, _title_from(cleaned), cleaned, kind=kind,
                          link=_sella_link())
     except nx.NotionError as exc:
         # ⛔ 프로덕션은 앱 INFO 를 통째로 버린다 — 로컬 실패(`disabled`·`bad_property`)가
