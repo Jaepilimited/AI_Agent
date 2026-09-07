@@ -385,3 +385,42 @@ def format_answer(result: Dict[str, Any]) -> str:
         out.append(f"\n총 {result['total']}건 중 {len(rows)}건만 표시했습니다.")
     out.append(f"\n*기준: {result.get('synced_at', '-')} 적재분*")
     return "\n".join(out)
+
+
+# ── 라우팅 의도 판정 (Task 4) ──────────────────────────────────────────
+#: 이 도메인에서만 쓰이는 낱말 — 단독으로 켜도 안전하다.
+_STRONG = ("수상", "어워드", "awards", "수상이력", "수상 이력")
+#: ⛔ `랭킹`·`순위` 는 매출 질문에도 흔하다. **축 낱말과 함께**일 때만 켠다
+#:    (물류가 `발주` 를 단독으로 쓰지 않고 튜플로 건 것과 같은 방식).
+_WEAK = ("랭킹", "순위", "1위", "top")
+_AXIS = ("화해", "글로우픽", "picky", "쇼피", "올리브영 글로벌", "주최사", "어워드",
+         "수상", "한국소비자포럼", "female daily", "예스스타일")
+#: 이 낱말이 있으면 매출·재고 질문이다 — 켜지 않는다.
+_BLOCK = ("매출", "판매", "재고", "광고", "물류", "발주", "출고")
+
+_STOP = ("알려줘", "보여줘", "뭐", "있어", "우리", "관련", "정보", "목록", "리스트")
+
+
+def awards_intent(query: str, explicit: bool = False) -> Optional[str]:
+    """이 경로가 맞으면 검색어를, 아니면 None.
+
+    ⛔ `explicit=True` 는 빈 문자열을 돌려줄 수 있다 — 빈 문자열은 falsy 라
+       호출부가 `if _awd_term:` 로 받으면 `@@수상` 만 찍은 사용자가 경로를 못 타고
+       **에러 없이 일반 답변**을 받는다. 호출부는 반드시 `is not None` 으로 볼 것.
+    """
+    q = (query or "").strip()
+    if explicit:
+        return _search_term(q)
+    low = q.lower()
+    if any(b in low for b in _BLOCK):
+        return None
+    if any(s in low for s in _STRONG):
+        return _search_term(q)
+    if any(w in low for w in _WEAK) and any(a in low for a in _AXIS):
+        return _search_term(q)
+    return None
+
+
+def _search_term(q: str) -> str:
+    words = [w for w in re.split(r"\s+", q) if w and w not in _STOP]
+    return " ".join(words)[:120]

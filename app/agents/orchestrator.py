@@ -846,6 +846,11 @@ class OrchestratorAgent:
         # OP — 운영팀 재고. ⚠️ 벡터가 아니라 **표 조회**다 (`route: "inventory"`).
         #    시트가 SKU × 창고 수량이라 임베딩으로는 숫자를 못 지킨다 (2026-08-25 결정).
         {"key": "OP", "aliases": ["op", "운영", "운영팀", "재고", "inventory", "stock"], "route": "inventory", "group": "Notion", "icon": "box", "label": "OP", "desc": "재고 (SKU·창고별 수량)"},
+        # 수상/랭킹 — ⚠️ 벡터가 아니라 **표 조회**다 (`route: "awards"`).
+        #    랭킹이 숫자라 임베딩으로는 1위와 10위를 구분하지 못한다 (2026-09-07 결정).
+        {"key": "수상", "aliases": ["awards", "어워드", "랭킹정보", "수상랭킹"],
+         "route": "awards", "group": "브랜드 성과", "icon": "star", "label": "수상",
+         "desc": "수상·랭킹·설문 이력 (주최사·순위·마케팅 활용 표기)"},
         # ── 시스템 ──
         {"key": "gws", "aliases": ["google workspace", "workspace", "워크스페이스", "google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
         # ── 확장 ──
@@ -1231,6 +1236,12 @@ class OrchestratorAgent:
             logger.info("inventory_query", path="route_and_execute", term=_inv_term[:60])
             return await self._handle_inventory_query(_inv_term)
 
+        # 수상/랭킹 — 재고·성분과 같은 이유로 표 조회다 (2026-09-07)
+        _awd_term = self._awards_term(query, clean_query, db_entry, enabled_sources)
+        if _awd_term is not None:
+            logger.info("awards_query", path="route_and_execute", term=_awd_term[:60])
+            return await self._handle_awards_query(_awd_term)
+
         from app.core.model_rights import model_rights_intent
         _mr_entries = db_entry if isinstance(db_entry, list) else ([db_entry] if isinstance(db_entry, dict) else [])
         _mr_selected = any(e.get("route") == "model_rights" for e in _mr_entries)             or (enabled_sources and list(enabled_sources) == ["초상권"])
@@ -1566,6 +1577,15 @@ class OrchestratorAgent:
             logger.info("inventory_query", path="route_and_stream", term=_inv_term[:60])
             _r = await self._handle_inventory_query(_inv_term)
             yield ("source", "inventory")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 수상/랭킹 — **두 경로 모두**에 걸어야 한다. 한쪽만 걸면 경로에 따라 답이 갈린다
+        _awd_term = self._awards_term(query, clean_query, db_entry, enabled_sources)
+        if _awd_term is not None:
+            logger.info("awards_query", path="route_and_stream", term=_awd_term[:60])
+            _r = await self._handle_awards_query(_awd_term)
+            yield ("source", "awards")
             yield ("done", _r.get("answer", ""))
             return
 
@@ -3396,6 +3416,35 @@ class OrchestratorAgent:
                   + (" · 대상 {:,}개 품목".format(len(index)))
                   + " · [원본 시트](" + SHEET_URL + ")*"]
         return {"source": "inventory", "answer": nl.join(lines)}
+
+    @staticmethod
+    def _awards_term(query, clean_query, db_entry, enabled_sources):
+        """수상/랭킹 질문이면 검색어를, 아니면 None (`@@수상` 지정이면 낱말을 안 봐도 켠다).
+
+        ⚠️ `db_entry` 는 딕셔너리일 수도 리스트일 수도 있다 (`@@` 를 여러 개 붙인
+           경우) — `_inventory_term` 과 같은 방식으로 정규화한다. `db_entry.get()` 을
+           그냥 부르면 리스트에서 터진다.
+        ⛔ `awards_intent(explicit=True)` 는 낱말이 없으면 **빈 문자열**을 돌려준다.
+           호출부는 반드시 `is not None` 으로 받을 것 — 참 판정이면 `@@수상` 만
+           찍은 사용자가 경로를 못 타고 에러 없이 일반 답변을 받는다.
+        """
+        from app.core.awards import awards_intent
+
+        entries = db_entry if isinstance(db_entry, list) else (
+            [db_entry] if isinstance(db_entry, dict) else [])
+        explicit = bool(any(e.get("route") == "awards" for e in entries)
+                        or (enabled_sources and list(enabled_sources) == ["수상"]))
+        text = (clean_query or query) if explicit else query
+        return awards_intent(text, explicit=explicit)
+
+    async def _handle_awards_query(self, term: str) -> Dict[str, Any]:
+        """수상/랭킹 — 벡터가 아니라 **표 조회**다 (재고·성분과 같은 사상)."""
+        import asyncio as _asyncio
+
+        from app.core.awards import format_answer, search
+        result = await _asyncio.to_thread(search, term)
+        return {"answer": format_answer(result), "route": "awards",
+                "source": "awards", "sources": ["수상/랭킹 시트"]}
 
     async def _handle_expiry_query(self, term: str) -> dict:
         """OP 유통기한 — 로트별 잔량을 **임박한 순**으로 보여준다.

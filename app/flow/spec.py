@@ -64,6 +64,11 @@ NODES: tuple[Node, ...] = (
     Node("intercept.inventory", "재고 가로채기",
          fn="app.core.inventory.inventory_intent",
          knobs=("@@OP 지정", "'재고' 낱말")),
+    # 수상/랭킹 가로채기 — 재고·성분과 같은 이유로 분류기보다 **먼저** 돈다.
+    # 랭킹이 숫자·판정이라 LLM 에 SQL 을 맡기지 않는다 (2026-09-07).
+    Node("intercept.awards", "수상/랭킹 가로채기",
+         fn="app.core.awards.awards_intent",
+         knobs=("@@수상 지정", "'수상'·'어워드' 낱말")),
     Node("intercept.report", "보고서 가로채기",
          fn="app.reports.registry.wants_report",
          knobs=("registry._REPORT_META", "@@보고서 지정")),
@@ -102,6 +107,7 @@ NODES: tuple[Node, ...] = (
     Node("route.model_rights", "model_rights", group="route"),
     Node("route.report", "report", group="route"),
     Node("route.inventory", "inventory", group="route"),
+    Node("route.awards", "awards", group="route"),
     # ⚠️ 여기 있던 `route.team` 은 2026-08-25 에 **배선째 걷어냈다.** 도달 불가 표시는
     #    "지우지도 화살표를 긋지도 않는" 세 번째 선택지였는데, 코드를 실제로 지운
     #    다음에는 그 표시 자체가 낡은 사실이 된다. 팀 자료는 이제 벡터 색인의 링크
@@ -228,7 +234,11 @@ EDGES: tuple[Edge, ...] = (
 
     Edge("intercept.inventory", "route.inventory",
          label="@@OP · 재고 질문", conditional=True),
-    Edge("intercept.inventory", "source_pin", label="통과", conditional=True),
+    Edge("intercept.inventory", "intercept.awards", label="통과", conditional=True),
+
+    Edge("intercept.awards", "route.awards",
+         label="@@수상 · 수상/랭킹 질문", conditional=True),
+    Edge("intercept.awards", "source_pin", label="통과", conditional=True),
 
     *tuple(Edge("source_pin", r, label="소스 지정", conditional=True)
            for r in _PINNED_ROUTES),

@@ -368,3 +368,56 @@ def test_the_answer_says_nothing_about_rank_when_no_rank_filter_was_applied():
     text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
                                  "rank_filter": None})
     assert "좁혔습니다" not in text
+
+
+# ── Task 4: 라우팅 ─────────────────────────────────────────────────────
+import re as _re
+
+from app.core.awards import awards_intent
+
+
+@pytest.mark.parametrize("q", [
+    "화해 어워드에서 1위 한 제품 알려줘",
+    "우리 수상 이력 알려줘",
+    "글로우픽 랭킹 알려줘",
+    "쇼피 Top Item 랭킹 뭐 있어?",
+])
+def test_award_questions_reach_this_route(q):
+    assert awards_intent(q) is not None
+
+
+@pytest.mark.parametrize("q", [
+    "제품별 판매 순위 알려줘",
+    "매출 랭킹 보여줘",
+    "8월 국가별 매출 순위",
+    "인도네시아 재고 얼마나 있어",
+])
+def test_sales_and_stock_questions_do_not_reach_this_route(q):
+    """⛔ `랭킹` 두 글자를 단독으로 켜면 매출 질문을 가로챈다."""
+    assert awards_intent(q) is None
+
+
+def test_explicit_source_selection_always_reaches_this_route():
+    assert awards_intent("아무거나", explicit=True) is not None
+
+
+def test_explicit_source_selection_with_no_words_returns_empty_string_not_none():
+    """⛔ Correction A — 빈 문자열은 falsy 라 `if _awd_term:` 로 받으면
+    `@@수상` 만 찍은 사용자가 경로를 못 탄다. 호출부는 `is not None` 으로 봐야 한다."""
+    result = awards_intent("", explicit=True)
+    assert result is not None
+    assert result == ""
+
+
+def test_the_registry_has_the_awards_entry_and_the_front_knows_its_group():
+    src = open("app/agents/orchestrator.py", encoding="utf-8").read()
+    assert '"key": "수상"' in src and '"route": "awards"' in src
+    group = _re.search(r'"key": "수상".*?"group": "([^"]+)"', src, _re.S).group(1)
+    js = open("app/frontend/chat.js", encoding="utf-8").read()
+    assert group in js, f"{group} 그룹이 chat.js 에 없다 — 화면에서 통째로 사라진다"
+
+
+def test_both_routing_paths_are_wired():
+    """⚠️ 한쪽만 고치면 경로에 따라 답이 갈린다 — 이 저장소에서 이미 겪은 사고다."""
+    src = open("app/agents/orchestrator.py", encoding="utf-8").read()
+    assert src.count("_awards_term(") >= 3   # 정의 1 + 호출 2(비스트리밍·스트리밍)
