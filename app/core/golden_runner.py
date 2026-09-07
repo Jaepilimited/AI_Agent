@@ -31,6 +31,7 @@ from typing import Optional
 
 import structlog
 
+from app.core.answer_check import has_number_near
 from app.db.mariadb import execute, execute_lastid, fetch_all, fetch_one
 
 logger = structlog.get_logger(__name__)
@@ -165,6 +166,21 @@ def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
     for kw in exp.get("not_contains", []):
         if kw in a:
             reasons.append(f"금지 문구 등장: {kw!r}")
+
+    # ── 수치는 문자열이 아니라 **허용오차**로 본다 ────────────────────────────
+    # ⛔ 살아 있는 집계값을 문자열로 얼리지 마라. 2026-09-07 실측: 문항 4개가 매일
+    #    실패하고 있었는데 앱은 정상이었고 얼려 둔 숫자만 낡았다 (789→790, 930→932,
+    #    5,577→5,576.9). 매일 실패하는 문항은 곧 아무도 안 읽고, 그러면 진짜
+    #    회귀가 났을 때 그 문항도 함께 무시당한다.
+    # ⛔ 더 나쁜 쪽은 **음성 단언**이다 — `not_contains: "5,577"` 은 전사값이
+    #    5,576.9 로 밀리는 순간 아무 흔적 없이 죽는다. 실패는 눈에 띄지만 무력해진
+    #    단언은 조용하다. 그래서 양·음 두 방향 모두 허용오차로 쓴다.
+    near = exp.get("number_near")
+    if near and not has_number_near(a, near["value"], near.get("pct", 2) / 100.0):
+        reasons.append(f"수치 불일치 — {near['value']:,} ±{near.get('pct', 2)}% 가 본문에 없음")
+    far = exp.get("number_not_near")
+    if far and has_number_near(a, far["value"], far.get("pct", 2) / 100.0):
+        reasons.append(f"금지 수치 등장 — {far['value']:,} ±{far.get('pct', 2)}%")
 
     sql_kws = exp.get("sql_contains_any", [])
     if sql_kws:

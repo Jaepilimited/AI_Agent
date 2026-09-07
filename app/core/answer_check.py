@@ -144,6 +144,32 @@ def _column_derived(cols: Dict[str, List[float]]) -> Set[float]:
     return sums
 
 
+# ── 금액 컬럼인가 — **여기가 단일 소스다** (`sql_agent._is_money_column` 이 부른다)
+#    ⚠️ 두 곳에 각자 적으면 한쪽만 고쳐진다 (이 프로젝트가 반복해서 겪은 함정).
+MONEY_TOKENS = (
+    "amount", "revenue", "sales", "cost", "spend", "expense", "fee", "profit",
+    "discount", "coupon", "income", "loss", "price", "krw", "usd",
+    "금액", "매출", "비용", "원가", "이익", "광고비", "총액", "수수료", "단가",
+)
+
+
+def _name_parts(column: str) -> Tuple[str, Set[str]]:
+    normalized = re.sub(r"[^0-9a-zA-Z가-힣]+", "_", str(column)).strip("_").lower()
+    return normalized, {p for p in normalized.split("_") if p}
+
+
+def is_money_column(column: str) -> bool:
+    """열 이름이 금액을 가리키는가. 영문은 낱말 경계로, 한글은 부분 일치로 본다."""
+    normalized, parts = _name_parts(column)
+    for token in MONEY_TOKENS:
+        if token.isascii():
+            if token in parts or normalized.startswith(token) or normalized.endswith(token):
+                return True
+        elif token in normalized:
+            return True
+    return False
+
+
 def grounded_amounts(rows: Sequence[Dict[str, Any]]) -> Set[float]:
     """조회 결과가 **실제로 설명하는 금액**의 집합 (행 값 + 열 파생값)."""
     vals, cols = _row_values(rows)
@@ -163,6 +189,29 @@ _SCALES = (1.0, 1e3, 1e4, 1e6, 1e8, 1e12)   # 원 · 천 · 만 · 백만 · 억
 
 def _close_any_scale(c: float, k: float) -> bool:
     return any(_close(c * s, k) for s in _SCALES)
+
+
+def has_number_near(text: str, value: float, tol: float = _TOL) -> bool:
+    """본문에 `value` 와 (배율을 무시하고) 가까운 숫자가 있는가.
+
+    골든셋이 쓴다 — **살아 있는 집계값을 문자열로 얼리지 않기 위해서**다.
+    `432,140,854,164` 로 쓰든 `4,321.4억` 으로 쓰든 같은 값으로 본다.
+
+    ⚠️ 숫자 추출은 `_numbers_in` 을 그대로 쓴다. 여기에 따로 구현하면 `SKIN1004` 의
+       **1004** 같은 '이름 속 숫자'를 다시 값으로 세게 된다 (그 함정은 이미 한 번
+       실측으로 잡혔다). 날짜 조각도 `verify` 와 같은 방식으로 먼저 지운다.
+    """
+    body = _DATE.sub(" ", _SQL_BLOCK.sub(" ", text or ""))
+    for c in _numbers_in(body):
+        if any(_close_tol(c * s, value, tol) for s in _SCALES):
+            return True
+    return False
+
+
+def _close_tol(a: float, b: float, tol: float) -> bool:
+    if b == 0:
+        return abs(a) < 1e-9
+    return abs(a - b) / max(abs(b), 1e-9) <= tol
 
 
 def verify(answer: str, rows: Sequence[Dict[str, Any]], question: str = "",
@@ -291,6 +340,12 @@ _ALT_SCALES = (1.0, 1e3, 1e4, 1e5, 1e6, 1e8, 1e12)
 _REPAIR_TOL = 0.005
 #: 2등 후보가 이만큼 멀어야 "이 값이다"라고 확정한다.
 _REPAIR_MARGIN = 3.0
+#: ⛔ **교정 결과가 1만원 미만일 수 없다.** `_MONEY_UNIT` 은 만·억·조만 매치하므로
+#:    "1.0억원" 을 "1원" 으로 되돌리는 것은 배율 실수의 교정이 아니라 **파괴**다.
+#:    2026-09-04 프로덕션 실측: `104,694,886 KRW` 에 LLM 이 맞게 붙인 "약 1.0억원" 을
+#:    교정기가 **"약 1원"** 으로 바꿔 놓았다 (`answer_money_scale_repaired
+#:    fixes=['1.0억원 -> 1원']`). 후보 집합에 **선적 건수 1** 이 들어 있었기 때문이다.
+_REPAIR_FLOOR = 1e4
 
 
 def render_amount(value: float) -> str:
@@ -306,6 +361,11 @@ def render_amount(value: float) -> str:
 def repair_money_scale(text: str, known: Set[float]) -> Tuple[str, List[str]]:
     """`828.7억원` 처럼 **배율만 틀린 금액 표기**를 조회 결과 값으로 되돌린다."""
     if not text or not known:
+        return text, []
+    # ⛔ 금액일 수 없는 값(건수·순위·비율)을 후보에서 뺀다 — 그것들이 붙잡히면
+    #    맞게 쓰인 금액이 1원·3원으로 파괴된다 (`_REPAIR_FLOOR` 주석 참고).
+    known = {k for k in known if abs(k) >= _REPAIR_FLOOR}
+    if not known:
         return text, []
     fixed: List[str] = []
 
@@ -344,13 +404,33 @@ def repair_money_scale(text: str, known: Set[float]) -> Tuple[str, List[str]]:
     return out, fixed
 
 
+def repairable_amounts(rows: Sequence[Dict[str, Any]]) -> Set[float]:
+    """**고쳐 쓸 때** 기준으로 삼는 값 — `grounded_amounts` 보다 좁다.
+
+    검증(`verify`)은 넉넉해야 정상 답변을 미검증으로 잡지 않지만, 교정은
+    **되돌릴 수 없으므로** 좁아야 한다. 그래서 금액 컬럼만 본다:
+    건수·컨테이너 수·순위가 섞여 있으면 맞게 쓰인 금액이 그쪽으로 끌려간다.
+
+    ⚠️ 금액처럼 보이는 열이 하나도 없으면 예전처럼 전체를 쓴다 — 그때도
+       `_REPAIR_FLOOR` 하한이 남아 있어 1원짜리 파괴는 일어나지 않는다.
+    """
+    _, cols = _row_values(rows)
+    money = {k: v for k, v in cols.items() if is_money_column(k)}
+    if not money:
+        return grounded_amounts(rows)
+    vals: Set[float] = set()
+    for v in money.values():
+        vals |= set(v)
+    return vals | _column_derived(money)
+
+
 def money_scale_repairer(rows: Sequence[Dict[str, Any]]):
     """행에서 기준값을 **한 번만** 뽑아 두는 줄 단위 교정기를 만든다.
 
     ⚠️ 줄마다 파생값을 다시 계산하면 스트리밍이 느려진다.
     """
     try:
-        known = grounded_amounts(rows)
+        known = repairable_amounts(rows)
     except Exception as e:
         logger.warning("money_scale_known_failed", error=str(e)[:150])
         known = set()
