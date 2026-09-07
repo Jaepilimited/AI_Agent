@@ -1345,7 +1345,16 @@ class OrchestratorAgent:
                     flash = get_flash_client()
                     # 2단계: **소스가 필요한가**를 먼저 묻는다 (예/아니오)
                     # ⚠️ 꺼져 있으면 게이트를 통째로 건너뛴다 = 도입 이전 동작.
+                    from app.core.route_intent import gate_can_judge
                     if not _get_settings().source_gate_enabled:
+                        route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif not gate_can_judge(query, conversation_context):
+                        # ⛔ 게이트는 발화 하나만 본다 — "B2B"·"B2C" 처럼 짧고
+                        #    앞 대화가 있는 발화는 뜻이 직전 턴에 있어 게이트
+                        #    혼자로는 판단할 수 없다. 안전한 쪽(뒤진다)으로 간다.
+                        logger.warning("source_gate_skipped", path="route_and_execute",
+                                       query=query[:80])
                         route = await self._classify_with_llm(
                             query, conversation_context, flash)
                     elif await self._needs_source(query, flash):
@@ -1750,7 +1759,15 @@ class OrchestratorAgent:
                     from app.config import get_settings as _get_settings
                     flash = get_flash_client()
                     # ⚠️ 꺼져 있으면 게이트를 건너뛴다 = 도입 이전 동작 (비스트리밍과 동일)
+                    from app.core.route_intent import gate_can_judge
                     if not _get_settings().source_gate_enabled:
+                        new_route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif not gate_can_judge(query, conversation_context):
+                        # ⛔ 비스트리밍과 동일 — 짧고 앞 대화가 있는 발화는
+                        #    게이트 혼자로는 판단할 수 없다 (route_and_execute 참고)
+                        logger.warning("source_gate_skipped", path="route_and_stream",
+                                       query=query[:80])
                         new_route = await self._classify_with_llm(
                             query, conversation_context, flash)
                     elif await self._needs_source(query, flash):

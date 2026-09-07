@@ -84,6 +84,41 @@ def parse_gate(raw) -> str:
     return "SELF" if (has_self and not has_need) else "NEED"
 
 
+# 이 글자 수 이하이면서 앞 대화가 있으면 게이트에 맡기지 않는다.
+# ⛔ 손으로 고른 값이 아니다 — 실사고 두 건("B2B"·"B2C", 각 3자)에서 실측한 상한이다.
+_GATE_SHORT_MAX_CHARS = 20
+
+
+def gate_can_judge(query: str, conversation_context: str) -> bool:
+    """게이트가 이 발화를 **혼자 판단할 수 있는가**.
+
+    ⛔ 게이트(`_needs_source`)는 발화 **하나만** 본다 — 그것이 이 뒤의 6지선다
+       (`_classify_with_llm`, 대화 맥락을 함께 받는다)와의 결정적 차이다.
+       그런데 "B2B"·"B2C" 처럼 짧은 발화는 뜻이 발화 자체가 아니라 **직전 턴**
+       (되물음 "B2B/B2C 중 어느 기준인지요?")에 있다. 그 발화만 떼어 게이트에
+       물으면 국가·기간·수치 같은 사내 자료 신호가 하나도 없어 SELF 로 떨어지고,
+       조회 없이 답하게 된다 — 골든셋 `inc_clarify_followup_b2b`·`fu_clarify_b2c`
+       가 바로 이 모양이다.
+    ⛔ **앞 대화가 없으면** 아무리 짧아도("roas가 뭐야?") 그 발화가 뜻의 전부이므로
+       계속 게이트에 맡긴다 — 이 함수가 생기기 전과 같은 동작이다. 앞 대화가
+       있을 때만 "말이 짧으면 뜻이 앞 턴에 있다"는 전제가 성립한다.
+    ⚠️ 임계를 넉넉히 20자로 잡았다 — 좁히면(예: 5자) "국가별로 나눠줘" 같이
+       그 자체로 뜻이 완결된 짧은 후속 지시까지 게이트를 건너뛰게 되는데,
+       그건 게이트가 원래도 잘 판정하던 범위라 건드릴 이유가 없다.
+    ⚠️ **부정 발화("아니 ;; …")는 짧아도 건너뛰지 않는다.** "B2B" 같은 맨 답과
+       달리, 부정은 그 자체로 "이전 것이 아니다"라는 뜻을 이미 담고 있어
+       발화 하나만으로도 판단이 선다 (`rejection_kind` 가 "none" 이 아닌 경우).
+       `bare`(정보 없는 부정)는 애초에 이 함수에 닿기 전에 되묻기로 빠지고,
+       `informative`(고쳐 말한 부정)는 그대로 게이트에 맡긴다 — 이 함수가
+       생기기 전과 같은 동작이다.
+    """
+    if not (conversation_context or "").strip():
+        return True
+    if rejection_kind(query) != "none":
+        return True
+    return len((query or "").strip()) > _GATE_SHORT_MAX_CHARS
+
+
 # 사람이 읽는 경로 이름. ⛔ 내부 경로명("bigquery")을 그대로 보여주지 않는다
 _ROUTE_LABEL = {
     "bigquery": "사내 데이터",

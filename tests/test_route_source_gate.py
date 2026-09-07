@@ -60,6 +60,44 @@ def test_게이트가_두_경로에_모두_걸려_있다():
     # ⛔ SELF 만 세면 **분자만 있고 분모가 없다** — SELF 가 두 배로 는 것과
     #    트래픽이 두 배가 된 것을 구분할 수 없다. NEED 도 같은 자리에서 센다.
     assert src.count("source_gate_need") == 2
+    # ⛔ "짧고 앞 대화가 있어 게이트 혼자 못 판단한다" 스킵도 두 경로 모두다
+    #    (같은 이유 — 문자열 카운트가 아니라 실제 배선은 아래 실행형 테스트가 본다).
+    assert src.count("gate_can_judge(") == 2
+    assert src.count("source_gate_skipped") == 2
+
+
+# ── 새 게이트 관문: `gate_can_judge` — 짧고 앞 대화가 있으면 게이트를 건너뛴다 ──
+#    골든셋 `inc_clarify_followup_b2b`·`fu_clarify_b2c` 사고("B2B"/"B2C" 한 단어
+#    후속 답변이 조회 없이 direct 로 떨어짐)의 재발을 막는 판정 함수 자체를 본다.
+
+def test_짧고_앞_대화가_있으면_게이트가_판단할_수_없다():
+    from app.core.route_intent import gate_can_judge
+
+    assert gate_can_judge("B2B", "사용자: 인도네시아 첫 거래일자?\n어시스턴트: ...") is False
+    assert gate_can_judge("B2C", "사용자: 인도네시아 첫 거래일자?\n어시스턴트: ...") is False
+
+
+def test_짧아도_앞_대화가_없으면_게이트가_판단한다():
+    from app.core.route_intent import gate_can_judge
+
+    # "roas가 뭐야?" 처럼 짧아도 그 자체가 뜻의 전부라면 게이트에 계속 맡긴다
+    assert gate_can_judge("roas가 뭐야?", "") is True
+    assert gate_can_judge("B2B", "") is True
+
+
+def test_길면_앞_대화가_있어도_게이트가_판단한다():
+    from app.core.route_intent import gate_can_judge
+
+    long_query = "이번 분기 B2B 채널 매출과 원가율을 국가별로 비교해서 알려줘"
+    assert len(long_query) > 20
+    assert gate_can_judge(long_query, "사용자: 지난달은?\n어시스턴트: ...") is True
+
+
+def test_빈_질문은_앞_대화가_있으면_판단할_수_없다():
+    from app.core.route_intent import gate_can_judge
+
+    assert gate_can_judge("", "사용자: 뭔가\n어시스턴트: 뭔가") is False
+    assert gate_can_judge("   ", "사용자: 뭔가\n어시스턴트: 뭔가") is False
 
 
 def test_게이트가_오래_걸리면_상한에서_끊고_뒤지는_쪽으로_간다(agent):
@@ -273,6 +311,100 @@ def test_게이트가_NEED면_route_and_stream이_새_소스를_방출한다(mon
 
     assert "classify_with_llm" in calls
     assert ("source", "notion") in events
+
+
+# ── 골든셋 재발 방지: "B2B"/"B2C" 한 단어 후속답변은 게이트에 물어보지 않는다 ──
+#    `data/golden_set.json` 의 `inc_clarify_followup_b2b`·`fu_clarify_b2c` 와
+#    정확히 같은 모양이다 — 직전 assistant 메시지가 되물음이고, 마지막 사용자
+#    메시지가 "B2B"/"B2C" 한 단어다.
+#
+#    ⚠️ `messages[-1]` 이 **현재** 질문이다 — `_build_conversation_context` 는
+#       `messages[:-1]` 만 맥락으로 쓴다. 그래서 여기서도 되물음(assistant) +
+#       "B2B"(user, 현재 질문) **두 개**를 넣는다. 하나만 넣으면(되물음을 빼면)
+#       맥락이 빈 문자열이 돼 `gate_can_judge` 가 항상 True 를 내고, 이 테스트는
+#       아무것도 증명하지 못한 채 통과한다.
+_B2B_FOLLOWUP_MESSAGES = [
+    {"role": "assistant",
+     "content": "국가별 첫 거래일자를 확인하려면 채널 기준이 필요합니다. "
+                "B2B/B2C 중 어느 기준인지 알려주시면 조회하겠습니다."},
+    {"role": "user", "content": "B2B"},
+]
+
+
+def test_B2B_후속답변은_route_and_execute에서_게이트를_건너뛴다(monkeypatch):
+    """⛔ 이 테스트가 없어서 사고가 배포됐다 — 게이트의 LLM 이 절대 불리면 안 된다."""
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+
+    flash = FakeFlash("SELF")   # 게이트가 불렸다면 이 값으로 direct 오답을 냈을 것
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: flash)
+    # 실측 그대로: 키워드 분류가 "B2B" 하나만 보고 확신 없이 direct 로 떨어진다
+    agent._keyword_classify_ex = lambda query: ("direct", False)
+
+    calls = []
+
+    async def fake_classify(*a, **k):
+        calls.append("classify_with_llm")
+        return "bigquery"
+
+    agent._classify_with_llm = fake_classify
+
+    async def fake_bigquery(query, messages, conversation_context, model_type,
+                             user_email, **kwargs):
+        calls.append("handle_bigquery")
+        return {"source": "bigquery", "answer": "인도네시아 2019-01-08"}
+
+    agent._handle_bigquery = fake_bigquery
+
+    result = asyncio.run(
+        agent.route_and_execute("B2B", messages=_B2B_FOLLOWUP_MESSAGES)
+    )
+
+    assert flash.calls == 0                       # 게이트 LLM 이 아예 불리지 않았다
+    assert calls == ["classify_with_llm", "handle_bigquery"]
+    assert result["source"] == "bigquery"          # direct 로 강제되지 않았다
+
+
+def test_B2C_후속답변은_route_and_stream에서_게이트를_건너뛴다(monkeypatch):
+    """스트리밍 경로도 동일 — 한쪽만 고치면 경로에 따라 답이 갈린다."""
+    agent, orch_module = _prepare_gate_agent(monkeypatch)
+
+    flash = FakeFlash("SELF")
+    monkeypatch.setattr(orch_module, "get_flash_client", lambda: flash)
+    monkeypatch.setattr("app.knowledge.wiki_search.search_with_pages", _no_wiki)
+    agent._keyword_classify_ex = lambda query: ("direct", False)
+
+    messages = [
+        {"role": "assistant",
+         "content": "| 국가 | 첫 거래일자 |\n| 인도네시아 | 2019-01-08 |\n"
+                    "(B2B+B2C 통합 기준입니다. 채널별로 필요하시면 알려주세요.)"},
+        {"role": "user", "content": "B2C"},
+    ]
+
+    calls = []
+
+    async def fake_classify(*a, **k):
+        calls.append("classify_with_llm")
+        return "notion"
+
+    agent._classify_with_llm = fake_classify
+
+    async def fake_qdrant(*a, **k):
+        calls.append("handle_qdrant")
+        return {"answer": "sentinel"}
+
+    agent._handle_qdrant = fake_qdrant
+
+    events = asyncio.run(
+        _collect(agent.route_and_stream("B2C", messages=messages))
+    )
+
+    assert flash.calls == 0                        # 게이트 LLM 이 아예 불리지 않았다
+    assert "classify_with_llm" in calls
+    # ⚠️ 첫 ("source", "direct") 는 확신 없는 키워드 1차 분류의 즉시 방출
+    #    (Wave 1)이다 — 게이트와 무관하게 항상 나간다. 게이트가 direct 로
+    #    강제했는지는 **재분류 뒤 마지막 source** 로만 판정할 수 있다.
+    source_events = [data for kind, data in events if kind == "source"]
+    assert source_events[-1] == "notion"
 
 
 async def _collect(stream):
