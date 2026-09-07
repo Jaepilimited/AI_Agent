@@ -164,6 +164,14 @@ def _do_save(user_id: int | None, url: str, body: str, kind: str) -> str:
     except nx.NotionError as exc:
         logger.info("notion_save_failed", kind=exc.kind, user_id=user_id)
         return _ERROR_MESSAGE.get(exc.kind, _ERROR_MESSAGE["unavailable"])
+    except Exception as exc:
+        # ⛔ 예상 못한 예외를 그대로 올리면 API 경계의 일반 핸들러가 잡아
+        #    "AI 서비스가 일시적으로 혼잡합니다" 를 준다 — 저장 실패인데 원인이 지워지고,
+        #    `_ERROR_MESSAGE` 를 만든 이유가 통째로 무의미해진다.
+        #    ⚠️ 여기서 None 을 돌려주면 관문이 놓아줘서 노션 **검색** 결과가 나간다.
+        logger.warning("notion_save_unexpected", error_type=type(exc).__name__,
+                       error=str(exc)[:200], user_id=user_id)
+        return _ERROR_MESSAGE["unavailable"]
 
     lines = [f"노션에 저장했습니다 → {result.url}"]
     if result.created_database:

@@ -241,3 +241,24 @@ def test_gate_runs_before_the_source_fast_path():
         parse = chunk.find("self.parse_db_prefix")
         assert gate > 0 and parse > 0
         assert gate < parse, "관문이 @@ 소스 판정보다 뒤에 있다"
+
+
+def test_unexpected_engine_failure_is_contained(monkeypatch, fake_engine):
+    """⛔ 저장 실패가 API 경계까지 올라가면 원인이 지워진 일반 에러가 나간다."""
+    warnings = []
+    monkeypatch.setattr(ns.logger, "warning",
+                        lambda event, **kw: warnings.append(event))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("소켓이 끊겼다")
+
+    monkeypatch.setattr(nx, "resolve_target", boom)
+    messages = _msgs(
+        ("user", "매출은?"), ("assistant", "55.1억원입니다."),
+        ("user", "이거 노션에 넣어줘 https://www.notion.so/"
+                 "24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert answer is not None                 # 관문이 놓아주면 검색 결과가 나간다
+    assert "다시" in answer                    # 저장 실패라고 말한다
+    assert "notion_save_unexpected" in warnings

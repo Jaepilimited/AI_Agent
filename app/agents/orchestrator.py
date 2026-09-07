@@ -1142,7 +1142,7 @@ class OrchestratorAgent:
         _notion_answer = await asyncio.to_thread(
             notion_save.handle, query, messages, user_id)
         if _notion_answer:
-            logger.info("notion_save_handled", path="route_and_execute")
+            logger.info("notion_save_handled", path="route_and_execute", query=query[:100])
             return {"source": "direct", "answer": _notion_answer}
 
         # ═══ @@ 데이터소스 직접 지정 ═══
@@ -1455,7 +1455,7 @@ class OrchestratorAgent:
         _notion_answer = await asyncio.to_thread(
             notion_save.handle, query, messages, user_id)
         if _notion_answer:
-            logger.info("notion_save_handled", path="route_and_stream")
+            logger.info("notion_save_handled", path="route_and_stream", query=query[:100])
             yield ("source", "direct")
             yield ("done", _notion_answer)
             return
