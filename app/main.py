@@ -763,7 +763,15 @@ async def _cs_cache_job():
             #    그것을 성공으로 기록하면 자가 점검이 영영 못 잡는다.
             if n < 0:
                 raise RuntimeError("cs 시트 재로딩 실패 — 옛 캐시 유지")
-            jr["detail"] = f"CS Q&A {n}건"
+            # ⛔ `jr` 는 딕셔너리가 아니다 — `_JobRun` 이고 `set_note()` 만 받는다.
+            #    첨자 대입으로 쓰면 TypeError 가 나는데, 그 예외가 track_job
+            #    안에서 발생하므로 **갱신은 성공했는데 잡이 매시 '실패'로 기록**됐다
+            #    (⚠️ 그 잘못된 호출 모양을 여기 적지 마라 — 회귀가 소스를 글자로 훑어
+            #     스스로 걸린다. 실제로 이 주석을 처음 쓸 때 그렇게 걸렸다)
+            #    (2026-09-07 발견). 기능은 멀쩡하고 기록만 거짓이라 아무도 못 봤다 —
+            #    배치 건강성을 `job_runs` 로 판정하는 자가 점검이 이 잡에 대해서만
+            #    신호를 잃은 상태였다. 회귀가 `tests/test_no_silent_failures.py` 에 있다.
+            jr.set_note(f"CS Q&A {n}건")
         logger.info("cs_cache_job_done", qa_count=n)
     except Exception as e:
         logger.error("cs_cache_job_failed", error=str(e)[:200])

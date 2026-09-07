@@ -1143,3 +1143,43 @@ def test_the_prompt_hands_over_converted_amounts():
     note = _amount_note(_JD_ROWS)
     assert "8,287만원" in note and "82,871,719원" in note
     assert "1억 미만에 '억'을 쓰지 마라" in note
+
+
+# ── 스케줄 잡의 결과 기록 — 되는데 "실패" 로 남던 것 (2026-09-07) ──────────────
+#
+# `track_job` 이 넘겨주는 핸들은 딕셔너리가 아니라 `_JobRun` 이고 `set_note()` 만
+# 받는다. `jr["detail"] = ...` 로 쓰면 TypeError 가 나는데, 그 예외가 `track_job`
+# 블록 **안**에서 나므로 잡이 실패로 기록되고 그대로 다시 올라간다.
+#
+# 실제로 `cs_cache_hourly` 가 그랬다: `refresh()` 는 이미 끝나 캐시는 갱신됐는데
+# 그 다음 줄에서 터져 **매시 '실패'로 기록**됐다. 기능은 멀쩡하고 기록만 거짓이라
+# 아무도 못 봤고, 배치 건강성을 `job_runs` 로 판정하는 자가 점검이 이 잡에 대해
+# 신호를 잃었다. 에러를 던지는데도 조용한 실패다 — 바깥 `except` 가 삼킨다.
+
+
+def test_job_handles_are_not_used_as_dictionaries():
+    """⛔ `jr["..."] = ...` 는 TypeError 다. `jr.set_note(...)` 를 쓴다."""
+    import re
+    from pathlib import Path
+
+    offenders = []
+    for path in Path("app").rglob("*.py"):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\bjr\s*\[", line):
+                offenders.append(f"{path}:{i}: {line.strip()}")
+    assert not offenders, (
+        "track_job 핸들을 딕셔너리처럼 썼다 — set_note() 로 바꿔라:\n"
+        + "\n".join(offenders))
+
+
+def test_the_job_handle_really_rejects_item_assignment():
+    """위 검사가 무엇을 막는지 코드로 고정한다 (규칙만 적어 두면 낡는다)."""
+    import pytest
+
+    from app.core.self_check import _JobRun
+
+    handle = _JobRun()
+    handle.set_note("정상 경로")
+    assert handle.note == "정상 경로"
+    with pytest.raises(TypeError):
+        handle["detail"] = "이 줄이 매시 잡을 실패로 만들었다"
