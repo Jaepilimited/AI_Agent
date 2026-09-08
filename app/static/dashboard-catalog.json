@@ -1,0 +1,676 @@
+{
+  "인플루언서": {
+    "대시보드": [
+      {
+        "t": "[통합] 인플루언서 마케팅 대시보드",
+        "d": "전체 인플루언서 마케팅 통합 현황",
+        "u": "https://lookerstudio.google.com/reporting/34ac7165-6f4c-42ba-9fe6-f54e5373f50f/page/cwFHF",
+        "icon": "📊",
+        "type": "looker"
+      },
+      {
+        "t": "틱톡 해시태그 콘텐츠 대시보드",
+        "d": "키워드/인게이지먼트 별 컨텐츠 확인",
+        "u": "https://lookerstudio.google.com/reporting/a099c5fd-e316-455c-8686-a54b807b5b4c/page/MMeaE",
+        "icon": "🎵",
+        "type": "looker"
+      },
+      {
+        "t": "인스타그램 계정 멘션 콘텐츠 대시보드",
+        "d": "인스타그램 계정 멘션 콘텐츠 실적 확인",
+        "u": "https://lookerstudio.google.com/reporting/0ada621f-2504-432c-bc87-f75003526fe4/page/TuqPF",
+        "icon": "📸",
+        "type": "looker"
+      }
+    ],
+    "스프레드시트": [
+      {
+        "t": "틱톡 회의록 지표",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1PMVNBgBodUCII6rnmWspKFVEsTwIJmcFSN5-ekf79ck/edit?gid=1727349",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "TSS 데이터",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1Y20GMruDuWPeT-gcmyiEceP9PO7MyinUHC94SzqBgpM/edit?gid=1604396",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "GM-WEST KOL리스팅",
+        "d": "WEST팀 KOL 리스트업 및 컨택 여부",
+        "u": "https://docs.google.com/spreadsheets/d/1Gf65LUqadQErCoePgK8qkJxXyZvcyP_d_TuQdNcwjAc/edit?pli=1&gid=3",
+        "icon": "👥",
+        "type": "sheets"
+      },
+      {
+        "t": "GM-EAST KOL리스팅",
+        "d": "EAST팀 KOL 리스트업 및 컨택 여부",
+        "u": "https://docs.google.com/spreadsheets/d/1ob3uK8U47u-4IEIh9pQFZOVkHR9Zhd_lyMwJMqdMytY/edit?resourcekey",
+        "icon": "👥",
+        "type": "sheets"
+      },
+      {
+        "t": "WEST 인플루언서 마케팅 업로드",
+        "d": "인플루언서 마케팅 콘텐츠 입력 시트(GM-WEST)",
+        "u": "https://docs.google.com/spreadsheets/d/1vtyGT-Hm1jGwel7cOypRU_5npmg6GIzR_0fKHZ_qGlk/edit?gid=1211900",
+        "icon": "📤",
+        "type": "sheets"
+      },
+      {
+        "t": "EAST 인플루언서 마케팅 업로드",
+        "d": "인플루언서 마케팅 콘텐츠 입력 시트(GM-EAST)",
+        "u": "https://docs.google.com/spreadsheets/d/1lOyNzu02YoyjEp8nFyaHTVpx6eA2jwEhB8V4IMeHGVw/edit?gid=1211900",
+        "icon": "📤",
+        "type": "sheets"
+      },
+      {
+        "t": "인플루언서 크롤링 요청",
+        "d": "신규 KOL리스팅을 위한 크롤링 요청",
+        "u": "https://docs.google.com/spreadsheets/d/1rDdlpef3PYwFVFRcc1yU4dxIjlzuKtsu_d18siCUXDg/edit?gid=6101746",
+        "icon": "🔍",
+        "type": "sheets"
+      },
+      {
+        "t": "최신 바이럴 컨텐츠",
+        "d": "1M 이상 최신 업로드 컨텐츠 크롤링",
+        "u": "https://docs.google.com/spreadsheets/d/1ozRYPyjLF3mvelW7pNG3RtPNeon2Bh5WIxTZWLhnQdI/edit?gid=0#gid=0",
+        "icon": "🔥",
+        "type": "sheets"
+      }
+    ]
+  },
+  "매출&제품": {
+    "대시보드": [
+      {
+        "t": "데일리 메트릭스(2024~)",
+        "d": "최신 데일리 매출 메트릭스",
+        "u": "https://lookerstudio.google.com/reporting/c021c6c6-ac73-4753-a36b-cc95a889811b/page/p_mde0034oqd",
+        "icon": "📈",
+        "type": "looker"
+      },
+      {
+        "t": "데일리 메트릭스(~2023)",
+        "d": "과거 데일리 매출 메트릭스",
+        "u": "https://lookerstudio.google.com/reporting/c08881b2-a584-4a3d-9578-c08762a117d4/page/p_mde0034oqd",
+        "icon": "📉",
+        "type": "looker"
+      },
+      {
+        "t": "프로덕트 매트릭스",
+        "d": "제품별 매출 분석",
+        "u": "https://lookerstudio.google.com/reporting/41182756-3fce-4c48-9c76-429ba9d99aaf/page/p_mde0034oqd",
+        "icon": "🧴",
+        "type": "looker"
+      },
+      {
+        "t": "플랫폼 대시보드",
+        "d": "플랫폼별 매출 현황",
+        "u": "https://lookerstudio.google.com/reporting/93148b10-d6a8-42f5-acdb-8192e5e79612/page/p_9an4m8l4wd",
+        "icon": "🏪",
+        "type": "looker"
+      },
+      {
+        "t": "제품 순위 트렌드 대시보드(웹)",
+        "d": "플랫폼메트릭스 웹 버전",
+        "u": "https://skin1004official.github.io/platform-metrics/",
+        "icon": "🏆",
+        "type": "web"
+      },
+      {
+        "t": "EAST 프로덕트 대시보드",
+        "d": "EAST 제품별 대시보드",
+        "u": "https://lookerstudio.google.com/u/0/reporting/4334059b-adea-436f-9b6b-154aa15727c3/page/p_jhinbd29sd",
+        "icon": "🌏",
+        "type": "looker"
+      },
+      {
+        "t": "GM EAST 제품 대시보드",
+        "d": "제품별 판매량, 경쟁사 제품 랭킹",
+        "u": "https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/ydIsF",
+        "icon": "📦",
+        "type": "looker"
+      },
+      {
+        "t": "틱톡샵 Affiliate 대시보드",
+        "d": "틱톡샵 어필리에이트 현황",
+        "u": "https://lookerstudio.google.com/reporting/be8c9c17-5a1e-450c-85d7-3a2f36550c70/page/mgUfF",
+        "icon": "🛒",
+        "type": "looker"
+      },
+      {
+        "t": "Shopify 대시보드",
+        "d": "Shopify 매출 현황",
+        "u": "https://lookerstudio.google.com/reporting/afe86a46-018a-4918-ae64-4219ccf5b029/page/gK5fF",
+        "icon": "🛍️",
+        "type": "looker"
+      },
+      {
+        "t": "KBT 전용 대시보드 (Sales, Paid, CRM)",
+        "d": "KBT 종합 대시보드",
+        "u": "https://lookerstudio.google.com/reporting/dd6a2a6c-5654-47ab-b29a-f279e602e5cf/page/bfsiE",
+        "icon": "🎯",
+        "type": "looker"
+      },
+      {
+        "t": "리뷰 대시보드",
+        "d": "제품 리뷰 분석",
+        "u": "https://lookerstudio.google.com/reporting/bd0bd4fa-fb97-472a-82a4-cfa1a42f27a2/page/p_jauu8i71yd",
+        "icon": "⭐",
+        "type": "looker"
+      },
+      {
+        "t": "아마존 대시보드",
+        "d": "아마존 매출 및 지표",
+        "u": "https://lookerstudio.google.com/reporting/0932b147-5a33-4734-9895-7ede8bd99074/page/R2inF",
+        "icon": "📦",
+        "type": "looker"
+      },
+      {
+        "t": "FastMoss 틱톡샵(미국) 데이터",
+        "d": "FastMoss 데이터 대시보드",
+        "u": "https://lookerstudio.google.com/reporting/89b6c9a7-afac-4778-b6c6-f12353012a17/page/UKxQE",
+        "icon": "🇺🇸",
+        "type": "looker"
+      },
+      {
+        "t": "플랫폼메트릭스_루커ver",
+        "d": "Looker 플랫폼 메트릭스",
+        "u": "https://lookerstudio.google.com/reporting/08773b41-23c4-4d3d-8855-2cd316d7052d/page/p_en3gp5wgmd",
+        "icon": "📊",
+        "type": "looker"
+      }
+    ],
+    "스프레드시트": [
+      {
+        "t": "데일리 메트릭스",
+        "d": "데일리 매출 RAW 데이터",
+        "u": "https://docs.google.com/spreadsheets/d/1ulmdW5pydgiJJbJVRWti-sL0m3mXm3GLeiGlViU_6rQ/edit?gid=4410448",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "B2B2 매출",
+        "d": "B2B2 채널 매출 데이터",
+        "u": "https://docs.google.com/spreadsheets/d/11HJPWPqq2GvZ8kV7lhkaxEwUymcAjpiDjT4Bt0wEJe4/edit?gid=3077552",
+        "icon": "💰",
+        "type": "sheets"
+      },
+      {
+        "t": "B2B2_유럽팀_매출",
+        "d": "유럽팀 B2B2 매출",
+        "u": "https://docs.google.com/spreadsheets/d/1wfEObImX7KNJpEkaQfaprFIteyurgDIzX2vjAyfQoho/edit?gid=9123917",
+        "icon": "🇪🇺",
+        "type": "sheets"
+      },
+      {
+        "t": "B2B3 매출",
+        "d": "B2B3 채널 매출 데이터",
+        "u": "https://docs.google.com/spreadsheets/d/1nSYhX1Ln80m2K1WY73baHYa4k9orW-pl7J4qHXrGwV0/edit?gid=3077552",
+        "icon": "💰",
+        "type": "sheets"
+      },
+      {
+        "t": "B2B3 남미팀 매출",
+        "d": "남미팀 B2B3 매출",
+        "u": "https://docs.google.com/spreadsheets/d/1tkX7mKMAq6rSpMP27qj5rKtiXtt-r6mNlehW01mqDHw/edit?gid=1936593",
+        "icon": "🌎",
+        "type": "sheets"
+      }
+    ]
+  },
+  "퍼포먼스마케팅": {
+    "대시보드": [
+      {
+        "t": "통합 마케팅 대시보드",
+        "d": "전체 마케팅 통합 현황",
+        "u": "https://lookerstudio.google.com/reporting/a1a1a9d1-be92-4d66-8d6f-acd12859dd2e/page/bfsiE",
+        "icon": "📊",
+        "type": "looker"
+      },
+      {
+        "t": "틱톡 광고 대시보드",
+        "d": "틱톡 광고 성과",
+        "u": "https://lookerstudio.google.com/reporting/09154ceb-118d-4eea-9637-953516517860/page/kw8cE",
+        "icon": "🎵",
+        "type": "looker"
+      },
+      {
+        "t": "메타 광고 대시보드",
+        "d": "Facebook/Instagram 광고 성과",
+        "u": "https://lookerstudio.google.com/reporting/a56e222e-48c2-43d2-844e-1cb536489bc6/page/MMeaE",
+        "icon": "📱",
+        "type": "looker"
+      },
+      {
+        "t": "TeamMint 대시보드",
+        "d": "TeamMint 마케팅 현황",
+        "u": "https://lookerstudio.google.com/reporting/d5ab4952-0dda-4881-aa52-8b20f97edcf9/page/wpRLF",
+        "icon": "🪙",
+        "type": "looker"
+      },
+      {
+        "t": "통합 ROI 마케팅 대시보드",
+        "d": "ROI 기반 마케팅 분석",
+        "u": "https://lookerstudio.google.com/u/0/reporting/2214aeda-dfa0-4321-ae7c-79ceef01a6c9/page/bfsiE",
+        "icon": "💹",
+        "type": "looker"
+      },
+      {
+        "t": "GM WEST Ecomm 통합 대시보드",
+        "d": "소재 단위 성과와 SKU 매출을 연결해서 확인할 수 있는 구조",
+        "u": "https://datastudio.google.com/reporting/847f5a3b-54e4-47a9-98a2-d974f2020036/page/6jpvF",
+        "icon": "📊",
+        "type": "looker"
+      },
+      {
+        "t": "Amazon Ads Search Term Report",
+        "d": "아마존 검색 광고 Search Term 단위 분석",
+        "u": "https://datastudio.google.com/reporting/d5d70074-5c8f-4877-b0fd-e385cf6d28b8/page/p_yvoevgrh5d",
+        "icon": "🔍",
+        "type": "looker"
+      }
+    ],
+    "스프레드시트": [
+      {
+        "t": "(KM) Paid 성과 대시보드",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1XSFUhHXAtKnR6JXDTOE-J0IMS43G28epbpfyxKEWGr0/edit?gid=5053456",
+        "icon": "💳",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 틱톡 스파크애즈 광고 데이터",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1XSFUhHXAtKnR6JXDTOE-J0IMS43G28epbpfyxKEWGr0/edit?gid=5053456",
+        "icon": "🎵",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 틱톡 스파크애즈 광고 데이터",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1r036BUekpeSrql8fC5PlgYzJszxikqNVq_Fm8j1gb_8/edit?gid=4796117",
+        "icon": "🎵",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST/WEST) 데일리 리포트 (25.04)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1zU96tYMBR_T5n42kapE6fJ1YQl42DPNdKlW4lKTHHNs/edit?gid=5651446",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.05)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1-P5s3nGARyWqwV8jsibLfr14HKcmMGYAZs4MOQ0HVIM/edit?gid=1098424",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.05)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/11joiqJ1q7qnUtvvcNAv37DHIaJQP6-Iat4q76ScqcLY/edit?gid=5651446",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.06)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1QXdqHFuBe7cdsys08OGhF2ICJ1auePxYA_irefTAGzg/edit?gid=1337033",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.06)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1kUjMcTbPeiDzzhzgn48F0DhkY9qnzamo8HACfaTt7d4/edit?gid=4748520",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.07)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1H2zwLwH2cG73B-v0HT0U29McE0-VMGo82XntC0zQnpo/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.07)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1HAGqea_0FyJUro7AkfGKW5lF60cCEhjsIsXMbyzFH28/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.08)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1aUOGrhNmwBlwdg5ozM6ol19bnAXoLKmcKpBpbBisXms/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.08)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1GgrG4XMitR5Px-Eyiw85gWbWjggw8hwaSJom7KFh9-w/edit?gid=5869300",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.09)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1g3PHdNjGBA75MRkIRMbFTf8gu_hfATe7UJFWKQe-dvc/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.09)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1nLoePA8iPkzsUmJwrIuFv4xZPmG9HbfnqWZugwtgH-Y/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.10)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1yZLa45IqERB3Xi14vs7jiDG2H5CKSsAzWOzKJvIBGXM/edit?gid=7396793",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.10)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1X7Mg9ylpGT-PxdI6Qo2HUny7Orj4ihKARPXvtrDZp1s/edit?gid=1184305",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.11)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1GLChILebNSAZigfruhJsikqUtOO_qVJEtifnKrrheEM/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.11)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1D20SJRs3D3UrroETf-diLpMOCj9B7Vwn6Fb9t1F8Q24/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(WEST) 데일리 리포트 (25.12)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1NiIZozBdfOwMWJKjafLMPw5A0ltfiYlqx-GzQn0F1es/edit?gid=8273856",
+        "icon": "📋",
+        "type": "sheets"
+      },
+      {
+        "t": "(EAST) 데일리 리포트 (25.12)",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1-eX4qpx2ykMUmcPZhHqMMYvc7lWJp5vgpEI-1YaXcqI/edit?gid=8635440",
+        "icon": "📋",
+        "type": "sheets"
+      }
+    ]
+  },
+  "기타": {
+    "대시보드": [
+      {
+        "t": "유럽 판매채널 모니터링",
+        "d": "",
+        "u": "https://lookerstudio.google.com/reporting/db521aea-53b0-49fd-8352-c6142a097fe3/page/ji3HF/edit",
+        "icon": "🇪🇺",
+        "type": "looker"
+      },
+      {
+        "t": "메가와리 대시보드",
+        "d": "",
+        "u": "https://lookerstudio.google.com/reporting/3ada86c9-85a4-4191-bdf0-1fb879d6a2ac/page/d51NF",
+        "icon": "🎪",
+        "type": "looker"
+      },
+      {
+        "t": "아마존 제품 리뷰 분석",
+        "d": "",
+        "u": "https://lookerstudio.google.com/reporting/47d7a862-bff5-4ca7-879c-0a7353f6ccff/page/bHGRF",
+        "icon": "⭐",
+        "type": "looker"
+      },
+      {
+        "t": "그로스 오퍼레이션 센터",
+        "d": "",
+        "u": "https://lookerstudio.google.com/reporting/73b14477-02e2-4dd5-8a57-d115dda5a834/page/p_cl81eaejud",
+        "icon": "🚀",
+        "type": "looker"
+      },
+      {
+        "t": "메타 광고 진행현황 분석",
+        "d": "",
+        "u": "https://lookerstudio.google.com/u/0/reporting/533e0388-3905-4a39-93ca-0516ed8167cb/page/p_577xmorfyd",
+        "icon": "📱",
+        "type": "looker"
+      },
+      {
+        "t": "프로모션 캘린더",
+        "d": "권역별 프로모션 일정 확인을 위한 마케팅 캘린더",
+        "u": "http://34.64.99.254:8041/",
+        "icon": "📅",
+        "type": "web"
+      },
+      {
+        "t": "물류관리 시스템",
+        "d": "물류 수출파트 내역 관리 프로덕트",
+        "u": "http://34.64.99.254:8051/",
+        "icon": "🚚",
+        "type": "web"
+      },
+      {
+        "t": "CS 대시보드",
+        "d": "CS 문의 내역 시각화 (웹 대시보드 형태)",
+        "u": "http://34.64.99.254:8061/",
+        "icon": "🎧",
+        "type": "web"
+      },
+      {
+        "t": "SKIN1004 CS 대시보드",
+        "d": "",
+        "u": "https://cs.cravercorp.internal",
+        "icon": "🎧",
+        "type": "web"
+      },
+      {
+        "t": "국내 교환/반품 통합 대시보드",
+        "d": "",
+        "u": "http://34.64.99.254:8061/data/channels?startDate=2026-08-01&endDate=2026-08-31&status=in_progress",
+        "icon": "🔄",
+        "type": "web"
+      }
+    ],
+    "스프레드시트": [
+      {
+        "t": "유럽 판가 RAW데이터",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1bDzdVDBGta4AREM6ndEZQHva8OZoGCZJJVrr2EyYW9w/edit?gid=1391792",
+        "icon": "🇪🇺",
+        "type": "sheets"
+      },
+      {
+        "t": "Craver 채용 광고 대시보드",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1AX8b7m2YH7s9u5fZO1sW0JAntl0gaRWyREELDZiGHpM/edit?gid=1331875",
+        "icon": "👔",
+        "type": "sheets"
+      },
+      {
+        "t": "키워드별 구글 관심도 데이터",
+        "d": "",
+        "u": "https://docs.google.com/spreadsheets/d/1_peM7F7kFxSWXMGin_gIIjs5wwkYfsQWoo2DycbD7gQ/edit?pli=1&gid=9",
+        "icon": "🔑",
+        "type": "sheets"
+      },
+      {
+        "t": "팔레트 계산기",
+        "d": "AI Studio 기반",
+        "u": "https://aistudio.google.com/apps/drive/1CVd73kTlc5jBYBUErAR2o7osfY5X0nKs",
+        "icon": "🎨",
+        "type": "tool"
+      },
+      {
+        "t": "재고 데이터 피벗 엑셀 변환기",
+        "d": "ERP 가용재고조회_craver 엑셀 데이터 피벗 프로그램(OP팀 사용)",
+        "u": "https://aistudio.google.com/apps/e9b00eeb-b6f3-418c-8d22-a9b811168755?fullscreenApplet=true",
+        "icon": "📦",
+        "type": "tool"
+      }
+    ]
+  },
+  "솔루션": {
+    "외부 툴": [
+      {
+        "t": "Google BigQuery",
+        "d": "console.cloud.google.com",
+        "u": "https://console.cloud.google.com/bigquery?referrer=search&hl=ko&project=skin1004-319714&ws=!1m0",
+        "icon": "🗄️",
+        "type": "tool"
+      },
+      {
+        "t": "Apify",
+        "d": "console.apify.com",
+        "u": "https://console.apify.com/",
+        "icon": "🤖",
+        "type": "tool"
+      },
+      {
+        "t": "FastMoss",
+        "d": "fastmoss.com",
+        "u": "https://www.fastmoss.com/",
+        "icon": "📊",
+        "type": "tool"
+      },
+      {
+        "t": "Exolyt",
+        "d": "exolyt.com",
+        "u": "https://exolyt.com/",
+        "icon": "📈",
+        "type": "tool"
+      },
+      {
+        "t": "Brand24",
+        "d": "app.brand24.com",
+        "u": "https://app.brand24.com/panel/",
+        "icon": "📡",
+        "type": "tool"
+      },
+      {
+        "t": "Semrush",
+        "d": "ko.semrush.com",
+        "u": "https://ko.semrush.com/home/",
+        "icon": "🔍",
+        "type": "tool"
+      },
+      {
+        "t": "Ahrefs",
+        "d": "app.ahrefs.com",
+        "u": "https://app.ahrefs.com/dashboard",
+        "icon": "🔗",
+        "type": "tool"
+      },
+      {
+        "t": "SimilarWeb",
+        "d": "pro.similarweb.com",
+        "u": "https://pro.similarweb.com/",
+        "icon": "🌐",
+        "type": "tool"
+      },
+      {
+        "t": "NoxInfluencer",
+        "d": "kr.noxinfluencer.com",
+        "u": "https://kr.noxinfluencer.com/search/youtube/channel",
+        "icon": "🎬",
+        "type": "tool"
+      },
+      {
+        "t": "Kalodata",
+        "d": "kalodata.com",
+        "u": "https://www.kalodata.com/",
+        "icon": "📉",
+        "type": "tool"
+      },
+      {
+        "t": "Hunter.io",
+        "d": "hunter.io",
+        "u": "https://hunter.io/dashboard",
+        "icon": "✉️",
+        "type": "tool"
+      },
+      {
+        "t": "Keyword Tool",
+        "d": "keywordtool.io",
+        "u": "https://keywordtool.io/",
+        "icon": "🔑",
+        "type": "tool"
+      },
+      {
+        "t": "Hotjar",
+        "d": "hotjar.com",
+        "u": "https://www.hotjar.com/",
+        "icon": "🔥",
+        "type": "tool"
+      },
+      {
+        "t": "ChatGPT",
+        "d": "chatgpt.com",
+        "u": "https://chatgpt.com/",
+        "icon": "🧠",
+        "type": "tool"
+      },
+      {
+        "t": "ExpressVPN",
+        "d": "expressvpn.com",
+        "u": "https://www.expressvpn.com/",
+        "icon": "🔒",
+        "type": "tool"
+      },
+      {
+        "t": "QR Code Generator",
+        "d": "qr-code-generator.com",
+        "u": "https://www.qr-code-generator.com/",
+        "icon": "📱",
+        "type": "tool"
+      },
+      {
+        "t": "Linktree",
+        "d": "linktr.ee",
+        "u": "https://linktr.ee/",
+        "icon": "🌳",
+        "type": "tool"
+      },
+      {
+        "t": "GitHub Copilot",
+        "d": "github.com",
+        "u": "https://github.com/features/copilot/plans",
+        "icon": "🤖",
+        "type": "tool"
+      }
+    ],
+    "사내 툴": [
+      {
+        "t": "이메일 및 틱톡 자동발송 시스템",
+        "d": "이메일 parameter별 대량발송, 틱톡 DM 대량 자동발송 시스템 가이드",
+        "u": "https://www.notion.so/skin1004/DM-Mail-2e82b4283b0080968d39f19678257d23",
+        "icon": "✉️",
+        "type": "notion"
+      },
+      {
+        "t": "TikTok 이메일 팔로워 추출",
+        "d": "A열(KOL ID), B열(URL)에 정보 넣고 수집 버튼 -> 이메일,팔로워 추출",
+        "u": "https://docs.google.com/spreadsheets/d/1ZbQMPBi2S7uk6zK7r8QcvSmMDJogSGq7j8KDNu2Aya0/edit?gid=0#gid=0",
+        "icon": "📧",
+        "type": "sheets"
+      }
+    ]
+  }
+}
