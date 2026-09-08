@@ -106,19 +106,26 @@ def set_target(user_id: int, page_url: str, enabled: bool = True,
                send_at: Any = None, muted: Any = None) -> None:
     """⚠️ `muted` 가 None 이면 **바꾸지 않는다** — 시각만 저장하는 요청이
        항목 설정을 지우면 안 된다. 빈 목록(`[]`)은 "전부 받기" 라는 뜻이다.
+
+    ⚠️ `send_at` 이 None 이어도 **바꾸지 않는다** (새 행일 때만 기본값이 들어간다).
+       시각을 빼고 저장하는 요청(예: 채팅 등록이 `set_target(user_id, url)` 로
+       부른다)이 사용자가 골라 둔 회차를 08:00 으로 되돌리면 안 된다 —
+       `muted` 와 같은 규칙이다.
     """
     # ⛔ `normalize_send_at(None)` 은 ValueError 다 — 시각을 안 주고 등록하는
     #    흐름(첫 등록·채팅 등록)이 그대로 죽는다. 잔디의 `set_webhook` 과 같은 가드다.
+    #    (신규 행의 INSERT 값으로만 쓰이고, 기존 행은 아래 IF() 가 덮어쓰지 않는다.)
     when = DEFAULT_SEND_AT if send_at is None else normalize_send_at(send_at)
     execute(
         "INSERT INTO user_notion_targets "
         "(user_id, page_url, enabled, send_at, muted_sections) "
         "VALUES (%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE "
         "page_url=VALUES(page_url), enabled=VALUES(enabled), "
-        "send_at=VALUES(send_at), "
+        "send_at=IF(%s, VALUES(send_at), send_at), "
         "muted_sections=IF(%s, VALUES(muted_sections), muted_sections)",
         (int(user_id), page_url.strip(), 1 if enabled else 0,
          when, serialize_muted(muted or []),
+         1 if send_at is not None else 0,
          1 if muted is not None else 0),
     )
 

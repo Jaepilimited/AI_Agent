@@ -59,16 +59,26 @@ async def put_my_notion_target(
         raise HTTPException(400, "노션 페이지 주소가 아닙니다.")
 
     send_at = payload.get("send_at")
-    if send_at and str(send_at) not in notion_briefing.SEND_TIME_CHOICES:
-        # ⛔ 목록에 없는 시각을 저장하면 그 사람 브리핑은 영영 오지 않는다.
-        raise HTTPException(400, "받을 수 있는 시각이 아닙니다.")
+    if send_at:
+        try:
+            # ⚠️ 문자열을 그대로 비교하지 않는다 — `8:00`·`08:00:00` 도 저장 계층은
+            #    받는데 여기서만 거절하면 화면과 저장이 서로 다른 규칙을 갖는다.
+            label = notion_briefing.normalize_send_at(send_at).strftime("%H:%M")
+        except ValueError:
+            raise HTTPException(400, "받을 수 있는 시각이 아닙니다.")
+        if label not in notion_briefing.SEND_TIME_CHOICES:
+            # ⛔ 목록에 없는 시각을 저장하면 그 사람 브리핑은 영영 오지 않는다.
+            raise HTTPException(400, "받을 수 있는 시각이 아닙니다.")
+        send_at = label
 
     # ⚠️ `muted` 를 안 보낸 것과 빈 목록은 뜻이 다르다 — 없으면 "안 바꿈".
     muted = payload.get("muted") if "muted" in payload else None
     notion_briefing.set_target(
         user.id, url, enabled=bool(payload.get("enabled", True)),
         send_at=send_at, muted=muted)
-    return {"ok": True}
+    # ⚠️ 잔디와 같게 **갱신된 전체 상태**를 돌려준다 — 화면이 저장 직후
+    #    한 번 더 GET 하지 않아도 되게.
+    return await get_my_notion_target(user)
 
 
 @router.delete("/api/personal-briefing/notion")

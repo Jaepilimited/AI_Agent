@@ -452,3 +452,43 @@ def test_api_is_registered_in_main():
     root = Path(__file__).resolve().parents[1]
     source = (root / "app" / "main.py").read_text(encoding="utf-8")
     assert "notion_briefing_api" in source
+
+
+def test_set_target_keeps_the_chosen_time_when_none_is_given(monkeypatch):
+    """⛔ 시각을 빼고 저장하는 요청이 골라 둔 회차를 되돌리면 안 된다.
+
+    채팅 등록이 `set_target(user_id, url)` 로 부르므로, 이미 18:30 으로
+    맞춰 둔 사람이 페이지만 바꿔도 08:00 으로 리셋될 수 있었다.
+    """
+    seen = {}
+    monkeypatch.setattr(nb, "execute",
+                        lambda sql, params=(): seen.update(
+                            {"sql": " ".join(sql.split()), "params": params}) or 1)
+    url = "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"
+
+    nb.set_target(7, url)                      # 시각 안 줌
+    assert "send_at=IF(%s," in seen["sql"].replace(" ", "")
+    assert 0 in seen["params"]                 # 바꾸지 않는다는 플래그
+
+    nb.set_target(7, url, send_at="09:00")     # 시각 줌
+    assert 1 in seen["params"]
+
+
+def test_put_returns_the_refreshed_state_like_jandi():
+    """화면이 저장 직후 한 번 더 GET 하지 않아도 되게."""
+    import inspect
+
+    from app.api import notion_briefing_api as api
+
+    source = inspect.getsource(api.put_my_notion_target)
+    assert "get_my_notion_target" in source
+
+
+def test_put_accepts_the_same_time_forms_the_store_accepts():
+    """⚠️ 화면과 저장이 서로 다른 규칙을 가지면 안 된다."""
+    import inspect
+
+    from app.api import notion_briefing_api as api
+
+    source = inspect.getsource(api.put_my_notion_target)
+    assert "normalize_send_at" in source
