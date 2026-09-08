@@ -359,3 +359,17 @@ def _async_value(value):
     async def _fn(*_args, **_kwargs):
         return value
     return _fn
+
+
+def test_계정을_못_이었을_때_할_수_없는_일을_시키지_않는다():
+    """⛔ ID/PW 로그인을 끈 뒤 "기존 방식으로 로그인하세요" 는 거짓 안내다.
+
+    회사 계정은 멀쩡한데 셀라 계정에 못 이어진 사람에게, 이제 존재하지 않는
+    경로를 시키면 그 사람은 아무것도 할 수 없다. 오늘 내내 고친 「낡으면
+    거짓이 되는 문장」과 같은 부류다.
+    """
+    src = open("app/api/entra_routes.py", encoding="utf-8").read()
+    body = src[src.index("entra_no_matching_account"):]
+    body = body[:body.index("status=404")]
+    assert "기존 방식으로" not in body, "없어진 로그인 방식을 안내하고 있다"
+    assert "관리자에게 문의" in body
