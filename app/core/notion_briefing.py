@@ -130,3 +130,72 @@ def enabled_recipients() -> list[dict[str, Any]]:
     return fetch_all(
         "SELECT user_id, page_url, send_at, muted_sections "
         "FROM user_notion_targets WHERE enabled=1")
+
+
+def enqueue(user_id: int, for_date: date, page_url: str, body: str,
+            title: str, send_after: datetime | None = None) -> bool:
+    """하루치 브리핑 한 건을 넣는다. **같은 날짜는 두 번 들어가지 않는다.**"""
+    if not body.strip() or not is_valid_page_url(page_url):
+        return False
+    key = f"briefing:{for_date}"[:120]
+    changed = execute(
+        "INSERT INTO briefing_notion_outbox "
+        "(user_id,for_date,dedup_key,title,page_url,body,send_after) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+        "ON DUPLICATE KEY UPDATE "
+        "page_url=VALUES(page_url),"
+        # 이미 보낸 건은 본문을 바꾸지 않는다 (다시 보내지 않으므로 뜻도 없다).
+        "body=IF(status='pending',VALUES(body),body),"
+        "title=IF(status='pending',VALUES(title),title),"
+        "send_after=IF(status='pending',VALUES(send_after),send_after)",
+        (int(user_id), for_date, key, title[:200], page_url.strip(), body,
+         send_after),
+    )
+    return bool(changed)
+
+
+def pending(now: datetime, limit: int = 50) -> list[dict[str, Any]]:
+    """도착 시각이 된 것만 꺼낸다.
+
+    ⛔ `NOW()` 로 비교하지 마라 — DB `time_zone` 이 `SYSTEM` 이라 호스트 TZ 가
+       바뀌면 9시간 어긋난다. 시계는 **파라미터로** 받는다.
+    ⚠️ `send_after IS NULL` 도 함께 꺼낸다 — 즉시 발송분이 그렇다.
+    """
+    return fetch_all(
+        "SELECT id,user_id,for_date,title,page_url,body,attempts "
+        "FROM briefing_notion_outbox "
+        "WHERE status='pending' AND attempts < %s "
+        "AND (send_after IS NULL OR send_after <= %s) "
+        "ORDER BY id LIMIT %s",
+        (MAX_ATTEMPTS, now, int(limit)))
+
+
+def mark_sent(outbox_id: int, row_url: str) -> None:
+    execute(
+        "UPDATE briefing_notion_outbox "
+        "SET status='sent', sent_at=NOW(), last_error=%s WHERE id=%s",
+        (row_url[:255], int(outbox_id)))
+
+
+def mark_failed(outbox_id: int, error: str) -> None:
+    """⚠️ 상한에 닿으면 `failed` 로 굳힌다 — 영원히 재시도하지 않는다."""
+    execute(
+        "UPDATE briefing_notion_outbox "
+        "SET attempts=attempts+1, last_error=%s, "
+        "status=IF(attempts+1 >= %s,'failed','pending') WHERE id=%s",
+        (error[:255], MAX_ATTEMPTS, int(outbox_id)))
+
+
+def status_counts(for_date: date | None = None) -> dict[str, int]:
+    sql = "SELECT status, COUNT(*) AS n FROM briefing_notion_outbox"
+    params: tuple = ()
+    if for_date is not None:
+        sql += " WHERE for_date=%s"
+        params = (for_date,)
+    sql += " GROUP BY status"
+    return {str(row["status"]): int(row["n"]) for row in fetch_all(sql, params)}
+
+
+def cleanup(before: date) -> int:
+    return execute(
+        "DELETE FROM briefing_notion_outbox WHERE for_date < %s", (before,))

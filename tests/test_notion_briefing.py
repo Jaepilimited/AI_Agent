@@ -71,3 +71,79 @@ def test_mask_is_empty_for_a_bad_url():
     """가릴 것이 없으면 빈 문자열 — 엉뚱한 문자열을 만들어내지 않는다."""
     assert nb.mask("https://example.com/x") == ""
     assert nb.mask("") == ""
+
+
+from datetime import date, datetime, time
+
+
+class _FakeDB:
+    """execute/fetch_* 를 가로채 SQL 과 파라미터만 기록한다."""
+
+    def __init__(self):
+        self.calls = []
+        self.rows = []
+
+    def execute(self, sql, params=()):
+        self.calls.append((" ".join(sql.split()), params))
+        return 1
+
+    def fetch_all(self, sql, params=()):
+        self.calls.append((" ".join(sql.split()), params))
+        return self.rows
+
+    def fetch_one(self, sql, params=()):
+        self.calls.append((" ".join(sql.split()), params))
+        return self.rows[0] if self.rows else None
+
+
+@pytest.fixture
+def db(monkeypatch):
+    fake = _FakeDB()
+    monkeypatch.setattr(nb, "execute", fake.execute)
+    monkeypatch.setattr(nb, "fetch_all", fake.fetch_all)
+    monkeypatch.setattr(nb, "fetch_one", fake.fetch_one)
+    return fake
+
+
+def test_enqueue_refuses_an_empty_body(db):
+    """빈 브리핑을 보내지 않는다."""
+    assert nb.enqueue(7, date(2026, 9, 8), "https://www.notion.so/x", "  ", "제목") is False
+    assert db.calls == []
+
+
+def test_enqueue_refuses_a_bad_url(db):
+    assert nb.enqueue(7, date(2026, 9, 8), "https://example.com/x", "본문", "제목") is False
+    assert db.calls == []
+
+
+def test_enqueue_uses_the_date_as_dedup_key(db):
+    """⛔ 같은 날 두 번 돌아도 두 번 보내지 않는다."""
+    assert nb.enqueue(7, date(2026, 9, 8),
+                      "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
+                      "본문", "2026-09-08 출근 브리핑") is True
+    sql, params = db.calls[0]
+    assert "briefing_notion_outbox" in sql
+    assert "briefing:2026-09-08" in params
+
+
+def test_pending_compares_against_the_passed_clock_not_now(db):
+    """⛔ `NOW()` 를 쓰면 DB 호스트 TZ 가 바뀔 때 9시간 어긋난다."""
+    now = datetime(2026, 9, 8, 9, 0)
+    nb.pending(now)
+    sql, params = db.calls[0]
+    assert "NOW()" not in sql
+    assert now in params
+
+
+def test_pending_also_takes_rows_without_a_send_after(db):
+    """⚠️ 즉시 발송분(`지금 대기열에 넣기`)은 시각을 갖지 않는다."""
+    nb.pending(datetime(2026, 9, 8, 9, 0))
+    sql, _ = db.calls[0]
+    assert "send_after IS NULL" in sql
+
+
+def test_mark_failed_gives_up_after_max_attempts(db):
+    nb.mark_failed(11, "노션이 404")
+    sql, params = db.calls[0]
+    assert "attempts=attempts+1" in sql.replace(" ", "")
+    assert nb.MAX_ATTEMPTS in params
