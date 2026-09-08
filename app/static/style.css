@@ -4982,7 +4982,14 @@ html.dark .db-autocomplete-dropdown {
 
 .briefing-settings-saved .saved-list { max-height: 240px; }
 
-.briefing-jandi-help {
+/* ⚠️ 잔디·노션은 **마크업이 서로 다른 클래스**를 쓴다(`briefing-jandi-*` /
+   `briefing-notion-*`) — 요소를 공유하지 않는다. 그런데 생김새는 같아야
+   하므로 선택자만 나란히 묶는다. 잔디 쪽 마크업·클래스는 건드리지 않는다
+   (2026-09-08: 두 클래스를 한 요소에 함께 달았다가 `.briefing-jandi-select`
+   같은 선택자가 두 다이얼로그 요소를 동시에 잡아 Playwright strict-mode
+   충돌을 냈다). */
+.briefing-jandi-help,
+.briefing-notion-help {
   margin: 0 0 16px;
   padding-left: 18px;
   color: var(--text-secondary);
@@ -4990,7 +4997,8 @@ html.dark .db-autocomplete-dropdown {
   line-height: 1.75;
 }
 
-.briefing-jandi-input {
+.briefing-jandi-input,
+.briefing-notion-input {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--border-strong);
@@ -5000,10 +5008,12 @@ html.dark .db-autocomplete-dropdown {
   font-size: var(--text-sm);
 }
 
-.briefing-jandi-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.briefing-jandi-input:focus-visible,
+.briefing-notion-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* 받을 시각. 목록은 서버가 준 것만 그린다 (프론트에 사본을 두지 않는다). */
-.briefing-jandi-time {
+.briefing-jandi-time,
+.briefing-notion-time {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -5012,7 +5022,8 @@ html.dark .db-autocomplete-dropdown {
   font-size: var(--text-caption);
 }
 
-.briefing-jandi-select {
+.briefing-jandi-select,
+.briefing-notion-select {
   padding: 8px 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -5022,26 +5033,31 @@ html.dark .db-autocomplete-dropdown {
   font-variant-numeric: tabular-nums;
 }
 
-.briefing-jandi-select:disabled { color: var(--text-muted); }
-.briefing-jandi-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.briefing-jandi-select:disabled,
+.briefing-notion-select:disabled { color: var(--text-muted); }
+.briefing-jandi-select:focus-visible,
+.briefing-notion-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* 잔디로 받을 항목 — 체크가 꺼진 것이 '안 받음' 이다.
+/* 받을 항목 — 체크가 꺼진 것이 '안 받음' 이다.
    ⚠️ 색은 style.css 상단에 정의된 토큰만 쓴다. 없는 이름은 에러가 아니라
       폴백이라 라이트 모드에서 조용히 안 보이게 된다 (2026-08-13 사고). */
-.briefing-jandi-sections {
+.briefing-jandi-sections,
+.briefing-notion-sections {
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
-.briefing-jandi-sections-title {
+.briefing-jandi-sections-title,
+.briefing-notion-sections-title {
   display: block;
   margin-bottom: 8px;
   color: var(--text-secondary);
   font-size: var(--text-caption);
 }
 
-.briefing-jandi-group {
+.briefing-jandi-group,
+.briefing-notion-group {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -5049,13 +5065,15 @@ html.dark .db-autocomplete-dropdown {
   margin-bottom: 8px;
 }
 
-.briefing-jandi-group-name {
+.briefing-jandi-group-name,
+.briefing-notion-group-name {
   width: 100%;
   color: var(--text-muted);
   font-size: var(--text-caption);
 }
 
-.briefing-jandi-group label {
+.briefing-jandi-group label,
+.briefing-notion-group label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -5064,9 +5082,11 @@ html.dark .db-autocomplete-dropdown {
   cursor: pointer;
 }
 
-.briefing-jandi-group input[type="checkbox"] { cursor: pointer; }
+.briefing-jandi-group input[type="checkbox"],
+.briefing-notion-group input[type="checkbox"] { cursor: pointer; }
 
-.briefing-jandi-status {
+.briefing-jandi-status,
+.briefing-notion-status {
   margin: 10px 0 0;
   color: var(--text-muted);
   font-size: var(--text-caption);
@@ -5074,19 +5094,22 @@ html.dark .db-autocomplete-dropdown {
   word-break: break-all;
 }
 
-.briefing-jandi-actions {
+.briefing-jandi-actions,
+.briefing-notion-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
   margin-top: 18px;
 }
 
-.briefing-jandi-actions .briefing-doc-action.primary { color: var(--accent); }
-.briefing-jandi-actions .briefing-doc-action.danger { color: var(--error); }
+.briefing-jandi-actions .briefing-doc-action.primary,
+.briefing-notion-actions .briefing-doc-action.primary { color: var(--accent); }
+.briefing-jandi-actions .briefing-doc-action.danger,
+.briefing-notion-actions .briefing-doc-action.danger { color: var(--error); }
 
 /* ── 노션으로 받기 ─────────────────────────────────────────────────────────
-   구조는 잔디 설정과 같다(`.briefing-jandi-*` 규칙을 공유). 여기서 더하는
-   것은 사생활 안내 한 줄뿐이다. */
+   구조 규칙은 위에서 잔디와 선택자를 함께 묶어 공유한다(마크업은 분리).
+   여기서 더하는 것은 사생활 안내 한 줄뿐이다. */
 .briefing-notion-privacy {
   margin: 0 0 16px;
   padding: 10px 12px;

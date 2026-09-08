@@ -1115,12 +1115,14 @@
     /* ⛔ 선택지 목록을 여기서 만들지 않는다 — 서버가 준 send_time_choices 로만 채운다. */
     var timeField = document.createElement("label");
     var timeSelect = document.createElement("select");
-    var status = textNode("p", "briefing-jandi-status briefing-notion-status", "불러오는 중…");
+    var status = textNode("p", "briefing-notion-status", "불러오는 중…");
     var sectionBox = document.createElement("div");
     var row = document.createElement("div");
-    var save = textNode("button", "briefing-doc-action primary", "저장");
+    /* ⚠️ 잔디 버튼과 화면 문구가 겹치면(둘 다 "저장"/"해제") 같은 다이얼로그 안에서
+       텍스트로 찾는 자동화가 어느 버튼인지 가르지 못한다 — 여기서만 문구를 갈랐다. */
+    var save = textNode("button", "briefing-doc-action primary", "노션에 저장");
     var test = textNode("button", "briefing-doc-action", "지금 보내기");
-    var remove = textNode("button", "briefing-doc-action danger", "해제");
+    var remove = textNode("button", "briefing-doc-action danger", "노션 연결 해제");
     var title = textNode("h3",
       "briefing-settings-section-title briefing-notion-title", "노션으로 받기");
 
@@ -1134,14 +1136,14 @@
     box.appendChild(textNode("p", "briefing-notion-privacy",
       "브리핑에는 메일 제목이 들어갑니다. 노션 페이지는 공유하면 그 사람도 보게 됩니다."));
     input.type = "url";
-    input.className = "briefing-jandi-input briefing-notion-input";
+    input.className = "briefing-notion-input";
     input.setAttribute("aria-label", "노션 페이지 주소");
     input.placeholder = "https://www.notion.so/…";
     input.spellcheck = false;
     box.appendChild(input);
-    timeField.className = "briefing-jandi-time briefing-notion-time";
+    timeField.className = "briefing-notion-time";
     timeField.appendChild(textNode("span", "", "받을 시각"));
-    timeSelect.className = "briefing-jandi-select briefing-notion-select";
+    timeSelect.className = "briefing-notion-select";
     timeSelect.setAttribute("aria-label", "노션으로 받을 시각");
     timeSelect.disabled = true;
     timeField.appendChild(timeSelect);
@@ -1149,10 +1151,10 @@
     /* 받을 항목. ⛔ 목록을 여기서 만들지 않는다 — 서버가 준 sections 로만 그린다.
        ⚠️ 기본값은 잔디와 같게(전부 켜짐) 둔다 — 여기만 다르면
        "잔디엔 오는데 노션엔 안 온다" 가 된다. */
-    sectionBox.className = "briefing-jandi-sections briefing-notion-sections";
+    sectionBox.className = "briefing-notion-sections";
     box.appendChild(sectionBox);
     box.appendChild(status);
-    row.className = "briefing-jandi-actions briefing-notion-actions";
+    row.className = "briefing-notion-actions";
     [save, test, remove].forEach(function (button) {
       button.type = "button";
       row.appendChild(button);
@@ -1187,7 +1189,7 @@
         return;
       }
       sectionBox.replaceChildren();
-      sectionBox.appendChild(textNode("span", "briefing-jandi-sections-title",
+      sectionBox.appendChild(textNode("span", "briefing-notion-sections-title",
         "노션으로 받을 항목"));
       var groups = [];
       items.forEach(function (item) {
@@ -1197,14 +1199,17 @@
       });
       groups.forEach(function (group) {
         var wrap = document.createElement("div");
-        wrap.className = "briefing-jandi-group briefing-notion-group";
-        wrap.appendChild(textNode("span", "briefing-jandi-group-name", group.name));
+        wrap.className = "briefing-notion-group";
+        wrap.appendChild(textNode("span", "briefing-notion-group-name", group.name));
         group.rows.forEach(function (item) {
           var label = document.createElement("label");
           var box2 = document.createElement("input");
           box2.type = "checkbox";
           box2.checked = item.enabled !== false;
-          box2.dataset.sectionKey = item.key;
+          /* ⚠️ `data-section-key` 가 아니라 `data-notion-section-key` 다 — 잔디 쪽
+             체크박스와 키 값이 같아서(서버가 같은 sections 목록을 준다), 속성 이름까지
+             같으면 `input[data-section-key=…]` 로 찾는 자동화가 둘 중 무엇인지 못 가른다. */
+          box2.dataset.notionSectionKey = item.key;
           label.appendChild(box2);
           label.appendChild(textNode("span", "", item.label));
           wrap.appendChild(label);
@@ -1218,7 +1223,7 @@
       return Array.prototype.slice
         .call(sectionBox.querySelectorAll("input[type=checkbox]"))
         .filter(function (input) { return !input.checked; })
-        .map(function (input) { return input.dataset.sectionKey; });
+        .map(function (input) { return input.dataset.notionSectionKey; });
     }
 
     function paint(state) {
