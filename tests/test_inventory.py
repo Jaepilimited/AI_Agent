@@ -202,7 +202,13 @@ def test_question_words_do_not_zero_out_the_search():
 def test_particle_stripping_does_not_break_product_names():
     """`클레이` 의 끝 '이' 가 조사로 잘려 `클레` 가 된다. 원형이 품목에 있으면
        원형을 쓴다 — 두 형태를 모두 데이터에 물어본다."""
-    helper = inspect.getsource(inventory.usable_words)
+    # ⚠️ 판정 규칙은 `query_keywords.usable_words` **한 곳**에 있다 (2026-09-08).
+    #    제품정보 검색이 같은 사고("테카 앰플 정보좀" → 0건)를 겪어 공용으로 뺐다 —
+    #    두 번 구현하면 한쪽만 고쳤을 때 경로에 따라 답이 갈린다.
+    from app.core import query_keywords
+
+    assert "query_keywords" in inspect.getsource(inventory.usable_words),         "재고가 규칙을 다시 구현하면 안 된다 — 공용 함수를 쓴다"
+    helper = inspect.getsource(query_keywords.usable_words)
     assert "w[:-1]" in helper and "len(w) > 2" in helper
 
 

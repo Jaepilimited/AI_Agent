@@ -215,38 +215,86 @@ def sync(dry_run: bool = False) -> dict:
 
 
 def search(query: str, limit: int = 6) -> List[dict]:
-    """제품정보 검색 — 라인/제품명 우선, 없으면 본문 낱말.
+    """제품정보 검색 — 라인으로 좁히고, 그 안에서 낱말로 한 번 더 좁힌다.
 
     ⚠️ 라인 판정은 `product_lines` 를 쓴다 (프롬프트 표가 단일 소스).
+
+    ⛔ **낱말은 AND 로 걸린다 — 자료에 없는 낱말이 하나만 껴도 통째로 0건이다.**
+       실사용 제보(2026-09-08): `"테카 앰플 정보좀"` → 0건.
+       `정보`·`좀` 은 각각 불용어에 있는데 **`정보좀` 은 붙어 있어** 안 걸렸고
+       (`좀` 은 조사가 아니라 `strip_particle` 도 떼지 않는다), 그 한 낱말이
+       36만 개 팔린 `마다가스카르 센텔라 테카 앰플`을
+       *"등록 정보가 없습니다"* 로 만들었다. **에러가 아니라 빈손이라 조용하다.**
+
+       대응은 불용어 목록을 늘리는 것이 아니다 — 끝이 없다(정보좀·뭐임·궁금…).
+       `usable_words` 가 **자료에 물어** 버린다 (OP 재고와 같은 규칙·같은 함수).
+
+    ⛔ **라인을 맞혀도 낱말로 한 번 더 좁힌다.** 라인만 보고 돌려주면 호출부가
+       앞의 몇 개만 쓰기 때문에 **질문한 제품이 잘려 나간다** — 실측:
+       `"히알루시카 슬리핑 팩"`(11종 중 10번째)이 빠지고 젤리핏 앰플 패드가 실렸고,
+       `"센텔라 앰플 폼"` 에는 포어마이징 4종이 실렸다(제품명이 죄다
+       `마다가스카르 센텔라 …` 라 라인 필터가 거의 전부를 통과시킨다).
+       붐따 #111 과 같은 실패 모양이다 — 질문한 것이 아닌 제품을 설명하면서
+       바꿔치기했다는 말은 하지 않는다.
+
+    ⚠️ **못 좁히면 라인 전체로 되돌아간다.** 자료 표기가 어긋날 수 있다
+       (`히알루시카` ↔ 자료의 `히알루-시카`) — 좁히려다 0건을 만들면 안 된다.
     """
     from app.db.mariadb import fetch_all
 
     q = (query or "").strip()
     if not q:
         return []
-    rows: List[dict] = []
+    # ⚠️ 55행 · 3만자짜리 표다 — 통째로 읽어 파이썬에서 거른다. 낱말 판정이
+    #    자료를 봐야 하므로 SQL 로는 같은 일을 할 수 없다.
+    rows = fetch_all("SELECT line, product, body, url FROM product_info") or []
+    if not rows:
+        return []
+
+    # ① 라인을 지목했으면 **그 라인 안에서만** 본다 (붐따 #111)
+    scope, in_line = rows, False
     try:
         from app.core import product_lines
         asked = product_lines.mentioned(q)
         if asked:
-            all_rows = fetch_all("SELECT line, product, body, url FROM product_info") or []
-            rows = [r for r in all_rows
-                    if product_lines.mentioned(f"{r['line']} {r['product']}") & asked]
+            hit = [r for r in rows
+                   if product_lines.mentioned(f"{r['line']} {r['product']}") & asked]
+            if hit:
+                scope, in_line = hit, True
     except Exception as e:
         logger.info("product_info_line_filter_failed", error=str(e)[:120])
 
-    if not rows:
-        from app.core.query_keywords import extract
-        words = [w for w in extract(q) if len(w) >= 2][:4]
-        if words:
-            where = " AND ".join(["(product LIKE %s OR body LIKE %s)"] * len(words))
-            params = []
-            for w in words:
-                params += [f"%{w}%", f"%{w}%"]
-            rows = fetch_all(
-                f"SELECT line, product, body, url FROM product_info WHERE {where} "
-                f"LIMIT {int(limit) * 3}", tuple(params)) or []
-    return rows[:limit]
+    # ② 낱말 — 자료에 있는 것만 남기고 AND 로 좁힌다
+    from app.core.query_keywords import extract, usable_words
+
+    hay = [f"{r['product']} {r['body']}".lower() for r in scope]
+    words, dropped = usable_words(extract(q), hay)
+    if dropped:
+        # ⚠️ 0건은 "정말 없다" 와 똑같이 생겼다 — 무엇을 버렸는지 흔적을 남긴다
+        logger.info("product_info_words_dropped", kept=words, dropped=dropped)
+    keys = [w.lower() for w in words[:4]]
+    narrowed = [r for r, h in zip(scope, hay) if all(k in h for k in keys)] if keys else []
+
+    # ③ 이름에 걸린 제품이 본문에 스친 제품보다 앞이다.
+    #    실측(2026-09-08): 이걸 안 하면 "마다가스카르 센텔라 앰플" 의 상위 4건에
+    #    정작 그 제품이 없다 — 본문에 '앰플' 이 적힌 제품이 표 순서대로 먼저
+    #    실리고, **호출부는 앞의 몇 개만 쓴다.**
+    #    동점이면 **이름이 짧은 쪽** — 군더더기가 적을수록 가까운 이름이다.
+    # ⚠️ 순위는 코드가 정한다. LLM 에게 고르라고 맡기면 확률이 된다.
+    # ⚠️ 라인으로 되돌아간 목록에도 매긴다 — 낱말이 다 안 맞았을 뿐이지
+    #    어느 제품을 물었는지는 그대로 안다 (실측: "센텔라 테카 앰플 성분" 은
+    #    앰플 본문에만 '성분' 이 없어 AND 가 비었고, 정작 앰플이 세 번째였다).
+    def _rank(items: List[dict]) -> List[dict]:
+        if not keys:
+            return items          # 라인만 물었으면 표 순서를 흔들지 않는다
+        return sorted(items,
+                      key=lambda r: (-sum(k in str(r["product"]).lower() for k in keys),
+                                     len(str(r["product"]))))
+
+    if narrowed:
+        return _rank(narrowed)[:limit]
+    # ⛔ 라인 밖에서 못 좁혔으면 **빈손이 맞다** — 넓혀서 아무거나 주지 않는다
+    return _rank(scope)[:limit] if in_line else []
 
 
 def status() -> dict:

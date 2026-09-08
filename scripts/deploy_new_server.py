@@ -120,6 +120,22 @@ def preflight(skip: bool = False) -> bool:
     return False
 
 
+def untracked_notice(files) -> list:
+    """전송 목록 중 git 이 모르는 소스를 알린다. **막지 않는다.**
+
+    ⛔ 판정은 `app/core/deploy_preflight` 한 곳에서 한다 — 여기에 경로 규칙을
+       다시 적으면 언젠가 갈린다. 그리고 `collect()` 결과를 그대로 넘겨
+       **경고와 실제 전송이 같은 것을 보게** 한다.
+    ⚠️ git 이 없거나 조회가 실패하면 조용히 넘어간다 — 배포를 세울 일이 아니다.
+    """
+    sys.path.insert(0, str(PROJ))
+    try:
+        from app.core.deploy_preflight import untracked_in_payload, format_untracked_notice
+        return format_untracked_notice(untracked_in_payload(PROJ, files))
+    except Exception as e:                        # noqa: BLE001
+        return [f"  [보존] 확인하지 못했습니다 ({str(e)[:60]})"]
+
+
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1] not in HOSTS:
         print(__doc__)
@@ -135,6 +151,9 @@ def main() -> int:
     total = sum(f.stat().st_size for f in files)
     print(f"대상: {target} ({host})")
     print(f"전송 파일: {len(files)}개 / {total / 1024 / 1024:.1f} MB")
+    for line in untracked_notice(files):
+        # ⚠️ 콘솔이 cp949 다 (CLAUDE.md) — 진단이 죽으면 아무도 못 본다
+        print(line.encode("cp949", "replace").decode("cp949"))
 
     if dry:
         for f in sorted(files)[:25]:

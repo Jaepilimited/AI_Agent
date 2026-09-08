@@ -79,6 +79,53 @@ def extract(question: str, extra_stop: Optional[Iterable[str]] = None,
     return out
 
 
+def usable_words(words: Iterable[str], haystack: Iterable[str]
+                 ) -> tuple[List[str], List[str]]:
+    """자료에 실제로 있는 낱말만 남긴다 — 나머지는 질문의 군더더기다.
+
+    ⛔ 낱말을 **AND** 로 거는 검색은 하나라도 자료에 없으면 통째로 0건이 난다.
+       에러가 아니라 **빈손**이라 "정말 없다" 와 글자 그대로 똑같이 보인다:
+
+         OP 재고  : "센텔라 앰플 재고 얼마나 남았어?" → `얼마나` 때문에 0건
+         제품정보 : "테카 앰플 정보좀"              → `정보좀` 때문에 0건
+
+       둘 다 실사용 제보다. 뒤쪽은 36만 개 팔린 제품을 두고
+       *"등록 정보가 없습니다"* 라고 답했다.
+
+    ⛔ **불용어 목록을 늘리는 방식으로는 끝이 없다** (얼마나·남았어·정보좀·뭐임…).
+       대신 **자료에 물어본다**: 그 낱말이 든 항목이 하나도 없으면 이름이 아니라
+       질문의 말이다. 목록 관리가 필요 없고 새 말투에도 저절로 맞는다.
+
+    조사도 여기서 함께 푼다 — `클레이` 가 `클레` 로 잘려 있어도(끝의 '이' 를
+    조사로 본다) 원형이 자료에 있으면 원형을 쓴다.
+
+    ⚠️ 이 규칙은 **여기 한 곳에만** 둔다. 두 번 구현하면 한쪽만 고쳤을 때
+       경로에 따라 답이 갈린다 (이 저장소가 반복해서 겪은 실패다).
+
+    Returns:
+        (쓸 낱말, 버린 낱말) — 버린 것은 **답변에 밝혀라.** 안 쓴 말로 찾은
+        결과를 그대로 주면 그 말로 찾은 줄 알게 된다.
+    """
+    hay = [(h or "").lower() for h in haystack]
+    keep: List[str] = []
+    drop: List[str] = []
+    for w in words:
+        if not w:
+            continue
+        # 후보는 **긴 것부터**: 원형 → 조사를 뗀 형 → 한 글자 뺀 형.
+        # ⚠️ 원형을 먼저 물어야 `클레이` 가 `클레` 로 잘린 채 남지 않는다
+        #    (조사 규칙상 '이' 가 떨어진다). 뜻은 같아도 답변에 잘린 말이 보인다.
+        chosen = None
+        cands = [w, strip_particle(w)] + ([w[:-1]] if len(w) > 2 else [])
+        for cand in dict.fromkeys(c for c in cands if c and len(c) >= 2):
+            low = cand.lower()
+            if any(low in h for h in hay):
+                chosen = cand
+                break
+        (keep.append(chosen) if chosen else drop.append(w))
+    return keep, drop
+
+
 # ⛔ **동의어 목록을 손으로 쌓지 않는다** (2026-08-14 사용자 판단).
 #    쌓는 방식은 두 가지로 위험하다:
 #      ① 끝이 없다 — 새 용어마다 사람이 검수해야 하고, 안 하면 목록만 쌓인다

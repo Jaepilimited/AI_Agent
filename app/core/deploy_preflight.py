@@ -142,3 +142,134 @@ def run(root: Path = None) -> Tuple[bool, List[str]]:
     root = Path(root or Path(__file__).resolve().parents[2])
     problems = syntax_errors(root) + missing_self_methods(root)
     return (not problems), problems
+
+
+# ---------------------------------------------------------------------------
+# 배포에 실리는데 git 이 모르는 소스
+# ---------------------------------------------------------------------------
+#
+# ⛔ **왜 있나** (2026-09-08 실측): 이 저장소의 배포는 git 이 아니라 작업트리를
+#    통째로 SFTP 전송한다. 그래서 **git 이 배포 관문이 아니다** — 커밋하지 않은
+#    코드가 프로덕션에 있는 것이 사고가 아니라 구조적으로 정상 경로다.
+#
+#    그날 프로덕션은 HEAD 가 아니라 작업트리를 돌고 있었고, 그중 넷은
+#    `git log --all` 이 한 번도 본 적 없는 파일이었다:
+#
+#        app/core/user_directory.py            330줄  로그인 경로
+#        app/core/user_directory_migration.py  393줄  로그인 경로
+#        app/core/calendar_stats.py            350줄
+#        scripts/sync_entra_users.py            30줄  APP 크론 22:00 진입점
+#
+#    작업트리가 사라지면 돌아갈 길이 프로덕션 서버뿐이었다. 에러도 경고도
+#    없었고, 사람이 해시를 대조해 보고서야 드러났다.
+#
+# ⛔ **막지 않는다. 적기만 한다.** 더티 트리를 막는 관문을 만들면 그날로 꺼진다 —
+#    이 트리는 세션 서넛이 상시 공유해서 깨끗한 순간이 사실상 없고, 매번 걸리는
+#    관문은 곧 우회된다 (CLAUDE.md 가 훅에 대해 적어 둔 그대로). 드물게 떠야
+#    읽힌다.
+#
+# ⛔ **전송 목록에서 판정한다.** 경로 규칙을 여기 따로 적으면 `EXCLUDE_PATHS` 가
+#    바뀔 때 경고만 조용히 낡는다 — `knowledge_map` 이 이름으로 걸려
+#    `app/knowledge_map/` 이 통째로 빠졌던 그 자리다. 그래서 호출부가 `collect()`
+#    결과를 그대로 넘기고, 여기서는 그 안에서만 고른다.
+#
+# ⚠️ `scripts/_*` 는 뺀다 — 밑줄이 일회성 관례이고 CLAUDE.md 도 "scripts/ 일회성
+#    파일" 로 부른다. 46개가 상시 떠 있으면 그 경고는 태어나자마자 죽는다.
+#    ⚠️ 이건 의도한 맞바꿈이다: 그것들도 전송되므로 사라지면 함께 사라진다.
+#    잃어도 되는 것이라는 판단이 전제다.
+#
+# ⚠️ `.gitignore` 로 가려진 것은 보지 않는다 — 무시는 **결정**이지 실수가 아니다.
+#    (`analyze_warns.py` 가 `.gitignore:139` 에 이름째 적혀 있는 것이 그 예다.)
+#    추적 안 됨은 "아직 아무도 판단하지 않았다" 이고, 그것만이 알릴 값이 있다.
+#
+# ⚠️ `tests/` 는 볼 필요가 없다 — `EXCLUDE_DIRS` 에 있어 애초에 전송되지 않는다.
+#    전송 목록에서 고르므로 규칙을 따로 적지 않아도 자연히 빠진다.
+
+# ⛔ **자가 점검(매일)으로 만들지 마라 — 서버에서는 돌 수 없다.** 신규 서버는
+#    git 저장소가 아니라 SFTP 전송본이라 `git status` 가 성립하지 않는다
+#    (CLAUDE.md: "git pull 로 갱신되지 않는다"). 이 경고는 **git 이 있는 쪽**,
+#    즉 배포하는 사람의 화면에서만 뜻이 있다. 그래서 배포 시점에만 뜬다.
+
+WATCHED_ROOTS = ("app", "scripts")
+_SCRATCH_PREFIX = "_"
+
+
+def _rel(root: Path, path) -> str:
+    """저장소 상대경로를 슬래시 표기로."""
+    p = Path(path)
+    try:
+        p = p.resolve().relative_to(Path(root).resolve())
+    except ValueError:
+        p = p if not p.is_absolute() else Path(p.name)
+    return str(p).replace("\\", "/")
+
+
+def _load_bearing(rel: str) -> bool:
+    """잃으면 아픈 소스인가 — 감시 대상 판정 한 곳."""
+    if not rel.endswith(".py"):
+        return False
+    parts = rel.split("/")
+    if len(parts) < 2 or parts[0] not in WATCHED_ROOTS:
+        return False
+    if parts[0] == "scripts" and parts[-1].startswith(_SCRATCH_PREFIX):
+        return False
+    return True
+
+
+def untracked_paths(root: Path) -> Set[str]:
+    """git 이 모르는 파일의 상대경로.
+
+    ⚠️ `-z` 로 받는다 — 기본 출력은 비ASCII 경로를 따옴표로 감싸고 이스케이프해서
+       한글 파일명이 그대로 안 온다.
+    """
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "status", "--porcelain", "-uall", "-z"],
+        cwd=str(root), capture_output=True, timeout=120,
+    )
+    if out.returncode != 0:
+        raise RuntimeError((out.stderr or b"").decode("utf-8", "replace")[:200] or "git status 실패")
+    found: Set[str] = set()
+    for chunk in out.stdout.decode("utf-8", "replace").split("\0"):
+        if chunk.startswith("?? "):
+            found.add(chunk[3:].strip().rstrip("/"))
+    return found
+
+
+def untracked_in_payload(root: Path, payload) -> List[Tuple[str, int]]:
+    """전송 목록 중 git 이 모르는 소스. `(상대경로, 줄수)` 를 큰 것부터.
+
+    `payload` 는 배포 스크립트의 `collect()` 결과를 그대로 받는다 —
+    경고와 실제 전송이 같은 것을 보게 하려는 것이 이 인자의 전부다.
+    """
+    root = Path(root)
+    unknown = untracked_paths(root)
+    rows: List[Tuple[str, int]] = []
+    for path in payload:
+        rel = _rel(root, path)
+        if rel not in unknown or not _load_bearing(rel):
+            continue
+        try:
+            with open(root / rel, "rb") as fh:
+                lines = sum(1 for _ in fh)
+        except OSError:
+            lines = 0
+        rows.append((rel, lines))
+    rows.sort(key=lambda r: (-r[1], r[0]))
+    return rows
+
+
+def format_untracked_notice(rows: List[Tuple[str, int]]) -> List[str]:
+    """사람이 읽을 줄들. 없으면 빈 목록 — 조용할 때는 아무 말도 하지 않는다."""
+    if not rows:
+        return []
+    total = sum(n for _, n in rows)
+    out = [f"  [보존] !! git 이 모르는 소스 {len(rows)}개({total}줄)가 이번 전송에 포함됩니다"]
+    for rel, n in rows[:10]:
+        out.append(f"           {rel}  {n}줄")
+    if len(rows) > 10:
+        out.append(f"           ... 외 {len(rows) - 10}개")
+    out.append("         작업트리가 사라지면 이 코드는 프로덕션에만 남습니다. 커밋을 권합니다")
+    out.append("         (막지 않습니다 - 전송은 그대로 진행됩니다)")
+    return out

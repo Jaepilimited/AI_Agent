@@ -44,6 +44,19 @@ TAB_ERP = "🐵ERP 코드 통합 재고현황🎀"
 TAB_EXPIRY = "유통기한"
 _RANGES = {SHEET_TAB: f"A1:Z{MAX_ROWS}", TAB_ERP: "A1:U2000", TAB_EXPIRY: "A1:Y8000"}
 
+# ⛔ **개인 작업지 탭은 학습하지 않는다** (2026-09-03 사용자 지시).
+#    이 시트에는 탭이 40개 있고 그중 상당수가 담당자 개인 작업지다 —
+#    `나영`·`나영(ETC)`·`나영(FBI)`·`민재`·`민재(US)`·`훈`·`Yoona`·`어진`·`다운` 등.
+#    `제품정보` 탭에는 **"사용 후 꼭 지워주세요!!"** 라고 적혀 있다. 누가 값을
+#    넣었다 지웠다 하는 **임시 칸**이라, 적재하면 조용히 낡거나 조용히 비는
+#    데이터가 된다 (에러가 아니라 오답이 된다). 형식도 탭마다 다르다
+#    (`나영(FBI)` 는 바코드+`_Z` 접미, `민재(US)` 는 `_R`/`_ZR`/`_MC` 열).
+#    ⚠️ 수출 발주 계산(발주수량·박스수량·예상무게·HSCODE)이 거기 있어서
+#       `@@물류`(export_logistics)와 이어 보고 싶어지는데, **그러지 마라.**
+#       필요해지면 HSCODE 같은 **안정된 축만** 별도 마스터로 받는다.
+#    회귀 `tests/test_logistics_source.py` 7절이 이 목록을 고정한다.
+ALLOWED_TABS = frozenset(_RANGES)
+
 # ERP 탭 창고명 → SK/HQ_NEW 표기.
 # ⛔ **이름을 눈으로 맞추지 않았다 — 값으로 맞췄다.** 겹치는 730개 SKU 의 창고별
 #    수량을 전부 대조해 6개 모두 **100% 일치**하는 짝만 채택했다 (2026-08-25 실측).
@@ -134,6 +147,12 @@ def _sheets_service():
 def _fetch(svc, tab: str) -> List[List[Any]]:
     # ⛔ 성분 적재와 같은 노출이다 — 구글 쪽 일시 장애(503·timeout)에 한 번 걸리면
     #    조회가 통째로 실패한다. 재고는 **조회할 때마다** 부르므로 더 자주 걸린다.
+    # ⛔ 허용 탭만 읽는다 (2026-09-03 사용자 지시 — 개인 작업지 학습 금지).
+    #    `_RANGES[tab]` 의 KeyError 에 기대지 않는다 — 왜 막혔는지가 보여야 한다.
+    if tab not in ALLOWED_TABS:
+        raise ValueError(
+            f"허용되지 않은 시트 탭: {tab!r}. 개인 작업지는 적재하지 않는다 "
+            f"(허용: {sorted(ALLOWED_TABS)})")
     from app.core.retrying import with_retry
     return with_retry(
         lambda: (svc.spreadsheets().values()
@@ -522,27 +541,13 @@ def usable_words(words: List[str],
        대신 **데이터에 물어본다**: 그 낱말이 든 품목이 하나도 없으면 제품 이름이
        아니라 질문의 말이다. 목록 관리가 필요 없고 새 말투에도 저절로 맞는다.
 
-    조사도 여기서 함께 푼다 — `클레이` 가 `클레` 로 잘려 있어도(끝의 '이' 를 조사로
-    본다) 원형이 맞으면 원형을 쓴다.
+    ⚠️ **판정 규칙 자체는 `query_keywords.usable_words` 한 곳에 있다.** 여기는
+       재고의 건초더미(SKU+품목명)를 넘기는 자리다 — 같은 규칙을 두 번 구현하면
+       한쪽만 고쳤을 때 경로에 따라 답이 갈린다. 제품정보 검색도 같은 것을 쓴다.
     """
-    hay = _haystack(index)
-    keep: List[str] = []
-    drop: List[str] = []
-    for w in words:
-        if not w:
-            continue
-        # 후보는 **긴 것부터**: 원형 → 조사를 뗀 형 → 한 글자 뺀 형.
-        # ⚠️ 원형을 먼저 물어야 `클레이` 가 `클레` 로 잘린 채 남지 않는다
-        #    (조사 규칙상 `이` 가 떨어진다). 뜻은 같아도 답변에 잘린 말이 보인다.
-        from app.core.textmatch import strip_particle
-        chosen = None
-        cands = [w, strip_particle(w)] + ([w[:-1]] if len(w) > 2 else [])
-        for cand in dict.fromkeys(c for c in cands if c and len(c) >= 2):
-            if _hits(hay, cand):
-                chosen = cand
-                break
-        (keep.append(chosen) if chosen else drop.append(w))
-    return keep, drop
+    from app.core.query_keywords import usable_words as _usable
+
+    return _usable(words, _haystack(index))
 
 
 def _haystack(index: Dict[str, Dict[str, Any]] | None) -> List[str]:
