@@ -348,3 +348,45 @@ def test_enqueue_notion_titles_the_row_with_the_date(monkeypatch):
                               "임재필") is True
     assert seen["title"] == "2026-09-08 출근 브리핑"
     assert "회의" in seen["body"]
+
+
+def test_broken_send_at_or_date_does_not_crash_the_batch():
+    """⛔ 설정 하나가 깨져도 `one(row)` 밖으로 예외가 새면 성공한 브리핑까지
+    `failed` 로 잘못 집계된다 — 잔디처럼 두 겹으로 감싸 안전하게 실패한다."""
+    from app.core import personal_briefing as pb
+    from app.db.models import User
+
+    envelope = {"document": {"status": "ready", "for_date": "not-a-date",
+                             "meetings": [{"time": "10:00", "title": "회의",
+                                           "urgency": "normal"}]},
+                "fx": {}, "business": {}}
+    user = User(id=7, email="a@b.c", name="임재필", department="", role="user",
+                allowed_models="", ad_user_id=None)
+    # 고치기 전에는 `date.fromisoformat("not-a-date")` 의 ValueError 가 그대로
+    # 밖으로 나갔다 (RuntimeError·ValueError 전파, 아래에서 실측 확인함).
+    assert pb._enqueue_notion(user, envelope, "https://www.notion.so/x",
+                              "임재필") is False
+
+
+def test_run_morning_precompute_reports_notion_queue_count():
+    """⛔ 몇 명분을 노션 대기열에 넣었는지 세지 않으면 조용히 0건이 되어도
+    아무도 모른다 — 잔디의 `queued` 옆에 나란히 세운다."""
+    import asyncio
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.core import personal_briefing as pb
+
+    kst = ZoneInfo("Asia/Seoul")
+    # 주말 조기 반환 경로 — 실제 DB/네트워크 없이 그대로 부를 수 있다.
+    # ⚠️ 경로마다 반환 키가 달라지면 읽는 쪽이 KeyError 를 만난다.
+    out = asyncio.run(pb.run_morning_precompute(
+        now=datetime(2026, 8, 29, 9, 0, tzinfo=kst)))
+    assert out["skipped"] == "weekend"
+    assert out["queued_notion"] == 0
+
+    import inspect
+    source = inspect.getsource(pb.run_morning_precompute)
+    # 정상 경로(비주말)의 반환 dict 에도 같은 키가 있어야 한다.
+    assert '"queued_notion": queued_notion' in source
+    assert "queued_notion += 1" in source

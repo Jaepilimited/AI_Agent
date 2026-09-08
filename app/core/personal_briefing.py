@@ -732,7 +732,7 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
     if workday.is_weekend(current.date()):
         logger.info("personal_briefing_skipped_weekend", day=str(current.date()))
         return {"selected": 0, "succeeded": 0, "failed": 0, "queued": 0,
-                "skipped": "weekend"}
+                "queued_notion": 0, "skipped": "weekend"}
 
     rows = await asyncio.to_thread(
         fetch_all,
@@ -772,9 +772,10 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
         logger.warning("notion_recipients_unavailable", error_type=type(exc).__name__)
         notion_targets = {}
     queued = 0
+    queued_notion = 0
 
     async def one(row: dict[str, Any]) -> dict[str, Any]:
-        nonlocal queued
+        nonlocal queued, queued_notion
         async with semaphore:
             user = User(
                 id=row["id"], email=row["email"], name=row["name"],
@@ -793,10 +794,11 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
             target = notion_targets.get(int(row["id"]))
             if target:
                 page_url, n_send_at, n_muted = target
-                await asyncio.to_thread(
+                if await asyncio.to_thread(
                     _enqueue_notion, user, result, page_url, row.get("name", ""),
                     n_send_at, n_muted,
-                )
+                ):
+                    queued_notion += 1
             return result
 
     results = await asyncio.gather(*(one(row) for row in selected), return_exceptions=True)
@@ -806,6 +808,7 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
         "succeeded": sum(not isinstance(result, Exception) for result in results),
         "failed": sum(isinstance(result, Exception) for result in results),
         "queued": queued,
+        "queued_notion": queued_notion,
     }
 
 
@@ -902,10 +905,28 @@ def _enqueue_notion(user: User, envelope: dict[str, Any], page_url: str, name: s
         return False
 
     for_date = document.get("for_date") or ""
-    day = date.fromisoformat(str(for_date)) if for_date else date.today()
-    send_after = notion_briefing.send_after_for(
-        day, send_at if send_at is not None else notion_briefing.DEFAULT_SEND_AT)
-    return notion_briefing.enqueue(
-        user_id=user.id, for_date=day, page_url=page_url, body=body,
-        title=f"{day} 출근 브리핑", send_after=send_after,
-    )
+    try:
+        day = date.fromisoformat(str(for_date)) if for_date else date.today()
+    except ValueError:
+        # ⚠️ 날짜 문자열이 깨져도 브리핑을 버리지 않는다 — 오늘 날짜로 넣는다.
+        logger.warning("notion_for_date_invalid", user_id=user.id, value=str(for_date))
+        day = date.today()
+
+    try:
+        # ⚠️ 시각이 깨져 있어도 브리핑을 버리지 않는다 — 첫 회차로 보낸다.
+        #    설정 하나 때문에 그날 브리핑이 통째로 사라지는 편이 더 나쁘다.
+        try:
+            send_after = notion_briefing.send_after_for(
+                day, send_at if send_at is not None else notion_briefing.DEFAULT_SEND_AT)
+        except ValueError:
+            logger.warning("notion_send_at_invalid", user_id=user.id, value=str(send_at))
+            send_after = notion_briefing.send_after_for(
+                day, notion_briefing.DEFAULT_SEND_AT)
+        return notion_briefing.enqueue(
+            user_id=user.id, for_date=day, page_url=page_url, body=body,
+            title=f"{day} 출근 브리핑", send_after=send_after,
+        )
+    except Exception as exc:
+        logger.warning("notion_enqueue_failed", user_id=user.id,
+                       error_type=type(exc).__name__)
+        return False
