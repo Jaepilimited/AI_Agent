@@ -329,3 +329,78 @@ def test_the_line_fallback_is_ranked_too(monkeypatch):
     names = [r["product"] for r in PI.search("센텔라 테카 앰플 성분", limit=4)]
     assert names, "라인으로 되돌아가야 한다"
     assert names[0] == "마다가스카르 센텔라 테카 앰플", names
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# ⛔ 대화 맥락이 검색어를 **굶긴다** — 2026-09-09 프로덕션 실측
+#
+#   어제 `정보좀` 을 고치고 배포했는데 화면에서는 그대로 실패했다:
+#       질문: "테카 앰플 정보좀"
+#       답변: "'테카 앰플'에 대한 상세 정보는 … 등록되어 있지 않습니다"
+#             "현재 데이터베이스에는 마다가스카르 센텔라 앰플, … 티트리카 릴리프
+#              앰플, … 포어마이징 프레쉬 앰플 … 정보만 확인 가능합니다"
+#
+#   ⛔ **함수는 고쳐졌는데 함수에 닿는 문자열이 달랐다.** 오케스트레이터는
+#      `cs_agent` 에 원문이 아니라 이 덩어리를 넘긴다:
+#
+#          [이전 대화]
+#          사용자: 센텔라 앰플 사용법 …
+#          [현재 질문]
+#          테카 앰플 정보좀
+#
+#      `extract()` 는 **문서 순서대로 8개**만 뽑는다. 현재 질문이 맨 뒤라
+#      맥락이 상한을 다 먹고 `테카` 는 아예 들어오지 못한다 — 실측:
+#      ['이전','대화','사용자','센텔라','앰플','사용법','셀라','마다가스카르'].
+#
+#   ⚠️ 그래서 프로덕션에서 `search("테카 앰플 정보좀")` 을 직접 부르면 **맞게**
+#      나온다. 고쳤다고 확신하게 만드는 모양이라 특히 위험하다 — 실사용 경로는
+#      그 문자열을 부르지 않는다.
+# ──────────────────────────────────────────────────────────────────────────
+
+_CTX = """[이전 대화]
+사용자: 센텔라 앰플 사용법 알려줘
+셀라: 마다가스카르 센텔라 앰플은 토너 다음 단계에 사용합니다. 크림 전에 발라주세요.
+
+[현재 질문]
+테카 앰플 정보좀"""
+
+
+def test_the_current_question_is_not_starved_by_context(_rows):
+    """⛔ 맥락이 아무리 길어도 **지금 물은 것**이 검색어에 들어와야 한다."""
+    from app.agents import cs_agent
+
+    block = cs_agent._product_info_block(_CTX)
+    assert "마다가스카르 센텔라 테카 앰플" in block, block[:400]
+
+
+def test_a_bare_question_still_works(_rows):
+    """⚠️ 맥락 표식이 없으면 원문 그대로 쓴다 (첫 질문·비스트리밍 경로)."""
+    from app.agents import cs_agent
+
+    assert "마다가스카르 센텔라 테카 앰플" in cs_agent._product_info_block("테카 앰플 정보좀")
+
+
+def test_context_still_helps_when_the_question_alone_finds_nothing(_rows):
+    """⚠️ 맥락을 **버리지는** 않는다 — 현재 질문만으로 못 찾으면 되돌아본다.
+
+    "그럼 크림은?" 같은 후속 발화는 그 자체로는 라인을 모른다.
+    """
+    from app.agents import cs_agent
+
+    ctx = "[이전 대화]\n셀라: 마다가스카르 센텔라 테카 앰플 안내\n\n[현재 질문]\n그건 언제 발라?"
+    # 현재 질문에는 제품어가 없다 → 맥락에서 찾아 준다
+    assert "테카" in cs_agent._product_info_block(ctx)
+
+
+def test_the_marker_is_not_spelled_twice():
+    """⛔ 표식 문자열을 양쪽이 따로 적으면 한쪽만 고쳐졌을 때 조용히 갈린다.
+
+    오케스트레이터가 만들고 cs_agent 가 읽는다 — 같은 상수를 봐야 한다.
+    """
+    import inspect
+
+    from app.agents import cs_agent, orchestrator
+
+    marker = cs_agent.CURRENT_QUESTION_MARKER
+    assert marker in inspect.getsource(orchestrator), \
+        "오케스트레이터가 이 표식으로 감싸지 않으면 cs_agent 가 못 읽는다"

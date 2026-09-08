@@ -16,6 +16,7 @@ Spreadsheet structure:
 
 import asyncio
 import re
+import time as _time
 from typing import Dict, List, Optional
 
 import structlog
@@ -31,8 +32,16 @@ logger = structlog.get_logger(__name__)
 _SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
 
 # ── Module-level cache ──
+# ⛔ **이 캐시는 오래 조용히 낡아 있었다** (2026-09-03 사용자 제보:
+#    *"CS DB와 제품정보에 대한 DB가 최신정보가 아닌거같은데"*).
+#    `warmup()` 이 **서버 기동 시 한 번**만 불렸고 스케줄 잡도 TTL 도 없었다 —
+#    CS 시트를 고쳐도 **재기동 전까지 반영되지 않는다.** 실측(프로덕션):
+#    시트 최종수정 09-03 09:41 / 그 직전 재기동은 **09-02 16:18** 이었다.
+#    ⚠️ 에러가 아니라 **옛 답을 자신 있게** 내놓는 형태라 아무도 못 알아챈다.
+#    지금은 `cs_cache_hourly` 잡이 매시 :40 에 `refresh()` 를 부른다.
 _qa_cache: List[Dict[str, str]] = []
 _cache_loaded: bool = False
+_loaded_at: Optional[float] = None
 
 # ── Tab → brand mapping ──
 _TAB_BRAND_MAP = {
@@ -317,16 +326,56 @@ async def warmup() -> int:
     Returns:
         Number of Q&A entries loaded.
     """
-    global _qa_cache, _cache_loaded
+    global _qa_cache, _cache_loaded, _loaded_at
     try:
         _qa_cache = await load_all_sheets()
         _cache_loaded = True
+        _loaded_at = _time.time()
         logger.info("cs_cache_loaded", total_qa=len(_qa_cache))
         return len(_qa_cache)
     except Exception as e:
         logger.error("cs_warmup_failed", error=str(e))
         _cache_loaded = False
         return 0
+
+
+async def refresh() -> int:
+    """시트를 다시 읽어 캐시를 **바꿔 끼운다** (`cs_cache_hourly` 가 매시 부른다).
+
+    ⛔ `warmup()` 을 그대로 쓰지 않는 이유가 둘이다:
+      1. 실패하면 `warmup()` 은 `_cache_loaded=False` 로 내린다 → 다음 **사용자
+         질문**이 재로딩(수 초)을 떠안는다. 갱신 실패가 사용자 지연이 되면 안 된다
+      2. 빈 목록으로 바꿔 끼우면 *"CS 데이터베이스가 비어있습니다"* 가 나간다.
+         **옛 자료라도 있는 편이 낫다** — 그래서 비면 바꾸지 않는다
+    """
+    global _qa_cache, _cache_loaded, _loaded_at
+    try:
+        fresh = await load_all_sheets()
+    except Exception as e:
+        logger.warning("cs_cache_refresh_failed", error=str(e)[:200],
+                       kept=len(_qa_cache))
+        return -1
+    if not fresh:
+        # ⚠️ 0건은 성공이 아니다 — 권한이 끊기거나 탭 이름이 바뀌면 이렇게 온다
+        logger.warning("cs_cache_refresh_empty", kept=len(_qa_cache))
+        return -1
+    before = len(_qa_cache)
+    _qa_cache = fresh
+    _cache_loaded = True
+    _loaded_at = _time.time()
+    if before != len(fresh):
+        logger.info("cs_cache_refreshed", before=before, after=len(fresh))
+    return len(fresh)
+
+
+def status() -> Dict[str, object]:
+    """자가 점검·상태 화면용 — 캐시가 실제로 최신인가."""
+    age = (_time.time() - _loaded_at) if _loaded_at else None
+    return {
+        "loaded": _cache_loaded,
+        "count": len(_qa_cache),
+        "age_seconds": None if age is None else int(age),
+    }
 
 
 def _tokenize(text: str) -> set:
@@ -493,6 +542,64 @@ async def run(query: str, model_type: str = "gemini") -> str:
     return await _generate_answer(query, context, len(matched), model_type)
 
 
+# ⛔ 오케스트레이터는 원문이 아니라 대화 맥락을 감싼 덩어리를 넘긴다
+#    (스트리밍·비스트리밍 **양쪽 다**). 이 표식 뒤가 사용자가 지금 물은 것이다.
+CURRENT_QUESTION_MARKER = "[현재 질문]"
+
+
+def _current_question(query: str) -> str:
+    """맥락 덩어리에서 **지금 물은 것**만 떼어 낸다. 표식이 없으면 원문 그대로.
+
+    ⛔ **왜 필요한가** (2026-09-09 프로덕션 실측). `extract()` 는 문서 순서대로
+       8개만 뽑는데 현재 질문이 맨 뒤에 온다 — 맥락이 상한을 다 먹으면
+       정작 물어본 낱말이 검색어에 **들어오지도 못한다**:
+
+           넘어온 것: "[이전 대화] 센텔라 앰플 사용법 … [현재 질문] 테카 앰플 정보좀"
+           검색어    : ['이전','대화','사용자','센텔라','앰플','사용법','셀라','마다가스카르']
+                       ← '테카' 가 없다
+
+       그래서 "테카 앰플" 을 물었는데 센텔라·티트리카·포어마이징 앰플 목록이
+       나가고 *"등록되어 있지 않습니다"* 라고 답했다.
+    ⚠️ `search("테카 앰플 정보좀")` 을 직접 부르면 **맞게 나온다** — 실사용
+       경로는 그 문자열을 부르지 않는다. 고쳤다고 확신하게 만드는 모양이라
+       특히 위험하다. 검증은 이 함수를 지나는 경로로 할 것.
+    """
+    text = query or ""
+    i = text.rfind(CURRENT_QUESTION_MARKER)
+    if i < 0:
+        return text
+    return text[i + len(CURRENT_QUESTION_MARKER):].strip() or text
+
+
+def _product_info_block(query: str) -> str:
+    """제품정보(스펙) 블록 — **Q&A 와 별개 소스**다 (2026-09-04 사용자 지시:
+    *"제품 q&A는 따로이고, 제품정보는 cs데이터에 들어가야함"*).
+
+    Q&A 는 *문의 대응 기록*이고 제품정보는 *제품 스펙*이다. 한 덩어리로 섞으면
+    답변이 어느 쪽을 근거로 말하는지 사라진다 — 블록을 나눠 넣는다.
+    ⚠️ 실패해도 CS 답변이 죽으면 안 된다 — 비면 그냥 빠진다.
+    """
+    asked = _current_question(query)
+    try:
+        from app.core.product_info import search as _pi_search
+        rows = _pi_search(asked, limit=4)
+        # ⚠️ 맥락을 버리지는 않는다 — "그럼 크림은?" 같은 후속 발화는 그 자체로
+        #    라인을 모른다. 현재 질문으로 못 찾을 때만 덩어리 전체를 본다.
+        if not rows and asked != query:
+            rows = _pi_search(query, limit=4)
+    except Exception as e:
+        logger.warning("product_info_block_failed", error=str(e)[:140])
+        return ""
+    if not rows:
+        return ""
+    parts = []
+    for r in rows:
+        body = str(r.get("body") or "")[:1400]
+        parts.append(f"- [{r.get('line')}] {r.get('product')}\n{body}")
+    return ("\n\n## 제품정보 (제품 스펙 — 사내 노션 `스킨1004 전제품 한 눈에 파악하기`)\n"
+            + "\n\n".join(parts))
+
+
 def _build_answer_prompt(query: str, context: str, match_count: int) -> str:
     """Build the CS answer-synthesis prompt (shared by run() and run_stream())."""
     return f"""당신은 SKIN1004/COMMONLABS/ZOMBIE BEAUTY의 CS(고객상담) 전문 AI입니다.
@@ -502,6 +609,12 @@ def _build_answer_prompt(query: str, context: str, match_count: int) -> str:
 
 ## CS 데이터베이스 검색 결과 ({match_count}건)
 {context}
+{_product_info_block(query)}
+
+⚠️ **두 자료는 성격이 다릅니다.** `CS 데이터베이스`는 실제 문의 대응 기록이고,
+`제품정보`는 제품 스펙(사용법·성분·함량·피부타입)입니다. 제품의 성분·사용법을 물으면
+**제품정보**를 근거로 답하고, 문의 처리 방법·정책은 **Q&A**를 근거로 답하세요.
+⛔ 두 자료에 없는 수치(함량·PPM 등)를 지어내지 마세요.
 
 ## 고객 질문
 {query}
