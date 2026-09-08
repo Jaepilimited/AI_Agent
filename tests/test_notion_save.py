@@ -372,3 +372,56 @@ def test_recurring_request_without_a_url_asks_for_one(fake_engine):
     answer = ns.handle(messages[-1]["content"], messages, 7)
     assert ns._MARKER.search(answer)
     assert "준비 중" not in answer
+
+
+def test_registration_is_refused_when_the_feature_is_off(monkeypatch):
+    """⛔ 못 보내는 상태에서 "등록했습니다" 라고 하면 거짓 약속이다."""
+    from app.core import notion_briefing as nb
+    from app.core import notion_export as nx
+
+    monkeypatch.setattr(nx, "is_enabled", lambda: False)
+    touched = []
+    monkeypatch.setattr(nb, "set_target",
+                        lambda *a, **k: touched.append(1))
+
+    messages = _msgs(
+        ("user", "브리핑 매일 노션에 넣어줘"),
+        ("assistant", ns.build_prompt("브리핑")),
+        ("user", "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert touched == []                  # 등록하지 않는다
+    assert "관리자" in answer              # 꺼져 있다고 말한다
+
+
+def test_briefing_ask_back_round_trips_through_handle(fake_engine, monkeypatch):
+    """⛔ 되묻기에 실린 kind 가 틀리면 URL 을 받은 뒤 **저장**으로 갈린다.
+
+    구독을 걸었다고 믿는 사람에게 답변 한 건만 저장된다 — 조용한 오답이다.
+    그래서 `build_prompt` 를 손으로 만들지 않고 `handle()` 이 낸 것을 되먹인다.
+    """
+    from app.core import notion_briefing as nb
+
+    registered = {}
+    monkeypatch.setattr(nb, "ensure_tables", lambda: None)
+    monkeypatch.setattr(nb, "set_target",
+                        lambda user_id, url, **kw: registered.update(
+                            {"user_id": user_id, "url": url}))
+
+    messages = _msgs(
+        ("user", "매출은?"), ("assistant", "일본 매출은 55.1억원입니다."),
+        ("user", "브리핑 매일 노션에 넣어줘"),
+    )
+    prompt = ns.handle(messages[-1]["content"], messages, 7)
+    assert ns._MARKER.search(prompt), "되묻기가 나와야 한다"
+
+    messages = list(messages) + [
+        {"role": "assistant", "content": prompt},
+        {"role": "user",
+         "content": "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"},
+    ]
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+
+    assert registered.get("user_id") == 7, "저장이 아니라 **등록**이어야 한다"
+    assert fake_engine["saved"] is None, "직전 답변을 저장하면 안 된다"
+    assert "매일" in answer

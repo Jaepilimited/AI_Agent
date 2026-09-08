@@ -219,7 +219,12 @@ def _register_briefing(user_id: int | None, url: str) -> str:
     ⚠️ 첫 화면 설정과 **같은 테이블**에 쓴다 — 입구가 둘이어도 상태는 하나다.
     """
     from app.core import notion_briefing
+    from app.core import notion_export as nx
 
+    if not nx.is_enabled():
+        # ⚠️ `_do_save` 와 같은 가드다. 없으면 "등록했습니다" 라고 해 놓고
+        #    실제로는 아무것도 못 보낸다.
+        return _ERROR_MESSAGE["disabled"]
     if not notion_briefing.is_valid_page_url(url):
         return _ERROR_MESSAGE["bad_request"]
     try:
