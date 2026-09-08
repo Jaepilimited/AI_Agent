@@ -280,11 +280,12 @@ def test_second_save_does_not_store_our_own_confirmation(fake_engine):
     assert fake_engine["saved"]["text"] == "일본 매출은 55.1억원입니다."
 
 
-def test_recurring_briefing_request_is_declined_with_guidance(fake_engine):
-    """⛔ 정기 발송은 2단계 기능이다 — 한 건 저장하고 성공이라 답하면 안 된다."""
+def test_recurring_briefing_request_without_url_asks_back_not_declined(fake_engine):
+    """⛔ 2단계부터는 한 건 저장(_do_save)이 아니라 **등록**으로 되묻는다."""
     answer = ns.handle("브리핑 매일 노션에 넣어줘",
                        _msgs(("user", "브리핑 매일 노션에 넣어줘")), 7)
-    assert "준비 중" in answer
+    assert ns._MARKER.search(answer)
+    assert "준비 중" not in answer
     assert fake_engine["saved"] is None
 
 
@@ -293,9 +294,10 @@ def test_recurring_briefing_request_is_declined_with_guidance(fake_engine):
     "브리핑 매번 자동으로 노션에 올려줘",
     "앞으로 브리핑 계속 노션에 저장해줘",
 ])
-def test_recurring_briefing_variants_are_all_declined(fake_engine, query):
+def test_recurring_briefing_variants_all_ask_back_for_a_url(fake_engine, query):
     answer = ns.handle(query, _msgs(("user", query)), 7)
-    assert "준비 중" in answer
+    assert ns._MARKER.search(answer)
+    assert "준비 중" not in answer
     assert fake_engine["saved"] is None
 
 
@@ -341,3 +343,32 @@ def test_one_off_briefing_save_is_not_mistaken_for_recurring(fake_engine):
     answer = ns.handle(messages[-1]["content"], messages, 7)
     assert "https://notion.so/row-1" in answer
     assert fake_engine["saved"]["text"] == "오늘의 브리핑입니다."
+
+
+def test_recurring_request_now_registers_instead_of_apologising(monkeypatch, fake_engine):
+    """1단계에서는 "준비 중" 이라고 답했다. 2단계에서는 실제로 등록한다."""
+    from app.core import notion_briefing as nb
+
+    saved = {}
+    monkeypatch.setattr(nb, "set_target",
+                        lambda user_id, url, **kw: saved.update(
+                            {"user_id": user_id, "url": url}))
+    messages = _msgs(
+        ("user", "브리핑 매일 노션에 넣어줘"),
+        ("assistant", ns.build_prompt("브리핑")),
+        ("user", "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert saved["user_id"] == 7
+    assert "매일" in answer
+    assert "준비 중" not in answer
+
+
+def test_recurring_request_without_a_url_asks_for_one(fake_engine):
+    messages = _msgs(
+        ("user", "매출은?"), ("assistant", "55.1억원입니다."),
+        ("user", "브리핑 매일 노션에 넣어줘"),
+    )
+    answer = ns.handle(messages[-1]["content"], messages, 7)
+    assert ns._MARKER.search(answer)
+    assert "준비 중" not in answer

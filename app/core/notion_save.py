@@ -213,6 +213,27 @@ def _sella_link() -> str:
         return ""
 
 
+def _register_briefing(user_id: int | None, url: str) -> str:
+    """출근 브리핑을 매일 그 페이지에 쌓도록 등록한다.
+
+    ⚠️ 첫 화면 설정과 **같은 테이블**에 쓴다 — 입구가 둘이어도 상태는 하나다.
+    """
+    from app.core import notion_briefing
+
+    if not notion_briefing.is_valid_page_url(url):
+        return _ERROR_MESSAGE["bad_request"]
+    try:
+        notion_briefing.ensure_tables()
+        notion_briefing.set_target(int(user_id or 0), url)
+    except Exception as exc:
+        logger.warning("notion_briefing_register_failed",
+                       error_type=type(exc).__name__, user_id=user_id)
+        return _ERROR_MESSAGE["unavailable"]
+    return ("등록했습니다. 내일부터 **출근 브리핑을 매일** 그 페이지에 쌓습니다.\n\n"
+            "받을 시각과 항목은 첫 화면 브리핑의 `노션으로 받기` 에서 바꿀 수 있고, "
+            "거기서 해지도 됩니다.")
+
+
 def handle(query: str, messages: list[dict] | None,
           user_id: int | None) -> str | None:
     """관문. 해당 없으면 None 을 돌려 평소 라우팅으로 흘려보낸다.
@@ -232,6 +253,8 @@ def handle(query: str, messages: list[dict] | None,
             if not nx.is_enabled():
                 return _ERROR_MESSAGE["disabled"]
             return build_prompt(waiting.get("kind", "답변"))
+        if waiting.get("kind") == "브리핑":
+            return _register_briefing(user_id, url)
         return _do_save(user_id, url, target_answer(messages),
                         waiting.get("kind", "답변"))
 
@@ -239,11 +262,14 @@ def handle(query: str, messages: list[dict] | None,
         return None
 
     if _RECURRING.search(query) and _BRIEFING.search(query):
-        # ⛔ 정기 발송은 2단계 기능이다. 한 건 저장하고 성공이라 답하면
-        #    사용자는 구독을 걸었다고 믿는다 — 저장을 실행하기 전에 가로챈다.
-        return ("브리핑을 매일 노션으로 보내는 기능은 아직 준비 중입니다. "
-                "지금은 답변을 하나씩 저장하는 것만 됩니다 — "
-                "저장할 답변 다음에 `노션에 넣어줘` 라고 말씀해 주세요.")
+        # ⛔ 한 건 저장(_do_save)이 아니라 **정기 등록**으로 보낸다 — 저장으로
+        #    돌리면 그 순간만 담기고 다음 날 브리핑은 다시 오지 않는다.
+        if not nx.is_enabled():
+            return _ERROR_MESSAGE["disabled"]
+        url = extract_url(query)
+        if not url:
+            return build_prompt("브리핑")
+        return _register_briefing(user_id, url)
 
     # ⛔ **URL 을 묻기 전에 기능이 켜져 있는지부터 본다.** 브리프 원안은 이 확인 없이
     #    바로 `build_prompt()` 로 갔다 — 꺼진 상태에서도 URL 을 물어보고, 사용자가
