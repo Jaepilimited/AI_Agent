@@ -412,3 +412,17 @@ def test_self_check_has_a_notion_push_check():
     from app.core import self_check
 
     assert any(c.id == "notion_push" for c in self_check.CHECKS)
+
+
+def test_self_check_also_watches_immediate_rows():
+    """⛔ 즉시 발송분은 도착 시각이 없다 — 감시에서 빼면 조용히 쌓인다.
+
+    `pending()` 은 그런 행을 일부러 함께 꺼낸다. 감시만 빠지면 짝이 맞지 않는다.
+    """
+    import inspect
+
+    from app.core import self_check
+
+    source = inspect.getsource(self_check._check_notion_push)
+    assert "send_after IS NULL" in source
+    assert "created_at" in source

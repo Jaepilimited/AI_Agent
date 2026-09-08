@@ -990,8 +990,14 @@ def _check_notion_push() -> CheckResult:
 
     row = fetch_one(
         "SELECT COUNT(*) AS n FROM briefing_notion_outbox "
-        "WHERE status='pending' AND send_after IS NOT NULL "
-        "AND send_after < DATE_SUB(%s, INTERVAL 6 HOUR)", (now_kst(),))
+        "WHERE status='pending' AND ("
+        # 도착 시각이 정해진 건: 그 시각이 지났는데도 남아 있으면 밀린 것이다.
+        " (send_after IS NOT NULL AND send_after < DATE_SUB(%s, INTERVAL 6 HOUR))"
+        # ⚠️ 즉시 발송분은 도착 시각이 없다 — 만든 시각으로 센다.
+        #    `pending()` 은 이런 행을 **일부러** 함께 꺼내므로, 감시에서만 빼면
+        #    나중에 즉시 발송 경로가 생겼을 때 조용히 쌓인다.
+        " OR (send_after IS NULL AND created_at < DATE_SUB(%s, INTERVAL 6 HOUR))"
+        ")", (now_kst(), now_kst()))
     stuck = int((row or {}).get("n") or 0)
     if stuck:
         return CheckResult(False, f"도착 시각이 6시간 넘게 지난 대기 {stuck}건")
