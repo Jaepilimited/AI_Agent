@@ -170,6 +170,9 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "knowledge_map_build": (26, "지식맵 빌드 (WAS 03:00)"),
     "ingredient_sync_daily": (26, "제품 전성분 적재 (04:00)"),
     "op_inventory_sync_daily": (26, "OP 재고 시트 적재 (11:20·16:20)"),
+    # ⚠️ 매시 잡이지만 여유를 3시간 준다 — 한 번 걸렀다고 경보를 울리면 소음이 된다
+    "cs_cache_hourly": (3, "CS/BP 제품 Q&A 시트 재로딩 (매시 :40)"),
+    "product_info_sync_daily": (26, "제품정보(노션 제품 스펙) 적재 (04:20)"),
     "golden_daily": (26, "골든셋 회귀 (05:30)"),
     "model_rights_sync_daily": (26, "모델 초상권 적재 (04:30)"),
     "feedback_digest_daily": (26, "붐따 처리함 다이제스트 (08:00)"),
@@ -584,6 +587,115 @@ def _check_bq_tables() -> CheckResult:
         except Exception as e:
             bad.append(f"{tp.split('.')[-1]}({str(e)[:40]})")
     return CheckResult(not bad, f"접근 불가 {len(bad)}개: {bad[:4]}" if bad else "전 테이블 접근 정상")
+
+
+def _check_logistics_quantity_outlier() -> CheckResult:
+    """수출 물류 `quantity_ea` 에 물리적으로 불가능한 값이 있는가.
+
+    ⛔ **실측 사고 (2026-09-03)**: 코스타리카 1건의 `quantity_ea` 에
+       `202602190028` 이 들어 있었다 — 주문번호(`YYYYMMDDnnnn`)를 수량 칸에 잘못
+       적은 것이다. 그 한 행 때문에 **2026년 총 수출수량이 58,038,175 →
+       202,660,228,203 (3,492배)** 로 나갔고, 채팅은 아무 경고 없이
+       "총 202,602,265,193개" 라고 답했다. **에러가 아니라 조용한 오답이다.**
+
+    ⚠️ 판정은 `logistics_quality.outlier_rows()` **한 곳**이 한다 — 답변에 붙는
+       공시와 같은 함수여야 화면과 답변이 어긋나지 않는다.
+    ⚠️ 고치는 것은 우리가 아니다 — **원본(물류관리 시스템)의 셀**이다.
+       여기서는 조용히 지나가지 않게 **매일 보이게** 만드는 것까지만 한다.
+    """
+    from app.core.logistics_quality import outlier_rows
+
+    rows = outlier_rows(force=True)
+    if not rows:
+        return CheckResult(True, "수출 물류 수량 이상치 없음")
+    bad = ", ".join(
+        f"{r.get('order_date')} {r.get('country')} "
+        f"{r.get('order_number')}={int(r.get('quantity_ea') or 0):,}ea"
+        for r in rows[:3])
+    return CheckResult(
+        False,
+        f"수량 칸에 주문번호로 보이는 값 {len(rows)}건 — 합계가 통째로 틀린다: {bad}"
+        + (" 외" if len(rows) > 3 else ""))
+
+
+def _check_notion_unshared() -> CheckResult:
+    """노션에 걸어 뒀는데 **학습되지 않은** 자료가 새로 생겼는가.
+
+    ⛔ 실제 사고 (2026-09-04): 제품 라인업 DB 를 DB-HUB 에 걸었는데 학습되지 않았고
+       **사람이 물어봐서야** 알았다. 파이프라인은 매일 `404스킵=20` 을 찍고 있었지만
+       로그는 읽는 사람이 없으면 없는 것과 같다.
+    ⛔ **총 건수로 매일 울리지 않는다** — 밀린 20건 때문에 경보가 소음이 된다.
+       새로 생긴 것만 실패로 올린다 ("방금 건 자료가 안 들어왔다" 가 진짜 신호다).
+    """
+    from app.core.notion_watch import as_lines, newly_unshared
+
+    r = newly_unshared()
+    if not r["known"]:
+        return CheckResult(True, "미학습 기록 없음 (파이프라인이 아직 안 돌았다)")
+    if not r["new"]:
+        return CheckResult(True, f"새로 생긴 미학습 자료 없음 (밀린 것 {r['total']}건)")
+    return CheckResult(
+        False,
+        f"학습되지 않은 새 자료 {len(r['new'])}건 — Skin1004_AI 연결 필요: "
+        + " / ".join(as_lines(r["new"], limit=3)))
+
+
+def _check_data_freshness() -> CheckResult:
+    """파생 사본이 원본을 따라가고 있는가 (`app/core/data_freshness.py`).
+
+    ⛔ **"잡이 돌았다" 와 다르다.** 잡이 성공해도 원본을 못 읽었을 수 있고, 애초에
+       잡이 없을 수도 있다 — CS 캐시가 그랬다 (2026-09-03). 데이터 자신의 시각을 본다.
+    ⚠️ 나이가 아니라 **뒤처짐**을 본다. 원본이 안 바뀌었으면 사본이 오래돼도 정상이다.
+    """
+    from app.core.data_freshness import check
+
+    readings = check()
+    bad = [r for r in readings if not r.ok]
+    if not bad:
+        return CheckResult(True, f"파생 사본 {len(readings)}종 모두 최신")
+    detail = " / ".join(f"{r.name}: {r.detail}" for r in bad[:3])
+    return CheckResult(False, f"뒤처진 사본 {len(bad)}/{len(readings)}종 — {detail}")
+
+
+def _check_freshness_coverage() -> CheckResult:
+    """사용자에게 답하는 소스 중 **신선도 감시가 안 붙은 것**이 있는가.
+
+    ⛔ 이것이 "감시를 붙이는 걸 잊었다" 를 잡는 층이다. CS 캐시는 **잡이 아예 없어서**
+       `EXPECTED_JOBS` 로는 구조적으로 못 잡혔다 — 없는 잡은 빠졌다고 말할 수 없다.
+       `@@` 등록부를 기준으로 대조하므로, 새 소스를 붙이고 감시를 안 붙이면 그날 걸린다.
+    """
+    from app.core.data_freshness import SOURCES, coverage_gaps
+
+    gaps = coverage_gaps()
+    if gaps:
+        return CheckResult(
+            False,
+            f"신선도 감시가 없는 소스 {gaps} — data_freshness.SOURCES 에 등록하거나 "
+            f"사본이 아니면 NOT_A_COPY 에 이유와 함께 적을 것")
+    return CheckResult(True, f"감시 등록 {len(SOURCES)}종 · 빠진 소스 없음")
+
+
+def _check_cs_cache() -> CheckResult:
+    """CS/BP 제품 Q&A 캐시가 살아 있고 최신인가.
+
+    ⛔ 잡이 돌았다는 것과 **캐시가 채워져 있다**는 것은 다르다. 권한이 끊기거나
+       탭 이름이 바뀌면 `refresh()` 가 0건을 받고 옛 캐시를 지킨다 — 잡은 실패로
+       기록되지만, 캐시 자체가 얼마나 낡았는지는 여기서만 보인다.
+    ⚠️ 이 검사는 **앱 프로세스 안에서** 돌 때만 뜻이 있다 (모듈 캐시라서).
+    """
+    from app.agents.cs_agent import status
+
+    st = status()
+    if not st["loaded"] or not st["count"]:
+        return CheckResult(False, "CS Q&A 캐시가 비어 있다 — 시트 권한·탭 이름 확인")
+    age = st["age_seconds"]
+    if age is None:
+        return CheckResult(True, f"CS Q&A {st['count']}건 (적재 시각 미기록)")
+    hours = age / 3600.0
+    return CheckResult(
+        hours <= 3,
+        f"CS Q&A {st['count']}건 · {int(hours)}시간 전 적재"
+        + ("" if hours <= 3 else " — 매시 갱신이 멈췄다"))
 
 
 def _check_qdrant() -> CheckResult:
@@ -1160,12 +1272,28 @@ CHECKS: list[Check] = [
     Check("ad_media_missing", "datasource", SEV_WARNING,
           "광고 매체가 통째로 사라졌는가 (조용한 데이터 유실)",
           _check_ad_media_missing),
+    Check("logistics_quantity_outlier", "datasource", SEV_WARNING,
+          "수출 물류 수량 칸에 주문번호가 들어가 있지 않은가 (합계가 3,492배 틀렸다)",
+          _check_logistics_quantity_outlier),
     Check("new_log_errors", "quality", SEV_WARNING,
           "어제 로그에 직전 주에 없던 에러 유형이 있는가", _check_new_log_errors),
     Check("notion_allowlist", "datasource", SEV_WARNING,
           "노션 허용 페이지를 인테그레이션이 볼 수 있는가", _check_notion_allowlist),
     Check("qdrant", "datasource", SEV_CRITICAL,
           "Qdrant 기본 컬렉션에 데이터가 있는가", _check_qdrant),
+    Check("cs_cache", "datasource", SEV_WARNING,
+          "CS/BP 제품 Q&A 캐시가 최신인가 (기동 시 한 번만 읽던 것을 매시로 바꿈)",
+          _check_cs_cache),
+    Check("notion_unshared", "datasource", SEV_WARNING,
+          "노션에 걸었는데 학습 안 된 자료가 새로 생겼는가 (미공유)",
+          _check_notion_unshared),
+    Check("data_freshness", "datasource", SEV_WARNING,
+          "파생 사본이 원본을 따라가고 있는가 (나이가 아니라 뒤처짐)",
+          _check_data_freshness),
+    # ⛔ 감시를 **붙이는 걸 잊은 것**까지 잡는 층 — CS 캐시가 그렇게 조용히 낡았다
+    Check("freshness_coverage", "datasource", SEV_CRITICAL,
+          "신선도 감시가 안 붙은 데이터소스가 있는가",
+          _check_freshness_coverage),
     Check("drive_shared_access", "datasource", SEV_WARNING,
           "구글 드라이브 API 가 살아 있는가 (계정 1개로 확인 — 네트워크/프록시)",
           _check_drive_shared_access),
@@ -1204,6 +1332,10 @@ CHECKS: list[Check] = [
           _static("static_css_vars")),
     Check("static_at_sources", "static", SEV_WARNING,
           "@@ 데이터소스 목록이 프론트·서버에서 일치하는가", _static("static_at_sources")),
+    # ⛔ 클래스 안에 모듈 레벨 `def` 를 넣으면 거기서 클래스가 끊긴다 — import 는
+    #    멀쩡하고 라우팅이 그 속성을 만질 때서야 터진다 (2026-09-03 실제 배포 사고)
+    Check("static_orch_class", "static", SEV_CRITICAL,
+          "오케스트레이터 클래스 본문이 끊기지 않았는가", _static("static_orch_class")),
     Check("static_prompt_copies", "static", SEV_WARNING,
           "direct 시스템 프롬프트 사본이 하나인가", _static("static_prompt_copies")),
     Check("static_asset_stamp", "static", SEV_WARNING,
@@ -1232,6 +1364,10 @@ CHECKS: list[Check] = [
     Check("static_team_links", "static", SEV_WARNING,
           "팀 자료 링크(시트·드라이브)가 벡터 색인에 들어가 있는가",
           _static("static_team_links")),
+    # ⛔ 설문 배선이 끊기면 에러가 아니라 **팝업이 아무에게도 안 뜬다** — 침묵이다.
+    Check("static_survey_wiring", "static", SEV_WARNING,
+          "만족도 설문 배선이 /me ↔ 프론트 ↔ 처리함에서 이어지는가",
+          _static("static_survey_wiring")),
     Check("static_qdrant_teams", "static", SEV_WARNING,
           "@@팀 지정이 벡터 색인의 team 값과 맞물리는가 (어긋나면 조용히 0건)",
           _static("static_qdrant_teams")),

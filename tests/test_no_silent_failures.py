@@ -1115,6 +1115,56 @@ def test_the_repair_keeps_its_hands_off_when_unsure(text):
     assert out == text and not fixed, f"건드리면 안 되는 것을 고쳤다: {fixed}"
 
 
+# ⛔ 2026-09-04 프로덕션 실측 — **교정기가 맞는 값을 파괴하고 있었다.**
+#    `104,694,886 KRW` 에 LLM 이 맞게 붙인 "약 1.0억원" 이 **"약 1원"** 으로 나갔다
+#    (`answer_money_scale_repaired fixes=['1.0억원 -> 1원']`). 후보 집합에 같은 행의
+#    **선적 건수 1** 이 들어 있어서다. 붐따 #162 대화에 그대로 남아 있다.
+
+_MIXED_ROWS = [
+    {"country": "호주", "export_amount": 104_694_886, "shipments_count": 1},
+    {"country": "뉴질랜드", "export_amount": 82_891_766, "shipments_count": 1},
+    {"country": "중국", "export_amount": 457_412_786, "shipments_count": 2},
+]
+
+
+def test_a_correct_amount_is_not_destroyed_by_a_count_of_one():
+    from app.core.answer_check import money_scale_repairer
+
+    repair = money_scale_repairer(_MIXED_ROWS)
+    text = "호주는 104,694,886 KRW (약 1.0억원) 입니다."
+    out = repair(text) if repair else text
+    assert "1.0억원" in out, f"맞는 금액을 파괴했다: {out}"
+    assert "약 1원" not in out
+
+
+def test_repair_candidates_exclude_non_money_columns():
+    """건수·순위가 후보에 남으면 금액이 그쪽으로 끌려간다."""
+    from app.core.answer_check import repairable_amounts
+
+    known = repairable_amounts(_MIXED_ROWS)
+    assert 104_694_886 in known
+    assert 1.0 not in known and 2.0 not in known
+
+
+def test_a_repair_never_lands_below_one_man_won():
+    """`_MONEY_UNIT` 은 만·억·조만 매치한다 — 1만원 미만으로 되돌릴 일이 없다."""
+    from app.core.answer_check import repair_money_scale
+
+    out, fixed = repair_money_scale("약 1.0억원", {1.0, 2.0, 3.0})
+    assert out == "약 1.0억원" and not fixed
+
+
+def test_the_money_column_rule_lives_in_one_place():
+    """⛔ 같은 목록을 두 곳에 두면 한쪽만 고쳐진다."""
+    from app.agents import sql_agent
+    from app.core import answer_check
+
+    assert not hasattr(sql_agent, "_MONEY_TOKENS")
+    assert sql_agent._is_money_column("total_export_amount_krw")
+    assert answer_check.is_money_column("total_export_amount_krw")
+    assert not sql_agent._is_money_column("shipments_count")
+
+
 def test_the_repair_survives_chunk_boundaries():
     """⚠️ 스트리밍은 `828.` + `7억원` 으로 쪼개진다 — 줄 단위로 모아 판정해야 한다."""
     from app.agents.sql_agent import _mask_stream
@@ -1143,3 +1193,53 @@ def test_the_prompt_hands_over_converted_amounts():
     note = _amount_note(_JD_ROWS)
     assert "8,287만원" in note and "82,871,719원" in note
     assert "1억 미만에 '억'을 쓰지 마라" in note
+
+
+# ── 만족도 설문(별점) 배선 ────────────────────────────────────────────────
+# ⛔ 끊기면 에러가 아니라 **팝업이 아무에게도 안 뜬다.** 서버는 200 을 주고
+#    화면은 멀쩡해 보인다 — 아무도 모른 채 응답이 0건으로 남는다.
+
+def test_survey_wiring_is_checked_by_the_shared_function():
+    """서버에는 pytest 가 없다 — 같은 판정을 자가 점검이 매일 부른다."""
+    from app.core import static_checks
+
+    ok, detail = static_checks.survey_wiring()
+    assert ok, detail
+    assert any(name == "static_survey_wiring" for name, _fn, _d in static_checks.ALL)
+
+    from app.core.self_check import CHECKS
+    assert any(c.id == "static_survey_wiring" for c in CHECKS)
+
+
+def test_the_survey_popup_waits_for_an_answer():
+    """진입하자마자 막아서면 만족도를 묻는 팝업이 그 자체로 불만이 된다."""
+    js = SC._read(os.path.join("app", "frontend", "chat.js"))
+    # 답변 저장·후속 제안이 끝난 자리에서 불린다
+    done = js.index("showFollowups(text, cleanContent);")
+    assert "maybeShowSatisfactionSurvey();" in js[done:done + 400]
+
+
+def test_skipping_the_survey_is_still_recorded():
+    """'나중에' 를 저장하지 않으면 다음 접속마다 다시 뜬다."""
+    js = SC._read(os.path.join("app", "frontend", "chat.js"))
+    later = js.index('#survey-later')
+    assert "_postSurvey(prompt.milestone, null" in js[later:later + 600]
+
+
+def test_the_survey_never_asks_a_newcomer():
+    """10일 미만은 판단할 근거가 없다 — 물어도 답이 안 나온다."""
+    from app.core.satisfaction import select_milestone
+
+    assert select_milestone(0, ()) is None
+    assert select_milestone(9, ()) is None
+
+
+def test_survey_status_changes_carry_their_source():
+    """⛔ 소스를 빼먹으면 설문 id 로 붐따 행을 고친다 (조용한 오작동)."""
+    js = SC._read(os.path.join("app", "frontend", "chat.js"))
+    assert 'data-fb-source' in js
+    assert 'source: sel.dataset.fbSource' in js
+
+    from app.core import feedback_inbox
+    with pytest.raises(ValueError):
+        feedback_inbox.set_inbox_status("bogus", 1, "done", "admin@example.com")

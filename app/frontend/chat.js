@@ -1497,6 +1497,15 @@
         loadVisitorAnalytics(days);
       });
     });
+    document.querySelectorAll(".visitor-sort-btn").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var sort = btn.getAttribute("data-sort");
+        if (!sort || sort === _visitorAnalyticsSort) return;
+        _visitorAnalyticsSort = sort;
+        _syncVisitorSortControls();
+        loadVisitorAnalytics(_visitorAnalyticsDays);
+      });
+    });
     var _wikiBtn = document.getElementById("btn-wiki");
     if (_wikiBtn) _wikiBtn.addEventListener("click", openWikiDrawer);
     var _wikiClose = document.getElementById("wiki-drawer-close");
@@ -3640,9 +3649,20 @@
   }
 
   var _visitorAnalyticsDays = 30;
+  var _visitorAnalyticsSort = "recent";
   var _visitorAnalyticsChart = null;
   var _visitorAnalyticsData = null;
   var _visitorAnalyticsRequest = 0;
+
+  function _syncVisitorSortControls() {
+    document.querySelectorAll(".visitor-sort-btn").forEach(function(button) {
+      var active = button.getAttribute("data-sort") === _visitorAnalyticsSort;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      var heading = button.closest("th");
+      if (heading) heading.setAttribute("aria-sort", active ? "descending" : "none");
+    });
+  }
 
   function _visitorRangeText(days) {
     return days === 365 ? "최근 1년" : "최근 " + days + "일";
@@ -3743,6 +3763,10 @@
 
   function _renderVisitorAnalytics(data) {
     _visitorAnalyticsData = data;
+    if (data.sort) {
+      _visitorAnalyticsSort = data.sort;
+      _syncVisitorSortControls();
+    }
     var range = data.range || { days: _visitorAnalyticsDays, granularity: "month" };
     var summary = data.summary || {};
     var availability = data.availability || {};
@@ -3817,7 +3841,8 @@
     if (!section || section.hidden || !canViewVisitorAnalytics()) return;
     var requestId = ++_visitorAnalyticsRequest;
     section.setAttribute("aria-busy", "true");
-    fetch("/api/admin/visitor-analytics?days=" + encodeURIComponent(days))
+    fetch("/api/admin/visitor-analytics?days=" + encodeURIComponent(days) +
+      "&sort=" + encodeURIComponent(_visitorAnalyticsSort))
       .then(function(response) {
         if (!response.ok) throw new Error("visitor analytics request failed");
         return response.json();
