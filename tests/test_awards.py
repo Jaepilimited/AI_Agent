@@ -671,3 +671,129 @@ async def test_the_job_succeeds_and_notes_the_stat_on_nonempty_rows(monkeypatch)
 
     assert "succeeded" in events
     assert any(e.startswith("note:") and "written" in e for e in events)
+
+
+# ── Task 6: 골든셋 문항 3개 — expect 가 실제로 통과·실패를 가르는지 시험한다 ──
+# ⛔ 통과만 시키는 문항은 아무것도 지키지 못한다. 여기서는 그럴듯한 정답과
+#    그럴듯한 오답을 각각 만들어 `_evaluate()` 에 넣고 정답은 통과·오답은
+#    실패하는지 직접 확인한다 (golden_set.json 자체를 읽어서 검증 — 사본을
+#    새로 만들지 않는다. 사본은 반드시 낡는다).
+from app.core.golden_runner import _evaluate, load_golden_set
+
+
+def _golden_item(item_id):
+    items = {it["id"]: it for it in load_golden_set()}
+    return items[item_id]
+
+
+# ── awards_reaches_awards ────────────────────────────────────────────────
+
+def test_golden_awards_reaches_awards_question_routes_to_this_module():
+    q = _golden_item("awards_reaches_awards")["question"]
+    assert awards_intent(q) is not None
+
+
+def test_golden_awards_reaches_awards_passes_on_a_plausible_correct_answer():
+    item = _golden_item("awards_reaches_awards")
+    good = awards.format_answer({
+        "rows": [ROW], "total": 1, "synced_at": "2026-09-07",
+        "dropped": [], "rank_filter": 1,
+    })
+    assert len(good) >= item["expect"]["min_len"]
+    assert _evaluate(item, good, 5.0) == []
+
+
+def test_golden_awards_reaches_awards_fails_when_the_organizer_is_missing():
+    """라우팅이 새서 무관한 문서 검색 결과가 나오면 '화해' 가 답변에 없다."""
+    item = _golden_item("awards_reaches_awards")
+    bad = ("요청하신 수상 정보를 사내 문서에서 찾지 못했습니다. "
+           "노션 문서에서 관련 페이지를 다시 검색해 보시거나, "
+           "다른 키워드로 질문을 바꿔 다시 시도해 주시기 바랍니다.")
+    reasons = _evaluate(item, bad, 5.0)
+    assert f"필수 누락: {'화해'!r}" in reasons
+
+
+def test_golden_awards_reaches_awards_fails_when_usage_is_asserted_as_ok():
+    """활용 가부를 단정하면(법적 위험) 실패해야 한다 — '화해' 가 있어도 막는다."""
+    item = _golden_item("awards_reaches_awards")
+    bad = ("화해 뷰티 어워드에서 1위를 한 우리 제품은 누에고치 모공팩입니다. "
+           "이 수상 내역은 마케팅에 사용 가능합니다. 별도 확인 없이 바로 쓰셔도 됩니다.")
+    reasons = _evaluate(item, bad, 5.0)
+    assert f"금지 문구 등장: {'사용 가능합니다'!r}" in reasons
+
+
+# ── awards_sales_rank_stays_bigquery ─────────────────────────────────────
+
+def test_golden_awards_sales_rank_stays_bigquery_question_does_not_route_here():
+    q = _golden_item("awards_sales_rank_stays_bigquery")["question"]
+    assert awards_intent(q) is None
+
+
+def test_golden_awards_sales_rank_stays_bigquery_passes_on_a_plausible_correct_answer():
+    item = _golden_item("awards_sales_rank_stays_bigquery")
+    good = (
+        "2026년 상반기(1~6월) 제품별 판매수량 순위는 다음과 같습니다.\n\n"
+        "| 순위 | 제품 | 판매수량 |\n|---|---|---:|\n"
+        "| 1 | 히알루-테카 퍼밍 크림 | 361,315 |\n"
+        "| 2 | 마다가스카르 센텔라 앰플 | 210,442 |\n"
+        "| 3 | 라이트 클렌징 오일 | 158,904 |\n\n"
+        "판매수량은 세트 분해 기준 `Product.Total_Qty` 로 집계했습니다.\n\n"
+        "<details>\n<summary>실행된 쿼리</summary>\n\n"
+        "```sql\n"
+        "SELECT SET AS product, SUM(Total_Qty) AS qty\n"
+        "FROM `Product`\n"
+        "WHERE Date BETWEEN '2026-01-01' AND '2026-06-30'\n"
+        "GROUP BY SET ORDER BY qty DESC LIMIT 20\n"
+        "```\n</details>"
+    )
+    assert len(good) >= item["expect"]["min_len"]
+    assert _evaluate(item, good, 8.0) == []
+
+
+def test_golden_awards_sales_rank_stays_bigquery_fails_when_awards_route_hijacks_it():
+    """`순위`·`랭킹` 이 매출 질문을 가로채 awards 표가 나오면 실패해야 한다."""
+    item = _golden_item("awards_sales_rank_stays_bigquery")
+    bad = awards.format_answer({
+        "rows": [ROW], "total": 1, "synced_at": "2026-09-07",
+        "dropped": [], "rank_filter": None,
+    })
+    reasons = _evaluate(item, bad, 5.0)
+    assert f"금지 문구 등장: {'주최사'!r}" in reasons
+    assert any(r.startswith("SQL 규칙 위반") for r in reasons)
+
+
+# ── awards_usage_not_asserted ────────────────────────────────────────────
+
+def test_golden_awards_usage_not_asserted_question_routes_to_this_module():
+    q = _golden_item("awards_usage_not_asserted")["question"]
+    assert awards_intent(q) is not None
+
+
+def test_golden_awards_usage_not_asserted_passes_on_a_plausible_correct_answer():
+    """`format_answer` 가 실제로 내는 문구로 통과를 확인한다 — 지어낸 문장이 아니다."""
+    item = _golden_item("awards_usage_not_asserted")
+    good = awards.format_answer({
+        "rows": [ROW], "total": 1, "synced_at": "2026-09-07",
+        "dropped": [], "rank_filter": None,
+    })
+    assert "담당자 확인" in good  # format_answer 의 실제 문구와 기대어가 맞는지 대조
+    assert len(good) >= item["expect"]["min_len"]
+    assert _evaluate(item, good, 5.0) == []
+
+
+def test_golden_awards_usage_not_asserted_fails_when_usage_is_asserted_as_ok():
+    item = _golden_item("awards_usage_not_asserted")
+    bad = ("수상 이력 중 마케팅에 쓸 수 있는 것은 2021 화해 뷰티 어워드 1위 "
+           "누에고치 모공팩입니다. 이 수상 표기는 마케팅에 사용 가능합니다, "
+           "별도 확인 없이 바로 활용하시면 됩니다.")
+    reasons = _evaluate(item, bad, 5.0)
+    assert f"금지 문구 등장: {'사용 가능합니다'!r}" in reasons
+
+
+def test_golden_awards_usage_not_asserted_fails_when_the_disclaimer_is_missing():
+    """0건이면 `format_answer` 가 '담당자 확인' 문구를 내지 않는다 — 그 상태를
+    실패로 잡는지 확인한다 (note 에 적어 둔 0건 케이스에 대한 실제 회귀)."""
+    item = _golden_item("awards_usage_not_asserted")
+    bad = awards.format_answer({"rows": [], "total": 0, "synced_at": "2026-09-07"})
+    reasons = _evaluate(item, bad, 5.0)
+    assert f"다음 중 하나 필요: {item['expect']['contains_any']}" in reasons
