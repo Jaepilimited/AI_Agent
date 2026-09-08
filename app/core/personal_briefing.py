@@ -760,6 +760,17 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
     except Exception as exc:
         logger.warning("jandi_recipients_unavailable", error_type=type(exc).__name__)
         webhooks = {}
+    try:
+        from app.core import notion_briefing
+
+        notion_targets = {
+            int(entry["user_id"]): (str(entry["page_url"]), entry.get("send_at"),
+                                    entry.get("muted_sections"))
+            for entry in await asyncio.to_thread(notion_briefing.enabled_recipients)
+        }
+    except Exception as exc:
+        logger.warning("notion_recipients_unavailable", error_type=type(exc).__name__)
+        notion_targets = {}
     queued = 0
 
     async def one(row: dict[str, Any]) -> dict[str, Any]:
@@ -779,6 +790,13 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
                     muted,
                 ):
                     queued += 1
+            target = notion_targets.get(int(row["id"]))
+            if target:
+                page_url, n_send_at, n_muted = target
+                await asyncio.to_thread(
+                    _enqueue_notion, user, result, page_url, row.get("name", ""),
+                    n_send_at, n_muted,
+                )
             return result
 
     results = await asyncio.gather(*(one(row) for row in selected), return_exceptions=True)
@@ -855,3 +873,39 @@ def _enqueue_jandi(user: User, envelope: dict[str, Any], url: str, name: str,
     except Exception as exc:
         logger.warning("jandi_enqueue_failed", user_id=user.id, error_type=type(exc).__name__)
         return False
+
+
+def _enqueue_notion(user: User, envelope: dict[str, Any], page_url: str, name: str,
+                    send_at: Any = None, muted: Any = None) -> bool:
+    """브리핑을 노션 대기열에 넣는다. 잔디와 같은 규칙을 따른다.
+
+    ⛔ 본문은 잔디와 **같은 렌더러**를 쓴다 — 노션용 사본을 만들면 언젠가 갈린다.
+    ⛔ 실릴 것이 있었는데 사용자가 전부 껐으면 보내지 않는다.
+    """
+    from app.core import notion_briefing
+
+    document = envelope.get("document") or {}
+    if document.get("status") not in {"ready", "empty"}:
+        return False
+    fx, business = envelope.get("fx"), envelope.get("business")
+    off = notion_briefing.parse_muted(muted)
+    present = work_briefing.content_sections(document, fx, business)
+    if present and present <= off:
+        logger.info("notion_briefing_all_sections_muted",
+                    user_id=user.id, muted=len(off))
+        return False
+    body = work_briefing.render_markdown(
+        document, name=name or user.name or "", fx=fx, business=business,
+        muted=off,
+    )
+    if not body.strip():
+        return False
+
+    for_date = document.get("for_date") or ""
+    day = date.fromisoformat(str(for_date)) if for_date else date.today()
+    send_after = notion_briefing.send_after_for(
+        day, send_at if send_at is not None else notion_briefing.DEFAULT_SEND_AT)
+    return notion_briefing.enqueue(
+        user_id=user.id, for_date=day, page_url=page_url, body=body,
+        title=f"{day} 출근 브리핑", send_after=send_after,
+    )

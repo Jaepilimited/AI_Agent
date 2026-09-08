@@ -304,3 +304,47 @@ def test_an_unexpected_error_is_counted_and_recorded(db, engine, monkeypatch):
     assert nb.push_pending(datetime(2026, 9, 8, 9, 0)) == {"sent": 0, "failed": 1}
     assert failed[0][1] == "RuntimeError"
     assert remembered[0][0] == 7
+
+
+def test_enqueue_notion_skips_when_every_section_is_muted(monkeypatch):
+    """⛔ 실릴 것을 전부 끈 사람에게 머리말만 보내지 마라."""
+    from app.core import personal_briefing as pb
+    from app.db.models import User
+
+    envelope = {"document": {"status": "ready", "for_date": "2026-09-08",
+                             "meetings": [{"time": "10:00", "title": "회의",
+                                           "urgency": "normal"}]},
+                "fx": {}, "business": {}}
+    called = []
+    monkeypatch.setattr(nb, "enqueue", lambda *a, **k: called.append(1) or True)
+    user = User(id=7, email="a@b.c", name="임재필", department="", role="user",
+                allowed_models="", ad_user_id=None)
+    ok = pb._enqueue_notion(user, envelope, "https://www.notion.so/x", "임재필",
+                            muted=["meetings"])
+    assert ok is False
+    assert called == []
+
+
+def test_enqueue_notion_titles_the_row_with_the_date(monkeypatch):
+    from app.core import personal_briefing as pb
+    from app.db.models import User
+
+    envelope = {"document": {"status": "ready", "for_date": "2026-09-08",
+                             "weekday": "화",
+                             "meetings": [{"time": "10:00", "title": "회의",
+                                           "urgency": "normal"}]},
+                "fx": {}, "business": {}}
+    seen = {}
+
+    def fake_enqueue(user_id, for_date, page_url, body, title, send_after=None):
+        seen.update({"title": title, "body": body, "user_id": user_id})
+        return True
+
+    monkeypatch.setattr(nb, "enqueue", fake_enqueue)
+    user = User(id=7, email="a@b.c", name="임재필", department="", role="user",
+                allowed_models="", ad_user_id=None)
+    assert pb._enqueue_notion(user, envelope,
+                              "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
+                              "임재필") is True
+    assert seen["title"] == "2026-09-08 출근 브리핑"
+    assert "회의" in seen["body"]
