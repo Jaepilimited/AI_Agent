@@ -209,3 +209,43 @@ def test_success_reaches_a_working_app_without_relogin(browser):
     assert page.locator("#admin-btn-wrap").is_hidden()
 
     context.close()
+
+
+def test_user_footer_gear_owns_briefing_and_password_settings(browser):
+    """One visible gear replaces the lock and reaches both briefing and password settings."""
+    context = browser.new_context()
+    page = context.new_page()
+    page.set_default_timeout(3000)
+    calls = {}
+    normal_user = dict(_ME_REGISTERED, must_change_password=False)
+    _install_backend(page, [normal_user], calls)
+
+    page.goto("http://test.local/chat")
+    page.wait_for_selector("#btn-briefing-settings")
+
+    settings = page.locator("#btn-briefing-settings")
+    assert settings.is_visible()
+    assert page.locator("#btn-change-pw").count() == 0
+    assert page.evaluate(
+        """() => {
+          const settings = document.querySelector('#btn-briefing-settings');
+          return settings
+            && settings.previousElementSibling.id === 'user-name'
+            && settings.nextElementSibling.id === 'btn-logout';
+        }"""
+    ) is True
+
+    settings.click()
+    dialog = page.get_by_role("dialog", name="설정", exact=True)
+    assert dialog.is_visible()
+    assert dialog.locator(".briefing-settings-section-title").all_inner_texts() == [
+        "계정",
+        "내가 저장한 보고",
+        "잔디로 받기",
+        "노션으로 받기",
+    ]
+    dialog.get_by_role("button", name="비밀번호 변경").click()
+    assert dialog.count() == 0
+    assert page.locator(".pw-modal").is_visible()
+
+    context.close()

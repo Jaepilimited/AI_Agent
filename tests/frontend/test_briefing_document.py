@@ -102,6 +102,63 @@ def _mount(page, payload):
     )
 
 
+def _mount_with_settings(page, payload):
+    saved = {
+        "questions": [{
+            "id": "sq-1",
+            "question": "쇼피 인도네시아 주간 매출",
+            "cadence": "weekly",
+            "weekday": 0,
+            "enabled": True,
+            "last_run_at": "",
+            "last_status": "",
+            "last_error": "",
+        }]
+    }
+    jandi = {
+        "registered": True,
+        "enabled": True,
+        "masked": "…/abcd********",
+        "send_at": "09:30",
+        "send_time_choices": ["08:00", "09:30"],
+        "sections": [{
+            "key": "meetings",
+            "label": "오늘의 일정",
+            "group": "브리핑",
+            "enabled": True,
+        }],
+        "last_sent_at": "",
+        "last_error": "",
+    }
+    page.set_content(
+        '<section id="personal-briefing">'
+        '<div class="personal-briefing-grid"></div></section>'
+        '<textarea id="chat-input"></textarea>'
+    )
+    page.add_style_tag(path=str(STYLE))
+    page.add_script_tag(path=str(SCRIPT))
+    page.evaluate(
+        """async data => {
+          const reply = value => ({ok: true, json: async () => value});
+          window.fetch = async url => {
+            if (url === '/api/saved-questions') return reply(data.saved);
+            return {ok: false, json: async () => ({detail: 'unexpected request'})};
+          };
+          const fetchImpl = async url => {
+            if (url === '/api/personal-briefing') return reply(data.briefing);
+            if (url === '/api/personal-briefing/jandi') return reply(data.jandi);
+            return {ok: false, json: async () => ({detail: 'unexpected request'})};
+          };
+          window.controller = CellaPersonalBriefing.create({
+            root: document.querySelector('#personal-briefing'),
+            input: document.querySelector('#chat-input'), connect: () => {}, fetchImpl
+          });
+          await window.controller.load();
+        }""",
+        {"briefing": payload, "saved": saved, "jandi": jandi},
+    )
+
+
 def test_every_section_is_rendered(page):
     """섹션 이름은 이모지 없이 한 낱말이다 — 아이콘이 아니라 시간축이 종류를 말한다."""
     _mount(page, _payload(_document()))
@@ -166,6 +223,49 @@ def test_document_starts_open_and_the_header_collapses_it(page):
     page.locator(".briefing-doc-head").click()
     assert body.is_visible() is False
     assert page.locator(".briefing-doc-head").get_attribute("aria-expanded") == "false"
+
+
+def test_document_does_not_duplicate_the_global_settings_entry_point(page):
+    """Settings live in the user footer, so the briefing document must not grow a second gear."""
+
+    _mount(page, _payload(_document()))
+
+    assert page.locator(".briefing-doc-footer").count() == 0
+    assert page.get_by_role("button", name="설정", exact=True).count() == 0
+
+
+def test_saved_reports_are_managed_from_the_settings_button_only(page):
+    """저장한 보고 절에 옛 관리 버튼이 남으면 설정 입구가 다시 둘로 갈린다."""
+
+    document = _document(saved=[{
+        "question": "쇼피 인도네시아 주간 매출",
+        "answer": "약 28.5억원입니다.",
+        "last_run_at": "2026-08-25T09:00:00",
+    }])
+    _mount(page, _payload(document))
+
+    assert page.locator(".briefing-doc-section-action", has_text="관리").count() == 0
+    assert page.get_by_role("button", name="설정", exact=True).count() == 0
+
+
+def test_settings_button_opens_both_editors_in_one_dialog(page):
+    """한쪽이 다시 별도 팝업으로 빠지면 '한 설정창'이라는 약속이 깨진다."""
+
+    _mount_with_settings(page, _payload(_document()))
+    page.evaluate("() => window.controller.openSettings()")
+
+    dialog = page.get_by_role("dialog", name="설정", exact=True)
+    assert dialog.is_visible()
+    assert dialog.get_attribute("aria-modal") == "true"
+    assert dialog.locator(".briefing-settings-section-title").all_inner_texts() == [
+        "내가 저장한 보고",
+        "잔디로 받기",
+        "노션으로 받기",
+    ]
+    assert dialog.locator("#saved-new").is_visible()
+    assert dialog.locator(".saved-item-q").inner_text() == "쇼피 인도네시아 주간 매출"
+    assert dialog.locator(".briefing-jandi-input").is_visible()
+    assert dialog.locator(".briefing-jandi-select").input_value() == "09:30"
 
 
 def test_titles_are_text_not_markup(page):
