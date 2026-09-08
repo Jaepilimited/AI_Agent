@@ -554,6 +554,22 @@ def _inherit_route_for_followup(query: str, conversation_context: str) -> Option
        정상 라우팅한다. 반대로 제품명·국가명·팀명은 축 값이라 그대로 상속한다
        ("센텔라 앰플은?" 은 매출 맥락에서 그 제품의 매출을 묻는 것이다).
     """
+    # ⛔ **활용 가부만은 서술어가 붙어도 상속시킨다** (2026-09-08).
+    #    `_is_followup_utterance` 는 서술어·의문사가 있으면 "독립 질문" 으로 보고
+    #    상속을 아예 안 태운다 — 의도된 설계다(가이드라인 답변 뒤 "유가 협업은?" 이
+    #    사람 이름에 걸린 사고 때문). 그런데 그 규칙 때문에 수상 표를 받은 뒤
+    #    **"이거 광고에 써도 돼?" 가 direct 로 떨어져**, 대화 맥락에 남은 △ 표를 보고
+    #    LLM 이 "조건부라 사용 가능합니다" 를 지어낼 수 있었다. 활용 가부는 법적
+    #    판단이고, 못 쓰는 수상을 쓸 수 있다고 답하면 실제 문제가 된다.
+    # ⚠️ **직전이 수상 답변일 때만** 연다. 그래서 초상권(model_rights) 경로를 훔칠 수
+    #    없다 — 사진 사용 가부를 물으려면 그 앞 턴이 수상 답변이어야 하기 때문이다.
+    if _previous_route(conversation_context) == "awards":
+        from app.core.awards import asks_usage_permission
+
+        if asks_usage_permission(query):
+            logger.info("route_inherited_awards_usage", query=query[:60])
+            return "awards"
+
     viz_only = _is_visualization_only_request(query)
     if not (_is_followup_utterance(query) or viz_only):
         return None
@@ -3475,7 +3491,17 @@ class OrchestratorAgent:
         """수상/랭킹 — 벡터가 아니라 **표 조회**다 (재고·성분과 같은 사상)."""
         import asyncio as _asyncio
 
-        from app.core.awards import format_answer, search
+        from app.core.awards import (asks_usage_permission, format_answer,
+                                     search, usage_permission_answer)
+
+        # ⛔ 활용 가부 질문은 **조회하지 않는다.** 검색어로 쓸 낱말이 없어 기본 목록
+        #    40행이 나가는데, "써도 되나" 에 표를 들이미는 것은 답이 아니라 잡음이다.
+        #    고정 안내는 코드가 쓰므로 단정이 구조적으로 불가능하다.
+        if asks_usage_permission(term):
+            logger.info("awards_usage_question", term=term[:60])
+            return {"answer": usage_permission_answer(), "route": "awards",
+                    "source": "awards", "sources": ["수상/랭킹 시트"]}
+
         result = await _asyncio.to_thread(search, term)
         return {"answer": format_answer(result), "route": "awards",
                 "source": "awards", "sources": ["수상/랭킹 시트"]}

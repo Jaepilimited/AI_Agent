@@ -1069,3 +1069,93 @@ def test_a_missing_synced_at_raw_is_not_treated_as_stale():
     stale 판정이 조용히 켜지면 안 된다."""
     text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "2026-09-07"})
     assert not text.startswith("⚠")
+
+
+# ── 활용 가부 후속 질문 — 첫 턴에만 있던 방어선을 다음 턴까지 잇는다 (2026-09-08) ──
+#
+# 최종 리뷰가 잡은 구멍이다. 수상 표를 받은 뒤 "이거 광고에 써도 돼?" 를 물으면
+# `_is_followup_utterance` 가 서술어를 보고 "독립 질문" 으로 판정해 상속을 안 태우고,
+# 그 질문이 `direct` 로 떨어져 **대화 맥락에 남은 △ 표를 보고 LLM 이
+# "조건부라 사용 가능합니다" 를 지어낼 수 있었다.** 활용 가부는 법적 판단이다.
+#
+# ⚠️ 좁게 연다 — **직전이 수상 답변일 때만**. 그래서 초상권 경로를 훔칠 수 없다.
+
+_AWARDS_CTX_ROW = {
+    "category": "랭킹", "brand": "스킨1004", "organizer": "화해",
+    "title": "2021 화해 뷰티 어워드", "award_date": "2021-11-24", "award_start": "",
+    "country": "대한민국", "product": "센텔라 앰플", "detail": "앰플 부문 1위 선정",
+    "rank_raw": "1", "rank_value": 1, "paid": "무료", "amount_raw": "-",
+    "usage_flag": "△", "usage_start": "", "usage_end": "", "usage_region": "",
+    "source_url": "",
+}
+
+
+def _awards_context():
+    from app.core.awards import format_answer
+
+    answer = format_answer({"rows": [_AWARDS_CTX_ROW], "total": 1,
+                            "synced_at": "2026-09-08", "dropped": [], "rank_filter": 1})
+    return "user: 화해 어워드 1위\nassistant: " + answer
+
+
+@pytest.mark.parametrize("q", [
+    "이거 광고에 써도 돼?",
+    "이거 마케팅에 사용 가능해?",
+    "이 수상 활용해도 되나요?",
+    "저작권 문제 없어?",
+])
+def test_usage_questions_after_an_awards_answer_stay_on_the_awards_route(q):
+    """서술어가 붙어도 상속시킨다 — 이 경로에만 코드 보증이 있다."""
+    from app.agents.orchestrator import _inherit_route_for_followup
+
+    assert _inherit_route_for_followup(q, _awards_context()) == "awards"
+
+
+@pytest.mark.parametrize("q", ["일본 매출 얼마야?", "오늘 날씨 어때?", "보고서 만들어줘"])
+def test_ordinary_questions_after_an_awards_answer_route_normally(q):
+    """⛔ 넓히면 안 된다 — 활용 가부를 묻지 않는 말은 예전 그대로 정상 라우팅한다."""
+    from app.agents.orchestrator import _inherit_route_for_followup
+
+    assert _inherit_route_for_followup(q, _awards_context()) is None
+
+
+@pytest.mark.parametrize("prev_answer", [
+    "assistant: [메일] 3건 요약",
+    "assistant: Notion 사내 문서 검색 결과",
+])
+def test_usage_questions_do_not_hijack_other_routes(prev_answer):
+    """⛔ 사진 사용 가부는 초상권(model_rights)의 몫이다 — 직전이 수상일 때만 연다."""
+    from app.agents.orchestrator import _inherit_route_for_followup
+
+    ctx = "user: q\n" + prev_answer
+    assert _inherit_route_for_followup("이 사진 써도 돼?", ctx) is None
+
+
+def test_the_usage_answer_is_written_by_code_and_never_asserts_permission():
+    """⛔ 조회도 LLM 도 끼지 않는다 — 단정이 구조적으로 불가능해야 한다."""
+    from app.core.awards import usage_permission_answer
+
+    text = usage_permission_answer()
+    for banned in ("사용 가능합니다", "활용 가능합니다", "써도 됩니다", "문제 없습니다"):
+        assert banned not in text
+    assert "판단하지 않습니다" in text
+    assert "담당자 확인" in text
+
+
+def test_a_usage_question_does_not_run_a_search():
+    """⛔ 조회하면 안 쓴 낱말로 기본 목록 40행이 나간다 — 답이 아니라 잡음이다."""
+    from app.core.awards import asks_usage_permission
+
+    assert asks_usage_permission("이거 광고에 써도 돼?")
+    assert asks_usage_permission("이거 마케팅에 사용가능해?")   # 공백 없이 써도 잡는다
+    assert not asks_usage_permission("화해 어워드 1위 한 제품")
+
+
+def test_the_handler_short_circuits_usage_questions():
+    """핸들러가 실제로 조회를 건너뛰는지 — 소스에 배선이 있는지 본다."""
+    import inspect
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    src = inspect.getsource(OrchestratorAgent._handle_awards_query)
+    assert "asks_usage_permission" in src and "usage_permission_answer" in src
