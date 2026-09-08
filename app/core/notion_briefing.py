@@ -106,6 +106,9 @@ def set_target(user_id: int, page_url: str, enabled: bool = True,
     """⚠️ `muted` 가 None 이면 **바꾸지 않는다** — 시각만 저장하는 요청이
        항목 설정을 지우면 안 된다. 빈 목록(`[]`)은 "전부 받기" 라는 뜻이다.
     """
+    # ⛔ `normalize_send_at(None)` 은 ValueError 다 — 시각을 안 주고 등록하는
+    #    흐름(첫 등록·채팅 등록)이 그대로 죽는다. 잔디의 `set_webhook` 과 같은 가드다.
+    when = DEFAULT_SEND_AT if send_at is None else normalize_send_at(send_at)
     execute(
         "INSERT INTO user_notion_targets "
         "(user_id, page_url, enabled, send_at, muted_sections) "
@@ -114,7 +117,7 @@ def set_target(user_id: int, page_url: str, enabled: bool = True,
         "send_at=VALUES(send_at), "
         "muted_sections=IF(%s, VALUES(muted_sections), muted_sections)",
         (int(user_id), page_url.strip(), 1 if enabled else 0,
-         normalize_send_at(send_at), serialize_muted(muted or []),
+         when, serialize_muted(muted or []),
          1 if muted is not None else 0),
     )
 
