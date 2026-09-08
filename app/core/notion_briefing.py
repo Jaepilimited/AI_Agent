@@ -217,6 +217,9 @@ def push_pending(now: datetime | None = None, limit: int = 50) -> dict[str, int]
 
     ⛔ 토큰이 없으면 **아무것도 하지 않는다** — 대기열을 실패로 태우지 않고
        그대로 둔다. 나중에 켜지면 밀린 것이 그대로 나간다.
+    ⛔ **한 행이 터져도 나머지는 계속 보낸다.** 장부 기록(mark_*/_remember_*)까지
+       루프 안에서 감싸는 이유가 그것이다 — DB 가 잠깐 흔들렸다고 뒤에 남은
+       사람들 브리핑이 전부 발이 묶이면 안 된다.
     """
     if not nx.is_enabled():
         return {"sent": 0, "failed": 0}
@@ -225,27 +228,50 @@ def push_pending(now: datetime | None = None, limit: int = 50) -> dict[str, int]
     sent = failed = 0
     for row in pending(moment, limit):
         try:
-            target = nx.resolve_target(int(row["user_id"]), str(row["page_url"]))
-            result = nx.save(target, str(row["title"]), str(row["body"]),
-                             kind="브리핑", link=_sella_link())
-        except nx.NotionError as exc:
+            delivered = _push_one(row)
+        except Exception as exc:
+            # ⛔ 여기까지 왔다는 것은 **장부 기록 자체가 실패**했다는 뜻이다.
+            #    ⚠️ 이 행은 `pending` 으로 남아 다음 회차에 다시 시도된다. 노션에는
+            #       이미 쓰였을 수 있으므로 그때 같은 브리핑이 한 번 더 생길 수 있다 —
+            #       모두를 막는 것보다는 낫다는 판단이다(있는 그대로 적어 둔다).
             failed += 1
-            logger.warning("notion_briefing_push_failed",
-                           outbox_id=row["id"], user_id=row["user_id"],
-                           kind=exc.kind, error=str(exc)[:160])
-            mark_failed(int(row["id"]), f"{exc.kind}: {exc}")
-            _remember_error(int(row["user_id"]), f"{exc.kind}: {exc}")
+            logger.warning("notion_briefing_bookkeeping_failed",
+                           outbox_id=row.get("id"), user_id=row.get("user_id"),
+                           error_type=type(exc).__name__)
             continue
-        except Exception as exc:                    # 한 사람 때문에 멈추지 않는다
+        if delivered:
+            sent += 1
+        else:
             failed += 1
-            logger.warning("notion_briefing_push_error",
-                           outbox_id=row["id"], error_type=type(exc).__name__)
-            mark_failed(int(row["id"]), type(exc).__name__)
-            continue
-        sent += 1
-        mark_sent(int(row["id"]), result.url)
-        _remember_sent(int(row["user_id"]))
     return {"sent": sent, "failed": failed}
+
+
+def _push_one(row: dict[str, Any]) -> bool:
+    """한 행을 노션에 쓰고 장부를 남긴다. 보냈으면 True.
+
+    ⚠️ 여기서 나가는 예외는 **부르는 쪽이 잡아** 다음 행으로 넘어간다.
+    """
+    try:
+        target = nx.resolve_target(int(row["user_id"]), str(row["page_url"]))
+        result = nx.save(target, str(row["title"]), str(row["body"]),
+                         kind="브리핑", link=_sella_link())
+    except nx.NotionError as exc:
+        logger.warning("notion_briefing_push_failed",
+                       outbox_id=row["id"], user_id=row["user_id"],
+                       kind=exc.kind, error=str(exc)[:160])
+        mark_failed(int(row["id"]), f"{exc.kind}: {exc}")
+        _remember_error(int(row["user_id"]), f"{exc.kind}: {exc}")
+        return False
+    except Exception as exc:
+        logger.warning("notion_briefing_push_error",
+                       outbox_id=row["id"], user_id=row["user_id"],
+                       error_type=type(exc).__name__, error=str(exc)[:160])
+        mark_failed(int(row["id"]), type(exc).__name__)
+        _remember_error(int(row["user_id"]), type(exc).__name__)
+        return False
+    mark_sent(int(row["id"]), result.url)
+    _remember_sent(int(row["user_id"]))
+    return True
 
 
 def _sella_link() -> str:

@@ -267,3 +267,40 @@ def test_push_uses_kst_when_no_clock_is_given(db, engine, monkeypatch):
                         lambda now, limit=50: seen.setdefault("now", now) and [])
     nb.push_pending()
     assert seen["now"].year >= 2026
+
+
+def test_one_bad_row_does_not_strand_the_rest(db, engine, monkeypatch):
+    """⛔ 장부 기록이 터져도 뒤에 남은 사람들 브리핑은 계속 나가야 한다."""
+    rows = [_row(id=1, user_id=7), _row(id=2, user_id=8)]
+    monkeypatch.setattr(nb, "pending", lambda now, limit=50: rows)
+
+    calls = []
+
+    def flaky_mark_sent(outbox_id, row_url):
+        calls.append(outbox_id)
+        if outbox_id == 1:
+            raise RuntimeError("DB 가 잠깐 흔들렸다")
+
+    monkeypatch.setattr(nb, "mark_sent", flaky_mark_sent)
+    monkeypatch.setattr(nb, "_remember_sent", lambda user_id: None)
+
+    result = nb.push_pending(datetime(2026, 9, 8, 9, 0))
+    assert calls == [1, 2]                     # 두 번째 행까지 처리했다
+    assert result == {"sent": 1, "failed": 1}
+
+
+def test_an_unexpected_error_is_counted_and_recorded(db, engine, monkeypatch):
+    """노션이 아닌 이유로 실패해도 화면에 흔적이 남아야 한다."""
+    monkeypatch.setattr(nb, "pending", lambda now, limit=50: [_row()])
+
+    def boom(user_id, url):
+        raise RuntimeError("소켓이 끊겼다")
+
+    monkeypatch.setattr(nx, "resolve_target", boom)
+    failed, remembered = [], []
+    monkeypatch.setattr(nb, "mark_failed", lambda i, e: failed.append((i, e)))
+    monkeypatch.setattr(nb, "_remember_error", lambda u, e: remembered.append((u, e)))
+
+    assert nb.push_pending(datetime(2026, 9, 8, 9, 0)) == {"sent": 0, "failed": 1}
+    assert failed[0][1] == "RuntimeError"
+    assert remembered[0][0] == 7
