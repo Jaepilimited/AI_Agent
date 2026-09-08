@@ -543,6 +543,17 @@ html.light .login-card .logo { mix-blend-mode: multiply; }
 }
 .login-card .forgot-msg.is-error { color: #e5534b; }
 
+/* 회사 계정 버튼 아래 한 줄 안내 — 어떤 계정인지 알려준다.
+   ⚠️ 기존 `.forgot-help` 와 같은 어법을 쓴다 (크기·색). 새 토큰을 만들지 않는다. */
+.login-card .entra-help {
+  margin: 0 0 10px;
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.login-card .entra-help strong { color: var(--text); font-weight: 600; }
+
 /* 회사 계정 로그인 — 전환기에는 기존 로그인 폼 위에 선다. */
 .login-card .btn-entra {
   display: block;
@@ -3122,6 +3133,26 @@ html.dark .db-autocomplete-dropdown {
   font-size: var(--text-caption);
   font-weight: 600;
 }
+.visitor-table th.visitor-sort-heading { padding: 0; }
+.visitor-sort-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.visitor-table th:nth-child(4) .visitor-sort-btn,
+.visitor-table th:nth-child(5) .visitor-sort-btn { justify-content: flex-end; }
+.visitor-sort-btn span { opacity: 0; }
+.visitor-sort-btn:hover,
+.visitor-sort-btn.active { color: var(--accent); }
+.visitor-sort-btn.active span { opacity: 1; }
+.visitor-sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .visitor-table th:first-child { width: 29%; }
 .visitor-table th:nth-child(2) { width: 20%; }
 .visitor-table th:nth-child(3) { width: 25%; }
