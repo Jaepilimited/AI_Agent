@@ -492,3 +492,26 @@ def test_put_accepts_the_same_time_forms_the_store_accepts():
 
     source = inspect.getsource(api.put_my_notion_target)
     assert "normalize_send_at" in source
+
+
+def test_set_target_flags_land_in_their_own_slots(monkeypatch):
+    """⛔ 조건부 플래그가 둘이다 — 뒤바뀌면 "시각 그대로 둬" 가 **항목 설정을 지운다.**
+
+    존재만 보는 단언(`1 in params`)은 뒤바뀐 순서를 잡지 못한다.
+    두 플래그가 서로 다른 값이 되는 호출로 자리를 고정한다.
+    """
+    seen = {}
+    monkeypatch.setattr(nb, "execute",
+                        lambda sql, params=(): seen.update(
+                            {"sql": " ".join(sql.split()), "params": params}) or 1)
+    url = "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"
+
+    # 시각은 안 바꾸고(0) 항목만 바꾼다(1)
+    nb.set_target(7, url, muted=["mail"])
+    assert seen["params"][-2:] == (0, 1), (
+        f"시각 플래그=0, 항목 플래그=1 이어야 한다: {seen['params'][-2:]}")
+
+    # 반대로: 시각만 바꾸고(1) 항목은 그대로(0)
+    nb.set_target(7, url, send_at="09:00")
+    assert seen["params"][-2:] == (1, 0), (
+        f"시각 플래그=1, 항목 플래그=0 이어야 한다: {seen['params'][-2:]}")
