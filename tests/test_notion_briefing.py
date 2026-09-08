@@ -390,3 +390,25 @@ def test_run_morning_precompute_reports_notion_queue_count():
     # 정상 경로(비주말)의 반환 dict 에도 같은 키가 있어야 한다.
     assert '"queued_notion": queued_notion' in source
     assert "queued_notion += 1" in source
+
+
+def test_push_job_is_registered_in_main():
+    """⛔ 잡을 안 걸면 대기열이 영원히 안 비워진다 — 에러도 없이."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text(encoding="utf-8")
+    assert "notion_push_halfhourly" in source
+    assert "notion_briefing" in source
+
+
+def test_push_job_is_watched_by_self_check():
+    from app.core.self_check import EXPECTED_JOBS
+
+    assert "notion_push_halfhourly" in EXPECTED_JOBS
+
+
+def test_self_check_has_a_notion_push_check():
+    from app.core import self_check
+
+    assert any(c.id == "notion_push" for c in self_check.CHECKS)

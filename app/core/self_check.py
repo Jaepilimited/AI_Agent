@@ -182,6 +182,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "schema_docs_daily": (26, "정의서 → BigQuery 컬럼 설명 (03:40)"),
     "value_lists_daily": (26, "컬럼 값 목록 실측 갱신 (03:50)"),
     "ad_media_snapshot_daily": (14, "광고 매체 목록 스냅샷 (04:20·18:20)"),
+    "notion_push_halfhourly": (2, "브리핑 노션 대기열 발송 (30분마다)"),
 }
 
 
@@ -977,6 +978,26 @@ def _check_jandi_relay() -> CheckResult:
     return CheckResult(True, f"최근 7일 발송 {counts['sent']}건 · 대기 {counts['pending']}건")
 
 
+def _check_notion_push() -> CheckResult:
+    """도착 시각이 **지난** 대기 건이 쌓이고 있는가 (브리핑 노션 대기열).
+
+    ⛔ 잔디와 마찬가지로 릴레이가 없어 '보냈다'를 서버 로그로는 알 수 없다 —
+       대기열이 비는지로만 안다.
+    ⚠️ 기다리는 중인 것(18:30 을 고른 사람)을 밀린 것으로 세지 않는다 —
+       매일 뜨는 경고는 곧 아무도 안 읽는다.
+    """
+    from app.core.notion_briefing import now_kst
+
+    row = fetch_one(
+        "SELECT COUNT(*) AS n FROM briefing_notion_outbox "
+        "WHERE status='pending' AND send_after IS NOT NULL "
+        "AND send_after < DATE_SUB(%s, INTERVAL 6 HOUR)", (now_kst(),))
+    stuck = int((row or {}).get("n") or 0)
+    if stuck:
+        return CheckResult(False, f"도착 시각이 6시간 넘게 지난 대기 {stuck}건")
+    return CheckResult(True, "밀린 건 없음")
+
+
 def _check_drive_shared_access() -> CheckResult:
     """드라이브가 **네트워크·프록시·API 수준에서** 살아 있는가 (계정 하나로 찌른다).
 
@@ -1105,6 +1126,8 @@ CHECKS: list[Check] = [
           "앱이 재시작을 반복하고 있지 않은가 (크래시 루프)", _check_restart_loop),
     Check("jandi_relay", "batch", SEV_WARNING,
           "출근 브리핑 잔디 대기열이 비워지고 있는가 (DB_PC 릴레이)", _check_jandi_relay),
+    Check("notion_push", "batch", SEV_WARNING,
+          "브리핑 노션 대기열이 비워지고 있는가", _check_notion_push),
     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
           "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,

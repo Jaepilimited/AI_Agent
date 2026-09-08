@@ -201,6 +201,8 @@ def create_app() -> FastAPI:
         await asyncio.to_thread(ensure_personal_briefing_tables)
         from app.core.jandi_briefing import ensure_tables as ensure_jandi_tables
         await asyncio.to_thread(ensure_jandi_tables)
+        from app.core.notion_briefing import ensure_tables as ensure_notion_briefing_tables
+        await asyncio.to_thread(ensure_notion_briefing_tables)
         from app.core.saved_questions import ensure_tables as ensure_saved_question_tables
         await asyncio.to_thread(ensure_saved_question_tables)
         from app.core.fx_rates import ensure_tables as ensure_fx_tables
@@ -295,6 +297,9 @@ def create_app() -> FastAPI:
             _scheduler.add_job(_jandi_notify_job, "cron", day_of_week="mon-fri",
                                hour="8-18", minute=25, id="jandi_notify_hourly",
                                timezone=ZoneInfo("Asia/Seoul"))
+            # 브리핑 노션 대기열 발송. 잔디와 달리 릴레이가 없다 — WAS 가 직접 쓴다.
+            _scheduler.add_job(_notion_push_job, "cron", minute="5,35",
+                               id="notion_push_halfhourly")
             # AD sync is handled exclusively by the APP server crontab (22:00).
             # Removed from APScheduler to prevent concurrent dual-trigger race condition.
             _scheduler.start()
@@ -1008,6 +1013,20 @@ async def _jandi_notify_job():
             jr.set_note(f"recipients={result['recipients']} queued={result['queued']}")
     except Exception as exc:
         logger.error("jandi_notify_failed", error_type=type(exc).__name__)
+
+
+async def _notion_push_job():
+    """노션 대기열을 비운다 (30분마다). 잔디와 달리 릴레이가 없다 — WAS 가 직접 쓴다."""
+    from app.core.self_check import track_job
+
+    try:
+        with track_job("notion_push_halfhourly") as jr:
+            from app.core.notion_briefing import push_pending
+
+            result = await asyncio.to_thread(push_pending)
+            jr.set_note(f"sent={result['sent']} failed={result['failed']}")
+    except Exception as exc:
+        logger.error("notion_push_failed", error_type=type(exc).__name__)
 
 
 async def _schema_docs_job():
