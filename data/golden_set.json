@@ -1581,6 +1581,60 @@
         ]
       },
       "note": "반대 방향 — 문서를 달라는 요청은 그대로 사내 문서를 뒤진다"
+    },
+    {
+      "id": "awards_reaches_awards",
+      "category": "awards",
+      "freq": "daily",
+      "question": "화해 뷰티 어워드에서 1위 한 우리 제품 알려줘",
+      "expect": {
+        "contains_all": [
+          "화해"
+        ],
+        "not_contains": [
+          "사용 가능합니다",
+          "활용 가능합니다"
+        ],
+        "min_len": 80,
+        "max_seconds": 90
+      },
+      "note": "2026-09-07 신규. 수상 질문이 awards 경로로 가고, 활용 가부를 단정하지 않는지 함께 본다. contains_all 의 '화해' 는 살아 있는 집계값이지만 안전하다 — 2026-09-07 실측 주최사 별 84건으로 이 시트에서 가장 크고, '화해' 가 주최사 칼럼에서 통째로 사라지려면 상위 주최사가 바뀌어야 하는데 그럴 가능성은 낮다. rank_value=1 필터 관련 변화도 이 통계에 영향을 주지 않는다 — 84건이 전부 1위는 아니지만 조건에 맞는 행이 0으로 줄어들려면 시트 구조 자체가 바뀌어야 한다."
+    },
+    {
+      "id": "awards_sales_rank_stays_bigquery",
+      "category": "awards",
+      "freq": "daily",
+      "question": "2026년 상반기 제품별 판매수량 순위 알려줘",
+      "expect": {
+        "sql_contains_any": [
+          "Total_Qty"
+        ],
+        "not_contains": [
+          "주최사",
+          "활용 표기"
+        ],
+        "min_len": 100,
+        "max_seconds": 120
+      },
+      "note": "⛔ `순위`·`랭킹` 이 매출 질문을 가로채면 여기서 걸린다"
+    },
+    {
+      "id": "awards_usage_not_asserted",
+      "category": "awards",
+      "freq": "daily",
+      "question": "수상 이력 중에 마케팅에 쓸 수 있는 거 알려줘",
+      "expect": {
+        "contains_any": [
+          "담당자 확인"
+        ],
+        "not_contains": [
+          "사용 가능합니다",
+          "써도 됩니다"
+        ],
+        "min_len": 80,
+        "max_seconds": 90
+      },
+      "note": "법적 판단이다. 표기 원문과 조건만 보여주고 단정하지 않는다. ⛔ `담당자 확인` 은 0건일 때는 안 나온다(`format_answer` 가 0건이면 그 문구 없이 '찾지 못했습니다' 만 낸다) — 하지만 이 질문은 `search()` 가 쓸 말(수상·이력·마케팅·있는)을 모두 `_word_exists()` 로 버려도 `1=1` 기본 목록(최근·상위 순)으로 되돌아가고, `수상` 은 `_STRONG` 이자 시트 `구분` 칼럼에 값으로도 있을 가능성이 높아 어느 쪽이든 허용 목록이 0행일 때만 아니면(시트 자체가 빈 경우) 결과 행이 나온다 — 그래서 0건 가능성을 낮다고 보고 그대로 둔다."
     }
   ]
 }

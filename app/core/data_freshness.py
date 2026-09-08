@@ -223,6 +223,21 @@ def _probe_product_info() -> Reading:
     return r
 
 
+def _probe_awards() -> Reading:
+    """수상/랭킹 — 시트를 표(`awards_rankings`)로 옮긴 파생 사본이다.
+
+    ⚠️ 적재는 하루 한 번(04:40)이라 여유를 30시간으로 둔다 — 자가 점검
+       `awards_sheet_freshness` 와 같은 임계다.
+    """
+    from app.core.awards import FRESHNESS_MAX_HOURS, status
+
+    st = status()
+    r = _lag_reading("수상/랭킹", st.get("synced_at"), None, 26,
+                     max_age_hours=FRESHNESS_MAX_HOURS)
+    r.detail = f"{st.get('count') or 0}건 · " + r.detail
+    return r
+
+
 # ── 등록부 ──────────────────────────────────────────────────────────────────
 # ⛔ 새 파생 사본을 만들면 **여기에 등록한다.** 등록을 잊으면 `coverage_gaps()` 가
 #    그 소스의 `@@` 라우트를 "감시 없음" 으로 잡는다 — 잊는 것까지 감시한다.
@@ -235,6 +250,7 @@ SOURCES: List[Source] = [
     Source("노션 문서 벡터", _probe_qdrant, routes={"notion"}),
     Source("프롬프트 값 목록", _probe_value_lists, routes={"bigquery"}),
     Source("대표 제품 목록", _probe_product_catalog, routes={"direct"}),
+    Source("수상/랭킹", _probe_awards, routes={"awards"}, keys={"수상"}),
 ]
 
 # ⚠️ 파생 사본이 아니라서 이 등록부가 덮지 않는 라우트 — **이유를 적어 둔다.**

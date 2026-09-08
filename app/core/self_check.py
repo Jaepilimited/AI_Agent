@@ -186,6 +186,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "value_lists_daily": (26, "컬럼 값 목록 실측 갱신 (03:50)"),
     "ad_media_snapshot_daily": (14, "광고 매체 목록 스냅샷 (04:20·18:20)"),
     "notion_push_halfhourly": (2, "브리핑 노션 대기열 발송 (30분마다)"),
+    "awards_sync_daily": (26, "수상/랭킹 시트 적재 (04:40)"),
 }
 
 
@@ -818,6 +819,37 @@ def _check_ad_media_missing() -> CheckResult:
     return CheckResult(ok, detail)
 
 
+def _check_awards_unknown_usage() -> CheckResult:
+    """새 활용 표기(`usage_flag`)가 조용히 늘어나는 것을 사람이 보게 한다.
+
+    ⛔ 뜻풀이(`USAGE_LEGEND`)에 없는 표기가 들어오면 `format_answer` 가 그 표기를
+       설명 없이 그대로 내보낸다 — 사람이 봐야 새 표기인지 오타인지 판단할 수 있다.
+    """
+    from app.core.awards import USAGE_LEGEND
+    rows = fetch_all("SELECT DISTINCT usage_flag f FROM awards_rankings") or []
+    unknown = sorted({(r["f"] or "").strip() for r in rows} - set(USAGE_LEGEND))
+    if unknown:
+        return CheckResult(False, f"미등록 활용 표기: {unknown}")
+    return CheckResult(True, "표기 전부 등록됨")
+
+
+def _check_awards_sheet_freshness() -> CheckResult:
+    """수상/랭킹 시트가 안 바뀐 것인지, 우리가 못 읽은 것인지 가른다.
+
+    ⚠️ 잡이 돌았다는 것과 데이터가 있다는 것은 다르다 — 0건이면 먼저 그것부터 말한다
+       (권한 만료·탭 이름 변경이 정확히 이렇게, 에러 없이 온다).
+    """
+    row = fetch_one("SELECT MAX(synced_at) s, COUNT(*) n FROM awards_rankings") or {}
+    n = int(row.get("n") or 0)
+    if not n:
+        return CheckResult(False, "적재된 수상/랭킹 행이 0건 — 권한·탭 이름을 확인할 것")
+    stamp = row.get("s")
+    age_h = (datetime.now() - stamp).total_seconds() / 3600 if stamp else 999
+    from app.core.awards import FRESHNESS_MAX_HOURS
+    return CheckResult(age_h <= FRESHNESS_MAX_HOURS,
+                       f"{n}행 · 마지막 적재 {age_h:.0f}시간 전")
+
+
 def _check_schema_changes() -> CheckResult:
     """어제 대비 **앱이 쓰는 테이블**의 스키마가 바뀌었는가.
 
@@ -1275,6 +1307,10 @@ CHECKS: list[Check] = [
     Check("logistics_quantity_outlier", "datasource", SEV_WARNING,
           "수출 물류 수량 칸에 주문번호가 들어가 있지 않은가 (합계가 3,492배 틀렸다)",
           _check_logistics_quantity_outlier),
+    Check("awards_unknown_usage", "datasource", SEV_INFO,
+          "수상 활용 표기 미등록", _check_awards_unknown_usage),
+    Check("awards_sheet_freshness", "datasource", SEV_WARNING,
+          "수상/랭킹 적재 신선도", _check_awards_sheet_freshness),
     Check("new_log_errors", "quality", SEV_WARNING,
           "어제 로그에 직전 주에 없던 에러 유형이 있는가", _check_new_log_errors),
     Check("notion_allowlist", "datasource", SEV_WARNING,

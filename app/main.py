@@ -184,6 +184,9 @@ def create_app() -> FastAPI:
         # OP 재고 — 시트를 매일 04:10 에 적재해 **표 조회**로 답한다 (벡터 아님)
         from app.core.inventory import ensure_inventory_table
         await asyncio.to_thread(ensure_inventory_table)
+        # 수상/랭킹 — 시트를 매일 04:40 에 적재해 표 조회로 답한다 (벡터 아님)
+        from app.core.awards import ensure_awards_table
+        await asyncio.to_thread(ensure_awards_table)
         from app.core.term_aliases import ensure_term_aliases_table
         await asyncio.to_thread(ensure_term_aliases_table)
         from app.core.usage_meter import ensure_usage_table
@@ -273,6 +276,7 @@ def create_app() -> FastAPI:
             #    처음에 04:10 에 걸었다가 **매일 전날 데이터를 읽고 있었다** (2026-08-25).
             #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돈다.
             _scheduler.add_job(_op_inventory_sync_job, "cron", hour="11,16", minute=20, id="op_inventory_sync_daily")
+            _scheduler.add_job(_awards_sync_job, "cron", hour=4, minute=40, id="awards_sync_daily")
             # CS/BP 제품 Q&A 시트 — ⛔ 기동 시 한 번만 읽던 것을 매시 갱신으로 바꿨다
             #    (2026-09-03). 없으면 시트를 고쳐도 재기동 전까지 반영되지 않는다
             _scheduler.add_job(_cs_cache_job, "cron", minute=40, id="cs_cache_hourly")
@@ -776,7 +780,15 @@ async def _cs_cache_job():
             #    그것을 성공으로 기록하면 자가 점검이 영영 못 잡는다.
             if n < 0:
                 raise RuntimeError("cs 시트 재로딩 실패 — 옛 캐시 유지")
-            jr["detail"] = f"CS Q&A {n}건"
+            # ⛔ `jr` 는 딕셔너리가 아니다 — `_JobRun` 이고 `set_note()` 만 받는다.
+            #    첨자 대입으로 쓰면 TypeError 가 나는데, 그 예외가 track_job
+            #    안에서 발생하므로 **갱신은 성공했는데 잡이 매시 '실패'로 기록**됐다
+            #    (⚠️ 그 잘못된 호출 모양을 여기 적지 마라 — 회귀가 소스를 글자로 훑어
+            #     스스로 걸린다. 실제로 이 주석을 처음 쓸 때 그렇게 걸렸다)
+            #    (2026-09-07 발견). 기능은 멀쩡하고 기록만 거짓이라 아무도 못 봤다 —
+            #    배치 건강성을 `job_runs` 로 판정하는 자가 점검이 이 잡에 대해서만
+            #    신호를 잃은 상태였다. 회귀가 `tests/test_no_silent_failures.py` 에 있다.
+            jr.set_note(f"CS Q&A {n}건")
         logger.info("cs_cache_job_done", qa_count=n)
     except Exception as e:
         logger.error("cs_cache_job_failed", error=str(e)[:200])
@@ -797,7 +809,7 @@ async def _product_info_sync_job():
             if not stats.get("written"):
                 # ⚠️ 0건은 성공이 아니다 — 권한·구조 변경이면 이렇게 온다
                 raise RuntimeError(f"제품정보 적재 0건 (수집 {stats.get('collected')})")
-            jr["detail"] = f"제품 {stats['written']}종"
+            jr.set_note(f"제품 {stats['written']}종")
         logger.info("product_info_job_done", **stats)
     except Exception as e:
         logger.error("product_info_job_failed", error=str(e)[:200])
@@ -845,6 +857,27 @@ async def _op_inventory_sync_job():
                     **{k: v for k, v in stats.items() if k != "locations"})
     except Exception as e:
         logger.error("op_inventory_sync_failed", error=str(e))
+
+
+async def _awards_sync_job():
+    """매일 04:40: 수상/랭킹 시트 → MariaDB 적재.
+
+    ⛔ 재고와 같은 이유로 **벡터가 아니라 표**로 답한다 — 핵심이 숫자(랭킹)와
+       판정(마케팅 활용 O/△/X)이라 임베딩으로는 지킬 수 없다 (`app/core/awards.py` 참조).
+    ⚠️ 0행은 성공이 아니다 — 권한 만료·탭 이름 변경이 이렇게, 에러 없이 온다.
+       성공으로 기록하면 자가 점검이 영영 못 잡는다.
+    """
+    from app.core.self_check import track_job
+    try:
+        with track_job("awards_sync_daily") as jr:
+            from app.core.awards import sync_awards
+            stat = await asyncio.to_thread(sync_awards)
+            if stat.get("empty"):
+                raise RuntimeError("수상/랭킹 시트가 0행이다 — 권한·탭 이름을 확인할 것")
+            jr.set_note(str(stat)[:400])
+        logger.info("awards_sync_done", **{k: v for k, v in stat.items() if k != "rows"})
+    except Exception as e:
+        logger.error("awards_sync_failed", error=str(e)[:200])
 
 
 async def _knowledge_map_job():

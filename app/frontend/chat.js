@@ -607,6 +607,8 @@
       keys: [] },
     { id: "logistics", label: "물류 데이터", emoji: "\uD83D\uDEA2",
       keys: [] },
+    { id: "awards", label: "브랜드 성과", emoji: "\uD83C\uDFC6",
+      keys: [] },
     { id: "bc", label: "BC", emoji: "\uD83D\uDCF8",
       keys: [] },
     { id: "notion", label: "Notion 문서", emoji: "\uD83D\uDCD3",
@@ -623,7 +625,7 @@
   //    위에 남은 것은 **표현**뿐이다 (그룹 순서·이모지·링크).
   var GROUP_BY_NAME = {
     "보고서": "report", "매출 데이터": "sales", "마케팅 데이터": "marketing",
-    "물류 데이터": "logistics",
+    "물류 데이터": "logistics", "브랜드 성과": "awards",
     "BC": "bc", "Notion": "notion", "시스템": "system"
   };
   var SOURCE_LABELS = {};   // key -> 화면에 쓸 이름 (gws -> Google Workspace)
