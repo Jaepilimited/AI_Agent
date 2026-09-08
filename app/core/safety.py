@@ -341,6 +341,7 @@ def get_safety_status() -> dict:
         "쇼피 리뷰": "쇼피 리뷰",
         "스마트스토어 리뷰": "스마트스토어 리뷰",
         "프로모션": "프로모션 캘린더 (실행 일정)",
+        "물류": "수출 물류 — 발주·선적·출고 (Export_control)",
     }
     for label, detail in _mkt_tables.items():
         services[label] = _bq_service(label, detail)
@@ -452,6 +453,33 @@ def get_safety_status() -> dict:
     except Exception as _e:
         services["OP"] = {"status": "error", "detail": str(_e)[:30]}
 
+    # 수상/랭킹 (시트 → MariaDB, 매일 04:40 적재) — OP 재고와 같은 방식으로 낸다:
+    # 적재 건수·구분별 분포·마지막 적재 시각. `app/core/awards.py` 는 읽기만 한다
+    # (다른 세션이 그 파일을 작업 중 — CLAUDE.md 공유 작업트리 규칙).
+    try:
+        from app.core.awards import SHEET_URL as _AWD_URL
+        from app.core.awards import status as _awd_status
+        from app.db.mariadb import fetch_all as _fetch_all
+        _awd = _awd_status()
+        if _awd.get("count"):
+            _cats = _fetch_all(
+                "SELECT category, COUNT(*) c FROM awards_rankings "
+                "GROUP BY category ORDER BY c DESC") or []
+            _cat_str = " · ".join(
+                f"{r['category'] or '미분류'} {r['c']}" for r in _cats)
+            _synced = _awd.get("synced_at")
+            _synced_str = _synced.strftime("%m-%d %H:%M") if _synced else "시점 미상"
+            services["수상"] = {
+                "status": "ok",
+                "detail": "{:,}건 · {} (적재 {})".format(
+                    _awd["count"], _cat_str, _synced_str),
+                "url": _AWD_URL,
+            }
+        else:
+            services["수상"] = {"status": "updating", "detail": "적재 대기", "url": _AWD_URL}
+    except Exception as _e:
+        services["수상"] = {"status": "error", "detail": str(_e)[:30]}
+
     # Google Workspace
     services["Google Workspace"] = {"status": "ok", "detail": "OAuth ready"}
 
@@ -533,6 +561,8 @@ _MONITORED_TABLES: Dict[str, tuple] = {
     "쇼피 리뷰": ("Review_Data", "New_Shopee_Review"),
     "스마트스토어 리뷰": ("Review_Data", "New_Smartstore_Review"),
     "프로모션": ("promotion_calendar", "promotion"),
+    "물류": ("Export_control", "export_logistics"),
+    "환율": ("Sales_Integration", "Exchange_Rate"),
 }
 
 
