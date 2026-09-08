@@ -32,7 +32,7 @@ def _rows(monkeypatch, users, ad_users):
         seen.append(sql)
         if "FROM users" in sql:
             return users
-        if "FROM ad_users" in sql:
+        if "FROM directory_users" in sql or "FROM ad_users" in sql:
             return ad_users
         return []
 
@@ -42,14 +42,47 @@ def _rows(monkeypatch, users, ad_users):
 
 # ── 검사: users 도 봐야 한다 ────────────────────────────────────────────────
 
-def test_the_check_looks_at_users_not_only_ad_users(monkeypatch):
-    """⛔ `ad_users` 만 보면 로그인 화면이 실제로 읽는 값을 검사하지 않는 것이다."""
+def test_the_check_looks_at_users_not_only_the_directory(monkeypatch):
+    """⛔ 명단 표만 보면 로그인 화면이 실제로 읽는 값을 검사하지 않는 것이다.
+
+    ⚠️ **표 이름은 2026-09-08 Entra 이관으로 `ad_users` → `directory_users` 가
+       됐다.** 지키는 성질은 그대로다 — 로그인 자동완성은
+       `COALESCE(u.display_name, ad.display_name)` 를 그리므로 **둘 다** 봐야 한다.
+       한쪽만 보면 2개월간 안 보였던 그 사고가 그대로 재현된다.
+    ⛔ 옛 이름을 기대로 남겨 두면 안 된다 — `ad_users` 는 이제 롤백 보관본이고
+       (CLAUDE.md) 권한 판단에 쓰지 않는다. 없어진 표를 계속 요구하는 회귀는
+       고쳐야 할 것을 못 고치게 막는다.
+    """
 
     seen = _rows(monkeypatch, users=[], ad_users=[])
     self_check._check_name_encoding()
 
     assert any("FROM users" in sql for sql in seen), "users 를 보지 않는다"
-    assert any("FROM ad_users" in sql for sql in seen), "ad_users 검사를 잃었다"
+    assert any("FROM directory_users" in sql for sql in seen), "명단 표 검사를 잃었다"
+
+
+def test_the_check_reads_the_same_table_the_login_screen_does():
+    """⛔ 검사와 로그인 화면이 **같은 표**를 봐야 한다.
+
+    위 회귀가 표 이름을 손으로 적고 있어서, 다음 이관 때 또 갈린다.
+    그래서 이름을 적는 대신 **로그인 경로에 직접 물어본다** — 둘이 어긋나면
+    검사는 통과하는데 사람은 못 들어가는 상태가 된다 (그게 이 파일의 사고다).
+    """
+    import inspect
+    import re
+
+    from app.api import auth_api
+
+    login_src = inspect.getsource(auth_api)
+    check_src = inspect.getsource(self_check._check_name_encoding)
+
+    # 로그인 자동완성이 읽는 명단 표
+    login_tables = set(re.findall(r"FROM\s+(\w*directory_users|\w*ad_users)", login_src))
+    assert login_tables, "로그인 경로에서 명단 표를 못 찾았다 — 이 회귀를 고쳐야 한다"
+
+    checked = set(re.findall(r"FROM\s+(\w+)", check_src))
+    assert login_tables & checked, (
+        f"검사는 {sorted(checked)} 를 보는데 로그인 화면은 {sorted(login_tables)} 를 읽는다")
 
 
 def test_an_escaped_name_in_users_fails_the_check(monkeypatch):
