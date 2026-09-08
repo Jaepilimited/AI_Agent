@@ -198,3 +198,72 @@ def test_cleanup_only_deletes_older_than_the_cutoff(db):
     assert "DELETE" in sql
     assert "for_date < %s" in sql.replace("  ", " ")
     assert params == (date(2026, 9, 1),)
+
+
+from app.core import notion_export as nx
+
+
+@pytest.fixture
+def engine(monkeypatch):
+    state = {"saved": [], "target": nx.Target("db-1", "ds-1", {"제목": "title"})}
+
+    def resolve(user_id, url):
+        if "boom" in url:
+            raise nx.NotionError("not_connected", "연결 없음", 404)
+        return state["target"]
+
+    def save(target, title, text, kind="답변", link=""):
+        state["saved"].append({"title": title, "text": text, "kind": kind})
+        return nx.SaveResult(url="https://notion.so/row-1")
+
+    monkeypatch.setattr(nx, "is_enabled", lambda: True)
+    monkeypatch.setattr(nx, "resolve_target", resolve)
+    monkeypatch.setattr(nx, "save", save)
+    return state
+
+
+def _row(**over):
+    row = {"id": 1, "user_id": 7, "for_date": date(2026, 9, 8),
+           "title": "2026-09-08 출근 브리핑",
+           "page_url": "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
+           "body": "☀️ 오늘의 출근 브리핑", "attempts": 0}
+    row.update(over)
+    return row
+
+
+def test_push_saves_and_marks_sent(db, engine, monkeypatch):
+    monkeypatch.setattr(nb, "pending", lambda now, limit=50: [_row()])
+    marked = []
+    monkeypatch.setattr(nb, "mark_sent", lambda i, u: marked.append((i, u)))
+    result = nb.push_pending(datetime(2026, 9, 8, 9, 0))
+    assert result == {"sent": 1, "failed": 0}
+    assert engine["saved"][0]["kind"] == "브리핑"
+    assert marked == [(1, "https://notion.so/row-1")]
+
+
+def test_push_records_the_reason_when_notion_refuses(db, engine, monkeypatch):
+    """⛔ 실패를 조용히 넘기면 그 사람 브리핑은 영원히 안 온다."""
+    monkeypatch.setattr(nb, "pending",
+                        lambda now, limit=50: [_row(page_url="https://www.notion.so/boom1a2b3c4d54e6f8a9b0c1d2e3f4a5b")])
+    failed = []
+    monkeypatch.setattr(nb, "mark_failed", lambda i, e: failed.append((i, e)))
+    result = nb.push_pending(datetime(2026, 9, 8, 9, 0))
+    assert result == {"sent": 0, "failed": 1}
+    assert "not_connected" in failed[0][1]
+
+
+def test_push_does_nothing_when_the_feature_is_off(db, monkeypatch):
+    """토큰이 없으면 대기열을 건드리지 않는다 — 나중에 켜지면 그대로 나간다."""
+    monkeypatch.setattr(nx, "is_enabled", lambda: False)
+    called = []
+    monkeypatch.setattr(nb, "pending", lambda now, limit=50: called.append(1) or [])
+    assert nb.push_pending(datetime(2026, 9, 8, 9, 0)) == {"sent": 0, "failed": 0}
+    assert called == []
+
+
+def test_push_uses_kst_when_no_clock_is_given(db, engine, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(nb, "pending",
+                        lambda now, limit=50: seen.setdefault("now", now) and [])
+    nb.push_pending()
+    assert seen["now"].year >= 2026

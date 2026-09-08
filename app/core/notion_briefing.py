@@ -210,3 +210,59 @@ def status_counts(for_date: date | None = None) -> dict[str, int]:
 def cleanup(before: date) -> int:
     return execute(
         "DELETE FROM briefing_notion_outbox WHERE for_date < %s", (before,))
+
+
+def push_pending(now: datetime | None = None, limit: int = 50) -> dict[str, int]:
+    """대기열을 비운다. 잡이 30분마다 부른다.
+
+    ⛔ 토큰이 없으면 **아무것도 하지 않는다** — 대기열을 실패로 태우지 않고
+       그대로 둔다. 나중에 켜지면 밀린 것이 그대로 나간다.
+    """
+    if not nx.is_enabled():
+        return {"sent": 0, "failed": 0}
+
+    moment = now or now_kst()
+    sent = failed = 0
+    for row in pending(moment, limit):
+        try:
+            target = nx.resolve_target(int(row["user_id"]), str(row["page_url"]))
+            result = nx.save(target, str(row["title"]), str(row["body"]),
+                             kind="브리핑", link=_sella_link())
+        except nx.NotionError as exc:
+            failed += 1
+            logger.warning("notion_briefing_push_failed",
+                           outbox_id=row["id"], user_id=row["user_id"],
+                           kind=exc.kind, error=str(exc)[:160])
+            mark_failed(int(row["id"]), f"{exc.kind}: {exc}")
+            _remember_error(int(row["user_id"]), f"{exc.kind}: {exc}")
+            continue
+        except Exception as exc:                    # 한 사람 때문에 멈추지 않는다
+            failed += 1
+            logger.warning("notion_briefing_push_error",
+                           outbox_id=row["id"], error_type=type(exc).__name__)
+            mark_failed(int(row["id"]), type(exc).__name__)
+            continue
+        sent += 1
+        mark_sent(int(row["id"]), result.url)
+        _remember_sent(int(row["user_id"]))
+    return {"sent": sent, "failed": failed}
+
+
+def _sella_link() -> str:
+    try:
+        from app.core.jandi_notify import base_url
+
+        return base_url() or ""
+    except Exception:
+        return ""
+
+
+def _remember_sent(user_id: int) -> None:
+    execute("UPDATE user_notion_targets SET last_sent_at=NOW(), last_error='' "
+            "WHERE user_id=%s", (int(user_id),))
+
+
+def _remember_error(user_id: int, error: str) -> None:
+    """⚠️ 화면에 보여줄 마지막 오류. 연결이 끊기면 그날부터 조용히 안 간다."""
+    execute("UPDATE user_notion_targets SET last_error=%s WHERE user_id=%s",
+            (error[:255], int(user_id)))
