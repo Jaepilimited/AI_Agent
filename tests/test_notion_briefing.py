@@ -117,13 +117,18 @@ def test_enqueue_refuses_a_bad_url(db):
 
 
 def test_enqueue_uses_the_date_as_dedup_key(db):
-    """⛔ 같은 날 두 번 돌아도 두 번 보내지 않는다."""
-    assert nb.enqueue(7, date(2026, 9, 8),
-                      "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
-                      "본문", "2026-09-08 출근 브리핑") is True
+    """⛔ 같은 날 두 번 돌아도 두 번 보내지 않는다.
+
+    ⚠️ 파라미터를 **순서까지** 고정한다 — 값이 목록에 있기만 하면 통과하는
+       테스트는 순서가 뒤바뀐 SQL 을 잡지 못한다 (이번에 실제로 그렇게 놓쳤다).
+    """
+    url = "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"
+    assert nb.enqueue(7, date(2026, 9, 8), url, "본문",
+                      "2026-09-08 출근 브리핑") is True
     sql, params = db.calls[0]
     assert "briefing_notion_outbox" in sql
-    assert "briefing:2026-09-08" in params
+    assert params == (7, date(2026, 9, 8), "briefing:2026-09-08",
+                      "2026-09-08 출근 브리핑", url, "본문", None)
 
 
 def test_pending_compares_against_the_passed_clock_not_now(db):
@@ -171,3 +176,25 @@ def test_enqueue_does_not_touch_a_row_that_was_already_sent(db):
     for column in ("page_url", "body", "title", "send_after"):
         assert f"{column}=IF(status='pending'" in sql.replace(" ", ""), \
             f"{column} must be guarded with status='pending' check"
+
+
+def test_status_counts_can_narrow_to_one_day(db):
+    """자가 점검이 읽는 값이다 — 날짜를 주면 그 날짜만 센다."""
+    db.rows = [{"status": "pending", "n": 2}, {"status": "sent", "n": 5}]
+    assert nb.status_counts() == {"pending": 2, "sent": 5}
+    sql, params = db.calls[0]
+    assert "WHERE" not in sql
+
+    nb.status_counts(date(2026, 9, 8))
+    sql, params = db.calls[1]
+    assert "for_date=%s" in sql.replace(" ", "")
+    assert params == (date(2026, 9, 8),)
+
+
+def test_cleanup_only_deletes_older_than_the_cutoff(db):
+    """⛔ 기준일 이상은 지우지 않는다 — 오늘 몫을 지우면 그날 브리핑이 사라진다."""
+    nb.cleanup(date(2026, 9, 1))
+    sql, params = db.calls[0]
+    assert "DELETE" in sql
+    assert "for_date < %s" in sql.replace("  ", " ")
+    assert params == (date(2026, 9, 1),)
