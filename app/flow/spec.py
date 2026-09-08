@@ -152,8 +152,14 @@ _ROUTE_IDS = tuple(n.id for n in NODES if n.group == "route" and not n.unreachab
 # **코드가 부정하는 손글씨 근거**는 거짓 엣지 13개를 낳은 것과 같은 부류라 고쳤다.
 _PINNED_ROUTES = ("route.bigquery", "route.notion", "route.cs", "route.gws")
 
-# 직전 경로 상속이 낼 수 있는 값 = `_ROUTE_MARKERS` 의 네 종 (+ 정정 후속 → bigquery)
-_INHERITED_ROUTES = ("route.bigquery", "route.notion", "route.gws", "route.cs")
+# 직전 경로 상속이 낼 수 있는 값 = `_ROUTE_MARKERS` 의 다섯 종 (+ 정정 후속 → bigquery)
+# ⛔ `awards` 는 위의 `report` 함정을 그대로 밟을 뻔했다 — `HANDLER_ROUTES` 에 없어
+#    `_resolve_handler` 가 그냥 두면 direct 로 강등된다. `report` 와 달리 여기서는
+#    `route_and_execute`/`route_and_stream` 양쪽 디스패치에 `route == "awards"` 분기를
+#    **따로 추가해** `_handle_awards_query` 를 실제로 태우므로(2026-09-07), 이 엣지는
+#    거짓이 아니다. 분기를 없애면 이 줄도 함께 지울 것 — 그러지 않으면 `report` 가
+#    겪었던 것과 같은 "그림과 코드가 갈리는" 상태가 된다.
+_INHERITED_ROUTES = ("route.bigquery", "route.notion", "route.gws", "route.cs", "route.awards")
 
 
 def classifier_routes() -> tuple[str, ...]:

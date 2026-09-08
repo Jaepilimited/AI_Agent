@@ -441,6 +441,15 @@ _ROUTE_MARKERS = (
     ("notion", ("Notion 사내 문서 검색", "사내 문서에서")),
     ("gws", ("[메일]", "[일정]", "구글 캘린더", "드라이브")),
     ("cs", ("CS 데이터", "제품 Q&A")),
+    # ⛔ 2026-09-07 리뷰: 여기 없어서 수상 표를 받은 다음 턴("이 어워드는?" 류)이
+    #    direct 로 떨어졌다 — direct 는 full history 를 받으므로 LLM 이 △ 표기를
+    #    보고 "조건부라 사용 가능합니다" 를 만들 수 있다(활용 가부는 법적 판단이라
+    #    `awards.format_answer` 가 절대 단정하지 않게 지켜 둔 것과 정면으로 부딪힌다).
+    #    두 문구는 `format_answer` 가 매번 붙이는 것이라 이 경로에서만 나온다 —
+    #    "출처:" 가 CS 꼬리에 걸려 notion 으로 샌 사고와 같은 함정을 피하려고
+    #    `app/core/awards.py` 를 포함해 grep 으로 재확인했다: 두 문자열 다 다른
+    #    경로의 표지·정형 문구와 겹치지 않는다.
+    ("awards", ("활용 표기:", "실제 사용 가부는 담당자 확인")),
 )
 
 
@@ -1419,6 +1428,15 @@ class OrchestratorAgent:
                 query, messages, conversation_context, model_type, user_email,
                 team_key=(single_source_entry["key"] if single_source_entry else None),
             )
+        elif route == "awards":
+            # ⛔ `awards` 는 `HANDLER_ROUTES` 에 없다 — `@@`/명시 선택은 이미 위쪽
+            #    `_awd_term` 관문이 가로채므로, 여기 오는 것은 오직 후속 발화의
+            #    경로 상속뿐이다. `_resolve_handler` 의 direct 강등에 맡기면 이
+            #    분기 자체가 없던 것과 같아져(항상 `_handle_direct`) 표지를
+            #    추가한 의미가 사라진다 — `explicit=True` 로 다시 표 조회를 태운다.
+            from app.core.awards import awards_intent as _awd_intent
+            result = await self._handle_awards_query(
+                _awd_intent(clean_query or query, explicit=True))
         elif route == "direct" or handler == self._handle_direct:
             result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback, skill_context=_skill_ctx)
         else:
@@ -1807,8 +1825,15 @@ class OrchestratorAgent:
 
             # Apply enabled_sources filter
             # Exception: keyword-classified notion/cs/team bypass default filter
+            # ⛔ `awards` 도 넣는다 — 비스트리밍은 이 필터가 `_inherit_route_for_followup`
+            #    분기 밖(`else:` 안)에 있어 상속이 자동으로 비켜가지만, 스트리밍은
+            #    `if not _single_route:` 하나로 재분류·필터를 함께 묶어 두어 상속으로
+            #    받은 `awards` 도 그대로 걸린다. 여기서 안 빼면 기본 소스(수상 미선택)
+            #    사용자의 후속 발화가 매번 `direct` 로 되돌아가 표지·핸들러를 추가한
+            #    의미가 사라진다 — awards 자체가 (재고·유통기한처럼) `enabled_sources`
+            #    와 무관하게 상시 열려 있는 관문이라 이 예외가 그 설계와 일치한다.
             if allowed is not None and route not in allowed:
-                if enabled_sources is None and route in ("notion", "cs"):
+                if enabled_sources is None and route in ("notion", "cs", "awards"):
                     logger.info("stream_route_keyword_override", route=route)
                 else:
                     logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
@@ -1828,6 +1853,15 @@ class OrchestratorAgent:
                 _stream_skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
             except Exception:
                 pass
+
+        # 수상/랭킹 (후속 발화 상속) — `awards` 는 `HANDLER_ROUTES` 에 없어 아래
+        # "Non-streaming routes" 의 direct 강등에 맡기면 표지·상속을 추가한 의미가
+        # 사라진다 (route_and_execute 와 같은 이유로 `explicit=True` 로 표 조회를 다시 태운다).
+        if route == "awards":
+            from app.core.awards import awards_intent as _awd_intent
+            _r = await self._handle_awards_query(_awd_intent(clean_query or query, explicit=True))
+            yield ("done", _r.get("answer", ""))
+            return
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:

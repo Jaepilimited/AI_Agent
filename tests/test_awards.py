@@ -797,3 +797,275 @@ def test_golden_awards_usage_not_asserted_fails_when_the_disclaimer_is_missing()
     bad = awards.format_answer({"rows": [], "total": 0, "synced_at": "2026-09-07"})
     reasons = _evaluate(item, bad, 5.0)
     assert f"다음 중 하나 필요: {item['expect']['contains_any']}" in reasons
+
+
+# ── 2026-09-07 최종 리뷰 (final-fix-report) — Fix 1~4 + Minor ───────────────
+# 아래 문항이 그 리포트의 실행 근거다.
+
+# ── Fix 1 (Important): 활용 가부 방어선이 첫 턴에만 있었다 ───────────────────
+# `_ROUTE_MARKERS`·`_INHERITED_ROUTES` 에 awards 가 없어 수상 표를 받은 다음
+# 후속 발화("화해는?")가 direct 로 떨어졌다 — direct 는 full history 를 받으므로
+# LLM 이 조건부 표를 보고 "사용 가능합니다" 를 만들 수 있었다.
+
+_AWD_MARKER_CTX = (
+    "사용자: 화해 어워드에서 1위 한 제품 알려줘\n"
+    "AI: | 구분 | 브랜드 | 주최사 | 수상명 | 제품 | 상세 | 순위 | 국가 | 일자 | 활용 표기 |\n"
+    "|---|---|---|---|---|---|---:|---|---|---|\n"
+    "| 랭킹 | 좀비뷰티 | 화해 | 2021 화해 뷰티 어워드 | 누에고치 모공팩 | 클렌징 비누 부문 1위 "
+    "| 1 | 대한민국 | 2021-11-24 | X |\n\n"
+    "활용 표기: X 표기\n"
+    "위 표기는 시트에 적힌 원문입니다. 실제 사용 가부는 담당자 확인이 필요합니다."
+)
+
+
+def test_awards_route_marker_is_registered_and_matches_the_real_answer_text():
+    """표지 문자열이 `format_answer` 가 실제로 내는 문구와 일치해야 한다."""
+    from app.agents.orchestrator import _ROUTE_MARKERS
+
+    markers_by_route = dict(_ROUTE_MARKERS)
+    assert "awards" in markers_by_route
+    awd_markers = markers_by_route["awards"]
+    assert awd_markers
+
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-"})
+    assert any(m in text for m in awd_markers)
+
+
+def test_awards_marker_does_not_swallow_or_get_swallowed_by_other_route_markers():
+    """CS 답변 꼬리의 '출처:' 가 notion 표지에 걸려 새던 사고와 같은 함정을
+    awards 도 피해야 한다 — 어느 방향으로도 다른 경로 표지와 부분 일치하면 안 된다."""
+    from app.agents.orchestrator import _ROUTE_MARKERS
+
+    markers_by_route = dict(_ROUTE_MARKERS)
+    awd_markers = markers_by_route["awards"]
+    for route, markers in markers_by_route.items():
+        if route == "awards":
+            continue
+        for other in markers:
+            for mine in awd_markers:
+                assert other not in mine, (
+                    f"{route} marker {other!r} is contained in awards marker {mine!r}")
+                assert mine not in other, (
+                    f"awards marker {mine!r} is contained in {route} marker {other!r}")
+
+
+def test_previous_route_recognizes_an_awards_answer():
+    from app.agents.orchestrator import _previous_route
+
+    assert _previous_route(_AWD_MARKER_CTX) == "awards"
+
+
+def test_a_followup_after_an_awards_answer_inherits_awards_not_direct():
+    """이게 없으면 후속 발화가 direct 로 떨어져 LLM 이 스스로 활용 가부를 판단한다."""
+    from app.agents.orchestrator import _inherit_route_for_followup
+
+    assert _inherit_route_for_followup("화해는?", _AWD_MARKER_CTX) == "awards"
+
+
+def test_awards_is_registered_as_an_inheritable_route_in_the_architecture_canvas():
+    from app.flow.spec import _INHERITED_ROUTES
+
+    assert "route.awards" in _INHERITED_ROUTES
+
+
+def test_inherited_awards_route_is_actually_executed_not_silently_demoted_to_direct():
+    """`awards` 는 `HANDLER_ROUTES` 에 없다 — 그냥 두면 `_resolve_handler` 가
+    조용히 `_handle_direct` 로 떨어뜨려 `_ROUTE_MARKERS` 를 추가한 의미가
+    사라진다 (`route.report` 가 겪은 것과 같은 함정). 두 디스패치 경로
+    (route_and_execute, route_and_stream) 모두에 실행 분기가 있어야 한다."""
+    from pathlib import Path
+
+    src = Path("app/agents/orchestrator.py").read_text(encoding="utf-8")
+    assert src.count('route == "awards"') == 2
+    assert 'elif route == "awards":' in src
+    assert 'if route == "awards":' in src
+
+
+def test_awards_bypasses_the_streaming_default_source_filter():
+    """`enabled_sources=None` 기본 허용 목록엔 awards 가 없다 — 이 예외가
+    없으면 스트리밍에서 상속된 awards 후속이 매번 direct 로 되돌아간다."""
+    from pathlib import Path
+
+    src = Path("app/agents/orchestrator.py").read_text(encoding="utf-8")
+    assert 'route in ("notion", "cs", "awards")' in src
+
+
+# ── Fix 2 (Important): 조건부 행의 이유가 화면에서 사라진다 ──────────────────
+# 실측: 조건부 65행 중 86%가 usage_region 빈칸/'-' 지만 detail 은 대부분 값이
+# 있다 (예: "클렌징 비누 부문 1위 선정"). 표에도 조건에도 안 보이면 사용자는
+# 조건부 이유를 알 방법이 없다.
+
+def test_the_answer_table_has_a_detail_column():
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-"})
+    assert "상세" in text.splitlines()[0]
+    assert ROW["detail"] in text
+
+
+def test_a_conditional_row_with_no_usage_region_falls_back_to_detail():
+    """조건부이고 usage_region(및 시작/종료일)이 비어 있으면 조건 사유를 detail
+    에서 채운다 — 판단: 승인/불가/논의중은 확정 판정이라 이 보완을 적용하지
+    않는다 (조건이 아닌데 조건처럼 보이면 안 된다)."""
+    row = dict(ROW, usage_flag="△", usage_region="", usage_start="",
+               usage_end="", detail="클렌징 비누 부문 1위 선정")
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    assert "클렌징 비누 부문 1위 선정" in text
+    assert "조건:" in text
+
+
+def test_a_non_conditional_row_with_no_usage_region_does_not_borrow_detail_as_a_condition():
+    """승인 표기는 확정된 판정이다 — usage_region 이 비었다고 detail 을 조건
+    칸에 끌어오면 없던 '조건' 이 생긴 것처럼 보인다."""
+    row = dict(ROW, usage_flag="O", usage_region="", usage_start="", usage_end="",
+               detail="클렌징 비누 부문 1위 선정")
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    assert "조건:" not in text
+
+
+def test_a_long_detail_is_truncated_visibly():
+    row = dict(ROW, detail="가" * 80)
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    assert "…" in text
+    assert ("가" * 80) not in text
+
+
+# ── Fix 3 (Important): 배포 첫날 "아직 안 들어옴" 과 "그런 수상 없음" 이 같은 문장 ──
+
+def test_an_empty_table_says_not_yet_loaded_not_no_such_award():
+    text = awards.format_answer({"rows": [], "total": 0, "synced_at": "-", "table_empty": True})
+    assert "적재되지 않았" in text
+    assert "찾지 못했습니다" not in text
+
+
+def test_a_zero_match_on_a_loaded_table_still_says_not_found():
+    """테이블에 데이터가 있는데 조건에 맞는 게 없으면 여전히 '못 찾음' 이다 —
+    두 문구가 달라야 배포 첫날의 '아직 안 들어옴' 과 구분된다."""
+    text = awards.format_answer({"rows": [], "total": 0, "synced_at": "2026-09-07",
+                                 "table_empty": False})
+    assert "찾지 못했습니다" in text
+    assert "적재되지 않았" not in text
+
+
+def test_search_marks_the_table_as_empty_only_when_synced_at_is_null(monkeypatch):
+    """추가 COUNT 조회를 늘리지 않는다 — 기존 MAX(synced_at) 조회 하나로
+    판정한다 (리포트에 적은 판단 근거)."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [])
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 0} if "COUNT" in sql else {"s": None})
+
+    result = awards.search("화해")
+    assert result["table_empty"] is True
+
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 0} if "COUNT" in sql else {"s": "2026-09-07"})
+    result = awards.search("화해")
+    assert result["table_empty"] is False
+
+
+# ── Fix 4 (Important): 상한 때문에 쓰지 않은 낱말이 조용히 있다 ──────────────
+
+def test_a_word_beyond_the_eight_word_cap_is_disclosed_separately_from_dropped(monkeypatch):
+    """9번째 낱말은 _word_exists 조차 안 돈다 — '자료에 없다' 는 이유는 거짓이라
+    dropped 가 아니라 capped 로 따로 담는다."""
+    checked = []
+    monkeypatch.setattr(awards, "_word_exists", lambda w: checked.append(w) or True)
+    monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [ROW])
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    nine_words = " ".join(f"낱말{i}" for i in range(9))
+    result = awards.search(nine_words)
+
+    assert "낱말8" not in checked          # 9번째는 데이터 확인조차 안 됐다
+    assert "낱말8" in result["capped"]
+    assert "낱말8" not in result["dropped"]
+
+
+def test_a_kept_word_beyond_the_five_filter_cap_is_disclosed_as_capped(monkeypatch):
+    """데이터에 있는(=_word_exists 통과) 6번째 낱말은 필터에 못 걸렸을 뿐 —
+    dropped('자료에 없음') 가 아니라 capped('상한') 로 담는다."""
+    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    captured = {}
+
+    def fake_fetch_all(sql, params):
+        captured["params"] = params
+        return [ROW]
+
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+
+    six_words = " ".join(f"낱말{i}" for i in range(6))
+    result = awards.search(six_words)
+
+    assert result["dropped"] == []
+    assert "낱말5" in result["capped"]
+    assert not any("%낱말5%" in str(p) for p in captured["params"])
+
+
+def test_capped_words_are_disclosed_in_the_answer_with_a_distinct_reason():
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
+                                 "capped": ["넘친낱말"]})
+    assert "넘친낱말" in text
+    assert "반영하지 못했습니다" in text
+
+
+# ── Minor: `|` 나 개행이 든 셀이 표를 깨뜨리지 않는다 ────────────────────────
+
+def test_a_pipe_character_in_a_cell_does_not_break_the_markdown_table():
+    row = dict(ROW, title="A|B")
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    header, sep, data_row = text.splitlines()[0:3]
+    assert header.count("|") == sep.count("|") == data_row.count("|")
+    assert "A/B" in text
+
+
+def test_a_newline_in_a_cell_does_not_split_the_markdown_row():
+    row = dict(ROW, title="A\nB")
+    text = awards.format_answer({"rows": [row], "total": 1, "synced_at": "-"})
+    data_row = text.splitlines()[2]
+    assert data_row.startswith("|") and data_row.endswith("|")
+    assert "A B" in text
+
+
+# ── Minor: "자료에 없는" 문구가 _GENERIC_NOUNS 에는 거짓이었다 ───────────────
+
+def test_dropped_disclosure_does_not_claim_the_word_is_missing_from_the_data():
+    """_GENERIC_NOUNS(제품, 브랜드 등)는 실제로 데이터에 있다 — '자료에 없는' 은
+    거짓 문구다. 이유를 밝히지 않는 참인 문구로 바꿨다."""
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
+                                 "dropped": ["제품"]})
+    assert "자료에 없는" not in text
+    assert "필터로 쓰지 않고" in text
+
+
+# ── Minor: 적재 기준일이 낡았을 땐 표보다 먼저 말한다 ────────────────────────
+
+def test_a_fresh_answer_keeps_the_freshness_note_at_the_end():
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "2026-09-07",
+                                 "synced_at_raw": datetime.now()})
+    assert text.rstrip().endswith("적재분*")
+    assert not text.startswith("⚠")
+
+
+def test_a_stale_answer_moves_the_freshness_warning_to_the_front():
+    from datetime import timedelta
+
+    old = datetime.now() - timedelta(hours=40)
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "2026-09-05",
+                                 "synced_at_raw": old})
+    assert text.startswith("⚠")
+    table_pos = text.index("| 구분")
+    warn_pos = text.index("적재가")
+    assert warn_pos < table_pos
+
+
+def test_a_missing_synced_at_raw_is_not_treated_as_stale():
+    """synced_at_raw 를 안 주는 기존 호출부(대부분의 테스트)는 하위 호환이다 —
+    stale 판정이 조용히 켜지면 안 된다."""
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "2026-09-07"})
+    assert not text.startswith("⚠")

@@ -106,8 +106,6 @@ def parse_rows(values: List[List[Any]]) -> List[Dict[str, Any]]:
     return rows
 
 
-# app/core/awards.py 에 이어서
-
 _DDL = """
 CREATE TABLE IF NOT EXISTS awards_rankings (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -247,8 +245,6 @@ def sync_awards(dry_run: bool = False) -> Dict[str, Any]:
     return stat
 
 
-# app/core/awards.py 에 이어서 — 조회와 표시
-
 #: ⛔ 기호를 문장으로 바꾸지 않는다 — **뜻풀이**만 붙인다. 판단은 사람이 한다.
 USAGE_LEGEND = {
     "O": "사용 승인 표기",
@@ -312,12 +308,19 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
        3. 나머지 낱말은 데이터에 실제로 있는 것만 남긴다 (`_word_exists`).
        쓸 낱말이 하나도 안 남고 순위 필터도 없으면 조건 없이(=기본 목록,
        최근·상위 순) 돌려준다 — 빈 결과보다 낫다.
+
+    ⚠️ **상한(`[:8]`·`[:5]`)에 걸려 검토·적용되지 못한 낱말은 `capped` 로 따로
+       담는다** (2026-09-07 최종 리뷰 Fix 4). `dropped`(데이터에 없어서 뺀 것)와
+       뜻이 다르다 — 9번째 낱말은 `_word_exists` 조차 안 돌았고, 6번째 "있는" 낱말은
+       확인은 됐지만 필터에 못 걸렸다. 둘을 같은 문구로 뭉개면 "자료에 없다" 는
+       거짓 이유가 실제로 있는 낱말에 붙는다.
     """
     rank_filter, text = _extract_rank_filter(term)
     words = [w for w in re.split(r"\s+", (text or "").strip()) if len(w) >= 2]
 
     kept: List[str] = []
     dropped: List[str] = []
+    capped: List[str] = list(words[8:])  # ⛔ 9번째부터는 데이터 확인조차 안 됐다
     for w in words[:8]:
         if w in _GENERIC_NOUNS:
             dropped.append(w)
@@ -331,7 +334,9 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
     if rank_filter is not None:
         where += " AND rank_value = %s"
         params.append(rank_filter)
-    for w in kept[:5]:
+    applied, overflow = kept[:5], kept[5:]
+    capped += overflow  # ⛔ 데이터에 있는 낱말인데 5개 상한 때문에 조건에 못 걸렸다
+    for w in applied:
         where += " AND (" + " OR ".join(f"{c} LIKE %s" for c in _SEARCH_COLS) + ")"
         params += [f"%{w}%"] * len(_SEARCH_COLS)
 
@@ -342,29 +347,76 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
         "ORDER BY (rank_value IS NULL), rank_value ASC, award_date DESC LIMIT %s",
         tuple(params) + (limit,))
     stamp = (fetch_one("SELECT MAX(synced_at) s FROM awards_rankings") or {}).get("s")
+    # ⛔ 2026-09-07 최종 리뷰 Fix 3: 테이블 전체가 0행("아직 적재 안 됨")과 조건에
+    #    맞는 게 0행("그런 수상이 없음")은 다른 사실이다. `MAX(synced_at)` 가 NULL
+    #    이면 — WHERE 절과 무관하게 — 한 번도 적재된 적이 없다는 뜻이라 이 하나의
+    #    조회로 판정한다(추가 COUNT 조회를 늘리지 않는다). `ensure_awards_table()`
+    #    이 기동 시 테이블 자체는 만들어 두므로 이 SELECT 는 실패하지 않는다.
     return {"rows": rows or [], "total": total, "synced_at": str(stamp or "-"),
-            "dropped": dropped, "rank_filter": rank_filter}
+            "synced_at_raw": stamp, "table_empty": stamp is None,
+            "dropped": dropped, "capped": capped, "rank_filter": rank_filter}
+
+
+#: 실측 최대 73자(2026-09-07) — 짧은 편이라 대부분 안 잘리지만, 늘어날 수 있으니
+#: 자르는 코드는 남겨 두되 **자른 사실이 보이게**(`…`) 한다.
+_DETAIL_MAX = 60
+#: `self_check._check_awards_sheet_freshness()` 와 같은 30시간 기준. 상수를 여기
+#: 또 두는 이유 — `self_check` 는 여러 도메인을 훑는 얕은 층이라 거꾸로
+#: `awards` 를 import 하면 방향이 뒤집힌다. 바꿀 땐 두 곳을 함께 고칠 것.
+_STALE_HOURS = 30
+
+
+def _cell(v: Any) -> str:
+    """마크다운 표 셀로 안전하게 만든다.
+
+    ⛔ `|`·개행이 든 값 하나가 표 전체를 깨뜨린다 (2026-09-07 최종 리뷰 Minor).
+       `inventory` 의 재고 표가 이미 같은 방식(`|`→`/`)을 쓴다 — 그대로 맞춘다.
+    """
+    s = str(v) if v is not None else ""
+    return s.replace("|", "/").replace("\r", " ").replace("\n", " ").strip()
+
+
+def _truncated_detail(detail: Any) -> str:
+    s = _cell(detail)
+    return s if len(s) <= _DETAIL_MAX else s[:_DETAIL_MAX].rstrip() + "…"
 
 
 def format_answer(result: Dict[str, Any]) -> str:
     """표 + 활용 표기. ⛔ '사용 가능합니다' 같은 단정을 만들지 않는다."""
     rows = result.get("rows") or []
     if not rows:
+        # ⛔ 2026-09-07 최종 리뷰 Fix 3: 테이블이 통째로 비어 있는 것("아직 적재
+        #    안 됐다")과 조건에 맞는 행이 없는 것("그런 수상이 없다")은 다른
+        #    사실이다. 기동 직후~첫 적재(04:40) 사이의 질문이 후자로 읽히면
+        #    "수상이 없다" 로 오인된다 — 프로모션 캘린더·물류 보유구간과 같은 함정.
+        if result.get("table_empty"):
+            return ("수상·랭킹 자료가 아직 적재되지 않았습니다 "
+                    "(하루 한 번 04:40 적재 — 잠시 후 다시 시도해 주세요).")
         return "조건에 맞는 수상·랭킹 기록을 찾지 못했습니다."
-    out = ["| 구분 | 브랜드 | 주최사 | 수상명 | 제품 | 순위 | 국가 | 일자 | 활용 표기 |",
-           "|---|---|---|---|---|---:|---|---|---|"]
+    out = ["| 구분 | 브랜드 | 주최사 | 수상명 | 제품 | 상세 | 순위 | 국가 | 일자 | 활용 표기 |",
+           "|---|---|---|---|---|---|---:|---|---|---|"]
     notes: List[str] = []
     for r in rows:
         flag = (r.get("usage_flag") or "").strip()
-        out.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
-            r.get("category", ""), r.get("brand", ""), r.get("organizer", ""),
-            r.get("title", ""), r.get("product", ""), r.get("rank_raw") or "-",
-            r.get("country", ""), r.get("award_date") or r.get("award_start") or "",
-            flag or "표기 없음"))
+        out.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+            _cell(r.get("category")), _cell(r.get("brand")), _cell(r.get("organizer")),
+            _cell(r.get("title")), _cell(r.get("product")),
+            _truncated_detail(r.get("detail")),
+            _cell(r.get("rank_raw")) or "-",
+            _cell(r.get("country")),
+            _cell(r.get("award_date") or r.get("award_start")),
+            _cell(flag) or "표기 없음"))
         cond = " ".join(x for x in (r.get("usage_region"), r.get("usage_start"),
                                     r.get("usage_end")) if x and x != "-")
+        # ⛔ 2026-09-07 최종 리뷰 Fix 2: 조건부(△) 65행 중 86%는 `usage_region` 이
+        #    비어 있어 "왜 조건부인지" 표에서 사라진다. `detail`(수상 부문·근거,
+        #    최대 73자)이 채울 수 있는 유일한 값이다. **비어 있고 △일 때만**
+        #    보완한다 — O·X·논의중은 조건이 아니라 확정 판정이라, 거기 detail 을
+        #    붙이면 없던 조건이 생긴 것처럼 읽힌다 (판단 근거는 리포트에도 적었다).
+        if not cond and flag == "△" and (r.get("detail") or "").strip():
+            cond = "(상세) " + _truncated_detail(r.get("detail"))
         if cond:
-            notes.append(f"- {r.get('title', '')}: {cond}")
+            notes.append(f"- {_cell(r.get('title'))}: {cond}")
 
     seen = {(r.get("usage_flag") or "").strip() for r in rows}
     legend = " · ".join(f"`{k or '빈칸'}` {v}" for k, v in USAGE_LEGEND.items() if k in seen)
@@ -378,12 +430,33 @@ def format_answer(result: Dict[str, Any]) -> str:
     if rank_filter is not None:
         out.append(f"\n순위 {rank_filter}위로 좁혔습니다.")
     # ⛔ 안 쓴 말로 찾은 결과를 그대로 주면 사용자가 그 조건까지 맞는 줄 읽는다.
+    #    2026-09-07 최종 리뷰 Minor — "자료에 없는" 은 `_GENERIC_NOUNS`(제품·브랜드…)
+    #    에는 거짓이다(실제로 "신제품" 안에 있다). 이유를 밝히지 않는 참인 문구로 바꿨다.
     dropped = result.get("dropped") or []
     if dropped:
-        out.append("\n검색어 중 자료에 없는 낱말은 빼고 찾았습니다: " + ", ".join(dropped))
+        out.append("\n검색어 중 다음은 필터로 쓰지 않고 찾았습니다: " + ", ".join(dropped))
+    # ⛔ 2026-09-07 최종 리뷰 Fix 4: 상한(9번째 낱말·6번째 이후 "있는" 낱말) 때문에
+    #    검토·적용되지 못한 낱말은 `dropped`(데이터에 없어서 뺀 것)와 이유가 달라
+    #    따로 공시한다 — 안 그러면 있는 낱말이 "자료에 없다" 는 거짓 이유를 뒤집어쓴다.
+    capped = result.get("capped") or []
+    if capped:
+        out.append("\n낱말이 많아 다음은 조건에 반영하지 못했습니다: " + ", ".join(capped))
     if result.get("total", 0) > len(rows):
         out.append(f"\n총 {result['total']}건 중 {len(rows)}건만 표시했습니다.")
-    out.append(f"\n*기준: {result.get('synced_at', '-')} 적재분*")
+
+    stamp_display = result.get("synced_at", "-")
+    raw_stamp = result.get("synced_at_raw")
+    stale = (isinstance(raw_stamp, datetime)
+             and (datetime.now() - raw_stamp).total_seconds() / 3600 > _STALE_HOURS)
+    if stale:
+        # ⛔ 2026-09-07 최종 리뷰 Minor — "낡으면 표보다 먼저 말한다" (사람은 표를
+        #    보지 각주를 안 본다, 수출 물류 이상치 공시와 같은 자리). 호출부가
+        #    `synced_at_raw` 를 안 주면(대부분의 기존 테스트) `stale` 은 항상
+        #    False 라 옛 자리(맨 끝)를 그대로 쓴다 — 하위 호환이 깨지지 않는다.
+        out.insert(0, f"⚠️ 마지막 적재가 {stamp_display} 로 오래됐습니다 "
+                      "— 최신 수상/랭킹이 반영되지 않았을 수 있습니다.\n")
+    else:
+        out.append(f"\n*기준: {stamp_display} 적재분*")
     return "\n".join(out)
 
 
