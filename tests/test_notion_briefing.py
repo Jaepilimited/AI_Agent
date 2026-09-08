@@ -426,3 +426,29 @@ def test_self_check_also_watches_immediate_rows():
     source = inspect.getsource(self_check._check_notion_push)
     assert "send_after IS NULL" in source
     assert "created_at" in source
+
+
+def test_api_hides_the_saved_url_and_serves_the_choices():
+    """⛔ 시각·절 목록은 **서버가 단일 소스**다. 프론트에 사본을 두면 조용히 갈린다."""
+    from app.api import notion_briefing_api as api
+
+    source = __import__("pathlib").Path(api.__file__).read_text(encoding="utf-8")
+    assert "send_time_choices" in source
+    assert "sections" in source
+    assert "mask(" in source
+
+
+def test_api_put_keeps_the_saved_url_when_none_is_sent():
+    """⛔ 서버가 주소를 가려서 내려주므로, 시각만 바꾸려는 사람은 되붙일 수 없다."""
+    from app.api import notion_briefing_api as api
+
+    source = __import__("pathlib").Path(api.__file__).read_text(encoding="utf-8")
+    assert "이미 저장된 주소" in source
+
+
+def test_api_is_registered_in_main():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "app" / "main.py").read_text(encoding="utf-8")
+    assert "notion_briefing_api" in source

@@ -41,6 +41,7 @@ from app.api.personal_profile_api import router as personal_profile_router
 from app.api.saved_questions_api import router as saved_questions_router
 from app.api.survey_api import survey_router
 from app.api.jandi_briefing_api import router as jandi_briefing_router
+from app.api.notion_briefing_api import router as notion_briefing_router
 from app.api.reports_api import router as reports_router
 from app.api.notifications_api import router as notifications_router
 from app.api.sql_export_api import router as sql_export_router
@@ -381,6 +382,7 @@ def create_app() -> FastAPI:
     app.include_router(saved_questions_router)  # /api/saved-questions/*
     app.include_router(survey_router)         # /api/survey — 만족도 설문
     app.include_router(jandi_briefing_router)  # /api/personal-briefing/jandi, /api/internal/*
+    app.include_router(notion_briefing_router)  # /api/personal-briefing/notion
     app.include_router(conversation_router)  # /api/conversations/*
     app.include_router(admin_router)         # /api/admin/*
     app.include_router(group_router)         # /api/admin/groups/*
