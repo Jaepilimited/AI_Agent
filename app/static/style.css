@@ -5109,7 +5109,7 @@ html.dark .db-autocomplete-dropdown {
 
 /* ── 노션으로 받기 ─────────────────────────────────────────────────────────
    구조 규칙은 위에서 잔디와 선택자를 함께 묶어 공유한다(마크업은 분리).
-   여기서 더하는 것은 사생활 안내 한 줄뿐이다. */
+   여기서 더하는 것은 사생활 안내 한 줄과 기능 꺼짐 안내뿐이다. */
 .briefing-notion-privacy {
   margin: 0 0 16px;
   padding: 10px 12px;
@@ -5117,6 +5117,18 @@ html.dark .db-autocomplete-dropdown {
   border-radius: var(--radius-sm);
   background: var(--bg-elevated);
   color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+
+/* 관리자가 NOTION_WRITE_TOKEN 을 아직 안 넣었을 때만 보인다 — `hidden` 으로 토글. */
+.briefing-notion-disabled-note {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--warning);
   font-size: var(--text-caption);
   line-height: 1.6;
 }

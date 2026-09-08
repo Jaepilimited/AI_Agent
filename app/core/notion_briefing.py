@@ -130,8 +130,47 @@ def set_target(user_id: int, page_url: str, enabled: bool = True,
     )
 
 
+def reschedule_pending(user_id: int, send_at: Any) -> int:
+    """아직 안 보낸 오늘 몫의 도착 시각을 새로 고른 시각으로 옮긴다.
+
+    ⛔ 이걸 빼면 "고쳤는데 그대로" 가 된다 — 09:00 으로 바꿔도 오늘 몫은 이전에
+       고른 시각에 그대로 쓰인다. 화면은 새 시각을 말하는데 실제와 다르다
+       (잔디의 같은 이름 함수와 같은 이유).
+    ⚠️ `TIMESTAMP(for_date, %s)` 라 그 날짜의 KST 벽시계다. `NOW()` 를 섞지 않는다.
+    """
+    when = normalize_send_at(send_at)
+    return int(
+        execute(
+            "UPDATE briefing_notion_outbox SET send_after = TIMESTAMP(for_date, %s) "
+            "WHERE user_id = %s AND status = 'pending'",
+            (when, int(user_id)),
+        )
+        or 0
+    )
+
+
 def delete_target(user_id: int) -> None:
     execute("DELETE FROM user_notion_targets WHERE user_id=%s", (int(user_id),))
+    # ⛔ 아직 안 보낸 행에는 그 사람의 메일 제목·요약이 그대로 들어 있다 — 등록을
+    #    지우면서 대기열을 남기면 노션 연결이 끊긴 뒤에도 그 본문이 어딘가로 나갈
+    #    길이 없어 보이지만, 다시 등록하면 그 옛 본문이 새 페이지로 나간다.
+    #    잔디의 `delete_webhook()` 과 같은 이유다.
+    drop_pending_for_user(user_id)
+
+
+def drop_pending_for_user(user_id: int) -> int:
+    """구글 연동을 끊으면 아직 안 보낸 본문도 버린다 — 그 안에 끊은 계정의 메일
+    요약이 들어 있다 (잔디의 같은 이름 함수와 같은 이유).
+
+    등록한 대상 페이지는 남긴다 (다시 연결하면 그대로 받는다).
+    """
+    return int(
+        execute(
+            "DELETE FROM briefing_notion_outbox WHERE user_id=%s AND status='pending'",
+            (int(user_id),),
+        )
+        or 0
+    )
 
 
 def enabled_recipients() -> list[dict[str, Any]]:

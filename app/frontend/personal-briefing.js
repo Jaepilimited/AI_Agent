@@ -1125,6 +1125,12 @@
     var remove = textNode("button", "briefing-doc-action danger", "노션 연결 해제");
     var title = textNode("h3",
       "briefing-settings-section-title briefing-notion-title", "노션으로 받기");
+    /* ⛔ 기능 자체가 꺼져 있으면(관리자가 NOTION_WRITE_TOKEN 을 안 넣었으면) 등록해
+       봐야 대기열만 쌓이고 영영 안 나간다 — 절 자체를 숨기지는 않는다(그러면
+       사용자가 이 기능의 존재를 모른다), 대신 입력·버튼을 잠그고 이유를 적는다. */
+    var disabledNote = textNode("p", "briefing-notion-disabled-note",
+      "관리자가 노션 연동을 켜야 사용할 수 있습니다.");
+    disabledNote.hidden = true;
 
     box.className = "briefing-settings-section briefing-settings-notion";
     box.setAttribute("aria-labelledby", "briefing-settings-notion-title");
@@ -1135,6 +1141,7 @@
     notionHelp(box);
     box.appendChild(textNode("p", "briefing-notion-privacy",
       "브리핑에는 메일 제목이 들어갑니다. 노션 페이지는 공유하면 그 사람도 보게 됩니다."));
+    box.appendChild(disabledNote);
     input.type = "url";
     input.className = "briefing-notion-input";
     input.setAttribute("aria-label", "노션 페이지 주소");
@@ -1229,6 +1236,16 @@
     function paint(state) {
       paintTimes(state);
       paintSections(state);
+      /* ⛔ 채팅 등록(`notion_save._register_briefing`)에는 이미 이 관문이 있는데
+         화면에는 없었다 — 토큰이 없어도 등록되고, 화면은 "등록됨" 이라 말하는데
+         행은 영영 안 나간다. 절 자체는 숨기지 않는다(존재를 몰라야 할 이유가
+         없다) — 대신 잠그고 이유를 적는다. */
+      var featureOff = !!(state && state.enabled_feature === false);
+      disabledNote.hidden = !featureOff;
+      input.disabled = featureOff;
+      save.disabled = featureOff;
+      test.disabled = featureOff;
+      if (featureOff) timeSelect.disabled = true;
       if (!state || !state.registered) {
         status.textContent = "아직 등록된 노션 페이지가 없습니다.";
         return;

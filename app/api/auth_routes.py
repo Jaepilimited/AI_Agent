@@ -16,6 +16,7 @@ from app.core.google_oauth_state import consume_state, issue_state
 from app.core import password_reset_google
 from app.core.personal_briefing import get_user_refresh_lock
 from app.core.jandi_briefing import drop_pending_for_user
+from app.core.notion_briefing import drop_pending_for_user as drop_notion_pending_for_user
 from app.core.personal_briefing_store import delete_for_user
 from app.db.models import User
 
@@ -363,6 +364,16 @@ async def google_revoke(user: User = Depends(get_current_user)):
         except Exception as cleanup_error:
             logger.warning(
                 "jandi_outbox_cleanup_failed",
+                user_id=user.id,
+                error_type=type(cleanup_error).__name__,
+            )
+        # ⚠️ 노션 대기열도 같은 이유로 함께 버린다 — 잔디 정리가 실패해도 이건
+        #    돌아야 하고, 이게 실패해도 잔디 정리는 이미 끝났어야 한다(각자 감쌈).
+        try:
+            await asyncio.to_thread(drop_notion_pending_for_user, user.id)
+        except Exception as cleanup_error:
+            logger.warning(
+                "notion_outbox_cleanup_failed",
                 user_id=user.id,
                 error_type=type(cleanup_error).__name__,
             )

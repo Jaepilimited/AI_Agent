@@ -1123,12 +1123,17 @@ def _check_jandi_relay() -> CheckResult:
 
 
 def _check_notion_push() -> CheckResult:
-    """도착 시각이 **지난** 대기 건이 쌓이고 있는가 (브리핑 노션 대기열).
+    """도착 시각이 **지난** 대기 건이 쌓이거나, 최근 발송이 실패로 굳었는가
+    (브리핑 노션 대기열).
 
     ⛔ 잔디와 마찬가지로 릴레이가 없어 '보냈다'를 서버 로그로는 알 수 없다 —
        대기열이 비는지로만 안다.
     ⚠️ 기다리는 중인 것(18:30 을 고른 사람)을 밀린 것으로 세지 않는다 —
        매일 뜨는 경고는 곧 아무도 안 읽는다.
+    ⛔ **밀린 것과 실패로 굳은 것은 다른 사고다.** 페이지의 `셀라` 연결을 떼면
+       3번 시도 후 `status='failed'` 로 굳어 `pending` 대기 조회에서 사라진다 —
+       `pending` 만 세면 가장 흔한 실패가 이 검사에서 통째로 빠진다
+       (`_check_jandi_relay` 가 이미 `failed` 를 세는 것과 같은 이유).
     """
     from app.core.notion_briefing import now_kst
 
@@ -1145,6 +1150,15 @@ def _check_notion_push() -> CheckResult:
     stuck = int((row or {}).get("n") or 0)
     if stuck:
         return CheckResult(False, f"도착 시각이 6시간 넘게 지난 대기 {stuck}건")
+    failed_row = fetch_one(
+        "SELECT COUNT(*) AS n FROM briefing_notion_outbox "
+        "WHERE status='failed' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")
+    failed = int((failed_row or {}).get("n") or 0)
+    if failed:
+        return CheckResult(
+            False,
+            f"최근 7일 발송 실패 {failed}건 (페이지의 셀라 연결이 끊겼을 수 있다)",
+        )
     return CheckResult(True, "밀린 건 없음")
 
 

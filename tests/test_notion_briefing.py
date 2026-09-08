@@ -556,3 +556,297 @@ def test_frontend_warns_that_a_shared_page_shows_mail_titles():
     js = (root / "app" / "frontend" / "personal-briefing.js").read_text(encoding="utf-8")
     assert "메일 제목" in js
     assert "연결" in js          # 연결 붙이는 법도 함께 안내한다
+
+
+# ── ① 등록 해제·구글 연동 해제 시 대기 중인 본문도 함께 버린다 (사생활) ──────
+
+def test_drop_pending_for_user_only_deletes_pending_rows_for_that_user(db):
+    """⛔ 대기 행에는 그 사람의 메일 제목·요약이 그대로 들어 있다 — 등록을
+    지우거나 구글 연동을 끊었는데 대기열에 남아 있으면 나중에 그 본문이 나간다."""
+    nb.drop_pending_for_user(7)
+    sql, params = db.calls[0]
+    assert "DELETE" in sql
+    assert "briefing_notion_outbox" in sql
+    assert "user_id=%s" in sql.replace(" ", "")
+    assert "status='pending'" in sql.replace(" ", "")
+    assert params == (7,)
+
+
+def test_delete_target_also_drops_pending_rows(monkeypatch):
+    """⛔ 등록을 지우면서 대기열을 남기면, 다시 등록했을 때 옛 메일 요약이
+    새 페이지로 나간다 — 잔디의 `delete_webhook()` 과 같은 이유다."""
+    dropped = []
+    monkeypatch.setattr(nb, "execute", lambda *a, **k: 1)
+    monkeypatch.setattr(nb, "drop_pending_for_user", lambda uid: dropped.append(uid) or 1)
+
+    nb.delete_target(7)
+
+    assert dropped == [7]
+
+
+def test_auth_revoke_also_drops_the_notion_outbox(monkeypatch):
+    """구글 연동 해제 경로가 잔디 대기열 옆에서 노션 대기열도 함께 지우는가.
+
+    ⚠️ 잔디 정리가 실패해도 노션 정리는 돌아야 하고, 그 반대도 마찬가지다 —
+       각각 자기 `try/except` 로 감싸야 한다(브리프 요구사항).
+    """
+    from app.api import auth_routes
+
+    calls = []
+
+    class Manager:
+        def revoke_credentials(self, email):
+            return True
+
+    monkeypatch.setattr(auth_routes, "_get_auth_manager", lambda: Manager())
+    monkeypatch.setattr(auth_routes, "delete_for_user", lambda user_id: None)
+    monkeypatch.setattr(auth_routes, "drop_pending_for_user",
+                        lambda uid: calls.append(("jandi", uid)))
+    monkeypatch.setattr(auth_routes, "drop_notion_pending_for_user",
+                        lambda uid: calls.append(("notion", uid)))
+
+    import asyncio
+
+    from app.db.models import User
+
+    user = User(id=7, email="a@b.c", name="임재필", department="", role="user",
+                allowed_models="")
+    asyncio.run(auth_routes.google_revoke(user))
+
+    assert ("jandi", 7) in calls
+    assert ("notion", 7) in calls
+
+
+def test_auth_revoke_notion_cleanup_survives_a_jandi_cleanup_failure(monkeypatch):
+    """⚠️ 한쪽 정리가 터져도 다른 쪽 정리는 계속 돈다 — 각각 감싸야 한다."""
+    from app.api import auth_routes
+
+    calls = []
+
+    class Manager:
+        def revoke_credentials(self, email):
+            return True
+
+    monkeypatch.setattr(auth_routes, "_get_auth_manager", lambda: Manager())
+    monkeypatch.setattr(auth_routes, "delete_for_user", lambda user_id: None)
+
+    def boom(uid):
+        raise RuntimeError("DB 가 잠깐 흔들렸다")
+
+    monkeypatch.setattr(auth_routes, "drop_pending_for_user", boom)
+    monkeypatch.setattr(auth_routes, "drop_notion_pending_for_user",
+                        lambda uid: calls.append(("notion", uid)))
+
+    import asyncio
+
+    from app.db.models import User
+
+    user = User(id=7, email="a@b.c", name="임재필", department="", role="user",
+                allowed_models="")
+    result = asyncio.run(auth_routes.google_revoke(user))
+
+    assert result["revoked"] is True
+    assert ("notion", 7) in calls
+
+
+# ── ④ 시각을 바꾸면 오늘 몫도 함께 옮긴다 ────────────────────────────────────
+
+def test_reschedule_pending_moves_todays_row(db):
+    nb.reschedule_pending(7, "10:00")
+    sql, params = db.calls[0]
+    assert "TIMESTAMP(for_date, %s)" in sql
+    assert "status = 'pending'" in sql
+    assert "NOW()" not in sql
+    assert params[0] == time(10, 0)
+    assert params[1] == 7
+
+
+def test_reschedule_refuses_an_off_grid_time(monkeypatch):
+    monkeypatch.setattr(nb, "execute", lambda *a, **k: pytest.fail("must not run"))
+    with pytest.raises(ValueError):
+        nb.reschedule_pending(7, "08:10")
+
+
+def test_put_moves_todays_pending_briefing_to_the_new_time(monkeypatch):
+    """⛔ 이게 없으면 "고쳤는데 그대로" 가 된다 — 화면과 실제 도착이 하루 어긋난다."""
+    from app.api import notion_briefing_api as api
+
+    moved = {}
+    monkeypatch.setattr(nb, "ensure_tables", lambda: None)
+    monkeypatch.setattr(nx, "is_enabled", lambda: True)
+    monkeypatch.setattr(nb, "get_target", lambda user_id: {
+        "user_id": 7,
+        "page_url": "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
+        "enabled": 1, "send_at": "08:00", "muted_sections": "",
+        "last_sent_at": None, "last_error": "",
+    })
+    monkeypatch.setattr(nb, "set_target", lambda *a, **k: None)
+    monkeypatch.setattr(
+        nb, "reschedule_pending",
+        lambda user_id, send_at: moved.update(user_id=user_id, send_at=send_at) or 1,
+    )
+
+    _notion_client(monkeypatch).put(
+        "/api/personal-briefing/notion", json={"send_at": "10:00"})
+
+    assert moved == {"user_id": 7, "send_at": "10:00"}
+
+
+# ── ② 화면·API 에도 기능 꺼짐 가드가 있다 ────────────────────────────────────
+
+def _notion_client(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api.auth_middleware import get_current_user
+    from app.api.notion_briefing_api import router
+    from app.db.models import User
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_current_user] = lambda: User(
+        id=7, email="o@example.com", name="O", department="D", role="user",
+        allowed_models="skin1004-Analysis",
+    )
+    return TestClient(app)
+
+
+def test_get_reports_whether_the_feature_itself_is_on(monkeypatch):
+    """⛔ 채팅 등록(`notion_save._register_briefing`)에는 이미 이 관문이 있는데
+    화면·API 에는 없어서, 토큰이 없어도 등록되고 행만 쌓이는데 영영 안 나간다."""
+    monkeypatch.setattr(nb, "ensure_tables", lambda: None)
+    monkeypatch.setattr(nb, "get_target", lambda user_id: None)
+
+    monkeypatch.setattr(nx, "is_enabled", lambda: False)
+    response = _notion_client(monkeypatch).get("/api/personal-briefing/notion")
+    assert response.json()["enabled_feature"] is False
+
+    monkeypatch.setattr(nx, "is_enabled", lambda: True)
+    response = _notion_client(monkeypatch).get("/api/personal-briefing/notion")
+    assert response.json()["enabled_feature"] is True
+
+
+def test_put_refuses_with_503_when_the_feature_is_off(monkeypatch):
+    monkeypatch.setattr(nb, "ensure_tables", lambda: None)
+    monkeypatch.setattr(nx, "is_enabled", lambda: False)
+
+    response = _notion_client(monkeypatch).put(
+        "/api/personal-briefing/notion",
+        json={"page_url": "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b"})
+
+    assert response.status_code == 503
+
+
+def test_frontend_gates_inputs_when_the_feature_is_off():
+    """⛔ 절 자체를 숨기면 사용자가 기능의 존재를 모른다 — 잠그고 이유만 보여준다."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "app" / "frontend" / "personal-briefing.js").read_text(encoding="utf-8")
+    assert "enabled_feature" in js
+    assert "관리자가 노션 연동을 켜야" in js
+    assert "briefing-notion-disabled-note" in js
+
+
+def test_frontend_disabled_note_style_is_in_the_stylesheet():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "app" / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".briefing-notion-disabled-note" in css
+
+
+# ── ③ 자가 점검이 최근 실패도 센다 ───────────────────────────────────────────
+
+def test_check_notion_push_counts_recent_failures_too(monkeypatch):
+    """⛔ `pending` 만 세면 페이지의 셀라 연결이 끊겨 3번 시도 후 `failed` 로
+    굳은 행이 이 검사에서 통째로 사라진다 — 가장 흔한 실패가 무방비였다."""
+    from app.core import self_check
+
+    calls = []
+
+    def fake_fetch_one(sql, params=()):
+        calls.append((" ".join(sql.split()), params))
+        if "status='pending'" in sql.replace(" ", ""):
+            return {"n": 0}
+        if "status='failed'" in sql.replace(" ", ""):
+            return {"n": 3}
+        return {"n": 0}
+
+    monkeypatch.setattr(self_check, "fetch_one", fake_fetch_one)
+    result = self_check._check_notion_push()
+
+    assert result.ok is False
+    assert "실패 3건" in result.detail
+    failed_calls = [sql for sql, _ in calls if "status='failed'" in sql.replace(" ", "")]
+    assert failed_calls, "failed 행을 세는 조회가 없다"
+    assert "INTERVAL 7 DAY" in failed_calls[0]
+
+
+def test_check_notion_push_distinguishes_stuck_from_failed_wording(monkeypatch):
+    """⚠️ 밀린 것과 실패로 굳은 것은 다른 사고다 — 문구로 구분해야 한다."""
+    from app.core import self_check
+
+    def fake_fetch_one(sql, params=()):
+        if "status='pending'" in sql.replace(" ", ""):
+            return {"n": 2}
+        return {"n": 0}
+
+    monkeypatch.setattr(self_check, "fetch_one", fake_fetch_one)
+    result = self_check._check_notion_push()
+
+    assert result.ok is False
+    assert "지난 대기" in result.detail
+    assert "실패" not in result.detail
+
+
+def test_check_notion_push_ok_when_nothing_is_stuck_or_failing(monkeypatch):
+    from app.core import self_check
+
+    monkeypatch.setattr(self_check, "fetch_one", lambda sql, params=(): {"n": 0})
+    result = self_check._check_notion_push()
+    assert result.ok is True
+
+
+# ── minor: 시각이 깨져도 GET 이 500 을 내지 않는다 ───────────────────────────
+
+def test_send_at_label_falls_back_when_the_stored_value_is_broken():
+    from app.api.notion_briefing_api import _send_at_label
+
+    assert _send_at_label("not-a-time") == nb.DEFAULT_SEND_AT.strftime("%H:%M")
+
+
+# ── minor: last_error 화면 노출에서 노션 id 를 가린다 ────────────────────────
+
+def test_get_masks_notion_ids_out_of_last_error(monkeypatch):
+    """⛔ `page_url` 은 일부러 가리는데, 오류 메시지가 그 id 를 그대로 흘리면
+    가린 뜻이 없어진다."""
+    monkeypatch.setattr(nb, "ensure_tables", lambda: None)
+    monkeypatch.setattr(nx, "is_enabled", lambda: True)
+    monkeypatch.setattr(nb, "get_target", lambda user_id: {
+        "user_id": 7,
+        "page_url": "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
+        "enabled": 1, "send_at": "08:00", "muted_sections": "",
+        "last_sent_at": None,
+        "last_error": "not_connected: Could not find database with ID: "
+                      "24f1a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b",
+    })
+
+    response = _notion_client(monkeypatch).get("/api/personal-briefing/notion")
+
+    last_error = response.json()["last_error"]
+    assert "24f1a2b3-c4d5-4e6f-8a9b-0c1d2e3f4a5b" not in last_error
+    assert "a5b" in last_error          # 끝자리는 남겨 대조는 가능하게
+
+
+# ── minor: `/test` 가 이벤트 루프를 막지 않는다 ──────────────────────────────
+
+def test_test_endpoint_wraps_network_calls_in_a_thread():
+    """⛔ 동기 httpx 호출을 그대로 부르면 uvicorn 단일 프로세스가 통째로 멈춘다."""
+    import inspect
+
+    from app.api import notion_briefing_api as api
+
+    source = inspect.getsource(api.test_my_notion_target)
+    assert "asyncio.to_thread" in source
+    assert source.count("asyncio.to_thread") >= 2
