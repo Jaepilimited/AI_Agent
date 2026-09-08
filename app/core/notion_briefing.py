@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS briefing_notion_outbox (
     send_after DATETIME NULL,
     attempts INT NOT NULL DEFAULT 0,
     last_error VARCHAR(255) NOT NULL DEFAULT '',
+    row_url VARCHAR(300) NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     sent_at DATETIME NULL,
     UNIQUE KEY uniq_user_item (user_id, dedup_key),
@@ -143,7 +144,7 @@ def enqueue(user_id: int, for_date: date, page_url: str, body: str,
         "(user_id,for_date,dedup_key,title,page_url,body,send_after) "
         "VALUES (%s,%s,%s,%s,%s,%s,%s) "
         "ON DUPLICATE KEY UPDATE "
-        "page_url=VALUES(page_url),"
+        "page_url=IF(status='pending',VALUES(page_url),page_url),"
         # 이미 보낸 건은 본문을 바꾸지 않는다 (다시 보내지 않으므로 뜻도 없다).
         "body=IF(status='pending',VALUES(body),body),"
         "title=IF(status='pending',VALUES(title),title),"
@@ -171,19 +172,29 @@ def pending(now: datetime, limit: int = 50) -> list[dict[str, Any]]:
 
 
 def mark_sent(outbox_id: int, row_url: str) -> None:
+    """⚠️ 만들어진 노션 행 주소는 `row_url` 에 남긴다 — `last_error` 에 성공 값을
+       넣으면 나중에 읽는 사람이 반드시 오해한다. 성공했으니 오류는 비운다.
+    """
     execute(
         "UPDATE briefing_notion_outbox "
-        "SET status='sent', sent_at=NOW(), last_error=%s WHERE id=%s",
-        (row_url[:255], int(outbox_id)))
+        "SET status='sent', sent_at=NOW(), row_url=%s, last_error='' WHERE id=%s",
+        (row_url[:300], int(outbox_id)))
 
 
 def mark_failed(outbox_id: int, error: str) -> None:
-    """⚠️ 상한에 닿으면 `failed` 로 굳힌다 — 영원히 재시도하지 않는다."""
+    """시도 횟수를 올리고, 상한에 닿으면 실패로 굳힌다 — 무한 재시도를 만들지 않는다.
+
+    ⛔ **SET 절 순서가 의미를 바꾼다.** MySQL 은 단일 테이블 UPDATE 의 SET 을
+       왼쪽부터 평가하고 **뒤 절이 앞 절의 새 값을 본다.** `attempts=attempts+1` 을
+       먼저 쓰면 `status` 절이 이미 증가한 값을 읽어 `old+2 >= 상한` 을 검사하게 되고,
+       재시도가 한 번 일찍 끝난다. 그래서 `status` 를 **먼저** 계산한다.
+       ⚠️ 보기 좋게 정리한다고 순서를 바꾸지 마라.
+    """
     execute(
         "UPDATE briefing_notion_outbox "
-        "SET attempts=attempts+1, last_error=%s, "
-        "status=IF(attempts+1 >= %s,'failed','pending') WHERE id=%s",
-        (error[:255], MAX_ATTEMPTS, int(outbox_id)))
+        "SET status=IF(attempts+1 >= %s,'failed','pending'), "
+        "attempts=attempts+1, last_error=%s WHERE id=%s",
+        (MAX_ATTEMPTS, error[:255], int(outbox_id)))
 
 
 def status_counts(for_date: date | None = None) -> dict[str, int]:

@@ -147,3 +147,27 @@ def test_mark_failed_gives_up_after_max_attempts(db):
     sql, params = db.calls[0]
     assert "attempts=attempts+1" in sql.replace(" ", "")
     assert nb.MAX_ATTEMPTS in params
+
+
+def test_mark_failed_computes_status_before_incrementing(db):
+    """⛔ SET 절 순서가 의미를 바꾼다 — `status` 가 증가 뒤에 오면 한 번 일찍 포기한다.
+
+    MySQL 은 SET 을 왼쪽부터 평가하고 뒤 절이 앞 절의 **새 값**을 본다.
+    """
+    nb.mark_failed(11, "노션이 404")
+    sql, params = db.calls[0]
+    status_at = sql.index("status=IF")
+    attempts_at = sql.index("attempts=attempts+1")
+    assert status_at < attempts_at, "status 를 attempts 증가보다 먼저 계산해야 한다"
+    assert params[0] == nb.MAX_ATTEMPTS
+
+
+def test_enqueue_does_not_touch_a_row_that_was_already_sent(db):
+    """⚠️ 이미 보낸 행은 주소도 본문도 바꾸지 않는다 — 다시 보내지 않으므로 뜻이 없다."""
+    nb.enqueue(7, date(2026, 9, 8),
+               "https://www.notion.so/24f1a2b3c4d54e6f8a9b0c1d2e3f4a5b",
+               "본문", "제목")
+    sql, _ = db.calls[0]
+    for column in ("page_url", "body", "title", "send_after"):
+        assert f"{column}=IF(status='pending'" in sql.replace(" ", ""), \
+            f"{column} must be guarded with status='pending' check"
