@@ -515,3 +515,44 @@ def test_set_target_flags_land_in_their_own_slots(monkeypatch):
     nb.set_target(7, url, send_at="09:00")
     assert seen["params"][-2:] == (1, 0), (
         f"시각 플래그=1, 항목 플래그=0 이어야 한다: {seen['params'][-2:]}")
+
+
+def test_frontend_does_not_hardcode_choices_or_sections():
+    """⛔ 프론트에 사본을 두면 절이 하나 늘 때 화면에서 통째로 사라진다."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "app" / "frontend" / "personal-briefing.js").read_text(encoding="utf-8")
+    assert "/api/personal-briefing/notion" in js
+    assert "send_time_choices" in js          # 서버가 준 목록을 그린다
+    # 시각 목록을 손으로 적지 않았는가
+    assert "08:30" not in js
+
+
+def test_frontend_notion_settings_are_wired_into_the_dialog():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "app" / "frontend" / "personal-briefing.js").read_text(encoding="utf-8")
+    assert "appendNotionSettings" in js
+    # 다이얼로그를 만드는 곳에서 실제로 불린다
+    assert js.count("appendNotionSettings") >= 2
+
+
+def test_frontend_styles_live_in_the_stylesheet_not_inline():
+    """⛔ 테마를 타야 하는 스타일을 JS 인라인으로 두면 테마 전환에서 조용히 빠진다."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    css = (root / "app" / "static" / "style.css").read_text(encoding="utf-8")
+    assert ".briefing-notion" in css
+
+
+def test_frontend_warns_that_a_shared_page_shows_mail_titles():
+    """⛔ 브리핑에는 메일 제목이 들어간다 — 노션 페이지는 공유가 쉽다 (스펙 §6)."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "app" / "frontend" / "personal-briefing.js").read_text(encoding="utf-8")
+    assert "메일 제목" in js
+    assert "연결" in js          # 연결 붙이는 법도 함께 안내한다

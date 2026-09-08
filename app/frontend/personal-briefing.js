@@ -399,7 +399,6 @@
     { value: "weekly", label: "매주 월요일" },
     { value: "monthly", label: "매월 첫 근무일" }
   ];
-  var savedManagerBox = null;
 
   function cadenceLabel(value, weekday) {
     var found = SAVED_CADENCE.filter(function (c) { return c.value === value; })[0];
@@ -419,76 +418,59 @@
     return when + " · 정상";
   }
 
-  function openSavedManager(options) {
-    var overlay = savedManagerBox;
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.className = "fb-overlay saved-manager";
-      /* ⛔ **이 파일은 HTML 문자열로 화면을 만들지 않는다.** 구글 데이터를 그리므로
-         주입 경로를 아예 두지 않는 것이 규칙이고, 테스트가 소스를 훑어 강제한다
-         (tests/frontend/test_personal_briefing_welcome.py).
-         ⚠️ "지금은 상수만 넣으니 괜찮다" 가 위험하다 — 다음 사람이 그 틀에 변수를
-            하나 끼워 넣는 순간 주입구가 된다. 처음부터 DOM 으로 짓는다.
-         ⚠️ 금지된 속성 이름을 **주석에도 적지 마라** — 가드가 소스를 문자열로 보므로
-            설명만으로도 걸린다 (오늘 CSS·정규식에서도 같은 함정을 밟았다). */
-      var box = textNode("div", "fb-box saved-box", "");
-      var addWrap = textNode("div", "saved-add", "");
-      var actions = textNode("div", "fb-actions", "");
-      var list = textNode("div", "saved-list", "");
-      var note = textNode("div", "sq-note", "");
-      var input = document.createElement("textarea");
-      var select = document.createElement("select");
-      var close = textNode("button", "fb-btn", "닫기");
-      var add = textNode("button", "fb-btn fb-btn-primary", "추가");
+  function appendSavedSettings(parent, options) {
+    /* ⛔ **이 파일은 HTML 문자열로 화면을 만들지 않는다.** 구글 데이터를 그리므로
+       주입 경로를 아예 두지 않는 것이 규칙이고, 테스트가 소스를 훑어 강제한다
+       (tests/frontend/test_personal_briefing_welcome.py).
+       ⚠️ "지금은 상수만 넣으니 괜찮다" 가 위험하다 — 다음 사람이 그 틀에 변수를
+          하나 끼워 넣는 순간 주입구가 된다. 처음부터 DOM 으로 짓는다.
+       ⚠️ 금지된 속성 이름을 **주석에도 적지 마라** — 가드가 소스를 문자열로 보므로
+          설명만으로도 걸린다 (오늘 CSS·정규식에서도 같은 함정을 밟았다). */
+    var section = textNode("section",
+      "briefing-settings-section briefing-settings-saved", "");
+    var addWrap = textNode("div", "saved-add", "");
+    var actions = textNode("div", "fb-actions", "");
+    var list = textNode("div", "saved-list", "");
+    var note = textNode("div", "sq-note", "");
+    var input = document.createElement("textarea");
+    var select = document.createElement("select");
+    var add = textNode("button", "fb-btn fb-btn-primary", "추가");
+    var title = textNode("h3", "briefing-settings-section-title", SAVED_TITLE);
 
-      list.id = "saved-list";
-      note.id = "saved-note";
-      input.id = "saved-new";
-      input.className = "fb-text";
-      input.rows = 2;
-      input.placeholder = "예: 쇼피 인도네시아 이번 달 매출 알려줘";
-      select.id = "saved-new-cadence";
-      select.className = "sq-select";
-      close.id = "saved-close";
-      close.type = "button";
-      add.id = "saved-add";
-      add.type = "button";
+    section.setAttribute("aria-labelledby", "briefing-settings-saved-title");
+    title.id = "briefing-settings-saved-title";
+    list.id = "saved-list";
+    note.id = "saved-note";
+    input.id = "saved-new";
+    input.className = "fb-text";
+    input.rows = 2;
+    input.placeholder = "예: 쇼피 인도네시아 이번 달 매출 알려줘";
+    select.id = "saved-new-cadence";
+    select.className = "sq-select";
+    add.id = "saved-add";
+    add.type = "button";
 
-      box.appendChild(textNode("div", "fb-title", SAVED_TITLE));
-      box.appendChild(textNode("div", "fb-sub",
-        "여기 담아 두면 근무일 아침에 자동으로 돌려 브리핑과 잔디에 함께 보내 드립니다."));
-      box.appendChild(list);
-      addWrap.appendChild(input);
-      addWrap.appendChild(select);
-      box.appendChild(addWrap);
-      box.appendChild(note);
-      actions.appendChild(close);
-      actions.appendChild(add);
-      box.appendChild(actions);
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      overlay.addEventListener("click", function (e) {
-        if (e.target === overlay) overlay.style.display = "none";
-      });
-      SAVED_CADENCE.forEach(function (c) {
-        var opt = document.createElement("option");
-        opt.value = c.value;
-        opt.textContent = c.label;
-        select.appendChild(opt);
-      });
-      overlay.querySelector("#saved-close").addEventListener("click", function () {
-        overlay.style.display = "none";
-        /* 설정을 바꿨으면 첫 화면도 따라와야 한다 — 닫을 때 한 번 새로 그린다. */
-        if (typeof options.reload === "function") options.reload();
-      });
-      overlay.querySelector("#saved-add").addEventListener("click", function () {
-        savedAdd(overlay, options);
-      });
-      savedManagerBox = overlay;
-    }
-    overlay.style.display = "flex";
-    overlay.querySelector("#saved-note").textContent = "";
-    savedLoad(overlay, options);
+    section.appendChild(title);
+    section.appendChild(textNode("p", "briefing-settings-section-copy",
+      "근무일 아침에 자동 실행해 브리핑과 잔디에 함께 보낼 질문을 관리합니다."));
+    section.appendChild(list);
+    addWrap.appendChild(input);
+    addWrap.appendChild(select);
+    section.appendChild(addWrap);
+    section.appendChild(note);
+    actions.appendChild(add);
+    section.appendChild(actions);
+    parent.appendChild(section);
+
+    SAVED_CADENCE.forEach(function (c) {
+      var opt = document.createElement("option");
+      opt.value = c.value;
+      opt.textContent = c.label;
+      select.appendChild(opt);
+    });
+    add.addEventListener("click", function () { savedAdd(section, options); });
+    savedLoad(section, options);
+    return input;
   }
 
   function savedNote(overlay, text) {
@@ -614,11 +596,9 @@
 
     /* ⛔ 저장 질문이 없으면 절 자체를 만들지 않는다. 빈 절은 첫 화면만 길게 만든다.
        ⚠️ 대신 **설정으로 들어갈 입구가 사라지면 안 된다** — 처음 쓰는 사람은 저장된
-          것이 없어서 이 절을 볼 수 없다. 입구는 아래 `renderBusiness` 옆이 아니라
-          지표 절 제목에 단다 (`openSavedManager`). */
+          것이 없어서 이 절을 볼 수 없다. 입구는 문서 하단의 톱니바퀴에 둔다. */
     if (!rows.length) return;
     section = docSection(body, SAVED_TITLE, rows.length);
-    sectionAction(section, "관리", function () { openSavedManager(options); });
     rows.forEach(function (item) {
       var main = docRow(section, "normal", item.question, "", options, item.question,
         { start: clockLabel(item.last_run_at) });
@@ -814,37 +794,6 @@
     return titles.filter(Boolean);
   }
 
-  function docFooter(doc, options) {
-    var footer = document.createElement("div");
-    var copy = textNode("button", "briefing-doc-action", "본문 복사");
-    var jandi = textNode("button", "briefing-doc-action", "잔디로 받기");
-
-    footer.className = "briefing-doc-footer";
-    copy.type = "button";
-    copy.addEventListener("click", function () {
-      if (!doc.markdown || !navigator.clipboard) return;
-      navigator.clipboard.writeText(doc.markdown).then(function () {
-        copy.textContent = "복사됨";
-        window.setTimeout(function () { copy.textContent = "본문 복사"; }, 1500);
-      }, function () {});
-    });
-    jandi.type = "button";
-    jandi.addEventListener("click", function () {
-      openJandiDialog(options);
-    });
-    /* ⚠️ **저장된 것이 없어도 들어갈 수 있어야 한다.** 위 절은 비면 그려지지 않으므로
-       처음 쓰는 사람에게는 입구가 사라진다. 잔디 설정 옆에 두면 "매일 무엇을 받을지"
-       를 정하는 두 가지가 한자리에 모인다. */
-    var manage = textNode("button", "briefing-doc-action", SAVED_TITLE + " 설정");
-    manage.type = "button";
-    manage.addEventListener("click", function () { openSavedManager(options); });
-
-    footer.appendChild(copy);
-    footer.appendChild(manage);
-    footer.appendChild(jandi);
-    return footer;
-  }
-
   function renderDocument(root, data, options) {
     var doc = data.document || {};
     var node = docRoot(root);
@@ -921,7 +870,6 @@
       renderSaved(body, doc, options);
       renderBusiness(body, data, options);
       renderFx(body, data);
-      body.appendChild(docFooter(doc, options));
       return null;
     }
 
@@ -951,7 +899,6 @@
       docLine(body, "briefing-doc-note",
         "※ 근거(원문 숫자·메일)가 확인되지 않아 제외한 문장 " + doc.dropped + "건");
     }
-    body.appendChild(docFooter(doc, options));
     return right;
   }
 
@@ -969,9 +916,8 @@
     box.appendChild(help);
   }
 
-  function openJandiDialog(options) {
-    var overlay = document.createElement("div");
-    var box = document.createElement("div");
+  function appendJandiSettings(parent, options) {
+    var box = document.createElement("section");
     var input = document.createElement("input");
     /* ⛔ 선택지 목록을 여기서 만들지 않는다 — 서버가 준 send_time_choices 로만 채운다.
        릴레이 회차는 DB_PC 예약작업이 정하므로, 사본을 두면 조용히 갈린다. */
@@ -983,20 +929,26 @@
     var save = textNode("button", "briefing-doc-action primary", "저장");
     var test = textNode("button", "briefing-doc-action", "지금 대기열에 넣기");
     var remove = textNode("button", "briefing-doc-action danger", "해제");
-    var close = textNode("button", "briefing-doc-action", "닫기");
+    var title = textNode("h3",
+      "briefing-settings-section-title briefing-jandi-title", "잔디로 받기");
 
-    overlay.className = "briefing-jandi-overlay";
-    box.className = "briefing-jandi-box";
-    box.appendChild(textNode("h3", "briefing-jandi-title", "잔디로 출근 브리핑 받기"));
+    box.className = "briefing-settings-section briefing-settings-jandi";
+    box.setAttribute("aria-labelledby", "briefing-settings-jandi-title");
+    title.id = "briefing-settings-jandi-title";
+    box.appendChild(title);
+    box.appendChild(textNode("p", "briefing-settings-section-copy",
+      "원하는 시각과 항목을 골라 근무일마다 잔디에서 브리핑을 받습니다."));
     jandiHelp(box);
     input.type = "url";
     input.className = "briefing-jandi-input";
+    input.setAttribute("aria-label", "잔디 웹훅 주소");
     input.placeholder = "https://wh.jandi.com/connect-api/webhook/…";
     input.spellcheck = false;
     box.appendChild(input);
     timeField.className = "briefing-jandi-time";
     timeField.appendChild(textNode("span", "", "받을 시각"));
     timeSelect.className = "briefing-jandi-select";
+    timeSelect.setAttribute("aria-label", "잔디로 받을 시각");
     timeSelect.disabled = true;
     timeField.appendChild(timeSelect);
     box.appendChild(timeField);
@@ -1006,22 +958,12 @@
     box.appendChild(sectionBox);
     box.appendChild(status);
     row.className = "briefing-jandi-actions";
-    [save, test, remove, close].forEach(function (button) {
+    [save, test, remove].forEach(function (button) {
       button.type = "button";
       row.appendChild(button);
     });
     box.appendChild(row);
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-
-    function shut() {
-      overlay.remove();
-      document.removeEventListener("keydown", onKey);
-    }
-
-    function onKey(event) {
-      if (event.key === "Escape") shut();
-    }
+    parent.appendChild(box);
 
     function paintTimes(state) {
       var choices = (state && state.send_time_choices) || [];
@@ -1107,12 +1049,6 @@
       return value;
     }
 
-    overlay.addEventListener("click", function (event) {
-      if (event.target === overlay) shut();
-    });
-    document.addEventListener("keydown", onKey);
-    close.addEventListener("click", shut);
-
     save.addEventListener("click", async function () {
       status.textContent = "저장 중…";
       try {
@@ -1156,7 +1092,289 @@
     call("GET").then(paint, function () {
       status.textContent = "설정을 불러오지 못했습니다.";
     });
-    input.focus();
+    return input;
+  }
+
+  /* 노션 설정. 잔디와 같은 모양이되 대상이 노션 페이지다. */
+  function notionHelp(box) {
+    var help = textNode("ol", "briefing-notion-help", "");
+    [
+      "브리핑을 쌓을 노션 페이지를 하나 만듭니다 (본인만 있는 페이지를 권장합니다).",
+      "페이지 우상단 ⋯ > 연결 > Skin1004_AI 추가.",
+      "페이지 주소(https://www.notion.so/…)를 아래에 붙여 넣습니다.",
+      "받을 시각을 고르면 근무일마다 그 시각에 브리핑이 그 페이지에 쌓입니다."
+    ].forEach(function (step) {
+      help.appendChild(textNode("li", "", step));
+    });
+    box.appendChild(help);
+  }
+
+  function appendNotionSettings(parent, options) {
+    var box = document.createElement("section");
+    var input = document.createElement("input");
+    /* ⛔ 선택지 목록을 여기서 만들지 않는다 — 서버가 준 send_time_choices 로만 채운다. */
+    var timeField = document.createElement("label");
+    var timeSelect = document.createElement("select");
+    var status = textNode("p", "briefing-jandi-status briefing-notion-status", "불러오는 중…");
+    var sectionBox = document.createElement("div");
+    var row = document.createElement("div");
+    var save = textNode("button", "briefing-doc-action primary", "저장");
+    var test = textNode("button", "briefing-doc-action", "지금 보내기");
+    var remove = textNode("button", "briefing-doc-action danger", "해제");
+    var title = textNode("h3",
+      "briefing-settings-section-title briefing-notion-title", "노션으로 받기");
+
+    box.className = "briefing-settings-section briefing-settings-notion";
+    box.setAttribute("aria-labelledby", "briefing-settings-notion-title");
+    title.id = "briefing-settings-notion-title";
+    box.appendChild(title);
+    box.appendChild(textNode("p", "briefing-settings-section-copy",
+      "원하는 시각과 항목을 골라 근무일마다 노션 페이지에 브리핑을 쌓습니다."));
+    notionHelp(box);
+    box.appendChild(textNode("p", "briefing-notion-privacy",
+      "브리핑에는 메일 제목이 들어갑니다. 노션 페이지는 공유하면 그 사람도 보게 됩니다."));
+    input.type = "url";
+    input.className = "briefing-jandi-input briefing-notion-input";
+    input.setAttribute("aria-label", "노션 페이지 주소");
+    input.placeholder = "https://www.notion.so/…";
+    input.spellcheck = false;
+    box.appendChild(input);
+    timeField.className = "briefing-jandi-time briefing-notion-time";
+    timeField.appendChild(textNode("span", "", "받을 시각"));
+    timeSelect.className = "briefing-jandi-select briefing-notion-select";
+    timeSelect.setAttribute("aria-label", "노션으로 받을 시각");
+    timeSelect.disabled = true;
+    timeField.appendChild(timeSelect);
+    box.appendChild(timeField);
+    /* 받을 항목. ⛔ 목록을 여기서 만들지 않는다 — 서버가 준 sections 로만 그린다.
+       ⚠️ 기본값은 잔디와 같게(전부 켜짐) 둔다 — 여기만 다르면
+       "잔디엔 오는데 노션엔 안 온다" 가 된다. */
+    sectionBox.className = "briefing-jandi-sections briefing-notion-sections";
+    box.appendChild(sectionBox);
+    box.appendChild(status);
+    row.className = "briefing-jandi-actions briefing-notion-actions";
+    [save, test, remove].forEach(function (button) {
+      button.type = "button";
+      row.appendChild(button);
+    });
+    box.appendChild(row);
+    parent.appendChild(box);
+
+    function paintTimes(state) {
+      var choices = (state && state.send_time_choices) || [];
+      if (!choices.length) {
+        // 목록을 못 받았으면 고르게 두지 않는다 — 지어낸 시각은 영영 오지 않는다.
+        timeSelect.disabled = true;
+        return;
+      }
+      if (timeSelect.options.length !== choices.length) {
+        timeSelect.replaceChildren();
+        choices.forEach(function (value) {
+          var option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          timeSelect.appendChild(option);
+        });
+      }
+      timeSelect.value = state.send_at || choices[0];
+      timeSelect.disabled = false;
+    }
+
+    function paintSections(state) {
+      var items = (state && state.sections) || [];
+      if (!items.length) {
+        sectionBox.replaceChildren();
+        return;
+      }
+      sectionBox.replaceChildren();
+      sectionBox.appendChild(textNode("span", "briefing-jandi-sections-title",
+        "노션으로 받을 항목"));
+      var groups = [];
+      items.forEach(function (item) {
+        var found = groups.filter(function (g) { return g.name === item.group; })[0];
+        if (!found) { found = { name: item.group, rows: [] }; groups.push(found); }
+        found.rows.push(item);
+      });
+      groups.forEach(function (group) {
+        var wrap = document.createElement("div");
+        wrap.className = "briefing-jandi-group briefing-notion-group";
+        wrap.appendChild(textNode("span", "briefing-jandi-group-name", group.name));
+        group.rows.forEach(function (item) {
+          var label = document.createElement("label");
+          var box2 = document.createElement("input");
+          box2.type = "checkbox";
+          box2.checked = item.enabled !== false;
+          box2.dataset.sectionKey = item.key;
+          label.appendChild(box2);
+          label.appendChild(textNode("span", "", item.label));
+          wrap.appendChild(label);
+        });
+        sectionBox.appendChild(wrap);
+      });
+    }
+
+    function mutedSections() {
+      /* 체크가 **꺼진** 것을 보낸다 — 서버도 끈 것을 저장한다. */
+      return Array.prototype.slice
+        .call(sectionBox.querySelectorAll("input[type=checkbox]"))
+        .filter(function (input) { return !input.checked; })
+        .map(function (input) { return input.dataset.sectionKey; });
+    }
+
+    function paint(state) {
+      paintTimes(state);
+      paintSections(state);
+      if (!state || !state.registered) {
+        status.textContent = "아직 등록된 노션 페이지가 없습니다.";
+        return;
+      }
+      status.textContent = "등록됨 " + state.masked
+        + " · 매일 " + (state.send_at || "") + " 발송"
+        + (state.last_sent_at ? " · 마지막 발송 " + state.last_sent_at : " · 아직 발송 이력 없음")
+        + (state.last_error ? " · 최근 오류: " + state.last_error : "");
+    }
+
+    async function call(method, payload) {
+      var response = await options.fetchImpl("/api/personal-briefing/notion", payload
+        ? { method: method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+        : { method: method });
+      var value = await response.json().catch(function () { return {}; });
+      if (!response.ok) throw new Error(value.detail || "요청이 실패했습니다.");
+      return value;
+    }
+
+    save.addEventListener("click", async function () {
+      status.textContent = "저장 중…";
+      try {
+        /* 주소를 비워 두면 서버가 이미 저장된 것을 그대로 쓴다. */
+        paint(await call("PUT", {
+          page_url: input.value.trim(),
+          send_at: timeSelect.value,
+          muted: mutedSections(),
+          enabled: true
+        }));
+        input.value = "";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    remove.addEventListener("click", async function () {
+      status.textContent = "해제 중…";
+      try {
+        paint(await call("DELETE"));
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    test.addEventListener("click", async function () {
+      status.textContent = "보내는 중…";
+      try {
+        var response = await options.fetchImpl("/api/personal-briefing/notion/test", { method: "POST" });
+        var value = await response.json().catch(function () { return {}; });
+        if (!response.ok) throw new Error(value.detail || "요청이 실패했습니다.");
+        status.textContent = "노션 페이지로 보냈습니다.";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    call("GET").then(paint, function () {
+      status.textContent = "설정을 불러오지 못했습니다.";
+    });
+    return input;
+  }
+
+  function appendAccountSettings(parent, options, closeSettings) {
+    var section;
+    var title;
+    var actions;
+    var changePassword;
+
+    if (typeof options.changePassword !== "function") return;
+    section = textNode("section", "briefing-settings-section briefing-settings-account", "");
+    title = textNode("h3", "briefing-settings-section-title", "계정");
+    actions = textNode("div", "fb-actions", "");
+    changePassword = textNode("button", "fb-btn", "비밀번호 변경");
+    section.setAttribute("aria-labelledby", "briefing-settings-account-title");
+    title.id = "briefing-settings-account-title";
+    changePassword.type = "button";
+    section.appendChild(title);
+    section.appendChild(textNode("p", "briefing-settings-section-copy",
+      "현재 로그인한 계정의 비밀번호를 변경합니다."));
+    actions.appendChild(changePassword);
+    section.appendChild(actions);
+    parent.appendChild(section);
+    changePassword.addEventListener("click", function () {
+      closeSettings();
+      options.changePassword();
+    });
+  }
+
+  var activeBriefingSettingsClose = null;
+
+  function openBriefingSettings(options) {
+    var overlay = document.createElement("div");
+    var box = document.createElement("div");
+    var header = document.createElement("header");
+    var content = document.createElement("div");
+    var title = textNode("h2", "briefing-settings-title", "설정");
+    var close = textNode("button", "briefing-settings-close", "×");
+    var opener = document.activeElement;
+
+    options = options || {};
+    if (activeBriefingSettingsClose) activeBriefingSettingsClose();
+
+    overlay.className = "briefing-jandi-overlay briefing-settings-overlay";
+    box.className = "briefing-jandi-box briefing-settings-box";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-labelledby", "briefing-settings-title");
+    title.id = "briefing-settings-title";
+    header.className = "briefing-settings-header";
+    content.className = "briefing-settings-content";
+    close.type = "button";
+    close.setAttribute("aria-label", "설정 닫기");
+    close.title = "닫기";
+    header.appendChild(title);
+    header.appendChild(close);
+    box.appendChild(header);
+    box.appendChild(content);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    appendAccountSettings(content, options, shut);
+    appendSavedSettings(content, options);
+    appendJandiSettings(content, options);
+    appendNotionSettings(content, options);
+
+    function shut() {
+      if (!overlay.isConnected) return;
+      overlay.remove();
+      document.removeEventListener("keydown", onKey);
+      activeBriefingSettingsClose = null;
+      /* 저장한 보고를 바꿨으면 첫 화면도 닫는 순간 함께 갱신한다. */
+      if (typeof options.reload === "function") options.reload();
+      if (opener && opener.isConnected && typeof opener.focus === "function") opener.focus();
+    }
+
+    function onKey(event) {
+      if (event.key === "Escape") shut();
+    }
+
+    activeBriefingSettingsClose = shut;
+    overlay.addEventListener("click", function (event) {
+      if (event.target === overlay) shut();
+    });
+    document.addEventListener("keydown", onKey);
+    close.addEventListener("click", shut);
+    close.focus();
+  }
+
+  /* 이전 공개 진입점은 유지하되 이제 같은 통합 설정창을 연다. */
+  function openJandiDialog(options) {
+    openBriefingSettings(options);
   }
 
   function renderSkeleton(root) {
@@ -1480,6 +1698,7 @@
       show: function () {
         if (state) render(root, state, options);
       },
+      openSettings: function () { openBriefingSettings(options); },
       refreshAfterConnect: load,
       invalidate: invalidate
     };

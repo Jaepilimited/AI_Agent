@@ -5084,6 +5084,20 @@ html.dark .db-autocomplete-dropdown {
 .briefing-jandi-actions .briefing-doc-action.primary { color: var(--accent); }
 .briefing-jandi-actions .briefing-doc-action.danger { color: var(--error); }
 
+/* ── 노션으로 받기 ─────────────────────────────────────────────────────────
+   구조는 잔디 설정과 같다(`.briefing-jandi-*` 규칙을 공유). 여기서 더하는
+   것은 사생활 안내 한 줄뿐이다. */
+.briefing-notion-privacy {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  line-height: 1.6;
+}
+
 @media (max-width: 480px) {
   .briefing-settings-overlay {
     align-items: flex-end;
