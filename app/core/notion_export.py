@@ -289,7 +289,14 @@ def _classify(status: int, payload: dict) -> NotionError:
     return NotionError("unavailable", message, status)
 
 
-def _request(method: str, path: str, body: dict | None = None) -> dict:
+def _request(method: str, path: str, body: dict | None = None,
+             probe: bool = False) -> dict:
+    """`probe=True` 는 **답이 예/아니오인 조회**다 (이 주소가 DB 인가?).
+
+    ⛔ 그 400 을 WARNING 으로 남기지 마라 — 페이지 주소로 저장할 때마다
+       **성공 경로에서** 뜬다. 매일 뜨는 경고는 곧 아무도 안 읽고,
+       그러면 진짜 실패까지 함께 묻힌다. 예상 밖의 오류(403 등)는 그대로 남긴다.
+    """
     if not is_enabled():
         raise NotionError("disabled", "NOTION_WRITE_TOKEN 미설정")
     try:
@@ -307,7 +314,8 @@ def _request(method: str, path: str, body: dict | None = None) -> dict:
 
     if response.status_code >= 400:
         error = _classify(response.status_code, payload)
-        logger.warning(
+        expected = probe and _looks_like_a_page(error)
+        (logger.debug if expected else logger.warning)(
             "notion_write_failed",
             kind=error.kind, status=response.status_code,
             path=path, message=str(payload.get("message", ""))[:200],
@@ -414,9 +422,10 @@ def _fetch_schema(data_source_id: str, fallback_payload: dict) -> dict:
     return schema or _schema(fallback_payload)
 
 
-def _load_database(database_id: str, created: bool = False) -> Target:
+def _load_database(database_id: str, created: bool = False,
+                   probe: bool = False) -> Target:
     """DB 를 읽어 Target 을 만든다. 스키마는 `_fetch_schema()` 가 데이터 소스에서 얻는다."""
-    payload = _request("GET", f"/v1/databases/{database_id}")
+    payload = _request("GET", f"/v1/databases/{database_id}", probe=probe)
     data_source_id = _first_data_source(payload)
     return Target(database_id=str(payload.get("id", database_id)),
                   data_source_id=data_source_id,
@@ -475,7 +484,7 @@ def resolve_target(user_id: int, url: str) -> Target:
         raise NotionError("bad_request", "노션 주소를 읽지 못했다")
 
     try:
-        return _load_database(page_id)
+        return _load_database(page_id, probe=True)
     except NotionError as exc:
         # ⛔ 노션은 "이건 DB 가 아니라 페이지다" 를 **404 가 아니라 400** 으로 답한다
         #    (2026-09-08 실측: "Provided database_id … is a page, not a database").

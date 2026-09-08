@@ -245,7 +245,9 @@ def test_short_table_gets_no_note():
 def _stub_requests(monkeypatch, handler):
     calls = []
 
-    def fake(method, path, body=None):
+    # ⚠️ `probe=` 는 로그 수준만 바꾸는 인자다 — 스텁은 받아서 버린다.
+    #    (안 받으면 실제 호출부가 넘길 때 TypeError 로 전부 깨진다)
+    def fake(method, path, body=None, probe=False):
         calls.append((method, path, body))
         return handler(method, path, body)
 
@@ -594,3 +596,63 @@ def test_date_property_is_korea_time(monkeypatch, our_target):
     nx.save(our_target, "t", "본문")
     expected = datetime.now(ZoneInfo("Asia/Seoul")).date().isoformat()
     assert seen["날짜"]["date"]["start"] == expected
+
+
+# --- 예상된 400 은 경고가 아니다 (2026-09-09 프로덕션 실측) --------------------
+# 페이지 주소로 저장할 때마다 `GET /v1/databases/{id}` 가 400 "is a page" 를 준다.
+# 그건 성공 경로다 — WARNING 으로 남기면 정상 배송마다 실패처럼 보인다.
+
+class _Resp:
+    def __init__(self, status, payload):
+        self.status_code, self._payload = status, payload
+
+    def json(self):
+        return self._payload
+
+
+def _stub_http(monkeypatch, status, payload):
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def request(self, *a, **kw):
+            return _Resp(status, payload)
+
+    monkeypatch.setattr(nx.settings, "notion_write_token", "tok", raising=False)
+    monkeypatch.setattr(nx.httpx, "Client", _Client)
+    levels = {"warning": [], "debug": []}
+    monkeypatch.setattr(nx.logger, "warning",
+                        lambda event, **kw: levels["warning"].append(event))
+    monkeypatch.setattr(nx.logger, "debug",
+                        lambda event, **kw: levels["debug"].append(event))
+    return levels
+
+
+def test_probe_400_is_a_page_does_not_warn(monkeypatch):
+    levels = _stub_http(monkeypatch, 400, {
+        "message": f"Provided database_id {_UUID} is a page, not a database."})
+    with pytest.raises(nx.NotionError):
+        nx._request("GET", f"/v1/databases/{_UUID}", probe=True)
+    assert levels["warning"] == []
+    assert levels["debug"] == ["notion_write_failed"]
+
+
+def test_probe_does_not_silence_a_real_error(monkeypatch):
+    """⛔ probe 가 403 까지 삼키면 권한 문제가 로그에서 통째로 사라진다."""
+    levels = _stub_http(monkeypatch, 403, {"message": "no access"})
+    with pytest.raises(nx.NotionError):
+        nx._request("GET", f"/v1/databases/{_UUID}", probe=True)
+    assert levels["warning"] == ["notion_write_failed"]
+
+
+def test_same_400_still_warns_when_it_is_not_a_probe(monkeypatch):
+    levels = _stub_http(monkeypatch, 400, {"message": "is a page, not a database"})
+    with pytest.raises(nx.NotionError):
+        nx._request("POST", "/v1/pages", {})
+    assert levels["warning"] == ["notion_write_failed"]
