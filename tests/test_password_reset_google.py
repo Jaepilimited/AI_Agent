@@ -333,11 +333,11 @@ def test_public_providers_are_never_company_domains(public):
     assert public in pwg._PUBLIC_MAIL_DOMAINS
 
 
-def test_company_domains_are_read_from_ad_not_hardcoded():
+def test_company_domains_are_read_from_directory_not_hardcoded():
     """⛔ 손으로 적으면 낡고, 낡으면 에러가 아니라 조용한 매칭 실패다.
     회사 도메인은 하나가 아니다 (실측 4개)."""
     src = inspect.getsource(pwg.company_domains)
-    assert "ad_users" in src, "AD 에서 읽지 않는다"
+    assert "directory_users" in src, "사용자 디렉터리에서 읽지 않는다"
     # docstring 의 실측 근거는 남겨도 된다 — 막을 것은 **로직**의 리터럴이다.
     body = src.split('"""')[-1]
     for hardcoded in ("skin1004korea.com", "cravercorp.com"):

@@ -12,6 +12,7 @@ from app.agents.sql_agent import (
     _mask_fi_prompt,
 )
 from app.core.security import FI_ACCESS_DENIED_MESSAGE, validate_sql
+from app.db import mariadb
 from app.db.models import User
 
 
@@ -131,6 +132,35 @@ async def test_admin_can_update_fi_access_without_external_db(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_admin_can_grant_visitor_analytics_and_invalidate_the_target_cache(monkeypatch):
+    """Removing the new endpoint or cache invalidation must make an active grant stale."""
+    updater = getattr(admin_group_api, "update_visitor_analytics_access", None)
+    assert updater is not None, "Admin needs a per-user visitor analytics update endpoint"
+    state = {"can_view_visitor_analytics": False, "invalidated": []}
+
+    async def fake_fetch_one(sql, params=()):
+        return {"id": 17, "username": "finance.user", "display_name": "Finance User", "user_id": 74}
+
+    async def fake_execute(sql, params=()):
+        assert "can_view_visitor_analytics" in sql
+        state["can_view_visitor_analytics"] = bool(params[0])
+        return 1
+
+    monkeypatch.setattr(admin_group_api, "_fetch_one", fake_fetch_one)
+    monkeypatch.setattr(admin_group_api, "_execute", fake_execute)
+    monkeypatch.setattr(admin_group_api, "invalidate_user_cache", state["invalidated"].append)
+
+    result = await updater(
+        17,
+        SimpleNamespace(can_view_visitor_analytics=True),
+        ADMIN,
+    )
+
+    assert state == {"can_view_visitor_analytics": True, "invalidated": [74]}
+    assert result == {"ok": True, "ad_user_id": 17, "can_view_visitor_analytics": True}
+
+
+@pytest.mark.asyncio
 async def test_admin_user_list_exposes_fi_and_signup_state(monkeypatch):
     """Dropping either selected field or the FI-only condition must break the list contract."""
     row = {
@@ -163,6 +193,74 @@ async def test_admin_user_list_exposes_fi_and_signup_state(monkeypatch):
     )
 
     assert result == [row]
+
+
+@pytest.mark.asyncio
+async def test_admin_user_list_exposes_visitor_analytics_checkbox_state(monkeypatch):
+    """Dropping the selected visitor permission column must make the Admin checkbox lie."""
+    row = {
+        "id": 17,
+        "username": "finance.user",
+        "display_name": "Finance User",
+        "email": "finance@example.com",
+        "department": "운영본부 > 재무팀",
+        "can_view_fi": 0,
+        "can_view_visitor_analytics": 1,
+        "user_id": 74,
+        "group_names": None,
+    }
+
+    async def fake_fetch_all(sql, params=()):
+        assert "a.can_view_visitor_analytics" in sql
+        return [row]
+
+    monkeypatch.setattr(admin_group_api, "_fetch_all", fake_fetch_all)
+    result = await admin_group_api.list_ad_users(
+        user=ADMIN,
+        dept=None,
+        search=None,
+        group_id=None,
+        unassigned=False,
+        fi_only=False,
+    )
+
+    assert result == [row]
+
+
+@pytest.mark.asyncio
+async def test_admin_user_list_can_filter_to_visitor_analytics_targets(monkeypatch):
+    """Dropping the target-only filter must make a large AD list impossible to audit."""
+    async def fake_fetch_all(sql, params=()):
+        assert "a.can_view_visitor_analytics = 1" in sql
+        return []
+
+    monkeypatch.setattr(admin_group_api, "_fetch_all", fake_fetch_all)
+    result = await admin_group_api.list_ad_users(
+        user=ADMIN,
+        dept=None,
+        search=None,
+        group_id=None,
+        unassigned=False,
+        fi_only=False,
+        visitor_only=True,
+    )
+
+    assert result == []
+
+
+def test_new_visitor_permission_column_seeds_existing_db_team_only_when_created(monkeypatch):
+    """Repeating startup must not silently re-grant a permission an admin revoked."""
+    ensure = getattr(mariadb, "ensure_visitor_analytics_permission_column", None)
+    assert ensure is not None, "visitor permission needs an idempotent DB migration"
+    statements = []
+    monkeypatch.setattr(mariadb, "fetch_one", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mariadb, "execute", lambda sql, params=(): statements.append((sql, params)) or 1)
+
+    ensure()
+
+    assert "ADD COLUMN can_view_visitor_analytics" in statements[0][0]
+    assert "UPDATE directory_users" in statements[1][0]
+    assert statements[1][1] == ("%데이터 비즈니스팀%",)
 
 
 @pytest.mark.asyncio

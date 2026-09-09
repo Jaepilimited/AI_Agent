@@ -106,15 +106,43 @@ def get_maria_conn():
 
 
 def ensure_fi_permission_column():
-    """Add ad_users.can_view_fi if missing (idempotent)."""
+    """Add directory_users.can_view_fi if missing (idempotent)."""
     try:
         execute(
-            "ALTER TABLE ad_users "
+            "ALTER TABLE directory_users "
             "ADD COLUMN can_view_fi TINYINT(1) NOT NULL DEFAULT 0 "
             "COMMENT '재무 손익(FI_LLM_Flat) 열람 허용'"
         )
     except Exception:
         pass  # column already exists
+
+
+def ensure_visitor_analytics_permission_column():
+    """Create the Admin-managed visitor analytics flag and seed the current DB team once.
+
+    The seed runs only on first creation. Afterwards the Admin checkbox is the
+    sole authority, so an explicit revoke is never silently undone on restart.
+    """
+    try:
+        existing = fetch_one(
+            "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'directory_users' "
+            "AND COLUMN_NAME = 'can_view_visitor_analytics'"
+        )
+        if existing:
+            return
+        execute(
+            "ALTER TABLE directory_users "
+            "ADD COLUMN can_view_visitor_analytics TINYINT(1) NOT NULL DEFAULT 0 "
+            "COMMENT 'Admin이 부여한 방문자 분석 탭 열람 허용'"
+        )
+        execute(
+            "UPDATE directory_users SET can_view_visitor_analytics = 1 "
+            "WHERE department LIKE %s",
+            ("%데이터 비즈니스팀%",),
+        )
+    except Exception as e:
+        logger.warning("visitor_analytics_permission_column_skip", error=str(e)[:120])
 
 
 def ensure_must_change_password_column():

@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -110,20 +110,16 @@ def _ensure_golden_user() -> int:
 
 def _make_token(auth: str) -> str:
     """골든 전용 토큰. email 이 실사용자와 달라 사용 통계·audit 에서 분리된다."""
-    import jwt as _pyjwt
+    from app.core.session_auth import create_service_token
 
-    from app.config import get_settings
-
-    s = get_settings()
     if auth == "user":
         uid, role = _ensure_golden_user(), "user"
     else:
         adm = fetch_one("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1")
         uid, role = (adm or {}).get("id", 1), "admin"
-    return _pyjwt.encode(
-        {"user_id": uid, "email": GOLDEN_EMAIL, "role": role, "brand_filter": "",
-         "exp": datetime.now(timezone.utc) + timedelta(hours=2)},
-        s.jwt_secret_key, algorithm="HS256",
+    return create_service_token(
+        uid, GOLDEN_EMAIL, role=role,
+        service="golden_runner", lifetime_seconds=7200,
     )
 
 

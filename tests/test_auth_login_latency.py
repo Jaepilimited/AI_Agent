@@ -196,7 +196,7 @@ async def test_wrong_password_path_unaffected(monkeypatch):
     fake = _install_fake_sync(monkeypatch, delay=0.0)
 
     async def fake_fetch_one(sql, params=()):
-        if "ad_users" in sql:
+        if "directory_users" in sql:
             return {"id": 7, "display_name": "테스트유저", "email": "t@x.com", "department": "동남아시아1팀"}
         if "FROM users" in sql:
             import bcrypt

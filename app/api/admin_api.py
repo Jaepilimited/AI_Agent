@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.api.auth_middleware import get_current_user
+from app.core.visitor_access import can_view_visitor_analytics
 from app.db.mariadb import fetch_all, execute
 from app.db.models import User
 
@@ -19,6 +20,11 @@ admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 _ALL_MODELS = ALL_MODELS
 _VISITOR_TRACKING_STARTED_ON = date(2026, 8, 11)
+_VISITOR_SORT_ORDERS = {
+    "recent": "last_seen_at DESC, visits DESC, u.id ASC",
+    "active_days": "active_days DESC, last_seen_at DESC, u.id ASC",
+    "visits": "visits DESC, last_seen_at DESC, u.id ASC",
+}
 
 
 # ── Async DB wrappers ──
@@ -33,6 +39,12 @@ async def _db_execute(sql: str, params: tuple = ()) -> int:
 def _require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def _require_visitor_analytics_access(user: User = Depends(get_current_user)) -> User:
+    if not can_view_visitor_analytics(user.role, user.can_view_visitor_analytics):
+        raise HTTPException(status_code=403, detail="Visitor analytics access required")
     return user
 
 
@@ -58,7 +70,7 @@ async def list_users(
         SELECT u.id, u.email, u.display_name, u.role, u.allowed_models,
                a.display_name as ad_name, a.email as ad_email, a.department
         FROM users u
-        LEFT JOIN ad_users a ON u.ad_user_id = a.id
+        LEFT JOIN directory_users a ON u.ad_user_id = a.id
         ORDER BY u.created_at
     """)
     result = []
@@ -320,11 +332,18 @@ def _date_key(value) -> str:
 @admin_router.get("/visitor-analytics")
 async def get_visitor_analytics(
     days: int = Query(30),
-    _: User = Depends(_require_admin),
+    sort: str = "recent",
+    _: User = Depends(_require_visitor_analytics_access),
 ) -> dict:
-    """Authenticated visitor trend and recent visitor ledger. Admin only."""
+    """Visitor trend and ledger for admins and the Data Business team."""
     if days not in (30, 90, 365):
         raise HTTPException(status_code=400, detail="days must be 30, 90, or 365")
+    visitor_order = _VISITOR_SORT_ORDERS.get(sort)
+    if visitor_order is None:
+        raise HTTPException(
+            status_code=400,
+            detail="sort must be recent, active_days, or visits",
+        )
 
     today = date.today()
     requested_start = today - timedelta(days=days - 1)
@@ -367,7 +386,7 @@ async def get_visitor_analytics(
             (start, today),
         ),
         _db_fetch_all(
-            """SELECT u.id,
+            f"""SELECT u.id,
                       COALESCE(a.display_name, u.display_name, '') AS name,
                       COALESCE(a.email, u.email, '') AS email,
                       COALESCE(a.department, '') AS department,
@@ -376,10 +395,10 @@ async def get_visitor_analytics(
                       COALESCE(SUM(v.visit_count), 0) AS visits
                FROM user_visits v
                JOIN users u ON u.id = v.user_id
-               LEFT JOIN ad_users a ON a.id = u.ad_user_id
+               LEFT JOIN directory_users a ON a.id = u.ad_user_id
                WHERE v.visit_date BETWEEN %s AND %s
                GROUP BY u.id, a.display_name, u.display_name, a.email, u.email, a.department
-               ORDER BY last_seen_at DESC
+               ORDER BY {visitor_order}
                LIMIT 50""",
             (start, today),
         ),
@@ -428,6 +447,7 @@ async def get_visitor_analytics(
         })
 
     return {
+        "sort": sort,
         "range": {
             "days": days,
             "start": start.isoformat(),
@@ -1057,6 +1077,8 @@ async def get_llm_costs(days: int = 30, _: User = Depends(_require_admin)) -> di
 class FeedbackStatusIn(BaseModel):
     status: str
     note: str | None = None
+    # thumbs = 붐따(👎), survey = 만족도 설문. 없으면 붐따 (기존 호출 호환)
+    source: str = "thumbs"
 
 
 @admin_router.get("/feedback")
@@ -1066,9 +1088,11 @@ async def list_feedback(
     limit: int = Query(200, le=500),
     _: User = Depends(_require_admin),
 ):
-    from app.core.feedback_inbox import list_feedback as _list, summary
-    items = await asyncio.to_thread(_list, status, only_down, limit)
-    return {"items": items, "summary": await asyncio.to_thread(summary)}
+    # 붐따 + 만족도 설문을 **한 목록**으로 준다. 처리 동선이 둘로 갈리면
+    # 언젠가 한쪽만 읽힌다 (붐따 코멘트가 넉 달간 안 읽힌 그 실패와 같은 종류).
+    from app.core.feedback_inbox import inbox_summary, list_inbox
+    items = await asyncio.to_thread(list_inbox, status, limit)
+    return {"items": items, "summary": await asyncio.to_thread(inbox_summary)}
 
 
 @admin_router.put("/feedback/{feedback_id}")
@@ -1076,17 +1100,21 @@ async def update_feedback_status(
     feedback_id: int, body: FeedbackStatusIn,
     admin: User = Depends(_require_admin),
 ):
-    from app.core.feedback_inbox import set_status
+    from app.core.feedback_inbox import set_inbox_status
     try:
         await asyncio.to_thread(
-            set_status, feedback_id, body.status, admin.email, body.note)
+            set_inbox_status, body.source, feedback_id, body.status,
+            admin.email, body.note)
     except ValueError as e:
         error_text = str(e)
         unknown_status = f"unknown status: {body.status}"
+        unknown_source = f"unknown source: {body.source}"
         encoding_error = "처리 메모 인코딩이 손상되었습니다. UTF-8 입력으로 다시 작성해주세요."
         safe_detail = None
         if error_text == unknown_status:
             safe_detail = unknown_status
+        elif error_text == unknown_source:
+            safe_detail = unknown_source
         elif error_text == encoding_error:
             safe_detail = encoding_error
 

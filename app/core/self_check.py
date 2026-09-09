@@ -166,7 +166,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "quality_snapshot_daily": (26, "품질 스냅샷 (00:05)"),
     "self_check_daily": (26, "자가 점검 (07:30)"),
     "weekly_growth_report": (24 * 8, "주간 성장 리포트 (월 00:10)"),
-    "ad_sync": (26, "AD 동기화 (APP 서버 22:00)"),
+    "entra_directory_sync": (26, "Entra 사용자 동기화 (APP 서버 22:00)"),
     "knowledge_map_build": (26, "지식맵 빌드 (WAS 03:00)"),
     "ingredient_sync_daily": (26, "제품 전성분 적재 (04:00)"),
     "op_inventory_sync_daily": (26, "OP 재고 시트 적재 (11:20·16:20)"),
@@ -215,10 +215,12 @@ class Check:
 
 
 def _check_ad_sync_fresh() -> CheckResult:
-    row = fetch_one("SELECT MAX(synced_at) AS m FROM ad_users")
-    last = row and row.get("m")
+    row = fetch_one("SELECT succeeded_at,error_message FROM directory_sync_state WHERE id=1")
+    if row and row.get("error_message"):
+        return CheckResult(False, row["error_message"])
+    last = row and row.get("succeeded_at")
     if not last:
-        return CheckResult(False, "synced_at 기록이 없다")
+        return CheckResult(False, "Entra 전체 사용자 동기화 대기 — Graph 읽기 권한과 네트워크를 확인해 주세요.")
     age_h = (datetime.now() - last).total_seconds() / 3600
     # 매일 22:00 실행 → 26시간이면 한 번 걸렀다는 뜻
     return CheckResult(age_h <= 26, f"마지막 동기화 {last} ({age_h:.1f}시간 전)")
@@ -378,8 +380,8 @@ def _orphan(sql: str, label: str) -> CheckResult:
 def _check_orphan_user_groups_ad() -> CheckResult:
     return _orphan(
         "SELECT COUNT(*) c FROM user_groups ug "
-        "LEFT JOIN ad_users a ON ug.ad_user_id = a.id WHERE a.id IS NULL",
-        "user_groups→ad_users",
+        "LEFT JOIN directory_users a ON ug.ad_user_id = a.id WHERE a.id IS NULL",
+        "user_groups→directory_users",
     )
 
 
@@ -406,18 +408,18 @@ _ESCAPED_NAME_COND = "LOCATE(CONCAT(CHAR(92), 'u'), display_name) > 0"
 def _check_name_encoding() -> CheckResult:
     r"""`\uXXXX` 로 이스케이프된 채 저장된 이름을 찾는다. **두 표를 다 본다.**
 
-    ⛔ 예전엔 `ad_users` 만 봤다. 그런데 로그인 자동완성이 실제로 그리는 값은
+    ⛔ 예전엔 `directory_users` 만 봤다. 그런데 로그인 자동완성이 실제로 그리는 값은
        `COALESCE(u.display_name, ad.display_name)` 이라 **`users` 쪽이 이긴다** —
-       `ad_users` 가 멀쩡해도 `users` 가 깨져 있으면 사람은 자기 이름을 못 찾고,
+       `directory_users` 가 멀쩡해도 `users` 가 깨져 있으면 사람은 자기 이름을 못 찾고,
        그 행을 클릭하지 못하면 `auth.js` 가 프론트에서 막아 **서버 기록이 아예 없다**.
        2026-09-01 이주원 님(users.id=68)이 그랬고 2개월간 검사 밖이었다.
 
     치유 범위가 표마다 다르다:
-      - `ad_users` : **비활성만**. 활성은 다음 AD sync 가 덮어쓴다 (CLAUDE.md 규칙)
+      - `directory_users` : **비활성만**. 활성은 다음 AD sync 가 덮어쓴다 (CLAUDE.md 규칙)
       - `users`    : **전부**. 덮어써 주는 것이 없어 여기서 안 고치면 영영 그대로다
     """
     ad_rows = fetch_all(
-        "SELECT id, username, display_name, is_active FROM ad_users "
+        "SELECT id, username, display_name, is_active FROM directory_users "
         f"WHERE {_ESCAPED_NAME_COND}"
     )
     user_rows = fetch_all(
@@ -428,7 +430,7 @@ def _check_name_encoding() -> CheckResult:
     total = len(ad_rows) + len(user_rows)
     detail = (
         f"이스케이프된 이름 {total}건 "
-        f"(users {len(user_rows)}건 · ad_users {len(ad_rows)}건 중 비활성 {len(inactive)}건)"
+        f"(users {len(user_rows)}건 · directory_users {len(ad_rows)}건 중 비활성 {len(inactive)}건)"
     )
     if user_rows:
         # ⚠️ 어느 계정인지 적는다 — 로그인 화면에서만 드러나는 결함이라
@@ -466,11 +468,11 @@ def _decode_escaped(raw: str) -> str | None:
 def _repair_name_encoding(payload: dict) -> str:
     fixed = 0
     for uid in payload.get("ids", []):
-        row = fetch_one("SELECT display_name FROM ad_users WHERE id = %s", (uid,))
+        row = fetch_one("SELECT display_name FROM directory_users WHERE id = %s", (uid,))
         decoded = _decode_escaped((row or {}).get("display_name") or "")
         if decoded is None:
             continue
-        execute("UPDATE ad_users SET display_name = %s WHERE id = %s", (decoded, uid))
+        execute("UPDATE directory_users SET display_name = %s WHERE id = %s", (decoded, uid))
         fixed += 1
     # `users` 는 활성 여부와 무관하게 고친다 — 덮어써 주는 sync 가 없다.
     healed = 0
@@ -535,7 +537,7 @@ def _check_fi_permission_enforced() -> CheckResult:
 
 
 def _check_fi_grant_count() -> CheckResult:
-    row = fetch_one("SELECT COUNT(*) c FROM ad_users WHERE can_view_fi = 1")
+    row = fetch_one("SELECT COUNT(*) c FROM directory_users WHERE can_view_fi = 1")
     n = (row or {}).get("c", 0)
     # 인원이 바뀌는 것 자체는 정상이다. 0명이면 설정이 날아간 것이고,
     # 갑자기 대폭 늘면 사고다 — 둘 다 사람이 봐야 한다.
@@ -916,18 +918,17 @@ def _check_canary_answers() -> CheckResult:
     내용이 맞는지는 보지 않는다 — LLM 표현 변동으로 오탐이 나기 때문이다.
     """
     import httpx as _httpx
-    import jwt as _pyjwt
 
     from app.config import get_settings
+    from app.core.session_auth import create_service_token
 
     s = get_settings()
     adm = fetch_one("SELECT id, email, role FROM users WHERE role='admin' ORDER BY id LIMIT 1")
     if not adm:
         return CheckResult(False, "admin 계정이 없어 카나리아를 돌릴 수 없다")
-    token = _pyjwt.encode(
-        {"user_id": adm["id"], "email": adm["email"], "role": "admin", "brand_filter": "",
-         "exp": datetime.now(timezone.utc) + timedelta(minutes=15)},
-        s.jwt_secret_key, algorithm="HS256",
+    token = create_service_token(
+        adm["id"], adm["email"], role="admin",
+        service="self_check", lifetime_seconds=900,
     )
 
     problems = []
@@ -1219,7 +1220,7 @@ def _stored_google_accounts() -> list[dict]:
     rows = fetch_all(
         "SELECT u.id, COALESCE(a.email, u.email) email, "
         "COALESCE(a.display_name, u.display_name) name "
-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "WHERE u.is_active = 1"
     ) or []
     mgr = GoogleAuthManager()
@@ -1279,7 +1280,7 @@ def _check_google_account_health() -> CheckResult:
 
 CHECKS: list[Check] = [
     Check("ad_sync_fresh", "batch", SEV_CRITICAL,
-          "AD 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
+          "Entra 사용자 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
     Check("wiki_extract_fresh", "batch", SEV_WARNING,
           "위키 추출이 3시간 내 동작했는가", _check_wiki_extract_fresh),
     Check("quality_snapshot_fresh", "batch", SEV_WARNING,
@@ -1293,7 +1294,7 @@ CHECKS: list[Check] = [
     Check("notion_push", "batch", SEV_WARNING,
           "브리핑 노션 대기열이 비워지고 있는가", _check_notion_push),
     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
-          "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
+          "user_groups 가 실재하는 셀라 사용자를 가리키는가", _check_orphan_user_groups_ad),
     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,
           "user_groups 가 실재하는 그룹을 가리키는가", _check_orphan_user_groups_grp),
     Check("users_email_present", "integrity", SEV_WARNING,

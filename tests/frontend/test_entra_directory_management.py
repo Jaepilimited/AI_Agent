@@ -34,8 +34,9 @@ DIRECTORY_USERS = [
 ]
 
 
-def _install_directory_backend(page, calls, sync_status=200, sync_body=None):
+def _install_directory_backend(page, calls, sync_status=200, sync_body=None, directory_users=None):
     _install_backend(page, dict(_BASE_ME, role="admin"), calls)
+    users = DIRECTORY_USERS if directory_users is None else directory_users
 
     def handler(route):
         request = route.request
@@ -49,7 +50,7 @@ def _install_directory_backend(page, calls, sync_status=200, sync_body=None):
         elif path == "/api/admin/directory/users":
             calls["directory_reads"] = calls.get("directory_reads", 0) + 1
             calls.setdefault("directory_urls", []).append(request.url)
-            route.fulfill(status=200, content_type="application/json", body=json.dumps(DIRECTORY_USERS))
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(users))
         elif path == "/api/admin/directory/stats":
             calls["stats_reads"] = calls.get("stats_reads", 0) + 1
             route.fulfill(status=200, content_type="application/json", body=json.dumps({
@@ -98,15 +99,17 @@ def test_first_login_employees_keep_permission_and_group_assignment_controls(bro
     _open_users(page)
 
     expect(page.locator('.admin-tab[data-tab="users"]')).to_have_text("셀라 사용자")
-    expect(page.locator("#admin-directory-help")).to_contain_text("별도 회원가입 없이")
+    expect(page.locator("#admin-directory-help")).to_contain_text("모든 직원은 Entra ID로 로그인해야 합니다.")
+    expect(page.locator("#admin-directory-help")).to_contain_text("기존 계정·권한은 로그인 후 자동 승계됩니다.")
     existing = page.locator(".admin-ad-user").filter(has_text="Finance User")
     pending = page.locator(".admin-ad-user").filter(has_text="New Employee")
     legacy = page.locator(".admin-ad-user").filter(has_text="Legacy User")
     expect(existing.locator(".admin-fi-toggle")).to_be_checked()
     expect(existing.locator(".admin-visitor-toggle")).to_be_checked()
-    expect(existing.locator(".admin-directory-state")).to_have_text("Entra 연결셀라 계정 있음")
-    expect(pending.locator(".admin-directory-state")).to_have_text("Entra 연결첫 로그인 대기")
-    expect(legacy.locator(".admin-directory-state")).to_have_text("Entra 연결 대기셀라 계정 있음")
+    expect(existing.locator(".admin-directory-state")).to_have_text("Entra 로그인 완료")
+    expect(pending.locator(".admin-directory-state")).to_have_text("Entra 로그인 필요")
+    expect(legacy.locator(".admin-directory-state")).to_have_text("Entra 로그인 필요")
+    expect(page.locator(".admin-directory-state > span")).to_have_count(3)
     expect(page.locator(".admin-ad-reset-pw")).to_have_count(0)
     assert not any("password-reset" in path or "/ad/" in path for _, path in calls["admin_requests"])
 
@@ -123,6 +126,24 @@ def test_first_login_employees_keep_permission_and_group_assignment_controls(bro
         ("PUT", "/api/admin/directory/users/18/visitor-analytics", {"can_view_visitor_analytics": True}),
         ("POST", "/api/admin/groups/1/members", {"ad_user_ids": [18]}),
     ]
+    context.close()
+
+
+@pytest.mark.parametrize("missing_field", ["entra_linked", "user_id", "last_signin_at"])
+def test_directory_requires_an_actual_linked_entra_signin_for_completed_status(browser, missing_field):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    users = [dict(user) for user in DIRECTORY_USERS]
+    users[0][missing_field] = None
+    _install_directory_backend(page, calls, directory_users=users)
+    _open_users(page)
+
+    existing = page.locator(".admin-ad-user").filter(has_text="Finance User")
+    expect(existing.locator(".admin-directory-state")).to_have_text("Entra 로그인 필요")
+    expect(existing.locator(".admin-fi-toggle")).to_be_checked()
+    expect(existing.locator(".admin-visitor-toggle")).to_be_checked()
+    expect(existing.locator(".admin-ad-assign")).to_be_enabled()
     context.close()
 
 
@@ -196,11 +217,11 @@ def test_entra_department_hierarchy_supports_bulk_assignment_before_login(browse
 
 def _install_onboarding_backend(page, me, calls):
     _install_backend(page, me, calls)
-    state = {"me": me, "status": 200}
+    state = {"me": me, "status": 200, "headers": {}}
 
     def me_handler(route):
         calls["me_reads"] = calls.get("me_reads", 0) + 1
-        route.fulfill(status=state["status"], content_type="application/json", body=json.dumps(state["me"]))
+        route.fulfill(status=state["status"], headers=state["headers"], content_type="application/json", body=json.dumps(state["me"]))
 
     def conversations_handler(route):
         request = route.request
@@ -208,6 +229,8 @@ def _install_onboarding_backend(page, me, calls):
             route.fallback()
             return
         calls.setdefault("conversation_writes", []).append(_url_path(request.url))
+        if _url_path(request.url).endswith("/messages"):
+            calls.setdefault("saved_messages", []).append(json.loads(request.post_data))
         route.fulfill(status=200, content_type="application/json", body='{"id":211,"title":"Test conversation"}')
 
     def chat_handler(route):
@@ -329,4 +352,200 @@ def test_failed_or_incomplete_assignment_refresh_keeps_new_user_on_hold(browser,
     expect(page.locator("#btn-send")).to_be_disabled()
     expect(page.locator("#btn-check-group-assignment")).to_be_enabled()
     assert calls.get("chat_requests", []) == []
+    context.close()
+
+
+def _install_login_page(page, calls):
+    def handler(route):
+        calls["login_visits"] = calls.get("login_visits", 0) + 1
+        route.fulfill(status=200, content_type="text/html", body="<h1>Entra login</h1>")
+
+    page.route("**/login", handler)
+
+
+def _marked_login_required(route):
+    route.fulfill(status=401, headers={"X-Cella-Auth": "login-required"},
+                  content_type="application/json", body='{"detail":"Entra login required"}')
+
+
+def test_marked_session_failures_redirect_once_and_restore_the_same_users_question(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    _install_login_page(page, calls)
+    page.route("**/api/session-probe/*", _marked_login_required)
+    page.goto("http://test.local/chat")
+    expect(page.locator("#user-name")).to_have_text(_BASE_ME["name"])
+    question = "@@보고서 이번 달 매출을 알려줘"
+    page.fill("#chat-input", question)
+
+    page.evaluate("""() => {
+        void Promise.allSettled([fetch('/api/session-probe/one'), fetch('/api/session-probe/two')]);
+    }""")
+
+    page.wait_for_url("http://test.local/login")
+    assert calls["login_visits"] == 1
+    draft = page.evaluate("JSON.parse(sessionStorage.getItem('cella:reauth-question'))")
+    assert draft == {"userId": _BASE_ME["id"], "text": question}
+
+    page.goto("http://test.local/chat")
+    expect(page.locator("#chat-input")).to_have_value(question)
+    assert page.evaluate("sessionStorage.getItem('cella:reauth-question')") is None
+    assert calls.get("chat_requests", []) == []
+    assert calls.get("conversation_writes", []) == []
+    context.close()
+
+
+def test_initial_marked_me_failure_redirects_once(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    state = _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    state.update(status=401, me={"detail": "Entra login required"}, headers={"X-Cella-Auth": "login-required"})
+    _install_login_page(page, calls)
+
+    page.goto("http://test.local/chat")
+
+    page.wait_for_url("http://test.local/login")
+    assert calls["login_visits"] == 1
+    assert calls.get("conversation_writes", []) == []
+    context.close()
+
+
+def test_reauth_question_is_not_restored_to_a_different_user(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    state = _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    page.goto("http://test.local/chat")
+    expect(page.locator("#user-name")).to_have_text(_BASE_ME["name"])
+    page.evaluate("draft => sessionStorage.setItem('cella:reauth-question', JSON.stringify(draft))",
+                  {"userId": _BASE_ME["id"], "text": "Previous user's question"})
+    state["me"] = dict(_BASE_ME, id=53, name="Different User")
+
+    page.goto("http://test.local/chat")
+
+    expect(page.locator("#user-name")).to_have_text("Different User")
+    expect(page.locator("#chat-input")).to_have_value("")
+    assert page.evaluate("sessionStorage.getItem('cella:reauth-question')") is None
+    context.close()
+
+
+@pytest.mark.parametrize("denied_stage", ["conversation", "user_message", "chat_stream"])
+def test_marked_401_stops_question_pipeline_without_saving_an_empty_answer(browser, denied_stage):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    _install_login_page(page, calls)
+    denied_path = {
+        "conversation": "/api/conversations",
+        "user_message": "/api/conversations/211/messages",
+        "chat_stream": "/v1/chat/completions",
+    }[denied_stage]
+
+    def deny_post(route):
+        if route.request.method == "POST":
+            calls["denied_requests"] = calls.get("denied_requests", 0) + 1
+            _marked_login_required(route)
+        else:
+            route.fallback()
+
+    page.route("**" + denied_path, deny_post)
+    page.goto("http://test.local/chat")
+    expect(page.locator("#user-name")).to_have_text(_BASE_ME["name"])
+    question = "@@보고서 회사 매출을 알려줘"
+    page.fill("#chat-input", question)
+    page.click("#btn-send")
+
+    page.wait_for_url("http://test.local/login")
+    assert calls["login_visits"] == 1
+    assert calls["denied_requests"] == 1
+    assert [message["role"] for message in calls.get("saved_messages", [])] == (["user"] if denied_stage == "chat_stream" else [])
+    assert calls.get("chat_requests", []) == []
+    assert page.evaluate("JSON.parse(sessionStorage.getItem('cella:reauth-question')).text") == question
+    context.close()
+
+
+@pytest.mark.parametrize("path, method", [
+    ("/auth/google/status", "GET"),
+    ("/auth/google/status/", "GET"),
+    ("/auth/google/login", "GET"),
+    ("/auth/google/revoke", "POST"),
+    ("/safety/status", "GET"),
+    ("/admin/maintenance/status", "GET"),
+])
+def test_marked_private_service_session_failure_redirects_to_login(browser, path, method):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    _install_login_page(page, calls)
+    page.goto("http://test.local/chat")
+    expect(page.locator("#user-name")).to_have_text(_BASE_ME["name"])
+    page.route("**" + path, _marked_login_required)
+
+    page.evaluate("""({path, method}) => {
+        void fetch(path, {method}).catch(() => {});
+    }""", {"path": path, "method": method})
+
+    page.wait_for_url("http://test.local/login")
+    assert calls["login_visits"] == 1
+    assert calls.get("conversation_writes", []) == []
+    context.close()
+
+
+@pytest.mark.parametrize("url, status, marker", [
+    ("/api/gws/probe", 401, False),
+    ("/auth/google/status", 401, False),
+    ("/auth/google/revoke", 401, False),
+    ("/auth/google/callback", 401, True),
+    ("/api/auth/google/callback", 401, True),
+    ("/auth/google/probe", 401, True),
+    ("https://graph.example.test/v1.0/me", 401, True),
+    ("/api/permissions/probe", 403, True),
+])
+def test_other_service_failures_do_not_log_out_the_cella_user(browser, url, status, marker):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    _install_login_page(page, calls)
+    page.goto("http://test.local/chat")
+    expect(page.locator("#user-name")).to_have_text(_BASE_ME["name"])
+
+    def handler(route):
+        headers = {"Access-Control-Allow-Origin": "http://test.local", "Access-Control-Expose-Headers": "X-Cella-Auth"}
+        if marker:
+            headers["X-Cella-Auth"] = "login-required"
+        route.fulfill(status=status, headers=headers, content_type="application/json", body='{"detail":"service authorization required"}')
+
+    page.route(url if url.startswith("https:") else "**" + url, handler)
+    result = page.evaluate("async url => (await fetch(url)).status", url)
+
+    assert result == status
+    assert page.url == "http://test.local/chat"
+    assert calls.get("login_visits", 0) == 0
+    context.close()
+
+
+def test_unmarked_failed_chat_response_uses_the_existing_error_ui(browser):
+    context = browser.new_context()
+    page = context.new_page()
+    calls = {}
+    _install_onboarding_backend(page, dict(_BASE_ME), calls)
+    _install_login_page(page, calls)
+    page.route("**/v1/chat/completions", lambda route: route.fulfill(
+        status=401, content_type="application/json", body='{"detail":"upstream authorization failed"}',
+    ))
+    page.goto("http://test.local/chat")
+    expect(page.locator("#user-name")).to_have_text(_BASE_ME["name"])
+    page.fill("#chat-input", "Show company sales")
+    with page.expect_response(lambda response: _url_path(response.url) == "/v1/chat/completions"):
+        page.click("#btn-send")
+
+    expect(page.locator(".message-assistant")).to_contain_text("HTTP 401")
+    assert page.url == "http://test.local/chat"
+    assert calls.get("login_visits", 0) == 0
     context.close()

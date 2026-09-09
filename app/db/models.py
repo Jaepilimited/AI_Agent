@@ -8,7 +8,7 @@ from app.config import ALL_MODELS
 
 @dataclass
 class User:
-    """User model populated from MariaDB users + ad_users tables."""
+    """User model populated from MariaDB users + directory_users tables."""
     id: int = 0
     email: str = ""
     name: str = ""
@@ -16,5 +16,7 @@ class User:
     role: str = "user"
     allowed_models: str = ALL_MODELS
     ad_user_id: Optional[int] = None
+    can_view_visitor_analytics: bool = False
     password_hash: str = ""
     must_change_password: bool = False
+    requires_group_assignment: bool = False

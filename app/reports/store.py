@@ -180,7 +180,7 @@ def save(*, user_id: int, spec_id: str, title: str, params: Dict[str, Any],
     return rid
 
 
-# 이름은 AD 한글 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
+# 이름은 사용자 디렉터리 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
 _NAME = "COALESCE(a.display_name, u.display_name, u.email)"
 
 
@@ -196,7 +196,7 @@ def get_for_user(report_id: int, user_id: int) -> Optional[Dict[str, Any]]:
         f"{_NAME} AS owner_name "
         "FROM reports r "
         "JOIN users u ON u.id = r.user_id "
-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
         "WHERE r.id = %s AND (r.user_id = %s OR s.id IS NOT NULL)",
         (user_id, report_id, user_id),
@@ -214,7 +214,7 @@ def list_for_user(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
         "(SELECT COUNT(*) FROM report_shares x WHERE x.report_id = r.id) AS share_count "
         "FROM reports r "
         "JOIN users u ON u.id = r.user_id "
-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
         "WHERE r.user_id = %s OR s.id IS NOT NULL "
         "ORDER BY r.created_at DESC LIMIT %s",
@@ -232,7 +232,7 @@ def share_list(report_id: int, owner_id: int) -> List[Dict[str, Any]]:
         "FROM report_shares s "
         "JOIN reports r ON r.id = s.report_id AND r.user_id = %s "
         "JOIN users u ON u.id = s.user_id "
-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "WHERE s.report_id = %s ORDER BY s.created_at",
         (owner_id, report_id),
     )
@@ -273,7 +273,7 @@ def share_remove(report_id: int, owner_id: int, target_id: int) -> bool:
 def search_share_targets(q: str, me_id: int, limit: int = 8) -> List[Dict[str, Any]]:
     """공유할 사람 찾기. **가입한 사용자만** 나온다 — 로그인해야 열 수 있기 때문이다.
 
-    미가입자에게 미리 권한을 걸어두는 FI 방식([[ad_users]])과 다른 이유: 공유는 지금
+    미가입자에게 미리 권한을 걸어두는 FI 방식([[directory_users]])과 다른 이유: 공유는 지금
     보여주려고 누르는 동작이라, 열 수 없는 사람을 목록에 올리면 공유한 줄 알게 된다.
     """
     term = (q or "").strip()
@@ -283,7 +283,7 @@ def search_share_targets(q: str, me_id: int, limit: int = 8) -> List[Dict[str, A
     return fetch_all(
         f"SELECT u.id, {_NAME} AS name, COALESCE(a.email, u.email) AS email, "
         "COALESCE(a.department, '') AS department "
-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "WHERE u.id <> %s AND (a.display_name LIKE %s OR u.display_name LIKE %s "
         "  OR u.email LIKE %s OR a.email LIKE %s OR a.department LIKE %s) "
         f"ORDER BY {_NAME} LIMIT %s",
@@ -353,7 +353,7 @@ def list_notifications(user_id: int, limit: int = 30) -> List[Dict[str, Any]]:
         "FROM report_shares s "
         "JOIN reports r ON r.id = s.report_id "
         "JOIN users u ON u.id = s.shared_by "
-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "WHERE s.user_id = %s ORDER BY s.created_at DESC LIMIT %s",
         (user_id, limit),
     )

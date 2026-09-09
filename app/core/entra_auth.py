@@ -268,8 +268,9 @@ def verify_id_token(raw_id_token: str, nonce_hash: str) -> Dict[str, Any]:
         algorithms=["RS256"],
         audience=settings.entra_client_id,
         issuer=doc["issuer"].replace("{tenantid}", settings.entra_tenant_id),
+        options={"require": ["exp", "iss", "aud", "tid", "oid", "nonce"]},
     )
-    if claims.get("tid") and claims["tid"] != settings.entra_tenant_id:
+    if str(claims.get("tid") or "").lower() != settings.entra_tenant_id.lower():
         raise EntraUnavailable("회사 계정이 아닙니다",
                                "회사 EntraID 계정으로 로그인해 주세요.")
     if _sha256(str(claims.get("nonce", ""))) != nonce_hash:
@@ -308,7 +309,7 @@ def match_existing_account(claims: Dict[str, Any]) -> Optional[dict]:
 
     ⛔ 이메일 문자열 비교만으로는 안 된다 (활성 AD 436명 중 238명이 `mail` 공백,
        도메인도 `@cravercorp.com` / `@skin1004korea.com` 로 섞여 있다). 그래서
-       UPN·이메일의 **로컬파트**로 `ad_users` 를 찾는다 — 실측상 로컬파트는
+       UPN·이메일의 **로컬파트**로 `directory_users` 를 찾는다 — 실측상 로컬파트는
        조직 전체에서 유일하다(436명 = 436개, 충돌 0건).
     ⛔ 후보가 둘 이상이면 아무것도 고르지 않는다.
     """
@@ -318,7 +319,7 @@ def match_existing_account(claims: Dict[str, Any]) -> Optional[dict]:
     for local in locals_:
         rows = fetch_one(
             "SELECT u.id, u.display_name, u.role, u.ad_user_id, COUNT(*) OVER () AS n "
-            "FROM users u JOIN ad_users a ON u.ad_user_id = a.id "
+            "FROM users u JOIN directory_users a ON u.ad_user_id = a.id "
             "WHERE a.is_active = 1 AND LOWER(SUBSTRING_INDEX(a.email, '@', 1)) = %s",
             (local,),
         )

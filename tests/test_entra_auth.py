@@ -11,8 +11,12 @@
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
+import jwt
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from app.core import entra_auth as E
 
@@ -128,14 +132,84 @@ def test_state_is_single_use_and_server_side():
 
 # ────────────────────────── 계정 잇기 ──────────────────────────
 
-def test_a_first_login_never_creates_an_account():
-    """⛔ 아무나 들어오면 권한(FI 열람 등)의 근거가 사라진다.
-    셀라 계정은 AD 기반으로만 만들어진다."""
-    from app.api import entra_routes
+@pytest.mark.parametrize("callback_path", [
+    "/auth/entra/callback", "/users/auth/openid_connect/callback",
+])
+def test_first_login_provisions_the_verified_employee_and_issues_a_session(monkeypatch, callback_path):
+    """미가입 직원도 검증된 회사 계정으로 가입하고 기존 그룹을 세션에 반영한다."""
+    from app.api import auth_api, auth_middleware, entra_routes, middleware
+    from app.core import user_directory
 
-    src = inspect.getsource(entra_routes.entra_callback)
-    assert "INSERT INTO users" not in src
-    assert "셀라 계정을 찾지 못했습니다" in src
+    claims = {
+        "tid": "11111111-1111-4111-8111-111111111111",
+        "oid": "22222222-2222-4222-8222-222222222222",
+        "preferred_username": "new.employee@cravercorp.com",
+    }
+    steps = []
+    jwt_secret = "test-only-entra-session-secret-" + "x" * 40
+    settings = SimpleNamespace(
+        jwt_secret_key=jwt_secret, cookie_secure=True,
+        password_login_enabled=False, entra_tenant_id=claims["tid"],
+    )
+    monkeypatch.setattr(auth_api, "get_settings", lambda: settings)
+    monkeypatch.setattr(middleware, "get_settings", lambda: settings)
+    monkeypatch.setattr(auth_middleware, "fetch_one", lambda *a, **kw: pytest.fail(
+        "The public OIDC callback tried to load an existing session from the database"
+    ))
+
+    def consume(state):
+        assert state == "returned-state"
+        steps.append("state")
+        return {"redirect_uri": _Settings.entra_redirect_uri, "code_verifier": "verifier",
+                "nonce_hash": "nonce-hash", "next_path": "/reports"}
+
+    def exchange(code, redirect_uri, verifier):
+        assert (code, redirect_uri, verifier) == ("returned-code", _Settings.entra_redirect_uri, "verifier")
+        steps.append("exchange")
+        return {"id_token": "signed-id-token"}
+
+    def verify(token, nonce_hash):
+        assert (token, nonce_hash) == ("signed-id-token", "nonce-hash")
+        steps.append("verified")
+        return claims
+
+    def provision(verified_claims):
+        assert verified_claims == claims and steps[-1] == "verified"
+        steps.append("provisioned")
+        return {"id": 77, "role": "user", "ad_user_id": 417, "created": True}
+
+    def invalidate(user_id):
+        assert user_id == 77
+        steps.append("cache-invalidated")
+
+    def brand_filter(user_id):
+        assert user_id == 77
+        return "SK,CBT"
+
+    monkeypatch.setattr(E, "consume_state", consume)
+    monkeypatch.setattr(E, "exchange_code", exchange)
+    monkeypatch.setattr(E, "verify_id_token", verify)
+    monkeypatch.setattr(user_directory, "provision_from_claims", provision)
+    monkeypatch.setattr(auth_middleware, "invalidate_user_cache", invalidate)
+    monkeypatch.setattr(auth_api, "_lookup_brand_filter", brand_filter)
+    app = FastAPI()
+    app.add_middleware(middleware.RequestLoggingMiddleware)
+    app.include_router(entra_routes.entra_router)
+    app.include_router(entra_routes.entra_alias_router)
+    response = TestClient(app, base_url="https://ai.example.com").get(
+        f"{callback_path}?code=returned-code&state=returned-state", follow_redirects=False,
+    )
+
+    assert response.status_code == 303 and response.headers["location"] == "/reports"
+    token = response.cookies["token"]
+    session = jwt.decode(token, jwt_secret, algorithms=["HS256"])
+    assert session["user_id"] == 77 and session["email"] == claims["preferred_username"]
+    assert session["role"] == "user" and session["brand_filter"] == "SK,CBT"
+    assert session["purpose"] == "session" and session["auth_provider"] == "entra"
+    assert session["entra_tid"] == claims["tid"] and session["entra_oid"] == claims["oid"]
+    cookie = response.headers["set-cookie"].lower()
+    assert "httponly" in cookie and "secure" in cookie and "samesite=lax" in cookie
+    assert steps == ["state", "exchange", "verified", "provisioned", "cache-invalidated"]
 
 
 def test_linking_matches_on_local_part_because_domains_are_mixed():

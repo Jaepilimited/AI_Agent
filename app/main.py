@@ -112,6 +112,11 @@ def create_app() -> FastAPI:
 
         loop.set_exception_handler(_quiet_proactor_reset)
 
+        # Preserve identity and permission IDs before any directory consumer starts.
+        from app.core.user_directory_migration import ensure_directory_tables
+        from app.core.user_directory import ensure_directory_sync_table
+        await asyncio.to_thread(ensure_directory_tables)
+        await asyncio.to_thread(ensure_directory_sync_table)
         # Ensure admin user exists in MariaDB
         await asyncio.to_thread(_ensure_admin)
         await asyncio.to_thread(_ensure_audit_table)
@@ -390,7 +395,7 @@ def create_app() -> FastAPI:
     app.include_router(conversation_router)  # /api/conversations/*
     app.include_router(admin_router)         # /api/admin/*
     app.include_router(group_router)         # /api/admin/groups/*
-    app.include_router(ad_router)            # /api/admin/ad/*
+    app.include_router(ad_router)            # /api/admin/directory/*
     app.include_router(eval_router)          # /api/admin/eval/*
     app.include_router(harness_router)       # /harness, /api/harness/*
     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
@@ -421,9 +426,8 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     async def index(request: Request):
-        # Check if user is authenticated
-        token = request.cookies.get("token")
-        if not token:
+        # The session middleware validates Entra proof and the active account.
+        if not getattr(request.state, "user_id", None):
             return RedirectResponse(url="/login", status_code=302)
         from fastapi.responses import HTMLResponse
         return HTMLResponse(_CHAT_HTML_CACHE, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
@@ -472,7 +476,7 @@ def _ensure_admin():
     try:
         # Find AD user for jeffrey
         ad_user = fetch_one(
-            "SELECT id, email FROM ad_users WHERE email = %s AND is_active = 1",
+            "SELECT id, email FROM directory_users WHERE email = %s AND is_active = 1",
             ("jeffrey@skin1004korea.com",),
         )
         if not ad_user:

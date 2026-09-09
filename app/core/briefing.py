@@ -136,7 +136,7 @@ def stable_date(bq, table: str, lookback: int = 14) -> Optional[date]:
 def resolve_scope(department: str, team_map: Dict[str, str]) -> Dict[str, str]:
     """이 사람에게 보여줄 축을 정한다.
 
-    AD 부서 문자열에 공식 팀명이 들어 있으면 그 팀. ⚠️ 표기 공백이 다르다
+    사용자 부서 문자열에 공식 팀명이 들어 있으면 그 팀. ⚠️ 표기 공백이 다르다
     ("서구권 마케팅팀" vs `서구권마케팅팀`) — 공백을 지우고 비교한다.
     못 찾으면 전사로 두되, **왜 이 숫자를 보는지 문구에 밝힌다**.
     """
@@ -923,11 +923,11 @@ def run_daily() -> Dict[str, Any]:
     except Exception as e:
         # 광고 집계 장애가 검증된 매출 브리핑까지 숨기면 안 된다.
         logger.warning("briefing_marketing_failed", error=type(e).__name__)
-    # ⚠️ 퇴사자에게 매일 매출 브리핑을 보내지 않는다 (AD 부서로 걸러진다)
+    # ⚠️ 퇴사자에게 매일 매출 브리핑을 보내지 않는다 (사용자 부서로 걸러진다)
     users = fetch_all(
         "SELECT u.id, u.display_name, COALESCE(a.email, u.email) AS email, "
         "       COALESCE(a.department, '') AS department "
-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
         "WHERE u.is_active = 1 AND COALESCE(u.briefing_opt_out, 0) = 0 "
         "  AND COALESCE(a.department,'') NOT LIKE %s", ("%퇴사%",)) or []
 

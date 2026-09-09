@@ -109,6 +109,7 @@ class Settings(BaseSettings):
     entra_client_id: str = ""
     entra_client_secret: str = ""
     entra_redirect_uri: str = ""
+    entra_employee_domains: str = ""
 
     # Open WebUI integration (read OAuth tokens from its DB)
     openwebui_db_path: str = ""

@@ -738,7 +738,7 @@ async def run_morning_precompute(now: datetime | None = None) -> dict[str, int]:
         fetch_all,
         "SELECT u.id,COALESCE(a.email,u.email) email,COALESCE(a.display_name,u.display_name) name,"
         "COALESCE(a.department,'') department,u.role,u.allowed_models,u.ad_user_id "
-        "FROM users u LEFT JOIN ad_users a ON a.id=u.ad_user_id "
+        "FROM users u LEFT JOIN directory_users a ON a.id=u.ad_user_id "
         # ⛔ `last_login` 으로 거르지 마라 — `/signin` 에서만 찍혀서 가입 직후
         #    자동 로그인된 사람은 영영 NULL 이다 (활성 63명 중 28명, 2026-08-26 실측).
         #    NULL 은 "안 쓴다" 가 아니라 "모른다" 다. 진짜 게이트는 아래 `has_credentials`

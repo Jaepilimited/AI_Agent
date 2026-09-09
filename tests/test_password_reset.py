@@ -4,7 +4,7 @@ Sign-in uses a bcrypt password stored on `users`, separate from Active Directory
 `/api/auth/change-password` requires the current password, so a person who has
 forgotten it has no way back in and no admin has a way to help them. This adds:
 
-- `POST /api/admin/ad/users/{ad_user_id}/reset-password` — admin-only, generates a
+- `POST /api/admin/directory/users/{ad_user_id}/reset-password` — admin-only, generates a
   server-side temporary password, stores it bcrypt-hashed on `users`, sets
   `must_change_password`, and returns the plaintext exactly once.
 - A server-side gate in `get_current_user` that blocks app use (any endpoint except
@@ -38,7 +38,7 @@ _SECRET = "s" * 64
 
 
 # ─────────────────────────────────────────────────────────────────
-# POST /api/admin/ad/users/{id}/reset-password
+# POST /api/admin/directory/users/{id}/reset-password
 # ─────────────────────────────────────────────────────────────────
 
 def _admin_app(user):
@@ -53,7 +53,7 @@ def test_non_admin_refused(monkeypatch):
     monkeypatch.setattr(admin_group_api, "fetch_one", lambda *a, **k: touched.append(1) or None)
     monkeypatch.setattr(admin_group_api, "execute", lambda *a, **k: touched.append(1) or 1)
 
-    resp = _admin_app(REGULAR).post("/api/admin/ad/users/9/reset-password")
+    resp = _admin_app(REGULAR).post("/api/admin/directory/users/9/reset-password")
 
     assert resp.status_code == 403
     assert not touched  # a non-admin's request never reaches the DB
@@ -63,7 +63,7 @@ def test_unregistered_ad_user_is_404(monkeypatch, password_login_on):
     """An AD user with no `users` row (never signed up) has no password to reset."""
     monkeypatch.setattr(admin_group_api, "fetch_one", lambda *a, **k: None)
 
-    resp = _admin_app(ADMIN).post("/api/admin/ad/users/9/reset-password")
+    resp = _admin_app(ADMIN).post("/api/admin/directory/users/9/reset-password")
 
     assert resp.status_code == 404
 
@@ -78,7 +78,7 @@ def test_admin_reset_stores_bcrypt_hash_and_returns_plaintext_once(monkeypatch, 
         lambda sql, params=(): writes.append((sql, params)) or 1,
     )
 
-    resp = _admin_app(ADMIN).post("/api/admin/ad/users/9/reset-password")
+    resp = _admin_app(ADMIN).post("/api/admin/directory/users/9/reset-password")
 
     assert resp.status_code == 200
     body = resp.json()
@@ -106,8 +106,8 @@ def test_two_consecutive_resets_differ(monkeypatch, password_login_on):
     monkeypatch.setattr(admin_group_api, "execute", lambda *a, **k: 1)
 
     client = _admin_app(ADMIN)
-    p1 = client.post("/api/admin/ad/users/9/reset-password").json()["temporary_password"]
-    p2 = client.post("/api/admin/ad/users/9/reset-password").json()["temporary_password"]
+    p1 = client.post("/api/admin/directory/users/9/reset-password").json()["temporary_password"]
+    p2 = client.post("/api/admin/directory/users/9/reset-password").json()["temporary_password"]
 
     assert p1 != p2
 
@@ -133,7 +133,7 @@ def test_reset_action_is_logged_without_the_plaintext(monkeypatch, password_logi
 
     monkeypatch.setattr(admin_group_api, "logger", _FakeLogger())
 
-    resp = _admin_app(ADMIN).post("/api/admin/ad/users/9/reset-password")
+    resp = _admin_app(ADMIN).post("/api/admin/directory/users/9/reset-password")
     plaintext = resp.json()["temporary_password"]
 
     assert logged, "the reset action must be recorded (who / whose account / when)"
@@ -154,7 +154,9 @@ def _token(user_id: int) -> str:
 
 
 def _fake_settings():
-    return type("Settings", (), {"jwt_secret_key": _SECRET, "cookie_secure": False})()
+    return type("Settings", (), {
+        "jwt_secret_key": _SECRET, "cookie_secure": False, "password_login_enabled": True,
+    })()
 
 
 def _ad_row(user_id: int, must_change: int) -> dict:
@@ -174,6 +176,7 @@ def _ad_row(user_id: int, must_change: int) -> dict:
 
 def _gate_client(monkeypatch, must_change: int, user_id: int) -> TestClient:
     monkeypatch.setattr(auth_middleware, "get_settings", _fake_settings)
+    monkeypatch.setattr(auth_api, "get_settings", _fake_settings)
     monkeypatch.setattr(auth_middleware, "fetch_one", lambda *a, **k: _ad_row(user_id, must_change))
     auth_middleware._user_cache.clear()
     auth_api._me_last_refresh.clear()

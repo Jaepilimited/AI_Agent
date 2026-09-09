@@ -594,4 +594,7 @@ def _tracked_main():
 
 
 if __name__ == "__main__":
-    _tracked_main()
+    # Existing scheduler commands now refresh the Cella directory from Entra.
+    # The legacy helpers remain available for explicit rollback only.
+    from scripts.sync_entra_users import main as sync_entra_main
+    raise SystemExit(sync_entra_main())

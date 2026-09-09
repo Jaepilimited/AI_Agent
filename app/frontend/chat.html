@@ -188,6 +188,12 @@
 
       <!-- Input area -->
       <div class="chat-input-area" id="chat-input-area">
+        <div id="group-assignment-notice" role="status" aria-live="polite" hidden style="margin-bottom:12px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-elevated);font-size:13px;line-height:1.6;color:var(--text)">
+          <strong>데이터 조회 그룹 배정 대기</strong>
+          <p style="margin:4px 0 10px">회사 계정이 연결되었습니다. 관리자가 데이터 조회 그룹을 배정하면 질문을 이용할 수 있습니다.</p>
+          <button type="button" class="admin-btn-secondary" id="btn-check-group-assignment">배정 상태 확인</button>
+          <span id="group-assignment-status" style="margin-left:8px;color:var(--text-muted)"></span>
+        </div>
         <!-- Source filter badge (shown when not all sources enabled) -->
         <div class="source-filter-badge" id="source-filter-badge" style="display:none"></div>
         <!-- // slash command dropdown -->
@@ -292,7 +298,7 @@
     <!-- Tabs -->
     <div class="admin-tabs">
       <button class="admin-tab active" data-tab="groups">그룹 관리</button>
-      <button class="admin-tab" data-tab="users">AD 사용자</button>
+      <button class="admin-tab" data-tab="users">셀라 사용자</button>
       <button class="admin-tab" data-tab="visitors">방문자</button>
       <button class="admin-tab" data-tab="growth">성장 지표</button>
       <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
@@ -320,7 +326,7 @@
           <div class="visitor-permission-access" id="visitor-permission-access" hidden>
             <div>
               <strong>방문자 권한 대상 관리</strong>
-              <span>AD 사용자에서 사람별로 방문자 열람 권한을 부여하거나 회수할 수 있습니다.</span>
+              <span>셀라 사용자에서 사람별로 방문자 열람 권한을 부여하거나 회수할 수 있습니다.</span>
             </div>
             <button type="button" class="admin-btn-secondary" id="btn-manage-visitor-access">권한 대상 관리</button>
           </div>
@@ -366,12 +372,18 @@
 
           <div class="visitor-panel visitor-table-panel">
             <div class="visitor-panel-head">
-              <div><strong>최근 방문자</strong><span id="visitor-list-count">0명</span></div>
-              <span class="visitor-list-note">최근 50명 표시 · 전체 방문은 통계에 포함</span>
+              <div><strong>방문자 목록</strong><span id="visitor-list-count">0명</span></div>
+              <span class="visitor-list-note">선택 기준 상위 50명 · 전체 방문은 통계에 포함</span>
             </div>
             <div class="visitor-table-scroll">
               <table class="visitor-table">
-                <thead><tr><th>사용자</th><th>부서</th><th>마지막 방문</th><th>방문일</th><th>열람</th></tr></thead>
+                <thead><tr>
+                  <th>사용자</th>
+                  <th>부서</th>
+                  <th class="visitor-sort-heading" aria-sort="descending"><button type="button" class="visitor-sort-btn active" data-sort="recent" aria-pressed="true">최근 방문 <span aria-hidden="true">↓</span></button></th>
+                  <th class="visitor-sort-heading" aria-sort="none"><button type="button" class="visitor-sort-btn" data-sort="active_days" aria-pressed="false">방문일 <span aria-hidden="true">↓</span></button></th>
+                  <th class="visitor-sort-heading" aria-sort="none"><button type="button" class="visitor-sort-btn" data-sort="visits" aria-pressed="false">열람 <span aria-hidden="true">↓</span></button></th>
+                </tr></thead>
                 <tbody id="visitor-table-body"><tr><td colspan="5" class="visitor-table-empty">방문 기록을 불러오는 중입니다.</td></tr></tbody>
               </table>
             </div>
@@ -448,12 +460,16 @@
     <div class="admin-tab-content active" id="tab-groups">
       <div class="admin-toolbar">
         <button class="admin-btn-primary" id="btn-create-group">+ 새 그룹</button>
-        <button class="admin-btn-secondary" id="btn-sync-ad">AD 동기화</button>
       </div>
       <div class="admin-drawer-body" id="admin-group-list"></div>
     </div>
-    <!-- Tab: AD Users -->
+    <!-- Tab: Cella Users -->
     <div class="admin-tab-content" id="tab-users">
+      <div class="admin-toolbar" style="align-items:center">
+        <button class="admin-btn-secondary" id="btn-sync-directory">Entra 동기화</button>
+        <span id="admin-directory-status" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)"></span>
+      </div>
+      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">모든 직원은 Entra ID로 로그인해야 합니다. 기존 계정·권한은 로그인 후 자동 승계됩니다. 로그인 전에도 권한과 그룹을 미리 배정할 수 있습니다.</p>
       <div class="admin-toolbar">
         <select id="admin-dept-filter" class="admin-select">
           <option value="">전체 부서</option>
@@ -466,6 +482,7 @@
         </select>
         <input type="text" id="admin-search" class="admin-input" placeholder="이름/이메일 검색">
       </div>
+      <p id="admin-directory-error" role="alert" hidden style="margin:12px 20px 0;font-size:12px;color:var(--error)"></p>
       <div class="admin-drawer-body" id="admin-user-list"></div>
     </div>
     <!-- Tab: Growth -->

@@ -326,7 +326,7 @@ _PUBLIC_MAIL_DOMAINS = frozenset({
 
 
 def company_domains() -> set[str]:
-    """회사 메일 도메인을 **AD 에 실제로 있는 값**으로 판정한다.
+    """회사 메일 도메인을 **사용자 디렉터리에 실제로 있는 값**으로 판정한다.
 
     ⛔ 손으로 적으면 반드시 낡고, 낡으면 에러가 아니라 조용한 매칭 실패다
        (`{{VALUES:Continent1}}` 를 손으로 적었다가 겪은 것과 같은 부류).
@@ -335,14 +335,14 @@ def company_domains() -> set[str]:
     """
     rows = fetch_all(
         "SELECT DISTINCT LOWER(SUBSTRING_INDEX(email, '@', -1)) AS d "
-        "FROM ad_users WHERE email LIKE %s",
+        "FROM directory_users WHERE email LIKE %s",
         ("%@%",),
     )
     return {r["d"] for r in rows if r["d"] and r["d"] not in _PUBLIC_MAIL_DOMAINS}
 
 
 def _find_by_company_local_part(email: str) -> Optional[dict]:
-    """회사 도메인이 **둘 이상**이라, 구글이 돌려준 대표 주소와 AD 주소가 다를 수 있다.
+    """회사 도메인이 **둘 이상**이라, 구글 대표 주소와 사용자 디렉터리 주소가 다를 수 있다.
 
     실측(2026-09-01): AD 의 `mail` 이 빈 238명은 `userPrincipalName` 이
     `@cravercorp.com` 인데, 그중 다수가 구글에는 `@skin1004korea.com` 으로
@@ -364,7 +364,7 @@ def _find_by_company_local_part(email: str) -> Optional[dict]:
 
     rows = fetch_all(
         "SELECT u.id, u.display_name, u.ad_user_id FROM users u "
-        "JOIN ad_users a ON u.ad_user_id = a.id "
+        "JOIN directory_users a ON u.ad_user_id = a.id "
         "WHERE a.is_active = 1 AND LOWER(SUBSTRING_INDEX(a.email, '@', 1)) = %s",
         (local,),
     )

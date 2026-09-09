@@ -84,7 +84,7 @@ def open_requests(limit: int = 50) -> List[Dict[str, Any]]:
         "       a.display_name, a.department, "
         "       (u.id IS NOT NULL) AS registered "
         "FROM password_reset_requests r "
-        "JOIN ad_users a ON a.id = r.ad_user_id "
+        "JOIN directory_users a ON a.id = r.ad_user_id "
         "LEFT JOIN users u ON u.ad_user_id = a.id "
         "WHERE r.status = 'open' ORDER BY r.created_at LIMIT %s", (int(limit),)) or []
 

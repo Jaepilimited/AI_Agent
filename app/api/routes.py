@@ -70,12 +70,29 @@ def _require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 router = APIRouter()
+_DASHBOARD_NO_CACHE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"
+}
 
 
 @router.get("/dashboard")
 async def dashboard():
     """Serve the Dashboard Hub page."""
-    return FileResponse("app/static/dashboard.html", media_type="text/html")
+    return FileResponse(
+        "app/static/dashboard.html",
+        media_type="text/html",
+        headers=_DASHBOARD_NO_CACHE,
+    )
+
+
+@router.get("/static/dashboard-catalog.js", include_in_schema=False)
+async def legacy_broken_dashboard_catalog_url():
+    """Recover clients that cached the briefly corrupted catalog URL."""
+    return FileResponse(
+        "app/static/dashboard-catalog.json",
+        media_type="application/json",
+        headers=_DASHBOARD_NO_CACHE,
+    )
 
 
 def _write_roadmap_file(body: bytes) -> None:
@@ -91,7 +108,7 @@ async def save_roadmap(request: Request, _: User = Depends(_require_admin)):
     return {"status": "ok"}
 
 
-@router.post("/v1/chat/completions")
+@router.post("/v1/chat/completions", dependencies=[Depends(get_current_user)])
 async def chat_completions(http_request: Request, request: ChatCompletionRequest):
     """OpenAI-compatible chat completions endpoint.
 
@@ -115,21 +132,30 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
         try:
             row = await asyncio.to_thread(
                 fetch_one,
-                "SELECT u.role, a.can_view_fi, g.brand_filter FROM users u "
-                "LEFT JOIN ad_users a ON u.ad_user_id = a.id "
-                "LEFT JOIN user_groups ug ON u.ad_user_id = ug.ad_user_id "
-                "LEFT JOIN access_groups g ON ug.group_id = g.id AND g.brand_filter IS NOT NULL "
-                "WHERE u.id = %s LIMIT 1",
+                "SELECT u.role, u.requires_group_assignment, a.can_view_fi, "
+                "(SELECT GROUP_CONCAT(DISTINCT g.brand_filter) FROM user_groups ug "
+                "JOIN access_groups g ON g.id=ug.group_id WHERE ug.ad_user_id=u.ad_user_id "
+                "AND g.brand_filter IS NOT NULL AND g.brand_filter<>'') AS brand_filter FROM users u "
+                "LEFT JOIN directory_users a ON u.ad_user_id = a.id "
+                "WHERE u.id = %s AND u.is_active=1 "
+                "AND (u.ad_user_id IS NULL OR a.is_active=1) LIMIT 1",
                 (user_id,),
             )
-            if row:
-                is_admin = row["role"] == "admin"
-                brand_filter = None if is_admin else (row.get("brand_filter") or None)
-                can_view_fi = is_admin or bool(row.get("can_view_fi"))
+            if not row:
+                raise RuntimeError("Active user permissions were not found")
+            is_admin = row["role"] == "admin"
+            brand_filter = None if is_admin else (row.get("brand_filter") or None)
+            can_view_fi = is_admin or bool(row.get("can_view_fi"))
+            if not is_admin and row.get("requires_group_assignment") and not brand_filter:
+                from app.api.auth_middleware import GROUP_ASSIGNMENT_MESSAGE
+                raise HTTPException(status_code=403, detail=GROUP_ASSIGNMENT_MESSAGE)
             if brand_filter:
                 logger.info("brand_filter_from_db", user_id=user_id, brand_filter=brand_filter)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.warning("chat_access_lookup_failed", user_id=user_id, error=str(e))
+            raise HTTPException(status_code=503, detail="조회 권한을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.") from None
 
     logger.info(
         "chat_completion_request",
@@ -189,7 +215,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
 
     if request.stream:
         return StreamingResponse(
-            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources),
+            _stream_response(query, messages_for_context, model_type, request, user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
         )
@@ -197,7 +223,7 @@ async def chat_completions(http_request: Request, request: ChatCompletionRequest
     # Non-streaming response (v3.0: Orchestrator)
     try:
         result = await _get_orchestrator().route_and_execute(
-            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources
+            query, messages_for_context, model_type, user_email=user_email, images=images, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id
         )
         answer = result.get("answer", "")
     except Exception as e:
@@ -243,6 +269,7 @@ async def _stream_response(
     brand_filter: str = None,
     can_view_fi: bool = False,
     enabled_sources: list = None,
+    user_id: int = None,
 ) -> AsyncGenerator[str, None]:
     """Stream response chunks in SSE format.
 
@@ -285,6 +312,7 @@ async def _stream_response(
         async for msg_type, content in _get_orchestrator().route_and_stream(
             query, messages, model_type, user_email=user_email, images=images or [],
             brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources,
+            user_id=user_id,
         ):
             if msg_type == "source":
                 _detected_route = content

@@ -1,7 +1,7 @@
 """New Entra users need an assigned data group on HTTP and scheduled paths."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import sqlite3
 from types import SimpleNamespace
 
@@ -16,6 +16,8 @@ from app.db.models import User
 
 
 SECRET = "test-only-group-assignment-jwt-" + "x" * 40
+TENANT = "11111111-1111-4111-8111-111111111111"
+OID = "22222222-2222-4222-8222-222222222222"
 ADMIN = User(id=1, email="admin@example.com", role="admin")
 CHAT = {"messages": [{"role": "user", "content": "이번 달 매출"}]}
 
@@ -86,7 +88,9 @@ class _Store:
 def store(tmp_path, monkeypatch):
     state = _Store(tmp_path / "groups.sqlite")
     monkeypatch.setattr(auth_middleware, "_user_cache", {})
-    monkeypatch.setattr(auth_middleware, "get_settings", lambda: SimpleNamespace(jwt_secret_key=SECRET))
+    monkeypatch.setattr(auth_middleware, "get_settings", lambda: SimpleNamespace(
+        jwt_secret_key=SECRET, password_login_enabled=False, entra_tenant_id=TENANT,
+    ))
     for module in (auth_middleware, routes, saved_questions, admin_group_api):
         monkeypatch.setattr(module, "fetch_one", state.fetch_one)
     monkeypatch.setattr(admin_group_api, "fetch_all", state.fetch_all)
@@ -94,8 +98,16 @@ def store(tmp_path, monkeypatch):
     return state
 
 
+def _session_token(**token_claims):
+    return jwt.encode({
+        "user_id": 7, "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        "purpose": "session", "auth_provider": "entra", "entra_tid": TENANT,
+        "entra_oid": OID, **token_claims,
+    }, SECRET, algorithm="HS256")
+
+
 def _request(path="/api/reports", **token_claims):
-    token = jwt.encode({"user_id": 7, **token_claims}, SECRET, algorithm="HS256")
+    token = _session_token(**token_claims)
     return Request({"type": "http", "method": "GET", "scheme": "http", "path": path,
                     "headers": [(b"cookie", f"token={token}".encode())]})
 
@@ -124,8 +136,7 @@ def client(store, monkeypatch):
     for path in ("/api/auth/me", "/api/auth/logout", "/api/profile", "/api/personal-briefing"):
         app.add_api_route(path, identity, methods=["GET"])
     session = TestClient(app, raise_server_exceptions=False)
-    session.cookies.set("token", jwt.encode({"user_id": 7, "role": "admin", "brand_filter": "UM"},
-                                            SECRET, algorithm="HS256"))
+    session.cookies.set("token", _session_token(role="admin", brand_filter="UM"))
     session.observed = observed
     return session
 

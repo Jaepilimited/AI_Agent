@@ -45,7 +45,7 @@ def _rebuild_with(
     def fake_fetch_all(sql, params=()):
         if "FROM audit_logs" in sql:
             return audit_rows
-        if "FROM users u" in sql and "ad_users" in sql:
+        if "FROM users u" in sql and "directory_users" in sql:
             return [{"department": department}]
         raise AssertionError(f"예상하지 않은 DB 조회: {sql}")
 

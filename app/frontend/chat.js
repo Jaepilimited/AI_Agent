@@ -6,6 +6,70 @@
 (function () {
   "use strict";
 
+  var _authRedirectStarted = false;
+  var _questionPendingReauth = "";
+  var _reauthDraftKey = "cella:reauth-question";
+  var _originalFetch = window.fetch.bind(window);
+
+  function _privateApiUrl(input) {
+    try {
+      var url = new URL(input && input.url ? input.url : input, window.location.href);
+      var path = url.pathname.replace(/\/+$/, "") || "/";
+      if (path === "/api/auth/google/callback") return null;
+      var isPrivate = /^\/(api|v1)\//.test(path) || [
+        "/auth/google/status", "/auth/google/login", "/auth/google/revoke",
+        "/safety/status", "/admin/maintenance/status"
+      ].indexOf(path) !== -1;
+      return url.origin === window.location.origin && isPrivate ? url : null;
+    } catch (e) { return null; }
+  }
+
+  function _loginRequiredError() {
+    var error = new Error("Entra ID 로그인이 필요합니다.");
+    error.name = "CellaLoginRequiredError";
+    return error;
+  }
+
+  function _redirectToLogin() {
+    if (_authRedirectStarted) return;
+    _authRedirectStarted = true;
+    var draft = (chatInput && chatInput.value) || _questionPendingReauth;
+    if (draft && currentUser && currentUser.id) {
+      try {
+        sessionStorage.setItem(_reauthDraftKey, JSON.stringify({ userId: currentUser.id, text: draft }));
+      } catch (e) { /* The login redirect must also work when browser storage is unavailable. */ }
+    }
+    window.location.assign("/login");
+  }
+
+  function _restoreReauthDraft() {
+    try {
+      var saved = sessionStorage.getItem(_reauthDraftKey);
+      if (!saved) return;
+      sessionStorage.removeItem(_reauthDraftKey);
+      var draft = JSON.parse(saved);
+      if (draft.userId === currentUser.id && typeof draft.text === "string" && !chatInput.value) {
+        chatInput.value = draft.text;
+        chatInput.dispatchEvent(new Event("input"));
+      }
+    } catch (e) { /* A missing draft does not prevent sign-in. */ }
+  }
+
+  window.fetch = function(input, options) {
+    var privateUrl = _privateApiUrl(input);
+    if (_authRedirectStarted && privateUrl) return Promise.reject(_loginRequiredError());
+    return _originalFetch(input, options).then(function(response) {
+      var sameOriginResponse = !response.url || new URL(response.url, window.location.href).origin === window.location.origin;
+      if (privateUrl && sameOriginResponse && response.status === 401 &&
+          response.headers.get("X-Cella-Auth") === "login-required") {
+        _redirectToLogin();
+        throw _loginRequiredError();
+      }
+      if (_authRedirectStarted && privateUrl) throw _loginRequiredError();
+      return response;
+    });
+  };
+
   // ===== Markdown links (출처/소스 링크 포함) — 항상 새 창으로 =====
   if (window.marked && typeof marked.use === "function") {
     marked.use({
@@ -981,6 +1045,58 @@
   var fileInput = document.getElementById("file-input");
   var chatInputArea = document.getElementById("chat-input-area");
   var personalBriefingController = null;
+  var defaultChatPlaceholder = chatInput.getAttribute("placeholder");
+  var groupAssignmentRefresh = null;
+
+  function requiresGroupAssignment() {
+    return !!(currentUser && currentUser.role !== "admin" && currentUser.requires_group_assignment);
+  }
+
+  function applyGroupAssignmentState() {
+    var pending = requiresGroupAssignment();
+    document.getElementById("group-assignment-notice").hidden = !pending;
+    chatInput.disabled = pending;
+    btnAttach.disabled = pending;
+    fileInput.disabled = pending;
+    chatInput.placeholder = pending ? "관리자의 데이터 조회 그룹 배정을 기다리고 있습니다." : defaultChatPlaceholder;
+    if (pending) chatInput.setAttribute("aria-describedby", "group-assignment-notice");
+    else chatInput.removeAttribute("aria-describedby");
+    document.querySelectorAll(".suggestion-chip, .followup-chip").forEach(function(chip) {
+      chip.disabled = pending;
+    });
+    updateSendButton();
+  }
+
+  function refreshGroupAssignment() {
+    if (!requiresGroupAssignment() || groupAssignmentRefresh) return;
+    var button = document.getElementById("btn-check-group-assignment");
+    var status = document.getElementById("group-assignment-status");
+    button.disabled = true;
+    status.textContent = "확인 중...";
+    groupAssignmentRefresh = fetch("/api/auth/me")
+      .then(function(response) {
+        if (!response.ok) throw new Error("배정 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.");
+        return response.json();
+      })
+      .then(function(freshUser) {
+        if (!freshUser || freshUser.id !== currentUser.id ||
+            [true, false, 0, 1].indexOf(freshUser.requires_group_assignment) === -1) {
+          throw new Error("Incomplete group assignment response");
+        }
+        currentUser = freshUser;
+        applyGroupAssignmentState();
+        _applyFiSourceVisibility();
+        showAdminButton();
+        status.textContent = requiresGroupAssignment() ? "아직 그룹 배정 대기 중입니다." : "";
+      })
+      .catch(function() {
+        status.textContent = "배정 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.";
+      })
+      .finally(function() {
+        button.disabled = false;
+        groupAssignmentRefresh = null;
+      });
+  }
 
   // ===== Init =====
   init();
@@ -988,8 +1104,9 @@
   async function init() {
     try {
       var resp = await fetch("/api/auth/me");
-      if (!resp.ok) { window.location.href = "/login"; return; }
+      if (!resp.ok) { _redirectToLogin(); return; }
       currentUser = await resp.json();
+      applyGroupAssignmentState();
       // 만족도 설문 — 띄울지는 서버가 정한다 (접속일수 10일차부터 20일 간격)
       _surveyPrompt = currentUser.survey_prompt || null;
       _applyFiSourceVisibility();
@@ -1008,7 +1125,7 @@
         return;
       }
     } catch (e) {
-      window.location.href = "/login";
+      _redirectToLogin();
       return;
     }
 
@@ -1023,16 +1140,17 @@
       .then(function (r) { if (!r.ok) throw new Error("me failed"); return r.json(); })
       .then(function (freshUser) {
         currentUser = freshUser;
+        applyGroupAssignmentState();
         if (currentUser.must_change_password) {
           // 서버가 아직 플래그를 지운 것으로 안 보인다 — 앱을 반쯤 켜인 채로
           // 두는 대신 다시 로그인 경로로 보내 확실한 상태에서 다시 시작한다.
-          window.location.href = "/login";
+          _redirectToLogin();
           return;
         }
         _finishInit();
       })
       .catch(function () {
-        window.location.href = "/login";
+        _redirectToLogin();
       });
   }
 
@@ -1065,6 +1183,7 @@
     }
 
     setupEventListeners();
+    _restoreReauthDraft();
     showAdminButton();
     await loadConversations();
     updateTheme();
@@ -1078,6 +1197,11 @@
 
   // ===== Event Listeners =====
   function setupEventListeners() {
+    document.getElementById("btn-check-group-assignment").addEventListener("click", refreshGroupAssignment);
+    document.addEventListener("visibilitychange", function() {
+      if (document.visibilityState === "visible") refreshGroupAssignment();
+    });
+    window.addEventListener("focus", refreshGroupAssignment);
     btnSend.addEventListener("click", sendMessage);
     chatInput.addEventListener("keydown", function (e) {
       // Enter (no shift) OR Ctrl/Cmd+Enter → send
@@ -1450,7 +1574,7 @@
     if (suggestionsBox) {
       suggestionsBox.addEventListener("click", function (event) {
         var chip = event.target.closest(".suggestion-chip");
-        if (!chip || !chip.dataset.q) return;
+        if (!chip || !chip.dataset.q || requiresGroupAssignment()) return;
         chatInput.value = chip.dataset.q;
         chatInput.dispatchEvent(new Event("input"));
         sendMessage();
@@ -1951,7 +2075,7 @@
 
   // ===== Image Helpers =====
   function updateSendButton() {
-    btnSend.disabled = !(chatInput.value.trim() || pendingImages.length > 0
+    btnSend.disabled = requiresGroupAssignment() || !(chatInput.value.trim() || pendingImages.length > 0
                          || pendingTables.length > 0);
   }
 
@@ -1966,6 +2090,7 @@
   }
 
   function addImageFiles(fileList) {
+    if (requiresGroupAssignment()) return;
     for (var i = 0; i < fileList.length; i++) {
       var file = fileList[i];
       if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
@@ -2106,7 +2231,7 @@
 
   function _resetSendBtn() {
     btnSend.classList.remove("stop-mode");
-    btnSend.disabled = false;
+    btnSend.disabled = requiresGroupAssignment();
     btnSend.title = "전송";
     btnSend.onclick = null;
   }
@@ -2232,6 +2357,11 @@
   }
 
   async function sendMessage() {
+    if (_authRedirectStarted) return;
+    if (requiresGroupAssignment()) {
+      applyGroupAssignmentState();
+      return;
+    }
     var text = chatInput.value.trim();
     var hasImages = pendingImages.length > 0;
     // ⛔ 아직 읽는 중인 표가 있으면 기다린다 — 지금 보내면 그 표 없이 나가고,
@@ -2258,6 +2388,7 @@
     //    서버(`route_and_execute` → `parse_db_prefix`)는 질문 문자열의 `@@` 를 직접
     //    해석한다. 떼고 저장하면 "@@보고서 일본 매출" 이 그냥 조회로 되살아난다.
     var userQuestionForSave = text;
+    _questionPendingReauth = text;
 
     // Parse @@ source selections from input text (최장 일치 — 공백 포함 키 지원)
     var _parsed = parseSourceTokens(text);
@@ -2329,6 +2460,7 @@
     // Save only text to DB (no images in SQLite). Target convoIdAtSend
     // explicitly — the user could switch conversations during this await.
     await saveMessageTo(convoIdAtSend, "user", text || "[Image]", userQuestionForSave);
+    if (_authRedirectStarted) return;
     scrollToBottom();
 
     // Use in-memory messages for API (reliable, no DOM parsing)
@@ -2375,6 +2507,7 @@
         }),
         signal: currentAbortController.signal,
       });
+      if (!response.ok) throw new Error("요청에 실패했습니다. (HTTP " + response.status + ")");
 
       // The server accepted the request and opened the response stream.
       _renderAnswerLoading(contentEl, _preRoute);
@@ -2444,6 +2577,13 @@
         }
       }
     } catch (e) {
+      if (_authRedirectStarted || e.name === "CellaLoginRequiredError") {
+        _stopTokenDrain();
+        aiMsgEl.remove();
+        isStreaming = false;
+        currentAbortController = null;
+        return;
+      }
       if (e.name === "AbortError") {
         _stopTokenDrain();  // Stop token drain to prevent freeze
         var typing = aiMsgEl.querySelector(".typing-indicator");
@@ -2557,6 +2697,7 @@
 
     isStreaming = false;
     currentAbortController = null;
+    _questionPendingReauth = "";
   }
 
   // ===== Follow-up Suggestions =====
@@ -3039,15 +3180,30 @@
         p = sp > 0 ? p.slice(0, sp + 1) : "";
         return p.length >= 6 ? p : "";
       }
-      var _labelPrefix = _commonPrefixOf(config.data && config.data.labels);
+      var _chartLabels = (config.data && config.data.labels) || [];
+      // Daily ticks in one year need only month/day; keep full dates for tooltips.
+      var _sameYearDaily = _chartLabels.length > 0 && _chartLabels.every(function(label) {
+        return typeof label === "string" && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(label)
+          && label.slice(0, 4) === _chartLabels[0].slice(0, 4);
+      });
+      var _labelPrefix = _commonPrefixOf(_chartLabels);
       function _shortTick(raw, maxLen) {
         var s = String(raw);
+        if (_sameYearDaily) return s.slice(5).replace("-", "/");
         if (_labelPrefix && s.indexOf(_labelPrefix) === 0) s = s.slice(_labelPrefix.length);
         if (s.length > maxLen) s = s.slice(0, maxLen - 1) + "…";
         return s;
       }
       // 시리즈명(범례)도 공통 접두사가 길면 제거 — 전치된 제품별 멀티라인 대응
       var _dsList = (config.data && config.data.datasets) || [];
+      // Saved conversations also carry the old large markers (#166).
+      _dsList.forEach(function(d) {
+        if ((d.type || config.type) === "line") {
+          d.pointRadius = 2.5;
+          d.pointHoverRadius = 5;
+          d.pointHitRadius = 8;
+        }
+      });
       var _dsPrefix = _commonPrefixOf(_dsList.map(function(d) { return d.label; }));
       if (_dsPrefix) {
         _dsList.forEach(function(d) {
@@ -4552,6 +4708,7 @@
         items.slice(0, 4).forEach(function (item) {
           var chip = document.createElement("button");
           chip.className = "suggestion-chip mine";
+          chip.disabled = requiresGroupAssignment();
           chip.dataset.q = item.text;
           /* ⚠️ 질문 원문은 칩에 넣기엔 길다. 줄이되 **원문을 툴팁으로** 남긴다 —
              무엇을 보내는지 모르고 누르게 하면 안 된다. */
@@ -4646,13 +4803,13 @@
     if (activeTabName === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
     // Hide write-actions for non-admin
     document.getElementById("btn-create-group").style.display = isAdmin() ? "" : "none";
-    document.getElementById("btn-sync-ad").style.display = isAdmin() ? "" : "none";
+    document.getElementById("btn-sync-directory").style.display = isAdmin() ? "" : "none";
     if (visitorOnly) return;
     // Load all data in parallel
     Promise.all([
-      fetch("/api/admin/ad/stats").then(function(r) { return r.json(); }),
+      fetch("/api/admin/directory/stats").then(function(r) { return r.json(); }),
       fetch("/api/admin/groups").then(function(r) { return r.json(); }),
-      fetch("/api/admin/ad/departments").then(function(r) { return r.json(); }),
+      fetch("/api/admin/directory/departments").then(function(r) { return r.json(); }),
     ]).then(function(results) {
       renderAdminStats(results[0]);
       renderAdminGroups(results[1]);
@@ -5181,7 +5338,7 @@
       document.getElementById("skin-admin-drawer").classList.toggle("visitor-mode", tab.dataset.tab === "visitors");
       // ⚠️ 아키텍처 탭은 서랍을 넓혀야 한다 — 420px 안에서는 캔버스가 30px 폭이다
       document.getElementById("skin-admin-drawer").classList.toggle("flow-mode", tab.dataset.tab === "flow");
-      if (tab.dataset.tab === "users") loadAdminADUsers();
+      if (tab.dataset.tab === "users") loadAdminDirectoryUsers();
       if (tab.dataset.tab === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
       if (tab.dataset.tab === "growth") loadGrowthReport();
       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
@@ -5884,11 +6041,11 @@
 
   // Stats
   function loadAdminStats() {
-    fetch("/api/admin/ad/stats").then(function(r) { return r.json(); }).then(renderAdminStats).catch(function() {});
+    fetch("/api/admin/directory/stats").then(function(r) { return r.json(); }).then(renderAdminStats).catch(function() {});
   }
   function renderAdminStats(s) {
     document.getElementById("admin-stats-bar").innerHTML =
-      '<div class="admin-stat"><div class="admin-stat-num">' + s.total_ad_users + '</div><div class="admin-stat-label">AD 사용자</div></div>' +
+      '<div class="admin-stat"><div class="admin-stat-num">' + s.total_ad_users + '</div><div class="admin-stat-label">셀라 사용자</div></div>' +
       '<div class="admin-stat"><div class="admin-stat-num">' + s.assigned_users + '</div><div class="admin-stat-label">배정됨</div></div>' +
       '<div class="admin-stat"><div class="admin-stat-num">' + s.unassigned_users + '</div><div class="admin-stat-label">미배정</div></div>' +
       '<div class="admin-stat"><div class="admin-stat-num">' + s.fi_allowed_users + '</div><div class="admin-stat-label">손익 허용</div></div>' +
@@ -5897,18 +6054,24 @@
 
   // Departments — hierarchical tree
   function loadAdminDepts() {
-    fetch("/api/admin/ad/departments").then(function(r) { return r.json(); }).then(renderAdminDepts).catch(function() {});
+    fetch("/api/admin/directory/departments").then(function(r) { return r.json(); }).then(renderAdminDepts).catch(function() {});
+  }
+  function adminDepartmentParts(department) {
+    var parts = (department || "").split(" > ");
+    if (parts[0] === "Craver_Accounts" && parts[1] === "Users" && parts.length > 2) {
+      return parts.slice(2);
+    }
+    return parts;
   }
   function renderAdminDepts(depts) {
     _adminDepts = depts;
     var sel = document.getElementById("admin-dept-filter");
+    var selectedDept = sel.value;
     sel.innerHTML = '<option value="">전체 부서</option>';
 
     var tree = {};
     depts.forEach(function(d) {
-      var parts = d.department.split(" > ");
-      var meaningful = parts.slice(2);
-      if (!meaningful.length) meaningful = [parts[parts.length - 1]];
+      var meaningful = adminDepartmentParts(d.department);
       for (var i = 0; i < meaningful.length; i++) {
         var key = meaningful.slice(0, i + 1).join(" > ");
         if (!tree[key]) tree[key] = {count: 0, depth: i, label: meaningful[i]};
@@ -5926,6 +6089,7 @@
         indent + prefix + escapeHtml(node.label) + ' (' + node.count + ')</option>';
     });
     sel.innerHTML += optHtml;
+    sel.value = selectedDept;
   }
 
   // Groups
@@ -5937,11 +6101,13 @@
     var container = document.getElementById("admin-group-list");
     // Update group filter in users tab
     var gf = document.getElementById("admin-group-filter");
-    var gfHtml = '<option value="">전체 그룹</option><option value="unassigned">미배정</option><option value="fi_allowed">손익 허용</option>';
+    var selectedGroup = gf.value;
+    var gfHtml = '<option value="">전체 그룹</option><option value="unassigned">미배정</option><option value="fi_allowed">손익 허용</option><option value="visitor_allowed">방문자 허용</option>';
     groups.forEach(function(g) {
-      gfHtml += '<option value="' + g.id + '">' + g.name + '</option>';
+      gfHtml += '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
     });
     gf.innerHTML = gfHtml;
+    gf.value = selectedGroup;
 
     if (!groups.length) {
       container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">그룹이 없습니다. 새 그룹을 만들어보세요.</div>';
@@ -5986,36 +6152,41 @@
     });
   });
 
-  // AD sync
-  document.getElementById("btn-sync-ad").addEventListener("click", function() {
-    if (!confirm("AD 사용자 목록을 동기화하시겠습니까?")) return;
+  // Entra directory sync preserves the existing Cella permission records.
+  document.getElementById("btn-sync-directory").addEventListener("click", function() {
     var btn = this;
+    var status = document.getElementById("admin-directory-status");
     btn.textContent = "동기화 중...";
     btn.disabled = true;
-    fetch("/api/admin/ad/sync", {method: "POST"})
-      .then(function(r) { return r.json(); })
+    status.textContent = "Entra 사용자 정보를 불러오는 중입니다.";
+    status.style.color = "var(--text-muted)";
+    fetch("/api/admin/directory/sync", {method: "POST"})
+      .then(function(r) {
+        return r.json().then(function(res) {
+          if (!r.ok || !res.ok) {
+            throw new Error(res.error || res.detail || res.message || "사용자 정보를 동기화하지 못했습니다.");
+          }
+          return res;
+        });
+      })
       .then(function(res) {
-        btn.textContent = "AD 동기화";
-        btn.disabled = false;
-        if (res.ok) {
-          alert("AD 동기화 완료!\n" + res.output.split("\n").slice(-5).join("\n"));
-          loadAdminStats();
-          loadAdminADUsers();
-        } else {
-          alert("동기화 실패: " + (res.error || "Unknown"));
-        }
+        status.textContent = "Entra 동기화 완료 · " + Number(res.synced_users || 0).toLocaleString("ko-KR") + "명" +
+          (res.message ? " · " + res.message : "");
+        loadAdminStats();
+        loadAdminDepts();
+        loadAdminGroups();
+        loadAdminDirectoryUsers();
       }).catch(function(e) {
-        btn.textContent = "AD 동기화";
+        status.textContent = "동기화 실패: " + e.message + " 기존 사용자 목록과 권한은 유지됩니다.";
+        status.style.color = "var(--error)";
+      }).finally(function() {
+        btn.textContent = "Entra 동기화";
         btn.disabled = false;
-        alert("동기화 오류: " + e.message);
       });
   });
 
-  // AD users list
-  function loadAdminADUsers() {
-    // 요청 목록은 사용자 조회 실패와 무관하게 먼저 보인다. 그렇지 않으면 관리자에게
-    // 가장 중요한 재설정 요청이 목록 API의 일시 장애에 가려진다.
-    renderPasswordResetRequests();
+  // Directory rows are assignable before their first Cella sign-in.
+  function loadAdminDirectoryUsers() {
     var dept = document.getElementById("admin-dept-filter").value;
     var groupFilter = document.getElementById("admin-group-filter").value;
     var search = document.getElementById("admin-search").value;
@@ -6028,9 +6199,14 @@
     else if (groupFilter === "visitor_allowed") params.set("visitor_only", "true");
     else if (groupFilter) params.set("group_id", groupFilter);
 
-    fetch("/api/admin/ad/users?" + params.toString())
-      .then(function(r) { return r.json(); })
+    fetch("/api/admin/directory/users?" + params.toString())
+      .then(function(r) {
+        if (!r.ok) throw new Error("사용자 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return r.json();
+      })
       .then(function(users) {
+        if (!Array.isArray(users)) throw new Error("사용자 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        document.getElementById("admin-directory-error").hidden = true;
         var container = document.getElementById("admin-user-list");
         if (!users.length) {
           container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">검색 결과가 없습니다.</div>';
@@ -6043,16 +6219,18 @@
           var groupBadge = u.group_names
             ? '<span class="admin-ad-group-badge">' + escapeHtml(u.group_names) + '</span>'
             : '<span class="admin-ad-group-badge none">미배정</span>';
-          var signupBadge = u.user_id
-            ? ''
-            : ' <span class="admin-ad-group-badge none">미가입</span>';
+          var hasEntraSignin = !!(u.entra_linked && u.user_id && u.last_signin_at);
+          var identityBadge = hasEntraSignin
+            ? '<span class="admin-ad-group-badge">Entra 로그인 완료</span>'
+            : '<span class="admin-ad-group-badge none">Entra 로그인 필요</span>';
 
           html += '<div class="admin-ad-user">';
-          html += '<div class="admin-ad-avatar">' + initial + '</div>';
+          html += '<div class="admin-ad-avatar">' + escapeHtml(initial) + '</div>';
           html += '<div class="admin-ad-info">';
-          html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small>' + signupBadge + '</div>';
+          html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small></div>';
           html += '<div class="admin-ad-email">' + escapeHtml(u.email || "N/A") + '</div>';
           html += '<div class="admin-ad-dept">' + escapeHtml(deptShort) + '</div>';
+          html += '<div class="admin-directory-state" style="margin-top:4px">' + identityBadge + '</div>';
           html += '</div>';
           html += groupBadge;
           if (isAdmin()) {
@@ -6060,10 +6238,6 @@
             html += '<input type="checkbox" class="admin-fi-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_fi ? ' checked' : '') + '> 손익</label>';
             html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer">';
             html += '<input type="checkbox" class="admin-visitor-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_visitor_analytics ? ' checked' : '') + '> 방문자</label>';
-            // 가입한 사람만 로컬 비밀번호가 있다 — 미가입 AD 사용자는 초기화할 것이 없다
-            if (u.user_id) {
-              html += '<button class="admin-ad-reset-pw" data-ad-user-id="' + u.id + '" data-name="' + escapeHtml(u.display_name) + '">비밀번호 초기화</button>';
-            }
             html += '<button class="admin-ad-assign" onclick="adminAssignUser(' + u.id + ', \'' + escapeHtml(u.display_name) + '\')">배정</button>';
           }
           html += '</div>';
@@ -6073,7 +6247,7 @@
           checkbox.addEventListener("change", function() {
             var requested = checkbox.checked;
             checkbox.disabled = true;
-            fetch("/api/admin/ad/users/" + checkbox.dataset.adUserId + "/fi", {
+            fetch("/api/admin/directory/users/" + checkbox.dataset.adUserId + "/fi", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ can_view_fi: requested })
@@ -6084,7 +6258,7 @@
               checkbox.disabled = false;
               loadAdminStats();
               if (document.getElementById("admin-group-filter").value === "fi_allowed" && !requested) {
-                loadAdminADUsers();
+                loadAdminDirectoryUsers();
               }
             }).catch(function(e) {
               checkbox.checked = !requested;
@@ -6097,7 +6271,7 @@
           checkbox.addEventListener("change", function() {
             var requested = checkbox.checked;
             checkbox.disabled = true;
-            fetch("/api/admin/ad/users/" + checkbox.dataset.adUserId + "/visitor-analytics", {
+            fetch("/api/admin/directory/users/" + checkbox.dataset.adUserId + "/visitor-analytics", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ can_view_visitor_analytics: requested })
@@ -6106,6 +6280,9 @@
               return r.json();
             }).then(function() {
               checkbox.disabled = false;
+              if (document.getElementById("admin-group-filter").value === "visitor_allowed" && !requested) {
+                loadAdminDirectoryUsers();
+              }
             }).catch(function(e) {
               checkbox.checked = !requested;
               checkbox.disabled = false;
@@ -6113,12 +6290,14 @@
             });
           });
         });
-        container.querySelectorAll(".admin-ad-reset-pw").forEach(function(btn) {
-          btn.addEventListener("click", function() { resetPasswordFor(btn); });
-        });
-      }).catch(function(e) { console.error("Failed to load AD users:", e); });
+      }).catch(function(e) {
+        var error = document.getElementById("admin-directory-error");
+        error.textContent = e.message;
+        error.hidden = false;
+      });
   }
 
+  // Legacy password helpers remain dormant while Entra provides sign-in.
   // ── 비밀번호 재설정 요청 (로그인 화면 → 관리자) ──────────────────────────
   // 이름·팀은 이미 로그인 화면에 노출되므로, 이것은 본인 확인이나 자동 초기화가
   // 아니다. 관리자가 확인 후 임시 비밀번호를 한 번 발급하는 접수함이다.
@@ -6216,12 +6395,12 @@
   }
 
   // Filters
-  document.getElementById("admin-dept-filter").addEventListener("change", loadAdminADUsers);
-  document.getElementById("admin-group-filter").addEventListener("change", loadAdminADUsers);
+  document.getElementById("admin-dept-filter").addEventListener("change", loadAdminDirectoryUsers);
+  document.getElementById("admin-group-filter").addEventListener("change", loadAdminDirectoryUsers);
   var _searchTimer = null;
   document.getElementById("admin-search").addEventListener("input", function() {
     clearTimeout(_searchTimer);
-    _searchTimer = setTimeout(loadAdminADUsers, 300);
+    _searchTimer = setTimeout(loadAdminDirectoryUsers, 300);
   });
 
   // Assign user to group
@@ -6241,7 +6420,7 @@
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ad_user_ids: [userId]})
     }).then(function(r) { return r.json(); })
-    .then(function() { loadAdminADUsers(); loadAdminGroups(); loadAdminStats(); })
+    .then(function() { loadAdminDirectoryUsers(); loadAdminGroups(); loadAdminStats(); })
     .catch(function(e) { alert("배정 실패: " + e.message); });
   };
 
@@ -6254,9 +6433,10 @@
     var topDepts = {};
     _adminDepts.forEach(function(d) {
       var parts = d.department.split(" > ");
-      // Top-level = depth 2 (e.g. "Craver_Accounts > Users > Brand")
-      var topKey = parts.slice(0, 3).join(" > ");
-      var topLabel = parts[2] || parts[parts.length - 1];
+      var meaningful = adminDepartmentParts(d.department);
+      var topDepth = parts.length - meaningful.length + 1;
+      var topKey = parts.slice(0, topDepth).join(" > ");
+      var topLabel = meaningful[0];
       if (!topDepts[topKey]) topDepts[topKey] = { label: topLabel, fullPath: topKey, children: [], totalCount: 0 };
       topDepts[topKey].children.push(d);
       topDepts[topKey].totalCount += d.cnt;
@@ -6322,9 +6502,9 @@
       var html = "";
       children.sort(function(a, b) { return a.department.localeCompare(b.department); });
       children.forEach(function(d) {
-        var parts = d.department.split(" > ");
-        var label = parts.slice(3).join(" > ") || parts[parts.length - 1];
-        var indent = Math.max(0, parts.length - 4);
+        var parts = adminDepartmentParts(d.department);
+        var label = parts.slice(1).join(" > ") || parts[0];
+        var indent = Math.max(0, parts.length - 2);
         var indentStr = "";
         for (var i = 0; i < indent; i++) indentStr += "\u00A0\u00A0\u00A0";
         var prefix = indent > 0 ? "└ " : "";
@@ -6371,8 +6551,11 @@
 
       // Fetch users for the top dept (includes all sub), then filter client-side
       var topKey = topSelect.value;
-      fetch("/api/admin/ad/users?dept=" + encodeURIComponent(topKey))
-        .then(function(r) { return r.json(); })
+      fetch("/api/admin/directory/users?dept=" + encodeURIComponent(topKey))
+        .then(function(r) {
+          if (!r.ok) throw new Error("사용자 목록을 불러오지 못했습니다.");
+          return r.json();
+        })
         .then(function(users) {
           // Filter to only checked departments
           var deptSet = {};

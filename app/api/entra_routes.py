@@ -123,36 +123,19 @@ async def entra_callback(
         return _notice("회사 계정 확인에 실패했습니다",
                        "잠시 후 다시 시도하거나, 관리자에게 문의해 주세요.", status=500)
 
-    oid = str(claims["oid"])
-    user = await asyncio.to_thread(entra_auth.find_user_by_oid, oid)
-    if not user:
-        # 첫 로그인 — 기존 계정에 한 번 맞춰 잇는다.
-        user = await asyncio.to_thread(entra_auth.match_existing_account, claims)
-        if user:
-            await asyncio.to_thread(entra_auth.link_oid, int(user["id"]), oid)
-            logger.warning("entra_account_linked", user_id=int(user["id"]))
-
-    if not user:
-        # ⛔ 여기서 계정을 새로 만들지 않는다. 셀라 계정은 AD 기반으로 발급되며,
-        #    아무나 들어오면 권한(FI 열람 등)의 근거가 사라진다.
-        logger.warning("entra_no_matching_account")
-        # ⛔ 여기 **없어진 로그인 방식으로 다시 시도하라**는 안내가 있었다.
-        #    ID/PW 를 끈 뒤로는 할 수 없는 일을 시키는 문장이다 (2026-09-08).
-        #    안내는 실제로 할 수 있는 것만 적는다.
-        # ⚠️ 옛 문구를 여기 그대로 인용하지 마라 — 회귀가 소스를 문자열로
-        #    읽어서 주석에 걸린다 (저장소의 알려진 함정, 실제로 한 번 걸렸다).
-        # ⚠️ 이 사람은 회사 계정은 멀쩡한데 셀라 계정에 못 이어진 것이다 —
-        #    본인이 할 수 있는 일이 없으므로 관리자에게 보낸다.
-        return _notice(
-            "셀라 계정을 찾지 못했습니다",
-            "회사 계정은 확인됐지만 연결된 셀라 계정이 없습니다. "
-            "관리자에게 문의해 주세요.",
-            status=404)
+    from app.core.user_directory import DirectoryError, provision_from_claims
+    from app.api.auth_middleware import invalidate_user_cache
+    try:
+        user = await asyncio.to_thread(provision_from_claims, claims)
+    except DirectoryError as exc:
+        return _notice("회사 계정 연결을 확인해 주세요", str(exc), status=exc.status)
+    invalidate_user_cache(int(user["id"]))
 
     brand_filter = await asyncio.to_thread(_lookup_brand_filter, int(user["id"]))
     token = _create_token(int(user["id"]), claims.get("preferred_username", "") or "",
                           brand_filter=brand_filter,
-                          role=user.get("role", "user"))
+                          role=user.get("role", "user"), auth_provider="entra",
+                          entra_oid=claims["oid"], entra_tid=claims["tid"])
     redirect = RedirectResponse(url=pending.get("next_path") or "/", status_code=303)
     _set_cookie(redirect, token)
     logger.warning("entra_login_success", user_id=int(user["id"]))

@@ -2615,6 +2615,15 @@ Notion 팀 소스가 **누른 그 자리에서** 다시 켜졌다. 에러는 없
 - **로그인은 Entra ID만 사용한다.** `password_login_enabled=False`가 기본이다.
   기존 비밀번호 로그인·회원가입·재설정 API는 차단하며, 아래 비밀번호 복구 설명은
   롤백용 과거 구현에 대한 기록이다.
+- **기존 계정이나 Entra 연결 기록은 로그인 증명이 아니다** (2026-09-09).
+  `session_auth.decode_session()`은 검증된 Entra 콜백이 발급한 세션의 provider·tenant·oid를
+  확인한다. 이전 쿠키는 다시 로그인해야 하며 `/me`는 현재 요청의 인증 증명만 갱신한다.
+  공통 미들웨어가 화면·API를 보호하고, 인증 실패는 `X-Cella-Auth: login-required`로 표시한다.
+- **관리자 명단은 `Entra 로그인 완료 / Entra 로그인 필요`로 표시한다.** 계정 존재와
+  로그인 완료를 별개의 선택지처럼 나열하지 않는다. 미가입자의 사전 권한 배정은 유지한다.
+- **서버 점검 토큰은 사용자 로그인이 아니다.** 골든셋·자가 점검은 별도 purpose·scope로
+  직접 loopback의 `POST /v1/chat/completions`만 호출한다. 프록시 요청·관리자 API·세션 갱신에
+  사용할 수 없으며, Entra 인증으로 표시하거나 기존 JWT를 자동 승격하지 않는다.
 - **미가입 직원도 첫 로그인 시 계정이 생성된다.** 회사 tenant·서명·issuer·audience·
   만료·oid·nonce를 검증하고, 게스트·신원 충돌·비활성 계정을 거절한다.
 - **권한의 원본은 `directory_users`다.** 기존 `ad_users`의 ID·손익·방문자 권한과

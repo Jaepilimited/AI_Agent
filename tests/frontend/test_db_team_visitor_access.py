@@ -79,8 +79,8 @@ def _install_backend(page, me, calls):
             calls.setdefault("visitor_urls", []).append(request.url)
             route.fulfill(status=200, content_type="application/json", body=json.dumps(_VISITOR_RESPONSE))
             return
-        if path == "/api/admin/ad/users":
-            calls["ad_users"] = calls.get("ad_users", 0) + 1
+        if path == "/api/admin/directory/users":
+            calls["directory_users"] = calls.get("directory_users", 0) + 1
             route.fulfill(status=200, content_type="application/json", body=json.dumps([{
                 "id": 17,
                 "username": "finance.user",
@@ -91,9 +91,12 @@ def _install_backend(page, me, calls):
                 "can_view_visitor_analytics": False,
                 "user_id": 74,
                 "group_names": None,
+                "entra_linked": True,
+                "identity_source": "entra",
+                "last_signin_at": None,
             }]))
             return
-        if path == "/api/admin/ad/users/17/visitor-analytics" and request.method == "PUT":
+        if path == "/api/admin/directory/users/17/visitor-analytics" and request.method == "PUT":
             calls["visitor_access_body"] = json.loads(request.post_data or "{}")
             route.fulfill(status=200, content_type="application/json", body='{"ok":true}')
             return
@@ -164,7 +167,7 @@ def test_admin_still_sees_every_admin_tab(browser):
     context.close()
 
 
-def test_admin_can_grant_visitor_analytics_from_the_ad_user_row(browser):
+def test_admin_can_grant_visitor_analytics_from_the_directory_user_row(browser):
     """Removing the real Admin checkbox or sending the wrong update must fail this UI contract."""
     context = browser.new_context()
     page = context.new_page()
@@ -177,7 +180,7 @@ def test_admin_can_grant_visitor_analytics_from_the_ad_user_row(browser):
     page.click('.admin-tab[data-tab="users"]')
     checkbox = page.locator('.admin-visitor-toggle[data-ad-user-id="17"]')
     checkbox.wait_for(state="visible")
-    with page.expect_request(lambda request: _url_path(request.url) == "/api/admin/ad/users/17/visitor-analytics"):
+    with page.expect_request(lambda request: _url_path(request.url) == "/api/admin/directory/users/17/visitor-analytics"):
         checkbox.check()
 
     assert calls["visitor_access_body"] == {"can_view_visitor_analytics": True}

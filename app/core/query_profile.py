@@ -247,7 +247,7 @@ def rebuild(user_email: str,
 
             department_rows = fetch_all(
                 "SELECT COALESCE(a.department, '') AS department FROM users u "
-                "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
+                "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
                 "WHERE COALESCE(a.email, u.email) = %s LIMIT 1",
                 (user_email,),
             ) or []

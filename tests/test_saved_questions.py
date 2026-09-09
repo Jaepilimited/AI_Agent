@@ -201,7 +201,7 @@ async def test_run_continues_after_one_failure_and_records_the_error(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_run_reads_each_users_fi_permission_from_ad_users(monkeypatch):
+async def test_run_reads_each_users_fi_permission_from_directory_users(monkeypatch):
     rows = [_row(1, "daily", user_id=21), _row(2, "daily", user_id=22)]
     monkeypatch.setattr(saved_questions, "due", lambda _today: rows)
     db_calls: list[tuple[str, tuple]] = []
@@ -224,10 +224,10 @@ async def test_run_reads_each_users_fi_permission_from_ad_users(monkeypatch):
     await saved_questions.run_saved_questions(datetime(2026, 8, 3, 9, 0))
 
     assert observed == {"질문 1": False, "질문 2": True}
-    assert all("ad_users" in sql and "can_view_fi" in sql for sql, _params in db_calls)
+    assert all("directory_users" in sql and "can_view_fi" in sql for sql, _params in db_calls)
     source = inspect.getsource(saved_questions.run_saved_questions)
     assert "can_view_fi=False" not in source
-    assert "can_view_fi=permission" in source
+    assert "can_view_fi=is_admin or permission" in source
 
 
 @pytest.mark.asyncio
@@ -319,12 +319,15 @@ def test_compose_truncates_saved_answers_and_adds_the_continuation_link():
 
     # ⛔ 자른 것은 **자른 티가 나야 한다** (2026-09-02). 표시 없이 끊으면 읽는 사람은
     #    그게 답의 전부인 줄 안다 — 실제로 잔디에 `2. 원인 분석 * *` 이 그대로 나갔다.
-    assert document["saved"] == [{
-        "question": "Shopee Indonesia sales",
-        "answer": "a" * 299 + "…",
-        "last_run_at": "2026-08-03T08:58:00",
-        "link": "https://cella.example.test",
-    }]
+    # ⚠️ **카드 요약은 그대로다** — 화면은 훑어보는 자리라 계속 짧게 둔다.
+    #    2026-09-07 에 잔디만 전문으로 바꿨고(`answer_full`), 카드는 손대지 않았다.
+    row = document["saved"][0]
+    assert row["question"] == "Shopee Indonesia sales"
+    assert row["answer"] == "a" * 299 + "…"
+    assert row["last_run_at"] == "2026-08-03T08:58:00"
+    assert row["link"] == "https://cella.example.test"
+    # ⛔ 잔디용 전문이 함께 만들어져야 한다 (요약만 실어 표가 사라진다는 제보)
+    assert len(row["answer_full"]) > len(row["answer"])
     # \uc81c\ubaa9\uc740 "\ub0b4\uac00 \uc800\uc7a5\ud55c \ubcf4\uace0" \ub2e4 (2026-08-31 \uc0ac\uc6a9\uc790 \uc9c0\uc815). \ub2e4\ub978 \uc808\uacfc \uac19\uc774 \uc774\ubaa8\uc9c0\ub85c \uc5f0\ub2e4.
     assert "\ub0b4\uac00 \uc800\uc7a5\ud55c \ubcf4\uace0" in document["markdown"]
 

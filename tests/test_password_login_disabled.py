@@ -128,7 +128,7 @@ def test_admin_temporary_password_is_refused(off):
     요청이 막히는데, 그것을 푸는 유일한 길이 비밀번호 로그인이다.
     """
     _says_use_the_company_account(
-        _admin_client().post("/api/admin/ad/users/5/reset-password"))
+        _admin_client().post("/api/admin/directory/users/5/reset-password"))
 
 
 def test_google_callback_reset_branch_is_refused_with_readable_html(off, monkeypatch):
@@ -211,15 +211,19 @@ def test_google_self_reset_land_redirects_again_when_switched_on(on, monkeypatch
 
 
 def test_admin_temporary_password_reaches_its_own_lookup_when_switched_on(on, monkeypatch):
+    looked_up = []
+
     async def _no_target(*_args, **_kwargs):
+        looked_up.append((_args, _kwargs))
         return None
 
     monkeypatch.setattr(admin_group_api, "_fetch_one", _no_target)
 
-    response = _admin_client().post("/api/admin/ad/users/5/reset-password")
+    response = _admin_client().post("/api/admin/directory/users/5/reset-password")
 
     assert response.status_code == 404
     assert "회사 계정" not in response.text
+    assert len(looked_up) == 1, "없는 경로의 404 를 사용자 조회 실패로 착각했다"
 
 
 def test_google_callback_reset_branch_runs_again_when_switched_on(on, monkeypatch):
@@ -361,15 +365,35 @@ def _async_value(value):
     return _fn
 
 
-def test_계정을_못_이었을_때_할_수_없는_일을_시키지_않는다():
+def test_계정을_못_이었을_때_할_수_없는_일을_시키지_않는다(off, monkeypatch):
     """⛔ ID/PW 로그인을 끈 뒤 "기존 방식으로 로그인하세요" 는 거짓 안내다.
 
     회사 계정은 멀쩡한데 셀라 계정에 못 이어진 사람에게, 이제 존재하지 않는
     경로를 시키면 그 사람은 아무것도 할 수 없다. 오늘 내내 고친 「낡으면
     거짓이 되는 문장」과 같은 부류다.
     """
-    src = open("app/api/entra_routes.py", encoding="utf-8").read()
-    body = src[src.index("entra_no_matching_account"):]
-    body = body[:body.index("status=404")]
-    assert "기존 방식으로" not in body, "없어진 로그인 방식을 안내하고 있다"
-    assert "관리자에게 문의" in body
+    from app.api import entra_routes
+    from app.core import entra_auth, user_directory
+
+    claims = {"oid": "verified-object", "preferred_username": "employee@cravercorp.com"}
+    monkeypatch.setattr(entra_auth, "consume_state", lambda state: {
+        "redirect_uri": "https://ai.example.com/auth/entra/callback",
+        "code_verifier": "verifier", "nonce_hash": "nonce", "next_path": "/",
+    })
+    monkeypatch.setattr(entra_auth, "exchange_code", lambda *args: {"id_token": "verified-token"})
+    monkeypatch.setattr(entra_auth, "verify_id_token", lambda *args: claims)
+
+    def reject(verified_claims):
+        assert verified_claims == claims
+        raise user_directory.DirectoryError("사용자 연결을 확인할 수 없습니다. 관리자에게 문의해 주세요.")
+
+    monkeypatch.setattr(user_directory, "provision_from_claims", reject)
+    monkeypatch.setattr(auth_api, "_create_token", lambda *args, **kwargs: pytest.fail("연결 실패에 세션이 발급됐다"))
+    app = FastAPI()
+    app.include_router(entra_routes.entra_router)
+    response = TestClient(app).get("/auth/entra/callback?code=c&state=s", follow_redirects=False)
+
+    assert response.status_code == 403
+    assert "<html" in response.text.lower() and "관리자에게 문의" in response.text
+    assert "기존 방식으로" not in response.text, "없어진 로그인 방식을 안내하고 있다"
+    assert "token" not in response.cookies

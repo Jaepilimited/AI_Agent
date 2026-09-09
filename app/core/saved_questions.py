@@ -240,8 +240,15 @@ async def run_saved_questions(now: datetime | None = None) -> dict[str, int | st
             try:
                 access = await asyncio.to_thread(
                     fetch_one,
-                    "SELECT a.email, a.can_view_fi FROM users u "
-                    "JOIN ad_users a ON a.id = u.ad_user_id "
+                    "SELECT a.email, a.can_view_fi, u.role, "
+                    "(u.requires_group_assignment AND NOT EXISTS "
+                    "(SELECT 1 FROM user_groups ug JOIN access_groups g ON g.id=ug.group_id "
+                    "WHERE ug.ad_user_id=u.ad_user_id AND g.brand_filter IS NOT NULL "
+                    "AND g.brand_filter<>'')) AS requires_group_assignment, "
+                    "(SELECT GROUP_CONCAT(DISTINCT g.brand_filter) FROM user_groups ug "
+                    "JOIN access_groups g ON g.id=ug.group_id WHERE ug.ad_user_id=u.ad_user_id "
+                    "AND g.brand_filter IS NOT NULL AND g.brand_filter<>'') AS brand_filter FROM users u "
+                    "JOIN directory_users a ON a.id = u.ad_user_id "
                     "WHERE u.id = %s AND u.is_active = 1 AND a.is_active = 1 LIMIT 1",
                     (user_id,),
                 )
@@ -249,12 +256,17 @@ async def run_saved_questions(now: datetime | None = None) -> dict[str, int | st
                     # ⛔ 권한 조회 실패를 False로 대체하면 DB가 아닌 기본값이 보안 결정을 하게 된다.
                     raise RuntimeError("사용자 FI 권한을 DB에서 확인할 수 없습니다")
                 permission = bool(access["can_view_fi"])
+                is_admin = access.get("role") == "admin"
+                if access.get("requires_group_assignment") and not is_admin:
+                    raise RuntimeError("관리자의 데이터 조회 그룹 배정이 필요합니다")
                 result = await orchestrator.route_and_execute(
                     str(row["question"]),
                     [],
                     model,
                     user_email=str(access.get("email") or ""),
-                    can_view_fi=permission,
+                    can_view_fi=is_admin or permission,
+                    brand_filter=None if is_admin else (access.get("brand_filter") or None),
+                    user_id=user_id,
                 )
                 answer_value = result.get("answer", "") if isinstance(result, dict) else result
                 answer = "" if answer_value is None else str(answer_value).strip()

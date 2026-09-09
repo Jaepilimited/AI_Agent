@@ -65,7 +65,7 @@ _AD_CACHE_TTL = 300  # 5 minutes
 # hire whose AD account was created *today* is invisible to signup/signin until then,
 # which turns into a same-day "I can't find my name / it says user not found" incident
 # every time someone onboards mid-day. Self-heal: when a lookup against the local
-# ad_users cache/table comes up empty, kick off one live AD fetch + upsert in the
+# directory_users cache/table comes up empty, kick off one live AD fetch + upsert in the
 # background before answering the failing request.
 #
 # ⛔ This must NEVER be awaited on the request path. A live full resync (fetch_ad_users
@@ -169,8 +169,8 @@ async def _db_execute_lastid(sql: str, params: tuple = ()) -> int:
 def _decode_escaped_name(raw: str) -> str:
     r"""가입할 때 `이주원` 같은 이스케이프를 되돌린다.
 
-    ⛔ 가입은 `ad_users.display_name` 을 **복사**한다. 그 순간 깨져 있으면 사본이
-       `users` 에 굳고, `ad_users` 가 나중에 고쳐져도 사본은 그대로다 — 로그인
+    ⛔ 가입은 `directory_users.display_name` 을 **복사**한다. 그 순간 깨져 있으면 사본이
+       `users` 에 굳고, `directory_users` 가 나중에 고쳐져도 사본은 그대로다 — 로그인
        자동완성은 `COALESCE(u.display_name, ad.display_name)` 이라 깨진 사본이
        이긴다. 그러면 사람은 자기 이름을 못 찾고, 그 행을 클릭하지 못하면
        프론트에서 막혀 **서버에는 기록조차 남지 않는다** (2026-09-01 실제 사고).
@@ -223,7 +223,7 @@ def _resolve_models(role: str, allowed_models: str | None) -> list[str]:
 
 
 def _user_response(user_row: dict) -> dict:
-    """Build UserResponse dict from a joined users+ad_users row."""
+    """Build UserResponse dict from a joined users+directory_users row."""
     return {
         "id": user_row["id"],
         "email": user_row.get("ad_email") or user_row.get("email") or "",
@@ -234,7 +234,8 @@ def _user_response(user_row: dict) -> dict:
     }
 
 
-def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: str = "user") -> str:
+def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: str = "user", *,
+                  auth_provider: str = "password", entra_oid: str = "", entra_tid: str = "") -> str:
     settings = get_settings()
     payload = {
         "user_id": user_id,
@@ -242,7 +243,12 @@ def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: s
         "exp": datetime.now(timezone.utc) + timedelta(days=_TOKEN_EXPIRE_DAYS),
         "brand_filter": brand_filter,
         "role": role,
+        "purpose": "session",
+        "auth_provider": auth_provider,
+        "iat": datetime.now(timezone.utc),
     }
+    if auth_provider == "entra":
+        payload.update(entra_oid=entra_oid, entra_tid=entra_tid)
     return jwt.encode(payload, validate_jwt_secret(settings.jwt_secret_key), algorithm=_ALGORITHM)
 
 
@@ -327,7 +333,7 @@ async def list_users_by_department(
     users = await _db_fetch_all("""
         SELECT ad.id, ad.display_name, ad.email,
                CASE WHEN u.id IS NOT NULL THEN 1 ELSE 0 END as registered
-        FROM ad_users ad
+        FROM directory_users ad
         LEFT JOIN users u ON ad.id = u.ad_user_id
         WHERE ad.is_active = 1 AND ad.department = %s
         ORDER BY ad.display_name
@@ -348,7 +354,7 @@ async def _get_ad_cache() -> list[dict]:
                ad.username,
                COALESCE(ad.email, u.email) AS email,
                ad.department
-        FROM ad_users ad
+        FROM directory_users ad
         LEFT JOIN users u ON ad.id = u.ad_user_id COLLATE utf8mb4_unicode_ci
         WHERE ad.is_active = 1 AND ad.department IS NOT NULL AND ad.department != ''
         ORDER BY COALESCE(u.display_name, ad.display_name), ad.department
@@ -378,7 +384,7 @@ async def search_by_name(
 ):
     """Find AD users by name (searches display_name, ad_name, username).
 
-    Self-heals on a miss: a brand-new hire may not be in ad_users yet if they're
+    Self-heals on a miss: a brand-new hire may not be in directory_users yet if they're
     signing up before tonight's scheduled sync — kick off one live AD resync in the
     background so onboarding never blocks on the cron schedule. This call itself does
     not wait for it (see `_trigger_ad_fallback_resync`); if it lands, the *next*
@@ -395,7 +401,7 @@ async def search_by_name(
 # ── Auth endpoints ──
 
 async def _lookup_ad_user(department: str, name: str, ad_user_id: int | None) -> dict | None:
-    """Look up an ad_users row by id (preferred) or department+display_name.
+    """Look up an directory_users row by id (preferred) or department+display_name.
 
     Self-heals on a miss: kicks off a background AD resync so a same-day hire's
     *next* attempt isn't blocked by the nightly-only sync schedule — but does not
@@ -404,12 +410,12 @@ async def _lookup_ad_user(department: str, name: str, ad_user_id: int | None) ->
     """
     if ad_user_id:
         ad_user = await _db_fetch_one(
-            "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
+            "SELECT id, display_name, email, department FROM directory_users WHERE is_active = 1 AND id = %s",
             (ad_user_id,),
         )
     else:
         ad_user = await _db_fetch_one(
-            "SELECT id, display_name, email, department FROM ad_users "
+            "SELECT id, display_name, email, department FROM directory_users "
             "WHERE is_active = 1 AND department = %s AND display_name = %s",
             (department, name),
         )
@@ -432,7 +438,7 @@ async def _not_found_detail(department: str, name: str, ad_user_id: int | None, 
     itself is gone/inactive, and there's no "other department" to point at.
     """
     if not ad_user_id and await _db_fetch_one(
-        "SELECT 1 FROM ad_users WHERE is_active = 1 AND display_name = %s AND department != %s LIMIT 1",
+        "SELECT 1 FROM directory_users WHERE is_active = 1 AND display_name = %s AND department != %s LIMIT 1",
         (name, department),
     ):
         return _WRONG_TEAM_HINT
@@ -541,14 +547,21 @@ def _survey_prompt_for(user_id: int):
 
 
 @auth_api_router.get("/me")
-async def me(response: Response, user: User = Depends(get_current_user)):
+async def me(response: Response, user: User = Depends(get_current_user), *, request: Request):
     """Get current authenticated user. Refreshes cookie (sliding session)."""
     # Sliding refresh, debounced: only re-issue cookie if last refresh was > _ME_REFRESH_COOLDOWN ago.
     now = time.time()
     last = _me_last_refresh.get(user.id, 0)
     if now - last > _ME_REFRESH_COOLDOWN:
         bf = await asyncio.to_thread(_lookup_brand_filter, user.id)
-        fresh_token = _create_token(user.id, user.email or "", brand_filter=bf, role=user.role)
+        # Authentication proof belongs to this request, never the shared User cache
+        # or directory linkage. Refresh cannot turn a legacy login into Entra.
+        claims = request.state.session_claims
+        fresh_token = _create_token(
+            user.id, user.email or "", brand_filter=bf, role=user.role,
+            auth_provider=claims.get("auth_provider") or "password",
+            entra_oid=claims.get("entra_oid", ""), entra_tid=claims.get("entra_tid", ""),
+        )
         _set_cookie(response, fresh_token)
         _me_last_refresh[user.id] = now
         _me_last_refresh.move_to_end(user.id)
@@ -567,7 +580,7 @@ async def me(response: Response, user: User = Depends(get_current_user)):
     if not can_view_fi and user.ad_user_id:
         try:
             fi_row = await _db_fetch_one(
-                "SELECT can_view_fi FROM ad_users WHERE id = %s",
+                "SELECT can_view_fi FROM directory_users WHERE id = %s",
                 (user.ad_user_id,),
             )
             can_view_fi = bool(fi_row and fi_row.get("can_view_fi"))
@@ -606,6 +619,7 @@ async def me(response: Response, user: User = Depends(get_current_user)):
             user.role, user.can_view_visitor_analytics,
         ),
         "must_change_password": user.must_change_password,
+        "requires_group_assignment": user.requires_group_assignment,
         "allowed_models": _resolve_models(user.role, user.allowed_models),
         "brand_filters": brand_filters,
         "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,

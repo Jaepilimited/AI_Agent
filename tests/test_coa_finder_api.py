@@ -1,13 +1,19 @@
 """COA 찾기 엔드포인트."""
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.auth_middleware import get_current_user
 from app.core import coa_finder as cf
+
+
+_SECRET = "test-only-coa-session-secret-" + "x" * 40
+_TENANT = "11111111-1111-4111-8111-111111111111"
 
 
 class _User:
@@ -16,19 +22,36 @@ class _User:
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     # ⛔ 개발 PC `.env` 의 MIGRATED_REDIRECT_URL 이 앱 생성 시점에 리다이렉트
     #    미들웨어로 박힌다 (tests/test_router.py 와 같은 원인). 이미 만들어진
     #    `app.main.app` 싱글턴을 그대로 쓰면 모든 요청이 307 로 튕기므로,
     #    설정을 끈 뒤 새로 만든 앱으로 테스트한다.
+    from app.api import auth_middleware
     from app.config import get_settings
-    os.environ["MIGRATED_REDIRECT_URL"] = ""
+    monkeypatch.setenv("MIGRATED_REDIRECT_URL", "")
+    monkeypatch.setenv("JWT_SECRET_KEY", _SECRET)
+    monkeypatch.setenv("ENTRA_TENANT_ID", _TENANT)
+    monkeypatch.setenv("PASSWORD_LOGIN_ENABLED", "false")
     get_settings.cache_clear()
+    monkeypatch.setattr(auth_middleware, "_user_cache", {})
+    monkeypatch.setattr(auth_middleware, "fetch_one", lambda *args, **kwargs: {
+        "id": 7, "email": _User.email, "role": _User.role, "display_name": "Tester",
+        "account_active": 1, "directory_active": 1, "must_change_password": 0,
+        "requires_group_assignment": 0,
+    })
     from app.main import create_app
     app = create_app()
     app.dependency_overrides[get_current_user] = lambda: _User()
-    yield TestClient(app)
+    session = TestClient(app)
+    session.cookies.set("token", jwt.encode({
+        "user_id": 7, "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+        "purpose": "session", "auth_provider": "entra", "entra_tid": _TENANT,
+        "entra_oid": "22222222-2222-4222-8222-222222222222",
+    }, _SECRET, algorithm="HS256"))
+    yield session
     app.dependency_overrides.clear()
+    get_settings.cache_clear()
 
 
 def test_search_requires_google_connection(client):
@@ -154,6 +177,39 @@ def test_search_stream_carries_the_product_coa_column(client):
     assert row["coa"]["status"] and row["msds"]["status"]
 
 
+def test_search_stream_carries_size_and_modified_time(client):
+    """후보가 여럿일 때 **열지 않고** 고르는 근거다 — 여기서 빠지면 화면도 못 적는다.
+
+    ⛔ 판정에는 쓰지 않는다. 최신 파일이라고 그 롯트의 것은 아니다.
+    """
+    hit = [{"id": "f1", "name": "COA_FE103C.pdf", "size": "2048",
+            "webViewLink": "http://d/f1", "modifiedTime": "2026-08-14T01:02:03.000Z"}]
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=hit):
+        r = client.post("/api/coa-finder/search",
+                        data={"pasted": "SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\n"})
+    row_line = next(ln for ln in r.text.splitlines()
+                    if ln.startswith("data: ") and "COA_FE103C" in ln)
+    row = json.loads(row_line[len("data: "):])
+    got = row["coa"]["files"][0]
+    assert got["size"] == 2048
+    assert got["modified"].startswith("2026-08-14")
+
+
+def test_a_file_without_a_modified_time_is_not_given_one(client):
+    """⛔ 없는 값을 지어내면 화면이 조용히 거짓말을 한다."""
+    hit = [{"id": "f1", "name": "COA_FE103C.pdf", "size": "10",
+            "webViewLink": "http://d/f1"}]
+    with patch("app.api.coa_finder_api._credentials", return_value=MagicMock()), \
+         patch("app.core.coa_finder.search_drive", return_value=hit):
+        r = client.post("/api/coa-finder/search",
+                        data={"pasted": "SKU\tDESCRIPTION\tLOT\nA\t앰플\tFE103C\n"})
+    row_line = next(ln for ln in r.text.splitlines()
+                    if ln.startswith("data: ") and "COA_FE103C" in ln)
+    row = json.loads(row_line[len("data: "):])
+    assert row["coa"]["files"][0]["modified"] == ""
+
+
 @pytest.fixture
 def anon_client():
     """로그인 안 된 브라우저 — get_current_user 오버라이드를 걸지 않는다."""
@@ -165,7 +221,6 @@ def anon_client():
 
 
 def test_page_is_served(client):
-    client.cookies.set("token", "session")
     r = client.get("/coa-finder")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
@@ -291,12 +346,12 @@ def _zip_of(client, items):
     return zipfile.ZipFile(_io.BytesIO(r.content))
 
 
-def test_download_marks_unconfirmed_verdict_in_the_zip(client):
-    """⛔ 화면의 '확인필요' 가 ZIP 에서 사라지면 확정 문서로 둔갑한다.
+def test_a_file_name_never_carries_a_warning(client):
+    """⛔ 파일 이름에는 아무 표시도 붙이지 않는다 (2026-09-03 사용자 결정).
 
-    롯트 FE161 을 물었는데 드라이브 파일은 FE1615 인 실측 사례 — 화면은
-    확인필요라고 말하지만 ZIP 은 그 파일이 FE161 것이라고 주장했다.
-    ZIP 은 그대로 고객에게 전달되는 산출물이라 그 시점에 경고가 없으면 없는 것이다.
+    예전엔 확정되지 않은 문서에 `확인필요_` 접두를 붙였다. ZIP 이 그대로
+    고객에게 가는 산출물이라 한국어 접두가 이름에 남는 것이 문제였고,
+    경고는 `_확인필요_목록.txt` 하나로 모았다.
     """
     zf = _zip_of(client, [{
         "file_id": "1", "sku": "EUSKA022", "lot": "FE161",
@@ -304,8 +359,23 @@ def test_download_marks_unconfirmed_verdict_in_the_zip(client):
         "status": "확인필요", "kind": "coa",
     }])
     names = zf.namelist()
-    assert ("COA/확인필요_EUSKA022_FE161_"
+    assert ("COA/EUSKA022_FE161_"
             "COA_10116720_SUN SERUM_FE1615_15643EA.pdf") in names
+    assert not any("확인필요_" in n for n in names if not n.startswith("_"))
+
+
+def test_an_unconfirmed_file_is_still_listed_with_its_reason(client):
+    """⛔ 이름이 조용해진 만큼 목록이 유일한 경고다 — 여기가 비면 아무 경고도 없다.
+
+    롯트 FE161 을 물었는데 드라이브 파일은 FE1615 인 실측 사례 — 화면은
+    확인필요라고 말하는데, 그 사실이 ZIP 안 어디에도 없으면 없는 것이다.
+    """
+    zf = _zip_of(client, [{
+        "file_id": "1", "sku": "EUSKA022", "lot": "FE161",
+        "name": "COA_10116720_SUN SERUM_FE1615_15643EA.pdf",
+        "status": "확인필요", "kind": "coa",
+    }])
+    names = zf.namelist()
     assert "_확인필요_목록.txt" in names
     note = zf.read("_확인필요_목록.txt").decode("utf-8")
     assert "EUSKA022" in note and "FE161" in note
@@ -315,22 +385,33 @@ def test_download_marks_unconfirmed_verdict_in_the_zip(client):
     assert "_받지못한_목록.txt" not in names
 
 
+def test_the_unconfirmed_list_says_the_names_are_unmarked(client):
+    """⛔ 목록을 안 열어 본 사람은 이름만 보고 전부 확정된 문서라고 읽는다."""
+    zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
+                           "name": "a.pdf", "status": "확인필요", "kind": "coa"}])
+    note = zf.read("_확인필요_목록.txt").decode("utf-8")
+    assert "파일 이름에는 표시가 없습니다" in note
+
+
 def test_download_treats_missing_status_as_unconfirmed(client):
-    """⛔ 엔드포인트는 임의 JSON 을 받는다 — 상태가 없으면 확정으로 보면 안 된다."""
+    """⛔ 엔드포인트는 임의 JSON 을 받는다 — 상태가 없으면 확정으로 보면 안 된다.
+
+    이름으로는 더 이상 알 수 없으니 **목록에 오르는지**로 확인한다.
+    """
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf"}])
-    assert "COA/확인필요_A_FE103C_a.pdf" in zf.namelist()
+    assert "COA/A_FE103C_a.pdf" in zf.namelist()
     assert "_확인필요_목록.txt" in zf.namelist()
 
 
 def test_download_treats_unknown_status_as_unconfirmed(client):
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf", "status": "OK"}])
-    assert "COA/확인필요_A_FE103C_a.pdf" in zf.namelist()
+    assert "_확인필요_목록.txt" in zf.namelist()
 
 
-def test_download_keeps_confirmed_items_unprefixed(client):
-    """반대 방향 — 확정된 문서까지 확인필요로 적으면 경고가 소음이 된다."""
+def test_download_leaves_confirmed_items_out_of_the_list(client):
+    """반대 방향 — 확정된 문서까지 목록에 올리면 그 목록은 곧 안 읽힌다."""
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE103C",
                            "name": "a.pdf", "status": "찾음", "kind": "coa"}])
     names = zf.namelist()
@@ -361,7 +442,7 @@ def test_download_product_coa_entry_carries_no_lot(client):
     }])
     entry = next(n for n in zf.namelist() if not n.startswith("_"))
     assert "F31C28" not in entry
-    assert entry.startswith("제품COA/확인필요_EUSKA022_")
+    assert entry.startswith("제품COA/EUSKA022_")
     note = zf.read("_확인필요_목록.txt").decode("utf-8")
     assert "롯트" in note
 
@@ -373,9 +454,10 @@ def test_download_never_treats_product_coa_as_confirmed(client):
         "file_id": "1", "sku": "A", "lot": "L1", "name": "coa.pdf",
         "status": "찾음", "kind": "product_coa",
     }])
-    assert all(n.startswith("제품COA/확인필요_") or n.startswith("_")
-               for n in zf.namelist())
+    # 이름이 아니라 **목록에 오르는지**가 판정을 지고 있다
     assert "_확인필요_목록.txt" in zf.namelist()
+    note = zf.read("_확인필요_목록.txt").decode("utf-8")
+    assert "다른 생산분" in note
 
 
 # ── COA 와 MSDS 를 섞지 않는다 — 2026-09-02 사용자 문의 ──────────────────────
@@ -400,13 +482,12 @@ def test_download_sorts_each_kind_into_its_own_folder(client):
     assert all(n.count("/") == 1 for n in names)
 
 
-def test_zip_folder_does_not_swallow_the_unconfirmed_prefix(client):
-    """⛔ 폴더가 종류를 말한다고 경고를 폴더로 옮기지 마라 — 파일 하나만 꺼내면
-    폴더 이름은 따라오지 않아 경고가 그 시점에 사라진다."""
+def test_the_entry_name_is_folder_plus_plain_name(client):
+    """폴더는 종류만 말한다 — 판정은 이름 어디에도 적히지 않는다."""
     zf = _zip_of(client, [{"file_id": "1", "sku": "A", "lot": "FE161",
                            "name": "a.pdf", "status": "확인필요", "kind": "coa"}])
     entry = next(n for n in zf.namelist() if not n.startswith("_"))
-    assert entry == "COA/확인필요_A_FE161_a.pdf"
+    assert entry == "COA/A_FE161_a.pdf"
 
 
 def _disposition(client, items):

@@ -1,10 +1,8 @@
-"""Admin endpoints: AD user & group management (MariaDB)."""
+"""Admin endpoints: Cella employee directory and group management."""
 
 import asyncio
 import secrets
 import string
-import subprocess
-import sys
 from typing import Optional
 
 import bcrypt as _bcrypt
@@ -19,7 +17,7 @@ from app.db.mariadb import fetch_all, fetch_one, execute, execute_lastid
 logger = structlog.get_logger(__name__)
 
 group_router = APIRouter(prefix="/api/admin/groups", tags=["admin-groups"])
-ad_router = APIRouter(prefix="/api/admin/ad", tags=["admin-ad"])
+ad_router = APIRouter(prefix="/api/admin/directory", tags=["admin-directory"])
 
 
 def _require_admin(user: User = Depends(get_current_user)) -> User:
@@ -129,6 +127,7 @@ async def update_group(group_id: int, req: GroupUpdate, admin: User = Depends(_r
         # Empty string → NULL (clear filter)
         bf_val = req.brand_filter.strip() if req.brand_filter.strip() else None
         await _execute("UPDATE access_groups SET brand_filter = %s WHERE id = %s", (bf_val, group_id))
+        invalidate_user_cache()
 
     logger.info("group_updated", group_id=group_id, by=admin.email)
     return {"ok": True}
@@ -143,6 +142,7 @@ async def delete_group(group_id: int, admin: User = Depends(_require_admin)):
 
     await _execute("DELETE FROM user_groups WHERE group_id = %s", (group_id,))
     await _execute("DELETE FROM access_groups WHERE id = %s", (group_id,))
+    invalidate_user_cache()
     logger.info("group_deleted", name=group["name"], by=admin.email)
     return {"ok": True}
 
@@ -154,7 +154,7 @@ async def list_group_members(group_id: int, user: User = Depends(_require_admin)
     """List members of a group."""
     members = await _fetch_all("""
         SELECT a.id, a.username, a.display_name, a.email, a.department
-        FROM ad_users a
+        FROM directory_users a
         JOIN user_groups ug ON a.id = ug.ad_user_id
         WHERE ug.group_id = %s
         ORDER BY a.display_name
@@ -177,12 +177,12 @@ async def assign_users_to_group(
     if req.department:
         if req.include_sub:
             dept_users = await _fetch_all(
-                "SELECT id FROM ad_users WHERE is_active = 1 AND department LIKE %s",
+                "SELECT id FROM directory_users WHERE is_active = 1 AND department LIKE %s",
                 (f"{req.department}%",),
             )
         else:
             dept_users = await _fetch_all(
-                "SELECT id FROM ad_users WHERE is_active = 1 AND department = %s",
+                "SELECT id FROM directory_users WHERE is_active = 1 AND department = %s",
                 (req.department,),
             )
         user_ids.extend(u["id"] for u in dept_users)
@@ -210,6 +210,7 @@ async def assign_users_to_group(
             params,
         )
         added = len(new_ids)
+        invalidate_user_cache()
 
     logger.info("users_assigned", group=group["name"], added=added, skipped=skipped,
                 dept=req.department, by=admin.email)
@@ -228,6 +229,7 @@ async def remove_users_from_group(
             f"DELETE FROM user_groups WHERE group_id = %s AND ad_user_id IN ({placeholders})",
             (group_id, *req.ad_user_ids),
         )
+        invalidate_user_cache()
 
     logger.info("users_removed", group_id=group_id, removed=removed, by=admin.email)
     return {"ok": True, "removed": removed}
@@ -275,8 +277,9 @@ async def list_ad_users(
     sql = f"""
         SELECT a.id, a.username, a.display_name, a.email, a.department,
                a.can_view_fi, a.can_view_visitor_analytics, u.id AS user_id,
+               (a.entra_oid IS NOT NULL) AS entra_linked, a.identity_source, a.last_signin_at,
                GROUP_CONCAT(g.name SEPARATOR ', ') as group_names
-        FROM ad_users a
+        FROM directory_users a
         LEFT JOIN users u ON u.ad_user_id = a.id
         LEFT JOIN user_groups ug ON a.id = ug.ad_user_id
         LEFT JOIN access_groups g ON ug.group_id = g.id
@@ -285,6 +288,8 @@ async def list_ad_users(
         ORDER BY a.department, a.display_name
     """
     users = await _fetch_all(sql, tuple(params))
+    for row in users:
+        row["entra_linked"] = bool(row.get("entra_linked"))
     return users
 
 
@@ -296,14 +301,14 @@ async def update_fi_access(
 ):
     """Grant or revoke FI_LLM_Flat access for one AD user."""
     target = await _fetch_one(
-        "SELECT id, username, display_name FROM ad_users WHERE id = %s",
+        "SELECT id, username, display_name FROM directory_users WHERE id = %s",
         (ad_user_id,),
     )
     if not target:
         raise HTTPException(status_code=404, detail="AD user not found")
 
     await _execute(
-        "UPDATE ad_users SET can_view_fi = %s WHERE id = %s",
+        "UPDATE directory_users SET can_view_fi = %s WHERE id = %s",
         (1 if req.can_view_fi else 0, ad_user_id),
     )
     logger.info("admin_update_fi", target=target["username"], by=admin.email)
@@ -323,7 +328,7 @@ async def update_visitor_analytics_access(
     """Grant or revoke the visitor analytics tab for one AD user."""
     target = await _fetch_one(
         "SELECT a.id, a.username, a.display_name, u.id AS user_id "
-        "FROM ad_users a LEFT JOIN users u ON u.ad_user_id = a.id "
+        "FROM directory_users a LEFT JOIN users u ON u.ad_user_id = a.id "
         "WHERE a.id = %s",
         (ad_user_id,),
     )
@@ -331,7 +336,7 @@ async def update_visitor_analytics_access(
         raise HTTPException(status_code=404, detail="AD user not found")
 
     await _execute(
-        "UPDATE ad_users SET can_view_visitor_analytics = %s WHERE id = %s",
+        "UPDATE directory_users SET can_view_visitor_analytics = %s WHERE id = %s",
         (1 if req.can_view_visitor_analytics else 0, ad_user_id),
     )
     if target.get("user_id"):
@@ -368,7 +373,7 @@ async def reset_password(
 ):
     """관리자가 로컬 로그인 비밀번호를 초기화한다 — 잊어버린 사람의 유일한 복귀 경로.
 
-    비밀번호는 `users` 테이블에 있다 (`can_view_fi` 는 `ad_users` — 혼동 금지).
+    비밀번호는 `users` 테이블에 있다 (`can_view_fi` 는 `directory_users` — 혼동 금지).
     평문은 이 응답에 딱 한 번 실리고, DB·로그 어디에도 남지 않는다.
     `must_change_password` 를 세워 두면, 로그인은 되지만 본인이 새 비밀번호를
     정할 때까지(`/api/auth/change-password`) 그 외 어떤 요청도 `get_current_user`
@@ -385,7 +390,7 @@ async def reset_password(
 
     target = await _fetch_one(
         "SELECT u.id AS user_id, u.display_name, a.username "
-        "FROM users u JOIN ad_users a ON u.ad_user_id = a.id "
+        "FROM users u JOIN directory_users a ON u.ad_user_id = a.id "
         "WHERE a.id = %s",
         (ad_user_id,),
     )
@@ -451,7 +456,7 @@ async def list_departments(user: User = Depends(_require_admin)):
     """List all departments with user counts."""
     depts = await _fetch_all("""
         SELECT department, COUNT(*) as cnt
-        FROM ad_users
+        FROM directory_users
         WHERE is_active = 1
         GROUP BY department
         ORDER BY department
@@ -461,34 +466,9 @@ async def list_departments(user: User = Depends(_require_admin)):
 
 @ad_router.post("/sync")
 async def sync_ad_users(admin: User = Depends(_require_admin)):
-    """Trigger AD user sync (runs the CRM repo's sync-ad-users.py, which carries the
-    DEPARTMENT_OVERRIDES fix for members whose AD OU path is truncated)."""
-    script = r"C:\Users\DB_PC\Desktop\python_bcj\CRM\skin1004-crm\scripts\sync-ad-users.py"
-    try:
-        proc = await asyncio.to_thread(
-            subprocess.run,
-            [sys.executable, "-X", "utf8", script],
-            capture_output=True, text=True, timeout=60,
-        )
-        logger.info("ad_sync_triggered", by=admin.email, returncode=proc.returncode)
-        return {
-            "ok": proc.returncode == 0,
-            "output": proc.stdout[-500:] if proc.stdout else "",
-            "error": proc.stderr[-300:] if proc.stderr else "",
-        }
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="AD sync timed out")
-    except Exception as e:
-        logger.error(
-            "ad_sync_failed",
-            error_type=type(e).__name__,
-            error=str(e)[:200],
-        )
-        # ⛔ 실행 경로·프로세스 오류 원문은 관리자 화면에도 노출하지 않는다.
-        raise HTTPException(
-            status_code=500,
-            detail="AD 동기화 요청 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-        )
+    """Refresh employee profiles from Entra without changing Cella grants."""
+    from app.core.user_directory import sync_directory
+    return await asyncio.to_thread(sync_directory)
 
 
 @ad_router.get("/stats")
@@ -496,10 +476,10 @@ async def ad_stats(user: User = Depends(_require_admin)):
     """Quick stats for admin dashboard (single query)."""
     row = await _fetch_one("""
         SELECT
-            (SELECT COUNT(*) FROM ad_users WHERE is_active = 1) as total_ad_users,
+            (SELECT COUNT(*) FROM directory_users WHERE is_active = 1) as total_ad_users,
             (SELECT COUNT(DISTINCT ad_user_id) FROM user_groups) as assigned_users,
             (SELECT COUNT(*) FROM access_groups) as total_groups,
-            (SELECT COUNT(*) FROM ad_users WHERE is_active = 1 AND can_view_fi = 1) as fi_allowed_users
+            (SELECT COUNT(*) FROM directory_users WHERE is_active = 1 AND can_view_fi = 1) as fi_allowed_users
     """)
     return {
         "total_ad_users": row["total_ad_users"],

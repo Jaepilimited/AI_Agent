@@ -87,6 +87,18 @@ DEPLOYED_FEEDBACK_RESOLUTIONS = tuple(
     for feedback_id, created_on in _RESOLVED_2026_08_26
 ) + (
     {
+        "id": 172,
+        "created_on": "2026-09-08",
+        "note": (
+            "수정 완료(2026-09-09): 9월 전체 등록액을 현재 누적으로 설명하고, "
+            "데이터가 있는 날짜 16개를 경과 16일로 읽어 월말 예상액을 부풀린 문제를 고쳤습니다. "
+            "이제 마감 질문은 기준일까지 누적매출·이후 날짜 등록분·월 전체 등록 합계를 "
+            "구분해 보여줍니다. 미래 등록분을 포함한 금액을 다시 일할 확대하지 않으며, "
+            "추가 매출·취소·일정 변경을 반영하지 않은 등록 합계를 최종 마감 예측으로 "
+            "단정하지 않습니다. 미래 날짜 포함 안내도 실제 채팅 경로에 반영했습니다."
+        ),
+    },
+    {
         "id": 152,
         "created_on": "2026-08-25",
         "note": (
@@ -306,6 +318,31 @@ DEPLOYED_FEEDBACK_RESOLUTIONS = tuple(
             "것도 됩니다. 알려 주셔서 감사합니다."
         ),
     },
+    {
+        "id": 166,
+        "created_on": "2026-09-08",
+        "note": (
+            "수정 완료(2026-09-08): 같은 해의 일별 차트는 눈금을 08/28처럼 월/일로 "
+            "표시하고, 점 크기를 줄여 수치가 잘 보이도록 했습니다. 마우스를 올리면 "
+            "전체 날짜가 보이며, 연도가 달라지는 차트는 연도를 유지합니다. "
+            "기존 대화의 차트와 이미지 다운로드에도 적용됩니다."
+        ),
+    },
+    {
+        "id": 167,
+        "created_on": "2026-09-08",
+        "note": (
+            "수정 완료(2026-09-08): 올해 미팅 횟수를 물으셨는데 다음 7일의 일정만 "
+            "조회해 4건이라고 답했습니다. 이제 올해·작년·월·분기·날짜 범위의 전체 "
+            "페이지를 조회하고, 제외할 미팅 제목을 적용한 뒤 월별 횟수와 합계를 "
+            "직접 계산합니다. 원래 질문으로 다시 확인하실 수 있습니다. "
+            "'올해 캘린더 미팅 횟수와 팀별 협업 통계'라고 물으면 참석자의 확인된 "
+            "현재 소속별 공동 일정도 보여드립니다. 종일·취소·본인 거절 일정은 "
+            "제외하고 반복 미팅은 회차별로 셉니다. 캘린더 등록 기준이므로 실제 "
+            "참석 여부나 협업 성과를 의미하지 않으며, 소속 미확인 범위도 함께 "
+            "안내합니다. 전체 조회에 실패하면 일부만 세어 총횟수라고 답하지 않습니다."
+        ),
+    },
 )
 
 _COLUMNS = (
@@ -444,7 +481,7 @@ def set_status(feedback_id: int, status: str, who: str,
                 row = fetch_one(
                     "SELECT COALESCE(a.email, u.email) AS email, f.comment "
                     "FROM message_feedback f JOIN users u ON u.id = f.user_id "
-                    "LEFT JOIN ad_users a ON a.id = u.ad_user_id WHERE f.id = %s",
+                    "LEFT JOIN directory_users a ON a.id = u.ad_user_id WHERE f.id = %s",
                     (int(feedback_id),))
                 if row and row.get("email"):
                     label = {STATUS_DONE: "해결됨", STATUS_WONTFIX: "고치지 않음"}[status]
