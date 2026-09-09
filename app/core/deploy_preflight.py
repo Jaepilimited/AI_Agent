@@ -137,10 +137,159 @@ def missing_self_methods(root: Path) -> List[str]:
     return problems
 
 
+# ---------------------------------------------------------------------------
+# 풀리지 않는 import
+# ---------------------------------------------------------------------------
+#
+# ⛔ **왜 있나** (2026-09-09 실측, 프로덕션 80초 정지):
+#
+#       09:03:36  한 세션이 sql_agent.py 에 import 를 넣었다
+#                   from app.core.sales_outlook import (...)
+#       09:04:0x  다른 세션의 배포 전송  ← 이 순간 sales_outlook.py 는 없었다
+#       09:04~    ModuleNotFoundError 크래시 루프 · /health 000 · 재시작 11회
+#       09:05:21  서버 파일 하나를 되돌려 복구
+#       09:06:29  그 세션이 sales_outlook.py 를 만듦
+#
+#    import 를 먼저 넣고 3분 뒤 모듈을 만든 것이고, 전송이 그 사이에 떨어졌다.
+#    이 저장소는 트리를 통째로 보내므로 **편집 중간 상태가 그대로 프로덕션에 간다.**
+#
+# ⛔ **`syntax_errors` 도 `missing_self_methods` 도 이걸 못 잡는다.** 문법은
+#    멀쩡했고 클래스 구조도 온전했다. 그런데 배포에서 죽는 방식 중 가장 흔한
+#    것이 이것이다 — 그리고 서버는 `/health 000` 으로만 말한다.
+#
+# ⛔ **이건 경고가 아니라 관문이다.** 미추적 소스 경고(아래)는 "잃을 수도 있다"
+#    는 가능성이라 막지 않지만, 풀리지 않는 import 는 **확실히 죽는 조건**이다.
+#    실행 없이 AST 로만 판정하므로 부작용도 비용도 없다.
+#
+# ⚠️ **좁게 본다 — 매번 걸리는 관문은 그날로 꺼진다.** 넷을 제외한다:
+#      · `app.` 으로 시작하지 않는 import (외부 패키지는 여기서 판단하지 않는다)
+#      · 모듈 최상위가 아닌 것 (함수·메서드 안의 지연 import 는 **의도된 것**이다.
+#        이 저장소는 순환 참조와 기동 속도 때문에 실제로 많이 쓴다)
+#      · `try/except ImportError` 로 감싼 것 (없을 수 있음을 이미 다루고 있다)
+#      · `from X import *` 나 `__getattr__` 을 가진 모듈에서 가져오는 이름
+#        (무엇이 나올지 정적으로 알 수 없다 — 모르면 통과시킨다)
+#
+# ⚠️ `app/**` 은 전부 전송된다(EXCLUDE_PATHS 의 `app/static/charts` 는 .py 가
+#    아니다). 그래서 트리에서 판정해도 전송본과 같다 — 그 전제를 회귀가
+#    `collect()` 에 직접 물어 지킨다.
+
+_APP_PREFIX = "app."
+
+
+def _module_file(root: Path, dotted: str) -> Path:
+    """`app.core.x` → 실재하는 `app/core/x.py` 또는 `app/core/x/__init__.py`."""
+    rel = dotted.replace(".", "/")
+    for cand in (root / (rel + ".py"), root / rel / "__init__.py"):
+        if cand.exists():
+            return cand
+    return None
+
+
+def _toplevel_names(path: Path) -> Tuple[Set[str], bool]:
+    """모듈이 밖으로 내놓는 최상위 이름들. 두 번째 값이 True 면 '알 수 없음'."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except Exception:                                  # noqa: BLE001
+        return set(), True                             # 못 읽으면 판단하지 않는다
+    names: Set[str] = set()
+    opaque = False
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Import):
+            for a in node.names:
+                names.add(a.asname or a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.name == "*":
+                    opaque = True                      # 무엇이 들어오는지 모른다
+                else:
+                    names.add(a.asname or a.name)
+        elif isinstance(node, (ast.Try, ast.If)):
+            opaque = True                              # 조건부 정의 — 모르면 통과
+    if "__getattr__" in names:
+        opaque = True
+    return names, opaque
+
+
+def _guarded_by_import_error(node: ast.AST, parents: dict) -> bool:
+    """`try/except ImportError` 안에 있으면 없을 수 있음을 이미 다루는 코드다."""
+    cur = parents.get(id(node))
+    while cur is not None:
+        if isinstance(cur, ast.Try):
+            for h in cur.handlers:
+                t = h.type
+                cands = t.elts if isinstance(t, ast.Tuple) else ([t] if t else [])
+                for c in cands:
+                    nm = getattr(c, "id", None) or getattr(c, "attr", None)
+                    if nm in ("ImportError", "ModuleNotFoundError", "Exception", "BaseException"):
+                        return True
+        cur = parents.get(id(cur))
+    return False
+
+
+def unresolved_imports(root: Path) -> List[str]:
+    """모듈 최상위에서 `app.*` 를 부르는데 그 모듈이나 이름이 없는 곳."""
+    root = Path(root)
+    problems: List[str] = []
+    for path in _iter_python(root):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except Exception:                              # noqa: BLE001
+            continue                                   # syntax_errors 가 이미 잡는다
+        parents = {}
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                parents[id(child)] = parent
+        rel = path.relative_to(root).as_posix()
+
+        for node in tree.body + [n for t in tree.body if isinstance(t, (ast.Try, ast.If))
+                                 for n in getattr(t, "body", [])]:
+            mods = []
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                if node.module.startswith(_APP_PREFIX) or node.module == "app":
+                    mods.append((node.module, [a.name for a in node.names], node))
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name.startswith(_APP_PREFIX):
+                        mods.append((a.name, [], node))
+            for dotted, wanted, nd in mods:
+                if _guarded_by_import_error(nd, parents):
+                    continue
+                target = _module_file(root, dotted)
+                if target is None:
+                    problems.append(
+                        f"{rel}:{nd.lineno} — `{dotted}` 모듈이 없다 "
+                        f"(import 만 있고 파일이 아직 없다)")
+                    continue
+                if not wanted:
+                    continue
+                have, opaque = _toplevel_names(target)
+                if opaque:
+                    continue                           # 모르면 통과시킨다
+                # ⛔ `from app.core import product_lines` 는 패키지에서 **하위 모듈**을
+                #    가져오는 것이다. `__init__.py` 의 이름만 보면 이게 전부 오탐이 된다
+                #    — 실측으로 32건이 그렇게 걸렸다. 매번 걸리는 관문은 그날로 꺼진다.
+                missing = [w for w in wanted
+                           if w != "*" and w not in have
+                           and _module_file(root, f"{dotted}.{w}") is None]
+                if missing:
+                    problems.append(
+                        f"{rel}:{nd.lineno} — `{dotted}` 에 "
+                        f"{', '.join('`%s`' % m for m in missing)} 가 없다")
+    return problems
+
+
 def run(root: Path = None) -> Tuple[bool, List[str]]:
     """(통과 여부, 문제 목록)."""
     root = Path(root or Path(__file__).resolve().parents[2])
-    problems = syntax_errors(root) + missing_self_methods(root)
+    problems = syntax_errors(root) + unresolved_imports(root) + missing_self_methods(root)
     return (not problems), problems
 
 
