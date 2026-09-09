@@ -727,3 +727,132 @@ def test_surplus_right_sections_sit_beside_the_mail_not_below_it(page):
                  for i in range(len(names))]
         ys = [round(b["y"]) for b in boxes]
         assert ys == sorted(ys) and len(set(ys)) == len(ys), f"절이 겹쳤다: {ys}"
+
+
+def _mail_scroll_payload(mail_count=24):
+    """메일과 오른쪽 참고 절이 모두 긴 실제 렌더링용 데이터."""
+    document = _document()
+    template = document["mail"][0]
+    document["mail"] = [
+        {**template, "id": f"m{i}", "subject": f"{i + 1}. 채널별 예산 검토 요청"}
+        for i in range(mail_count)
+    ]
+    document["mail_total"] = mail_count
+    document["mail_unread"] = mail_count
+    document["saved"] = [{
+        "question": f"{i + 1}. 이번 달 채널별 매출과 지난달 실적 비교",
+        "answer": "국가와 채널별 실적을 확인하고 주요 변동 항목을 비교합니다. " * 10,
+        "last_run_at": "2026-08-25T09:00:00", "link": "",
+    } for i in range(3)]
+    return _payload(document)
+
+
+def _mail_geometry(page):
+    # The observer runs after layout; include its size update before measuring.
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    return page.evaluate("""() => {
+        const mail = document.querySelector('.briefing-doc-mail');
+        const peer = document.querySelector('.briefing-doc-cell.is-right:last-child');
+        const box = mail.getBoundingClientRect();
+        const right = peer.getBoundingClientRect();
+        return {top: box.top, height: box.height, rightTop: right.top,
+            rightHeight: right.height, client: mail.clientHeight, scroll: mail.scrollHeight};
+    }""")
+
+
+def _wait_for_mail_to_match_right(page):
+    page.wait_for_function("""() => {
+        const mail = document.querySelector('.briefing-doc-mail').getBoundingClientRect();
+        const peer = document.querySelector('.briefing-doc-cell.is-right:last-child').getBoundingClientRect();
+        return peer.height > 420 && Math.abs(mail.height - peer.height) <= 1;
+    }""", timeout=1500)
+
+
+def test_long_mail_uses_the_height_of_the_right_sections(page):
+    """오른쪽은 계속되는데 메일만 고정 상한에서 끝나면 화면 절반을 낭비한다."""
+    page.set_viewport_size({"width": 1400, "height": 1200})
+    _mount(page, _mail_scroll_payload())
+    _wait_for_mail_to_match_right(page)
+    geometry = _mail_geometry(page)
+    assert abs(geometry["top"] - geometry["rightTop"]) <= 1
+    assert geometry["scroll"] > geometry["client"]
+    assert page.locator(".briefing-doc-mail .briefing-doc-row").count() == 24
+
+
+def test_mail_height_tracks_wrapping_and_document_reopening(page):
+    page.set_viewport_size({"width": 1400, "height": 1200})
+    _mount(page, _mail_scroll_payload())
+    _wait_for_mail_to_match_right(page)
+    initial = _mail_geometry(page)
+
+    page.set_viewport_size({"width": 1100, "height": 1200})
+    _wait_for_mail_to_match_right(page)
+    wrapped = _mail_geometry(page)
+    assert wrapped["height"] > initial["height"]
+
+    page.locator(".briefing-doc-head").click()
+    page.locator(".briefing-doc-head").click()
+    _wait_for_mail_to_match_right(page)
+
+
+def test_short_mail_keeps_its_natural_height(page):
+    page.set_viewport_size({"width": 1400, "height": 1200})
+    _mount(page, _mail_scroll_payload(mail_count=1))
+    geometry = _mail_geometry(page)
+    assert geometry["rightHeight"] > 420
+    assert geometry["height"] < geometry["rightHeight"] / 2
+    assert geometry["scroll"] <= geometry["client"]
+
+
+def test_mobile_mail_stays_bounded_and_its_last_row_is_reachable(page):
+    page.set_viewport_size({"width": 390, "height": 640})
+    _mount(page, _mail_scroll_payload())
+    mail = page.locator(".briefing-doc-mail")
+    geometry = _mail_geometry(page)
+    assert geometry["height"] <= 420
+    assert geometry["scroll"] > geometry["client"]
+    assert page.locator(".briefing-doc-mail .briefing-doc-row").count() == 24
+    mail.evaluate("el => { el.scrollTop = el.scrollHeight; }")
+    last = mail.locator(".briefing-doc-row").last.bounding_box()
+    bounds = mail.bounding_box()
+    assert last["y"] + last["height"] <= bounds["y"] + bounds["height"] + 1
+    assert last["y"] >= bounds["y"]
+    heading = mail.locator(".briefing-doc-section-title").bounding_box()
+    assert abs(heading["y"] - bounds["y"]) <= 1
+
+
+@pytest.mark.parametrize("operation", ["refresh", "invalidate"])
+def test_replacing_a_collapsed_document_releases_its_resize_observer(page, operation):
+    """0px인 문서를 교체해도 크기가 안 변해 자동 resize 알림은 오지 않는다."""
+    page.set_viewport_size({"width": 1400, "height": 1200})
+    # Native ResizeObserver still measures and delivers every real callback.
+    page.evaluate("""() => {
+        const NativeObserver = window.ResizeObserver;
+        window.mailObserverRecords = [];
+        window.ResizeObserver = class extends NativeObserver {
+            constructor(callback) {
+                const record = {height: null, disconnected: false};
+                super((entries, observer) => {
+                    record.height = entries[0].contentRect.height;
+                    callback(entries, observer);
+                });
+                this.record = record;
+                mailObserverRecords.push(record);
+            }
+            disconnect() {
+                this.record.disconnected = true;
+                super.disconnect();
+            }
+        };
+    }""")
+    _mount(page, _mail_scroll_payload())
+    _wait_for_mail_to_match_right(page)
+    page.locator(".briefing-doc-head").click()
+    page.wait_for_function("mailObserverRecords[0].height === 0")
+
+    page.evaluate("async operation => { await controller[operation](); }", operation)
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    assert page.evaluate("mailObserverRecords[0].disconnected") is True
+    if operation == "refresh":
+        page.locator(".briefing-doc-head").click()
+        _wait_for_mail_to_match_right(page)

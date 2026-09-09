@@ -663,14 +663,41 @@
     });
 
     var rest = rightItems.slice(Math.max(lastRow - 1, 0));
+    var rightPeer = null;
     if (rest.length === 1) {
+      rightPeer = rest[0];
       place(rest[0], "right", lastRow);
     } else if (rest.length > 1) {
       var stack = textNode("div", "briefing-doc-stack", "");
       rest.forEach(function (node) { stack.appendChild(node); });
+      rightPeer = stack;
       place(stack, "right", lastRow);
     }
+
+    // 우측 참고 절이 길면 그 높이만큼 메일도 더 보여 준다. 높이 자체를 고정하지
+    // 않아 짧은 메일은 자연 높이를 유지하고, 좁은 화면의 상한은 CSS가 맡는다.
+    var mail = leftItems[lastRow - 1];
+    if (mail && mail.classList.contains("briefing-doc-mail") && rightPeer
+        && typeof ResizeObserver === "function") {
+      var observer = new ResizeObserver(function () {
+        // 새로고침/로그아웃으로 문서가 교체되면 이전 관찰과 DOM 참조도 놓는다.
+        if (!columns.isConnected) { observer.disconnect(); return; }
+        var height = rightPeer.getBoundingClientRect().height;
+        // 접힌 문서는 0px이다. 다시 펼쳐졌을 때 실제 높이로 갱신한다.
+        if (height > 0) mail.style.setProperty("--doc-mail-peer-height", Math.ceil(height) + "px");
+      });
+      observer.observe(rightPeer);
+      columns._mailHeightObserver = observer;
+    }
     return rows;
+  }
+
+  function disconnectMailHeightObserver(root) {
+    var columns = root.querySelector(".briefing-doc-columns");
+    if (columns && columns._mailHeightObserver) {
+      columns._mailHeightObserver.disconnect();
+      delete columns._mailHeightObserver;
+    }
   }
 
   function renderBusiness(body, data, options) {
@@ -809,6 +836,8 @@
 
     var connected = doc.status !== "disconnected";
 
+    // 접힌 0px 문서를 교체하면 resize 알림이 없으므로 먼저 명시적으로 해제한다.
+    disconnectMailHeightObserver(root);
     node.replaceChildren();
     if (!doc.status) {
       node.hidden = true;
@@ -1401,6 +1430,7 @@
 
   function renderSkeleton(root) {
     var grid = root.querySelector(".personal-briefing-grid");
+    disconnectMailHeightObserver(root);
     // ⚠️ 실제로 그릴 카드와 이름이 같아야 한다 — 다르면 로딩 순간에 없는 카드를 약속한다.
     /* ⚠️ 스켈레톤은 **실제로 뜰 카드만** 약속한다. 메일 카드는 문서가 비었거나
        연결이 끊겼을 때만 뜨므로(평소엔 없다) 자리를 미리 잡아 두면 빈 칸이 남는다. */

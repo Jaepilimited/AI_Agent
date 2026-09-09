@@ -4607,6 +4607,10 @@ html.dark .db-autocomplete-dropdown {
     grid-row: var(--doc-row);
   }
   .briefing-doc-columns.is-aligned > .briefing-doc-cell { margin-top: 0; }
+  /* 우측 남은 절만큼 더 보여 주되, 메일이 짧으면 빈 공간을 만들지 않는다. */
+  .briefing-doc-columns.is-aligned > .briefing-doc-mail.briefing-doc-cell {
+    max-height: max(420px, var(--doc-mail-peer-height));
+  }
 }
 
 .briefing-doc-columns { row-gap: 20px; }
@@ -6181,7 +6185,8 @@ html.dark .db-autocomplete-dropdown {
    ⚠️ 제목 줄은 고정한다. 스크롤에 같이 밀려 올라가면 지금 무엇을 보고 있는지
       모른 채 목록만 남는다. */
 .briefing-doc-mail {
-  max-height: 420px;
+  --doc-mail-peer-height: 0px;
+  max-height: min(420px, 65vh);
   overflow-y: auto;
   overscroll-behavior: contain;   /* 끝에서 페이지가 따라 스크롤되지 않게 */
   /* 스크롤이 생기고 사라져도 밑줄 길이가 흔들리지 않게 자리를 늘 비워 둔다. */
