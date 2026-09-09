@@ -100,3 +100,110 @@ def notice(sql: str = "") -> str:
         + "> 수출 금액은 보통 **유상 + 무상**으로 봅니다. 총액이 필요하시면 "
         + "「무상 포함 금액」·「총액」이라고 덧붙여 다시 물어봐 주세요."
         + nl + nl)
+
+
+# ── 「한화로 바꿔줘」 — 환산하지 않는다. 그렇다고 딴 컬럼을 갖다 붙이지도 않는다 ──
+#
+# 붐따 #162 (2026-09-04, 정다운 제보):
+#
+#     "수출 자료 다운로드시, 한화로 변환이 안되는것같습니다!"
+#
+# 실제로 일어난 일은 "환산이 안 된 것" 이 아니라 **엉뚱한 값이 한화 금액 행세를
+# 한 것**이다. "금액은 한화로 다 바꿔줘" 에 대해 생성된 SQL 이 이랬다:
+#
+#     SUM(cost_total_krw) AS total_export_amount_krw,  'KRW' AS currency
+#
+# `cost_total_krw` 는 **물류비**(포워더·관세·통관 수수료)이지 수출 금액이 아니다.
+# 게다가 거의 비어 있다 — 실측(2026-08, 삭제 제외 385건):
+#
+#     금액(유상+무상) 채워진 행   302건
+#     cost_total_krw 채워진 행     14건  (3.6%)   ← 이걸로 답했다
+#
+# 그래서 답변 표는 미국 65건·캐나다 44건이 전부 `null` 이었고, 제목은
+# 「담당자별 한화(KRW) 기준 수출 물류 실적」이었으며, 인사이트는 그 null 을
+# **"원화 정산 처리가 완료되지 않았을 가능성"** 이라고 지어냈다. 에러는 없었다.
+#
+# ⛔ 프롬프트에는 이미 "환율 환산도 하지 마라" 가 있었다. LLM 은 그 말을 지키면서
+#    **다른 컬럼으로 우회**했다 — 금지어를 늘리는 것으로는 끝나지 않는다.
+#    프롬프트는 확률이고 보증은 코드다 (FI 마스킹·내부 경로 마스킹과 같은 사상).
+#
+# ⚠️ 환율 데이터로 진짜 환산하지 않는 이유: `fx_rates` 는 **오늘치 고시**를 모으는
+#    것이라 지난달 선적을 오늘 환율로 바꾸면 그럴듯하게 틀린다. 조용한 오답을
+#    만드느니 못 한다고 말한다. 환산이 가능해지면 이 공시를 걷어내면 된다.
+
+_KRW_WORD = r"(?:한화|원화|KRW|krw|원貨)"
+_CONVERT_VERB = r"(?:환산|변환|바꿔|바꾸|바꾼|통일|맞춰|convert)"
+# "한화로 다 바꿔줘" · "원화로 환산해줘" · "KRW 로 통일" — 통화어 → 동사
+_RE_KRW_THEN_VERB = re.compile(_KRW_WORD + r".{0,12}?" + _CONVERT_VERB, re.IGNORECASE)
+# "환산해서 원화로" — 드물지만 반대 순서도 받는다
+_RE_VERB_THEN_KRW = re.compile(_CONVERT_VERB + r".{0,12}?" + _KRW_WORD, re.IGNORECASE)
+
+
+def wants_krw_conversion(question: str) -> bool:
+    """질문이 **금액을 원화로 바꿔 달라**고 했는가.
+
+    ⚠️ 통화어만으로는 판정하지 않는다 — "KRW 로 결제된 건" 은 환산 요청이 아니다.
+       바꿔 달라는 **동사**가 함께 있을 때만 참이다.
+    """
+    q = question or ""
+    return bool(_RE_KRW_THEN_VERB.search(q) or _RE_VERB_THEN_KRW.search(q))
+
+
+# `SUM(cost_total_krw) AS total_export_amount_krw` — 물류비를 집계해 놓고
+# 별칭이 **금액·매출** 을 주장하는 자리. 별칭이 `cost`·`물류비` 면 정상이라 안 건다.
+_RE_COST_AS_AMOUNT = re.compile(
+    r"\b(?:SUM|AVG|MAX|MIN)\s*\(\s*(?:[a-z_]*_)?cost(?:_[a-z_]*)?_krw\s*\)"
+    r"\s*AS\s+([A-Za-z0-9_가-힣]+)",
+    re.IGNORECASE)
+_RE_AMOUNT_CLAIM = re.compile(
+    r"(amount|revenue|sales|export|금액|매출|실적)", re.IGNORECASE)
+_RE_COST_CLAIM = re.compile(r"(cost|비용|물류비|운임|관세)", re.IGNORECASE)
+
+
+def cost_labelled_as_amount(sql: str) -> bool:
+    """물류비 컬럼에 **금액이라고 주장하는 별칭**이 붙었는가."""
+    if not _touches_logistics((sql or "").lower()):
+        return False
+    for alias in _RE_COST_AS_AMOUNT.findall(sql or ""):
+        if _RE_AMOUNT_CLAIM.search(alias) and not _RE_COST_CLAIM.search(alias):
+            return True
+    return False
+
+
+def krw_notice(sql: str = "", question: str = "") -> str:
+    """한화 환산을 요구받았거나, 물류비가 금액 행세를 하면 **표보다 먼저** 말한다.
+
+    ⛔ 값을 고치지 않는다 — 사실을 적고 판단을 사람에게 넘긴다.
+    ⚠️ 조건이 좁아 평소에는 뜨지 않는다. 매번 뜨는 경고는 곧 아무도 안 읽는다.
+    """
+    low = (sql or "").lower()
+    if not _touches_logistics(low):
+        return ""
+    mislabelled = cost_labelled_as_amount(sql)
+    # ⛔ 실제로 환산했으면 "못 했습니다" 라고 말하면 안 된다 — 공시는
+    #    `logistics_fx.notice()` 가 기준(월말환율)을 밝히는 쪽으로 넘어간다.
+    #    2026-09-06 사내 환율표가 올라와 환산이 가능해졌다 (그전엔 늘 못 했다).
+    from app.core.logistics_fx import converts_to_krw
+    asked = wants_krw_conversion(question) and not converts_to_krw(sql)
+    if not (mislabelled or asked):
+        return ""
+    nl = chr(10)
+    parts = []
+    if mislabelled:
+        logger.warning("logistics_cost_labelled_as_amount", sql=(sql or "")[:400])
+        parts.append(
+            "> ⛔ **아래 「원(KRW)」 값은 수출 금액이 아닙니다 — 물류비입니다.**" + nl
+            + "> 운임·관세·통관 수수료 등을 합한 값이라 수출 금액(인보이스 금액)과 "
+            + "다르고, **전체 건 중 일부에만 기록돼 있습니다**(2026년 8월 기준 "
+            + "385건 중 14건). 비어 있는 칸은 「금액이 0원」이 아니라 "
+            + "**물류비가 아직 입력되지 않은 것**입니다." + nl + nl)
+    if asked:
+        logger.info("logistics_krw_conversion_declined")
+        parts.append(
+            "> ⚠️ **금액을 한화로 환산해 드리지 못했습니다.**" + nl
+            + "> 수출 건은 통화가 섞여 있는데(USD·EUR·JPY·CNY·KRW, 통화가 비어 있는 "
+            + "건도 있습니다) **거래 시점 환율을 가지고 있지 않아** 원화로 바꾸면 "
+            + "그럴듯하게 틀린 값이 됩니다. 아래 금액은 **각 건에 기재된 통화의 "
+            + "원값**이니 「통화」 칸과 함께 보셔야 합니다." + nl
+            + "> 원화로 보고 싶으시면 「통화가 KRW 인 건만」이라고 물어봐 주세요." + nl + nl)
+    return "".join(parts)

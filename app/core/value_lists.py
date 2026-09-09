@@ -31,6 +31,7 @@ logger = structlog.get_logger(__name__)
 
 _SALES = "skin1004-319714.Sales_Integration.SALES_ALL_Backup"
 _AD = "skin1004-319714.marketing_analysis.integrated_ad"
+_LOG = "skin1004-319714.Export_control.export_logistics"
 
 # 자리표시자 이름 → (테이블, 컬럼, 최대 개수, 설명)
 # ⚠️ **고카디널리티 컬럼은 넣지 마라** — 제품명·거래처는 수천 개라 프롬프트가 터진다
@@ -45,6 +46,11 @@ REGISTRY: Dict[str, tuple] = {
     "Sales_Type":  (_SALES, "Sales_Type", 10, "B2B / B2C"),
     "AdMedia":     (_AD, "media", 60, "광고 매체"),
     "AdCountry":   (_AD, "country", 300, "광고 국가 (매출과 같은 한글명)"),
+    # LOG(수출 물류) — ⚠️ `forwarder`(390종)·`consignee`(536곳)는 **넣지 마라**.
+    #    고카디널리티라 프롬프트가 터지고, 상한을 넘으면 목록이 통째로 빠진다.
+    "LogTeam":     (_LOG, "order_team", 60, "수출 발주팀 (표기 흩어짐 — 원본 그대로)"),
+    "LogIncoterms": (_LOG, "incoterms", 20, "인코텀즈"),
+    "LogTransport": (_LOG, "transport_mode", 20, "운송방식"),
 }
 
 _TTL_HOURS = 26          # 하루 한 번 + 여유

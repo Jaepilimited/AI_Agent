@@ -352,6 +352,8 @@ SELECT '재고 데이터는 시스템에 연동되어 있지 않습니다. 판�
   다른 쪽이 8/31 로 끝냈고 **자른 사실을 답변에 적지 않았다**. 이 규칙은 코드
   (`_normalize_named_period`)가 강제하므로, 여기서 잘라도 되돌려진다.
 
+{{SALES_OUTLOOK_SECTION}}
+
 ### 16. 시각화/차트 요청 시
 - 반드시 SUM/COUNT + GROUP BY 집계. raw 행 금지!
 - 월별: `FORMAT_DATETIME('%Y-%m', Date) AS month` + GROUP BY
@@ -1564,10 +1566,17 @@ GROUP BY team_id ORDER BY promo_count DESC
    무의미한 숫자가 나온다. 금액을 물으면 **`GROUP BY unit` 으로 통화별로 나누고,
    통화 미상 건수를 답변에 함께 적는다**.
    ⛔ **통화별로 나눈 뒤 그 금액들을 다시 더하지 마라.** 달러·엔·원을 더한 값은
-   뜻이 없다. 환율 환산도 하지 마라 — 이 시스템에 환율 데이터가 없다.
+   뜻이 없다. ⛔ **환산은 요청받았을 때만** 하고, 그때는 아래 「한화(KRW) 환산」
+   절의 월말환율 조인을 쓴다 — 임의로 다른 컬럼을 갖다 쓰지 마라.
    합쳐서 말해도 되는 것은 **건수·수량**뿐이다
    (실측 사고 2026-09-03: 표는 통화별로 맞게 냈는데 요약이 전부 더해
    "총 수출 금액 약 266.8억원" 이라고 썼다. 표가 옆에 맞게 있어서 더 믿긴다)
+   ⛔ **한화 환산에 `cost_total_krw` 를 갖다 쓰지 마라** (2026-09-04 붐따 #162).
+   실제로 `SUM(cost_total_krw) AS total_export_amount_krw` 를 내놓은 적이 있다.
+   그건 **물류비**(운임·관세·통관 수수료)이지 수출 금액이 아니고, 2026년 8월
+   385건 중 **14건(3.6%)** 에만 값이 있어 미국 65건·캐나다 44건이 전부 `null` 로
+   나갔다. 답변은 그 `null` 을 "원화 정산 미완료" 라고 **지어냈다.**
+   한화로 바꾸는 방법은 아래 「한화(KRW) 환산」 절 하나뿐이다.
 3. ⛔ **금액은 `amount` 가 아니라 유상+무상이다** (2026-09-03 붐따 #159).
    `amount` 만 쓰면 무상분이 통째로 빠진다 — 실측 `202606010105`: 유상 7,555.72 +
    무상 1,108.40 = **8,664.12** 인데 답변은 7,555.72 만 냈다.
@@ -1624,7 +1633,7 @@ GROUP BY team_id ORDER BY promo_count DESC
 | domestic_shipping_fee_krw | INT | 국내 운송비(원) |
 | export_clearance_fee_krw | INT | 수출통관 수수료(원) |
 | origin_certificate_fee_krw | INT | 원산지증명 수수료(원) |
-| cost_total_krw | INT | 물류비 합계(원) ⚠️ 부분합과 안 맞는다 |
+| cost_total_krw | INT | 물류비 합계(원) ⛔ **수출 금액이 아니다** (21%만 채워짐) ⚠️ 부분합과 안 맞는다 |
 | combined_shipment_id | STRING | 합적(合積) 묶음 ID ⚠️ 아래 |
 | unipass_shipment_confirmed / unipass_shipment_date | BOOL/STRING | 유니패스 선적 확인 |
 | created_at / updated_at | TIMESTAMP | 생성/수정 시각 |
@@ -1643,6 +1652,8 @@ GROUP BY team_id ORDER BY promo_count DESC
   전휘빈 제보). `amount` 와 다른 이유는 낡아서가 아니라 **무상 금액을 포함하기**
   때문이다: `total_amount = amount + free_amount`. 아래 금액 규칙을 따를 것
 - `updated_by` `forwarder_note` `remittance_note` `sensitive_note` `etc_note` 는 **전부 빈 값**이다
+
+{{LOG_FX_SECTION}}
 
 {{LOG_TEAM_SECTION}}
 

@@ -21,6 +21,12 @@ import concurrent.futures
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
 from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
+from app.core.sales_outlook import (
+    SQL_PROMPT_RULE as _SALES_OUTLOOK_RULE,
+    build_company_sql as _build_company_outlook_sql,
+    is_month_close_query as _is_month_close_query,
+    render_answer as _render_sales_outlook,
+)
 from app.core.security import (
     FI_ACCESS_DENIED_MESSAGE,
     SOURCE_SCOPE_DENIED_PREFIX,
@@ -1113,6 +1119,11 @@ def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
         prompt = prompt.replace("{{TEAM_SECTION}}", build_team_section())
         prompt = prompt.replace("{{LOG_TEAM_SECTION}}",
                                 build_logistics_team_section())
+        # ⛔ 환산 조인식은 `logistics_fx` 한 곳에서만 만든다 — 프롬프트에 손으로
+        #    적으면 사본이 갈리고, 갈리면 에러가 아니라 조용한 오답이 된다
+        from app.core.logistics_fx import build_prompt_section as _fx_section
+        prompt = prompt.replace("{{LOG_FX_SECTION}}", _fx_section())
+        prompt = prompt.replace("{{SALES_OUTLOOK_SECTION}}", _SALES_OUTLOOK_RULE)
         # ⛔ 손으로 적은 값 목록은 **반드시 낡는다.** `{{VALUES:이름}}` 을 실측으로 채운다.
         #    2026-08-18 실측: Continent1 의 `남미`·`중미` 가 **`중남미` 로 통합**됐는데
         #    프롬프트만 옛 값을 들고 있었다 → "남미 매출" 은 0건이 난다.
@@ -1147,7 +1158,10 @@ def _source_table_map(settings) -> dict:
         "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
         "아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
         "프로모션": ["skin1004-319714.promotion_calendar.promotion"],
-        "물류": ["skin1004-319714.Export_control.export_logistics"],
+        # ⚠️ 환율표를 함께 연다 — 없으면 한화 환산 SQL 이 "허용되지 않은
+        #    테이블" 로 막힌다. `@@물류` 로만 테스트하면 늦게 발견된다
+        "물류": ["skin1004-319714.Export_control.export_logistics",
+                 "skin1004-319714.Sales_Integration.Exchange_Rate"],
         # ⛔ 리뷰는 국내/해외/매장 **통합 3종**이 정본이다 (2026-08-18 확정).
         #    구 몰별 소스(아마존·큐텐·쇼피·스마트스토어)를 남겨 두면 화이트리스트에
         #    없는 테이블을 가리켜 "허용되지 않은 테이블" 로 막힌다 — @@ 로만 쓰면
@@ -1558,6 +1572,20 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     enabled_sources = state.get("enabled_sources")
     can_view_fi = bool(state.get("can_view_fi", False))
     logger.info("generating_sql", query=query, enabled_sources=enabled_sources)
+
+    # Feedback 172: an explicit company-wide month outlook has fixed arithmetic.
+    # Validation and access-scope checks still run before any query is executed.
+    try:
+        explicit_company = re.search(
+            r"전사|회사\s*전체|전체\s*회사|\bcompany(?:[- ]wide)?\b", query, re.IGNORECASE)
+        outlook_sql = (
+            _build_company_outlook_sql(query, brand_filter=brand_filter)
+            if not state.get("conversation_context") or explicit_company else None
+        )
+    except ValueError:
+        return {"generated_sql": None, "error": "조회 권한의 브랜드 조건을 확인할 수 없습니다."}
+    if outlook_sql:
+        return {"generated_sql": outlook_sql, "error": None}
 
     # Use Flash for SQL generation (Pro is too slow due to thinking mode)
     llm = get_flash_client()
@@ -2454,6 +2482,16 @@ def _notice_result_answer(results) -> str:
         return ""
 
 
+def _outlook_result_answer(query: str, sql: str, results) -> Optional[str]:
+    """Keep registered future revenue and unsupported forecasts out of prose generation."""
+    answer = _render_sales_outlook(query, sql, results)
+    if answer is None:
+        return None
+    # The renderer discloses the validated month and future registration dates.
+    # A generic SQL upper bound can be exclusive and outside that month.
+    return answer + f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
+
+
 def format_answer(state: AgentState) -> Dict[str, Any]:
     """Format SQL results into a natural language answer with optional chart.
 
@@ -2495,6 +2533,10 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
     _notice_only = _notice_result_answer(results)
     if _notice_only:
         return {"answer": _notice_only}
+
+    _outlook_answer = _outlook_result_answer(query, sql, results)
+    if _outlook_answer is not None:
+        return {"answer": _outlook_answer}
 
     if not results:
         # 0건 질문에서 미인식 용어를 후보로 수집 (백그라운드 — 응답을 늦추지 않는다).
@@ -2766,6 +2808,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
 {_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_future_period_note(sql)}
+오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
 ⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
 
 ⚠️ **분량 제한 (최우선)**:
@@ -2883,8 +2927,10 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         # ⛔ 한화 환산은 하지 않고, **못 한다고 말한다** — 그러지 않으면 LLM 이
         #    물류비를 「한화 수출금액」이라고 내놓는다 (붐따 #162)
         from app.core.logistics_amount import krw_notice as _log_krw_notice
+        from app.core.logistics_fx import notice as _log_fx_notice
         answer = (_log_qty_notice(sql) + _log_amt_notice(sql)
                   + _log_krw_notice(sql, query)
+                  + _log_fx_notice(sql, query)
                   + _qty_cov_notice(sql, results)
                   + _trunc_notice(results, _rows_withheld)
                   + _mask_internal_paths(answer) + _future_period_note(sql))
@@ -3791,7 +3837,8 @@ def _amount_note(results: list) -> str:
     #    약 266.8억원" 이라고 쓴 답변이 실제로 나갔다. 표는 옆에 맞게 있었다.
     if _mixed_currency_axis(detail_rows):
         return ("\n⚠️ **통화가 여러 개다 — 금액을 합치지 마라.** 서로 다른 통화를"
-                " 더한 값은 뜻이 없다. 환율 환산도 하지 마라 (환율 데이터가 없다)."
+                " 더한 값은 뜻이 없다. 여기서 환율로 환산하지도 마라 —"
+                " 환산은 조회 단계에서 월말환율로 한다."
                 " 요약에도 '총 금액' 을 쓰지 말고 **통화별로 각각** 말해라."
                 " 합계를 말해도 되는 것은 건수·수량뿐이다."
                 # ⛔ 2026-09-04 실측: 합계는 안 냈는데 표에서 달러 값에
@@ -4251,7 +4298,7 @@ def run_sql_agent_stream(
     # skin1004-dev only — see ecosystem.windows.config.js). Prod keeps the
     # legacy generate→execute→format pipeline below.
     import os
-    if os.getenv("BQ_TOOL_LOOP") == "1":
+    if os.getenv("BQ_TOOL_LOOP") == "1" and not _is_month_close_query(query):
         from app.agents.sql_tool_agent import run_sql_tool_loop_stream
         yield from run_sql_tool_loop_stream(
             query,
@@ -4324,6 +4371,16 @@ def run_sql_agent_stream(
         yield _notice_only
         return
 
+    _outlook_answer = _outlook_result_answer(query, sql, results)
+    if _outlook_answer is not None:
+        yield _outlook_answer
+        return
+
+    # Shared by regular and fast streaming: the prompt promises this disclosure.
+    future_note = _future_period_note(sql)
+    if future_note:
+        yield future_note.lstrip() + "\n\n"
+
     # Fast-answer experiment (dev A/B: BQ_FAST_ANSWER=1): template table
     # instantly from rows, LLM only for short insights.
     if os.getenv("BQ_FAST_ANSWER") == "1":
@@ -4377,6 +4434,8 @@ def run_sql_agent_stream(
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
 {_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_future_period_note(sql)}
+오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
 {TEAM_DISPLAY_RULE}"""
 
@@ -4408,8 +4467,10 @@ def run_sql_agent_stream(
     from app.core.result_truncation import notice as _trunc_notice
     from app.core.logistics_amount import notice as _log_amt_notice
     from app.core.logistics_amount import krw_notice as _log_krw_notice
+    from app.core.logistics_fx import notice as _log_fx_notice
     _qty_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
                    + _log_krw_notice(sql, query)
+                   + _log_fx_notice(sql, query)
                    + _qty_cov_notice(sql, results)
                    + _trunc_notice(results, _rows_withheld))
     if _qty_notice:

@@ -36,6 +36,7 @@ WATCHED_DATASETS = (
     "marketing_analysis",
     "Platform_Data",
     "promotion_calendar",
+    "Export_control",
 )
 
 _DDL = """

@@ -118,3 +118,71 @@ def test_both_answer_paths_publish_the_notice():
     src = _agent_src()
     assert src.count("from app.core.logistics_amount import notice as _log_amt_notice") == 2
     assert src.count("_log_amt_notice(sql)") == 2
+
+
+# ── 한화 환산 (붐따 #162) ────────────────────────────────────────────────
+#
+# ⛔ 이 붐따의 정체는 "환산이 안 됐다" 가 아니라 **물류비가 한화 수출금액 행세를
+#    한 것**이다. 프롬프트에는 이미 "환율 환산도 하지 마라" 가 있었고, LLM 은 그
+#    말을 지키면서 `SUM(cost_total_krw) AS total_export_amount_krw` 로 우회했다.
+
+LOG_SQL = f"SELECT SUM(cost_total_krw) AS %s FROM {T} WHERE NOT is_deleted"
+
+
+def test_a_krw_conversion_request_is_recognised():
+    assert LA.wants_krw_conversion("금액은 한화로 다 바꿔줘")
+    assert LA.wants_krw_conversion("원화로 환산해줘")
+    assert LA.wants_krw_conversion("KRW 로 통일해서 보여줘")
+
+
+def test_merely_mentioning_the_currency_is_not_a_conversion_request():
+    """⚠️ 통화어만으로 켜면 평범한 조회마다 경고가 뜬다 — 그러면 아무도 안 읽는다."""
+    assert not LA.wants_krw_conversion("통화가 KRW 인 건만 보여줘")
+    assert not LA.wants_krw_conversion("원화로 결제된 수출 건수는?")
+    assert not LA.wants_krw_conversion("8월 수출 금액 알려줘")
+
+
+def test_a_conversion_request_is_answered_with_why_it_cannot_be_done():
+    out = LA.krw_notice(LOG_SQL % "amount_krw", "금액은 한화로 다 바꿔줘")
+    assert "환산해 드리지 못했습니다" in out
+    assert out.startswith(">")            # 표보다 먼저 오는 인용 블록
+
+
+def test_a_cost_column_wearing_an_amount_alias_is_called_out():
+    out = LA.krw_notice(LOG_SQL % "total_export_amount_krw", "")
+    assert "수출 금액이 아닙니다" in out
+    assert LA.cost_labelled_as_amount(LOG_SQL % "total_export_amount_krw")
+
+
+def test_an_honest_cost_alias_is_left_alone():
+    """물류비를 물류비라고 부르는 것은 정상이다 — 여기서 뜨면 소음이 된다."""
+    assert not LA.cost_labelled_as_amount(LOG_SQL % "logistics_cost_krw")
+    assert not LA.cost_labelled_as_amount(LOG_SQL % "총물류비")
+    assert LA.krw_notice(LOG_SQL % "logistics_cost_krw", "8월 물류비 알려줘") == ""
+
+
+def test_other_tables_never_get_the_krw_notice():
+    other = "SELECT SUM(cost_total_krw) AS amount_krw FROM `p.d.other_table`"
+    assert LA.krw_notice(other, "한화로 바꿔줘") == ""
+
+
+def test_the_regex_has_no_stray_control_characters():
+    """⛔ `\b` 가 진짜 백스페이스(0x08)로 들어가면 영영 매치하지 않는다 —
+    에러 없이 컴파일되고 편집기에도 안 보인다 (`static_ctrl_chars` 와 같은 규칙)."""
+    with open("app/core/logistics_amount.py", encoding="utf-8") as fh:
+        assert chr(8) not in fh.read()
+
+
+def test_the_prompt_names_the_column_that_was_substituted():
+    """프롬프트도 함께 못 박는다 — 코드가 보증하고 프롬프트가 확률을 낮춘다."""
+    with open("prompts/sql_generator.txt", encoding="utf-8") as fh:
+        prompt = fh.read()
+    assert "붐따 #162" in prompt
+    assert "total_export_amount_krw" in prompt
+
+
+def test_both_answer_paths_publish_the_krw_notice():
+    """⚠️ 한쪽만 걸면 스트리밍이냐 아니냐로 답이 갈린다 (이미 겪은 사고다)."""
+    src = _agent_src()
+    assert src.count("from app.core.logistics_amount import krw_notice as _log_krw_notice") == 2
+    assert src.count("_log_krw_notice(sql, query)") == 2
