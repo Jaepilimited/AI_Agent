@@ -4027,6 +4027,40 @@ def _insert_table_totals(answer: str, totals_block: str) -> str:
 _CORRECTION_MAX_ROWS = 30
 
 
+def _fast_answer_head(query: str, results: list, user_id=None) -> str:
+    """빠른 응답의 머리(제목·요약·표·합계). **마스킹은 여기서 보증한다.**
+
+    ⛔ **붐따 #147 재발(2026-09-09 실측).** `_mask_internal_paths` 는 LLM 이 쓰는
+       서술에만 걸려 있었고, **코드가 결과에서 만들어 흘리는 이 표는 마스킹 밖**
+       이었다. 그래서 "프로모션 캘린더 경로 알려줘" 가 스트리밍에서만
+       `프로젝트.데이터셋.테이블` 을 그대로 내놨다:
+
+           [비스트리밍] 노출 없음      ← `format_answer` 가 답변 전체를 가린다
+           [스트리밍]   **노출됨**     ← 실사용 경로가 이쪽이다
+
+       바로 이 저장소가 반복해 겪은 "두 경로 중 한쪽만 고쳤다" 이고, 하필
+       **보안 건**에서 났다. 표를 만드는 곳과 가리는 곳을 한 함수로 묶어
+       다음 사람이 갈라 놓을 수 없게 한다.
+    ⚠️ 값이 경로처럼 생겼을 뿐인 셀(`3.14.15`·`v1.2.3`)은 그대로 둔다 —
+       판정은 **실재하는 데이터셋·프로젝트 이름**으로만 한다.
+    """
+    title = re.sub(r"\s*(알려줘|보여줘|알려주세요|보여주세요|줄래\??|해줘)\s*$",
+                   "", (query or "").strip())
+    head = f"### 📊 {title}\n\n"
+    summary = _fast_summary_line(results)
+    if summary:
+        head += f"#### 요약\n{summary}\n\n"
+    fast_table = _fast_table_markdown(results, user_id=user_id)
+    head += f"#### 상세 데이터\n{fast_table}\n"
+    # 차원 열이 전혀 없는 특수한 다중 행 결과는 표 안에 '합계' 라벨을 넣을
+    # 자리가 없다. 이 경우에도 별도 합계 표로 보증한다.
+    if "**합계**" not in fast_table:
+        totals_block = _build_table_totals_markdown(results)
+        if totals_block:
+            head += "\n" + totals_block + "\n"
+    return _mask_internal_paths(head)
+
+
 def _number_check_notice(answer: str, results: list, query: str,
                          route: str = "bigquery") -> str:
     """답변 속 **금액급 수치가 조회 결과로 설명되지 않으면** 원본을 덧붙인다.
@@ -4162,9 +4196,34 @@ def _fast_table_markdown(
     return table
 
 
+#: 세는 열이라고 말해도 되는 이름. ⛔ `order` 만으로는 안 된다 —
+#: `total_order_amount` 는 **금액**이다 (아래 주석의 실측 사고).
+_COUNT_HINTS = ("count", "cnt", "건수", "_num", "num_")
+
+
 def _fast_summary_line(results: list) -> str:
-    """One-line computed summary: totals of revenue/qty-like numeric columns."""
+    """계산된 요약 한 줄. ⛔ **라벨이 값의 종류를 거짓말하면 안 된다.**
+
+    ⛔ 2026-09-09 스윕 실측 사고: `"order" in 컬럼명` 이면 무조건 「건」으로 셌다.
+       물류 주문 금액을 물었더니 `total_order_amount`(USD 8,664.12)가
+
+           #### 요약  총 주문 **8,664건**
+
+       으로 나갔다. **표는 옆에 맞게 있어서 오히려 더 믿긴다** — 붐따 #138
+       (`제품명: 숫자`)·#162(물류비를 「한화 수출금액」이라 부름)와 같은 계열의
+       조용한 오답이다. 금액인지 아닌지는 **`answer_check.is_money_column` 한
+       곳**에서만 판정한다 (교정 후보를 고를 때 쓰는 그 함수다 — 두 번 구현하면
+       한쪽만 고쳐진다).
+    ⚠️ 금액이면서 매출이 아닌 열(`paid_amount` 같은 외화 금액)은 **말하지 않는다.**
+       통화가 섞일 수 있어 더하면 뜻이 없고, 「매출액 억원」을 붙이면 라벨이 또
+       거짓말을 한다 (통화 혼재 합계 금지와 같은 이유). 표가 이미 보여 준다.
+    ⚠️ `quantity_ea`(수출 선적 수량)를 「판매수량」이라 부르지 않는다 — 판매수량은
+       `Total_Qty` 뿐이고, 둘은 값이 다르다.
+    """
     from decimal import Decimal as _D
+
+    from app.core.answer_check import is_money_column
+
     parts = []
     cols = list(results[0].keys())
     for c in cols:
@@ -4173,13 +4232,17 @@ def _fast_summary_line(results: list) -> str:
         if not vals:
             continue
         total = float(sum(float(v) for v in vals))
-        if "revenue" in cl or "sales" in cl or "매출" in cl:
+        money = is_money_column(c)
+        if money and ("revenue" in cl or "sales" in cl or "매출" in cl):
             uk = total / 100_000_000
             parts.append(f"총 매출액 **약 {uk:,.1f}억원** ({int(total):,}원)")
-        elif "qty" in cl or "quantity" in cl or "수량" in cl:
-            parts.append(f"총 판매수량 **{int(total):,}개**")
-        elif "order" in cl:
-            parts.append(f"총 주문 **{int(total):,}건**")
+        elif not money and ("qty" in cl or "quantity" in cl or "수량" in cl):
+            # ⚠️ 판매수량은 `Total_Qty` 뿐이다. 물류 선적 수량은 그렇게 부르지 않는다.
+            label = "총 판매수량" if "total_qty" in cl else "총 수량"
+            parts.append(f"{label} **{int(total):,}개**")
+        elif not money and any(h in cl for h in _COUNT_HINTS):
+            label = "총 주문" if "order" in cl else "총"
+            parts.append(f"{label} **{int(total):,}건**")
     return " · ".join(parts)
 
 
@@ -4222,19 +4285,7 @@ def _fast_answer_stream(
     if _pre_notice:
         yield _pre_notice
 
-    title = re.sub(r"\s*(알려줘|보여줘|알려주세요|보여주세요|줄래\??|해줘)\s*$", "", query.strip())
-    out_head = f"### 📊 {title}\n\n"
-    summary = _fast_summary_line(results)
-    if summary:
-        out_head += f"#### 요약\n{summary}\n\n"
-    fast_table = _fast_table_markdown(results, user_id=user_id)
-    out_head += f"#### 상세 데이터\n{fast_table}\n"
-    # 차원 열이 전혀 없는 특수한 다중 행 결과는 표 안에 '합계' 라벨을 넣을
-    # 자리가 없다. 이 경우에도 별도 합계 표로 보증한다.
-    if "**합계**" not in fast_table:
-        totals_block = _build_table_totals_markdown(results)
-        if totals_block:
-            out_head += "\n" + totals_block + "\n"
+    out_head = _fast_answer_head(query, results, user_id)
     yield out_head
 
     # Chart in background while insights stream
@@ -4286,7 +4337,10 @@ SQL 결과 ({len(results)}행):
     #    **모아 두었다가 끝에 원본 표를 붙인다** (정상 경로와 같다). 이 경로는
     #    표를 코드가 만들지만 인사이트는 LLM 이 쓴다 — 비중·비교를 문장에서
     #    계산하므로 검증이 빠지면 그것이 그대로 나간다.
-    _check_notice = _number_check_notice(out_head + "".join(_streamed), results, query)
+    # ⛔ 이 안내는 **조회 원본 표**를 붙인다 — 결과에서 나온 값이므로 여기도 가린다
+    #    (붐따 #147: 코드가 만든 조각이 마스킹 밖이면 경로에 따라 답이 갈린다).
+    _check_notice = _mask_internal_paths(
+        _number_check_notice(out_head + "".join(_streamed), results, query))
     if _check_notice:
         yield _check_notice
 
@@ -4483,7 +4537,8 @@ def run_sql_agent_stream(
     # Stream answer (chart generates in parallel)
     _t_stream_start = _time.perf_counter()
     _t_first_token = None
-    totals_block = _build_table_totals_markdown(results)
+    # ⛔ 이 블록은 마스킹된 스트림 **뒤에** 끼어든다 — 스스로 가려야 한다 (붐따 #147)
+    totals_block = _mask_internal_paths(_build_table_totals_markdown(results))
     # ⛔ 억·만 환산을 LLM 에게 시키지 마라 — 산술이고, LLM 의 산술은 확률이다.
     #    표가 맞는데 요약만 "82,871,719원 → 약 828.7억원"으로 나간 적이 있다
     #    (2026-08-31 2회차 제보). 배율만 틀린 표기는 코드가 되돌린다.
@@ -4519,7 +4574,9 @@ def run_sql_agent_stream(
         yield chunk
     _t_stream_end = _time.perf_counter()
 
-    check_notice = _number_check_notice("".join(_streamed), results, query)
+    # ⛔ 원본 표가 붙는다 — 결과에서 나온 값이라 여기도 가린다 (붐따 #147)
+    check_notice = _mask_internal_paths(
+        _number_check_notice("".join(_streamed), results, query))
     if check_notice:
         yield check_notice
     logger.info(

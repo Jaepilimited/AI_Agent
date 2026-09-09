@@ -57,13 +57,76 @@ def test_ordinary_text_with_dots_is_not_touched():
 
 
 def test_masking_runs_on_every_answer_path():
-    """⛔ 한 경로만 막으면 다른 경로로 그대로 나간다 (스트리밍/비스트리밍)."""
+    """⛔ 한 경로만 막으면 다른 경로로 그대로 나간다 (스트리밍/비스트리밍).
+
+    ⚠️ **이 개수 검사는 2026-09-09 에 실제 유출을 놓쳤다.** 호출이 몇 번 나오는지는
+       "무엇이 가려지는가" 를 말해 주지 않는다 — 아래 동작 검사가 진짜 방어다.
+    """
     import inspect
 
     from app.agents import sql_agent
 
     src = inspect.getsource(sql_agent)
     assert src.count("_mask_internal_paths(") >= 3
+
+
+# ── 붐따 #147 재발 (2026-09-09 실측) ─────────────────────────────────────────
+#
+# `_mask_internal_paths` 는 **LLM 이 쓰는 서술**에만 걸려 있었고, 코드가 결과에서
+# 만들어 흘리는 표는 마스킹 밖이었다. "프로모션 캘린더 경로 알려줘" 실측:
+#
+#     [비스트리밍] 노출 없음      ← format_answer 가 답변 전체를 가린다
+#     [스트리밍]   **노출됨**     ← 실사용 경로가 이쪽이다
+#
+# 이 저장소가 반복해 겪은 "두 경로 중 한쪽만" 이고, 하필 보안 건에서 났다.
+
+
+def test_the_code_built_table_is_masked_too():
+    """⛔ 표를 만드는 것도 코드다 — LLM 서술만 가리면 절반만 막는 것이다."""
+    from app.agents.sql_agent import _fast_answer_head
+
+    head = _fast_answer_head(
+        "프로모션 캘린더 경로 알려줘",
+        [{"table_path": "skin1004-319714.promotion_calendar.promotion"}])
+
+    assert "skin1004-319714" not in head
+    assert "promotion_calendar" not in head
+    assert "내부 경로 비공개" in head
+
+
+def test_the_code_built_table_keeps_ordinary_values():
+    """⚠️ 경로처럼 생겼을 뿐인 값을 뭉개면 멀쩡한 답이 망가진다."""
+    from app.agents.sql_agent import _fast_answer_head
+
+    head = _fast_answer_head("버전 알려줘", [{"버전": "3.14.15"}, {"버전": "v1.2.3"}])
+    assert "3.14.15" in head and "v1.2.3" in head
+
+
+def test_the_fast_stream_yields_the_head_through_the_masking_helper():
+    """⛔ 머리를 만드는 곳과 가리는 곳을 갈라 놓지 마라 — 갈라지면 또 샌다.
+
+    표를 손으로 다시 조립하는 코드가 생기면 이 검사가 걸린다.
+    """
+    import inspect
+
+    from app.agents import sql_agent
+
+    src = inspect.getsource(sql_agent)
+    assert "out_head = _fast_answer_head(" in src, \
+        "빠른 응답 머리는 _fast_answer_head() 로만 만든다"
+    assert "_mask_internal_paths(head)" in inspect.getsource(sql_agent._fast_answer_head), \
+        "머리 조립 함수가 스스로 가려야 한다"
+
+
+def test_the_verification_notice_is_masked():
+    """⛔ 대조용 원본 표는 **조회 결과 그대로**다 — 여기로도 샌다."""
+    import inspect
+
+    from app.agents import sql_agent
+
+    src = inspect.getsource(sql_agent)
+    assert src.count("_mask_internal_paths(\n        _number_check_notice(") == 2, \
+        "두 스트리밍 경로 모두에서 원본 표를 가려야 한다"
 
 
 def test_stream_masks_across_chunk_boundaries():
