@@ -317,7 +317,7 @@ _RANK_TOKEN = re.compile(r"(\d+)\s*위")
 
 # ⛔ 데이터에는 있지만 필터로 쓰면 답을 망가뜨리는 일반 명사 (2026-09-07 controller
 #    ruling — 실측 사고).
-#    `_word_exists` 는 "이 낱말이 든 행이 하나라도 있는가" 만 본다. `제품` 은
+#    자료 확인은 "이 낱말이 든 행이 하나라도 있는가" 만 본다. `제품` 은
 #    206행 중 6행에만("신제품" 안에) 들어 있어서 그 검사를 **통과한다** — 그런데
 #    AND 필터로 쓰면 화해 1위 10행 중 9행을 날린다("화해 뷰티 어워드에서 1위 한
 #    우리 제품 알려줘" → 정답 10행이 1행으로 줄었다). OP 재고의 `usable_words` 가
@@ -325,7 +325,7 @@ _RANK_TOKEN = re.compile(r"(\d+)\s*위")
 #    ⚠️ **`_STOP`(질문 형태 낱말, 예: OP 재고의 "얼마나"·"남았어") 과는 목적이
 #    다르다.** `_STOP` 류는 "질문투라 애초에 검색어가 아니다" 이고, 이 목록은
 #    "데이터에 실제로 있지만(다른 낱말 **안에** 우연히 끼어) 필터로 쓰면 위험하다"
-#    는 뜻이라 `_word_exists` 검사 **전에** 뗀다 — 검사 결과와 무관하게 무조건 뺀다.
+#    는 뜻이라 자료 확인 **전에** 뗀다 — 확인 결과와 무관하게 무조건 뺀다.
 #    ⛔ `수상`·`랭킹` 은 넣지 마라 — 그건 `구분` 을 고르는 뜻 있는 낱말이다.
 _GENERIC_NOUNS = frozenset({"제품", "상품", "브랜드", "회사", "자사"})
 
@@ -338,16 +338,131 @@ def _extract_rank_filter(term: str) -> "tuple[Optional[int], str]":
     return int(m.group(1)), (term[:m.start()] + " " + term[m.end():])
 
 
-def _word_exists(word: str) -> bool:
-    """이 낱말이 든 행이 하나라도 있는가 — 없으면 검색어가 아니라 질문의 군더더기다.
+# `2026년` 은 어느 컬럼에도 **문자열로 없다** — 날짜는 `2026-01-15` 로 들어 있다.
+# 그래서 텍스트 낱말로 걸면 자료 확인이 False 를 주고 조용히 버려진다.
+# 실측(2026-09-09 프로덕션): "2026년 수상 알려줘" → 연도가 통째로 무시돼 2017~2026
+# 전 기간 52행이 나갔다. `N위` 와 같은 계열로 **날짜 필터**로 뺀다.
+_YEAR_TOKEN = re.compile(r"(20\d\d)\s*년")
+#: ⛔ `년` 없는 맨 네 자리도 연도로 읽는다 — "2026 수상" 은 흔한 말투다.
+#:    단 `N위`·`N월` 을 먼저 뗀 뒤에 본다 (아래 호출 순서).
+_YEAR_BARE = re.compile(r"(?<!\d)(20\d\d)(?!\d)")
+#: `6월` — 연도와 **따로** 온다("6월에 받은 거"). 12를 넘는 숫자는 월이 아니다.
+_MONTH_TOKEN = re.compile(r"(?<!\d)([1-9]|1[0-2])\s*월")
 
-    ⛔ 불용어 목록을 늘리는 방식(에서·한·우리…)은 끝이 없다. OP 재고와 같은 해법:
-       **데이터에 물어본다.** 낱말당 SELECT 1 LIMIT 1 이라 비싸지 않다.
+#: 기간을 판정할 날짜 — `award_date` 가 비었거나 `-` 면(68/206) 수상 시작일을 쓴다.
+#:
+#: ⚠️ **두 가지 표기가 섞여 있다**: `2026-01-15`(205행) 와 `3/9/2026`(1행).
+#:    앞의 것만 읽으면 그 한 행이 기간 조회에서 조용히 빠진다 — 하필 2026년 행이다.
+#: ⚠️ 실측(2026-09-09): 이 식으로 파싱 실패는 **1행**뿐이다(`award_start='진행중'`).
+#:    연도별 집계가 문자열 방식과 **완전히 일치**함을 확인하고 바꿨다.
+#: ⛔ **`%` 를 두 번 쓴다.** pymysql 은 params 가 빈 튜플이어도 `query % params` 를
+#:    돌리므로 홑 `%` 는 그 자리에서 터진다 (CLAUDE.md 에 적힌 그 함정).
+_DATE_CELL = "IF(TRIM(award_date) IN ('', '-'), award_start, award_date)"
+_DATE_SQL = ("COALESCE(STR_TO_DATE({c}, '%%Y-%%m-%%d'), "
+             "STR_TO_DATE({c}, '%%c/%%e/%%Y'))").format(c=_DATE_CELL)
+
+#: 구분(`category`) 어휘 — 사람이 쓰는 말투를 시트 값으로 되돌린다.
+#:
+#: ⚠️ **텍스트로 걸던 것과 결과가 같은 낱말만 넣는다** (2026-09-09 프로덕션 실측).
+#:    `수상` 52 = `category='수상'` 52 · `랭킹` 94 = `category='랭킹'` 94 ·
+#:    `쇼피 수상` 4 = `쇼피 + category='수상'` 4. 즉 이 셋은 바꿔도 손해가 없고,
+#:    대신 자료에 없는 말투(`랭크되있는거`)까지 살아난다.
+#: ⛔ **`어워드`·`award` 는 넣지 마라 — 실측으로 17행이 사라진다.**
+#:    `어워드` 텍스트 19행 중 `category='수상'` 은 **2행**뿐이다. 나머지는
+#:    랭킹 행의 제목에 든 것이다("Daily Vanity Beauty Awards …"). 구분으로
+#:    바꾸면 조용히 90%가 날아간다 — `_GENERIC_NOUNS` 가 막던 것과 같은 함정이다.
+#: ⛔ `1위`·`상위` 도 넣지 마라 — 그건 구분이 아니라 순위다(`_extract_rank_filter`).
+_CATEGORY_WORDS = {"랭킹": "랭킹", "랭크": "랭킹", "rank": "랭킹",
+                   "수상": "수상", "설문": "설문"}
+
+
+def _extract_month_filter(term: str) -> "tuple[Optional[int], str]":
+    """`6월` 을 뽑아 날짜 필터로 돌려주고, 그 토큰은 텍스트에서 뗀다.
+
+    ⛔ **`N위` 를 뗀 뒤에 부른다.** 아니면 순위의 숫자가 월로 읽힐 수 있다.
+    ⚠️ 붐따 #173 후속(2026-09-09): "2026년 6월꺼만 보여줘" 에서 `6월꺼만` 이
+       통째로 버려져 **2026년 전체 7건**이 나갔다. 정답은 0건이다(그 달엔 기록이
+       없다) — 연도만 걸고 월을 흘리면 "6월에 이만큼 받았다" 로 읽힌다.
     """
-    where = " OR ".join(f"{c} LIKE %s" for c in _SEARCH_COLS)
-    params = tuple(f"%{word}%" for _ in _SEARCH_COLS)
-    row = fetch_one(f"SELECT 1 n FROM awards_rankings WHERE {where} LIMIT 1", params)
-    return bool(row)
+    m = _MONTH_TOKEN.search(term or "")
+    if not m:
+        return None, term or ""
+    return int(m.group(1)), (term[:m.start()] + " " + term[m.end():])
+
+
+def _extract_year_filter(term: str) -> "tuple[Optional[int], str]":
+    """`2026년`·`2026` 을 뽑아 날짜 필터로 돌려주고, 그 토큰은 텍스트에서 뗀다.
+
+    ⚠️ 남은 조사(`2026년"만"`)는 한 글자라 뒤의 `len(w) >= 2` 에서 저절로 빠진다.
+    ⛔ 맨 네 자리(`2026`)는 **`N위`·`N월` 을 뗀 뒤에** 본다 — 순서가 바뀌면
+       기간 표현의 숫자를 연도로 잘못 집는다.
+    """
+    m = _YEAR_TOKEN.search(term or "") or _YEAR_BARE.search(term or "")
+    if not m:
+        return None, term or ""
+    return int(m.group(1)), (term[:m.start()] + " " + term[m.end():])
+
+
+def _period_hint(year: Optional[int], month: Optional[int]) -> str:
+    """기간으로 좁혔는데 0건일 때 — **"안 받았다" 와 "안 적혔다" 를 가른다.**
+
+    ⛔ "찾지 못했습니다" 만으로는 그 달에 **수상이 없었던 것**인지 **시트에 아직
+       안 적힌 것**인지 알 수 없다. 프로모션 캘린더·수출 물류의 보유 구간과 같은
+       함정이다 (일본 최대 달의 메가와리가 캘린더에 없어 "행사 없음" 으로 세던 그것).
+       그래서 **기록이 있는 기간을 함께 적는다** — 사람이 판단할 수 있게.
+    ⚠️ 0건일 때만 부른다 (조회를 늘리지 않는다).
+    """
+    try:
+        if year is not None and month is not None:
+            rows = fetch_all(
+                f"SELECT MONTH({_DATE_SQL}) m, COUNT(*) n FROM awards_rankings "
+                f"WHERE YEAR({_DATE_SQL}) = %s GROUP BY m HAVING m IS NOT NULL "
+                "ORDER BY m", (year,))
+            got = [(int(r["m"]), int(r["n"])) for r in rows if r.get("m")]
+            if got:
+                return (f"{year}년 {month}월에는 기록이 없습니다. "
+                        f"{year}년에 기록이 있는 달은 "
+                        + " · ".join(f"{m}월 {n}건" for m, n in got) + " 입니다.")
+            return f"{year}년에는 기록이 아예 없습니다."
+        if year is not None:
+            rows = fetch_all(
+                f"SELECT YEAR({_DATE_SQL}) y, COUNT(*) n FROM awards_rankings "
+                f"GROUP BY y HAVING y > 0 ORDER BY y", ())
+            got = [(int(r["y"]), int(r["n"])) for r in rows if r.get("y")]
+            if got:
+                return (f"{year}년에는 기록이 없습니다. 기록이 있는 해는 "
+                        + " · ".join(f"{y}년 {n}건" for y, n in got) + " 입니다.")
+        if month is not None:
+            rows = fetch_all(
+                f"SELECT YEAR({_DATE_SQL}) y, COUNT(*) n FROM awards_rankings "
+                f"WHERE MONTH({_DATE_SQL}) = %s GROUP BY y HAVING y > 0 ORDER BY y",
+                (month,))
+            got = [(int(r["y"]), int(r["n"])) for r in rows if r.get("y")]
+            if got:
+                return (f"{month}월 기록이 있는 해는 "
+                        + " · ".join(f"{y}년 {n}건" for y, n in got) + " 입니다.")
+    except Exception as e:   # ⚠️ 안내를 못 만든다고 답변 자체를 죽이지 않는다
+        logger.warning("awards_period_hint_failed", error=str(e)[:160])
+    return ""
+
+
+def _haystack() -> List[str]:
+    """검색 대상 컬럼을 행마다 한 덩어리로 — `usable_words` 가 물어볼 자료다.
+
+    ⛔ 낱말마다 SELECT 를 날리던 것을 한 번으로 바꿨다. 바꾼 진짜 이유는 성능이
+       아니라 **조사**다: 예전에는 `쇼피에서` 가 자료에 없어 그냥 False 였고,
+       그러면 그 낱말이 버려져 **조건이 하나도 안 남아 기본 목록 40행**이 나갔다
+       (붐따 #173 — "@@수상으로 물어봤는데 그냥 원문만 보여줌", 2026-09-09).
+       `query_keywords.usable_words` 는 원형·조사를 뗀 형을 함께 물어 `쇼피` 를
+       살려낸다 (실측: 그 낱말 하나로 206행 → 45행).
+
+    ⚠️ **판정 규칙은 `query_keywords.usable_words` 한 곳에만 둔다** — OP 재고·
+       제품정보가 이미 같은 함수를 쓴다. 여기서 다시 구현하면 한쪽만 고쳐졌을 때
+       경로에 따라 답이 갈린다 (이 저장소가 반복해서 겪은 실패다).
+    """
+    cols = ", ".join(_SEARCH_COLS)
+    rows = fetch_all(f"SELECT {cols} FROM awards_rankings") or []
+    return [" ".join(str(r.get(c) or "") for c in _SEARCH_COLS).lower() for r in rows]
 
 
 def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
@@ -357,38 +472,76 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
        `어워드에서`·`1위` 때문에 0건이 된다 (실측). 대응은 셋:
        1. `N위` 는 `rank_value` 숫자 필터로 뺀다 (`_extract_rank_filter`).
        2. **일반 명사**(`_GENERIC_NOUNS`)는 데이터 확인 없이 먼저 뗀다 — 다른
-          낱말 안에 우연히 끼어 있어 `_word_exists` 를 통과해 버리기 때문이다
+          낱말 안에 우연히 끼어 있어 자료 확인을 통과해 버리기 때문이다
           (`제품` 이 6/206행에서 "신제품" 안에 있어 필터로 쓰면 정답의 90%가 날아간
           실측 사고, 2026-09-07). "화해"·"뷰티" 처럼 남은 진짜 검색어만 거른다.
-       3. 나머지 낱말은 데이터에 실제로 있는 것만 남긴다 (`_word_exists`).
-       쓸 낱말이 하나도 안 남고 순위 필터도 없으면 조건 없이(=기본 목록,
-       최근·상위 순) 돌려준다 — 빈 결과보다 낫다.
+       3. 나머지 낱말은 자료에 실제로 있는 것만 남긴다
+          (`query_keywords.usable_words` — **조사를 뗀 형도 함께 물어본다**).
+       그리고 텍스트로는 걸릴 수 없는 두 축을 따로 뺀다 (2026-09-09, 붐따 #173):
+       4. `2026년` 은 날짜 필터다 (`_extract_year_filter`) — 자료에는 `2026-01-15`
+          로 들어 있어 문자열로 걸면 **연도가 통째로 무시된다**.
+       5. `수상`·`랭킹`·`설문` 은 구분 필터다 (`_CATEGORY_WORDS`) — `랭크되있는거`
+          처럼 자료에 없는 말투로 와도 사용자가 고른 구분은 사라지면 안 된다.
+       쓸 낱말이 하나도 안 남고 다른 필터도 없으면 조건 없이(=기본 목록,
+       최근·상위 순) 돌려주되, **그 사실을 답변 맨 위에서 밝힌다** (`narrowed`).
 
     ⚠️ **상한(`[:8]`·`[:5]`)에 걸려 검토·적용되지 못한 낱말은 `capped` 로 따로
        담는다** (2026-09-07 최종 리뷰 Fix 4). `dropped`(데이터에 없어서 뺀 것)와
-       뜻이 다르다 — 9번째 낱말은 `_word_exists` 조차 안 돌았고, 6번째 "있는" 낱말은
+       뜻이 다르다 — 9번째 낱말은 자료 확인조차 안 됐고, 6번째 "있는" 낱말은
        확인은 됐지만 필터에 못 걸렸다. 둘을 같은 문구로 뭉개면 "자료에 없다" 는
        거짓 이유가 실제로 있는 낱말에 붙는다.
     """
+    from app.core.query_keywords import usable_words
+
+    # ⛔ 순서가 뜻을 바꾼다: `N위` → `N월` → 연도. 연도의 맨 네 자리 규칙이
+    #    먼저 돌면 기간 표현의 숫자를 연도로 집는다.
     rank_filter, text = _extract_rank_filter(term)
+    month_filter, text = _extract_month_filter(text)
+    year_filter, text = _extract_year_filter(text)
     words = [w for w in re.split(r"\s+", (text or "").strip()) if len(w) >= 2]
 
-    kept: List[str] = []
-    dropped: List[str] = []
-    capped: List[str] = list(words[8:])  # ⛔ 9번째부터는 데이터 확인조차 안 됐다
-    for w in words[:8]:
-        if w in _GENERIC_NOUNS:
-            dropped.append(w)
-        elif _word_exists(w):
-            kept.append(w)
+    # ⛔ 구분(수상/랭킹/설문)은 **데이터 확인 전에** 뗀다. `랭크되있는거` 는
+    #    자료에 없는 말이라 `usable_words` 가 버리는데, 사용자가 고른 구분은
+    #    조용히 사라지면 안 된다 (붐따 #173 의 "2026년만 랭크되있는거").
+    category_filter: Optional[str] = None
+    rest: List[str] = []
+    for w in words:
+        hit = next((v for k, v in _CATEGORY_WORDS.items() if k in w.lower()), None)
+        if hit and category_filter is None:
+            category_filter = hit
         else:
-            dropped.append(w)
+            rest.append(w)
+    words = rest
+
+    # 일반 명사는 자료 확인 **전에** 뗀다 — 다른 낱말 안에 우연히 끼어 있어
+    # 확인을 통과해 버리기 때문이다 (`제품` 이 "신제품" 안에 있던 실측 사고).
+    generic = [w for w in words[:8] if w in _GENERIC_NOUNS]
+    checkable = [w for w in words[:8] if w not in _GENERIC_NOUNS]
+    capped: List[str] = list(words[8:])  # ⛔ 9번째부터는 자료 확인조차 안 됐다
+    # ⚠️ 확인할 낱말이 없으면 자료를 읽지 않는다 — "2026년 랭킹" 처럼 구분·연도만
+    #    물은 질문이 전체 표를 한 번 훑는 것은 낭비다.
+    kept, missing = usable_words(checkable, _haystack()) if checkable else ([], [])
+    dropped: List[str] = generic + missing
 
     where = "1=1"
     params: List[Any] = []
     if rank_filter is not None:
         where += " AND rank_value = %s"
         params.append(rank_filter)
+    # ⚠️ 연·월은 **같은 날짜식**을 쓴다. 갈라 두면 언제고 서로 다른 행을 골라
+    #    표 안에서 숫자가 어긋나고, 그 어긋남은 티가 안 난다.
+    #    실측(2026-09-09): 이 식의 연도별 집계가 예전 문자열 방식과 전 연도 일치한다.
+    #    날짜를 못 읽는 행(1행, `award_start='진행중'`)은 기간을 물으면 빠진다 —
+    #    모르는 것을 넣지 않는다.
+    if year_filter is not None:
+        where += f" AND YEAR({_DATE_SQL}) = %s"
+        params.append(year_filter)
+    if month_filter is not None:
+        where += f" AND MONTH({_DATE_SQL}) = %s"
+        params.append(month_filter)
+    if category_filter is not None:
+        where += " AND category = %s"
+        params.append(category_filter)
     applied, overflow = kept[:5], kept[5:]
     capped += overflow  # ⛔ 데이터에 있는 낱말인데 5개 상한 때문에 조건에 못 걸렸다
     for w in applied:
@@ -409,7 +562,19 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
     #    이 기동 시 테이블 자체는 만들어 두므로 이 SELECT 는 실패하지 않는다.
     return {"rows": rows or [], "total": total, "synced_at": str(stamp or "-"),
             "synced_at_raw": stamp, "table_empty": stamp is None,
-            "dropped": dropped, "capped": capped, "rank_filter": rank_filter}
+            "dropped": dropped, "capped": capped, "rank_filter": rank_filter,
+            "year_filter": year_filter, "month_filter": month_filter,
+            "category_filter": category_filter,
+            # ⛔ 기간으로 좁혀 0건이면 "안 받았다" 와 "안 적혔다" 가 똑같이 보인다.
+            #    기록이 있는 기간을 함께 준다 (0건일 때만 조회한다).
+            "period_hint": (_period_hint(year_filter, month_filter)
+                            if not rows and (year_filter is not None
+                                             or month_filter is not None) else ""),
+            # ⛔ "아무것도 못 좁혔다" 는 답변 **맨 위**에서 말해야 한다 — 안 그러면
+            #    무엇을 물어도 같은 표가 나오고, 사용자는 그것을 원문 덤프로 읽는다.
+            "narrowed": bool(rank_filter is not None or year_filter is not None
+                             or month_filter is not None
+                             or category_filter is not None or applied)}
 
 
 #: 실측 최대 73자(2026-09-07) — 짧은 편이라 대부분 안 잘리지만, 늘어날 수 있으니
@@ -447,7 +612,11 @@ def format_answer(result: Dict[str, Any]) -> str:
         if result.get("table_empty"):
             return ("수상·랭킹 자료가 아직 적재되지 않았습니다 "
                     "(하루 한 번 04:40 적재 — 잠시 후 다시 시도해 주세요).")
-        return "조건에 맞는 수상·랭킹 기록을 찾지 못했습니다."
+        # ⛔ "찾지 못했습니다" 만 주면 **그 달에 수상이 없었던 것**인지
+        #    **아직 안 적힌 것**인지 구분되지 않는다. 기록이 있는 기간을 함께 적는다.
+        hint = (result.get("period_hint") or "").strip()
+        return ("조건에 맞는 수상·랭킹 기록을 찾지 못했습니다."
+                + (" " + hint if hint else ""))
     out = ["| 구분 | 브랜드 | 주최사 | 수상명 | 제품 | 상세 | 순위 | 국가 | 일자 | 활용 표기 |",
            "|---|---|---|---|---|---|---:|---|---|---|"]
     notes: List[str] = []
@@ -481,9 +650,27 @@ def format_answer(result: Dict[str, Any]) -> str:
         out += ["", "조건:"] + notes
     # ⛔ 조용히 좁히지 마라 — rank_value 필터가 걸린 사실도 dropped 만큼 공시한다.
     #    없으면(None) 아무 문구도 만들지 않는다 — 매번 뜨는 안내는 곧 아무도 안 읽는다.
+    narrowed_by: List[str] = []
     rank_filter = result.get("rank_filter")
     if rank_filter is not None:
-        out.append(f"\n순위 {rank_filter}위로 좁혔습니다.")
+        narrowed_by.append(f"순위 {rank_filter}위")
+    # ⚠️ 연도·구분은 텍스트 낱말이 아니라 별도 필터라, 밝히지 않으면 사용자는
+    #    좁혀졌는지조차 모른다 (붐따 #173 은 좁혀지지 **않은** 표를 받은 건이다).
+    year_filter = result.get("year_filter")
+    if year_filter is not None:
+        narrowed_by.append(f"{year_filter}년")
+    month_filter = result.get("month_filter")
+    if month_filter is not None:
+        narrowed_by.append(f"{month_filter}월")
+    category_filter = result.get("category_filter")
+    if category_filter:
+        narrowed_by.append(f"구분 {category_filter}")
+    if narrowed_by:
+        # ⚠️ 앞말에 조사를 직접 붙이지 마라 — `랭킹`(받침 O)·`1위`(받침 X)로 갈려
+        #    "구분 랭킹로 좁혔습니다" 가 나간다(프로덕션 실측). 고정 명사(`조건`)를
+        #    세워 받침 판정 자체를 없앤다. `blocks._josa` 를 쓰려면 reports 패키지를
+        #    core 로 끌어와야 하고, 그 표에는 `으로/로` 도 없다.
+        out.append("\n" + " · ".join(narrowed_by) + " 조건으로 좁혔습니다.")
     # ⛔ 안 쓴 말로 찾은 결과를 그대로 주면 사용자가 그 조건까지 맞는 줄 읽는다.
     #    2026-09-07 최종 리뷰 Minor — "자료에 없는" 은 `_GENERIC_NOUNS`(제품·브랜드…)
     #    에는 거짓이다(실제로 "신제품" 안에 있다). 이유를 밝히지 않는 참인 문구로 바꿨다.
@@ -498,6 +685,18 @@ def format_answer(result: Dict[str, Any]) -> str:
         out.append("\n낱말이 많아 다음은 조건에 반영하지 못했습니다: " + ", ".join(capped))
     if result.get("total", 0) > len(rows):
         out.append(f"\n총 {result['total']}건 중 {len(rows)}건만 표시했습니다.")
+
+    # ⛔ **표보다 먼저 말한다.** 질문의 낱말이 하나도 조건이 되지 못하면 무엇을
+    #    물어도 같은 기본 목록이 나간다 — 붐따 #173 이 그것이다("@@수상으로
+    #    물어봤는데 그냥 원문만 보여줌"). 사용자는 세 번 다른 질문에 **같은 표**를
+    #    받았고, 왜 그런지는 아래 각주에만 있었다 (그마저 표에 밀려 안 읽힌다).
+    # ⚠️ `narrowed` 를 안 주는 호출부에서는 뜨지 않는다 — 하위 호환.
+    if result.get("narrowed") is False and (result.get("dropped")
+                                            or result.get("capped")):
+        out.insert(0, "⚠️ 질문의 낱말로 좁히지 못해 **전체 목록**(최근·상위 순)을 "
+                      "보여드립니다 — 아래 표는 질문에 대한 답이 아닙니다.\n"
+                      "주최사(화해·쇼피·올리브영 글로벌…)·연도(2026년)·"
+                      "구분(수상/랭킹/설문)·순위(1위)로 물어보시면 좁혀 드립니다.\n")
 
     stamp_display = result.get("synced_at", "-")
     raw_stamp = result.get("synced_at_raw")

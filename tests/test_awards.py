@@ -214,7 +214,7 @@ def test_extract_rank_filter_is_none_when_there_is_no_rank_token():
 def test_a_rank_number_in_the_question_becomes_a_numeric_filter_not_a_text_term(monkeypatch):
     """실측: '1위' 를 텍스트로 걸면 표기가 갈려(1위 선정/TOP10 진입) 화해 10행 중
     1행만 걸린다. rank_value 숫자 필터라야 표기와 무관하게 맞는다."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    monkeypatch.setattr(awards, "_haystack", lambda: ["화해 뷰티 어워드"])
     captured = {}
 
     def fake_fetch_all(sql, params):
@@ -239,7 +239,7 @@ def test_a_rank_number_in_the_question_becomes_a_numeric_filter_not_a_text_term(
 
 def test_a_word_missing_from_every_row_does_not_zero_out_the_results(monkeypatch):
     """OP 재고와 같은 실패: 통째로 AND 로 걸면 한 낱말 때문에 0건이 된다."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: w == "화해")
+    monkeypatch.setattr(awards, "_haystack", lambda: ["화해"])
     captured = {}
 
     def fake_fetch_all(sql, params):
@@ -263,7 +263,7 @@ def test_a_word_missing_from_every_row_does_not_zero_out_the_results(monkeypatch
 
 def test_when_no_word_is_usable_the_default_listing_is_returned_instead_of_empty(monkeypatch):
     """쓸 낱말이 하나도 안 남으면 빈 결과가 아니라 기본 목록(조건 없음)을 돌려준다."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: False)
+    monkeypatch.setattr(awards, "_haystack", lambda: [""])
     captured = {}
 
     def fake_fetch_all(sql, params):
@@ -292,14 +292,15 @@ def test_dropped_words_are_disclosed_in_the_answer_body():
 
 
 # tests/test_awards.py 에 이어서 — fix round 1
-# Finding 1 (Critical): 일반명사가 _word_exists 를 통과해 정답 10행을 1행으로 줄인다.
+# Finding 1 (Critical): 일반명사가 자료 확인을 통과해 정답 10행을 1행으로 줄인다.
 # 실측: "화해 뷰티 어워드에서 1위 한 우리 제품 알려줘" 에서 `제품` 은 206행 중
 # 6행에만("신제품" 안에) 있어 데이터 확인은 통과하지만, 필터로 쓰면 화해 rank1
 # 10행 중 9행이 사라진다. 데이터 확인 전에 일반명사를 먼저 뗀다.
 
 def test_a_generic_noun_is_not_used_as_a_filter_even_though_the_data_contains_it(monkeypatch):
-    """`제품` 은 '신제품' 안에 있어 _word_exists 를 통과하지만 필터로 쓰면 안 된다."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: True)  # 데이터엔 다 있다고 가정
+    """`제품` 은 '신제품' 안에 있어 자료 확인을 통과하지만 필터로 쓰면 안 된다."""
+    # 데이터엔 다 있다고 가정
+    monkeypatch.setattr(awards, "_haystack", lambda: ["화해 신제품"])
     captured = {}
 
     def fake_fetch_all(sql, params):
@@ -319,8 +320,14 @@ def test_a_generic_noun_is_not_used_as_a_filter_even_though_the_data_contains_it
 
 
 def test_meaningful_category_words_are_still_used_as_filters(monkeypatch):
-    """`수상`·`랭킹` 은 `구분` 을 고르는 뜻 있는 낱말이라 빼면 안 된다."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    """`수상`·`랭킹` 은 `구분` 을 고르는 뜻 있는 낱말이라 빼면 안 된다.
+
+    2026-09-09: 텍스트 LIKE 가 아니라 `category` 필터로 좁힌다. 프로덕션 실측으로
+    **결과가 같음**을 확인하고 바꿨다 (`수상` 52 = `category='수상'` 52 ·
+    `랭킹` 94 = 94). 바꾼 이유는 `랭크되있는거` 처럼 자료에 없는 말투를 살리기
+    위해서다 — 지켜야 할 것은 "이 낱말이 계속 좁힌다" 이지 좁히는 수단이 아니다.
+    """
+    monkeypatch.setattr(awards, "_haystack", lambda: ["수상 랭킹"])
     captured = {}
 
     def fake_fetch_all(sql, params):
@@ -336,14 +343,21 @@ def test_meaningful_category_words_are_still_used_as_filters(monkeypatch):
     result = awards.search("수상 랭킹")
 
     assert result["dropped"] == []
-    assert any("%수상%" in str(p) for p in captured["params"])
-    assert any("%랭킹%" in str(p) for p in captured["params"])
+    assert result["category_filter"] == "수상"       # 앞선 구분 낱말이 이긴다
+    assert "category = %s" in captured["sql"]
+    assert "수상" in captured["params"]
+    assert any("%랭킹%" in str(p) for p in captured["params"])   # 나머지는 텍스트로
 
 
 def test_generic_nouns_are_never_checked_against_the_data(monkeypatch):
-    """데이터 확인(_word_exists) 이전에 뗀다 — 통과 여부와 무관하게 무조건 뺀다."""
+    """자료 확인(usable_words) 이전에 뗀다 — 통과 여부와 무관하게 무조건 뺀다."""
     checked = []
-    monkeypatch.setattr(awards, "_word_exists", lambda w: checked.append(w) or True)
+    import app.core.query_keywords as _qk
+    _real = _qk.usable_words
+    monkeypatch.setattr(
+        _qk, "usable_words",
+        lambda words, hay: (checked.extend(words), _real(words, hay))[1])
+    monkeypatch.setattr(awards, "_haystack", lambda: ["브랜드 화해"])
     monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [ROW])
     monkeypatch.setattr(
         awards, "fetch_one",
@@ -369,6 +383,268 @@ def test_the_answer_says_nothing_about_rank_when_no_rank_filter_was_applied():
                                  "rank_filter": None})
     assert "좁혔습니다" not in text
 
+
+
+# ── 붐따 #173 (2026-09-09): "@@수상으로 물어봤는데 그냥 원문만 보여줌" ──────────
+#
+# 실제 대화(c780c26b…)에서 사용자는 **세 번 다른 질문**을 던지고 **같은 표 40행**을
+# 받았다. 에러는 없었다. 프로덕션 실측으로 원인 셋을 확인했다:
+#
+#   "쇼피에서 받은게 뭐있지"      → `쇼피에서` 가 조사째라 자료에 없다 → 전부 버려짐
+#   "2026년만 랭크되있는거 …"     → `2026년` 은 자료에 문자열로 없다(`2026-01-15`)
+#                                   `랭크되있는거` 도 자료에 없는 말투
+#   ⟹ 조건이 하나도 안 남아 **조건 없는 기본 목록**이 나갔고, 왜 그런지는
+#      표 아래 각주에만 있었다 (사람은 표를 보지 각주를 안 본다).
+
+
+def _stub_query(monkeypatch, haystack, rows=None):
+    """조회를 가짜로 두고 WHERE/params 를 잡아 둔다."""
+    captured = {}
+
+    def fake_fetch_all(sql, params=()):
+        # ⚠️ **첫 호출**만 잡는다 — 0건이면 뒤에 `_period_hint` 조회가 한 번 더
+        #    붙어, 그냥 덮어쓰면 본 조회의 조건이 사라진다.
+        captured.setdefault("sql", sql)
+        captured.setdefault("params", params)
+        return rows if rows is not None else [ROW]
+
+    monkeypatch.setattr(awards, "_haystack", lambda: haystack)
+    monkeypatch.setattr(awards, "fetch_all", fake_fetch_all)
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "2026-09-07"})
+    return captured
+
+
+def test_a_particle_does_not_throw_the_whole_question_away(monkeypatch):
+    """`쇼피에서` 는 자료에 없지만 `쇼피` 는 있다 — 조사를 떼고 살려낸다.
+
+    ⛔ 이걸 안 하면 낱말이 통째로 버려져 **조건 없는 기본 목록**이 나간다.
+       실측: 그 낱말 하나로 206행 → 45행.
+    """
+    captured = _stub_query(monkeypatch, ["쇼피 12.12 birthday sale"])
+
+    result = awards.search("쇼피에서 받은게")
+
+    assert "쇼피에서" not in result["dropped"], "조사를 뗀 형이 자료에 있으면 살린다"
+    assert any("%쇼피%" in str(p) for p in captured["params"]), \
+        "조사를 뗀 원형이 필터에 걸려야 한다"
+    assert result["narrowed"] is True
+
+
+def test_the_particle_rule_is_not_reimplemented_here():
+    """⚠️ 규칙은 `query_keywords.usable_words` **한 곳**에만 둔다.
+
+    OP 재고·제품정보가 이미 같은 함수를 쓴다. 여기서 다시 구현하면 한쪽만
+    고쳐졌을 때 경로에 따라 답이 갈린다 (이 저장소가 반복해서 겪은 실패다).
+    """
+    import inspect
+    src = inspect.getsource(awards.search)
+    assert "usable_words" in src
+    assert "strip_particle" not in src, "조사 규칙을 여기서 다시 구현하면 안 된다"
+
+
+def test_a_year_becomes_a_date_filter_not_a_text_term(monkeypatch):
+    """`2026년` 은 어느 컬럼에도 문자열로 없다 — 텍스트로 걸면 연도가 통째로 무시된다.
+
+    실측(프로덕션): "2026년 수상 알려줘" 가 2017~2026 전 기간 52행을 냈다.
+    """
+    captured = _stub_query(monkeypatch, ["화해 뷰티 어워드"])
+
+    result = awards.search("2026년 화해")
+
+    assert result["year_filter"] == 2026
+    assert "YEAR(" in captured["sql"]
+    assert 2026 in captured["params"]
+    assert not any("2026년" in str(p) for p in captured["params"]), \
+        "연도는 텍스트 검색어로 남으면 안 된다 — 남으면 그 낱말 때문에 0건이 된다"
+
+
+def test_a_year_falls_back_to_the_award_start_when_the_date_cell_is_blank(monkeypatch):
+    """`award_date` 가 비었거나 `-` 인 행이 68/206 이다 — 그때만 수상 시작일로 본다."""
+    captured = _stub_query(monkeypatch, ["화해"])
+
+    awards.search("2026년 화해")
+
+    assert "TRIM(award_date) IN ('', '-')" in captured["sql"]
+    assert "award_start" in captured["sql"]
+
+
+def test_both_date_spellings_are_parsed(monkeypatch):
+    """⚠️ 자료에 `2026-01-15`(205행) 와 `3/9/2026`(1행) 이 섞여 있다.
+
+    앞의 것만 읽으면 그 한 행이 기간 조회에서 조용히 빠진다 — 하필 2026년 행이다.
+    """
+    assert "%%Y-%%m-%%d" in awards._DATE_SQL
+    assert "%%c/%%e/%%Y" in awards._DATE_SQL
+
+
+def test_the_date_sql_survives_pymysql_parameter_formatting():
+    """⛔ pymysql 은 params 가 **빈 튜플이어도** `query % params` 를 돌린다.
+
+    홑 `%` 를 쓰면 그 자리에서 터진다 (CLAUDE.md 에 적힌 그 함정). 날짜식이
+    조건 없는 기본 조회에도 실려 나가므로 여기서 못 잡으면 조회가 통째로 죽는다.
+    """
+    sql = f"SELECT 1 FROM t WHERE YEAR({awards._DATE_SQL}) = %s"
+    assert sql % ("2026",)          # 터지면 이 줄에서 TypeError/ValueError
+    sql_noargs = f"SELECT 1 FROM t WHERE {awards._DATE_SQL} IS NOT NULL"
+    assert sql_noargs % ()
+
+
+def test_a_month_becomes_a_date_filter_not_a_text_term(monkeypatch):
+    """붐따 #173 후속(2026-09-09): "2026년 6월꺼만 보여줘" 가 `6월꺼만` 을 통째로
+    버려 **2026년 전체 7건**을 냈다. 정답은 0건이다(그 달엔 기록이 없다).
+
+    연도만 걸고 월을 흘리면 답이 "6월에 이만큼 받았다" 로 읽힌다.
+    """
+    captured = _stub_query(monkeypatch, ["화해"], rows=[])
+
+    result = awards.search("2026년 6월꺼만")
+
+    assert result["year_filter"] == 2026
+    assert result["month_filter"] == 6
+    assert "MONTH(" in captured["sql"]
+    assert 6 in captured["params"]
+
+
+def test_a_rank_token_is_not_read_as_a_month(monkeypatch):
+    """⛔ 추출 순서가 뜻을 바꾼다 — `N위` 를 먼저 뗀다."""
+    captured = _stub_query(monkeypatch, ["화해"])
+
+    result = awards.search("화해 1위")
+
+    assert result["rank_filter"] == 1
+    assert result["month_filter"] is None
+    assert "MONTH(" not in captured["sql"]
+
+
+def test_a_number_above_twelve_is_not_a_month(monkeypatch):
+    """`13월` 은 달이 아니다 — 있지도 않은 조건으로 0건을 만들면 안 된다."""
+    _stub_query(monkeypatch, ["화해"])
+    assert awards.search("화해 13월")["month_filter"] is None
+
+
+def test_a_bare_year_is_not_confused_with_a_month(monkeypatch):
+    """`2026` 은 연도다. 월 추출이 먼저 돌아도 네 자리 숫자를 건드리면 안 된다."""
+    _stub_query(monkeypatch, ["화해"])
+    r = awards.search("2026 화해")
+    assert r["year_filter"] == 2026 and r["month_filter"] is None
+
+
+def test_an_empty_period_says_which_periods_do_have_records(monkeypatch):
+    """⛔ "찾지 못했습니다" 만으로는 **수상이 없었던 것**과 **아직 안 적힌 것**이
+    글자 그대로 똑같이 보인다 (프로모션 캘린더 보유구간과 같은 함정).
+
+    실측: 2026년은 1월 4건 · 2월 1건 · 3월 2건뿐이고 6월은 0건이다.
+    """
+    monkeypatch.setattr(awards, "_haystack", lambda: [""])
+    monkeypatch.setattr(awards, "fetch_all", lambda sql, params=(): (
+        [{"m": 1, "n": 4}, {"m": 2, "n": 1}, {"m": 3, "n": 2}]
+        if "GROUP BY m" in sql else []))
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 0} if "COUNT" in sql else {"s": "2026-09-09"})
+
+    result = awards.search("2026년 6월")
+    text = awards.format_answer(result)
+
+    assert "2026년 6월에는 기록이 없습니다" in text
+    assert "1월 4건" in text and "3월 2건" in text
+    assert "찾지 못했습니다" in text
+
+
+def test_the_period_hint_is_not_queried_when_rows_were_found(monkeypatch):
+    """조회를 늘리지 않는다 — 0건일 때만 부른다."""
+    called = []
+    monkeypatch.setattr(awards, "_period_hint",
+                        lambda y, m: called.append((y, m)) or "hint")
+    _stub_query(monkeypatch, ["화해"])
+
+    awards.search("2026년 화해")
+
+    assert called == []
+
+
+def test_the_month_is_disclosed_in_the_answer():
+    text = awards.format_answer({"rows": [ROW], "total": 1, "synced_at": "-",
+                                 "year_filter": 2026, "month_filter": 6})
+    assert "2026년" in text and "6월" in text and "좁혔습니다" in text
+
+
+def test_a_colloquial_category_word_still_selects_the_category(monkeypatch):
+    """`랭크되있는거` 는 자료에 없는 말투다 — 그래도 사용자가 고른 구분은 남는다."""
+    captured = _stub_query(monkeypatch, ["화해"])
+
+    result = awards.search("2026년만 랭크되있는거")
+
+    assert result["category_filter"] == "랭킹"
+    assert result["year_filter"] == 2026
+    assert "category = %s" in captured["sql"]
+    assert "랭킹" in captured["params"]
+
+
+def test_award_is_not_treated_as_a_category_word(monkeypatch):
+    """⛔ `어워드` 를 `구분=수상` 으로 바꾸면 **실측 17행이 사라진다.**
+
+    프로덕션 실측: `어워드` 텍스트 19행 중 `category='수상'` 은 2행뿐이다.
+    나머지는 랭킹 행의 제목에 든 것이다("Daily Vanity Beauty Awards …").
+    """
+    assert "어워드" not in awards._CATEGORY_WORDS
+    assert "award" not in awards._CATEGORY_WORDS
+
+    captured = _stub_query(monkeypatch, ["2021 화해 뷰티 어워드"])
+    result = awards.search("어워드")
+
+    assert result["category_filter"] is None
+    assert any("%어워드%" in str(p) for p in captured["params"]), \
+        "어워드는 텍스트 검색어로 남아야 한다"
+
+
+def test_a_question_that_narrowed_nothing_says_so_above_the_table():
+    """⛔ **표보다 먼저 말한다.** 무엇을 물어도 같은 표가 나오면 원문 덤프로 읽힌다.
+
+    각주로는 부족하다 — 붐따 #173 에서 그 각주는 표에 밀려 읽히지 않았다.
+    """
+    text = awards.format_answer({"rows": [ROW], "total": 206, "synced_at": "-",
+                                 "dropped": ["받은게", "뭐있지"], "narrowed": False})
+    head = text.split("|")[0]
+    assert "전체 목록" in head
+    assert "답이 아닙니다" in head
+
+
+def test_the_notice_is_absent_when_the_question_did_narrow():
+    """매번 뜨는 안내는 곧 아무도 안 읽는다 — 좁혔으면 문구도 없다."""
+    text = awards.format_answer({"rows": [ROW], "total": 4, "synced_at": "-",
+                                 "dropped": ["받은게"], "narrowed": True})
+    assert "전체 목록" not in text
+
+
+def test_the_notice_is_absent_when_the_user_asked_for_nothing_in_particular():
+    """빈 질문(`@@수상` 만 찍음)에 '답이 아니다' 라고 하면 거짓이다 — 그게 답이다."""
+    text = awards.format_answer({"rows": [ROW], "total": 206, "synced_at": "-",
+                                 "dropped": [], "capped": [], "narrowed": False})
+    assert "전체 목록" not in text
+
+
+def test_the_year_and_category_filters_are_disclosed_in_the_answer():
+    """⛔ 조용히 좁히지 마라 — 무엇으로 좁혔는지 밝힌다 (순위와 같은 규칙)."""
+    text = awards.format_answer({"rows": [ROW], "total": 2, "synced_at": "-",
+                                 "year_filter": 2026, "category_filter": "랭킹"})
+    assert "2026년" in text and "구분 랭킹" in text and "좁혔습니다" in text
+
+
+def test_no_data_read_when_there_is_nothing_to_check(monkeypatch):
+    """구분·연도만 물은 질문이 표 전체를 훑는 것은 낭비다."""
+    read = []
+    monkeypatch.setattr(awards, "_haystack", lambda: read.append(1) or [""])
+    monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [ROW])
+    monkeypatch.setattr(
+        awards, "fetch_one",
+        lambda sql, *a, **k: {"n": 1} if "COUNT" in sql else {"s": "-"})
+
+    awards.search("2026년 랭킹")
+
+    assert read == []
 
 # ── Task 4: 라우팅 ─────────────────────────────────────────────────────
 import re as _re
@@ -948,7 +1224,7 @@ def test_a_zero_match_on_a_loaded_table_still_says_not_found():
 def test_search_marks_the_table_as_empty_only_when_synced_at_is_null(monkeypatch):
     """추가 COUNT 조회를 늘리지 않는다 — 기존 MAX(synced_at) 조회 하나로
     판정한다 (리포트에 적은 판단 근거)."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    monkeypatch.setattr(awards, "_haystack", lambda: ["화해"])
     monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [])
     monkeypatch.setattr(
         awards, "fetch_one",
@@ -967,10 +1243,16 @@ def test_search_marks_the_table_as_empty_only_when_synced_at_is_null(monkeypatch
 # ── Fix 4 (Important): 상한 때문에 쓰지 않은 낱말이 조용히 있다 ──────────────
 
 def test_a_word_beyond_the_eight_word_cap_is_disclosed_separately_from_dropped(monkeypatch):
-    """9번째 낱말은 _word_exists 조차 안 돈다 — '자료에 없다' 는 이유는 거짓이라
+    """9번째 낱말은 자료 확인 목록에도 안 든다 — '자료에 없다' 는 이유는 거짓이라
     dropped 가 아니라 capped 로 따로 담는다."""
     checked = []
-    monkeypatch.setattr(awards, "_word_exists", lambda w: checked.append(w) or True)
+    import app.core.query_keywords as _qk
+    _real = _qk.usable_words
+    monkeypatch.setattr(
+        _qk, "usable_words",
+        lambda words, hay: (checked.extend(words), _real(words, hay))[1])
+    monkeypatch.setattr(awards, "_haystack",
+                        lambda: [" ".join(f"낱말{i}" for i in range(9))])
     monkeypatch.setattr(awards, "fetch_all", lambda sql, params: [ROW])
     monkeypatch.setattr(
         awards, "fetch_one",
@@ -985,9 +1267,10 @@ def test_a_word_beyond_the_eight_word_cap_is_disclosed_separately_from_dropped(m
 
 
 def test_a_kept_word_beyond_the_five_filter_cap_is_disclosed_as_capped(monkeypatch):
-    """데이터에 있는(=_word_exists 통과) 6번째 낱말은 필터에 못 걸렸을 뿐 —
+    """자료에 있는(=usable_words 통과) 6번째 낱말은 필터에 못 걸렸을 뿐 —
     dropped('자료에 없음') 가 아니라 capped('상한') 로 담는다."""
-    monkeypatch.setattr(awards, "_word_exists", lambda w: True)
+    monkeypatch.setattr(awards, "_haystack",
+                        lambda: [" ".join(f"낱말{i}" for i in range(6))])
     captured = {}
 
     def fake_fetch_all(sql, params):
