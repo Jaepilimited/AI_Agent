@@ -583,6 +583,207 @@ def classifier_return_routes() -> set:
     return set(re.findall(r'return\s*\(\s*"([a-z_]+)"\s*,', src))
 
 
+def _declared_gate_chain(spec_mod) -> List[str]:
+    """캔버스 사슬을 `input` 부터 걸어 관문이 나오는 **순서**를 얻는다.
+
+    ⛔ `NODES` 선언 순서를 쓰면 안 된다 — 그건 목록이지 흐름이 아니다.
+       그림이 말하는 순서는 **엣지**다.
+    """
+    gates = {n.id for n in spec_mod.NODES if n.gate}
+    nxt: Dict[str, str] = {}
+    for edge in spec_mod.EDGES:
+        if not edge.conditional or edge.label == "통과":
+            nxt.setdefault(edge.src, edge.dst)
+    order, cur, seen = [], "input", set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        if cur in gates:
+            order.append(cur)
+        cur = nxt.get(cur)
+    return order
+
+
+def _gate_order_in(source: str, func: str, tokens: Dict[str, str]) -> List[str]:
+    """`func` 본문에서 관문 호출부가 나오는 순서. 주석 줄은 세지 않는다."""
+    import re as _re
+
+    lines = source.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if f"async def {func}" in l)
+    except StopIteration:
+        return []
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if _re.match(r"\s{4}(async )?def ", lines[i]):
+            end = i
+            break
+    hits = []
+    for node_id, token in tokens.items():
+        for i in range(start, end):
+            body = lines[i].strip()
+            if body.startswith("#") or not body:
+                continue
+            if any(t in lines[i] for t in token.split("|")):
+                hits.append((i, node_id))
+                break
+    return [nid for _, nid in sorted(hits)]
+
+
+def _early_return_gates(source: str, func: str, stop_token: str) -> List[Tuple[int, int, str]]:
+    """`func` 안에서 **분류기 앞의 조기 return 관문**을 구조로 찾는다.
+
+    ⛔ 낱말 목록으로 찾지 않는다 — 목록은 낡고, 낡으면 새 관문이 조용히 빠진다
+       (이 검사가 생긴 이유가 정확히 그것이다). 대신 **모양**을 본다:
+       `if <조건>: … return …` 이 분류기 호출보다 위에 있으면 관문이다.
+
+    ⚠️ 조각은 **줄 창(window)으로 자르지 않는다.** 창은 무딘 도구라 넓히면 이웃
+       관문이 서로를 가려 주고(실측 15개 중 8개가 그렇게 숨었다) 좁히면 멀쩡한
+       관문이 미선언으로 잡힌다. 대신 `if` 조건에 쓰인 **변수가 대입된 줄**을
+       AST 로 따라가 함께 싣는다 — `if _org_answer:` 는 그 변수를 만든
+       `answer_team_country_scope(...)` 줄과 한 덩어리다.
+
+    Returns: (시작줄, 끝줄, 판정에 쓸 소스 조각)
+    """
+    import ast as _ast
+
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return []
+    target = None
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)) and node.name == func:
+            target = node
+            break
+    if target is None:
+        return []
+
+    lines = source.splitlines()
+    stop = None
+    for i in range(target.lineno, min(target.end_lineno or len(lines), len(lines))):
+        if stop_token in lines[i]:
+            stop = i + 1
+            break
+    stop = stop or (target.end_lineno or len(lines))
+
+    # 변수 → 그 변수를 만든 줄들 (같은 이름이 여러 번 대입되면 전부)
+    assigned: Dict[str, List[int]] = {}
+    for node in _ast.walk(target):
+        if isinstance(node, (_ast.Assign, _ast.AnnAssign, _ast.AugAssign)):
+            targets = node.targets if isinstance(node, _ast.Assign) else [node.target]
+            flat = []
+            for t in targets:
+                flat.extend(t.elts if isinstance(t, (_ast.Tuple, _ast.List)) else [t])
+            for t in flat:
+                if isinstance(t, _ast.Name):
+                    assigned.setdefault(t.id, []).append(node.lineno)
+
+    # 바깥 `if` 의 조건 줄 — 중첩된 조기 return 은 그것을 감싼 관문의 일부다
+    #  (`@@` 파싱 블록 안의 "질문을 입력해주세요" 안내 같은 것).
+    enclosing: Dict[int, List[int]] = {}
+
+    def _descend(node, stack):
+        for child in _ast.iter_child_nodes(node):
+            if isinstance(child, _ast.If):
+                enclosing[child.lineno] = list(stack)
+                _descend(child, stack + [child.lineno])
+            else:
+                _descend(child, stack)
+
+    _descend(target, [])
+
+    blocks = []
+    for stmt in _ast.walk(target):
+        if not isinstance(stmt, _ast.If) or stmt.lineno >= stop:
+            continue
+        if not any(isinstance(n, _ast.Return) for n in stmt.body):
+            continue
+        want = {n.id for n in _ast.walk(stmt.test) if isinstance(n, _ast.Name)}
+        rows = {stmt.lineno, *enclosing.get(stmt.lineno, ())}
+        for name in want:
+            for ln in assigned.get(name, ()):
+                if ln < stmt.lineno:
+                    rows.update(range(ln, min(ln + 4, stmt.lineno + 1)))
+        # 조건이 곧 호출인 경우(`if images:` · `if _rep_reg.wants_report(q):`)도 담긴다
+        chunk = "\n".join(lines[r - 1] for r in sorted(rows) if 0 < r <= len(lines))
+        blocks.append((stmt.lineno, stmt.end_lineno or stmt.lineno, chunk))
+    return blocks
+
+
+def flow_gates_match_code() -> Tuple[bool, str]:
+    """캔버스가 그리는 **관문 순서**가 코드와 같은가.
+
+    ⛔ **왜 따로 있나** (2026-09-09). `flow_spec_matches_code` 는 라우트만 본다 —
+       노드가 가리키는 함수가 있는가, 코드가 낼 수 있는 라우트가 캔버스에 있는가.
+       **관문이 통째로 빠져도 통과한다.** 실제로 그랬다: 분류기 앞에서 도는 관문
+       12개 중 **6개가 캔버스에 없었고**, 남은 것들은 **코드와 다른 순서**로
+       그려지고 있었는데 검사는 매일 "일치" 라고 답했다.
+
+    ⛔ **순서가 뜻을 갖는다.** 위에 있는 관문이 먼저 잡으면 아래는 못 본다 —
+       유통기한이 재고보다 위여야 하고(둘 다 '재고' 를 신호로 쓴다), 노션 저장은
+       `@@` 파싱보다 위여야 한다(`@@물류` 를 켠 채로도 저장돼야 한다).
+       그림의 순서가 코드와 다르면 **캔버스가 조용히 거짓말을 한다.**
+
+    ⚠️ 두 경로(비스트리밍·스트리밍)가 서로 다른 것도 여기서 잡는다 — 이 저장소가
+       여러 번 겪은 사고다(direct 프롬프트 두 벌 · 답변 검증 한쪽만 배선).
+
+    ⚠️ **완전하지 않다 — 실측을 적어 둔다.** 선언에서 관문 하나를 지우는 실험에서
+       15개 중 **12개를 잡았다.** 못 잡은 셋(`alias_expand`·`intercept.fi_guard`·
+       `intercept.model_rights`)은 그 블록이 다른 관문이 이미 덮은 바깥 `if` 안에
+       들어 있어서다. **새로 생긴 관문이 선언되지 않는 것**(2026-09-09 에 실제로
+       6개가 그랬다)은 잡고, 있던 선언을 지우는 것은 일부만 잡는다.
+    """
+    from pathlib import Path
+
+    try:
+        from app.flow import spec
+    except Exception as e:                                  # noqa: BLE001
+        return False, f"흐름 선언 로드 실패: {str(e)[:120]}"
+
+    tokens = {n.id: n.gate for n in spec.NODES if n.gate}
+    if not tokens:
+        return False, "관문 노드에 호출부 표식(gate)이 하나도 없다"
+    declared = _declared_gate_chain(spec)
+    missing_chain = [nid for nid in tokens if nid not in declared]
+    if missing_chain:
+        return False, f"사슬에 이어지지 않은 관문 노드: {', '.join(sorted(missing_chain))}"
+
+    src = (Path(__file__).resolve().parent.parent / "agents"
+           / "orchestrator.py").read_text(encoding="utf-8")
+    problems: List[str] = []
+    orders = {}
+    for func in ("route_and_execute", "route_and_stream"):
+        orders[func] = _gate_order_in(src, func, tokens)
+        absent = [nid for nid in declared if nid not in orders[func]]
+        if absent:
+            problems.append(f"{func} 에 없는 관문: {', '.join(absent)}")
+
+    if orders["route_and_execute"] != orders["route_and_stream"]:
+        problems.append("비스트리밍과 스트리밍의 관문 순서가 다르다")
+    elif orders["route_and_execute"] != declared:
+        problems.append(f"캔버스 {declared} ≠ 코드 {orders['route_and_execute']}")
+
+    # ⛔ **코드 → 캔버스** 방향. 이게 없으면 관문을 지우거나 새로 만들어도
+    #    검사가 통과한다 — 2026-09-09 에 실제로 6개가 그렇게 빠져 있었다.
+    #    낱말 목록이 아니라 **모양**으로 찾는다: 분류기 앞의 `if …: return …`.
+    blocks = _early_return_gates(src, "route_and_execute", "_keyword_classify_ex")
+    # ⛔ **잎 블록만 센다.** 바깥 `if` 하나로 묶어 세면 그 안의 관문들이 서로를
+    #    가려 준다 — 실측으로 15개 중 8개가 그렇게 숨었다. 진짜 관문은 잎이다.
+    leaves = [b for b in blocks
+              if not any(o is not b and b[0] <= o[0] and o[1] <= b[1] for o in blocks)]
+    for lineno, _end, chunk in leaves:
+        if any(t in chunk for token in tokens.values() for t in token.split("|")):
+            continue
+        head = next((l.strip() for l in chunk.splitlines()
+                     if l.strip().startswith("if ")), "")
+        problems.append(
+            f"orchestrator.py:{lineno} 의 관문이 캔버스에 없다 ({head[:60]})")
+
+    if problems:
+        return False, " / ".join(problems)[:400]
+    return True, f"관문 {len(declared)}개 · 두 경로와 캔버스 순서 일치"
+
+
 def flow_spec_matches_code() -> Tuple[bool, str]:
     """캔버스가 그리는 흐름이 실제 코드와 같은가.
 
@@ -1067,6 +1268,8 @@ ALL = [
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
     ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
     ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
+    ("static_flow_gates", flow_gates_match_code,
+     "캔버스의 관문 순서가 코드(두 경로)와 같은가"),
     ("static_ctrl_chars", stray_control_chars, "소스에 섞인 제어문자"),
     ("static_page_scroll", page_scroll_restored,
      "style.css 를 쓰는 문서 페이지가 스크롤을 되살렸는가"),

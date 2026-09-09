@@ -34,6 +34,11 @@ class Node:
     fn: str | None = None          # "모듈.속성" — 실제 실행 지점
     subgraph: str | None = None    # "모듈.빌더" (LangGraph) — 런타임 추출
     knobs: tuple[str, ...] = ()    # 3단계에서 편집 대상이 될 후보
+    gate: str = ""                 # 관문이면 orchestrator 안의 **호출부 표식**.
+    #   ⛔ `fn`(결정 함수)과 다를 수 있다 — 보고서는 `wants_report` 로 판정하지만
+    #      호출부는 `_handle_report` 다. 그래서 둘을 따로 둔다.
+    #   ⚠️ 이 표식이 두 경로(비스트리밍·스트리밍)에서 안 보이면
+    #      `flow_gates_match_code` 가 **실패로 올린다** — 조용히 낡지 않는다.
     group: str = "main"
     unreachable: str = ""          # 비어 있지 않으면 "도달 불가" + 그 이유
 
@@ -50,28 +55,87 @@ _ORCH = "app.agents.orchestrator"
 
 NODES: tuple[Node, ...] = (
     Node("input", "USER INPUT", group="io"),
+    # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 **전에 한 번만** 돈다.
+    # 질문 문자열을 바꾸므로 뒤의 모든 판정이 이 결과를 본다.
+    Node("alias_expand", "은어·오타 보정",
+         fn="app.core.term_aliases.expand_aliases",
+         knobs=("term_aliases 사전",),
+         gate='expand_aliases('),
     Node("at_parse", "@@ 소스 파싱", fn=f"{_ORCH}.OrchestratorAgent.get_db_registry",
+         # `|` 로 나눈 여러 표식 — 이 노드는 파싱과 `@@` 명령 응답을 함께 맡는다
+         gate="parse_db_prefix(|if db_entry:",
          knobs=("orchestrator._DB_REGISTRY",)),
 
     # ── 분류기보다 **먼저** 도는 관문 ──
     # 두 경로 모두 `route_and_execute`(비스트리밍) 와 `route_and_stream`(스트리밍)
     # 에서 분류기 호출보다 위에 있고, 걸리면 그 자리에서 return 한다.
-    Node("intercept.model_rights", "초상권 가로채기",
-         fn="app.core.model_rights.model_rights_intent",
-         knobs=("@@초상권 지정", "사진 첨부 시 얼굴 인식")),
+    # ⛔ **여기 순서가 곧 실행 순서다.** 앞의 관문이 먼저 잡으면 뒤는 못 본다 —
+    #    그림의 순서가 코드와 다르면 캔버스가 조용히 거짓말을 한다
+    #    (2026-09-09: 실제로 4개가 코드와 다른 순서로 그려지고 있었고,
+    #     6개는 아예 빠져 있었다. `flow_gates_match_code` 가 이제 매일 대조한다).
+    Node("intercept.notion_save", "노션 저장 관문",
+         fn="app.core.notion_save.handle",
+         knobs=("저장 동사 + 노션 낱말", "NOTION_WRITE_TOKEN"),
+         gate='notion_save.handle'),
+    Node("intercept.dashboard_link", "대시보드 링크 관문",
+         fn="app.core.dashboard_links.answer_dashboard_link_query",
+         knobs=("dashboard 카탈로그 JSON",),
+         gate='answer_dashboard_link_query('),
+    Node("intercept.team_country", "팀 담당 국가 관문",
+         fn="app.core.org_structure.answer_team_country_scope",
+         knobs=("org_structure 등록 팀", "권역명은 되묻는다"),
+         gate='answer_team_country_scope('),
+    Node("intercept.clarify", "부정-only 되묻기",
+         fn="app.core.route_intent.clarify_message",
+         knobs=("settings.bare_rejection_clarify_enabled",),
+         gate='clarify_message('),
+    Node("intercept.company", "회사 사실 관문",
+         fn="app.core.company_facts.answer",
+         knobs=("company_facts 표",),
+         gate='_company_answer('),
+    # ⛔ 손익(FI) 방어선 1번 — **LLM 을 부르기 전에** 거절한다.
+    #    나머지 4겹(프롬프트 마스킹·테이블 화이트리스트·validate_sql·프론트)이
+    #    있어도 이 관문이 가장 앞이라 캔버스에 없으면 방어선이 안 보인다.
+    Node("intercept.fi_guard", "손익 권한 거절",
+         fn=f"{_ORCH}._requests_fi_data",
+         gate="_requests_fi_data(",
+         knobs=("directory_users.can_view_fi",)),
+    Node("intercept.ingredient", "성분 필터 가로채기",
+         fn=f"{_ORCH}._ingredient_filter_intent",
+         knobs=("성분 포함/미포함 낱말",),
+         gate='_ingredient_filter_intent('),
+    # ⛔ 유통기한은 **재고보다 먼저** 판정한다 — 둘 다 '재고' 를 신호로 쓰기 때문이다
+    #    (로트 잔량과 창고 재고는 세는 기준이 다르다).
+    Node("intercept.expiry", "유통기한 가로채기",
+         fn=f"{_ORCH}.OrchestratorAgent._expiry_term",
+         knobs=("'유통기한'·'임박' 낱말",),
+         gate='_expiry_term('),
     # 재고 가로채기 — 성분과 같은 이유로 분류기보다 **먼저** 돈다. 재고는 표 조회라
     #  LLM 이 SQL 을 짜게 두지 않는다 (2026-08-25).
     Node("intercept.inventory", "재고 가로채기",
          fn="app.core.inventory.inventory_intent",
-         knobs=("@@OP 지정", "'재고' 낱말")),
+         knobs=("@@OP 지정", "'재고' 낱말"),
+         gate='_inventory_term('),
     # 수상/랭킹 가로채기 — 재고·성분과 같은 이유로 분류기보다 **먼저** 돈다.
     # 랭킹이 숫자·판정이라 LLM 에 SQL 을 맡기지 않는다 (2026-09-07).
     Node("intercept.awards", "수상/랭킹 가로채기",
          fn="app.core.awards.awards_intent",
-         knobs=("@@수상 지정", "'수상'·'어워드' 낱말")),
+         knobs=("@@수상 지정", "'수상'·'어워드' 낱말"),
+         gate='_awards_term(|_handle_awards_query('),
+    Node("intercept.model_rights", "초상권 가로채기",
+         fn="app.core.model_rights.model_rights_intent",
+         knobs=("@@초상권 지정", "사진 첨부 시 얼굴 인식"),
+         gate='model_rights_intent'),
+    # 이미지가 붙으면 분류를 건너뛰고 vision LLM 으로 간다 — 어떤 라우트도
+    # 사진을 읽지 못하므로 여기서 갈라야 한다.
+    Node("intercept.images", "이미지 첨부 → direct 강제",
+         fn=f"{_ORCH}.OrchestratorAgent._handle_direct",
+         gate="if images:",
+         knobs=("첨부 이미지 유무",)),
     Node("intercept.report", "보고서 가로채기",
          fn="app.reports.registry.wants_report",
-         knobs=("registry._REPORT_META", "@@보고서 지정")),
+         knobs=("registry._REPORT_META", "@@보고서 지정"),
+         gate='_handle_report('),
 
     # ── 소스가 이미 경로를 정한 경우 (분류기 우회) ──
     Node("source_pin", "소스 지정 경로",
@@ -227,16 +291,43 @@ def all_edges() -> tuple[Edge, ...]:
     return EDGES + generated_edges()
 
 EDGES: tuple[Edge, ...] = (
-    Edge("input", "at_parse"),
+    # ⛔ 이 사슬의 **순서가 곧 코드의 순서**다 (orchestrator.route_and_execute /
+    #    route_and_stream). 하나라도 어긋나면 캔버스가 거짓말을 한다.
+    Edge("input", "intercept.notion_save"),
+    Edge("intercept.notion_save", "route.direct",
+         label="저장 요청 · 저장함", conditional=True),
+    Edge("intercept.notion_save", "alias_expand", label="통과", conditional=True),
 
-    Edge("at_parse", "intercept.model_rights"),
-    Edge("intercept.model_rights", "route.model_rights",
-         label="@@초상권 · 초상권 의도", conditional=True),
-    Edge("intercept.model_rights", "intercept.report", label="통과", conditional=True),
+    Edge("alias_expand", "at_parse"),
 
-    Edge("intercept.report", "route.report",
-         label="@@보고서 · 보고서 요청", conditional=True),
-    Edge("intercept.report", "intercept.inventory", label="통과", conditional=True),
+    Edge("at_parse", "intercept.dashboard_link"),
+    Edge("intercept.dashboard_link", "route.direct",
+         label="대시보드 링크 질문", conditional=True),
+    Edge("intercept.dashboard_link", "intercept.team_country", label="통과", conditional=True),
+
+    Edge("intercept.team_country", "route.direct",
+         label="등록 팀의 담당 국가", conditional=True),
+    Edge("intercept.team_country", "intercept.clarify", label="통과", conditional=True),
+
+    Edge("intercept.clarify", "route.direct",
+         label="부정만 있고 정보 없음 · 되묻기", conditional=True),
+    Edge("intercept.clarify", "intercept.company", label="통과", conditional=True),
+
+    Edge("intercept.company", "route.direct",
+         label="회사 기본 사실", conditional=True),
+    Edge("intercept.company", "intercept.fi_guard", label="통과", conditional=True),
+
+    Edge("intercept.fi_guard", "route.bigquery",
+         label="권한 없음 · 거절", conditional=True),
+    Edge("intercept.fi_guard", "intercept.ingredient", label="통과", conditional=True),
+
+    Edge("intercept.ingredient", "route.bigquery",
+         label="성분 포함/미포함 질문", conditional=True),
+    Edge("intercept.ingredient", "intercept.expiry", label="통과", conditional=True),
+
+    Edge("intercept.expiry", "route.inventory",
+         label="유통기한 질문 (재고보다 먼저)", conditional=True),
+    Edge("intercept.expiry", "intercept.inventory", label="통과", conditional=True),
 
     Edge("intercept.inventory", "route.inventory",
          label="@@OP · 재고 질문", conditional=True),
@@ -244,7 +335,19 @@ EDGES: tuple[Edge, ...] = (
 
     Edge("intercept.awards", "route.awards",
          label="@@수상 · 수상/랭킹 질문", conditional=True),
-    Edge("intercept.awards", "source_pin", label="통과", conditional=True),
+    Edge("intercept.awards", "intercept.model_rights", label="통과", conditional=True),
+
+    Edge("intercept.model_rights", "route.model_rights",
+         label="@@초상권 · 초상권 의도", conditional=True),
+    Edge("intercept.model_rights", "intercept.report", label="통과", conditional=True),
+
+    Edge("intercept.report", "route.report",
+         label="@@보고서 · 보고서 요청", conditional=True),
+    Edge("intercept.report", "intercept.images", label="통과", conditional=True),
+
+    Edge("intercept.images", "route.direct",
+         label="사진 첨부 · vision", conditional=True),
+    Edge("intercept.images", "source_pin", label="통과", conditional=True),
 
     *tuple(Edge("source_pin", r, label="소스 지정", conditional=True)
            for r in _PINNED_ROUTES),
