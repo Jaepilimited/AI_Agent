@@ -453,6 +453,10 @@ KIND_META = {
 }
 
 
+#: 잔디 커넥트 본문 상한. ⚠️ 우리가 정한 안전선이다 — 넘으면 **밝히고** 자른다
+_JANDI_BODY_LIMIT = 9000
+
+
 def jandi_payload(body: str, kind: str = "briefing", title: str = "",
                   link: str = "") -> dict[str, Any]:
     """잔디 커넥트 형식. 잔디는 마크다운을 거의 그리지 않으므로 본문은 평문이다.
@@ -467,4 +471,10 @@ def jandi_payload(body: str, kind: str = "briefing", title: str = "",
              "description": datetime.now().strftime("%Y-%m-%d %H:%M")}]
     if link:
         info.append({"title": "셀라에서 이어서 물어보기", "description": link})
-    return {"body": body[:9000], "connectColor": color, "connectInfo": info}
+    # ⛔ **조용히 자르지 않는다.** 잘린 줄 모르면 "왜 일부만 오지" 가 된다
+    #    (2026-09-07 제보의 원인이 정확히 그것이었다). 자를 땐 사실을 적는다.
+    text = str(body or "")
+    if len(text) > _JANDI_BODY_LIMIT:
+        cut = f"\n\n… (본문이 길어 여기까지만 보냅니다 · 전체 {len(text):,}자 — 위 링크에서 전문 확인)"
+        text = text[:_JANDI_BODY_LIMIT - len(cut)].rstrip() + cut
+    return {"body": text, "connectColor": color, "connectInfo": info}
