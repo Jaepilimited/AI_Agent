@@ -68,6 +68,7 @@ SECTIONS: tuple[tuple[str, str, str], ...] = (
     ("fx", "오늘의 환율", "브리핑"),
     ("report_share", "보고서 공유 알림", "알림"),
     ("feedback", "의견(붐따) 회신 알림", "알림"),
+    ("group_assign", "그룹 배정 대기 알림", "알림"),
 )
 
 SECTION_KEYS = frozenset(key for key, _, _ in SECTIONS)
@@ -450,6 +451,9 @@ KIND_META = {
     "report_share": ("보고서가 공유되었습니다", "#4b8bf5"),
     "feedback": ("보내주신 의견이 처리되었습니다", "#46be8a"),
     "announcement": ("공지", "#9b6bde"),
+    # ⛔ 릴레이(`scripts/jandi_briefing_relay.py`)에 같은 목록이 있다 —
+    #    한쪽만 고치면 색·제목이 어긋난다 (회귀가 대조한다)
+    "group_assign": ("새 사용자가 그룹 배정을 기다립니다", "#e8543f"),
 }
 
 

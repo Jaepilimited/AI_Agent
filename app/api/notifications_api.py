@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.auth_middleware import get_current_user
 from app.db.models import User
-from app.core import announcements, briefing, feedback_inbox
+from app.core import announcements, briefing, feedback_inbox, group_alerts
 from app.reports import store
 
 logger = structlog.get_logger(__name__)
@@ -40,11 +40,12 @@ async def list_notifications(user: User = Depends(get_current_user)) -> dict:
 
     `type` 으로 구분한다. 프론트는 종류가 늘어도 같은 목록을 그린다.
     """
-    shares, feedbacks, notices, briefs = await asyncio.gather(
+    shares, feedbacks, notices, briefs, waiting = await asyncio.gather(
         asyncio.to_thread(store.list_notifications, user.id),
         asyncio.to_thread(feedback_inbox.my_feedback, user.id),
         asyncio.to_thread(announcements.for_user, user.id),
         asyncio.to_thread(briefing.for_user, user.id),
+        asyncio.to_thread(group_alerts.for_user, user.id),
     )
 
     items = [{
@@ -97,6 +98,18 @@ async def list_notifications(user: User = Depends(get_current_user)) -> dict:
         "url": "",
     } for b in briefs]
 
+    # 그룹 배정 대기 — 새 사람이 막혀 있는데 관리자만 모르던 자리 (2026-09-09)
+    # ⚠️ 정해진 한 사람에게만 온다. 대상이 아니면 `for_user` 가 빈 목록을 준다.
+    items += [{
+        "type": "group_assign",
+        "waiting_user_id": w["waiting_user_id"],
+        "title": w["title"],
+        "note": w["note"],
+        "created_at": w["at"].isoformat() if hasattr(w.get("at"), "isoformat") else "",
+        "seen": bool(w.get("seen")),
+        "url": "",
+    } for w in waiting]
+
     items.sort(key=lambda i: (i["seen"], _neg(i["created_at"])))
     return {"unseen": sum(1 for i in items if not i["seen"]), "items": items}
 
@@ -108,6 +121,7 @@ async def mark_all_seen(user: User = Depends(get_current_user)) -> dict:
     await asyncio.to_thread(feedback_inbox.mark_my_feedback_seen, user.id)
     await asyncio.to_thread(announcements.mark_seen, user.id)
     await asyncio.to_thread(briefing.mark_seen, user.id)
+    await asyncio.to_thread(group_alerts.mark_seen, user.id)
     logger.info("notifications_marked_seen", user_id=user.id, shares=n)
     return {"marked": n}
 

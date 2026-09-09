@@ -120,7 +120,20 @@ def _announcements(user_id: int) -> list[dict[str, Any]]:
 
 #: ⛔ 여기에 `_announcements` 를 더하지 마라 — 전원 방송은 잔디로 밀지 않는다.
 #: 새 종류를 넣기 전에 물어라: **받는 사람이 특정되는가?** 아니면 알림함이 맡는다.
-_PERSONAL_SOURCES = (_shares, _feedbacks)
+def _group_assignments(user_id: int) -> list[dict[str, Any]]:
+    """새 계정이 그룹 배정을 기다리는 중 — **정해진 한 사람에게만** 간다.
+
+    ⛔ 잔디 규칙은 중요도가 아니라 **수신자 특정 여부**다. "관리자에게" 는 역할이라
+       공지와 같은 모양이 되는데, 이 알림은 `group_alerts.OWNER_EMAIL` 한 사람을
+       지목하므로 통과한다 (2026-09-09 사용자 지시: *"나한테만"*).
+    ⚠️ 대상이 아니면 `for_user` 가 빈 목록을 준다 — 여기서 또 판정하지 않는다.
+    """
+    from app.core import group_alerts
+
+    return group_alerts.for_user(user_id)
+
+
+_PERSONAL_SOURCES = (_shares, _feedbacks, _group_assignments)
 
 
 def _fresh(item: dict[str, Any], now: datetime) -> bool:

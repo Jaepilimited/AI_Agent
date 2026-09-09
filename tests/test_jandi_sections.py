@@ -124,7 +124,9 @@ def test_notification_kinds_are_selectable_and_match_real_kinds():
     """알림 키가 실제 `kind` 값과 같아야 한다 — 다르면 체크를 꺼도 계속 온다."""
 
     keys = {key for key, _, group in jandi_briefing.SECTIONS if group == "알림"}
-    assert keys == {"report_share", "feedback"}
+    # ⚠️ `group_assign` 은 2026-09-09 에 늘었다 (그룹 배정 대기 — 한 사람에게만).
+    #    끌 수 있어야 한다: 못 끄는 알림은 결국 전체 알림을 무시하게 만든다.
+    assert keys == {"report_share", "feedback", "group_assign"}
     assert keys <= set(jandi_briefing.KIND_META), "KIND_META 에 없는 종류를 그리고 있다"
 
 

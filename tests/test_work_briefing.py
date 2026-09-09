@@ -770,7 +770,12 @@ def test_broadcast_announcements_never_reach_jandi():
     from app.core import jandi_notify
 
     names = [fn.__name__ for fn in jandi_notify._PERSONAL_SOURCES]
-    assert names == ["_shares", "_feedbacks"], (
+    # ⚠️ 2026-09-09 에 `_group_assignments` 가 늘었다. 이 관문을 지난 근거는
+    #    **역할이 아니라 사람**이라는 것이다 — 그룹 배정 대기 알림은
+    #    `group_alerts.OWNER_EMAIL` **한 사람**에게만 가고, 대상이 아니면
+    #    `for_user` 가 빈 목록을 준다 (사용자 지시: "나한테만").
+    #    "관리자에게" 로 넓혔다면 공지와 같은 모양이라 여기서 막혔어야 한다.
+    assert names == ["_shares", "_feedbacks", "_group_assignments"], (
         f"잔디 알림 소스가 바뀌었다: {names}. 새 종류를 넣기 전에 "
         "'받는 사람이 특정되는가' 를 먼저 물어라 — 방송은 알림함이 맡는다"
     )

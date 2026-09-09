@@ -78,6 +78,7 @@ KIND_META = {
     "report_share": ("보고서가 공유되었습니다", "#4b8bf5"),
     "feedback": ("보내주신 의견이 처리되었습니다", "#46be8a"),
     "announcement": ("공지", "#9b6bde"),
+    "group_assign": ("새 사용자가 그룹 배정을 기다립니다", "#e8543f"),
 }
 
 
