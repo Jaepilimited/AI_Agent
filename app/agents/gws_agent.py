@@ -61,10 +61,27 @@ _GMAIL_OPERATOR_RE = re.compile(
 #    메일 본문에 있는 게 아니다. 게다가 AND 라 다른 낱말까지 같이 죽는다.
 # ⚠️ 잘못 잡을 수 있다("고객사로부터"). 그래서 `from:` 은 **되돌릴 수 있는 층**으로
 #    둔다 — 0건이면 좁혀 찾기 사다리(`run_gmail_search`)가 이 조건도 떼고 다시 본다.
+#: ⚠️ 존칭이 붙으면 `from:이해인님` 이 된다 — Gmail 이 못 찾는다. 정규식에서
+#:    한 번 받아 주고(`(?:님|씨)?`) 잡힌 값에서도 한 번 더 뗀다(`_strip_honorific`).
+#: ⚠️ `발송한`·`보내신` 도 같은 뜻이다 — 동사가 하나뿐이면 "대표님이 발송한 메일" 이
+#:    보낸사람으로 안 잡히고 `in:sent`(내 보낸편지함)로 샌다.
 _SENDER_RE = re.compile(
-    r"([A-Za-z][A-Za-z0-9._'-]+|[가-힣]{2,4})\s*"
-    r"(?:으로부터|로부터|에게서|한테서|(?:가|이|께서)\s*보낸)"
+    r"([A-Za-z][A-Za-z0-9._'-]+|[가-힣]{2,4})\s*(?:님|씨)?\s*"
+    r"(?:으로부터|로부터|에게서|한테서"
+    r"|(?:가|이|께서)\s*(?:보낸|보내신|보내준|보내주신|발송한|발신한))"
 )
+
+
+#: 이름을 `from:` 으로 뺀 뒤 남는 존칭 조각 — 검색어가 되면 AND 로 걸려 0건이 된다.
+_HONORIFIC_ONLY = re.compile(r"^(?:님|씨)(?:이|가|께서|은|는|의|들)?$")
+
+
+def _strip_honorific(name: str) -> str:
+    """`이해인님` → `이해인`. ⚠️ 두 글자 미만으로 줄면 떼지 않는다 (조사 규칙과 같다)."""
+    for suffix in ("님", "씨"):
+        if name.endswith(suffix) and len(name) - len(suffix) >= 2:
+            return name[: -len(suffix)]
+    return name
 
 # "과거 1년 이내" · "최근 3개월" · "지난 2주" → newer_than: (붐따 #149)
 # ⛔ "약 1년 **전**" 은 여기 걸리면 안 된다 — 1년 안쪽이 아니라 그 무렵이라, 기간을
@@ -111,8 +128,10 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
     if "from:" not in operators_lower:
         found = _SENDER_RE.search(_GMAIL_OPERATOR_RE.sub(" ", question))
         if found:
-            sender = found.group(1)
-            sender_tokens.add(sender.lower())
+            raw = found.group(1)
+            sender = _strip_honorific(raw)
+            # 원문 표기도 함께 기억한다 — 검색어로 다시 새어 나가면 안 된다
+            sender_tokens.update({raw.lower(), sender.lower()})
 
     generated: List[str] = []
     if not has_date_operator:
@@ -163,7 +182,14 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
         "받은 메일", "수신 메일", "수신한", "수신 받은", "들어온 메일",
         "도착한 메일", "온 메일", "received",
     ))
-    if sent and "in:" not in operators_lower:
+    # ⛔ **보낸사람이 지목되면 `in:sent` 가 아니다** (2026-09-09 스윕 실측 사고).
+    #    "이해인님이 보낸 메일 찾아줘" 가 `in:sent from:이해인님` 이 됐다 —
+    #    내 보낸편지함에는 내가 보낸 것만 있으므로 **구조적으로 항상 0건**이고,
+    #    그래서 좁혀찾기 사다리가 `from:` 을 떼어 **내가 보낸 메일 12건**을
+    #    답으로 내놨다. 넓혔다고 밝히긴 했지만 밝힌 내용이 이미 다른 질문이다
+    #    (드라이브 규칙: 잡음은 답처럼 보여서 0건보다 나쁘다).
+    #    `내가/제가 보낸` 은 이름이 안 잡히므로 종전대로 `in:sent` 다.
+    if sent and not sender and "in:" not in operators_lower:
         generated.append("in:sent")
     elif received and not any(key in operators_lower for key in ("from:", "in:")):
         generated.append("-from:me")
@@ -216,6 +242,12 @@ def build_gmail_query(query: str, now: datetime | None = None) -> str:
             token = strip_particle(token.strip("._-"))
             low = token.lower()
             if len(token) < 2 or low in sender_tokens:
+                continue
+            # ⚠️ 이름을 `from:` 으로 뺐으면 **그 이름이 붙은 조각도 검색어가 아니다.**
+            #    실측: `이해인님으로부터 온 메일` → `from:이해인 이해인님으로` 가 되어
+            #    본문에 그 글자가 없으면 0건이 됐다. `haein 님이` 의 `님이` 도 같다.
+            if sender_tokens and (any(low.startswith(s) for s in sender_tokens if s)
+                                  or _HONORIFIC_ONLY.match(token)):
                 continue
             # ⚠️ **불용어를 뗀 자리에 2글자 이하가 남으면 어미 오타다** (`해조`·`해줭`).
             #    뗀 것이 없는 어절은 그대로 둔다 — `환율`·`면세` 처럼 짧아도 뜻이 있다

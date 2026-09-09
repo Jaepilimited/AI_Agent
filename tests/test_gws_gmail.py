@@ -222,3 +222,62 @@ async def test_missing_gws_token_uses_authenticated_relative_login_route(monkeyp
     assert "<!-- gws-auth:/auth/google/login -->" in answer
     assert "owner@example.com" not in answer
     assert "accounts.google.com" not in answer
+
+
+# ── 「OO님이 보낸 메일」이 내 보낸편지함을 뒤졌다 (2026-09-09 붐따 스윕) ────────
+#
+#     "이해인님이 보낸 메일 찾아줘"  ->  in:sent from:이해인님
+#
+# 내 보낸편지함에는 **내가 보낸 것만** 있으므로 이 조합은 구조적으로 항상 0건이다.
+# 그래서 좁혀찾기 사다리가 `from:` 을 떼어 **내가 보낸 메일 12건**을 답으로 내놨다.
+# 넓혔다고 밝히긴 했지만, 밝힌 그 내용이 이미 다른 질문이다
+# (드라이브 규칙과 같다: 잡음은 답처럼 보여서 0건보다 나쁘다).
+
+
+def test_a_named_sender_is_not_my_sent_folder():
+    """⛔ 이 건 자체 — 보낸사람이 지목되면 `in:sent` 가 아니다."""
+    q = gws_agent.build_gmail_query("이해인님이 보낸 메일 찾아줘")
+    assert "from:이해인" in q
+    assert "in:sent" not in q
+
+
+def test_the_honorific_is_stripped_from_the_sender():
+    """⚠️ `from:이해인님` 은 Gmail 이 못 찾는다."""
+    assert "from:이해인님" not in gws_agent.build_gmail_query("이해인님이 보낸 메일 찾아줘")
+    assert "from:haein" in gws_agent.build_gmail_query("haein 님이 보낸 메일")
+
+
+def test_a_short_name_keeps_its_last_character():
+    """⚠️ 두 글자 미만으로 줄면 떼지 않는다 (조사 규칙과 같다)."""
+    assert gws_agent._strip_honorific("이해인님") == "이해인"
+    assert gws_agent._strip_honorific("하님") == "하님"
+
+
+def test_other_sending_verbs_are_understood():
+    """⚠️ 동사가 `보낸` 하나뿐이면 「발송한」이 `in:sent` 로 샌다."""
+    q = gws_agent.build_gmail_query("대표님이 발송한 메일 찾아줘")
+    assert "from:대표" in q and "in:sent" not in q
+
+
+def test_my_own_sent_mail_still_uses_in_sent():
+    """정상 경로는 그대로다 — 좁히다가 쓸모를 없애면 안 된다."""
+    for q in ("내가 보낸 메일 찾아줘", "제가 보낸 메일 알려줘"):
+        assert "in:sent" in gws_agent.build_gmail_query(q)
+        assert "from:" not in gws_agent.build_gmail_query(q)
+
+
+def test_the_sender_name_does_not_leak_back_as_a_keyword():
+    """⚠️ 이름을 `from:` 으로 뺐으면 그 이름이 붙은 조각도 검색어가 아니다.
+
+    실측: `이해인님으로부터 온 메일` → `from:이해인 이해인님으로` 가 되어
+    본문에 그 글자가 없으면 AND 로 걸려 0건이 됐다.
+    """
+    q = gws_agent.build_gmail_query("이해인님으로부터 온 메일")
+    assert "from:이해인" in q
+    assert "이해인님으로" not in q
+    assert "님이" not in gws_agent.build_gmail_query("haein 님이 보낸 메일")
+
+
+def test_a_real_keyword_survives_next_to_a_sender():
+    q = gws_agent.build_gmail_query("이해인님이 보낸 물류 관련 메일")
+    assert "from:이해인" in q and "물류" in q
