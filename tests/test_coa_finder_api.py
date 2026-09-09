@@ -1104,3 +1104,64 @@ def test_five_lots_with_one_found_does_not_warn(client, caplog):
         r = client.post("/api/coa-finder/search", data={"pasted": payload})
     assert r.status_code == 200
     assert not any(rec.message == "coa_finder_all_none" for rec in caplog.records)
+
+
+@pytest.mark.parametrize("kinds", [("coa",), ("msds",), ("coa", "msds")])
+def test_latest_search_results_flow_into_zip_without_older_versions(client, kinds):
+    """Use real search classification/SSE/ZIP paths; only Drive I/O is replaced."""
+    import io
+    import zipfile
+
+    creds = object()
+    old_date, new_date = "2026-09-01T00:00:00Z", "2026-09-08T03:30:00Z"
+    downloads = []
+
+    def search(credential, query, **kwargs):
+        assert credential is creds
+        kind = "msds" if "MSDS" in query else "coa"
+        name = "MSDS Toning Toner 210ml" if kind == "msds" else "COA_FE103C"
+        return [{"id": kind + "-" + version, "name": name + "_" + version + ".pdf",
+                 "size": 100, "modifiedTime": modified,
+                 "webViewLink": "https://drive.example/" + kind + "-" + version}
+                for version, modified in (("old", old_date), ("new", new_date))]
+
+    def fetch(credential, file_id, budget):
+        assert credential is creds and file_id in {"coa-new", "msds-new"}
+        downloads.append(file_id)
+        return file_id.encode()
+
+    with patch("app.api.coa_finder_api._credentials", return_value=creds) as credentials, \
+         patch("app.core.coa_finder.search_drive", side_effect=search), \
+         patch("app.api.coa_finder_api._fetch_file", side_effect=fetch):
+        response = client.post("/api/coa-finder/search", data={
+            "pasted": "SKU\tDESCRIPTION\tLOT\nEUSKA022\tMadagascar Centella Toning Toner 210ml\tFE103C\n",
+        })
+        assert response.status_code == 200
+        blocks = [block for block in response.text.split("\n\n") if block.startswith("event: row")]
+        assert len(blocks) == 1
+        row = json.loads(next(line[6:] for line in blocks[0].splitlines() if line.startswith("data: ")))
+        for kind in ("coa", "msds"):
+            verdict = row[kind]
+            assert verdict["status"] == cf.FOUND
+            assert [file["id"] for file in verdict["files"]] == [kind + "-new"]
+            assert verdict["files"][0]["modified"] == new_date
+            assert "최신" in verdict["note"] and "2026-09-08" in verdict["note"]
+        assert _done_payload(response.text)["counts"][cf.FOUND] == 1
+        items = [{"file_id": file["id"], "name": file["name"], "sku": row["sku"],
+                  "lot": row["lot"] if kind == "coa" else "", "kind": kind,
+                  "status": row[kind]["status"]}
+                 for kind in kinds for file in row[kind]["files"]]
+        archive = client.post("/api/coa-finder/download", json={"items": items})
+        assert archive.status_code == 200
+        assert credentials.call_args_list[0].args == (_User.email,)
+        assert credentials.call_args_list[-1].args == (_User.email,)
+    assert set(downloads) == {kind + "-new" for kind in kinds}
+    with zipfile.ZipFile(io.BytesIO(archive.content)) as zf:
+        names = zf.namelist()
+        assert len(names) == len(kinds)
+        assert {name.split("/", 1)[0] for name in names} == {kind.upper() for kind in kinds}
+        assert not any("old" in name or name.startswith("_") for name in names)
+        for name in names:
+            kind = name.split("/", 1)[0].lower()
+            assert zf.read(name) == (kind + "-new").encode()
+            assert ("FE103C" in name) is (kind == "coa")

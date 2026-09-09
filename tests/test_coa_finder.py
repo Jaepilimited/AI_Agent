@@ -572,6 +572,97 @@ def test_product_terms_strips_cpnp_marker():
     assert "CPNP" not in cf.product_terms("SKIN1004 Madagascar Centella Ampoule 100ml_CPNP")
 
 
+# ── 제품명의 용량이 MSDS 를 못 찾게 하던 것 (2026-09-04 사용자 제보) ──────────
+#
+# MSDS 는 **제형 단위** 문서라 파일명에 용량이 없는 것이 흔한데(`… FIRST
+# AMPOULE(2026)`), 붙은 것도 있어서(`… TONING TONER 210ml.pdf`) 어떤 제품은 되고
+# 어떤 제품은 조용히 '없음' 이 됐다. 프로덕션 실측:
+#   `Hyalu-Cica First Ampoule 100ml` → 0건 / 용량을 빼면 → 4건
+
+
+def _msds_rows(desc):
+    return [cf.Row("A", desc, "", 1)]
+
+
+def _msds_only(name):
+    """롯트 조회에는 아무것도 주지 않고 MSDS 조회에만 파일 하나를 준다."""
+    def fake_search(creds, query, **k):
+        if "MSDS" not in query:
+            return []
+        return [{"id": "m1", "name": name, "size": 100,
+                 "webViewLink": "http://d/m1"}]
+    return fake_search
+
+
+def test_volume_in_the_product_name_no_longer_hides_the_msds():
+    got = list(cf.find_all(
+        MagicMock(), _msds_rows("Madagascar Centella Hyalu-Cica First Ampoule 100ml"),
+        search=_msds_only("MSDS_SKIN1004 MADAGASCAR CENTELLA HYALU-CICA "
+                          "FIRST AMPOULE(2026).pdf")))
+    assert got[0].msds.status == cf.FOUND
+
+
+def test_a_widened_msds_search_says_so():
+    """⛔ 안 쓴 낱말로 찾았으면 밝힌다 — 용량이 맞는 문서로 읽히면 안 된다."""
+    got = list(cf.find_all(
+        MagicMock(), _msds_rows("Madagascar Centella Hyalu-Cica First Ampoule 100ml"),
+        search=_msds_only("MSDS_SKIN1004 MADAGASCAR CENTELLA HYALU-CICA "
+                          "FIRST AMPOULE(2026).pdf")))
+    assert "100ml" in got[0].msds.note and "넓혀" in got[0].msds.note
+
+
+def test_a_msds_that_carries_the_volume_is_found_without_widening():
+    """반대 방향 — 용량이 이름에 있으면 넓히지 않는다 (넓힘 안내도 없다)."""
+    got = list(cf.find_all(
+        MagicMock(), _msds_rows("Madagascar Centella Toning Toner 210ml"),
+        search=_msds_only("MSDS_SKIN1004 MADAGASCAR CENTELLA TONING TONER 210ml.pdf")))
+    assert got[0].msds.status == cf.FOUND
+    assert "넓혀" not in got[0].msds.note
+
+
+def test_an_unrelated_msds_is_still_rejected_after_widening():
+    """⛔ 넓힌다고 아무거나 받지 않는다 — 용량만 빠질 뿐 제품 낱말은 그대로 요구한다."""
+    got = list(cf.find_all(
+        MagicMock(), _msds_rows("Madagascar Centella Teca Cream 75ml"),
+        search=_msds_only("MSDS_SKIN1004 MADAGASCAR CENTELLA SOOTHING CREAM(2026).pdf")))
+    assert got[0].msds.status == cf.NONE
+
+
+def test_widening_never_falls_back_to_a_single_word():
+    """⛔ 한 낱말까지 풀지 마라 — 'Ampoule' 하나면 온갖 MSDS 가 걸린다.
+
+    잡음은 답처럼 보여서 0건보다 나쁘다 (드라이브 검색에서 이미 정한 규칙).
+    """
+    assert cf.drop_volume(["Ampoule", "100ml"]) == ["Ampoule", "100ml"]
+    got = list(cf.find_all(
+        MagicMock(), _msds_rows("Madagascar Centella Ampoule 100ml"),
+        search=_msds_only("MSDS_SKIN1004 MADAGASCAR CENTELLA AMPOULE(2026).pdf")))
+    assert got[0].msds.status == cf.NONE
+
+
+def test_a_bare_number_is_not_a_volume():
+    """⛔ 단위 없는 숫자를 용량으로 보면 제품 고유어가 잘려 나간다."""
+    assert cf.drop_volume(["Retinol", "0.2", "Boosting", "Shot"]) == [
+        "Retinol", "0.2", "Boosting", "Shot"]
+    assert cf.drop_volume(["Niacinamide", "10", "Ampoule"]) == [
+        "Niacinamide", "10", "Ampoule"]
+
+
+def test_drop_volume_handles_the_units_that_actually_appear():
+    assert cf.drop_volume(["Sun", "Stick", "20g"]) == ["Sun", "Stick"]
+    assert cf.drop_volume(["Cloudy", "Mist", "120ML"]) == ["Cloudy", "Mist"]
+
+
+def test_a_missing_msds_says_what_it_looked_for():
+    """⛔ '없음' 세 글자만 남으면 "정말 없다" 와 "낱말이 안 맞았다" 가 똑같이 보인다."""
+    got = list(cf.find_all(
+        MagicMock(), _msds_rows("Madagascar Centella Teca Cream 75ml"),
+        search=lambda creds, query, **k: []))
+    assert got[0].msds.status == cf.NONE
+    note = got[0].msds.note
+    assert "Teca" in note and "Cream" in note and "MSDS" in note
+
+
 def test_find_all_never_widens_the_query():
     """⛔ expand()/llm_variants() 를 부르면 이 기능은 오답 생성기가 된다."""
     rows = [cf.Row("EUSKA032", "SKIN1004 Madagascar Centella Poremizing Fresh Ampoule 50ml",
@@ -1064,3 +1155,256 @@ def test_drive_access_probe_empty_result_is_not_a_failure(monkeypatch):
     monkeypatch.setattr(google_workspace, "search_drive", lambda *a, **k: [])
     r = self_check._check_drive_shared_access()
     assert r.ok is True
+
+
+def _dated(name, fid, modified, size=1000):
+    return cf.DriveFile(fid, name, size, "http://d/" + fid, modified)
+
+
+def _raw_candidates(files):
+    return [{"id": f.id, "name": f.name, "size": f.size, "webViewLink": f.web_link,
+             "modifiedTime": f.modified} for f in files]
+
+
+def _find_msds_candidates(files, description="Toning Toner 210ml"):
+    def search(_creds, query, **kwargs):
+        return _raw_candidates(files) if "MSDS" in query else []
+
+    return list(cf.find_all(None, _msds_rows(description), search=search))[0].msds
+
+
+def test_latest_coa_chooses_the_newest_matching_lot_even_when_older_is_first():
+    files = [
+        _dated("COA_A_FE103C.pdf", "old", "2026-09-08T01:00:00Z"),
+        _dated("COA_B_FE103C.pdf", "latest", "2026-09-09T01:00:00Z"),
+        _dated("COA_C_FE103D.pdf", "wrong-lot", "2026-09-10T01:00:00Z"),
+        _dated("COA_D_FE103CX.pdf", "longer-lot", "2026-09-11T01:00:00Z"),
+    ]
+
+    verdict = cf.classify_lot("FE103C", files)
+
+    assert verdict.status == cf.FOUND
+    assert [f.id for f in verdict.files] == ["latest"]
+    assert "검색된 같은 롯트의 COA 2건 중" in verdict.note
+    assert "최종 수정일 2026-09-09 10:00:00 KST" in verdict.note
+    assert "최신 1개" in verdict.note
+
+
+def test_latest_compares_timezone_instants_instead_of_timestamp_strings():
+    files = [
+        _dated("COA_A_FE103C.pdf", "older-kst", "2026-09-09T09:30:00+09:00"),
+        _dated("COA_B_FE103C.pdf", "latest-utc", "2026-09-09T01:00:00Z"),
+    ]
+    verdict = cf.classify_lot("FE103C", files)
+    assert verdict.status == cf.FOUND
+    assert verdict.files == (files[1],)
+
+
+def test_latest_copy_is_not_discarded_before_comparing_distinct_documents():
+    files = [
+        _dated("COA_A_FE103C.pdf", "old-original", "2026-09-01T00:00:00Z"),
+        _dated("COA_B_FE103C.pdf", "other-document", "2026-09-03T00:00:00Z"),
+        _dated("COA_A_FE103C (1).pdf", "latest-copy", "2026-09-05T00:00:00Z"),
+    ]
+    verdict = cf.classify_lot("FE103C", files)
+    assert verdict.status == cf.FOUND
+    assert [f.id for f in verdict.files] == ["latest-copy"]
+    assert "검색된 같은 롯트의 COA 3건 중" in verdict.note
+
+
+def test_latest_copy_bucket_keeps_the_newest_dated_representative():
+    old = _dated("COA_FE103C.pdf", "old", "2026-09-01T00:00:00Z")
+    new = _dated("COA_FE103C (1).pdf", "new", "2026-09-05T00:00:00Z")
+    verdict = cf.classify_lot("FE103C", [old, new])
+    assert verdict.status == cf.FOUND and verdict.files == (new,)
+
+
+def test_latest_copy_ties_keep_the_existing_representative():
+    files = [
+        _dated("COA_A_FE103C.pdf", "original", "2026-09-09T01:00:00Z"),
+        _dated("COA_A_FE103C (1).pdf", "copy", "2026-09-09T10:00:00+09:00"),
+        _dated("COA_B_FE103C.pdf", "older", "2026-09-08T01:00:00Z"),
+    ]
+    verdict = cf.classify_lot("FE103C", files)
+    assert verdict.status == cf.FOUND and verdict.files == (files[0],)
+
+
+@pytest.mark.parametrize("modified", [
+    "", None, "not-a-date", "2026-09-09", "2026-09-09T00:00:00",
+    "2026-02-30T00:00:00Z", "2026-09-09T00:00:00+24:00",
+    "2026-09-09T00:00:00+00:99",
+])
+def test_latest_never_hides_a_candidate_with_an_unknown_modification_instant(modified):
+    files = [
+        _dated("COA_A_FE103C.pdf", "dated", "2026-09-09T01:00:00Z"),
+        _dated("COA_B_FE103C.pdf", "unknown", modified),
+    ]
+    verdict = cf.classify_lot("FE103C", files)
+    assert verdict.status == cf.MANY and verdict.files == tuple(files)
+    assert "최종 수정일" in verdict.note and "최신 1개를 고르지 않았습니다" in verdict.note
+
+
+@pytest.mark.parametrize("unknown_copy_first", [False, True])
+def test_latest_ambiguity_uses_raw_copy_dates_before_deduplication(unknown_copy_first):
+    original = _dated("COA_A_FE103C.pdf", "original", "2026-09-01T00:00:00Z")
+    unknown = _dated("COA_A_FE103C (1).pdf", "undated-copy", "")
+    other = _dated("COA_B_FE103C.pdf", "other", "2026-09-09T00:00:00Z")
+    files = [unknown, original, other] if unknown_copy_first else [original, unknown, other]
+    verdict = cf.classify_lot("FE103C", files)
+    assert verdict.status == cf.MANY
+    assert len(verdict.files) == 2
+    assert {f.id for f in verdict.files} == {"original", "other"}
+    assert "최종 수정일" in verdict.note and "최신 1개를 고르지 않았습니다" in verdict.note
+
+
+def test_latest_distinct_documents_with_the_same_newest_instant_remain_choices():
+    files = [
+        _dated("COA_A_FE103C.pdf", "first", "2026-09-09T01:00:00Z"),
+        _dated("COA_B_FE103C.pdf", "second", "2026-09-09T10:00:00+09:00"),
+        _dated("COA_C_FE103C.pdf", "older", "2026-09-08T01:00:00Z"),
+    ]
+    verdict = cf.classify_lot("FE103C", files)
+    assert verdict.status == cf.MANY and verdict.files == tuple(files)
+    assert "최종 수정일" in verdict.note and "같은" in verdict.note
+    assert "최신 1개를 고르지 않았습니다" in verdict.note
+
+
+def test_latest_preserves_the_historical_undated_copy_representative():
+    original = _dated("COA_FE103C.pdf", "original", "")
+    copy = _dated("COA_FE103C (1).pdf", "copy", "")
+    verdict = cf.classify_lot("FE103C", [original, copy])
+    assert verdict.status == cf.FOUND and verdict.files == (original,)
+
+
+@pytest.mark.parametrize("modified", ["", "not-a-date", "2026-09-09T01:00:00Z"])
+def test_latest_does_not_change_a_single_file_verdict(modified):
+    file = _dated("COA_FE103C.pdf", "only", modified)
+    verdict = cf.classify_lot("FE103C", [file])
+    assert verdict == cf.Verdict(cf.FOUND, (file,))
+
+
+def test_latest_msds_preserves_strict_volume_matching_before_selection():
+    files = [
+        _dated("MSDS_Toning Toner 210ml_v1.pdf", "old", "2026-09-01T00:00:00Z"),
+        _dated("MSDS_Toning Toner 210ml_v2.pdf", "latest", "2026-09-05T00:00:00Z"),
+        _dated("MSDS_Toning Toner_v3.pdf", "no-volume", "2026-09-09T00:00:00Z"),
+        _dated("MSDS_Soothing Cream 210ml.pdf", "wrong-product", "2026-09-10T00:00:00Z"),
+    ]
+    verdict = _find_msds_candidates(files)
+    assert verdict.status == cf.FOUND and verdict.files == (files[1],)
+    assert "검색된 같은 제품의 MSDS 2건 중" in verdict.note
+    assert "제품명으로 찾았습니다 (롯트 무관)" in verdict.note
+    assert "최종 수정일 2026-09-05 09:00:00 KST" in verdict.note
+    assert "넓혀" not in verdict.note
+
+
+@pytest.mark.parametrize("second_search", [False, True])
+def test_latest_msds_keeps_the_volume_relaxation_note(second_search):
+    files = [
+        _dated("MSDS_Toning Toner_v1.pdf", "old", "2026-09-01T00:00:00Z"),
+        _dated("MSDS_Toning Toner_v2.pdf", "latest", "2026-09-05T00:00:00Z"),
+        _dated("MSDS_Soothing Cream.pdf", "wrong-product", "2026-09-10T00:00:00Z"),
+    ]
+    calls = []
+
+    def search(_creds, query, **kwargs):
+        if "MSDS" not in query:
+            return []
+        calls.append((query, kwargs))
+        if second_search and "210ml" in query:
+            return []
+        return _raw_candidates(files)
+
+    verdict = list(cf.find_all(None, _msds_rows("Toning Toner 210ml"), search=search))[0].msds
+    assert verdict.status == cf.FOUND and verdict.files == (files[1],)
+    assert "용량(210ml)을 빼고 넓혀 찾았습니다" in verdict.note
+    assert "검색된 같은 제품의 MSDS 2건 중" in verdict.note
+    assert "최신 1개" in verdict.note
+    assert [query for query, _ in calls] == (
+        ["Toning Toner 210ml MSDS", "Toning Toner MSDS"] if second_search
+        else ["Toning Toner 210ml MSDS"]
+    )
+    assert all(kwargs == {"max_results": 25, "widen": False} for _, kwargs in calls)
+
+
+@pytest.mark.parametrize("modified", ["", "bad-date", "2026-09-09T01:00:00Z"])
+def test_latest_msds_keeps_ambiguous_dates_and_explains_why(modified):
+    files = [
+        _dated("MSDS_Toning Toner 210ml_v1.pdf", "first", "2026-09-09T01:00:00Z"),
+        _dated("MSDS_Toning Toner 210ml_v2.pdf", "second", modified),
+    ]
+    verdict = _find_msds_candidates(files)
+    assert verdict.status == cf.MANY and verdict.files == tuple(files)
+    assert "최종 수정일" in verdict.note and "최신 1개를 고르지 않았습니다" in verdict.note
+    assert "제품명으로 찾았습니다 (롯트 무관)" in verdict.note
+
+
+@pytest.mark.parametrize("lot,names,status", [
+    ("FF21", ["COA_A_FF21.pdf", "COA_B_FF21.pdf"], cf.MANY),
+    ("FE103C", ["COA_A_FE103CX.pdf", "COA_B_FE103CY.pdf"], cf.CHECK),
+    ("F31C28 D", ["COA_A_F31C28.pdf", "COA_B_F31C28.pdf"], cf.CHECK),
+])
+def test_latest_never_upgrades_short_boundary_or_suffix_candidates(lot, names, status):
+    files = [
+        _dated(names[0], "old", "2026-09-01T00:00:00Z"),
+        _dated(names[1], "new", "2026-09-09T00:00:00Z"),
+    ]
+    verdict = cf.classify_lot(lot, files)
+    assert verdict.status == status and verdict.files == tuple(files)
+    assert "최신 1개" not in verdict.note
+
+
+def test_latest_never_selects_a_single_body_only_coa():
+    files = [
+        _dated("COA_Toning Toner_v1.pdf", "old", "2026-09-01T00:00:00Z"),
+        _dated("COA_Toning Toner_v2.pdf", "new", "2026-09-09T00:00:00Z"),
+    ]
+
+    def search(_creds, _query, **kwargs):
+        return [] if kwargs.get("exact_name") else _raw_candidates(files)
+
+    result = list(cf.find_all(None, [cf.Row("A", "", "FE103C", 1)], search=search))[0]
+    assert result.coa.status == cf.CHECK and result.coa.files == tuple(files)
+    assert "본문" in result.coa.note and "최신 1개" not in result.coa.note
+
+
+def test_latest_never_selects_a_single_product_coa_from_another_batch():
+    files = [
+        _dated("COA_Toning Toner 210ml_FE103A.pdf", "old", "2026-09-01T00:00:00Z"),
+        _dated("COA_Toning Toner 210ml_FE103B.pdf", "new", "2026-09-09T00:00:00Z"),
+    ]
+    result = list(cf.find_all(
+        None, [cf.Row("A", "Toning Toner 210ml", "FE103C", 1)],
+        search=_product_coa_search(_raw_candidates(files)),
+    ))[0]
+    assert result.product_coa.status == cf.CHECK and result.product_coa.files == tuple(files)
+    assert "최신 1개" not in result.product_coa.note
+
+
+@pytest.mark.parametrize("relaxed", [False, True])
+@pytest.mark.parametrize("same_variant", [False, True])
+def test_latest_msds_checks_product_variant_terms_beyond_the_four_word_query(relaxed, same_variant):
+    base = "Hyalu-Cica First Ampoule" if relaxed else "Tone Brightening Capsule Ampoule"
+    description = base + " 100ml Mild" if relaxed else base + " Mild 100ml"
+    files = [
+        _dated(f"MSDS_{base} Mild_v1.pdf", "old-correct-variant", "2026-09-01T00:00:00Z"),
+        _dated(f"MSDS_{base} {'Mild' if same_variant else 'Strong'}_v2.pdf",
+               "new", "2026-09-09T00:00:00Z"),
+    ]
+
+    verdict = _find_msds_candidates(files, description)
+
+    if same_variant:
+        assert verdict.status == cf.FOUND and verdict.files == (files[1],)
+    else:
+        assert verdict.status == cf.MANY and verdict.files == tuple(files)
+        assert "제품명" in verdict.note and "Mild" in verdict.note
+        assert "최신 1개를 고르지 않았습니다" in verdict.note
+    assert ("용량(100ml)을 빼고 넓혀 찾았습니다" in verdict.note) is relaxed
+
+
+def test_latest_msds_variant_guard_leaves_single_file_behavior_unchanged():
+    file = _dated("MSDS_Tone Brightening Capsule Ampoule.pdf", "only", "2026-09-09T00:00:00Z")
+    verdict = _find_msds_candidates([file], "Tone Brightening Capsule Ampoule Mild 100ml")
+    assert verdict.status == cf.FOUND and verdict.files == (file,)
+    assert verdict.note == "제품명으로 찾았습니다 (롯트 무관)"

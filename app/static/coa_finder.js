@@ -20,8 +20,20 @@
   // product_coa is also the one column the row checkbox must not sweep up: it
   // is the most dangerous thing on this page, so it opts in per cell and the
   // header "select all" cannot reach it.
-  function cell(v, sku, lot, kind) {
-    const optIn = kind === "product_coa" && (v.files || []).length > 0;
+  //
+  // 후보가 둘 이상인 칸(여러건)은 **파일마다** 체크박스를 단다. 안쪽 체크박스가
+  // 진실이고 바깥(행·칸) 체크박스는 그것을 한꺼번에 켜고 끄는 스위치다.
+  // ⛔ 하나를 골라도 판정(status)은 그대로 실려 간다 — 사람이 눈으로 고른 것이지
+  //    시스템이 확정한 것이 아니다. 이 값이 ZIP 안 `_확인필요_목록.txt` 에
+  //    오를지를 정하고, 파일 이름에는 아무 표시도 붙지 않으므로 **그 목록이
+  //    유일한 표시다**. 여기서 '찾음' 으로 바꿔 보내면 확인되지 않은 문서가
+  //    목록에서 통째로 빠진다 (서버도 클라이언트의 그런 주장을 믿지 않는다).
+  function cell(v, sku, lot, kind, defaultOn) {
+    const files = v.files || [];
+    const optIn = kind === "product_coa" && files.length > 0;
+    // ⛔ 고를 것이 하나뿐인 칸에는 달지 않는다 — 선택지가 없는 자리의 체크박스는
+    //    "이것도 켜야 받아지나" 하는 잘못된 질문을 만든다
+    const perFile = files.length > 1;
     const wrap = document.createElement("td");
     const label = document.createElement("div");
     label.className = STATUS_CLASS[v.status] || "";
@@ -34,8 +46,18 @@
       label.prepend(box);
     }
     wrap.appendChild(label);
-    (v.files || []).forEach((f) => {
+    files.forEach((f) => {
       const line = document.createElement("div");
+      if (perFile) {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        // 제품COA 후보는 행 체크·전체선택이 닿지 못하게 따로 표시해 둔다
+        box.className = optIn
+          ? "cf-pick-file cf-pick-file-product" : "cf-pick-file";
+        box.checked = optIn ? false : !!defaultOn;
+        line.className = "cf-line";
+        line.appendChild(box);
+      }
       const a = document.createElement("a");
       a.href = f.link;
       a.target = "_blank";
@@ -55,6 +77,15 @@
       // selection before asking the server for any of it.
       a.dataset.size = f.size == null ? "" : String(f.size);
       line.appendChild(a);
+      if (perFile) {
+        const meta = fileMeta(f);
+        if (meta) {
+          const m = document.createElement("span");
+          m.className = "cf-meta";
+          m.textContent = meta;
+          line.appendChild(m);
+        }
+      }
       wrap.appendChild(line);
     });
     if (v.note) {
@@ -63,7 +94,42 @@
       n.textContent = v.note;
       wrap.appendChild(n);
     }
+    if (perFile) {
+      const hint = document.createElement("div");
+      hint.className = "cf-note";
+      hint.textContent = "받을 것만 체크하세요";
+      wrap.appendChild(hint);
+    }
     return wrap;
+  }
+
+  // 후보 줄에 붙는 "1.2MB · 2026-08-14". 열지 않고도 고를 수 있게 하는 것이 목적이라
+  // **고를 것이 여럿인 칸에만** 붙인다.
+  // ⛔ 없는 값을 지어내지 마라 — 드라이브가 구글 문서에는 크기를 주지 않고,
+  //    수정일이 비어 오는 파일도 있다. 모르는 칸은 그냥 빼고 아는 것만 적는다
+  //    (0바이트나 오늘 날짜로 채우면 화면이 조용히 거짓말을 한다).
+  function fileMeta(f) {
+    const parts = [];
+    const size = Number(f && f.size);
+    if (size > 0) {
+      parts.push(size >= 1024 * 1024
+        ? (size / 1024 / 1024).toFixed(1) + "MB"
+        : Math.max(1, Math.round(size / 1024)) + "KB");
+    }
+    // RFC3339 앞 10글자가 날짜다. 모양이 다르면 손대지 않는다 —
+    // 파싱해서 현지 시각으로 옮기면 하루가 밀 수 있고, 여기서는 날짜만으로 충분하다
+    const when = String((f && f.modified) || "");
+    if (/^\d{4}-\d{2}-\d{2}/.test(when)) parts.push(when.slice(0, 10));
+    return parts.join(" · ");
+  }
+
+  // 행 체크는 그 행의 파일 체크를 한꺼번에 따라오게 한다.
+  // ⛔ 제품COA 후보는 건드리지 않는다 — 다른 롯트의 문서라 행 체크도 전체선택도
+  //    닿으면 안 된다 (그 칸은 칸 체크박스나 파일 체크박스로만 켜진다)
+  function syncRowFiles(tr, on) {
+    if (!tr) return;
+    tr.querySelectorAll(".cf-pick-file:not(.cf-pick-file-product)")
+      .forEach((b) => { b.checked = on; });
   }
 
   // Every row payload, in arrival order. The CSV of missing COAs is built
@@ -80,7 +146,10 @@
     const box = document.createElement("input");
     box.type = "checkbox";
     box.className = "cf-pick";
-    box.checked = d.coa.status === "찾음";
+    // 파일별 체크박스의 기본값도 이 값을 따른다 — 행을 켜면 후보가 전부 켜지고,
+    // 여러건 행은 처음부터 꺼져 있어 사람이 고른 것만 켜진다
+    const rowDefault = d.coa.status === "찾음";
+    box.checked = rowDefault;
     pick.appendChild(box);
     tr.appendChild(pick);
     [d.sku, d.description, d.lot].forEach((t) => {
@@ -88,10 +157,10 @@
       td.textContent = t || "";
       tr.appendChild(td);
     });
-    tr.appendChild(cell(d.coa, d.sku, d.lot, "coa"));
-    tr.appendChild(cell(d.msds, d.sku, d.lot, "msds"));
+    tr.appendChild(cell(d.coa, d.sku, d.lot, "coa", rowDefault));
+    tr.appendChild(cell(d.msds, d.sku, d.lot, "msds", rowDefault));
     tr.appendChild(cell(d.product_coa || { status: "", files: [] },
-                        d.sku, d.lot, "product_coa"));
+                        d.sku, d.lot, "product_coa", false));
     if ($("cf-only-none").checked && tr.dataset.coaStatus !== "없음") {
       tr.hidden = true;
     }
@@ -267,6 +336,7 @@
     showSkipped(0);
     notice("cf-batch", "");
     notice("cf-kind", "");
+    notice("cf-picked", "");
     // A new search invalidates the caps until this run's "done" restates them.
     caps = null;
     // ⛔ 지난 조회의 행을 남기면 'COA 없는 목록' 이 이번 조회에 없는 롯트를
@@ -421,15 +491,29 @@
     // An archive quietly smaller than the selection is the failure this page
     // exists to avoid, so the count is stated on screen.
     let dropped = 0;
+    // 후보가 여럿인 칸에서 사람이 끄고 남긴 것. 스스로 끈 것이지만 건수는 말한다 —
+    // 선택보다 작아진 ZIP 을 조용히 넘기지 않는 것이 이 화면의 규칙이다
+    let unpicked = 0;
     document.querySelectorAll("#cf-body tr").forEach((tr) => {
       const rowOn = tr.querySelector(".cf-pick").checked;
       tr.querySelectorAll("a.cf-file").forEach((a) => {
-        // Opt-in files (product COA) follow their own cell's checkbox, never
+        // 안쪽 체크박스(파일별)가 있으면 그것이 진실이다 — 행·칸 체크박스는
+        // 그것을 한꺼번에 켜고 끄는 스위치일 뿐이다
+        const own = a.parentNode.querySelector("input.cf-pick-file");
+        // Opt-in files (product COA) follow their own checkbox, never
         // the row's and never "select all" -- they are other lots' documents.
         if (a.dataset.optin === "1") {
           const td = a.closest("td");
           const box = td && td.querySelector(".cf-pick-product");
-          if (!box || !box.checked) return;
+          const on = own ? own.checked : !!(box && box.checked);
+          // ⛔ 제품COA 는 기본이 꺼짐이라 '제외' 로 세지 않는다 — 아무도 고르지
+          //    않은 다른 롯트 문서를 매번 "N건 제외" 로 알리면 그 안내는 소음이 된다
+          if (!on) return;
+        } else if (own) {
+          if (!own.checked) {
+            if (rowOn) unpicked++;
+            return;
+          }
         } else if (!rowOn) {
           return;
         }
@@ -449,6 +533,7 @@
       });
     });
     if (!items.length) {
+      notice("cf-picked", "");
       showError(kindFilter
         ? "선택한 행에 " + (KIND_LABEL[kindFilter] || kindFilter) + " 파일이 없습니다"
         : "받을 파일을 선택해주세요");
@@ -457,6 +542,10 @@
     notice("cf-kind", dropped > 0
       ? (KIND_LABEL[kindFilter] || kindFilter) + "만 받습니다 — 선택한 것 중 " +
         dropped + "건(다른 종류)은 이번 받기에서 제외했습니다."
+      : "");
+    notice("cf-picked", unpicked > 0
+      ? "후보가 여럿인 칸에서 체크하지 않은 " + unpicked +
+        "건은 받지 않았습니다 — 체크한 것만 담깁니다."
       : "");
 
     const batches = planBatches(items, caps);
@@ -550,10 +639,29 @@
     $("cf-only-none").addEventListener("change", (e) => {
       applyNoneFilter(e.target.checked);
     });
+    // ⛔ `.checked` 를 코드로 바꾸면 change 가 발생하지 않는다 — 파일 체크박스를
+    //    여기서 함께 맞추지 않으면 전체선택이 후보를 하나도 켜지 못한다
+    //    (에러 없이 "선택했는데 안 받아지는" 조용한 상태가 된다)
     $("cf-all").addEventListener("change", (e) => {
-      document.querySelectorAll(".cf-pick").forEach((b) => {
-        b.checked = e.target.checked;
+      document.querySelectorAll("#cf-body tr").forEach((tr) => {
+        const box = tr.querySelector(".cf-pick");
+        if (box) box.checked = e.target.checked;
+        syncRowFiles(tr, e.target.checked);
       });
+    });
+    // 행이 늘어나며 스트리밍되므로 행마다 리스너를 달지 않고 위임으로 받는다
+    $("cf-body").addEventListener("change", (e) => {
+      const t = e.target;
+      if (!t || !t.classList) return;
+      if (t.classList.contains("cf-pick")) {
+        syncRowFiles(t.closest("tr"), t.checked);
+      } else if (t.classList.contains("cf-pick-product")) {
+        const td = t.closest("td");
+        if (td) {
+          td.querySelectorAll(".cf-pick-file-product")
+            .forEach((b) => { b.checked = t.checked; });
+        }
+      }
     });
   });
 })();

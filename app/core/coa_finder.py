@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional, Sequence
 
 # 헤더 낱말. ⛔ "몇 번째 행" 으로 박지 마라 — 안내문이 늘면 조용히 0건이 난다
@@ -319,6 +320,10 @@ class DriveFile:
     name: str
     size: int
     web_link: str
+    # 드라이브의 수정 시각(RFC3339). 같은 롯트·제품으로 좁힌 후보끼리만
+    # 최신 문서를 고르는 데 쓴다. 날짜가 없거나 애매하면 사람이 고른다.
+    # 기본값은 옛 호출부와 날짜 없는 파일을 그대로 지원한다.
+    modified: str = ""
 
 
 @dataclass(frozen=True)
@@ -358,12 +363,67 @@ def _dedup_key(f: DriveFile) -> tuple:
     return (_strip_copy_markers(stem).casefold(), ext.casefold(), f.size)
 
 
+_RFC3339_MODIFIED = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?"
+    r"(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)"
+)
+_KST = timezone(timedelta(hours=9))
+_UNKNOWN_MODIFIED_NOTE = (
+    "최종 수정일이 없거나 날짜·시간대를 확인할 수 없는 파일이 있어 "
+    "최신 1개를 고르지 않았습니다. 직접 선택하세요"
+)
+
+
+def _modified_instant(value: str) -> Optional[datetime]:
+    """시간대가 명시된 Drive 수정 시각만 UTC 시점으로 읽는다."""
+    if not isinstance(value, str) or not _RFC3339_MODIFIED.fullmatch(value):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00").replace("z", "+00:00"))
+        return parsed.astimezone(timezone.utc)
+    except (ValueError, OverflowError):
+        return None
+
+
 def _dedup(files: Sequence[DriveFile]) -> tuple[DriveFile, ...]:
-    """같은 파일의 사본을 접는다. 먼저 온 것을 남긴다."""
+    """날짜가 있는 사본 중 최신을 남긴다. 모두 날짜가 없거나 같으면 먼저 온 것을 남긴다."""
     seen: dict[tuple, DriveFile] = {}
     for f in files:
-        seen.setdefault(_dedup_key(f), f)
+        key = _dedup_key(f)
+        if key not in seen:
+            seen[key] = f
+            continue
+        modified = _modified_instant(f.modified)
+        previous = _modified_instant(seen[key].modified)
+        if modified is not None and (previous is None or modified > previous):
+            seen[key] = f
     return tuple(seen.values())
+
+
+def _latest_match(files: Sequence[DriveFile], label: str) -> tuple[Optional[DriveFile], str]:
+    """이미 일치한 후보만 비교한다. 접히는 사본의 날짜 누락도 숨기지 않는다."""
+    dated = []
+    for file in files:
+        modified = _modified_instant(file.modified)
+        if modified is None:
+            return None, _UNKNOWN_MODIFIED_NOTE
+        dated.append((modified, file))
+    newest = max(modified for modified, _ in dated)
+    latest_files = [file for modified, file in dated if modified == newest]
+    documents = {_dedup_key(file) for file in latest_files}
+    if len(documents) > 1:
+        return None, (f"최종 수정일이 같은 최신 문서가 {len(documents)}건이라 "
+                      "최신 1개를 고르지 않았습니다. 직접 선택하세요")
+    try:
+        displayed = newest.astimezone(_KST).strftime("%Y-%m-%d %H:%M:%S")
+    except OverflowError:
+        return None, _UNKNOWN_MODIFIED_NOTE
+    if newest.microsecond:
+        displayed += f".{newest.microsecond:06d}".rstrip("0")
+    return latest_files[0], (
+        f"검색된 {label} {len(files)}건 중 최종 수정일 {displayed} KST인 "
+        "최신 1개를 선택했습니다"
+    )
 
 
 def _is_delimited_match(name: str, lot: str) -> bool:
@@ -409,7 +469,13 @@ def classify_lot(lot: str, files: Sequence[DriveFile]) -> Verdict:
         if delimited:
             exact = _dedup(delimited)
             if len(exact) > 1:
-                return Verdict(MANY, exact, f"{len(exact)}건 — 어느 것인지 확인이 필요합니다")
+                note = f"{len(exact)}건 — 어느 것인지 확인이 필요합니다"
+                if len(lot) > _SHORT_LOT_LEN:
+                    latest, reason = _latest_match(delimited, "같은 롯트의 COA")
+                    if latest is not None:
+                        return Verdict(FOUND, (latest,), reason)
+                    note += " · " + reason
+                return Verdict(MANY, exact, note)
             if len(lot) <= _SHORT_LOT_LEN:
                 return Verdict(CHECK, exact,
                                f"롯트가 {len(lot)}자로 짧아 다른 코드에 걸렸을 수 있습니다")
@@ -448,6 +514,12 @@ logger = logging.getLogger(__name__)
 # 모든 제품에 공통으로 들어가 변별력이 없는 낱말
 _BRAND_WORDS = {"skin1004", "madagascar", "centella", "cpnp", "twin", "pack"}
 _TERM_SPLIT = re.compile(r"[\s_/,()]+")
+# 용량 토큰. ⛔ 단위를 반드시 요구한다 — 그냥 숫자를 용량으로 보면
+# "RETINOL 0.2"·"NIACINAMIDE 10" 의 제품 고유어가 잘려 나간다
+_VOLUME = re.compile(r"^\d+(?:\.\d+)?\s*(?:ml|l|g|kg|oz|ea)$", re.IGNORECASE)
+# 용량을 뺀 뒤 남아야 하는 최소 낱말 수. ⛔ 한 낱말까지 풀지 마라 —
+# "Cream" 하나로 찾으면 온갖 MSDS 가 걸리고, 잡음은 답처럼 보여서 0건보다 나쁘다
+_MIN_TERMS_AFTER_RELAX = 2
 
 
 @dataclass(frozen=True)
@@ -470,10 +542,19 @@ def product_terms(description: str) -> list[str]:
     return out
 
 
+def drop_volume(terms: Sequence[str]) -> list[str]:
+    """용량 낱말을 뺀 목록. 뺄 것이 없거나 너무 짧아지면 원본 그대로 돌려준다."""
+    kept = [t for t in terms if not _VOLUME.match(t.strip())]
+    if len(kept) == len(terms) or len(kept) < _MIN_TERMS_AFTER_RELAX:
+        return list(terms)
+    return kept
+
+
 def _to_files(raw: Iterable[dict]) -> list[DriveFile]:
     return [
         DriveFile(id=r.get("id", ""), name=r.get("name", ""),
-                  size=int(r.get("size") or 0), web_link=r.get("webViewLink", ""))
+                  size=int(r.get("size") or 0), web_link=r.get("webViewLink", ""),
+                  modified=r.get("modifiedTime", "") or "")
         for r in raw
     ]
 
@@ -539,13 +620,64 @@ def _one(creds, row: Row, search) -> Result:
                            extra={"sku": row.sku, "error": str(exc)[:200]})
             msds = Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
         else:
-            files = _dedup(_filter_by_name(_to_files(raw), query_terms, "msds"))
+            matched = _filter_by_name(_to_files(raw), query_terms, "msds")
+            files = _dedup(matched)
+            note = "제품명으로 찾았습니다 (롯트 무관)"
+            # ⛔ 제품명의 용량이 MSDS 를 통째로 못 찾게 만들고 있었다 (2026-09-04
+            #    사용자 제보, 프로덕션 실측). MSDS 는 **제형 단위** 문서라 파일명에
+            #    용량이 없는 것이 흔한데(`… FIRST AMPOULE(2026)`), 붙은 것도 있어서
+            #    (`… TONING TONER 210ml.pdf`) 어떤 제품은 되고 어떤 제품은 조용히
+            #    '없음' 이 됐다 — 에러가 아니라 0건이라 아무도 못 알아챈다.
+            #    실측: `Hyalu-Cica First Ampoule 100ml` 0건 → 용량 빼면 4건.
+            # ⚠️ 그래서 **용량은 요구 조건이 아니라 선호**로 둔다: 그대로 찾아보고
+            #    0건일 때만 용량을 빼고 다시 찾는다. 처음부터 빼면 75ml 와 100ml
+            #    파일이 함께 걸려 여러건이 늘어난다
             if not files:
-                msds = Verdict(NONE, (), "")
+                relaxed = drop_volume(query_terms)
+                if relaxed != query_terms:
+                    # 같은 응답에서 낱말만 풀어 본 뒤, 그래도 없으면 다시 조회한다
+                    matched = _filter_by_name(_to_files(raw), relaxed, "msds")
+                    files = _dedup(matched)
+                    if not files:
+                        try:
+                            raw2 = search(creds, " ".join(relaxed + ["MSDS"]),
+                                          max_results=25, widen=False)
+                        except Exception as exc:      # noqa: BLE001
+                            logger.warning("msds_relaxed_query_failed",
+                                           extra={"sku": row.sku,
+                                                  "error": str(exc)[:200]})
+                            raw2 = []
+                        matched = _filter_by_name(_to_files(raw2), relaxed, "msds")
+                        files = _dedup(matched)
+                    if files:
+                        # ⛔ 넓혀 찾았으면 반드시 밝힌다 — 안 쓴 낱말로 찾은 결과를
+                        #    그대로 주면 사용자가 용량이 맞는 문서라고 읽는다
+                        dropped = [t for t in query_terms if t not in relaxed]
+                        note += f" · 용량({', '.join(dropped)})을 빼고 넓혀 찾았습니다"
+            if not files:
+                # ⛔ '없음' 에 근거를 적는다. 빈칸으로 두면 "정말 없다" 와
+                #    "낱말이 안 맞았다" 가 화면에서 글자 그대로 똑같아진다 —
+                #    2026-09-04 제보가 정확히 그 상태였고, 사람이 물어보기
+                #    전까지 아무도 어느 쪽인지 알 수 없었다 (COA 쪽은 이미 적고 있다)
+                searched = ", ".join(drop_volume(query_terms))
+                msds = Verdict(
+                    NONE, (),
+                    f"파일명에 MSDS 와 '{searched}' 가 함께 든 파일이 없습니다")
             elif len(files) == 1:
-                msds = Verdict(FOUND, files, "제품명으로 찾았습니다 (롯트 무관)")
+                msds = Verdict(FOUND, files, note)
             else:
-                msds = Verdict(MANY, files, "제품명으로 찾았습니다 (롯트 무관)")
+                # 조회에 쓰지 않은 제품 고유어도 확인해야 다른 변형 제품을
+                # 최신이라는 이유로 확정하지 않는다. 용량은 기존처럼 선호다.
+                unchecked = [t for t in terms[4:] if not _VOLUME.fullmatch(t.strip())
+                             and any(t.casefold() not in f.name.casefold() for f in matched)]
+                if unchecked:
+                    latest = None
+                    reason = (f"제품명 낱말({', '.join(unchecked)})을 모든 후보 파일명에서 "
+                              "확인할 수 없어 최신 1개를 고르지 않았습니다. 직접 선택하세요")
+                else:
+                    latest, reason = _latest_match(matched, "같은 제품의 MSDS")
+                msds = Verdict(FOUND if latest is not None else MANY,
+                               (latest,) if latest is not None else files, note + " · " + reason)
     elif row.description:
         msds = Verdict(NONE, (), "제품명에서 검색에 쓸 낱말을 찾지 못했습니다")
     else:

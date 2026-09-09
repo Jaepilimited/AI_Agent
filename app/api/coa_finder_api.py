@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
-from app.api.auth_middleware import get_current_user
+from app.api.auth_middleware import get_current_user, _extract_user_id
 from app.core import coa_finder as cf
 from app.core.google_auth import GoogleAuthManager
 
@@ -49,7 +49,9 @@ async def coa_finder_page(request: Request):
        fetch 로 부르는 경로라, 로그인 HTML 로 리다이렉트하면 프론트가
        그 페이지를 조회 결과로 읽는다.
     """
-    if not request.cookies.get("token"):
+    try:
+        _extract_user_id(request)
+    except HTTPException:
         return RedirectResponse(url="/login", status_code=302)
     return FileResponse("app/static/coa_finder.html", media_type="text/html")
 
@@ -115,7 +117,10 @@ async def coa_finder_search(
         return {
             "status": v.status,
             "note": v.note,
-            "files": [{"id": f.id, "name": f.name, "link": f.web_link, "size": f.size}
+            # 최신 파일 선택에 사용한 수정일도 화면에 전달한다. 다운로드는
+            # 선택된 파일 ID를 사용하며 수정일로 다시 선택하지 않는다.
+            "files": [{"id": f.id, "name": f.name, "link": f.web_link,
+                       "size": f.size, "modified": f.modified}
                       for f in v.files],
         }
 
@@ -267,7 +272,12 @@ _ZIP_FOLDER = {"coa": "COA", _MSDS_KIND: "MSDS", _PRODUCT_COA_KIND: "제품COA"}
 # **다른 롯트**의 것이다 — 둘 다 이 행의 롯트를 주장하면 거짓이 된다
 _LOTLESS_KINDS = {_MSDS_KIND, _PRODUCT_COA_KIND}
 _KIND_TAG = {_MSDS_KIND: "MSDS", _PRODUCT_COA_KIND: "제품COA"}
-_UNCONFIRMED_PREFIX = "확인필요_"
+# ⛔ 파일 이름에는 **아무 표시도 붙이지 않는다** (2026-09-03 사용자 결정).
+#    예전엔 확정되지 않은 문서에 `확인필요_` 접두를 붙였는데, ZIP 이 그대로
+#    고객에게 가는 산출물이라 한국어 접두가 파일 이름에 남는 것이 문제였다.
+#    ⚠️ 그래서 **경고는 이 목록 하나에만 있다** — 목록을 없애면 확정되지 않은
+#       문서와 확정된 문서가 ZIP 안에서 **글자 그대로 구분되지 않는다**.
+#       `_is_confirmed` 도 그대로 둔다 (무엇을 목록에 올릴지 정하는 판정이다)
 _UNCONFIRMED_LIST = "_확인필요_목록.txt"
 
 # 상태별로 '왜 확정이 아닌가'. 모르는 값은 맨 아래 기본 사유로 떨어진다
@@ -320,9 +330,9 @@ def _label(item: DownloadItem) -> str:
 def _zip_name(item: DownloadItem) -> str:
     """어느 롯트 것인지 열어보지 않아도 알게 한다.
 
-    ⛔ 화면의 판정을 여기서 지우지 마라. ZIP 은 그대로 고객에게 전달되는
-       산출물이라, 확인필요·여러건이 확정된 이름으로 나가면 화면에만 있던
-       경고는 그 시점에 사라진다.
+    ⛔ 이름에 판정을 적지 않는다 (2026-09-03 사용자 결정) — 대신 확정되지 않은
+       파일은 `_확인필요_목록.txt` 에 사유와 함께 **반드시** 오른다.
+       ⚠️ 그 목록이 유일한 경고다. 목록 쓰기를 건드릴 땐 이 사실을 기억할 것
     ⛔ MSDS 에는 롯트를 붙이지 않는다 — 제품 단위 문서라 롯트가 없는데
        이름이 롯트를 주장하면 롯트가 맞는 문서인 것처럼 보인다.
     ⛔ **자르는 것은 파일 이름만이다.** 폴더까지 붙여 놓고 자르면 긴 이름에서
@@ -335,8 +345,6 @@ def _zip_name(item: DownloadItem) -> str:
     else:
         parts = [item.sku, item.lot, item.name or item.file_id]
     joined = _UNSAFE.sub("_", "_".join(p for p in parts if p))
-    if not _is_confirmed(item):
-        joined = _UNCONFIRMED_PREFIX + joined
     # `_UNSAFE` 가 `/` 를 이미 지웠으므로 폴더 깊이는 언제나 하나다
     return f"{_ZIP_FOLDER[kind]}/{_truncate_utf8(joined, _MAX_ZIP_NAME_BYTES)}"
 
@@ -441,7 +449,10 @@ async def coa_finder_download(
             zf.writestr(
                 _UNCONFIRMED_LIST,
                 "확인이 필요한 파일 (이 롯트 것이라고 확정되지 않았습니다)\n"
-                "⛔ 고객에게 전달하기 전에 사람이 열어서 확인하세요.\n\n"
+                "⛔ 고객에게 전달하기 전에 사람이 열어서 확인하세요.\n"
+                # ⚠️ 이름에 표시가 없다는 사실 자체를 적는다 — 목록을 안 열어 본
+                #    사람은 파일 이름만 보고 전부 확정된 문서라고 읽는다
+                "⚠️ 파일 이름에는 표시가 없습니다 — 이 목록이 유일한 표시입니다.\n\n"
                 + "\n\n".join(unconfirmed) + "\n")
 
     buf.seek(0)

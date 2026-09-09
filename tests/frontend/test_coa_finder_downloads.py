@@ -50,6 +50,57 @@ DONE = {"total": 3,
         "max_download_items": 200, "max_download_bytes": 500 * 1024 * 1024}
 
 
+# 후보가 여러 건인 화면. ⛔ 위 ROWS 에 섞지 마라 — 기존 테스트가 그 행 수와
+# 파일 수를 세고 있어, 한 줄만 늘려도 무엇이 깨졌는지 알 수 없게 된다
+MANY_ROWS = [
+    {"index": 1, "total": 2, "sku": "KRSKSO14", "description": "선세럼",
+     "lot": "FE221",
+     "coa": _verdict("여러건",
+                     [("c1", "SUN_SERUM_FE221_6150EA.pdf"),
+                      ("c2", "SUN_SERUM_FE221_9450EA.pdf")],
+                     note="2건 — 어느 것인지 확인이 필요합니다"),
+     "msds": _verdict("찾음", [("m1", "SUN_SERUM_MSDS.pdf")]),
+     "product_coa": _verdict("없음")},
+    {"index": 2, "total": 2, "sku": "KRSKCO12", "description": "젤크림",
+     "lot": "E04Z040",
+     "coa": _verdict("없음"),
+     "msds": _verdict("없음"),
+     "product_coa": _verdict("여러건",
+                             [("p1", "GEL_CREAM_COA_A.pdf"),
+                              ("p2", "GEL_CREAM_COA_B.pdf")])},
+]
+# 후보 줄의 크기·수정일. ⛔ 마지막 후보는 수정일을 일부러 비워 둔다 —
+# 없는 값을 지어내지 않는지 그 자리에서 확인한다
+MANY_ROWS[0]["coa"]["files"][0].update(size=2 * 1024 * 1024,
+                                       modified="2026-08-14T01:02:03.000Z")
+MANY_ROWS[0]["coa"]["files"][1].update(size=51200, modified="")
+
+MANY_COUNTS = {"찾음": 0, "여러건": 1, "없음": 1, "확인필요": 0, "조회실패": 0}
+
+
+# The server has already resolved these duplicates. The browser must keep
+# that selection and its explanation while retaining the other-lot opt-in.
+LATEST_ROWS = [
+    {"index": 1, "total": 2, "sku": "KRSKSO14", "description": "선세럼",
+     "lot": "FE221",
+     "coa": _verdict("찾음", [("c-latest", "SUN_SERUM_FE221_9450EA.pdf")],
+                     note="검색된 3개 중 최종 수정일 기준 최신 1개 (2026-09-09 14:30 KST)"),
+     "msds": _verdict("찾음", [("m-latest", "SUN_SERUM_MSDS.pdf")],
+                      note="검색된 2개 중 최종 수정일 기준 최신 1개 (2026-09-08 10:15 KST)"),
+     "product_coa": _verdict("없음")},
+    {"index": 2, "total": 2, "sku": "KRSKCO12", "description": "젤크림",
+     "lot": "E04Z040",
+     "coa": _verdict("없음"),
+     "msds": _verdict("없음"),
+     "product_coa": _verdict("확인필요", [("p-other-lot", "GEL_CREAM_COA_OTHER_LOT.pdf")],
+                             note="다른 롯트의 증명서입니다")},
+]
+LATEST_ROWS[0]["coa"]["files"][0]["modified"] = "2026-09-09T05:30:00Z"
+LATEST_ROWS[0]["msds"]["files"][0]["modified"] = "2026-09-08T01:15:00Z"
+LATEST_ROWS[1]["product_coa"]["files"][0]["modified"] = "2026-09-09T06:00:00Z"
+LATEST_COUNTS = {"찾음": 1, "여러건": 0, "없음": 1, "확인필요": 0, "조회실패": 0}
+
+
 def _frames():
     out = [f"event: row\ndata: {json.dumps(r, ensure_ascii=False)}\n\n" for r in ROWS]
     out.append(f"event: done\ndata: {json.dumps(DONE, ensure_ascii=False)}\n\n")
@@ -102,21 +153,98 @@ _STUBS = """
 """
 
 
-def _open(page):
+def _open_rows(page, rows, counts):
     html = PAGE.read_text(encoding="utf-8").replace(
         '<script src="/static/coa_finder.js"></script>',
         "<script>" + SCRIPT.read_text(encoding="utf-8") + "</script>")
     page.set_content(html)
-    page.evaluate(_STUBS, _frames())
-    page.fill("#cf-paste", "SKU\tDESCRIPTION\tLOT")
+    frames = [f"event: row\ndata: {json.dumps(r, ensure_ascii=False)}\n\n"
+              for r in rows]
+    frames.append("event: done\ndata: " + json.dumps(
+        dict(DONE, total=len(rows), counts=counts), ensure_ascii=False) + "\n\n")
+    page.evaluate(_STUBS, frames)
+    page.fill("#cf-paste", "x")
     page.click("#cf-run")
     page.wait_for_function("() => !document.getElementById('cf-download').disabled")
     return page
 
 
+def _open(page):
+    return _open_rows(page, ROWS, DONE["counts"])
+
+
+def _many(page):
+    return _open_rows(page, MANY_ROWS, MANY_COUNTS)
+
+
+def _cell(page, row, col):
+    """0-based. 열 순서: 선택 · SKU · 제품명 · 롯트 · COA · MSDS · COA(제품)"""
+    return page.locator("#cf-body tr").nth(row).locator("td").nth(col)
+
+
+def _ids(page, index=0):
+    items = page.evaluate("(i) => window.__downloads[i].items", index)
+    return [it["file_id"] for it in items]
+
+
 def _kinds(page, index=0):
     items = page.evaluate("(i) => window.__downloads[i].items", index)
     return [it["kind"] for it in items]
+
+
+def test_latest_singletons_show_the_selection_reason_without_extra_checkboxes(page):
+    _open_rows(page, LATEST_ROWS, LATEST_COUNTS)
+    assert _cell(page, 0, 0).locator("input.cf-pick").is_checked()
+    for col, kind in [(4, "coa"), (5, "msds")]:
+        cell = _cell(page, 0, col)
+        assert cell.locator("a.cf-file").count() == 1
+        assert cell.locator("input.cf-pick-file").count() == 0
+        assert cell.locator(".cf-note").inner_text() == LATEST_ROWS[0][kind]["note"]
+        assert cell.locator(".st-found").inner_text() == "찾음"
+
+
+@pytest.mark.parametrize("select_all", [False, True])
+@pytest.mark.parametrize("button, expected_kinds", [
+    ("#cf-download", ["coa", "msds"]),
+    ("#cf-dl-coa", ["coa"]),
+    ("#cf-dl-msds", ["msds"]),
+])
+def test_latest_downloads_send_only_selected_ids_with_their_original_verdicts(
+    page, button, expected_kinds, select_all,
+):
+    _open_rows(page, LATEST_ROWS, LATEST_COUNTS)
+    if select_all:
+        page.check("#cf-all")
+    page.click(button)
+    page.wait_for_function("() => window.__downloads.length === 1")
+    items = page.evaluate("() => window.__downloads[0].items")
+    assert [item["kind"] for item in items] == expected_kinds
+    for item in items:
+        expected_id = "c-latest" if item["kind"] == "coa" else "m-latest"
+        assert item["file_id"] == expected_id
+        assert item["status"] == "찾음"
+        assert item["sku"] == "KRSKSO14"
+        assert item["lot"] == ("FE221" if item["kind"] == "coa" else "")
+    assert not _cell(page, 1, 6).locator("input.cf-pick-product").is_checked()
+
+
+def test_newer_other_lot_product_coa_still_needs_explicit_selection(page):
+    _open_rows(page, LATEST_ROWS, LATEST_COUNTS)
+    page.check("#cf-all")
+    product_pick = _cell(page, 1, 6).locator("input.cf-pick-product")
+    assert not product_pick.is_checked()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert _ids(page) == ["c-latest", "m-latest"]
+
+    product_pick.check()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 2")
+    items = page.evaluate("() => window.__downloads[1].items")
+    product = next(item for item in items if item["file_id"] == "p-other-lot")
+    assert product["kind"] == "product_coa"
+    assert product["status"] == "확인필요"
+    assert product["lot"] == ""
 
 
 def test_the_search_renders_every_row(page):
@@ -234,3 +362,130 @@ def test_the_page_refuses_an_empty_missing_coa_list(page):
     page.click("#cf-dl-none")
     assert "비어 있습니다" in page.locator("#cf-error").inner_text()
     assert page.evaluate("() => window.__saved.length") == 0
+
+
+# ── 후보가 여러 건일 때 하나만 골라 받기 ─────────────────────────────────
+#
+# 여기서 잡으려는 것도 전부 **에러 없이 잘못 보이는** 종류다:
+# - 전체선택이 파일 체크박스를 못 켜면 "선택했는데 안 받아진다" (콘솔은 조용하다)
+# - 제품COA 후보를 행 체크가 쓸어가면 **다른 롯트의 증명서**가 고객에게 나간다
+# - 고른 것의 판정이 '찾음' 으로 바뀌면 ZIP 안 _확인필요_목록.txt 에서 빠진다
+
+
+def test_multiple_candidates_each_get_their_own_checkbox(page):
+    _many(page)
+    assert _cell(page, 0, 4).locator("input.cf-pick-file").count() == 2
+    assert _cell(page, 1, 6).locator("input.cf-pick-file-product").count() == 2
+
+
+def test_a_lone_candidate_gets_no_checkbox(page):
+    """⛔ 고를 것이 하나뿐인 칸의 체크박스는 잘못된 질문을 만든다."""
+    _many(page)
+    assert _cell(page, 0, 5).locator("input.cf-pick-file").count() == 0
+
+
+def test_the_row_checkbox_turns_every_candidate_on(page):
+    """반대 방향 — 고르는 기능을 넣느라 행 단위 받기를 부수면 안 된다."""
+    _many(page)
+    _cell(page, 0, 0).locator("input.cf-pick").check()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert sorted(_ids(page)) == ["c1", "c2", "m1"]
+
+
+def test_select_all_reaches_the_candidates_too(page):
+    """⛔ `.checked` 를 코드로 바꾸면 change 가 안 난다 — 그 조용한 실패."""
+    _many(page)
+    page.check("#cf-all")
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert sorted(_ids(page)) == ["c1", "c2", "m1"]
+
+
+def test_unchecking_one_candidate_leaves_it_out(page):
+    _many(page)
+    _cell(page, 0, 0).locator("input.cf-pick").check()
+    _cell(page, 0, 4).locator("input.cf-pick-file").nth(1).uncheck()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert sorted(_ids(page)) == ["c1", "m1"]
+
+
+def test_the_page_says_how_many_candidates_it_left_out(page):
+    """⛔ 선택보다 작아진 ZIP 을 조용히 넘기지 않는다."""
+    _many(page)
+    _cell(page, 0, 0).locator("input.cf-pick").check()
+    _cell(page, 0, 4).locator("input.cf-pick-file").nth(1).uncheck()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert "1건" in page.locator("#cf-picked").inner_text()
+
+
+def test_a_hand_picked_candidate_still_carries_its_verdict(page):
+    """⛔ 사람이 골랐다고 확정이 되지는 않는다 — ZIP 의 확인필요 목록이 여기서 나온다."""
+    _many(page)
+    _cell(page, 0, 0).locator("input.cf-pick").check()
+    _cell(page, 0, 4).locator("input.cf-pick-file").nth(1).uncheck()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    items = page.evaluate("() => window.__downloads[0].items")
+    picked = [i for i in items if i["file_id"] == "c1"][0]
+    assert picked["status"] == "여러건"
+
+
+def test_select_all_never_reaches_a_product_coa_candidate(page):
+    """⛔ 다른 롯트의 증명서다 — 행 체크도 전체선택도 닿으면 안 된다."""
+    _many(page)
+    page.check("#cf-all")
+    boxes = _cell(page, 1, 6).locator("input.cf-pick-file-product")
+    assert boxes.nth(0).is_checked() is False
+    assert boxes.nth(1).is_checked() is False
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert "p1" not in _ids(page) and "p2" not in _ids(page)
+
+
+def test_a_product_coa_candidate_can_be_picked_one_at_a_time(page):
+    _many(page)
+    _cell(page, 1, 6).locator("input.cf-pick-file-product").nth(0).check()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert _ids(page) == ["p1"]
+
+
+def test_the_cell_checkbox_still_takes_every_product_candidate(page):
+    _many(page)
+    _cell(page, 1, 6).locator("input.cf-pick-product").check()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert sorted(_ids(page)) == ["p1", "p2"]
+
+
+def test_unpicked_product_candidates_are_not_announced_as_left_out(page):
+    """⛔ 기본이 꺼짐인 칸을 매번 'N건 제외' 로 알리면 그 안내는 소음이 된다."""
+    _many(page)
+    _cell(page, 0, 0).locator("input.cf-pick").check()
+    page.click("#cf-download")
+    page.wait_for_function("() => window.__downloads.length === 1")
+    assert page.locator("#cf-picked").count() == 0
+
+
+def test_a_candidate_line_shows_its_size_and_date(page):
+    """열지 않고도 고를 수 있어야 한다 — 그러라고 붙인 값이다."""
+    _many(page)
+    text = _cell(page, 0, 4).inner_text()
+    assert "2.0MB" in text
+    assert "2026-08-14" in text
+
+
+def test_a_candidate_without_a_date_shows_only_its_size(page):
+    """⛔ 모르는 값을 오늘 날짜로 채우면 화면이 조용히 거짓말을 한다."""
+    _many(page)
+    metas = _cell(page, 0, 4).locator(".cf-meta")
+    assert metas.nth(1).inner_text().strip() == "50KB"
+
+
+def test_a_lone_file_gets_no_size_line(page):
+    """고를 것이 없는 칸에는 붙이지 않는다 — 화면만 시끄러워진다."""
+    _many(page)
+    assert _cell(page, 0, 5).locator(".cf-meta").count() == 0

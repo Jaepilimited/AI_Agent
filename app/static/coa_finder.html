@@ -21,6 +21,8 @@
     .cf-wrap { max-width: 1200px; margin: 0 auto; padding: 24px; color: var(--text); }
     .cf-wrap h1 { font-size: 1.4em; margin-bottom: 8px; }
     .cf-intro { color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5; }
+    /* 안내문의 코드 조각이 줄바꿈에서 쪼개지면 다른 낱말처럼 읽힌다 */
+    .cf-intro code { white-space: nowrap; }
     .cf-input { width: 100%; min-height: 140px; background: var(--bg-input);
                 border: 1px solid var(--border); border-radius: 8px;
                 color: var(--text); padding: 12px; font-family: inherit;
@@ -49,6 +51,13 @@
     .st-none { color: var(--text-muted); }
     .st-check, .st-many { color: var(--text); font-weight: 600; }
     .cf-note { color: var(--text-muted); font-size: 0.85em; }
+    /* 후보가 여럿인 칸의 파일 한 줄. 체크박스와 파일명을 가로로 두되, 이름이
+       길어 줄바꿈될 때 두 번째 줄이 체크박스 밑으로 파고들지 않게 flex 로 묶는다 */
+    .cf-line { display: flex; align-items: baseline; gap: 6px; }
+    /* 크기·수정일은 파일명 뒤에 붙되 줄바꿈되지 않는다 — 잘리면 다른 값처럼 읽힌다 */
+    .cf-meta { color: var(--text-muted); font-size: 0.85em; white-space: nowrap;
+               font-variant-numeric: tabular-nums; }
+    .cf-line > input { flex: none; }
     .cf-toggle { display: inline-flex; align-items: center; gap: 6px;
                  color: var(--text-secondary); font-size: 0.92em; cursor: pointer; }
     .cf-toggle .cf-note { font-size: 0.85em; }
@@ -58,9 +67,16 @@
   <div class="cf-wrap">
     <h1>인증서류 찾기 (COA · MSDS)</h1>
     <p class="cf-intro">엑셀에서 SKU · DESCRIPTION · LOT 열을 복사해 붙여넣거나
-      .xlsx 파일을 올리세요. 공유드라이브에서 롯트가 정확히 일치하는 파일만 찾습니다.<br>
+      .xlsx 파일을 올리세요. 공유드라이브에서 COA는 정확한 롯트로, MSDS는 제품으로 찾습니다.<br>
+      같은 롯트의 COA나 같은 제품의 MSDS가 여러 개면 <b>드라이브 최종 수정일 기준 최신 1개</b>를 자동 선택합니다.
+      수정일을 확인할 수 없거나 최신 시각이 같으면 후보를 그대로 표시합니다.
+      이때는 파일별 크기·수정일을 보고 필요한 것만 체크하세요.<br>
+      <b>COA(제품)</b>은 다른 롯트의 증명서이므로 별도로 선택해야 합니다.
       받은 ZIP 안은 <code>COA/</code> · <code>MSDS/</code> · <code>제품COA/</code> 폴더로 나뉘고,
-      한 종류만 따로 받을 수도 있습니다.</p>
+      한 종류만 따로 받을 수도 있습니다.<br>
+      수동으로 골라도 어느 것이 맞는지 확인된 것은 아니라서, 확정되지 않은 파일은
+      ZIP 안 <code>_확인필요_목록.txt</code> 에 사유와 함께 적힙니다
+      (파일 이름은 원래대로 나갑니다).</p>
 
     <textarea class="cf-input" id="cf-paste"
               placeholder="SKU&#9;DESCRIPTION&#9;LOT"></textarea>
