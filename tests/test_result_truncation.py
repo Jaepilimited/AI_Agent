@@ -5,6 +5,7 @@
 "총 8건" 이라고 **단정**했고, 영국 7건이 통째로 사라졌다. 프롬프트는 확률이다.
 """
 from app.core import result_truncation as RT
+from tests._answer_paths import assert_every_answer_path_has
 
 
 def _rows(n):
@@ -73,12 +74,18 @@ def _agent_src():
 def test_both_answer_paths_publish_the_notice():
     """⛔ 채팅은 스트리밍으로 나간다 — 한쪽만 걸면 실사용 경로에서 빠진다."""
     src = _agent_src()
-    assert src.count("from app.core.result_truncation import notice as _trunc_notice") == 2
-    assert src.count("_trunc_notice(results, _rows_withheld)") == 2
+    assert_every_answer_path_has(
+        "from app.core.result_truncation import notice as _trunc_notice",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
+    assert_every_answer_path_has(
+        "_trunc_notice(results, _rows_withheld)",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
 
 
 def test_both_prompts_carry_the_fact():
-    assert _agent_src().count("_truncation_fact(results, _rows_withheld)") == 2
+    assert_every_answer_path_has(
+        "_truncation_fact(results, _rows_withheld)",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
 
 
 def test_the_notice_leads_the_answer():

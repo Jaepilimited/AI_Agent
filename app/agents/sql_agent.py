@@ -4199,6 +4199,29 @@ def _fast_answer_stream(
     today = datetime.now().strftime("%Y-%m-%d")
     _t_tpl = _time.perf_counter()
 
+    # ⛔ **표보다 먼저 말한다** — 뒤에 붙이면 후속 질문·실행된 쿼리 뒤로 밀려
+    #    정작 숫자를 읽는 사람 눈에 닿지 않는다 (물류 수량 공시가 겪은 것).
+    # ⛔ **정상 경로와 같은 함수를 같은 순서로 부른다.** 2026-09-09 실측으로 이
+    #    경로에는 이것들이 통째로 없었다 — 코드가 만드는 표는 오히려 더 단단한데
+    #    **LLM 이 쓰는 인사이트 문장**에 수치 방어가 없었다. 표가 맞는데 요약만
+    #    1,000배로 나갔던 2026-08-31 사고가 정확히 그 자리다.
+    from app.core.logistics_amount import krw_notice as _log_krw_notice
+    from app.core.logistics_amount import notice as _log_amt_notice
+    from app.core.logistics_fx import notice as _log_fx_notice
+    from app.core.logistics_quality import notice_for_sql as _log_qty_notice
+    from app.core.qty_coverage import notice as _qty_cov_notice
+    from app.core.result_truncation import notice as _trunc_notice
+
+    # 빠른 표는 _FAST_TABLE_MAX_ROWS 에서 자른다 — 자른 사실을 공시해야 한다
+    _rows_withheld = len(results) > _FAST_TABLE_MAX_ROWS
+    _pre_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                   + _log_krw_notice(sql, query)
+                   + _log_fx_notice(sql, query)
+                   + _qty_cov_notice(sql, results)
+                   + _trunc_notice(results, _rows_withheld))
+    if _pre_notice:
+        yield _pre_notice
+
     title = re.sub(r"\s*(알려줘|보여줘|알려주세요|보여주세요|줄래\??|해줘)\s*$", "", query.strip())
     out_head = f"### 📊 {title}\n\n"
     summary = _fast_summary_line(results)
@@ -4240,6 +4263,8 @@ SQL 결과 ({len(results)}행):
 > - [구체적 후속 질문 2]
 > - [구체적 후속 질문 3]
 
+{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_future_period_note(sql)}
 규칙: SQL 결과만 근거로. 금액 1억+ → "약 OO.O억원". 플레이스홀더 출력 금지.
 ⚠️ 후속 질문은 대괄호([]) 없이 완성된 실제 질문 문장으로 출력하라.
 ⚠️ 테이블명·프로젝트 ID·컬럼명 노출 금지. 출처는 '내부 데이터베이스'로만.
@@ -4249,11 +4274,21 @@ SQL 결과 ({len(results)}행):
     _t_ins = _time.perf_counter()
     yield "\n"
     from app.core.answer_check import money_scale_repairer
+    _streamed = []
     for chunk in _mask_stream(
             llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500),
             transform=money_scale_repairer(results)):
+        _streamed.append(chunk)
         yield chunk
     _t_end = _time.perf_counter()
+
+    # ⛔ 흘려보낸 답변을 그냥 버리지 마라 — 이미 나간 글자는 되돌릴 수 없으므로
+    #    **모아 두었다가 끝에 원본 표를 붙인다** (정상 경로와 같다). 이 경로는
+    #    표를 코드가 만들지만 인사이트는 LLM 이 쓴다 — 비중·비교를 문장에서
+    #    계산하므로 검증이 빠지면 그것이 그대로 나간다.
+    _check_notice = _number_check_notice(out_head + "".join(_streamed), results, query)
+    if _check_notice:
+        yield _check_notice
 
     try:
         chart_markdown = chart_future.result(timeout=8.0)

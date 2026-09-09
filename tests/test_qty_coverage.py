@@ -6,6 +6,7 @@
 "총 판매수량 0개" 가 그대로 나가고, 사용자는 "안 팔렸다" 로 읽는다.
 """
 import pytest
+from tests._answer_paths import assert_every_answer_path_has
 
 from app.core import qty_coverage as QC
 
@@ -119,12 +120,16 @@ def test_both_answer_paths_publish_the_notice():
     나가므로 한쪽만 고치면 실사용 경로에서 조용히 빠진다 (`answer_check` 가
     비스트리밍에만 배선돼 계측조차 안 되던 그 사고와 같은 부류)."""
     src = _agent_src()
-    assert src.count("from app.core.qty_coverage import notice as _qty_cov_notice") == 2
+    assert_every_answer_path_has(
+        "from app.core.qty_coverage import notice as _qty_cov_notice",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
     assert "_qty_cov_notice(sql, results)" in src
 
 
 def test_both_prompts_carry_the_fact():
-    assert _agent_src().count("_qty_coverage_fact(sql, results)") == 2
+    assert_every_answer_path_has(
+        "_qty_coverage_fact(sql, results)",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
 
 
 def test_the_notice_leads_the_answer():

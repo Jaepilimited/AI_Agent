@@ -15,6 +15,7 @@
 """
 import re
 from pathlib import Path
+from tests._answer_paths import assert_every_answer_path_has
 
 import pytest
 
@@ -584,7 +585,9 @@ def test_probe_failure_does_not_warn_on_healthy_answers(monkeypatch):
 def test_notice_is_wired_into_both_answer_paths():
     """⛔ 한쪽만 걸면 **경로에 따라 답이 갈린다** — 이미 겪은 사고다."""
     src = _read("app/agents/sql_agent.py")
-    assert src.count("from app.core.logistics_quality import notice_for_sql") == 2
+    assert_every_answer_path_has(
+        "from app.core.logistics_quality import notice_for_sql",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
     assert "_log_qty_notice(sql)" in src
 
 

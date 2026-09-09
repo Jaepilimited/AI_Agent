@@ -6,6 +6,7 @@
    없어 그것을 잡을 방법이 없다 — 그래서 확실히 안전한 자리에서만 고친다.
 """
 from app.core import logistics_amount as LA
+from tests._answer_paths import assert_every_answer_path_has
 
 T = "`skin1004-319714.Export_control.export_logistics`"
 EXPECTED = "IFNULL(total_amount, amount + IFNULL(free_amount, 0))"
@@ -116,8 +117,12 @@ def test_the_fix_runs_in_both_sql_pipelines():
 
 def test_both_answer_paths_publish_the_notice():
     src = _agent_src()
-    assert src.count("from app.core.logistics_amount import notice as _log_amt_notice") == 2
-    assert src.count("_log_amt_notice(sql)") == 2
+    assert_every_answer_path_has(
+        "from app.core.logistics_amount import notice as _log_amt_notice",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
+    assert_every_answer_path_has(
+        "_log_amt_notice(sql)",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
 
 
 # ── 한화 환산 (붐따 #162) ────────────────────────────────────────────────
@@ -184,5 +189,9 @@ def test_the_prompt_names_the_column_that_was_substituted():
 def test_both_answer_paths_publish_the_krw_notice():
     """⚠️ 한쪽만 걸면 스트리밍이냐 아니냐로 답이 갈린다 (이미 겪은 사고다)."""
     src = _agent_src()
-    assert src.count("from app.core.logistics_amount import krw_notice as _log_krw_notice") == 2
-    assert src.count("_log_krw_notice(sql, query)") == 2
+    assert_every_answer_path_has(
+        "from app.core.logistics_amount import krw_notice as _log_krw_notice",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
+    assert_every_answer_path_has(
+        "_log_krw_notice(sql, query)",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")

@@ -7,6 +7,7 @@
 """
 import re
 from datetime import date
+from tests._answer_paths import assert_every_answer_path_has
 
 from app.core import logistics_fx as FX
 
@@ -121,8 +122,12 @@ def test_the_rate_table_is_allowed_and_scoped():
 def test_both_answer_paths_publish_the_fx_notice():
     """⚠️ 한쪽만 걸면 스트리밍이냐 아니냐로 답이 갈린다."""
     src = open("app/agents/sql_agent.py", encoding="utf-8").read()
-    assert src.count("from app.core.logistics_fx import notice as _log_fx_notice") == 2
-    assert src.count("_log_fx_notice(sql, query)") == 2
+    assert_every_answer_path_has(
+        "from app.core.logistics_fx import notice as _log_fx_notice",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
+    assert_every_answer_path_has(
+        "_log_fx_notice(sql, query)",
+        "세는 단언이었다 — 경로가 늘면 뜻을 안 보고 숫자만 올리게 된다")
 
 
 def test_the_rate_table_is_watched_for_freshness():
