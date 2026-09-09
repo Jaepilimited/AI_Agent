@@ -48,6 +48,13 @@ EXCLUDE_DIRS = {
 #     따로 쌓이는 산출물이고 TTL 로 스스로 지워진다 — 올리지 않는다
 EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports", "qa_artifacts",
                  "data/sql_results"}
+# qa_artifacts 는 **릴리스 검증 산출물**이다 (verification.json · selected.json ·
+#   release.diff · 스테이징 사본). 프로덕션에 올릴 이유가 없다.
+#   ⚠️ 그래서 **백업으로도 못 쓴다** — 여기 있는 사본은 배포본이 아니다.
+#      2026-09-08 에 미커밋 로그인 경로 코드를 찾을 때 이 안의 스테이징 사본이
+#      "이미 사본이 있다" 로 보였는데, 같은 디스크에 있는 untracked 파일이라
+#      트리가 죽으면 함께 죽는다.
+#   유래: docs/ENTRA_DIRECTORY_RELEASE_20260908.md
 # 영상은 코드가 아니다 — 배포 전송에 끼면 **매번** 함께 올라간다.
 #   셀라 기원 MV 는 720p 로 줄여도 40MB 다 (전체 전송량이 37.8MB 다).
 #   서버에는 한 번만 올린다: python scripts/upload_media.py
