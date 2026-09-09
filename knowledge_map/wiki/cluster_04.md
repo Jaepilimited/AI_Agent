@@ -1,30 +1,34 @@
 # Cluster 04
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 9
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 10
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent의 핵심 데이터 처리, 상태 관리 및 RAG(Retrieval-Augmented Generation) 파이프라인을 담당합니다. 사용자의 질문에 대해 정확한 데이터를 조회하고, 대화의 맥락(Turn State)을 유지하며, 조회 결과가 없을 때 원인을 분석하고(Zero-row), 최종적으로 사용자에게 구조화된 판정 결과와 시각화 차트를 제공하는 핵심 비즈니스 로직을 포함하고 있습니다.
+SKIN1004 AI Agent의 핵심 비즈니스 로직, 데이터 포맷팅, 그리고 사용자 편의 기능을 담당하는 코어 유틸리티 클러스터입니다. 사용자의 질문 이력 분석, 수출 물류 금액 계산 오류 방지, 대용량 SQL 결과의 CSV 다운로드 제공, 그리고 멀티모달 이미지/얼굴 검색 등 실무에서 발생하는 다양한 예외 상황과 요구사항을 결정론적(Deterministic)이고 신뢰할 수 있는 방식으로 처리합니다.
 
 ## Key Files
-- `app/core/chart.py` — 서버 부하가 큰 PNG 렌더링 대신 프론트엔드에서 대화형으로 렌더링할 수 있는 Chart.js 설정 JSON 생성기
-- `app/core/embeddings.py` — 벡터 검색 및 RAG를 위한 BGE-M3 임베딩 모델 인터페이스
-- `app/core/turn_state.py` — 대화 턴 간의 조회 상태를 구조적으로 유지하여, 이전 쿼리 조건 상속 및 다중 턴 맥락 유지를 가능하게 하는 상태 관리 모듈
-- `app/core/zero_row.py` — 데이터 조회 결과가 0건일 때, LLM의 환각(Hallucination)을 방지하기 위해 어떤 필터 조건이 원인인지 실제로 측정하고 분석하는 모듈
-- `app/models/schemas.py` — OpenAI 호환 API 규격을 위한 Pydantic 요청/응답 스키마 정의
-- `app/models/state.py` — LangGraph 에이전트 워크플로우에서 사용되는 전역 상태(State) 정의
-- `app/rag/chunker.py` — RAG 성능 극대화를 위한 Semantic 및 Hierarchical 하이브리드 청킹 모듈
-- `app/rag/parser.py` — Docling을 활용하여 PDF, HWP, PPT 등 다양한 문서를 마크다운으로 변환하는 파서
-- `app/reports/judge.py` — 단순 표 출력을 넘어 데이터분석파트의 보고서 스타일을 차용하여 명확한 결론(Key Message)을 도출하는 판정 계층
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/file_request.py` — "엑셀로 뽑아줘" 요청 시 실제 다운로드 가능한 파일이나 링크를 생성하여 제공하는 모듈
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/sql_result_store.py` — 채팅창에 일부만 표시되고 잘린 대용량 SQL 조회 결과 전체를 임시 보관하여 CSV 다운로드로 연동하는 저장소
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/logistics_amount.py` — 수출 물류 금액 계산 시 유상 금액과 무상 금액을 합산하여 누락 없이 정확한 값을 산출하는 모듈
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/query_profile.py` — 사용자의 빈번한 질문 이력을 분석하여 화면에 제안할 질문을 결정론적으로 추출하는 모듈
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/agents/face_clip_agent.py` — CLIP 및 InsightFace 인덱스를 기반으로 인물 및 제품 사진 검색을 수행하는 에이전트
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/table_attachment.py` — 사용자가 업로드한 엑셀/CSV 파일을 시스템이 인식할 수 있는 TSV 텍스트 형태로 변환하는 모듈
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/response_formatter.py` — 에이전트의 답변을 프론트엔드 렌더링에 적합한 일관된 마크다운 형식으로 가공하는 포맷터
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/org_structure.py` — 공식 팀명 및 국가별 담당 범위 등 검증된 조직도 정보를 제공하는 Single Source of Truth
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/calendar_stats.py` — 사용자의 전체 이벤트 이력에서 미팅 횟수 통계를 계산하는 모듈
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/dashboard_links.py` — 대시보드 탭 링크 카탈로그 및 결정론적 채팅 답변 매핑 관리
 
 ## Key Concepts
-- **Turn State (조회 상태)** — 이전 대화의 SQL 앵커나 단순 텍스트 뭉치에 의존하지 않고, 사용자가 거쳐온 조회 조건과 맥락을 구조화된 상태로 들고 가며 후속 질문에 대응합니다.
-- **Zero-row 실측** — 데이터가 0건 조회되었을 때 LLM이 거짓 원인을 지어내지 않도록, 시스템이 직접 필터 조건을 역추적하여 "어느 필터가 범인인지" 명확하게 판정합니다.
-- **판정 계층 (Judge Layer)** — 사용자가 표를 직접 읽고 해석하게 만드는 대신, 시스템이 데이터를 분석하여 "이 장에서 무엇이 결론인가"에 대한 Key Message를 선제적으로 제시합니다.
+- **유상 및 무상 합산 (Logistics Amount)** — 수출 물류 데이터 분석 시 `amount` 컬럼(유상)만 단순 합산하면 무상 샘플 등의 금액이 누락되므로, 반드시 유상과 무상을 합산하여 정확한 실적을 도출합니다.
+- **결정론적 질문 제안 (Query Profile)** — 사용자가 자주 묻는 질문 제안 생성 시 LLM의 확률적 생성에 의존하지 않고, 실제 질문 이력과 필터 추출 규칙을 기반으로 명확한 근거를 가지고 추출합니다.
+- **TSV 변환 (Table Attachment)** — 사용자가 표 데이터를 이미지로 캡처하여 올리는 대신 엑셀/CSV 파일 자체를 업로드할 수 있도록 지원하며, 이를 내부적으로 다루기 쉬운 TSV 형태로 변환합니다.
 
 ## How It Fits In
-이 클러스터는 에이전트의 '두뇌'와 '데이터 파이프라인' 역할을 동시에 수행합니다. `app/models/state.py`의 LangGraph 상태를 기반으로 전체 워크플로우가 구동되며, `app/rag` 패키지의 파서와 청커가 지식 베이스를 구축하면 `app/core/embeddings.py`가 이를 벡터화합니다. 데이터 조회 시에는 `app/core/turn_state.py`와 `app/core/zero_row.py`가 대화의 맥락과 예외 상황을 통제하고, 최종 출력 단계에서 `app/reports/judge.py`와 `app/core/chart.py`가 결합되어 시각적이고 직관적인 분석 보고서를 완성합니다.
+- **Cluster 03 연계**: `face_clip_agent.py`는 이미지 검색 성능 향상을 위해 `concept:ocr_reranking` (Cluster 03) 기술을 구현 및 활용합니다.
+- **Cluster 12 연계**: `response_formatter.py`는 에이전트의 최종 출력 품질을 보장하기 위해 `concept:response_formatting` (Cluster 12) 표준 규격을 구현합니다.
+- **Cluster 31 연계**: `query_profile.py`는 사용자 행동 분석을 위해 `concept:audit_logs` (Cluster 31)의 감사 로그 데이터를 활용하여 자주 묻는 질문을 추출합니다.
 
 ## Common Questions This Page Answers
-- 데이터 조회 결과가 0건(Zero-row)일 때 LLM의 환각 답변을 어떻게 방지하나요?
-- 이전 대화 턴의 복잡한 SQL 조회 조건을 다음 질문에서도 유지하려면 어떻게 해야 하나요?
-- 보고서 출력 시 단순 데이터 나열을 넘어 분석적 결론(Key Message)을 어떻게 도출하나요?
+- "엑셀로 뽑아줘"라는 사용자 요청에 대해 실제로 다운로드 가능한 파일을 어떻게 생성하고 전달하나요?
+- SQL 조회 결과가 너무 길어서 채팅창에서 잘릴 때, 전체 데이터를 사용자가 다운로드하게 하려면 어떻게 해야 하나요?
+- 수출 물류 금액을 계산할 때 무상 수출 건이 누락되는 문제를 어떻게 방지하고 있나요?
+- 사용자가 업로드한 엑셀 파일 데이터를 에이전트가 텍스트 형태로 정확히 읽게 하려면 어떻게 처리하나요?

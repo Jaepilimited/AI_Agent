@@ -1,26 +1,29 @@
 # Cluster 14
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 2
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 3
 
 ## Purpose
-이 클러스터는 SKIN1004 Enterprise AI 에이전트 애플리케이션의 진입점(Entry Point)과 API 패키지 구조의 기반을 정의합니다. 단일 포트(Port 3000)에서 AI 백엔드 기능과 커스텀 프론트엔드를 동시에 서빙하는 FastAPI 애플리케이션을 구동하는 역할을 합니다.
+본 클러스터는 Google Workspace(GWS) 연동을 통해 개별 사용자의 업무 생산성을 극대화하는 핵심 에이전트 기능과 브리핑 시스템을 다룹니다. 개별 사용자 단위의 OAuth2 인증을 기반으로 Gmail 및 Calendar 데이터를 안전하게 처리하고, 공유드라이브 내의 인증서류를 효율적으로 검색하는 설계를 포함합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/main.py` — SKIN1004 Enterprise AI 애플리케이션의 메인 진입점 파일로, FastAPI 인스턴스를 생성하고 포트 3000에서 백엔드 API와 프론트엔드 정적 파일을 통합 서빙합니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/__init__.py` — `api` 디렉토리를 Python 패키지로 인식하게 하여 하위 모듈 및 라우터 임포트를 가능하게 하는 빈 초기화 파일입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/agents/gws_agent.py` — 개별 사용자별 OAuth2 인증, 타임아웃, 재귀 제한을 지원하는 Google Workspace 서브 에이전트 구현체입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/personal_briefing.py` — 사용자의 로그인 시점에 제공할 Gmail 및 캘린더 메타데이터를 캐싱하고 읽기 전용으로 집계하는 개인화 브리핑 모듈입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/specs/2026-08-28-coa-lot-finder-design.md` — SKIN1004 업무에 필요한 공유드라이브 내 인증서류(COA·MSDS) 및 롯트(Lot) 번호 일괄 검색 기능에 대한 설계 문서입니다.
 
 ## Key Concepts
-- **FastAPI Entry Point**: `app/main.py`는 전체 AI 에이전트 시스템의 구동 엔진 역할을 하며, 라우팅 설정 및 미들웨어, 이벤트 핸들러 등을 초기화합니다.
-- **Single Server Architecture**: 별도의 웹 서버 분리 없이, 하나의 FastAPI 인스턴스가 포트 3000을 통해 AI 백엔드 API와 커스텀 프론트엔드 리소스를 모두 호스팅합니다.
-- **API Package Initialization**: `app/api/__init__.py`를 통해 API 관련 비즈니스 로직과 엔드포인트 모듈들을 체계적으로 구조화하고 임포트할 수 있는 기반을 제공합니다.
+- **개별 사용자 OAuth2 (Per-user OAuth2)**: 기존 MCP 기반의 단일 사용자 접근 방식을 대체하여, 각 사용자가 자신의 구글 계정으로 개별 인증하고 권한을 부여받아 안전하게 GWS 데이터에 접근합니다.
+- **개인화 브리핑 (Personal Briefing)**: 로그인 시점에 Gmail 메타데이터와 캘린더 이벤트 일정을 요약하여 제공하는 기능입니다. 보안을 위해 원본 본문은 메일 요약 시에만 일시적으로 사용되며, 캐싱된 메타데이터 위주로 안전하게 경계를 넘나듭니다.
+- **COA/MSDS 롯트 일괄 찾기**: SKIN1004 원료 및 제품 관리 과정에서 구글 공유드라이브에 저장된 시험성적서(COA) 및 물질안전보건자료(MSDS)의 롯트 번호를 신속하게 일괄 검색하기 위한 기능 명세입니다.
 
 ## How It Fits In
-이 클러스터는 SKIN1004 AI 에이전트 프로젝트의 최상위 실행 레이어입니다. 다른 클러스터에서 정의된 비즈니스 로직, 데이터베이스 모델, 에이전트 워크플로우 및 API 라우터들이 최종적으로 `app/main.py`에 등록되어 외부 클라이언트(커스텀 프론트엔드 및 API 요청자)와 통신하게 됩니다.
+본 클러스터는 시스템의 사용자 맞춤형 연동 및 자동화 레이어에서 중요한 역할을 합니다.
+- `gws_agent.py`는 **cluster_38**의 `concept:gws_agent` 구체적 명세를 직접 구현하여, 시스템 전반에 구글 서비스 연동 기능을 제공합니다.
+- `personal_briefing.py`는 **cluster_12**의 `concept:personal_briefing` 설계를 구현하여, 사용자가 시스템에 진입할 때 개인화된 대시보드 정보를 안전하고 빠르게 제공할 수 있도록 돕습니다.
 
 ## Common Questions This Page Answers
-- SKIN1004 AI 에이전트 서버를 시작하는 메인 진입점 파일은 어디에 있나요?
-  - `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/main.py` 파일이 애플리케이션의 진입점입니다.
-- 백엔드 API와 프론트엔드는 어떤 포트를 통해 서빙되나요?
-  - 단일 서버 환경으로 구성되어 포트 3000을 통해 동시에 서빙됩니다.
-- `app/api` 디렉토리 내부의 모듈들을 패키지 형태로 임포트하려면 어떻게 해야 하나요?
-  - `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/__init__.py` 파일이 패키지 초기화를 담당하고 있으므로, 표준 Python 임포트 구문을 사용하여 하위 API 라우터들을 불러올 수 있습니다.
+- **Q1: Google Workspace 에이전트는 다중 사용자 환경에서 보안을 어떻게 유지하나요?**
+  - 단일 공용 계정 대신 개별 사용자별 OAuth2 인증 방식을 채택하여, 각 사용자가 허가한 범위 내의 Gmail 및 캘린더 데이터에만 접근할 수 있도록 격리합니다.
+- **Q2: 로그인 브리핑 생성 시 이메일 본문 노출 위험은 없나요?**
+  - 브리핑 시스템은 기본적으로 읽기 전용 메타데이터(제목, 시간 등)만 캐싱하여 활용하며, 상세 요약이 필요한 경우에만 제한적으로 원본 스니펫을 일시적으로 처리하므로 안전합니다.
+- **Q3: 공유드라이브 내 COA/MSDS 서류 검색은 어떻게 설계되어 있나요?**
+  - `2026-08-28-coa-lot-finder-design.md` 설계에 따라, 대량의 롯트 번호에 대응하는 인증서류를 구글 공유드라이브 내에서 일괄적으로 탐색하고 매칭하는 구조를 가집니다.

@@ -1,24 +1,24 @@
 # Cluster 10
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 3
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 3
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트의 시스템 안정성과 지속적인 자가 개선을 위한 **야간 자동 디버깅·개선 시스템(Nightly Debug & Improvement System)**의 설계 및 실행 계획을 다룹니다. 사용자가 활동하지 않는 야간 시간을 활용하여 시스템의 오류를 진단하고, 코드를 자동으로 개선하며, 프로젝트의 업데이트 이력을 기록하는 메커니즘을 정의합니다.
+이 클러스터는 SKIN1004 AI Agent의 핵심 라우팅 및 정보 검색 아키텍처를 담당합니다. 사용자의 질문을 분석하여 적절한 서브 에이전트로 분배하는 오케스트레이터와, 노션(Notion) 워크스페이스 및 MariaDB에 저장된 스킨1004 제품 정보를 안전하게 조회하는 기능을 제공합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/specs/2026-07-07-nightly-debug-system-design.md` — 야간 자동 디버깅·개선 시스템의 아키텍처, 트리거 조건, 분석 및 패치 프로세스에 대한 상세 설계 문서입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/plans/2026-07-07-nightly-debug-system-plan.md` — 설계된 야간 디버깅 시스템을 실제 환경에 단계별로 적용하기 위한 구체적인 구현 및 테스트 일정 계획서입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-02-20.md` — SKIN1004 AI Agent의 기능 개선, 버그 수정 및 시스템 업데이트 내역을 기록한 변경 로그 파일입니다.
+- `app/agents/orchestrator.py` — 사용자 질의를 분석하고 적절한 전문 서브 에이전트(Specialized Sub Agent)로 작업을 위임하며, 대화 맥락(Conversation Context)을 유지하는 컨트롤 타워 역할을 수행합니다.
+- `app/agents/notion_agent.py` — MCP 의존성 없이 Notion API를 직접 호출하여 허용된(Allowlisted) 페이지 및 데이터베이스의 블록 콘텐츠를 검색하고 답변을 생성합니다.
+- `app/core/product_info.py` — 노션의 `스킨1004 전제품 한 눈에 파악하기` 데이터를 MariaDB로 동기화하고 관리하는 제품 정보 스펙 모듈입니다.
 
 ## Key Concepts
-- **야간 자동 디버깅 (Nightly Debugging)**: 트래픽이 적은 야간 시간대에 에이전트가 스스로 낮 동안 발생한 에러 로그를 수집하고 분석하는 프로세스입니다.
-- **자가 개선 (Self-Improvement)**: 분석된 에러 원인을 바탕으로 AI Agent가 직접 패치 코드를 작성하고, 테스트를 거쳐 안전하게 메인 코드베이스에 반영하는 자동화 루프입니다.
-- **업데이트 로그 (Update Log)**: 시스템의 변경 사항과 디버깅 결과를 투명하게 기록하여 관리자가 시스템의 진화 과정을 추적할 수 있도록 돕는 이력 관리 체계입니다.
+- **Orchestrator (오케스트레이터)**: v3.0 이상 버전에서 도입된 핵심 구조로, 단순한 쿼리 분석(Query Analyzer)을 넘어 여러 전문 서브 에이전트에게 역할을 위임하고 대화의 연속성(Context Continuity)을 보장합니다.
+- **Notion Sub Agent**: 보안을 위해 사전에 지정된 화이트리스트(Allowlist) 범위 내의 노션 페이지와 데이터베이스만 접근하여 정보를 탐색하는 에이전트입니다.
+- **제품 정보 vs 제품 Q&A**: 2026-09-04 지침에 따라 엄격히 구분됩니다. `product_info.py`가 다루는 **제품 정보**는 스킨1004의 공식 제품 라인 및 상세 스펙(CS 데이터 영역)을 의미하며, 실제 고객 문의 대응 기록인 **제품 Q&A**(`[BD_BP] CS제품문의_모음집` 시트, 914건)와는 명확히 분리되어 처리됩니다.
 
 ## How It Fits In
-이 클러스터는 SKIN1004 AI Agent가 인간 개발자의 개입을 최소화하면서도 스스로 성능을 유지하고 결함을 수정할 수 있도록 지원하는 '자가 치유(Self-Healing)' 인프라 역할을 합니다. 수집된 런타임 오류와 사용자 피드백 로그를 분석하여 시스템의 안정성을 극대화하며, 업데이트 로그를 통해 전체 프로젝트의 변경 이력을 체계적으로 관리합니다.
+이 클러스터는 AI Agent 시스템의 중추 신경계 역할을 합니다. 외부 사용자의 입력이 들어오면 `orchestrator.py`가 이를 수신하여 분석한 뒤, 노션 내부 지식 검색이 필요할 경우 `notion_agent.py`를 호출하고, 정형화된 스킨1004 제품 스펙 정보가 필요할 경우 `product_info.py`를 통해 MariaDB의 데이터를 조회하여 최적의 답변을 구성합니다.
 
 ## Common Questions This Page Answers
-- 야간 자동 디버깅 시스템은 어떤 단계를 거쳐 에러를 분석하고 패치를 적용하나요?
-- 자동 패치 적용 시 발생할 수 있는 부작용(Side Effects)을 방지하기 위한 안전장치는 무엇인가요?
-- SKIN1004 AI Agent의 최근 업데이트 내역과 시스템 개선 방향은 어떻게 확인할 수 있나요?
+- 사용자의 질문이 들어왔을 때 어떤 서브 에이전트가 처리할지 어떻게 결정하나요?
+- 노션(Notion) 연동 시 보안을 위해 접근 가능한 페이지를 어떻게 제한하나요?
+- 스킨1004의 공식 제품 스펙 정보와 일반 CS 제품 Q&A 데이터는 코드상에서 어떻게 다르게 취급되나요?

@@ -1,31 +1,28 @@
 # Cluster 07
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 16
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 7
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트의 **지식 맵(Knowledge Map) 구축**, **위키 지식 그래프(Wiki Graph) 분석**, 그리고 **정형 보고서(Reports) 생성 엔진**을 담당합니다. 코드베이스와 문서의 구조를 정적·의미론적으로 분석하여 시각화하고, LLM의 오작동(Hallucination)을 방지하면서 안전하게 비즈니스 지표 보고서를 생성하는 핵심 인프라를 제공합니다.
+Cluster 07은 SKIN1004 AI Agent의 핵심 비즈니스 로직 및 검색 신뢰성을 보장하는 핵심 유틸리티 모듈 모음입니다. LLM의 환각(Hallucination)이나 한국어 형태소 분석의 한계로 인해 발생할 수 있는 오답을 방지하고, 정형/비정형 데이터 조회 결과를 규칙 기반(Rule-based) 코드로 안전하게 정제하여 사용자에게 전달하는 역할을 합니다.
 
 ## Key Files
-- `app/knowledge_map/ast_parser.py` — Python AST를 파싱하여 클래스, 함수, 임포트 관계를 추출합니다.
-- `app/knowledge_map/semantic.py` — Gemini Flash를 활용해 개별 파일의 개념, 관계, 요약을 추출하는 의미론적 분석 패스입니다.
-- `app/knowledge_map/graph.py` — NetworkX와 Louvain 알고리즘을 사용하여 지식 맵 그래프를 구축하고 커뮤니티를 감지합니다.
-- `app/knowledge/wiki_graph.py` — 위키 사실(Facts)로부터 엔티티 관계를 추출하여 `wiki_graph_edge`에 저장합니다.
-- `app/reports/semantic.py` — LLM이 직접 SQL을 작성하지 못하도록 지표, 축, 필터를 검증된 어휘로 고정하는 의미론 계층입니다.
-- `app/reports/spec.py` — "숫자는 코드가 계산하고, 문장은 템플릿이 만든다"는 원칙 하에 보고서 스펙을 정의합니다.
-- `app/core/log_scrub.py` — 로그 출력 시 개인정보(`user_id` 등)를 마스킹하는 structlog 프로세서입니다.
+- `app/core/coa_finder.py` — 공유드라이브에서 롯트(Lot) 번호 기반으로 COA 및 MSDS 문서를 규칙 기반으로 정확하게 매칭하여 탐색합니다. (LLM 미사용)
+- `app/core/notice_result.py` — SQL 조회 결과가 시스템 미연동 안내문 등 단일 안내 메시지인 경우, LLM을 거치지 않고 즉시 답변으로 반환합니다.
+- `app/core/qty_coverage.py` — 판매수량 집계가 불가능한 특정 브랜드에 대해 데이터 미집계 상태를 인지하고 0개로 잘못 답변하는 것을 방지합니다.
+- `app/core/query_keywords.py` — 한국어 교착어 특성을 고려하여 질문에서 불용어와 조사를 제거하고 검색용 핵심 키워드를 단일 지점에서 추출합니다.
+- `app/core/result_truncation.py` — 대용량 조회 결과가 잘려서 LLM에 전달될 때, 전체 데이터가 아님을 코드가 직접 명시하여 사용자 오해를 방지합니다.
+- `app/core/team_link_index.py` — `team_resources` 테이블의 시트 및 드라이브 링크를 벡터 색인(Qdrant)에 동기화하여 팀별 자료 링크 카드를 제공합니다.
+- `app/core/textmatch.py` — 한국어 조사나 긴 단어 내에 짧은 단어(예: '인도', '인')가 잘못 매칭되는 현상을 방지하는 낱말 경계 매칭을 수행합니다.
 
 ## Key Concepts
-- **Knowledge Map (지식 맵)**: Claude Code 세션 등을 위해 프로젝트의 소스 코드와 Markdown 문서를 분석하여 정적 관계 그래프를 생성하는 기능입니다.
-- **Semantic Layer (의미론 계층)**: LLM 플래너가 보고서 생성 시 직접 SQL을 작성하는 대신, 사전에 정의되고 검증된 지표와 축의 조합만을 선택하도록 제한하여 데이터 일관성을 보장합니다.
-- **Wiki Graph & Insights**: 위키 데이터에서 엔티티 간의 관계(src, relation, dst)를 추출하고, 연결성이 높은 God node나 고립된 Orphan 엔티티를 분석하여 지식의 밀도를 관리합니다.
+- **규칙 기반 문서 매칭 (Rule-based Matching)**: 규제 및 인증 문서(COA/MSDS)는 잘못된 파일을 제공할 경우 리스크가 매우 크기 때문에, LLM에 의존하지 않고 `app/core/coa_finder.py` 내의 엄격한 코드 규칙으로만 파일을 선택합니다.
+- **한국어 낱말 경계 매칭**: 한국어는 띄어쓰기가 불분명하고 교착어적 특성이 있어 `"외부 요인도"`에서 국가 `"인도"`를 추출하는 등의 오작동이 발생하기 쉽습니다. `app/core/textmatch.py`와 `app/core/query_keywords.py`는 이러한 한국어 특화 검색 노이즈를 제거합니다.
 
 ## How It Fits In
-- **보안 및 감사**: `app/core/log_scrub.py`는 시스템 전반의 로깅 과정에서 개인정보를 제거하여 `concept:audit_logging` (Cluster 24)을 안전하게 구현합니다.
-- **배치 처리**: `app/knowledge_map/semantic.py`는 대규모 파일 분석을 위해 `concept:batch_processing` (Cluster 11) 구조를 활용하여 효율적으로 Gemini API를 호출합니다.
-- **사실 추출**: `app/reports/spec.py`는 보고서 생성에 필요한 원천 데이터를 검증하고 정제하기 위해 `concept:fact_extraction` (Cluster 22) 메커니즘과 연계됩니다.
+- **Cluster 12 연결**: `app/core/result_truncation.py`는 대용량 데이터 조회 시 상위 일부 행만 요약하여 LLM에 전달하는 `concept:smart_preview` (Cluster 12) 메커니즘을 구현하며, 데이터가 생략되었다는 사실을 프롬프트가 아닌 코드가 직접 공시하도록 강제합니다.
 
 ## Common Questions This Page Answers
-- **Q. LLM이 잘못된 SQL을 실행하여 엉뚱한 보고서 지표를 만들지 않으려면 어떻게 해야 하나요?**
-  - `app/reports/semantic.py`와 `app/reports/spec.py`에 정의된 원칙에 따라, LLM은 사전에 정의된 지표와 축의 조합만 선택할 수 있으며 실제 SQL 생성과 숫자 계산은 엄격하게 통제된 코드 엔진이 수행합니다.
-- **Q. 코드베이스의 구조와 문서 간의 연관 관계를 시각화하거나 분석하려면 어떤 모듈을 사용하나요?**
-  - `app/knowledge_map` 패키지의 AST/Markdown 파서와 NetworkX 기반의 `graph.py`를 사용하여 프로젝트의 정적 지식 맵을 빌드하고 분석할 수 있습니다.
+- **Q. 특정 브랜드의 판매수량이 실제와 다르게 0개로 답변되는 문제를 어떻게 해결하나요?**
+  - `app/core/qty_coverage.py`를 통해 수량 미집계 브랜드에 대해 잘못된 수치(0개)가 나가는 것을 방지하고 예외 처리를 수행합니다.
+- **Q. "인플루언서"나 "요인도"라는 단어에서 국가 "인도"가 검색 필터로 걸리는 현상을 막으려면?**
+  - `app/core/textmatch.py`의 낱말 경계 매칭 로직을 사용하여 텍스트가 독립된 단어로 쓰였는지 검증합니다.

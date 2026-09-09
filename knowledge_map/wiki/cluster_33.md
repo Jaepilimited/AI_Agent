@@ -1,22 +1,22 @@
 # Cluster 33
 
-> Auto-generated 2026-07-30T03:00:10.834479+09:00 · Files: 1
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트의 인프라 전환 및 서버 이전을 위한 실행 지침을 제공합니다. 구체적으로 AI Craver 서버 마이그레이션 과정에서 필요한 사전 준비, 단계별 실행 절차, 그리고 검증 방법을 상세히 기록하여 안전하고 일관된 시스템 이전을 보장합니다.
+이 클러스터는 SKIN1004 AI Agent 프로젝트 내에서 지식 맵(Knowledge Map)을 구축하고 시각화 및 문서화 형태로 내보내는 핵심 오케스트레이터와 내보내기(Exporter) 도구들로 구성되어 있습니다. 프로젝트 소스 코드와 문서를 탐색하여 지식 구조를 발견하고, 이를 정형화된 그래프 데이터 및 마크다운 위키 문서로 변환하는 역할을 수행합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/MIGRATION_AI_CRAVER.md` — AI Craver 서버 마이그레이션의 전체 프로세스, 체크리스트, 환경 설정 및 트러블슈팅 가이드를 담고 있는 실행 런북(Runbook) 문서입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/builder.py` — 지식 맵 구축의 전체 흐름(탐색 → 캐싱 → 파싱 → 플래시 → 그래프 생성 → 내보내기)을 제어하는 오케스트레이터 클래스입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/exporters.py` — 구축된 지식 데이터를 `graph.json`, `GRAPH_REPORT.md`, 그리고 `wiki/index.md`, `wiki/log.md`를 포함한 `wiki/*.md` 파일 등 다양한 포맷의 출력물로 작성하는 라이터(Writer) 모듈입니다.
 
 ## Key Concepts
-- **AI Craver 마이그레이션**: 기존 인프라에서 새로운 대상 서버 환경으로 AI Craver 시스템을 안전하게 이전하는 프로세스입니다.
-- **런북 (Runbook)**: 마이그레이션 작업 중 발생할 수 있는 실수를 방지하고, 작업의 일관성을 유지하기 위해 작성된 단계별 기술 가이드라인입니다.
-- **환경 검증 (Validation)**: 서버 이전 완료 후, AI Agent 서비스(예: skin1004 관련 기능)가 정상적으로 작동하는지 확인하는 필수 검증 단계입니다.
+- **Knowledge Map Build Pipeline**: `builder.py`가 주도하는 파이프라인으로, 프로젝트의 메타데이터와 코드 관계를 분석하여 구조화된 지식 그래프를 형성하는 일련의 프로세스(discover → cache → parse → flash → graph → export)입니다.
+- **Multi-format Exporters**: 분석된 지식 맵을 기계가 읽을 수 있는 JSON 형식(`graph.json`)과 사용자가 읽을 수 있는 마크다운 위키 문서(`wiki/*.md`, `GRAPH_REPORT.md`)로 동시에 변환하여 프로젝트의 문서화를 자동화하는 기능입니다.
 
 ## How It Fits In
-이 클러스터는 코드 구현보다는 시스템 운영 및 인프라 관리에 초점을 맞춘 독립적인 문서화 영역입니다. 다른 코드 클러스터들과 직접적인 의존 관계는 없으나, AI Agent 서비스의 무중단 운영과 안정적인 배포 환경을 구축하는 데 있어 기반이 되는 중요한 운영 지침 역할을 합니다.
+이 클러스터는 독립적인 지식 맵 생성 및 문서화 도구 세트로 동작합니다. 프로젝트 내의 다른 코드 베이스나 문서들을 정적 분석하여 시각화 가능한 그래프 데이터와 위키 페이지를 생성함으로써, 개발자와 AI Agent가 전체 시스템 구조를 빠르게 파악할 수 있도록 돕는 메타 도구 역할을 합니다.
 
 ## Common Questions This Page Answers
-- AI Craver 서버 마이그레이션을 시작하기 전에 준비해야 할 체크리스트는 무엇인가요?
-- 마이그레이션 수행 중 예기치 못한 오류가 발생했을 때 어떻게 대응해야 하나요?
-- 서버 이전이 완료된 후 시스템이 정상적으로 동작하는지 어떻게 검증하나요?
+- 프로젝트의 전체 구조를 분석하여 시각화용 JSON 그래프나 마크다운 위키로 자동 생성하려면 어떤 모듈을 실행해야 하나요?
+- 지식 맵 빌드 파이프라인의 구체적인 단계(discover, cache, parse 등)는 어떻게 제어되나요?
+- 생성되는 위키 문서(`wiki/index.md`, `wiki/log.md` 등)와 리포트 파일들은 어디에서 정의되고 작성되나요?

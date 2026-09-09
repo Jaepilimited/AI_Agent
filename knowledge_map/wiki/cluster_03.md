@@ -1,31 +1,38 @@
 # Cluster 03
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 5
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 22
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 시스템의 핵심 안전장치(Safety), 정적 검증(Static Validation), 메타데이터 동기화 및 멀티모달 검색 엔진을 포함하는 핵심 유틸리티 및 에이전트 군으로 구성되어 있습니다. 생성된 SQL의 보안을 검증하고, 시스템 전반의 무오류를 보장하는 정적 검사를 수행하며, 보고서 템플릿의 하드코딩을 방지하고, 얼굴 및 제품 이미지 검색을 지원합니다.
+SKIN1004 AI Agent 프로젝트의 핵심 API 엔드포인트와 사용자 인증, 개인화 서비스 및 보안 제어를 담당하는 클러스터입니다. Google Workspace, Entra ID 기반의 인증 체계를 구축하고, 보고서 공유·개인 브리핑·알림 등 민감한 비즈니스 데이터에 대한 철저한 권한 검증과 사용자별 맞춤형 기능을 제공합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/agents/face_clip_agent.py` — Drive 인덱스 기반 CLIP 및 InsightFace를 활용한 얼굴/제품 사진 검색 에이전트
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/schema_docs.py` — Notion의 BigQuery 데이터베이스 정의서를 기반으로 컬럼 설명을 동기화하는 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/security.py` — Text-to-SQL 에이전트가 생성한 SQL의 안전성을 검증하는 보안 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/static_checks.py` — 코드와 자산을 읽어 에러가 나지 않는 고장(Silent Failures)을 잡아내는 정적 검사 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/reports/render.py` — 페이로드와 템플릿을 결합하여 HTML 보고서를 렌더링하고 하드코딩된 숫자를 방지하는 모듈
+- `app/api/auth_middleware.py` — MariaDB 연동 및 JWT 쿠키 기반의 FastAPI 인증 디펜던시 (역할 기반 접근 제어 구현)
+- `app/api/auth_routes.py` — Google Workspace OAuth2 인증 엔드포인트
+- `app/api/entra_routes.py` — 과도기 대응을 위한 Entra ID (OIDC) 로그인 엔드포인트 (기존 ID/PW 로그인과 병행)
+- `app/api/reports_api.py` — 보고서 생성, 목록, 열람 및 공유 API (작성자와 지목된 수신자만 열람 가능하도록 엄격히 제한)
+- `app/reports/share_ui.py` — 보고서 상단 공유 막대를 응답 시점에 동적으로 렌더링하여 권한별 UI 일관성 유지
+- `app/api/attachment_api.py` — 업로드된 엑셀/CSV 파일을 서버에 저장하지 않고 즉시 표 텍스트로 변환하여 반환하는 API
+- `app/api/personal_briefing_api.py` — 로그인 시 제공되는 사용자 맞춤형 출근 브리핑 API
+- `app/api/sql_export_api.py` — 채팅 중 잘린 SQL 결과를 작성자 본인만 CSV로 다운로드할 수 있게 하는 엔드포인트
+- `app/api/jandi_briefing_api.py` — 잔디(Jandi) 메신저 출근 브리핑 웹훅 등록 및 3중 방어선 기반의 내부 릴레이 API
+- `app/api/coa_finder_api.py` — 사용자 본인의 OAuth 권한을 그대로 사용하여 구글 공유드라이브 내 COA/MSDS 문서를 검색하는 API
 
 ## Key Concepts
-- **정적 자가 점검 (Static Self-Checks)**: `static_checks.py`는 개발 단계(`test_no_silent_failures.py`)와 서버 운영 환경 모두에서 동일한 규칙으로 시스템 고장을 진단할 수 있도록 단일 판정 로직을 제공합니다.
-- **SQL 안전성 검증 (SQL Safety Validation)**: `security.py`는 생성된 모든 SQL이 실행되기 전에 악의적인 쿼리나 비정상적인 연산을 수행하지 않는지 정적으로 검증합니다.
-- **템플릿 리터럴 제한**: `render.py`는 보고서 템플릿 내에 하드코딩된 숫자 리터럴이 남지 않도록 강제하며, 모든 수치는 `{{ derived.pnl.H1_26.sales | eok }}`와 같은 슬롯 형태로만 주입되도록 제한합니다.
+- **엄격한 소유권 검증 (Strict Ownership)** — `reports_api.py` 및 `sql_export_api.py` 등에서 원가, 마진 등 민감한 데이터 유출을 막기 위해 admin 권한 유무와 상관없이 오직 '작성자 및 명시적 공유 대상자'만 데이터에 접근할 수 있도록 제한합니다.
+- **무저장 원칙 (Stateless Processing)** — `attachment_api.py`는 업로드된 파일을 서버에 저장하지 않고 텍스트로 변환 후 즉시 반환하여, 보안 위협과 파일 관리 리스크를 원천 차단합니다.
+- **점진적 인증 전환 (Coexistence of Auth)** — `entra_routes.py`는 시스템 전환기 동안 기존 로컬 로그인과 Entra ID 로그인을 동시에 지원하여 사용자 락인(Lock-in) 및 차단 사고를 방지합니다.
+- **동적 UI 바인딩 (Dynamic UI Injection)** — `share_ui.py`는 공유 버튼 등의 UI 요소를 정적 HTML에 저장하지 않고, 조회하는 사용자의 권한에 따라 응답 시점에 동적으로 결합합니다.
 
 ## How It Fits In
-- **OCR Reranking 연계**: `face_clip_agent.py`는 이미지 검색 성능을 고도화하기 위해 `concept:ocr_reranking` (cluster_13)을 구현하여 활용합니다.
-- **BigQuery 메타데이터 연계**: `schema_docs.py`는 `INFORMATION_SCHEMA`만으로는 파악할 수 없던 컬럼의 상세한 한글 의미를 Notion 정의서로부터 가져와 `concept:bigquery_metadata` (cluster_05)에 동기화하고 앱에 전달합니다.
-- **Text-to-SQL 보안**: `security.py`는 `concept:text_to_sql` (cluster_30) 에이전트가 생성한 SQL이 데이터베이스에서 실행되기 직전에 필수적으로 거쳐야 하는 보안 필터 역할을 합니다.
+- **인증 및 권한 제어**: `auth_middleware.py`는 [cluster_05](cluster_05)의 JWT 인증 개념 및 [cluster_38](cluster_38)의 역할 기반 접근 제어(RBAC)를 실무 API 레이어에 적용합니다.
+- **외부 플랫폼 연동**: `auth_routes.py`는 [cluster_14](cluster_14)의 Google Workspace 인증을, `entra_routes.py` 및 `jandi_briefing_api.py`는 [cluster_13](cluster_13)의 Entra ID 및 잔디 브리핑 연동 규격을 구현합니다.
+- **개인화 및 브리핑**: `personal_briefing_api.py`와 `notion_briefing_api.py`는 [cluster_12](cluster_12)의 개인화 브리핑 아키텍처와 연결됩니다.
+- **데이터 내보내기**: `sql_export_api.py`는 [cluster_04](cluster_04)의 임시 SQL 결과 저장소(`sql_result_store`)에서 데이터를 안전하게 인출하여 사용자에게 전달합니다.
 
 ## Common Questions This Page Answers
-- **Q. 생성된 SQL이 안전한지 어떻게 검증하나요?**
-  - `app/core/security.py`가 제공하는 SQL safety validation을 통해 실행 전 정적 검증을 통과해야만 쿼리가 실행됩니다.
-- **Q. 보고서 템플릿에 숫자를 직접 하드코딩하면 어떻게 되나요?**
-  - `app/reports/render.py` 내부의 `lint_template()` 검사에 의해 차단되며, 모든 숫자는 반드시 슬롯 형태로 템플릿에 주입되어야 합니다.
-- **Q. 테스트 환경과 서버 환경에서 정적 검사 규칙이 달라져 발생하는 문제는 어떻게 해결했나요?**
-  - `app/core/static_checks.py`에 단일 판정 함수를 정의하여, `pytest` 환경과 서버 자가 점검 루틴이 동일한 검사 로직을 공유하도록 일원화했습니다.
+- Q. 업로드한 엑셀이나 CSV 파일은 서버의 어디에 저장되고 어떻게 삭제되나요?
+  - A. `attachment_api.py`는 파일을 서버에 절대 저장하지 않습니다. 읽어서 텍스트로 변환한 뒤 즉시 반환하며, 대화 기록에만 텍스트 형태로 남습니다.
+- Q. 관리자(admin) 계정은 모든 보고서(`reports_api.py`)를 열람할 수 있나요?
+  - A. 아닙니다. 매출, 원가, 마진 등 민감한 정보가 포함되어 있어 관리자라 하더라도 작성자가 직접 지목하여 공유하지 않은 보고서는 열람할 수 없습니다.
+- Q. 서버에서 이메일 알림 발송이 실패하는 이유는 무엇인가요?
+  - A. 2026-08-19 실측 결과 WAS/APP 전 영역에서 SMTP 포트가 차단되어 있습니다. 따라서 IT 부서의 릴레이 개방 전까지는 `notifications_api.py`를 통해 앱 내 알림으로 대체 처리합니다.

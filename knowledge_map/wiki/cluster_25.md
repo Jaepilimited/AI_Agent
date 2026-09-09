@@ -1,22 +1,24 @@
 # Cluster 25
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 2
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
 
 ## Purpose
-본 클러스터는 SKIN1004 AI Agent 프로젝트 내에서 데이터 모델 및 리포트 명세(Specifications)를 정의하는 패키지들의 진입점을 제공합니다. 각 디렉토리가 파이썬 패키지로 올바르게 인식되고 네임스페이스를 구성할 수 있도록 초기화 역할을 수행합니다.
+본 클러스터는 SKIN1004 AI Agent 프로젝트의 핵심 진입점이 되는 API 엔드포인트를 정의합니다. 외부 클라이언트(예: Open WebUI)와의 연동을 위한 OpenAI 호환 API 규격을 제공하고, AI 에이전트의 지식 기반이 되는 마크다운(MD) 문서 및 메모리 파일을 시각화하고 편집할 수 있는 관리 도구용 API를 담당합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/models/__init__.py` — AI Agent에서 사용하는 데이터베이스 모델 및 스키마 정의 패키지의 초기화 파일입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/reports/specs/__init__.py` — 메가와리(Megawari) 등 주요 마케팅 채널의 리포트 생성 명세(Specifications) 패키지의 초기화 파일입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/harness_api.py` — AI Knowledge Base Editor API로, `CLAUDE.md` 및 메모리 파일을 읽고 편집하며 섹션 간 연결 그래프를 생성하는 기능을 제공합니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/routes.py` — Open WebUI 등 외부 시스템과의 통합을 위한 OpenAI 호환 API 엔드포인트를 제공합니다.
 
 ## Key Concepts
-- **Python Package Initialization**: `__init__.py` 파일을 통해 해당 디렉토리를 모듈화된 파이썬 패키지로 선언합니다. 이를 통해 다른 모듈에서 `app.models` 또는 `app.reports.specs` 경로로 내부 모듈들을 일관되게 임포트(Import)할 수 있습니다.
-- **Data Models**: SKIN1004 AI Agent가 수집하고 처리하는 원시 데이터 및 가공 데이터를 구조화하기 위한 모델 정의의 기반이 됩니다.
-- **Report Specs**: 메가와리 실적 분석 및 광고 효율 리포트 등 다양한 보고서 양식의 규격과 명세를 정의하는 패키지 구조를 형성합니다.
+- **AI Knowledge Base Editor**: AI 에이전트가 프로젝트를 이해하는 기반이 되는 `CLAUDE.md` 파일과 메모리 파일들을 시각화하고 직접 편집할 수 있게 해주는 도구입니다.
+- **OpenAI-compatible API**: Open WebUI와 같은 표준 클라이언트가 별도의 커스텀 구현 없이 SKIN1004 AI Agent와 통신할 수 있도록 `/v1/chat/completions` 등의 표준 규격을 제공하는 인터페이스입니다.
 
 ## How It Fits In
-본 클러스터는 프로젝트의 핵심 비즈니스 로직과 데이터 구조를 담는 패키지들의 뼈대를 구성합니다. `app/models` 패키지는 데이터베이스 및 데이터 처리 레이어와 연결되며, `app/reports/specs` 패키지는 수집된 데이터를 바탕으로 마케팅 리포트를 시각화하고 명세화하는 리포트 생성 엔진 레이어의 기초가 됩니다.
+이 클러스터는 외부 요청을 수신하여 시스템 내부의 핵심 비즈니스 로직으로 라우팅하는 게이트웨이 역할을 합니다.
+- `app/api/routes.py`는 OpenAI 호환 API 규격(`concept:openai_compatible_api`, cluster_28)을 구현하여 외부 클라이언트의 요청을 처리합니다.
+- 수신된 요청은 내부의 오케스트레이터 에이전트(`concept:orchestrator_agent`, cluster_10)로 전달되어 메인 워크플로우를 트리거합니다.
+- 요청 처리 과정에서 메가와리(megawari) 등 특정 브랜드 컨텍스트를 필터링하기 위해 브랜드 필터(`concept:brand_filter`, cluster_12)를 적용합니다.
 
 ## Common Questions This Page Answers
-- `app/models` 패키지를 다른 모듈에서 임포트하기 위해 어떤 초기화 구조를 가지고 있나요?
-- 리포트 명세(Specifications) 관련 모듈들은 어떤 패키지 구조 아래에 위치하나요?
+- Open WebUI와 SKIN1004 AI Agent를 연동하기 위해 어떤 API 엔드포인트를 사용해야 하나요?
+- AI 에이전트의 지식 기반이 되는 `CLAUDE.md`나 메모리 파일을 웹 인터페이스에서 시각화하고 수정하려면 어떤 API를 호출해야 하나요?

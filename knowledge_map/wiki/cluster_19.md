@@ -1,28 +1,25 @@
 # Cluster 19
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 5
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트의 시스템 안정성을 보장하는 핵심 안전 장치(Safety) 모듈과, 프로젝트의 주요 마일스톤, QA 테스트 결과 및 업데이트 이력을 기록한 문서들로 구성되어 있습니다. 시스템의 실시간 장애 방지 및 유지보수 기능과 함께, 비즈니스 보고 및 UX 개선 과정을 종합적으로 관리합니다.
+이 클러스터는 SKIN1004 AI Agent 애플리케이션의 핵심 인프라 기능인 사용자 인증(Authentication) 및 프론트엔드 시각화를 위한 동적 차트 설정(Chart Configuration) 생성을 담당합니다. 사용자의 안전한 시스템 접속을 보장하고, 데이터 분석 결과를 인터랙티브한 UI 요소로 변환하는 기반을 제공합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/safety.py` — 시스템 장애 및 과부하를 방지하기 위한 `MaintenanceManager` 및 `CircuitBreaker` 로직을 제공합니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/presentation_prompt.md` — SKIN1004 Enterprise AI Agent 리더미팅 발표를 위한 PPT 구성 프롬프트 문서입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/test_report_2026-02-10.md` — 시스템의 안정성과 기능 검증을 기록한 QA 테스트 보고서입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-03-24.md` — ChatGPT급 UX 구현, 보안 강화 및 프레젠테이션 준비 사항을 기록한 업데이트 로그입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-03-25.md` — 스트리밍 성능 개선, 보안 고도화, UX 최적화 및 향후 로드맵을 담은 업데이트 로그입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/auth_api.py` — MariaDB 및 사내 AD(Active Directory) 부서/이름 정보와 연동된 회원가입, 로그인, 로그아웃 및 현재 사용자 정보 조회(me) API 엔드포인트를 제공합니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/chart.py` — 서버 사이드에서 무거운 이미지(PNG)를 생성하는 대신, 프론트엔드에서 인터랙티브하게 렌더링할 수 있도록 Chart.js 호환 설정 JSON 객체를 빌드하는 모듈입니다.
 
 ## Key Concepts
-- **MaintenanceManager**: 시스템 점검 모드를 관리합니다. 수동 토글(`activate`/`deactivate`) 기능뿐만 아니라, 60초 주기로 데이터베이스 테이블(`__TABLES__`)의 행 수 메타데이터를 가볍게 폴링하여 이상 징후를 자동 감지합니다.
-- **CircuitBreaker**: 외부 API 호출 실패나 시스템 과부하 발생 시, 추가적인 장애 확산을 막기 위해 요청을 차단하고 우회 경로를 제공하는 안전 패턴입니다.
-- **ChatGPT급 UX**: 사용자에게 끊김 없는 실시간 스트리밍 응답과 직관적인 인터페이스를 제공하여 메가와리(Megawari) 행사 등 대규모 트래픽 상황에서도 원활한 사용자 경험을 보장하는 개념입니다.
+- **AD 연동 로그인 (Active Directory Integration)**: `auth_api.py`는 단순한 자체 회원 관리를 넘어, 사내 AD 시스템의 부서(Department) 및 이름(Name) 정보와 연동하여 사용자를 인증하고 MariaDB에 정보를 동기화합니다.
+- **인터랙티브 차트 JSON (Interactive Chart JSON)**: `chart.py`는 서버의 리소스를 소모하여 정적 이미지를 그리는 대신, 클라이언트 사이드 렌더링에 최적화된 Chart.js 구성 데이터를 생성하여 프론트엔드에 전달합니다. 이를 통해 사용자는 웹 UI에서 차트 데이터와 동적으로 상호작용할 수 있습니다.
 
 ## How It Fits In
-이 클러스터는 시스템의 **안정성 제어**와 **프로젝트 이력 관리**의 교차점에 있습니다. 
-- `app/core/safety.py` 파일은 시스템의 핵심 제어 패턴인 `concept:circuit_breaker` 및 `concept:maintenance_mode` (cluster_29)를 직접 구현하여, 에이전트가 비정상적인 상태에 빠지지 않도록 보호합니다.
-- 문서 파일들은 QA 테스트 결과와 업데이트 로그를 통해 이러한 안전 장치들이 실제 운영 환경(예: SKIN1004 글로벌 마케팅 및 메가와리 분석)에서 어떻게 검증되고 발전해 왔는지를 보여줍니다.
+이 클러스터는 독자적인 유틸리티 및 API 레이어로서 다른 비즈니스 로직 클러스터들과 직접적인 의존성을 크게 가지지 않으면서도 시스템 전반의 기반을 지탱합니다. 
+- **인증(Auth)** 기능은 향후 에이전트 제어 및 메가와리(Megawari) 분석 데이터 조회 등 권한이 필요한 모든 API 요청의 관문 역할을 합니다.
+- **차트(Chart)** 생성 모듈은 AI Agent가 분석한 통계 데이터나 스킨1004(SKIN1004) 관련 실적 지표를 프론트엔드 대시보드에 시각화할 때 공통 유틸리티로 활용됩니다.
 
 ## Common Questions This Page Answers
-- 시스템에 장애가 발생하거나 점검이 필요할 때 점검 모드(`MaintenanceManager`)를 어떻게 활성화하나요?
-- 데이터베이스 부하를 최소화하면서 테이블 메타데이터를 감시하는 방법은 무엇인가요?
-- 2026년 3월 말 진행된 주요 업데이트(스트리밍 개선, UX 고도화 등)의 상세 내역은 어디서 확인하나요?
+- **사용자 로그인 시 사내 AD 정보가 어떻게 활용되나요?**
+  - `auth_api.py`를 통해 로그인할 때, 사용자의 AD 연동 부서 및 이름 정보를 기반으로 인증이 수행되며 관련 정보가 MariaDB에 저장 및 관리됩니다.
+- **차트 시각화 시 서버 부하를 줄이기 위해 어떤 방식을 사용하나요?**
+  - `chart.py`를 사용하여 서버에서 직접 이미지를 렌더링하지 않고, 프론트엔드가 동적으로 그릴 수 있는 Chart.js 설정 JSON만 빠르게 생성하여 반환합니다.

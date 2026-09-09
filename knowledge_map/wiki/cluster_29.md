@@ -1,34 +1,25 @@
 # Cluster 29
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 32
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
 
 ## Purpose
-본 클러스터는 SKIN1004 AI Agent 프로젝트의 개발 역사, 릴리즈 변경 사항, 그리고 주요 기능 개선을 위한 상세 설계 및 실행 계획(Implementation Plans)을 담고 있는 **종합 업데이트 로그 및 기술 스펙 문서군**입니다. 초기 버전부터 엔터프라이즈급 성능 최적화, 보안 강화, UI 리브랜딩에 이르기까지 시스템의 진화 과정을 체계적으로 기록하고 있습니다.
+이 클러스터는 SKIN1004 AI Agent 프로젝트의 핵심 개발 마일스톤과 기능 개선 사항을 기록한 업데이트 로그(Update Log) 문서들을 포함하고 있습니다. 2026년 8월 중순 동안 진행된 주요 기능 추가, 알고리즘 개선, 데이터 정합성 확보 및 시스템 안정화 작업의 상세 이력을 제공합니다.
 
 ## Key Files
-- `docs/update_log_2026-02-06.md` — Dual LLM 아키텍처 도입 및 Google Workspace OAuth2 연동 등 초기 주요 업데이트 기록
-- `docs/update_log_2026-02-23_cs.md` — CS Agent v1.0 출시 및 오케스트레이터 라우팅 적용 기록
-- `docs/update_log_2026-03-17.md` — v8.0 Enterprise Output, 프론트엔드 개선 및 속도 최적화 로그
-- `docs/superpowers/plans/2026-04-20-bigquery-performance.md` — BigQuery 응답 속도 개선을 위한 구체적인 실행 계획
-- `docs/superpowers/specs/2026-04-17-integrated-ad-migration-design.md` — 마케팅 광고 데이터 테이블의 마이그레이션(Wide → Long 구조) 설계서
-- `docs/test_report_comprehensive_2026-02-12.md` — 시스템 전반에 대한 종합 QA 테스트 결과 보고서
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-08-13.md` — 2026년 8월 6일부터 13일까지 진행된 질문형 보고서 도입, 초상권 사진 식별 기능, 골든셋 회귀 테스트 및 Opus 5 모델 적용에 대한 업데이트 기록입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-08-19.md` — 2026년 8월 14일부터 19일까지 진행된 알림함 기능, 조용한 오답 사냥(Silent Error Hunting) 메커니즘, 그리고 데이터 정합성 개선 작업에 대한 업데이트 기록입니다.
 
 ## Key Concepts
-- **업데이트 로그 (Update Logs)**: 시스템의 기능 추가, 버그 수정, 성능 최적화 내역을 날짜 및 버전별로 기록한 이력입니다.
-- **실행 계획 (Implementation Plans)**: BigQuery 성능 개선, 익명화 파이프라인 구축, DB HUB 팀별 자료 시스템 등 고도화 작업을 위한 구체적인 마일스톤과 설계 방향을 정의합니다.
-- **통합 광고 데이터 마이그레이션**: 효율적인 쿼리 수행을 위해 기존 Wide 테이블 구조를 Long 테이블 구조로 전환하는 데이터 모델링 전략입니다.
+- **질문형 보고서**: 사용자의 피드백이나 분석 요청에 대해 단순 단답형이 아닌, 추가적인 인사이트를 유도하는 질문 형태의 보고서 생성 기능입니다.
+- **초상권 사진식별**: SKIN1004 마케팅 및 리뷰 데이터 처리 중 모델의 초상권을 보호하기 위해 인물 사진을 자동으로 감지하고 분류하는 기능입니다.
+- **골든셋 회귀 (Golden Set Regression)**: 시스템 업데이트 시 기존의 답변 품질이 저하되지 않도록 표준 검증 데이터셋(Golden Set)을 활용해 성능을 비교·평가하는 회귀 테스트 프로세스입니다.
+- **조용한 오답 사냥 (Silent Error Hunting)**: 시스템 내부에서 에러를 발생시키지 않지만 논리적으로 잘못된 결과를 도출하는 미세한 버그나 데이터 불일치를 추적하고 수정하는 정밀 디버깅 작업입니다.
 
 ## How It Fits In
-본 클러스터의 문서들은 프로젝트 전반의 아키텍처 변화와 기능 구현을 유기적으로 연결합니다.
-- `docs/changelog/v3.0.0.md` 및 업데이트 로그들은 **cluster_30**의 `orchestrator_worker_pattern`, `dual_llm_architecture`, `google_workspace_oauth2` 개념을 구체적으로 구현(implements)하고 있습니다.
-- `docs/superpowers/plans/2026-04-17-anonymization-and-eval.md`는 개인정보 보호를 위해 **cluster_21**의 가명화(`pseudonymization`) 개념을 차용합니다.
-- BigQuery 성능 개선 계획(`2026-04-20-bigquery-performance.md`)은 **cluster_01**의 프롬프트 엔지니어링(`prompt_engineering`) 기법을 활용하며, Phase 2 성능 최적화 계획은 **cluster_30**의 파티션 필터 우회(`partition_filter_bypass`) 기술을 적용합니다.
-- `docs/update_log_2026-02-24.md`는 **cluster_10**의 `gemini_flash_transition`을 통한 모델 전환 과정을 보여줍니다.
+이 클러스터는 AI Agent 프로젝트의 진화 과정을 보여주는 역사적 기록이자 기술 부채 해결 과정을 담은 아카이브입니다. 다른 코드 구현 클러스터들이 제공하는 기능들(예: 이미지 처리, 데이터베이스 정합성 검증, LLM 프롬프트 엔지니어링)이 실제 비즈니스 요구사항에 맞춰 어떻게 통합되고 발전했는지 맥락을 제공합니다.
 
 ## Common Questions This Page Answers
-- **SKIN1004 AI Agent의 버전별 주요 변경 사항과 릴리즈 역사는 어떻게 되나요?**
-  - `docs/changelog/` 및 `docs/update_log_*.md` 파일들을 통해 v1.1.0부터 v9.0+에 이르는 기능 개선, 버그 수정, UI 리브랜딩 이력을 상세히 확인할 수 있습니다.
-- **BigQuery의 응답 속도 저하 문제를 해결하기 위해 어떤 설계와 계획이 수립되었나요?**
-  - `docs/superpowers/specs/2026-04-20-bigquery-performance-design.md`와 관련 실행 계획 문서에서 파티션 필터 최적화 및 쿼리 튜닝 방안을 제시합니다.
-- **마케팅 광고 데이터의 테이블 구조는 어떻게 개선되었나요?**
-  - `docs/superpowers/specs/2026-04-17-integrated-ad-migration-design.md`에서 Wide에서 Long 구조로의 마이그레이션 스펙을 다룹니다.
+- **Opus 5 모델과 골든셋 회귀 테스트는 언제, 어떤 목적으로 도입되었나요?**
+  - `update_log_2026-08-13.md`에서 확인할 수 있듯이, 2026년 8월 초에 답변 품질 향상을 위해 Opus 5를 도입하였으며, 이 과정에서 성능 저하를 막기 위해 골든셋 회귀 테스트를 함께 수행했습니다.
+- **시스템의 데이터 정합성 향상과 '조용한 오답 사냥'은 어떻게 진행되었나요?**
+  - `update_log_2026-08-19.md`에 기록된 내역에 따라, 알림함 기능 구현과 병행하여 겉으로 드러나지 않는 논리적 오류들을 잡아내고 데이터 일관성을 강화하는 작업이 수행되었습니다.

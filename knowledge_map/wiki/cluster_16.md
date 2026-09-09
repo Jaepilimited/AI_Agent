@@ -1,29 +1,28 @@
 # Cluster 16
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 3
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 5
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent가 수집한 비즈니스 지식과 과거 답변 사실(facts)을 체계적으로 관리하고 검색하기 위한 **지식 위키(Knowledge Wiki)** 핵심 모듈을 제공합니다. 수집된 개별 사실들을 엔티티별로 취합하여 정돈된 페이지로 컴파일하고, 검색 쿼리에 맞는 사실을 조회하며, 해당 정보의 신뢰성을 평가하는 역할을 수행합니다.
+본 클러스터는 SKIN1004 AI Agent의 **출근 브리핑(Personal Briefing)** 생성 및 전달, 그리고 이에 필요한 **근무일 판정 및 환율 계산**을 담당하는 핵심 비즈니스 로직 모듈로 구성되어 있습니다. 외부 네트워크가 차단된 WAS 환경의 제약을 극복하기 위해 DB_PC와의 릴레이 및 대기열 구조를 활용하여 잔디(Jandi) 메시지 발송과 환율 조회를 안전하게 수행합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge/entity_pages.py` — 수집된 SKIN1004 관련 사실들을 기간 및 메트릭별로 그룹화하여 하나의 마크다운 엔티티 페이지로 컴파일하는 모듈입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge/wiki_search.py` — `knowledge_wiki` 테이블을 대상으로 SQL 기반 검색을 수행하여 사용자 질의에 부합하는 사실을 찾아내는 모듈입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge/trust.py` — 검색되거나 마이닝된 지식 위키 사실들의 신뢰 상태(Trust-state)를 평가하고 안전성을 검증하는 헬퍼 모듈입니다.
+- `app/core/fx_rates.py` — DB_PC가 수집하여 저장한 오늘의 환율 데이터를 브리핑 모듈이 읽을 수 있도록 제공하는 환율 관리 모듈
+- `app/core/jandi_briefing.py` — 프록시 제약으로 직접 발송이 불가능한 환경에서, 사용자별 웹훅과 발송 대기열을 통해 잔디로 브리핑을 전달하는 모듈
+- `app/core/logistics_fx.py` — BigQuery의 사내 환율표 데이터를 기반으로 수출 물류 금액을 한화(KRW)로 환산하고 적용된 월말환율 정보를 명시하는 모듈
+- `app/core/personal_briefing_store.py` — MariaDB를 기반으로 사용자별 브리핑 스냅샷 데이터를 저장하고 관리하는 데이터 스토어
+- `app/core/workday.py` — 구글 '대한민국 공휴일' 캘린더 API 등을 활용하여 정확한 근무일을 판정하고 브리핑 대상 메일 조회 구간을 결정하는 모듈
 
 ## Key Concepts
-- **엔티티 페이지 (Entity Pages)**: Andrej Karpathy의 "LLM wiki" 개념을 적용한 것으로, 특정 엔티티(예: 메가와리 행사, SKIN1004 특정 제품 등)에 대해 알려진 모든 사실을 기간과 메트릭 기준으로 통합한 마크다운 문서입니다.
-- **SQL 기반 위키 검색 (SQL-only Search)**: 초기 단계(Week 2 v1)에서는 복잡한 벡터 임베딩이나 LLM 리랭킹 없이, `knowledge_wiki` 테이블에 직접 SQL 쿼리를 수행하여 빠르고 직관적으로 사실을 검색합니다.
-- **신뢰 상태 (Trust-state)**: 과거 어시스턴트의 답변 등에서 마이닝된 사실들이 항상 100% 정확한 것은 아니므로, 답변에 안전하게 인용할 수 있는지 신뢰도를 검증하고 관리하는 메커니즘입니다.
+- **환율 릴레이 (FX Relay)** — WAS 서버가 외부 환율 API에 직접 접근할 수 없으므로, 외부 통신이 가능한 DB_PC가 환율을 수집하여 서버에 전달하고 이를 활용하는 방식입니다.
+- **잔디 대기열 (Jandi Queue)** — WAS에서 `wh.jandi.com`으로의 직접 아웃바운드 통신이 차단되어 있기 때문에, SSH 터널링이 열려 있는 DB_PC(172.16.1.250)를 경유하여 잔디 웹훅을 안전하게 릴레이 발송하는 구조입니다.
+- **정확한 근무일 판정** — 하드코딩된 공휴일 목록 대신 구글 공식 대한민국 공휴일 데이터를 참조하여, 메가와리(Megawari) 기간 등 민감한 시기에 LLM이나 시스템이 잘못된 날짜 구간의 메일 및 데이터를 조회하지 않도록 방지합니다.
 
 ## How It Fits In
-이 클러스터는 시스템의 장기 기억 및 지식 저장소 역할을 하는 **`concept:knowledge_wiki` (Cluster 22)**를 구체적으로 구현하고 활용하는 레이어입니다. 
-- `entity_pages.py`에서 컴파일된 지식과 `wiki_search.py`를 통한 검색 결과는 AI Agent가 SKIN1004 관련 질의(예: 메가와리 실적, 제품 판매 추이 등)에 답변할 때 신뢰할 수 있는 컨텍스트를 제공하는 데 사용됩니다.
-- `trust.py`를 통해 필터링된 안전한 사실들만 답변 생성 프롬프트에 주입됨으로써 모델의 환각(Hallucination) 현상을 방지합니다.
+- **Cluster 34 (`concept:jandi_webhook`)** — `app/core/jandi_briefing.py`는 잔디 웹훅 송신 표준 규격을 구현하여 사내 협업 툴로 브리핑을 안전하게 전달합니다.
+- **Cluster 03 (`concept:personal_briefing_store`)** — `app/core/personal_briefing_store.py`는 수집 및 정제된 개인화 브리핑 데이터를 MariaDB 스토어에 안전하게 적재하여 로그인 시 즉시 노출될 수 있도록 지원합니다.
 
 ## Common Questions This Page Answers
-- 특정 SKIN1004 제품이나 메가와리 기간에 대한 흩어진 사실들을 어떻게 하나의 문서로 병합하나요?
-  - `entity_pages.py`를 사용하여 기간 및 메트릭별로 그룹화된 마크다운 형식의 엔티티 페이지를 컴파일합니다.
-- 벡터 데이터베이스나 임베딩 없이 위키 지식을 어떻게 검색하나요?
-  - `wiki_search.py`에서 제공하는 `knowledge_wiki` 대상의 SQL-only 검색 기능을 활용합니다.
-- 과거 답변에서 추출한 지식을 AI Agent가 다시 인용할 때, 정보의 신뢰성을 어떻게 검증하나요?
-  - `trust.py` 모듈의 Trust-state 헬퍼 함수들을 사용하여 해당 사실의 안전성과 신뢰 등급을 평가합니다.
+- **Q. 수출 자료 다운로드 시 한화 환산이 안 되거나 환율 정보가 누락되면 어떻게 하나요?**  
+  A. `app/core/logistics_fx.py`를 통해 BigQuery에 적재된 사내 월말환율 데이터를 조회하여 한화로 변환하며, 계산 시 어떤 환율 기준을 사용했는지 사용자에게 명확히 안내합니다.
+- **Q. WAS 서버에서 잔디 웹훅 호출 시 403 에러가 발생하는 이유는 무엇인가요?**  
+  A. 사내 프록시 보안 정책으로 인해 WAS에서 외부 잔디 서버로의 직접 연결이 차단되어 있습니다. `app/core/jandi_briefing.py`가 관리하는 대기열과 DB_PC 간의 SSH 릴레이 통신을 거쳐 발송해야 합니다.

@@ -1,37 +1,36 @@
 # Cluster 05
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 13
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 17
 
 ## Purpose
-SKIN1004 AI Agent의 핵심 비즈니스 로직, 데이터 정합성 유지, 그리고 시스템의 자율적 성장과 품질 관리를 담당하는 코어 엔진 클러스터입니다. 실측 데이터 기반의 피드백 루프를 구축하고, BigQuery 스키마 변화 감지 및 전성분/모델 초상권 등 민감한 도메인 지식을 안전하게 처리하여 답변의 신뢰성을 극대화합니다.
+SKIN1004 AI Agent 프로젝트의 핵심 인프라스트럭처, 보안 인증, 그리고 RAG(Retrieval-Augmented Generation)의 기초가 되는 코어 모듈들을 모아둔 클러스터입니다. Microsoft Entra ID 기반의 사내 계정 통합 인증, API 미들웨어, 외부 API 재시도 로직, 그리고 BigQuery 및 LLM(Gemini/Claude) 연동을 위한 공통 유틸리티를 제공합니다.
 
 ## Key Files
-- `app/agents/skill_memory.py` — 피드백을 반영하여 우수 답변(👍)은 few-shot으로, 부정 피드백(👎)은 회피 패턴으로 시스템 프롬프트에 주입하는 Hermes 스타일 스킬 메모리
-- `app/core/feedback_inbox.py` — 기존에 방치되던 부정 피드백(👎) 코멘트를 수집하여 시스템 개선의 입력으로 전환하는 피드백 처리기
-- `app/core/golden_runner.py` — 배포 전이나 매일 아침 라우팅 오분류 및 맥락 유실 등의 회귀(Regression)를 잡아내는 골든셋 테스트 러너
-- `app/core/ingredients.py` — "나이아신아마이드 미포함 제품" 등 성분 기준 조회 오류를 방지하기 위해 스프레드시트에서 제품 전성분을 적재하고 조회하는 모듈
-- `app/core/model_rights.py` — 초상권 침해로 인한 수백만 원 규모의 벌금 리스크를 방지하기 위해 모델 사진의 사용 가능 매체·지역·기간을 조회하는 모듈
-- `app/core/schema_watch.py` — BigQuery 테이블 구조 변경(예: 국내/해외 리뷰 테이블 통합)을 감지하여 앱의 데이터 정합성 유실을 막는 스키마 감시 도구
-- `app/core/value_lists.py` — 메가와리 기간, 국가 목록 등 프롬프트 내 하드코딩된 값이 낡아 발생하는 오답을 막기 위해 데이터베이스에서 실시간 `DISTINCT` 값을 추출하는 모듈
-- `app/core/usage_meter.py` — LLM 및 BigQuery 사용량을 계측하여 운영 비용 대비 가치(ROI)를 정량적으로 증명하는 미터링 도구
-- `app/core/quality_monitor.py` — 최근 24시간 동안의 라우트별 답변 정확도(👍 비율), 컨텍스트 길이, 응답 속도를 모니터링하는 도구
-- `app/core/growth_report.py` — SQL 캐시 히트율, 신규 SQL 패턴, 스킬 메모리 성장 등 시스템의 자율 성장 지표를 측정하는 주간 보고서 생성기
-- `app/core/response_formatter.py` — 일관된 마크다운 렌더링과 시각적 위계 확보를 위한 응답 포스트 프로세서
-- `app/knowledge/wiki_communities.py` — 지식 그래프에서 Louvain 알고리즘을 통해 커뮤니티를 감지하고 지식 구조를 체계화하는 모듈
-- `app/reports/store.py` — 원가, 마진 등 민감 정보가 포함된 보고서에 대해 작성자와 지정된 수신자만 접근할 수 있도록 제한하는 권한 관리 모듈
+- `app/core/entra_auth.py` — Microsoft Entra ID(OIDC)를 활용한 사내 통합 로그인 구현
+- `app/core/user_directory.py` — Entra ID로 인증된 Cella 임직원 정보 및 권한 관리
+- `app/core/llm.py` — Gemini(Pro/Flash) 및 Claude Opus를 지원하는 이중 LLM 클라이언트 인터페이스
+- `app/core/anonymization.py` — HMAC-SHA256 기반의 대화 및 피드백 소유자 가명화(Pseudonymization) 헬퍼
+- `app/core/bigquery.py` — 쿼리 실행 및 데이터 적재를 위한 BigQuery 클라이언트
+- `app/rag/chunker.py` — RAG 성능 향상을 위한 하이브리드(Semantic + Hierarchical) 청킹 모듈
+- `app/rag/indexer.py` — BigQuery 벡터 인덱싱 및 검색 구현
+- `app/knowledge/wiki_embed.py` — `text-embedding-004` 모델을 사용한 위키 데이터 임베딩 생성
 
 ## Key Concepts
-- **Hermes-style Skill Memory** — 사용자의 피드백을 기반으로 긍정 패턴은 Few-shot 예시로, 부정 패턴은 금지 규칙으로 프롬프트에 동적 주입하여 에이전트의 성능을 지속적으로 개선합니다.
-- **실시간 데이터 동기화 (Value Lists & Schema Watch)** — 프롬프트 내 정적 텍스트 관리의 한계를 극복하기 위해, 실제 DB의 `DISTINCT` 값과 BigQuery 스키마 변경 사항을 실시간으로 추적하여 오답률을 낮춥니다.
-- **민감 도메인 보호 (Ingredients & Model Rights)** — 전성분 매칭 오류나 모델 초상권 만료와 같이 기업에 직접적인 금전적 손실을 줄 수 있는 비즈니스 리스크를 방어합니다.
+- **Entra ID OIDC**: 기존 자체 비밀번호 저장 방식에서 탈피하여, Microsoft Entra ID를 통해 사내 계정 및 권한을 안전하게 통합 관리합니다.
+- **가명화 (Pseudonymization)**: `hmac_sha256`을 이용해 사용자 ID를 결정론적으로 암호화하여, 개인정보를 보호하면서도 사용자의 이전 대화 목록을 안전하게 그룹화합니다.
+- **이중 LLM (Dual LLM)**: 메인 채팅에는 Claude Opus를 사용하고, 가벼운 태스크나 특정 백그라운드 작업에는 Gemini Flash를 적절히 분배하여 효율성을 극대화합니다.
+- **하이브리드 청킹 (Hybrid Chunking)**: RAG의 검색 정확도를 높이기 위해 의미론적(Semantic) 기준과 계층적(Hierarchical) 구조를 결합하여 텍스트를 분할합니다.
 
 ## How It Fits In
-본 클러스터는 시스템의 안정성과 비용 효율성, 그리고 품질 관리를 위한 중추 역할을 합니다.
-- `app/core/feedback_inbox.py`, `app/core/growth_report.py`, `app/core/response_formatter.py`는 **cluster_29**의 스키마 마이그레이션, 성장 스냅샷, 응답 포맷팅 개념을 구현하여 시스템의 구조적 진화를 돕습니다.
-- `app/core/golden_runner.py`와 `app/core/usage_meter.py`는 **cluster_08**의 골든셋 회귀 테스트 및 사용량 계측 메커니즘을 구체화하여 운영 비용과 답변 품질을 동시에 통제합니다.
+이 클러스터는 프로젝트 전반의 뼈대를 형성하며 다른 전문 클러스터들과 긴밀히 연결됩니다:
+- **인증 및 마이그레이션**: `user_directory.py` 및 `entra_auth.py`는 사용자 인증(cluster_13)을 담당하며, `user_directory_migration.py`를 통해 데이터베이스 마이그레이션(cluster_16) 흐름과 연결됩니다.
+- **데이터 및 검색**: `bigquery.py`는 BigQuery 클라이언트(cluster_06) 및 서킷 브레이커(cluster_12) 개념을 구현하고, `indexer.py`는 BigQuery 벡터 검색(cluster_38)으로 이어집니다.
+- **임베딩 및 지식 저장**: `wiki_embed.py`는 Gemini 임베딩(cluster_17)을 활용하며, Notion 내보내기 계획서(`2026-09-07-notion-export-phase1.md`)는 Notion API 연동 및 내보내기 엔진(cluster_35) 설계의 기반이 됩니다.
 
 ## Common Questions This Page Answers
-- 사용자가 남긴 👎 피드백과 코멘트는 어떻게 시스템 개선에 반영되나요?
-- 메가와리 일정이나 국가 목록처럼 자주 변하는 데이터를 프롬프트에서 어떻게 최신 상태로 유지하나요?
-- 모델 초상권 만료나 전성분 오답으로 인한 비즈니스 리스크를 어떻게 기술적으로 방어하고 있나요?
-- 에이전트 운영 비용(LLM, BigQuery)과 시스템의 자율적 성장 지표는 어떻게 측정하나요?
+- **Q. 사용자의 개인정보를 보호하면서 대화 기록 세션을 유지하는 방법은 무엇인가요?**  
+  A. `app/core/anonymization.py`에서 HMAC-SHA256과 솔트(Salt) 값을 조합하여 사용자 ID를 16자리 가명 ID로 결정론적으로 변환함으로써 구현합니다.
+- **Q. 외부 API 호출 실패나 구글 시트 적재 오류에 어떻게 대응하나요?**  
+  A. `app/core/retrying.py`에 구현된 재시도 메커니즘을 통해 일시적인 네트워크 오류나 API 타임아웃으로 인해 일배치 작업이 완전히 실패하는 것을 방지합니다.
+- **Q. 사내 계정 비밀번호 분실 시 사용자가 직접 초기화할 수 있나요?**  
+  A. `app/core/password_reset_google.py`를 통해 구글 계정이 연동된 사용자는 관리자 개입 없이 스스로 비밀번호를 복구할 수 있습니다.

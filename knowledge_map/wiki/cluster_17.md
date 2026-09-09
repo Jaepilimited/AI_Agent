@@ -1,23 +1,23 @@
 # Cluster 17
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 2
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
 
 ## Purpose
-SKIN1004 AI Agent 프로젝트에서 사용자의 질문을 바탕으로 상세한 보고서(Report)를 생성하고 관리하는 파이프라인을 제공합니다. 채팅 인터페이스의 가독성을 유지하기 위해 본문을 직접 출력하는 대신, 요약 정보와 링크만을 생성하여 사용자에게 전달하는 역할을 수행합니다.
+이 클러스터는 SKIN1004 AI Agent가 Notion 사내 문서를 효율적으로 검색하고 동기화할 수 있도록 지원하는 벡터 검색 시스템을 구축합니다. 로컬 JSON 데이터를 소스 오브 트루스(Source of Truth)로 유지하면서, Qdrant Cloud를 실제 벡터 검색 백엔드로 활용하여 고성능 지식 검색 및 답변 생성 기능을 제공합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/reports/README.md` — 보고서 생성 파이프라인의 전체적인 흐름과 아키텍처를 설명하는 문서입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/reports/service.py` — 채팅 서비스 등 외부 진입점에서 호출되어 질문 분석부터 보고서 생성, 저장, 요약까지의 전체 비즈니스 로직을 실행하는 핵심 서비스 파일입니다.
+- `app/agents/qdrant_agent.py` — Gemini 임베딩 모델과 Qdrant Cloud를 연동하여 사내 문서에 대한 벡터 검색을 수행하고, Gemini Flash를 통해 최종 답변을 생성하는 에이전트 핵심 로직입니다.
+- `docs/superpowers/plans/2026-05-14-notion-sync-skill.md` — Notion 데이터를 로컬 JSON 파일(`notion_vectors_gemini.json`)과 Qdrant Cloud 간에 일관성 있게 동기화하기 위한 기술적 구현 계획서입니다.
 
 ## Key Concepts
-- **보고서 파이프라인 (Report Pipeline)**: 질문 매칭(`match`) → 캐시 확인 → 병렬 데이터 조회 → 품질 게이트(Quality Gate) 검증 → 파생 데이터 생성 → 렌더링 → 저장 → 요약 생성으로 이어지는 일련의 보고서 빌드 프로세스입니다.
-- **채팅 최적화 요약 (Chat-optimized Summary)**: 보고서 본문(표, 상세 텍스트 등)을 채팅창에 그대로 출력하면 UI가 깨지거나 가독성이 떨어집니다. 이를 방지하기 위해 LLM을 활용하여 페이로드(Payload) 기반의 짧은 요약 문장과 보고서 다운로드 링크만을 생성하여 반환합니다.
+- **Qdrant Cloud 벡터 검색** — 사내 지식 데이터베이스(Notion 문서)를 고차원 벡터로 변환하여 저장하고, 사용자의 질문과 가장 유사한 맥락의 문서를 빠르게 찾아내는 백엔드 엔진입니다.
+- **소스 오브 트루스 (Source of Truth)** — 로컬에 저장된 `notion_vectors_gemini.json` 파일을 최신 데이터의 기준으로 삼아, Qdrant Cloud의 인덱스가 항상 신뢰할 수 있는 상태를 유지하도록 관리합니다.
+- **Gemini Embedding & Flash** — 사용자 질문을 벡터로 변환할 때는 Gemini 임베딩을 사용하고, Qdrant에서 검색된 컨텍스트를 바탕으로 최종 사용자 답변을 구성할 때는 Gemini Flash 모델을 활용합니다.
 
 ## How It Fits In
-이 클러스터는 SKIN1004 AI Agent의 사용자 인터페이스와 데이터 처리 레이어를 연결하는 가교 역할을 합니다. 
-- **캐싱 시스템 연동**: `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/reports/service.py`는 보고서 생성 성능을 최적화하고 중복 연산을 방지하기 위해 `concept:report_caching` (cluster_05) 메커니즘을 구현하여 활용합니다.
+이 클러스터는 AI Agent가 단순한 규칙 기반 답변을 넘어, SKIN1004의 실제 사내 노하우와 Notion 문서에 기반한 정확한 답변을 생성할 수 있도록 돕는 지식 베이스(RAG) 역할을 합니다. 외부 데이터 소스(Notion)와 벡터 데이터베이스(Qdrant)를 연결하는 가교 역할을 수행하며, 다른 에이전트들이 사내 정보를 필요로 할 때 신뢰할 수 있는 API 인터페이스를 제공합니다.
 
 ## Common Questions This Page Answers
-- 사용자의 질문으로부터 보고서가 생성되어 최종 전달되기까지의 전체 흐름은 어떻게 되나요?
-- 채팅창에 길고 복잡한 보고서 본문이 그대로 노출되지 않도록 제어하는 방법은 무엇인가요?
-- 보고서 생성 시 캐싱 레이어는 어떻게 연동되어 동작하나요?
+- AI Agent가 Notion 사내 문서를 검색할 때 어떤 벡터 데이터베이스를 사용하나요?
+- 로컬 JSON 파일과 Qdrant Cloud 간의 데이터 일관성은 어떻게 유지하나요?
+- 문서 검색 결과를 바탕으로 최종 답변을 생성하는 데 사용되는 AI 모델은 무엇인가요?

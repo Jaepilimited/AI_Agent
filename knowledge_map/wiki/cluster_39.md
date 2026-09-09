@@ -1,23 +1,30 @@
 # Cluster 39
 
-> Auto-generated 2026-06-30T03:00:03.176169+09:00 · Files: 1
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 4
 
 ## Purpose
-이 클러스터는 SKIN1004 엔터프라이즈 AI 시스템의 전반적인 비전과 제품 요구사항을 정의합니다. 프로젝트의 목표, 범위, 그리고 핵심 기능을 개괄적으로 설명하는 역할을 합니다. 이는 SKIN1004 AI Agent 프로젝트의 고수준 청사진을 제공합니다.
+이 클러스터는 SKIN1004 AI Agent 프로젝트의 핵심 데이터베이스 레이어인 MariaDB 인터페이스와 개인정보 비식별화(Anonymization) 및 평가 파이프라인(Eval Pipeline)의 설계 및 구현 문서를 포함합니다. 시스템의 안정적인 데이터 적재와 민감 정보 보호, 그리고 에이전트 성능 평가를 위한 기반을 제공합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/SKIN1004_Enterprise_AI_PRD_v6.md` — SKIN1004 엔터프라이즈 AI 시스템의 제품 요구사항 및 비전 정의
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/db/mariadb.py` — 운영(Port 3000) 및 개발(Port 3001) 환경 모두에서 공통으로 사용하는 MariaDB 데이터베이스 접근 레이어 인터페이스입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/specs/2026-04-17-anonymization-and-eval-design.md` — 고객 정보 보호를 위한 비식별화 엔진과 LLM 응답 품질 측정을 위한 평가 파이프라인의 상세 설계서입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/plans/2026-04-17-anonymization-and-eval-pipeline.md` — 비식별화 및 평가 파이프라인의 단계별 구현 계획 및 마일스톤을 정의한 문서입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-04-17.md` — Anonymization v1.0 및 Eval Pipeline v1.0 기능이 성공적으로 반영되었음을 기록한 업데이트 로그입니다.
 
 ## Key Concepts
-- **SKIN1004 (스킨1004)** — 이 AI Agent 프로젝트가 개발되는 대상 브랜드 또는 회사입니다. 화장품 및 스킨케어 산업과 관련이 있습니다.
-- **Enterprise AI System (엔터프라이즈 AI 시스템)** — SKIN1004의 비즈니스 전반에 걸쳐 인공지능 기술을 통합하고 활용하기 위한 포괄적인 시스템을 의미합니다.
-- **PRD (Product Requirement Document, 제품 요구사항 문서)** — 제품의 목적, 기능, 특징 및 기타 요구사항을 상세히 설명하는 문서입니다. 이 프로젝트에서는 SKIN1004 AI 시스템의 개발 방향을 제시합니다.
+- **MariaDB Interface** — `fetch_all`, `fetch_one`, `execute`, `execute_lastid` 등의 표준 메서드를 통해 일관된 DB CRUD 작업을 지원합니다.
+- **비식별화 (Anonymization)** — SKIN1004 고객의 개인정보(이름, 전화번호, 주소 등)가 외부 LLM API로 유출되지 않도록 마스킹하거나 가상 데이터로 치환하는 보안 프로세스입니다.
+- **평가 파이프라인 (Eval Pipeline)** — 메가와리(Megawari) 프로모션 대응 등 에이전트가 생성한 답변의 정확성, 톤앤매너, 일관성을 정량적으로 평가하는 시스템입니다.
 
 ## How It Fits In
-이 클러스터는 현재 다른 클러스터와의 명시적인 관계가 감지되지 않았습니다. 이는 프로젝트의 초기 단계에서 전체 시스템의 기반을 다지는 독립적인 문서 역할을 할 수 있습니다.
+이 클러스터는 시스템의 데이터 신뢰성과 보안의 중추 역할을 합니다. 
+- `app/db/mariadb.py` 파일은 데이터베이스 커넥션 풀 관리 방식(`concept:mariadb_connection_pool`, cluster_08)을 구체적으로 구현하여, 다중 세션 환경에서도 안전하고 효율적인 DB 연결을 보장합니다.
+- 비식별화 및 평가 파이프라인 설계는 에이전트가 안전하게 고객 데이터를 처리하고, 지속적으로 고품질의 상담 서비스를 제공할 수 있도록 돕는 핵심 안전장치 역할을 합니다.
 
 ## Common Questions This Page Answers
-- SKIN1004 AI Agent 프로젝트의 궁극적인 목표는 무엇인가요?
-- SKIN1004 엔터프라이즈 AI 시스템은 어떤 핵심 기능을 포함하도록 구상되었나요?
-- SKIN1004 AI 시스템의 고수준 요구사항은 무엇인가요?
-- 이 프로젝트에서 "엔터프라이즈 AI 시스템"이 의미하는 바는 무엇인가요?
+- **Q1: 개발 환경과 운영 환경의 MariaDB 포트 설정은 어떻게 다른가요?**
+  - 운영 환경은 3000 포트, 개발 환경은 3001 포트의 MariaDB를 사용하며 `mariadb.py`가 이를 통합 지원합니다.
+- **Q2: 고객의 민감한 개인정보는 어떻게 보호되나요?**
+  - `anonymization-and-eval-design.md`에 설계된 비식별화 엔진을 통해 외부 API 전송 전 민감 정보가 안전하게 마스킹 처리됩니다.
+- **Q3: DB 트랜잭션 및 쿼리 실행을 위해 어떤 메서드를 사용해야 하나요?**
+  - 단건 조회는 `fetch_one`, 다중 건 조회는 `fetch_all`, 쓰기/수정 작업은 `execute` 또는 `execute_lastid`를 사용합니다.

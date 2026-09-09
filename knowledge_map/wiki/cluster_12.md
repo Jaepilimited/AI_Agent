@@ -1,28 +1,32 @@
 # Cluster 12
 
-> Auto-generated 2026-08-19T03:00:36.499205+09:00 · Files: 4
+> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 39
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트에서 정형화된 보고서(Report)를 생성하고 관리하는 핵심 엔진과 스펙 정의를 담당합니다. LLM의 확률적 판정을 배제하고 명확한 규칙 기반의 스펙 매핑과 품질 게이트(Quality Gate) 검증을 거쳐 신뢰할 수 있는 보고서 데이터를 산출합니다.
+본 클러스터는 SKIN1004 AI Agent 프로젝트의 개발 역사, 릴리즈 변경 사항(Changelog), 업데이트 로그 및 주요 기능의 상세 설계 사양서(Specs)와 구현 계획서(Plans)를 포함하는 **종합 기술 문서 저장소**입니다. 시스템의 성능 최적화, 데이터 마이그레이션, 라우팅 아키텍처 개선 등 프로젝트의 진화 과정을 상세히 기록하고 있습니다.
 
 ## Key Files
-- `app/reports/engine.py` — 보고서 스펙을 기반으로 조회, 품질 게이트 검증, 파생 지표 계산을 순차적으로 실행하여 최종 `payload`를 생성하는 실행 엔진입니다.
-- `app/reports/registry.py` — 사용자 질문을 분석하여 적절한 보고서 스펙과 파라미터로 매핑하는 레지스트리입니다. LLM을 사용하지 않고 결정론적으로 처리합니다.
-- `app/reports/specs/cost_efficiency.py` — FOC(무상지원품) 및 바우처 비용 효율화를 분석하는 구체적인 보고서 스펙 파일입니다.
-- `docs/weekly_report_2026-04-23.md` — 2026년 4월 17일부터 4월 23일까지의 주간 업무 보고 문서입니다.
+- `docs/ROUTING_TRIGGERS.md` — 사용자 질문이 어떤 데이터 소스(BigQuery, Google Drive 등)로 라우팅되는지 정의한 트리거 지도
+- `docs/superpowers/specs/2026-09-07-router-source-gate-design.md` — 라우터 1단계에서 외부 소스 필요 여부를 판정하는 Source Gate 설계서
+- `docs/superpowers/specs/2026-04-17-integrated-ad-migration-design.md` — 마케팅 광고 데이터 테이블을 Wide 포맷에서 Long 포맷으로 전환하는 마이그레이션 설계서
+- `docs/superpowers/plans/2026-04-20-bigquery-performance.md` — BigQuery 응답 속도 개선을 위한 파티셔닝 및 클러스터링 구현 계획서
+- `docs/update_log_2026-02-23_cs.md` — CS Agent v1.0 출시 및 오케스트레이터 라우팅 적용 기록
 
 ## Key Concepts
-- **Payload 구조**: 보고서 엔진이 출력하는 표준 데이터 구조로, 메타데이터(`meta`), 원천 데이터(`facts`), 품질 검증 결과(`gates`), 계산된 파생 지표(`derived`)를 포함합니다.
-- **결정론적 스펙 매핑 (Deterministic Mapping)**: `registry.py`는 보고서 생성 시 LLM을 배제합니다. 지원하지 않는 주제는 환각(Hallucination)을 방지하기 위해 단호히 "없음"으로 응답하며, 기간 및 국가/팀 리터럴을 명확히 교정합니다.
-- **비용 효율화 스펙 (Cost Efficiency Spec)**: `Production_Cost2` 등 CLAUDE.md의 "원가·FOC·할인 집계 계약"을 준수하여 B2B FOC 및 B2C 할인 비용 효율성을 재현 가능한 파이프라인으로 계산합니다.
+- **Source Gate** — `2026-09-07-router-source-gate-design.md`에서 정의된 개념으로, LLM이 외부 데이터 소스(SQL, Drive 등)를 조회할 필요가 있는지 1차적으로 판정하여 불필요한 API 호출과 지연 시간을 줄이는 필터링 레이어입니다.
+- **Wide-to-Long Migration** — `2026-04-17-integrated-ad-migration-design.md`에 기록된 설계로, 여러 매체의 광고 데이터를 효율적으로 쿼리하기 위해 테이블 구조를 정규화(Long Format)한 작업입니다.
+- **Durable Answer Jobs** — `2026-07-16-durable-answer-jobs.md`에서 다루는 개념으로, 시간이 오래 걸리는 대규모 쿼리나 분석 작업을 백그라운드에서 안정적으로 처리하고 결과를 보관하는 비동기 작업 관리 시스템입니다.
 
 ## How It Fits In
-이 클러스터는 보고서의 신뢰성을 보장하기 위해 **Cluster 07**의 핵심 개념들을 구체적으로 구현합니다.
-- `app/reports/engine.py` 및 `app/reports/specs/cost_efficiency.py`는 데이터의 정합성을 검증하기 위해 **Cluster 07**의 `concept:quality_gate`를 구현하여 적용합니다.
-- `app/reports/registry.py`는 **Cluster 07**의 `concept:report_specification` 인터페이스를 구현하여, 입력된 질문에 대응하는 정확한 보고서 스펙을 매핑합니다.
+본 클러스터는 프로젝트 전반의 아키텍처 변화와 기능 추가를 기록하는 허브 역할을 합니다.
+- **라우팅 시스템 연계**: `2026-09-07-router-source-gate-design.md` 설계서는 **cluster_36**의 `router_source_gate` 개념을 구체적으로 구현합니다.
+- **오케스트레이터 및 인증**: `update_log_2026-02-06.md` 및 `update_log_2026-02-23_cs.md`는 **cluster_38**의 `dual_llm_architecture`, `google_workspace_oauth2`, `orchestrator_routing` 아키텍처가 실제 시스템에 어떻게 반영되었는지 증명합니다.
+- **프롬프트 최적화**: `update_log_2026-03-17.md`는 **cluster_02**의 `prompt_fragments` 구조를 활용하여 Enterprise Output의 품질을 높인 과정을 보여줍니다.
 
 ## Common Questions This Page Answers
-- **Q1. 보고서 생성 과정에서 LLM을 사용하지 않는 이유는 무엇인가요?**
-  - 보고서 종류와 기간 표현은 유한하므로, 확률적 판정을 도입하면 "왜 특정 기간의 데이터가 도출되었는지" 설명할 수 없는 문제가 발생합니다. 데이터 신뢰성을 위해 결정론적 규칙과 후처리를 사용합니다.
-- **Q2. 보고서 엔진이 출력하는 Payload의 세부 구성은 어떻게 되나요?**
-  - 스펙 ID와 파라미터가 담긴 `meta`, 원천 로우 데이터인 `facts`, 품질 통과 여부를 나타내는 `gates`, 그리고 최종 계산된 파생 지표인 `derived`로 구성됩니다.
+- **BigQuery의 응답 속도를 개선하기 위해 어떤 전략을 사용했나요?**
+  - `2026-04-20-bigquery-performance-design.md` 및 관련 계획서에 따라 파티션 필터 강제 적용, 쿼리 캐싱, 그리고 테이블 클러스터링을 통해 속도를 대폭 개선했습니다.
+- **광고 데이터 테이블 구조는 어떻게 변경되었나요?**
+  - `2026-04-17-integrated-ad-migration-design.md`에 따라 기존의 분산된 Wide 테이블들을 하나의 통합 Long 포맷 테이블로 마이그레이션하여 쿼리 복잡도를 낮추고 유지보수성을 확보했습니다.
+- **사용자 질문이 들어왔을 때 불필요한 데이터베이스 조회를 어떻게 방지하나요?**
+  - `2026-09-07-router-source-gate-design.md`에 설계된 1단계 Source Gate가 질문의 의도를 분석하여, 단순 대화나 일반 지식 질문은 외부 소스 조회 없이 즉시 답변하도록 라우팅합니다.
