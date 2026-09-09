@@ -646,6 +646,85 @@ def test_no_data_read_when_there_is_nothing_to_check(monkeypatch):
 
     assert read == []
 
+
+# ── 낱말이 조건이 안 되던 나머지 두 갈래 (2026-09-09 스윕에서 발견) ───────────
+#
+#   "올해 받은 상 알려줘"        -> 전체 40행 (연도를 숫자로 안 적었다)
+#   "틱톡샵에서 받은거 알려줘"    -> 전체 40행 (자료엔 `TIKTOK SHOP` 으로 있다)
+#
+# 붐따 #173 과 같은 결함이다 — 질문의 말이 조건이 되지 못하고 조용히 전체가 나간다.
+
+
+def test_this_year_and_last_year_become_a_year_filter(monkeypatch):
+    from datetime import datetime
+    captured = _stub_query(monkeypatch, ["화해"])
+    now = datetime.now().year
+
+    assert awards.search("올해 받은 상")["year_filter"] == now
+    assert awards.search("작년에 받은거")["year_filter"] == now - 1
+    assert awards.search("재작년 수상")["year_filter"] == now - 2
+    assert captured  # 조회는 실제로 돌았다
+
+
+def test_the_longer_relative_year_word_wins(monkeypatch):
+    """⚠️ `작년` 이 `재작년` 안에 들어 있다 — 짧은 쪽이 먼저 맞으면 한 해가 어긋난다."""
+    from datetime import datetime
+    _stub_query(monkeypatch, ["화해"])
+    assert awards.search("재작년 수상")["year_filter"] == datetime.now().year - 2
+
+
+def test_an_explicit_year_beats_a_relative_word(monkeypatch):
+    _stub_query(monkeypatch, ["화해"])
+    assert awards.search("2023년 올해 수상")["year_filter"] == 2023
+
+
+def test_an_organizer_spelled_differently_in_the_sheet_is_still_found(monkeypatch):
+    """⛔ 주최사 29종에 한글·영문이 섞여 있다 — `TIKTOK SHOP` 은 영문이다.
+
+    "틱톡샵에서 받은거" 가 자료에 `틱톡샵` 이라는 글자가 없어 **전체 40행**을 냈다.
+    """
+    captured = _stub_query(monkeypatch, ["tiktok shop malaysia ultimate live"])
+
+    result = awards.search("틱톡샵에서 받은거")
+
+    assert result["dropped"] == ["받은거"]
+    assert any("%tiktok shop%" in str(p).lower() for p in captured["params"])
+    assert result["narrowed"] is True
+
+
+def test_an_alias_is_ignored_when_the_sheet_no_longer_uses_that_spelling(monkeypatch):
+    """⛔ **손으로 적은 목록은 낡는다.** 별칭은 자료에 그 표기가 있을 때만 쓴다.
+
+    시트 표기가 바뀌면 별칭은 스스로 꺼지고 원래 낱말로 되돌아간다 — 낡은 목록이
+    조용히 0건을 만드는 그 자리를 구조적으로 막는다.
+    """
+    captured = _stub_query(monkeypatch, ["화해 뷰티 어워드"])   # tiktok 이 없는 자료
+
+    result = awards.search("틱톡샵")
+
+    assert not any("tiktok" in str(p).lower() for p in captured["params"])
+    assert result["dropped"] == ["틱톡샵"]
+
+
+def test_one_organizer_spelled_two_ways_in_the_data_is_matched_either_way(monkeypatch):
+    """⛔ `스타일바나`(1건)와 `STYLEVANA`(1건)는 **같은 주최사**다 (실측).
+
+    물류 `forwarder` 표기 혼재와 같은 계열 — 한쪽만 걸면 절반이 사라진다.
+    """
+    assert set(awards._ORG_ALIASES["스타일바나"]) == {"스타일바나", "stylevana"}
+    captured = _stub_query(monkeypatch, ["stylevana beauty awards"])
+    awards.search("스타일바나")
+    assert any("stylevana" in str(p).lower() for p in captured["params"])
+
+
+def test_the_alias_table_holds_only_spellings_not_synonyms():
+    """⛔ 뜻이 비슷할 뿐인 말은 넣지 마라 — 틀린 동의어는 조용한 오답을 만든다.
+
+    드라이브 검색 씨앗과 같은 기준이다 (표기 변형만).
+    """
+    for bad in ("매출", "실적", "성과", "수상", "랭킹", "제품", "브랜드"):
+        assert bad not in awards._ORG_ALIASES, f"{bad} 는 표기 변형이 아니다"
+
 # ── Task 4: 라우팅 ─────────────────────────────────────────────────────
 import re as _re
 

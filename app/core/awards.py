@@ -376,6 +376,55 @@ _CATEGORY_WORDS = {"랭킹": "랭킹", "랭크": "랭킹", "rank": "랭킹",
                    "수상": "수상", "설문": "설문"}
 
 
+#: `올해`·`작년` — 사람은 연도를 숫자로만 말하지 않는다.
+#: ⚠️ 실측(2026-09-09): "올해 받은 상 알려줘"·"작년에 받은거" 가 **전체 40행**을 냈다.
+#:    `2026년` 은 고쳤는데 이건 남아 있었다 — 같은 결함의 다른 말투다.
+_REL_YEAR = {"올해": 0, "금년": 0, "작년": -1, "지난해": -1, "재작년": -2}
+
+#: 주최사 표기 별칭 — **뜻이 비슷한 말이 아니라 같은 이름의 다른 표기**다.
+#:
+#: ⛔ 실측(2026-09-09) 주최사 29종에 한글·영문이 섞여 있다: `TIKTOK SHOP`·`Qoo10`·
+#:    `PICKY`·`Daily Vanity` 는 영문인데 `쇼피`·`화해`·`아마존` 은 한글이다.
+#:    그래서 "틱톡샵에서 받은거 알려줘" 가 **전체 40행**을 냈다 — 자료에 `틱톡샵`
+#:    이라는 글자가 없기 때문이다. 에러가 아니라 조용한 전체 덤프다.
+#: ⛔ **같은 주최사가 자료에서 두 표기로 갈려 있다** — `스타일바나`(1건)와
+#:    `STYLEVANA`(1건). 물류 `forwarder` 표기 혼재와 같은 계열이라 둘 다 건다.
+#: ⛔ **뜻이 비슷할 뿐인 말은 넣지 마라** (매출/실적/성과 같은 것). 여기 들어갈 수
+#:    있는 것은 **표기 변형**뿐이다 — 드라이브 검색 씨앗과 같은 기준이다.
+#: ⚠️ **손으로 적은 목록은 낡는다.** 그래서 `_alias_for()` 가 별칭을 쓰기 전에
+#:    **자료에 그 표기가 실제로 있는지 확인**한다 — 시트가 바뀌어 표기가 사라지면
+#:    별칭은 저절로 꺼지고 원래 낱말로 되돌아간다 (0건을 만들지 않는다).
+_ORG_ALIASES = {
+    "틱톡샵": ("tiktok shop",), "틱톡": ("tiktok shop",), "tiktokshop": ("tiktok shop",),
+    "큐텐": ("qoo10",), "규텐": ("qoo10",),
+    "피키": ("picky",),
+    "데일리배니티": ("daily vanity",), "데일리버니티": ("daily vanity",),
+    "피메일데일리": ("female daily",),
+    "코스모프로프": ("cosmoprof",),
+    "립스": ("일본 lips",),
+    "스타일바나": ("스타일바나", "stylevana"), "스타일베나": ("스타일바나", "stylevana"),
+    "stylevana": ("스타일바나", "stylevana"),
+}
+
+
+def _alias_for(word: str, haystack: List[str]) -> str:
+    """질문의 말을 **자료에 실제로 있는 표기**로 바꾼다. 없으면 그대로 둔다.
+
+    ⛔ 자료 확인 없이 바꾸면 시트 표기가 바뀐 날 조용히 0건이 된다 —
+       손으로 적은 목록이 낡는 그 자리다. 확인해서 쓰므로 스스로 꺼진다.
+    """
+    from app.core.textmatch import strip_particle
+
+    for cand in (word, strip_particle(word)):
+        spellings = _ORG_ALIASES.get((cand or "").lower())
+        if not spellings:
+            continue
+        found = [s for s in spellings if any(s in h for h in haystack)]
+        if found:
+            return found[0]
+    return word
+
+
 def _extract_month_filter(term: str) -> "tuple[Optional[int], str]":
     """`6월` 을 뽑아 날짜 필터로 돌려주고, 그 토큰은 텍스트에서 뗀다.
 
@@ -398,9 +447,16 @@ def _extract_year_filter(term: str) -> "tuple[Optional[int], str]":
        기간 표현의 숫자를 연도로 잘못 집는다.
     """
     m = _YEAR_TOKEN.search(term or "") or _YEAR_BARE.search(term or "")
-    if not m:
-        return None, term or ""
-    return int(m.group(1)), (term[:m.start()] + " " + term[m.end():])
+    if m:
+        return int(m.group(1)), (term[:m.start()] + " " + term[m.end():])
+    # 숫자로 안 적은 연도 — `올해`·`작년`. ⚠️ 긴 낱말부터 봐야 `작년` 이
+    # `재작년` 안에서 먼저 걸리지 않는다 (권역명 되묻기에서 겪은 그 함정).
+    for word in sorted(_REL_YEAR, key=len, reverse=True):
+        i = (term or "").find(word)
+        if i >= 0:
+            year = datetime.now().year + _REL_YEAR[word]
+            return year, (term[:i] + " " + term[i + len(word):])
+    return None, term or ""
 
 
 def _period_hint(year: Optional[int], month: Optional[int]) -> str:
@@ -520,7 +576,14 @@ def search(term: str = "", limit: int = 40) -> Dict[str, Any]:
     capped: List[str] = list(words[8:])  # ⛔ 9번째부터는 자료 확인조차 안 됐다
     # ⚠️ 확인할 낱말이 없으면 자료를 읽지 않는다 — "2026년 랭킹" 처럼 구분·연도만
     #    물은 질문이 전체 표를 한 번 훑는 것은 낭비다.
-    kept, missing = usable_words(checkable, _haystack()) if checkable else ([], [])
+    if checkable:
+        hay = _haystack()
+        # ⛔ 별칭은 자료 확인 **앞**에 끼운다. 뒤에 두면 `틱톡샵` 이 이미 버려진
+        #    뒤라 되살릴 자리가 없다 (자료엔 `TIKTOK SHOP` 으로 있다).
+        checkable = [_alias_for(w, hay) for w in checkable]
+        kept, missing = usable_words(checkable, hay)
+    else:
+        kept, missing = [], []
     dropped: List[str] = generic + missing
 
     where = "1=1"
