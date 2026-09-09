@@ -124,6 +124,49 @@ def at_source_parity() -> Tuple[bool, str]:
     return True, f"@@ 소스 {len(srv_groups)}그룹 · 키 {len(OrchestratorAgent._DB_REGISTRY)}개 정상"
 
 
+# ── 2b) 오케스트레이터 클래스 본문이 끊기지 않았는가 ────────────────────────
+
+def orchestrator_class_intact() -> Tuple[bool, str]:
+    """클래스 안에 **들여쓰기 없는 `def`** 를 넣으면 거기서 클래스가 끝난다.
+
+    ⛔ 실제로 그랬다 (2026-09-03): 대표 제품 목록을 실측 주입으로 바꾸면서
+       헬퍼를 `def _build_direct_system_prompt` **앞**에 모듈 레벨로 끼워 넣었더니,
+       뒤에 있던 `_BIZ_CONTEXT`·`_SEARCH_KEYWORDS` 가 통째로 클래스 밖으로 나갔다.
+       **import 는 멀쩡히 되고**, 라우팅이 그 속성을 만질 때서야
+       `AttributeError` 가 난다 — 테스트 68건이 한 번에 깨졌다.
+       (그 상태가 프로덕션에 한 번 배포됐다. 그래서 서버에서도 매일 본다.)
+
+    ⚠️ 이름 목록을 손으로 늘리지 마라 — 라우팅이 실제로 쓰는 것만 고정한다.
+    """
+    if not _exists("app/agents/orchestrator.py"):
+        return True, "건너뜀"
+    import ast
+
+    tree = ast.parse(_read("app/agents/orchestrator.py"))
+    node = next((n for n in tree.body
+                 if isinstance(n, ast.ClassDef) and n.name == "OrchestratorAgent"), None)
+    if node is None:
+        return False, "OrchestratorAgent 클래스를 찾지 못했다"
+    names = set()
+    for st in node.body:
+        if isinstance(st, ast.Assign):
+            names |= {t.id for t in st.targets if isinstance(t, ast.Name)}
+        elif isinstance(st, ast.AnnAssign) and isinstance(st.target, ast.Name):
+            names.add(st.target.id)
+        elif isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(st.name)
+    required = {
+        "_DB_REGISTRY", "_DATA_KEYWORDS", "_BIZ_CONTEXT", "_SEARCH_KEYWORDS",
+        "_CS_KEYWORDS", "_TEAM_KEYWORDS", "_GUARDED",
+        "_keyword_classify_ex", "route_and_execute", "route_and_stream",
+        "_build_direct_system_prompt",
+    }
+    missing = sorted(required - names)
+    if missing:
+        return False, f"클래스 본문이 끊겼다 — 밖으로 나간 것 {missing}"
+    return True, f"클래스 본문 정상 (속성·메서드 {len(names)}개)"
+
+
 # ── 3) direct 프롬프트 단일 소스 ────────────────────────────────────────────
 
 def prompt_single_source() -> Tuple[bool, str]:
@@ -180,6 +223,41 @@ def asset_stamping_wired() -> Tuple[bool, str]:
             problems.append(f"main.py 에 {what}({needle}) 배선 없음")
     return (not problems), ("; ".join(problems) if problems
                             else "자산 캐시 지문 배선 정상")
+
+
+def survey_wiring() -> Tuple[bool, str]:
+    """만족도 설문 배선 — **끊기면 에러가 아니라 팝업이 조용히 사라진다.**
+
+    노출 판정은 서버(`/api/auth/me` 의 `survey_prompt`)가 하고 프론트는 그 이름을
+    읽는다. 이름이 어긋나면 아무 로그도 없이 아무에게도 안 뜬다 — `@@` 목록이
+    프론트/서버 두 벌이라 조용히 갈렸던 그 사고와 같은 종류다.
+    """
+    problems = []
+    auth = _read("app/api/auth_api.py") if _exists("app/api/auth_api.py") else ""
+    chat = _read("app/frontend/chat.js") if _exists("app/frontend/chat.js") else ""
+    api = _read("app/api/survey_api.py") if _exists("app/api/survey_api.py") else ""
+    css = _read("app/static/style.css") if _exists("app/static/style.css") else ""
+    admin = _read("app/api/admin_api.py") if _exists("app/api/admin_api.py") else ""
+
+    if '"survey_prompt"' not in auth:
+        problems.append("/me 응답에 survey_prompt 가 없다")
+    if "survey_prompt" not in chat:
+        problems.append("chat.js 가 survey_prompt 를 읽지 않는다")
+    if "maybeShowSatisfactionSurvey()" not in chat:
+        problems.append("답변 완료 지점에서 설문을 띄우지 않는다")
+    if '"/api/survey"' not in chat:
+        problems.append("chat.js 가 /api/survey 로 보내지 않는다")
+    if 'prefix="/api/survey"' not in api:
+        problems.append("survey_api 의 경로가 /api/survey 가 아니다")
+    # 모달 스타일이 없으면 폴백으로 밀려 라이트 모드에서 안 보이는 그 사고가 난다
+    if ".sv-star" not in css:
+        problems.append("style.css 에 설문 모달 스타일(.sv-star)이 없다")
+    # 처리함에서 소스를 안 보내면 설문 id 로 붐따 행을 고친다
+    if "data-fb-source" not in chat:
+        problems.append("처리함이 상태 변경에 source 를 붙이지 않는다")
+    if "body.source" not in admin:
+        problems.append("admin_api 가 source 를 읽지 않는다")
+    return (not problems), ("; ".join(problems) if problems else "설문 배선 정상")
 
 
 # ── 5) 라우팅 키워드 삼킴 충돌 (경로가 갈리는 것만) ──────────────────────────
@@ -982,6 +1060,8 @@ ALL = [
      "소스에 손으로 적은 값 목록"),
     ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
     ("static_at_sources", at_source_parity, "@@ 데이터소스 프론트/서버 일치"),
+    ("static_orch_class", orchestrator_class_intact,
+     "오케스트레이터 클래스 본문이 끊기지 않았는가"),
     ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),
     ("static_asset_stamp", asset_stamping_wired, "자산 캐시 지문 배선"),
     ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
@@ -996,4 +1076,5 @@ ALL = [
     ("static_notion_dates", notion_pages_without_date,
      "수정일 없이 색인된 노션 문서 (낡은 값이 최신을 이긴다)"),
     ("static_stale_copies", qdrant_stale_page_copies, "같은 문서의 옛 조각이 남아 있는가"),
+    ("static_survey_wiring", survey_wiring, "만족도 설문 배선 (/me ↔ 프론트 ↔ 처리함)"),
 ]

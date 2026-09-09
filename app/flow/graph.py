@@ -10,7 +10,8 @@ import importlib
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
-from app.flow.spec import EDGES, NODES, Edge, Node
+from app.flow import spec
+from app.flow.spec import Edge, Node
 
 _SENTINELS = ("__start__", "__end__")
 
@@ -93,17 +94,19 @@ def build() -> Dict[str, Any]:
          2. 하위 그래프의 이탈 노드 → 상위 노드가 원래 가리키던 곳
          3. 상위 노드의 원래 직행 엣지는 하위 그래프가 대신하므로 뺀다
     """
-    nodes: List[Dict[str, Any]] = [_as_dict(n) for n in NODES]
+    nodes_spec = spec.all_nodes()
+    edges_spec = spec.all_edges()
+    nodes: List[Dict[str, Any]] = [_as_dict(n) for n in nodes_spec]
 
     subgraphs: Dict[str, SubGraph] = {
         n.id: expand_langgraph(n.subgraph, prefix=n.id.split(".")[-1])
-        for n in NODES if n.subgraph
+        for n in nodes_spec if n.subgraph
     }
 
     # 하위 그래프가 대신할 상위 노드의 직행 엣지는 뺀다 (2단계에서 이탈점이 잇는다)
     edges: List[Dict[str, Any]] = [
         {"src": e.src, "dst": e.dst, "label": e.label, "conditional": e.conditional}
-        for e in EDGES if e.src not in subgraphs
+        for e in edges_spec if e.src not in subgraphs
     ]
 
     for parent_id, sub in subgraphs.items():
@@ -113,7 +116,7 @@ def build() -> Dict[str, Any]:
              "conditional": e.conditional, "parent": parent_id}
             for e in sub.edges
         )
-        downstream = [e.dst for e in EDGES if e.src == parent_id]
+        downstream = [e.dst for e in edges_spec if e.src == parent_id]
         edges.extend(
             {"src": parent_id, "dst": entry, "label": "", "conditional": False,
              "parent": parent_id}

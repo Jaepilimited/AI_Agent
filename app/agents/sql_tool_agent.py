@@ -132,6 +132,7 @@ def run_sql_tool_loop_stream(
         _build_brand_section,
         _build_schema_context,
         _build_smart_preview,
+        _build_table_totals_markdown,
         _load_prompt,
         _try_generate_chart,
     )
@@ -292,6 +293,11 @@ def run_sql_tool_loop_stream(
                 chart_future = chart_executor.submit(
                     _try_generate_chart, get_flash_client(), query, last_sql, preview, last_rows
                 )
+
+        if last_rows:
+            totals_block = _build_table_totals_markdown(last_rows)
+            if totals_block:
+                yield "\n\n" + totals_block
 
         if chart_future is not None:
             try:

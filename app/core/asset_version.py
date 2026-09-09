@@ -49,6 +49,7 @@ _MOUNTS = {
 #: HTML 안의 자산 참조. 기존 `?v=193` 이 붙어 있어도 통째로 갈아 끼운다.
 _REF = re.compile(
     r"(?P<url>/(?:frontend|static)/[A-Za-z0-9_./-]+\.(?:js|css))"
+    r"(?=\?v=|[\"'\s>]|$)"
     r"(?:\?v=[^\"'\s>]*)?"
 )
 

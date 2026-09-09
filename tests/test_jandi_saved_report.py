@@ -250,9 +250,19 @@ def test_percent_column_is_skipped_but_the_amount_column_still_draws():
     assert widths == sorted(widths, reverse=True) and widths[0] > widths[-1]
 
 
-def test_two_row_tables_get_no_bars():
-    """⚠️ 두 줄짜리는 그림이 아니라 그냥 숫자 둘이다."""
+def test_two_row_tables_do_get_bars():
+    """⚠️ 2026-09-07 사용자 결정으로 하한을 3행 → **2행**으로 낮췄다.
+    쇼피 vs 라자다처럼 둘만 견주는 표가 실제로 흔하다."""
     text = "| 채널 | 매출 |\n| :--- | ---: |\n| 쇼피 | 750,296,972 |\n| 라자다 | 120,000,000 |"
+    widths = [ln.count("\u2588") for ln in _bars(text)]
+    assert len(widths) == 2 and widths[0] > widths[1]
+
+
+def test_one_row_tables_get_no_bars():
+    """⛔ 견줄 대상이 없는데 꽉 찬 막대 하나를 그리면 '제일 크다' 로 읽힌다 —
+    그림이 없는 것보다 나쁘다. 실제로 저장 보고 한 건이 이 모양이었다
+    (쇼피 인도네시아 단일 행 · 앱에서도 차트가 없었다)."""
+    text = "| 채널 | 매출 |\n| :--- | ---: |\n| 쇼피 인도네시아 (Shopee) | 750,296,972 |"
     assert _bars(text) == []
 
 

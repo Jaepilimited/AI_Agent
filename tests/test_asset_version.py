@@ -76,6 +76,13 @@ def test_rewrite_stamps_our_assets_and_leaves_others_alone():
     assert "https://cdn.example.com/lib.js?v=1" in out, "외부 주소를 건드렸다"
 
 
+def test_rewrite_does_not_treat_json_suffix_as_javascript():
+    """`.json` 안의 `.js`를 잡으면 대시보드 카탈로그 URL이 404로 훼손된다."""
+    html = 'fetch("/static/dashboard-catalog.json?v=1")'
+
+    assert av.rewrite_html(html) == html
+
+
 @pytest.mark.parametrize("path,root,expected", [
     # Starlette 1.x — path 가 이미 전체 경로다
     ("/frontend/chat.js", "/frontend", "/frontend/chat.js"),

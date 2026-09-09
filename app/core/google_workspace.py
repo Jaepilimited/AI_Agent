@@ -290,6 +290,68 @@ def list_calendar_window(
     }
 
 
+def list_calendar_history(
+    creds: Credentials,
+    start: datetime,
+    end: datetime,
+    max_pages: int = 20,
+) -> Dict[str, Any]:
+    """Read primary-calendar history, preserving metadata for exact counts.
+
+    Google returns events overlapping the supplied window. Callers counting
+    event starts must apply their own [start, end) filter. Raw event metadata
+    stays in memory, and API errors propagate even after successful pages.
+    """
+    for boundary in (start, end):
+        if not isinstance(boundary, datetime) or boundary.utcoffset() is None:
+            raise ValueError("Calendar history requires timezone-aware datetimes")
+    start_utc = start.astimezone(timezone.utc)
+    end_utc = end.astimezone(timezone.utc)
+    if end_utc <= start_utc:
+        raise ValueError("Calendar history end must be after start")
+
+    page_limit = min(max(1, max_pages), 20)
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    params = {
+        "calendarId": "primary",
+        "timeMin": start_utc.isoformat(),
+        "timeMax": end_utc.isoformat(),
+        "maxResults": 2500,
+        "singleEvents": True,
+        "orderBy": "startTime",
+        "showDeleted": False,
+        "fields": (
+            "nextPageToken,items(id,summary,start,end,status,eventType,"
+            "attendees(email,self,resource,responseStatus),attendeesOmitted,"
+            "organizer(email,self),recurringEventId,originalStartTime)"
+        ),
+    }
+    items = []
+    seen_event_ids = set()
+    seen_page_tokens = set()
+    for _ in range(page_limit):
+        page = service.events().list(**params).execute()
+        for event in page.get("items", []):
+            event_id = event.get("id")
+            if event_id and event_id in seen_event_ids:
+                continue
+            items.append(event)
+            if event_id:
+                # Recurring instances have distinct IDs; their shared series
+                # ID must not collapse separate meetings into one event.
+                seen_event_ids.add(event_id)
+
+        next_token = page.get("nextPageToken")
+        if not next_token:
+            return {"items": items, "truncated": False}
+        if next_token in seen_page_tokens:
+            return {"items": items, "truncated": True}
+        seen_page_tokens.add(next_token)
+        params["pageToken"] = next_token
+
+    return {"items": items, "truncated": True}
+
+
 def _event_attendees(event: Dict[str, Any]) -> List[str]:
     """참석자 표시 이름만. 사람이 읽을 목록이라 리소스(회의실)와 본인은 뺀다."""
     names = []

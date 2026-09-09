@@ -100,7 +100,7 @@ def test_current_resolution_manifest_closes_the_verified_feedback_backlog():
     open_ids = {
         34, 35, 36, 37, 38, 39, 40, 42, 43, 44, 45, 46, 47, 48, 55, 57,
         66, 68, 69, 70, 75, 76, 77, 81, 82, 83, 85, 86, 88, 89, 90, 105,
-        110, 112, 113, 115, 136, 150, 152,
+        110, 112, 113, 115, 136, 150, 152, 166, 167,
     }
     rows = {feedback_id: {"id": feedback_id, "status": "ack"} for feedback_id in open_ids}
     rows[150]["status"] = "new"

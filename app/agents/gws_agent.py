@@ -448,6 +448,11 @@ class GWSAgent:
         # 한 번만 부를 거면 ReAct 루프가 필요 없다 — 분류해서 직접 부르고 결과를
         # 정리만 시키는 편이 빠르고 결과도 예측 가능하다.
         tool_type = self._classify_tool(query)
+        # A count must use the whole requested period, before any text formatter
+        # can mistake the default upcoming-week preview for an annual total.
+        from app.core.calendar_stats import answer_statistics, is_statistics_query
+        if is_statistics_query(_current_question(query)):
+            return await asyncio.to_thread(answer_statistics, creds, _current_question(query))
         results, notices = await asyncio.to_thread(self._collect, creds, query, tool_type)
 
         if not results.strip():

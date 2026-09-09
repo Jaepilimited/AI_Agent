@@ -591,10 +591,13 @@ def _barrable_column(header, rows):
        (실측 사고: USD+KRW+JPY 를 더해 "266.8억원" 이 나갔다)
     ⛔ **음수가 있는 열** — 막대 길이로는 방향을 말할 수 없다
     ⛔ **숫자가 아닌 셀이 섞인 열** — 빠진 칸이 0으로 보인다
-    ⚠️ **본문 3행 미만** — 두 줄짜리는 그림이 아니라 그냥 숫자 둘이다
+    ⚠️ **본문 2행 미만** — 한 줄짜리는 견줄 대상이 없다. 꽉 찬 막대 하나는
+       "제일 크다" 로 읽히는데 비교 대상이 없어, 그림이 없는 것보다 나쁘다.
+       ⚠️ 처음엔 3행 이상으로 뒀다가 2행으로 낮췄다 (2026-09-07 사용자 결정:
+       *"2행부터 그려줘"*). 쇼피 vs 라자다처럼 **둘만 견주는 표가 실제로 흔하다**
     """
     body = [c for c in rows if c and not _TOTAL_LABEL.search(c[0])]
-    if len(body) < 3:
+    if len(body) < 2:
         return None
 
     width = max([len(header)] + [len(c) for c in rows])

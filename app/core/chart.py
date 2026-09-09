@@ -474,8 +474,9 @@ def build_chartjs_config(
                     "borderWidth": 2.5,
                     "fill": False,
                     "tension": 0.35,
-                    "pointRadius": 5,
-                    "pointHoverRadius": 8,
+                    "pointRadius": 2.5,
+                    "pointHoverRadius": 5,
+                    "pointHitRadius": 8,
                     "pointBackgroundColor": border,
                 })
 
@@ -504,8 +505,9 @@ def build_chartjs_config(
                 if chart_type == "line":
                     ds["fill"] = False
                     ds["tension"] = 0.35
-                    ds["pointRadius"] = 5
-                    ds["pointHoverRadius"] = 8
+                    ds["pointRadius"] = 2.5
+                    ds["pointHoverRadius"] = 5
+                    ds["pointHitRadius"] = 8
                     ds["pointBackgroundColor"] = border
                     ds["borderWidth"] = 2.5
                     if group_col == "__yoy_year" and str(g) == "2025":
@@ -528,8 +530,9 @@ def build_chartjs_config(
                 if chart_type == "line":
                     ds["fill"] = False
                     ds["tension"] = 0.35
-                    ds["pointRadius"] = 5
-                    ds["pointHoverRadius"] = 8
+                    ds["pointRadius"] = 2.5
+                    ds["pointHoverRadius"] = 5
+                    ds["pointHitRadius"] = 8
                     ds["pointBackgroundColor"] = border
                     ds["borderWidth"] = 2.5
                 datasets.append(ds)
@@ -567,8 +570,9 @@ def build_chartjs_config(
                     ds["backgroundColor"] = COLORS[0].replace("0.85)", "0.15)")
                     ds["borderColor"] = COLORS_SOLID[0]
                     ds["tension"] = 0.35
-                    ds["pointRadius"] = 5
-                    ds["pointHoverRadius"] = 8
+                    ds["pointRadius"] = 2.5
+                    ds["pointHoverRadius"] = 5
+                    ds["pointHitRadius"] = 8
                     ds["pointBackgroundColor"] = COLORS_SOLID[0]
                     ds["borderWidth"] = 2.5
                 datasets.append(ds)

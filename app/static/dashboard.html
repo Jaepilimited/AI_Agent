@@ -350,127 +350,7 @@ body {
 </div>
 
 <script>
-var DATA = {
-  "\uC778\uD50C\uB8E8\uC5B8\uC11C": {
-    "\uB300\uC2DC\uBCF4\uB4DC": [
-      { t: "[\uD1B5\uD569] \uC778\uD50C\uB8E8\uC5B8\uC11C \uB9C8\uCF00\uD305 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC804\uCCB4 \uC778\uD50C\uB8E8\uC5B8\uC11C \uB9C8\uCF00\uD305 \uD1B5\uD569 \uD604\uD669", u: "https://lookerstudio.google.com/reporting/34ac7165-6f4c-42ba-9fe6-f54e5373f50f/page/cwFHF", icon: "\uD83D\uDCCA", type: "looker" },
-      { t: "\uD2F1\uD1A1 \uD574\uC2DC\uD0DC\uADF8 \uCF58\uD150\uCE20 \uB300\uC2DC\uBCF4\uB4DC", d: "\uD0A4\uC6CC\uB4DC/\uC778\uAC8C\uC774\uC9C0\uBA3C\uD2B8 \uBCC4 \uCEE8\uD150\uCE20 \uD655\uC778", u: "https://lookerstudio.google.com/reporting/a099c5fd-e316-455c-8686-a54b807b5b4c/page/MMeaE", icon: "\uD83C\uDFB5", type: "looker" },
-      { t: "\uC778\uC2A4\uD0C0\uADF8\uB7A8 \uACC4\uC815 \uBA58\uC158 \uCF58\uD150\uCE20 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC778\uC2A4\uD0C0\uADF8\uB7A8 \uACC4\uC815 \uBA58\uC158 \uCF58\uD150\uCE20 \uC2E4\uC801 \uD655\uC778", u: "https://lookerstudio.google.com/reporting/0ada621f-2504-432c-bc87-f75003526fe4/page/TuqPF", icon: "\uD83D\uDCF8", type: "looker" }
-    ],
-    "\uC2A4\uD504\uB808\uB4DC\uC2DC\uD2B8": [
-      { t: "\uD2F1\uD1A1 \uD68C\uC758\uB85D \uC9C0\uD45C", d: "", u: "https://docs.google.com/spreadsheets/d/1PMVNBgBodUCII6rnmWspKFVEsTwIJmcFSN5-ekf79ck/edit?gid=1727349", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "TSS \uB370\uC774\uD130", d: "", u: "https://docs.google.com/spreadsheets/d/1Y20GMruDuWPeT-gcmyiEceP9PO7MyinUHC94SzqBgpM/edit?gid=1604396", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "GM-WEST KOL\uB9AC\uC2A4\uD305", d: "WEST\uD300 KOL \uB9AC\uC2A4\uD2B8\uC5C5 \uBC0F \uCEE8\uD0DD \uC5EC\uBD80", u: "https://docs.google.com/spreadsheets/d/1Gf65LUqadQErCoePgK8qkJxXyZvcyP_d_TuQdNcwjAc/edit?pli=1&gid=3", icon: "\uD83D\uDC65", type: "sheets" },
-      { t: "GM-EAST KOL\uB9AC\uC2A4\uD305", d: "EAST\uD300 KOL \uB9AC\uC2A4\uD2B8\uC5C5 \uBC0F \uCEE8\uD0DD \uC5EC\uBD80", u: "https://docs.google.com/spreadsheets/d/1ob3uK8U47u-4IEIh9pQFZOVkHR9Zhd_lyMwJMqdMytY/edit?resourcekey", icon: "\uD83D\uDC65", type: "sheets" },
-      { t: "WEST \uC778\uD50C\uB8E8\uC5B8\uC11C \uB9C8\uCF00\uD305 \uC5C5\uB85C\uB4DC", d: "\uC778\uD50C\uB8E8\uC5B8\uC11C \uB9C8\uCF00\uD305 \uCF58\uD150\uCE20 \uC785\uB825 \uC2DC\uD2B8(GM-WEST)", u: "https://docs.google.com/spreadsheets/d/1vtyGT-Hm1jGwel7cOypRU_5npmg6GIzR_0fKHZ_qGlk/edit?gid=1211900", icon: "\uD83D\uDCE4", type: "sheets" },
-      { t: "EAST \uC778\uD50C\uB8E8\uC5B8\uC11C \uB9C8\uCF00\uD305 \uC5C5\uB85C\uB4DC", d: "\uC778\uD50C\uB8E8\uC5B8\uC11C \uB9C8\uCF00\uD305 \uCF58\uD150\uCE20 \uC785\uB825 \uC2DC\uD2B8(GM-EAST)", u: "https://docs.google.com/spreadsheets/d/1lOyNzu02YoyjEp8nFyaHTVpx6eA2jwEhB8V4IMeHGVw/edit?gid=1211900", icon: "\uD83D\uDCE4", type: "sheets" },
-      { t: "\uC778\uD50C\uB8E8\uC5B8\uC11C \uD06C\uB864\uB9C1 \uC694\uCCAD", d: "\uC2E0\uADDC KOL\uB9AC\uC2A4\uD305\uC744 \uC704\uD55C \uD06C\uB864\uB9C1 \uC694\uCCAD", u: "https://docs.google.com/spreadsheets/d/1rDdlpef3PYwFVFRcc1yU4dxIjlzuKtsu_d18siCUXDg/edit?gid=6101746", icon: "\uD83D\uDD0D", type: "sheets" },
-      { t: "\uCD5C\uC2E0 \uBC14\uC774\uB7F4 \uCEE8\uD150\uCE20", d: "1M \uC774\uC0C1 \uCD5C\uC2E0 \uC5C5\uB85C\uB4DC \uCEE8\uD150\uCE20 \uD06C\uB864\uB9C1", u: "https://docs.google.com/spreadsheets/d/1ozRYPyjLF3mvelW7pNG3RtPNeon2Bh5WIxTZWLhnQdI/edit?gid=0#gid=0", icon: "\uD83D\uDD25", type: "sheets" }
-    ]
-  },
-  "\uB9E4\uCD9C&\uC81C\uD488": {
-    "\uB300\uC2DC\uBCF4\uB4DC": [
-      { t: "\uB370\uC77C\uB9AC \uBA54\uD2B8\uB9AD\uC2A4(2024~)", d: "\uCD5C\uC2E0 \uB370\uC77C\uB9AC \uB9E4\uCD9C \uBA54\uD2B8\uB9AD\uC2A4", u: "https://lookerstudio.google.com/reporting/c021c6c6-ac73-4753-a36b-cc95a889811b/page/p_mde0034oqd", icon: "\uD83D\uDCC8", type: "looker" },
-      { t: "\uB370\uC77C\uB9AC \uBA54\uD2B8\uB9AD\uC2A4(~2023)", d: "\uACFC\uAC70 \uB370\uC77C\uB9AC \uB9E4\uCD9C \uBA54\uD2B8\uB9AD\uC2A4", u: "https://lookerstudio.google.com/reporting/c08881b2-a584-4a3d-9578-c08762a117d4/page/p_mde0034oqd", icon: "\uD83D\uDCC9", type: "looker" },
-      { t: "\uD504\uB85C\uB355\uD2B8 \uB9E4\uD2B8\uB9AD\uC2A4", d: "\uC81C\uD488\uBCC4 \uB9E4\uCD9C \uBD84\uC11D", u: "https://lookerstudio.google.com/reporting/41182756-3fce-4c48-9c76-429ba9d99aaf/page/p_mde0034oqd", icon: "\uD83E\uDDF4", type: "looker" },
-      { t: "\uD50C\uB7AB\uD3FC \uB300\uC2DC\uBCF4\uB4DC", d: "\uD50C\uB7AB\uD3FC\uBCC4 \uB9E4\uCD9C \uD604\uD669", u: "https://lookerstudio.google.com/reporting/93148b10-d6a8-42f5-acdb-8192e5e79612/page/p_9an4m8l4wd", icon: "\uD83C\uDFEA", type: "looker" },
-      { t: "\uC81C\uD488 \uC21C\uC704 \uD2B8\uB80C\uB4DC \uB300\uC2DC\uBCF4\uB4DC(\uC6F9)", d: "\uD50C\uB7AB\uD3FC\uBA54\uD2B8\uB9AD\uC2A4 \uC6F9 \uBC84\uC804", u: "https://skin1004official.github.io/platform-metrics/", icon: "\uD83C\uDFC6", type: "web" },
-      { t: "EAST \uD504\uB85C\uB355\uD2B8 \uB300\uC2DC\uBCF4\uB4DC", d: "EAST \uC81C\uD488\uBCC4 \uB300\uC2DC\uBCF4\uB4DC", u: "https://lookerstudio.google.com/u/0/reporting/4334059b-adea-436f-9b6b-154aa15727c3/page/p_jhinbd29sd", icon: "\uD83C\uDF0F", type: "looker" },
-      { t: "GM EAST \uC81C\uD488 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC81C\uD488\uBCC4 \uD310\uB9E4\uB7C9, \uACBD\uC7C1\uC0AC \uC81C\uD488 \uB7AD\uD0B9", u: "https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/ydIsF", icon: "\uD83D\uDCE6", type: "looker" },
-      { t: "\uD2F1\uD1A1\uC0F5 Affiliate \uB300\uC2DC\uBCF4\uB4DC", d: "\uD2F1\uD1A1\uC0F5 \uC5B4\uD544\uB9AC\uC5D0\uC774\uD2B8 \uD604\uD669", u: "https://lookerstudio.google.com/reporting/be8c9c17-5a1e-450c-85d7-3a2f36550c70/page/mgUfF", icon: "\uD83D\uDED2", type: "looker" },
-      { t: "Shopify \uB300\uC2DC\uBCF4\uB4DC", d: "Shopify \uB9E4\uCD9C \uD604\uD669", u: "https://lookerstudio.google.com/reporting/afe86a46-018a-4918-ae64-4219ccf5b029/page/gK5fF", icon: "\uD83D\uDECD\uFE0F", type: "looker" },
-      { t: "KBT \uC804\uC6A9 \uB300\uC2DC\uBCF4\uB4DC (Sales, Paid, CRM)", d: "KBT \uC885\uD569 \uB300\uC2DC\uBCF4\uB4DC", u: "https://lookerstudio.google.com/reporting/dd6a2a6c-5654-47ab-b29a-f279e602e5cf/page/bfsiE", icon: "\uD83C\uDFAF", type: "looker" },
-      { t: "\uB9AC\uBDF0 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC81C\uD488 \uB9AC\uBDF0 \uBD84\uC11D", u: "https://lookerstudio.google.com/reporting/bd0bd4fa-fb97-472a-82a4-cfa1a42f27a2/page/p_jauu8i71yd", icon: "\u2B50", type: "looker" },
-      { t: "\uC544\uB9C8\uC874 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC544\uB9C8\uC874 \uB9E4\uCD9C \uBC0F \uC9C0\uD45C", u: "https://lookerstudio.google.com/reporting/0932b147-5a33-4734-9895-7ede8bd99074/page/R2inF", icon: "\uD83D\uDCE6", type: "looker" },
-      { t: "FastMoss \uD2F1\uD1A1\uC0F5(\uBBF8\uAD6D) \uB370\uC774\uD130", d: "FastMoss \uB370\uC774\uD130 \uB300\uC2DC\uBCF4\uB4DC", u: "https://lookerstudio.google.com/reporting/89b6c9a7-afac-4778-b6c6-f12353012a17/page/UKxQE", icon: "\uD83C\uDDFA\uD83C\uDDF8", type: "looker" },
-      { t: "\uD50C\uB7AB\uD3FC\uBA54\uD2B8\uB9AD\uC2A4_\uB8E8\uCEE4ver", d: "Looker \uD50C\uB7AB\uD3FC \uBA54\uD2B8\uB9AD\uC2A4", u: "https://lookerstudio.google.com/reporting/08773b41-23c4-4d3d-8855-2cd316d7052d/page/p_en3gp5wgmd", icon: "\uD83D\uDCCA", type: "looker" }
-    ],
-    "\uC2A4\uD504\uB808\uB4DC\uC2DC\uD2B8": [
-      { t: "\uB370\uC77C\uB9AC \uBA54\uD2B8\uB9AD\uC2A4", d: "\uB370\uC77C\uB9AC \uB9E4\uCD9C RAW \uB370\uC774\uD130", u: "https://docs.google.com/spreadsheets/d/1ulmdW5pydgiJJbJVRWti-sL0m3mXm3GLeiGlViU_6rQ/edit?gid=4410448", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "B2B2 \uB9E4\uCD9C", d: "B2B2 \uCC44\uB110 \uB9E4\uCD9C \uB370\uC774\uD130", u: "https://docs.google.com/spreadsheets/d/11HJPWPqq2GvZ8kV7lhkaxEwUymcAjpiDjT4Bt0wEJe4/edit?gid=3077552", icon: "\uD83D\uDCB0", type: "sheets" },
-      { t: "B2B2_\uC720\uB7FD\uD300_\uB9E4\uCD9C", d: "\uC720\uB7FD\uD300 B2B2 \uB9E4\uCD9C", u: "https://docs.google.com/spreadsheets/d/1wfEObImX7KNJpEkaQfaprFIteyurgDIzX2vjAyfQoho/edit?gid=9123917", icon: "\uD83C\uDDEA\uD83C\uDDFA", type: "sheets" },
-      { t: "B2B3 \uB9E4\uCD9C", d: "B2B3 \uCC44\uB110 \uB9E4\uCD9C \uB370\uC774\uD130", u: "https://docs.google.com/spreadsheets/d/1nSYhX1Ln80m2K1WY73baHYa4k9orW-pl7J4qHXrGwV0/edit?gid=3077552", icon: "\uD83D\uDCB0", type: "sheets" },
-      { t: "B2B3 \uB0A8\uBBF8\uD300 \uB9E4\uCD9C", d: "\uB0A8\uBBF8\uD300 B2B3 \uB9E4\uCD9C", u: "https://docs.google.com/spreadsheets/d/1tkX7mKMAq6rSpMP27qj5rKtiXtt-r6mNlehW01mqDHw/edit?gid=1936593", icon: "\uD83C\uDF0E", type: "sheets" }
-    ]
-  },
-  "\uD37C\uD3EC\uBA3C\uC2A4\uB9C8\uCF00\uD305": {
-    "\uB300\uC2DC\uBCF4\uB4DC": [
-      { t: "\uD1B5\uD569 \uB9C8\uCF00\uD305 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC804\uCCB4 \uB9C8\uCF00\uD305 \uD1B5\uD569 \uD604\uD669", u: "https://lookerstudio.google.com/reporting/a1a1a9d1-be92-4d66-8d6f-acd12859dd2e/page/bfsiE", icon: "\uD83D\uDCCA", type: "looker" },
-      { t: "\uD2F1\uD1A1 \uAD11\uACE0 \uB300\uC2DC\uBCF4\uB4DC", d: "\uD2F1\uD1A1 \uAD11\uACE0 \uC131\uACFC", u: "https://lookerstudio.google.com/reporting/09154ceb-118d-4eea-9637-953516517860/page/kw8cE", icon: "\uD83C\uDFB5", type: "looker" },
-      { t: "\uBA54\uD0C0 \uAD11\uACE0 \uB300\uC2DC\uBCF4\uB4DC", d: "Facebook/Instagram \uAD11\uACE0 \uC131\uACFC", u: "https://lookerstudio.google.com/reporting/a56e222e-48c2-43d2-844e-1cb536489bc6/page/MMeaE", icon: "\uD83D\uDCF1", type: "looker" },
-      { t: "TeamMint \uB300\uC2DC\uBCF4\uB4DC", d: "TeamMint \uB9C8\uCF00\uD305 \uD604\uD669", u: "https://lookerstudio.google.com/reporting/d5ab4952-0dda-4881-aa52-8b20f97edcf9/page/wpRLF", icon: "\uD83E\uDE99", type: "looker" },
-      { t: "\uD1B5\uD569 ROI \uB9C8\uCF00\uD305 \uB300\uC2DC\uBCF4\uB4DC", d: "ROI \uAE30\uBC18 \uB9C8\uCF00\uD305 \uBD84\uC11D", u: "https://lookerstudio.google.com/u/0/reporting/2214aeda-dfa0-4321-ae7c-79ceef01a6c9/page/bfsiE", icon: "\uD83D\uDCB9", type: "looker" },
-      { t: "GM WEST Ecomm \uD1B5\uD569 \uB300\uC2DC\uBCF4\uB4DC", d: "\uC18C\uC7AC \uB2E8\uC704 \uC131\uACFC\uC640 SKU \uB9E4\uCD9C\uC744 \uC5F0\uACB0\uD574\uC11C \uD655\uC778\uD560 \uC218 \uC788\uB294 \uAD6C\uC870", u: "https://datastudio.google.com/reporting/847f5a3b-54e4-47a9-98a2-d974f2020036/page/6jpvF", icon: "\uD83D\uDCCA", type: "looker" },
-      { t: "Amazon Ads Search Term Report", d: "\uC544\uB9C8\uC874 \uAC80\uC0C9 \uAD11\uACE0 Search Term \uB2E8\uC704 \uBD84\uC11D", u: "https://datastudio.google.com/reporting/d5d70074-5c8f-4877-b0fd-e385cf6d28b8/page/p_yvoevgrh5d", icon: "\uD83D\uDD0D", type: "looker" }
-    ],
-    "\uC2A4\uD504\uB808\uB4DC\uC2DC\uD2B8": [
-      { t: "(KM) Paid \uC131\uACFC \uB300\uC2DC\uBCF4\uB4DC", d: "", u: "https://docs.google.com/spreadsheets/d/1XSFUhHXAtKnR6JXDTOE-J0IMS43G28epbpfyxKEWGr0/edit?gid=5053456", icon: "\uD83D\uDCB3", type: "sheets" },
-      { t: "(WEST) \uD2F1\uD1A1 \uC2A4\uD30C\uD06C\uC560\uC988 \uAD11\uACE0 \uB370\uC774\uD130", d: "", u: "https://docs.google.com/spreadsheets/d/1XSFUhHXAtKnR6JXDTOE-J0IMS43G28epbpfyxKEWGr0/edit?gid=5053456", icon: "\uD83C\uDFB5", type: "sheets" },
-      { t: "(EAST) \uD2F1\uD1A1 \uC2A4\uD30C\uD06C\uC560\uC988 \uAD11\uACE0 \uB370\uC774\uD130", d: "", u: "https://docs.google.com/spreadsheets/d/1r036BUekpeSrql8fC5PlgYzJszxikqNVq_Fm8j1gb_8/edit?gid=4796117", icon: "\uD83C\uDFB5", type: "sheets" },
-      { t: "(EAST/WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.04)", d: "", u: "https://docs.google.com/spreadsheets/d/1zU96tYMBR_T5n42kapE6fJ1YQl42DPNdKlW4lKTHHNs/edit?gid=5651446", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.05)", d: "", u: "https://docs.google.com/spreadsheets/d/1-P5s3nGARyWqwV8jsibLfr14HKcmMGYAZs4MOQ0HVIM/edit?gid=1098424", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.05)", d: "", u: "https://docs.google.com/spreadsheets/d/11joiqJ1q7qnUtvvcNAv37DHIaJQP6-Iat4q76ScqcLY/edit?gid=5651446", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.06)", d: "", u: "https://docs.google.com/spreadsheets/d/1QXdqHFuBe7cdsys08OGhF2ICJ1auePxYA_irefTAGzg/edit?gid=1337033", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.06)", d: "", u: "https://docs.google.com/spreadsheets/d/1kUjMcTbPeiDzzhzgn48F0DhkY9qnzamo8HACfaTt7d4/edit?gid=4748520", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.07)", d: "", u: "https://docs.google.com/spreadsheets/d/1H2zwLwH2cG73B-v0HT0U29McE0-VMGo82XntC0zQnpo/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.07)", d: "", u: "https://docs.google.com/spreadsheets/d/1HAGqea_0FyJUro7AkfGKW5lF60cCEhjsIsXMbyzFH28/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.08)", d: "", u: "https://docs.google.com/spreadsheets/d/1aUOGrhNmwBlwdg5ozM6ol19bnAXoLKmcKpBpbBisXms/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.08)", d: "", u: "https://docs.google.com/spreadsheets/d/1GgrG4XMitR5Px-Eyiw85gWbWjggw8hwaSJom7KFh9-w/edit?gid=5869300", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.09)", d: "", u: "https://docs.google.com/spreadsheets/d/1g3PHdNjGBA75MRkIRMbFTf8gu_hfATe7UJFWKQe-dvc/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.09)", d: "", u: "https://docs.google.com/spreadsheets/d/1nLoePA8iPkzsUmJwrIuFv4xZPmG9HbfnqWZugwtgH-Y/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.10)", d: "", u: "https://docs.google.com/spreadsheets/d/1yZLa45IqERB3Xi14vs7jiDG2H5CKSsAzWOzKJvIBGXM/edit?gid=7396793", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.10)", d: "", u: "https://docs.google.com/spreadsheets/d/1X7Mg9ylpGT-PxdI6Qo2HUny7Orj4ihKARPXvtrDZp1s/edit?gid=1184305", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.11)", d: "", u: "https://docs.google.com/spreadsheets/d/1GLChILebNSAZigfruhJsikqUtOO_qVJEtifnKrrheEM/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.11)", d: "", u: "https://docs.google.com/spreadsheets/d/1D20SJRs3D3UrroETf-diLpMOCj9B7Vwn6Fb9t1F8Q24/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(WEST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.12)", d: "", u: "https://docs.google.com/spreadsheets/d/1NiIZozBdfOwMWJKjafLMPw5A0ltfiYlqx-GzQn0F1es/edit?gid=8273856", icon: "\uD83D\uDCCB", type: "sheets" },
-      { t: "(EAST) \uB370\uC77C\uB9AC \uB9AC\uD3EC\uD2B8 (25.12)", d: "", u: "https://docs.google.com/spreadsheets/d/1-eX4qpx2ykMUmcPZhHqMMYvc7lWJp5vgpEI-1YaXcqI/edit?gid=8635440", icon: "\uD83D\uDCCB", type: "sheets" }
-    ]
-  },
-  "\uAE30\uD0C0": {
-    "\uB300\uC2DC\uBCF4\uB4DC": [
-      { t: "\uC720\uB7FD \uD310\uB9E4\uCC44\uB110 \uBAA8\uB2C8\uD130\uB9C1", d: "", u: "https://lookerstudio.google.com/reporting/db521aea-53b0-49fd-8352-c6142a097fe3/page/ji3HF/edit", icon: "\uD83C\uDDEA\uD83C\uDDFA", type: "looker" },
-      { t: "\uBA54\uAC00\uC640\uB9AC \uB300\uC2DC\uBCF4\uB4DC", d: "", u: "https://lookerstudio.google.com/reporting/3ada86c9-85a4-4191-bdf0-1fb879d6a2ac/page/d51NF", icon: "\uD83C\uDFAA", type: "looker" },
-      { t: "\uC544\uB9C8\uC874 \uC81C\uD488 \uB9AC\uBDF0 \uBD84\uC11D", d: "", u: "https://lookerstudio.google.com/reporting/47d7a862-bff5-4ca7-879c-0a7353f6ccff/page/bHGRF", icon: "\u2B50", type: "looker" },
-      { t: "\uADF8\uB85C\uC2A4 \uC624\uD37C\uB808\uC774\uC158 \uC13C\uD130", d: "", u: "https://lookerstudio.google.com/reporting/73b14477-02e2-4dd5-8a57-d115dda5a834/page/p_cl81eaejud", icon: "\uD83D\uDE80", type: "looker" },
-      { t: "\uBA54\uD0C0 \uAD11\uACE0 \uC9C4\uD589\uD604\uD669 \uBD84\uC11D", d: "", u: "https://lookerstudio.google.com/u/0/reporting/533e0388-3905-4a39-93ca-0516ed8167cb/page/p_577xmorfyd", icon: "\uD83D\uDCF1", type: "looker" },
-      { t: "\uD504\uB85C\uBAA8\uC158 \uCE98\uB9B0\uB354", d: "\uAD8C\uC5ED\uBCC4 \uD504\uB85C\uBAA8\uC158 \uC77C\uC815 \uD655\uC778\uC744 \uC704\uD55C \uB9C8\uCF00\uD305 \uCE98\uB9B0\uB354", u: "http://34.64.99.254:8041/", icon: "\uD83D\uDCC5", type: "web" },
-      { t: "\uBB3C\uB958\uAD00\uB9AC \uC2DC\uC2A4\uD15C", d: "\uBB3C\uB958 \uC218\uCD9C\uD30C\uD2B8 \uB0B4\uC5ED \uAD00\uB9AC \uD504\uB85C\uB355\uD2B8", u: "http://34.64.99.254:8051/", icon: "\uD83D\uDE9A", type: "web" },
-      { t: "CS \uB300\uC2DC\uBCF4\uB4DC", d: "CS \uBB38\uC758 \uB0B4\uC5ED \uC2DC\uAC01\uD654 (\uC6F9 \uB300\uC2DC\uBCF4\uB4DC \uD615\uD0DC)", u: "http://34.64.99.254:8061/", icon: "\uD83C\uDFA7", type: "web" }
-    ],
-    "\uC2A4\uD504\uB808\uB4DC\uC2DC\uD2B8": [
-      { t: "\uC720\uB7FD \uD310\uAC00 RAW\uB370\uC774\uD130", d: "", u: "https://docs.google.com/spreadsheets/d/1bDzdVDBGta4AREM6ndEZQHva8OZoGCZJJVrr2EyYW9w/edit?gid=1391792", icon: "\uD83C\uDDEA\uD83C\uDDFA", type: "sheets" },
-      { t: "Craver \uCC44\uC6A9 \uAD11\uACE0 \uB300\uC2DC\uBCF4\uB4DC", d: "", u: "https://docs.google.com/spreadsheets/d/1AX8b7m2YH7s9u5fZO1sW0JAntl0gaRWyREELDZiGHpM/edit?gid=1331875", icon: "\uD83D\uDC54", type: "sheets" },
-      { t: "\uD0A4\uC6CC\uB4DC\uBCC4 \uAD6C\uAE00 \uAD00\uC2EC\uB3C4 \uB370\uC774\uD130", d: "", u: "https://docs.google.com/spreadsheets/d/1_peM7F7kFxSWXMGin_gIIjs5wwkYfsQWoo2DycbD7gQ/edit?pli=1&gid=9", icon: "\uD83D\uDD11", type: "sheets" },
-      { t: "\uD314\uB808\uD2B8 \uACC4\uC0B0\uAE30", d: "AI Studio \uAE30\uBC18", u: "https://aistudio.google.com/apps/drive/1CVd73kTlc5jBYBUErAR2o7osfY5X0nKs", icon: "\uD83C\uDFA8", type: "tool" }
-    ]
-  },
-  "\uC194\uB8E8\uC158": {
-    "\uC678\uBD80 \uD234": [
-      { t: "Google BigQuery", d: "console.cloud.google.com", u: "https://console.cloud.google.com/bigquery?referrer=search&hl=ko&project=skin1004-319714&ws=!1m0", icon: "\uD83D\uDDC4\uFE0F", type: "tool" },
-      { t: "Apify", d: "console.apify.com", u: "https://console.apify.com/", icon: "\uD83E\uDD16", type: "tool" },
-      { t: "FastMoss", d: "fastmoss.com", u: "https://www.fastmoss.com/", icon: "\uD83D\uDCCA", type: "tool" },
-      { t: "Exolyt", d: "exolyt.com", u: "https://exolyt.com/", icon: "\uD83D\uDCC8", type: "tool" },
-      { t: "Brand24", d: "app.brand24.com", u: "https://app.brand24.com/panel/", icon: "\uD83D\uDCE1", type: "tool" },
-      { t: "Semrush", d: "ko.semrush.com", u: "https://ko.semrush.com/home/", icon: "\uD83D\uDD0D", type: "tool" },
-      { t: "Ahrefs", d: "app.ahrefs.com", u: "https://app.ahrefs.com/dashboard", icon: "\uD83D\uDD17", type: "tool" },
-      { t: "SimilarWeb", d: "pro.similarweb.com", u: "https://pro.similarweb.com/", icon: "\uD83C\uDF10", type: "tool" },
-      { t: "NoxInfluencer", d: "kr.noxinfluencer.com", u: "https://kr.noxinfluencer.com/search/youtube/channel", icon: "\uD83C\uDFAC", type: "tool" },
-      { t: "Kalodata", d: "kalodata.com", u: "https://www.kalodata.com/", icon: "\uD83D\uDCC9", type: "tool" },
-      { t: "Hunter.io", d: "hunter.io", u: "https://hunter.io/dashboard", icon: "\u2709\uFE0F", type: "tool" },
-      { t: "Keyword Tool", d: "keywordtool.io", u: "https://keywordtool.io/", icon: "\uD83D\uDD11", type: "tool" },
-      { t: "Hotjar", d: "hotjar.com", u: "https://www.hotjar.com/", icon: "\uD83D\uDD25", type: "tool" },
-      { t: "ChatGPT", d: "chatgpt.com", u: "https://chatgpt.com/", icon: "\uD83E\uDDE0", type: "tool" },
-      { t: "ExpressVPN", d: "expressvpn.com", u: "https://www.expressvpn.com/", icon: "\uD83D\uDD12", type: "tool" },
-      { t: "QR Code Generator", d: "qr-code-generator.com", u: "https://www.qr-code-generator.com/", icon: "\uD83D\uDCF1", type: "tool" },
-      { t: "Linktree", d: "linktr.ee", u: "https://linktr.ee/", icon: "\uD83C\uDF33", type: "tool" },
-      { t: "GitHub Copilot", d: "github.com", u: "https://github.com/features/copilot/plans", icon: "\uD83E\uDD16", type: "tool" }
-    ],
-    "\uC0AC\uB0B4 \uD234": [
-      { t: "\uC774\uBA54\uC77C \uBC0F \uD2F1\uD1A1 \uC790\uB3D9\uBC1C\uC1A1 \uC2DC\uC2A4\uD15C", d: "\uC774\uBA54\uC77C parameter\uBCC4 \uB300\uB7C9\uBC1C\uC1A1, \uD2F1\uD1A1 DM \uB300\uB7C9 \uC790\uB3D9\uBC1C\uC1A1 \uC2DC\uC2A4\uD15C \uAC00\uC774\uB4DC", u: "https://www.notion.so/skin1004/DM-Mail-2e82b4283b0080968d39f19678257d23", icon: "\u2709\uFE0F", type: "notion" },
-      { t: "TikTok \uC774\uBA54\uC77C \uD314\uB85C\uC6CC \uCD94\uCD9C", d: "A\uC5F4(KOL ID), B\uC5F4(URL)\uC5D0 \uC815\uBCF4 \uB123\uACE0 \uC218\uC9D1 \uBC84\uD2BC -> \uC774\uBA54\uC77C,\uD314\uB85C\uC6CC \uCD94\uCD9C", u: "https://docs.google.com/spreadsheets/d/1ZbQMPBi2S7uk6zK7r8QcvSmMDJogSGq7j8KDNu2Aya0/edit?gid=0#gid=0", icon: "\uD83D\uDCE7", type: "sheets" }
-    ]
-  }
-};
+var DATA = {};
 
 // ===== SVG Icons — semantic per-icon mapping =====
 var ICON_SVGS = {
@@ -548,17 +428,20 @@ function getIconSvg(item) {
 // ===== State =====
 var activeCat = 0;
 var activeItemKey = null;
-var catNames = Object.keys(DATA);
+var catNames = [];
 
 // ===== Render Category Tabs =====
 var catTabsEl = document.getElementById("catTabs");
-catNames.forEach(function(name, idx) {
-  var btn = document.createElement("button");
-  btn.className = "cat-tab" + (idx === 0 ? " active" : "");
-  btn.textContent = name;
-  btn.onclick = function() { selectCategory(idx); };
-  catTabsEl.appendChild(btn);
-});
+function renderCategoryTabs() {
+  catTabsEl.innerHTML = "";
+  catNames.forEach(function(name, idx) {
+    var btn = document.createElement("button");
+    btn.className = "cat-tab" + (idx === 0 ? " active" : "");
+    btn.textContent = name;
+    btn.onclick = function() { selectCategory(idx); };
+    catTabsEl.appendChild(btn);
+  });
+}
 
 function selectCategory(idx) {
   activeCat = idx;
@@ -589,7 +472,7 @@ function renderItems() {
       var key = catName + "|" + secName + "|" + item.t;
       var row = document.createElement("div");
       row.className = "item" + (activeItemKey === key ? " active" : "");
-      row.onclick = function() { cancelPreload(); selectItem(key, item); };
+      row.onclick = function() { cancelPreload(); selectItem(key, item, row); };
       row.onmouseenter = function() { preloadItem(key, item); };
       row.onmouseleave = function() { cancelPreload(); };
 
@@ -661,13 +544,15 @@ function _getOrCreateIframe(key, url) {
 }
 
 // ===== Select Item → Show Preview =====
-function selectItem(key, item) {
+function selectItem(key, item, selectedRow) {
   activeItemKey = key;
 
-  document.querySelectorAll(".item").forEach(function(el) {
-    el.classList.remove("active");
-  });
-  event.currentTarget.classList.add("active");
+  if (selectedRow) {
+    document.querySelectorAll(".item").forEach(function(el) {
+      el.classList.remove("active");
+    });
+    selectedRow.classList.add("active");
+  }
 
   var previewHeader = document.getElementById("previewHeader");
   var previewEmpty = document.getElementById("previewEmpty");
@@ -730,40 +615,58 @@ function toEmbedUrl(url) {
 }
 
 // ===== Init =====
-renderItems();
+async function initDashboard() {
+  try {
+    var response = await fetch("/static/dashboard-catalog.json?v=1", { cache: "no-cache" });
+    if (!response.ok) throw new Error("HTTP " + response.status);
+    DATA = await response.json();
+  } catch (error) {
+    console.error("Dashboard catalog load failed", error);
+    document.getElementById("itemsList").innerHTML =
+      '<div class="sec-header">대시보드 목록을 불러오지 못했습니다. 잠시 후 다시 열어주세요.</div>';
+    document.getElementById("itemCount").textContent = "load failed";
+    return;
+  }
 
-// Auto-select first item + preload top dashboards
-var firstCat = catNames[0];
-var firstSec = Object.keys(DATA[firstCat])[0];
-var firstItem = DATA[firstCat][firstSec][0];
-if (firstItem) {
-  var firstKey = firstCat + "|" + firstSec + "|" + firstItem.t;
-  activeItemKey = firstKey;
+  catNames = Object.keys(DATA);
+  renderCategoryTabs();
   renderItems();
-  selectItem(firstKey, firstItem);
-}
 
-// Background preload: first dashboard of each category (staggered to avoid network congestion)
-setTimeout(function() {
-  var preloadCount = 0;
-  catNames.forEach(function(cat, idx) {
-    var secs = Object.keys(DATA[cat]);
-    for (var s = 0; s < secs.length && preloadCount < 5; s++) {
-      var items = DATA[cat][secs[s]];
-      for (var i = 0; i < items.length && preloadCount < 5; i++) {
-        var it = items[i];
-        if (it.type === "notion") continue;
-        var k = cat + "|" + secs[s] + "|" + it.t;
-        if (!_iframeCache[k]) {
-          (function(key, url) {
-            setTimeout(function() { _getOrCreateIframe(key, url); }, preloadCount * 2000);
-          })(k, it.u);
-          preloadCount++;
+  // Auto-select first item.
+  var firstCat = catNames[0];
+  var firstSec = firstCat && Object.keys(DATA[firstCat])[0];
+  var firstItem = firstSec && DATA[firstCat][firstSec][0];
+  if (firstItem) {
+    var firstKey = firstCat + "|" + firstSec + "|" + firstItem.t;
+    activeItemKey = firstKey;
+    renderItems();
+    selectItem(firstKey, firstItem);
+  }
+
+  // Background preload: first dashboard of each category (staggered to avoid congestion).
+  setTimeout(function() {
+    var preloadCount = 0;
+    catNames.forEach(function(cat) {
+      var secs = Object.keys(DATA[cat]);
+      for (var s = 0; s < secs.length && preloadCount < 5; s++) {
+        var items = DATA[cat][secs[s]];
+        for (var i = 0; i < items.length && preloadCount < 5; i++) {
+          var it = items[i];
+          if (it.type === "notion") continue;
+          var k = cat + "|" + secs[s] + "|" + it.t;
+          if (!_iframeCache[k]) {
+            (function(key, url, delay) {
+              setTimeout(function() { _getOrCreateIframe(key, url); }, delay);
+            })(k, it.u, preloadCount * 2000);
+            preloadCount++;
+          }
         }
       }
-    }
-  });
-}, 1000);
+    });
+  }, 1000);
+}
+
+initDashboard();
 </script>
 </body>
 </html>

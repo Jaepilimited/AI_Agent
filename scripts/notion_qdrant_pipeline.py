@@ -40,6 +40,52 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 DB_HUB_ID = "2e12b4283b008011ae32e39bf73b7f7b"
 
+# 학습에서 **영구 제외**할 페이지·DB (2026-09-04 사용자 지시: "검색에서 아예 제외되도")
+#   ⛔ 낡은 자료가 색인돼 있으면 검색에서 최신을 이기기까지 한다 — 그 사고가 이미 있었다
+#      ([GM]WEST 옛 사본이 0.783 vs 최신 0.661 로 이겼다, 파이프라인 머리말 참조).
+#   ⚠️ **이유를 함께 적는다.** 적어 두지 않으면 다음 사람이 "왜 빠졌지" 를 다시 조사한다.
+#   ⚠️ DB-HUB 에서 링크를 떼는 것만으로는 부족하다 — 다른 경로로 다시 들어올 수 있다.
+#      여기 적으면 **수집 단계에서 걸러진다.**
+#   ⛔ **다만 "기존 색인 조각까지 지워진다" 는 조건부다** (2026-09-04 실측으로 정정).
+#      삭제는 `local_page_map(로컬 JSON) - notion_page_ids` 로 계산하므로
+#      **파이프라인이 스스로 넣은 페이지만** 지운다. 다른 적재기가 넣은 옛 조각은
+#      로컬 JSON 에 없어서 계산 대상 자체가 아니다 — 제외해도 Qdrant 에 그대로 남는다.
+#      실측: 제외한 14건의 잔존 청크 45개 / 그중 로컬 JSON 소유 **0건**.
+#      정말 지우려면 Qdrant 에서 직접 지워야 한다 (여기서는 하지 않는다).
+EXCLUDED_PAGE_IDS = {
+    # `SK/CL 전제품 정보` — 2022-05-16 생성 이후 한 번도 수정되지 않은 과거 데이터.
+    # 신제품(센텔라 테카 등)이 없어 최신 제품정보를 오염시킨다.
+    "ea8558d649aa4de7b4b08d78f4fdae4e": "SK/CL 전제품 정보 (2022년 과거 데이터)",
+
+    # ── 외부 공개 사이트(`verbena-niece-fe4.notion.site`) — **학습이 구조적으로 불가능** ──
+    # ⛔ 2026-09-04 실측: DB-HUB 에 멘션은 걸려 있는데, 열어 보면 우리 SKIN1004
+    #    워크스페이스가 아니라 **별도 공개 사이트**로 리다이렉트된다. 우리 인테그레이션
+    #    (`Skin1004_AI`)을 붙일 수 있는 대상이 아니라 **영원히 404** 다.
+    #    빼지 않으면 파이프라인이 매일 헛되이 14번 404 를 맞는다.
+    # ⚠️ 노션에서 링크를 지우지 않고 **여기서만** 뺐다 — 남의 팀 HUB 를 편집하는 것보다
+    #    되돌리기 쉽고, 나중에 사내로 옮겨오면 이 줄만 지우면 된다.
+    # ⚠️ 이 자료가 정말 필요하면 인테그레이션이 아니라 **공개 사이트를 읽는 별도 경로**가
+    #    있어야 한다 (`docs/` 에 정리).
+    "5bbe47d1099f435eb0d3a7d4fbb1c807": "PEOPLE 시설 (외부 공개 사이트)",
+    "5f504c36fcc845cf99e2943e1cc0f379": "PEOPLE 명함 및 각종 서류 (외부)",
+    "143997dd9d55431b9853dbf919d9f873": "PEOPLE 업무 툴 (외부)",
+    "21d6714bbf6880df9a81f82f005e0bcd": "PEOPLE 공통 역량 & 핵심 가치 (외부)",
+    "1156714bbf6880aa8189f1c5d64620fe": "PEOPLE 채용 (외부)",
+    "14a6714bbf68807a941ceb12d3c1bb5b": "PEOPLE 보상 (외부)",
+    "1156714bbf68805abd8cd5215300c2ec": "PEOPLE 근태 (외부)",
+    "21c6714bbf688009b6a7d216c1213ee1": "PEOPLE 사내근로복지기금 (외부)",
+    "14c6714bbf6880d3a971f3bf9e0a5dd9": "PEOPLE 퇴사(Offboarding) (외부)",
+    "1156714bbf6880e3b845e963c0675489": "PEOPLE 교육 (외부)",
+    "1156714bbf6880b681dbce22a89b18d8": "PEOPLE 복리후생 (외부)",
+    "2a46714bbf6881f2b41df47382af9f4e": "PEOPLE 다면 피드백 (외부)",
+    "2a86714bbf68814cbce8c0a58644c160": "PEOPLE (리더용) 상반기 다면 피드백 가이드 (외부)",
+    "7cecb6b53fac43c888127729c29b7436": "[GM]WEST CRAVER 지식in (외부)",
+}
+
+
+def _is_excluded(page_id: str) -> bool:
+    return str(page_id or "").replace("-", "").lower() in EXCLUDED_PAGE_IDS
+
 # ⛔ **페이지 안의 페이지를 놓치면 그 자리를 옛 스냅샷이 메운다** (2026-08-25 실측).
 #    예전 크롤은 팀 토글 바로 아래 `child_page`/`child_database`/멘션만 주웠다 —
 #    58페이지. 그런데 Qdrant 에는 그 밖의 101페이지(669조각)가 남아 있었고, 그중
@@ -224,8 +270,8 @@ def fetch_page_text(page_id: str, client: httpx.Client, _depth: int = 0) -> str:
             bid = b.get("id", "")
 
             if btype == "child_database":
-                # 인라인 DB: 항목 제목+속성 텍스트 추출
-                _extract_database_text(bid, client, texts)
+                # 인라인 DB: 항목 제목+속성 **+ 각 행의 본문**까지 추출
+                _extract_database_text(bid, client, texts, _depth=_depth)
                 continue
 
             if btype == "table":
@@ -255,9 +301,28 @@ def fetch_page_text(page_id: str, client: httpx.Client, _depth: int = 0) -> str:
     return "\n".join(texts)
 
 
-def _extract_database_text(db_id: str, client: httpx.Client, texts: list[str]) -> None:
-    """child_database 내 항목 텍스트를 texts에 추가."""
+# 행 본문을 읽을 최대 개수 (DB 하나당).
+# ⛔ 상한이 없으면 폭주한다 — `미팅록` 처럼 수백 행짜리 DB 가 있어서 행마다 블록 조회를
+#    하면 파이프라인이 몇 배로 늘어난다. 제품 라인업(9행) 같은 **설명형 DB** 를 담기에
+#    충분하면서, 로그성 대형 DB 는 속성만 담고 넘어가도록 잡았다.
+# ⚠️ 잘렸으면 **조용히 넘기지 않는다** — 로그로 남긴다.
+_MAX_DB_ROW_BODIES = 40
+
+
+def _extract_database_text(db_id: str, client: httpx.Client, texts: list[str],
+                           _depth: int = 0) -> None:
+    """child_database 내 항목 텍스트를 texts에 추가.
+
+    ⛔ **행 속성만 담으면 내용이 없는 색인이 된다** (2026-09-04 실사용 제보).
+       `스킨1004 제품 라인업` DB 가 `정렬: 9 | 한줄 설명: … | 라인업: …` 만 색인돼,
+       "히알루테카 제품 정보" 질문에 **경로와 링크만** 답하고
+       *"상세 텍스트는 포함되어 있지 않습니다"* 로 끝났다.
+       각 행은 그 자체가 페이지이고 **본문에 진짜 내용이 있다.**
+    ⚠️ 행 본문 안에 또 DB 가 있으면 재귀가 커진다 — `_depth` 로 막는다.
+    """
     cursor = None
+    bodies_read = 0
+    rows_seen = 0
     while True:
         body: dict = {"page_size": 100}
         if cursor:
@@ -289,10 +354,26 @@ def _extract_database_text(db_id: str, client: httpx.Client, texts: list[str]) -
                     parts.append(f"{prop_name}: {val}")
             if parts:
                 texts.append(" | ".join(parts))
+
+            # ── 행 본문 ──
+            rows_seen += 1
+            if _depth < 2 and bodies_read < _MAX_DB_ROW_BODIES:
+                row_title = next(
+                    ("".join(t.get("plain_text", "")
+                             for t in (pr.get("title") or []))
+                     for pr in item.get("properties", {}).values()
+                     if pr.get("type") == "title"), "")
+                body = fetch_page_text(item.get("id", ""), client, _depth + 2)
+                if body and body.strip():
+                    bodies_read += 1
+                    texts.append(f"[{row_title}] {body}" if row_title else body)
         if data.get("has_more") and data.get("next_cursor"):
             cursor = data["next_cursor"]
         else:
             break
+    if rows_seen > bodies_read and _depth < 2:
+        print(f"    DB 행 본문 {bodies_read}/{rows_seen} 만 읽음"
+              f" (상한 {_MAX_DB_ROW_BODIES})")
 
 
 def _extract_table_text(table_id: str, client: httpx.Client, texts: list[str]) -> None:
@@ -394,6 +475,9 @@ def run_incremental_sync(full: bool = False) -> dict:
     print(f"\n=== Notion → Local JSON {'전체' if full else '증분'} 동기화 (DB-HUB 기준) ===")
     t0 = time.time()
     stats = {"new": 0, "updated": 0, "deleted": 0, "unchanged": 0, "errors": 0, "skipped_404": 0}
+    # ⛔ **건수만 세면 아무것도 못 한다** — 누구에게 무엇을 공유해 달라고 할지 모른다.
+    #    누가·어느 팀의·어떤 페이지인지 남겨야 사람이 조치할 수 있다 (2026-09-04).
+    skipped_pages: list[dict] = []
 
     local_page_map: dict[str, str] = {} if full else get_local_page_map()
 
@@ -404,12 +488,18 @@ def run_incremental_sync(full: bool = False) -> dict:
         # page_id 중복 제거
         seen_ids: set[str] = set()
         unique_pages = []
+        excluded = 0
         for p in hub_pages:
             pid = p["page_id"]
+            if _is_excluded(pid):
+                excluded += 1
+                continue
             if pid not in seen_ids:
                 seen_ids.add(pid)
                 unique_pages.append(p)
-        print(f"  HUB 등록 페이지: {len(unique_pages)}개 (중복 제거 후)")
+        print(f"  HUB 등록 페이지: {len(unique_pages)}개 (중복 제거 후)"
+              + (f" · 제외 {excluded}개" if excluded else ""))
+        stats["excluded"] = excluded
 
         notion_page_ids: set[str] = set()
         new_page_vectors: dict[str, list[dict]] = {}
@@ -438,6 +528,8 @@ def run_incremental_sync(full: bool = False) -> dict:
                 if meta is None:
                     print(f"  SKIP(404): [{team}] {entry['title'][:50]}")
                     stats["skipped_404"] += 1
+                    skipped_pages.append({"page_id": page_id, "team": team,
+                                          "title": entry.get("title") or "", "kind": "database"})
                     continue
 
                 notion_page_ids.add(page_id)
@@ -453,6 +545,8 @@ def run_incremental_sync(full: bool = False) -> dict:
                 if meta is None:
                     print(f"  SKIP(404): [{team}] {entry['title'][:50]}")
                     stats["skipped_404"] += 1
+                    skipped_pages.append({"page_id": page_id, "team": team,
+                                          "title": entry.get("title") or "", "kind": "page"})
                     continue
 
                 notion_page_ids.add(page_id)
@@ -534,6 +628,15 @@ def run_incremental_sync(full: bool = False) -> dict:
         update_local_json(new_page_vectors, removed)
     else:
         print("\n  변경 없음 — 로컬 JSON 유지")
+
+    # ⛔ 건너뛴 목록을 **남긴다.** 로그로만 찍으면 아무도 안 본다 — 실제로
+    #    매일 `404스킵=20` 을 찍고 있었는데 사람이 물어봐서야 알았다 (2026-09-04).
+    stats["skipped_pages"] = skipped_pages
+    try:
+        from app.core.notion_watch import record
+        record(skipped_pages)
+    except Exception as e:
+        print(f"  미학습 목록 기록 실패 (색인은 유지): {e}")
 
     elapsed = time.time() - t0
     print(f"\n  동기화 완료: {elapsed:.0f}초")

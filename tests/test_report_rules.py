@@ -71,6 +71,124 @@ def test_report_route_needs_explicit_or_wording():
     assert registry.route("2026년 일본 매출", explicit=False) is None
 
 
+# ── 보고서 생성 전 최소 드릴다운 ────────────────────────────────────────────
+
+def test_report_clarification_asks_two_questions_and_round_trips_request():
+    """보고서를 바로 만들지 않고 두 질문을 거쳐 원 요청과 답을 함께 넘긴다."""
+    from app.reports import clarify
+
+    prompt = clarify.build_prompt("2026년 일본 매출 보고서 만들어줘", explicit=False)
+    question_lines = [line for line in prompt.splitlines()
+                      if line.startswith(("1. ", "2. ")) and line.endswith("?")]
+    assert len(question_lines) == 2
+
+    messages = [
+        {"role": "user", "content": "2026년 일본 매출 보고서 만들어줘"},
+        {"role": "assistant", "content": prompt},
+        {"role": "user", "content": "감소 원인 확인, 채널별로 나눠 전년 동기와 비교"},
+    ]
+    pending = clarify.pending(messages)
+    assert pending == {
+        "question": "2026년 일본 매출 보고서 만들어줘",
+        "explicit": False,
+    }
+
+    enriched = clarify.enrich(pending["question"], messages[-1]["content"])
+    assert "2026년 일본 매출 보고서 만들어줘" in enriched
+    assert "채널별로 나눠 전년 동기와 비교" in enriched
+    assert clarify.is_cancelled("일단 보류")
+
+    explicit_prompt = clarify.build_prompt("2026년 일본 매출", explicit=True)
+    explicit_messages = [
+        {"role": "user", "content": "2026년 일본 매출"},
+        {"role": "assistant", "content": explicit_prompt},
+        {"role": "user", "content": "국가별 전년 동기 비교"},
+    ]
+    assert clarify.pending(explicit_messages)["explicit"] is True
+
+
+def test_report_clarification_only_accepts_immediate_reply():
+    """오래된 확인 표식으로 나중의 일반 질문을 보고서 답변으로 오인하지 않는다."""
+    from app.reports import clarify
+
+    prompt = clarify.build_prompt("일본 매출 보고서", explicit=False)
+    messages = [
+        {"role": "user", "content": "일본 매출 보고서"},
+        {"role": "assistant", "content": prompt},
+        {"role": "user", "content": "일단 보류"},
+        {"role": "assistant", "content": "알겠습니다."},
+        {"role": "user", "content": "오늘 날씨 어때?"},
+    ]
+    assert clarify.pending(messages) is None
+
+
+@pytest.mark.asyncio
+async def test_report_handler_waits_for_clarification_before_running(monkeypatch):
+    """첫 턴에는 조회하지 않고, 다음 답변에서만 보고서 서비스를 실행한다."""
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.db import mariadb
+    from app.reports import service
+
+    calls = []
+    monkeypatch.setattr(mariadb, "fetch_one", lambda *args, **kwargs: {"id": 7})
+    monkeypatch.setattr(
+        service, "run",
+        lambda question, user_id, explicit=False: calls.append(
+            (question, user_id, explicit)) or {
+                "report_id": 91, "spec": "dynamic", "elapsed_sec": 0.1,
+            })
+    monkeypatch.setattr(service, "to_markdown", lambda result: "보고서 완료")
+
+    agent = OrchestratorAgent.__new__(OrchestratorAgent)
+    first_messages = [
+        {"role": "user", "content": "2026년 일본 매출 보고서 만들어줘"},
+    ]
+    first = await agent._handle_report(
+        first_messages[-1]["content"], "user@example.com",
+        explicit=False, messages=first_messages)
+    assert first and first.get("report_clarification") is True
+    assert calls == []
+
+    followup_messages = first_messages + [
+        {"role": "assistant", "content": first["answer"]},
+        {"role": "user", "content": "감소 원인, 채널별 전년 동기 비교"},
+    ]
+    done = await agent._handle_report(
+        followup_messages[-1]["content"], "user@example.com",
+        explicit=False, messages=followup_messages)
+    assert done["answer"] == "보고서 완료"
+    assert calls and calls[0][1:] == (7, False)
+    assert "2026년 일본 매출 보고서 만들어줘" in calls[0][0]
+    assert "채널별 전년 동기 비교" in calls[0][0]
+
+
+@pytest.mark.asyncio
+async def test_streaming_report_followup_keeps_report_route(monkeypatch):
+    """다음 답변에 '보고서'가 없어도 스트리밍 관문이 대기 상태를 이어받는다."""
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.reports import clarify
+
+    prompt = clarify.build_prompt("2026년 일본 매출 보고서", explicit=False)
+    messages = [
+        {"role": "user", "content": "2026년 일본 매출 보고서"},
+        {"role": "assistant", "content": prompt},
+        {"role": "user", "content": "채널별로 나눠 전년 동기 비교"},
+    ]
+    calls = []
+
+    async def fake_handle(query, user_email, explicit=False, messages=None):
+        calls.append((query, user_email, explicit, messages))
+        return {"source": "bigquery", "answer": "보고서 완료"}
+
+    agent = OrchestratorAgent.__new__(OrchestratorAgent)
+    monkeypatch.setattr(agent, "_handle_report", fake_handle)
+    events = [event async for event in agent.route_and_stream(
+        messages[-1]["content"], messages=messages, user_email="user@example.com")]
+
+    assert events == [("source", "bigquery"), ("done", "보고서 완료")]
+    assert calls and calls[0][3] is messages
+
+
 # ── 판정 계층 ────────────────────────────────────────────────────────────────
 
 def test_headline_skips_methodology():
@@ -228,7 +346,7 @@ def test_direct_prompt_has_exactly_one_source():
     import inspect
     from app.agents import orchestrator as O
 
-    src = inspect.getsource(O)
+    src = inspect.getsource(O).replace(inspect.getsource(O._strip_model_claim), "")
     assert src.count("당신은 Craver의 AI 어시스턴트입니다") == 1, (
         "direct 프롬프트 사본이 늘었다 — _build_direct_system_prompt() 하나만 두라")
     assert src.count("## 시스템 기능") == 1
