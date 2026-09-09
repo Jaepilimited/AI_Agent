@@ -146,8 +146,13 @@ def untracked_notice(files) -> list:
     """
     sys.path.insert(0, str(PROJ))
     try:
-        from app.core.deploy_preflight import untracked_in_payload, format_untracked_notice
-        return format_untracked_notice(untracked_in_payload(PROJ, files))
+        from app.core.deploy_preflight import (untracked_in_payload,
+                                                format_untracked_notice, recently_touched)
+        rows = untracked_in_payload(PROJ, files)
+        # ⛔ "방금 생긴 것" 을 이 목록 안에서 말한다 — 블록을 따로 만들면 같은 파일이
+        #    두 번 적히고, 두 번 적힌 것은 곧 한 번도 안 읽힌다 (2026-09-09)
+        ages = {rel: age for rel, age, _ in recently_touched(PROJ)}
+        return format_untracked_notice(rows, ages)
     except Exception as e:                        # noqa: BLE001
         return [f"  [보존] 확인하지 못했습니다 ({str(e)[:60]})"]
 

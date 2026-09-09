@@ -409,17 +409,38 @@ def untracked_in_payload(root: Path, payload) -> List[Tuple[str, int]]:
     return rows
 
 
-def format_untracked_notice(rows: List[Tuple[str, int]]) -> List[str]:
-    """사람이 읽을 줄들. 없으면 빈 목록 — 조용할 때는 아무 말도 하지 않는다."""
+def format_untracked_notice(rows: List[Tuple[str, int]], ages: dict = None) -> List[str]:
+    """사람이 읽을 줄들. 없으면 빈 목록 — 조용할 때는 아무 말도 하지 않는다.
+
+    ⛔ **`ages` 는 "방금 생겼다" 를 붙이려고 있다** (2026-09-09). 관문이 통과할
+       때는 `[편집중]` 블록이 안 뜨는데, **가장 위험한 상태가 바로 "관문 통과 +
+       편집 중"** 이다. 그날 09:15 이 그랬다 — 구문도 import 도 통과하고
+       `/health` 도 200 인데 스위트가 76건 실패했고, 원인은 20초 전에 생긴
+       `session_auth.py` 였다.
+    ⚠️ **블록을 따로 만들지 않는다.** 이 목록이 이미 그 파일들을 보여주고 있고,
+       빠진 것은 *언제* 뿐이다. 블록을 더하면 같은 파일을 두 번 적게 되고,
+       두 번 적힌 것은 곧 한 번도 안 읽힌다.
+    ⚠️ 여기에 `M` 은 넣지 않는다 — 오늘 상시 114~117개였고 사고를 낸 것은 없다.
+       `??` 는 두 번 뜨고 두 번 다 사고였다. 신호 대 잡음이 다르다.
+    """
     if not rows:
         return []
+    ages = ages or {}
     total = sum(n for _, n in rows)
     out = [f"  [보존] !! git 이 모르는 소스 {len(rows)}개({total}줄)가 이번 전송에 포함됩니다"]
+    fresh = False
     for rel, n in rows[:10]:
-        out.append(f"           {rel}  {n}줄")
+        age = ages.get(rel)
+        if age is not None and age <= RECENT_EDIT_WINDOW_SECONDS:
+            fresh = True
+            out.append(f"           {rel}  {n}줄  <- {_ago(age)}에 바뀜")
+        else:
+            out.append(f"           {rel}  {n}줄")
     if len(rows) > 10:
         out.append(f"           ... 외 {len(rows) - 10}개")
     out.append("         작업트리가 사라지면 이 코드는 프로덕션에만 남습니다. 커밋을 권합니다")
+    if fresh:
+        out.append("         !! 방금 바뀐 것이 있습니다 - 다른 세션이 편집 중일 수 있습니다")
     out.append("         (막지 않습니다 - 전송은 그대로 진행됩니다)")
     return out
 

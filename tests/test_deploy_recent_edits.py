@@ -207,3 +207,66 @@ def test_git_absence_does_not_break_it(tmp_path):
     touch(tmp_path, "app/core/x.py", seconds_ago=10)
     rows = recently_touched(tmp_path)
     assert [r[0] for r in rows] == ["app/core/x.py"]
+
+
+# ---------------------------------------------------------------------------
+# 관문이 **통과**할 때 — 가장 위험한 자리
+# ---------------------------------------------------------------------------
+#
+# ⛔ `[편집중]` 은 실패 분기에만 있다. 그런데 2026-09-09 09:15 의 상태는
+#    **구문 통과 · import 통과 · /health 200 인데 스위트 76건 실패** 였고,
+#    원인은 20초 전에 생긴 `session_auth.py` 였다. 사람이 배포를 누르는 순간은
+#    대개 관문이 통과할 때라, 그 자리에서 침묵하면 안 된다.
+#
+# ⚠️ **블록을 따로 만들지 않았다.** 미추적 경고가 이미 그 파일들을 보여주고
+#    있고 빠진 것은 *언제* 뿐이다 — 블록을 더하면 같은 파일이 두 번 적히고,
+#    두 번 적힌 것은 곧 한 번도 안 읽힌다.
+#
+# ⚠️ `M` 은 여기 넣지 않는다. 그날 상시 114~117개였고 사고를 낸 것은 없다.
+#    `??` 는 두 번 뜨고 **두 번 다 사고**였다.
+
+from app.core.deploy_preflight import format_untracked_notice  # noqa: E402
+
+
+def test_a_freshly_created_untracked_source_says_when():
+    """⛔ 09:15 에 보였어야 했던 그 한 줄이다."""
+    body = "\n".join(format_untracked_notice(
+        [("app/core/session_auth.py", 78)], ages={"app/core/session_auth.py": 20}))
+    assert "20초 전에 바뀜" in body
+    assert "다른 세션이 편집 중일 수 있습니다" in body
+
+
+def test_an_old_untracked_source_does_not():
+    """⚠️ 며칠 된 미커밋 파일은 '편집 중' 이 아니다 — 매번 뜨면 죽는다."""
+    body = "\n".join(format_untracked_notice(
+        [("app/core/settled.py", 300)], ages={"app/core/settled.py": 99999}))
+    assert "바뀜" not in body
+    assert "편집 중일 수 있습니다" not in body
+
+
+def test_the_warning_line_appears_only_when_something_is_fresh():
+    rows = [("app/core/a.py", 10), ("app/core/b.py", 20)]
+    stale = "\n".join(format_untracked_notice(rows, ages={"app/core/a.py": 99999}))
+    fresh = "\n".join(format_untracked_notice(rows, ages={"app/core/a.py": 30}))
+    assert "편집 중일 수 있습니다" not in stale
+    assert "편집 중일 수 있습니다" in fresh
+
+
+def test_without_ages_it_behaves_exactly_as_before():
+    """⚠️ 호출부가 나이를 안 넘겨도 기존 문구 그대로여야 한다."""
+    body = "\n".join(format_untracked_notice([("app/core/x.py", 5)]))
+    assert "app/core/x.py  5줄" in body
+    assert "바뀜" not in body
+
+
+def test_the_deploy_script_passes_the_ages():
+    """⛔ 만들어 놓고 배선하지 않으면 아무것도 안 지킨다 (이 저장소의 전례)."""
+    src = DEPLOY.read_text(encoding="utf-8")
+    assert "recently_touched(PROJ)" in src
+    assert "format_untracked_notice(rows, ages)" in src
+
+
+def test_there_is_no_second_block_listing_the_same_files():
+    """⚠️ 성공 분기에 `[편집중]` 블록을 또 만들면 같은 파일이 두 번 적힌다."""
+    src = DEPLOY.read_text(encoding="utf-8")
+    assert src.count("recent_edits_notice()") == 2, "정의 1 + 실패분기 호출 1 뿐이어야 한다"
