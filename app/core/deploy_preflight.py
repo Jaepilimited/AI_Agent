@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
@@ -545,4 +546,101 @@ def format_recent_edits_notice(rows: List[Tuple[str, int, str]]) -> List[str]:
     if len(rows) > 8:
         out.append(f"           ... 외 {len(rows) - 8}개")
     out.append("         그 작업이 끝난 뒤 다시 실행하면 통과할 수 있습니다")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 배포 직전 스위트 — "뜨는가" 말고 "도는가"
+# ---------------------------------------------------------------------------
+#
+# ⛔ **왜 있나** (2026-09-09, 같은 날 두 사고가 서로 다른 것을 보여줬다):
+#
+#       09:04  import 만 있고 모듈이 없었다  → 프로세스가 안 뜬다   (시끄럽다)
+#       09:15  인증이 반쯤 배선돼 있었다      → 뜨는데 401 을 낸다   (조용하다)
+#
+#    위의 관문들(`syntax_errors`·`unresolved_imports`·`missing_self_methods`)은
+#    **"프로세스가 뜨는가"** 를 본다. 09:15 상태는 그것을 전부 통과하고
+#    `/health` 도 200 이었는데 **스위트가 76건 실패**했다. COA 찾기 41건이
+#    죽어 있었고, 그건 사용자에게 조용히 도달한다.
+#
+#    ⟹ **"도는가" 는 스위트만 안다.** 실측 66초다.
+#
+# ⛔ **판정만 여기서 하고 실행은 호출부가 한다.** 서버(자가 점검)에는 pytest 도
+#    `tests/` 도 없다 — 이 모듈이 서버에서도 import 되므로 여기서 pytest 를
+#    부르면 안 된다.
+#
+# ⚠️ **`--skip-tests` 우회로를 반드시 둔다.** 롤백을 막는 관문이 되면 안 된다
+#    (`--skip-preflight` 와 같은 규칙). 그리고 이 트리는 세션 서넛이 공유해서
+#    **남의 편집 때문에 상시 막힐 수 있다** — 실측으로 같은 스위트가 4분 사이에
+#    76건 → 1건이 됐다. 그래서 실패 화면에 `[편집중]` 을 함께 찍어
+#    *"내 잘못이 아니라 기다릴 일"* 을 즉시 알 수 있게 한다.
+
+TEST_TARGETS = ("tests/", "--ignore=tests/frontend")
+TEST_TIMEOUT_SECONDS = 900
+_SUMMARY = re.compile(
+    r"^(?:=+\s*)?(?:(?P<failed>\d+) failed[,\s]+)?"
+    r"(?:(?P<passed>\d+) passed)?"
+    r"(?:[,\s]+(?P<skipped>\d+) skipped)?"
+    r"(?:[,\s]+(?P<errors>\d+) errors?)?",
+    re.M)
+_FAILED_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(?P<file>[^\s:]+)", re.M)
+
+
+def test_command(python: str = None) -> List[str]:
+    """돌릴 명령. ⚠️ 목록을 호출부에 다시 적지 마라 — 갈리면 관문이 다른 것을 잰다."""
+    import sys as _sys
+    return [python or _sys.executable, "-m", "pytest", *TEST_TARGETS, "-q"]
+
+
+def parse_pytest_output(text: str) -> dict:
+    """pytest `-q` 출력에서 결과를 읽는다.
+
+    ⚠️ **요약 줄을 못 읽으면 통과로 치지 않는다.** pytest 가 수집 단계에서
+       죽으면 요약 줄이 아예 없는데, 그때 `failed=0` 으로 읽어 통과시키면
+       **이 관문이 가장 필요한 순간에 침묵한다.**
+    """
+    text = text or ""
+    failed = passed = skipped = errors = None
+    for line in reversed(text.strip().splitlines()):
+        m = _SUMMARY.match(line.strip())
+        if m and (m.group("passed") or m.group("failed")):
+            failed = int(m.group("failed") or 0)
+            passed = int(m.group("passed") or 0)
+            skipped = int(m.group("skipped") or 0)
+            errors = int(m.group("errors") or 0)
+            break
+    files = {}
+    for m in _FAILED_LINE.finditer(text):
+        f = m.group("file")
+        files[f] = files.get(f, 0) + 1
+    return {
+        "parsed": failed is not None,
+        "failed": failed or 0,
+        "passed": passed or 0,
+        "skipped": skipped or 0,
+        "errors": errors or 0,
+        "files": sorted(files.items(), key=lambda kv: (-kv[1], kv[0])),
+    }
+
+
+def suite_ok(result: dict, returncode: int) -> bool:
+    """통과 판정. ⛔ 요약을 못 읽었거나 종료코드가 0이 아니면 통과가 아니다."""
+    if not result.get("parsed"):
+        return False
+    return returncode == 0 and result["failed"] == 0 and result["errors"] == 0
+
+
+def format_suite_notice(result: dict, seconds: float = None) -> List[str]:
+    """사람이 읽을 줄들. 통과했으면 한 줄, 실패했으면 어디가 깨졌는지."""
+    took = f" ({seconds:.0f}초)" if seconds is not None else ""
+    if not result.get("parsed"):
+        return [f"  [스위트] !! 결과를 읽지 못했습니다{took} - 수집 단계에서 죽었을 수 있습니다",
+                "         보내지 않습니다. 정말 이대로 보내야 하면 --skip-tests"]
+    if result["failed"] == 0 and result["errors"] == 0:
+        return [f"  [스위트] 통과 {result['passed']}건{took}"]
+    out = [f"  [스위트] !! {result['failed']}건 실패 / {result['passed']}건 통과{took} - 보내지 않습니다"]
+    for f, n in result["files"][:8]:
+        out.append(f"           {f}  {n}건")
+    if len(result["files"]) > 8:
+        out.append(f"           ... 외 {len(result['files']) - 8}개 파일")
     return out

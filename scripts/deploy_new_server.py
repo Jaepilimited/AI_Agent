@@ -20,6 +20,8 @@ from __future__ import annotations
 import io
 import os
 import sys
+import time
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -46,6 +48,8 @@ EXCLUDE_DIRS = {
 #     쌓이는 산출물이고 DB payload 로 재생성되므로 올리지 않는다.
 #   - data/sql_results: 사용자별 조회 결과 CSV 보관분(매출·원가 포함). 서버마다
 #     따로 쌓이는 산출물이고 TTL 로 스스로 지워진다 — 올리지 않는다
+SUITE_HINT_SECONDS = 70   # 실측 66초 (2026-09-09, 3,253문항)
+
 EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports", "qa_artifacts",
                  "data/sql_results"}
 # qa_artifacts 는 **릴리스 검증 산출물**이다 (verification.json · selected.json ·
@@ -133,6 +137,59 @@ def preflight(skip: bool = False) -> bool:
     return False
 
 
+def suite_gate(skip: bool, dry: bool) -> bool:
+    """보내기 직전에 **전체 스위트**를 돌린다. 깨져 있으면 보내지 않는다.
+
+    ⛔ **왜 여기인가** (2026-09-09): 위의 `preflight` 는 "프로세스가 뜨는가" 를
+       본다. 그날 09:15 상태는 그것을 전부 통과하고 `/health` 도 200 이었는데
+       **스위트가 76건 실패**했다 — COA 찾기 41건이 죽어 있었고 그건 사용자에게
+       조용히 도달한다. **"도는가" 는 스위트만 안다.**
+    ⛔ **누르기 직전에 돌린다.** 그날 배포 20분 전에 돌린 결과를 믿었다가
+       그 사이 트리가 바뀌어 사고가 났다. 실측으로 같은 스위트가 4분 사이에
+       76건 → 1건이 됐다 — 이 트리에서 스위트 결과는 **움직이는 값**이다.
+    ⚠️ `--dry` 는 아무것도 보내지 않으므로 돌리지 않는다 (빠른 확인용이다).
+    ⚠️ `--skip-tests` 를 반드시 둔다 — 롤백을 막는 관문이 되면 안 된다.
+    """
+    if dry:
+        return True
+    sys.path.insert(0, str(PROJ))
+    try:
+        from app.core.deploy_preflight import (test_command, parse_pytest_output,
+                                               suite_ok, format_suite_notice,
+                                               TEST_TIMEOUT_SECONDS)
+    except Exception as e:                        # noqa: BLE001
+        print(f"  [스위트] 불러오지 못했습니다 ({str(e)[:60]}) - 건너뜁니다")
+        return True
+    if skip:
+        print("  [스위트] --skip-tests 로 건너뜁니다 !! 깨진 채로 나갈 수 있습니다")
+        return True
+
+    print(f"  [스위트] 돌리는 중... (약 {SUITE_HINT_SECONDS}초)")
+    started = time.time()
+    try:
+        proc = subprocess.run(test_command(), cwd=str(PROJ), capture_output=True,
+                              text=True, timeout=TEST_TIMEOUT_SECONDS)
+        out, rc = (proc.stdout or "") + (proc.stderr or ""), proc.returncode
+    except subprocess.TimeoutExpired:
+        print(f"  [스위트] !! {TEST_TIMEOUT_SECONDS}초를 넘겨 멈췄습니다 - 보내지 않습니다")
+        return False
+    except Exception as e:                        # noqa: BLE001
+        print(f"  [스위트] 돌리지 못했습니다 ({str(e)[:60]}) - 건너뜁니다")
+        return True                               # 못 돌린 것으로 배포를 세우지 않는다
+
+    took = time.time() - started
+    result = parse_pytest_output(out)
+    for line in format_suite_notice(result, took):
+        print(line.encode("cp949", "replace").decode("cp949"))
+    if suite_ok(result, rc):
+        return True
+    # ⛔ 실패 이유가 **내 잘못이 아닐 수 있다** — 이 트리는 세션 서넛이 공유한다
+    for line in recent_edits_notice():
+        print(line.encode("cp949", "replace").decode("cp949"))
+    print("  고친 뒤 다시 실행하세요. 정말 이대로 보내야 하면 --skip-tests")
+    return False
+
+
 def recent_edits_notice() -> list:
     """관문이 걸렸을 때만 붙는 보조 설명. 판정은 `deploy_preflight` 한 곳에서 한다."""
     sys.path.insert(0, str(PROJ))
@@ -173,6 +230,8 @@ def main() -> int:
     dry = "--dry" in sys.argv
 
     if not dry and not preflight("--skip-preflight" in sys.argv):
+        return 1
+    if not suite_gate("--skip-tests" in sys.argv, dry):
         return 1
 
     files = collect()

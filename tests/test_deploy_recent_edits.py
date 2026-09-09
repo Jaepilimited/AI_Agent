@@ -266,7 +266,23 @@ def test_the_deploy_script_passes_the_ages():
     assert "format_untracked_notice(rows, ages)" in src
 
 
-def test_there_is_no_second_block_listing_the_same_files():
-    """⚠️ 성공 분기에 `[편집중]` 블록을 또 만들면 같은 파일이 두 번 적힌다."""
+def test_it_is_never_printed_on_the_success_path():
+    """⚠️ 성공 분기에 `[편집중]` 블록을 또 만들면 같은 파일이 두 번 적힌다 —
+    미추적 경고가 이미 그 목록을 보여주고 있고, 거기엔 `<- N초 전에 바뀜` 이
+    붙는다.
+
+    ⛔ **호출 횟수를 세지 마라.** 처음에 `== 2` 로 적었더니 실패 분기가 하나
+       늘자(스위트 관문) 규칙과 무관하게 깨졌다. 세는 단언은 관문이 늘 때마다
+       고쳐야 하고, 그러면 다음 사람이 **뜻을 안 보고 숫자만 올린다.**
+       규칙은 "성공 경로에서 안 부른다" 이지 "두 번 나온다" 가 아니다.
+    """
     src = DEPLOY.read_text(encoding="utf-8")
-    assert src.count("recent_edits_notice()") == 2, "정의 1 + 실패분기 호출 1 뿐이어야 한다"
+    main_body = src[src.index("def main() -> int:"):]
+    assert "recent_edits_notice()" not in main_body, (
+        "성공 경로(main)에서 부르고 있다 — 실패 분기 안에서만 불러야 한다")
+    # 실패 분기 둘에서는 불러야 한다
+    next_def = chr(10) + "def "
+    for fn in ("def preflight(", "def suite_gate("):
+        start = src.index(fn)
+        body = src[start:src.index(next_def, start + 10)]
+        assert "recent_edits_notice()" in body, f"{fn} 에서 안 부른다"
