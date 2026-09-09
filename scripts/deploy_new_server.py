@@ -46,7 +46,7 @@ EXCLUDE_DIRS = {
 #     쌓이는 산출물이고 DB payload 로 재생성되므로 올리지 않는다.
 #   - data/sql_results: 사용자별 조회 결과 CSV 보관분(매출·원가 포함). 서버마다
 #     따로 쌓이는 산출물이고 TTL 로 스스로 지워진다 — 올리지 않는다
-EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports",
+EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports", "qa_artifacts",
                  "data/sql_results"}
 # 영상은 코드가 아니다 — 배포 전송에 끼면 **매번** 함께 올라간다.
 #   셀라 기원 MV 는 720p 로 줄여도 40MB 다 (전체 전송량이 37.8MB 다).
