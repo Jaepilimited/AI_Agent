@@ -32,7 +32,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 # 검사 대상 — 앱이 실제로 import 하는 것만.
 # ⛔ `scripts/` 는 넣지 않는다. 일회용 조사 스크립트가 문법이 깨진 채 남아 있고
@@ -586,10 +586,55 @@ _SUMMARY = re.compile(
 _FAILED_LINE = re.compile(r"^(?:FAILED|ERROR)\s+(?P<file>[^\s:]+)", re.M)
 
 
-def test_command(python: str = None) -> List[str]:
-    """돌릴 명령. ⚠️ 목록을 호출부에 다시 적지 마라 — 갈리면 관문이 다른 것을 잰다."""
+def _can_run_suite(python: str) -> bool:
+    """그 파이썬으로 스위트를 돌릴 수 있나 — pytest 와 프로젝트 의존성이 다 있나."""
+    import subprocess
+
+    try:
+        done = subprocess.run([python, "-c", "import pytest, fastapi"],
+                              capture_output=True, timeout=60)
+        return done.returncode == 0
+    except Exception:                                     # noqa: BLE001
+        return False
+
+
+def suite_python() -> Optional[str]:
+    """스위트를 돌릴 파이썬.
+
+    ⛔ **`sys.executable` 을 그대로 쓰면 안 된다.** CLAUDE.md 는 배포를
+       `./sshenv/Scripts/python` 으로 돌리라고 정하고 있는데(paramiko 가 거기 있다),
+       그 venv 에는 **프로젝트 의존성이 없다.** 실측(2026-09-09 첫 실전):
+       pytest 는 있어서 명령은 뜨는데 **수집 단계에서 118건이 죽고 4.2초 만에**
+       요약 줄 없이 끝난다 → 관문이 "결과를 읽지 못했습니다" 로 배포를 막았다.
+       테스트 실패가 아니라 **관문이 자기를 못 돌린 것**이었다.
+
+    ⚠️ 이름으로 고르지 않고 **물어본다** — 실제로 import 가 되는 파이썬만 쓴다.
+       경로 규칙을 적어 두면 다른 기계에서 조용히 어긋난다.
+    """
+    import shutil
     import sys as _sys
-    return [python or _sys.executable, "-m", "pytest", *TEST_TARGETS, "-q"]
+
+    seen = set()
+    for cand in (_sys.executable, shutil.which("python"), shutil.which("python3")):
+        if not cand or cand in seen:
+            continue
+        seen.add(cand)
+        if _can_run_suite(cand):
+            return cand
+    return None
+
+
+def test_command(python: str = None) -> List[str]:
+    """돌릴 명령. ⚠️ 목록을 호출부에 다시 적지 마라 — 갈리면 관문이 다른 것을 잰다.
+
+    ⛔ 돌릴 파이썬이 없으면 **막지 않고 알린다.** 영원히 못 도는 관문은 곧
+       `--skip-tests` 로 넘겨지고, 그러면 아무것도 안 지킨다.
+    """
+    chosen = python or suite_python()
+    if not chosen:
+        raise RuntimeError(
+            "스위트를 돌릴 파이썬을 찾지 못했습니다 (pytest+프로젝트 의존성 필요)")
+    return [chosen, "-m", "pytest", *TEST_TARGETS, "-q"]
 
 
 def parse_pytest_output(text: str) -> dict:

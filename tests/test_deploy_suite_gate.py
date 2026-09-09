@@ -219,3 +219,66 @@ def test_the_module_never_runs_pytest_itself():
 @pytest.mark.parametrize("target", TEST_TARGETS)
 def test_targets_are_what_we_actually_measured(target):
     assert target in ("tests/", "--ignore=tests/frontend")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# ⛔ 관문이 **자기를 못 돌려서** 배포를 막았다 — 2026-09-09 첫 실전
+#
+#   [스위트] !! 결과를 읽지 못했습니다 (5초) - 앞 단계에서 죽었을 수 있습니다
+#            보내지 않습니다
+#
+#   테스트가 실패한 것이 아니었다. CLAUDE.md 는 배포를
+#   `./sshenv/Scripts/python scripts/deploy_new_server.py was` 로 돌리라고 정하는데
+#   (paramiko 가 거기 있다), **그 venv 에는 프로젝트 의존성이 없다.**
+#   pytest 는 있어서 명령은 뜨지만 수집 단계에서 118건이 죽고 4.2초 만에
+#   요약 줄 없이 끝난다 → 관문이 "못 읽었다" 로 막는다.
+#
+#   ⚠️ 이 모양이 관문을 죽이는 경로다: 늘 막히면 사람은 `--skip-tests` 를 외우고,
+#      그러면 관문은 아무것도 안 지킨다.
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_the_suite_runs_under_a_python_that_actually_has_the_project():
+    """⛔ `sys.executable` 을 그대로 쓰면 배포 인터프리터(sshenv)로 돌게 된다."""
+    import subprocess
+
+    from app.core.deploy_preflight import suite_python
+
+    chosen = suite_python()
+    assert chosen, "스위트를 돌릴 파이썬을 못 찾았다"
+    done = subprocess.run([chosen, "-c", "import pytest, fastapi"],
+                          capture_output=True, timeout=60)
+    assert done.returncode == 0, "고른 파이썬으로 프로젝트를 import 하지 못한다"
+
+
+def test_it_asks_the_interpreter_instead_of_guessing_by_path():
+    """⚠️ 경로 규칙을 적어 두면 다른 기계에서 조용히 어긋난다 — 물어봐야 한다."""
+    import inspect
+
+    from app.core import deploy_preflight
+
+    src = inspect.getsource(deploy_preflight.suite_python)
+    assert "_can_run_suite" in src, "실제로 import 되는지 확인하지 않는다"
+
+    # ⚠️ **독스트링은 빼고 본다.** 왜 그러면 안 되는지를 설명하려면
+    #    그 경로를 적을 수밖에 없는데, 그것까지 코드로 읽으면 설명이 회귀에 걸린다
+    #    (없는 CSS 변수를 주석에 썼다가 린트가 코드로 읽던 그 함정과 같다).
+    body = src.split(chr(34) * 3)[-1]
+    for hardcoded in ("sshenv", "Scripts/python", "Programs"):
+        assert hardcoded not in body, f"경로를 손으로 적었다: {hardcoded}"
+
+
+def test_no_runnable_python_reports_instead_of_blocking(monkeypatch):
+    """⛔ 영원히 못 도는 관문은 곧 `--skip-tests` 로 넘겨진다 — 막지 말고 알린다.
+
+    `test_command()` 가 예외를 던지면 배포 스크립트의 `except` 가
+    "돌리지 못했습니다 - 건너뜁니다" 를 찍고 **보낸다** (그 분기가 이미 있다).
+    """
+    from app.core import deploy_preflight
+
+    monkeypatch.setattr(deploy_preflight, "suite_python", lambda: None)
+    with pytest.raises(RuntimeError):
+        deploy_preflight.test_command()
+
+    src = (ROOT / "scripts" / "deploy_new_server.py").read_text(encoding="utf-8")
+    assert "돌리지 못했습니다" in src and "건너뜁니다" in src, \
+        "못 돌렸을 때 배포를 세우지 않는 분기가 사라졌다"
