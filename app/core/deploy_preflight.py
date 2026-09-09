@@ -422,3 +422,106 @@ def format_untracked_notice(rows: List[Tuple[str, int]]) -> List[str]:
     out.append("         작업트리가 사라지면 이 코드는 프로덕션에만 남습니다. 커밋을 권합니다")
     out.append("         (막지 않습니다 - 전송은 그대로 진행됩니다)")
     return out
+
+
+# ---------------------------------------------------------------------------
+# 지금 누가 만지고 있는가 — 관문이 걸렸을 때만 보여준다
+# ---------------------------------------------------------------------------
+#
+# ⛔ **왜 있나** (2026-09-09, 하루에 두 번):
+#
+#       09:04  import 만 있고 모듈이 없는 상태가 전송됐다 → 프로덕션 80초 정지
+#       09:15  인증 미들웨어가 반쯤 배선된 상태 → 스위트 76건 실패
+#
+#    두 번 다 원인은 **다른 세션이 그 순간 편집 중**이었다는 것이다. 그런데
+#    누르는 사람이 보는 것은 `76 failed` 뿐이라, **"내가 뭘 깼나" 를 한참
+#    뒤지게 된다.** 실제로 그날 두 세션이 각자 그 판단에 시간을 썼다.
+#    (같은 스위트를 4분 간격으로 두 번 쟀더니 76건 → 1건이었다. 둘 다
+#    정확히 잰 것이고 **트리가 그 사이에 달라진 것**이다.)
+#
+#    ⟹ 실패 목록 옆에 **"최근에 바뀐 파일"** 을 함께 찍으면, *"내 잘못이
+#       아니라 기다릴 일"* 이라는 판단을 사람이 즉시 할 수 있다.
+#
+# ⛔ **막지 않는다. 판단도 하지 않는다.** 이건 이미 걸린 관문 옆에 붙는
+#    보조 설명이라, 이것만으로 배포를 세우지 않는다.
+#
+# ⛔ **"누가" 를 단정하지 마라.** mtime 은 *언제* 만 말한다. 오늘 우리는
+#    파일 이름만 보고 세션을 잘못 짚었다 (`sales_outlook` → S&OP 세션인 줄
+#    알았는데 아니었다). 그래서 문구는 "다른 세션이 편집 중일 수 있습니다" 다.
+#
+# ⚠️ **`??`(추적 안 됨)를 함께 표시한다.** 오늘 두 번 다 신호가 그것이었다 —
+#    `sales_outlook.py` 도 `session_auth.py` 도 **방금 생긴 untracked 새
+#    모듈**이었다. `M` 보다 훨씬 강한 신호다.
+#
+# ⚠️ 창은 10분이다. 실측(2026-09-09 09:30): 2분 0개 · 5분 2개 · 10분 2개 ·
+#    20분 11개 · 60분 16개. 오늘 두 사고는 각각 30초·2분 간격이라 어느
+#    창으로도 잡히지만, 넓히면 조용한 날에도 목록이 길어져 읽히지 않는다.
+
+RECENT_EDIT_WINDOW_SECONDS = 600
+
+
+def recently_touched(root: Path, within_seconds: int = RECENT_EDIT_WINDOW_SECONDS,
+                     now: float = None) -> List[Tuple[str, int, str]]:
+    """최근에 바뀐 감시 대상 소스. `(상대경로, 몇 초 전, 상태)` 를 최신순.
+
+    상태는 `??`(git 이 모름) 또는 `M`(고쳐짐) 또는 빈 문자열(방금 커밋됨).
+    """
+    import time
+
+    root = Path(root)
+    now = time.time() if now is None else now
+    unknown = set()
+    try:
+        unknown = untracked_paths(root)
+    except Exception:                                  # noqa: BLE001
+        pass                                           # git 이 없어도 mtime 은 말한다
+
+    modified = set()
+    try:
+        import subprocess
+        out = subprocess.run(["git", "status", "--porcelain", "-z"],
+                             cwd=str(root), capture_output=True, timeout=120)
+        for chunk in out.stdout.decode("utf-8", "replace").split("\0"):
+            if chunk[:2] in (" M", "M ", "MM"):
+                modified.add(chunk[3:].strip())
+    except Exception:                                  # noqa: BLE001
+        pass
+
+    rows: List[Tuple[str, int, str]] = []
+    for base in WATCHED_ROOTS:
+        for p in (root / base).rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            rel = p.relative_to(root).as_posix()
+            if not _load_bearing(rel):
+                continue
+            try:
+                age = int(now - p.stat().st_mtime)
+            except OSError:
+                continue
+            if age < 0 or age > within_seconds:
+                continue
+            state = "??" if rel in unknown else ("M" if rel in modified else "")
+            rows.append((rel, age, state))
+    rows.sort(key=lambda r: r[1])
+    return rows
+
+
+def _ago(seconds: int) -> str:
+    if seconds < 90:
+        return f"{seconds}초 전"
+    return f"{seconds // 60}분 전"
+
+
+def format_recent_edits_notice(rows: List[Tuple[str, int, str]]) -> List[str]:
+    """관문이 걸렸을 때 옆에 붙는 설명. 없으면 아무 말도 하지 않는다."""
+    if not rows:
+        return []
+    out = ["  [편집중] 최근 10분 안에 바뀐 소스가 있습니다 - 다른 세션이 편집 중일 수 있습니다"]
+    for rel, age, state in rows[:8]:
+        tag = "  <- git 에 없음(새 파일)" if state == "??" else ""
+        out.append(f"           {rel}  {_ago(age)}{tag}")
+    if len(rows) > 8:
+        out.append(f"           ... 외 {len(rows) - 8}개")
+    out.append("         그 작업이 끝난 뒤 다시 실행하면 통과할 수 있습니다")
+    return out

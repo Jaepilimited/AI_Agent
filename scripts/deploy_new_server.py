@@ -113,11 +113,27 @@ def preflight(skip: bool = False) -> bool:
         print("        ", line.encode("cp949", "replace").decode("cp949"))
     if len(problems) > 15:
         print(f"         ... 외 {len(problems) - 15}건")
+    # ⛔ 걸린 이유가 **내 잘못이 아닐 수 있다**. 이 트리는 세션 서넛이 공유해서,
+    #    2026-09-09 에는 같은 스위트가 4분 사이에 76건 → 1건이 됐다 (둘 다 정확히
+    #    잰 것이고 트리가 그 사이에 달라진 것이다). 최근에 바뀐 파일을 함께 찍어
+    #    "기다릴 일" 이라는 판단을 즉시 할 수 있게 한다. ⚠️ 누가인지는 말하지 않는다.
+    for line in recent_edits_notice():
+        print(line.encode("cp949", "replace").decode("cp949"))
     if skip:
         print("  [점검] --skip-preflight 로 무시하고 보냅니다 !! 이 상태가 그대로 뜹니다")
         return True
     print("  고친 뒤 다시 실행하세요. 정말 이대로 보내야 하면 --skip-preflight")
     return False
+
+
+def recent_edits_notice() -> list:
+    """관문이 걸렸을 때만 붙는 보조 설명. 판정은 `deploy_preflight` 한 곳에서 한다."""
+    sys.path.insert(0, str(PROJ))
+    try:
+        from app.core.deploy_preflight import recently_touched, format_recent_edits_notice
+        return format_recent_edits_notice(recently_touched(PROJ))
+    except Exception:                             # noqa: BLE001
+        return []                                 # 보조 설명이 배포를 세우지 않는다
 
 
 def untracked_notice(files) -> list:
