@@ -679,8 +679,17 @@ def format_suite_notice(result: dict, seconds: float = None) -> List[str]:
     """사람이 읽을 줄들. 통과했으면 한 줄, 실패했으면 어디가 깨졌는지."""
     took = f" ({seconds:.0f}초)" if seconds is not None else ""
     if not result.get("parsed"):
-        return [f"  [스위트] !! 결과를 읽지 못했습니다{took} - 수집 단계에서 죽었을 수 있습니다",
-                "         보내지 않습니다. 정말 이대로 보내야 하면 --skip-tests"]
+        # ⚠️ 여기는 **테스트가 깨진 것과 스위트를 못 돌린 것이 똑같이 생기는** 자리다.
+        #    2026-09-09 실전에서 실제로 후자였고(격리 venv 에 의존성이 없었다),
+        #    그 구분에 10분이 들었다. 직접 돌려 볼 명령을 함께 준다.
+        out = [f"  [스위트] !! 결과를 읽지 못했습니다{took} - 수집 단계에서 죽었을 수 있습니다",
+               "         ⚠️ 테스트가 깨진 것이 아니라 **스위트를 못 돌린 것**일 수 있습니다"]
+        try:
+            out.append("         직접 돌려 보세요: " + " ".join(test_command()))
+        except Exception:                                 # noqa: BLE001
+            out.append("         돌릴 파이썬을 찾지 못했습니다 (pytest+프로젝트 의존성 필요)")
+        out.append("         보내지 않습니다. 정말 이대로 보내야 하면 --skip-tests")
+        return out
     if result["failed"] == 0 and result["errors"] == 0:
         return [f"  [스위트] 통과 {result['passed']}건{took}"]
     out = [f"  [스위트] !! {result['failed']}건 실패 / {result['passed']}건 통과{took} - 보내지 않습니다"]

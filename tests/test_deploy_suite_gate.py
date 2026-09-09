@@ -282,3 +282,17 @@ def test_no_runnable_python_reports_instead_of_blocking(monkeypatch):
     src = (ROOT / "scripts" / "deploy_new_server.py").read_text(encoding="utf-8")
     assert "돌리지 못했습니다" in src and "건너뜁니다" in src, \
         "못 돌렸을 때 배포를 세우지 않는 분기가 사라졌다"
+
+
+def test_an_unreadable_result_says_it_might_be_the_environment():
+    """⚠️ '테스트가 깨졌다' 와 '스위트를 못 돌렸다' 가 같은 화면으로 보인다.
+
+    2026-09-09 실전에서 실제로 후자였고 그 구분에 10분이 들었다 — 다음 사람은
+    직접 돌려 볼 명령을 화면에서 바로 받는다.
+    """
+    from app.core.deploy_preflight import format_suite_notice, parse_pytest_output
+
+    body = "\n".join(format_suite_notice(parse_pytest_output("boom"), 5.0))
+    assert "못 돌린 것" in body, "환경 문제일 수 있다는 사실을 말하지 않는다"
+    assert "pytest" in body, "직접 돌려 볼 명령이 없다"
+    assert "--skip-tests" in body, "우회로 안내가 사라졌다"
