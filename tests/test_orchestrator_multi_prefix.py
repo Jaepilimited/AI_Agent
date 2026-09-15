@@ -97,4 +97,6 @@ async def test_enabled_sources_downgrades_classified_notion_to_direct():
     result = await agent.route_and_execute("lookup", enabled_sources=[])
 
     assert result["source"] == "direct"
-    assert result["answer"] == "direct answer"
+    # 2026-09-15: 사용자가 좁힌 소스로 막혔으면 코드가 답변 맨 앞에 그 사실을 적는다
+    assert result["answer"].endswith("direct answer")
+    assert result["answer"].startswith("> ⚠️ **데이터 조회를 실행하지 않았습니다.**")

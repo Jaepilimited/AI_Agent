@@ -82,6 +82,16 @@ _RESOLUTION_NOTE_2026_08_26 = (
     "사용자 확인(2026-08-26): 해결 완료. "
     "배포된 해결 목록과 피드백 상태를 자동 동기화했습니다."
 )
+_RESOLUTION_NOTE_2026_09_15 = (
+    "수정 완료(2026-09-15): 남미 매출 질문에 조회 없이 「조회가 붙지 않았다」고만 답하던 "
+    "건입니다. 확인해 보니 질문은 매출 조회로 정확히 판정됐는데, 사이드바 System Status 의 "
+    "데이터 소스 선택이 꺼져 있어(전체 해제 상태) 조회 경로가 막히고 직접 대화로만 답했던 "
+    "것입니다. 9월 3일부터 그 체크박스가 실제 조회에 적용되는데, 막혔다는 사실을 화면 어디에도 "
+    "말하지 않은 것이 문제였습니다. 이제는 그 경우 답변 맨 앞에 「데이터 조회를 실행하지 "
+    "않았습니다 — System Status 에서 전체 선택을 누르거나 @@매출 로 지정해 주세요」를 코드가 "
+    "붙입니다. 지금 바로 쓰시려면 사이드바 System Status 에서 「전체 선택」을 누르시면 됩니다."
+)
+
 DEPLOYED_FEEDBACK_RESOLUTIONS = tuple(
     {"id": feedback_id, "created_on": created_on, "note": _RESOLUTION_NOTE_2026_08_26}
     for feedback_id, created_on in _RESOLVED_2026_08_26
@@ -362,6 +372,9 @@ DEPLOYED_FEEDBACK_RESOLUTIONS = tuple(
             "안내합니다. 전체 조회에 실패하면 일부만 세어 총횟수라고 답하지 않습니다."
         ),
     },
+) + tuple(
+    {"id": feedback_id, "created_on": "2026-09-15", "note": _RESOLUTION_NOTE_2026_09_15}
+    for feedback_id in (174, 175, 177)
 )
 
 _COLUMNS = (

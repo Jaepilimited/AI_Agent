@@ -196,6 +196,47 @@ _DIRECT_PARTIAL_FAILURE = (
 _SOURCE_GATE_TIMEOUT_SECONDS = 6.0
 
 
+# ── 소스가 꺼져 있어 조회를 건너뛴 사실은 코드가 말한다 (2026-09-15 붐따 #174·#175·#177)
+# System Status 의 소스 선택이 실제 라우팅에 닿게 된 뒤(2026-09-03), `전체 해제` 나
+# 그룹 해제를 해 둔 사람의 매출 질문이 확신 `bigquery` 로 분류되고도 조용히 `direct`
+# 로 떨어졌다. 그러면 LLM 이 "조회가 붙지 않았다" 며 변명하거나 숫자를 지어낸다.
+# 실측(9/3 전후): 확신 매출 질문의 direct 오분류 1.9%(5명) → 18.2%(13명).
+# ⛔ 프롬프트가 아니라 코드가 답변 **맨 앞**에 적는다 (수량 이상치 공시와 같은 자리).
+# ⚠️ `enabled_sources is None`(서버 기본값)일 때는 붙이지 않는다 — 그건 사용자가
+#    끈 것이 아니라 설계된 기본이고, 매번 뜨는 안내는 곧 아무도 안 읽는다.
+_SOURCE_OFF_LABELS = {
+    "bigquery": ("매출·데이터", "`@@매출`"),
+    "multi": ("매출·데이터", "`@@매출`"),
+    "gws": ("Google Workspace(메일·캘린더·드라이브)", "`@@gws`"),
+    "notion": ("사내 문서(Notion)", "`@@` + 팀 이름"),
+    "cs": ("제품 Q&A", "`@@BP`"),
+    "inventory": ("OP 재고", "`@@OP`"),
+    "model_rights": ("초상권", "`@@초상권`"),
+    "awards": ("수상/랭킹", "`@@수상`"),
+    "report": ("보고서", "`@@보고서`"),
+}
+
+
+def _sources_off_notice(original_route: str, enabled_sources) -> str:
+    """사용자가 좁혀 둔 소스 목록 때문에 데이터 경로가 direct 로 떨어졌을 때
+    답변 맨 앞에 붙일 문구. 붙일 일이 없으면 빈 문자열."""
+    if enabled_sources is None:
+        return ""
+    label_hint = _SOURCE_OFF_LABELS.get(original_route)
+    if not label_hint:
+        return ""
+    label, hint = label_hint
+    n = len(enabled_sources)
+    state = "전체 해제 상태" if n == 0 else f"{n}개만 선택된 상태"
+    return (
+        "> ⚠️ **데이터 조회를 실행하지 않았습니다.** 이 질문은 "
+        f"{label} 조회로 판정됐지만, System Status 의 데이터 소스가 꺼져 있어"
+        f"({state}) 직접 대화로만 답했습니다. 아래 답변에 수치가 있다면 조회 결과가 "
+        "아닙니다. 사이드바 **System Status → 전체 선택** 을 누르거나, 질문 앞에 "
+        f"{hint} 를 붙여 다시 물어봐 주세요."
+    )
+
+
 def _system_instruction_to_text(system_instruction) -> str:
     """Flatten Anthropic system blocks for the Gemini fallback."""
     if isinstance(system_instruction, str):
@@ -1164,6 +1205,7 @@ class OrchestratorAgent:
         images = images or []
         conversation_context = _build_conversation_context(messages)
         _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
+        _sources_off_note = ""  # 소스가 꺼져 조회를 건너뛴 사실 (코드가 공시한다)
 
         # ═══ 노션 저장 관문 ═══
         # ⛔ 라우터보다, 그리고 @@ 소스 판정보다 **먼저** 돈다 — `@@물류` 를 켠 채로
@@ -1413,7 +1455,17 @@ class OrchestratorAgent:
                 if enabled_sources is None and route in ("notion", "cs"):
                     logger.info("route_keyword_override", route=route, reason="keyword-classified, bypassing default filter")
                 else:
-                    logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
+                    _sources_off_note = _sources_off_notice(route, enabled_sources)
+                    if enabled_sources is not None:
+                        # ⛔ WARNING 이다 — INFO 는 프로덕션에서 통째로 버려져
+                        #    이 필터가 13명의 매출 질문을 조용히 떨어뜨리는 동안
+                        #    아무 흔적도 없었다 (2026-09-15)
+                        logger.warning("route_filtered_by_sources", path="route_and_execute",
+                                       original_route=route,
+                                       enabled_sources=list(enabled_sources)[:40],
+                                       query=query[:80])
+                    else:
+                        logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
                     route = "direct"
 
         logger.info(
@@ -1456,6 +1508,9 @@ class OrchestratorAgent:
                 _awd_intent(clean_query or query, explicit=True))
         elif route == "direct" or handler == self._handle_direct:
             result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback, skill_context=_skill_ctx)
+            if _sources_off_note and result.get("answer"):
+                # 표보다 먼저 — 사람은 각주를 안 본다. 스트리밍 경로도 같은 자리다
+                result["answer"] = _sources_off_note + "\n\n" + result["answer"]
         else:
             result = await handler(query, messages, conversation_context, model_type, user_email)
 
@@ -1504,6 +1559,7 @@ class OrchestratorAgent:
         images = images or []
         conversation_context = _build_conversation_context(messages)
         _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
+        _sources_off_note = ""  # 소스가 꺼져 조회를 건너뛴 사실 (코드가 공시한다)
 
         # ⚠️ 비스트리밍과 **같은 관문** — 한쪽만 달면 경로에 따라 답이 갈린다.
         from app.core import notion_save
@@ -1855,7 +1911,14 @@ class OrchestratorAgent:
                 if enabled_sources is None and route in ("notion", "cs", "awards"):
                     logger.info("stream_route_keyword_override", route=route)
                 else:
-                    logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
+                    _sources_off_note = _sources_off_notice(route, enabled_sources)
+                    if enabled_sources is not None:
+                        logger.warning("route_filtered_by_sources", path="route_and_stream",
+                                       original_route=route,
+                                       enabled_sources=list(enabled_sources)[:40],
+                                       query=query[:80])
+                    else:
+                        logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
                     if route != "direct":
                         route = "direct"
                         yield ("source", route)
@@ -1884,6 +1947,9 @@ class OrchestratorAgent:
 
         # Direct route → real-time streaming
         if route == "direct" and not is_system_task:
+            if _sources_off_note:
+                # ⚠️ 비스트리밍과 **같은 자리**(답변 맨 앞). 한쪽만 걸면 경로에 따라 답이 갈린다
+                yield ("chunk", _sources_off_note + "\n\n")
             llm = get_llm_client(MODEL_CLAUDE)
             today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
             system = self._build_direct_system_prompt()
