@@ -868,6 +868,7 @@ class OrchestratorAgent:
         {"key": "KBT", "aliases": ["kbt", "국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
         {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법)"},
         {"key": "PEOPLE", "aliases": ["people", "피플", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지"},
+        {"key": "PR", "aliases": ["pr", "홍보", "보도자료", "프레인"], "route": "notion", "group": "브랜드 성과", "icon": "sheet", "label": "PR", "desc": "프레인 PR 이슈 (리스트 탭)"},
         # OP — 운영팀 재고. ⚠️ 벡터가 아니라 **표 조회**다 (`route: "inventory"`).
         #    시트가 SKU × 창고 수량이라 임베딩으로는 숫자를 못 지킨다 (2026-08-25 결정).
         {"key": "OP", "aliases": ["op", "운영", "운영팀", "재고", "inventory", "stock"], "route": "inventory", "group": "Notion", "icon": "box", "label": "OP", "desc": "재고 (SKU·창고별 수량)"},
@@ -1442,7 +1443,7 @@ class OrchestratorAgent:
         elif route == "notion":
             result = await self._handle_qdrant(
                 query, messages, conversation_context, model_type, user_email,
-                team_key=(single_source_entry["key"] if single_source_entry else None),
+                team_key=self._notion_query_team(query, single_source_entry),
             )
         elif route == "awards":
             # ⛔ `awards` 는 `HANDLER_ROUTES` 에 없다 — `@@`/명시 선택은 이미 위쪽
@@ -1718,6 +1719,8 @@ class OrchestratorAgent:
                         result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=300.0 if route == "multi" else 30.0)
                 except asyncio.TimeoutError:
                     result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 더 짧은 기간이나 구체적인 조건으로 다시 질문해 보세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"2025년 1분기 일본 매출 알려줘\" (기간+국가 한정)\n> - \"이번 달 아마존 매출 현황\" (채널 지정)\n> - \"센텔라 앰플 최근 3개월 매출 추이\" (제품 지정)", "source": route}
+                    if entry["key"] == "PR":
+                        result = self._pr_unavailable_result("PR 자료 검색이 지연되고 있습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
             else:
                 # Multiple sources → parallel, merge results
                 logger.info("db_multi_prefix_stream", sources=[e["key"] for e in db_entry])
@@ -2051,19 +2054,22 @@ class OrchestratorAgent:
 
         handler = self._resolve_handler(route)
         _route_timeout = 60.0 if route == "gws" else 30.0
+        _pr_scoped = route == "notion" and self._notion_query_team(query, single_source_entry) == "PR"
 
         # Check circuit breaker before calling
         circuit = get_circuit(route)
         if not circuit.is_available():
             logger.warning("circuit_open_fallback", route=route)
             result = {"answer": f"⚠️ {route} 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.", "source": route}
+            if _pr_scoped:
+                result = self._pr_unavailable_result("PR 자료 검색 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
         else:
             try:
                 if route == "notion":
                     result = await asyncio.wait_for(
                         self._handle_qdrant(
                             query, messages, conversation_context, model_type, user_email,
-                            team_key=(single_source_entry["key"] if single_source_entry else None),
+                            team_key=self._notion_query_team(query, single_source_entry),
                         ),
                         timeout=20.0,
                     )
@@ -2077,10 +2083,14 @@ class OrchestratorAgent:
                 logger.warning("route_timeout", route=route, timeout_s=_route_timeout)
                 circuit.record_failure()
                 result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 조회 범위를 좁혀서 다시 시도해 주세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - 기간을 한정: \"2025년 1분기\" 대신 \"2025년 3월\"\n> - 국가/채널 지정: \"일본 큐텐 매출\"\n> - 제품 지정: \"센텔라 앰플 매출 추이\"", "source": route}
+                if _pr_scoped:
+                    result = self._pr_unavailable_result("PR 자료 검색이 지연되고 있습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
             except Exception as e:
                 logger.error("route_execution_failed", route=route, error=str(e))
                 circuit.record_failure()
                 result = {"answer": "⚠️ 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n다른 방식으로 질문하시면 도움이 될 수 있습니다:\n- 질문을 더 구체적으로 (기간, 국가, 제품 등 조건 추가)\n- 복잡한 질문은 나누어서 하나씩 질문", "source": route}
+                if _pr_scoped:
+                    result = self._pr_unavailable_result("PR 자료를 검색하지 못했습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
 
         if "answer" in result:
             result["answer"] = ensure_formatting(result["answer"], domain=route)
@@ -2520,6 +2530,32 @@ class OrchestratorAgent:
             return False
         return not any(w in q for w in self._LOOKUP_WORD)
 
+    # PR 두 글자는 product·promotion 등의 일부이므로 영문 경계를 따로 확인한다.
+    # 홍보용 문구 작성이나 일반 실적·행사 조회는 PR 자료 검색이 아니다.
+    _PR_LOOKUP_RE = re.compile(
+        r"(?<![a-z0-9_])pr\s+이슈(?=$|[\s?!.,]|[은는을를이가에의])"
+        r"|(?<![가-힣])보도자료(?=$|[\s?!.,]|[은는를이가에의])"
+        r"|(?<![가-힣])프레인(?=$|[\s?!.,]|[은는이가에의])"
+        r"|(?<![가-힣])홍보\s*(?:관련\s*)?(?:자료|이슈|활동|내역|현황|리스트|시트|내용|기록)",
+        re.I,
+    )
+
+    def _is_pr_lookup_query(self, query: str) -> bool:
+        q = query.lower()
+        if not self._PR_LOOKUP_RE.search(q):
+            return False
+        if query.strip().startswith("### Task:") or self._has_pasted_data(query):
+            return False
+        if self._RE_AUTHORING.search(q) and not any(w in q for w in self._LOOKUP_WORD):
+            return False
+        return not (self._is_definition_question(q) or self._is_self_feature_question(q))
+
+    def _notion_query_team(self, query: str, selected_entry=None):
+        """명시적으로 고른 소스를 우선하고, 일반 PR 질문만 PR 구역으로 좁힌다."""
+        if selected_entry:
+            return selected_entry["key"]
+        return "PR" if self._is_pr_lookup_query(query) else None
+
     def _is_self_feature_question(self, q: str) -> bool:
         """우리 서비스 자신의 기능을 설명해 달라는 질문인가.
 
@@ -2688,6 +2724,9 @@ class OrchestratorAgent:
         # 지표·용어의 **뜻**을 묻는 질문 → direct (SQL 을 만들 대상이 아니다)
         if self._is_definition_question(q):
             return ("direct", True)
+
+        if self._is_pr_lookup_query(query):
+            return ("notion", True)
 
         # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
         if self._has(q, self._FULLDATA_KEYWORDS):
@@ -3643,6 +3682,11 @@ class OrchestratorAgent:
         ]
         return {"source": "bigquery", "answer": "\n".join(lines)}
 
+    @staticmethod
+    def _pr_unavailable_result(message):
+        from app.agents.qdrant_agent import pr_answer_with_source
+        return {"source": "notion", "answer": pr_answer_with_source(message)}
+
     async def _handle_qdrant(self, query, messages, conversation_context, model_type, user_email="", team_key=None):
         from app.agents.qdrant_agent import run as run_qdrant
         # 벡터 임베딩에는 순수 query만 사용 — 대화 히스토리를 넣으면 검색 정확도 하락
@@ -3650,6 +3694,10 @@ class OrchestratorAgent:
             result = await run_qdrant(query, team_key=team_key, model_type=model_type)
             return {"source": "notion", "answer": result}
         except Exception as e:
+            from app.agents.qdrant_agent import resolve_team_filter
+            if resolve_team_filter(team_key) == "PR":
+                logger.error("pr_search_failed", error=str(e))
+                return self._pr_unavailable_result("PR 자료를 검색하지 못했습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
             return {"source": "notion", "answer": f"사내 문서 검색 중 오류: {str(e)}"}
 
     async def _handle_gws(
@@ -4431,6 +4479,23 @@ JSON만 반환:
                         ),
                         temperature=0.5,
                     )
+
+            # ⛔ **빈 답변을 그대로 내보내지 않는다.** 모델이 출력 토큰을 다 쓰고도
+            #    text 블록 없이 끝나는 일이 실제로 있다 (2026-09-15 골든 run#88:
+            #    출력 1,191 토큰 · `answer_len=0` · 예외도 경고도 없었다).
+            #    **예외가 아니라서 아래 `except` 에 걸리지 않는다** — HTTP 200 에
+            #    빈 화면이 나가고, 사용자가 말해 주기 전까지 아무도 모른다.
+            # ⚠️ 스트리밍은 이미 흘려보낸 뒤라 되돌릴 수 없다 — 대신 안내를 한 조각
+            #    더 보낸다. 실패한 쪽이 조용한 것보다 낫다.
+            if not (answer or "").strip():
+                logger.warning(
+                    "direct_empty_answer",
+                    streamed=bool(stream_callback),
+                    query=query[:80],
+                )
+                answer = _DIRECT_TEMPORARY_FAILURE
+                if stream_callback:
+                    await stream_callback(answer)
 
             return {"source": "direct", "answer": answer}
         except Exception as e:

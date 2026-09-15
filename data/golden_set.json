@@ -1447,12 +1447,9 @@
       "freq": "daily",
       "question": "한국팀 최근 3개월 광고비 및 매출 광고 매체별로 정리해줘",
       "expect": {
-        "sql_contains_any": [
-          "integrated_ad"
-        ],
-        "contains_any": [
-          "KBT",
-          "한국사업팀"
+        "sql_contains_all": [
+          "integrated_ad",
+          "KBT"
         ],
         "not_contains": [
           "SQL이 생성되지 않았습니다",
@@ -1461,7 +1458,7 @@
         "min_len": 150,
         "max_seconds": 90
       },
-      "note": "2026-08-27 실측: 2026-08-25 에 뒤집힌 CURRENT_DATE 상한 규칙의 잔재 관문이 `date <= DATE('2026-08-27')` 를 상한이 없다고 읽어 이 질문을 두 번 죽였다 (사용자 제보). 프로덕션 14일 — 발동 10회 중 9회가 오탐(거부당한 SQL 에 상한이 실제로 있었다)이고 요청 5건이 죽었다. `SQL이 생성되지 않았습니다` 가 다시 나오면 관문이 되살아난 것이다."
+      "note": "2026-08-27 실측: 2026-08-25 에 뒤집힌 CURRENT_DATE 상한 규칙의 잔재 관문이 `date <= DATE('2026-08-27')` 를 상한이 없다고 읽어 이 질문을 두 번 죽였다 (사용자 제보). 프로덕션 14일 — 발동 10회 중 9회가 오탐(거부당한 SQL 에 상한이 실제로 있었다)이고 요청 5건이 죽었다. `SQL이 생성되지 않았습니다` 가 다시 나오면 관문이 되살아난 것이다. | 2026-09-15: 팀 확인을 본문 기대어('KBT'/'한국사업팀')로 걸어 두었더니 최근 20런 중 9회가 실패했다 — 이 SQL 은 팀으로 **필터만** 하고 GROUP BY 는 매체라 팀 이름이 표에 나올 수 없고, LLM 이 문장에 우연히 쓸 때만 통과했다. 확률적으로 깜빡이는 문항은 `golden_regression` 자가점검을 격일로 울려 진짜 회귀를 묻는다. 팀 확인은 결정적인 곳(SQL 리터럴)에서 한다."
     },
     {
       "id": "log_team_spelling_scatter",
@@ -1491,11 +1488,15 @@
       "question": "2026년 상반기(1~6월) 수출 금액을 통화별로 나눠서 알려줘",
       "expect": {
         "contains_all": [
-          "USD"
+          "USD",
+          "EUR",
+          "JPY",
+          "CNY"
         ],
         "contains_any": [
-          "1,142",
-          "1142"
+          "통화미상",
+          "통화 미상",
+          "미상"
         ],
         "not_contains": [
           "어느 기간",
@@ -1505,7 +1506,7 @@
         "min_len": 60,
         "max_seconds": 90
       },
-      "note": "2026-09-03 LOG 연동. amount 는 USD·EUR·KRW·JPY·CNY 가 섞여 있고 통화 미상이 348건이다 — 통화 구분 없이 SUM 하면 숫자는 나오는데 뜻이 없다"
+      "note": "2026-09-03 LOG 연동. amount 는 USD·EUR·KRW·JPY·CNY 가 섞여 있고 통화 미상이 348건이다 — 통화 구분 없이 SUM 하면 숫자는 나오는데 뜻이 없다 | 2026-09-15: 기대어가 USD 건수 '1,142' 였는데 실제가 1,141 로 한 건 줄어 **13런 연속 실패**했다 (답변은 내내 정상이었다). 살아 있는 집계값을 문자열로 얼리면 반드시 낡는다 — `log_team_spelling_scatter` 가 같은 이유로 이미 한 번 고쳐졌다. 이 문항이 지키려는 것은 건수가 아니라 **통화를 나눴는가**이므로 통화 코드가 각각 나오는지와 통화 미상을 공시하는지로 본다."
     },
     {
       "id": "log_routing_not_missing_data",
@@ -1581,6 +1582,20 @@
         ]
       },
       "note": "반대 방향 — 문서를 달라는 요청은 그대로 사내 문서를 뒤진다"
+    },
+    {
+      "id": "pr_issue_reaches_pr",
+      "category": "notion",
+      "freq": "daily",
+      "question": "PR 이슈에서 브라질 Sephora 입점 내용을 알려줘",
+      "expect": {
+        "contains_all": ["작성월", "1MLuwW74Nvv33YW6cVG5qW4uJLGuj3miUqcky9r20A8c"],
+        "contains_any": ["브라질", "Sephora"],
+        "not_contains": ["Google 검색 기반 답변", "색인 0건"],
+        "min_len": 150,
+        "max_seconds": 90
+      },
+      "note": "PR 선택 항목과 검색 데이터 누락 재발 감시. 지정 리스트 탭의 내용·작성월·원본 출처가 함께 답에 나와야 한다."
     },
     {
       "id": "awards_reaches_awards",

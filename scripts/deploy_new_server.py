@@ -51,7 +51,27 @@ EXCLUDE_DIRS = {
 SUITE_HINT_SECONDS = 70   # 실측 66초 (2026-09-09, 3,253문항)
 
 EXCLUDE_PATHS = {"app/static/charts", "knowledge_map", "data/reports", "qa_artifacts",
-                 "data/sql_results"}
+                 "data/sql_results",
+                 # ⛔ **서버가 스스로 쓰는 상태를 로컬 사본으로 덮지 마라.**
+                 #   data/reports·data/sql_results 와 같은 부류인데 빠져 있었다.
+                 #   2026-09-15 실측 — 이 셋이 전송 목록에 들어 있었다:
+                 #     data/gws_tokens/*.json          구글 OAuth 자격증명
+                 #     data/notion_vectors_gemini.json 노션 색인 페이지 맵
+                 #     data/notion_status_block_id.json
+                 #   그날은 우연히 무해했다 (5명 전부 refresh_token 이 같았고
+                 #   access_token 만 달랐다). ⚠️ **회전하는 순간 달라진다** —
+                 #   구글이 refresh_token 을 갱신하면 옛 사본을 덮어쓰는 배포가
+                 #   그 사람의 구글 연결을 끊는다. 에러가 아니라 "연결됨" 이
+                 #   그대로 뜬 채 조용히 죽는다.
+                 #   노션 맵은 더 나쁘다 — 다음 파이프라인이 삭제 대상을
+                 #   `로컬 맵 − 현재 크롤` 로 계산하므로, 낡은 맵을 올리면
+                 #   **멀쩡한 청크를 지우는 근거**가 된다 (링크 카드 177장을
+                 #   통째로 지웠던 그 계열이다).
+                 #   ⚠️ 서버를 새로 세울 때는 이것들이 안 올라간다 — 구글 연결은
+                 #   각자 다시 맺고, 노션 맵은 05:00 파이프라인이 다시 만든다.
+                 "data/gws_tokens",
+                 "data/notion_vectors_gemini.json",
+                 "data/notion_status_block_id.json"}
 # qa_artifacts 는 **릴리스 검증 산출물**이다 (verification.json · selected.json ·
 #   release.diff · 스테이징 사본). 프로덕션에 올릴 이유가 없다.
 #   ⚠️ 그래서 **백업으로도 못 쓴다** — 여기 있는 사본은 배포본이 아니다.
@@ -84,6 +104,14 @@ def collect() -> list[Path]:
         for n in names:
             p = Path(root) / n
             if n.startswith(".") or p.suffix in EXCLUDE_EXT or n in EXCLUDE_FILES:
+                continue
+            # ⛔ EXCLUDE_PATHS 를 **파일에도** 건다. 오래 디렉토리에만 걸려 있어서
+            #    파일 하나를 지목해 적어 두면 **아무 일도 일어나지 않았다** — 에러가
+            #    아니라 조용히 그대로 전송됐다 (2026-09-15 실측: `data/
+            #    notion_vectors_gemini.json` 을 넣고도 목록에 그대로 남았다).
+            #    `EXCLUDE_DIRS` 가 이름으로만 걸러 `app/knowledge_map/` 을 통째로
+            #    빠뜨렸던 것의 거울상이다 — 한쪽은 너무 많이, 한쪽은 아무것도.
+            if str(rel / n).replace("\\", "/").lstrip("./") in EXCLUDE_PATHS:
                 continue
             try:
                 if p.stat().st_size > 40 * 1024 * 1024:

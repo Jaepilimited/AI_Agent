@@ -645,10 +645,26 @@ class ClaudeClient:
 
         `content[0].text` 를 그대로 쓰면 thinking 이 켜진 순간 터진다 —
         0번이 thinking 블록이기 때문이다. 블록 종류가 늘어도 안 깨지게 훑는다.
+
+        ⛔ **못 찾았으면 반드시 흔적을 남긴다.** 예전엔 조용히 `default`("")를
+           돌려줬는데, 그러면 모델이 출력 토큰을 다 쓰고도 **빈 답변이 HTTP 200
+           으로** 나간다 — 예외도 경고도 없어 아무도 모른다. 2026-09-15 골든
+           run#88 실측: `dir_company_intro` 가 출력 1,191 토큰을 쓰고
+           `answer_len=0` 으로 끝났고 로그에 한 줄도 없었다 (20런 중 2회).
+        ⚠️ INFO 는 프로덕션에서 통째로 버려진다 — WARNING 이어야 남는다.
         """
-        for block in (getattr(response, "content", None) or []):
+        blocks = list(getattr(response, "content", None) or [])
+        for block in blocks:
             if getattr(block, "type", None) == "text":
                 return block.text
+        logger.warning(
+            "claude_no_text_block",
+            stop_reason=getattr(response, "stop_reason", None),
+            block_types=[getattr(b, "type", "?") for b in blocks],
+            block_count=len(blocks),
+            output_tokens=getattr(
+                getattr(response, "usage", None), "output_tokens", None),
+        )
         return default
 
     @staticmethod

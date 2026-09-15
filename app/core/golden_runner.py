@@ -127,8 +127,46 @@ def _extract_sql_blocks(answer: str) -> str:
     return "\n".join(re.findall(r"```sql\s*\n(.*?)```", answer, re.DOTALL | re.IGNORECASE))
 
 
-_RE_FOLLOWUP = re.compile(r"\n>?\s*💡\s*\*{0,2}이런 것도 물어보세요.*", re.DOTALL)
 _RE_DETAILS = re.compile(r"<details>.*?</details>", re.DOTALL | re.IGNORECASE)
+_RE_FOLLOWUP_HEAD = re.compile(r"💡")
+_RE_FOLLOWUP_ITEM = re.compile(r"^>?\s*[-*]\s*.+")
+
+
+def _strip_followup_block(answer: str) -> str:
+    """후속 질문 제안 **블록만** 걷는다 — 그 뒤에 오는 본문은 남긴다.
+
+    ⛔ **끝까지 지우지 마라.** 예전에는 `💡 이런 것도 물어보세요` 부터 문자열
+       끝까지를 통째로 버렸다(`DOTALL`). 그런데 이 파이프라인은 제안 **뒤에도**
+       본문을 덧붙인다 — PR 출처 링크·대조용 원본 표·합계 블록·물류 공시가 전부
+       그 자리다. 그래서 판정이 그 구간을 **구조적으로 못 봤다**:
+       `pr_issue_reaches_pr` 은 답변에 원본 시트 링크가 **있는데도** "필수 누락"
+       으로 9런 내리 실패했다 (2026-09-15 실측 — 문항이 태어난 뒤 통과 이력 0).
+    ⛔ 더 나쁜 쪽은 **음성 단언**이다. `not_contains` 가 그 구간을 못 보면
+       금지 문구가 거기 있어도 조용히 통과한다 — 실패는 눈에 띄지만 무력해진
+       단언은 아무 소리도 내지 않는다.
+    ⚠️ 규칙은 화면(`chat.js` 의 `stripFollowupBlock`)과 **같아야 한다.** 사용자가
+       보는 본문과 판정이 보는 본문이 갈리면 어느 쪽도 못 믿는다 — 제안 항목 줄
+       (`- …`)·인용부호만 있는 줄·빈 줄까지만 건너뛰고, 그 밖의 줄을 만나면 블록이
+       끝난 것으로 본다.
+    """
+    if not answer or "💡" not in answer:
+        return answer or ""
+    kept: list[str] = []
+    in_followup = False
+    for line in answer.split("\n"):
+        stripped = line.strip()
+        if _RE_FOLLOWUP_HEAD.search(stripped) and (
+                "물어보세요" in stripped or "질문" in stripped):
+            in_followup = True
+            continue
+        if in_followup:
+            if _RE_FOLLOWUP_ITEM.match(stripped) or stripped in (">", ""):
+                continue
+            in_followup = False
+        kept.append(line)
+    while kept and not kept[-1].strip():
+        kept.pop()
+    return "\n".join(kept)
 
 
 def _body_only(answer: str) -> str:
@@ -143,8 +181,7 @@ def _body_only(answer: str) -> str:
         "B2B 프로모션 검토 필요" 라고 오도하고 있었다.
     sql_contains_any 는 원문에서 따로 뽑으므로 영향받지 않는다.
     """
-    a = _RE_FOLLOWUP.sub("", answer or "")
-    return _RE_DETAILS.sub("", a)
+    return _RE_DETAILS.sub("", _strip_followup_block(answer))
 
 
 def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
@@ -178,12 +215,20 @@ def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
     if far and has_number_near(a, far["value"], far.get("pct", 2) / 100.0):
         reasons.append(f"금지 수치 등장 — {far['value']:,} ±{far.get('pct', 2)}%")
 
-    sql_kws = exp.get("sql_contains_any", [])
-    if sql_kws:
-        # ⚠️ 원문에서 뽑는다 — SQL 은 <details> 안에 있고, 본문에서는 그 블록을 걷어냈다
-        sql = _extract_sql_blocks(answer or "") or (answer or "")
-        if not any(kw.lower() in sql.lower() for kw in sql_kws):
-            reasons.append(f"SQL 규칙 위반 — 다음 중 하나 필요: {sql_kws}")
+    # ⚠️ SQL 은 원문에서 뽑는다 — `<details>` 안에 있고 본문에서는 그 블록을 걷어냈다
+    sql_any = exp.get("sql_contains_any", [])
+    sql_all = exp.get("sql_contains_all", [])
+    if sql_any or sql_all:
+        sql = (_extract_sql_blocks(answer or "") or (answer or "")).lower()
+        if sql_any and not any(kw.lower() in sql for kw in sql_any):
+            reasons.append(f"SQL 규칙 위반 — 다음 중 하나 필요: {sql_any}")
+        # ⛔ 필터가 제대로 걸렸는지는 **SQL 에서** 본다. 본문 기대어로 걸면 그 값이
+        #    표에 나올 때만(= GROUP BY 축일 때만) 맞고, 필터로만 쓰였을 때는 LLM 이
+        #    문장에 우연히 적어 줘야 통과한다 — 확률적으로 깜빡이는 문항이 된다
+        #    (2026-09-15 `inc_date_cap_gate_never_kills_request` 20런 중 9회 실패).
+        for kw in sql_all:
+            if kw.lower() not in sql:
+                reasons.append(f"SQL 필수 누락: {kw!r}")
 
     # 길이는 "답변이 오긴 왔는가" 검사라 원문 기준으로 둔다 (본문 기준으로 바꾸면
     # 기존 문항들의 임계값이 한꺼번에 어긋난다)
