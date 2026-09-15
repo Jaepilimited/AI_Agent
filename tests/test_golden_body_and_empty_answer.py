@@ -193,3 +193,43 @@ def test_direct_handler_replaces_an_empty_answer() -> None:
                                      "inc_date_cap_gate_never_kills_request"])
 def test_touched_items_still_load(item_id: str) -> None:
     assert _item(item_id)["expect"]["max_seconds"] > 0
+
+
+# ── 5. 본문 단언으로 SQL 을 찾지 않는다 (무력해진 단언은 조용하다) ──────────
+
+_SQLISH = re.compile(
+    r"SALES_ALL|integrated_ad|export_logistics|Total_Qty|Sales1_R|FI_LLM_Flat|"
+    r"Exchange_Rate|GROUP\s+BY|SELECT\s|CURRENT_DATE", re.I)
+
+
+def test_no_body_assertion_hunts_for_a_sql_token() -> None:
+    """⛔ 본문 단언은 SQL 을 볼 수 없다 — `_body_only` 가 `<details>` 를 걷는다.
+
+    2026-09-15 실측: 주제 이탈을 막겠다던 `fu_topic_continuity_*` 세 문항이
+    `not_contains: 'SALES_ALL_Backup'` 로 걸려 있었는데, 그 문자열은 본문에
+    **나타날 수가 없어서** 세 문항의 핵심 방어가 내내 무력했다. 실패는 눈에 띄지만
+    통과하는 헛단언은 아무 소리도 내지 않는다. SQL 은 `sql_*` 로 본다.
+    """
+    offenders = []
+    for item in load_golden_set():
+        exp = item.get("expect", {})
+        for key in ("contains_all", "contains_any", "not_contains"):
+            for kw in exp.get(key, []):
+                if _SQLISH.search(str(kw)):
+                    offenders.append(f"{item['id']}.{key}={kw!r}")
+
+    assert offenders == [], (
+        "본문 단언이 SQL 토큰을 찾고 있다 — sql_contains_*/sql_not_contains 로 옮길 것: "
+        + ", ".join(offenders))
+
+
+def test_topic_continuity_items_guard_the_sql_not_the_wording() -> None:
+    """주제 이탈 여부는 SQL 이 결정적으로 말한다. 낱말 선택은 확률이다."""
+    for item_id in ("fu_topic_continuity_ad", "fu_topic_continuity_influencer",
+                    "fu_topic_continuity_mkt_country"):
+        exp = _item(item_id)["expect"]
+        assert exp["sql_not_contains"] == ["SALES_ALL_Backup"], item_id
+
+    # 3회 중 1회가 '마케팅 비용' 이라고 써서 깜빡이던 기대어 — SQL 이 대신 증명한다
+    assert "contains_any" not in _item("fu_topic_continuity_ad")["expect"]
+    assert _item("fu_topic_continuity_ad")["expect"]["sql_contains_any"] == ["integrated_ad"]
