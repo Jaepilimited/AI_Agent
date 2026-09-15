@@ -43,6 +43,7 @@ QUALITY_GATE    = 0.57  # 최상위 결과가 이 이하면 관련 자료 없음
 COLLECTION      = "Craver"
 
 _LOCAL_JSON = Path(__file__).resolve().parent.parent.parent / "data" / "notion_vectors_gemini.json"
+_PR_LOCAL_JSON = _LOCAL_JSON.with_name("pr_vectors.json")
 
 TEAM_MAP = {
     "west": "[GM]WEST", "gm_west": "[GM]WEST", "서부": "[GM]WEST",
@@ -57,6 +58,7 @@ TEAM_MAP = {
     "log": "LOG", "물류": "LOG",
     "fi": "FI", "재무": "FI",
     "op": "OP", "운영": "OP",
+    "pr": "PR", "홍보": "PR", "보도자료": "PR", "프레인": "PR",
 }
 
 
@@ -103,20 +105,21 @@ def index_team_counts(refresh: bool = False) -> dict:
     global _TEAM_COUNTS
     if _TEAM_COUNTS is not None and not refresh:
         return _TEAM_COUNTS
-    try:
-        raw = json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
-        points = raw if isinstance(raw, list) else (raw.get("points") or raw.get("vectors") or [])
-        counts: dict = {}
-        for pt in points:
-            payload = pt.get("payload", pt)
-            team = payload.get("team")
-            if team:
-                counts[team] = counts.get(team, 0) + 1
-        _TEAM_COUNTS = counts
-    except Exception as e:
-        # ⚠️ 삼키지 말 것 — 여기가 조용하면 "자료 없음"과 "파일 못 읽음"이 같아 보인다
-        logger.warning("qdrant_index_counts_failed", error=str(e), path=str(_LOCAL_JSON))
-        _TEAM_COUNTS = {}
+    counts: dict = {}
+    # 소유권 맵은 별개다. 노션 파일이 없거나 깨져도 PR 적재분은 따로 센다.
+    for path in (_LOCAL_JSON, _PR_LOCAL_JSON):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            points = raw if isinstance(raw, list) else (raw.get("points") or raw.get("vectors") or [])
+            for pt in points:
+                payload = pt.get("payload", pt)
+                team = payload.get("team")
+                if team:
+                    counts[team] = counts.get(team, 0) + 1
+        except Exception as e:
+            # 파일을 못 읽은 상태와 실제 0건을 로그에서 구분한다.
+            logger.warning("qdrant_index_counts_failed", error=str(e), path=str(path))
+    _TEAM_COUNTS = counts
     return _TEAM_COUNTS
 
 
@@ -239,7 +242,10 @@ def _format_results(results: list[dict]) -> str:
         team  = p.get("team", "?")
         title = p.get("page_title", "?")
         section = p.get("section_path", "")
-        text  = p.get("text", "")[:2000]
+        # PR은 한 행의 설명 전체가 한 청크다. 결론·예정 표현이 끝에 있을 수 있다.
+        text  = p.get("text", "")
+        if team != "PR":
+            text = text[:2000]
         url   = p.get("page_url", "")
         # ⛔ **문서 날짜를 안 넘기면 LLM 이 낡은 문서를 고르고도 모른다** (2026-08-18 확인).
         #    "야근 식대 지원한도"를 물었을 때 `복리후생`(15,000원)과 2023-03-31 자
@@ -251,9 +257,53 @@ def _format_results(results: list[dict]) -> str:
         header = f"[{i}] ({score:.2f}) {team} > {title}"
         if section:
             header += f" > {section}"
-        header += f"  [문서 수정일: {edited or '미상'}]"
+        if team == "PR":
+            header += f"  [{_pr_month_label(p)}]"
+            header += f"  [작성월 원문: {p.get('month_raw') or '미기재'}]"
+        else:
+            header += f"  [문서 수정일: {edited or '미상'}]"
         chunks.append(f"{header}\n{text}\n출처: {url}")
     return "\n\n---\n\n".join(chunks)
+
+
+def _pr_month_label(payload: dict) -> str:
+    month = str(payload.get("issue_month") or "")
+    if not month:
+        return "작성월: 미상"
+    label = "작성월 추정" if payload.get("month_inferred") else "작성월"
+    return f"{label}: {month}"
+
+
+def pr_answer_with_source(answer: str, results: Optional[list[dict]] = None) -> str:
+    """성공·빈 결과·실패 모두 원본으로 연결하고 누락된 작성월을 보완한다."""
+    from app.core.pr_issues import SHEET_URL
+
+    pr_results = [r for r in (results or []) if r.get("payload", {}).get("team") == "PR"]
+    only_pr = bool(pr_results) and len(pr_results) == len(results)
+    if only_pr:
+        answer = re.sub(r"(?m)^[ \t]*[*_]{0,2}Notion 사내 문서 검색[^\n]*", "", answer).rstrip()
+    # 원본 행 링크를 우선하고, 링크가 없으면 답변에 표시된 제목을 본다.
+    # PR만 검색했는데 둘 다 없을 때에만 최상위 자료의 작성월을 보완한다.
+    plain = re.sub(r"[*_`]", "", answer)
+    cited = [r for r in pr_results if r["payload"].get("page_url")
+             and r["payload"]["page_url"] in answer]
+    if not cited:
+        cited = [r for r in pr_results if r["payload"].get("page_title")
+                 and r["payload"]["page_title"] in plain]
+    if results and not only_pr and not cited:
+        return answer
+    compact = re.sub(r"\s+", "", plain)
+    missing = []
+    for r in (cited or pr_results[:1]):
+        p = r["payload"]
+        label = _pr_month_label(p)
+        if re.sub(r"\s+", "", label) not in compact:
+            missing.append(f"- {p.get('page_title') or 'PR 자료'} · {label}")
+    if missing:
+        answer += "\n\n참고 PR 자료의 작성월:\n" + "\n".join(dict.fromkeys(missing))
+    if SHEET_URL not in answer:
+        answer += f"\n\n[PR 이슈 원본 시트 · 리스트 탭]({SHEET_URL})"
+    return answer
 
 
 async def run(query: str, team_key: Optional[str] = None, model_type: str = "gemini") -> str:
@@ -264,12 +314,16 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
         vector = await _embed_query(query)
     except Exception as e:
         logger.error("qdrant_embedding_failed", error=str(e))
+        if team_filter == "PR":
+            return pr_answer_with_source("PR 자료 검색을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.")
         return f"임베딩 생성 실패: {e}"
 
     try:
         results = _search(vector, team_filter=team_filter, top_k=TOP_K)
     except Exception as e:
         logger.error("qdrant_search_failed", error=str(e))
+        if team_filter == "PR":
+            return pr_answer_with_source("PR 자료 검색 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.")
         return f"벡터 검색 실패: {e}"
 
     logger.info("qdrant_search_done", result_count=len(results),
@@ -286,6 +340,13 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
             indexed = index_team_counts().get(team_filter, 0)
             logger.warning("qdrant_pinned_empty", team_key=team_key,
                            team_filter=team_filter, indexed=indexed, query=query[:80])
+            if team_filter == "PR":
+                if indexed == 0:
+                    return pr_answer_with_source("**PR 자료**가 아직 검색에 반영되지 않았습니다 (색인 0건). 원본 리스트 탭에서 확인해 주세요.")
+                return pr_answer_with_source(
+                    f"**PR 자료 {indexed}건**에서 '{query}'와 관련된 내용을 찾지 못했습니다. "
+                    "월이나 키워드를 바꾸어 검색하거나 원본 리스트 탭에서 확인해 주세요."
+                )
             if indexed == 0:
                 return (
                     f"**{team_filter}** 팀 자료는 사내 문서 색인에 아직 없습니다 (색인 0건).\n\n"
@@ -322,8 +383,19 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
             return f"**{label}** 팀 자료에서 '{query}'와 관련된 문서를 찾을 수 없습니다.\n\n다른 키워드로 검색해보세요."
 
     context = _format_results(results)
-    llm = get_flash_client()
     label = team_filter or "전체"
+    has_pr = any(r.get("payload", {}).get("team") == "PR" for r in results)
+    only_pr = has_pr and all(r.get("payload", {}).get("team") == "PR" for r in results)
+    source_footer = ("PR 이슈 자료 · 리스트 탭" if only_pr else
+                     "사내 문서·PR 이슈 자료 검색" if has_pr else
+                     f"Notion 사내 문서 검색 · {label} 팀 자료")
+    pr_rules = """
+- PR 자료를 요약한 항목마다 '작성월: YYYY-MM'을 함께 적으세요.
+- month_inferred 자료는 '작성월 추정', 월이 없는 자료는 '작성월: 미상'이라고 명시하세요.
+- PR 자료의 작성월은 원본의 기록 시점입니다. 과거 자료를 현재 성과나 최신 이슈로 단정하지 마세요.
+- 원문이 예정·계획·진행 중이라고 적은 행사는 그 상태를 유지하고, 완료된 성과로 바꾸지 마세요.
+- PR의 출처는 프레인 PR 이슈 원본 시트의 리스트 탭입니다. 자료 열의 개별 URL은 답변에 싣지 마세요.
+""" if has_pr else ""
 
     prompt = f"""{LANGUAGE_DETECTION_RULE}
 
@@ -342,6 +414,7 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 - 검색된 문서에 관련 내용이 있으면 **즉시 답변하세요**. "찾을 수 없습니다"로 시작하지 마세요.
 - 검색된 문서에 전혀 관련 내용이 없을 때만 "관련 자료가 없습니다"라고 안내하세요.
 - 숫자, 번호, 주소, 이름 등 구체적 정보가 문서에 있으면 그대로 인용하세요.
+{pr_rules}
 
 ## 답변 형식
 - 검색된 문서 내용을 직접 요약하여 답변 (링크만 달지 마세요!)
@@ -350,7 +423,7 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 - 부분적으로만 답변 가능해도 아는 범위에서 먼저 답변하고, 보완이 필요한 부분만 언급하세요
 - 답변 마지막 출처:
   ---
-  *Notion 사내 문서 검색 · {label} 팀 자료*
+  *{source_footer}*
 
 ## 후속 질문
 > 💡 **이런 것도 물어보세요**
@@ -359,10 +432,15 @@ async def run(query: str, team_key: Optional[str] = None, model_type: str = "gem
 """
 
     try:
+        llm = get_flash_client()
         answer = await asyncio.to_thread(llm.generate, prompt, None, 0.3, 2048)
+        if has_pr:
+            answer = pr_answer_with_source(answer, results)
         return answer + _vintage_note(results, answer)
     except Exception as e:
         logger.error("qdrant_answer_failed", error=str(e))
+        if team_filter == "PR" or only_pr:
+            return pr_answer_with_source("PR 자료를 찾았지만 답변을 생성하지 못했습니다. 원본 리스트 탭에서 확인해 주세요.", results)
         return f"답변 생성 중 오류: {e}"
 
 
@@ -403,7 +481,9 @@ def _vintage_note(results: list[dict], answer: str = "") -> str:
         if url in answer or (len(pid) == 32 and pid in _ans_hex):
             cited.append(r)
 
-    pool = cited or (results or [])[:1]
+    # PR은 수정일 없는 Notion 공개 문서가 아니다. 작성월 안내를 별도로 쓴다.
+    pool = [r for r in (cited or (results or [])[:1])
+            if (r.get("payload") or {}).get("team") != "PR"]
     top = []
     for r in pool:
         raw = str((r.get("payload") or {}).get("last_edited_time") or "")[:10]
