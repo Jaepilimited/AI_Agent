@@ -104,8 +104,29 @@ def test_every_sql_path_runs_the_guard() -> None:
     calls = src.count("_include_zombie_in_skin1004(")
     strips = src.count("_strip_unrequested_brand_filter(")
 
-    assert calls == strips, "브랜드 후처리와 호출 횟수가 다르다 — 경로가 빠졌다"
-    assert calls == 5, f"정의 1 + 호출 4 = 5 여야 한다 (지금 {calls})"
+    # 생성·재생성 경로에서는 기존 브랜드 후처리와 **같은 자리**에 있어야 한다
+    for line in src.splitlines():
+        if "_strip_unrequested_brand_filter(" in line and "def " not in line:
+            var = line.strip().split(" =")[0]
+            assert f"{var} = _include_zombie_in_skin1004({var}, query)" in src, \
+                f"{var} 경로에 좀비 가드가 없다"
+    # 거기에 캐시 적중 자리가 하나 더 붙는다 (캐시는 후처리를 타지 않는다)
+    assert calls == strips + 1, (
+        f"생성 {strips - 1}경로 + 정의 1 + 캐시 1 = {strips + 1} 이어야 한다 (지금 {calls})")
+
+
+def test_a_stale_cache_entry_is_forgotten_instead_of_replayed() -> None:
+    """⛔ 캐시 적중은 후처리를 타지 않는다 — 지우지 않으면 "고쳤는데 그대로" 가 된다.
+
+    실측(2026-09-15): ZB 절이 든 캐시 53건 중 10건이 새 규칙과 어긋났고 그중 하나는
+    21회 히트였다. 값이 0.1% 만 달라져 표를 봐도 틀린 줄 모른다.
+    """
+    src = (_ROOT / "app" / "agents" / "sql_agent.py").read_text(encoding="utf-8")
+    hit = src.split("cached_sql = _cache_lookup(")[1].split("schema_context =")[0]
+
+    assert "_include_zombie_in_skin1004(cached_sql, query) != cached_sql" in hit
+    assert "_cache_forget(cache_key)" in hit
+    assert "sql_cache_zombie_exclusion_stale" in hit
 
 
 def test_the_rule_is_written_where_the_llm_reads_it() -> None:

@@ -1658,6 +1658,16 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             logger.warning("sql_cache_brand_filter_missing", query=query[:60])
             _cache_forget(cache_key)
             cached_sql = None
+        # ⛔ 좀비뷰티 제외가 박힌 **옛 규칙의 SQL** 도 지운다 (2026-09-15 규칙 변경).
+        #    스킨천사는 이제 좀비뷰티를 포함하는데, 캐시는 후처리를 타지 않고 그대로
+        #    재생된다 — 실측: ZB 절이 든 캐시 53건 중 10건이 새 규칙과 어긋났고 그중
+        #    하나는 21회 히트였다. 값이 0.1% 만 달라져 **표를 봐도 틀린 줄 모른다.**
+        #    ⚠️ 한 번 DELETE 하고 마는 대신 여기서 판정한다 — 규칙이 또 바뀌어도
+        #       같은 자리가 계속 듣는다 (지우면 다음 질문에서 새 규칙으로 다시 만든다).
+        if cached_sql and _include_zombie_in_skin1004(cached_sql, query) != cached_sql:
+            logger.warning("sql_cache_zombie_exclusion_stale", query=query[:60])
+            _cache_forget(cache_key)
+            cached_sql = None
         if cached_sql:
             logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
             return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
