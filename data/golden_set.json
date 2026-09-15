@@ -1589,9 +1589,18 @@
       "freq": "daily",
       "question": "PR 이슈에서 브라질 Sephora 입점 내용을 알려줘",
       "expect": {
-        "contains_all": ["작성월", "1MLuwW74Nvv33YW6cVG5qW4uJLGuj3miUqcky9r20A8c"],
-        "contains_any": ["브라질", "Sephora"],
-        "not_contains": ["Google 검색 기반 답변", "색인 0건"],
+        "contains_all": [
+          "작성월",
+          "1MLuwW74Nvv33YW6cVG5qW4uJLGuj3miUqcky9r20A8c"
+        ],
+        "contains_any": [
+          "브라질",
+          "Sephora"
+        ],
+        "not_contains": [
+          "Google 검색 기반 답변",
+          "색인 0건"
+        ],
         "min_len": 150,
         "max_seconds": 90
       },
@@ -1650,6 +1659,55 @@
         "max_seconds": 90
       },
       "note": "법적 판단이다. 표기 원문과 조건만 보여주고 단정하지 않는다. ⛔ `담당자 확인` 은 0건일 때는 안 나온다(`format_answer` 가 0건이면 그 문구 없이 '찾지 못했습니다' 만 낸다) — 하지만 이 질문은 `search()` 가 쓸 말(수상·이력·마케팅·있는)을 모두 `_word_exists()` 로 버려도 `1=1` 기본 목록(최근·상위 순)으로 되돌아가고, `수상` 은 `_STRONG` 이자 시트 `구분` 칼럼에 값으로도 있을 가능성이 높아 어느 쪽이든 허용 목록이 0행일 때만 아니면(시트 자체가 빈 경우) 결과 행이 나온다 — 그래서 0건 가능성을 낮다고 보고 그대로 둔다."
+    },
+    {
+      "id": "brand_skin1004_includes_zombie",
+      "category": "brand",
+      "freq": "daily",
+      "question": "2026년 1월부터 6월까지 스킨천사 매출 알려줘",
+      "expect": {
+        "sql_contains_all": [
+          "SALES_ALL_Backup",
+          "'SK'",
+          "'CBT'"
+        ],
+        "sql_not_contains": [
+          "!= 'ZB'",
+          "<> 'ZB'",
+          "!='ZB'",
+          "<>'ZB'"
+        ],
+        "not_contains": [
+          "어느 기간",
+          "언제인가요"
+        ],
+        "min_len": 60,
+        "max_seconds": 90
+      },
+      "note": "2026-09-15 사용자 확정: '보통 스킨천사는 좀비뷰티 같이 확인해. 그래서 따로 보지 마'. 예전 정의의 `Line!='ZB'` 가 스킨천사 단독 조회에까지 따라붙어 말없이 좀비뷰티를 떼고 답했다. ⛔ 본문으로는 볼 수 없다 — 필터는 표에 안 나오고, 붙어도 값이 0.107%(2026) 만 달라져 표를 아무리 봐도 틀린 줄 모른다. 그래서 SQL 에서 본다. 보증은 sql_agent._include_zombie_in_skin1004()."
+    },
+    {
+      "id": "brand_breakdown_still_splits_zombie",
+      "category": "brand",
+      "freq": "daily",
+      "question": "2026년 브랜드별 매출 알려줘",
+      "expect": {
+        "contains_all": [
+          "스킨천사",
+          "우마"
+        ],
+        "contains_any": [
+          "좀비뷰티",
+          "커먼랩스"
+        ],
+        "not_contains": [
+          "어느 기간",
+          "언제인가요"
+        ],
+        "min_len": 80,
+        "max_seconds": 90
+      },
+      "note": "반대 방향. 스킨천사에 좀비뷰티를 합쳤다고 브랜드별 표까지 합치면 안 된다 — 그 표에서는 CASE 순서(좀비뷰티 절이 스킨천사 절보다 앞)가 갈라 준다. 한쪽만 고치면 이중 계상이거나 브랜드 하나가 사라진다."
     }
   ]
 }

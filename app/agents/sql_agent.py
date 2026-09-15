@@ -377,6 +377,51 @@ def _strip_unrequested_brand_filter(sql: str, question: str) -> str:
     return cleaned
 
 
+# ── 스킨천사는 좀비뷰티를 **포함한다** (2026-09-15 사용자 확정) ────────────────
+# 사용자 지시: *"보통 스킨천사는 좀비뷰티 같이 확인해. 그래서 따로 보지 마"*
+#
+# 예전 규칙은 스킨천사를 `Brand IN ('SK','CBT') AND (Line!='ZB' OR Line IS NULL)`
+# 로 정의했다. 그 `Line!='ZB'` 는 **브랜드별 표에서 이중 계상을 막으려던 것**인데,
+# 스킨천사를 단독으로 물었을 때까지 따라붙어 말없이 좀비뷰티를 떼고 답했다.
+# 실측(2026-09-15): 좀비뷰티는 스킨천사의 0.107%(2026) · 0.219%(2025) 라 숫자는
+# 거의 같지만, **말없이 뺀 것은 말없이 더한 것과 같은 종류의 조용한 오답이다.**
+#
+# ⛔ **브랜드별로 나눌 때는 여전히 갈라야 한다.** 다만 그건 이 필터가 아니라
+#    `CASE` 의 순서가 한다 — `WHEN Brand='SK' AND Line='ZB' THEN '좀비뷰티'` 가
+#    `WHEN Brand IN ('SK','CBT') THEN '스킨천사'` 보다 **앞**에 있어서 스킨천사
+#    행에는 ZB 가 들어가지 않는다. 그래서 그런 SQL 은 건드리지 않는다.
+# ⚠️ 프롬프트에도 적었지만 **프롬프트는 확률이다.** 게다가 `sql_cache` 가 옛 SQL 을
+#    그대로 재생하므로(0건이든 아니든 캐시는 행 수를 안 본다) 후처리가 없으면
+#    "고쳤는데 그대로" 가 된다. 국가·팀·프로모션 리터럴과 같은 방식으로 보증한다.
+_ZB_EXCLUSION_RE = re.compile(
+    r"\s*AND\s*"
+    r"(?:\(\s*(?:`?\w+`?\.)?`?Line`?\s*(?:!=|<>)\s*'ZB'\s*"
+    r"OR\s+(?:`?\w+`?\.)?`?Line`?\s+IS\s+NULL\s*\)"
+    r"|(?:`?\w+`?\.)?`?Line`?\s*(?:!=|<>)\s*'ZB')",
+    re.I)
+# ⚠️ `Line != 'ZB'` 안의 `= 'ZB'` 에 걸리면 안 된다 — 앞 글자가 `!`·`<`·`>` 가
+#    아닐 때만 '동등 비교' 로 본다. 이게 브랜드별 CASE 를 알아보는 유일한 표시다.
+_ZB_EQUALITY_RE = re.compile(r"(?<![!<>])=\s*'ZB'", re.I)
+# 사용자가 스스로 뺀 것은 존중한다 (기간을 직접 자른 것을 되돌리지 않는 것과 같다)
+_ZB_EXCLUDE_WORDS = ("좀비뷰티 제외", "좀비뷰티제외", "좀비 제외", "좀비뷰티 빼", "좀비 빼",
+                     "좀비뷰티를 빼", "좀비뷰티는 빼", "zb 제외", "좀비뷰티 없이")
+
+
+def _include_zombie_in_skin1004(sql: str, question: str) -> str:
+    """스킨천사 조회에서 좀비뷰티 제외 필터를 걷는다 (브랜드별 분류는 건드리지 않는다)."""
+    if not sql or not _ZB_EXCLUSION_RE.search(sql):
+        return sql
+    if _ZB_EQUALITY_RE.search(sql):
+        return sql                      # 브랜드별 CASE — 순서가 이미 갈라 준다
+    if any(w in (question or "").lower() for w in _ZB_EXCLUDE_WORDS):
+        return sql                      # 사용자가 직접 빼라고 했다
+    cleaned = _ZB_EXCLUSION_RE.sub("", sql)
+    if cleaned != sql:
+        logger.warning("zombie_exclusion_dropped", question=(question or "")[:120],
+                       removed=_ZB_EXCLUSION_RE.search(sql).group(0).strip())
+    return cleaned
+
+
 def _localize_promotion_literals(sql: str) -> str:
     """promotion 테이블 전용 리터럴 교정 (team_id·country_code)."""
     def _sub_one(m, fn):
@@ -834,6 +879,7 @@ def _enforce_partition_filter(
         new_sql = _normalize_named_period(new_sql, query)
         new_sql = _fix_continent_column(new_sql)
         new_sql = _strip_unrequested_brand_filter(new_sql, query)
+        new_sql = _include_zombie_in_skin1004(new_sql, query)
         if new_sql and len(new_sql) > 10:
             if allowed_tables is None:
                 allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
@@ -1846,6 +1892,7 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = _fix_logistics_amount(sql)
             sql = _normalize_named_period(sql, query)
             sql = _strip_unrequested_brand_filter(sql, query)
+            sql = _include_zombie_in_skin1004(sql, query)
 
         logger.info("sql_generated", sql=sql[:200])
 
@@ -1944,6 +1991,7 @@ def _retry_with_stronger_model(
         retry_sql = _normalize_named_period(retry_sql, query)
         retry_sql = _fix_continent_column(retry_sql)
         retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
+        retry_sql = _include_zombie_in_skin1004(retry_sql, query)
         if not retry_sql:
             return None
 
@@ -2121,6 +2169,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _normalize_named_period(retry_sql, query)
                 retry_sql = _fix_continent_column(retry_sql)
                 retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
+                retry_sql = _include_zombie_in_skin1004(retry_sql, query)
                 if retry_sql:
                     if (_period_retry_required
                             and not _has_partitioned_period_ranking(retry_sql)

@@ -218,10 +218,17 @@ def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
     # ⚠️ SQL 은 원문에서 뽑는다 — `<details>` 안에 있고 본문에서는 그 블록을 걷어냈다
     sql_any = exp.get("sql_contains_any", [])
     sql_all = exp.get("sql_contains_all", [])
-    if sql_any or sql_all:
+    sql_none = exp.get("sql_not_contains", [])
+    if sql_any or sql_all or sql_none:
         sql = (_extract_sql_blocks(answer or "") or (answer or "")).lower()
         if sql_any and not any(kw.lower() in sql for kw in sql_any):
             reasons.append(f"SQL 규칙 위반 — 다음 중 하나 필요: {sql_any}")
+        # ⛔ "붙이면 안 되는 절"은 본문으로는 볼 수 없다 — 필터는 표에 안 나온다.
+        #    스킨천사의 `Line != 'ZB'` 가 그 예다: 붙어도 값이 0.1% 만 달라져
+        #    표를 아무리 봐도 틀린 줄 모른다 (2026-09-15).
+        for kw in sql_none:
+            if kw.lower() in sql:
+                reasons.append(f"SQL 금지 절 등장: {kw!r}")
         # ⛔ 필터가 제대로 걸렸는지는 **SQL 에서** 본다. 본문 기대어로 걸면 그 값이
         #    표에 나올 때만(= GROUP BY 축일 때만) 맞고, 필터로만 쓰였을 때는 LLM 이
         #    문장에 우연히 적어 줘야 통과한다 — 확률적으로 깜빡이는 문항이 된다
