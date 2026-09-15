@@ -208,12 +208,19 @@ def _evaluate(item: dict, answer: str, elapsed_s: float) -> list[str]:
     # ⛔ 더 나쁜 쪽은 **음성 단언**이다 — `not_contains: "5,577"` 은 전사값이
     #    5,576.9 로 밀리는 순간 아무 흔적 없이 죽는다. 실패는 눈에 띄지만 무력해진
     #    단언은 조용하다. 그래서 양·음 두 방향 모두 허용오차로 쓴다.
-    near = exp.get("number_near")
-    if near and not has_number_near(a, near["value"], near.get("pct", 2) / 100.0):
-        reasons.append(f"수치 불일치 — {near['value']:,} ±{near.get('pct', 2)}% 가 본문에 없음")
-    far = exp.get("number_not_near")
-    if far and has_number_near(a, far["value"], far.get("pct", 2) / 100.0):
-        reasons.append(f"금지 수치 등장 — {far['value']:,} ±{far.get('pct', 2)}%")
+    # ⚠️ 값이 여럿인 문항도 있다 (분기 비교처럼) — dict 하나든 목록이든 받는다.
+    #    하나만 받게 두면 나머지를 `contains_all` 문자열로 적게 되고, 그 순간 표기가
+    #    흔들릴 때마다 깜빡인다 (2026-09-15 `inc_megawari_quarter_amounts`: 값은
+    #    똑같은데 요약이 "73.4억" 대신 원 단위로 적혀 실패했다).
+    def _specs(v):
+        return [v] if isinstance(v, dict) else list(v or [])
+
+    for near in _specs(exp.get("number_near")):
+        if not has_number_near(a, near["value"], near.get("pct", 2) / 100.0):
+            reasons.append(f"수치 불일치 — {near['value']:,} ±{near.get('pct', 2)}% 가 본문에 없음")
+    for far in _specs(exp.get("number_not_near")):
+        if has_number_near(a, far["value"], far.get("pct", 2) / 100.0):
+            reasons.append(f"금지 수치 등장 — {far['value']:,} ±{far.get('pct', 2)}%")
 
     # ⚠️ SQL 은 원문에서 뽑는다 — `<details>` 안에 있고 본문에서는 그 블록을 걷어냈다
     sql_any = exp.get("sql_contains_any", [])

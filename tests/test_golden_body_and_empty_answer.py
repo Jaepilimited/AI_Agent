@@ -223,6 +223,38 @@ def test_no_body_assertion_hunts_for_a_sql_token() -> None:
         + ", ".join(offenders))
 
 
+def test_number_near_accepts_a_list_so_multi_value_items_need_no_frozen_strings() -> None:
+    """값이 여럿인 문항이 문자열로 되돌아가지 않게 한다.
+
+    2026-09-15 `inc_megawari_quarter_amounts`: 값은 직전 런과 똑같은데(7,339,363,289 /
+    6,223,366,621) 요약이 "73.4억" 대신 원 단위로 적혀 실패했다. 배율 무시 비교면 같다.
+    """
+    body = "1분기 " + "메가와리 " * 40
+    item = {"expect": {"number_near": [{"value": 7339363289, "pct": 2},
+                                       {"value": 6223366621, "pct": 2}], "min_len": 1}}
+
+    assert _evaluate(item, body + "73.4억원, 2분기 62.2억원", 1.0) == []
+    assert _evaluate(item, body + "7,339,363,289원, 2분기 6,223,366,621원", 1.0) == []
+    missing = _evaluate(item, body + "73.4억원만 있습니다", 1.0)
+    assert any("6,223,366,621" in r for r in missing)
+
+
+def test_number_not_near_also_accepts_a_list() -> None:
+    item = {"expect": {"number_not_near": [{"value": 4020000000, "pct": 3}], "min_len": 1}}
+
+    assert any("4,020,000,000" in r for r in _evaluate(item, "2분기는 40.2억원입니다", 1.0))
+    assert _evaluate(item, "2분기는 62.2억원입니다", 1.0) == []
+
+
+def test_megawari_item_no_longer_freezes_the_notation() -> None:
+    exp = _item("inc_megawari_quarter_amounts")["expect"]
+
+    assert "contains_all" not in exp
+    assert {7339363289, 6223366621} == {s["value"] for s in exp["number_near"]}
+    # 지어낸 Q2 날짜를 잡던 본래 방어는 그대로 있어야 한다
+    assert "40.2" in exp["not_contains"]
+
+
 def test_topic_continuity_items_guard_the_sql_not_the_wording() -> None:
     """주제 이탈 여부는 SQL 이 결정적으로 말한다. 낱말 선택은 확률이다."""
     for item_id in ("fu_topic_continuity_ad", "fu_topic_continuity_influencer",
