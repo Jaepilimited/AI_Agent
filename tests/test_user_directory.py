@@ -154,7 +154,7 @@ class _Database:
                 last_login TEXT, entra_oid TEXT UNIQUE, must_change_password INTEGER,
                 requires_group_assignment INTEGER DEFAULT 0
             );
-            CREATE TABLE access_groups (id INTEGER PRIMARY KEY, brand_filter TEXT);
+            CREATE TABLE access_groups (id INTEGER PRIMARY KEY, name TEXT, brand_filter TEXT);
             CREATE TABLE user_groups (
                 ad_user_id INTEGER REFERENCES directory_users(id),
                 group_id INTEGER REFERENCES access_groups(id),
@@ -317,6 +317,7 @@ def test_imported_employee_without_signup_inherits_grants_and_real_group(databas
 
 
 def test_unknown_employee_starts_without_sensitive_permissions_or_brand_assignment(database):
+    # 기본 그룹(SK_Brand·DD)이 아예 없는 저장소 — 자동 배정은 조용히 물러서고 관리자 배정으로 남는다
     result = directory.provision_from_claims(_claims(preferred_username="new@cravercorp.com"))
     person = database.rows("directory_users")[0]
     account = database.rows("users")[0]
@@ -677,3 +678,79 @@ def test_graph_storage_failure_rolls_back_all_profiles_and_success_marker(databa
         directory._apply_graph_users([_graph_user()])
     assert database.snapshot() == before
     assert database.rollbacks == 1 and database.releases == 1 and not database.lock.locked()
+
+
+# ── 기본 그룹 자동 배정 (2026-09-16: "유통본부는 DD, 나머지는 SK, 회원가입하면 자동으로") ──
+from app.core.group_autoassign import default_group_name  # noqa: E402
+
+DIST = "Craver_Accounts > Users > 유통부문 > 유통1본부 > 리테일팀 > 리테일1파트"
+IT = "Craver_Accounts > Users > 경영부문 > 재무·IT본부 > IT팀 > I_개발파트"
+
+
+@pytest.mark.parametrize("department, expected", [
+    (DIST, "DD"),
+    ("Craver_Accounts > Users > 유통부문 > 유통SCM본부 > 물류운영팀", "DD"),
+    ("Craver_Accounts > Users > 유통부문 > 유통2본부", "DD"),
+    ("Craver_Accounts > Users > Distribution Division > 유통1 본부 > 리테일 > 리테일1", "DD"),
+    (IT, "SK_Brand"),
+    ("Craver_Accounts > Users > 브랜드부문 > 글로벌마케팅본부 > 일본사업팀", "SK_Brand"),
+    # ⛔ '유통' 글자만 보면 브랜드부문 사람이 DD 가 된다 — 마디로 판정한다
+    ("Craver_Accounts > Users > 브랜드부문 > 글로벌마케팅본부 > 중국사업팀 > 신규 브랜드 유통파트", "SK_Brand"),
+    ("", "SK_Brand"),
+    (None, "SK_Brand"),
+])
+def test_default_group_follows_the_division_segment(department, expected):
+    assert default_group_name(department) == expected
+
+
+def _seed_brand_groups(database):
+    database.seed("access_groups", id=2, name="SK_Brand", brand_filter="SK,CL,CBT")
+    database.seed("access_groups", id=3, name="DD", brand_filter="UM")
+
+
+@pytest.mark.parametrize("department, group_id", [(DIST, 3), (IT, 2), ("", 2)])
+def test_new_employee_is_assigned_a_default_group_by_department(database, department, group_id):
+    _seed_brand_groups(database)
+    result = directory.provision_from_claims(
+        _claims(preferred_username="new@cravercorp.com", department=department))
+    assert result["created"] is True
+    account = database.rows("users")[0]
+    # 플래그는 그대로 1 — 그룹이 나중에 회수되면 다시 막혀야 한다
+    assert account["requires_group_assignment"] == 1
+    assert database.rows("user_groups") == [{"ad_user_id": result["ad_user_id"], "group_id": group_id}]
+
+
+def test_pre_assigned_group_is_never_overridden_by_department(database):
+    _seed_brand_groups(database)
+    database.person(department=DIST)          # 유통 소속이지만 관리자가 SK 를 미리 줬다
+    database.seed("user_groups", ad_user_id=41, group_id=2)
+    directory.provision_from_claims(_claims())
+    assert database.rows("user_groups") == [{"ad_user_id": 41, "group_id": 2}]
+
+
+def test_existing_flagged_account_without_group_is_assigned_on_next_login(database):
+    # 정재명의 상태: 가입은 됐는데(플래그 1) 그룹이 비어 있다 → 다음 로그인에 붙는다
+    _seed_brand_groups(database)
+    database.person(department=IT, entra_tenant_id=TENANT, entra_oid=OID)
+    database.account(requires_group_assignment=1, entra_oid=OID)
+    result = directory.provision_from_claims(_claims())
+    assert result["created"] is False
+    assert database.rows("user_groups") == [{"ad_user_id": 41, "group_id": 2}]
+
+
+def test_legacy_account_without_group_keeps_unrestricted_access(database):
+    # ⛔ 플래그 0 인 옛 계정은 그룹이 없어도 전체가 열려 있다 — 붙이면 접근이 조용히 좁아진다
+    _seed_brand_groups(database)
+    database.person(department=DIST, entra_tenant_id=TENANT, entra_oid=OID)
+    database.account(requires_group_assignment=0, entra_oid=OID)
+    directory.provision_from_claims(_claims())
+    assert database.rows("user_groups") == []
+
+
+def test_missing_default_group_falls_back_to_manual_assignment(database):
+    # 그룹 이름이 바뀌었으면 조용히 실패하지 않고 관리자 배정으로 남는다 (WARNING 은 로그로)
+    database.seed("access_groups", id=9, name="Renamed", brand_filter="SK")
+    result = directory.provision_from_claims(_claims(preferred_username="new@cravercorp.com", department=IT))
+    assert result["created"] is True
+    assert database.rows("user_groups") == []
+    assert database.rows("users")[0]["requires_group_assignment"] == 1

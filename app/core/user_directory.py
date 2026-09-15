@@ -10,6 +10,7 @@ import requests
 import structlog
 
 from app.config import ALL_MODELS, get_settings
+from app.core.group_autoassign import assign_default_group
 from app.db.mariadb import execute, fetch_one, get_maria_conn
 
 logger = structlog.get_logger(__name__)
@@ -157,7 +158,8 @@ def provision_from_claims(claims: dict) -> dict:
                 person = _insert_person(cur, tenant, oid, profile)
             if not person.get("is_active"):
                 raise DirectoryError("이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
-            cur.execute("SELECT id,role,email,entra_oid,is_active,ad_user_id FROM users "
+            cur.execute("SELECT id,role,email,entra_oid,is_active,ad_user_id,"
+                        "requires_group_assignment FROM users "
                         "WHERE ad_user_id=%s OR entra_oid=%s FOR UPDATE", (person["id"], oid))
             accounts = cur.fetchall()
             if len(accounts) > 1:
@@ -181,7 +183,15 @@ def provision_from_claims(claims: dict) -> dict:
                             (person.get("email") or profile["email"] or f"entra_{oid}@noemail.local",
                              password_hash, profile["display_name"] or person.get("display_name") or "",
                              ALL_MODELS, person["id"], oid, 1))
-                account = {"id": cur.lastrowid, "role": "user", "ad_user_id": person["id"]}
+                account = {"id": cur.lastrowid, "role": "user", "ad_user_id": person["id"],
+                           "requires_group_assignment": 1}
+            # 새 계정(플래그 1)에 브랜드 그룹이 없으면 부서로 기본 그룹을 붙인다 (2026-09-16).
+            # ⚠️ 옛 계정(플래그 0)은 그룹이 없어도 전체가 열려 있으므로 건드리지 않는다 —
+            #    뒤늦게 붙이면 접근이 조용히 좁아진다. 플래그 자체는 그대로 둔다: 그룹이
+            #    나중에 회수되면 다시 막혀야 한다
+            if account.get("requires_group_assignment"):
+                assign_default_group(cur, person["id"],
+                                     profile["department"] or person.get("department"))
             _update_profile(cur, person, tenant, oid, profile, signed_in=True)
             conn.commit()
             return {"id": int(account["id"]), "role": account["role"],
