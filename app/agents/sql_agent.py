@@ -4278,23 +4278,45 @@ def _fast_summary_line(results: list) -> str:
        거짓말을 한다 (통화 혼재 합계 금지와 같은 이유). 표가 이미 보여 준다.
     ⚠️ `quantity_ea`(수출 선적 수량)를 「판매수량」이라 부르지 않는다 — 판매수량은
        `Total_Qty` 뿐이고, 둘은 값이 다르다.
+
+    ⛔ **무엇을 더해도 되는지는 `_is_additive_metric_column` 한 곳에서만 판정한다.**
+       2026-09-15 프로덕션 실측: 남아메리카 국가별 매출 답변의 요약이
+
+           총 매출액 약 382.4억원 (38,244,190,784원) · 총 매출액 약 0.0억원 (100원)
+
+       이었다. 뒤엣것은 `revenue_share_pct`(비중, 합이 100)를 **금액으로 더한 것**이다.
+       ⚠️ **같은 답변의 표 합계 행은 그 열을 `-` 로 제대로 비웠다** — 판정이 이미
+       있었는데 요약만 그것을 안 보고 컬럼을 직접 훑었다. "더해도 되는가" 를 두 곳이
+       따로 판정하고 한쪽만 맞는, 이 저장소의 단골 실패다 (금액 판정을
+       `answer_check.is_money_column` 한 곳으로 모은 것과 같은 이유).
     """
     from decimal import Decimal as _D
 
-    from app.core.answer_check import is_money_column
+    from app.core.answer_check import is_money_column, render_amount
 
     parts = []
     cols = list(results[0].keys())
     for c in cols:
         cl = c.lower()
+        # ⛔ 비율·평균·순위·단가·시점은 더하면 숫자는 나오지만 뜻이 없다.
+        #    표 합계(`_additive_totals`)와 **같은 함수**로 먼저 거른다.
+        if not _is_additive_metric_column(c):
+            continue
         vals = [r.get(c) for r in results if isinstance(r.get(c), (int, float, _D))]
         if not vals:
             continue
         total = float(sum(float(v) for v in vals))
         money = is_money_column(c)
         if money and ("revenue" in cl or "sales" in cl or "매출" in cl):
-            uk = total / 100_000_000
-            parts.append(f"총 매출액 **약 {uk:,.1f}억원** ({int(total):,}원)")
+            # ⛔ 억 환산을 여기서 따로 하지 마라 — `render_amount()` 가 억·만·원을
+            #    고른다. 억으로 나누는 식을 못 박아 두면 1억 미만이 **"약 0.0억원"**
+            #    으로 나간다 (CLAUDE.md: 1억 미만에 '억'을 쓰지 마라 — 8,287만원을
+            #    828.7억원이라 쓴 사고가 그 자리다). 두 곳에서 따로 환산하면
+            #    한쪽만 고쳐진다.
+            # ⚠️ 이 주석에 나눗셈 상수를 **숫자로 적지 마라** — 회귀가 소스를 글자로
+            #    읽어 스스로 걸린다 (없는 CSS 변수를 주석에 썼다가 린트에 걸린 것과
+            #    같은 부류다. 실제로 이 수정에서 한 번 걸렸다).
+            parts.append(f"총 매출액 **약 {render_amount(total)}** ({int(total):,}원)")
         elif not money and ("qty" in cl or "quantity" in cl or "수량" in cl):
             # ⚠️ 판매수량은 `Total_Qty` 뿐이다. 물류 선적 수량은 그렇게 부르지 않는다.
             label = "총 판매수량" if "total_qty" in cl else "총 수량"
