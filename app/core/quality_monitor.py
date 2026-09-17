@@ -2,11 +2,25 @@
 
 Three metrics per route (computed from the last 24h):
   accuracy_rate  = 👍 / (👍 + 👎)  — from message_feedback
-                   threshold < 0.65 → flag_accuracy
+                   **기록만 하고 경고하지 않는다** (아래 ⛔ 참고)
   avg_response_ms = mean(total_ms)  — from audit_logs
                    threshold > 12000ms → flag_speed
   avg_context_len = mean(context_len) — from audit_logs
                    threshold < 300 chars → flag_context (too shallow)
+
+⛔ 정확도 경고는 끈다 (2026-09-17 사용자 결정). 이 비율은 정확도가 아니다:
+   사람들은 **틀렸을 때 👎 를 누르고, 괜찮으면 아무것도 안 누른다.** 그래서
+
+       2026-09-16: 요청 56건 · 피드백 3건(전부 👎) · 나머지 53건 무반응 → "정확도 0%"
+
+   표본 하한도 없어 👎 한 건이면 0% 다 (9/9 는 n=1). 9/3 이후 피드백이 있던 **6일
+   전부** 경고가 떴다 — 매일 뜨는 경고는 곧 아무도 안 읽고, 그러면 진짜 경고(속도)
+   까지 함께 무시당한다. 👍 버튼 고장도 의심해 확인했지만 정상이었다 (👍·👎 가 같은
+   경로이고 마지막 👍(8/19) 전후로 코드가 바뀐 적이 없다. 👍 는 원래 주 0~3건이다).
+   - 실제 정답률은 **골든셋**이 본다 (매일 05:30). 👎 한 건 한 건은 **붐따 처리함**이 본다
+   - ⚠️ 값은 계속 저장한다 — `growth_report.py` 가 이 행을 읽는다. 끈 것은 경고뿐이다
+   - ⚠️ 속도 기준 12s 는 **그대로 둔다** (같은 날 사용자 결정). medium 실측 중앙값
+     13.3s 보다 낮아 자주 뜨지만, 더 빠르게 만들 여지를 계속 보겠다는 선택이다
 
 Called daily at midnight via APScheduler.  Can also be run manually:
   python scripts/compute_quality_snapshot.py
@@ -22,7 +36,7 @@ from app.db.mariadb import fetch_all, execute
 logger = structlog.get_logger(__name__)
 
 # Thresholds
-_ACCURACY_MIN = 0.65
+# ⛔ 정확도에는 경고 임계가 없다 — 모듈 머리말 참고. 되살리지 마라.
 _RESPONSE_MAX_MS = 12_000
 _CONTEXT_MIN_LEN = 300
 
@@ -148,7 +162,8 @@ def compute_daily_snapshot(target_date: date | None = None) -> dict:
     # ── Global accuracy row: the only place a real (non-fabricated) accuracy_rate is
     # stored. request_count is set to the day's total across all routes (rather than 0)
     # so growth_report.py's `WHERE request_count > 0` filter still picks this row up.
-    flag_accuracy_global = int(global_accuracy is not None and global_accuracy < _ACCURACY_MIN)
+    # ⛔ 경고하지 않는다 — 값만 남긴다 (모듈 머리말). 0 으로 적어야 경고 막대가 안 읽는다.
+    flag_accuracy_global = 0
     execute(
         """
         INSERT INTO quality_snapshots
@@ -167,17 +182,8 @@ def compute_daily_snapshot(target_date: date | None = None) -> dict:
     results[_GLOBAL_ROUTE] = {
         "accuracy_rate": global_accuracy,
         "feedback_count": total_fb,
-        "flag_accuracy": bool(flag_accuracy_global),
+        "flag_accuracy": False,
     }
-    if flag_accuracy_global:
-        flags_found.append((_GLOBAL_ROUTE, [f"accuracy={global_accuracy:.2f}<{_ACCURACY_MIN}"]))
-        logger.warning(
-            "quality_threshold_exceeded",
-            date=str(target_date),
-            route=_GLOBAL_ROUTE,
-            issues=flags_found[-1][1],
-            request_count=total_fb,
-        )
 
     if flags_found:
         logger.warning(

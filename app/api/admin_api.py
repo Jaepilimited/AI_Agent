@@ -125,15 +125,20 @@ async def update_user_models(
 
 @admin_router.get("/quality-flags")
 async def get_quality_flags(_: User = Depends(_require_admin)):
-    """Return yesterday's quality snapshot flags. Admin only."""
+    """Return yesterday's quality snapshot flags. Admin only.
+
+    ⛔ 정확도(`flag_accuracy`)는 읽지 않는다 (2026-09-17 사용자 결정 — `quality_monitor`
+       머리말 참고). 계산 쪽만 끄면 **이미 저장된 행**의 `flag_accuracy=1` 때문에 그날
+       하루 경고가 계속 뜬다 — 그래서 읽는 쪽에서도 막는다. 옛 행을 고쳐 쓰지는 않는다.
+    """
     from datetime import date, timedelta
     yesterday = (date.today() - timedelta(days=1)).isoformat()
     rows = await _db_fetch_all(
-        """SELECT route, flag_accuracy, flag_speed, flag_context,
-                  accuracy_rate, avg_response_ms, avg_context_len, request_count
+        """SELECT route, flag_speed, flag_context,
+                  avg_response_ms, avg_context_len, request_count
            FROM quality_snapshots
            WHERE snapshot_date = %s
-             AND (flag_accuracy = 1 OR flag_speed = 1 OR flag_context = 1)
+             AND (flag_speed = 1 OR flag_context = 1)
            ORDER BY route""",
         (yesterday,),
     )

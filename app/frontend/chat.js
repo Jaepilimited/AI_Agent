@@ -4451,7 +4451,7 @@
               if (!qd || !qd.flags || qd.flags.length === 0) return;
               var flagRows = qd.flags.map(function(f) {
                 var issues = [];
-                if (f.flag_accuracy) issues.push("정확도 " + (f.accuracy_rate != null ? (f.accuracy_rate * 100).toFixed(0) + "%" : "N/A") + " (기준 65%)");
+                // 정확도(👍 비율)는 경고하지 않는다 — 서버가 더 이상 내려주지 않는다 (2026-09-17)
                 if (f.flag_speed)    issues.push("응답속도 " + (f.avg_response_ms / 1000).toFixed(1) + "s (기준 12s)");
                 if (f.flag_context)  issues.push("컨텍스트 " + f.avg_context_len + "자 (기준 300자)");
                 var routeLabel = f.route === "_all" ? "전체" : f.route;
