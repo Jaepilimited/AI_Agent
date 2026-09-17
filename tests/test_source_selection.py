@@ -97,6 +97,7 @@ def _run_reconcile(keys, selected, stored, known=None, logistics_migrated=False)
         "var enabledSources = " + json.dumps(selected) + ";",
         _extract_js_function(js, "saveEnabledSources"),
         _extract_js_function(js, "_hasSavedSourcePrefs"),
+        _extract_js_function(js, "_mergeBpSourceKeys"),
         _extract_js_function(js, "_loadKnownSourceKeys"),
         _extract_js_function(js, "_saveKnownSourceKeys"),
         _extract_js_function(js, "_migrateLogisticsSourceDefault"),

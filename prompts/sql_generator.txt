@@ -43,9 +43,12 @@
 | **재구매** (재구매율, 리텐션, 코호트) | `SALES_ALL_Backup` (ID 컬럼으로 고객 식별) |
 | **프로모션 일정** (어느 팀이 언제 어느 몰에서) | `promotion_calendar.promotion` (테이블 15) |
 | **수출 물류** (발주·선적·출고일·ETD/ETA·포워더·인코텀즈·컨테이너·통관·물류비) | `Export_control.export_logistics` ⭐ 테이블 16 |
+| **국내 CS** (접수·반품·교환·재배송·채널별 처리 기록·보상 기록액) | `cs_dashboard.domestic_cs_records` ⭐ 테이블 17, `@@국내CS` |
+| **해외 CS / Shopify 환불** (환불 건수·환불액·국가별 환불·처리 상태) | `cs_dashboard.overseas_cs_refunds` ⭐ 테이블 18, `@@해외CS` — 전체 CS 접수 데이터가 아님 |
 
 - Product 테이블: 매출 없음! 수량만!
 - SALES_ALL_Backup: SET 컬럼은 세트 묶음 포함 → **Total_Qty가 세트를 1개로 세어 수량이 부정확**. 수량 답변에 SALES_ALL_Backup.Total_Qty 사용 절대 금지 (2026-07-15 실제 오답 발생)
+- **CS 접수·반품·검품 상품수량은 판매수량과 다르다.** 국내 CS 상품수량은 테이블 17의 `items.quantity` 또는 `inspections.quantity`를 목적에 맞게 쓴다. CS 환불액을 매출·Shopify 매출·재무 손익 테이블로 대체하지 마라.
 
 ## ⛔ 보유하지 않은 데이터 (다른 데이터로 대체 생성 금지!)
 
@@ -1760,6 +1763,180 @@ FROM `skin1004-319714.Export_control.export_logistics`
 WHERE NOT is_deleted AND status = '진행중' AND NOT is_shipped_out
 ORDER BY IFNULL(etd, order_date)
 LIMIT 200
+```
+
+---
+
+## 테이블 17: domestic_cs_records (국내 CS — 처리 기록)
+
+테이블: `skin1004-319714.cs_dashboard.domestic_cs_records`
+소스: `@@국내CS` (BigQuery). `@@CS`는 `@@BP`의 별칭으로 제품 Q&A·CS 문서를 함께 검색하며 이 집계와 별개다.
+
+**한 행 = 원본에서 묶은 처리 기록 1건.** `record_id`는 현재 스냅샷의 키이며 평생 유일한 CS 접수 ID가 아니다.
+같은 주문에 반품·재배송 기록이 함께 있을 수 있다. `COUNT(*)`는 **처리 기록 수**, 주문 수는
+`COUNT(DISTINCT order_key)`다. 주문번호 누락으로 `order_key IS NULL`인 기록 수를 함께 밝힌다.
+
+### 집계에 쓰는 컬럼
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| record_id / order_key / order_no | STRING | 처리 기록 키 / 채널+주문 식별 키 / 원본 주문번호 |
+| channel | STRING | 판매 채널. 실제 값: {{VALUES:DomesticCSChannel}} |
+| claim_type | STRING | 표준 접수 유형. 실제 값: {{VALUES:DomesticCSClaimType}} |
+| process_status | STRING | 표준 처리 상태. 실제 값: {{VALUES:DomesticCSStatus}} |
+| received_at | DATE | **접수일. 기본 기간 기준** |
+| completed_at | DATE | 완료일. 완료 기간 질문에만 사용 |
+| outbound_invoice_nos / return_invoice_nos | ARRAY<STRING> | 출고 송장번호 / 회수 송장번호. 빈 배열은 원본 미기재이며 발송·회수하지 않았다는 뜻이 아님 |
+| reason_normalized | STRING | 집계용 단일 표준 사유. 실제 값: {{VALUES:DomesticCSReason}} |
+| reasons_normalized / reasons / reason_details | ARRAY<STRING> | 복수 표준 사유 / 원본 사유 / 상세 사유. 배열을 펼치면 한 기록이 여러 행이 됨 |
+| purchase_amount / paid_amount | NUMERIC | 네이버 원본 구매금액 / 자사몰·입점몰 실결제금액. 서로 다른 기준 |
+| source_order_amount / source_order_amount_basis | NUMERIC / STRING | 원본 주문금액과 기준. `purchase_amount_raw` 또는 `paid_amount_raw` |
+| discount_amount / return_shipping_fee | NUMERIC | 쿠폰·적립금 합계 / 반송 배송비 합계 |
+| compensation_amount | NUMERIC | 원본에 기록된 보상액. 철회·미완료·검토 대상도 포함할 수 있음 |
+| eligible_recorded_compensation | NUMERIC | **완료·비철회·검토 대상 제외 보상 기록액. 실제 지급 확인액이 아님** |
+| compensation_eligibility | STRING | 보상액 집계 분류. 실제 값: {{VALUES:DomesticCSCompensation}} |
+| currency | STRING | KRW |
+| items | ARRAY<STRUCT> | 접수 상품. 주요 하위 필드: `product_name`, `barcode`, `erp_code` STRING, `quantity` INTEGER, `is_gift` BOOLEAN, 상품별 금액 NUMERIC |
+| inspections | ARRAY<STRUCT> | 검품 상품. 주요 하위 필드: `product_name`, `barcode`, `erp_code`, `lot_no`, `inspection_result`, `disposition` STRING, `quantity` INTEGER |
+| quality_flags | ARRAY<STRING> | 데이터 확인 필요 항목. 있는 것을 정상 처리로 단정하지 말 것 |
+| ingested_at / source_fetched_at | TIMESTAMP | 적재 기준시각 / 수집 후 기록시각. 원본 시트 최종 수정시각이 아님 |
+
+### 필수 집계 규칙
+
+1. **국내 접수 기간은 `received_at` DATE를 그대로 쓴다.** 국내 `completed_at`도 DATE다.
+   적재 시각으로 접수 기간을 대신하지 마라. 기간이 없으면 보유 전체 기간으로 집계하고 실제 최소·최대 접수일을 함께 반환한다.
+2. 한국어 접수 유형을 실제 코드로 맞춘다: 반품=`return`, 재배송=`redelivery`, 교환=`exchange`,
+   취소=`cancellation`, 수거=`collection`. 상태 완료=`completed`, 진행중=`in_progress`,
+   철회=`cancelled`, 예정=`scheduled`. 새 값은 위 실제 값 목록을 따른다.
+   채널의 네이버는 `스마트스토어`다. `source_tab`은 입력 출처이므로 판매 채널로 집계하지 마라.
+3. **사유별 처리 기록 수는 단일 컬럼 `reason_normalized`로 묶는다.** 복수 사유는 원본의
+   집계용 복합 사유 값을 존중한다. 사유·상태·유형이 비어 있으면 `미분류`로 포함하고,
+   `WHERE ... IS NOT NULL`로 조용히 제외하지 마라.
+4. **`items`와 `inspections`는 서로 독립이다.** 접수 상품과 검품 상품·수량이 다를 수 있다.
+   두 배열을 동시에 `CROSS JOIN UNNEST`하면 곱집합이 된다. 각각 필요한 배열만 집계하거나
+   각각 기록별로 집계한 뒤 결합한다. 접수 수량과 검품 수량을 섞지 마라.
+5. **배열을 펼친 뒤 부모의 `COUNT(*)`·금액 합계를 내지 마라.** 상품별 처리 기록 수는
+   `COUNT(DISTINCT record_id)`, 접수 수량은 `SUM(item.quantity)`다. 특정 상품이 포함된
+   기록의 보상액은 `WHERE EXISTS (SELECT 1 FROM UNNEST(items) item WHERE ...)`로
+   기록을 거른 뒤 부모 테이블에서 합산한다. `SUM(DISTINCT 금액)`은 서로 다른 기록의 같은 금액을 지우므로 해결책이 아니다.
+6. `items.quantity`의 NULL은 상품 미상 재배송 등의 수량 미확인이다. 0으로 단정하지 말고
+   누락 항목 수를 함께 반환한다. `CS_RP_` 값은 재배송 참조값이며 바코드나 송장번호가 아니다.
+7. **보상액 기본값은 `SUM(eligible_recorded_compensation)`이며 '보상 기록액'이라고 부른다.**
+   제외·미기재 건수도 함께 낸다. `compensation_amount`를 쓰는 원본 기록 조회와 구분한다.
+   실제 지급 완료 금액은 이 표로 확인할 수 없다. `SUM`이 NULL이면 0원으로 바꾸지 마라.
+8. **`source_order_amount`는 `source_order_amount_basis`별로 나눈다.** 구매금액과 실결제금액을
+   통합 순결제액으로 더하지 마라. 이 금액은 처리 기록에 붙은 원본금액이며, 같은 주문의
+   여러 처리 기록을 더한 값을 고유 주문의 결제액이라고 부르지 마라.
+9. `raw_rows`·`raw_headers` 등 원본 셀 전체를 기본 집계 결과에 노출하지 마라.
+   처리 기록 수를 영구 고유 CS 수로, 국내 기록과 해외 환불의 합을 전체 CS 접수 수로 부르지 마라.
+10. **주문 상세는 실제 `order_no`로 정확히 조회한다.** `record_id`·`order_key`는 내부 관리 키라
+    기본 SELECT·답변에서 제외한다(고유 건수 집계에는 계속 사용). 주문번호 일부로 생성 키를 LIKE 검색하지 마라.
+    접수일·완료일·유형·상태·사유와 `outbound_invoice_nos`·`return_invoice_nos`를 함께 가져온다.
+    상품은 `ARRAY(SELECT AS STRUCT product_name, quantity FROM UNNEST(items))`로 보존한다.
+    수량 NULL 때문에 `CONCAT` 전체가 NULL이 되어 상품명까지 사라지게 하지 마라.
+    동일 주문의 여러 처리 기록을 별도로 보여주고, 미기재 날짜·송장·보상액을 없거나 0이라고 단정하지 마라.
+
+### 예시
+
+```sql
+-- 국내 8월 채널별 처리 기록 수·고유 주문 수
+SELECT channel, COUNT(*) AS processing_records,
+       COUNT(DISTINCT order_key) AS distinct_orders,
+       COUNTIF(order_key IS NULL) AS records_without_order_key
+FROM `skin1004-319714.cs_dashboard.domestic_cs_records`
+WHERE received_at BETWEEN '2026-08-01' AND '2026-08-31'
+GROUP BY channel ORDER BY processing_records DESC
+LIMIT 1000
+```
+```sql
+-- 접수 상품별 수량과 처리 기록 수. 부모 금액은 이 UNNEST 결과에서 합산하지 않는다
+SELECT COALESCE(NULLIF(item.product_name, ''), '상품 미상') AS product_name,
+       COUNT(DISTINCT cs.record_id) AS processing_records,
+       SUM(item.quantity) AS received_item_quantity,
+       COUNTIF(item.quantity IS NULL) AS items_without_quantity
+FROM `skin1004-319714.cs_dashboard.domestic_cs_records` cs,
+     UNNEST(cs.items) item
+WHERE cs.received_at BETWEEN '2026-08-01' AND '2026-08-31'
+GROUP BY product_name ORDER BY processing_records DESC
+LIMIT 1000
+```
+
+---
+
+## 테이블 18: overseas_cs_refunds (해외 CS — Shopify 환불)
+
+테이블: `skin1004-319714.cs_dashboard.overseas_cs_refunds`
+소스: `@@해외CS` (BigQuery). **한 행 = Shopify 환불 1건. 전체 해외 CS 접수나 모든 반품의 목록이 아니다.**
+환불 수는 `COUNT(*)` 또는 `COUNT(DISTINCT shopify_refund_id)`, 주문 수는
+`COUNT(DISTINCT shopify_order_id)`다. 같은 주문에 여러 환불이 존재한다.
+
+### 집계에 쓰는 컬럼
+
+| 컬럼 | 타입 | 설명 |
+|------|------|------|
+| shopify_refund_id / shopify_order_id / order_number | STRING | 환불 ID / 주문 ID / 표시용 주문번호 |
+| shopify_return_id / return_status | STRING | 연결 반품 ID / 반품 상태. 환불과 반품은 같은 사건이 아님 |
+| process_status | STRING | 환불 처리 상태. 실제 값: {{VALUES:OverseasCSStatus}} |
+| refund_created_at | TIMESTAMP | **환불 생성시각. 기본 기간 기준은 `DATE(refund_created_at, 'Asia/Seoul')`** |
+| refund_processed_at | TIMESTAMP | 환불 처리시각 |
+| completed_at | TIMESTAMP | 모든 환불 거래가 성공한 경우의 완료시각 |
+| received_at | TIMESTAMP | 연결된 Return 생성시각. 반품 연결이 없으면 NULL. **기본 기간으로 쓰지 마라** |
+| intake_type | STRING | 접수 유형. 원본 변환 코드에서 NULL일 수 있으며 유형을 추정하지 말 것 |
+| country_code / country_name | STRING | 배송국가 코드 / **영문** 국가명. 실제 국가명: {{VALUES:OverseasCSCountry}} |
+| return_type_normalized | STRING | 표준 환불 사유. 실제 값: {{VALUES:OverseasCSReason}} — 반품·교환 접수 유형이 아님 |
+| return_type_raw / reason_detail / refund_note_raw | STRING | 원본 환불 사유 분류 / 상세 사유 / 원본 메모 |
+| normalization_status | STRING | 사유 분류 상태. 실제 값: {{VALUES:OverseasCSNormalization}} |
+| refund_amount_usd | NUMERIC | **성공한 환불 거래 금액의 합계(USD)**. 전체 환불 완료와는 다른 기준 |
+| refund_amount_krw | NUMERIC | 완료일 환율로 환산·원화 반올림한 환불액. 환율 미확보 등으로 NULL 가능 |
+| payment_amount_usd / payment_amount_krw | NUMERIC | **주문 전체 수취액**. 복수 환불 행에 반복되므로 단순 합산 금지 |
+| fx_date / usd_krw_rate / fx_basis | DATE / NUMERIC / STRING | 완료일 한국 날짜 / 적용 환율 / 환산 기준. 완료 전 또는 환율 미확보는 NULL 가능 |
+| refund_transaction_succeeded | BOOLEAN | 모든 환불 거래 성공이면 TRUE. 거래가 없으면 NULL |
+| ingested_at / shopify_updated_at | TIMESTAMP | 적재 시각 / 환불·주문 updatedAt 중 최신 |
+
+### 필수 집계 규칙
+
+1. **날짜·월 변환에는 한국 시간 `Asia/Seoul`을 명시한다.** 기본 환불 생성 기간은
+   `DATE(refund_created_at, 'Asia/Seoul')`. '완료된 환불액'처럼 완료 기간을 물으면
+   `DATE(completed_at, 'Asia/Seoul')`로 제한하고 그 기준을 답변에 밝힌다.
+   기간이 없으면 보유 전체 기간으로 집계하고 실제 최소·최대 환불 생성일을 함께 반환한다.
+   `received_at`은 일부 환불만 가진 반품 연결시각이며, 이를 기본 필터로 삼으면 대부분이 사라진다.
+2. 상태 완료=`completed`, 진행중=`in_progress`, 미확인=`unknown`이다. 표준값은 위 실제 목록을 따른다.
+   `refund_amount_usd`는 성공 거래액이므로 `process_status != 'completed'`에도 일부 성공 금액이
+   있을 수 있다. 사용자가 완료분만 요청하지 않았다면 완료 필터를 임의로 붙여 누락시키지 마라.
+3. **원화 환불액의 NULL을 0으로 바꾸지 마라.** `SUM(refund_amount_krw)`와
+   `COUNTIF(refund_amount_krw IS NULL)`을 함께 반환하고, 원화 합계에서 빠진 환불 건수를
+   안내한다. 환율 미확보·미완료 등 원인은 실제 필드로 확인한 경우에만 단정한다.
+4. **`payment_amount_usd`는 `shopify_order_id`별로 중복 제거한 뒤 합산한다.**
+   `SUM(DISTINCT payment_amount_usd)`는 다른 주문의 같은 금액을 지우므로 금지.
+   서로 다른 환불 생성·완료 기간에 같은 주문이 다시 나타날 수 있으므로 기간별 고유 주문 수·주문금액을
+   더한 값을 전체 기간 고유 주문 값이라고 부르지 마라.
+   `payment_amount_krw`는 같은 주문도 환불 완료일별 환율로 달라질 수 있다. 임의의 행·최대값을
+   골라 통합 원화 결제액으로 합산하지 말고, 일관된 환산 기준 없이는 원화 주문금액 합계를 만들지 마라.
+5. **영문 `country_name`은 매출의 한글 국가명과 다르다.** 미국은 `United States`처럼
+   실제 국가명 또는 `country_code`로 필터한다. 국가 NULL도 `국가 미상`으로 포함한다.
+6. 사유별로는 `COALESCE(NULLIF(return_type_normalized, ''), '미분류')`를 쓴다.
+   `intake_type`·표준 환불 사유가 전부 NULL이면 **유형·표준사유 데이터가 없다**고 안내한다.
+   빈 값을 지우거나, 비정형 메모에서 이유를 임의 추정하거나, 환불 사유를 반품·교환 접수 유형으로
+   바꾸지 마라. 미분류 건수와 `normalization_status`를 함께 보여 줄 수 있다.
+7. **전체 해외 CS 접수 건수·모든 반품 건수는 이 표로 알 수 없다.** 환불 건수만을 전체 접수로
+   바꾸지 마라. 국내와 비교하면 국내 '처리 기록 수'와 해외 '환불 수'를 따로 밝히고,
+   둘을 더해 하나의 전체 CS 합계로 만들지 마라.
+8. 고객 이메일 `customer_email`, 고객 ID, `raw_payload` 및 원본 메모 전체를 기본 집계에 노출하지 마라.
+
+### 예시
+
+```sql
+-- 8월 생성된 해외 환불의 국가별 집계. 미완료 건의 성공 거래액도 포함
+SELECT COALESCE(NULLIF(country_name, ''), '국가 미상') AS country_name,
+       COUNT(*) AS refund_records,
+       COUNT(DISTINCT shopify_order_id) AS distinct_orders,
+       SUM(refund_amount_usd) AS successful_refund_amount_usd,
+       SUM(refund_amount_krw) AS recorded_refund_amount_krw,
+       COUNTIF(refund_amount_krw IS NULL) AS refunds_without_krw
+FROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`
+WHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'
+GROUP BY country_name ORDER BY refund_records DESC
+LIMIT 1000
 ```
 
 ---

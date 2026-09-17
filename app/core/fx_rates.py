@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from calendar import monthrange as _monthrange
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.db.mariadb import execute, fetch_all, fetch_one
@@ -57,10 +57,16 @@ def ensure_tables() -> None:
     execute(_DDL)
 
 
-def put(for_date: date, rows: list[dict[str, Any]], source: str) -> int:
-    """하루치를 통째로 upsert. 같은 날 두 번 넣어도 마지막 값만 남는다."""
+def put(
+    for_date: date, rows: list[dict[str, Any]], source: str, *, only_missing: bool = False,
+) -> int:
+    """최신값을 upsert. 과거 보충은 이미 수집한 값과 출처를 그대로 보존한다."""
 
     ensure_tables()
+    update = (
+        "currency=currency" if only_missing else
+        "krw=VALUES(krw), unit=VALUES(unit), source=VALUES(source), fetched_at=NOW()"
+    )
     saved = 0
     for row in rows:
         currency = str(row.get("currency", "")).upper()[:8]
@@ -73,8 +79,7 @@ def put(for_date: date, rows: list[dict[str, Any]], source: str) -> int:
         execute(
             "INSERT INTO fx_rates (for_date, currency, krw, unit, source) "
             "VALUES (%s,%s,%s,%s,%s) "
-            "ON DUPLICATE KEY UPDATE krw=VALUES(krw), unit=VALUES(unit), "
-            "source=VALUES(source), fetched_at=NOW()",
+            "ON DUPLICATE KEY UPDATE " + update,
             (for_date, currency, krw, int(row.get("unit") or 1), source[:40]),
         )
         saved += 1
@@ -99,8 +104,20 @@ def month_before(day: date) -> date:
     return date(year, month, min(day.day, last))
 
 
+def missing_history_target(day: date) -> date | None:
+    """한 달 전 날짜에 빠진 통화가 있으면 릴레이에 그 날짜를 요청한다.
+
+    직전 영업일 값만으로는 해당 날짜의 고시 유무를 알 수 없다. 휴일 보정은
+    과거 조회 API가 반환하는 날짜로 하므로 여기서는 정확한 날짜를 확인한다.
+    """
+    ensure_tables()
+    target = month_before(day)
+    present = {str(row["currency"]) for row in _rows_for(target)}
+    return None if set(CURRENCIES) <= present else target
+
+
 #: 비교 기준일이 '한 달 전' 에서 이만큼까지 떨어지는 것은 정상이다 (주말·공휴일).
-#: ⚠️ 이보다 멀면 전월대비가 아니다 — 이름을 바꾼다.
+#: ⚠️ 이보다 오래된 값은 전월대비 조회에서 제외한다.
 BASIS_TOLERANCE_DAYS = 7
 
 
@@ -111,7 +128,7 @@ def basis_note(basis, target) -> str:
         return ""
     gap = (target - basis).days
     if 0 <= gap <= BASIS_TOLERANCE_DAYS:
-        return f"전월대비 {basis}"
+        return f"한 달 전 대비 ({basis} 고시)"
     # 보유일이 드물어 한 달 전과 견주지 못했다. 숫자는 진짜지만 이름은 아니다.
     return f"{basis} 대비"
 
@@ -120,13 +137,14 @@ def _basis_date(day: date):
     """전월대비의 기준일 — 한 달 전 **이전**에서 가장 가까운 보유일.
 
     ⛔ 한 달 전 날짜를 콕 집어 찾으면 주말·공휴일에 **조용히 0건**이 된다.
-       그 날짜 이하에서 가장 가까운 값을 쓴다.
+       그 날짜 이하에서 가장 가까운 값을 쓰되, 허용 기간보다 오래된 값은 제외한다.
     ⚠️ 없으면 None 이다 — 그때는 변동률을 만들지 않는다. 없는 것을 0% 로 적으면
        "안 움직였다" 로 읽힌다 (이 파일이 이미 지키는 규칙이다).
     """
+    target = month_before(day)
     row = fetch_one(
-        "SELECT MAX(for_date) d FROM fx_rates WHERE for_date <= %s",
-        (month_before(day),),
+        "SELECT MAX(for_date) d FROM fx_rates WHERE for_date <= %s AND for_date >= %s",
+        (target, target - timedelta(days=BASIS_TOLERANCE_DAYS)),
     ) or {}
     basis = row.get("d")
     if isinstance(basis, datetime):

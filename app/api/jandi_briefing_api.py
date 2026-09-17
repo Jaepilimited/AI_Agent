@@ -210,10 +210,19 @@ async def relay_fx(request: Request, payload: dict = Body(...)) -> dict:
     rows = payload.get("rates")
     if not isinstance(rows, list) or not rows:
         raise HTTPException(status_code=400, detail="rates must be a non-empty list")
-    saved = fx_rates.put(for_date, rows[:40], str(payload.get("source", "")))
+    only_missing = payload.get("only_missing", False)
+    if not isinstance(only_missing, bool):
+        raise HTTPException(status_code=400, detail="only_missing must be a boolean")
+    saved = fx_rates.put(
+        for_date, rows[:40], str(payload.get("source", "")), only_missing=only_missing,
+    )
     fx_rates.cleanup(for_date - timedelta(days=90))
+    history_target = None if only_missing else fx_rates.missing_history_target(for_date)
     logger.info("fx_relay_saved", for_date=str(for_date), saved=saved)
-    return {"saved": saved, "for_date": str(for_date)}
+    return {
+        "saved": saved, "for_date": str(for_date),
+        "history_needed_for": str(history_target) if history_target else "",
+    }
 
 
 @router.post("/api/internal/briefing-outbox/ack")

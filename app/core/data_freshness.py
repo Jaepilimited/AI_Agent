@@ -238,6 +238,27 @@ def _probe_awards() -> Reading:
     return r
 
 
+def _probe_pr_issues() -> Reading:
+    """PR 전용 사본을 원본 시트와 대조한다. 노션 사본의 시각으로 대신하지 않는다."""
+    from app.core.pr_issues import FRESHNESS_MAX_HOURS, SHEET_ID, status
+
+    st = status()
+    if st.get("pending_recovery"):
+        return Reading("PR 이슈", False, "PR 검색 저장소 복구 미완료 — 다음 동기화에서 재시도")
+    count = int(st.get("count") or 0)
+    if not count:
+        return Reading("PR 이슈", False, "PR 검색 데이터 0건 — 리스트 탭 적재 확인 필요")
+    ours = st.get("synced_at")
+    if isinstance(ours, str):
+        ours = datetime.fromisoformat(ours.replace("Z", "+00:00"))
+    if ours is not None and ours.tzinfo is not None:
+        ours = ours.astimezone().replace(tzinfo=None)
+    r = _lag_reading("PR 이슈", ours, _drive_modified(SHEET_ID),
+                     max_lag_hours=26, max_age_hours=FRESHNESS_MAX_HOURS)
+    r.detail = f"{count}건 · " + r.detail
+    return r
+
+
 # ── 등록부 ──────────────────────────────────────────────────────────────────
 # ⛔ 새 파생 사본을 만들면 **여기에 등록한다.** 등록을 잊으면 `coverage_gaps()` 가
 #    그 소스의 `@@` 라우트를 "감시 없음" 으로 잡는다 — 잊는 것까지 감시한다.
@@ -251,6 +272,7 @@ SOURCES: List[Source] = [
     Source("프롬프트 값 목록", _probe_value_lists, routes={"bigquery"}),
     Source("대표 제품 목록", _probe_product_catalog, routes={"direct"}),
     Source("수상/랭킹", _probe_awards, routes={"awards"}, keys={"수상"}),
+    Source("PR 이슈", _probe_pr_issues, keys={"PR"}),
 ]
 
 # ⚠️ 파생 사본이 아니라서 이 등록부가 덮지 않는 라우트 — **이유를 적어 둔다.**

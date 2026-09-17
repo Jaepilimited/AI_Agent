@@ -342,9 +342,16 @@ def get_safety_status() -> dict:
         "스마트스토어 리뷰": "스마트스토어 리뷰",
         "프로모션": "프로모션 캘린더 (실행 일정)",
         "물류": "수출 물류 — 발주·선적·출고 (Export_control)",
+        "국내CS": "국내 CS 대시보드 · 처리 기록",
+        "해외CS": "해외 CS 대시보드 · Shopify 환불 기록",
     }
     for label, detail in _mkt_tables.items():
         services[label] = _bq_service(label, detail)
+
+    from app.core.cs_metrics import DASHBOARD_URL as _CS_DASHBOARD_URL
+    for _cs_key in ("국내CS", "해외CS"):
+        services[_cs_key]["url"] = _CS_DASHBOARD_URL
+        services[_cs_key]["url_label"] = "대시보드"
 
     # 모델 초상권 (시트 → MariaDB, 매일 04:30 적재) — 적재 수·신선도로 판정
     # 원본 시트를 화면에 함께 걸어 둔다 — 앱이 판정 못 하는 건은 사람이 시트를 봐야 한다
@@ -371,6 +378,7 @@ def get_safety_status() -> dict:
 
     # Notion (Qdrant) — 팀별 분리 (5분 캐시)
     import time as _time
+    _cs_docs_count = None
     _QDRANT_TEAM_LABELS = {
         "B2B1": "B2B1", "[GM]WEST": "GM WEST", "CS": "CS",
         "DB": "DB", "B2B2": "B2B2", "PEOPLE": "PEOPLE",
@@ -404,27 +412,39 @@ def get_safety_status() -> dict:
         else:
             _team_counts = _qdrant_cache
 
-        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "UNKNOWN", "?", "google_sheets", "임베딩 된 구글시트"}
+        _cs_docs_count = _team_counts.get("CS", 0)
+        _SKIP_TEAMS = {"FI", "OP", "LOG", "IT", "CS", "UNKNOWN", "?", "google_sheets", "임베딩 된 구글시트"}
         for _qt, _qc in sorted(_team_counts.items(), key=lambda x: _QDRANT_TEAM_LABELS.get(x[0], x[0])):
             if _qt in _SKIP_TEAMS:
                 continue
             _label = _QDRANT_TEAM_LABELS.get(_qt, _qt)
             services[_label] = {"status": "ok", "detail": f"{_qc} chunks"}
+            if _qt == "PR":
+                from app.core.pr_issues import SHEET_URL as _PR_SHEET_URL
+                services[_label]["url"] = _PR_SHEET_URL
 
     except Exception as e:
         services["Notion"] = {"status": "error", "detail": str(e)[:30]}
 
-    # BP / CS
-    cs_detail = "737 entries"
-    cs_status = "ok"
+    # BP는 제품 Q&A와 CS 문서를 함께 조회한다. 둘 중 한쪽이 없어도 정상으로 숨기지 않는다.
+    _cs_docs_detail = ("CS 문서 연결" if _cs_docs_count else
+                       "CS 문서 미적재" if _cs_docs_count == 0 else "CS 문서 확인 실패")
+    services["BP"] = {"status": "error", "detail": "제품 Q&A 확인 실패 · " + _cs_docs_detail}
     try:
-        from app.agents.cs_agent import _qa_cache, _cache_loaded
-        if _cache_loaded:
-            cs_detail = f"{len(_qa_cache)}건"
-        else:
-            cs_detail = "loading"; cs_status = "error"
-    except: pass
-    services["BP"] = {"status": cs_status, "detail": cs_detail}
+        from app.agents.cs_agent import source_links as _bp_source_links
+        from app.agents.cs_agent import status as _bp_qa_status
+        _links = _bp_source_links()
+        services["BP"]["links"] = _links
+        if _links:
+            services["BP"]["url"] = _links[0]["url"]
+        _qa = _bp_qa_status()
+        _qa_ready = bool(_qa.get("loaded") and _qa.get("count"))
+        services["BP"]["detail"] = (
+            f"제품 Q&A {_qa.get('count') or 0}건" if _qa_ready else "제품 Q&A 준비 중"
+        ) + " · " + _cs_docs_detail
+        services["BP"]["status"] = "ok" if _qa_ready and _cs_docs_count else "error"
+    except Exception:
+        pass
 
     # OP 재고 (시트 → MariaDB, 매일 04:10) — 적재량과 **시트 갱신 시점**을 함께 낸다.
     # ⚠️ 매일 바뀌는 값이라 "언제 것인가" 가 숫자만큼 중요하다.
@@ -563,6 +583,8 @@ _MONITORED_TABLES: Dict[str, tuple] = {
     "프로모션": ("promotion_calendar", "promotion"),
     "물류": ("Export_control", "export_logistics"),
     "환율": ("Sales_Integration", "Exchange_Rate"),
+    "국내CS": ("cs_dashboard", "domestic_cs_records"),
+    "해외CS": ("cs_dashboard", "overseas_cs_refunds"),
 }
 
 

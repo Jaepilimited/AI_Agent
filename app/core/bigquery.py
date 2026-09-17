@@ -93,13 +93,19 @@ class BigQueryClient:
         try:
             table = self.client.get_table(table_id)
             schema = []
-            for field in table.schema:
-                schema.append({
-                    "name": field.name,
-                    "type": field.field_type,
-                    "mode": field.mode,
-                    "description": field.description or "",
-                })
+            def add_fields(fields, prefix=""):
+                for field in fields:
+                    name = prefix + field.name
+                    schema.append({
+                        "name": name,
+                        "type": field.field_type,
+                        "mode": field.mode,
+                        "description": field.description or "",
+                    })
+                    if getattr(field, "fields", ()):
+                        add_fields(field.fields, name + ".")
+
+            add_fields(table.schema)
             logger.info("schema_retrieved", table=table_id, columns=len(schema))
             return schema
         except Exception as e:

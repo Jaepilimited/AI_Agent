@@ -23,7 +23,7 @@ def _links_module():
 def test_shared_catalog_contains_every_dashboard_link():
     links = _links_module().iter_dashboard_links()
 
-    assert len(links) == 92
+    assert len(links) == 93
     assert all(link["title"] and link["url"].startswith(("http://", "https://")) for link in links)
     assert any(
         link["title"] == "프로모션 캘린더"
@@ -48,10 +48,10 @@ def test_every_catalog_title_can_resolve_its_own_url():
             "재고 데이터 피벗 엑셀 변환기",
             "https://aistudio.google.com/apps/e9b00eeb-b6f3-418c-8d22-a9b811168755?fullscreenApplet=true",
         ),
-        ("SKIN1004 CS 대시보드", "https://cs.cravercorp.internal"),
+        ("SKIN1004 CS 대시보드", "http://34.64.99.254:8061/"),
         (
             "국내 교환/반품 통합 대시보드",
-            "http://34.64.99.254:8061/data/channels?startDate=2026-08-01&endDate=2026-08-31&status=in_progress",
+            "http://34.64.99.254:8061/dashboard",
         ),
     ],
 )
@@ -96,6 +96,26 @@ def test_multiple_matches_are_capped_at_five():
     ],
 )
 def test_data_questions_do_not_turn_into_dashboard_link_answers(query):
+    assert _links_module().answer_dashboard_link_query(query) is None
+
+
+@pytest.mark.parametrize("query,path", [
+    ("국내CS 링크", "/dashboard"),
+    ("해외CS 링크", "/global/dashboard"),
+    ("국내 CS 상품별 그래프 어디서 봐?", "/reports/product"),
+    ("국내 CS 사유별 시각화 주소", "/reports/reason"),
+])
+def test_cs_sources_link_to_their_actual_dashboard_pages(query, path):
+    answer = _links_module().answer_dashboard_link_query(query)
+    assert f"](http://34.64.99.254:8061{path})" in answer
+
+
+@pytest.mark.parametrize("query", [
+    "8월 해외 CS 환불액 얼마야? 링크도 줘",
+    "해외 CS 8월 환불 금액과 링크 알려줘",
+    "국내 CS 8월 건수 링크도 같이 보여줘",
+])
+def test_cs_metric_request_with_link_still_fetches_the_answer(query):
     assert _links_module().answer_dashboard_link_query(query) is None
 
 

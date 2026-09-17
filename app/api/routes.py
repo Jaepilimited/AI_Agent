@@ -540,7 +540,8 @@ async def list_datasources():
     #    그래서 서버만 고치면 조용히 어긋났다 (2026-08-13 단일 소스화).
     return [{"key": e["key"], "aliases": e["aliases"], "label": e["label"],
              "desc": e["desc"], "group": e.get("group", ""), "icon": e.get("icon", ""),
-             "route": e.get("route", "bigquery")} for e in registry]
+             "route": e.get("route", "bigquery"),
+             **{k: e[k] for k in ("url", "url_label", "links") if e.get(k)}} for e in registry]
 
 
 @router.get("/api/notion-sync/status")

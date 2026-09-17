@@ -259,6 +259,9 @@ class Settings(BaseSettings):
             "skin1004-319714.Export_control.export_logistics",
             # 월말환율 (수출 물류 금액을 한화로 환산할 때만 쓴다 — 사내 확정 고시)
             "skin1004-319714.Sales_Integration.Exchange_Rate",
+            # CS records (국내 처리 기록 / 해외 Shopify 환불 기록)
+            "skin1004-319714.cs_dashboard.domestic_cs_records",
+            "skin1004-319714.cs_dashboard.overseas_cs_refunds",
             # Financial P&L (FI Dashboard — monthly consolidated income statement)
             "skin1004-319714.Sales_Integration.FI_LLM_Flat",
         ]

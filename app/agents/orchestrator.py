@@ -209,7 +209,7 @@ _SOURCE_OFF_LABELS = {
     "multi": ("매출·데이터", "`@@매출`"),
     "gws": ("Google Workspace(메일·캘린더·드라이브)", "`@@gws`"),
     "notion": ("사내 문서(Notion)", "`@@` + 팀 이름"),
-    "cs": ("제품 Q&A", "`@@BP`"),
+    "cs": ("제품 Q&A·CS 문서", "`@@BP`"),
     "inventory": ("OP 재고", "`@@OP`"),
     "model_rights": ("초상권", "`@@초상권`"),
     "awards": ("수상/랭킹", "`@@수상`"),
@@ -478,7 +478,11 @@ def multi_prefix_target_routes() -> tuple[str, ...]:
 #    *실패 답변에도 들어가는 낱말은 표지가 될 수 없다.*
 # ⚠️ 순서로 때우지 마라 (cs 를 앞에 두는 식). 표지 자체가 고유해야 한다.
 _ROUTE_MARKERS = (
-    ("bigquery", ("[직전 실행 SQL", "내부 데이터베이스", "```chart-config")),
+    ("bigquery", ("[직전 실행 SQL", "[실행된 쿼리 테이블:", "CS 대시보드 기준", "CS 대시보드 ·",
+                  "국내 CS 상세 기록 · 주문번호", "내부 데이터베이스", "```chart-config")),
+    # BP가 실제 원본 링크와 함께 붙이는 고유 표지다. 문서 내용을 설명하며
+    # "사내 문서에서"라고 썼더라도 합쳐진 BP 검색을 다음 턴에 유지한다.
+    ("cs", ("BP 자료 원본 · 제품 Q&A와 CS 문서",)),
     ("notion", ("Notion 사내 문서 검색", "사내 문서에서")),
     ("gws", ("[메일]", "[일정]", "구글 캘린더", "드라이브")),
     ("cs", ("CS 데이터", "제품 Q&A")),
@@ -786,6 +790,30 @@ def _scope_sources(enabled_sources, db_entry):
     return [e["key"] for e in db_entry]
 
 
+def _cs_order_routing(query, conversation_context, enabled_sources, db_entry=None,
+                      single_source_entry=None) -> tuple[bool, str]:
+    """Keep order details ahead of BP history without expanding source selection."""
+    from app.core.cs_order_details import is_order_detail_query
+
+    if not is_order_detail_query(query, conversation_context):
+        return False, ""
+    explicit = db_entry or ([single_source_entry] if single_source_entry else [])
+    if any(entry.get("route") != "bigquery" for entry in explicit):
+        # A deliberate BP/document choice still owns its usual route.
+        return False, ""
+    scoped_sources = _scope_sources(enabled_sources, db_entry)
+    if scoped_sources is None:
+        return True, ""
+    for source in scoped_sources:
+        entry = OrchestratorAgent._single_enabled_source_entry([source])
+        if entry and entry["key"] == "국내CS":
+            return True, ""
+    return True, (
+        "**국내 CS 소스가 꺼져 있어 주문 정보를 조회하지 않았습니다.**\n\n"
+        "System Status에서 **국내CS**를 켜거나, 질문 앞에 `@@국내CS`를 붙여 다시 요청해 주세요."
+    )
+
+
 def _euro(word: str) -> str:
     """받침에 맞는 `으로`/`로`. "'전체' 으로" 처럼 틀리면 자동 생성 티가 난다."""
     from app.reports.blocks import _josa
@@ -888,6 +916,9 @@ class OrchestratorAgent:
         {"key": "국내몰 리뷰", "aliases": ["스마트스토어 리뷰", "smartstore review", "네이버 리뷰", "올리브영 리뷰", "무신사 리뷰", "국내 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "국내몰 리뷰", "desc": "스마트스토어·올리브영·무신사 등 8채널"},
         {"key": "해외몰 리뷰", "aliases": ["아마존 리뷰", "amazon review", "큐텐 리뷰", "qoo10 review", "쿠텐 리뷰", "쇼피 리뷰", "shopee review", "해외 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "해외몰 리뷰", "desc": "Qoo10·Shopee·Amazon·해외 자사몰"},
         {"key": "매장 리뷰", "aliases": ["플래그십 리뷰", "오프라인 리뷰", "스토어 리뷰", "구글맵 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "매장 리뷰", "desc": "명동·뉴욕 플래그십 (구글맵·네이버 플레이스)"},
+        # ── BigQuery 고객지원 (CS 문서·BP 제품 Q&A와 별도) ──
+        {"key": "국내CS", "aliases": ["국내 CS", "domestic cs", "domestic_cs"], "route": "bigquery", "group": "고객지원", "icon": "headset", "label": "국내CS", "desc": "대시보드 국내 CS 현황·처리 기록·사유·보상"},
+        {"key": "해외CS", "aliases": ["해외 CS", "overseas cs", "overseas_cs", "글로벌 CS", "글로벌CS"], "route": "bigquery", "group": "고객지원", "icon": "headset", "label": "해외CS", "desc": "대시보드 CS 현황·Shopify 환불 상세"},
         # ── BigQuery 물류 ──
         # ⚠️ 키는 사용자가 부르는 이름(`물류`)이다. `LOG` 는 별칭으로 남겼다
         #    (2026-09-03 사용자 요청으로 `LOG` → `물류` 변경).
@@ -901,13 +932,12 @@ class OrchestratorAgent:
         {"key": "B2B2", "aliases": ["b2b2", "b2b", "해외영업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B2", "desc": "B2B 프로세스/온보딩"},
         {"key": "BCM", "aliases": ["bcm", "브랜드커뮤니케이션"], "route": "notion", "group": "Notion", "icon": "doc", "label": "BCM", "desc": "브랜드커뮤니케이션팀"},
         {"key": "Craver", "aliases": ["craver", "크레이버", "경영기획"], "route": "notion", "group": "Notion", "icon": "doc", "label": "Craver", "desc": "경영기획"},
-        {"key": "CS", "aliases": ["cs", "cs문서", "cs자료", "notion_cs"], "route": "notion", "group": "Notion", "icon": "doc", "label": "CS", "desc": "CS팀 Notion 문서"},
         {"key": "DB", "aliases": ["db", "데이터분석", "데이터팀"], "route": "notion", "group": "Notion", "icon": "doc", "label": "DB", "desc": "데이터분석팀"},
         {"key": "GM EAST", "aliases": ["gm_east", "east", "동부", "gm동부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM EAST", "desc": "글로벌마케팅 동부"},
         {"key": "GM WEST", "aliases": ["gm_west", "west", "서부", "gm서부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM WEST", "desc": "글로벌마케팅 서부"},
         {"key": "JBT", "aliases": ["jbt", "일본사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "JBT", "desc": "일본사업팀"},
         {"key": "KBT", "aliases": ["kbt", "국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
-        {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법)"},
+        {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담", "CS", "cs", "cs문서", "cs자료", "notion_cs"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A·CS 문서 (성분·사용법·제품정보·응대 규정)"},
         {"key": "PEOPLE", "aliases": ["people", "피플", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지"},
         {"key": "PR", "aliases": ["pr", "홍보", "보도자료", "프레인"], "route": "notion", "group": "브랜드 성과", "icon": "sheet", "label": "PR", "desc": "프레인 PR 이슈 (리스트 탭)"},
         # OP — 운영팀 재고. ⚠️ 벡터가 아니라 **표 조회**다 (`route: "inventory"`).
@@ -933,7 +963,21 @@ class OrchestratorAgent:
     @classmethod
     def get_db_registry(cls):
         """Return the full DB registry (for API/frontend)."""
-        return cls._DB_REGISTRY
+        from app.agents.cs_agent import source_links
+        from app.core.cs_metrics import DASHBOARD_URL
+
+        entries = []
+        for entry in cls._DB_REGISTRY:
+            item = dict(entry)
+            if item["key"] == "BP":
+                item["links"] = source_links()
+                if item["links"]:
+                    item["url"] = item["links"][0]["url"]
+                    item["url_label"] = item["links"][0]["label"]
+            elif item["key"] in ("국내CS", "해외CS"):
+                item.update(url=DASHBOARD_URL, url_label="대시보드")
+            entries.append(item)
+        return entries
 
     @classmethod
     def parse_db_prefix(cls, query: str):
@@ -1107,6 +1151,13 @@ class OrchestratorAgent:
         """Build the shared @@ multi-source parallel fan-out tasks."""
         tasks = []
         scoped_sources = _scope_sources(enabled_sources, entries)
+        # 두 CS 소스 비교는 같은 범위의 SQL을 두 번 실행하지 않고 한 번에 답한다.
+        # 다른 소스가 함께 있으면 기존 소스별 병렬 실행을 그대로 유지한다.
+        if (len(entries) == 2
+                and {entry["key"] for entry in entries} == {"국내CS", "해외CS"}
+                and all(entry["route"] == "bigquery" for entry in entries)):
+            scoped_sources = ["국내CS", "해외CS"]
+            entries = [{**entries[0], "label": "국내·해외 CS"}]
         for entry in entries:
             target = _multi_prefix_target(entry["route"])
             if target == "bigquery":
@@ -1241,9 +1292,15 @@ class OrchestratorAgent:
             None if db_entry else self._single_enabled_source_entry(enabled_sources)
         )
 
+        _cs_order_query, _cs_order_notice = _cs_order_routing(
+            clean_query, conversation_context, enabled_sources, db_entry, single_source_entry,
+        )
+        if _cs_order_notice:
+            return {"source": "direct", "answer": _cs_order_notice}
+
         # Dashboard 탭의 URL은 화면과 같은 JSON 카탈로그에서 결정적으로 답한다.
         # "프로모션 일정" 같은 데이터 질문은 링크 의도가 없으므로 기존 BQ 경로를 탄다.
-        if not db_entry and single_source_entry is None:
+        if not db_entry and single_source_entry is None and not _cs_order_query:
             from app.core.dashboard_links import answer_dashboard_link_query
             _dashboard_answer = answer_dashboard_link_query(query)
             if _dashboard_answer:
@@ -1403,6 +1460,8 @@ class OrchestratorAgent:
 
         if _single_route:
             route = _single_route
+        elif _cs_order_query:
+            route = "bigquery"
         elif _should_continue_bigquery_for_correction(query, conversation_context):
             route = "bigquery"
             logger.info("bigquery_correction_followup", query=query[:100])
@@ -1596,8 +1655,16 @@ class OrchestratorAgent:
             None if db_entry else self._single_enabled_source_entry(enabled_sources)
         )
 
+        _cs_order_query, _cs_order_notice = _cs_order_routing(
+            clean_query, conversation_context, enabled_sources, db_entry, single_source_entry,
+        )
+        if _cs_order_notice:
+            yield ("source", "direct")
+            yield ("done", _cs_order_notice)
+            return
+
         # 비스트리밍 경로와 동일한 공유 카탈로그 fast path.
-        if not db_entry and single_source_entry is None:
+        if not db_entry and single_source_entry is None and not _cs_order_query:
             from app.core.dashboard_links import answer_dashboard_link_query
             _dashboard_answer = answer_dashboard_link_query(query)
             if _dashboard_answer:
@@ -1838,6 +1905,8 @@ class OrchestratorAgent:
 
         if _single_route:
             route, _confident = _single_route, True
+        elif _cs_order_query:
+            route, _confident = "bigquery", True
         elif _should_continue_bigquery_for_correction(query, conversation_context):
             route, _confident = "bigquery", True
             logger.info("stream_bigquery_correction_followup", query=query[:100])
@@ -2791,6 +2860,13 @@ class OrchestratorAgent:
         if self._is_definition_question(q):
             return ("direct", True)
 
+        # CS 운영 통계·주문 상세는 제품 Q&A나 팀 문서가 아닌 BigQuery 기록이다.
+        # 일반 분류 안에서 판정해야 사용자가 끈 소스는 아래 허용 경로 필터가 막는다.
+        from app.core.cs_order_details import is_order_detail_query
+        from app.core.cs_metrics import is_cs_metrics_query
+        if is_order_detail_query(query) or is_cs_metrics_query(query):
+            return ("bigquery", True)
+
         if self._is_pr_lookup_query(query):
             return ("notion", True)
 
@@ -3061,6 +3137,11 @@ class OrchestratorAgent:
         되묻지 않아 같은 질문이 경로에 따라 다르게 동작했다 (2026-08-11 발견).
         """
         if source_explicit:
+            return False
+        # CS 대시보드·주문 상세에는 매출의 기간·판매몰을 다시 묻지 않는다.
+        from app.core.cs_order_details import is_order_detail_query
+        from app.core.cs_metrics import is_cs_metrics_query
+        if is_order_detail_query(query, conversation_context) or is_cs_metrics_query(query):
             return False
         if len(query.strip()) > 40:
             return False

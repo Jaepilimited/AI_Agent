@@ -96,6 +96,12 @@ def validate_sql(
     if not table_valid:
         return False, table_error
 
+    # 실행·재생성·캐시·도구 호출 모두 같은 CS 집계 계약을 검사한다.
+    from app.core.cs_metrics import validation_error as cs_validation_error
+    cs_error = cs_validation_error(sql)
+    if cs_error:
+        return False, cs_error
+
     # 5. Check for LIMIT clause (warn if missing, but don't block)
     if "LIMIT" not in normalized:
         logger.warning("sql_missing_limit", sql=sql[:200])
@@ -126,6 +132,15 @@ def _validate_tables(sql: str, allowed_tables: Collection[str]) -> Tuple[bool, s
     # can never be misread as a table path.
     unquoted_pattern = r'(?:FROM|JOIN)\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b'
     referenced_tables += re.findall(unquoted_pattern, sql, re.IGNORECASE)
+
+    # dataset.table도 BigQuery의 유효한 표기다. 기본 프로젝트를 붙여 같은
+    # 허용목록으로 검사해야 단축 표기가 소스 선택 제한을 우회하지 않는다.
+    short_quoted = r'(?:FROM|JOIN)\s+`([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`'
+    short_plain = r'(?:FROM|JOIN)\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)(?![\w.])'
+    short_tables = re.findall(short_quoted, sql, re.IGNORECASE)
+    short_tables += re.findall(short_plain, sql, re.IGNORECASE)
+    project = get_settings().gcp_project_id
+    referenced_tables += [f"{project}.{table}" for table in short_tables]
 
     for table in referenced_tables:
         table_clean = table.strip('`').strip()

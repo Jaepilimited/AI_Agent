@@ -669,6 +669,8 @@
       keys: [] },
     { id: "marketing", label: "마케팅 데이터", emoji: "\uD83D\uDCC8",
       keys: [] },
+    { id: "customer_support", label: "고객지원", emoji: "\uD83C\uDFA7",
+      keys: [], link: "http://34.64.99.254:8061/", linkLabel: "대시보드" },
     { id: "logistics", label: "물류 데이터", emoji: "\uD83D\uDEA2",
       keys: [] },
     { id: "awards", label: "브랜드 성과", emoji: "\uD83C\uDFC6",
@@ -689,20 +691,23 @@
   //    위에 남은 것은 **표현**뿐이다 (그룹 순서·이모지·링크).
   var GROUP_BY_NAME = {
     "보고서": "report", "매출 데이터": "sales", "마케팅 데이터": "marketing",
-    "물류 데이터": "logistics", "브랜드 성과": "awards",
+    "고객지원": "customer_support", "물류 데이터": "logistics", "브랜드 성과": "awards",
     "BC": "bc", "Notion": "notion", "시스템": "system"
   };
   var SOURCE_LABELS = {};   // key -> 화면에 쓸 이름 (gws -> Google Workspace)
+  var SOURCE_LINKS = {};    // /api/datasources가 제공하는 원본 링크
 
   function fillSourceGroups(data) {
     SOURCE_GROUPS.forEach(function(g) { g.keys = []; });
     (data || []).forEach(function(d) {
+      if (d.key === "CS") return;  // 이전에 저장한 소스 목록에서도 통합된 CS 행은 숨긴다.
       var gid = GROUP_BY_NAME[d.group];
       if (!gid) return;   // 서버에 새 그룹이 생기면 위 표에 넣어야 화면에 뜬다
       for (var i = 0; i < SOURCE_GROUPS.length; i++) {
         if (SOURCE_GROUPS[i].id === gid) { SOURCE_GROUPS[i].keys.push(d.key); break; }
       }
       SOURCE_LABELS[d.key] = d.label || d.key;
+      SOURCE_LINKS[d.key] = { url: d.url, url_label: d.url_label, links: d.links };
       SOURCE_ROUTE_MAP[d.key] = d.route || "bigquery";
     });
     return SOURCE_GROUPS;
@@ -830,6 +835,11 @@
         //    `0/30` 이 됐다 (2026-08-14 사용자 제보 — 내가 만든 회귀).
         //    검증은 목록이 도착한 뒤 `_reconcileEnabledSources()` 가 한다.
         if (!Array.isArray(parsed)) throw new Error("not an array");
+        var merged = _mergeBpSourceKeys(parsed);
+        if (JSON.stringify(merged) !== JSON.stringify(parsed)) {
+          localStorage.setItem(_SOURCES_STORAGE_KEY, JSON.stringify(merged));
+          parsed = merged;
+        }
         if (!DATA_SOURCE_KEYS.length) return parsed;
         var hasOld = parsed.some(function(k) { return DATA_SOURCE_KEYS.indexOf(k) < 0; });
         // ⛔ 예전엔 "저장분이 비어 있지 않을 것" 을 함께 요구해서
@@ -848,6 +858,9 @@
   function _reconcileEnabledSources() {
     if (!DATA_SOURCE_KEYS.length) return;
     var before = enabledSources.length;
+    var merged = _mergeBpSourceKeys(enabledSources);
+    var bpChanged = JSON.stringify(merged) !== JSON.stringify(enabledSources);
+    enabledSources = merged;
     // ⛔ **아직 안 온 소스를 없어진 소스로 세지 마라.** Notion 팀 키는 상태 응답
     //    (`pollSystemStatus`)이 도착해야 목록에 생긴다 — 그전에 잘라내면 사용자가
     //    골라 둔 팀이 새로고침마다 지워진다. 한 번이라도 본 키(대장)는 남긴다.
@@ -872,7 +885,7 @@
     // (대장이 없을 때는 아무것도 켜지 않는 것이 배포 직후를 지키는 규칙이라서다).
     if (!hadPrefs) _saveKnownSourceKeys([]);
     _migrateLogisticsSourceDefault();
-    if (enabledSources.length !== before) saveEnabledSources();
+    if (bpChanged || enabledSources.length !== before) saveEnabledSources();
   }
   function saveEnabledSources() {
     localStorage.setItem(_SOURCES_STORAGE_KEY, JSON.stringify(enabledSources));
@@ -908,19 +921,32 @@
       return known.indexOf(k) < 0 && selected.indexOf(k) < 0;
     });
   }
+  // CS 문서를 BP로 합친다. 선택과 대장을 함께 옮겨 꺼 둔 BP를 새 소스로 켜지 않는다.
+  function _mergeBpSourceKeys(keys) {
+    return keys.map(function(k) {
+      return k === "CS" || k === "CS Q&A" ? "BP" : k;
+    }).filter(function(k, i, all) { return all.indexOf(k) === i; });
+  }
   function _loadKnownSourceKeys() {
     try {
       var raw = localStorage.getItem(_KNOWN_SOURCES_KEY);
       if (!raw) return null;   // null = 아직 목록을 본 적이 없다
       var parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : null;
+      if (!Array.isArray(parsed)) return null;
+      var merged = _mergeBpSourceKeys(parsed);
+      if (JSON.stringify(merged) !== JSON.stringify(parsed)) _saveKnownSourceKeys(merged);
+      return merged;
     } catch (e) {
       return null;
     }
   }
   function _saveKnownSourceKeys(keys) {
     try {
-      localStorage.setItem(_KNOWN_SOURCES_KEY, JSON.stringify(keys));
+      // 상태 폴링과 소스 목록은 따로 도착한다. 일부 목록이 먼저 와도 이미 본 키는 잊지 않는다.
+      var previous = null;
+      try { previous = JSON.parse(localStorage.getItem(_KNOWN_SOURCES_KEY) || "null"); } catch (e) {}
+      var known = _mergeBpSourceKeys((Array.isArray(previous) ? previous : []).concat(keys));
+      localStorage.setItem(_KNOWN_SOURCES_KEY, JSON.stringify(known));
     } catch (e) {}
   }
   // 질문과 함께 보낼 소스 목록을 정한다. `null` 은 "서버 기본값"(BQ+GWS+Direct)이다.
@@ -1322,9 +1348,9 @@
       if (!_dbDropdown || !_dbSources.length) return;
       var f = (filter || "").toLowerCase();
       var matches = _dbSources.filter(function(s) {
-        return !f || s.key.toLowerCase().indexOf(f) === 0
+        return s.key !== "CS" && (!f || s.key.toLowerCase().indexOf(f) === 0
             || s.aliases.some(function(a) { return a.toLowerCase().indexOf(f) === 0; })
-            || s.label.toLowerCase().indexOf(f) >= 0;
+            || s.label.toLowerCase().indexOf(f) >= 0);
       });
 
       // Already selected keys (multi-select)
@@ -1350,9 +1376,10 @@
         groups[gName].forEach(function(s) {
           var icon = _DB_ICONS[s.icon] || _DB_ICONS.doc;
           var sel = selectedKeys.indexOf(s.key) >= 0 ? " selected" : "";
-          html += '<div class="db-ac-item' + sel + '" data-key="' + s.key + '" title="' + s.desc + '">'
+          html += '<div class="db-ac-item' + sel + '" data-key="' + s.key + '" title="' + s.desc + '" style="flex-wrap:wrap">'
                + '<span class="db-ac-icon">' + icon + '</span>'
-               + '<span class="db-ac-name">' + s.label + '</span></div>';
+               + '<span class="db-ac-name">' + s.label + '</span>'
+               + _statusSourceLinks(s) + '</div>';
         });
         html += '</div>';
       });
@@ -1368,6 +1395,7 @@
 
       _dbDropdown.querySelectorAll(".db-ac-item, .db-ac-chip").forEach(function(el) {
         el.addEventListener("mousedown", function(e) {
+          if (e.target.closest("a")) return;
           e.preventDefault();
           _tabSelectDbItem(el.dataset.key);
         });
@@ -2829,7 +2857,7 @@
       svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
     },
     cs: {
-      label: "CS Q&A",
+      label: "BP",
       svg: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
     },
     multi: {
@@ -3657,6 +3685,7 @@
   // 메일이 나가지 않는 동안(SMTP 차단) 앱 안에서 알린다. 대상 판정은 서버가 하고
   // 프론트는 그린다 — 여기서 사용자 id 를 다루지 않는다.
   var _notifTimer = null;
+  var _notifLoadId = 0;
 
   function _timeAgo(iso) {
     if (!iso) return "";
@@ -3677,14 +3706,45 @@
     else { b.style.display = "none"; }
   }
 
+  function notifLoadIsCurrent(loadId) {
+    var drawer = document.getElementById("notif-drawer");
+    return loadId === _notifLoadId && drawer && drawer.classList.contains("open");
+  }
+
+  function renderNotifLoadState(failed) {
+    var box = document.getElementById("notif-items");
+    if (!box) return;
+    box.innerHTML = failed
+      ? '<div class="notif-empty" role="status"><p>알림을 불러오지 못했습니다.</p>' +
+        '<button type="button" class="notif-ask" id="notif-retry">다시 시도</button></div>'
+      : '<div class="notif-empty" role="status">알림을 불러오는 중입니다...</div>';
+    if (failed) {
+      document.getElementById("notif-retry").addEventListener("click", function () {
+        pollNotifications(true);
+      });
+    }
+  }
+
   async function pollNotifications(render) {
+    var loadId = render ? ++_notifLoadId : _notifLoadId;
+    if (render && notifLoadIsCurrent(loadId)) renderNotifLoadState(false);
     try {
       var r = await fetch("/api/notifications", { credentials: "same-origin" });
-      if (!r.ok) return;
+      // 이 주소는 로그인이 필수다. 인증 헤더가 없는 401도 같은 복귀 경로를 쓴다.
+      if (r.status === 401) { _redirectToLogin(); return; }
+      if (!r.ok) throw new Error("알림 조회 실패");
       var data = await r.json();
+      if (!data || !Array.isArray(data.items)) throw new Error("알림 응답 오류");
       renderNotifBadge(data.unseen || 0);
-      if (render) renderNotifList(data.items || []);
-    } catch (e) { /* 알림 실패가 채팅을 막지 않는다 */ }
+      if (render && notifLoadIsCurrent(loadId)) {
+        renderNotifList(data.items);
+        // 목록이 실제로 열린 뒤에만 브리핑 열람을 기록한다. 실패·닫힌 요청은 제외한다.
+        fetch("/api/notifications/viewed", { method: "POST", credentials: "same-origin" })
+          .catch(function () { /* 기록 실패가 화면을 막지 않는다 */ });
+      }
+    } catch (e) {
+      if (render && !_authRedirectStarted && notifLoadIsCurrent(loadId)) renderNotifLoadState(true);
+    }
   }
 
   function renderNotifList(items) {
@@ -3746,19 +3806,17 @@
   }
 
   function openNotifDrawer() {
-    pollNotifications(true);
-    // 알림함을 연 것 = 브리핑을 본 것. 공유·붐따는 각자의 지점에서 따로 찍힌다
-    fetch("/api/notifications/viewed", { method: "POST", credentials: "same-origin" })
-      .catch(function () { /* 기록 실패가 화면을 막지 않는다 */ });
     document.getElementById("notif-overlay").className = "open";
     var d = document.getElementById("notif-drawer");
     d.classList.remove("closed"); d.classList.add("open");
+    pollNotifications(true);
   }
 
   function closeNotifDrawer() {
     document.getElementById("notif-overlay").className = "closed";
     var d = document.getElementById("notif-drawer");
     d.classList.remove("open"); d.classList.add("closed");
+    _notifLoadId += 1;
     pollNotifications(false);   // 보고서를 열었으면 배지가 줄어든다
   }
 
@@ -4054,6 +4112,9 @@
     "해외몰 리뷰":     { label: "해외몰 리뷰", svg: _svgStar },
     "매장 리뷰":       { label: "매장 리뷰", svg: _svgStar },
     "프로모션":        { label: "프로모션", svg: _svgCalendar },
+    // 고객지원
+    "국내CS":          { label: "국내CS", svg: _svgChat },
+    "해외CS":          { label: "해외CS", svg: _svgChat },
     // 물류
     "물류":            { label: "물류", svg: _svgBox },
     // 팀별 자료
@@ -4066,13 +4127,12 @@
     "B2B1":           { label: "B2B1", svg: _svgGlobe },
     "B2B2":           { label: "B2B2", svg: _svgGlobe },
     "BCM":            { label: "BCM", svg: _svgBar },
+    "PR":             { label: "PR", svg: _svgFile },
     "PEOPLE":         { label: "PEOPLE", svg: _svgUsers },
     "IT":             { label: "IT", svg: _svgMonitor },
-    "CS":             { label: "CS", svg: _svgChat },
-    "BP":             { label: "BP (제품 Q&A)", svg: _svgChat },
+    "BP":             { label: "BP", svg: _svgChat },
     // 업무 도구
     "Notion":         { label: "Notion", svg: _svgFile },
-    "CS Q&A":         { label: "CS Q&A", svg: _svgChat },
     "Google Workspace": { label: "GWS", svg: _svgFolder },
     // 시스템
     "Gemini API":     { label: "Gemini", svg: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' },
@@ -4093,7 +4153,7 @@
     { cmd: "물류", label: "수출 물류", keys: ["물류"] },
     { cmd: "리뷰", label: "리뷰 전체", keys: ["국내몰 리뷰", "해외몰 리뷰", "매장 리뷰"] },
     { cmd: "notion", label: "Notion", keys: ["Notion"] },
-    { cmd: "cs", label: "CS Q&A", keys: ["CS Q&A"] },
+    { cmd: "bp", label: "BP", keys: ["BP"] },
     { cmd: "팀", label: "팀별 자료", _useGroup: "notion" },
     { cmd: "gws", label: "Google Workspace", keys: ["Google Workspace"] },
   ];
@@ -4135,9 +4195,9 @@
     DATA_SOURCE_KEYS.forEach(function(key) {
       if (!filter || key.toLowerCase().indexOf(filter) >= 0) {
         var checked = _slashTempSelection.indexOf(key) >= 0 ? ' checked' : '';
-        html += '<label class="slash-source-item">' +
+        html += '<label class="slash-source-item" style="flex-wrap:wrap">' +
           '<input type="checkbox" class="slash-source-cb" data-key="' + key + '"' + checked + '>' +
-          '<span>' + key + '</span></label>';
+          '<span>' + key + '</span>' + _statusSourceLinks(SOURCE_LINKS[key] || {}) + '</label>';
       }
     });
     html += '</div>';
@@ -4288,6 +4348,17 @@
       .catch(function() {});
   }
 
+  function _statusSourceLinks(svc) {
+    var links = Array.isArray(svc.links) ? svc.links : [];
+    if (!links.length && svc.url) links = [{ url: svc.url, label: svc.url_label || "시트" }];
+    return links.filter(function(link) {
+      return link && typeof link.url === "string" && /^https?:\/\//i.test(link.url);
+    }).map(function(link) {
+      var label = link.label || "원본";
+      return '<a href="' + _escape(link.url) + '" target="_blank" rel="noopener noreferrer" class="status-group-link" onclick="event.stopPropagation()" title="' + _escape(label + ' 열기') + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg> ' + _escape(label) + '</a>';
+    }).join('');
+  }
+
   function pollSystemStatus() {
     fetch("/safety/status")
       .then(function (r) { return r.json(); })
@@ -4323,15 +4394,20 @@
             : '';
 
           var detailText = (st === "ok" && detail && detail !== "loading") ? detail : "";
+          var sourceLinksHtml = _statusSourceLinks(svc);
+          var multipleLinks = Array.isArray(svc.links) && svc.links.length > 1;
           var h = '<div class="status-item' + (st !== "ok" ? " status-alert" : "") + '">' +
             '<div class="status-item-row">' + checkboxHtml +
             '<span class="status-dot' + (st !== "ok" ? " error" : "") + '"></span>' +
             '<span class="status-icon">' + info.svg + '</span>' +
             '<span class="status-name">' + info.label + '</span>' +
             (detailText ? '<span class="status-detail-text">' + detailText + '</span>' : '') +
-            (svc.url ? '<a href="' + svc.url + '" target="_blank" class="status-group-link" onclick="event.stopPropagation()" title="원본 시트 열기"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg> 시트</a>' : '') +
+            (multipleLinks ? '' : sourceLinksHtml) +
             '<span class="status-label' + labelClass + '">' + (labels[st] || st) + '</span>' +
             '</div>';
+          if (multipleLinks) {
+            h += '<div class="status-source-links" style="display:flex;flex-wrap:wrap;gap:4px;padding:4px 0 0 24px">' + sourceLinksHtml + '</div>';
+          }
           if (alertMsg) {
             h += '<div class="status-msg-wrap"><div class="status-msg-ticker"><span>' + alertMsg + '</span></div></div>';
           }
@@ -4345,6 +4421,7 @@
           var staticKeys = grp.keys.slice();
           var teamKeys = [];
           for (var svcName in data.services) {
+            if (svcName === "CS") continue;  // 구 서버의 폴링 응답도 BP에 통합된 소스를 되살리지 않는다.
             var svc = data.services[svcName];
             // 팀 소스 판정은 상태 응답의 "N chunks" 하나로 한다.
             // (예전엔 `svc.tree` 도 봤지만 서버는 그 필드를 준 적이 없다 — 2026-08-25 제거)
@@ -4391,7 +4468,7 @@
             '<label class="status-checkbox-label"><input type="checkbox" class="status-group-cb" data-group="' + grp.id + '"' + (allOn ? ' checked' : '') + (groupEnabled > 0 && !allOn ? ' data-indeterminate="1"' : '') + '></label>' +
             '<span class="status-group-emoji">' + grp.emoji + '</span>' +
             '<span class="status-group-label">' + grp.label + '</span>' +
-            (grp.link ? '<a href="' + grp.link + '" target="_blank" class="status-group-link" onclick="event.stopPropagation()" title="Notion DB HUB 열기"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg> DB HUB</a>' : '') +
+            (grp.link ? _statusSourceLinks({ url: grp.link, url_label: grp.linkLabel || "DB HUB" }) : '') +
             '<span class="status-group-count">' + groupEnabled + '/' + groupTotal + '</span>' +
             '<span class="status-group-toggle">&#9660;</span>' +
             '</div>' +

@@ -77,6 +77,10 @@ NODES: tuple[Node, ...] = (
          fn="app.core.notion_save.handle",
          knobs=("저장 동사 + 노션 낱말", "NOTION_WRITE_TOKEN"),
          gate='notion_save.handle'),
+    Node("intercept.cs_order_scope", "국내 CS 주문 소스 확인",
+         fn=f"{_ORCH}._cs_order_routing",
+         knobs=("국내CS 선택 범위",),
+         gate='_cs_order_routing('),
     Node("intercept.dashboard_link", "대시보드 링크 관문",
          fn="app.core.dashboard_links.answer_dashboard_link_query",
          knobs=("dashboard 카탈로그 JSON",),
@@ -300,7 +304,10 @@ EDGES: tuple[Edge, ...] = (
 
     Edge("alias_expand", "at_parse"),
 
-    Edge("at_parse", "intercept.dashboard_link"),
+    Edge("at_parse", "intercept.cs_order_scope"),
+    Edge("intercept.cs_order_scope", "route.direct",
+         label="국내CS 미선택 · 조회 없이 안내", conditional=True),
+    Edge("intercept.cs_order_scope", "intercept.dashboard_link", label="통과", conditional=True),
     Edge("intercept.dashboard_link", "route.direct",
          label="대시보드 링크 질문", conditional=True),
     Edge("intercept.dashboard_link", "intercept.team_country", label="통과", conditional=True),

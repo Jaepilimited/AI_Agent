@@ -17,6 +17,19 @@ from langgraph.graph import END, StateGraph
 
 from app.config import get_settings
 from app.core.bigquery import get_bigquery_client
+from app.core.cs_metrics import (
+    DOMESTIC_TABLE as _DOMESTIC_CS_TABLE,
+    OVERSEAS_TABLE as _OVERSEAS_CS_TABLE,
+    DOMESTIC_KEYWORDS as _DOMESTIC_CS_KEYWORDS,
+    OVERSEAS_KEYWORDS as _OVERSEAS_CS_KEYWORDS,
+    normalize_sql as _normalize_cs_sql,
+    validation_error as _cs_validation_error,
+    answer_fact as _cs_answer_fact,
+    notice as _cs_notice,
+    is_cs_metrics_query as _is_cs_metrics_query,
+    prepare_results as _prepare_cs_results,
+    answer_title as _cs_answer_title,
+)
 import concurrent.futures
 
 from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
@@ -875,6 +888,7 @@ def _enforce_partition_filter(
         new_sql = _localize_team_literals(new_sql)
         new_sql = _localize_promotion_literals(new_sql)
         new_sql = _localize_logistics_literals(new_sql)
+        new_sql = _normalize_cs_sql(new_sql)
         new_sql = _fix_logistics_amount(new_sql)
         new_sql = _normalize_named_period(new_sql, query)
         new_sql = _fix_continent_column(new_sql)
@@ -1024,6 +1038,8 @@ def _kw_hit(kw, query_lower: str) -> bool:
 
 # Marketing / review / ad tables with keyword triggers for lazy loading
 MARKETING_TABLES = [
+    (_DOMESTIC_CS_TABLE, "국내 CS 처리 기록", _DOMESTIC_CS_KEYWORDS),
+    (_OVERSEAS_CS_TABLE, "해외 Shopify 환불 기록", _OVERSEAS_CS_KEYWORDS),
     ("skin1004-319714.marketing_analysis.integrated_ad", "통합 광고 데이터",
      ["광고", "ad", "advertising", "클릭", "노출", "roas", "cpc", "cpm", "ctr", "cvr", "전환",
       "틱톡광고", "페이스북광고", "메타광고 비용", "메타 광고비", "구글광고", "카카오", "네이버광고",
@@ -1195,6 +1211,8 @@ def _source_table_map(settings) -> dict:
     허용목록 계산과 "어느 소스를 켜야 하나" 안내가 같은 표를 봐야 어긋나지 않는다.
     """
     return {
+        "국내CS": [_DOMESTIC_CS_TABLE],
+        "해외CS": [_OVERSEAS_CS_TABLE],
         "매출": [settings.sales_table_full_path],
         "제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
         "광고": ["skin1004-319714.marketing_analysis.integrated_ad"],
@@ -1373,7 +1391,7 @@ def _build_schema_context(query: str, allowed_tables: Optional[set],
             try:
                 tbl_schema = bq.get_table_schema(table_path)
                 tbl_lines = [
-                    f"  - {col['name']} ({col['type']}): {col['description']}"
+                    f"  - {col['name']} ({col['type']}, {col.get('mode', 'NULLABLE')}): {col['description']}"
                     for col in tbl_schema
                 ]
                 table_short = table_path.rsplit(".", 1)[-1]
@@ -1649,6 +1667,14 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
     if not conv_context and not _is_relative_period_query(query):
         cache_key = _cache_key(query, brand_filter)
         cached_sql = _cache_lookup(cache_key, allowed_tables)
+        # CS 접수 질문을 옛 판매 테이블로 답했던 캐시는 새 소스로 다시 생성한다.
+        if cached_sql and _is_cs_metrics_query(query) and not any(
+                table in cached_sql for table in (_DOMESTIC_CS_TABLE, _OVERSEAS_CS_TABLE)):
+            _cache_forget(cache_key)
+            cached_sql = None
+        if cached_sql and (_normalize_cs_sql(cached_sql) != cached_sql or _cs_validation_error(cached_sql)):
+            _cache_forget(cache_key)
+            cached_sql = None
         # ⛔ **캐시에도 같은 보증을 건다.** 브랜드를 지목했는데 브랜드를 안 거르는
         #    SQL 이 캐시에 남아 있으면, 아래 재생성 보증을 통째로 건너뛴다 —
         #    실측(2026-08-27): 코드를 고쳐 배포했는데 답이 그대로 5,577.5억이었다.
@@ -1903,6 +1929,15 @@ def generate_sql(state: AgentState) -> Dict[str, Any]:
             sql = _normalize_named_period(sql, query)
             sql = _strip_unrequested_brand_filter(sql, query)
             sql = _include_zombie_in_skin1004(sql, query)
+            sql = _normalize_cs_sql(sql)
+
+        # 주문 중복/NULL 금액의 명확한 오집계는 실행 전에 한 번 재생성한다.
+        _cs_error = _cs_validation_error(sql)
+        if _cs_error:
+            sql = _normalize_cs_sql(sanitize_sql(llm.generate(
+                full_prompt + f"\n\n이전 SQL:\n{sql}\n집계 오류: {_cs_error}\n이 오류를 고친 SQL만 출력하라.",
+                temperature=0.0, max_output_tokens=10000,
+            )))
 
         logger.info("sql_generated", sql=sql[:200])
 
@@ -1998,6 +2033,7 @@ def _retry_with_stronger_model(
         retry_sql = _localize_team_literals(retry_sql)
         retry_sql = _localize_promotion_literals(retry_sql)
         retry_sql = _localize_logistics_literals(retry_sql)
+        retry_sql = _normalize_cs_sql(retry_sql)
         retry_sql = _normalize_named_period(retry_sql, query)
         retry_sql = _fix_continent_column(retry_sql)
         retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
@@ -2176,6 +2212,7 @@ def execute_sql(state: AgentState) -> Dict[str, Any]:
                 retry_sql = _localize_team_literals(retry_sql)
                 retry_sql = _localize_promotion_literals(retry_sql)
                 retry_sql = _localize_logistics_literals(retry_sql)
+                retry_sql = _normalize_cs_sql(retry_sql)
                 retry_sql = _normalize_named_period(retry_sql, query)
                 retry_sql = _fix_continent_column(retry_sql)
                 retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
@@ -2585,6 +2622,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         results = None
 
     results = _relabel_team_values(results)
+    results = _prepare_cs_results(sql, results)
 
     # ⛔ 안내문 한 줄짜리 결과는 **LLM 을 태우지 않는다** — 태웠더니 없는 표를
     #    지어내 "내부 데이터베이스에서 확인할 수 있는 지표" 라고 소개했다
@@ -2598,6 +2636,8 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         return {"answer": _outlook_answer}
 
     if not results:
+        if _cs_notice(sql):
+            return {"answer": _cs_notice(sql) + "해당 기간·조건에 맞는 기록이 조회되지 않았습니다. 기간이나 채널·국가 조건을 넓혀 확인해 주세요."}
         # 0건 질문에서 미인식 용어를 후보로 수집 (백그라운드 — 응답을 늦추지 않는다).
         # 스트리밍 경로도 0건이면 format_answer 를 타므로 이 한 곳이면 된다.
         try:
@@ -2866,7 +2906,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
-{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_unit_note(sql)}{_amount_note(results, sql)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}{_cs_answer_fact(sql)}
 {_future_period_note(sql)}
 오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
 ⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
@@ -2988,6 +3028,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         from app.core.logistics_amount import krw_notice as _log_krw_notice
         from app.core.logistics_fx import notice as _log_fx_notice
         answer = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                  + _cs_notice(sql, results)
                   + _log_krw_notice(sql, query)
                   + _log_fx_notice(sql, query)
                   + _qty_cov_notice(sql, results)
@@ -3598,6 +3639,7 @@ async def run_sql_agent_unlimited(
     try:
         bq = get_bigquery_client()
         results = bq.execute_query(unlimited_sql, timeout=300.0, max_rows=100000)
+        results = _prepare_cs_results(unlimited_sql, results)
         total_rows = len(results)
         logger.info("sql_unlimited_executed", row_count=total_rows)
 
@@ -3629,10 +3671,12 @@ async def run_sql_agent_unlimited(
 4. 한국어로 답변하세요.
 5. 금액: 1억 이상은 "약 OO.O억원", 1억 미만은 천 단위 쉼표."""
 
+        prompt += _cs_answer_fact(unlimited_sql)
+
         answer = llm.generate(prompt, temperature=0.05)
         totals_block = _build_table_totals_markdown(results)
         answer = _insert_table_totals(answer, totals_block) if totals_block else answer
-        return _prepend_data_update_notice(answer, unlimited_sql)
+        return _prepend_data_update_notice(_cs_notice(unlimited_sql, results) + answer, unlimited_sql)
 
     except Exception as e:
         logger.error("sql_unlimited_failed", error=str(e))
@@ -3662,6 +3706,26 @@ async def run_sql_agent(
     Returns:
         Natural language answer based on SQL results.
     """
+    # 주문 상세는 실제 주문번호로 조회하고 날짜·송장·상품을 일정한 형태로 낸다.
+    # SQL 캐시나 빠른 표 경로가 필수 열을 빠뜨리지 않도록 먼저 처리한다.
+    from app.core.cs_order_details import answer_query as order_detail_answer
+    answer = await order_detail_answer(
+        query, enabled_sources=enabled_sources, conversation_context=conversation_context,
+        brand_filter=brand_filter,
+    )
+    if answer is not None:
+        return answer
+
+    # CS 화면에서 제공하는 지표는 그 화면의 집계 API를 우선 사용한다.
+    # 브랜드 필터는 대시보드가 지원하지 않으므로 기존 상세 조회로 처리한다.
+    if not brand_filter:
+        from app.core.cs_dashboard import answer_query as dashboard_answer
+        answer = await dashboard_answer(
+            query, enabled_sources=enabled_sources, conversation_context=conversation_context,
+        )
+        if answer is not None:
+            return answer
+
     initial_state: AgentState = {
         "query": query,
         "route_type": "text_to_sql",
@@ -3714,6 +3778,17 @@ async def run_sql_agent(
 # --- Fast-answer experiment (BQ_FAST_ANSWER=1): template table first, short LLM insights after ---
 
 _COL_LABELS = {
+    "total_processing_records": "처리 기록 수", "refund_count": "환불 건수",
+    "total_refund_amount_usd": "환불액 (USD)", "total_refund_amount_krw": "환산 환불액 (원)",
+    "uncalculated_krw_count": "원화 미환산 건수", "total_item_quantity": "접수 상품수량 (개)",
+    "refund_reason": "환불 사유", "cs_scope": "구분", "metric_type": "집계 기준", "record_count": "건수",
+    "processing_records": "처리 기록 수", "refund_records": "환불 건수",
+    "distinct_orders": "고유 주문 수", "records_without_order_key": "주문 식별값 미기재 건수",
+    "successful_refund_amount_usd": "성공 환불액 (USD)", "recorded_refund_amount_krw": "환산 환불액 (원)",
+    "refund_amount_usd": "환불액 (USD)", "refund_amount_krw": "환산 환불액 (원)",
+    "refunds_without_krw": "원화 미환산 건수", "eligible_recorded_compensation": "집계 대상 보상 기록액 (원)",
+    "received_item_quantity": "접수 상품수량 (개)", "items_without_quantity": "수량 미확인 항목수",
+    "channel": "채널", "country_name": "국가", "claim_type": "접수 유형", "process_status": "처리 상태",
     "total_revenue": "매출액 (원)", "revenue": "매출액 (원)", "sales": "매출액 (원)",
     "total_quantity": "판매수량 (개)", "total_qty": "판매수량 (개)", "quantity": "판매수량 (개)",
     "total_orders": "주문 건수", "product_name": "제품", "product": "제품",
@@ -3802,7 +3877,11 @@ def _metric_display_label(column: str) -> str:
             qualifiers.append(label)
 
     # Specific metrics precede generic cost/count tokens.
-    if "revenue" in parts or "sales" in parts or "매출" in normalized:
+    if "refund" in parts and "usd" in parts and not parts & {"count", "records"}:
+        metric = "환불액 (USD)"
+    elif "refund" in parts and "krw" in parts and not parts & {"count", "records"}:
+        metric = "환산 환불액 (원)"
+    elif "revenue" in parts or "sales" in parts or "매출" in normalized:
         metric = "매출액 (원)"
     elif "gross" in parts and "profit" in parts:
         metric = "매출총이익 (원)"
@@ -3879,7 +3958,7 @@ def _distinct_metric_labels(columns) -> list:
     return out
 
 
-def _amount_note(results: list) -> str:
+def _amount_note(results: list, sql: str = "") -> str:
     """합계를 **코드가 환산해서** 프롬프트에 박는다 — 환산은 산술이라 맡기면 틀린다.
 
     실제 사고(2026-08-31): 표는 `82,871,719` 로 맞게 적어 놓고 요약 문장에만
@@ -3889,6 +3968,23 @@ def _amount_note(results: list) -> str:
        높이는 쪽이고, 배선이 아니라 프롬프트라는 것을 잊지 마라.
     """
     from app.core.answer_check import render_amount
+
+    # CS는 건수·USD/KRW가 함께 나온다. 합산 가능한 금액만 원래 통화로 고정한다.
+    if _DOMESTIC_CS_TABLE in sql or _OVERSEAS_CS_TABLE in sql:
+        rows = _prepare_cs_results(sql, results)
+        _, totals = _additive_totals(rows)
+        lines = []
+        for column, total in totals.items():
+            if column in rows.count_columns or re.search(r"(?:^|_)(?:count|cnt|records|orders)(?:_|$)|건수", column, re.I):
+                continue
+            if not _is_money_column(column):
+                continue
+            label = _metric_display_label(column)
+            if re.search(r"usd|달러", column, re.I):
+                lines.append(f"- {label}: **USD {float(total):,.2f}**")
+            elif _DOMESTIC_CS_TABLE in sql or re.search(r"krw|원화", column, re.I):
+                lines.append(f"- {label}: **{render_amount(float(total))}** ({round(float(total)):,}원)")
+        return ("\nCS 금액 합계 (코드 계산 · 통화 변경 금지):\n" + "\n".join(lines) + "\n") if lines else ""
 
     detail_rows, totals = _additive_totals(results)
     # ⛔ 통화가 섞였으면 **합계를 주지 않고, 내지 말라고 말한다** (2026-09-03 실측).
@@ -4005,6 +4101,8 @@ def _additive_totals(results: list) -> tuple[list[dict], dict]:
     from decimal import Decimal as _D
     import math as _math
 
+    # CS의 고유 주문/주문금액은 축 사이에서 겹친다. 그 열은 SQL이 계산한
+    # 전체 값만 쓰고, 환불액처럼 합산 가능한 열은 원래 통화로 합산한다.
     if not results or len(results) < 2:
         return list(results or []), {}
 
@@ -4017,6 +4115,8 @@ def _additive_totals(results: list) -> tuple[list[dict], dict]:
 
     totals = {}
     for column in results[0].keys():
+        if column in getattr(results, "non_additive_columns", ()):
+            continue
         if not _is_additive_metric_column(column):
             continue
         if currency_axis and _is_money_column(column):
@@ -4298,6 +4398,8 @@ def _fast_summary_line(results: list) -> str:
     cols = list(results[0].keys())
     for c in cols:
         cl = c.lower()
+        if c in getattr(results, "non_additive_columns", ()):
+            continue
         # ⛔ 비율·평균·순위·단가·시점은 더하면 숫자는 나오지만 뜻이 없다.
         #    표 합계(`_additive_totals`)와 **같은 함수**로 먼저 거른다.
         if not _is_additive_metric_column(c):
@@ -4359,6 +4461,7 @@ def _fast_answer_stream(
     # 빠른 표는 _FAST_TABLE_MAX_ROWS 에서 자른다 — 자른 사실을 공시해야 한다
     _rows_withheld = len(results) > _FAST_TABLE_MAX_ROWS
     _pre_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                   + _cs_notice(sql, results)
                    + _log_krw_notice(sql, query)
                    + _log_fx_notice(sql, query)
                    + _qty_cov_notice(sql, results)
@@ -4366,7 +4469,7 @@ def _fast_answer_stream(
     if _pre_notice:
         yield _pre_notice
 
-    out_head = _fast_answer_head(query, results, user_id)
+    out_head = _fast_answer_head(_cs_answer_title(query, sql), results, user_id)
     yield out_head
 
     # Chart in background while insights stream
@@ -4395,7 +4498,7 @@ SQL 결과 ({len(results)}행):
 > - [구체적 후속 질문 2]
 > - [구체적 후속 질문 3]
 
-{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_unit_note(sql)}{_amount_note(results, sql)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}{_cs_answer_fact(sql)}
 {_future_period_note(sql)}
 규칙: SQL 결과만 근거로. 금액 1억+ → "약 OO.O억원". 플레이스홀더 출력 금지.
 ⚠️ 후속 질문은 대괄호([]) 없이 완성된 실제 질문 문장으로 출력하라.
@@ -4464,6 +4567,24 @@ def run_sql_agent_stream(
     Yields:
         str: text chunks as the answer is generated.
     """
+    from app.core.cs_order_details import answer_query_sync as order_detail_answer
+    answer = order_detail_answer(
+        query, enabled_sources=enabled_sources, conversation_context=conversation_context,
+        brand_filter=brand_filter,
+    )
+    if answer is not None:
+        yield answer
+        return
+
+    if not brand_filter:
+        from app.core.cs_dashboard import answer_query_sync as dashboard_answer
+        answer = dashboard_answer(
+            query, enabled_sources=enabled_sources, conversation_context=conversation_context,
+        )
+        if answer is not None:
+            yield answer
+            return
+
     # Experimental single-session tool-loop path (dev A/B: BQ_TOOL_LOOP=1 on
     # skin1004-dev only — see ecosystem.windows.config.js). Prod keeps the
     # legacy generate→execute→format pipeline below.
@@ -4533,6 +4654,7 @@ def run_sql_agent_stream(
 
     # 팀 코드 → 한글 팀명 (fast-answer 의 결정적 표까지 함께 적용된다)
     results = _relabel_team_values(results)
+    results = _prepare_cs_results(sql, results)
 
     # ⛔ 안내문 한 줄이면 여기서 끝낸다 (붐따 #153). 두 경로에 **함께** 걸어야
     #    한다 — 채팅은 스트리밍으로 나가므로 한쪽만 고치면 실사용에서 빠진다
@@ -4603,7 +4725,7 @@ def run_sql_agent_stream(
 
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
-{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_unit_note(sql)}{_amount_note(results, sql)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}{_cs_answer_fact(sql)}
 {_future_period_note(sql)}
 오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
@@ -4640,6 +4762,7 @@ def run_sql_agent_stream(
     from app.core.logistics_amount import krw_notice as _log_krw_notice
     from app.core.logistics_fx import notice as _log_fx_notice
     _qty_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                   + _cs_notice(sql, results)
                    + _log_krw_notice(sql, query)
                    + _log_fx_notice(sql, query)
                    + _qty_cov_notice(sql, results)

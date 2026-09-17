@@ -47,7 +47,7 @@ class TestAPIEndpoints:
         assert response.status_code == 200
         catalog = response.json()
         assert len(catalog) == 5
-        assert sum(len(items) for sections in catalog.values() for items in sections.values()) == 92
+        assert sum(len(items) for sections in catalog.values() for items in sections.values()) == 93
 
     def test_list_models_requires_login(self):
         """⛔ 2026-09-09 Entra 인증 릴리스로 **의도적으로 닫혔다.**

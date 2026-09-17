@@ -23,6 +23,7 @@ logger = structlog.get_logger(__name__)
 SHEET_ID = "1oxtCpeubAuo2e_uXkKcy0oY3Nb-iGQ-KMW3ImWc4-FE"
 SHEET_TAB = "수상및랭킹"
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?gid=2037853201"
+_SOURCE_LINK = f"[수상·랭킹 원본 시트]({SHEET_URL})"
 MAX_ROWS = 3000
 _RANGE = f"A1:U{MAX_ROWS}"
 
@@ -305,7 +306,8 @@ def usage_permission_answer() -> str:
         "(예: 사용 지역·기간, 검수 필요 여부).\n\n"
         "⚠️ **실제 사용 가부는 담당자 확인이 필요합니다** — 유료 수상이거나 "
         "사용 지역·기간이 제한된 건이 있습니다.\n\n"
-        "어느 수상인지 알려주시면 그 건의 표기와 조건을 찾아 드리겠습니다."
+        "어느 수상인지 알려주시면 그 건의 표기와 조건을 찾아 드리겠습니다.\n\n"
+        f"{_SOURCE_LINK}"
     )
 
 
@@ -674,12 +676,13 @@ def format_answer(result: Dict[str, Any]) -> str:
         #    "수상이 없다" 로 오인된다 — 프로모션 캘린더·물류 보유구간과 같은 함정.
         if result.get("table_empty"):
             return ("수상·랭킹 자료가 아직 적재되지 않았습니다 "
-                    "(하루 한 번 04:40 적재 — 잠시 후 다시 시도해 주세요).")
+                    "(하루 한 번 04:40 적재 — 잠시 후 다시 시도해 주세요).\n\n"
+                    + _SOURCE_LINK)
         # ⛔ "찾지 못했습니다" 만 주면 **그 달에 수상이 없었던 것**인지
         #    **아직 안 적힌 것**인지 구분되지 않는다. 기록이 있는 기간을 함께 적는다.
         hint = (result.get("period_hint") or "").strip()
         return ("조건에 맞는 수상·랭킹 기록을 찾지 못했습니다."
-                + (" " + hint if hint else ""))
+                + (" " + hint if hint else "") + "\n\n" + _SOURCE_LINK)
     out = ["| 구분 | 브랜드 | 주최사 | 수상명 | 제품 | 상세 | 순위 | 국가 | 일자 | 활용 표기 |",
            "|---|---|---|---|---|---|---:|---|---|---|"]
     notes: List[str] = []
@@ -761,6 +764,7 @@ def format_answer(result: Dict[str, Any]) -> str:
                       "주최사(화해·쇼피·올리브영 글로벌…)·연도(2026년)·"
                       "구분(수상/랭킹/설문)·순위(1위)로 물어보시면 좁혀 드립니다.\n")
 
+    out += ["", _SOURCE_LINK]
     stamp_display = result.get("synced_at", "-")
     raw_stamp = result.get("synced_at_raw")
     stale = (isinstance(raw_stamp, datetime)

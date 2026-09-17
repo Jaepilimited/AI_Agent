@@ -282,6 +282,8 @@ def create_app() -> FastAPI:
             #    갱신 이후로 옮기고, 오후 갱신분까지 잡도록 하루 두 번 돈다.
             _scheduler.add_job(_op_inventory_sync_job, "cron", hour="11,16", minute=20, id="op_inventory_sync_daily")
             _scheduler.add_job(_awards_sync_job, "cron", hour=4, minute=40, id="awards_sync_daily")
+            _scheduler.add_job(_pr_issues_sync_job, "cron", hour=4, minute=50,
+                               id="pr_issues_sync_daily")
             # CS/BP 제품 Q&A 시트 — ⛔ 기동 시 한 번만 읽던 것을 매시 갱신으로 바꿨다
             #    (2026-09-03). 없으면 시트를 고쳐도 재기동 전까지 반영되지 않는다
             _scheduler.add_job(_cs_cache_job, "cron", minute=40, id="cs_cache_hourly")
@@ -882,6 +884,21 @@ async def _awards_sync_job():
         logger.info("awards_sync_done", **{k: v for k, v in stat.items() if k != "rows"})
     except Exception as e:
         logger.error("awards_sync_failed", error=str(e)[:200])
+
+
+async def _pr_issues_sync_job():
+    """매일 04:50: 프레인 시트의 지정된 리스트 탭을 PR 검색에 반영한다."""
+    from app.core.self_check import track_job
+    try:
+        with track_job("pr_issues_sync_daily") as jr:
+            from app.core.pr_issues import sync_pr_issues
+            stat = await asyncio.to_thread(sync_pr_issues)
+            if stat.get("empty") or stat.get("cleanup_refused") or stat.get("ok") is False:
+                raise RuntimeError(f"PR 적재 실패: {stat}")
+            jr.set_note(str(stat)[:400])
+        logger.info("pr_issues_sync_done", rows=stat.get("rows"), written=stat.get("written"))
+    except Exception as e:
+        logger.error("pr_issues_sync_failed", error=str(e)[:200])
 
 
 async def _knowledge_map_job():

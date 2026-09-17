@@ -32,6 +32,8 @@ logger = structlog.get_logger(__name__)
 _SALES = "skin1004-319714.Sales_Integration.SALES_ALL_Backup"
 _AD = "skin1004-319714.marketing_analysis.integrated_ad"
 _LOG = "skin1004-319714.Export_control.export_logistics"
+_DOMESTIC_CS = "skin1004-319714.cs_dashboard.domestic_cs_records"
+_OVERSEAS_CS = "skin1004-319714.cs_dashboard.overseas_cs_refunds"
 
 # 자리표시자 이름 → (테이블, 컬럼, 최대 개수, 설명)
 # ⚠️ **고카디널리티 컬럼은 넣지 마라** — 제품명·거래처는 수천 개라 프롬프트가 터진다
@@ -51,7 +53,20 @@ REGISTRY: Dict[str, tuple] = {
     "LogTeam":     (_LOG, "order_team", 60, "수출 발주팀 (표기 흩어짐 — 원본 그대로)"),
     "LogIncoterms": (_LOG, "incoterms", 20, "인코텀즈"),
     "LogTransport": (_LOG, "transport_mode", 20, "운송방식"),
+    "DomesticCSChannel": (_DOMESTIC_CS, "channel", 50, "국내 CS 판매 채널"),
+    "DomesticCSClaimType": (_DOMESTIC_CS, "claim_type", 50, "국내 CS 접수 유형"),
+    "DomesticCSStatus": (_DOMESTIC_CS, "process_status", 50, "국내 CS 처리 상태"),
+    "DomesticCSReason": (_DOMESTIC_CS, "reason_normalized", 100, "국내 CS 집계용 표준 사유"),
+    "DomesticCSCompensation": (_DOMESTIC_CS, "compensation_eligibility", 50, "국내 CS 보상액 집계 분류"),
+    "OverseasCSStatus": (_OVERSEAS_CS, "process_status", 50, "해외 환불 처리 상태"),
+    "OverseasCSCountry": (_OVERSEAS_CS, "country_name", 300, "해외 환불 배송 국가명"),
+    "OverseasCSReason": (_OVERSEAS_CS, "return_type_normalized", 100, "해외 표준 환불 사유"),
+    "OverseasCSNormalization": (_OVERSEAS_CS, "normalization_status", 50, "해외 환불 사유 정규화 상태"),
 }
+
+# 선택적 파생 분류는 원본 메모에 따라 전부 NULL일 수 있다. 정상 조회한 빈 목록만
+# 허용하며, 캐시 부재나 Country 등 필수 목록의 유실은 계속 자가 점검 실패다.
+_EMPTY_ALLOWED = frozenset({"OverseasCSReason"})
 
 _TTL_HOURS = 26          # 하루 한 번 + 여유
 _DDL = """
@@ -144,11 +159,11 @@ def _is_stale() -> bool:
 def render(name: str) -> str:
     """자리표시자 하나를 실측 목록 문장으로. 실패하면 빈 문자열."""
     vals = _cached(name)
-    if not vals:
+    if vals is None or (not vals and name not in _EMPTY_ALLOWED):
         return ""
     _, col, _, desc = REGISTRY[name]
     return (f"**{col} 실제 값 ({desc} · {len(vals)}개, 매일 자동 갱신)**: "
-            + ", ".join(vals))
+            + (", ".join(vals) if vals else "NULL/빈값을 제외한 값이 없습니다."))
 
 
 def fill(text: str) -> str:
@@ -175,7 +190,11 @@ def fill(text: str) -> str:
 def status() -> Dict[str, object]:
     """자가 점검용 — 캐시가 최신인가, 빠진 항목은 없는가."""
     ensure_value_cache_table()
-    missing = [n for n in REGISTRY if not _cached(n)]
+    missing = []
+    for name in REGISTRY:
+        vals = _cached(name)
+        if vals is None or (not vals and name not in _EMPTY_ALLOWED):
+            missing.append(name)
     row = fetch_one("SELECT MAX(updated_at) t, COUNT(*) c FROM bq_value_cache") or {}
     return {"total": len(REGISTRY), "cached": int(row.get("c") or 0),
             "missing": missing, "updated_at": str(row.get("t") or ""),

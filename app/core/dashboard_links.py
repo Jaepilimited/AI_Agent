@@ -132,6 +132,27 @@ def answer_dashboard_link_query(query: str, limit: int = 5) -> str | None:
     if not _LINK_INTENT_RE.search(query or ""):
         return None
 
+    # 붙여 쓴 소스명도 실제 CS 화면으로 연결한다. 숫자와 링크를 함께 요청한
+    # 질문은 조회 경로가 답과 같은 조건의 링크를 만들도록 남겨 둔다.
+    if re.search(r"(?:국내|한국|해외|글로벌)\s*(?:자사몰\s*)?cs", query, re.I):
+        if re.search(r"얼마|몇\s*건|집계|분석|비교|합계|건수|금액|환불액|보상액", query):
+            return None
+        from app.core.cs_metrics import DASHBOARD_URL
+        links = []
+        if re.search(r"국내|한국", query):
+            path, title = "dashboard", "국내 CS 대시보드"
+            for word, suffix, label in (("상품", "product", "상품별"), ("제품", "product", "상품별"),
+                                         ("사유", "reason", "사유별"), ("채널", "channel", "판매처별"),
+                                         ("판매처", "channel", "판매처별")):
+                if word in query:
+                    path, title = "reports/" + suffix, "국내 CS " + label + " 시각화"
+                    break
+            links.append(f"[{title}]({DASHBOARD_URL}{path})")
+        if re.search(r"해외|글로벌", query):
+            links.append(f"[해외 CS 대시보드]({DASHBOARD_URL}global/dashboard)")
+        if links:
+            return " · ".join(links) + "\n\n화면에서 기간과 조회 조건을 선택할 수 있습니다."
+
     matches = find_dashboard_links(query, limit=limit)
     if not matches:
         return None

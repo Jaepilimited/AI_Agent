@@ -187,6 +187,7 @@ EXPECTED_JOBS: dict[str, tuple[float, str]] = {
     "ad_media_snapshot_daily": (14, "광고 매체 목록 스냅샷 (04:20·18:20)"),
     "notion_push_halfhourly": (2, "브리핑 노션 대기열 발송 (30분마다)"),
     "awards_sync_daily": (26, "수상/랭킹 시트 적재 (04:40)"),
+    "pr_issues_sync_daily": (26, "PR 리스트 탭 적재 (04:50)"),
 }
 
 
@@ -852,6 +853,51 @@ def _check_awards_sheet_freshness() -> CheckResult:
                        f"{n}행 · 마지막 적재 {age_h:.0f}시간 전")
 
 
+def _check_pr_vectors_present() -> CheckResult:
+    """사본이 있어도 검색 저장소에서 PR 자료가 사라질 수 있으므로 양쪽을 잰다."""
+    from app.agents.qdrant_agent import COLLECTION, _get_client
+    from app.core.pr_issues import status
+    from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+    st = status()
+    if st.get("pending_recovery"):
+        return CheckResult(False, "PR 검색 저장소 복구 미완료 — 다음 동기화에서 재시도")
+    count = int(st.get("count") or 0)
+    if not count:
+        return CheckResult(False, "PR 사본 0건 — 리스트 탭 적재 확인 필요")
+    cloud = _get_client().count(
+        collection_name=COLLECTION,
+        count_filter=Filter(must=[FieldCondition(key="team", match=MatchValue(value="PR"))]),
+        exact=True,
+    ).count
+    return CheckResult(cloud == count, f"PR 사본 {count}건 · 검색 저장소 {cloud}건")
+
+
+def _check_pr_sheet_freshness() -> CheckResult:
+    from app.core.data_freshness import _probe_pr_issues
+    reading = _probe_pr_issues()
+    return CheckResult(reading.ok, reading.detail)
+
+
+def _check_pr_unknown_team() -> CheckResult:
+    from app.core.pr_issues import status
+    unknown = status().get("unknown_teams") or {}
+    return CheckResult(not unknown,
+                       f"미등록 작성팀(원문 유지): {unknown}" if unknown else "작성팀 모두 등록됨")
+
+
+def _check_pr_month_unresolved() -> CheckResult:
+    from app.core.pr_issues import status
+    st = status()
+    unknown = int(st.get("month_unknown") or 0)
+    inferred = int(st.get("month_inferred") or 0)
+    baseline_unknown = int(st.get("baseline_month_unknown") or 0)
+    baseline_inferred = int(st.get("baseline_month_inferred") or 0)
+    ok = unknown <= baseline_unknown and inferred <= baseline_inferred
+    return CheckResult(ok, f"작성월 미상 {unknown}건 · 추정 {inferred}건 "
+                       f"(최초 적재 기준 미상 {baseline_unknown}건 · 추정 {baseline_inferred}건)")
+
+
 def _check_schema_changes() -> CheckResult:
     """어제 대비 **앱이 쓰는 테이블**의 스키마가 바뀌었는가.
 
@@ -1326,6 +1372,14 @@ CHECKS: list[Check] = [
           "수상 활용 표기 미등록", _check_awards_unknown_usage),
     Check("awards_sheet_freshness", "datasource", SEV_WARNING,
           "수상/랭킹 적재 신선도", _check_awards_sheet_freshness),
+    Check("pr_vectors_present", "datasource", SEV_WARNING,
+          "PR 검색 데이터가 사본과 일치하는가", _check_pr_vectors_present),
+    Check("pr_sheet_freshness", "datasource", SEV_WARNING,
+          "PR 리스트 탭 적재 신선도", _check_pr_sheet_freshness),
+    Check("pr_unknown_team", "datasource", SEV_INFO,
+          "PR 미등록 작성팀 원문", _check_pr_unknown_team),
+    Check("pr_month_unresolved", "datasource", SEV_INFO,
+          "PR 작성월 미상·추정 건수가 늘었는가", _check_pr_month_unresolved),
     Check("new_log_errors", "quality", SEV_WARNING,
           "어제 로그에 직전 주에 없던 에러 유형이 있는가", _check_new_log_errors),
     Check("notion_allowlist", "datasource", SEV_WARNING,

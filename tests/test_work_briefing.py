@@ -463,7 +463,7 @@ def test_a_far_basis_is_not_called_a_month_over_month():
     from app.core import fx_rates
 
     # 주말 때문에 이틀 밀린 것 — 전월대비가 맞다.
-    assert fx_rates.basis_note(_date(2026, 7, 24), _date(2026, 7, 26)) == "전월대비 2026-07-24"
+    assert fx_rates.basis_note(_date(2026, 7, 24), _date(2026, 7, 26)) == "한 달 전 대비 (2026-07-24 고시)"
     # 한 달 가까이 벌어진 것 — 숫자는 진짜지만 이름은 아니다.
     assert fx_rates.basis_note(_date(2026, 7, 24), _date(2026, 8, 23)) == "2026-07-24 대비"
     assert fx_rates.basis_note(None, _date(2026, 7, 26)) == ""

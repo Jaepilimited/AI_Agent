@@ -126,7 +126,11 @@ def fetch_history(day: str) -> tuple[list[dict], str, str] | None:
     """
     others = ",".join(c for c in CURRENCIES if c != "USD")
     try:
+        requested = date.fromisoformat(day)
         data = _get_json(f"https://api.frankfurter.app/{day}?from=USD&to=KRW,{others}")
+        quoted = date.fromisoformat(str(data.get("date") or ""))
+        if not 0 <= (requested - quoted).days <= 7:
+            raise ValueError("과거 고시일이 요청일 이전 7일 범위에 없습니다")
         rates = data["rates"]
         krw = float(rates["KRW"])
         rows = []
@@ -137,7 +141,7 @@ def fetch_history(day: str) -> tuple[list[dict], str, str] | None:
                 value = krw / float(rates[currency]) * UNITS.get(currency, 1)
             rows.append({"currency": currency, "krw": round(value, 4),
                          "unit": UNITS.get(currency, 1)})
-        return rows, "frankfurter.app", str(data.get("date") or day)
+        return rows, "frankfurter.app", str(quoted)
     except Exception as exc:
         print(f"[!] {day} 과거 조회 실패: {type(exc).__name__} {exc}", file=sys.stderr)
         return None
@@ -164,6 +168,26 @@ def push(client, token: str, payload: dict) -> tuple[int, str]:
             conn.close()
         except OSError:
             pass
+
+
+def _publish(client, token: str, fetched: tuple, *, only_missing: bool = False) -> dict:
+    """고시를 저장하고, 서버가 알려준 누락 비교일을 돌려준다."""
+    rows, source, quoted = fetched
+    payload = {"for_date": quoted, "rates": rows, "source": source}
+    if only_missing:
+        payload["only_missing"] = True
+    status, body = push(client, token, payload)
+    if status == 404:
+        raise RuntimeError(
+            "WAS 가 404 를 돌려줬습니다. BRIEFING_RELAY_TOKEN 이 서버와 다르거나 "
+            "서버에 설정되지 않았습니다 (.env 는 배포에서 제외된다).")
+    if status != 200:
+        raise RuntimeError(f"전송 실패: HTTP {status} {body[:200]}")
+    result = json.loads(body)
+    if not isinstance(result, dict):
+        raise ValueError("환율 저장 응답 형식이 올바르지 않습니다")
+    print(f"[o] {body}")
+    return result
 
 
 def main() -> int:
@@ -205,17 +229,19 @@ def main() -> int:
         return _fail(f"SSH 접속 실패 {WAS_USER}@{WAS_HOST}: {type(exc).__name__} {exc}")
 
     try:
-        status, body = push(client, token, {
-            "for_date": quoted, "rates": rows, "source": source,
-        })
-        if status == 404:
-            return _fail(
-                "WAS 가 404 를 돌려줬습니다. BRIEFING_RELAY_TOKEN 이 서버와 다르거나 "
-                "서버에 설정되지 않았습니다 (.env 는 배포에서 제외된다).")
-        if status != 200:
-            return _fail(f"전송 실패: HTTP {status} {body[:200]}")
-        print(f"[o] {body}")
+        result = _publish(client, token, fetched, only_missing=bool(args.date))
+        target = result.get("history_needed_for")
+        if target and not args.date:
+            # 서버가 실제 고시일의 한 달 전을 판정한다. 기존 일별 고시는 보존하고
+            # 누락분만 채워, 최초 백필 날짜에 비교 기준이 멈추는 것을 막는다.
+            history = fetch_history(str(target))
+            if not history:
+                return _fail("현재 환율은 저장했지만 전월 비교 환율을 가져오지 못했습니다.")
+            print(f"[i] 전월 비교 {target} · 실제 고시일 {history[2]}")
+            _publish(client, token, history, only_missing=True)
         return 0
+    except Exception as exc:
+        return _fail(f"환율 저장 실패: {type(exc).__name__} {exc}")
     finally:
         client.close()
 

@@ -48,6 +48,8 @@ def _execute_tool_call(
     from app.agents.sql_agent import _build_smart_preview, _enforce_partition_filter
 
     sql = sanitize_sql(sql_arg or "")
+    from app.core.cs_metrics import normalize_sql as normalize_cs_sql
+    sql = normalize_cs_sql(sql)
     is_valid, err = validate_sql(sql, allowed_tables=allowed_tables)
     if not is_valid:
         logger.warning("tool_sql_validation_failed", error=str(err)[:200], sql=sql[:200])
@@ -80,6 +82,8 @@ def _execute_tool_call(
         }, sql, []
 
     logger.info("tool_sql_executed", row_count=len(rows), sql=sql[:200])
+    from app.core.cs_metrics import prepare_results
+    rows = prepare_results(sql, rows)
     if len(rows) > 100:
         payload: Dict[str, Any] = {
             "row_count": len(rows),
@@ -89,6 +93,9 @@ def _execute_tool_call(
     else:
         payload = {"row_count": len(rows), "rows": _json_safe_rows(rows)}
     payload["executed_sql"] = sql
+    from app.core.cs_metrics import answer_fact
+    if answer_fact(sql):
+        payload["cs_interpretation"] = answer_fact(sql)
     return payload, sql, rows
 
 
@@ -272,6 +279,9 @@ def run_sql_tool_loop_stream(
                     return
                 if rows:
                     last_sql, last_rows = executed_sql, rows
+                    from app.core.cs_metrics import notice as cs_notice
+                    if cs_notice(executed_sql, rows):
+                        yield cs_notice(executed_sql, rows)
                 elif executed_sql and not last_sql:
                     last_sql = executed_sql
                 response_parts.append(
