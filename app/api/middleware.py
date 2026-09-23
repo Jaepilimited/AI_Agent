@@ -58,7 +58,7 @@ def _public_request(request: Request) -> bool:
 def _page_request(request: Request) -> bool:
     path = request.url.path.rstrip("/") or "/"
     return request.method in {"GET", "HEAD"} and (
-        path in {"/", "/coa-finder", "/face-search", "/harness", "/dashboard", "/docs", "/redoc",
+        path in {"/", "/coa-finder", "/sales-carryover", "/face-search", "/harness", "/dashboard", "/docs", "/redoc",
                  "/auth/google/login"}
         or path.lower().endswith(".html")
     )

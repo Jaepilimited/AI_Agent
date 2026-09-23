@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko" class="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>매출 이월 확인 — 셀라</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <script>
+    if (localStorage.theme === "dark") {
+      document.documentElement.classList.replace("light", "dark");
+    }
+  </script>
+  <style>
+    /* style.css 는 채팅 SPA 용이라 body 스크롤을 죽인다 — 이 페이지는 표가 자라는
+       평범한 문서라 되살린다 (인증서류 찾기와 같은 규칙) */
+    html, body { height: auto; overflow: auto; }
+    .sc-wrap { max-width: 1200px; margin: 0 auto; padding: 24px; color: var(--text); }
+    .sc-wrap h1 { font-size: 1.4em; margin-bottom: 8px; }
+    .sc-intro { color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5; }
+    .sc-intro code { white-space: nowrap; }
+    .sc-bar { display: flex; gap: 12px; align-items: flex-end; margin: 16px 0; flex-wrap: wrap; }
+    .sc-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.85em;
+                color: var(--text-muted); }
+    .sc-field select, .sc-field input { background: var(--bg-input); color: var(--text);
+                border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+                font-family: inherit; font-size: 1.05em; min-width: 160px; }
+    .sc-field select:focus, .sc-field input:focus { outline: none; border-color: var(--border-strong); }
+    .sc-bar button { background: var(--bg-elevated); color: var(--text);
+                      border: 1px solid var(--border); border-radius: 6px;
+                      padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: 0.92em; }
+    .sc-bar button:hover:not(:disabled) { background: var(--bg-hover); }
+    .sc-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .sc-summary { color: var(--text-secondary); font-variant-numeric: tabular-nums; line-height: 1.6; }
+    .sc-error { color: var(--text); background: var(--bg-elevated);
+                border: 1px solid var(--border-strong); border-radius: 6px;
+                padding: 8px 12px; margin-bottom: 12px; font-size: 0.9em; }
+    .sc-error:empty { display: none; }
+    /* 표보다 먼저 읽혀야 하는 공시 — 각주는 표에 밀려 안 읽힌다 */
+    .sc-notice { color: var(--text); background: var(--bg-elevated);
+                 border-left: 3px solid var(--border-strong); border-radius: 6px;
+                 padding: 8px 12px; margin: 0 0 12px; font-size: 0.92em; line-height: 1.5; }
+    .sc-notice:empty { display: none; }
+    .sc-scroll { overflow-x: auto; }
+    table.sc { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    table.sc th, table.sc td { border-bottom: 1px solid var(--border);
+                               padding: 7px 10px; text-align: right; vertical-align: top;
+                               font-size: 0.92em; white-space: nowrap; }
+    table.sc th { color: var(--text-muted); font-weight: 600; cursor: pointer; }
+    table.sc th:first-child, table.sc td:first-child,
+    table.sc th.sc-left, table.sc td.sc-left { text-align: left; }
+    table.sc td.sc-company { white-space: normal; min-width: 180px; }
+    .st-gone { font-weight: 700; }
+    .st-down { font-weight: 600; }
+    .st-same, .st-up, .st-new { color: var(--text-muted); }
+    .sc-toggle { display: inline-flex; align-items: center; gap: 6px;
+                 color: var(--text-secondary); font-size: 0.92em; cursor: pointer; }
+    .sc-note { color: var(--text-muted); font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <div class="sc-wrap">
+    <h1>매출 이월 확인 (B2B · 스킨천사)</h1>
+    <p class="sc-intro">매출 백업 스냅샷 두 날짜를 골라 <b>거래처별 매출이 어떻게 달라졌는지</b> 견줍니다.
+      조건은 <code>Brand IN ('SK','CBT')</code> · <code>Sales_Type = 'B2B'</code>, 매출은 <code>Sales1_R</code> 입니다.<br>
+      대상월은 앞 날짜의 달이 기본입니다. 그 달 매출이 다음 달로 이월됐는지 보려고
+      <b>다음 달 증감</b>도 함께 보여 줍니다. 건수가 그대로인데 금액만 일제히 움직였다면
+      이월이 아니라 환율 재환산일 수 있습니다 — 그때는 표 위에 먼저 알립니다.</p>
+
+    <div class="sc-bar">
+      <label class="sc-field">앞 날짜 (A)
+        <select id="sc-a"></select>
+      </label>
+      <label class="sc-field">뒤 날짜 (B)
+        <select id="sc-b"></select>
+      </label>
+      <label class="sc-field">대상월
+        <input type="month" id="sc-month">
+      </label>
+      <button id="sc-run" type="button" disabled>비교</button>
+      <button id="sc-csv" type="button" disabled>CSV 받기</button>
+      <label class="sc-toggle" for="sc-only-drop">
+        <input type="checkbox" id="sc-only-drop" checked> 빠진 것만 보기
+        <span class="sc-note">(사라짐·감소만 · CSV 는 전체)</span>
+      </label>
+    </div>
+    <div id="sc-error" class="sc-error"></div>
+    <div id="sc-notice" class="sc-notice"></div>
+    <div id="sc-summary" class="sc-summary"></div>
+    <div class="sc-scroll">
+      <table class="sc" id="sc-table" hidden>
+        <thead><tr>
+          <th class="sc-left" data-key="company">거래처</th>
+          <th class="sc-left" data-key="status">상태</th>
+          <th data-key="s_a">A 매출</th>
+          <th data-key="s_b">B 매출</th>
+          <th data-key="diff">차이 (B−A)</th>
+          <th data-key="pct">변동률</th>
+          <th data-key="n_a">A 건수</th>
+          <th data-key="n_b">B 건수</th>
+          <th data-key="next_diff">다음 달 증감 (B−A)</th>
+        </tr></thead>
+        <tbody id="sc-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="/static/sales_carryover.js"></script>
+</body>
+</html>

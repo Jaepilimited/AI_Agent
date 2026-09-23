@@ -31,6 +31,7 @@ from app.api.auth_routes import auth_router
 from app.api.entra_routes import entra_alias_router, entra_router
 from app.api.attachment_api import router as attachment_router
 from app.api.coa_finder_api import router as coa_finder_router
+from app.api.sales_carryover_api import router as sales_carryover_router
 from app.api.conversation_api import conversation_router, ensure_message_columns
 from app.api.eval_api import eval_router
 from app.api.face_search_routes import router as face_search_router
@@ -402,6 +403,7 @@ def create_app() -> FastAPI:
     app.include_router(harness_router)       # /harness, /api/harness/*
     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
     app.include_router(coa_finder_router)     # /coa-finder, /api/coa-finder/*
+    app.include_router(sales_carryover_router)  # /sales-carryover, /api/sales-carryover/* — B2B 거래처 이월 대조
     app.include_router(attachment_router)     # /api/attachments/table — 엑셀·CSV → 표 텍스트
     app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
     app.include_router(notifications_router)   # /api/notifications/*

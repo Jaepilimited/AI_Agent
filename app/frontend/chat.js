@@ -1633,6 +1633,11 @@
       window.open("/coa-finder", "_blank", "noopener");
     });
 
+    // 매출 이월 확인 — 전용 페이지를 새 탭에서 연다
+    document.getElementById("btn-sales-carryover").addEventListener("click", () => {
+      window.open("/sales-carryover", "_blank", "noopener");
+    });
+
     // System Status drawer
     document.getElementById("btn-system-status").addEventListener("click", openStatusDrawer);
     initNotifications();
