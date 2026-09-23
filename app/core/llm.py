@@ -600,21 +600,53 @@ class ClaudeClient:
     """
 
     def __init__(self, model: Optional[str] = None) -> None:
-        from anthropic import Anthropic
         self.settings = get_settings()
-        self.client = Anthropic(
-            api_key=self.settings.anthropic_api_key,
-            timeout=60.0,
-        )
         self.model = model or self.settings.anthropic_opus_model
+        # 전송층 선택 — 사내 LLM 게이트웨이(OpenAI 호환) 또는 Anthropic 직접 호출.
+        # 게이트웨이 어댑터는 `messages.create / .stream` 두 메서드를 SDK 와 같은
+        # 모양으로 제공하므로 아래 메서드들은 어느 쪽인지 모른 채 그대로 돈다.
+        # 상세·주의는 `app/core/llm_gateway.py` 머리말.
+        gw_url = (getattr(self.settings, "llm_gateway_url", "") or "").strip()
+        gw_key = (getattr(self.settings, "llm_gateway_key", "") or "").strip()
+        if gw_url and gw_key:
+            from app.core.llm_gateway import GatewayTransport
+            self.client = GatewayTransport(
+                gw_url, gw_key,
+                timeout=float(getattr(self.settings, "llm_gateway_timeout", 120.0) or 120.0),
+            )
+            self.transport = "gateway"
+        else:
+            if gw_url or gw_key:
+                # 반쪽 설정은 "켜진 줄 알았는데 직접 호출 중" 이 된다 — 조용히 넘기지 않는다
+                logger.warning("llm_gateway_half_configured",
+                               has_url=bool(gw_url), has_key=bool(gw_key))
+            from anthropic import Anthropic
+            self.client = Anthropic(
+                api_key=self.settings.anthropic_api_key,
+                timeout=60.0,
+            )
+            self.transport = "anthropic"
         # Claude 4.x/5.x reject a non-default temperature — only pre-4 models accept it.
         # Opt-in (not opt-out) so newly configured models (sonnet-5, fable-5, ...) default
         # safely to "no temperature" instead of silently 400ing.
         self._use_temperature = any(x in self.model for x in ["claude-3", "claude-2"])
         self._thinking = any(m in self.model for m in self._THINKING_MODELS)
         self._effort = getattr(self.settings, "anthropic_effort", "medium")
-        logger.info("claude_client_initialized", model=self.model,
+        logger.info("claude_client_initialized", model=self.model, transport=self.transport,
                     thinking=self._thinking, effort=self._effort if self._thinking else None)
+
+    def _websearch_tools(self) -> Optional[list]:
+        """게이트웨이 웹서치 tools 블록 — 게이트웨이 전송이고 설정이 켜졌을 때만.
+
+        Anthropic 직접 호출에는 절대 붙이지 않는다 (SDK 가 모르는 tool 형식이라 400 이 난다).
+        """
+        # 회귀 테스트는 `__init__` 없이 객체를 만들기도 한다 — 속성이 없으면 직접 호출로 본다
+        if getattr(self, "transport", "anthropic") != "gateway":
+            return None
+        if not getattr(getattr(self, "settings", None), "llm_gateway_websearch", False):
+            return None
+        from app.core.llm_gateway import WEBSEARCH_TOOLS
+        return list(WEBSEARCH_TOOLS)
 
     def _apply_temperature(self, kwargs: Dict[str, Any], temperature: float) -> None:
         """Add temperature to kwargs only if model supports it."""
@@ -973,6 +1005,9 @@ class ClaudeClient:
         }
         if system_instruction:
             kwargs["system"] = self._wrap_system(system_instruction)
+        tools = self._websearch_tools()
+        if tools:
+            kwargs["tools"] = tools
         yield from self._stream_with_first_token_retry(
             kwargs,
             "history_stream",

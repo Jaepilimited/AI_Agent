@@ -75,6 +75,19 @@ class Settings(BaseSettings):
     # 올릴 땐 반드시 다시 재고 올릴 것 (SDK 단독 측정은 앱 지연과 다르다).
     anthropic_effort: str = "medium"
 
+    # 사내 LLM 게이트웨이 (2026-09-23, 노션 `llm-chatbot-integration` 가이드)
+    # 둘 다 있을 때만 Claude 호출이 게이트웨이(OpenAI 호환 /v1/chat/completions)를 탄다.
+    # 하나라도 비면 예전처럼 Anthropic 직접 호출이다. ⛔ `.env` 는 배포에서 제외된다 —
+    # 여기 기본값을 고쳐도 아무것도 안 바뀌고, WAS 의 `.env` 에 직접 넣어야 켜진다.
+    # ⛔ 2026-09-23 실측: 발급된 키가 아직 모델 접근 권한이 없다(403). 운영자가 키에
+    #    모델 접근 + `default_tools` 그룹을 주기 전에는 프로덕션에 키를 넣지 마라.
+    llm_gateway_url: str = ""
+    llm_gateway_key: str = ""
+    # 채팅(대화 이력 스트림)에 게이트웨이 웹서치(agentcore_websearch) tools 블록을 붙인다.
+    # 기본 꺼짐 — 지금 검색은 Gemini 그라운딩이 `_SEARCH_KEYWORDS` 로 조건부로 맡는다.
+    llm_gateway_websearch: bool = False
+    llm_gateway_timeout: float = 120.0
+
     # 라우터 2단계 — "사내 자료를 뒤져야 하는가" 예/아니오 게이트 (2026-09-07)
     # 확신 없는 분류(실사용 22.6%)에만 도는 추가 LLM 호출이다. 껐을 때의 동작은
     # **도입 이전과 정확히 같다** — 바로 6지선다(`_classify_with_llm`)로 간다.

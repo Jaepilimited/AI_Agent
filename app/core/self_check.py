@@ -679,6 +679,31 @@ def _check_freshness_coverage() -> CheckResult:
     return CheckResult(True, f"감시 등록 {len(SOURCES)}종 · 빠진 소스 없음")
 
 
+def _check_llm_gateway() -> CheckResult:
+    """사내 LLM 게이트웨이가 설정돼 있으면 **실제로 답하는지** 본다.
+
+    2026-09-23 실측: 노션에 적힌 가상 키가 모델 접근 권한이 없어 모든 요청이 403 이었다.
+    그 상태로 키를 넣으면 채팅이 통째로 죽는데, 403 은 재시도도 Flash 폴백도 없이
+    즉시 올라온다 (게이트웨이를 탄다는 보안 전제를 조용히 무너뜨리지 않으려고).
+    그래서 매일 아주 작은 완성 요청 한 번으로 키·모델 접근·통신을 함께 확인한다.
+    미설정이면 정상(직접 호출) — 그것도 사실이라 detail 에 적는다.
+    """
+    from app.config import get_settings
+    from app.core.llm_gateway import probe
+
+    s = get_settings()
+    url = (getattr(s, "llm_gateway_url", "") or "").strip()
+    key = (getattr(s, "llm_gateway_key", "") or "").strip()
+    if not url and not key:
+        return CheckResult(True, "게이트웨이 미설정 — Claude 를 Anthropic 에 직접 호출 중")
+    if not (url and key):
+        return CheckResult(False, "게이트웨이 설정이 반쪽이다 (URL·키 중 하나만 있음) — 직접 호출로 돌고 있다")
+    err = probe(url, key, s.anthropic_opus_model)
+    if err:
+        return CheckResult(False, f"게이트웨이 응답 실패 — {err}. 키의 모델 접근 권한·프록시 화이트리스트 확인")
+    return CheckResult(True, f"게이트웨이 정상 ({s.anthropic_opus_model})")
+
+
 def _check_cs_cache() -> CheckResult:
     """CS/BP 제품 Q&A 캐시가 살아 있고 최신인가.
 
@@ -1389,6 +1414,9 @@ CHECKS: list[Check] = [
     Check("cs_cache", "datasource", SEV_WARNING,
           "CS/BP 제품 Q&A 캐시가 최신인가 (기동 시 한 번만 읽던 것을 매시로 바꿈)",
           _check_cs_cache),
+    Check("llm_gateway", "datasource", SEV_CRITICAL,
+          "사내 LLM 게이트웨이가 설정돼 있으면 실제로 답하는가 (키 권한·프록시)",
+          _check_llm_gateway),
     Check("notion_unshared", "datasource", SEV_WARNING,
           "노션에 걸었는데 학습 안 된 자료가 새로 생겼는가 (미공유)",
           _check_notion_unshared),

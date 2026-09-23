@@ -1789,7 +1789,27 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   브라우저가 원시 401 JSON 대신 로그인으로 간다 — 처음에 빠뜨려 테스트가 잡았다
 - ⛔ LLM 을 부르지 않는다. 두 표의 차이는 산술이다 (인증서류·성분·재고와 같은 사상).
   CSV 는 프론트가 BOM 을 붙여 만들고, 화면 필터(빠진 것만 보기)와 무관하게 전체를 낸다
-- 회귀: `tests/test_sales_carryover.py` (23문항 — 판정·재환산 공시·배선·API 권한)
+- **팀·담당자 열** (2026-09-23 사용자 요청): `Team_NEW`·`Manager_NEW` 를 두 스냅샷의 대상월·다음 달
+  행에서 모아 매출 큰 순으로 **다 적는다** (실측 355곳 중 팀 둘 이상 3곳 · 담당자 둘 이상 7곳,
+  실리콘투는 팀 셋·담당자 넷). `Manager`(옛 컬럼)는 전부 NULL 이라 쓰지 않는다. 팀 라벨은
+  `org_structure.TEAM_CODE2KR` 로 `영업1팀(B2B1)`. 못 붙이면 빈 칸 + 공시 (지어내지 않는다)
+  - ⛔ **BigQuery 클라이언트를 요청마다 새로 만들어 두 스레드에서 첫 호출을 겹치게 하지 마라.**
+    각 1초짜리 조회 둘이 **20~40초**가 됐다 (자격증명 갱신이 겹친다). 클라이언트 하나를 스냅샷
+    목록 조회로 먼저 데운 뒤 나란히 돌린다 → 4.2초(첫 호출) · 1.8초
+- **팀별 묶음 + 합계** (2026-09-23 사용자 요청: *"팀별로 정리되고 sum값도 같이 나오게 하고 한화면에"*).
+  `team_groups()` 가 팀 줄(그 팀 거래처 전부의 합계)을 만들고 화면 맨 아래 전체 합계가 붙는다.
+  ⛔ **한 거래처는 첫 팀(매출 큰 쪽)에만 넣는다** — 두 팀에 다 넣으면 팀 합계의 합이 전체와 안 맞는다
+  (회귀가 합을 대조한다). ⚠️ 합계는 화면 필터(빠진 것만 보기)와 **무관**하다 — 필터로 걸러진
+  합계를 팀 합계라고 보여 주면 조용히 틀린 숫자가 된다. 표는 촘촘한 행 + 고정 머리글이고,
+  `팀 합계만 보기` 로 접었다가 팀 줄을 눌러 그 팀만 펼친다
+- 회귀: `tests/test_sales_carryover.py` (31문항 — 판정·재환산 공시·팀/담당자·팀 합계·배선·API 권한)
+- **가로 스크롤 없음이 규칙이다** (2026-09-23 사용자 지적: *"칸 간격이 보기 좋지않아 … 옆으로 스크롤 할 수
+  없게"*). 열은 **9개 고정**, `colgroup` 비율 + `table-layout: fixed`, 글자 열만 줄바꿈. 금액은 화면에서
+  **백만원**(원 값은 title·CSV), 건수는 `A→B` 한 칸, 팀 열은 없앴다(팀 줄이 말한다 — 두 번째 팀부터는
+  거래처 옆에 작게). 실측 927px 창에서 문서 폭 = 창 폭, 넘치는 칸 0. ⛔ 열을 더하면 스크롤이
+  되살아난다 — 새 값은 title 이나 CSV 로. ⚠️ 머리글은 줄바꿈 허용 — `nowrap` 이면 좁은 창에서
+  "A 매출 (백만…" 처럼 잘려 단위를 잃는다
+
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)
 
@@ -2654,6 +2674,44 @@ DB-HUB 에 멘션은 걸려 있는데 열어 보면 우리 워크스페이스가
     A/B 는 매번 다른 문구(문의번호 등)를 붙여 잰다
   - ⚠️ thinking 을 끄는 것(`disabled`)으로 속도를 벌지 마라 — Opus 5 는 그때
     `<thinking>` 태그가 답변에 새는 사례가 보고돼 있다. 낮은 effort 가 정답이다
+
+### 사내 LLM 게이트웨이 경유 — 준비됐지만 **아직 꺼져 있다** (2026-09-23)
+
+보안 검토("Claude 직접 호출이라 프롬프트 감사·가드레일이 없다")에 IT 가 게이트웨이로
+답했다 (노션 `llm-chatbot-integration`, `https://llmgw.cravercorp.com`). 거치면 가드레일·
+Langfuse 감사 로깅·키 단위 사용량 집계가 코드 수정 없이 붙는다. **Claude 만이다** —
+Gemini(SQL 생성·라우팅·브리핑)는 여전히 구글 직접 호출이다.
+
+- **파일**: `app/core/llm_gateway.py`(전송층) · `config.llm_gateway_*` · 자가 점검 `llm_gateway` ·
+  회귀 `tests/test_llm_gateway_transport.py`(16문항, `httpx.MockTransport`)
+- **켜는 조건은 `.env` 의 `LLM_GATEWAY_URL` + `LLM_GATEWAY_KEY` 둘 다다.** 하나라도 비면
+  예전처럼 Anthropic 직접 호출이고, 반쪽이면 `llm_gateway_half_configured` WARNING 을 남긴다.
+  ⛔ `.env` 는 배포에서 제외된다 — **WAS 에 직접 넣고 재기동해야 켜진다**
+- ⛔ **2026-09-23 실측: 노션에 적힌 가상 키는 모델 접근 권한이 없다.** 8가지 요청 전부
+  `403 team not allowed to access model … ['no-default-models']`, `/v1/models` 도 빈 목록.
+  **운영자가 키에 모델 접근(`claude-opus-5`·`claude-sonnet-5`)과 웹서치용 `default_tools`
+  그룹을 주기 전에는 프로덕션 `.env` 에 키를 넣지 마라** — 넣는 순간 채팅 전체가 죽는다.
+  로컬 `.env` 에는 넣어 두었다 (실측·회귀용)
+- ⛔ **403 은 재시도도 Flash 폴백도 없이 즉시 올라온다.** 조용히 직접 호출로 되돌아가면
+  "게이트웨이를 탄다" 는 보안 전제가 소리 없이 무너진다. 죽는 쪽이 맞다 —
+  `llm_gateway_denied` ERROR 와 자가 점검 `llm_gateway`(매일, 작은 완성 1회)가 그걸 잡는다
+- **설계 — `ClaudeClient` 는 그대로 두고 `self.client` 만 바꿔 끼운다.** 어댑터가 SDK 와
+  같은 `messages.create / .stream` 을 제공하므로 `_first_text()`·`_tune()`·재시도·토큰
+  계측·Flash 폴백이 한 줄도 안 바뀐다 (그 모양은 `test_llm_overload_fallback` 의 가짜
+  client 가 이미 보증한다). 빈 본문은 **빈 블록 목록**으로 두어 `claude_no_text_block`
+  경고가 그대로 산다
+- ⚠️ **게이트웨이가 무엇을 받는지는 실측하지 못했다** (키가 막혀서). thinking 은
+  `output_config.effort` → `reasoning_effort`(xhigh·max 는 high) 로 보내고, 시스템 프롬프트는
+  캐시 블록 파트로 보낸다. **400 이 나면 그 둘을 한 단계씩 내려 다시 보내고 기억한다**
+  (`_DEGRADE_LADDER`, WARNING `llm_gateway_degraded`). 키가 열리면 **가장 먼저 그 두 파라미터를
+  실측**하고 이 문단을 고칠 것 — `ANTHROPIC_EFFORT=medium` 은 8/13 사용자 결정이다
+- 웹서치(`agentcore_websearch` tools 블록)는 `LLM_GATEWAY_WEBSEARCH=true` 일 때 **채팅 스트림
+  에만** 붙는다. 기본 꺼짐 — 지금 검색은 Gemini 그라운딩이 `_SEARCH_KEYWORDS` 로 조건부로 맡고,
+  보고서 해석 같은 비채팅 호출에 검색이 섞이면 안 된다
+- 켠 뒤 확인할 것: 골든 전체 런(직전 기준선 #102 84/84) · `audit_logs` 의 `first_token_ms`·
+  `total_ms` 전후 비교(9/22 는 세 경로가 동시에 느렸던 날이라 기준선에서 뺀다) ·
+  Langfuse 에 트래픽이 실제로 찍히는지 · WAS 프록시가 `llmgw.cravercorp.com`(Cloudflare) 을
+  통과시키는지 (실측 못 함 — 기동 시 `claude_opus_warmup_failed` 로 드러난다)
 
 ### direct 경로가 느릴 땐 effort 보다 **검색 그라운딩**을 먼저 의심하라 (2026-08-13)
 
