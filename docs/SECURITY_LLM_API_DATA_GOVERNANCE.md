@@ -118,6 +118,7 @@ IT팀이 보안 지적에 대한 답으로 LLM 게이트웨이(`llmgw.cravercorp
 | A2 | Anthropic Console > Privacy Controls에서 보존 기간 확인·기록 | 개발 | 화면 캡처 첨부 |
 | A3 | 이 문서를 보안 검토자에게 전달하고 지적사항의 범위를 확정 (접근 통제 vs LLM 고유 위협) | 프로젝트 오너 | 회신 |
 | A4 | 플랫폼 운영자에게 게이트웨이 키의 모델 접근(`claude-opus-5`·`claude-sonnet-5`)과 `default_tools` 그룹 부여 요청. 권한이 열리면 WAS `.env`에 `LLM_GATEWAY_URL`·`LLM_GATEWAY_KEY`를 넣고 재기동 → 골든 전체 런 → Langfuse 로깅 확인 | 프로젝트 오너 · 개발 | 자가 점검 `llm_gateway` 정상 |
+| A5 | IT팀에 WAS 프록시(10.1.50.2:3128) 화이트리스트에 `llmgw.cravercorp.com` 추가 요청. 2026-09-23 실측: WAS에서 `CONNECT tunnel failed, response 403`. 이것이 열리지 않으면 키가 열려도 게이트웨이에 닿지 못한다 | IT팀 | WAS에서 `curl https://llmgw.cravercorp.com/v1/models` 가 401 |
 
 ### 단기 (1개월)
 
@@ -146,7 +147,7 @@ IT팀이 보안 지적에 대한 답으로 LLM 게이트웨이(`llmgw.cravercorp
 - 두 공급자의 실제 처리 리전 — 문서에 명시가 없다
 - 국외 이전 고지 의무 해당 여부 — 법무 판단
 - 게이트웨이가 thinking 깊이(`reasoning_effort`)와 시스템 프롬프트 캐시 블록을 받는지 — 키 권한이 없어 실측 못 함 (A4)
-- WAS 프록시가 `llmgw.cravercorp.com`(Cloudflare 경유 공개 호스트)을 통과시키는지 — 같은 이유로 실측 못 함
+- ~~WAS 프록시가 `llmgw.cravercorp.com`을 통과시키는지~~ → 실측 완료: **막혀 있다** (A5로 이관)
 
 이 항목들이 닫히기 전까지 이 문서는 "검토 요청" 상태다.
 

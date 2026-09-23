@@ -2708,10 +2708,17 @@ Gemini(SQL 생성·라우팅·브리핑)는 여전히 구글 직접 호출이다
 - 웹서치(`agentcore_websearch` tools 블록)는 `LLM_GATEWAY_WEBSEARCH=true` 일 때 **채팅 스트림
   에만** 붙는다. 기본 꺼짐 — 지금 검색은 Gemini 그라운딩이 `_SEARCH_KEYWORDS` 로 조건부로 맡고,
   보고서 해석 같은 비채팅 호출에 검색이 섞이면 안 된다
+- ⛔ **WAS 프록시가 `llmgw.cravercorp.com` 을 막는다** (2026-09-23 배포 직후 실측:
+  `HTTPS_PROXY=10.1.50.2:3128` 경유 `CONNECT tunnel failed, response 403`, 프록시 없이는
+  타임아웃). 호스트는 Cloudflare 뒤의 공개 주소라 화이트리스트에 들어가야 한다.
+  **막힌 것이 둘이다 — 키 권한(운영자) + 프록시 화이트리스트(IT).** 둘 다 열려야 켜진다.
+  잔디·환율과 같은 부류의 벽이다 (`docs/…GOVERNANCE.md` A4·A5)
 - 켠 뒤 확인할 것: 골든 전체 런(직전 기준선 #102 84/84) · `audit_logs` 의 `first_token_ms`·
   `total_ms` 전후 비교(9/22 는 세 경로가 동시에 느렸던 날이라 기준선에서 뺀다) ·
-  Langfuse 에 트래픽이 실제로 찍히는지 · WAS 프록시가 `llmgw.cravercorp.com`(Cloudflare) 을
-  통과시키는지 (실측 못 함 — 기동 시 `claude_opus_warmup_failed` 로 드러난다)
+  Langfuse 에 트래픽이 실제로 찍히는지
+- ⚠️ **켜기 전에 WAS 루프백에서 한 번 찔러 200 을 본 뒤 `.env` 에 넣어라.** 403 은 재시도
+  없이 올라오므로 키가 안 살아난 채 켜면 direct·bigquery·cs·notion **모든 LLM 경로가 한꺼번에**
+  죽는다 (ai-agent-0f 지적). 요란한 실패라 금방 보이지만 반경이 전부다
 
 ### direct 경로가 느릴 땐 effort 보다 **검색 그라운딩**을 먼저 의심하라 (2026-08-13)
 
