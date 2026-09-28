@@ -43,6 +43,14 @@ INJECTION_PATTERNS = [
 MAX_TIMEOUT_SECONDS = 30
 MAX_RESULT_ROWS = 10000
 
+# 함수 인자 안에서 쓰이는 FROM — `EXTRACT(YEAR FROM x)` · `SUBSTRING(s FROM 1)` ·
+# `TRIM(BOTH ' ' FROM s)` · `POSITION('a' IN s)` 는 아니지만 `OVERLAY(... FROM ...)` 등.
+# 여는 괄호 뒤 첫 FROM 까지만 본다 (그 앞에 중첩 괄호가 없는 경우가 실제 쓰임의 전부다).
+_FUNC_FROM = re.compile(
+    r"\b(?:EXTRACT|SUBSTRING|SUBSTR|TRIM|OVERLAY)\s*\([^()]*?\bFROM\b",
+    re.IGNORECASE,
+)
+
 
 def validate_sql(
     sql: str,
@@ -120,6 +128,13 @@ def _validate_tables(sql: str, allowed_tables: Collection[str]) -> Tuple[bool, s
     Returns:
         Tuple of (is_valid, error_message).
     """
+    # ⛔ 함수 안의 FROM 은 테이블 절이 아니다 (2026-09-28 프로덕션 실측).
+    #    `EXTRACT(YEAR FROM s.Date)` 의 `s.Date` 를 아래 `short_plain` 이 `dataset.table` 로 읽고
+    #    기본 프로젝트를 붙여 "허용되지 않은 테이블입니다: skin1004-319714.s.Date" 로 막았다 —
+    #    별칭을 붙인 멀쩡한 매출 SQL 이 죽었고(하루 2건), 사용자 눈에는 조회 실패로 보인다.
+    #    검사 전에 그 FROM 만 다른 낱말로 바꿔 둔다 (원 SQL 은 건드리지 않는다).
+    sql = _FUNC_FROM.sub(lambda m: m.group(0)[:-4] + "FR0M", sql)
+
     # Extract table references from FROM and JOIN clauses
     # Matches backtick-quoted GCP table paths: `project.dataset.table`
     # Matches project.dataset.table paths — allows spaces in table name (e.g. `ad_data.meta data_test`)

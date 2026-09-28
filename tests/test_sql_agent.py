@@ -202,3 +202,36 @@ class TestPartitionFilter:
             mock_flash.return_value = mock_client
             result = _enforce_partition_filter(sql, "마케팅 비용")
         assert result == sentinel_sql
+
+
+class TestFunctionFromIsNotATable:
+    """함수 안의 FROM(`EXTRACT(YEAR FROM s.Date)`)을 테이블 절로 읽어 멀쩡한 SQL 을 막던 오탐.
+
+    2026-09-28 프로덕션 실측: `허용되지 않은 테이블입니다: skin1004-319714.s.Date` 로
+    별칭 붙인 매출 SQL 이 하루 2건 죽었다. 사용자 눈에는 조회 실패로 보인다.
+    """
+
+    _T = "`skin1004-319714.Sales_Integration.SALES_ALL_Backup`"
+
+    @pytest.mark.parametrize("sql", [
+        f"SELECT EXTRACT(YEAR FROM s.Date) y, SUM(s.Sales1_R) r FROM {_T} s GROUP BY y LIMIT 100",
+        f"SELECT extract(month from s.Date) m FROM {_T} s GROUP BY m LIMIT 100",
+        f"SELECT SUBSTRING(t.Country FROM 1 FOR 2) c FROM {_T} t LIMIT 10",
+        f"SELECT TRIM(BOTH ' ' FROM t.Country) c FROM {_T} t LIMIT 10",
+        f"WITH f AS (SELECT `SET` p, MIN(Date) d FROM {_T} GROUP BY p) "
+        f"SELECT EXTRACT(YEAR FROM f.d) y, COUNT(*) FROM f GROUP BY y LIMIT 100",
+    ])
+    def test_alias_column_after_function_from_is_allowed(self, sql):
+        ok, err = validate_sql(sql)
+        assert ok, err
+
+    def test_real_table_after_from_is_still_checked(self):
+        sql = ("SELECT EXTRACT(YEAR FROM s.Date) y FROM "
+               "`skin1004-319714.Sales_Integration.NOT_ALLOWED` s GROUP BY y LIMIT 10")
+        ok, err = validate_sql(sql)
+        assert not ok and "허용되지 않은 테이블" in err
+
+    def test_short_dataset_table_after_real_from_is_still_checked(self):
+        sql = "SELECT EXTRACT(YEAR FROM s.Date) y FROM Sales_Integration.NOT_ALLOWED s GROUP BY y LIMIT 10"
+        ok, err = validate_sql(sql)
+        assert not ok and "NOT_ALLOWED" in err
