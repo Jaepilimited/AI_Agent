@@ -404,11 +404,18 @@ class GatewayTransport:
 
 
 def probe(base_url: str, api_key: str, model: str, timeout: float = 30.0) -> Optional[str]:
-    """아주 작은 완성 요청 한 번. 성공이면 None, 실패면 원인 문자열. (자가 점검용)"""
+    """아주 작은 완성 요청 한 번. 성공이면 None, 실패면 원인 문자열. (자가 점검용)
+
+    ⛔ 처음엔 `"hi"` + `max_tokens=5` 였다. 2026-09-28 개통 당일 자가 점검이 **"응답은 200 인데
+       본문이 비었다"** 로 실패했다 — 실측 5회 중 2회가 `finish_reason=length` 로 빈 본문이었다
+       (Opus 5 는 thinking 이 기본이라 5토큰이 답 전에 소진된다). 실제 서비스 호출은
+       `ClaudeClient._tune()` 이 최소 토큰을 보장해 무관하지만, 매일 40% 로 실패하는 점검은
+       곧 아무도 안 읽는다. 한 낱말을 지목하고 여유를 준다 (실측 10/10 `stop`, 4~5토큰).
+    """
     try:
         t = GatewayTransport(base_url, api_key, timeout=timeout)
-        msg = t.messages.create(model=model, max_tokens=5,
-                                messages=[{"role": "user", "content": "hi"}])
+        msg = t.messages.create(model=model, max_tokens=64,
+                                messages=[{"role": "user", "content": "Reply with the single word: pong"}])
         if not msg.content:
             return "응답은 200 인데 본문이 비었다"
         return None
