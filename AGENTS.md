@@ -2029,6 +2029,13 @@ CSV 도 같은 값이었다. **에러는 없었다.**
 
 ## 코드 규칙 — 재발 방지
 
+- ⛔ **SQL 검증기의 테이블 추출은 함수 안의 FROM 을 테이블 절로 읽었다** (2026-09-28 프로덕션
+  실측). `EXTRACT(YEAR FROM s.Date)` 의 `s.Date` 가 `dataset.table` 모양이라 기본 프로젝트가 붙어
+  `허용되지 않은 테이블입니다: skin1004-319714.s.Date` 로 **멀쩡한 매출 SQL 이 죽었다** (하루 2건,
+  사용자 눈에는 조회 실패). `security._FUNC_FROM` 이 EXTRACT·SUBSTRING·TRIM·OVERLAY 안의 FROM 만
+  검사 전에 다른 낱말로 바꾼다 — 진짜 FROM 뒤 검사는 그대로다. ⚠️ 이 로그 문구를 보면 **소스
+  선택 문제인지 정규식 오탐인지** 테이블 이름부터 보라: 실재하지 않는 `프로젝트.한글자.컬럼` 모양이면 오탐이다.
+  회귀 `tests/test_sql_agent.py::TestFunctionFromIsNotATable`
 - ⛔ **`ThreadPoolExecutor` 를 `with` 블록으로 감싸고 `future.result(timeout=N)` 을 쓰지 마라.**
   블록을 빠져나갈 때 `shutdown(wait=True)` 가 걸려 **타임아웃이 무의미해진다** —
   워커가 끝날 때까지 그대로 기다린다. 실제로 "차트 8초 넘으면 건너뛴다"는 로직이
