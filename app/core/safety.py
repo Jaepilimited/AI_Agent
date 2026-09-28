@@ -564,6 +564,31 @@ def get_safety_status() -> dict:
 
 _UPDATE_WINDOW_SECONDS = 180  # 3 minutes: table modified within this window → "updating"
 
+#: 최근 수정 + 행 감소를 "적재 중(truncate+reload)" 으로 보려면 **이만큼은 줄어야** 한다.
+#:
+#: ⛔ 처음엔 "기준보다 하나라도 적으면" 이었다. 2026-09-28 프로덕션 30일 실측 406회 중
+#:    **물류 244회(60%)가 전부 정확히 1행(0.035%) 감소**였다 — 사람이 물류 시트에서 행 하나를
+#:    지울 때마다 3분씩 점검 모드가 켜져 물류 답변마다 "데이터 업데이트 중" 이 붙었다
+#:    (하루 최대 38회). 제품 35회(≤0.98%)·매출·메타광고도 같은 부류다.
+#:    진짜 재적재는 다르게 생겼다: 광고 9~100% · 마케팅 2~81% · 인플루언서 5~100% ·
+#:    플랫폼 3.1% · Shopify 2.7% · 해외CS 4.8% · 아마존검색 1.0~2.0%. 1% 는 그 둘 사이에 있고,
+#:    1% 미만이 빠진 표는 조회해도 안전하다 (KakaoMoments 0.57% 유실이 여기 안 잡히는 것은
+#:    처음부터 문서에 적힌 한계다 — 그건 `ad_media_watch` 가 본다).
+#: ⚠️ 1% 미만 감소는 Detection 2 로 흘러가 기준선만 낮아진다 (ratio ≥ 0.98). 켜지지 않는다.
+_RELOAD_MIN_DROP_RATIO = 0.01
+
+
+def looks_like_reload(row_count, baseline, modified_ago_seconds) -> bool:
+    """최근에 수정됐고 행이 **의미 있게** 줄었는가 (= truncate+reload 진행 중으로 볼 것인가).
+
+    순수 함수다 — 감시 루프의 판정을 여기서만 하고 회귀가 이 함수를 직접 부른다.
+    """
+    if not baseline or baseline <= 0 or row_count is None or modified_ago_seconds is None:
+        return False
+    if modified_ago_seconds >= _UPDATE_WINDOW_SECONDS:
+        return False
+    return (baseline - row_count) >= baseline * _RELOAD_MIN_DROP_RATIO
+
 # service label -> (dataset, table_id). One entry per System Status BigQuery service —
 # each is tracked independently so one table updating doesn't flag the rest.
 _MONITORED_TABLES: Dict[str, tuple] = {
@@ -746,9 +771,10 @@ async def maintenance_auto_detect_loop(interval: float = 60.0) -> None:
                 #    영영 갱신되지 않았다.** 오탐이 스스로를 고착시키는 구조였다.
                 #    적재 중이라는 진짜 신호는 "행이 줄어드는 것"이다 (truncate+reload).
                 #    단순 append 는 조회해도 안전하므로 점검 중으로 보지 않는다.
+                # ⛔ 그리고 **의미 있게** 줄어야 한다 (`_RELOAD_MIN_DROP_RATIO`) — 1행 삭제로
+                #    물류가 30일간 244회 켜졌다. 판정은 `looks_like_reload()` 한 곳이 한다.
                 _base = mm.table_baseline(label)
-                if (modified_ago is not None and modified_ago < _UPDATE_WINDOW_SECONDS
-                        and _base and row_count < _base):
+                if looks_like_reload(row_count, _base, modified_ago):
                     mm.auto_activate_table(
                         label,
                         f"테이블 적재 중 (row {row_count:,} < 기준 {_base:,}, "
