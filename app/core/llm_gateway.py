@@ -47,9 +47,16 @@ logger = structlog.get_logger(__name__)
 
 CHAT_PATH = "/v1/chat/completions"
 
-#: 가이드 5절 그대로. `server_url` 은 리터럴이다 — 실제 주소·서명은 게이트웨이가 갖는다.
+#: `server_url` 은 리터럴이다 — 실제 주소·서명은 게이트웨이가 갖는다.
+#: ⛔ 2026-09-28 실측 (키가 열린 날): 가이드에 적힌 `llm_proxy` 로 보내면 **200 이 오지만 도구가
+#:    붙지 않는다** — 모델이 "검색 도구가 없다" 고 답한다 (에러가 아니라 조용한 실패).
+#:    LiteLLM 의 예약어는 `litellm_proxy` 이고, `require_approval: "never"` 가 없으면 도구 호출이
+#:    승인 대기(`finish_reason=tool_calls`)에서 멈춰 검색 결과 없이 끝난다. 둘 다 있어야
+#:    실제 검색 결과(출처 URL 포함)가 온다. 게이트웨이의 `/v1/mcp/tools` 에 도구가
+#:    `agentcore_websearch-websearch___WebSearch` 로 등록돼 있는 것도 같은 날 확인했다.
 WEBSEARCH_TOOLS: List[Dict[str, str]] = [
-    {"type": "mcp", "server_url": "llm_proxy", "server_label": "agentcore_websearch"},
+    {"type": "mcp", "server_url": "litellm_proxy", "server_label": "agentcore_websearch",
+     "require_approval": "never"},
 ]
 
 #: Anthropic `output_config.effort` → OpenAI 호환 `reasoning_effort`.

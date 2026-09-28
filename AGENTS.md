@@ -2675,7 +2675,7 @@ DB-HUB 에 멘션은 걸려 있는데 열어 보면 우리 워크스페이스가
   - ⚠️ thinking 을 끄는 것(`disabled`)으로 속도를 벌지 마라 — Opus 5 는 그때
     `<thinking>` 태그가 답변에 새는 사례가 보고돼 있다. 낮은 effort 가 정답이다
 
-### 사내 LLM 게이트웨이 경유 — 준비됐지만 **아직 꺼져 있다** (2026-09-23)
+### 사내 LLM 게이트웨이 경유 — **2026-09-28 11:50 부터 프로덕션이 켜져 있다** (준비 09-23 · 개통 09-28)
 
 보안 검토("Claude 직접 호출이라 프롬프트 감사·가드레일이 없다")에 IT 가 게이트웨이로
 답했다 (노션 `llm-chatbot-integration`, `https://llmgw.cravercorp.com`). 거치면 가드레일·
@@ -2687,11 +2687,16 @@ Gemini(SQL 생성·라우팅·브리핑)는 여전히 구글 직접 호출이다
 - **켜는 조건은 `.env` 의 `LLM_GATEWAY_URL` + `LLM_GATEWAY_KEY` 둘 다다.** 하나라도 비면
   예전처럼 Anthropic 직접 호출이고, 반쪽이면 `llm_gateway_half_configured` WARNING 을 남긴다.
   ⛔ `.env` 는 배포에서 제외된다 — **WAS 에 직접 넣고 재기동해야 켜진다**
-- ⛔ **2026-09-23 실측: 노션에 적힌 가상 키는 모델 접근 권한이 없다.** 8가지 요청 전부
-  `403 team not allowed to access model … ['no-default-models']`, `/v1/models` 도 빈 목록.
-  **운영자가 키에 모델 접근(`claude-opus-5`·`claude-sonnet-5`)과 웹서치용 `default_tools`
-  그룹을 주기 전에는 프로덕션 `.env` 에 키를 넣지 마라** — 넣는 순간 채팅 전체가 죽는다.
-  로컬 `.env` 에는 넣어 두었다 (실측·회귀용)
+- **키 권한은 2026-09-28 에 열렸다** (운영자 재적용 후 실측: `/v1/models` = `['claude-opus-5']`,
+  완성·스트림 200). 그전 9/23 은 8가지 요청 전부 `403 … ['no-default-models']` 였고, 운영자가
+  *"재시도하면 될 것"* 이라고 한 첫 회신 뒤에도 그대로였다 — **"됐다" 는 말이 아니라 200 을
+  보고 넣는다.** ⚠️ **팀에 열린 모델은 `claude-opus-5` 하나뿐이다** — `claude-sonnet-5` 는 403.
+  코드는 opus 만 쓰므로(`anthropic_sonnet_model` 은 미사용) 지금은 문제없지만, 다른 티어를
+  붙이려면 먼저 운영자에게 모델을 추가해 달라고 해야 한다. **프로덕션 WAS `.env` 에 두 값을
+  넣고 2026-09-28 11:50 재기동했다** (백업 `.env.bak.20260928114610`). 개통 순서는 이랬다 —
+  로컬에서 200 → WAS 에서 프록시 경유 401/200 → 전체 테스트 4,147건 → `.env` → 배포·재기동 →
+  WAS 안에서 자가 점검 `llm_gateway` 정상 + `ClaudeClient.transport == "gateway"` 실호출 200.
+  ⚠️ **끄려면 `.env` 의 두 줄을 지우고 재기동**하면 된다 — 코드는 손대지 않아도 직접 호출로 돌아간다
 - ⛔ **403 은 재시도도 Flash 폴백도 없이 즉시 올라온다.** 조용히 직접 호출로 되돌아가면
   "게이트웨이를 탄다" 는 보안 전제가 소리 없이 무너진다. 죽는 쪽이 맞다 —
   `llm_gateway_denied` ERROR 와 자가 점검 `llm_gateway`(매일, 작은 완성 1회)가 그걸 잡는다
@@ -2700,22 +2705,45 @@ Gemini(SQL 생성·라우팅·브리핑)는 여전히 구글 직접 호출이다
   계측·Flash 폴백이 한 줄도 안 바뀐다 (그 모양은 `test_llm_overload_fallback` 의 가짜
   client 가 이미 보증한다). 빈 본문은 **빈 블록 목록**으로 두어 `claude_no_text_block`
   경고가 그대로 산다
-- ⚠️ **게이트웨이가 무엇을 받는지는 실측하지 못했다** (키가 막혀서). thinking 은
-  `output_config.effort` → `reasoning_effort`(xhigh·max 는 high) 로 보내고, 시스템 프롬프트는
-  캐시 블록 파트로 보낸다. **400 이 나면 그 둘을 한 단계씩 내려 다시 보내고 기억한다**
-  (`_DEGRADE_LADDER`, WARNING `llm_gateway_degraded`). 키가 열리면 **가장 먼저 그 두 파라미터를
-  실측**하고 이 문단을 고칠 것 — `ANTHROPIC_EFFORT=medium` 은 8/13 사용자 결정이다
+- **게이트웨이가 무엇을 받는지 — 2026-09-28 실측** (키가 열린 날, 앱의 `ClaudeClient` 경로로도 확인):
+
+    | 보낸 것 | 결과 |
+    |---|---|
+    | `reasoning_effort` low·medium·high | 전부 200 — **내림(`_DEGRADE_LADDER`) 없이 그대로 통과** |
+    | 시스템 프롬프트 캐시 블록 파트(`cache_control`) | 200 · **캐시가 실제로 듣는다** (10,403 토큰 write → 두 번째 호출 read) |
+    | 평문 system 문자열 | 200 이지만 **캐시 0** — 파트 형식을 유지해야 한다 |
+    | `thinking: {type: enabled}` | **400** (Bedrock: `adaptive` + `output_config.effort` 를 쓰라고 한다) |
+
+  - ⚠️ **thinking 이 실제로 얼마나 도는지는 이 게이트웨이로는 못 본다.** `usage` 의
+    `reasoning_tokens` 가 effort 와 무관하게 **항상 0** 이고 `reasoning_content` 도 비어 온다
+    (`thinking_blocks` 는 1개씩 있다). 파라미터가 거부되지는 않으니 effort 조절은 그대로 두되,
+    **효과를 여기 usage 로 논하지 마라** — 전후 비교는 `audit_logs` 의 시간으로 한다
+  - 실측 지연(DB_PC → 게이트웨이, Bedrock 경유): 짧은 완성 1.6~2.4초 · 스트림 첫 글자 1.5~2.6초.
+    직접 호출과의 차이는 WAS 에서 `audit_logs` 로 다시 잰다
 - 웹서치(`agentcore_websearch` tools 블록)는 `LLM_GATEWAY_WEBSEARCH=true` 일 때 **채팅 스트림
   에만** 붙는다. 기본 꺼짐 — 지금 검색은 Gemini 그라운딩이 `_SEARCH_KEYWORDS` 로 조건부로 맡고,
   보고서 해석 같은 비채팅 호출에 검색이 섞이면 안 된다
-- ⛔ **WAS 프록시가 `llmgw.cravercorp.com` 을 막는다** (2026-09-23 배포 직후 실측:
-  `HTTPS_PROXY=10.1.50.2:3128` 경유 `CONNECT tunnel failed, response 403`, 프록시 없이는
-  타임아웃). 호스트는 Cloudflare 뒤의 공개 주소라 화이트리스트에 들어가야 한다.
-  **막힌 것이 둘이다 — 키 권한(운영자) + 프록시 화이트리스트(IT).** 둘 다 열려야 켜진다.
-  잔디·환율과 같은 부류의 벽이다 (`docs/…GOVERNANCE.md` A4·A5)
-- 켠 뒤 확인할 것: 골든 전체 런(직전 기준선 #102 84/84) · `audit_logs` 의 `first_token_ms`·
-  `total_ms` 전후 비교(9/22 는 세 경로가 동시에 느렸던 날이라 기준선에서 뺀다) ·
-  Langfuse 에 트래픽이 실제로 찍히는지
+  - ⛔ **가이드의 `server_url: "llm_proxy"` 는 틀렸다** (2026-09-28 실측). 그대로 보내면 **200 이
+    오는데 도구가 안 붙어** 모델이 "검색 도구가 없다" 고 답한다 — 조용한 실패다. 예약어는
+    **`litellm_proxy`** 이고, **`require_approval: "never"`** 가 없으면 호출이 승인 대기
+    (`finish_reason=tool_calls`)에서 멈춘다. 둘을 갖추면 실제 검색 결과와 출처 URL 이 온다.
+    `WEBSEARCH_TOOLS` 상수가 그렇게 돼 있다 — 가이드대로 "고치지" 마라
+  - ⚠️ 검색이 붙으면 프롬프트 토큰이 **21,000 개**까지 뛴다 (검색 결과가 컨텍스트로 들어온다).
+    켜기 전에 비용·지연을 채팅 경로에서 실측할 것
+- **WAS 프록시는 2026-09-28 에 열렸다** (실측: `HTTPS_PROXY=10.1.50.2:3128` 경유 `/v1/models`
+  **401** 0.29s · `/health/liveliness` 응답 · 키 붙여 완성·스트림 200. 9/23 에는
+  `CONNECT tunnel failed, response 403` 이었다). 프록시 없이는 여전히 타임아웃(000)이다 —
+  systemd 의 `HTTPS_PROXY` 환경이 빠지면 게이트웨이도 함께 죽는다. **막혔던 것이 둘이었고
+  둘 다 9/28 에 열렸다** — 키 권한(운영자)·프록시 화이트리스트(IT). ⚠️ 둘 다 운영자가 먼저
+  "재시도하면 된다" 고 했고 키 쪽은 그 뒤에도 403 이었다 — **말이 아니라 200 을 보고 켰다.**
+  프록시 확인 한 줄: `HTTPS_PROXY=http://10.1.50.2:3128 curl -s -o /dev/null -w "%{http_code}"
+  https://llmgw.cravercorp.com/v1/models` → 열렸으면 `401`, 막혔으면 `000`/`403`
+  (`docs/…GOVERNANCE.md` A4·A5)
+- 켠 뒤 확인한 것 / 남은 것: **골든 전체 런 #108 = 84/84 (개통 직후, 536초)** — 직전 전체 런 #106
+  476초(일요일 새벽)·#102 579초(9/23 주간)와 같은 범위라 게이트웨이가 눈에 띄는 지연을 더하지
+  않았다. 런 동안 `llm_gateway_*` 경고 0건. **남은 것**: `audit_logs` 의 `first_token_ms`·`total_ms`
+  전후 비교(실사용 트래픽이 쌓인 뒤 · 9/22 는 세 경로가 동시에 느렸던 날이라 기준선에서 뺀다) ·
+  Langfuse 에 트래픽이 실제로 찍히는지(운영자 화면)
 - ⚠️ **켜기 전에 WAS 루프백에서 한 번 찔러 200 을 본 뒤 `.env` 에 넣어라.** 403 은 재시도
   없이 올라오므로 키가 안 살아난 채 켜면 direct·bigquery·cs·notion **모든 LLM 경로가 한꺼번에**
   죽는다 (ai-agent-0f 지적). 요란한 실패라 금방 보이지만 반경이 전부다

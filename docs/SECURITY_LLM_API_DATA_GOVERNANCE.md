@@ -87,7 +87,7 @@ IT팀이 보안 지적에 대한 답으로 LLM 게이트웨이(`llmgw.cravercorp
 | | 상태 |
 |---|---|
 | 코드 | 전환 완료. `app/core/llm_gateway.py` 전송층 + `LLM_GATEWAY_URL`·`LLM_GATEWAY_KEY` 설정. 둘 다 있을 때만 켜지고, 없으면 종전대로 Anthropic 직접 호출 |
-| 프로덕션 | **꺼짐.** 발급된 가상 키가 아직 모델 접근 권한이 없다 (2026-09-23 실측: 8가지 요청 전부 `403 team not allowed to access model`). 운영자가 키에 `claude-opus-5`·`claude-sonnet-5` 접근과 웹서치용 `default_tools` 그룹을 부여해야 한다 |
+| 프로덕션 | **켜짐 (2026-09-28 11:50 KST).** 키 권한은 같은 날 운영자 재적용으로 열렸고(`/v1/models`=`['claude-opus-5']`, 9/23 은 8가지 요청 전부 `403`), WAS 프록시도 같은 날 열렸다(`/v1/models` 401 · 완성 200). WAS `.env` 에 `LLM_GATEWAY_URL`·`LLM_GATEWAY_KEY` 투입 후 재기동, WAS 안에서 자가 점검 `llm_gateway` 정상·`ClaudeClient.transport == "gateway"` 실호출 200 확인. 열린 모델은 `claude-opus-5` 하나뿐이다(`claude-sonnet-5` 403 — 코드는 opus 만 쓴다) |
 | 감시 | 자가 점검 `llm_gateway`가 매일 작은 요청 1회로 키·통신을 확인한다. 403이면 채팅이 통째로 서므로 재시도·폴백 없이 즉시 드러나게 두었다 |
 | 범위 | **Claude만.** Gemini(SQL 생성·라우팅·브리핑·검색 그라운딩)는 여전히 Google 직접 호출이다. 4절의 Gemini 조건은 그대로 유효하다 |
 
@@ -117,8 +117,8 @@ IT팀이 보안 지적에 대한 답으로 LLM 게이트웨이(`llmgw.cravercorp
 | A1 | AI Studio API keys 페이지에서 Gemini 프로젝트 Plan이 `Paid`인지 확인. 아니면 Cloud Billing 연결 | 개발 | 화면 캡처 첨부 |
 | A2 | Anthropic Console > Privacy Controls에서 보존 기간 확인·기록 | 개발 | 화면 캡처 첨부 |
 | A3 | 이 문서를 보안 검토자에게 전달하고 지적사항의 범위를 확정 (접근 통제 vs LLM 고유 위협) | 프로젝트 오너 | 회신 |
-| A4 | 플랫폼 운영자에게 게이트웨이 키의 모델 접근(`claude-opus-5`·`claude-sonnet-5`)과 `default_tools` 그룹 부여 요청. 권한이 열리면 WAS `.env`에 `LLM_GATEWAY_URL`·`LLM_GATEWAY_KEY`를 넣고 재기동 → 골든 전체 런 → Langfuse 로깅 확인 | 프로젝트 오너 · 개발 | 자가 점검 `llm_gateway` 정상 |
-| A5 | IT팀에 WAS 프록시(10.1.50.2:3128) 화이트리스트에 `llmgw.cravercorp.com` 추가 요청. 2026-09-23 실측: WAS에서 `CONNECT tunnel failed, response 403`. 이것이 열리지 않으면 키가 열려도 게이트웨이에 닿지 못한다 | IT팀 | WAS에서 `curl https://llmgw.cravercorp.com/v1/models` 가 401 |
+| A4 | ~~플랫폼 운영자에게 게이트웨이 키의 모델 접근과 `default_tools` 그룹 부여 요청 → WAS `.env` 투입·재기동~~ **2026-09-28 완료** (`claude-opus-5` 만 열림). 남은 것: Langfuse 에 셀라 트래픽이 실제로 찍히는지 운영자 화면에서 확인 | 프로젝트 오너 · 개발 | 자가 점검 `llm_gateway` 정상 ✅ |
+| A5 | ~~IT팀에 WAS 프록시(10.1.50.2:3128) 화이트리스트에 `llmgw.cravercorp.com` 추가 요청~~ **2026-09-28 완료** — WAS 에서 프록시 경유 `/v1/models` 401(0.29s). 9/23 에는 `CONNECT tunnel failed, response 403` 이었다 | IT팀 | WAS에서 `curl https://llmgw.cravercorp.com/v1/models` 가 401 ✅ |
 
 ### 단기 (1개월)
 
@@ -146,7 +146,8 @@ IT팀이 보안 지적에 대한 답으로 LLM 게이트웨이(`llmgw.cravercorp
 - Anthropic 조직의 보존 설정 (A2)
 - 두 공급자의 실제 처리 리전 — 문서에 명시가 없다
 - 국외 이전 고지 의무 해당 여부 — 법무 판단
-- 게이트웨이가 thinking 깊이(`reasoning_effort`)와 시스템 프롬프트 캐시 블록을 받는지 — 키 권한이 없어 실측 못 함 (A4)
+- ~~게이트웨이가 thinking 깊이(`reasoning_effort`)와 시스템 프롬프트 캐시 블록을 받는지~~ → 2026-09-28 실측 완료: **둘 다 받는다** (effort low·medium·high 200, 캐시 블록 10,403 토큰 write→read 확인). 단 `usage.reasoning_tokens` 가 항상 0 이라 thinking 이 실제로 얼마나 도는지는 이 경로로 못 본다
+- 웹서치 도구 지정은 가이드의 `server_url: "llm_proxy"` 가 아니라 **`litellm_proxy` + `require_approval: "never"`** 여야 실제 검색이 붙는다 (2026-09-28 실측 — 가이드대로 보내면 200 이 오는데 모델이 "검색 도구가 없다" 고 답한다). 코드 상수는 고쳤고, 가이드 페이지 정정은 운영자에게 알려야 한다
 - ~~WAS 프록시가 `llmgw.cravercorp.com`을 통과시키는지~~ → 실측 완료: **막혀 있다** (A5로 이관)
 
 이 항목들이 닫히기 전까지 이 문서는 "검토 요청" 상태다.
@@ -175,3 +176,4 @@ IT팀이 보안 지적에 대한 답으로 LLM 게이트웨이(`llmgw.cravercorp
 |---|---|
 | 2026-09-10 | 초안. 보안 지적사항 대응을 위해 코드 실사·공식 문서 조사 결과 정리 |
 | 2026-09-23 | IT 게이트웨이 가이드 반영. Claude 전송층을 게이트웨이 경유로 준비(코드 완료, 키 권한 대기). G8·A4 추가 |
+| 2026-09-28 | 키 권한·WAS 프록시 모두 열림(A4·A5 완료). effort·캐시 블록 수용 실측, 웹서치 도구 지정 오류 발견·수정. **11:50 프로덕션 게이트웨이 경유 개통** — 이후 Claude 호출은 전부 llmgw 를 거친다(Gemini 는 여전히 직접) |
