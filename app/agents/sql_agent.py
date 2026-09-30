@@ -2458,6 +2458,72 @@ def _mask_internal_paths(text: str) -> str:
     return "".join(out)
 
 
+# -- LLM 이 직접 쓴 차트 펜스는 걷어낸다 (2026-09-30 사용자 제보) -------------
+# 제보는 답변 한가운데 박힌 ```chart:line JSON 원문이었다. 프론트가 그림으로
+# 그리는 것은 ```chart-config 하나뿐이라(`chat.js` 의 `chartMatch`), 그 밖의 태그는
+# **그림이 아니라 코드 블록 글자 더미**로 화면에 남는다. 게다가 시각화는 코드가
+# 뒤에 따로 붙이므로 같은 차트가 **두 번** 나갔다 -- 한 번은 글자, 한 번은 그림으로.
+# 0 프롬프트로 막는 것만으로는 부족하다 (확률이다). 실측: 8/1 이후 차트가 실린
+#   답변 314건 중 2건(9/15 `chart:doughnut` · 9/30 `chart:line`)이 이렇게 나갔다.
+# 0 **모델이 쓴 차트를 렌더하지는 않는다.** 차트 의미(0 기준선·축 제목·계열 라벨·
+#   단위 환산)는 `app/core/chart.py` 가 결정적으로 정한다 -- 모델 JSON 을 그리면
+#   그 방어가 통째로 비켜간다. 그릴 수 없는 것을 지우는 것이지 정보를 버리는 게
+#   아니다 (같은 숫자가 바로 아래 chart-config 로 다시 온다).
+_RE_MODEL_CHART_OPEN = re.compile(r"^\s*```chart(?!-config" + chr(92) + "b)")
+#    chr(92)+"b" = 낱말 경계. 소스에 직접 쓰지 않는 이유는 CLAUDE.md 에 있다 —
+#    스크립트로 파일을 쓸 때 진짜 백스페이스(0x08)로 들어가 영영 매치하지 않는다
+_RE_FENCE_CLOSE = re.compile(r"^\s*```\s*$")
+# 닫는 펜스가 안 오면 붙잡은 것을 **그대로 내보낸다** -- 답변 뒷부분을 삼키는 것이
+# JSON 이 보이는 것보다 나쁘다 (안전한 쪽으로 실패).
+_MODEL_CHART_MAX_LINES = 150
+
+
+class _ModelChartStripper:
+    """줄 단위 상태를 들고 모델이 쓴 차트 블록만 걷어낸다.
+
+    스트리밍·비스트리밍이 **같은 구현**을 쓴다 (규칙을 두 번 구현하면 한쪽만 고쳐진다).
+    """
+
+    def __init__(self):
+        self._held: list = []
+        self.dropped = 0
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return text
+        out = []
+        for line in text.splitlines(keepends=True):
+            if self._held:
+                self._held.append(line)
+                if _RE_FENCE_CLOSE.match(line.rstrip(chr(10))):
+                    self.dropped += 1
+                    self._held = []
+                elif len(self._held) > _MODEL_CHART_MAX_LINES:
+                    out.extend(self._held)      # 안 닫혔다 -- 삼키지 않는다
+                    self._held = []
+                continue
+            if _RE_MODEL_CHART_OPEN.match(line):
+                self._held = [line]
+                continue
+            out.append(line)
+        return "".join(out)
+
+    def flush(self) -> str:
+        held, self._held = self._held, []
+        return "".join(held)
+
+
+def _strip_model_chart_fences(text: str) -> str:
+    """완성된 답변에서 모델이 쓴 차트 블록을 걷어낸다 (비스트리밍 경로)."""
+    if not text or "```chart" not in text:
+        return text
+    stripper = _ModelChartStripper()
+    out = stripper.feed(text) + stripper.flush()
+    if stripper.dropped:
+        logger.warning("model_chart_fence_dropped", blocks=stripper.dropped, streaming=False)
+    return out
+
+
 def _mask_stream(chunks, transform=None):
     """스트리밍 청크에도 같은 마스킹을 건다.
 
@@ -2468,9 +2534,15 @@ def _mask_stream(chunks, transform=None):
        꿀어서 보내면 방어가 절반만 듣는다 — 마지막 줄 조각을 붙잡았다가 다음 청크와
        이어 붙여 판정한다. 줄 단위로 뮸루므로 첫 토큰 체감은 거의 그대로다.
     """
+    stripper = _ModelChartStripper()
+
     def _clean(text: str) -> str:
         out = _mask_internal_paths(text)
-        return transform(out) if transform else out
+        if transform:
+            out = transform(out)
+        # 마스킹·교정 **뒤에** 걷는다 -- 안 닫힌 펜스를 되돌려 내보낼 때
+        # 가려지지 않은 내부 경로가 함께 나가면 안 된다
+        return stripper.feed(out)
 
     buf = ""
     for chunk in chunks:
@@ -2482,6 +2554,11 @@ def _mask_stream(chunks, transform=None):
         yield _clean(head)
     if buf:
         yield _clean(buf)
+    tail = stripper.flush()
+    if stripper.dropped:
+        logger.warning("model_chart_fence_dropped", blocks=stripper.dropped, streaming=True)
+    if tail:
+        yield tail
 
 
 def _unit_note(sql: str) -> str:
@@ -2925,6 +3002,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 
 ## 작성 규칙
 - SQL 결과 데이터만 사용 (외부 정보 절대 금지)
+- 차트·그래프 JSON 을 **직접 쓰지 마세요.** 시각화는 시스템이 답변에 자동으로 붙입니다. 당신이 쓴 차트 블록은 그림이 되지 않고 JSON 글자 더미로 화면에 남고, 같은 차트가 두 번 실립니다 (코드가 걷어내지만 애초에 쓰지 않는 것이 먼저다)
 - 금액 표기: 1억 이상 → "약 12.3억원" 형태(실제 숫자 대입!), 1억 미만 → 천 단위 쉼표(예: 7,700만원). 퍼센트 소수점 1자리. ⚠️ "OO.O억원" 같은 플레이스홀더 출력 절대 금지! 반드시 실제 계산된 숫자를 넣으세요
 - 3행 이상 비교 → 마크다운 표 필수. 시계열은 전체 행 표시 (생략 금지)
 - 제품명(SET) 영어 원본 그대로 공백 포함 (한국어 번역 금지, 언더스코어 사용 금지)
@@ -2967,6 +3045,11 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
                 logger.info("chart_generation_skipped_timeout")
         finally:
             executor.shutdown(wait=False)
+
+        # 0 모델이 직접 쓴 차트 펜스를 걷는다 -- 그림이 되지 않는 글자 더미다.
+        #   스트리밍은 `_mask_stream` 이 **같은 스트리퍼**로 한다 (두 경로에 함께
+        #   걸어야 한다 -- 한쪽만 고치면 경로에 따라 답이 갈린다).
+        answer = _strip_model_chart_fences(answer)
 
         if chart_markdown:
             insight_markers = ["#### 분석 및 인사이트", "#### 분석", "### 분석 및 인사이트", "### 분석"]
