@@ -26,16 +26,22 @@
    재시도 대상이 아니라 즉시 올라온다 (조용히 Flash 로 새지 않는다 — 그러면 "게이트웨이를
    탄다" 는 보안 전제가 소리 없이 무너진다). 자가 점검 `llm_gateway` 가 매일 확인한다.
 
-⚠️ 게이트웨이가 무엇을 받는지는 키가 막혀 **실측하지 못했다.** 그래서 400 이 나면
-   파라미터를 한 단계씩 내려 다시 보낸다 (`_DEGRADE_LADDER`) — `reasoning_effort` 를 빼고,
-   그래도 안 되면 시스템 프롬프트를 캐시 블록 목록에서 평문으로 편다. 내린 단계는
-   기억해 두어 매 요청마다 400 을 두 번 맞지 않는다. 내릴 때마다 WARNING 을 남긴다
-   (INFO 는 프로덕션에서 통째로 버려진다).
+2026-09-28 키가 열려 실측했다: `reasoning_effort`·시스템 캐시 블록 파트 모두 그대로 받는다
+   (캐시가 실제로 듣는다). 그래도 400 이 **그 파라미터를 지목하면** 한 단계씩 내려 다시 보낸다
+   (`_DEGRADE_LADDER` + `_DEGRADE_HINTS`). 내린 단계는 프로세스 수명 동안 기억한다.
+
+⛔ **2026-09-29 프로덕션 장애 — 강등이 오판됐다.** 대화 이력의 빈 메시지가 Bedrock 에서
+   400(`ContentBlock … is blank`)을 냈고, 그때 코드는 "400 = 파라미터 문제" 로 읽어 effort 와
+   캐시 블록을 **영구히** 내렸다. 그 뒤 모든 요청이 thinking 깊이 없이·캐시 없이 나갔고
+   응답이 눈에 띄게 느려졌다 (direct 첫 토큰 7초 → 10초). 에러는 없었다. 그래서 지금은
+   ① 빈 텍스트는 보내기 전에 `_BLANK_TEXT_PLACEHOLDER` 로 채우고 ② 400 본문이 그 파라미터를
+   가리킬 때만 내린다. 모르는 400 은 그대로 올린다 — 조용히 느려지는 것보다 낫다.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional
@@ -65,6 +71,20 @@ _EFFORT_MAP = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high"
 
 #: 400 을 받았을 때 내려 볼 단계. 순서가 곧 우선순위다.
 _DEGRADE_LADDER = ("reasoning_effort", "system_parts")
+
+#: 그 400 이 정말 그 단계를 가리킬 때만 내린다 (본문의 낱말로 판정).
+#: ⚠️ `content`·`message` 같은 일반어를 넣지 마라 — 빈 메시지 400
+#:    ("The text field in the ContentBlock … is blank") 이 다시 걸린다.
+_DEGRADE_HINTS = {
+    "reasoning_effort": re.compile(r"reasoning|effort|thinking", re.I),
+    "system_parts": re.compile(r"cache_control|cache|system", re.I),
+}
+
+#: Bedrock 은 빈 텍스트 블록을 400 으로 거절한다 ("The text field … is blank").
+#: 대화 이력에는 빈 메시지가 실제로 온다 — 차트·SQL 만 있던 답변은 잡음을 걷어내면 빈
+#: 문자열이 된다 (2026-09-29 프로덕션 5건). 메시지를 버리면 역할 교대가 깨지므로
+#: 자리는 남기고 이 문구로 채운다.
+_BLANK_TEXT_PLACEHOLDER = "(본문 없음)"
 
 
 class GatewayError(RuntimeError):
@@ -194,6 +214,21 @@ def _content_to_openai(content: Any) -> Any:
     return parts or ""
 
 
+def _fill_blank(content: Any) -> Any:
+    """빈 텍스트를 자리 문구로 채운다 — Bedrock 이 빈 블록을 400 으로 거절한다 (머리말 참조).
+
+    문자열이 비면 문구로, 파트 목록이면 빈 텍스트 파트를 빼고 남는 것이 없으면 문구 하나로.
+    이미지 파트는 그대로 둔다 (이미지만 있는 메시지는 비어 있는 것이 아니다).
+    """
+    if isinstance(content, str):
+        return content if content.strip() else _BLANK_TEXT_PLACEHOLDER
+    if isinstance(content, list):
+        kept = [p for p in content
+                if not (isinstance(p, dict) and p.get("type") == "text" and not str(p.get("text", "")).strip())]
+        return kept or _BLANK_TEXT_PLACEHOLDER
+    return content
+
+
 def build_payload(
     kwargs: Dict[str, Any],
     *,
@@ -212,7 +247,8 @@ def build_payload(
         content = _flatten_system(system) if "system_parts" in degraded else _system_to_parts(system)
         messages.append({"role": "system", "content": content})
     for msg in kwargs.get("messages") or []:
-        messages.append({"role": msg.get("role", "user"), "content": _content_to_openai(msg.get("content", ""))})
+        messages.append({"role": msg.get("role", "user"),
+                         "content": _fill_blank(_content_to_openai(msg.get("content", "")))})
 
     payload: Dict[str, Any] = {"model": kwargs["model"], "messages": messages}
     if kwargs.get("max_tokens"):
@@ -350,17 +386,27 @@ class GatewayTransport:
         raise GatewayError(resp.status_code, msg)
 
     def _next_degrade(self, resp: httpx.Response, payload: Dict[str, Any]) -> Optional[str]:
-        """400 이면 아직 안 내린 단계 중 이 요청에 실제로 쓰인 것을 하나 고른다."""
+        """400 이면 아직 안 내린 단계 중 **그 400 이 실제로 가리키는** 것을 하나 고른다.
+
+        ⛔ 2026-09-29 프로덕션 실측: 대화 이력의 빈 메시지 때문에 난 400(`ContentBlock … is blank`)을
+           파라미터 문제로 오판해 `reasoning_effort` 와 시스템 캐시 블록을 **프로세스 전체에서
+           영구히** 내렸다 — 그 뒤 모든 요청이 thinking 깊이 없이·캐시 없이 나갔고, 9/29~30 응답이
+           느려졌다 (direct 첫 토큰 7초 → 10초). 400 이 우리 파라미터를 지목할 때만 내린다.
+           모르는 400 은 그대로 올린다 — 조용히 성능을 깎는 것보다 요란하게 죽는 편이 낫다.
+        """
         if resp.status_code != 400:
             return None
+        msg = self._error_message(resp).lower()
         for step in _DEGRADE_LADDER:
             if step in self.degraded:
                 continue
-            if step == "reasoning_effort" and "reasoning_effort" in payload:
+            if step == "reasoning_effort" and "reasoning_effort" in payload \
+                    and _DEGRADE_HINTS[step].search(msg):
                 return step
             if step == "system_parts" and payload.get("messages") \
                     and payload["messages"][0].get("role") == "system" \
-                    and isinstance(payload["messages"][0].get("content"), list):
+                    and isinstance(payload["messages"][0].get("content"), list) \
+                    and _DEGRADE_HINTS[step].search(msg):
                 return step
         return None
 

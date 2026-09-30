@@ -297,3 +297,73 @@ def test_probe_reports_denial_as_text():
     finally:
         gw.GatewayTransport.__init__ = orig
     assert err and "403" in err and "team not allowed" in err
+
+
+# ---------------------------------------------------------------------------
+# 5. 2026-09-29 프로덕션 장애 — 빈 메시지 400 이 파라미터 강등으로 오판됐다
+# ---------------------------------------------------------------------------
+
+_BLANK_400 = {"error": {"message": (
+    "litellm.BadRequestError: BedrockException - {\"message\":\"The text field in the "
+    "ContentBlock object at messages.14.content.0 is blank. Add text to the text field, "
+    "and try again.\"}. Received Model Group=claude-opus-5")}}
+
+
+def test_blank_history_messages_are_filled_not_sent_empty():
+    """차트·SQL 만 있던 답변은 잡음을 걷어내면 빈 문자열이 된다 — Bedrock 은 그걸 400 으로 거절한다."""
+    kwargs = {"model": "m", "messages": [
+        {"role": "user", "content": "매출 보여줘"},
+        {"role": "assistant", "content": ""},
+        {"role": "user", "content": "   "},
+        {"role": "assistant", "content": [{"type": "text", "text": ""}]},
+        {"role": "user", "content": [{"type": "text", "text": " "},
+                                     {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}}]},
+        {"role": "user", "content": "그럼 9월은?"},
+    ]}
+    p = gw.build_payload(kwargs)
+    contents = [m["content"] for m in p["messages"]]
+    assert contents[0] == "매출 보여줘" and contents[-1] == "그럼 9월은?"
+    assert contents[1] == gw._BLANK_TEXT_PLACEHOLDER
+    assert contents[2] == gw._BLANK_TEXT_PLACEHOLDER
+    assert contents[3] == gw._BLANK_TEXT_PLACEHOLDER
+    # 이미지만 남은 메시지는 비어 있는 것이 아니다 — 빈 텍스트 파트만 빠진다
+    assert contents[4] == [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}]
+    assert len(p["messages"]) == 6, "메시지를 버리면 역할 교대가 깨진다"
+
+
+def test_a_blank_content_400_does_not_degrade_effort_or_cache():
+    """그 400 은 우리 파라미터 탓이 아니다 — 내리면 프로세스 전체가 조용히 느려진다 (실제로 그랬다)."""
+    fake = FakeGateway([(400, _BLANK_400)])
+    t = _transport(fake)
+    kw = {"model": "m", "output_config": {"effort": "medium"},
+          "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+          "messages": [{"role": "user", "content": "x"}]}
+    with pytest.raises(gw.GatewayError) as ei:
+        t.messages.create(**kw)
+    assert ei.value.status_code == 400
+    assert t.degraded == set(), "빈 메시지 400 으로 effort·캐시를 내리면 안 된다"
+    assert len(fake.requests) == 1, "내릴 것이 없으니 다시 보내지도 않는다"
+
+
+def test_a_blank_content_400_on_stream_does_not_degrade_either():
+    fake = FakeGateway([(400, _BLANK_400)])
+    t = _transport(fake)
+    with pytest.raises(gw.GatewayError):
+        with t.messages.stream(model="m", messages=[{"role": "user", "content": "x"}],
+                               output_config={"effort": "low"}) as s:
+            list(s.text_stream)
+    assert t.degraded == set()
+
+
+def test_a_cache_control_400_still_flattens_system_parts():
+    """반대 방향 — 정말 캐시 블록을 못 받는 400 은 여전히 내려서 살린다."""
+    fake = FakeGateway([
+        (400, {"error": {"message": "Unsupported field: cache_control in system content"}}),
+        (200, _ok_json("ok")),
+    ])
+    t = _transport(fake)
+    kw = {"model": "m", "system": [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}],
+          "messages": [{"role": "user", "content": "x"}]}
+    assert t.messages.create(**kw).content[0].text == "ok"
+    assert t.degraded == {"system_parts"}
+    assert fake.requests[1]["json"]["messages"][0]["content"] == "sys"
