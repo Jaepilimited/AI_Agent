@@ -3776,6 +3776,7 @@ html.dark .db-autocomplete-dropdown {
 .flow-dot-route { background: #e89200; }
 .flow-dot-branch { background: #8a63d2; }
 .flow-dot-sub { background: #5b8def; }
+.flow-dot-llm { background: #0b7285; }
 .flow-dot-dead { background: rgba(120,120,120,0.18); border: 1px dashed #8a8a8a; }
 .flow-line { width: 14px; height: 0; border-top: 2px dashed #c76a00; display: inline-block; }
 

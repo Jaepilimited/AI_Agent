@@ -5689,6 +5689,7 @@
     return group === "route" ? "#e89200"
          : group === "sub" ? "#5b8def"
          : group === "branch" ? "#8a63d2"
+         : group === "llm" ? "#0b7285"
          : group === "io" ? "#7a7a7a" : "#3aa675";
   }
 

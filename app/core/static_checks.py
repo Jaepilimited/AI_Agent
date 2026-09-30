@@ -838,7 +838,11 @@ def flow_spec_matches_code() -> Tuple[bool, str]:
     # 라우터 노드의 나가는 엣지 = 분류기가 낼 수 있는 값. 하나라도 어긋나면
     # 화면이 "이 질문은 저기로 갈 수 있다"고 없는 길을 알려준다 (13개 거짓 엣지 사고).
     for router in ("router.keyword", "router.llm"):
-        router_edges = {e["dst"] for e in built["edges"] if e["src"] == router}
+        # ⚠️ LLM 층(`llm.*`)은 라우팅 위상이 아니라 "어느 모델을 부르나" 를 그린 곁가지다
+        #    (2026-09-30). 재판정이 Gemini 를 부른다는 엣지는 사실이지만 라우트가 아니므로
+        #    여기 비교에서 뺀다 — 안 빼면 이 검사가 참인 그림을 어긋남으로 올린다
+        router_edges = {e["dst"] for e in built["edges"]
+                        if e["src"] == router and not e["dst"].startswith("llm.")}
         expected_edges = (
             {"router.llm", "route_filter.allowed"}
             if router == "router.keyword" else {"route_filter.allowed"}

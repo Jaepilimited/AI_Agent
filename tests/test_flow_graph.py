@@ -364,3 +364,52 @@ def test_build_has_no_disconnected_islands():
         reached.add(cur)
         stack.extend(adjacency[cur] - reached)
     assert reached == node_ids, f"input 에서 도달할 수 없는 노드: {node_ids - reached}"
+
+
+# ── 2026-09-30: LLM 층 — Claude 가 어느 길(게이트웨이 → Bedrock / 직접)로 나가는지 ──
+
+
+def test_llm_layer_is_drawn_from_real_call_sites():
+    """route.direct 는 Claude 를, 라우터 재판정은 Gemini Flash 를 부른다 (호출부는 spec 주석)."""
+    out = graph.build()
+    pairs = {(e["src"], e["dst"]) for e in out["edges"]}
+    assert ("route.direct", "llm.claude") in pairs
+    assert ("router.llm", "llm.gemini") in pairs
+    assert ("route.report", "llm.claude") in pairs and ("route.report", "llm.gemini") in pairs
+    # ⛔ bigquery 하위 그래프에서 Claude 로 가는 엣지는 그리지 않는다 — build() 가
+    #    이탈점에 다시 붙여 "포맷 뒤에 Claude" 라는 거짓 그림이 된다
+    assert not any(e["src"].startswith("bigquery.") and e["dst"].startswith("llm.")
+                   for e in out["edges"])
+
+
+def test_claude_transport_choice_is_both_ways_and_bedrock_is_behind_the_gateway():
+    """게이트웨이는 조건부(.env 두 값)이고, Bedrock 은 게이트웨이 뒤에만 있다 — 우리 코드가 직접 부르지 않는다."""
+    out = graph.build()
+    by_pair = {(e["src"], e["dst"]): e for e in out["edges"]}
+    gw = by_pair[("llm.claude", "llm.gateway")]
+    direct = by_pair[("llm.claude", "llm.anthropic")]
+    assert gw["conditional"] and direct["conditional"]
+    assert "LLM_GATEWAY" in gw["label"]
+    assert ("llm.gateway", "llm.bedrock") in by_pair
+    assert not any(e["dst"] == "llm.bedrock" and e["src"] != "llm.gateway" for e in out["edges"])
+    bedrock = next(n for n in out["nodes"] if n["id"] == "llm.bedrock")
+    assert bedrock["fn"] is None, "Bedrock 을 부르는 코드는 우리 쪽에 없다 — fn 이 생기면 그림이 거짓이 된다"
+
+
+def test_llm_group_has_color_and_legend_in_every_front_file():
+    """캔버스 색(chat.js)·범례 점(style.css)·범례 글(chat.html)이 한 벌이어야 한다 — 한쪽만 있으면 범례가 거짓말한다."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    js = (root / "app/frontend/chat.js").read_text(encoding="utf-8")
+    css = (root / "app/static/style.css").read_text(encoding="utf-8")
+    html = (root / "app/frontend/chat.html").read_text(encoding="utf-8")
+    assert 'group === "llm"' in js
+    assert ".flow-dot-llm" in css and "flow-dot-llm" in html
+    # 같은 색이어야 한다
+    import re
+    js_color = re.search(r'group === "llm" \? "(#[0-9a-fA-F]{6})"', js).group(1).lower()
+    css_color = re.search(r"\.flow-dot-llm \{ background: (#[0-9a-fA-F]{6})", css).group(1).lower()
+    assert js_color == css_color
+    # 간략 보기에서 접히지 않는다 — 접히면 게이트웨이가 화면에서 사라진다
+    hidden = re.search(r"_FLOW_HIDDEN_GROUPS = \{([^}]*)\}", js).group(1)
+    assert "llm" not in hidden

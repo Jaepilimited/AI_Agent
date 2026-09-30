@@ -192,6 +192,32 @@ NODES: tuple[Node, ...] = (
     #    스트리밍이라 검증이 통째로 안 돌았다. 이 그림은 그때도 맞았다.)
     Node("answer_check", "답변 수치검증 (bigquery 전용)",
          fn="app.core.answer_check.log_verification"),
+
+    # ── LLM 층 — 어느 모델이 어느 길로 나가는가 (2026-09-30 사용자 요청) ──
+    # ⛔ 여기서도 화살표는 호출부를 댈 수 있는 것만 그린다:
+    #   · route.direct → Claude : orchestrator.route_and_stream / _handle_direct 의
+    #     `get_llm_client(MODEL_CLAUDE)`
+    #   · route.report → Claude : reports/insight.py `_llm()` (해석 문장) ·
+    #     route.report → Gemini : reports/planner.py `get_llm_client()` (계획)
+    #   · router.llm → Gemini : orchestrator 가 `_classify_with_llm(…, flash)` 로 넘긴다
+    #   · Claude → 게이트웨이/직접 : ClaudeClient.__init__ 이 .env 두 값으로 전송층을 고른다
+    #   ⚠️ bigquery 의 0건 재시도(`sql_agent._escalate_to_claude`)와 SQL 실패 폴백
+    #     (`_handle_bigquery_fallback`)도 Claude 를 부르지만, `route.bigquery` 는 하위
+    #     그래프 노드라 `build()` 가 그 엣지를 이탈점(format_answer)에 다시 붙인다 —
+    #     그러면 "답변 포맷 뒤에 Claude 를 부른다" 는 거짓 그림이 된다. 그래서 안 그린다
+    #   ⚠️ Bedrock 은 우리 코드가 부르지 않는다 — 게이트웨이(LiteLLM)가 뒤에서 부른다.
+    #     그래서 fn 이 없다. 계정·리전·모델 배포는 전부 플랫폼 운영자 몫이다
+    Node("llm.claude", "Claude Opus 5 · ClaudeClient",
+         fn="app.core.llm.ClaudeClient",
+         knobs=("ANTHROPIC_OPUS_MODEL", "ANTHROPIC_EFFORT"), group="llm"),
+    Node("llm.gateway", "사내 LLM 게이트웨이 (LiteLLM)",
+         fn="app.core.llm_gateway.GatewayTransport",
+         knobs=("LLM_GATEWAY_URL", "LLM_GATEWAY_KEY", "LLM_GATEWAY_WEBSEARCH"), group="llm"),
+    Node("llm.bedrock", "AWS Bedrock (운영자 계정)", group="llm"),
+    Node("llm.anthropic", "Anthropic API 직접", group="llm"),
+    Node("llm.gemini", "Gemini Flash (구글 직접)",
+         fn="app.core.llm.get_flash_client",
+         knobs=("GEMINI_FLASH_MODEL",), group="llm"),
     Node("response", "응답", group="io"),
 )
 
@@ -372,4 +398,14 @@ EDGES: tuple[Edge, ...] = (
     Edge("route.bigquery", "answer_check"),
     Edge("answer_check", "response"),
     *tuple(Edge(r, "response") for r in _ROUTE_IDS if r != "route.bigquery"),
+
+    # ── LLM 층 (근거는 위 노드 선언의 주석) ──
+    Edge("route.direct", "llm.claude", label="답변 생성"),
+    Edge("route.report", "llm.claude", label="해석 문장 (insight)", conditional=True),
+    Edge("route.report", "llm.gemini", label="계획 (planner)", conditional=True),
+    Edge("router.llm", "llm.gemini", label="재판정"),
+    Edge("llm.claude", "llm.gateway",
+         label="LLM_GATEWAY_URL·KEY 설정 (2026-09-28~ 켜짐)", conditional=True),
+    Edge("llm.claude", "llm.anthropic", label="미설정 · 직접 호출", conditional=True),
+    Edge("llm.gateway", "llm.bedrock", label="OpenAI 호환 → Bedrock · 가드레일 · Langfuse"),
 )
