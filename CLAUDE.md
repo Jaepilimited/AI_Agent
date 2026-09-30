@@ -2749,6 +2749,17 @@ Gemini(SQL 생성·라우팅·브리핑)는 여전히 구글 직접 호출이다
     | 평문 system 문자열 | 200 이지만 **캐시 0** — 파트 형식을 유지해야 한다 |
     | `thinking: {type: enabled}` | **400** (Bedrock: `adaptive` + `output_config.effort` 를 쓰라고 한다) |
 
+  - ⛔ **강등(`_DEGRADE_LADDER`)은 그 400 이 우리 파라미터를 지목할 때만** (2026-09-29 프로덕션
+    장애). 대화 이력의 **빈 메시지**(차트·SQL 만 있던 답변은 잡음을 걷어내면 빈 문자열이 된다)가
+    Bedrock 에서 `ContentBlock … is blank` 400 을 냈고, 코드는 그걸 파라미터 문제로 읽어 effort 와
+    캐시 블록을 **프로세스 전체에서 영구히** 내렸다. 그 뒤 모든 요청이 thinking 없이·캐시 없이
+    나갔고 direct 첫 토큰이 7초 → 10초로 늘었다. **에러는 없었다** — 감사 로그의 지연과 WARNING
+    `llm_gateway_degraded` 두 줄이 전부였다. 같은 원인으로 요청 5건이 400 으로 죽었다.
+    지금은 ① 빈 텍스트를 `_BLANK_TEXT_PLACEHOLDER` 로 채워 보내고 ② `_DEGRADE_HINTS` 가 400
+    본문의 낱말(reasoning/effort/thinking · cache_control/cache/system)을 확인한 뒤에만 내린다.
+    ⚠️ 힌트에 `content`·`message` 같은 일반어를 넣지 마라 — 빈 메시지 400 이 다시 걸린다.
+    ⚠️ **`llm_gateway_degraded` 가 로그에 보이면 그날부터 프로세스가 느려진 것이다** — 재기동해야
+    풀린다. 회귀 `tests/test_llm_gateway_transport.py` 5절
   - ⚠️ **thinking 이 실제로 얼마나 도는지는 이 게이트웨이로는 못 본다.** `usage` 의
     `reasoning_tokens` 가 effort 와 무관하게 **항상 0** 이고 `reasoning_content` 도 비어 온다
     (`thinking_blocks` 는 1개씩 있다). 파라미터가 거부되지는 않으니 effort 조절은 그대로 두되,
