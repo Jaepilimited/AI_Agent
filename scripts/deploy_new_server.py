@@ -195,8 +195,13 @@ def suite_gate(skip: bool, dry: bool) -> bool:
     print(f"  [스위트] 돌리는 중... (약 {SUITE_HINT_SECONDS}초)")
     started = time.time()
     try:
+        # ⚠️ 자식 콘솔이 없어 기본 인코딩이 cp949 다 — 한글 테스트 id·단언문이 섞이면
+        #    자식은 UnicodeEncodeError 로, 부모는 디코딩 실패로 죽어 "결과를 읽지 못했습니다"
+        #    가 된다 (2026-09-30 실전). 자식에게 UTF-8 을 강제하고 부모도 UTF-8 로 읽는다.
+        child_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
         proc = subprocess.run(test_command(), cwd=str(PROJ), capture_output=True,
-                              text=True, timeout=TEST_TIMEOUT_SECONDS)
+                              text=True, encoding="utf-8", errors="replace",
+                              env=child_env, timeout=TEST_TIMEOUT_SECONDS)
         out, rc = (proc.stdout or "") + (proc.stderr or ""), proc.returncode
     except subprocess.TimeoutExpired:
         print(f"  [스위트] !! {TEST_TIMEOUT_SECONDS}초를 넘겨 멈췄습니다 - 보내지 않습니다")
