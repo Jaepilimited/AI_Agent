@@ -2463,9 +2463,9 @@ def _mask_internal_paths(text: str) -> str:
 # 그리는 것은 ```chart-config 하나뿐이라(`chat.js` 의 `chartMatch`), 그 밖의 태그는
 # **그림이 아니라 코드 블록 글자 더미**로 화면에 남는다. 게다가 시각화는 코드가
 # 뒤에 따로 붙이므로 같은 차트가 **두 번** 나갔다 -- 한 번은 글자, 한 번은 그림으로.
-# 0 프롬프트로 막는 것만으로는 부족하다 (확률이다). 실측: 8/1 이후 차트가 실린
+# ⛔ 프롬프트로 막는 것만으로는 부족하다 (확률이다). 실측: 8/1 이후 차트가 실린
 #   답변 314건 중 2건(9/15 `chart:doughnut` · 9/30 `chart:line`)이 이렇게 나갔다.
-# 0 **모델이 쓴 차트를 렌더하지는 않는다.** 차트 의미(0 기준선·축 제목·계열 라벨·
+# ⛔ **모델이 쓴 차트를 렌더하지는 않는다.** 차트 의미(0 기준선·축 제목·계열 라벨·
 #   단위 환산)는 `app/core/chart.py` 가 결정적으로 정한다 -- 모델 JSON 을 그리면
 #   그 방어가 통째로 비켜간다. 그릴 수 없는 것을 지우는 것이지 정보를 버리는 게
 #   아니다 (같은 숫자가 바로 아래 chart-config 로 다시 온다).
@@ -2522,6 +2522,82 @@ def _strip_model_chart_fences(text: str) -> str:
     if stripper.dropped:
         logger.warning("model_chart_fence_dropped", blocks=stripper.dropped, streaming=False)
     return out
+
+
+# -- 답변 꼬리(조회 기준 · 후속 질문)는 차트보다 뒤에 온다 (2026-09-30) --------
+# ⛔ 스트리밍은 이미 흘려보낸 글자 사이에 차트를 끼워 넣을 수 없어 **맨 끝**에 붙였다.
+#   그래서 화면에서 차트가 「이런 것도 물어보세요」 **아래**에 왔다 — 답변이 끝난 줄
+#   알고 스크롤을 멈춘 사람에게는 차트가 없는 것과 같다.
+# 꼬리만 붙잡아 두면 차트를 그 앞에 흘릴 수 있다. 붙잡는 것은 LLM 출력의 **마지막
+# 블록**뿐이라 본문 첫 글자 체감은 그대로다.
+# ⛔ **비스트리밍도 같은 자리에 넣는다** (`_with_chart_before_tail`) -- 경로에 따라
+#   화면 순서가 갈리면 "왜 어제와 다르지" 가 된다 (이 저장소가 반복해서 겪은 실패).
+_RE_TAIL_RULE = re.compile(r"^\s*-{3,}\s*$")
+_RE_TAIL_START = re.compile(r"^\s*(?:\*\s*조회\s*기준|>.*이런 것도 물어보세요)")
+# 구분선 다음 줄이 꼬리가 아니면 되돌린다 -- 본문 중간의 수평선을 삼키지 않는다
+_TAIL_PROBE_LINES = 3
+
+
+class _AnswerTailHolder:
+    """답변 맨 끝 블록(조회 기준·후속 질문)을 붙잡아 둔다.
+
+    확정되기 전에는 **되돌릴 수 있게** 붙잡는다 -- 본문에 `---` 가 있어도 다음 줄을
+    보고 꼬리가 아니면 그대로 흘려보낸다 (한 줄 지연은 체감되지 않는다).
+    """
+
+    def __init__(self):
+        self._held: list = []
+        self._armed = False
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return text
+        out = []
+        for line in text.splitlines(keepends=True):
+            if self._armed:
+                self._held.append(line)
+                continue
+            if self._held:                       # 구분선을 잠정 보류한 상태
+                if _RE_TAIL_START.match(line):
+                    self._held.append(line)
+                    self._armed = True
+                    continue
+                if not line.strip() and len(self._held) < _TAIL_PROBE_LINES:
+                    self._held.append(line)      # 구분선과 꼬리 사이의 빈 줄
+                    continue
+                out.extend(self._held)           # 꼬리가 아니었다 -- 되돌린다
+                self._held = []
+                out.append(line)
+                continue
+            if _RE_TAIL_START.match(line):
+                self._held = [line]
+                self._armed = True
+                continue
+            if _RE_TAIL_RULE.match(line):
+                self._held = [line]              # 잠정 -- 다음 줄을 보고 정한다
+                continue
+            out.append(line)
+        return "".join(out)
+
+    def flush(self) -> str:
+        held, self._held, self._armed = self._held, [], False
+        return "".join(held)
+
+
+def _split_answer_tail(text: str):
+    """완성된 답변을 (본문, 꼬리) 로 가른다 -- 스트리밍과 **같은 규칙**을 쓴다."""
+    holder = _AnswerTailHolder()
+    body = holder.feed(text or "")
+    return body, holder.flush()
+
+
+def _with_chart_before_tail(answer: str, chart_markdown: str) -> str:
+    """차트를 꼬리(조회 기준·후속 질문) **앞**에 넣는다 (비스트리밍)."""
+    block = "#### 시각화\n" + chart_markdown
+    body, tail = _split_answer_tail(answer)
+    if not tail:
+        return answer.rstrip("\n") + "\n\n" + block
+    return body.rstrip("\n") + "\n\n" + block + "\n\n" + tail
 
 
 def _mask_stream(chunks, transform=None):
@@ -3046,21 +3122,16 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
         finally:
             executor.shutdown(wait=False)
 
-        # 0 모델이 직접 쓴 차트 펜스를 걷는다 -- 그림이 되지 않는 글자 더미다.
+        # ⛔ 모델이 직접 쓴 차트 펜스를 걷는다 -- 그림이 되지 않는 글자 더미다.
         #   스트리밍은 `_mask_stream` 이 **같은 스트리퍼**로 한다 (두 경로에 함께
         #   걸어야 한다 -- 한쪽만 고치면 경로에 따라 답이 갈린다).
         answer = _strip_model_chart_fences(answer)
 
         if chart_markdown:
-            insight_markers = ["#### 분석 및 인사이트", "#### 분석", "### 분석 및 인사이트", "### 분석"]
-            inserted = False
-            for marker in insight_markers:
-                if marker in answer:
-                    answer = answer.replace(marker, f"#### 시각화\n{chart_markdown}\n\n{marker}", 1)
-                    inserted = True
-                    break
-            if not inserted:
-                answer = answer + f"\n\n#### 시각화\n{chart_markdown}"
+            # ⛔ 예전엔 `#### 분석 및 인사이트` **앞**에 넣어 스트리밍과 자리가
+            #   갈렸다. 스트리밍은 흘려보낸 글자 사이에 끼울 수 없으므로 **꼬리
+            #   앞**으로 맞춘다 -- 같은 질문이 경로에 따라 다르게 보이지 않게.
+            answer = _with_chart_before_tail(answer, chart_markdown)
 
         # 합계는 답변 작성 LLM에 맡기지 않는다. 표는 잘 만들면서 합계 행만
         # 빠뜨리는 붐따가 반복됐고, 사용자가 화면의 값을 손으로 더해야 했다.
@@ -4593,9 +4664,14 @@ SQL 결과 ({len(results)}행):
     yield "\n"
     from app.core.answer_check import money_scale_repairer
     _streamed = []
+    # 꼬리(조회 기준·후속 질문)는 붙잡아 둔다 -- 차트를 그 앞에 흘리기 위해서다
+    _tail = _AnswerTailHolder()
     for chunk in _mask_stream(
             llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500),
             transform=money_scale_repairer(results)):
+        chunk = _tail.feed(chunk)
+        if not chunk:
+            continue
         _streamed.append(chunk)
         yield chunk
     _t_end = _time.perf_counter()
@@ -4606,11 +4682,7 @@ SQL 결과 ({len(results)}행):
     #    계산하므로 검증이 빠지면 그것이 그대로 나간다.
     # ⛔ 이 안내는 **조회 원본 표**를 붙인다 — 결과에서 나온 값이므로 여기도 가린다
     #    (붐따 #147: 코드가 만든 조각이 마스킹 밖이면 경로에 따라 답이 갈린다).
-    _check_notice = _mask_internal_paths(
-        _number_check_notice(out_head + "".join(_streamed), results, query))
-    if _check_notice:
-        yield _check_notice
-
+    # 차트를 **꼬리보다 먼저** 흘린다 (`_AnswerTailHolder` 주석 참고)
     try:
         chart_markdown = chart_future.result(timeout=8.0)
         if chart_markdown:
@@ -4618,6 +4690,17 @@ SQL 결과 ({len(results)}행):
     except (concurrent.futures.TimeoutError, Exception):
         pass
     _chart_executor.shutdown(wait=False)
+
+    _answer_tail = _tail.flush()
+    if _answer_tail:
+        _streamed.append(_answer_tail)
+        yield _answer_tail
+
+    # ⛔ 검증은 **꼬리까지 담은 뒤에** 한다 -- 먼저 계산하면 꼬리의 수치가 빠진다
+    _check_notice = _mask_internal_paths(
+        _number_check_notice(out_head + "".join(_streamed), results, query))
+    if _check_notice:
+        yield _check_notice
 
     yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
 
@@ -4854,18 +4937,18 @@ def run_sql_agent_stream(
         yield _qty_notice
 
     _streamed = []
+    # 꼬리(조회 기준·후속 질문)는 붙잡아 둔다 — 차트를 그 앞에 흘리기 위해서다
+    _tail = _AnswerTailHolder()
     for chunk in _stream_with_table_totals(answer_chunks, totals_block):
         if _t_first_token is None:
-            _t_first_token = _time.perf_counter()
+            _t_first_token = _time.perf_counter()   # 받은 시각이다 (붙잡기 전)
+        chunk = _tail.feed(chunk)
+        if not chunk:
+            continue
         _streamed.append(chunk)
         yield chunk
     _t_stream_end = _time.perf_counter()
 
-    # ⛔ 원본 표가 붙는다 — 결과에서 나온 값이라 여기도 가린다 (붐따 #147)
-    check_notice = _mask_internal_paths(
-        _number_check_notice("".join(_streamed), results, query))
-    if check_notice:
-        yield check_notice
     logger.info(
         "bq_stage_timing",
         sql_gen_ms=round((_t_gen - _t0) * 1000),
@@ -4877,6 +4960,7 @@ def run_sql_agent_stream(
     )
 
     # Chart should be done by now (ran in parallel with answer streaming)
+    # 차트를 **꼬리보다 먼저** 흘린다 (`_AnswerTailHolder` 주석 참고)
     try:
         chart_markdown = chart_future.result(timeout=8.0)
         if chart_markdown:
@@ -4884,6 +4968,18 @@ def run_sql_agent_stream(
     except (concurrent.futures.TimeoutError, Exception):
         pass
     _chart_executor.shutdown(wait=False)
+
+    _answer_tail = _tail.flush()
+    if _answer_tail:
+        _streamed.append(_answer_tail)
+        yield _answer_tail
+
+    # ⛔ 원본 표가 붙는다 — 결과에서 나온 값이라 여기도 가린다 (붐따 #147)
+    # ⛔ 검증은 **꼬리까지 담은 뒤에** 한다 — 먼저 계산하면 꼬리의 수치가 빠진다
+    check_notice = _mask_internal_paths(
+        _number_check_notice("".join(_streamed), results, query))
+    if check_notice:
+        yield check_notice
 
     # 표에 못 보여준 행이 있었으면(_rows_withheld) 전체를 CSV로 받는 실제 링크를
     # 붙인다. 이 경로는 이미 스트리밍이 끝난 텍스트를 손볼 수 없으므로(LLM이
