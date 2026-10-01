@@ -36,6 +36,34 @@
     .jb-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     @media (max-width: 700px) { .jb-cols { grid-template-columns: 1fr; } }
     .jb-wrap code { white-space: nowrap; }
+    /* 사용 순서 — 단계마다 그림 한 장. 그림 색은 테마 변수를 따라 다크 모드에서도 읽힌다 */
+    .jb-steps { list-style: none; padding: 0 !important; margin: 8px 0 0; counter-reset: jbstep; }
+    .jb-step { display: grid; grid-template-columns: 1fr 1.25fr; gap: 20px; align-items: center;
+               background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px;
+               padding: 18px; margin: 0 0 14px !important; }
+    @media (max-width: 760px) { .jb-step { grid-template-columns: 1fr; } }
+    .jb-step h3 { font-size: 1em; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+    .jb-step h3::before { counter-increment: jbstep; content: counter(jbstep); display: inline-grid;
+               place-items: center; width: 26px; height: 26px; border-radius: 50%; flex: none;
+               background: #17a673; color: #fff; font-size: 0.85em; }
+    .jb-step p { margin: 4px 0; }
+    .jb-step .jb-tip { color: var(--text-muted); font-size: 0.88em; }
+    .jb-fig svg { width: 100%; height: auto; display: block; }
+    .jb-fig .w { fill: var(--bg-elevated); stroke: var(--border-strong); }
+    .jb-fig .s { fill: var(--bg-surface); stroke: var(--border); }
+    .jb-fig .t { fill: var(--text); font: 12px system-ui, sans-serif; }
+    .jb-fig .m { fill: var(--text-muted); font: 11px system-ui, sans-serif; }
+    .jb-fig .b { font-weight: 700; }
+    .jb-fig .g { fill: #17a673; }
+    .jb-fig .gl { fill: #17a673; opacity: 0.14; }
+    .jb-fig .gs { stroke: #17a673; fill: none; stroke-width: 2.5; }
+    .jb-fig .wt { fill: #fff; font: 700 12px system-ui, sans-serif; }
+    .jb-fig .ln { stroke: var(--border); }
+    .jb-fig .ar { stroke: #e8590c; stroke-width: 3; fill: none; stroke-dasharray: 7 5; }
+    .jb-fig .ah { fill: #e8590c; }
+    .jb-fig .cur { fill: #fff; stroke: #222; stroke-width: 1.2; }
+    .jb-faq dt { font-weight: 700; margin-top: 12px; }
+    .jb-faq dd { margin: 2px 0 0 0; color: var(--text-secondary); }
   </style>
 </head>
 <body>
@@ -55,15 +83,197 @@
       <div class="jb-msg" id="jb-msg"></div>
     </div>
 
-    <h2>사용 순서</h2>
-    <ol>
-      <li>위의 <b>잔디 백업</b> 버튼을 북마크바로 끌어다 놓습니다. (한 번만 하면 됩니다)</li>
-      <li>Chrome 또는 Edge 에서 잔디 웹(<code>https://팀이름.jandi.com/app</code>)에 로그인하고, 대화 목록이 보이면 북마크바의 <b>잔디 백업</b>을 누릅니다.</li>
-      <li>오른쪽 위에 뜬 패널에서 받을 범위(토픽 · 1:1 · 그룹 대화 · 첨부파일 포함)를 고르고
-        <b>저장 폴더 선택 후 시작</b>을 누릅니다. 바탕화면 등에 빈 폴더를 하나 만들어 고르고, 브라우저가 묻는 저장 권한을 허용합니다.</li>
-      <li>끝나면 고른 폴더 안 <code>잔디백업_팀이름_날짜</code> 폴더의 <b>index.html</b> 을 엽니다.
-        중간에 멈췄다면 같은 폴더를 골라 다시 시작하세요 — 끝난 방은 건너뛰고 이어서 받습니다.</li>
+    <h2>사용 순서 — 그림대로 따라 하세요</h2>
+    <ol class="jb-steps">
+      <li class="jb-step">
+        <div>
+          <h3>버튼을 북마크바로 끌어다 놓기</h3>
+          <p>위의 <b>잔디 백업</b> 버튼을 마우스로 꾹 누른 채 주소창 바로 아래 <b>북마크바</b>까지 끌고 가서 놓습니다.</p>
+          <p class="jb-tip">누르는 버튼이 아닙니다. 처음 한 번만 하면 됩니다.<br>북마크바가 안 보이면 <code>Ctrl + Shift + B</code></p>
+        </div>
+        <div class="jb-fig" aria-hidden="true">
+          <svg viewBox="0 0 360 200">
+            <rect class="w" x="1" y="1" width="358" height="198" rx="10"/>
+            <circle cx="16" cy="16" r="4" fill="#ff5f57"/><circle cx="30" cy="16" r="4" fill="#febc2e"/><circle cx="44" cy="16" r="4" fill="#28c840"/>
+            <rect class="s" x="12" y="28" width="336" height="24" rx="12"/>
+            <text class="m" x="26" y="44">ai.cravercorp.internal/jandi-backup</text>
+            <line class="ln" x1="1" y1="62" x2="359" y2="62"/>
+            <text class="m" x="14" y="78">북마크바</text>
+            <rect class="gl" x="70" y="66" width="88" height="20" rx="5"/>
+            <rect class="gs" x="70" y="66" width="88" height="20" rx="5" stroke-dasharray="4 3"/>
+            <text class="t b" x="82" y="80">잔디 백업</text>
+            <line class="ln" x1="1" y1="92" x2="359" y2="92"/>
+            <text class="t b" x="20" y="118">잔디 백업 도우미</text>
+            <rect class="s" x="20" y="134" width="320" height="52" rx="8"/>
+            <rect class="w" x="36" y="146" width="96" height="28" rx="6"/>
+            <text class="t b" x="54" y="165">잔디 백업</text>
+            <text class="m" x="146" y="165">← 이 버튼을</text>
+            <path class="ar" d="M84 144 C 84 120, 112 108, 114 92"/>
+            <path class="ah" d="M114 86 l7 12 h-14 z" transform="rotate(10 114 92)"/>
+            <path class="cur" d="M112 74 l0 16 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z"/>
+            <text class="m" x="176" y="80">← 여기에 놓기</text>
+          </svg>
+        </div>
+      </li>
+
+      <li class="jb-step">
+        <div>
+          <h3>잔디를 열고 북마크 누르기</h3>
+          <p>Chrome 또는 Edge 에서 잔디 웹(<code>https://팀이름.jandi.com/app</code>)에 로그인합니다.
+            대화 목록이 보이면 북마크바의 <b>잔디 백업</b>을 누릅니다.</p>
+          <p class="jb-tip">잔디 PC 프로그램(설치형)에서는 안 됩니다. 반드시 <b>브라우저</b>로 연 잔디에서 누르세요.</p>
+        </div>
+        <div class="jb-fig" aria-hidden="true">
+          <svg viewBox="0 0 360 200">
+            <rect class="w" x="1" y="1" width="358" height="198" rx="10"/>
+            <circle cx="16" cy="16" r="4" fill="#ff5f57"/><circle cx="30" cy="16" r="4" fill="#febc2e"/><circle cx="44" cy="16" r="4" fill="#28c840"/>
+            <rect class="s" x="12" y="28" width="336" height="24" rx="12"/>
+            <text class="m" x="26" y="44">팀이름.jandi.com/app</text>
+            <line class="ln" x1="1" y1="62" x2="359" y2="62"/>
+            <rect class="g" x="14" y="66" width="80" height="20" rx="5"/>
+            <text class="wt" x="24" y="80">잔디 백업</text>
+            <path class="cur" d="M70 78 l0 16 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z"/>
+            <text class="m" x="104" y="80">← 딸깍</text>
+            <line class="ln" x1="1" y1="92" x2="359" y2="92"/>
+            <rect class="s" x="1" y="92" width="96" height="107"/>
+            <rect class="gl" x="10" y="104" width="78" height="14" rx="3"/>
+            <rect class="s" x="10" y="124" width="70" height="10" rx="3"/>
+            <rect class="s" x="10" y="140" width="62" height="10" rx="3"/>
+            <rect class="s" x="10" y="156" width="74" height="10" rx="3"/>
+            <rect class="s" x="10" y="172" width="58" height="10" rx="3"/>
+            <rect class="s" x="110" y="108" width="150" height="20" rx="8"/>
+            <rect class="s" x="170" y="136" width="170" height="20" rx="8"/>
+            <rect class="s" x="110" y="164" width="120" height="20" rx="8"/>
+            <text class="m" x="250" y="190">잔디 대화 화면</text>
+          </svg>
+        </div>
+      </li>
+
+      <li class="jb-step">
+        <div>
+          <h3>받을 범위 고르고 시작</h3>
+          <p>잔디 화면 오른쪽 위에 <b>백업 패널</b>이 뜹니다. 받을 대화 종류와 첨부파일 포함 여부를 고르고
+            <b>저장 폴더 선택 후 시작</b>을 누릅니다.</p>
+          <p class="jb-tip">처음엔 다 체크된 그대로 두면 됩니다. 첨부파일을 빼면 훨씬 빨리 끝납니다.</p>
+        </div>
+        <div class="jb-fig" aria-hidden="true">
+          <svg viewBox="0 0 360 200">
+            <rect class="w" x="1" y="1" width="358" height="198" rx="10"/>
+            <rect class="s" x="1" y="1" width="80" height="198" rx="10"/>
+            <rect class="s" x="96" y="40" width="90" height="16" rx="7"/>
+            <rect class="s" x="110" y="70" width="70" height="16" rx="7"/>
+            <rect class="s" x="96" y="100" width="80" height="16" rx="7"/>
+            <rect class="w" x="168" y="12" width="182" height="178" rx="10" style="filter:drop-shadow(0 3px 6px rgba(0,0,0,.18))"/>
+            <text class="t b" x="182" y="34">잔디 백업</text><text class="m" x="334" y="34">×</text>
+            <rect class="g" x="182" y="48" width="12" height="12" rx="2"/><text class="t" x="200" y="58">토픽 38</text>
+            <rect class="g" x="182" y="68" width="12" height="12" rx="2"/><text class="t" x="200" y="78">1:1 대화 367</text>
+            <rect class="g" x="182" y="88" width="12" height="12" rx="2"/><text class="t" x="200" y="98">그룹 대화 79</text>
+            <rect class="g" x="182" y="112" width="12" height="12" rx="2"/><text class="t" x="200" y="122">첨부파일 포함</text>
+            <rect class="g" x="182" y="140" width="156" height="30" rx="7"/>
+            <text class="wt" x="196" y="160">저장 폴더 선택 후 시작</text>
+            <path class="cur" d="M300 158 l0 16 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z"/>
+            <text class="m" x="12" y="190">숫자는 예시</text>
+          </svg>
+        </div>
+      </li>
+
+      <li class="jb-step">
+        <div>
+          <h3>저장할 폴더 고르고 허용</h3>
+          <p>폴더 고르는 창이 뜹니다. 바탕화면 등에서 <b>새 폴더</b>를 하나 만들어 고르고 <b>폴더 선택</b>을 누릅니다.
+            이어서 브라우저가 파일 저장을 물으면 <b>허용</b>(파일 수정 허용)을 누릅니다.</p>
+          <p class="jb-tip">디스크 여유를 확인하세요. 첨부파일까지 받으면 수십 GB 가 될 수 있습니다.</p>
+        </div>
+        <div class="jb-fig" aria-hidden="true">
+          <svg viewBox="0 0 360 200">
+            <rect class="w" x="1" y="1" width="230" height="136" rx="8"/>
+            <text class="t b" x="14" y="22">폴더 선택</text>
+            <line class="ln" x1="1" y1="32" x2="231" y2="32"/>
+            <rect class="s" x="12" y="42" width="60" height="18" rx="4"/><text class="m" x="20" y="55">새 폴더</text>
+            <text class="m" x="14" y="76">바탕 화면 ›</text>
+            <rect class="gl" x="12" y="82" width="206" height="22" rx="4"/>
+            <path class="g" d="M20 88 h8 l3 3 h11 v10 h-22 z"/>
+            <text class="t" x="50" y="98">잔디백업</text>
+            <rect class="g" x="142" y="108" width="76" height="22" rx="5"/>
+            <text class="wt" x="155" y="123">폴더 선택</text>
+            <path class="ar" d="M220 120 C 250 120, 270 128, 280 142"/>
+            <rect class="w" x="150" y="140" width="206" height="56" rx="8" style="filter:drop-shadow(0 3px 6px rgba(0,0,0,.18))"/>
+            <text class="t" x="162" y="160">이 사이트에서 파일 수정 허용?</text>
+            <rect class="s" x="196" y="168" width="58" height="20" rx="5"/><text class="m" x="212" y="182">취소</text>
+            <rect class="g" x="262" y="168" width="84" height="20" rx="5"/><text class="wt" x="290" y="182">허용</text>
+          </svg>
+        </div>
+      </li>
+
+      <li class="jb-step">
+        <div>
+          <h3>끝날 때까지 기다리기</h3>
+          <p>패널에 진행 상황(방 · 파일 · 용량 · 남은 시간)이 나옵니다. <b>끝날 때까지 잔디 탭을 닫거나 새로고침하지 마세요.</b>
+            다른 탭에서 다른 일을 하셔도 됩니다.</p>
+          <p class="jb-tip">PC 가 절전으로 들어가지 않게 해 주세요. 중간에 끊겨도 4번에서 <b>같은 폴더</b>를 고르면 이어서 받습니다.</p>
+        </div>
+        <div class="jb-fig" aria-hidden="true">
+          <svg viewBox="0 0 360 200">
+            <rect class="w" x="60" y="10" width="240" height="180" rx="10" style="filter:drop-shadow(0 3px 6px rgba(0,0,0,.18))"/>
+            <text class="t b" x="76" y="34">잔디 백업 · 진행 중</text>
+            <text class="m" x="76" y="58">방</text><text class="t" x="232" y="58">212 / 484</text>
+            <rect class="s" x="76" y="64" width="208" height="8" rx="4"/><rect class="g" x="76" y="64" width="92" height="8" rx="4"/>
+            <text class="m" x="76" y="92">파일</text><text class="t" x="226" y="92">5,120 / 16,752</text>
+            <rect class="s" x="76" y="98" width="208" height="8" rx="4"/><rect class="g" x="76" y="98" width="64" height="8" rx="4"/>
+            <text class="m" x="76" y="126">받은 용량 18.2GB · 남은 시간 약 25분</text>
+            <rect class="s" x="76" y="146" width="96" height="28" rx="6"/><text class="t" x="98" y="165">일시정지</text>
+            <rect class="s" x="184" y="146" width="100" height="28" rx="6"/><text class="t" x="222" y="165">중지</text>
+          </svg>
+        </div>
+      </li>
+
+      <li class="jb-step">
+        <div>
+          <h3>백업 열어 보기</h3>
+          <p>고른 폴더 안의 <code>잔디백업_팀이름_날짜</code> 폴더에서 <b>index.html</b> 을 더블클릭합니다.
+            방 목록이 열리고, 방 이름을 누르면 그 방 대화를 이름 · 날짜 · 내용으로 검색하며 볼 수 있습니다.</p>
+          <p class="jb-tip">인터넷이 없어도 열립니다. 엑셀로 보려면 방 폴더의 <code>messages.csv</code> 를 여세요.</p>
+        </div>
+        <div class="jb-fig" aria-hidden="true">
+          <svg viewBox="0 0 360 200">
+            <rect class="w" x="1" y="1" width="164" height="198" rx="8"/>
+            <text class="t b" x="12" y="22">잔디백업_팀이름_날짜</text>
+            <line class="ln" x1="1" y1="32" x2="165" y2="32"/>
+            <path class="g" d="M14 44 h8 l3 3 h11 v10 h-22 z"/><text class="t" x="44" y="56">rooms</text>
+            <rect class="gl" x="8" y="66" width="150" height="22" rx="4"/>
+            <rect class="s" x="16" y="70" width="14" height="16" rx="2"/><text class="t b" x="44" y="82">index.html</text>
+            <rect class="s" x="16" y="96" width="14" height="16" rx="2"/><text class="t" x="44" y="108">summary.json</text>
+            <rect class="s" x="16" y="122" width="14" height="16" rx="2"/><text class="t" x="44" y="134">README.txt</text>
+            <path class="ar" d="M160 78 C 180 78, 186 70, 196 70"/>
+            <path class="ah" d="M198 64 l10 6 l-10 6 z"/>
+            <rect class="w" x="196" y="20" width="160" height="176" rx="8"/>
+            <text class="t b" x="206" y="40">잔디 전체 백업</text>
+            <rect class="s" x="206" y="50" width="140" height="18" rx="4"/><text class="m" x="212" y="63">방 이름 검색</text>
+            <text class="m" x="206" y="88">토픽</text><text class="t" x="256" y="88">회사 공지</text>
+            <text class="m" x="206" y="110">토픽</text><text class="t" x="256" y="110">운영본부</text>
+            <text class="m" x="206" y="132">1대1</text><text class="t" x="256" y="132">홍길동</text>
+            <text class="m" x="206" y="154">그룹DM</text><text class="t" x="256" y="154">프로젝트방</text>
+            <text class="m" x="206" y="182">누르면 그 방 대화가 열림</text>
+          </svg>
+        </div>
+      </li>
     </ol>
+
+    <h2>자주 막히는 곳</h2>
+    <dl class="jb-faq">
+      <dt>북마크바가 안 보여요</dt>
+      <dd><code>Ctrl + Shift + B</code> 를 누르면 주소창 아래에 나타납니다. (Edge 에서는 '즐겨찾기 모음')</dd>
+      <dt>버튼을 눌렀더니 아무 일도 안 일어나요</dt>
+      <dd>이 페이지의 버튼은 누르는 게 아니라 <b>끌어다 놓는</b> 것입니다. 북마크바에 생긴 <b>잔디 백업</b>을 잔디 화면에서 누르세요.</dd>
+      <dt>"로그인한 탭에서 북마크를 눌러 주세요" 라고 나와요</dt>
+      <dd>잔디가 아닌 페이지에서 누른 것입니다. 브라우저에서 <code>팀이름.jandi.com</code> 으로 잔디를 열고, 로그인한 다음 누르세요.</dd>
+      <dt>폴더 고르는 창이 안 떠요 / 지원하지 않는 브라우저라고 나와요</dt>
+      <dd>PC 의 <b>Chrome</b> 이나 <b>Edge</b> 로 잔디를 열어 주세요. 휴대폰, 사파리, 파이어폭스에서는 안 됩니다.</dd>
+      <dt>중간에 탭을 닫았어요</dt>
+      <dd>처음부터 다시 할 필요 없습니다. 2번부터 다시 하고 4번에서 <b>같은 폴더</b>를 고르면 끝난 방은 건너뛰고 이어서 받습니다.</dd>
+      <dt>너무 오래 걸려요</dt>
+      <dd>첨부파일이 대부분의 시간을 차지합니다. 대화만 필요하면 3번에서 <b>첨부파일 포함</b>을 끄세요.</dd>
+    </dl>
 
     <div class="jb-cols">
       <div>
