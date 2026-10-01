@@ -1819,6 +1819,67 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   "A 매출 (백만…" 처럼 잘려 단위를 잃는다
 
 
+## 메일 발송 (`/mail-sender`) — gmailv2 Apps Script 를 셀라 안으로 (2026-10-01)
+
+- **화면**: `/mail-sender` (`app/static/mail_sender.html` · `mail_sender.js`) / **API**: `app/api/mail_sender_api.py`
+  (`status`·`sheets`·`preview`·`test-send`·`check`·`jobs`·`jobs/active`·`jobs/{id}`·`stop`·`ack-unknown`) /
+  **작업**: `app/core/mail_sender_jobs.py` / **판정**: `app/core/mail_sender.py` (시트 행·`_탭목록` 파싱·발송 전 점검,
+  `DOC_ID`·`TAB_DIR_SHEET`) / **템플릿**: `app/core/mail_template.py` (Docs 탭 내보내기 zip → 메일 HTML, 클래스 인라인,
+  이미지 cid, 변수 치환·속성 포함·URL 스킴 허용목록, `unreplaced`/`unreplaced_html`) / **MIME**: `app/core/mail_mime.py`
+  (`build_mime`, multipart/related) / **구글 호출**: `app/core/mail_google.py` (사용자 토큰 — 탭 내보내기·Sheets·sendAs·발송·tokeninfo 스코프 확인) /
+  **동의**: `app/core/google_auth.py` (`MAIL_SCOPES`, `/auth/google/login?feature=mail` 증분 동의, 승인된 스코프 저장·로드).
+  페이지 진입 점검(`mail_google.missing_mail_scopes`)은 **`REQUIRED_MAIL_PAGE_SCOPES`** = `MAIL_SCOPES`(gmail.send·spreadsheets)
+  + `gmail.readonly`(sendAs.list) + `drive.readonly`(탭 내보내기)를 본다 — 세분화 동의에서 하나만 꺼도 403/500 이 되던 구멍 (2026-10-01)
+- **Docs 내보내기 변환 규칙** (2026-10-01 실측): 링크는 `https://www.google.com/url?q=<대상>&sa=D&…&usg=…` 로 **감싸여 온다**
+  (실제 탭 링크 4/4) → `q` 로 되돌리고 `%7B…%7D` 를 `{변수}` 로 되살린다 (변수 처리보다 먼저). CSS 는 클래스 규칙만이 아니라
+  **요소 규칙**(`p{margin:0}`·`table td,table th{…}` 등 p·li·ul·ol·td·th·table·span·h1~h6)도 인라인 — 요소 → 클래스 → 원래 인라인 순
+- **시트 열은 위치로 읽는다** (2026-10-01 실측): 기존 Apps Script `CONFIG` 와 같이 A 날짜 · B 탭 이름 · D 이메일 · G 전송여부 ·
+  H 비고, 1행 헤더·2행부터 데이터. ⛔ 헤더 이름으로 찾지 말 것 — 담당자마다 `담당자`/`문서명`, `전송여부`/`전송 여부` 로 달라
+  기존 툴로 잘 쓰던 시트가 여기서만 "헤더를 찾지 못했습니다" 500 이 났다. 변수(`{…}`)만 1행 헤더 이름으로 찾는다.
+- **Entra 사용자 구글 연결** (2026-10-01): Entra 로그인은 늘 `ai.cravercorp.internal` 로 돌아오는데 구글은 `.internal` 콜백을
+  받지 않는다 → `auth_routes._oauth_redirect_uri` 가 등록 콜백(`10.1.100.5.nip.io`)으로 보내고 서명된 state 의 `origin` 으로
+  쿠키 있는 주소에 한 번 되돌린다 (`_origin_can_hop_back` — `PUBLIC_BASE_URL`·`ENTRA_REDIRECT_URI` 호스트만)
+- **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
+- **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
+  `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는
+  **Docs API 가 꺼져 있어** 켤 권한도 없다. `www.googleapis.com`·`sheets`·`gmail`(12MB 업로드도)·`docs.google.com`·`drive.google.com` 은 열려 있다.
+  그래서 gmailv2 Apps Script 가 탭 목록(제목·탭 ID·상위·갱신 시각)을 **숨김 시트 `_탭목록`** 에 적고, WAS 는 Sheets 로 그걸 읽어
+  `docs.google.com/document/d/{DOC_ID}/export?format=zip&tab={탭 ID}` 를 **탭별로** 받는다 (zip 에 이미지가 파일로 들어 있어 googleusercontent 불필요.
+  문서 전체 내보내기는 10MB 한도로 실패한다). Docs API·Drive `export` 우회는 시도하지 않는다
+- ⛔ LLM 을 부르지 않는다. 변환·치환·점검은 전부 규칙이다 (인증서류·성분·재고와 같은 사상)
+- ⛔ **확인(confirm) 없이 발송하지 않는다.** 미리보기·점검·테스트 발송을 거친 뒤 사람이 확정해야 작업이 시작된다
+- ⛔ **재시작 뒤 자동 이어보내기 없음.** 서버가 죽었다 살아나면 돌던 작업은 `interrupted`, 발송 중이던 행은 `unknown` 이 된다 — 사람이 보고 다시 시작한다
+- ⛔ **이미지는 링크로 넣지 않는다.** 본문 이미지는 항상 cid 첨부(multipart/related)다 — 수신자 메일 클라이언트가 외부 링크를 막으면 빈 칸이 된다
+- ⛔ **From 은 Gmail sendAs 가 수락한 주소만.** 목록에 없는 주소로 보내면 구글이 조용히 계정 기본 주소로 바꾼다 — 보내기 전에 거절한다.
+  From 은 그 별칭의 Gmail 표시 이름으로 `formataddr((표시 이름, 주소))`, 화면에 별칭의 답장 받는 주소(replyTo)를 보인다
+- ⛔ **권한·토큰 문제는 X(실패)로 기록하지 않는다.** 스코프 부족·토큰 만료는 "수신자 문제" 가 아니라 "작업 중단" 이다 — 시트에 X 를 쓰면 다음 사람이 그 행을 영영 건너뛴다
+- ⛔ **행마다 G(상태) 를 다시 읽는다.** 시작 시점 스냅샷만 믿으면 다른 사람이 같은 시트에서 보낸 행을 또 보낸다
+- ⛔ **행 번호는 발송 중에 바뀔 수 있다 (정렬·행 삽입).** 발송 직전 그 행의 **이메일·G 를 한 범위로** 읽어(`read_cells`)
+  이메일이 다르면 보내지도 시트에 쓰지도 않고 **작업을 멈춘다** — 그 행은 대기로 남는다
+  ("시트 행 순서가 바뀌었습니다 — 다시 점검 후 이어서 보내세요"). O·X 를 쓰기 직전에도 같은 확인을 다시 하고, 바뀌었으면 쓰지 않는다.
+  보낸 뒤 바뀐 경우는 "시트 기록 실패: 행이 바뀜"(`sheet_write_failed`, 발송 기록엔 sent)으로 남기고 **같은 문구로 멈춘다**.
+  불확실 메모(H)는 확인 읽기가 성공했고 다른 사람이면 쓰지 않는다 (읽기 실패면 쓴다 — G 를 건드리지 않으므로)
+- **행 간격 2.5초 (`ROW_MIN_INTERVAL`)** — 보냄·건너뜀·실패 모든 행에, 루프 첫머리에서 벽시계 기준으로 맞춘다
+  (300행 ≈ 12.5분). 행마다 시트 읽기 ~2회 + 쓰기 1회라 분당 읽기 ~48회로 **사용자당 한도 60/분** 아래에 머문다.
+  ⚠️ 프로젝트 전체 한도는 **읽기 300/분** — 동시에 보내는 사람이 **약 6명**을 넘으면 429 가 난다
+- **시트 429·5xx·전송 오류는 재시도**(읽기·쓰기는 멱등) 한 뒤에야 기존 분류를 탄다: 발송 전 읽기 2/4/8초,
+  **발송 뒤 확인 읽기·O 쓰기는 5/15/30/60초** (여기서 포기하면 '보냈는데 O 없음' → 다른 툴이 다시 보낼 수 있다).
+  429 멈춤 문구는 시트("구글 시트 사용량 한도(429)")와 Gmail("구글 발송 속도·한도 제한(429)")을 구분한다
+- ⛔ **이중 발송 금지 — 발송 기록으로 제외한다.** `sent` 는 **이메일** 기준(누구의 작업이든), `sending`/`unknown` 은 **행 또는 이메일** 기준으로 제외한다.
+  `unknown` 행은 목록에 보여 주고 **작업 주인이 확인(ack)** 해야 풀린다. 전송 중 불확실한 오류(타임아웃 등)는 **X 가 아니라 `unknown`** — 실제로는 갔을 수 있다
+- ⚠️ **한 시트는 한 도구에서만** — 같은 시트를 gmailv2 와 셀라가 동시에 돌리면 서로의 O/X 를 못 본다. 셀라는 `GET_LOCK` 으로 같은 시트 동시 작업을 막지만 Apps Script 는 막지 못한다
+- ⚠️ **운영 메모 (사람이 해야 하는 것)**:
+  - gmailv2 Apps Script 편집기에서 `writeTabDirectory()` 를 부르는 **10분 시간 트리거를 손으로 만들어야 한다 — 현재 미생성.**
+    없으면 `템플릿 검증` 을 누를 때만 갱신된다. 자가 점검 `mail_sender_tab_directory` 는 **기본으로 켜져 있다**
+    (`mail_sender.MAIL_TAB_DIR_SPREADSHEET_ID`, env `CELLA_MAIL_TAB_DIR_SPREADSHEET_ID` 로 덮어쓴다) — 1시간 넘게 낡으면 경고하고,
+    **`_탭목록` 읽기 실패·빈 목록도 경고**다. 건너뜀(+사유)은 관리자 토큰이 없을 때뿐이다 (그건 `google_account_health` 가 알린다)
+  - 기존 구글 연결 사용자는 메일 페이지의 안내로 **재동의**한다 — 동의 창에서 **모든 체크박스를 켜야** 한다
+    (하나라도 빼면 스코프가 모자라 발송 시작 전에 막힌다)
+  - 방금 만든 탭은 최대 10분 늦게 보인다 — "탭 없음" 옆에 갱신 시각과 "잠시 뒤 다시" 를 적는다
+- 회귀: `tests/test_mail_template.py` · `test_mail_mime.py` · `test_mail_sender.py` · `test_mail_google_auth.py` ·
+  `test_mail_sender_jobs.py` · `test_mail_sender_api.py` · `test_self_check_mail_sender.py`
+- 상태: 구현 완료(브랜치 `feat/mail-sender`) → 실물 확인(Task 9) 대기
+
 ## 잔디 백업 도우미 (`/jandi-backup`) — 각자 PC 로, 서버는 아무것도 받지 않는다 (2026-10-01)
 
 - **무엇**: 직원 각자가 자기 잔디 대화·첨부를 자기 PC 폴더에 받는 **북마크**. 셀라 화면
@@ -1846,10 +1907,20 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   11,588건 · 약 65GB)를 render.py 는 파일 정보 JSON 원문으로 찍었고 받지도 않았다 — 여기서는
   `[파일] 이름` 으로 적고 같은 id 로 받는다. ⚠️ 이 id 로 `getImage` 가 되는지는 실측 전이다
 - 시스템 기록(`message` 없음)은 원시 JSON 이 아니라 한국어 문장(16종, 모르면 `누구 · 종류`), 보낸 사람 `시스템`
+- **용량 미리 확인**(패널 `용량 미리 확인`, 2026-10-01 요청 *"얼마나 받는지도 알게 해줘 (용량 및 시간)"*):
+  ⛔ **읽기만 한다** — 폴더를 고르지 않고 아무것도 쓰지 않으며 `getImage` 도 부르지 않는다. 메시지 API 를 백업과
+  같은 `walkMessages` 로 넘기되 ⛔ **기록은 쪽마다 버리고 방마다 숫자만** 남긴다(`tallyPage` · 방 동안만 쓰는 id Set 2개).
+  첨부는 백업과 같은 `collectFileJobs` 로 세서 개수가 어긋나지 않는다(첨부 · 댓글 원본 첨부 · 옛 방식 파일 메시지,
+  스티커는 개수만, 크기 없는 파일은 `삭제됨/크기 모름`). 걸릴 시간 = 대화: 확인에 걸린 시간 ~ ×1.3(쓰기 몫),
+  첨부: 용량 ÷ **20~60MB/s 가정**(받기 전엔 속도를 모른다 — 화면에 "대략값" 이라고 적는다). 방마다 결과를
+  들고 있다가 시작하면 처음부터 예상 용량을 안다. 실행 중에는 `받은 용량 / 예상`(미리 확인 없으면 `지금까지 확인된 용량`),
+  최근 15초 속도, 남은 시간 = 남은 용량 ÷ 속도(모르면 방 수 비율) 를 지수 평활(20초)로 다듬어 보인다.
+  실측 참고(9/30~10/1, 한 사람 6년치): 방 484 · 기록 41.5만 · 첨부 2.8만 개 123GB(옛 방식 66GB) · 대화만 7~10분 ·
+  첨부 포함 40~60분(회사망 50~90MB/s) — 안내 페이지 `얼마나 걸리나요` 에 같은 숫자
 - ⚠️ 잔디 웹 **내부 구조**(앵귤러 서비스 `RoomTopicList`·`RoomChatDmList`·`RoomChatGroupList`·
   `UserList`·`FileApi`, `$http`)에 기대므로 잔디 업데이트로 멈출 수 있다. 화면에 그렇게 적어 두었다
 - 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
-  19문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지)
+  28문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인)
 
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)

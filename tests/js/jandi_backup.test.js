@@ -212,6 +212,135 @@ test('팀 이름은 창 제목 끝, 없으면 하위 도메인', () => {
   assert.equal(L.backupFolderName('A/B', '20261001'), '잔디백업_A_B_20261001');
 });
 
+// ── 용량 미리 확인 · 남은 시간 ─────────────────────────────────────────────
+
+test('미리 확인: 첨부·댓글 원본 첨부·옛 방식 파일 메시지는 용량으로, 스티커는 개수만, 쪽이 겹쳐도 한 번', () => {
+  const t = L.newTally();
+  const seenR = new Set();
+  const seenF = new Set();
+  // fixture 방을 두 쪽으로 나누고, 둘째 쪽에 첫째 쪽 기록 하나를 겹쳐 넣는다
+  assert.equal(L.tallyPage(t, FX.records.slice(5), seenR, seenF), 6);
+  assert.equal(L.tallyPage(t, FX.records.slice(0, 6), seenR, seenF), 5, '겹친 기록은 새로 세지 않는다');
+  assert.equal(t.records, 11);
+  // 7000001(11) · 7000002(22) · 7000003(33) · 7000004(7, 댓글 원본) · 5000010(44, 옛 방식)
+  assert.equal(t.files, 5);
+  assert.equal(t.bytes, 117);
+  assert.equal(t.legacyFiles, 1);
+  assert.equal(t.legacyBytes, 44);
+  assert.equal(t.stickers, 2);
+  assert.equal(t.unknown, 0);
+  // 실제 백업이 받을 목록과 같은 개수
+  assert.equal(t.files + t.stickers + t.unknown, L.collectFileJobs(FX.records).length);
+});
+
+test('미리 확인: 크기가 없는 파일(삭제됨)은 따로 센다 — 옛 방식 파일도', () => {
+  const t = L.newTally();
+  L.tallyPage(t, [
+    { id: 1, message: { id: 11, contentType: 'text', content: { body: 'x' }, attachments: [{ id: 501, content: { name: 'a.pdf' } }, { id: 502, content: { name: 'b.pdf', size: 1000 } }] } },
+    { id: 2, message: { id: 12, contentType: 'file', content: { name: '옛.hwp' } } },
+    { id: 3, message: { id: 13, contentType: 'file', content: { name: '옛2.hwp', size: 3e9 } } },
+    { id: 4 }
+  ], new Set(), new Set());
+  assert.equal(t.records, 4);
+  assert.equal(t.files, 2);
+  assert.equal(t.bytes, 3e9 + 1000);
+  assert.equal(t.unknown, 2);
+  assert.equal(t.legacyFiles, 1);
+  assert.equal(t.legacyBytes, 3e9);
+});
+
+test('미리 확인 합계: 종류별(비공개 토픽은 토픽) · 전체, 확인 못 한 방은 빠진다', () => {
+  const rooms = [
+    { id: 1, kind: 'topic' }, { id: 2, kind: 'private_topic' }, { id: 3, kind: 'chat' }, { id: 4, kind: 'groupChat' }, { id: 5, kind: 'chat' }
+  ];
+  const mk = (records, files, bytes) => Object.assign(L.newTally(), { records, files, bytes });
+  const per = { 1: mk(100, 3, 5e9), 2: mk(50, 1, 1e9), 3: mk(10, 0, 0), 4: mk(7, 2, 2e6) };
+  const s = L.summarizeScan(rooms, per);
+  assert.deepEqual([s.topic.rooms, s.topic.records, s.topic.files, s.topic.bytes], [2, 150, 4, 6e9]);
+  assert.deepEqual([s.chat.rooms, s.chat.records], [1, 10], '확인 못 한 방(5)은 세지 않는다');
+  assert.deepEqual([s.total.rooms, s.total.records, s.total.files, s.total.bytes], [4, 167, 6, 6e9 + 2e6]);
+});
+
+test('용량 표기: GB 한 자리 · MB 정수', () => {
+  assert.equal(L.fmtBytes(123.4e9), '123.4GB');
+  assert.equal(L.fmtBytes(66e9), '66.0GB');
+  assert.equal(L.fmtBytes(1234e9), '1,234.0GB');
+  assert.equal(L.fmtBytes(512e6), '512MB');
+  assert.equal(L.fmtBytes(117), '117B');
+  assert.equal(L.fmtBytes(0), '0B');
+});
+
+test('걸릴 시간: 대화 = 확인에 걸린 시간 ~ 쓰기 몫, 첨부 = 용량 ÷ 20~60MB/s', () => {
+  // 실측(2026-10-01): 123GB, 확인 7분
+  const e = L.estimateTimes(123e9, 7 * 60000);
+  assert.equal(e.speedLow, 20e6);
+  assert.equal(e.speedHigh, 60e6);
+  assert.equal(e.messages[0], 7 * 60000);
+  assert.ok(Math.abs(e.messages[1] - 7 * 60000 * 1.3) < 1);
+  assert.equal(Math.round(e.download[0]), 2050000);   // 123e9 / 60e6 초
+  assert.equal(Math.round(e.download[1]), 6150000);   // 123e9 / 20e6 초
+  assert.equal(L.fmtRange(e.messages[0], e.messages[1]), '약 7분 ~ 9분');
+  assert.equal(L.fmtRange(e.withFiles[0], e.withFiles[1]), '약 41분 ~ 1시간 52분');
+  // 첨부가 없으면 대화 시간 그대로
+  const z = L.estimateTimes(0, 20000);
+  assert.deepEqual(z.withFiles, z.messages);
+  assert.equal(L.fmtRange(z.withFiles[0], z.withFiles[1]), '약 1분 미만');
+  // 속도를 바꿔 넣을 수 있다
+  assert.equal(L.estimateTimes(90e9, 0, { low: 50e6, high: 90e6 }).download[0], 1000000);
+});
+
+test('대략 시간 표기는 분 단위', () => {
+  assert.equal(L.fmtApprox(0), '1분 미만');
+  assert.equal(L.fmtApprox(29000), '1분 미만');
+  assert.equal(L.fmtApprox(31000), '1분');
+  assert.equal(L.fmtApprox(59 * 60000), '59분');
+  assert.equal(L.fmtApprox(60 * 60000), '1시간');
+  assert.equal(L.fmtApprox(125 * 60000), '2시간 5분');
+  assert.equal(L.fmtRange(60000, 60000), '약 1분');
+});
+
+test('속도: 최근 창의 표본만 남기고(기준점 하나는 창 밖), 짧으면 모른다', () => {
+  const s = [];
+  for (let t = 0; t <= 30000; t += 1000) L.pushSample(s, t, t * 50e3, 15000);   // 50MB/s 로 꾸준히
+  assert.ok(s[0].t <= 30000 - 15000 && s[1].t > 30000 - 15000, '창 밖 표본은 하나만');
+  assert.ok(s.length <= 17);
+  assert.equal(L.rollingRate(s, 5000), 50e6);
+  assert.equal(L.rollingRate([{ t: 0, b: 0 }, { t: 2000, b: 1e8 }], 5000), null, '2초로는 재지 않는다');
+  assert.equal(L.rollingRate([{ t: 0, b: 0 }], 5000), null);
+  // 갑자기 멈추면 창이 지나며 속도가 0 으로 내려간다
+  for (let t = 31000; t <= 50000; t += 1000) L.pushSample(s, t, 30000 * 50e3, 15000);
+  assert.equal(L.rollingRate(s, 5000), 0);
+});
+
+test('남은 시간: 용량을 알고 속도가 붙으면 용량 기준, 아니면 방 수 기준', () => {
+  const base = { useBytes: true, expectedComplete: true, expected: 100e9, bytes: 40e9, rate: 50e6, roomsFrac: 0.5, elapsedMs: 600000 };
+  assert.deepEqual(L.rawEta(base), { ms: 1200000, basis: 'bytes' });
+  assert.equal(L.rawEta(Object.assign({}, base, { expectedComplete: false })).basis, 'rooms', '예상 용량이 다 안 모였으면');
+  assert.equal(L.rawEta(Object.assign({}, base, { rate: null })).basis, 'rooms', '속도를 아직 모르면');
+  assert.equal(L.rawEta(Object.assign({}, base, { useBytes: false })).ms, 600000, '첨부 제외면 방 수 기준');
+  assert.equal(L.rawEta(Object.assign({}, base, { rate: null, roomsFrac: 0.01 })).ms, null, '너무 이르면 말하지 않는다');
+  assert.equal(L.rawEta(Object.assign({}, base, { bytes: 120e9 })).ms, 0, '예상을 넘겨도 음수가 아니다');
+});
+
+test('남은 시간 다듬기: 흐른 시간만큼 줄이고 새 값 쪽으로 천천히, 근거가 바뀌면 새로', () => {
+  assert.equal(L.smoothEta(null, { ms: null, basis: null }, 700, 20000), null);
+  const first = L.smoothEta(null, { ms: 600000, basis: 'bytes' }, 700, 20000);
+  assert.equal(first.ms, 600000);
+  // 예측대로면(10분 → 0.7초 뒤 599.3초) 그대로 따라간다
+  const same = L.smoothEta(first, { ms: 599300, basis: 'bytes' }, 700, 20000);
+  assert.ok(Math.abs(same.ms - 599300) < 1e-6);
+  // 속도가 순간 반토막(원값 두 배) 나도 한 번에 뛰지 않는다
+  const spike = L.smoothEta(first, { ms: 1200000, basis: 'bytes' }, 700, 20000);
+  assert.ok(spike.ms > 599300 && spike.ms < 625000, String(spike.ms));
+  // 원값이 정말로 바뀌었으면(15분 쪽으로 꾸준히 줄어듦) 시상수의 몇 배 뒤에는 따라가 있다
+  let cur = first;
+  let raw = 900000;
+  for (let i = 0; i < 300; i++) { raw -= 700; cur = L.smoothEta(cur, { ms: raw, basis: 'bytes' }, 700, 20000); }
+  assert.ok(Math.abs(cur.ms - raw) < 1000, cur.ms + ' vs ' + raw);
+  // 근거가 바뀌면 이어 붙이지 않는다
+  assert.deepEqual(L.smoothEta(first, { ms: 42, basis: 'rooms' }, 700, 20000), { ms: 42, basis: 'rooms' });
+});
+
 // ── 북마크 ─────────────────────────────────────────────────────────────────
 
 const CODE = fs.readFileSync(SRC, 'utf8');
