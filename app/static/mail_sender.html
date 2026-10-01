@@ -38,10 +38,15 @@
     <ul id="ms-global-issues"></ul>
     <table class="ms-table"><thead><tr><th>행</th><th>담당자</th><th>이메일</th><th>상태</th><th>점검</th><th></th></tr></thead>
       <tbody id="ms-rows"></tbody></table>
-    <button id="ms-send-all" class="ms-btn ms-btn-primary">전체 발송</button>
+    <button id="ms-send-all" class="ms-btn ms-btn-primary" disabled>전체 발송</button>
   </section>
   <section id="ms-job" class="ms-card" hidden>
     <p id="ms-job-text"></p><progress id="ms-job-bar" max="100" value="0"></progress>
+    <p id="ms-job-err" class="ms-err"></p>
+    <div id="ms-unknown" hidden>
+      <p id="ms-unknown-text" class="ms-warn"></p>
+      <button id="ms-ack" class="ms-btn">확인했음</button>
+    </div>
     <button id="ms-stop" class="ms-btn">중지</button>
   </section>
   <dialog id="ms-preview"><h3 id="ms-pv-subject"></h3><div id="ms-pv-body"></div>

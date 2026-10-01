@@ -1,13 +1,27 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-let state = { spreadsheet_id: "", sheet: "", job: null };
+const TERMINAL = ["done", "stopped", "interrupted"];
+const STATUS_LABEL = { running: "발송 중", stopping: "중지하는 중", done: "완료", stopped: "중지됨",
+  interrupted: "중단됨(서버 재시작)" };
+// checkOk: 마지막 점검이 오류 없이 대상 1명 이상 / watching: 지켜보는 작업 id (그동안 전체 발송 잠금)
+let state = { spreadsheet_id: "", sheet: "", checkOk: false, watching: null };
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body) } : {});
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : (j.detail && j.detail.message) || r.status);
+  if (!r.ok) {
+    const err = new Error(typeof j.detail === "string" ? j.detail : (j.detail && j.detail.message) || String(r.status));
+    err.status = r.status;
+    err.detail = j.detail;
+    throw err;
+  }
   return j;
+}
+
+// ⛔ 작업을 지켜보는 동안에는 전체 발송을 다시 누를 수 없다 (끝난 뒤에도 새 점검이 있어야 켜진다)
+function refreshSendAll() {
+  $("ms-send-all").disabled = state.watching !== null || !state.checkOk;
 }
 
 function text(el, s) { el.textContent = s; }
@@ -47,6 +61,7 @@ async function init() {
     return;
   }
   $("ms-main").hidden = false;
+  refreshSendAll();
   for (const a of s.senders) {
     const o = new Option(a.display ? `${a.display} <${a.email}>` : a.email, a.email, a.default, a.default);
     $("ms-sender").add(o);
@@ -63,6 +78,8 @@ $("ms-load").onclick = guard(async () => {
 
 $("ms-check").onclick = guard(async () => {
   state.sheet = $("ms-sheet").value;
+  state.checkOk = false;
+  refreshSendAll();
   text($("ms-summary"), "점검 중… (Docs 탭을 받아오는 데 수십 초 걸릴 수 있습니다)");
   $("ms-result").hidden = false;
   const j = await api("/api/mail-sender/check", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet });
@@ -75,12 +92,13 @@ $("ms-check").onclick = guard(async () => {
   $("ms-rows").replaceChildren(...j.rows.map((r) => {
     const tr = document.createElement("tr");
     const iss = byRow[r.row] || [];
-    const mark = r.status === "O" ? "보냄" : iss.some((i) => i.level === "error") ? "❌" : iss.length ? "⚠️" : "✅";
+    const isSent = (r.status || "").trim().toUpperCase() === "O";
+    const mark = isSent ? "보냄" : iss.some((i) => i.level === "error") ? "❌" : iss.length ? "⚠️" : "✅";
     for (const v of [r.row, r.manager, r.email, r.status || "", mark + " " + iss.map((i) => i.message).join(" / ")]) {
       const td = document.createElement("td"); td.textContent = v; tr.append(td);
     }
     const td = document.createElement("td");
-    if (r.status !== "O") {
+    if (!isSent) {
       const pv = document.createElement("button"); pv.className = "ms-btn"; pv.textContent = "미리보기";
       pv.onclick = guard(() => preview(r.row));
       const ts = document.createElement("button"); ts.className = "ms-btn"; ts.textContent = "나에게 테스트";
@@ -89,8 +107,9 @@ $("ms-check").onclick = guard(async () => {
     }
     tr.append(td); return tr;
   }));
-  $("ms-send-all").disabled = j.errors > 0 || j.pending === 0;
   $("ms-send-all").dataset.count = j.pending;
+  state.checkOk = j.errors === 0 && j.pending > 0;
+  refreshSendAll();
 });
 
 async function preview(row) {
@@ -110,26 +129,78 @@ async function testSend(row) {
 }
 
 $("ms-send-all").onclick = guard(async () => {
-  const n = $("ms-send-all").dataset.count;
+  const btn = $("ms-send-all");
+  if (btn.disabled) return;
+  const n = btn.dataset.count;
   if (!confirm(`${state.sheet} 시트의 ${n}명에게 '${$("ms-sender").value}' 로 발송합니다. 진행할까요?`)) return;
-  await busy($("ms-send-all"), async () => {
+  // busy() 는 끝나면 버튼을 다시 켠다 — 작업을 지켜보는 동안 잠가 두려고 직접 다룬다
+  btn.disabled = true;
+  try {
     const j = await api("/api/mail-sender/jobs", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet,
       sender: $("ms-sender").value, confirm_count: Number(n) });
+    state.checkOk = false;  // 다음 발송은 다시 점검한 뒤에
     watchJob(j.job_id);
-  });
+  } catch (e) {
+    refreshSendAll();
+    const ids = e.detail && Array.isArray(e.detail.unknown_job_ids) ? e.detail.unknown_job_ids : [];
+    if (ids.length) watchJob(ids[0]);  // 불확실 행과 '확인했음' 버튼을 보여 준다
+    throw e;
+  }
 });
 
+function renderJob(j) {
+  const n = (k) => Number(j[k] || 0);
+  const done = n("sent") + n("failed") + n("skipped") + n("unknown");
+  $("ms-job-bar").value = j.total ? Math.round((done / j.total) * 100) : 0;
+  text($("ms-job-text"), `${STATUS_LABEL[j.status] || j.status} · 성공 ${n("sent")} · 실패 ${n("failed")} · ` +
+    `건너뜀 ${n("skipped")} · 불확실 ${n("unknown")} · 시트 기록 실패 ${n("sheet_write_failed")} / 전체 ${j.total}` +
+    (j.stop_reason ? ` — ${j.stop_reason}` : ""));
+  const rows = Array.isArray(j.unknown_rows) ? j.unknown_rows : [];
+  $("ms-unknown").hidden = rows.length === 0;
+  if (!rows.length) return;
+  text($("ms-unknown-text"), `발송 여부 불확실: ${rows.join(", ")}행 — Gmail 보낸편지함에서 확인하세요. ` +
+    "실제로 나간 행은 시트 전송여부 열에 O 를 적은 뒤 '확인했음' 을 누르세요 (O 가 없는 행은 다음 발송 때 보내집니다)");
+  $("ms-ack").onclick = guard(() => busy($("ms-ack"), async () => {
+    if (!confirm(`${rows.join(", ")}행을 보낸편지함에서 확인했고, 나간 행은 O 로 표시했습니까?`)) return;
+    await api(`/api/mail-sender/jobs/${j.id}/ack-unknown`, {});
+    renderJob(await api(`/api/mail-sender/jobs/${j.id}`));
+  }));
+}
+
+function endWatch(id) {
+  if (state.watching !== id) return;
+  state.watching = null;
+  $("ms-stop").hidden = true;
+  refreshSendAll();
+}
+
 function watchJob(id) {
+  state.watching = id;
+  refreshSendAll();
   $("ms-job").hidden = false;
-  $("ms-stop").onclick = () => api(`/api/mail-sender/jobs/${id}/stop`, {});
-  const tick = guard(async () => {
-    const j = await api(`/api/mail-sender/jobs/${id}`);
-    const done = j.sent + j.failed + j.skipped;
-    $("ms-job-bar").value = j.total ? Math.round((done / j.total) * 100) : 0;
-    text($("ms-job-text"), `${j.status} · 성공 ${j.sent} · 실패 ${j.failed} · 건너뜀 ${j.skipped} / ${j.total}` +
-      (j.stop_reason ? ` — ${j.stop_reason}` : ""));
-    if (["running", "stopping"].includes(j.status)) setTimeout(tick, 2000);
-  });
+  $("ms-stop").hidden = false;
+  $("ms-stop").onclick = guard(() => busy($("ms-stop"), () => api(`/api/mail-sender/jobs/${id}/stop`, {})));
+  const tick = async () => {
+    if (state.watching !== id) return;
+    let j;
+    try {
+      j = await api(`/api/mail-sender/jobs/${id}`);
+    } catch (e) {
+      if (e.status === 404) {
+        text($("ms-job-err"), "작업을 찾을 수 없습니다");
+        endWatch(id);
+        return;
+      }
+      // 일시 오류(네트워크·서버 재시작) — 지켜보기를 멈추지 않는다
+      text($("ms-job-err"), `상태를 불러오지 못했습니다 (${e.message}) — 5초 뒤 다시 확인합니다`);
+      setTimeout(tick, 5000);
+      return;
+    }
+    text($("ms-job-err"), "");
+    renderJob(j);
+    if (TERMINAL.includes(j.status)) endWatch(id);
+    else setTimeout(tick, 2000);
+  };
   tick();
 }
 

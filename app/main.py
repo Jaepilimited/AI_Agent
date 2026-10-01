@@ -161,6 +161,12 @@ def create_app() -> FastAPI:
             await asyncio.to_thread(_ensure_fn)
         from app.core.self_check import ensure_self_check_tables
         await asyncio.to_thread(ensure_self_check_tables)
+        # 메일 발송 작업 기록 — 재시작 시 진행 중이던 작업은 '중단됨' 으로만 바꾼다 (자동 재개 금지)
+        from app.core.mail_sender_jobs import ensure_mail_sender_tables
+        try:
+            await asyncio.to_thread(ensure_mail_sender_tables)
+        except Exception as e:  # DB 가 없어도 앱은 뜬다 — 메일 작업 API 만 실패한다
+            logger.warning("mail_sender_tables_failed", error=str(e))
         # 붐따 처리 상태 컬럼 — 없으면 "처리했다"를 남길 곳이 없어
         # "인입은 됐는데 처리가 안 된 건지"를 영영 답할 수 없다 (2026-08-14)
         from app.core.feedback_inbox import (

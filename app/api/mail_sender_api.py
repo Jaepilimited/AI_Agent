@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from app.api.auth_middleware import _extract_user_id, get_current_user
 from app.core import mail_google
+from app.core import mail_sender_jobs as jobs
 from app.core.google_auth import GoogleAuthManager
 from app.core.mail_mime import build_mime
 from app.core.mail_sender import DOC_ID, TAB_DIR_SHEET, check, parse_rows, parse_tab_directory, pending
@@ -88,7 +89,7 @@ def _load(creds, spreadsheet_id: str, sheet: str):
 
 
 async def _sent_today(email: str) -> int:
-    return 0  # Task 7 에서 jobs.sent_today 로 바꾼다 (발송 기록 테이블이 생긴 뒤)
+    return await asyncio.to_thread(jobs.sent_today, email)
 
 
 class SheetsIn(BaseModel):
@@ -190,3 +191,82 @@ async def test_send(body: RowIn, user=Depends(get_current_user)):
     _, tpl, subject, html = _row_message(rows, templates, body.row)
     raw = build_mime(sender=sender, to=user.email, subject="[테스트] " + subject, html=html, images=tpl.images)
     return {"message_id": await asyncio.to_thread(mail_google.send_raw, creds, raw)}
+
+
+# ---------------------------------------------------------------------------
+# 발송 작업 — ⛔ 확인 창(confirm_count) 없이는 시작하지 않는다
+# ---------------------------------------------------------------------------
+class JobIn(SheetIn):
+    sender: str
+    confirm_count: int
+
+
+def _unresolved_unknown(user_email: str, spreadsheet_id: str, sheet: str, rows) -> tuple[list[int], list[int]]:
+    """앞선 작업에서 '보냈는지 모름' 으로 남았고, 아직 확인받지 못했고, 지금 시트에 O 도 없는 행."""
+    status = {r.row: r.status for r in rows}
+    left = [u for u in jobs.unresolved_unknown(spreadsheet_id, sheet)
+            if status.get(u["sheet_row"], "").strip().upper() != "O"]
+    sheet_rows = sorted({u["sheet_row"] for u in left})
+    own_jobs = sorted({u["job_id"] for u in left if u["owner"] == user_email})
+    return sheet_rows, own_jobs
+
+
+@router.post("/api/mail-sender/jobs")
+@_google_errors
+async def start_job(body: JobIn, user=Depends(get_current_user)):
+    creds = await asyncio.to_thread(_ready_creds, user)
+    sender = await asyncio.to_thread(_check_sender, creds, body.sender)  # 시작 시점에 다시 검증
+    rows, cols, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
+    targets = pending(rows)
+    issues = check(targets, tab_dir, updated, templates, datetime.now(timezone.utc),
+                   sent_today=await _sent_today(user.email))
+    errors = [i for i in issues if i.level == "error"]
+    if errors:
+        raise HTTPException(400, f"점검 오류 {len(errors)}건이 있어 시작하지 않습니다: {errors[0].message}")
+    unsure_rows, unsure_jobs = await asyncio.to_thread(
+        _unresolved_unknown, user.email, body.spreadsheet_id, body.sheet, rows)
+    if unsure_rows:  # ⛔ 같은 사람에게 두 번 — 확인 전에는 다시 보내지 않는다
+        raise HTTPException(409, {
+            "message": f"발송 여부 불확실한 행이 있습니다: {', '.join(map(str, unsure_rows))}행 — "
+                       "보낸편지함을 확인한 뒤 '확인했음' 을 눌러 주세요",
+            "unknown_rows": unsure_rows, "unknown_job_ids": unsure_jobs})
+    if len(targets) != body.confirm_count:  # 확인 창 이후 시트가 바뀌었다
+        raise HTTPException(409, f"대상이 바뀌었습니다 ({body.confirm_count} → {len(targets)}명). 다시 점검하세요")
+    try:
+        job_id = await asyncio.to_thread(jobs.create_job, user.email, body.spreadsheet_id, body.sheet, sender, targets)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    jobs.start_job_thread(job_id, creds, cols, templates)
+    return {"job_id": job_id}
+
+
+def _jsonable(j: dict) -> dict:
+    return {k: (str(v) if isinstance(v, datetime) else v) for k, v in j.items()}
+
+
+@router.get("/api/mail-sender/jobs/active")  # ⛔ /jobs/{job_id} 보다 먼저 선언 (경로 매칭 순서)
+async def active(user=Depends(get_current_user)):
+    j = await asyncio.to_thread(jobs.active_job, user.email)
+    return {"job": _jsonable(j) if j else None}
+
+
+@router.get("/api/mail-sender/jobs/{job_id}")
+async def job_status(job_id: int, user=Depends(get_current_user)):
+    j = await asyncio.to_thread(jobs.get_job, job_id, user.email)
+    if not j:
+        raise HTTPException(404, "작업이 없습니다")
+    return _jsonable(j)
+
+
+@router.post("/api/mail-sender/jobs/{job_id}/stop")
+async def stop(job_id: int, user=Depends(get_current_user)):
+    return {"ok": await asyncio.to_thread(jobs.request_stop, job_id, user.email)}
+
+
+@router.post("/api/mail-sender/jobs/{job_id}/ack-unknown")
+async def ack_unknown(job_id: int, user=Depends(get_current_user)):
+    """작업 주인이 보낸편지함을 확인했다 — 불확실 행을 '확인됨' 으로. 나간 행은 사용자가 시트에 O 를 적는다."""
+    n = await asyncio.to_thread(jobs.ack_unknown, job_id, user.email)
+    if n is None:
+        raise HTTPException(404, "작업이 없습니다")
+    return {"acknowledged": n}
