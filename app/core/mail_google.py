@@ -19,9 +19,14 @@ def _fresh(creds):
 
 
 def granted_scopes(creds) -> set[str]:
-    r = requests.get("https://oauth2.googleapis.com/tokeninfo",
-                     params={"access_token": _fresh(creds).token}, timeout=20)
-    return set((r.json().get("scope") or "").split()) if r.ok else set()
+    try:
+        r = requests.get("https://oauth2.googleapis.com/tokeninfo",
+                         params={"access_token": _fresh(creds).token}, timeout=20)
+    except requests.RequestException as e:
+        raise RuntimeError("구글 권한 확인 실패 (네트워크) — 잠시 뒤 다시 시도하세요") from e
+    if not r.ok:
+        raise RuntimeError(f"구글 권한 확인 실패 (HTTP {r.status_code}) — 잠시 뒤 다시 시도하세요")
+    return set((r.json().get("scope") or "").split())
 
 
 def missing_mail_scopes(creds) -> list[str]:
@@ -38,8 +43,14 @@ def export_tab_zip(creds, doc_id: str, tab_id: str) -> bytes:
     r = AuthorizedSession(_fresh(creds)).get(
         f"https://docs.google.com/document/d/{doc_id}/export",
         params={"format": "zip", "tab": tab_id}, timeout=180)
-    if r.status_code != 200 or r.content[:2] != b"PK":
-        raise RuntimeError(f"탭 내보내기 실패 (HTTP {r.status_code}) — zip 이 아닙니다. 문서 권한을 확인하세요")
+    if r.status_code == 404:
+        raise RuntimeError("문서나 탭을 찾을 수 없습니다 (탭 목록이 낡았을 수 있습니다)")
+    if r.status_code in (401, 403):
+        raise RuntimeError("이 문서에 접근 권한이 없습니다 — 문서 공유 설정을 확인하세요")
+    if r.status_code != 200:
+        raise RuntimeError(f"탭 내보내기 실패 (HTTP {r.status_code})")
+    if r.content[:2] != b"PK":
+        raise RuntimeError("구글이 로그인/권한 페이지를 돌려줬습니다 (zip 이 아님) — 구글 다시 연결")
     return r.content
 
 
@@ -55,8 +66,12 @@ def sheet_titles(creds, spreadsheet_id: str) -> list[str]:
 
 def read_sheet(creds, spreadsheet_id: str, title: str) -> list[list[str]]:
     res = _sheets(creds).spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'", valueRenderOption="FORMATTED_VALUE").execute()
+        spreadsheetId=spreadsheet_id, range=_a1(title), valueRenderOption="FORMATTED_VALUE").execute()
     return res.get("values", [])
+
+
+def _a1(title: str) -> str:
+    return "'" + title.replace("'", "''") + "'"
 
 
 def _col(i: int) -> str:
@@ -70,13 +85,13 @@ def _col(i: int) -> str:
 
 def read_cell(creds, spreadsheet_id: str, title: str, row: int, col: int) -> str:
     res = _sheets(creds).spreadsheets().values().get(
-        spreadsheetId=spreadsheet_id, range=f"'{title}'!{_col(col)}{row}").execute()
+        spreadsheetId=spreadsheet_id, range=f"{_a1(title)}!{_col(col)}{row}").execute()
     vals = res.get("values", [])
     return str(vals[0][0]).strip() if vals and vals[0] else ""
 
 
 def write_cells(creds, spreadsheet_id: str, title: str, row: int, updates: dict[int, str]) -> None:
-    data = [{"range": f"'{title}'!{_col(c)}{row}", "values": [[v]]} for c, v in updates.items()]
+    data = [{"range": f"{_a1(title)}!{_col(c)}{row}", "values": [[v]]} for c, v in updates.items()]
     _sheets(creds).spreadsheets().values().batchUpdate(
         spreadsheetId=spreadsheet_id, body={"valueInputOption": "USER_ENTERED", "data": data}).execute()
 

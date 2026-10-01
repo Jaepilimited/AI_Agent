@@ -353,6 +353,21 @@ except:
         )
         return auth_url
 
+    @staticmethod
+    def _granted_scopes_from_flow(flow, creds) -> list:
+        """Scopes Google actually granted (token response), falling back to SCOPES."""
+        raw = None
+        try:
+            raw = flow.oauth2session.token.get("scope")
+        except Exception:
+            raw = None
+        if not raw:
+            raw = getattr(creds, "granted_scopes", None)
+        if isinstance(raw, str):
+            raw = raw.split()
+        granted = [str(x) for x in (raw or []) if x]
+        return granted or list(SCOPES)
+
     def exchange_code(self, code: str, user_email: str, redirect_uri: str = "") -> Credentials:
         """Exchange authorization code for credentials and save.
 
@@ -372,6 +387,18 @@ except:
         )
         flow.fetch_token(code=code)
         creds = flow.credentials
+
+        # ⛔ Flow 의 credentials.scopes 는 '요청한' 목록이다. 저장·갱신에는 구글이 실제로
+        #    '부여한' 스코프만 써야 한다 — 안 그러면 갱신이 invalid_scope 로 실패한다.
+        granted = self._granted_scopes_from_flow(flow, creds)
+        creds = Credentials(
+            token=creds.token,
+            refresh_token=creds.refresh_token,
+            token_uri=creds.token_uri,
+            client_id=creds.client_id,
+            client_secret=creds.client_secret,
+            scopes=granted,
+        )
 
         # Fetch Google account email via Gmail API
         google_email = ""
