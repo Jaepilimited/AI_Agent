@@ -6421,3 +6421,31 @@ html.dark .db-autocomplete-dropdown {
   color: var(--text-secondary);
   font-size: 0.85em;
 }
+
+/* ── 메일 발송 페이지 (/mail-sender) ── */
+.ms-page { max-width: 1100px; margin: 0 auto; padding: var(--space-lg); color: var(--text); font-family: var(--font-korean); }
+.ms-head { display: flex; align-items: baseline; gap: var(--space-md); }
+.ms-head h1 { font-size: var(--text-xl); }
+.ms-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+           padding: var(--space-md); margin: var(--space-md) 0; display: flex; flex-direction: column;
+           align-items: flex-start; gap: var(--space-sm); }
+.ms-card label { display: flex; flex-direction: column; gap: var(--space-xs); width: 100%;
+                 color: var(--text-secondary); font-size: var(--text-sm); }
+.ms-muted { color: var(--text-secondary); font-size: var(--text-sm); }
+.ms-input, .ms-card select { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius-sm);
+                             color: var(--text); padding: var(--space-sm); font: inherit; width: 100%; }
+.ms-input:focus, .ms-card select:focus { outline: none; border-color: var(--border-focus); }
+.ms-btn { background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+          color: var(--text); padding: var(--space-xs) var(--space-md); font: inherit; font-size: var(--text-ui); cursor: pointer; }
+.ms-btn:hover { background: var(--bg-hover); }
+.ms-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ms-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg-surface); }
+.ms-btn-primary:hover { background: var(--accent-hover); }
+.ms-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.ms-table th, .ms-table td { border-bottom: 1px solid var(--border); padding: var(--space-sm); text-align: left; vertical-align: top; }
+.ms-err { color: var(--error); }
+.ms-warn { color: var(--warning); }
+.ms-frame { width: 100%; height: 60vh; border: 1px solid var(--border); }
+#ms-preview { width: min(800px, 92vw); background: var(--bg-surface); color: var(--text);
+              border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+#ms-job-bar { width: 100%; }

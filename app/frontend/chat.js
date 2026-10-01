@@ -1638,6 +1638,11 @@
       window.open("/sales-carryover", "_blank", "noopener");
     });
 
+    // 메일 발송 — 전용 페이지를 새 탭에서 연다
+    document.getElementById("btn-mail-sender").addEventListener("click", () => {
+      window.open("/mail-sender", "_blank", "noopener");
+    });
+
     // System Status drawer
     document.getElementById("btn-system-status").addEventListener("click", openStatusDrawer);
     initNotifications();
