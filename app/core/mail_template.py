@@ -98,6 +98,9 @@ def template_from_export_zip(zip_bytes: bytes) -> MailTemplate:
     cid_by_src: dict[str, str] = {}
     for img in body.find_all("img"):
         src = img.get("src", "")
+        # Skip variable substitution if src contains a template variable
+        if "{" in src:
+            continue
         if src.startswith(("http://", "https://")):
             raise TemplateError(f"외부 이미지 링크는 보낼 수 없습니다: {src[:60]}")
         if src not in cid_by_src:
@@ -129,6 +132,20 @@ def find_variables(template: MailTemplate) -> set[str]:
     return variables
 
 
+def _safe_url(url: str) -> bool:
+    """Check if URL scheme is safe (http, https, mailto, tel, or relative)."""
+    url = url.strip().lower()
+    # Relative URLs: start with /, #, or don't have a scheme
+    if url.startswith(("/", "#")):
+        return True
+    # Check for scheme
+    scheme_match = re.match(r"^([a-z]+):", url)
+    if not scheme_match:
+        return True  # No scheme = relative URL
+    scheme = scheme_match.group(1)
+    return scheme in ("http", "https", "mailto", "tel")
+
+
 def _sub(text: str, values: dict[str, str], escape: bool) -> str:
     def repl(m: re.Match) -> str:
         key = normalize_key(m.group(1))
@@ -152,7 +169,7 @@ def render(template: MailTemplate, values: dict[str, str]) -> tuple[str, str]:
     for tag in soup.find_all():
         for attr_name, attr_value in list(tag.attrs.items()):
             if isinstance(attr_value, str) and "{" in attr_value:
-                # URL attributes: smart quoting
+                # URL attributes: smart quoting with security
                 if attr_name in ("href", "src"):
                     stripped = attr_value.strip()
                     # Check if entire value is a single variable
@@ -165,10 +182,32 @@ def render(template: MailTemplate, values: dict[str, str]) -> tuple[str, str]:
                         if key not in vals:
                             return m.group(0)
                         v = vals[key] or ""
-                        # Don't quote if entire value is single var or starts with mailto:
-                        if full_var_match or is_mailto:
+
+                        # Handle full variable substitution (entire attribute is {var})
+                        if full_var_match:
+                            # Security check: only allow safe schemes
+                            if not _safe_url(v):
+                                return urllib.parse.quote(v, safe='')
                             return v
-                        # Otherwise quote for embedded variables in URLs
+
+                        # Handle mailto: with query string
+                        if is_mailto:
+                            # Check if there's a query string (after ?)
+                            if "?" in attr_value:
+                                # Only quote the variable if it's in the query part
+                                # Simple heuristic: if variable position is after ?, quote it
+                                before_var = attr_value[:m.start()]
+                                if "?" in before_var:
+                                    # Variable is in query part, quote it
+                                    return urllib.parse.quote(v, safe='')
+                                else:
+                                    # Variable is in address part (before ?), use raw
+                                    return v
+                            else:
+                                # No query string, use raw value
+                                return v
+
+                        # For embedded variables in URLs, always quote
                         return urllib.parse.quote(v, safe='')
                     tag[attr_name] = _VAR.sub(repl_url, attr_value)
                 else:

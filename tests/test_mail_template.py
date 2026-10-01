@@ -152,3 +152,33 @@ def test_href_embedded_variable_is_quoted():
     t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
     _, html_out = render(t, {"name": "test", "query": "hello world"})
     assert "hello%20world" in html_out  # Should be URL-encoded
+
+
+def test_javascript_href_blocked():
+    html = EXPORT.replace(
+        '<a class="c2" href="https://form.example">FORM</a>',
+        '<a class="c2" href="{link}">FORM</a>'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, html_out = render(t, {"name": "test", "link": "javascript:alert(1)"})
+    assert "javascript:" not in html_out  # Should be neutralized
+
+
+def test_data_url_blocked():
+    html = EXPORT.replace(
+        '<img src="images/image1.png" style="width: 200px; height: 100px;">',
+        '<img src="{image_src}" style="width: 200px; height: 100px;">'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, html_out = render(t, {"name": "test", "image_src": "data:text/html,<script>alert(1)</script>"})
+    assert "data:" not in html_out or "%3A" in html_out  # Should be neutralized or encoded
+
+
+def test_mailto_with_query_string():
+    html = EXPORT.replace(
+        '<a class="c2" href="https://form.example">FORM</a>',
+        '<a class="c2" href="mailto:{email}?subject={subject}">FORM</a>'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, html_out = render(t, {"name": "test", "email": "a@b.com", "subject": "a b&c"})
+    assert 'href="mailto:a@b.com?subject=a%20b%26c"' in html_out  # Email raw, query encoded
