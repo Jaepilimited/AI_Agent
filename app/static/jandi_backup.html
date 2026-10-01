@@ -37,6 +37,13 @@
 
     /* ── 3단계 ── 줄마다: 큰 숫자 · 한 문장 · 움직이는 그림 */
     .jb-steps { list-style: none; margin-top: 28px; border-top: 2px solid var(--text); }
+    /* 실제 화면 캡처 — 개인 탭·북마크·잔디 내용은 가리고, 누를 곳만 빨간 테두리 (2026-10-01) */
+    .jb-real { grid-column: 2 / -1; margin: 6px 0 0; }
+    .jb-real-side { grid-column: auto; margin: 0; }
+    .jb-real-small { max-width: 360px; }
+    .jb-real img { width: 100%; height: auto; display: block; border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 4px 14px rgba(0,0,0,.08); }
+    .jb-real figcaption { margin-top: 8px; color: var(--text-secondary); font-size: 0.88rem; }
+    @media (max-width: 760px) { .jb-real, .jb-real-side { grid-column: 1 / -1; } }
     .jb-step { display: grid; grid-template-columns: 56px minmax(0, 1fr) minmax(0, 1.32fr); gap: 8px 28px;
                align-items: start; padding: 28px 0; border-bottom: 1px solid var(--border-strong); }
     .jb-num { align-self: start; font: 800 3.4rem/0.9 var(--font-display); color: var(--jb-green);
@@ -256,44 +263,10 @@
           <div class="jb-ready" id="jb-ready">버튼을 준비하는 중입니다…</div>
           <div class="jb-msg" id="jb-msg" role="status"></div>
         </div>
-        <div class="jb-fig jb-anim" style="--freeze: .7" aria-hidden="true">
-          <svg viewBox="0 0 400 240">
-            <defs>
-              <marker id="jb-arrowhead" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                <path class="ah" d="M0 0 L10 5 L0 10 z"/>
-              </marker>
-            </defs>
-            <rect class="w" x="1" y="1" width="398" height="238" rx="10"/>
-            <circle cx="16" cy="14" r="4" fill="#ff5f57"/><circle cx="30" cy="14" r="4" fill="#febc2e"/><circle cx="44" cy="14" r="4" fill="#28c840"/>
-            <rect class="s" x="12" y="26" width="376" height="22" rx="11"/>
-            <text class="m" x="26" y="41">셀라 › 잔디 백업 도우미</text>
-            <line class="ln" x1="1" y1="56" x2="399" y2="56"/>
-            <rect class="s" x="12" y="62" width="46" height="19" rx="5"/><text class="m" x="23" y="75">메일</text>
-            <rect class="s" x="64" y="62" width="46" height="19" rx="5"/><text class="m" x="75" y="75">셀라</text>
-            <rect class="slot a f1-slot" x="116" y="61" width="96" height="21" rx="5"/>
-            <g class="a f1-place">
-              <rect class="pl" x="116" y="61" width="96" height="21" rx="5"/>
-              <circle class="g" cx="129" cy="71.5" r="4"/>
-              <text class="t b" x="139" y="76">잔디 백업</text>
-            </g>
-            <text class="an" x="222" y="76">즐겨찾기 줄(북마크바)</text>
-            <line class="ln" x1="1" y1="86" x2="399" y2="86"/>
-            <text class="t b" x="24" y="116" style="font-size:13px">잔디 백업 도우미</text>
-            <text class="m" x="24" y="135">딱 3번만 따라 하세요</text>
-            <rect class="g" x="24" y="150" width="124" height="38" rx="8"/>
-            <g fill="#fff" opacity=".85"><circle cx="38" cy="163" r="1.4"/><circle cx="43" cy="163" r="1.4"/><circle cx="38" cy="169" r="1.4"/><circle cx="43" cy="169" r="1.4"/><circle cx="38" cy="175" r="1.4"/><circle cx="43" cy="175" r="1.4"/></g>
-            <text class="wt" x="54" y="174" style="font-size:13px">잔디 백업</text>
-            <text class="an" x="160" y="174">꾹 눌러서 위로 끌기</text>
-            <path class="ar a f1-arrow" d="M70 146 C 70 116, 150 112, 160 92" marker-end="url(#jb-arrowhead)"/>
-            <g class="a f1-ghost">
-              <rect class="g" x="24" y="150" width="124" height="38" rx="8" style="filter:drop-shadow(0 6px 8px rgba(0,0,0,.25))"/>
-              <text class="wt" x="54" y="174" style="font-size:13px">잔디 백업</text>
-            </g>
-            <circle class="ring a f1-r1" cx="94" cy="174" r="16"/>
-            <circle class="ring a f1-r2" cx="164" cy="71" r="22"/>
-            <g class="a f1-cur"><g transform="scale(1.25)"><path class="cur" d="M0 0 L0 17 L4.5 13 L8 20.5 L11 19 L7.5 12 L13 12 Z"/></g></g>
-          </svg>
-        </div>
+        <figure class="jb-real jb-real-side">
+          <img src="/static/jandi-backup/guide/step1-real.png" alt="실제 화면: 초록 잔디 백업 버튼을 꾹 눌러 주소창 아래 즐겨찾기 줄로 끌어 올려 놓은 모습" loading="lazy">
+          <figcaption>실제 화면 — 놓고 나면 즐겨찾기 줄 왼쪽에 <b>잔디 백업</b>이 생깁니다.</figcaption>
+        </figure>
       </li>
 
       <li class="jb-step">
@@ -302,54 +275,10 @@
           <h2>크롬이나 엣지로 잔디에 로그인한 뒤, 즐겨찾기 줄의 <b>잔디 백업</b>을 누르세요.</h2>
           <p class="jb-sub">잔디 화면 오른쪽 위에 백업 창이 뜹니다. 설치형 잔디 프로그램에서는 안 되고, 브라우저로 연 잔디(<code>팀이름.jandi.com</code>)에서만 됩니다.</p>
         </div>
-        <div class="jb-fig jb-anim" style="--freeze: .7" aria-hidden="true">
-          <svg viewBox="0 0 400 240">
-            <defs><clipPath id="jb-clip2"><rect x="1" y="1" width="398" height="238" rx="10"/></clipPath></defs>
-            <rect class="w" x="1" y="1" width="398" height="238" rx="10"/>
-            <circle cx="16" cy="14" r="4" fill="#ff5f57"/><circle cx="30" cy="14" r="4" fill="#febc2e"/><circle cx="44" cy="14" r="4" fill="#28c840"/>
-            <rect class="s" x="12" y="26" width="376" height="22" rx="11"/>
-            <text class="m" x="26" y="41">팀이름.jandi.com/app</text>
-            <line class="ln" x1="1" y1="56" x2="399" y2="56"/>
-            <rect class="s" x="12" y="62" width="46" height="19" rx="5"/><text class="m" x="23" y="75">메일</text>
-            <rect class="s" x="64" y="62" width="46" height="19" rx="5"/><text class="m" x="75" y="75">셀라</text>
-            <rect class="pl" x="116" y="61" width="96" height="21" rx="5"/>
-            <circle class="g" cx="129" cy="71.5" r="4"/>
-            <text class="t b" x="139" y="76">잔디 백업</text>
-            <rect class="g a f2-flash" x="116" y="61" width="96" height="21" rx="5"/>
-            <text class="an" x="222" y="76">여기를 누르세요</text>
-            <line class="ln" x1="1" y1="86" x2="399" y2="86"/>
-            <g clip-path="url(#jb-clip2)">
-              <rect class="s" x="1" y="86" width="104" height="153"/>
-              <text class="t b sm" x="12" y="104">대화 목록</text>
-              <rect class="gl" x="8" y="112" width="90" height="16" rx="4"/>
-              <rect class="w" x="12" y="134" width="74" height="9" rx="3"/>
-              <rect class="w" x="12" y="150" width="62" height="9" rx="3"/>
-              <rect class="w" x="12" y="166" width="80" height="9" rx="3"/>
-              <rect class="w" x="12" y="182" width="56" height="9" rx="3"/>
-              <rect class="w" x="12" y="198" width="70" height="9" rx="3"/>
-            </g>
-            <rect class="s" x="120" y="100" width="150" height="20" rx="10"/>
-            <rect class="s" x="196" y="128" width="130" height="20" rx="10"/>
-            <rect class="s" x="120" y="156" width="176" height="20" rx="10"/>
-            <rect class="s" x="120" y="184" width="110" height="20" rx="10"/>
-            <rect class="s" x="116" y="212" width="272" height="18" rx="6"/>
-            <g class="a f2-panel">
-              <rect class="pn" x="204" y="92" width="186" height="142" rx="9"/>
-              <text class="t b" x="216" y="110">잔디 백업</text><text class="m" x="374" y="110">×</text>
-              <line class="ln" x1="204" y1="118" x2="390" y2="118"/>
-              <rect class="g" x="216" y="126" width="10" height="10" rx="2"/><text class="t sm" x="232" y="135">토픽 12개</text>
-              <rect class="g" x="216" y="142" width="10" height="10" rx="2"/><text class="t sm" x="232" y="151">1:1 대화 30개</text>
-              <rect class="g" x="216" y="158" width="10" height="10" rx="2"/><text class="t sm" x="232" y="167">그룹 대화 8개</text>
-              <rect class="g" x="216" y="174" width="10" height="10" rx="2"/><text class="t sm" x="232" y="183">첨부파일 포함</text>
-              <rect class="s" x="216" y="191" width="162" height="17" rx="5" style="stroke:var(--jb-green)"/>
-              <text class="t sm" x="297" y="203" text-anchor="middle">용량 미리 확인</text>
-              <rect class="g" x="216" y="212" width="162" height="19" rx="5"/>
-              <text class="wt sm" x="297" y="225" text-anchor="middle">저장 폴더 선택 후 시작</text>
-            </g>
-            <circle class="ring a f2-r1" cx="164" cy="71" r="22"/>
-            <g class="a f2-cur"><g transform="scale(1.25)"><path class="cur" d="M0 0 L0 17 L4.5 13 L8 20.5 L11 19 L7.5 12 L13 12 Z"/></g></g>
-          </svg>
-        </div>
+        <figure class="jb-real">
+          <img src="/static/jandi-backup/guide/step2-real.png" alt="실제 화면: 잔디에서 즐겨찾기 줄의 잔디 백업을 누르면 오른쪽 위에 잔디 백업 창이 뜨고, 아래 초록 버튼 저장 폴더 선택 후 시작이 있다" loading="lazy">
+          <figcaption>실제 화면 — 잔디 내용은 가려 두었습니다. 오른쪽 위에 <b>잔디 백업</b> 창이 뜹니다.</figcaption>
+        </figure>
       </li>
 
       <li class="jb-step">
@@ -359,67 +288,18 @@
           <p class="jb-sub">바탕화면에 빈 폴더를 하나 만들어 고르면 찾기 쉽습니다. 이제 끝날 때까지 기다리면 됩니다.</p>
           <p class="jb-opt">얼마나 걸릴지 먼저 보고 싶으면 <b>용량 미리 확인</b>을 누르세요. (안 눌러도 됩니다)</p>
         </div>
-        <div class="jb-fig jb-anim" style="--freeze: .7" aria-hidden="true">
-          <svg viewBox="0 0 400 240">
-            <rect class="w" x="1" y="1" width="398" height="238" rx="10"/>
-            <circle cx="16" cy="14" r="4" fill="#ff5f57"/><circle cx="30" cy="14" r="4" fill="#febc2e"/><circle cx="44" cy="14" r="4" fill="#28c840"/>
-            <rect class="s" x="12" y="26" width="376" height="22" rx="11"/>
-            <text class="m" x="26" y="41">팀이름.jandi.com/app</text>
-            <line class="ln" x1="1" y1="56" x2="399" y2="56"/>
-            <rect class="s" x="12" y="62" width="46" height="19" rx="5"/><text class="m" x="23" y="75">메일</text>
-            <rect class="s" x="64" y="62" width="46" height="19" rx="5"/><text class="m" x="75" y="75">셀라</text>
-            <rect class="pl" x="116" y="61" width="96" height="21" rx="5"/>
-            <circle class="g" cx="129" cy="71.5" r="4"/>
-            <text class="t b" x="139" y="76">잔디 백업</text>
-            <line class="ln" x1="1" y1="86" x2="399" y2="86"/>
-            <!-- 백업 창 -->
-            <rect class="pn" x="214" y="92" width="176" height="142" rx="9"/>
-            <text class="t b" x="226" y="109">잔디 백업</text><text class="m" x="374" y="109">×</text>
-            <line class="ln" x1="214" y1="116" x2="390" y2="116"/>
-            <rect class="g" x="226" y="122" width="9" height="9" rx="2"/><text class="t sm" x="241" y="130">토픽 12개</text>
-            <rect class="g" x="226" y="136" width="9" height="9" rx="2"/><text class="t sm" x="241" y="144">1:1 대화 30개</text>
-            <rect class="g" x="226" y="150" width="9" height="9" rx="2"/><text class="t sm" x="241" y="158">그룹 대화 8개</text>
-            <rect class="g" x="226" y="164" width="9" height="9" rx="2"/><text class="t sm" x="241" y="172">첨부파일 포함</text>
-            <rect class="s" x="226" y="180" width="152" height="17" rx="5" style="stroke:var(--jb-green)"/>
-            <text class="t sm" x="302" y="192" text-anchor="middle">용량 미리 확인</text>
-            <rect class="g" x="226" y="201" width="152" height="22" rx="5"/>
-            <text class="wt sm" x="302" y="216" text-anchor="middle">저장 폴더 선택 후 시작</text>
-            <!-- 시작한 뒤 -->
-            <g class="a f3-prog">
-              <rect x="220" y="176" width="164" height="52" rx="6" style="fill:var(--bg-surface)"/>
-              <text class="t b sm" x="226" y="191">백업 중…</text>
-              <rect class="s" x="226" y="198" width="152" height="8" rx="4"/>
-              <rect class="g a f3-bar" x="226" y="198" width="152" height="8" rx="4"/>
-              <text class="m" x="226" y="221" style="font-size:10px">끝날 때까지 이 탭을 열어 두세요</text>
-            </g>
-            <!-- 폴더 고르는 창 (윈도우) -->
-            <g class="a f3-dialog">
-              <rect class="pn" x="20" y="68" width="234" height="156" rx="8" style="fill:var(--bg-elevated)"/>
-              <text class="t b" x="34" y="90">폴더 선택</text>
-              <line class="ln" x1="20" y1="98" x2="254" y2="98"/>
-              <text class="m" x="34" y="116">바탕 화면 ›</text>
-              <path class="m" style="fill:var(--text-secondary)" d="M34 128 h8 l3 3 h10 v10 h-21 z"/>
-              <text class="t" x="62" y="140">문서</text>
-              <rect class="gl a f3-hl" x="28" y="149" width="218" height="22" rx="4"/>
-              <path class="g" d="M34 153 h8 l3 3 h10 v10 h-21 z"/>
-              <text class="t b" x="62" y="165">잔디백업</text>
-              <rect class="s" x="118" y="192" width="56" height="21" rx="5"/><text class="t sm" x="146" y="206" text-anchor="middle">취소</text>
-              <rect class="g" x="180" y="192" width="64" height="21" rx="5"/><text class="wt sm" x="212" y="206" text-anchor="middle">폴더 선택</text>
-            </g>
-            <!-- 브라우저가 묻는 창 -->
-            <g class="a f3-prompt">
-              <rect class="pn" x="14" y="52" width="250" height="84" rx="8" style="fill:var(--bg-elevated)"/>
-              <text class="t" x="28" y="75">'잔디백업' 폴더의 파일을</text>
-              <text class="t" x="28" y="92">수정하도록 허용할까요?</text>
-              <rect class="s" x="118" y="104" width="58" height="22" rx="5"/><text class="t sm" x="147" y="119" text-anchor="middle">취소</text>
-              <rect class="g" x="184" y="104" width="68" height="22" rx="5"/><text class="wt" x="218" y="119" text-anchor="middle">허용</text>
-            </g>
-            <circle class="ring a f3-r1" cx="300" cy="211" r="16"/>
-            <circle class="ring a f3-r2" cx="212" cy="202" r="16"/>
-            <circle class="ring a f3-r3" cx="218" cy="115" r="16"/>
-            <g class="a f3-cur"><g transform="scale(1.25)"><path class="cur" d="M0 0 L0 17 L4.5 13 L8 20.5 L11 19 L7.5 12 L13 12 Z"/></g></g>
-          </svg>
-        </div>
+        <figure class="jb-real">
+          <img src="/static/jandi-backup/guide/step3-folder-real.png" alt="실제 화면: 윈도우 폴더 선택 창에서 빈 폴더를 고르고 폴더 선택을 누른다" loading="lazy">
+          <figcaption>실제 화면 ① — 폴더 고르는 창에서 빈 폴더를 고르고 <b>폴더 선택</b>.</figcaption>
+        </figure>
+        <figure class="jb-real">
+          <img src="/static/jandi-backup/guide/step3-allow-real.png" alt="실제 화면: 이 사이트에서 파일을 수정하도록 허용하시겠습니까 질문에 허용을 누른다" loading="lazy">
+          <figcaption>실제 화면 ② — <b>허용</b>을 누르면 바로 시작됩니다.</figcaption>
+        </figure>
+        <figure class="jb-real jb-real-small">
+          <img src="/static/jandi-backup/guide/progress-real.png" alt="실제 화면: 백업 중 창 — 방, 기록, 첨부, 받은 용량, 속도, 경과 시간이 보인다" loading="lazy">
+          <figcaption>실제 화면 ③ — 시작되면 이렇게 진행 상황이 보입니다. 끝날 때까지 잔디 탭을 닫지 마세요.</figcaption>
+        </figure>
       </li>
     </ol>
 
