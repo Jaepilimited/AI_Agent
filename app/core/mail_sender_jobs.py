@@ -244,6 +244,17 @@ class MemoryStore:
         return None
 
 
+def _discard_conn(conn) -> None:
+    """풀 연결 안의 실제 DB 세션을 닫는다 — GET_LOCK 은 세션이 끝나야 풀린다.
+    풀(PooledDB)은 다음에 꺼낼 때 ping 으로 죽은 세션을 알아채고 다시 연결한다."""
+    raw = getattr(getattr(conn, "_con", None), "_con", None)
+    try:
+        if raw is not None:
+            raw.close()
+    except Exception as e:
+        logger.warning("mail_sheet_lock_conn_discard_failed", error=str(e))
+
+
 def _sheet_lock_name(sid: str, sheet: str) -> str:
     # MariaDB 잠금 이름은 64자 제한 — 시트를 해시로 줄인다
     return "mail_sheet:" + hashlib.sha1(f"{sid}|{sheet}".encode("utf-8")).hexdigest()[:40]
@@ -271,6 +282,7 @@ class MariaStore:
         """
         lock = _sheet_lock_name(sid, sheet)
         conn = self.db.get_maria_conn()
+        released = True
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT GET_LOCK(%s, 10) AS got", (lock,))
@@ -301,8 +313,11 @@ class MariaStore:
                     try:
                         cur.execute("SELECT RELEASE_LOCK(%s)", (lock,))
                     except Exception as e:  # 연결이 죽었으면 잠금도 세션과 함께 풀린다
+                        released = False
                         logger.warning("mail_sheet_lock_release_failed", error=str(e))
         finally:
+            if not released:  # ⛔ 잠금을 쥐었을 수 있는 세션을 풀에 되돌리지 않는다 (다음 시작이 10초 막힌다)
+                _discard_conn(conn)
             conn.close()
 
     def job(self, jid):
@@ -383,20 +398,39 @@ class MariaStore:
 
 
 _store = None
+# 부팅 때 테이블 준비·재시작 정리(DB 다운 등)에 실패했다 — 저장소를 처음 쓸 때 한 번 다시 한다.
+# ⛔ 정리 전엔 이 프로세스가 만든 작업이 없다 (작업 생성도 _s() 를 거친다) — 남의 진행 중 작업을 끊지 않는다.
+_recovery_pending = False
+_recovery_lock = threading.Lock()
 
 
 def _s():
-    global _store
+    global _store, _recovery_pending
     if _store is None:
         _store = MariaStore()
+    if _recovery_pending:
+        with _recovery_lock:
+            if _recovery_pending:
+                _prepare(_store)
+                _recovery_pending = False
+                logger.info("mail_sender_lazy_recovery_done")
     return _store
 
 
-def ensure_mail_sender_tables() -> None:
+def _prepare(store) -> None:
     from app.db import mariadb
     for ddl in _DDL:
         mariadb.execute(ddl)
-    recover_after_restart()
+    store.interrupt_all()
+
+
+def ensure_mail_sender_tables() -> None:
+    global _recovery_pending
+    try:
+        _prepare(_s())
+    except Exception:
+        _recovery_pending = True
+        raise
 
 
 def recover_after_restart() -> None:

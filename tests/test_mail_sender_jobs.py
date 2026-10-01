@@ -856,3 +856,71 @@ def test_start_job_thread_passes_sender_name(monkeypatch):
     monkeypatch.setattr(J.threading, "Thread", FakeThread)
     J.start_job_thread(1, "C", COLS, {}, sender_name="마케팅")
     assert seen["args"][:4] == (1, "C", COLS, {}) and "마케팅" in (*seen["args"], *seen["kwargs"].values())
+
+
+
+def test_recovery_runs_lazily_once_after_boot_failure(monkeypatch):
+    """부팅 때 DB 가 죽어 '중단됨' 정리를 못 했으면, 저장소를 처음 쓸 때 한 번 한다."""
+    import app.db.mariadb as M
+    monkeypatch.setattr(M, "execute", lambda sql, params=(): 0)
+
+    class Flaky(J.MemoryStore):
+        calls = 0
+
+        def interrupt_all(self):
+            self.calls += 1
+            if self.calls <= 2:
+                raise RuntimeError("db down")
+            super().interrupt_all()
+    st = Flaky()
+    jid = st.insert_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))  # 재시작 전 발송 중이던 작업
+    st.set_item_status(jid, 2, "sending")
+    monkeypatch.setattr(J, "_store", st)
+    monkeypatch.setattr(J, "_recovery_pending", False)
+    with pytest.raises(RuntimeError):
+        J.ensure_mail_sender_tables()
+    assert J._recovery_pending is True
+    with pytest.raises(RuntimeError):  # 아직 DB 가 죽어 있다 — 다음 사용에서 다시
+        J.sent_today("me@x.com")
+    assert J._recovery_pending is True
+    assert J.sent_today("me@x.com") == 0
+    assert st.calls == 3 and J._recovery_pending is False
+    assert st.jobs[jid]["status"] == "interrupted" and st.item_status(jid, 2) == "unknown"
+    J.active_job("me@x.com")
+    assert st.calls == 3  # 한 번만
+
+
+def test_no_lazy_recovery_when_boot_succeeded(monkeypatch, db):
+    import app.db.mariadb as M
+    monkeypatch.setattr(M, "execute", lambda sql, params=(): 0)
+    J.ensure_mail_sender_tables()
+    assert J._recovery_pending is False
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    assert J.get_job(jid, "me@x.com")["status"] == "running"  # 이 프로세스가 만든 작업은 건드리지 않는다
+
+
+def test_maria_insert_job_discards_connection_when_release_fails():
+    log = []
+    cur = _FakeCursor(log)
+    real = cur.execute
+
+    def execute(sql, params=()):
+        if "RELEASE_LOCK" in sql:
+            raise RuntimeError("connection lost")
+        return real(sql, params)
+    cur.execute = execute
+    m = _maria(cur)
+    conn = m.db.get_maria_conn.return_value
+    conn._con = MagicMock()  # PooledDB 의 steady 연결 — 그 안의 _con 이 실제 DB 세션
+    assert m.insert_job("me", "sid", "gmail_a", "me", _rows(1)) == 42
+    conn._con._con.close.assert_called_once()  # 잠금을 쥔 세션째 버린다
+    assert log[-1] == ("close",)
+
+
+def test_maria_insert_job_keeps_connection_when_release_ok():
+    log = []
+    m = _maria(_FakeCursor(log))
+    conn = m.db.get_maria_conn.return_value
+    conn._con = MagicMock()
+    m.insert_job("me", "sid", "gmail_a", "me", _rows(1))
+    conn._con._con.close.assert_not_called()
