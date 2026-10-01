@@ -12,10 +12,25 @@ async function api(path, body) {
 
 function text(el, s) { el.textContent = s; }
 
+function showError(msg) {
+  $("ms-result").hidden = false;
+  text($("ms-summary"), "오류: " + msg);
+}
+
+const guard = (fn) => async (...a) => {
+  try { await fn(...a); } catch (e) { showError(e.message); }
+};
+
+// 요청이 도는 동안 버튼을 잠가 중복 발송을 막는다
+async function busy(btn, fn) {
+  btn.disabled = true;
+  try { await fn(); } finally { btn.disabled = false; }
+}
+
 async function init() {
   const s = await api("/api/mail-sender/status");
   text($("ms-me"), s.me);
-  if (s.error) {
+  if (s.error && s.connected) {
     $("ms-connect").hidden = false;
     $("ms-connect-btn").hidden = true;
     text($("ms-connect-msg"), "오류: " + s.error + " — 잠시 후 새로고침해 주세요");
@@ -23,7 +38,7 @@ async function init() {
   }
   if (!s.connected || s.missing_scopes.length) {
     $("ms-connect").hidden = false;
-    text($("ms-connect-msg"), s.connected ? "메일 발송 권한이 빠져 있습니다: " + s.missing_scopes.join(", ") +
+    text($("ms-connect-msg"), s.error ? s.error : s.connected ? "메일 발송 권한이 빠져 있습니다: " + s.missing_scopes.join(", ") +
       " — 연결 화면에서 모든 항목을 체크하고 허용하세요" : "구글 계정을 연결해야 합니다");
     $("ms-connect-btn").onclick = () => {
       const w = window.open(s.login_url, "gws_auth", "width=500,height=650");
@@ -40,13 +55,13 @@ async function init() {
   if (running && running.job) watchJob(running.job.id);
 }
 
-$("ms-load").onclick = async () => {
+$("ms-load").onclick = guard(async () => {
   const j = await api("/api/mail-sender/sheets", { spreadsheet: $("ms-url").value });
   state.spreadsheet_id = j.spreadsheet_id;
   $("ms-sheet").replaceChildren(...j.sheets.map((t) => new Option(t, t)));
-};
+});
 
-$("ms-check").onclick = async () => {
+$("ms-check").onclick = guard(async () => {
   state.sheet = $("ms-sheet").value;
   text($("ms-summary"), "점검 중… (Docs 탭을 받아오는 데 수십 초 걸릴 수 있습니다)");
   $("ms-result").hidden = false;
@@ -67,21 +82,23 @@ $("ms-check").onclick = async () => {
     const td = document.createElement("td");
     if (r.status !== "O") {
       const pv = document.createElement("button"); pv.className = "ms-btn"; pv.textContent = "미리보기";
-      pv.onclick = () => preview(r.row);
+      pv.onclick = guard(() => preview(r.row));
       const ts = document.createElement("button"); ts.className = "ms-btn"; ts.textContent = "나에게 테스트";
-      ts.onclick = () => testSend(r.row);
+      ts.onclick = guard(() => busy(ts, () => testSend(r.row)));
       td.append(pv, ts);
     }
     tr.append(td); return tr;
   }));
   $("ms-send-all").disabled = j.errors > 0 || j.pending === 0;
   $("ms-send-all").dataset.count = j.pending;
-};
+});
 
 async function preview(row) {
   const j = await api("/api/mail-sender/preview", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet, row });
   text($("ms-pv-subject"), j.subject);
-  const frame = document.createElement("iframe"); frame.className = "ms-frame"; frame.srcdoc = j.html;
+  const frame = document.createElement("iframe"); frame.className = "ms-frame";
+  frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
+  frame.srcdoc = j.html;
   $("ms-pv-body").replaceChildren(frame);
   $("ms-preview").showModal();
 }
@@ -92,25 +109,27 @@ async function testSend(row) {
   alert("본인 메일함으로 테스트 메일을 보냈습니다");
 }
 
-$("ms-send-all").onclick = async () => {
+$("ms-send-all").onclick = guard(async () => {
   const n = $("ms-send-all").dataset.count;
   if (!confirm(`${state.sheet} 시트의 ${n}명에게 '${$("ms-sender").value}' 로 발송합니다. 진행할까요?`)) return;
-  const j = await api("/api/mail-sender/jobs", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet,
-    sender: $("ms-sender").value, confirm_count: Number(n) });
-  watchJob(j.job_id);
-};
+  await busy($("ms-send-all"), async () => {
+    const j = await api("/api/mail-sender/jobs", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet,
+      sender: $("ms-sender").value, confirm_count: Number(n) });
+    watchJob(j.job_id);
+  });
+});
 
 function watchJob(id) {
   $("ms-job").hidden = false;
   $("ms-stop").onclick = () => api(`/api/mail-sender/jobs/${id}/stop`, {});
-  const tick = async () => {
+  const tick = guard(async () => {
     const j = await api(`/api/mail-sender/jobs/${id}`);
     const done = j.sent + j.failed + j.skipped;
     $("ms-job-bar").value = j.total ? Math.round((done / j.total) * 100) : 0;
     text($("ms-job-text"), `${j.status} · 성공 ${j.sent} · 실패 ${j.failed} · 건너뜀 ${j.skipped} / ${j.total}` +
       (j.stop_reason ? ` — ${j.stop_reason}` : ""));
     if (["running", "stopping"].includes(j.status)) setTimeout(tick, 2000);
-  };
+  });
   tick();
 }
 

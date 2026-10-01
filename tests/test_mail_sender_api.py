@@ -99,3 +99,60 @@ def test_sender_not_in_sendas_is_rejected(client):
         r = client.post("/api/mail-sender/test-send",
                         json={"spreadsheet_id": "x", "sheet": "gmail_a", "row": 2, "sender": "marketing@x.com"})
     assert r.status_code == 400 and "보내는 주소" in r.json()["detail"]
+
+
+def test_preview_iframe_is_sandboxed():
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    assert re.search(r'setAttribute\("sandbox",\s*"[^"]*"\)', js)
+    assert js.index('setAttribute("sandbox"') < js.index("srcdoc")
+    assert "allow-scripts" not in js and "allow-same-origin" not in js
+
+
+def test_js_handlers_are_guarded():
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    for h in ("ms-load", "ms-check", "ms-send-all"):
+        assert re.search(rf'\$\("{h}"\)\.onclick = guard\(', js), h
+    assert "guard(() => preview(" in js and "guard(() => busy(ts, () => testSend(" in js
+
+
+def _refresh_error():
+    from google.auth.exceptions import RefreshError
+    return RefreshError("invalid_grant")
+
+
+def test_status_refresh_error_means_reconnect(client):
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", side_effect=_refresh_error()):
+        r = client.get("/api/mail-sender/status")
+    j = r.json()
+    assert r.status_code == 200 and j["connected"] is False and "다시 연결" in j["error"]
+
+
+def test_check_refresh_error_is_409(client):
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", side_effect=_refresh_error()):
+        r = client.post("/api/mail-sender/check", json={"spreadsheet_id": "x", "sheet": "gmail_a"})
+    assert r.status_code == 409 and "다시 연결" in r.json()["detail"]
+
+
+def test_refresh_error_inside_route_is_409(client):
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
+         patch("app.api.mail_sender_api.mail_google.sheet_titles", side_effect=_refresh_error()):
+        r = client.post("/api/mail-sender/sheets", json={"spreadsheet": "abc"})
+    assert r.status_code == 409 and "다시 연결" in r.json()["detail"]
+
+
+def test_one_tab_timeout_is_that_managers_error_not_502(client):
+    import requests
+    header = ["Email", "담당자", "전송여부", "{kol id}"]
+    sheet = [header, ["a@x.com", "강하니", "", "k1"]]
+    tabs = [["담당자", "탭", "", ""], ["강하니", "t.a", "", ""]]
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
+         patch("app.api.mail_sender_api.mail_google.read_sheet", side_effect=[sheet, tabs]), \
+         patch("app.api.mail_sender_api.mail_google.export_tab_zip", side_effect=requests.Timeout("timeout")):
+        r = client.post("/api/mail-sender/check", json={"spreadsheet_id": "x", "sheet": "gmail_a"})
+    assert r.status_code == 200
+    j = r.json()
+    assert j["errors"] >= 1 and any(i["level"] == "error" and i["row"] == 2 for i in j["issues"])

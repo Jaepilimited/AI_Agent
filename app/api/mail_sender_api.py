@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
-from google.auth.exceptions import GoogleAuthError
+from google.auth.exceptions import GoogleAuthError, RefreshError
 from googleapiclient.errors import HttpError
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from app.core.mail_sender import DOC_ID, TAB_DIR_SHEET, check, parse_rows, parse
 from app.core.mail_template import TemplateError, render, template_from_export_zip
 
 router = APIRouter()
+_EXPIRED = "구글 연결이 만료되었습니다 — 다시 연결해 주세요"
 _auth = GoogleAuthManager()
 
 
@@ -36,6 +37,8 @@ def _google_errors(fn):
             return await fn(*args, **kwargs)
         except HTTPException:
             raise
+        except RefreshError as e:
+            raise HTTPException(409, _EXPIRED) from e
         except RuntimeError as e:
             raise HTTPException(502, str(e) or "구글 호출에 실패했습니다") from e
         except HttpError as e:
@@ -52,6 +55,8 @@ def _ready_creds(user):
         raise HTTPException(409, "구글 계정이 연결되어 있지 않습니다")
     try:
         missing = mail_google.missing_mail_scopes(creds)
+    except RefreshError as e:
+        raise HTTPException(409, _EXPIRED) from e
     except RuntimeError as e:  # 일시 장애 — '권한 없음' 이 아니다
         raise HTTPException(503, str(e)) from e
     if missing:
@@ -77,7 +82,7 @@ def _load(creds, spreadsheet_id: str, sheet: str):
             continue
         try:
             templates[manager] = template_from_export_zip(mail_google.export_tab_zip(creds, DOC_ID, tab_id))
-        except (TemplateError, RuntimeError) as e:
+        except (TemplateError, RuntimeError, requests.RequestException) as e:
             templates[manager] = e
     return rows, cols, templates, tab_dir, updated
 
@@ -120,6 +125,11 @@ async def status(user=Depends(get_current_user)):
         out["missing_scopes"] = await asyncio.to_thread(mail_google.missing_mail_scopes, creds)
         if not out["missing_scopes"]:
             out["senders"] = await asyncio.to_thread(mail_google.send_as_addresses, creds)
+    except RefreshError:  # 토큰 폐기 — 재연결이 필요하다
+        out["connected"] = False
+        out["missing_scopes"] = []
+        out["senders"] = []
+        out["error"] = _EXPIRED
     except RuntimeError as e:  # 일시 장애 — 재연결 버튼 대신 메시지만 보인다
         out["missing_scopes"] = []
         out["senders"] = []
@@ -130,7 +140,7 @@ async def status(user=Depends(get_current_user)):
 @router.post("/api/mail-sender/sheets")
 @_google_errors
 async def sheets(body: SheetsIn, user=Depends(get_current_user)):
-    creds = _ready_creds(user)
+    creds = await asyncio.to_thread(_ready_creds, user)
     sid = mail_google.spreadsheet_id_from(body.spreadsheet)
     titles = await asyncio.to_thread(mail_google.sheet_titles, creds, sid)
     return {"spreadsheet_id": sid, "sheets": [t for t in titles if t.startswith("gmail_")]}
@@ -139,7 +149,7 @@ async def sheets(body: SheetsIn, user=Depends(get_current_user)):
 @router.post("/api/mail-sender/check")
 @_google_errors
 async def check_sheet(body: SheetIn, user=Depends(get_current_user)):
-    creds = _ready_creds(user)
+    creds = await asyncio.to_thread(_ready_creds, user)
     rows, _, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     issues = check(pending(rows), tab_dir, updated, templates, datetime.now(timezone.utc),
                    sent_today=await _sent_today(user.email))
@@ -163,7 +173,7 @@ def _row_message(rows, templates, row: int):
 @router.post("/api/mail-sender/preview")
 @_google_errors
 async def preview(body: RowIn, user=Depends(get_current_user)):
-    creds = _ready_creds(user)
+    creds = await asyncio.to_thread(_ready_creds, user)
     rows, _, templates, _, _ = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     _, tpl, subject, html = _row_message(rows, templates, body.row)
     for cid, (data, mime) in tpl.images.items():
@@ -174,7 +184,7 @@ async def preview(body: RowIn, user=Depends(get_current_user)):
 @router.post("/api/mail-sender/test-send")
 @_google_errors
 async def test_send(body: RowIn, user=Depends(get_current_user)):
-    creds = _ready_creds(user)
+    creds = await asyncio.to_thread(_ready_creds, user)
     sender = await asyncio.to_thread(_check_sender, creds, body.sender)
     rows, _, templates, _, _ = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     _, tpl, subject, html = _row_message(rows, templates, body.row)
