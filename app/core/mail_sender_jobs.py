@@ -43,9 +43,21 @@ UNCERTAIN = "발송 여부 불확실 — 보낸편지함 확인"
 EXPIRED_STOP = "구글 연결이 만료되었습니다 — 다시 연결 후 이어서 보내세요"
 READ_FAILED = "시트 확인 실패 — 다시 시도"
 HISTORY = "발송 기록 있음"
+# 발송 중 시트가 정렬·행 삽입되면 같은 행 번호에 다른 사람이 있다 — 그 행에는 아무것도 쓰지 않는다
+ROW_SHIFTED = "시트 행이 바뀜 — 다시 점검"
+SHEETS_429_STOP = "구글 시트 사용량 한도(429) — 잠시 뒤 이어서 보내세요"
+GMAIL_429_STOP = "구글 발송 속도·한도 제한(429)으로 멈춤 — 잠시 뒤 이어서 보내세요"
+# 시트 읽기·쓰기는 같은 값을 다시 해도 결과가 같다 — 429·5xx·전송 오류는 이 간격으로 다시 시도한다
+SHEETS_RETRY_DELAYS = (2, 4, 8)
 # 이 상태의 발송 기록이 있는 행은 누구의 작업이든 다시 대상에 넣지 않는다 (확인된 불확실 행은 제외)
 _BLOCKING = ("sent", "sending", "unknown")
 _BLOCK_RANK = {"sent": 0, "sending": 1, "unknown": 2}
+
+
+class RowShifted(RuntimeError):
+    """발송 뒤 기록하려는 행에 이제 다른 사람이 있다."""
+    def __init__(self):
+        super().__init__("행이 바뀜")
 
 
 class TargetsChanged(RuntimeError):
@@ -439,7 +451,7 @@ def ack_unknown(job_id: int, owner: str) -> int | None:
 
 @dataclass
 class JobDeps:
-    read_cell: Callable = mail_google.read_cell
+    read_cells: Callable = mail_google.read_cells
     write_cells: Callable = mail_google.write_cells
     send_raw: Callable = mail_google.send_raw
     sleep: Callable = time.sleep
@@ -463,8 +475,29 @@ def _uncertain(e: Exception) -> bool:
     return isinstance(e, _TRANSPORT_UNCERTAIN)
 
 
-def _account_problem(e: Exception) -> str | None:
-    """발송 결과가 아니라 계정·연결 문제 — 작업을 멈추고 행은 대기로 둔다 (X 금지)."""
+def _retryable(e: Exception) -> bool:
+    if isinstance(e, HttpError):
+        code = _http_status(e)
+        return code == 429 or code >= 500
+    return isinstance(e, _TRANSPORT_UNCERTAIN)
+
+
+def _sheets_call(deps, fn, *args):
+    """시트 읽기·쓰기 — 429·5xx·전송 오류면 SHEETS_RETRY_DELAYS 간격으로 다시 (멱등이라 안전하다).
+    다 실패하면 마지막 예외를 그대로 올린다 — 분류는 부르는 쪽이 한다."""
+    for delay in (*SHEETS_RETRY_DELAYS, None):
+        try:
+            return fn(*args)
+        except Exception as e:
+            if delay is None or not _retryable(e):
+                raise
+            logger.info("mail_sheets_retry", delay=delay, error=f"{type(e).__name__}: {e}"[:200])
+            deps.sleep(delay)
+
+
+def _account_problem(e: Exception, sheets: bool = False) -> str | None:
+    """발송 결과가 아니라 계정·연결 문제 — 작업을 멈추고 행은 대기로 둔다 (X 금지).
+    sheets=True: 시트 호출에서 난 오류 (429 문구가 다르다)."""
     if isinstance(e, RefreshError):
         return EXPIRED_STOP
     if isinstance(e, HttpError):
@@ -472,7 +505,7 @@ def _account_problem(e: Exception) -> str | None:
         if code in (401, 403):
             return f"구글 권한 오류({code})로 멈춤 — 연결·권한을 확인한 뒤 이어서 보내세요: {getattr(e, 'reason', '') or e}"
         if code == 429:
-            return "구글 발송 속도·한도 제한(429)으로 멈춤 — 잠시 뒤 이어서 보내세요"
+            return SHEETS_429_STOP if sheets else GMAIL_429_STOP
     return None
 
 
@@ -506,18 +539,33 @@ def _finish(st, job_id: int, status: str, reason: str | None) -> None:
     st.set_job(job_id, status=status, stop_reason=reason, finished_at=datetime.now())
 
 
-def _write_sheet(deps, creds, job, row, updates, job_id) -> None:
+def _row_cells(deps, creds, job, cols, row) -> dict[int, str]:
+    """그 행의 이메일·전송여부를 한 번에 (재시도 포함)."""
+    return _sheets_call(deps, deps.read_cells, creds, job["spreadsheet_id"], job["sheet"], row,
+                        [cols.email, cols.status])
+
+
+def _same_person(cells: dict, cols, email: str) -> bool:
+    return norm_email(cells.get(cols.email)) == norm_email(email)
+
+
+def _write_sheet(deps, creds, job, cols, row, updates, job_id, email=None) -> None:
+    """실패·불확실 표시. 전송여부(G)를 건드리는 쓰기(email 지정)는 그 행이 아직 같은 사람인지 먼저 본다 —
+    확인을 못 했거나 행이 바뀌었으면 쓰지 않는다 (남의 O 를 X 로 덮으면 다시 보내진다)."""
     try:
-        deps.write_cells(creds, job["spreadsheet_id"], job["sheet"], row, updates)
+        if email is not None and not _same_person(_row_cells(deps, creds, job, cols, row), cols, email):
+            logger.warning("mail_send_sheet_note_skipped_row_shifted", job_id=job_id, row=row)
+            return
+        _sheets_call(deps, deps.write_cells, creds, job["spreadsheet_id"], job["sheet"], row, updates)
     except Exception as e:  # 실패 표시를 못 남겨도 발송 판단은 이미 끝났다
         logger.warning("mail_send_sheet_note_failed", job_id=job_id, row=row, error=str(e))
 
 
-def _mark_failed(st, deps, creds, job, cols, job_id, row, e) -> None:
+def _mark_failed(st, deps, creds, job, cols, job_id, row, e, email) -> None:
     msg = (str(e) or type(e).__name__)[:500]
     st.set_item_status(job_id, row, "failed", error=msg)
     st.bump(job_id, "failed")
-    _write_sheet(deps, creds, job, row, {cols.status: "X", cols.note: msg[:200]}, job_id)
+    _write_sheet(deps, creds, job, cols, row, {cols.status: "X", cols.note: msg[:200]}, job_id, email=email)
 
 
 def _mark_unknown(st, deps, creds, job, cols, job_id, row, e) -> None:
@@ -525,11 +573,12 @@ def _mark_unknown(st, deps, creds, job, cols, job_id, row, e) -> None:
     logger.warning("mail_send_uncertain", job_id=job_id, row=row, error=f"{type(e).__name__}: {e}")
     st.set_item_status(job_id, row, "unknown", error=f"{UNCERTAIN} ({type(e).__name__}: {e})"[:500])
     st.bump(job_id, "unknown")
-    _write_sheet(deps, creds, job, row, {cols.note: UNCERTAIN}, job_id)
+    _write_sheet(deps, creds, job, cols, row, {cols.note: UNCERTAIN}, job_id)
 
 
-def _record_sent(st, deps, creds, job, cols, job_id, row, mid) -> Exception | None:
-    """발송 뒤 기록 — 여기서의 실패는 무엇이든 '발송 실패' 가 아니다. 시트 기록 실패면 그 예외를 돌려준다."""
+def _record_sent(st, deps, creds, job, cols, job_id, row, mid, email) -> Exception | None:
+    """발송 뒤 기록 — 여기서의 실패는 무엇이든 '발송 실패' 가 아니다. 시트 기록 실패면 그 예외를 돌려준다.
+    ⛔ O 를 쓰기 전에 그 행이 아직 이 수신자인지 다시 본다 — 바뀌었으면 O 를 쓰지 않는다(RowShifted)."""
     try:
         st.set_item_status(job_id, row, "sent", message_id=mid)
     except Exception as e:
@@ -542,7 +591,9 @@ def _record_sent(st, deps, creds, job, cols, job_id, row, mid) -> Exception | No
     if cols.date is not None:
         updates[cols.date] = datetime.now().strftime("%Y-%m-%d")
     try:
-        deps.write_cells(creds, job["spreadsheet_id"], job["sheet"], row, updates)
+        if not _same_person(_row_cells(deps, creds, job, cols, row), cols, email):
+            raise RowShifted()
+        _sheets_call(deps, deps.write_cells, creds, job["spreadsheet_id"], job["sheet"], row, updates)
         return None
     except Exception as we:
         logger.warning("mail_send_sheet_write_failed", job_id=job_id, row=row, message_id=mid, error=str(we))
@@ -559,7 +610,7 @@ def _mark_read_failed(st, deps, creds, job, cols, job_id, row, e) -> None:
     """G열을 못 읽었다 — 이미 O 일 수도 있으니 G 는 절대 쓰지 않는다 (H 메모만)."""
     st.set_item_status(job_id, row, "failed", error=f"{READ_FAILED} ({type(e).__name__}: {e})"[:500])
     st.bump(job_id, "failed")
-    _write_sheet(deps, creds, job, row, {cols.note: READ_FAILED}, job_id)
+    _write_sheet(deps, creds, job, cols, row, {cols.note: READ_FAILED}, job_id)
 
 
 def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None) -> None:
@@ -588,11 +639,11 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
         if st.sent_today(owner) >= DAILY_LIMIT:
             return _finish(st, job_id, "stopped", f"오늘 발송 한도({DAILY_LIMIT}통)에 도달해 멈춤 — 내일 이어서 보내세요")
         row = item["sheet_row"]
-        # ① 발송 직전 G열 재확인 — 읽기에 실패하면 G 는 건드리지 않는다
+        # ① 발송 직전 그 행의 이메일·G열을 한 번에 재확인 — 읽기에 실패하면 G 는 건드리지 않는다
         try:
-            current = deps.read_cell(creds, sid, sheet, row, cols.status)
+            cells = _row_cells(deps, creds, job, cols, row)
         except Exception as e:
-            halt = _account_problem(e)
+            halt = _account_problem(e, sheets=True)
             if halt:
                 return _finish(st, job_id, "stopped", halt)
             _mark_read_failed(st, deps, creds, job, cols, job_id, row, e)
@@ -600,7 +651,12 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
                 return _finish(st, job_id, "stopped", streak_reason(e))
             deps.sleep(SEND_DELAY)
             continue
-        if str(current or "").strip().upper() == "O":
+        if not _same_person(cells, cols, item["email"]):
+            # 정렬·행 삽입으로 이 행에 다른 사람이 있다 — 보내지도, 시트에 쓰지도 않는다
+            st.set_item_status(job_id, row, "failed", error=ROW_SHIFTED)
+            st.bump(job_id, "failed")
+            continue
+        if str(cells.get(cols.status) or "").strip().upper() == "O":
             st.set_item_status(job_id, row, "skipped", error="다른 툴이 이미 보냄(O)")
             st.bump(job_id, "skipped")
             continue
@@ -632,19 +688,19 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
             if unsure:
                 _mark_unknown(st, deps, creds, job, cols, job_id, row, failure)
             else:
-                _mark_failed(st, deps, creds, job, cols, job_id, row, failure)
+                _mark_failed(st, deps, creds, job, cols, job_id, row, failure, item["email"])
             if same_error_streak(failure):
                 return _finish(st, job_id, "stopped", streak_reason(failure))
             deps.sleep(SEND_DELAY)
             continue
         # ④ 나갔다 — 이후 무엇이 실패해도 이 행은 '보냄' 이다
         last_kind, streak = None, 0
-        sheet_err = _record_sent(st, deps, creds, job, cols, job_id, row, mid)
+        sheet_err = _record_sent(st, deps, creds, job, cols, job_id, row, mid, item["email"])
         if sheet_err is None:
             sheet_streak = 0
         else:
             sheet_streak += 1
-            halt = _account_problem(sheet_err)
+            halt = _account_problem(sheet_err, sheets=True)
             if halt or sheet_streak >= MAX_SAME_ERROR:
                 # 시트에 O 가 안 남으면 다른 툴이 다시 보낼 수 있다 — 계속 보내지 않는다
                 return _finish(st, job_id, "stopped", halt or (

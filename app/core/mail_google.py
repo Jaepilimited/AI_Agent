@@ -90,6 +90,16 @@ def read_cell(creds, spreadsheet_id: str, title: str, row: int, col: int) -> str
     return str(vals[0][0]).strip() if vals and vals[0] else ""
 
 
+def read_cells(creds, spreadsheet_id: str, title: str, row: int, cols: list[int]) -> dict[int, str]:
+    """한 행의 여러 칸을 한 번의 범위 읽기로 — 발송 직전 이메일·전송여부를 같은 시점에 본다."""
+    lo, hi = min(cols), max(cols)
+    res = _sheets(creds).spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id, range=f"{_a1(title)}!{_col(lo)}{row}:{_col(hi)}{row}").execute()
+    vals = res.get("values", [])
+    line = vals[0] if vals else []
+    return {c: (str(line[c - lo]).strip() if c - lo < len(line) else "") for c in cols}
+
+
 def write_cells(creds, spreadsheet_id: str, title: str, row: int, updates: dict[int, str]) -> None:
     data = [{"range": f"{_a1(title)}!{_col(c)}{row}", "values": [[v]]} for c, v in updates.items()]
     _sheets(creds).spreadsheets().values().batchUpdate(

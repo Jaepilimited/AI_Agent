@@ -32,10 +32,19 @@ def _rows(n):
     return [Row(row=i + 2, manager="강하니", email=f"u{i}@x.com", status="", values={"kol id": f"k{i}"}) for i in range(n)]
 
 
-def _deps(sent, g_values=None, send_side=None):
-    g_values = g_values or {}
+def _reader(g_values=None, emails=None):
+    """시트 한 행의 E(이메일)·G(전송여부) — 기본 이메일은 _rows 와 같다 (u{row-2}@x.com)."""
+    g_values, emails = g_values or {}, emails or {}
+
+    def read(c, sid, sh, row, cols):
+        vals = {COLS.status: g_values.get(row, ""), COLS.email: emails.get(row, f"u{row - 2}@x.com")}
+        return {k: vals.get(k, "") for k in cols}
+    return read
+
+
+def _deps(sent, g_values=None, send_side=None, emails=None):
     return J.JobDeps(
-        read_cell=lambda c, sid, sh, row, col: g_values.get(row, ""),
+        read_cells=_reader(g_values, emails),
         write_cells=MagicMock(),
         send_raw=send_side or (lambda c, raw: sent.append(raw) or f"id{len(sent)}"),
         sleep=lambda s: None)
@@ -127,14 +136,14 @@ def test_refresh_error_stops_job_and_returns_item_to_pending(db, where):
         sent.append(raw)
         return "id"
 
-    def read(c, sid, sh, row, col):
+    def read(c, sid, sh, row, cols):
         if where == "read" and row == 3:
             raise RefreshError("invalid_grant")
-        return ""
+        return _reader()(c, sid, sh, row, cols)
 
     jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(5))
     deps = _deps(sent, send_side=send)
-    deps.read_cell = read
+    deps.read_cells = read
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
     job = J.get_job(jid, "me@x.com")
     assert job["status"] == "stopped"
@@ -634,11 +643,11 @@ def test_own_unknown_jobs():
 @pytest.mark.parametrize("exc", [_http_error(500), TimeoutError("t"), RuntimeError("x")],
                          ids=["5xx", "timeout", "runtime"])
 def test_read_failure_writes_note_only_never_G(db, exc):
-    def read(c, sid, sh, row, col):
+    def read(c, sid, sh, row, cols):
         raise exc
     jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
     deps = _deps([])
-    deps.read_cell = read
+    deps.read_cells = read
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
     assert db.items[jid][0]["status"] == "failed"
     assert db.items[jid][0]["error"].startswith("시트 확인 실패 — 다시 시도")
@@ -691,3 +700,135 @@ def test_insert_job_drops_sent_email_under_lock(db):
     _seed_history(db, 30, "sent", email="u1@x.com")  # 정렬로 30행에 있던 사람이 지금 3행
     jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3), confirm_count=2)
     assert [i["sheet_row"] for i in db.items[jid]] == [2, 4]
+
+
+# ---------------------------------------------------------------------------
+# Final review — 발송 중 행 이동, 시트 429 재시도
+# ---------------------------------------------------------------------------
+def test_row_shifted_before_send_is_skipped_without_sheet_write(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps(sent, emails={2: "Someone-Else@x.com"})  # 정렬로 2행에 다른 사람이 들어왔다
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    item = next(i for i in db.items[jid] if i["sheet_row"] == 2)
+    assert item["status"] == "failed" and item["error"] == "시트 행이 바뀜 — 다시 점검"
+    assert len(sent) == 1  # 3행만 나갔다
+    assert [c.args[3] for c in deps.write_cells.call_args_list] == [3]  # 2행엔 아무것도 쓰지 않는다
+
+
+def test_row_email_compare_ignores_case_and_spaces(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent, emails={2: "  U0@X.com "}))
+    assert len(sent) == 1 and db.items[jid][0]["status"] == "sent"
+
+
+def test_row_shifted_between_send_and_O_write(db):
+    sent = []
+    reads = {"n": 0}
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        reads["n"] += 1
+        if reads["n"] == 2:  # 발송 뒤 O 쓰기 전 재확인 — 그사이 정렬됐다
+            return {k: ("moved@x.com" if k == COLS.email else "") for k in cols}
+        return base(c, sid, sh, row, cols)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps(sent)
+    deps.read_cells = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert len(sent) == 1 and (job["sent"], job["sheet_write_failed"], job["failed"]) == (1, 1, 0)
+    assert deps.write_cells.call_count == 0  # O 를 남의 행에 쓰지 않는다
+    item = db.items[jid][0]
+    assert item["status"] == "sent" and item["error"] == "시트 기록 실패: 행이 바뀜"
+
+
+def test_failure_X_is_not_written_on_shifted_row(db):
+    reads = {"n": 0}
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        reads["n"] += 1
+        if reads["n"] == 2:
+            return {k: ("moved@x.com" if k == COLS.email else "O") for k in cols}
+        return base(c, sid, sh, row, cols)
+
+    def send(c, raw):
+        raise _http_error(400)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([], send_side=send)
+    deps.read_cells = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert db.items[jid][0]["status"] == "failed" and not _x_written(deps)
+
+
+def test_read_cells_reads_one_range():
+    from app.core import mail_google
+    svc = MagicMock()
+    get = svc.spreadsheets.return_value.values.return_value.get
+    get.return_value.execute.return_value = {"values": [[" a@x.com ", "", "", "O"]]}
+    from unittest.mock import patch
+    with patch("app.core.mail_google._sheets", return_value=svc):
+        got = mail_google.read_cells(MagicMock(), "id", "Bob's", 5, [3, 6, 7])
+    assert get.call_count == 1 and get.call_args.kwargs["range"] == "'Bob''s'!D5:H5"
+    assert got == {3: "a@x.com", 6: "O", 7: ""}
+
+
+def _flaky(times, exc_factory, then):
+    n = {"i": 0}
+
+    def fn(*a):
+        n["i"] += 1
+        if times is None or n["i"] <= times:
+            raise exc_factory()
+        return then(*a)
+    return fn
+
+
+def test_sheets_429_is_retried_then_succeeds(db):
+    sent, slept = [], []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps(sent)
+    deps.read_cells = _flaky(1, lambda: _http_error(429), _reader())
+    deps.write_cells = MagicMock(side_effect=[_http_error(503), None])
+    deps.sleep = slept.append
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert (job["status"], job["sent"], job["sheet_write_failed"]) == ("done", 1, 0)
+    assert slept[:1] == [2] and slept.count(2) == 2  # 읽기 1회·쓰기 1회 재시도
+    assert deps.write_cells.call_args_list[-1].args[4][COLS.status] == "O"
+
+
+def test_sheets_429_always_stops_with_sheets_message(db):
+    slept = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps([])
+    deps.read_cells = _flaky(None, lambda: _http_error(429), _reader())
+    deps.sleep = slept.append
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["stop_reason"].startswith("구글 시트 사용량 한도(429)")
+    assert slept == [2, 4, 8] and db.item_status(jid, 2) == "pending" and deps.write_cells.call_count == 0
+
+
+def test_gmail_429_message_is_send_limit(db):
+    def send(c, raw):
+        raise _http_error(429)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps([], send_side=send))
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["stop_reason"].startswith("구글 발송 속도·한도 제한(429)")
+    assert db.item_status(jid, 2) == "pending"
+
+
+def test_sheet_O_write_429_always_stops_with_sheets_message(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    deps = _deps(sent)
+    deps.write_cells = MagicMock(side_effect=_http_error(429))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert len(sent) == 1 and job["sheet_write_failed"] == 1 and job["status"] == "stopped"
+    assert job["stop_reason"].startswith("구글 시트 사용량 한도(429)")
+    assert deps.write_cells.call_count == 4  # 1 + 재시도 3
