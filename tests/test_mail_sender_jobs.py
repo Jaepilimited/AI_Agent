@@ -705,15 +705,16 @@ def test_insert_job_drops_sent_email_under_lock(db):
 # ---------------------------------------------------------------------------
 # Final review — 발송 중 행 이동, 시트 429 재시도
 # ---------------------------------------------------------------------------
-def test_row_shifted_before_send_is_skipped_without_sheet_write(db):
+def test_row_shifted_before_send_stops_job_and_returns_row_to_pending(db):
     sent = []
-    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
-    deps = _deps(sent, emails={2: "Someone-Else@x.com"})  # 정렬로 2행에 다른 사람이 들어왔다
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    deps = _deps(sent, emails={3: "Someone-Else@x.com"})  # 정렬로 3행에 다른 사람이 들어왔다
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
-    item = next(i for i in db.items[jid] if i["sheet_row"] == 2)
-    assert item["status"] == "failed" and item["error"] == "시트 행이 바뀜 — 다시 점검"
-    assert len(sent) == 1  # 3행만 나갔다
-    assert [c.args[3] for c in deps.write_cells.call_args_list] == [3]  # 2행엔 아무것도 쓰지 않는다
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["stop_reason"] == "시트 행 순서가 바뀌었습니다 — 다시 점검 후 이어서 보내세요"
+    assert len(sent) == 1 and db.item_status(jid, 3) == "pending" and db.item_status(jid, 4) == "pending"
+    assert job["failed"] == 0
+    assert [c.args[3] for c in deps.write_cells.call_args_list] == [2]  # 3행엔 아무것도 쓰지 않는다
 
 
 def test_row_email_compare_ignores_case_and_spaces(db):
@@ -733,15 +734,33 @@ def test_row_shifted_between_send_and_O_write(db):
         if reads["n"] == 2:  # 발송 뒤 O 쓰기 전 재확인 — 그사이 정렬됐다
             return {k: ("moved@x.com" if k == COLS.email else "") for k in cols}
         return base(c, sid, sh, row, cols)
-    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
     deps = _deps(sent)
     deps.read_cells = read
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
     job = J.get_job(jid, "me@x.com")
     assert len(sent) == 1 and (job["sent"], job["sheet_write_failed"], job["failed"]) == (1, 1, 0)
+    assert job["status"] == "stopped" and job["stop_reason"] == "시트 행 순서가 바뀌었습니다 — 다시 점검 후 이어서 보내세요"
+    assert db.item_status(jid, 3) == "pending"
     assert deps.write_cells.call_count == 0  # O 를 남의 행에 쓰지 않는다
     item = db.items[jid][0]
     assert item["status"] == "sent" and item["error"] == "시트 기록 실패: 행이 바뀜"
+
+
+def test_post_send_shift_with_O_write_skipped_stops_even_if_first_row(db):
+    reads = {"n": 0}
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        reads["n"] += 1
+        if reads["n"] == 2:
+            return {k: ("moved@x.com" if k == COLS.email else "") for k in cols}
+        return base(c, sid, sh, row, cols)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([])
+    deps.read_cells = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert J.get_job(jid, "me@x.com")["status"] == "stopped"
 
 
 def test_failure_X_is_not_written_on_shifted_row(db):
@@ -796,7 +815,7 @@ def test_sheets_429_is_retried_then_succeeds(db):
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
     job = J.get_job(jid, "me@x.com")
     assert (job["status"], job["sent"], job["sheet_write_failed"]) == ("done", 1, 0)
-    assert slept[:1] == [2] and slept.count(2) == 2  # 읽기 1회·쓰기 1회 재시도
+    assert slept == [2, 5]  # 발송 전 읽기는 짧게(2), 발송 뒤 O 쓰기는 길게(5)
     assert deps.write_cells.call_args_list[-1].args[4][COLS.status] == "O"
 
 
@@ -831,7 +850,7 @@ def test_sheet_O_write_429_always_stops_with_sheets_message(db):
     job = J.get_job(jid, "me@x.com")
     assert len(sent) == 1 and job["sheet_write_failed"] == 1 and job["status"] == "stopped"
     assert job["stop_reason"].startswith("구글 시트 사용량 한도(429)")
-    assert deps.write_cells.call_count == 4  # 1 + 재시도 3
+    assert deps.write_cells.call_count == 5  # 1 + 발송 뒤 재시도 4 (5/15/30/60초)
 
 
 
@@ -924,3 +943,125 @@ def test_maria_insert_job_keeps_connection_when_release_ok():
     conn._con = MagicMock()
     m.insert_job("me", "sid", "gmail_a", "me", _rows(1))
     conn._con._con.close.assert_not_called()
+
+
+
+# ---------------------------------------------------------------------------
+# Quota fix — 행 간격, 발송 뒤 긴 재시도, 불확실 메모 행 확인
+# ---------------------------------------------------------------------------
+class _Clock:
+    def __init__(self):
+        self.t = 1000.0
+        self.slept = []
+
+    def now(self):
+        return self.t
+
+    def sleep(self, s):
+        self.slept.append(s)
+        self.t += s
+
+
+def test_rows_are_paced_including_skips(db):
+    clock = _Clock()
+    sent, starts = [], {}
+    base = _reader(g_values={3: "O", 5: "O", 6: "O", 9: "O"})  # 건너뛰는 행이 섞여 있다
+
+    def read(c, sid, sh, row, cols):
+        starts.setdefault(row, clock.now())  # 행의 첫 읽기 = 행 시작
+        return base(c, sid, sh, row, cols)
+
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(10))
+    deps = _deps(sent)
+    deps.read_cells, deps.sleep, deps.clock = read, clock.sleep, clock.now
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    t = [starts[r] for r in sorted(starts)]
+    assert len(t) == 10 and J.get_job(jid, "me@x.com")["status"] == "done"
+    assert all(b - a >= J.ROW_MIN_INTERVAL - 1e-9 for a, b in zip(t, t[1:]))
+    assert t[-1] - t[0] >= 9 * 2.5 - 1e-9
+    assert sum(clock.slept) >= 9 * 2.5 - 1e-9 and len(sent) == 6
+
+
+def test_pacing_subtracts_time_already_spent(db):
+    clock = _Clock()
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        clock.t += 1.0  # 읽기마다 1초 — 보낸 행은 2회 읽어 이미 2초를 썼다
+        return base(c, sid, sh, row, cols)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    deps = _deps([])
+    deps.read_cells, deps.sleep, deps.clock = read, clock.sleep, clock.now
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert [round(x, 6) for x in clock.slept] == [0.5, 0.5]
+
+
+def test_row_min_interval_constant_and_no_fixed_send_delay():
+    assert J.ROW_MIN_INTERVAL == 2.5
+    assert not hasattr(J, "SEND_DELAY")
+
+
+def test_post_send_verify_read_uses_long_retry(db):
+    clock = _Clock()
+    n = {"i": 0}
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        n["i"] += 1
+        if n["i"] in (2, 3):  # 발송 뒤 확인 읽기가 두 번 429
+            raise _http_error(429)
+        return base(c, sid, sh, row, cols)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([])
+    deps.read_cells, deps.sleep, deps.clock = read, clock.sleep, clock.now
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert clock.slept == [5, 15] and (job["sent"], job["sheet_write_failed"]) == (1, 0)
+    assert deps.write_cells.call_args.args[4][COLS.status] == "O"
+
+
+def test_post_send_O_write_exhausts_long_retry_then_stops(db):
+    clock = _Clock()
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps([])
+    deps.write_cells = MagicMock(side_effect=_http_error(429))
+    deps.sleep, deps.clock = clock.sleep, clock.now
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert clock.slept == [5, 15, 30, 60]
+    assert J.get_job(jid, "me@x.com")["status"] == "stopped" and db.item_status(jid, 3) == "pending"
+
+
+def _send_timeout(c, raw):
+    raise TimeoutError("t")
+
+
+def test_unknown_note_skipped_when_row_shifted(db):
+    n = {"i": 0}
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        n["i"] += 1
+        if n["i"] == 2:  # 불확실 메모 직전 확인 — 다른 사람
+            return {k: ("moved@x.com" if k == COLS.email else "") for k in cols}
+        return base(c, sid, sh, row, cols)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([], send_side=_send_timeout)
+    deps.read_cells = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert db.item_status(jid, 2) == "unknown" and deps.write_cells.call_count == 0
+
+
+def test_unknown_note_written_when_verify_read_fails(db):
+    n = {"i": 0}
+    base = _reader()
+
+    def read(c, sid, sh, row, cols):
+        n["i"] += 1
+        if n["i"] >= 2:
+            raise RuntimeError("read down")
+        return base(c, sid, sh, row, cols)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([], send_side=_send_timeout)
+    deps.read_cells = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert [c.args[4] for c in deps.write_cells.call_args_list] == [{COLS.note: "발송 여부 불확실 — 보낸편지함 확인"}]

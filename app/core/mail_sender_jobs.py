@@ -36,19 +36,23 @@ from app.core.mail_template import render
 logger = structlog.get_logger(__name__)
 
 MAX_SAME_ERROR = 3
-SEND_DELAY = 1.0
+# 행 사이 최소 간격(초) — 건너뛴 행까지 모든 행에. 행마다 시트 읽기 ~2회 + 쓰기 1회라
+# 2.5초면 분당 읽기 ~48회로 구글 시트 사용자당 한도(60/분) 아래에 머문다 (300행 ≈ 12.5분)
+ROW_MIN_INTERVAL = 2.5
 _ACTIVE = ("running", "stopping")
 BUSY = "이 시트는 이미 발송 중입니다"
 UNCERTAIN = "발송 여부 불확실 — 보낸편지함 확인"
 EXPIRED_STOP = "구글 연결이 만료되었습니다 — 다시 연결 후 이어서 보내세요"
 READ_FAILED = "시트 확인 실패 — 다시 시도"
 HISTORY = "발송 기록 있음"
-# 발송 중 시트가 정렬·행 삽입되면 같은 행 번호에 다른 사람이 있다 — 그 행에는 아무것도 쓰지 않는다
-ROW_SHIFTED = "시트 행이 바뀜 — 다시 점검"
+# 발송 중 시트가 정렬·행 삽입되면 같은 행 번호에 다른 사람이 있다 — 그 행에는 아무것도 쓰지 않고 작업을 멈춘다
+ROW_ORDER_STOP = "시트 행 순서가 바뀌었습니다 — 다시 점검 후 이어서 보내세요"
 SHEETS_429_STOP = "구글 시트 사용량 한도(429) — 잠시 뒤 이어서 보내세요"
 GMAIL_429_STOP = "구글 발송 속도·한도 제한(429)으로 멈춤 — 잠시 뒤 이어서 보내세요"
 # 시트 읽기·쓰기는 같은 값을 다시 해도 결과가 같다 — 429·5xx·전송 오류는 이 간격으로 다시 시도한다
 SHEETS_RETRY_DELAYS = (2, 4, 8)
+# 발송 뒤 확인 읽기·O 쓰기는 더 오래 버틴다 — 여기서 포기하면 '보냈는데 O 없음' 이 되어 다른 툴이 다시 보낼 수 있다
+POST_SEND_RETRY_DELAYS = (5, 15, 30, 60)
 # 이 상태의 발송 기록이 있는 행은 누구의 작업이든 다시 대상에 넣지 않는다 (확인된 불확실 행은 제외)
 _BLOCKING = ("sent", "sending", "unknown")
 _BLOCK_RANK = {"sent": 0, "sending": 1, "unknown": 2}
@@ -489,6 +493,7 @@ class JobDeps:
     write_cells: Callable = mail_google.write_cells
     send_raw: Callable = mail_google.send_raw
     sleep: Callable = time.sleep
+    clock: Callable = time.monotonic
 
 
 # 요청이 구글에 닿았는지 알 수 없는 전송 계층 오류 — 보냈을 수도 있다
@@ -516,10 +521,10 @@ def _retryable(e: Exception) -> bool:
     return isinstance(e, _TRANSPORT_UNCERTAIN)
 
 
-def _sheets_call(deps, fn, *args):
-    """시트 읽기·쓰기 — 429·5xx·전송 오류면 SHEETS_RETRY_DELAYS 간격으로 다시 (멱등이라 안전하다).
+def _sheets_call(deps, fn, *args, delays=SHEETS_RETRY_DELAYS):
+    """시트 읽기·쓰기 — 429·5xx·전송 오류면 delays 간격으로 다시 (멱등이라 안전하다).
     다 실패하면 마지막 예외를 그대로 올린다 — 분류는 부르는 쪽이 한다."""
-    for delay in (*SHEETS_RETRY_DELAYS, None):
+    for delay in (*delays, None):
         try:
             return fn(*args)
         except Exception as e:
@@ -574,10 +579,10 @@ def _finish(st, job_id: int, status: str, reason: str | None) -> None:
     st.set_job(job_id, status=status, stop_reason=reason, finished_at=datetime.now())
 
 
-def _row_cells(deps, creds, job, cols, row) -> dict[int, str]:
+def _row_cells(deps, creds, job, cols, row, delays=SHEETS_RETRY_DELAYS) -> dict[int, str]:
     """그 행의 이메일·전송여부를 한 번에 (재시도 포함)."""
     return _sheets_call(deps, deps.read_cells, creds, job["spreadsheet_id"], job["sheet"], row,
-                        [cols.email, cols.status])
+                        [cols.email, cols.status], delays=delays)
 
 
 def _same_person(cells: dict, cols, email: str) -> bool:
@@ -603,11 +608,20 @@ def _mark_failed(st, deps, creds, job, cols, job_id, row, e, email) -> None:
     _write_sheet(deps, creds, job, cols, row, {cols.status: "X", cols.note: msg[:200]}, job_id, email=email)
 
 
-def _mark_unknown(st, deps, creds, job, cols, job_id, row, e) -> None:
-    """보냈을 수도 있다 — X 를 쓰지 않는다 (X 는 '다시 보내도 됨' 으로 읽힌다)."""
+def _mark_unknown(st, deps, creds, job, cols, job_id, row, e, email) -> None:
+    """보냈을 수도 있다 — X 를 쓰지 않는다 (X 는 '다시 보내도 됨' 으로 읽힌다).
+    메모는 그 행이 아직 같은 사람일 때만 — 확인 읽기가 실패하면 그래도 쓴다 (G 를 건드리지 않는 메모라서)."""
     logger.warning("mail_send_uncertain", job_id=job_id, row=row, error=f"{type(e).__name__}: {e}")
     st.set_item_status(job_id, row, "unknown", error=f"{UNCERTAIN} ({type(e).__name__}: {e})"[:500])
     st.bump(job_id, "unknown")
+    try:
+        cells = _row_cells(deps, creds, job, cols, row)
+    except Exception as re_:
+        logger.warning("mail_send_uncertain_note_unverified", job_id=job_id, row=row, error=str(re_))
+        cells = None
+    if cells is not None and not _same_person(cells, cols, email):
+        logger.warning("mail_send_sheet_note_skipped_row_shifted", job_id=job_id, row=row)
+        return
     _write_sheet(deps, creds, job, cols, row, {cols.note: UNCERTAIN}, job_id)
 
 
@@ -626,9 +640,10 @@ def _record_sent(st, deps, creds, job, cols, job_id, row, mid, email) -> Excepti
     if cols.date is not None:
         updates[cols.date] = datetime.now().strftime("%Y-%m-%d")
     try:
-        if not _same_person(_row_cells(deps, creds, job, cols, row), cols, email):
+        if not _same_person(_row_cells(deps, creds, job, cols, row, delays=POST_SEND_RETRY_DELAYS), cols, email):
             raise RowShifted()
-        _sheets_call(deps, deps.write_cells, creds, job["spreadsheet_id"], job["sheet"], row, updates)
+        _sheets_call(deps, deps.write_cells, creds, job["spreadsheet_id"], job["sheet"], row, updates,
+                     delays=POST_SEND_RETRY_DELAYS)
         return None
     except Exception as we:
         logger.warning("mail_send_sheet_write_failed", job_id=job_id, row=row, message_id=mid, error=str(we))
@@ -656,6 +671,7 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
     job = st.job(job_id)
     sid, sheet, owner = job["spreadsheet_id"], job["sheet"], job["owner"]
     last_kind, streak, sheet_streak = None, 0, 0
+    last_start: float | None = None
 
     def same_error_streak(e: Exception) -> bool:
         nonlocal last_kind, streak
@@ -668,6 +684,12 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
         return f"같은 오류 {streak}회 연속으로 멈춤: {e}"[:1000]
 
     for item in st.pending_items(job_id):
+        # 행 간격 — 보냄·건너뜀·실패 모든 행에 (건너뛰는 행이 몰려도 시트 읽기가 한꺼번에 나가지 않게)
+        if last_start is not None:
+            wait = ROW_MIN_INTERVAL - (deps.clock() - last_start)
+            if wait > 0:
+                deps.sleep(wait)
+        last_start = deps.clock()
         status = st.job(job_id)["status"]
         if status != "running":
             if status == "stopping":
@@ -686,13 +708,10 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
             _mark_read_failed(st, deps, creds, job, cols, job_id, row, e)
             if same_error_streak(e):
                 return _finish(st, job_id, "stopped", streak_reason(e))
-            deps.sleep(SEND_DELAY)
             continue
         if not _same_person(cells, cols, item["email"]):
-            # 정렬·행 삽입으로 이 행에 다른 사람이 있다 — 보내지도, 시트에 쓰지도 않는다
-            st.set_item_status(job_id, row, "failed", error=ROW_SHIFTED)
-            st.bump(job_id, "failed")
-            continue
+            # 정렬·행 삽입으로 이 행에 다른 사람이 있다 — 보내지도, 시트에 쓰지도 않고 멈춘다 (행은 대기로 남는다)
+            return _finish(st, job_id, "stopped", ROW_ORDER_STOP)
         if str(cells.get(cols.status) or "").strip().upper() == "O":
             st.set_item_status(job_id, row, "skipped", error="다른 툴이 이미 보냄(O)")
             st.bump(job_id, "skipped")
@@ -723,16 +742,17 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
                 st.set_item_status(job_id, row, "pending")
                 return _finish(st, job_id, "stopped", halt)
             if unsure:
-                _mark_unknown(st, deps, creds, job, cols, job_id, row, failure)
+                _mark_unknown(st, deps, creds, job, cols, job_id, row, failure, item["email"])
             else:
                 _mark_failed(st, deps, creds, job, cols, job_id, row, failure, item["email"])
             if same_error_streak(failure):
                 return _finish(st, job_id, "stopped", streak_reason(failure))
-            deps.sleep(SEND_DELAY)
             continue
         # ④ 나갔다 — 이후 무엇이 실패해도 이 행은 '보냄' 이다
         last_kind, streak = None, 0
         sheet_err = _record_sent(st, deps, creds, job, cols, job_id, row, mid, item["email"])
+        if isinstance(sheet_err, RowShifted):  # 보낸 뒤 정렬됨 — 기록은 남겼다, 다음 행부터는 번호를 믿을 수 없다
+            return _finish(st, job_id, "stopped", ROW_ORDER_STOP)
         if sheet_err is None:
             sheet_streak = 0
         else:
@@ -743,7 +763,6 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
                 return _finish(st, job_id, "stopped", halt or (
                     f"시트에 O 기록이 {sheet_streak}회 연속 실패해 멈춤 — 보낸 행은 발송 기록에 남아 있습니다: {sheet_err}"
                 )[:1000])
-        deps.sleep(SEND_DELAY)
     if st.job(job_id)["status"] in _ACTIVE:  # 그사이 다른 곳에서 끝낸 작업은 덮어쓰지 않는다
         _finish(st, job_id, "done", None)
 
