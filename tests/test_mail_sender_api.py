@@ -611,3 +611,45 @@ def test_js_shows_reply_to_of_alias():
     html = (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")
     assert 'id="ms-reply-to"' in html
     assert "reply_to" in js and re.search(r'text\(\$\("ms-reply-to"\)', js)
+
+
+
+def _sheet_and_tabs():
+    sheet = [["Email", "담당자", "전송여부", "{kol id}"], ["a@x.com", "강하니", "", "k1"]]
+    tabs = [["담당자", "탭", "", ""], ["강하니", "t.a", "", ""]]
+    return sheet, tabs
+
+
+def test_corrupt_zip_is_that_managers_error_not_500(client):
+    sheet, tabs = _sheet_and_tabs()
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
+         patch("app.api.mail_sender_api.mail_google.read_sheet", side_effect=[sheet, tabs]), \
+         patch("app.api.mail_sender_api.mail_google.export_tab_zip", return_value=b"PK\x03\x04 broken"):
+        r = _check(client)
+    assert r.status_code == 200
+    j = r.json()
+    assert any(i["level"] == "error" and i["row"] == 2 and "템플릿 오류" in i["message"] for i in j["issues"])
+
+
+def test_missing_tab_directory_sheet_is_readable_400(client):
+    sheet, _ = _sheet_and_tabs()
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
+         patch("app.api.mail_sender_api.mail_google.read_sheet", side_effect=[sheet, _http_error(400)]):
+        r = _check(client)
+    assert r.status_code == 400
+    assert "_탭목록" in r.json()["detail"] and "gmailv2" in r.json()["detail"]
+
+
+def test_js_popup_blocked_is_reported():
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    body = js[js.index('$("ms-connect-btn").onclick'):]
+    body = body[:body.index("location.reload")]
+    assert "팝업이 차단되었습니다 — 팝업을 허용해 주세요" in body
+    assert body.index("if (!w)") < body.index("setInterval")
+
+
+def test_middleware_page_list_is_formatted():
+    mw = (ROOT / "app/api/middleware.py").read_text(encoding="utf-8")
+    assert '"/mail-sender", "/face-search"' in mw

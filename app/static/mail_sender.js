@@ -56,6 +56,10 @@ async function init() {
       " — 연결 화면에서 모든 항목을 체크하고 허용하세요" : "구글 계정을 연결해야 합니다");
     $("ms-connect-btn").onclick = () => {
       const w = window.open(s.login_url, "gws_auth", "width=500,height=650");
+      if (!w) {  // 팝업 차단 — 닫힘 감시를 시작하지 않는다
+        text($("ms-connect-msg"), "팝업이 차단되었습니다 — 팝업을 허용해 주세요");
+        return;
+      }
       const t = setInterval(() => { if (w.closed) { clearInterval(t); location.reload(); } }, 1000);
     };
     return;

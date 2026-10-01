@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import functools
+import zipfile
 from datetime import datetime, timezone
 
 import pymysql
@@ -29,6 +30,7 @@ router = APIRouter()
 _EXPIRED = "구글 연결이 만료되었습니다 — 다시 연결해 주세요"
 _DB_DOWN = "발송 기록 DB 에 연결하지 못했습니다 — 잠시 뒤 다시 시도"
 _auth = GoogleAuthManager()
+_NO_TAB_DIR = f"이 스프레드시트에 `{TAB_DIR_SHEET}` 이 없습니다 — gmailv2 시트(탭 목록이 있는 시트)를 쓰세요"
 
 
 def _credentials(email: str):
@@ -83,7 +85,13 @@ def _check_sender(creds, sender: str) -> tuple[str, str]:
 
 def _load(creds, spreadsheet_id: str, sheet: str):
     rows, cols = parse_rows(mail_google.read_sheet(creds, spreadsheet_id, sheet))
-    tab_dir, updated = parse_tab_directory(mail_google.read_sheet(creds, spreadsheet_id, TAB_DIR_SHEET))
+    try:
+        tab_values = mail_google.read_sheet(creds, spreadsheet_id, TAB_DIR_SHEET)
+    except HttpError as e:  # 없는 시트 이름이면 구글은 400 'Unable to parse range' 를 준다
+        if getattr(getattr(e, "resp", None), "status", None) == 400:
+            raise HTTPException(400, _NO_TAB_DIR) from e
+        raise
+    tab_dir, updated = parse_tab_directory(tab_values)
     templates = {}
     for manager in {r.manager for r in pending(rows)}:
         tab_id = tab_dir.get(manager)
@@ -91,7 +99,7 @@ def _load(creds, spreadsheet_id: str, sheet: str):
             continue
         try:
             templates[manager] = template_from_export_zip(mail_google.export_tab_zip(creds, DOC_ID, tab_id))
-        except (TemplateError, RuntimeError, requests.RequestException) as e:
+        except (TemplateError, RuntimeError, requests.RequestException, zipfile.BadZipFile) as e:
             templates[manager] = e
     return rows, cols, templates, tab_dir, updated
 
