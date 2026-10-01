@@ -1814,6 +1814,43 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   "A 매출 (백만…" 처럼 잘려 단위를 잃는다
 
 
+## 메일 발송 (`/mail-sender`) — gmailv2 Apps Script 를 셀라 안으로 (2026-10-01)
+
+- **화면**: `/mail-sender` (`app/static/mail_sender.html` · `mail_sender.js`) / **API**: `app/api/mail_sender_api.py`
+  (`status`·`sheets`·`preview`·`test-send`·`check`·`jobs`·`jobs/active`·`jobs/{id}`·`stop`·`ack-unknown`) /
+  **작업**: `app/core/mail_sender_jobs.py` / **판정**: `app/core/mail_sender.py` (시트 행·`_탭목록` 파싱·발송 전 점검,
+  `DOC_ID`·`TAB_DIR_SHEET`) / **템플릿**: `app/core/mail_template.py` (Docs 탭 내보내기 zip → 메일 HTML, 클래스 인라인,
+  이미지 cid, 변수 치환·속성 포함·URL 스킴 허용목록, `unreplaced`/`unreplaced_html`) / **MIME**: `app/core/mail_mime.py`
+  (`build_mime`, multipart/related) / **구글 호출**: `app/core/mail_google.py` (사용자 토큰 — 탭 내보내기·Sheets·sendAs·발송·tokeninfo 스코프 확인) /
+  **동의**: `app/core/google_auth.py` (`MAIL_SCOPES`, `/auth/google/login?feature=mail` 증분 동의, 승인된 스코프 저장·로드)
+- **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
+- **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
+  `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는
+  **Docs API 가 꺼져 있어** 켤 권한도 없다. `www.googleapis.com`·`sheets`·`gmail`(12MB 업로드도)·`docs.google.com`·`drive.google.com` 은 열려 있다.
+  그래서 gmailv2 Apps Script 가 탭 목록(제목·탭 ID·상위·갱신 시각)을 **숨김 시트 `_탭목록`** 에 적고, WAS 는 Sheets 로 그걸 읽어
+  `docs.google.com/document/d/{DOC_ID}/export?format=zip&tab={탭 ID}` 를 **탭별로** 받는다 (zip 에 이미지가 파일로 들어 있어 googleusercontent 불필요.
+  문서 전체 내보내기는 10MB 한도로 실패한다). Docs API·Drive `export` 우회는 시도하지 않는다
+- ⛔ LLM 을 부르지 않는다. 변환·치환·점검은 전부 규칙이다 (인증서류·성분·재고와 같은 사상)
+- ⛔ **확인(confirm) 없이 발송하지 않는다.** 미리보기·점검·테스트 발송을 거친 뒤 사람이 확정해야 작업이 시작된다
+- ⛔ **재시작 뒤 자동 이어보내기 없음.** 서버가 죽었다 살아나면 돌던 작업은 `interrupted`, 발송 중이던 행은 `unknown` 이 된다 — 사람이 보고 다시 시작한다
+- ⛔ **이미지는 링크로 넣지 않는다.** 본문 이미지는 항상 cid 첨부(multipart/related)다 — 수신자 메일 클라이언트가 외부 링크를 막으면 빈 칸이 된다
+- ⛔ **From 은 Gmail sendAs 가 수락한 주소만.** 목록에 없는 주소로 보내면 구글이 조용히 계정 기본 주소로 바꾼다 — 보내기 전에 거절한다
+- ⛔ **권한·토큰 문제는 X(실패)로 기록하지 않는다.** 스코프 부족·토큰 만료는 "수신자 문제" 가 아니라 "작업 중단" 이다 — 시트에 X 를 쓰면 다음 사람이 그 행을 영영 건너뛴다
+- ⛔ **행마다 G(상태) 를 다시 읽는다.** 시작 시점 스냅샷만 믿으면 다른 사람이 같은 시트에서 보낸 행을 또 보낸다
+- ⛔ **이중 발송 금지 — 발송 기록으로 제외한다.** `sent` 는 **이메일** 기준(누구의 작업이든), `sending`/`unknown` 은 **행 또는 이메일** 기준으로 제외한다.
+  `unknown` 행은 목록에 보여 주고 **작업 주인이 확인(ack)** 해야 풀린다. 전송 중 불확실한 오류(타임아웃 등)는 **X 가 아니라 `unknown`** — 실제로는 갔을 수 있다
+- ⚠️ **한 시트는 한 도구에서만** — 같은 시트를 gmailv2 와 셀라가 동시에 돌리면 서로의 O/X 를 못 본다. 셀라는 `GET_LOCK` 으로 같은 시트 동시 작업을 막지만 Apps Script 는 막지 못한다
+- ⚠️ **운영 메모 (사람이 해야 하는 것)**:
+  - gmailv2 Apps Script 편집기에서 `writeTabDirectory()` 를 부르는 **10분 시간 트리거를 손으로 만들어야 한다 — 현재 미생성.**
+    없으면 `템플릿 검증` 을 누를 때만 갱신된다. 자가 점검 `mail_sender_tab_directory` 가 1시간 넘게 낡으면 경고한다
+    (관리자 토큰·`CELLA_MAIL_TAB_DIR_SPREADSHEET_ID` 가 없으면 **건너뜀 + 사유**를 detail 에 남긴다 — 조용한 통과 아님)
+  - 기존 구글 연결 사용자는 메일 페이지의 안내로 **재동의**한다 — 동의 창에서 **모든 체크박스를 켜야** 한다
+    (하나라도 빼면 스코프가 모자라 발송 시작 전에 막힌다)
+  - 방금 만든 탭은 최대 10분 늦게 보인다 — "탭 없음" 옆에 갱신 시각과 "잠시 뒤 다시" 를 적는다
+- 회귀: `tests/test_mail_template.py` · `test_mail_mime.py` · `test_mail_sender.py` · `test_mail_google_auth.py` ·
+  `test_mail_sender_jobs.py` · `test_mail_sender_api.py` · `test_self_check_mail_sender.py`
+- 상태: 구현 완료(브랜치 `feat/mail-sender`) → 실물 확인(Task 9) 대기
+
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)
 
 - **파일**: `app/agents/cs_agent.py` (구글 시트 `[BD_BP] CS제품문의_모음집`, 13탭 ~900건)

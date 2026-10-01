@@ -1307,6 +1307,46 @@ def _stored_google_accounts() -> list[dict]:
     return out
 
 
+def _check_mail_sender_tab_directory() -> CheckResult:
+    """메일 발송의 탭 목록(`_탭목록`)이 최근에 갱신됐는가 — gmailv2 트리거가 죽으면 낡는다.
+
+    탭 목록은 gmailv2 Apps Script 가 10분마다 시트에 적는다. 트리거가 멈추면 새로 만든 탭이
+    전부 "탭 없음" 으로 보인다. 서비스 계정은 사용자가 공유한 시트를 못 읽으므로
+    **관리자 토큰**(jeffrey, 구글 연결 계정)으로 읽는다.
+
+    ⛔ 읽을 수 없으면 조용히 통과하지 않는다 — 건너뛴 이유를 detail 에 적는다
+       (이 파일의 CheckResult 는 ok/실패 둘뿐이라 skip 은 ok=True + "건너뜀 — 사유" 로 남긴다).
+    """
+    import os
+
+    from app.core import mail_google
+    from app.core.google_auth import GoogleAuthManager
+    from app.core.mail_sender import TAB_DIR_SHEET, TAB_DIR_STALE, parse_tab_directory
+
+    sheet_id = (os.getenv("CELLA_MAIL_TAB_DIR_SPREADSHEET_ID") or "").strip()
+    if not sheet_id:
+        return CheckResult(True, "건너뜀 — CELLA_MAIL_TAB_DIR_SPREADSHEET_ID 미설정 "
+                                 "(gmail_v2 시트 ID 를 모르면 _탭목록 을 읽을 수 없다)")
+    email = "jeffrey@skin1004korea.com"
+    outcome = GoogleAuthManager().load_credentials(email)
+    if outcome.status != "ready" or outcome.credentials is None:
+        return CheckResult(True, f"건너뜀 — 관리자({email}) 구글 토큰 없음/사용 불가 "
+                                 f"({outcome.status}) — 탭 목록 갱신 시각을 확인하지 못했다")
+    try:
+        values = mail_google.read_sheet(outcome.credentials, sheet_id, TAB_DIR_SHEET)
+    except Exception as exc:                          # noqa: BLE001
+        return CheckResult(True, f"건너뜀 — _탭목록 읽기 실패: {str(exc)[:160]} "
+                                 "(관리자 토큰에 메일 발송 권한이 없을 수 있다)")
+    _, updated = parse_tab_directory(values)
+    if updated is None:
+        return CheckResult(False, "메일 발송 탭 목록 갱신 시각을 읽지 못함 — gmailv2 트리거 확인")
+    age = datetime.now(timezone.utc) - updated
+    if age > TAB_DIR_STALE:
+        return CheckResult(False, "메일 발송 탭 목록 갱신 멈춤 — gmailv2 트리거 확인 "
+                                  f"(마지막 갱신 {int(age.total_seconds() // 60)}분 전)")
+    return CheckResult(True, f"탭 목록 최신 (마지막 갱신 {int(age.total_seconds() // 60)}분 전)")
+
+
 def _check_google_account_health() -> CheckResult:
     """저장된 구글 계정 **각각**의 토큰이 살아 있는가 — 죽은 계정의 이름을 남긴다.
 
@@ -1433,6 +1473,9 @@ CHECKS: list[Check] = [
     Check("google_account_health", "datasource", SEV_WARNING,
           "연결된 구글 계정마다 토큰이 살아 있는가 (죽은 계정 이름을 남긴다)",
           _check_google_account_health),
+    Check("mail_sender_tab_directory", "datasource", SEV_WARNING,
+          "메일 발송 탭 목록(_탭목록)이 1시간 안에 갱신됐는가 (gmailv2 트리거 — 관리자 토큰)",
+          _check_mail_sender_tab_directory),
     Check("canary_answers", "quality", SEV_WARNING,
           "대표 질문 답변이 구조적으로 온전한가", _check_canary_answers),
     # ⚠️ id 를 `feedback_spike` 에서 바꿨다 (2026-08-26). 재는 대상이 달라졌는데
