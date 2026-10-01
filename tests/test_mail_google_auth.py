@@ -36,7 +36,25 @@ def test_missing_mail_scopes_uses_tokeninfo():
     resp = MagicMock(ok=True)
     resp.json.return_value = {"scope": "https://www.googleapis.com/auth/gmail.send openid"}
     with patch("app.core.mail_google.requests.get", return_value=resp):
-        assert mail_google.missing_mail_scopes(creds) == ["https://www.googleapis.com/auth/spreadsheets"]
+        assert mail_google.missing_mail_scopes(creds) == [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/drive.readonly"]
+
+
+def test_page_scopes_cover_sendas_and_tab_export():
+    assert google_auth.REQUIRED_MAIL_PAGE_SCOPES == google_auth.MAIL_SCOPES + [
+        "https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/drive.readonly"]
+
+
+def test_missing_gmail_readonly_is_reported():
+    """세분화 동의에서 gmail.readonly 만 끄면 sendAs.list 가 403 — 발송 권한만 보고 통과시키면 안 된다."""
+    creds = MagicMock(token="t")
+    resp = MagicMock(ok=True)
+    have = google_auth.MAIL_SCOPES + ["https://www.googleapis.com/auth/drive.readonly"]
+    resp.json.return_value = {"scope": " ".join(have)}
+    with patch("app.core.mail_google.requests.get", return_value=resp):
+        assert mail_google.missing_mail_scopes(creds) == ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
 def test_spreadsheet_id_from_url():

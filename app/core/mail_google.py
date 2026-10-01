@@ -9,7 +9,7 @@ from google.auth.transport.requests import AuthorizedSession, Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 
-from app.core.google_auth import MAIL_SCOPES
+from app.core.google_auth import REQUIRED_MAIL_PAGE_SCOPES
 
 
 def _fresh(creds):
@@ -30,8 +30,9 @@ def granted_scopes(creds) -> set[str]:
 
 
 def missing_mail_scopes(creds) -> list[str]:
+    """메일 페이지에 필요한 스코프(발송·시트 + 보내는 주소 목록·탭 내보내기) 중 빠진 것."""
     have = granted_scopes(creds)
-    return [s for s in MAIL_SCOPES if s not in have]
+    return [s for s in REQUIRED_MAIL_PAGE_SCOPES if s not in have]
 
 
 def spreadsheet_id_from(url_or_id: str) -> str:

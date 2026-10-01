@@ -37,6 +37,12 @@ MAIL_SCOPES = [
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
+# 메일 페이지가 실제로 쓰는 전부 — 보내는 주소 목록(sendAs.list)은 gmail.readonly, 탭 내보내기는 drive.readonly.
+# 둘은 기본 SCOPES 에 있지만 세분화 동의에서 꺼질 수 있다 (2026-09-30 사고) — 빠지면 페이지가 403/500 이 된다.
+REQUIRED_MAIL_PAGE_SCOPES = MAIL_SCOPES + [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+]
 # include_granted_scopes 로 받은 토큰은 요청보다 넓은 스코프를 돌려준다 — oauthlib 의 '스코프 변경' 예외를 끈다
 os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 

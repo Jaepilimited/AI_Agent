@@ -122,7 +122,7 @@ async def mail_sender_page(request: Request):
 
 @router.get("/api/mail-sender/status")
 async def status(user=Depends(get_current_user)):
-    creds = _credentials(user.email)
+    creds = await asyncio.to_thread(_credentials, user.email)  # 토큰 파일 읽기·갱신 — 이벤트 루프 밖에서
     out = {"connected": creds is not None, "missing_scopes": [], "senders": [],
            "login_url": "/auth/google/login?feature=mail", "me": user.email}
     if creds is None:
@@ -140,6 +140,13 @@ async def status(user=Depends(get_current_user)):
         out["missing_scopes"] = []
         out["senders"] = []
         out["error"] = str(e)
+    except HttpError as e:  # 보내는 주소 목록 실패 (권한·일시 장애) — 원시 500 대신 메시지
+        code = getattr(getattr(e, "resp", None), "status", "")
+        out["senders"] = []
+        out["error"] = f"보내는 주소 목록을 읽지 못했습니다 — 구글 API 오류({code}): {getattr(e, 'reason', None) or e}"
+    except (GoogleAuthError, requests.RequestException) as e:
+        out["senders"] = []
+        out["error"] = f"구글 연결에 실패했습니다: {e}"
     return out
 
 

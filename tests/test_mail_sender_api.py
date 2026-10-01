@@ -535,3 +535,32 @@ def test_js_shows_unknown_jobs_with_ack_buttons():
     assert "await runCheck()" in js and '$("ms-check").onclick = guard(runCheck)' in js
     html = (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")
     assert 'id="ms-unknown-jobs"' in html
+
+
+# ---------------------------------------------------------------------------
+# Final review
+# ---------------------------------------------------------------------------
+def _http_error(status):
+    import httplib2
+    from googleapiclient.errors import HttpError
+    resp = httplib2.Response({"status": status})
+    resp.reason = "insufficientPermissions"
+    return HttpError(resp, b'{"error": {"message": "x"}}')
+
+
+@pytest.mark.parametrize("exc", ["http403", "auth", "net"])
+def test_status_google_error_in_sendas_is_200_with_error(client, exc):
+    import requests
+    from google.auth.exceptions import TransportError
+    err = {"http403": _http_error(403), "auth": TransportError("t"), "net": requests.ConnectionError("c")}[exc]
+    with patch("app.api.mail_sender_api._credentials", return_value=object()),          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]),          patch("app.api.mail_sender_api.mail_google.send_as_addresses", side_effect=err):
+        r = client.get("/api/mail-sender/status")
+    j = r.json()
+    assert r.status_code == 200 and j["senders"] == [] and j["error"]
+
+
+def test_status_loads_credentials_off_the_event_loop():
+    src = (ROOT / "app/api/mail_sender_api.py").read_text(encoding="utf-8")
+    body = src[src.index("async def status("):src.index('@router.post("/api/mail-sender/sheets")')]
+    assert "await asyncio.to_thread(_credentials, user.email)" in body
+    assert "creds = _credentials(" not in body
