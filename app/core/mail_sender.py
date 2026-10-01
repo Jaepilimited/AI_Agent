@@ -37,6 +37,8 @@ class Row:
     email: str
     status: str
     values: dict[str, str] = field(default_factory=dict)
+    attachments: list[str] = field(default_factory=list)  # `첨부` 열의 Drive 파일 ID
+    attach_bad: list[str] = field(default_factory=list)   # 그 칸에서 알아볼 수 없는 조각 — 점검 오류
 
 
 @dataclass
@@ -47,6 +49,7 @@ class Columns:
     note: int
     date: int | None
     variables: dict[str, int]
+    attach: int | None = None
 
 
 @dataclass
@@ -62,6 +65,27 @@ class Issue:
 #    이름으로 찾으면 기존 툴로 잘 쓰던 시트가 여기서만 안 열린다.
 #    A 날짜 · B 탭 이름 · D 이메일 · G 전송여부 · H 비고, 1행 헤더, 2행부터 데이터.
 COL_DATE, COL_MANAGER, COL_EMAIL, COL_STATUS, COL_NOTE = 0, 1, 3, 6, 7
+_FIXED_COLS = {COL_DATE, COL_MANAGER, COL_EMAIL, COL_STATUS, COL_NOTE}
+# 수신자별 첨부 열은 고정 위치가 없다 — 담당자가 I열 이후에 만들므로 1행 헤더 이름으로 찾는다
+ATTACH_HEADERS = {"첨부", "첨부파일", "attachment", "attachments"}
+_DRIVE_LINK = re.compile(r"/(?:file|document|spreadsheets|presentation)/d/([A-Za-z0-9_-]+)|[?&]id=([A-Za-z0-9_-]+)")
+_DRIVE_BARE_ID = re.compile(r"[A-Za-z0-9_-]{20,}")
+
+
+def drive_ids(cell: str) -> tuple[list[str], list[str]]:
+    """첨부 칸 → (Drive 파일 ID, 알아볼 수 없는 조각). 줄바꿈·쉼표·공백으로 나눈다."""
+    ids: list[str] = []
+    bad: list[str] = []
+    for part in re.split(r"[\s,]+", cell or ""):
+        if not part:
+            continue
+        m = _DRIVE_LINK.search(part)
+        fid = (m.group(1) or m.group(2)) if m else (part if _DRIVE_BARE_ID.fullmatch(part) else None)
+        if fid is None:
+            bad.append(part)
+        elif fid not in ids:
+            ids.append(fid)
+    return ids, bad
 
 
 def parse_rows(values: list[list[str]]) -> tuple[list[Row], Columns]:
@@ -71,16 +95,20 @@ def parse_rows(values: list[list[str]]) -> tuple[list[Row], Columns]:
     headers = [str(h) for h in values[0]]
     variables = {normalize_key(h.strip()[1:-1]): i for i, h in enumerate(headers)
                  if h.strip().startswith("{") and h.strip().endswith("}")}
+    attach = next((i for i, h in enumerate(headers)
+                   if i not in _FIXED_COLS and normalize_key(h) in ATTACH_HEADERS), None)
     cols = Columns(email=COL_EMAIL, manager=COL_MANAGER, status=COL_STATUS,
-                   note=COL_NOTE, date=COL_DATE, variables=variables)
+                   note=COL_NOTE, date=COL_DATE, variables=variables, attach=attach)
     rows = []
     for ri, raw in enumerate(values[1:], start=2):
         cell = lambda i: (str(raw[i]).strip() if i is not None and i < len(raw) else "")
         if not any(str(c).strip() for c in raw):
             continue
+        ids, bad = drive_ids(cell(attach))
         rows.append(Row(row=ri, manager=cell(COL_MANAGER), email=cell(COL_EMAIL),
                         status=cell(COL_STATUS),
-                        values={k: cell(i) for k, i in variables.items()}))
+                        values={k: cell(i) for k, i in variables.items()},
+                        attachments=ids, attach_bad=bad))
     return rows, cols
 
 
@@ -123,6 +151,14 @@ def first_subjects(rows: list[Row], templates: dict[str, MailTemplate | Exceptio
 def estimate_size(template: MailTemplate) -> int:
     # base64 는 4/3 배 + 헤더 여유
     return int((len(template.html.encode()) + sum(len(b) for b, _ in template.images.values())) * 1.37) + 4096
+
+
+def ensure_message_size(raw: bytes) -> bytes:
+    """조립한 메일이 Gmail 한도를 넘으면 보내지 않는다 (보내 봐야 구글이 거절한다)."""
+    if len(raw) > MAX_MESSAGE_BYTES:
+        raise RuntimeError(f"메일 용량 초과 ({len(raw) / 1024 / 1024:.1f}MB > "
+                           f"{MAX_MESSAGE_BYTES // 1024 // 1024}MB) — 첨부를 줄여 주세요")
+    return raw
 
 
 def check(rows: list[Row], tab_dir: dict[str, str], dir_updated_at: datetime | None,

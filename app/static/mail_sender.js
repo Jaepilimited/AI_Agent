@@ -100,6 +100,54 @@ const loadSheets = guard(async () => {
 $("ms-book").onchange = loadSheets;
 $("ms-sheet").onchange = () => remember(LAST_SHEET, $("ms-sheet").value);
 
+// 공통 첨부 — base64 로 읽어 JSON 으로 보낸다. 서버도 같은 한도로 다시 막는다.
+const FILES_MAX = 10;
+const FILES_MAX_BYTES = 15 * 1024 * 1024;
+let commonFiles = [];   // [{name, mime, data, size}]
+let filesReady = Promise.resolve();
+const mb = (n) => (n / 1024 / 1024).toFixed(1) + "MB";
+
+function readBase64(f) {
+  return new Promise((ok, fail) => {
+    const rd = new FileReader();
+    rd.onload = () => ok(String(rd.result).split(",", 2)[1] || "");
+    rd.onerror = () => fail(new Error(`첨부 '${f.name}' 을 읽지 못했습니다`));
+    rd.readAsDataURL(f);
+  });
+}
+
+function filesInfo(msg, bad) {
+  const el = $("ms-files-info");
+  el.className = bad ? "ms-err" : "ms-muted";
+  text(el, msg);
+}
+
+$("ms-files").onchange = () => {
+  const picked = Array.from($("ms-files").files || []);
+  const total = picked.reduce((s, f) => s + f.size, 0);
+  commonFiles = [];
+  if (picked.length > FILES_MAX || total > FILES_MAX_BYTES) {
+    $("ms-files").value = "";
+    filesInfo(`선택 거부: ${picked.length}개 · ${mb(total)} — 최대 ${FILES_MAX}개, 합계 15MB 까지입니다`, true);
+    filesReady = Promise.resolve();
+    return;
+  }
+  filesInfo(picked.length ? `${picked.length}개 · ${mb(total)} 읽는 중…` : "", false);
+  filesReady = Promise.all(picked.map(async (f) => ({ name: f.name, mime: f.type || "application/octet-stream",
+    data: await readBase64(f), size: f.size }))).then((list) => {
+    commonFiles = list;
+    filesInfo(list.length ? `${list.length}개 · ${mb(total)}` : "", false);
+  }).catch((e) => {
+    $("ms-files").value = "";
+    filesInfo(e.message, true);
+  });
+};
+
+async function commonAttachments() {
+  await filesReady;
+  return commonFiles.map(({ name, mime, data }) => ({ name, mime, data }));
+}
+
 // 본인 작업의 '발송 여부 불확실' 행 — 서버 재시작으로 중단된 작업도 여기서만 '확인했음' 을 누를 수 있다
 function renderUnknownJobs(list) {
   $("ms-unknown-jobs").replaceChildren(...(list || []).map((u) => {
@@ -126,7 +174,9 @@ async function runCheck() {
   refreshSendAll();
   text($("ms-summary"), "점검 중… (Docs 탭을 받아오는 데 수십 초 걸릴 수 있습니다)");
   $("ms-result").hidden = false;
-  const j = await api("/api/mail-sender/check", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet });
+  await filesReady;
+  const j = await api("/api/mail-sender/check", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet,
+    common_bytes: commonFiles.reduce((s, f) => s + f.size, 0) });
   text($("ms-summary"), `대상 ${j.pending}명 · 오류 ${j.errors}건`);
   $("ms-global-issues").replaceChildren(...j.issues.filter((i) => i.row === null).map((i) => {
     const li = document.createElement("li"); li.className = i.level === "error" ? "ms-err" : "ms-warn";
@@ -138,7 +188,8 @@ async function runCheck() {
     const iss = byRow[r.row] || [];
     const isSent = (r.status || "").trim().toUpperCase() === "O";
     const mark = isSent ? "보냄" : iss.some((i) => i.level === "error") ? "❌" : iss.length ? "⚠️" : "✅";
-    for (const v of [r.row, r.manager, r.email, r.status || "", mark + " " + iss.map((i) => i.message).join(" / ")]) {
+    const email = r.attachments ? `${r.email} 📎${r.attachments}` : r.email;
+    for (const v of [r.row, r.manager, email, r.status || "",mark + " " + iss.map((i) => i.message).join(" / ")]) {
       const td = document.createElement("td"); td.textContent = v; tr.append(td);
     }
     const td = document.createElement("td");
@@ -161,6 +212,9 @@ async function runCheck() {
 async function preview(row) {
   const j = await api("/api/mail-sender/preview", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet, row });
   text($("ms-pv-subject"), j.subject);
+  const names = [...(j.attachments || []), ...commonFiles.map((f) => f.name)];
+  $("ms-pv-attach").hidden = names.length === 0;
+  text($("ms-pv-attach"), names.length ? "첨부: " + names.join(", ") : "");
   const frame = document.createElement("iframe"); frame.className = "ms-frame";
   frame.setAttribute("sandbox", "allow-popups allow-popups-to-escape-sandbox");
   frame.srcdoc = j.html;
@@ -170,7 +224,7 @@ async function preview(row) {
 
 async function testSend(row) {
   await api("/api/mail-sender/test-send", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet, row,
-    sender: $("ms-sender").value });
+    sender: $("ms-sender").value, attachments: await commonAttachments() });
   alert("본인 메일함으로 테스트 메일을 보냈습니다");
 }
 
@@ -180,12 +234,14 @@ $("ms-send-all").onclick = guard(async () => {
   const n = btn.dataset.count;
   // 확인 창: N명 · 보내는 주소 · 담당자 탭별 제목 (첫 대상 행으로 치환한 것)
   const subjects = Object.entries(state.subjects).map(([m, s]) => `  ${m} 탭: ${s}`).join("\n");
-  if (!confirm(`${state.sheet} 시트 · ${n}명 · 보내는 주소 ${$("ms-sender").value}\n${subjects}\n\n발송할까요?`)) return;
+  const attachments = await commonAttachments();
+  const attachLine = attachments.length ? `\n공통 첨부: ${attachments.map((a) => a.name).join(", ")}` : "";
+  if (!confirm(`${state.sheet} 시트 · ${n}명 · 보내는 주소 ${$("ms-sender").value}\n${subjects}${attachLine}\n\n발송할까요?`)) return;
   // busy() 는 끝나면 버튼을 다시 켠다 — 작업을 지켜보는 동안 잠가 두려고 직접 다룬다
   btn.disabled = true;
   try {
     const j = await api("/api/mail-sender/jobs", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet,
-      sender: $("ms-sender").value, confirm_count: Number(n) });
+      sender: $("ms-sender").value, confirm_count: Number(n), attachments });
     state.checkOk = false;  // 다음 발송은 다시 점검한 뒤에
     watchJob(j.job_id);
   } catch (e) {

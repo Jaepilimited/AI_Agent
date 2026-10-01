@@ -71,6 +71,54 @@ def drive_download(creds, file_id: str) -> bytes:
     return r.content
 
 
+# 수신자별 첨부 — 구글 문서류는 PDF 로 내보내 붙인다. ⚠️ 받기·내보내기 모두 www.googleapis.com 의 Drive API 로만
+# (docs.google.com 내보내기는 *.googleusercontent.com 으로 넘겨져 WAS 프록시에 막힌다).
+_DRIVE_FILES = "https://www.googleapis.com/drive/v3/files/"
+GOOGLE_EXPORTABLE = frozenset({"application/vnd.google-apps.document", "application/vnd.google-apps.spreadsheet",
+                               "application/vnd.google-apps.presentation", "application/vnd.google-apps.drawing"})
+
+
+def _attachment_get(creds, url: str, params: dict, timeout: int = 180):
+    r = AuthorizedSession(_fresh(creds)).get(url, params=params, timeout=timeout)
+    if r.status_code == 404:
+        raise RuntimeError("첨부 파일을 찾을 수 없습니다 — 링크가 맞는지, 지워지지 않았는지 확인하세요")
+    if r.status_code == 403 and b"exportSizeLimitExceeded" in (r.content or b""):
+        raise RuntimeError("구글 문서가 너무 커서 PDF 로 내보낼 수 없습니다 (구글 내보내기 10MB 한도)")
+    if r.status_code in (401, 403):
+        raise RuntimeError("첨부 파일에 접근 권한이 없습니다 — 파일을 공유받았는지 확인하세요")
+    if r.status_code != 200:
+        raise RuntimeError(f"첨부 파일 읽기 실패 (HTTP {r.status_code})")
+    return r
+
+
+def drive_meta(creds, file_id: str) -> dict:
+    """첨부 점검용 — {name, mimeType, size}. 구글 문서류는 size 가 없다."""
+    r = _attachment_get(creds, _DRIVE_FILES + file_id,
+                        {"fields": "name,mimeType,size", "supportsAllDrives": "true"}, timeout=30)
+    return r.json()
+
+
+def attachment_name(meta: dict) -> str:
+    """메일에 붙을 파일명 — 구글 문서류는 `.pdf`. 붙일 수 없는 종류(폴더·설문 등)는 RuntimeError."""
+    name, mime = meta.get("name") or "첨부파일", meta.get("mimeType") or ""
+    if mime in GOOGLE_EXPORTABLE:
+        return name if name.lower().endswith(".pdf") else name + ".pdf"
+    if mime.startswith("application/vnd.google-apps."):
+        raise RuntimeError(f"첨부할 수 없는 종류입니다 ({name}: {mime.rsplit('.', 1)[-1]}) — 파일 링크를 적으세요")
+    return name
+
+
+def drive_attachment(creds, file_id: str, meta: dict | None = None) -> tuple[str, str, bytes]:
+    """(파일명, mime, 내용). 구글 문서류는 files/{id}/export 로 PDF, 그 밖은 alt=media."""
+    meta = meta or drive_meta(creds, file_id)
+    name = attachment_name(meta)
+    if meta.get("mimeType") in GOOGLE_EXPORTABLE:
+        r = _attachment_get(creds, _DRIVE_FILES + file_id + "/export", {"mimeType": "application/pdf"})
+        return name, "application/pdf", r.content
+    r = _attachment_get(creds, _DRIVE_FILES + file_id, {"alt": "media", "supportsAllDrives": "true"})
+    return name, meta.get("mimeType") or "application/octet-stream", r.content
+
+
 def read_template_cache_index(creds, index_id: str) -> dict:
     """'셀라 메일 템플릿 캐시' Apps Script 가 10분마다 쓰는 index.json — {tabs: {탭 ID: {fileId, hash, …}}}."""
     if not index_id:

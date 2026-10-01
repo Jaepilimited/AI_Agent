@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import functools
+import re
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import pymysql
@@ -22,15 +25,20 @@ from app.core import mail_sender_jobs as jobs
 from app.core.google_auth import GoogleAuthManager
 from app.core.mail_mime import build_mime
 from app.core.mail_sender import (
-    MAIL_SPREADSHEETS, TAB_DIR_SHEET, template_cache_index_id, Issue, check, first_subjects, parse_rows, parse_tab_directory, pending,
+    MAIL_SPREADSHEETS, MAX_MESSAGE_BYTES, TAB_DIR_SHEET, template_cache_index_id, Issue, check, ensure_message_size,
+    estimate_size, first_subjects, parse_rows, parse_tab_directory, pending,
 )
-from app.core.mail_template import TemplateError, render, template_from_export_zip
+from app.core.mail_template import MailTemplate, TemplateError, render, template_from_export_zip
 
 router = APIRouter()
 _EXPIRED = "구글 연결이 만료되었습니다 — 다시 연결해 주세요"
 _DB_DOWN = "발송 기록 DB 에 연결하지 못했습니다 — 잠시 뒤 다시 시도"
 _auth = GoogleAuthManager()
 _NO_TAB_DIR = f"이 스프레드시트에 `{TAB_DIR_SHEET}` 이 없습니다 — gmailv2 시트(탭 목록이 있는 시트)를 쓰세요"
+# 공통 첨부 — 화면이 base64 JSON 으로 보낸다 (본문 ~20MB). 수신자별 Drive 첨부·이미지와 합쳐도 24MB 안에 들게 15MB.
+MAX_COMMON_BYTES = 15 * 1024 * 1024
+MAX_COMMON_FILES = 10
+_BAD_NAME_CHARS = re.compile(r"[/\\\x00-\x1f\x7f]")
 
 
 def _credentials(email: str):
@@ -121,9 +129,94 @@ class SheetIn(BaseModel):
     sheet: str
 
 
+class AttachmentIn(BaseModel):
+    name: str
+    mime: str = ""
+    data: str  # base64
+
+
+class CheckIn(SheetIn):
+    common_bytes: int = 0  # 화면이 고른 공통 첨부 총 바이트 — 용량 판정용
+
+
 class RowIn(SheetIn):
     row: int
     sender: str = ""
+    attachments: list[AttachmentIn] = []
+
+
+def _decode_attachments(items: list[AttachmentIn]) -> list[tuple[str, str, bytes]]:
+    if len(items) > MAX_COMMON_FILES:
+        raise HTTPException(400, f"공통 첨부는 {MAX_COMMON_FILES}개까지입니다 ({len(items)}개)")
+    out, total = [], 0
+    for a in items:
+        try:
+            data = base64.b64decode(a.data, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise HTTPException(400, f"첨부 '{a.name}' 을 읽지 못했습니다 (base64 오류) — 다시 골라 주세요") from e
+        total += len(data)
+        if total > MAX_COMMON_BYTES:
+            raise HTTPException(400, f"공통 첨부 합계가 {MAX_COMMON_BYTES // 1024 // 1024}MB 를 넘습니다 — 파일을 줄여 주세요")
+        name = _BAD_NAME_CHARS.sub("", a.name).strip() or "첨부파일"  # 경로·헤더 끼워 넣기 차단
+        out.append((name, a.mime.strip() or "application/octet-stream", data))
+    return out
+
+
+def _drive_metas(creds, ids: set[str]) -> dict:
+    """파일 ID → meta 또는 예외. 같은 ID 는 한 번만, 몇 개씩 동시에 (행이 많으면 순차로는 너무 느리다)."""
+    def one(fid):
+        try:
+            return fid, mail_google.drive_meta(creds, fid)
+        except (RuntimeError, requests.RequestException) as e:
+            return fid, e
+    if not ids:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(ids))) as ex:
+        return dict(ex.map(one, sorted(ids)))
+
+
+def _attachment_issues(creds, targets, templates: dict, common_bytes: int = 0) -> list[Issue]:
+    """수신자별 첨부(Drive 링크)·공통 첨부 점검 — 링크 형식, 접근 권한·종류, 합친 용량."""
+    metas = _drive_metas(creds, {f for r in targets for f in r.attachments})
+    issues: list[Issue] = []
+    for r in targets:
+        if r.attach_bad:
+            issues.append(Issue(r.row, "error", f"첨부 링크를 알아볼 수 없습니다: {', '.join(r.attach_bad)}"))
+        size = 0
+        for fid in r.attachments:
+            m = metas[fid]
+            try:
+                if isinstance(m, Exception):
+                    raise m
+                mail_google.attachment_name(m)
+            except (RuntimeError, requests.RequestException) as e:
+                issues.append(Issue(r.row, "error", f"첨부 오류: {e} ({fid})"))
+                continue
+            size += int(m.get("size") or 0)  # 구글 문서류는 size 가 없다 — PDF 크기는 미리 알 수 없다
+        tpl = templates.get(r.manager)
+        if not isinstance(tpl, MailTemplate) or (not size and not common_bytes):
+            continue
+        base = estimate_size(tpl)
+        total = base + (common_bytes + size) * 4 // 3
+        if base <= MAX_MESSAGE_BYTES < total:  # 템플릿만으로 넘는 경우는 check() 가 이미 알린다
+            issues.append(Issue(r.row, "error", f"메일 용량 초과 예상 ({total // 1024 // 1024} MB) — 첨부를 줄여 주세요"))
+    return issues
+
+
+def _row_files(creds, r) -> list[tuple[str, str, bytes]]:
+    if r.attach_bad:
+        raise HTTPException(400, f"첨부 링크를 알아볼 수 없습니다: {', '.join(r.attach_bad)}")
+    return [mail_google.drive_attachment(creds, fid) for fid in r.attachments]
+
+
+def _attachment_names(creds, r) -> list[str]:
+    names = []
+    for fid in r.attachments:
+        try:
+            names.append(mail_google.attachment_name(mail_google.drive_meta(creds, fid)))
+        except (RuntimeError, requests.RequestException) as e:  # 미리보기는 막지 않는다 — 점검이 오류로 잡는다
+            names.append(f"{fid} (오류: {e})")
+    return names
 
 
 @router.get("/mail-sender")
@@ -191,21 +284,28 @@ def _row_message(rows, templates, row: int):
 async def preview(body: RowIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
     rows, _, templates, _, _ = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
-    _, tpl, subject, html = _row_message(rows, templates, body.row)
+    r, tpl, subject, html = _row_message(rows, templates, body.row)
     for cid, (data, mime) in tpl.images.items():
         html = html.replace(f"cid:{cid}", f"data:{mime};base64," + base64.b64encode(data).decode())
-    return {"subject": subject, "html": html}
+    names = await asyncio.to_thread(_attachment_names, creds, r)
+    return {"subject": subject, "html": html, "attachments": names}
 
 
 @router.post("/api/mail-sender/test-send")
 @_google_errors
 async def test_send(body: RowIn, user=Depends(get_current_user)):
+    common = _decode_attachments(body.attachments)
     creds = await asyncio.to_thread(_ready_creds, user)
     sender, sender_name = await asyncio.to_thread(_check_sender, creds, body.sender)
     rows, _, templates, _, _ = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
-    _, tpl, subject, html = _row_message(rows, templates, body.row)
+    r, tpl, subject, html = _row_message(rows, templates, body.row)
+    files = await asyncio.to_thread(_row_files, creds, r)
     raw = build_mime(sender=sender, sender_name=sender_name, to=user.email, subject="[테스트] " + subject, html=html,
-                     images=tpl.images)
+                     images=tpl.images, attachments=[*common, *files])
+    try:
+        ensure_message_size(raw)
+    except RuntimeError as e:  # 사람이 첨부를 줄여서 고칠 문제 — 502 가 아니다
+        raise HTTPException(400, str(e)) from e
     return {"message_id": await asyncio.to_thread(mail_google.send_raw, creds, raw)}
 
 
@@ -256,13 +356,15 @@ async def _targets(spreadsheet_id: str, sheet: str, rows, me: str) -> tuple[list
 
 @router.post("/api/mail-sender/check")
 @_google_errors
-async def check_sheet(body: SheetIn, user=Depends(get_current_user)):
+async def check_sheet(body: CheckIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
     rows, _, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     targets, excluded, unknown_jobs = await _targets(body.spreadsheet_id, body.sheet, rows, user.email)
     issues = excluded + check(targets, tab_dir, updated, templates, datetime.now(timezone.utc),
                               sent_today=await _sent_today(user.email))
-    return {"rows": [{"row": r.row, "manager": r.manager, "email": r.email, "status": r.status} for r in rows],
+    issues += await asyncio.to_thread(_attachment_issues, creds, targets, templates, max(0, body.common_bytes))
+    return {"rows": [{"row": r.row, "manager": r.manager, "email": r.email, "status": r.status,
+                      "attachments": len(r.attachments)} for r in rows],
             "issues": [i.__dict__ for i in issues],
             "pending": len(targets),
             "subjects": first_subjects(targets, templates),  # 확인 창: 담당자 탭별 첫 대상 행의 제목
@@ -276,17 +378,21 @@ async def check_sheet(body: SheetIn, user=Depends(get_current_user)):
 class JobIn(SheetIn):
     sender: str
     confirm_count: int
+    attachments: list[AttachmentIn] = []
 
 
 @router.post("/api/mail-sender/jobs")
 @_google_errors
 async def start_job(body: JobIn, user=Depends(get_current_user)):
+    common = _decode_attachments(body.attachments)
     creds = await asyncio.to_thread(_ready_creds, user)
     sender, sender_name = await asyncio.to_thread(_check_sender, creds, body.sender)  # 시작 시점에 다시 검증
     rows, cols, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     targets, _, _ = await _targets(body.spreadsheet_id, body.sheet, rows, user.email)
     issues = check(targets, tab_dir, updated, templates, datetime.now(timezone.utc),
                    sent_today=await _sent_today(user.email))
+    issues += await asyncio.to_thread(_attachment_issues, creds, targets, templates,
+                                      sum(len(d) for _, _, d in common))
     errors = [i for i in issues if i.level == "error"]
     if errors:
         raise HTTPException(400, f"점검 오류 {len(errors)}건이 있어 시작하지 않습니다: {errors[0].message}")
@@ -297,7 +403,7 @@ async def start_job(body: JobIn, user=Depends(get_current_user)):
                                          targets, body.confirm_count)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
-    jobs.start_job_thread(job_id, creds, cols, templates, sender_name=sender_name)
+    jobs.start_job_thread(job_id, creds, cols, templates, sender_name=sender_name, attachments=common)
     return {"job_id": job_id}
 
 

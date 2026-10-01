@@ -30,7 +30,7 @@ from googleapiclient.errors import HttpError
 
 from app.core import mail_google
 from app.core.mail_mime import build_mime
-from app.core.mail_sender import DAILY_LIMIT, Columns, Row
+from app.core.mail_sender import DAILY_LIMIT, Columns, Row, ensure_message_size
 from app.core.mail_template import render
 
 logger = structlog.get_logger(__name__)
@@ -107,6 +107,17 @@ def own_unknown_jobs(history: list[dict], owner: str) -> list[dict]:
     return [{"job_id": jid, "rows": sorted(rows)} for jid, rows in sorted(by_job.items())]
 
 
+# 수신자별 첨부 ID 는 row_values 안에 함께 둔다 — 스키마를 바꾸지 않으려고. _compose 가 render 전에 뺀다.
+ATTACH_KEY = "__attach__"
+
+
+def _stored_values(r: Row) -> dict:
+    v = dict(r.values)
+    if r.attachments:
+        v[ATTACH_KEY] = ",".join(r.attachments)
+    return v
+
+
 def _keep_targets(rows, history, confirm_count):
     kept = [r for r in rows if blocking_record(history, r.row, r.email) is None]
     if confirm_count is not None and len(kept) != confirm_count:
@@ -166,7 +177,7 @@ class MemoryStore:
                                   status="running", total=len(rows), sent=0, failed=0, skipped=0,
                                   sheet_write_failed=0, unknown=0, stop_reason=None,
                                   created_at=datetime.now(), finished_at=None)
-            self.items[jid] = [dict(sheet_row=r.row, email=r.email, manager=r.manager, row_values=dict(r.values),
+            self.items[jid] = [dict(sheet_row=r.row, email=r.email, manager=r.manager, row_values=_stored_values(r),
                                     status="pending", error=None, message_id=None, sent_at=None) for r in rows]
             return jid
 
@@ -307,7 +318,7 @@ class MariaStore:
                     cur.executemany(
                         "INSERT INTO mail_send_items (job_id, sheet_row, email, manager, row_values) "
                         "VALUES (%s,%s,%s,%s,%s)",
-                        [(jid, r.row, r.email, r.manager, json.dumps(r.values, ensure_ascii=False)) for r in rows])
+                        [(jid, r.row, r.email, r.manager, json.dumps(_stored_values(r), ensure_ascii=False)) for r in rows])
                     conn.commit()
                     return jid
                 except Exception:
@@ -492,6 +503,7 @@ class JobDeps:
     read_cells: Callable = mail_google.read_cells
     write_cells: Callable = mail_google.write_cells
     send_raw: Callable = mail_google.send_raw
+    drive_attachment: Callable = mail_google.drive_attachment
     sleep: Callable = time.sleep
     clock: Callable = time.monotonic
 
@@ -556,16 +568,24 @@ def _error_kind(e: Exception) -> str:
     return kind
 
 
-def _compose(job: dict, item: dict, templates: dict, sender_name: str = "") -> bytes:
+def _compose(job: dict, item: dict, templates: dict, sender_name: str = "", *,
+             common: tuple = (), fetch_attachment: Callable | None = None) -> bytes:
+    """common: 화면에서 올린 공통 첨부 (메모리로만 받는다). fetch_attachment: Drive 파일 ID → (이름, mime, 내용)."""
     manager = item["manager"]
     tpl = templates.get(manager)
     if tpl is None:
         raise RuntimeError(f"템플릿 없음: {manager}")
     if isinstance(tpl, Exception):
         raise RuntimeError(f"템플릿 오류: {manager} ({tpl})")
-    subject, html = render(tpl, item["row_values"])
-    return build_mime(sender=job["sender"], sender_name=sender_name, to=item["email"], subject=subject, html=html,
-                      images=tpl.images)
+    values = dict(item["row_values"])
+    ids = [i for i in (values.pop(ATTACH_KEY, "") or "").split(",") if i]
+    if ids and fetch_attachment is None:
+        raise RuntimeError("첨부를 받을 수 없습니다 (내부 설정)")
+    files = [fetch_attachment(i) for i in ids]
+    subject, html = render(tpl, values)
+    return ensure_message_size(build_mime(sender=job["sender"], sender_name=sender_name, to=item["email"],
+                                          subject=subject, html=html, images=tpl.images,
+                                          attachments=[*common, *files]))
 
 
 def _finish(st, job_id: int, status: str, reason: str | None) -> None:
@@ -664,9 +684,17 @@ def _mark_read_failed(st, deps, creds, job, cols, job_id, row, e) -> None:
 
 
 def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None,
-            sender_name: str = "") -> None:
-    """sender_name: 보내는 주소의 Gmail 표시 이름 (작업 시작 때 sendAs 에서 — 재시작 뒤 재개는 없으므로 DB 에 두지 않는다)."""
+            sender_name: str = "", attachments: tuple = ()) -> None:
+    """sender_name: 보내는 주소의 Gmail 표시 이름 (작업 시작 때 sendAs 에서 — 재시작 뒤 재개는 없으므로 DB 에 두지 않는다).
+    attachments: 공통 첨부 (이름, mime, 내용) — 같은 이유로 DB 에 두지 않고 메모리로만 넘긴다."""
     deps = deps or JobDeps()
+    common = tuple(attachments)
+    files: dict[str, tuple] = {}  # 여러 행이 같은 Drive 파일을 쓰면 한 번만 받는다 (실패는 담지 않는다)
+
+    def fetch(fid: str) -> tuple:
+        if fid not in files:
+            files[fid] = deps.drive_attachment(creds, fid)
+        return files[fid]
     st = _s()
     job = st.job(job_id)
     sid, sheet, owner = job["spreadsheet_id"], job["sheet"], job["owner"]
@@ -727,7 +755,7 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
         failure: Exception | None = None
         unsure = False
         try:
-            raw = _compose(job, item, templates, sender_name)
+            raw = _compose(job, item, templates, sender_name, common=common, fetch_attachment=fetch)
         except Exception as e:
             failure = e
         if failure is None:
@@ -768,10 +796,10 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
 
 
 def _thread_main(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None,
-                 sender_name: str = "") -> None:
+                 sender_name: str = "", attachments: tuple = ()) -> None:
     """스레드 대상 — 예상 못 한 예외로 작업이 'running' 에 영원히 남지 않게 한다."""
     try:
-        run_job(job_id, creds, cols, templates, deps, sender_name=sender_name)
+        run_job(job_id, creds, cols, templates, deps, sender_name=sender_name, attachments=attachments)
     except Exception as e:
         logger.exception("mail_send_job_crashed", job_id=job_id)
         try:
@@ -780,6 +808,7 @@ def _thread_main(job_id: int, creds, cols: Columns, templates: dict, deps: JobDe
             logger.exception("mail_send_job_crash_unrecorded", job_id=job_id)
 
 
-def start_job_thread(job_id: int, creds, cols: Columns, templates: dict, sender_name: str = "") -> None:
-    threading.Thread(target=_thread_main, args=(job_id, creds, cols, templates, None, sender_name), daemon=True,
-                     name=f"mail-send-{job_id}").start()
+def start_job_thread(job_id: int, creds, cols: Columns, templates: dict, sender_name: str = "",
+                     attachments: tuple = ()) -> None:
+    threading.Thread(target=_thread_main, args=(job_id, creds, cols, templates, None, sender_name, tuple(attachments)),
+                     daemon=True, name=f"mail-send-{job_id}").start()

@@ -30,6 +30,9 @@
     <label>보내는 주소 <select id="ms-sender"></select></label> <span id="ms-reply-to" class="ms-muted"></span>
     <p class="ms-muted">공용 주소가 없으면 Gmail 설정 → 계정 → '다른 주소에서 메일 보내기' 에 등록하세요.
       한 시트는 한 툴로만 보내세요 (기존 Apps Script 와 동시에 돌리지 마세요).</p>
+    <p class="ms-muted">수신자별 첨부: 시트 1행에 '첨부' 열을 만들고(I열 이후) 행마다 Drive 링크를 적으세요 — 구글 문서는 PDF 로 붙습니다. 링크 파일은 내 계정에서 열 수 있어야 합니다.</p>
+    <label>공통 첨부 (모든 수신자에게, 합계 15MB) <input type="file" id="ms-files" multiple></label>
+    <span id="ms-files-info" class="ms-muted"></span>
     <button id="ms-check" class="ms-btn">점검</button>
   </section>
   <section id="ms-result" class="ms-card" hidden>
@@ -49,7 +52,7 @@
     </div>
     <button id="ms-stop" class="ms-btn">중지</button>
   </section>
-  <dialog id="ms-preview"><h3 id="ms-pv-subject"></h3><div id="ms-pv-body"></div>
+  <dialog id="ms-preview"><h3 id="ms-pv-subject"></h3><p id="ms-pv-attach" class="ms-muted" hidden></p><div id="ms-pv-body"></div>
     <form method="dialog"><button class="ms-btn">닫기</button></form></dialog>
 </main>
 <script src="/static/mail_sender.js"></script>

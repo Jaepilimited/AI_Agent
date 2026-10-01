@@ -1846,6 +1846,13 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   ⚠️ 바뀐 탭 판정 지문은 **글자·링크 URL·이미지 ID 만**(documentTab 전체는 97탭에서 1~2분·두 번 읽으면 메모리 초과) +
   **키 정렬 직렬화**(`canon_` — 고급 서비스 객체는 호출마다 키 순서가 달라 그냥 stringify 하면 매번 전 탭 '바뀜').
   서식만 바꾼 변경은 지문에 안 잡혀 회차마다 가장 오래된 탭 3개(`REFRESH_PER_RUN`)를 새로 받는다.
+- **첨부** (2026-10-01): ① **공통 첨부** — 화면에서 올린 파일(합계 15MB·10개, `_decode_attachments`)을 base64 JSON 으로 받아
+  test-send·jobs 에 붙인다. 작업에는 **메모리로만** 넘긴다(`start_job_thread(attachments=)` → `run_job` → `_compose`, DB 저장 없음 — 재시작 뒤 재개가 없으니 충분).
+  ② **수신자별 첨부** — 1행 헤더가 `첨부`/`첨부파일`/`attachment(s)` 인 열(고정 위치 A·B·D·G·H 제외)의 Drive 링크·ID(`drive_ids`).
+  구글 문서류는 `files/{id}/export?mimeType=application/pdf` 로 PDF, 폴더·설문 등은 오류. ⛔ `www.googleapis.com` Drive API(`drive_meta`·
+  `drive_attachment`)만 쓴다 — `docs.google.com` 내보내기는 `*.googleusercontent.com` 으로 넘겨져 WAS 프록시에 막힌다.
+  첨부 ID 는 `row_values["__attach__"]`(쉼표 구분)에 함께 저장(스키마 변경 없음), `_compose` 가 render 전에 빼고 작업 동안 ID 별 캐시로 받는다.
+  `/check`·`/jobs` 는 `_attachment_issues` 로 접근 권한·종류·합친 용량(`estimate_size` + 첨부×4/3 > 24MB)을 행 오류로 본다. 조립한 메일이 24MB 를 넘으면 보내지 않는다(`ensure_message_size`)
 - **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
 - **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
   `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는
