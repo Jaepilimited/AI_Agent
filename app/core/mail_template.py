@@ -134,16 +134,24 @@ def find_variables(template: MailTemplate) -> set[str]:
 
 def _safe_url(url: str) -> bool:
     """Check if URL scheme is safe (http, https, mailto, tel, or relative)."""
-    url = url.strip().lower()
+    # Browsers strip ASCII tab/newline/C0 controls and spaces before parsing the scheme
+    url = re.sub(r"[\x00-\x20]", "", url).lower()
     # Relative URLs: start with /, #, or don't have a scheme
     if url.startswith(("/", "#")):
         return True
     # Check for scheme
-    scheme_match = re.match(r"^([a-z]+):", url)
+    scheme_match = re.match(r"^([a-z][a-z0-9+.\-]*):", url)
     if not scheme_match:
         return True  # No scheme = relative URL
     scheme = scheme_match.group(1)
     return scheme in ("http", "https", "mailto", "tel")
+
+
+def _mailto_addr(v: str) -> str:
+    """Quote a mailto address value if it could inject headers."""
+    if re.search(r"[?&\r\n]", v):
+        return urllib.parse.quote(v, safe="@")
+    return v
 
 
 def _sub(text: str, values: dict[str, str], escape: bool) -> str:
@@ -202,10 +210,10 @@ def render(template: MailTemplate, values: dict[str, str]) -> tuple[str, str]:
                                     return urllib.parse.quote(v, safe='')
                                 else:
                                     # Variable is in address part (before ?), use raw
-                                    return v
+                                    return _mailto_addr(v)
                             else:
                                 # No query string, use raw value
-                                return v
+                                return _mailto_addr(v)
 
                         # For embedded variables in URLs, always quote
                         return urllib.parse.quote(v, safe='')

@@ -171,7 +171,7 @@ def test_data_url_blocked():
     )
     t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
     _, html_out = render(t, {"name": "test", "image_src": "data:text/html,<script>alert(1)</script>"})
-    assert "data:" not in html_out or "%3A" in html_out  # Should be neutralized or encoded
+    assert "data:" not in html_out
 
 
 def test_mailto_with_query_string():
@@ -182,3 +182,31 @@ def test_mailto_with_query_string():
     t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
     _, html_out = render(t, {"name": "test", "email": "a@b.com", "subject": "a b&c"})
     assert 'href="mailto:a@b.com?subject=a%20b%26c"' in html_out  # Email raw, query encoded
+
+
+def _href_template():
+    html = EXPORT.replace('href="https://form.example"', 'href="{link}"')
+    return template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+
+
+@pytest.mark.parametrize("evil", [
+    "JavaScript:alert(1)", " javascript:alert(1)", "java\tscript:alert(1)",
+    "java\nscript:alert(1)", "\x01javascript:alert(1)",
+])
+def test_obfuscated_javascript_href_blocked(evil):
+    import re
+    _, out = render(_href_template(), {"name": "x", "link": evil})
+    href = re.search(r'href="([^"]*)"', out).group(1)
+    assert "script:" not in re.sub(r"[\x00-\x20]", "", href).lower()
+
+
+def test_https_href_stays_raw():
+    _, out = render(_href_template(), {"name": "x", "link": "https://a.com/x?y=1"})
+    assert 'href="https://a.com/x?y=1"' in out
+
+
+def test_mailto_address_injection_quoted():
+    html = EXPORT.replace('href="https://form.example"', 'href="mailto:{email}"')
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, out = render(t, {"name": "x", "email": "a@b.com?bcc=x"})
+    assert "?bcc=" not in out
