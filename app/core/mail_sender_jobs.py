@@ -41,6 +41,30 @@ _ACTIVE = ("running", "stopping")
 BUSY = "이 시트는 이미 발송 중입니다"
 UNCERTAIN = "발송 여부 불확실 — 보낸편지함 확인"
 EXPIRED_STOP = "구글 연결이 만료되었습니다 — 다시 연결 후 이어서 보내세요"
+READ_FAILED = "시트 확인 실패 — 다시 시도"
+HISTORY = "발송 기록 있음"
+# 이 상태의 발송 기록이 있는 행은 누구의 작업이든 다시 대상에 넣지 않는다 (확인된 불확실 행은 제외)
+_BLOCKING = ("sent", "sending", "unknown")
+_BLOCK_RANK = {"sent": 0, "sending": 1, "unknown": 2}
+
+
+class TargetsChanged(RuntimeError):
+    """잠금 안에서 다시 따진 대상 수가 확인 창의 숫자와 다르다."""
+    def __init__(self, expected: int, actual: int):
+        super().__init__(f"대상이 바뀌었습니다 ({expected} → {actual}명). 다시 점검하세요")
+
+
+def _merge_block(out: dict, row: int, status: str) -> None:
+    # 한 행에 기록이 여럿이면 '보냄' 이 가장 강하다
+    if row not in out or _BLOCK_RANK[status] < _BLOCK_RANK[out[row]]:
+        out[row] = status
+
+
+def _keep_targets(rows, blocked, confirm_count):
+    kept = [r for r in rows if r.row not in blocked]
+    if confirm_count is not None and len(kept) != confirm_count:
+        raise TargetsChanged(confirm_count, len(kept))
+    return kept
 BUMP_COLS = frozenset({"sent", "failed", "skipped", "unknown", "sheet_write_failed"})
 SET_JOB_KEYS = frozenset({"status", "stop_reason", "finished_at"})
 
@@ -85,11 +109,12 @@ class MemoryStore:
         return any(j["spreadsheet_id"] == sid and j["sheet"] == sheet and j["status"] in _ACTIVE
                    for j in self.jobs.values())
 
-    def insert_job(self, owner, sid, sheet, sender, rows):
-        with self._lock:  # 진행 중 확인과 삽입을 한 덩어리로 — 동시 요청 둘 중 하나만 통과
+    def insert_job(self, owner, sid, sheet, sender, rows, confirm_count=None):
+        with self._lock:  # 진행 중 확인·발송 기록 확인·삽입을 한 덩어리로 — 동시 요청 둘 중 하나만 통과
             if self.active_for_sheet(sid, sheet):
                 raise RuntimeError(BUSY)
-            jid = len(self.jobs) + 1
+            rows = _keep_targets(rows, self.blocked_rows(sid, sheet), confirm_count)
+            jid = max(self.jobs, default=0) + 1
             self.jobs[jid] = dict(id=jid, owner=owner, spreadsheet_id=sid, sheet=sheet, sender=sender,
                                   status="running", total=len(rows), sent=0, failed=0, skipped=0,
                                   sheet_write_failed=0, unknown=0, stop_reason=None,
@@ -140,10 +165,15 @@ class MemoryStore:
     def unknown_rows(self, jid):
         return sorted(i["sheet_row"] for i in self.items.get(jid, []) if i["status"] == "unknown")
 
-    def unresolved_unknown(self, sid, sheet):
-        return [{"job_id": jid, "sheet_row": i["sheet_row"], "owner": j["owner"]}
-                for jid, j in sorted(self.jobs.items()) if j["spreadsheet_id"] == sid and j["sheet"] == sheet
-                for i in sorted(self.items[jid], key=lambda x: x["sheet_row"]) if i["status"] == "unknown"]
+    def blocked_rows(self, sid, sheet, exclude_job=None, row=None):
+        out: dict[int, str] = {}
+        for jid, j in self.jobs.items():
+            if jid == exclude_job or j["spreadsheet_id"] != sid or j["sheet"] != sheet:
+                continue
+            for i in self.items[jid]:
+                if i["status"] in _BLOCKING and (row is None or i["sheet_row"] == row):
+                    _merge_block(out, i["sheet_row"], i["status"])
+        return out
 
     def ack_unknown(self, jid):
         n = 0
@@ -180,10 +210,14 @@ class MariaStore:
             "SELECT id FROM mail_send_jobs WHERE spreadsheet_id=%s AND sheet=%s AND status IN ('running','stopping')",
             (sid, sheet)))
 
-    def insert_job(self, owner, sid, sheet, sender, rows):
-        """진행 중 확인 + 작업·항목 삽입을 한 연결·한 트랜잭션에서, 시트 이름 잠금(GET_LOCK) 아래 한다.
+    _BLOCKED_SQL = ("SELECT i.sheet_row, i.status FROM mail_send_items i JOIN mail_send_jobs j ON i.job_id=j.id "
+                    "WHERE j.spreadsheet_id=%s AND j.sheet=%s AND i.status IN ('sent','sending','unknown')")
+
+    def insert_job(self, owner, sid, sheet, sender, rows, confirm_count=None):
+        """진행 중 확인 + 발송 기록 확인 + 작업·항목 삽입을 한 연결·한 트랜잭션에서, 시트 이름 잠금(GET_LOCK) 아래 한다.
 
         ⛔ 확인과 삽입 사이에 다른 요청이 끼어들면 같은 시트에 작업이 둘 생겨 같은 사람에게 두 번 간다.
+        ⛔ 점검 뒤 새로 생긴 발송 기록(보냄·불확실) 행은 여기서 다시 빼고, 숫자가 달라지면 시작하지 않는다.
         """
         lock = _sheet_lock_name(sid, sheet)
         conn = self.db.get_maria_conn()
@@ -199,6 +233,8 @@ class MariaStore:
                                 "AND status IN ('running','stopping') LIMIT 1", (sid, sheet))
                     if cur.fetchone():
                         raise RuntimeError(BUSY)
+                    cur.execute(self._BLOCKED_SQL, (sid, sheet))
+                    rows = _keep_targets(rows, {r["sheet_row"] for r in cur.fetchall()}, confirm_count)
                     cur.execute("INSERT INTO mail_send_jobs (owner, spreadsheet_id, sheet, sender, status, total) "
                                 "VALUES (%s,%s,%s,%s,'running',%s)", (owner, sid, sheet, sender, len(rows)))
                     jid = cur.lastrowid
@@ -267,11 +303,18 @@ class MariaStore:
         return [r["sheet_row"] for r in self.db.fetch_all(
             "SELECT sheet_row FROM mail_send_items WHERE job_id=%s AND status='unknown' ORDER BY sheet_row", (jid,))]
 
-    def unresolved_unknown(self, sid, sheet):
-        return [{"job_id": r["job_id"], "sheet_row": r["sheet_row"], "owner": r["owner"]} for r in self.db.fetch_all(
-            "SELECT i.job_id, i.sheet_row, j.owner FROM mail_send_items i JOIN mail_send_jobs j ON i.job_id=j.id "
-            "WHERE j.spreadsheet_id=%s AND j.sheet=%s AND i.status='unknown' ORDER BY i.job_id, i.sheet_row",
-            (sid, sheet))]
+    def blocked_rows(self, sid, sheet, exclude_job=None, row=None):
+        sql, params = self._BLOCKED_SQL, [sid, sheet]
+        if exclude_job is not None:
+            sql += " AND i.job_id<>%s"
+            params.append(exclude_job)
+        if row is not None:
+            sql += " AND i.sheet_row=%s"
+            params.append(row)
+        out: dict[int, str] = {}
+        for r in self.db.fetch_all(sql, tuple(params)):
+            _merge_block(out, r["sheet_row"], r["status"])
+        return out
 
     def ack_unknown(self, jid):
         return self.db.execute(
@@ -314,9 +357,16 @@ def sent_today(email: str) -> int:
     return _s().sent_today(email)
 
 
-def create_job(owner: str, spreadsheet_id: str, sheet: str, sender: str, rows: list[Row]) -> int:
-    """같은 시트가 진행 중이면 RuntimeError(BUSY) — 확인과 삽입은 저장소 안에서 원자적으로."""
-    return _s().insert_job(owner, spreadsheet_id, sheet, sender, rows)
+def create_job(owner: str, spreadsheet_id: str, sheet: str, sender: str, rows: list[Row],
+               confirm_count: int | None = None) -> int:
+    """같은 시트가 진행 중이면 RuntimeError(BUSY). 발송 기록 있는 행은 잠금 안에서 다시 빼고,
+    남은 수가 confirm_count 와 다르면 TargetsChanged — 확인과 삽입은 저장소 안에서 원자적으로."""
+    return _s().insert_job(owner, spreadsheet_id, sheet, sender, rows, confirm_count=confirm_count)
+
+
+def blocked_rows(spreadsheet_id: str, sheet: str) -> dict[int, str]:
+    """이 시트에서 발송 기록(보냄·발송 중·확인 안 된 불확실)이 있는 행 → 상태. 누구의 작업이든."""
+    return _s().blocked_rows(spreadsheet_id, sheet)
 
 
 def get_job(job_id: int, owner: str) -> dict | None:
@@ -339,11 +389,6 @@ def request_stop(job_id: int, owner: str) -> bool:
         return False
     _s().set_job(job_id, status="stopping")
     return True
-
-
-def unresolved_unknown(spreadsheet_id: str, sheet: str) -> list[dict]:
-    """이 시트에서 '보냈는지 모름' 으로 남아 아직 확인(ack)받지 못한 행들."""
-    return _s().unresolved_unknown(spreadsheet_id, sheet)
 
 
 def ack_unknown(job_id: int, owner: str) -> int | None:
@@ -471,32 +516,68 @@ def _record_sent(st, deps, creds, job, cols, job_id, row, mid) -> Exception | No
         return we
 
 
+def _mark_read_failed(st, deps, creds, job, cols, job_id, row, e) -> None:
+    """G열을 못 읽었다 — 이미 O 일 수도 있으니 G 는 절대 쓰지 않는다 (H 메모만)."""
+    st.set_item_status(job_id, row, "failed", error=f"{READ_FAILED} ({type(e).__name__}: {e})"[:500])
+    st.bump(job_id, "failed")
+    _write_sheet(deps, creds, job, row, {cols.note: READ_FAILED}, job_id)
+
+
 def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None) -> None:
     deps = deps or JobDeps()
     st = _s()
     job = st.job(job_id)
     sid, sheet, owner = job["spreadsheet_id"], job["sheet"], job["owner"]
     last_kind, streak, sheet_streak = None, 0, 0
+
+    def same_error_streak(e: Exception) -> bool:
+        nonlocal last_kind, streak
+        kind = _error_kind(e)
+        streak = streak + 1 if kind == last_kind else 1
+        last_kind = kind
+        return streak >= MAX_SAME_ERROR
+
+    def streak_reason(e: Exception) -> str:
+        return f"같은 오류 {streak}회 연속으로 멈춤: {e}"[:1000]
+
     for item in st.pending_items(job_id):
-        if st.job(job_id)["status"] == "stopping":
-            return _finish(st, job_id, "stopped", "사용자가 중지함")
+        status = st.job(job_id)["status"]
+        if status != "running":
+            if status == "stopping":
+                return _finish(st, job_id, "stopped", "사용자가 중지함")
+            return  # 다른 곳에서 이미 끝냈다(중단됨 등) — 보내지도, 상태를 덮어쓰지도 않는다
         if st.sent_today(owner) >= DAILY_LIMIT:
             return _finish(st, job_id, "stopped", f"오늘 발송 한도({DAILY_LIMIT}통)에 도달해 멈춤 — 내일 이어서 보내세요")
         row = item["sheet_row"]
-        failure: Exception | None = None
-        unsure = False
-        # ① 발송 직전 G열 재확인 + 조립 — 여기서 실패하면 아직 아무것도 나가지 않았다
+        # ① 발송 직전 G열 재확인 — 읽기에 실패하면 G 는 건드리지 않는다
         try:
             current = deps.read_cell(creds, sid, sheet, row, cols.status)
-            already = str(current or "").strip().upper() == "O"
-            raw = None if already else _compose(job, item, templates)
         except Exception as e:
-            failure = e
-        if failure is None and already:
+            halt = _account_problem(e)
+            if halt:
+                return _finish(st, job_id, "stopped", halt)
+            _mark_read_failed(st, deps, creds, job, cols, job_id, row, e)
+            if same_error_streak(e):
+                return _finish(st, job_id, "stopped", streak_reason(e))
+            deps.sleep(SEND_DELAY)
+            continue
+        if str(current or "").strip().upper() == "O":
             st.set_item_status(job_id, row, "skipped", error="다른 툴이 이미 보냄(O)")
             st.bump(job_id, "skipped")
             continue
-        # ② 발송
+        # ② 다른 작업의 발송 기록(보냄·발송 중·확인 안 된 불확실) — 시트에 O 가 없어도 다시 보내지 않는다
+        history = st.blocked_rows(sid, sheet, exclude_job=job_id, row=row)
+        if history:
+            st.set_item_status(job_id, row, "skipped", error=f"{HISTORY} ({history[row]})")
+            st.bump(job_id, "skipped")
+            continue
+        # ③ 조립 + 발송
+        failure: Exception | None = None
+        unsure = False
+        try:
+            raw = _compose(job, item, templates)
+        except Exception as e:
+            failure = e
         if failure is None:
             st.set_item_status(job_id, row, "sending")
             try:
@@ -512,14 +593,11 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
                 _mark_unknown(st, deps, creds, job, cols, job_id, row, failure)
             else:
                 _mark_failed(st, deps, creds, job, cols, job_id, row, failure)
-            kind = _error_kind(failure)
-            streak = streak + 1 if kind == last_kind else 1
-            last_kind = kind
-            if streak >= MAX_SAME_ERROR:
-                return _finish(st, job_id, "stopped", f"같은 오류 {streak}회 연속으로 멈춤: {failure}"[:1000])
+            if same_error_streak(failure):
+                return _finish(st, job_id, "stopped", streak_reason(failure))
             deps.sleep(SEND_DELAY)
             continue
-        # ③ 나갔다 — 이후 무엇이 실패해도 이 행은 '보냄' 이다
+        # ④ 나갔다 — 이후 무엇이 실패해도 이 행은 '보냄' 이다
         last_kind, streak = None, 0
         sheet_err = _record_sent(st, deps, creds, job, cols, job_id, row, mid)
         if sheet_err is None:
@@ -533,7 +611,8 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
                     f"시트에 O 기록이 {sheet_streak}회 연속 실패해 멈춤 — 보낸 행은 발송 기록에 남아 있습니다: {sheet_err}"
                 )[:1000])
         deps.sleep(SEND_DELAY)
-    _finish(st, job_id, "done", None)
+    if st.job(job_id)["status"] in _ACTIVE:  # 그사이 다른 곳에서 끝낸 작업은 덮어쓰지 않는다
+        _finish(st, job_id, "done", None)
 
 
 def _thread_main(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None) -> None:

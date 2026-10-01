@@ -416,21 +416,24 @@ def test_unknown_rows_and_ack(db):
     db.set_item_status(jid, 3, "sending")
     db.set_item_status(jid, 4, "sending")
     J.recover_after_restart()
-    assert J.unresolved_unknown("sid", "gmail_a") == [
-        {"job_id": jid, "sheet_row": 3, "owner": "me@x.com"},
-        {"job_id": jid, "sheet_row": 4, "owner": "me@x.com"}]
-    assert J.unresolved_unknown("sid", "other") == []
+    assert J.blocked_rows("sid", "gmail_a") == {3: "unknown", 4: "unknown"}
+    assert J.blocked_rows("sid", "other") == {}
     assert J.ack_unknown(jid, "you@x.com") is None  # 남의 작업
     assert J.ack_unknown(jid, "me@x.com") == 2
     assert db.item_status(jid, 3) == "acknowledged"
-    assert J.unresolved_unknown("sid", "gmail_a") == [] and J.get_job(jid, "me@x.com")["unknown_rows"] == []
+    assert J.blocked_rows("sid", "gmail_a") == {} and J.get_job(jid, "me@x.com")["unknown_rows"] == []
 
 
 class _FakeCursor:
-    def __init__(self, log, active=None):
-        self.log, self.active = log, active
+    def __init__(self, log, active=None, blocked=()):
+        self.log, self.active, self.blocked = log, active, list(blocked)
         self.lastrowid = 42
         self._last = ""
+
+    def fetchall(self):
+        if "FROM mail_send_items" in self._last:
+            return [{"sheet_row": r, "status": "sent"} for r in self.blocked]
+        return []
 
     def __enter__(self):
         return self
@@ -525,3 +528,96 @@ def test_ensure_tables_adds_new_counter_columns(monkeypatch, db):
 def test_no_unused_field_import():
     src = Path(J.__file__).read_text(encoding="utf-8")
     assert "dataclass, field" not in src
+
+
+# ---------------------------------------------------------------------------
+# Fix Round 1 (after redo)
+# ---------------------------------------------------------------------------
+def _seed_history(store, row, status, owner="other@x.com", sheet="gmail_a"):
+    """같은 시트의 끝난 앞선 작업 — 그 행의 발송 기록 상태를 남긴다."""
+    jid = max(store.jobs, default=0) + 1
+    store.jobs[jid] = dict(id=jid, owner=owner, spreadsheet_id="sid", sheet=sheet, sender=owner, status="done",
+                           total=1, sent=0, failed=0, skipped=0, sheet_write_failed=0, unknown=0,
+                           stop_reason=None, created_at=datetime.now(), finished_at=datetime.now())
+    store.items[jid] = [dict(sheet_row=row, email=f"h{row}@x.com", manager="강하니", row_values={},
+                             status=status, error=None, message_id=None, sent_at=None)]
+    return jid
+
+
+def test_blocked_rows_statuses(db):
+    for row, st in [(2, "sent"), (3, "sending"), (4, "unknown"), (5, "acknowledged"), (6, "failed"),
+                    (7, "skipped"), (8, "pending")]:
+        _seed_history(db, row, st)
+    _seed_history(db, 9, "sent", sheet="gmail_b")
+    assert J.blocked_rows("sid", "gmail_a") == {2: "sent", 3: "sending", 4: "unknown"}
+    assert db.blocked_rows("sid", "gmail_a", row=3) == {3: "sending"}
+    jid = _seed_history(db, 10, "sent")
+    assert 10 not in db.blocked_rows("sid", "gmail_a", exclude_job=jid)
+
+
+def test_insert_job_drops_blocked_rows_under_lock(db):
+    _seed_history(db, 3, "unknown")
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3), confirm_count=2)
+    assert [i["sheet_row"] for i in db.items[jid]] == [2, 4] and db.jobs[jid]["total"] == 2
+
+
+def test_insert_job_count_changed_is_refused(db):
+    _seed_history(db, 3, "unknown")  # 점검 뒤 시작 전에 생긴 불확실 행
+    with pytest.raises(RuntimeError, match="대상이 바뀌었습니다"):
+        J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3), confirm_count=3)
+    assert len(db.jobs) == 1  # 새 작업은 만들어지지 않았다
+
+
+def test_run_job_skips_row_with_db_history(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    _seed_history(db, 2, "sent")  # 시트에 O 를 못 남긴 앞선 발송 (G 는 비어 있다)
+    deps = _deps(sent)
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert len(sent) == 1 and (job["sent"], job["skipped"]) == (1, 1)
+    item = next(i for i in db.items[jid] if i["sheet_row"] == 2)
+    assert item["status"] == "skipped" and item["error"].startswith("발송 기록 있음")
+    assert [c.args[3] for c in deps.write_cells.call_args_list] == [3]  # 2행 시트는 건드리지 않는다
+
+
+@pytest.mark.parametrize("exc", [_http_error(500), TimeoutError("t"), RuntimeError("x")],
+                         ids=["5xx", "timeout", "runtime"])
+def test_read_failure_writes_note_only_never_G(db, exc):
+    def read(c, sid, sh, row, col):
+        raise exc
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([])
+    deps.read_cell = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert db.items[jid][0]["status"] == "failed"
+    assert db.items[jid][0]["error"].startswith("시트 확인 실패 — 다시 시도")
+    assert [c.args[4] for c in deps.write_cells.call_args_list] == [{COLS.note: "시트 확인 실패 — 다시 시도"}]
+
+
+@pytest.mark.parametrize("status", ["interrupted", "stopped", "done"])
+def test_run_job_exits_when_not_running(db, status):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    db.jobs[jid]["status"] = status  # 다른 프로세스가 바꿨다
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent))
+    assert not sent and db.jobs[jid]["status"] == status
+
+
+def test_maria_insert_job_drops_blocked_rows_and_checks_count():
+    log = []
+    m = _maria(_FakeCursor(log, blocked=[3]))
+    assert m.insert_job("me", "sid", "gmail_a", "me", _rows(3), confirm_count=2) == 42
+    many = [e for e in log if e[0] == "executemany"][0]
+    assert [p[1] for p in many[2]] == [2, 4]
+    ins = next(e for e in log if e[0] == "execute" and "INSERT INTO mail_send_jobs" in e[1])
+    assert ins[2][-1] == 2  # total
+    blocked_q = next(i for i, e in enumerate(log) if e[0] == "execute" and "FROM mail_send_items" in e[1])
+    lock_q = next(i for i, e in enumerate(log) if e[0] == "execute" and "GET_LOCK" in e[1])
+    assert lock_q < blocked_q < log.index(ins)  # 잠금 안에서 다시 판단
+    log2 = []
+    m2 = _maria(_FakeCursor(log2, blocked=[3]))
+    with pytest.raises(RuntimeError, match="대상이 바뀌었습니다"):
+        m2.insert_job("me", "sid", "gmail_a", "me", _rows(3), confirm_count=3)
+    assert not [e for e in log2 if e[0] == "executemany"] and ("rollback",) in log2
+    assert any("RELEASE_LOCK" in e[1] for e in log2 if e[0] == "execute")

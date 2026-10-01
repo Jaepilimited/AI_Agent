@@ -142,8 +142,6 @@ $("ms-send-all").onclick = guard(async () => {
     watchJob(j.job_id);
   } catch (e) {
     refreshSendAll();
-    const ids = e.detail && Array.isArray(e.detail.unknown_job_ids) ? e.detail.unknown_job_ids : [];
-    if (ids.length) watchJob(ids[0]);  // 불확실 행과 '확인했음' 버튼을 보여 준다
     throw e;
   }
 });

@@ -314,26 +314,88 @@ def _rows_at(*spec):
     return [Row(r, "강하니", f"u{r}@x.com", s, {}) for r, s in spec]
 
 
-def test_unknown_rows_block_new_job_until_ack(client, mem_store):
+def _check(client):
+    return client.post("/api/mail-sender/check", json={"spreadsheet_id": "x", "sheet": "gmail_a"})
+
+
+def _seed_sent(mem_store, owner, row):
+    """앞선 작업이 보냈지만 시트에 O 를 못 남긴 행 (DB 에만 sent)."""
+    from app.core.mail_sender import Row
+    jid = mem_store.insert_job(owner, "x", "gmail_a", owner, [Row(row, "강하니", f"u{row}@x.com", "", {})])
+    mem_store.set_item_status(jid, row, "sent", message_id="m")
+    mem_store.set_job(jid, status="done")
+    return jid
+
+
+def test_unknown_rows_are_excluded_until_ack(client, mem_store):
     jid = _seed_unknown(mem_store, _User.email)
     assert client.get(f"/api/mail-sender/jobs/{jid}").json()["unknown_rows"] == [3, 7]
-    rows = _rows_at((3, ""), (7, ""))
+    rows = _rows_at((3, ""), (7, ""), (8, ""))
+    with _start_env(rows):
+        c = _check(client).json()
+    assert c["pending"] == 1 and c["errors"] == 0
+    summary = [i["message"] for i in c["issues"] if i["row"] is None and "불확실" in i["message"]]
+    assert summary and "발송 여부 불확실 2행(3, 7)" in summary[0] and "확인했음" in summary[0]
+    assert {i["row"] for i in c["issues"] if i["row"] is not None and i["level"] == "warn"} == {3, 7}
     with _start_env(rows) as th:
-        r = _start(client, 2)
-    assert r.status_code == 409
-    d = r.json()["detail"]
-    assert d["message"] == ("발송 여부 불확실한 행이 있습니다: 3, 7행 — 보낸편지함을 확인한 뒤 "
-                            "'확인했음' 을 눌러 주세요")
-    assert d["unknown_job_ids"] == [jid]
+        r = _start(client, 3)  # 제외 전 숫자로는 시작하지 않는다
+    assert r.status_code == 409 and "바뀌었" in r.json()["detail"]
     th.assert_not_called()
 
     a = client.post(f"/api/mail-sender/jobs/{jid}/ack-unknown")
     assert a.status_code == 200 and a.json() == {"acknowledged": 2}
     assert client.get(f"/api/mail-sender/jobs/{jid}").json()["unknown_rows"] == []
+    with _start_env(rows):
+        assert _check(client).json()["pending"] == 3
     with _start_env(rows) as th2:
-        r2 = _start(client, 2)
+        r2 = _start(client, 3)
     assert r2.status_code == 200
     th2.assert_called_once()
+    assert [i["sheet_row"] for i in mem_store.items[r2.json()["job_id"]]] == [3, 7, 8]
+
+
+def test_sent_in_db_with_empty_G_is_excluded_for_colleague(client, mem_store):
+    _seed_sent(mem_store, "other@x.com", 4)  # 동료가 보냈고 O 기록은 실패했다
+    rows = _rows_at((4, ""), (5, ""))
+    with _start_env(rows):
+        c = _check(client).json()
+    assert c["pending"] == 1
+    assert any(i["row"] is None and "발송 기록 있음 1행(4) — 다시 보내지 않습니다" in i["message"] for i in c["issues"])
+    with _start_env(rows) as th:
+        r = _start(client, 1)
+    assert r.status_code == 200
+    th.assert_called_once()
+    assert [i["sheet_row"] for i in mem_store.items[r.json()["job_id"]]] == [5]
+
+
+def test_blocked_row_appearing_between_check_and_start_is_409(client, mem_store):
+    from app.core import mail_sender_jobs as J
+    real = J.create_job
+
+    def late(*a, **kw):  # 경로가 대상을 계산한 뒤, 잠금 안 재판단 전에 불확실 행이 생긴다
+        _seed_unknown(mem_store, "other@x.com", rows=(3,))
+        return real(*a, **kw)
+    with _start_env(_two_rows()) as th, patch("app.api.mail_sender_api.jobs.create_job", side_effect=late):
+        r = _start(client, 2)
+    assert r.status_code == 409 and "대상이 바뀌었습니다" in r.json()["detail"]
+    th.assert_not_called()
+    assert all(j["owner"] == "other@x.com" for j in mem_store.jobs.values())
+
+
+@pytest.mark.parametrize("route", ["check", "start", "status", "active", "ack", "stop"])
+def test_db_errors_are_readable_503(client, mem_store, route):
+    import pymysql
+    boom = pymysql.err.OperationalError(2003, "Can't connect")
+    target = {"check": "sent_today", "start": "blocked_rows", "status": "get_job", "active": "active_job",
+              "ack": "ack_unknown", "stop": "request_stop"}[route]
+    with _start_env(_two_rows()), patch(f"app.api.mail_sender_api.jobs.{target}", side_effect=boom):
+        r = {"check": lambda: _check(client), "start": lambda: _start(client, 2),
+             "status": lambda: client.get("/api/mail-sender/jobs/1"),
+             "active": lambda: client.get("/api/mail-sender/jobs/active"),
+             "ack": lambda: client.post("/api/mail-sender/jobs/1/ack-unknown"),
+             "stop": lambda: client.post("/api/mail-sender/jobs/1/stop")}[route]()
+    assert r.status_code == 503
+    assert r.json()["detail"] == "발송 기록 DB 에 연결하지 못했습니다 — 잠시 뒤 다시 시도"
 
 
 def test_unknown_row_already_marked_O_does_not_block(client, mem_store):
@@ -346,13 +408,13 @@ def test_unknown_row_already_marked_O_does_not_block(client, mem_store):
     assert [i["sheet_row"] for i in mem_store.items[jid]] == [2]  # O 행은 대상에서 빠진다
 
 
-def test_unknown_rows_of_other_owner_still_block(client, mem_store):
+def test_unknown_rows_of_other_owner_are_excluded_not_409(client, mem_store):
     _seed_unknown(mem_store, "other@x.com", rows=(4,))
-    with _start_env(_rows_at((4, ""))) as th:
+    with _start_env(_rows_at((4, ""), (5, ""))) as th:
         r = _start(client, 1)
-    assert r.status_code == 409 and "4행" in r.json()["detail"]["message"]
-    assert r.json()["detail"]["unknown_job_ids"] == []
-    th.assert_not_called()
+    assert r.status_code == 200
+    th.assert_called_once()
+    assert [i["sheet_row"] for i in mem_store.items[r.json()["job_id"]]] == [5]
 
 
 def test_check_uses_real_sent_today(client):
