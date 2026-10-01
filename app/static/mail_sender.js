@@ -76,7 +76,26 @@ $("ms-load").onclick = guard(async () => {
   $("ms-sheet").replaceChildren(...j.sheets.map((t) => new Option(t, t)));
 });
 
-$("ms-check").onclick = guard(async () => {
+// 본인 작업의 '발송 여부 불확실' 행 — 서버 재시작으로 중단된 작업도 여기서만 '확인했음' 을 누를 수 있다
+function renderUnknownJobs(list) {
+  $("ms-unknown-jobs").replaceChildren(...(list || []).map((u) => {
+    const box = document.createElement("div"); box.className = "ms-warn";
+    const p = document.createElement("p");
+    p.textContent = `작업 #${u.job_id}: ${u.rows.join(", ")}행 — 발송 여부 불확실. Gmail 보낸편지함에서 확인하고, ` +
+      "실제로 나간 행은 시트 전송여부 열에 O 를 적은 뒤 '확인했음' 을 누르세요 (O 가 없는 행은 다시 대상이 됩니다)";
+    const b = document.createElement("button"); b.className = "ms-btn"; b.textContent = "확인했음";
+    b.onclick = guard(() => busy(b, async () => {
+      if (!confirm(`${u.rows.join(", ")}행을 보낸편지함에서 확인했고, 나간 행은 O 로 표시했습니까?`)) return;
+      await api(`/api/mail-sender/jobs/${u.job_id}/ack-unknown`, {});
+      await runCheck();
+    }));
+    box.append(p, b); return box;
+  }));
+}
+
+$("ms-check").onclick = guard(runCheck);
+
+async function runCheck() {
   state.sheet = $("ms-sheet").value;
   state.checkOk = false;
   refreshSendAll();
@@ -107,10 +126,11 @@ $("ms-check").onclick = guard(async () => {
     }
     tr.append(td); return tr;
   }));
+  renderUnknownJobs(j.unknown_jobs);
   $("ms-send-all").dataset.count = j.pending;
   state.checkOk = j.errors === 0 && j.pending > 0;
   refreshSendAll();
-});
+}
 
 async function preview(row) {
   const j = await api("/api/mail-sender/preview", { spreadsheet_id: state.spreadsheet_id, sheet: state.sheet, row });

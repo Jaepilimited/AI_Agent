@@ -54,14 +54,45 @@ class TargetsChanged(RuntimeError):
         super().__init__(f"대상이 바뀌었습니다 ({expected} → {actual}명). 다시 점검하세요")
 
 
-def _merge_block(out: dict, row: int, status: str) -> None:
-    # 한 행에 기록이 여럿이면 '보냄' 이 가장 강하다
-    if row not in out or _BLOCK_RANK[status] < _BLOCK_RANK[out[row]]:
-        out[row] = status
+def norm_email(email: str | None) -> str:
+    return (email or "").strip().lower()
 
 
-def _keep_targets(rows, blocked, confirm_count):
-    kept = [r for r in rows if r.row not in blocked]
+def blocking_record(history: list[dict], row: int, email: str) -> dict | None:
+    """이 행·수신자를 막는 발송 기록 — 없으면 None. 결과: {status, by: 행|이메일, owner, job_id}.
+
+    - 보냄(sent): **이메일로만** 막는다. 정렬로 행이 옮겨가도 같은 사람은 막고,
+      옛 행 번호를 새로 쓴 다른 사람은 막지 않는다.
+    - 발송 중·불확실(sending/unknown): 행 **또는** 이메일 — 확실하지 않으면 엄격하게.
+    - 여럿이면 보냄 > 발송 중 > 불확실 순으로 대표를 고른다.
+    """
+    em = norm_email(email)
+    best = None
+    for h in history:
+        if h["status"] not in _BLOCKING:
+            continue
+        same_email = bool(em) and h["email"] == em
+        if h["status"] == "sent":
+            by = "이메일" if same_email else None
+        else:
+            by = "행" if h["sheet_row"] == row else ("이메일" if same_email else None)
+        if by and (best is None or _BLOCK_RANK[h["status"]] < _BLOCK_RANK[best["status"]]):
+            best = {"status": h["status"], "by": by, "owner": h["owner"], "job_id": h["job_id"]}
+    return best
+
+
+def own_unknown_jobs(history: list[dict], owner: str) -> list[dict]:
+    """호출자 본인 작업 중 '확인했음' 이 필요한 것 — 불확실 행과, 끝난 작업에 남은 '발송 중' 행."""
+    by_job: dict[int, set] = {}
+    for h in history:
+        orphan = h["status"] == "sending" and h["job_status"] not in _ACTIVE
+        if h["owner"] == owner and (h["status"] == "unknown" or orphan):
+            by_job.setdefault(h["job_id"], set()).add(h["sheet_row"])
+    return [{"job_id": jid, "rows": sorted(rows)} for jid, rows in sorted(by_job.items())]
+
+
+def _keep_targets(rows, history, confirm_count):
+    kept = [r for r in rows if blocking_record(history, r.row, r.email) is None]
     if confirm_count is not None and len(kept) != confirm_count:
         raise TargetsChanged(confirm_count, len(kept))
     return kept
@@ -113,7 +144,7 @@ class MemoryStore:
         with self._lock:  # 진행 중 확인·발송 기록 확인·삽입을 한 덩어리로 — 동시 요청 둘 중 하나만 통과
             if self.active_for_sheet(sid, sheet):
                 raise RuntimeError(BUSY)
-            rows = _keep_targets(rows, self.blocked_rows(sid, sheet), confirm_count)
+            rows = _keep_targets(rows, self.history(sid, sheet), confirm_count)
             jid = max(self.jobs, default=0) + 1
             self.jobs[jid] = dict(id=jid, owner=owner, spreadsheet_id=sid, sheet=sheet, sender=sender,
                                   status="running", total=len(rows), sent=0, failed=0, skipped=0,
@@ -165,20 +196,26 @@ class MemoryStore:
     def unknown_rows(self, jid):
         return sorted(i["sheet_row"] for i in self.items.get(jid, []) if i["status"] == "unknown")
 
-    def blocked_rows(self, sid, sheet, exclude_job=None, row=None):
-        out: dict[int, str] = {}
-        for jid, j in self.jobs.items():
+    def history(self, sid, sheet, exclude_job=None, row=None, email=None):
+        em = norm_email(email)
+        out = []
+        for jid, j in sorted(self.jobs.items()):
             if jid == exclude_job or j["spreadsheet_id"] != sid or j["sheet"] != sheet:
                 continue
             for i in self.items[jid]:
-                if i["status"] in _BLOCKING and (row is None or i["sheet_row"] == row):
-                    _merge_block(out, i["sheet_row"], i["status"])
+                if i["status"] not in _BLOCKING:
+                    continue
+                if row is not None and not (i["sheet_row"] == row or norm_email(i["email"]) == em):
+                    continue
+                out.append(dict(job_id=jid, owner=j["owner"], sheet_row=i["sheet_row"],
+                                email=norm_email(i["email"]), status=i["status"], job_status=j["status"]))
         return out
 
     def ack_unknown(self, jid):
         n = 0
+        ended = self.jobs[jid]["status"] not in _ACTIVE
         for i in self.items.get(jid, []):
-            if i["status"] == "unknown":
+            if i["status"] == "unknown" or (i["status"] == "sending" and ended):
                 i["status"] = "acknowledged"
                 n += 1
         return n
@@ -210,7 +247,8 @@ class MariaStore:
             "SELECT id FROM mail_send_jobs WHERE spreadsheet_id=%s AND sheet=%s AND status IN ('running','stopping')",
             (sid, sheet)))
 
-    _BLOCKED_SQL = ("SELECT i.sheet_row, i.status FROM mail_send_items i JOIN mail_send_jobs j ON i.job_id=j.id "
+    _HISTORY_SQL = ("SELECT i.job_id, j.owner, i.sheet_row, LOWER(TRIM(i.email)) AS email, i.status, "
+                    "j.status AS job_status FROM mail_send_items i JOIN mail_send_jobs j ON i.job_id=j.id "
                     "WHERE j.spreadsheet_id=%s AND j.sheet=%s AND i.status IN ('sent','sending','unknown')")
 
     def insert_job(self, owner, sid, sheet, sender, rows, confirm_count=None):
@@ -233,8 +271,8 @@ class MariaStore:
                                 "AND status IN ('running','stopping') LIMIT 1", (sid, sheet))
                     if cur.fetchone():
                         raise RuntimeError(BUSY)
-                    cur.execute(self._BLOCKED_SQL, (sid, sheet))
-                    rows = _keep_targets(rows, {r["sheet_row"] for r in cur.fetchall()}, confirm_count)
+                    cur.execute(self._HISTORY_SQL, (sid, sheet))
+                    rows = _keep_targets(rows, list(cur.fetchall()), confirm_count)
                     cur.execute("INSERT INTO mail_send_jobs (owner, spreadsheet_id, sheet, sender, status, total) "
                                 "VALUES (%s,%s,%s,%s,'running',%s)", (owner, sid, sheet, sender, len(rows)))
                     jid = cur.lastrowid
@@ -303,22 +341,22 @@ class MariaStore:
         return [r["sheet_row"] for r in self.db.fetch_all(
             "SELECT sheet_row FROM mail_send_items WHERE job_id=%s AND status='unknown' ORDER BY sheet_row", (jid,))]
 
-    def blocked_rows(self, sid, sheet, exclude_job=None, row=None):
-        sql, params = self._BLOCKED_SQL, [sid, sheet]
+    def history(self, sid, sheet, exclude_job=None, row=None, email=None):
+        sql, params = self._HISTORY_SQL, [sid, sheet]
         if exclude_job is not None:
             sql += " AND i.job_id<>%s"
             params.append(exclude_job)
-        if row is not None:
-            sql += " AND i.sheet_row=%s"
-            params.append(row)
-        out: dict[int, str] = {}
-        for r in self.db.fetch_all(sql, tuple(params)):
-            _merge_block(out, r["sheet_row"], r["status"])
-        return out
+        if row is not None:  # 이 행 또는 이 수신자의 기록만
+            sql += " AND (i.sheet_row=%s OR LOWER(TRIM(i.email))=%s)"
+            params += [row, norm_email(email)]
+        return [dict(r) for r in self.db.fetch_all(sql, tuple(params))]
 
     def ack_unknown(self, jid):
+        # 불확실 행 + 끝난 작업에 남은 '발송 중' 행 (재시작·충돌로 정리되지 못한 것)
         return self.db.execute(
-            "UPDATE mail_send_items SET status='acknowledged' WHERE job_id=%s AND status='unknown'", (jid,))
+            "UPDATE mail_send_items i JOIN mail_send_jobs j ON i.job_id=j.id SET i.status='acknowledged' "
+            "WHERE i.job_id=%s AND (i.status='unknown' OR "
+            "(i.status='sending' AND j.status NOT IN ('running','stopping')))", (jid,))
 
     def sent_today(self, owner):
         r = self.db.fetch_one(
@@ -364,9 +402,10 @@ def create_job(owner: str, spreadsheet_id: str, sheet: str, sender: str, rows: l
     return _s().insert_job(owner, spreadsheet_id, sheet, sender, rows, confirm_count=confirm_count)
 
 
-def blocked_rows(spreadsheet_id: str, sheet: str) -> dict[int, str]:
-    """이 시트에서 발송 기록(보냄·발송 중·확인 안 된 불확실)이 있는 행 → 상태. 누구의 작업이든."""
-    return _s().blocked_rows(spreadsheet_id, sheet)
+def sheet_history(spreadsheet_id: str, sheet: str) -> list[dict]:
+    """이 시트의 막는 발송 기록(보냄·발송 중·확인 안 된 불확실) — 누구의 작업이든.
+    각 항목: job_id, owner, sheet_row, email(정규화), status, job_status. 판정은 blocking_record."""
+    return _s().history(spreadsheet_id, sheet)
 
 
 def get_job(job_id: int, owner: str) -> dict | None:
@@ -565,10 +604,11 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
             st.set_item_status(job_id, row, "skipped", error="다른 툴이 이미 보냄(O)")
             st.bump(job_id, "skipped")
             continue
-        # ② 다른 작업의 발송 기록(보냄·발송 중·확인 안 된 불확실) — 시트에 O 가 없어도 다시 보내지 않는다
-        history = st.blocked_rows(sid, sheet, exclude_job=job_id, row=row)
-        if history:
-            st.set_item_status(job_id, row, "skipped", error=f"{HISTORY} ({history[row]})")
+        # ② 다른 작업의 발송 기록(보냄=이메일, 발송 중·불확실=행 또는 이메일) — 시트에 O 가 없어도 다시 보내지 않는다
+        block = blocking_record(st.history(sid, sheet, exclude_job=job_id, row=row, email=item["email"]),
+                                row, item["email"])
+        if block:
+            st.set_item_status(job_id, row, "skipped", error=f"{HISTORY} ({block['status']}, {block['by']})")
             st.bump(job_id, "skipped")
             continue
         # ③ 조립 + 발송

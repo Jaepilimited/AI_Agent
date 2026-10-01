@@ -416,12 +416,12 @@ def test_unknown_rows_and_ack(db):
     db.set_item_status(jid, 3, "sending")
     db.set_item_status(jid, 4, "sending")
     J.recover_after_restart()
-    assert J.blocked_rows("sid", "gmail_a") == {3: "unknown", 4: "unknown"}
-    assert J.blocked_rows("sid", "other") == {}
+    assert sorted(h["sheet_row"] for h in J.sheet_history("sid", "gmail_a")) == [3, 4]
+    assert J.sheet_history("sid", "other") == []
     assert J.ack_unknown(jid, "you@x.com") is None  # 남의 작업
     assert J.ack_unknown(jid, "me@x.com") == 2
     assert db.item_status(jid, 3) == "acknowledged"
-    assert J.blocked_rows("sid", "gmail_a") == {} and J.get_job(jid, "me@x.com")["unknown_rows"] == []
+    assert J.sheet_history("sid", "gmail_a") == [] and J.get_job(jid, "me@x.com")["unknown_rows"] == []
 
 
 class _FakeCursor:
@@ -432,7 +432,8 @@ class _FakeCursor:
 
     def fetchall(self):
         if "FROM mail_send_items" in self._last:
-            return [{"sheet_row": r, "status": "sent"} for r in self.blocked]
+            return [{"job_id": 9, "owner": "o", "sheet_row": r, "email": f"u{r - 2}@x.com", "status": "sent",
+                     "job_status": "done"} for r in self.blocked]
         return []
 
     def __enter__(self):
@@ -533,26 +534,29 @@ def test_no_unused_field_import():
 # ---------------------------------------------------------------------------
 # Fix Round 1 (after redo)
 # ---------------------------------------------------------------------------
-def _seed_history(store, row, status, owner="other@x.com", sheet="gmail_a"):
+def _seed_history(store, row, status, owner="other@x.com", sheet="gmail_a", email=None, job_status="done"):
     """같은 시트의 끝난 앞선 작업 — 그 행의 발송 기록 상태를 남긴다."""
     jid = max(store.jobs, default=0) + 1
-    store.jobs[jid] = dict(id=jid, owner=owner, spreadsheet_id="sid", sheet=sheet, sender=owner, status="done",
+    store.jobs[jid] = dict(id=jid, owner=owner, spreadsheet_id="sid", sheet=sheet, sender=owner, status=job_status,
                            total=1, sent=0, failed=0, skipped=0, sheet_write_failed=0, unknown=0,
                            stop_reason=None, created_at=datetime.now(), finished_at=datetime.now())
-    store.items[jid] = [dict(sheet_row=row, email=f"h{row}@x.com", manager="강하니", row_values={},
+    store.items[jid] = [dict(sheet_row=row, email=email or f"h{row}@x.com", manager="강하니", row_values={},
                              status=status, error=None, message_id=None, sent_at=None)]
     return jid
 
 
-def test_blocked_rows_statuses(db):
+def test_sheet_history_statuses(db):
     for row, st in [(2, "sent"), (3, "sending"), (4, "unknown"), (5, "acknowledged"), (6, "failed"),
                     (7, "skipped"), (8, "pending")]:
         _seed_history(db, row, st)
     _seed_history(db, 9, "sent", sheet="gmail_b")
-    assert J.blocked_rows("sid", "gmail_a") == {2: "sent", 3: "sending", 4: "unknown"}
-    assert db.blocked_rows("sid", "gmail_a", row=3) == {3: "sending"}
+    hist = J.sheet_history("sid", "gmail_a")
+    assert sorted((h["sheet_row"], h["status"]) for h in hist) == [(2, "sent"), (3, "sending"), (4, "unknown")]
+    assert {"job_id", "owner", "email", "job_status"} <= set(hist[0])
+    assert [h["sheet_row"] for h in db.history("sid", "gmail_a", row=3, email="nobody@x.com")] == [3]
+    assert [h["sheet_row"] for h in db.history("sid", "gmail_a", row=99, email=" H4@X.com ")] == [4]
     jid = _seed_history(db, 10, "sent")
-    assert 10 not in db.blocked_rows("sid", "gmail_a", exclude_job=jid)
+    assert 10 not in [h["sheet_row"] for h in db.history("sid", "gmail_a", exclude_job=jid)]
 
 
 def test_insert_job_drops_blocked_rows_under_lock(db):
@@ -571,14 +575,60 @@ def test_insert_job_count_changed_is_refused(db):
 def test_run_job_skips_row_with_db_history(db):
     sent = []
     jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
-    _seed_history(db, 2, "sent")  # 시트에 O 를 못 남긴 앞선 발송 (G 는 비어 있다)
+    _seed_history(db, 9, "sent", email="U0@x.com ")  # 정렬로 다른 행에 있던, O 를 못 남긴 앞선 발송
     deps = _deps(sent)
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
     job = J.get_job(jid, "me@x.com")
     assert len(sent) == 1 and (job["sent"], job["skipped"]) == (1, 1)
     item = next(i for i in db.items[jid] if i["sheet_row"] == 2)
     assert item["status"] == "skipped" and item["error"].startswith("발송 기록 있음")
+    assert "이메일" in item["error"]
     assert [c.args[3] for c in deps.write_cells.call_args_list] == [3]  # 2행 시트는 건드리지 않는다
+
+
+def test_run_job_sends_new_recipient_on_old_sent_row(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    _seed_history(db, 2, "sent", email="someone-else@x.com")  # 같은 행 번호, 다른 사람
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent))
+    assert len(sent) == 1
+
+
+def test_run_job_unknown_blocks_by_row_or_email(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    _seed_history(db, 2, "unknown", email="x@x.com")      # 행이 같다
+    _seed_history(db, 50, "sending", email="u1@x.com")    # 이메일이 같다
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent))
+    st = {i["sheet_row"]: (i["status"], i["error"]) for i in db.items[jid]}
+    assert len(sent) == 1 and st[4][0] == "sent"
+    assert st[2][0] == "skipped" and "행" in st[2][1] and st[3][0] == "skipped" and "이메일" in st[3][1]
+
+
+def test_blocking_record_rules():
+    hist = [dict(job_id=1, owner="a", sheet_row=3, email="p@x.com", status="sent", job_status="done"),
+            dict(job_id=2, owner="b", sheet_row=5, email="q@x.com", status="unknown", job_status="interrupted")]
+    assert J.blocking_record(hist, 3, "new@x.com") is None                    # sent: 행만 같음 → 다른 사람
+    assert J.blocking_record(hist, 8, " P@X.com")["by"] == "이메일"            # sent: 이메일이 같음
+    assert J.blocking_record(hist, 5, "z@x.com")["by"] == "행"                 # unknown: 행
+    assert J.blocking_record(hist, 9, "q@x.com")["by"] == "이메일"             # unknown: 이메일
+    assert J.blocking_record(hist, 9, "z@x.com") is None
+
+
+def test_ack_resolves_orphaned_sending_of_non_running_job(db):
+    jid = _seed_history(db, 3, "sending", owner="me@x.com", job_status="stopped")
+    assert J.ack_unknown(jid, "me@x.com") == 1 and db.item_status(jid, 3) == "acknowledged"
+    live = _seed_history(db, 4, "sending", owner="me@x.com", job_status="running")
+    assert J.ack_unknown(live, "me@x.com") == 0 and db.item_status(live, 4) == "sending"
+
+
+def test_own_unknown_jobs():
+    hist = [dict(job_id=1, owner="me", sheet_row=3, email="a", status="unknown", job_status="interrupted"),
+            dict(job_id=1, owner="me", sheet_row=2, email="b", status="sending", job_status="stopped"),
+            dict(job_id=2, owner="me", sheet_row=4, email="c", status="sending", job_status="running"),
+            dict(job_id=3, owner="you", sheet_row=5, email="d", status="unknown", job_status="done"),
+            dict(job_id=4, owner="me", sheet_row=6, email="e", status="sent", job_status="done")]
+    assert J.own_unknown_jobs(hist, "me") == [{"job_id": 1, "rows": [2, 3]}]
 
 
 @pytest.mark.parametrize("exc", [_http_error(500), TimeoutError("t"), RuntimeError("x")],
@@ -621,3 +671,23 @@ def test_maria_insert_job_drops_blocked_rows_and_checks_count():
         m2.insert_job("me", "sid", "gmail_a", "me", _rows(3), confirm_count=3)
     assert not [e for e in log2 if e[0] == "executemany"] and ("rollback",) in log2
     assert any("RELEASE_LOCK" in e[1] for e in log2 if e[0] == "execute")
+
+
+def test_maria_history_and_ack_sql():
+    m = J.MariaStore.__new__(J.MariaStore)
+    m.db = MagicMock()
+    m.db.fetch_all.return_value = []
+    m.history("sid", "sh", exclude_job=5, row=3, email=" A@x.com")
+    sql, params = m.db.fetch_all.call_args.args
+    assert "LOWER(TRIM(i.email))" in sql and "i.job_id<>%s" in sql and "i.sheet_row=%s OR" in sql
+    assert params == ("sid", "sh", 5, 3, "a@x.com")
+    m.db.execute.return_value = 2
+    assert m.ack_unknown(7) == 2
+    sql = m.db.execute.call_args.args[0]
+    assert "i.status='sending'" in sql and "NOT IN ('running','stopping')" in sql
+
+
+def test_insert_job_drops_sent_email_under_lock(db):
+    _seed_history(db, 30, "sent", email="u1@x.com")  # 정렬로 30행에 있던 사람이 지금 3행
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3), confirm_count=2)
+    assert [i["sheet_row"] for i in db.items[jid]] == [2, 4]

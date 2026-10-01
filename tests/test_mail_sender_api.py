@@ -386,7 +386,7 @@ def test_blocked_row_appearing_between_check_and_start_is_409(client, mem_store)
 def test_db_errors_are_readable_503(client, mem_store, route):
     import pymysql
     boom = pymysql.err.OperationalError(2003, "Can't connect")
-    target = {"check": "sent_today", "start": "blocked_rows", "status": "get_job", "active": "active_job",
+    target = {"check": "sent_today", "start": "sheet_history", "status": "get_job", "active": "active_job",
               "ack": "ack_unknown", "stop": "request_stop"}[route]
     with _start_env(_two_rows()), patch(f"app.api.mail_sender_api.jobs.{target}", side_effect=boom):
         r = {"check": lambda: _check(client), "start": lambda: _start(client, 2),
@@ -457,3 +457,81 @@ def test_js_parses():
         pytest.skip("node 없음")
     r = subprocess.run([node, "--check", str(ROOT / "app/static/mail_sender.js")], capture_output=True)
     assert r.returncode == 0, r.stderr.decode("utf-8", "replace")
+
+
+# ---------------------------------------------------------------------------
+# Fix Round 2 (after redo) — 행·이메일 기준 발송 기록, 중단된 작업의 '확인했음'
+# ---------------------------------------------------------------------------
+def _row(r, email, status=""):
+    from app.core.mail_sender import Row
+    return Row(r, "강하니", email, status, {})
+
+
+def test_sorted_sheet_sent_person_moved_is_excluded(client, mem_store):
+    _seed_sent(mem_store, "other@x.com", 4)  # u4@x.com 에게 보냈고 O 기록 실패
+    rows = [_row(4, "new@x.com"), _row(6, " U4@X.com ")]  # 정렬 뒤: 4행은 새 사람, 보낸 사람은 6행
+    with _start_env(rows):
+        c = _check(client).json()
+    assert c["pending"] == 1
+    per_row = {i["row"]: i["message"] for i in c["issues"] if i["row"] is not None and i["level"] == "warn"}
+    assert set(per_row) == {6} and "이메일" in per_row[6]
+    with _start_env(rows) as th:
+        r = _start(client, 1)
+    assert r.status_code == 200
+    assert [i["sheet_row"] for i in mem_store.items[r.json()["job_id"]]] == [4]
+
+
+def test_unknown_blocks_row_and_email(client, mem_store):
+    _seed_unknown(mem_store, _User.email, rows=(3,))  # u3@x.com, 3행
+    rows = [_row(3, "other3@x.com"), _row(9, "u3@x.com"), _row(10, "z@x.com")]
+    with _start_env(rows):
+        c = _check(client).json()
+    assert c["pending"] == 1
+    per_row = {i["row"]: i["message"] for i in c["issues"] if i["row"] is not None and i["level"] == "warn"}
+    assert "행" in per_row[3] and "이메일" in per_row[9]
+
+
+def test_check_lists_own_unknown_jobs_and_ack_interrupted_job(client, mem_store):
+    jid = _seed_unknown(mem_store, _User.email)  # 재시작으로 중단된 작업의 3, 7행
+    assert mem_store.jobs[jid]["status"] == "interrupted"
+    rows = _rows_at((3, ""), (7, ""))
+    with _start_env(rows):
+        c = _check(client).json()
+    assert c["unknown_jobs"] == [{"job_id": jid, "rows": [3, 7]}] and c["pending"] == 0
+    assert client.get("/api/mail-sender/jobs/active").json() == {"job": None}  # 활성 작업으로는 못 닿는다
+    assert client.post(f"/api/mail-sender/jobs/{jid}/ack-unknown").json() == {"acknowledged": 2}
+    with _start_env(rows):
+        c2 = _check(client).json()
+    assert c2["unknown_jobs"] == [] and c2["pending"] == 2
+
+
+def test_orphaned_sending_is_listed_and_cleared_by_ack(client, mem_store):
+    from app.core.mail_sender import Row
+    jid = mem_store.insert_job(_User.email, "x", "gmail_a", _User.email, [Row(5, "강하니", "u5@x.com", "", {})])
+    mem_store.set_item_status(jid, 5, "sending")
+    mem_store.set_job(jid, status="stopped")  # 정리되지 못한 'sending'
+    rows = _rows_at((5, ""))
+    with _start_env(rows):
+        c = _check(client).json()
+    assert c["unknown_jobs"] == [{"job_id": jid, "rows": [5]}] and c["pending"] == 0
+    assert client.post(f"/api/mail-sender/jobs/{jid}/ack-unknown").json() == {"acknowledged": 1}
+    with _start_env(rows):
+        assert _check(client).json()["pending"] == 1
+
+
+def test_other_owners_unknown_rows_say_who_must_confirm(client, mem_store):
+    _seed_unknown(mem_store, "other@x.com", rows=(4,))
+    with _start_env(_rows_at((4, ""), (5, ""))):
+        c = _check(client).json()
+    assert c["unknown_jobs"] == [] and c["pending"] == 1
+    msgs = [i["message"] for i in c["issues"]]
+    assert any("다른 사람(other@x.com)의 작업에서 발송 여부 불확실 — 그 사람이 확인해야 합니다" in m for m in msgs)
+
+
+def test_js_shows_unknown_jobs_with_ack_buttons():
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    assert "unknown_jobs" in js and 'getElementById(id)' in js and '$("ms-unknown-jobs")' in js
+    assert re.search(r"guard\(\(\) => busy\(b, async \(\) => \{", js)
+    assert "await runCheck()" in js and '$("ms-check").onclick = guard(runCheck)' in js
+    html = (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")
+    assert 'id="ms-unknown-jobs"' in html

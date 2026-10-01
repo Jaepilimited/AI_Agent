@@ -189,34 +189,45 @@ def _rowlist(rows: list[int], limit: int = 10) -> str:
     return ", ".join(map(str, rows[:limit])) + ("…" if len(rows) > limit else "")
 
 
-def _split_targets(rows, blocked: dict[int, str]) -> tuple[list, list[Issue]]:
-    """발송 대상 = G≠O 이면서 발송 기록(보냄·발송 중·확인 안 된 불확실)이 없는 행. 누구의 기록이든 뺀다.
+def _split_targets(rows, history: list[dict], me: str) -> tuple[list, list[Issue]]:
+    """발송 대상 = G≠O 이면서 막는 발송 기록이 없는 행 (jobs.blocking_record: 보냄=이메일,
+    발송 중·불확실=행 또는 이메일). 누구의 기록이든 뺀다.
 
     ⛔ /check 와 시작 경로가 이 함수 하나를 쓴다 — 두 숫자가 달라지면 확인 창 숫자가 거짓이 된다.
     """
-    targets, sent, unsure = [], [], []
+    targets, sent, mine, others = [], [], [], {}
+    per_row: list[Issue] = []
     for r in pending(rows):
-        st = blocked.get(r.row)
-        if st is None:
+        b = jobs.blocking_record(history, r.row, r.email)
+        if b is None:
             targets.append(r)
-        elif st == "sent":
+            continue
+        hit = f"({b['by']} 일치)"
+        if b["status"] == "sent":
             sent.append(r.row)
+            per_row.append(Issue(r.row, "warn", f"발송 기록 있음 — 다시 보내지 않습니다 {hit}"))
+        elif b["owner"] == me:
+            mine.append(r.row)
+            per_row.append(Issue(r.row, "warn", f"발송 여부 불확실 — 보낸편지함 확인 후 '확인했음' {hit}"))
         else:
-            unsure.append(r.row)
+            others.setdefault(b["owner"], []).append(r.row)
+            per_row.append(Issue(r.row, "warn", f"다른 사람({b['owner']})의 작업에서 발송 여부 불확실 — "
+                                                f"그 사람이 확인해야 합니다 {hit}"))
     parts = []
     if sent:
         parts.append(f"발송 기록 있음 {len(sent)}행({_rowlist(sent)}) — 다시 보내지 않습니다")
-    if unsure:
-        parts.append(f"발송 여부 불확실 {len(unsure)}행({_rowlist(unsure)}) — 보낸편지함 확인 후 '확인했음'")
+    if mine:
+        parts.append(f"발송 여부 불확실 {len(mine)}행({_rowlist(mine)}) — 보낸편지함 확인 후 '확인했음'")
+    for owner, rs in others.items():
+        parts.append(f"다른 사람({owner})의 작업에서 발송 여부 불확실 {len(rs)}행({_rowlist(rs)}) — 그 사람이 확인해야 합니다")
     issues = [Issue(None, "warn", " · ".join(parts))] if parts else []
-    issues += [Issue(r, "warn", "발송 기록 있음 — 다시 보내지 않습니다") for r in sent]
-    issues += [Issue(r, "warn", "발송 여부 불확실 — 보낸편지함 확인 후 '확인했음'") for r in unsure]
-    return targets, issues
+    return targets, issues + per_row
 
 
-async def _targets(spreadsheet_id: str, sheet: str, rows) -> tuple[list, list[Issue]]:
-    blocked = await asyncio.to_thread(jobs.blocked_rows, spreadsheet_id, sheet)
-    return _split_targets(rows, blocked)
+async def _targets(spreadsheet_id: str, sheet: str, rows, me: str) -> tuple[list, list[Issue], list[dict]]:
+    history = await asyncio.to_thread(jobs.sheet_history, spreadsheet_id, sheet)
+    targets, issues = _split_targets(rows, history, me)
+    return targets, issues, jobs.own_unknown_jobs(history, me)
 
 
 @router.post("/api/mail-sender/check")
@@ -224,12 +235,13 @@ async def _targets(spreadsheet_id: str, sheet: str, rows) -> tuple[list, list[Is
 async def check_sheet(body: SheetIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
     rows, _, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
-    targets, excluded = await _targets(body.spreadsheet_id, body.sheet, rows)
+    targets, excluded, unknown_jobs = await _targets(body.spreadsheet_id, body.sheet, rows, user.email)
     issues = excluded + check(targets, tab_dir, updated, templates, datetime.now(timezone.utc),
                               sent_today=await _sent_today(user.email))
     return {"rows": [{"row": r.row, "manager": r.manager, "email": r.email, "status": r.status} for r in rows],
             "issues": [i.__dict__ for i in issues],
             "pending": len(targets),
+            "unknown_jobs": unknown_jobs,  # 본인 작업의 '확인했음' 대상 (중단된 작업 포함)
             "errors": sum(1 for i in issues if i.level == "error")}
 
 
@@ -247,7 +259,7 @@ async def start_job(body: JobIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
     sender = await asyncio.to_thread(_check_sender, creds, body.sender)  # 시작 시점에 다시 검증
     rows, cols, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
-    targets, _ = await _targets(body.spreadsheet_id, body.sheet, rows)
+    targets, _, _ = await _targets(body.spreadsheet_id, body.sheet, rows, user.email)
     issues = check(targets, tab_dir, updated, templates, datetime.now(timezone.utc),
                    sent_today=await _sent_today(user.email))
     errors = [i for i in issues if i.level == "error"]
@@ -293,7 +305,7 @@ async def stop(job_id: int, user=Depends(get_current_user)):
 @router.post("/api/mail-sender/jobs/{job_id}/ack-unknown")
 @_google_errors
 async def ack_unknown(job_id: int, user=Depends(get_current_user)):
-    """작업 주인이 보낸편지함을 확인했다 — 불확실 행을 '확인됨' 으로.
+    """작업 주인이 보낸편지함을 확인했다 — 불확실 행(과 끝난 작업에 남은 '발송 중' 행)을 '확인됨' 으로.
     나간 행은 사용자가 시트에 O 를 적는다 (O 가 없는 확인됨 행은 다음 작업의 대상이 된다)."""
     n = await asyncio.to_thread(jobs.ack_unknown, job_id, user.email)
     if n is None:
