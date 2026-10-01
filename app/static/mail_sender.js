@@ -62,10 +62,19 @@ async function init() {
   }
   $("ms-main").hidden = false;
   refreshSendAll();
+  const replyTo = {};
   for (const a of s.senders) {
     const o = new Option(a.display ? `${a.display} <${a.email}>` : a.email, a.email, a.default, a.default);
     $("ms-sender").add(o);
+    replyTo[a.email] = a.reply_to || "";
   }
+  // 별칭에 '답장 받을 주소' 가 따로 있으면 보인다 — 답장이 어디로 가는지 발송 전에 알 수 있게
+  const showReplyTo = () => {
+    const r = replyTo[$("ms-sender").value];
+    text($("ms-reply-to"), r ? `답장 받는 주소: ${r}` : "");
+  };
+  $("ms-sender").onchange = showReplyTo;
+  showReplyTo();
   const running = await api("/api/mail-sender/jobs/active").catch(() => null);
   if (running && running.job) watchJob(running.job.id);
 }

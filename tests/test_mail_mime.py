@@ -50,3 +50,17 @@ def test_korean_subject_and_sender_display_name():
     assert m["Subject"] == "안녕하세요, 이것은 테스트 메일입니다"
     assert "마케팅팀" in m["From"]
     assert "mk@x.com" in m["From"]
+
+
+def test_display_name_from_sendas_is_encoded():
+    raw = build_mime(sender="mk@x.com", sender_name="SKIN1004 마케팅", to="a@b.com", subject="s",
+                     html="<p>x</p>", images={})
+    raw.decode("ascii")  # 한글 표시 이름도 RFC 2047 로 — 원문은 ASCII
+    m = _parse(raw)
+    assert m["From"].addresses[0].display_name == "SKIN1004 마케팅"
+    assert m["From"].addresses[0].addr_spec == "mk@x.com"
+
+
+def test_no_display_name_is_bare_address():
+    m = _parse(build_mime(sender="mk@x.com", sender_name="", to="a@b.com", subject="s", html="x", images={}))
+    assert m["From"] == "mk@x.com"

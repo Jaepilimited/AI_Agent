@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from email.message import EmailMessage
+from email.utils import formataddr
 from email.policy import SMTP
 
 
 def build_mime(*, sender: str, to: str, subject: str, html: str,
-               images: dict[str, tuple[bytes, str]]) -> bytes:
+               images: dict[str, tuple[bytes, str]], sender_name: str = "") -> bytes:
+    """sender_name: Gmail '다른 주소에서 보내기' 에 등록된 표시 이름 — 있으면 '이름 <주소>' (한글은 RFC 2047)."""
     msg = EmailMessage()
-    msg["From"] = sender
+    msg["From"] = formataddr((sender_name, sender)) if sender_name else sender
     msg["To"] = to
     msg["Subject"] = subject
     full = ('<html><head><meta charset="UTF-8"></head>'

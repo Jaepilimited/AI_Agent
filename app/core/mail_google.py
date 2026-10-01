@@ -114,7 +114,7 @@ def send_as_addresses(creds) -> list[dict]:
     for s in items:
         if s.get("isPrimary") or s.get("verificationStatus") == "accepted":
             out.append({"email": s["sendAsEmail"], "display": s.get("displayName", ""),
-                        "default": bool(s.get("isDefault"))})
+                        "reply_to": s.get("replyToAddress", ""), "default": bool(s.get("isDefault"))})
     return out
 
 

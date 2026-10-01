@@ -832,3 +832,27 @@ def test_sheet_O_write_429_always_stops_with_sheets_message(db):
     assert len(sent) == 1 and job["sheet_write_failed"] == 1 and job["status"] == "stopped"
     assert job["stop_reason"].startswith("구글 시트 사용량 한도(429)")
     assert deps.write_cells.call_count == 4  # 1 + 재시도 3
+
+
+
+def test_run_job_from_uses_sendas_display_name(db):
+    from email import message_from_bytes, policy
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "mk@x.com", _rows(1))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent), sender_name="마케팅팀")
+    frm = message_from_bytes(sent[0], policy=policy.default)["From"]
+    assert frm.addresses[0].display_name == "마케팅팀" and frm.addresses[0].addr_spec == "mk@x.com"
+
+
+def test_start_job_thread_passes_sender_name(monkeypatch):
+    seen = {}
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None, name=None):
+            seen.update(args=args, kwargs=kwargs or {})
+
+        def start(self):
+            pass
+    monkeypatch.setattr(J.threading, "Thread", FakeThread)
+    J.start_job_thread(1, "C", COLS, {}, sender_name="마케팅")
+    assert seen["args"][:4] == (1, "C", COLS, {}) and "마케팅" in (*seen["args"], *seen["kwargs"].values())

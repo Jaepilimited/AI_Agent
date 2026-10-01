@@ -212,3 +212,16 @@ def test_login_feature_mail_requests_mail_scopes(monkeypatch):
 def test_login_plain_has_no_extra_scopes(monkeypatch):
     mgr = _login(monkeypatch, "/auth/google/login")
     assert "extra_scopes" not in mgr.kwargs
+
+
+def test_send_as_addresses_returns_display_and_reply_to():
+    gm = MagicMock()
+    gm.users.return_value.settings.return_value.sendAs.return_value.list.return_value.execute.return_value = {
+        "sendAs": [{"sendAsEmail": "me@x.com", "displayName": "나", "isPrimary": True, "isDefault": True},
+                   {"sendAsEmail": "mk@x.com", "displayName": "마케팅", "replyToAddress": "reply@x.com",
+                    "verificationStatus": "accepted"},
+                   {"sendAsEmail": "pending@x.com", "verificationStatus": "pending"}]}
+    with patch("app.core.mail_google.build", return_value=gm), patch("app.core.mail_google._fresh", side_effect=lambda c: c):
+        got = mail_google.send_as_addresses(MagicMock())
+    assert got == [{"email": "me@x.com", "display": "나", "reply_to": "", "default": True},
+                   {"email": "mk@x.com", "display": "마케팅", "reply_to": "reply@x.com", "default": False}]

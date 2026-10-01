@@ -586,3 +586,28 @@ def test_js_confirm_lists_subjects_and_sender():
     body = js[js.index('$("ms-send-all").onclick'):js.index("function renderJob")]
     assert "state.subjects" in body and "confirm(" in body
     assert "명 · " in body and '$("ms-sender").value' in body and "innerHTML" not in body
+
+
+
+def test_test_send_and_job_use_sendas_display_name(client, mem_store):
+    from email import policy
+    from app.core.mail_sender import Row
+    rows = [Row(2, "강하니", "kol@x.com", "", {})]
+    alias = [{"email": "mk@x.com", "display": "SKIN1004 마케팅", "reply_to": "r@x.com", "default": True}]
+    sent = {}
+    with _start_env(rows, sendas_side=lambda c: alias) as th, \
+         patch("app.api.mail_sender_api.mail_google.send_raw", side_effect=lambda c, raw: sent.setdefault("raw", raw) and "id"):
+        r = client.post("/api/mail-sender/test-send",
+                        json={"spreadsheet_id": "x", "sheet": "gmail_a", "row": 2, "sender": "mk@x.com"})
+        assert r.status_code == 200
+        frm = message_from_bytes(sent["raw"], policy=policy.default)["From"]
+        assert frm.addresses[0].display_name == "SKIN1004 마케팅"
+        assert _start(client, 1, sender="mk@x.com").status_code == 200
+    assert th.call_args.kwargs.get("sender_name") == "SKIN1004 마케팅"
+
+
+def test_js_shows_reply_to_of_alias():
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    html = (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")
+    assert 'id="ms-reply-to"' in html
+    assert "reply_to" in js and re.search(r'text\(\$\("ms-reply-to"\)', js)

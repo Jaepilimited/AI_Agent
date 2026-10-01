@@ -517,7 +517,7 @@ def _error_kind(e: Exception) -> str:
     return kind
 
 
-def _compose(job: dict, item: dict, templates: dict) -> bytes:
+def _compose(job: dict, item: dict, templates: dict, sender_name: str = "") -> bytes:
     manager = item["manager"]
     tpl = templates.get(manager)
     if tpl is None:
@@ -525,7 +525,8 @@ def _compose(job: dict, item: dict, templates: dict) -> bytes:
     if isinstance(tpl, Exception):
         raise RuntimeError(f"템플릿 오류: {manager} ({tpl})")
     subject, html = render(tpl, item["row_values"])
-    return build_mime(sender=job["sender"], to=item["email"], subject=subject, html=html, images=tpl.images)
+    return build_mime(sender=job["sender"], sender_name=sender_name, to=item["email"], subject=subject, html=html,
+                      images=tpl.images)
 
 
 def _finish(st, job_id: int, status: str, reason: str | None) -> None:
@@ -613,7 +614,9 @@ def _mark_read_failed(st, deps, creds, job, cols, job_id, row, e) -> None:
     _write_sheet(deps, creds, job, cols, row, {cols.note: READ_FAILED}, job_id)
 
 
-def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None) -> None:
+def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None,
+            sender_name: str = "") -> None:
+    """sender_name: 보내는 주소의 Gmail 표시 이름 (작업 시작 때 sendAs 에서 — 재시작 뒤 재개는 없으므로 DB 에 두지 않는다)."""
     deps = deps or JobDeps()
     st = _s()
     job = st.job(job_id)
@@ -671,7 +674,7 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
         failure: Exception | None = None
         unsure = False
         try:
-            raw = _compose(job, item, templates)
+            raw = _compose(job, item, templates, sender_name)
         except Exception as e:
             failure = e
         if failure is None:
@@ -711,10 +714,11 @@ def run_job(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | 
         _finish(st, job_id, "done", None)
 
 
-def _thread_main(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None) -> None:
+def _thread_main(job_id: int, creds, cols: Columns, templates: dict, deps: JobDeps | None = None,
+                 sender_name: str = "") -> None:
     """스레드 대상 — 예상 못 한 예외로 작업이 'running' 에 영원히 남지 않게 한다."""
     try:
-        run_job(job_id, creds, cols, templates, deps)
+        run_job(job_id, creds, cols, templates, deps, sender_name=sender_name)
     except Exception as e:
         logger.exception("mail_send_job_crashed", job_id=job_id)
         try:
@@ -723,6 +727,6 @@ def _thread_main(job_id: int, creds, cols: Columns, templates: dict, deps: JobDe
             logger.exception("mail_send_job_crash_unrecorded", job_id=job_id)
 
 
-def start_job_thread(job_id: int, creds, cols: Columns, templates: dict) -> None:
-    threading.Thread(target=_thread_main, args=(job_id, creds, cols, templates), daemon=True,
+def start_job_thread(job_id: int, creds, cols: Columns, templates: dict, sender_name: str = "") -> None:
+    threading.Thread(target=_thread_main, args=(job_id, creds, cols, templates, None, sender_name), daemon=True,
                      name=f"mail-send-{job_id}").start()

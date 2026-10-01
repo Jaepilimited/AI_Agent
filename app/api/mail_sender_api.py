@@ -73,11 +73,12 @@ def _ready_creds(user):
     return creds
 
 
-def _check_sender(creds, sender: str) -> str:
-    allowed = {s["email"].lower() for s in mail_google.send_as_addresses(creds)}
-    if sender.lower() not in allowed:
-        raise HTTPException(400, f"보내는 주소 '{sender}' 는 이 계정의 Gmail 에 등록된 주소가 아닙니다")
-    return sender
+def _check_sender(creds, sender: str) -> tuple[str, str]:
+    """(주소, 표시 이름) — Gmail sendAs 에 등록된 주소만."""
+    for s in mail_google.send_as_addresses(creds):
+        if s["email"].lower() == sender.lower():
+            return sender, s.get("display") or ""
+    raise HTTPException(400, f"보내는 주소 '{sender}' 는 이 계정의 Gmail 에 등록된 주소가 아닙니다")
 
 
 def _load(creds, spreadsheet_id: str, sheet: str):
@@ -187,10 +188,11 @@ async def preview(body: RowIn, user=Depends(get_current_user)):
 @_google_errors
 async def test_send(body: RowIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
-    sender = await asyncio.to_thread(_check_sender, creds, body.sender)
+    sender, sender_name = await asyncio.to_thread(_check_sender, creds, body.sender)
     rows, _, templates, _, _ = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     _, tpl, subject, html = _row_message(rows, templates, body.row)
-    raw = build_mime(sender=sender, to=user.email, subject="[테스트] " + subject, html=html, images=tpl.images)
+    raw = build_mime(sender=sender, sender_name=sender_name, to=user.email, subject="[테스트] " + subject, html=html,
+                     images=tpl.images)
     return {"message_id": await asyncio.to_thread(mail_google.send_raw, creds, raw)}
 
 
@@ -267,7 +269,7 @@ class JobIn(SheetIn):
 @_google_errors
 async def start_job(body: JobIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
-    sender = await asyncio.to_thread(_check_sender, creds, body.sender)  # 시작 시점에 다시 검증
+    sender, sender_name = await asyncio.to_thread(_check_sender, creds, body.sender)  # 시작 시점에 다시 검증
     rows, cols, templates, tab_dir, updated = await asyncio.to_thread(_load, creds, body.spreadsheet_id, body.sheet)
     targets, _, _ = await _targets(body.spreadsheet_id, body.sheet, rows, user.email)
     issues = check(targets, tab_dir, updated, templates, datetime.now(timezone.utc),
@@ -282,7 +284,7 @@ async def start_job(body: JobIn, user=Depends(get_current_user)):
                                          targets, body.confirm_count)
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
-    jobs.start_job_thread(job_id, creds, cols, templates)
+    jobs.start_job_thread(job_id, creds, cols, templates, sender_name=sender_name)
     return {"job_id": job_id}
 
 
