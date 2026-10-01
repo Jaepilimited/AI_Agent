@@ -1638,6 +1638,11 @@
       window.open("/sales-carryover", "_blank", "noopener");
     });
 
+    // 잔디 백업 도우미 — 북마크를 나눠 주는 페이지를 새 탭에서 연다
+    document.getElementById("btn-jandi-backup").addEventListener("click", () => {
+      window.open("/jandi-backup", "_blank", "noopener");
+    });
+
     // System Status drawer
     document.getElementById("btn-system-status").addEventListener("click", openStatusDrawer);
     initNotifications();

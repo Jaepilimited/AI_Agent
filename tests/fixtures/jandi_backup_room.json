@@ -1,0 +1,58 @@
+{
+  "_comment": "잔디 백업 도우미 시험용 방 하나. 실제 raw.json 기록 모양을 본떠 만들었고 이름·내용·파일은 모두 지어낸 값이다.",
+  "roomId": 90000001,
+  "roomName": "[테스트] 기획 <팀> 방",
+  "members": {
+    "1001": {"id": 1001, "name": "Kim Minsu_김민수", "status": "enabled"},
+    "1002": {"id": 1002, "name": "Lee O'Hara_이하라", "status": "enabled"},
+    "1003": {"id": 1003, "name": "Park Jiwoo_박지우", "status": "deleted"}
+  },
+  "manifest": [
+    {"roomId": 90000001, "id": 7000001, "name": "회의 사진.png", "size": 11, "type": "image/png", "path": "attachments/7000001_회의 사진.png", "status": "downloaded", "sha256": null},
+    {"roomId": 90000001, "id": 7000002, "name": "매출 현황 - 2026..xlsx", "size": 22, "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "path": "attachments/7000002_매출 현황 - 2026..xlsx", "status": "downloaded", "sha256": null},
+    {"roomId": 90000001, "id": 7000003, "name": "지워진 파일.pdf", "size": 33, "type": "application/pdf", "path": "attachments/7000003_지워진 파일.pdf", "status": "failed", "error": "다운로드 주소 HTTP 404"},
+    {"roomId": 90000001, "id": 5000010, "name": "옛날 보고서.docx", "size": 44, "type": "application/msword", "path": "attachments/5000010_옛날 보고서.docx", "status": "downloaded", "sha256": null},
+    {"roomId": 90000001, "id": "sticker_155_2", "name": "sticker_155_2.png", "kind": "sticker", "path": "attachments/sticker_155_2_sticker_155_2.png", "status": "downloaded", "size": 5, "sha256": null}
+  ],
+  "records": [
+    {"id": 6000001, "fromEntity": 1001, "teamId": 80000001, "status": "event", "feedbackId": -1, "messageId": -1, "time": 1782864000000, "toEntity": [90000001],
+     "info": {"eventType": "room_created", "eventInfo": {"members": [1001, 1002]}}},
+    {"id": 6000002, "fromEntity": 1001, "teamId": 80000001, "status": "created", "feedbackId": -1, "messageId": 5000001, "time": 1782864060000, "toEntity": [90000001],
+     "message": {"id": 5000001, "writerId": 1001, "contentType": "text", "createdAt": "2026-07-01T00:01:00.000Z", "attachments": [],
+                 "content": {"richText": [], "body": "안녕하세요 <script>alert(1)</script> & \"따옴표\"", "connectInfo": []}}},
+    {"id": 6000003, "fromEntity": 1002, "teamId": 80000001, "status": "created", "feedbackId": -1, "messageId": 5000002, "time": 1782864120000, "toEntity": [90000001],
+     "message": {"id": 5000002, "writerId": 1002, "contentType": "text", "createdAt": "2026-07-01T00:02:00.000Z",
+                 "content": {"richText": [], "body": "=SUM(A1:A9) 첨부 세 개, 줄\n바꿈", "connectInfo": []},
+                 "attachments": [
+                   {"id": 7000001, "contentType": "file", "content": {"title": "회의 사진.png", "name": "회의 사진.png", "type": "image/png", "size": 11}},
+                   {"id": 7000002, "contentType": "file", "content": {"title": "매출 현황 - 2026..xlsx", "name": "매출 현황 - 2026..xlsx", "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "size": 22}},
+                   {"id": 7000003, "contentType": "file", "content": {"title": "지워진 파일.pdf", "name": "지워진 파일.pdf", "type": "application/pdf", "size": 33}}
+                 ]}},
+    {"id": 6000004, "fromEntity": 1001, "teamId": 80000001, "status": "created", "feedbackType": "text", "feedbackId": 5000002, "messageId": 5000003, "time": 1782864180000, "toEntity": [90000001],
+     "message": {"id": 5000003, "writerId": 1001, "contentType": "comment", "createdAt": "2026-07-01T00:03:00.000Z", "attachments": [], "feedbackId": 5000002,
+                 "content": {"richText": [], "body": "확인했습니다", "connectInfo": []}},
+     "feedback": {"id": 5000002, "contentType": "text", "content": {"body": "=SUM(A1:A9) 첨부 세 개, 줄\n바꿈"},
+                  "attachments": [{"id": 7000004, "contentType": "file", "content": {"name": "댓글 원본 첨부.txt", "type": "text/plain", "size": 7}}]}},
+    {"id": 6000005, "fromEntity": 1003, "teamId": 80000001, "status": "shared", "feedbackId": -1, "messageId": 5000010, "time": 1782864240000, "toEntity": [90000001],
+     "message": {"id": 5000010, "writerId": 1003, "contentType": "file", "createdAt": "2026-07-01T00:04:00.000Z", "attachments": [],
+                 "content": {"richText": [], "title": "옛날 보고서.docx", "name": "옛날 보고서.docx", "type": "application/msword", "size": 44, "ext": "docx", "fileUrl": "https://files.jandi.com/files-private/80000001/abc", "connectInfo": []}}},
+    {"id": 6000006, "fromEntity": 1002, "teamId": 80000001, "status": "created", "feedbackId": -1, "messageId": 5000004, "time": 1782864300000, "toEntity": [90000001],
+     "message": {"id": 5000004, "writerId": 1002, "contentType": "sticker", "createdAt": "2026-07-01T00:05:00.000Z", "attachments": [],
+                 "content": {"richText": [], "stickerId": "2", "groupId": 155, "url": "https://jandi-box.com/files-sticker/155/2", "connectInfo": []}}},
+    {"id": 6000007, "fromEntity": 1001, "teamId": 80000001, "status": "created", "feedbackType": "file", "feedbackId": 5000010, "messageId": 5000005, "time": 1782864360000, "toEntity": [90000001],
+     "message": {"id": 5000005, "writerId": 1001, "contentType": "comment_sticker", "createdAt": "2026-07-01T00:06:00.000Z", "attachments": [], "feedbackId": 5000010,
+                 "content": {"richText": [], "stickerId": "11", "groupId": 160, "url": "https://jandi-box.com/files-sticker/160/11", "connectInfo": []}},
+     "feedback": {"id": 5000010, "contentType": "file", "content": {"name": "옛날 보고서.docx", "size": 44}, "attachments": []}},
+    {"id": 6000008, "fromEntity": 1002, "teamId": 80000001, "status": "created", "feedbackId": -1, "messageId": 5000006, "time": 1782864420000, "toEntity": [90000001],
+     "message": {"id": 5000006, "writerId": 1002, "contentType": "poll", "createdAt": "2026-07-01T00:07:00.000Z", "attachments": [],
+                 "content": {"richText": [], "body": "", "connectInfo": []}},
+     "poll": {"subject": "점심 메뉴", "description": "하나만 고르세요", "votedCount": 3, "status": "finished",
+              "items": [{"name": "국수", "votedCount": 2}, {"name": "김밥", "votedCount": 1}]}},
+    {"id": 6000009, "fromEntity": 1001, "teamId": 80000001, "status": "event", "feedbackId": -1, "messageId": -1, "time": 1782864480000, "toEntity": [90000001],
+     "info": {"eventType": "announcement_created", "eventInfo": {"writerId": 1002}}},
+    {"id": 6000010, "fromEntity": 1002, "teamId": 80000001, "status": "event", "feedbackId": -1, "messageId": -1, "time": 1782864540000, "toEntity": [90000001],
+     "info": {"eventType": "member_left"}},
+    {"id": 6000011, "fromEntity": 1001, "teamId": 80000001, "status": "event", "feedbackId": -1, "messageId": -1, "time": 1782864600000, "toEntity": [90000001],
+     "info": {"eventType": "topic_folder_moved"}}
+  ]
+}

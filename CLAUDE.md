@@ -1814,6 +1814,39 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   "A 매출 (백만…" 처럼 잘려 단위를 잃는다
 
 
+## 잔디 백업 도우미 (`/jandi-backup`) — 각자 PC 로, 서버는 아무것도 받지 않는다 (2026-10-01)
+
+- **무엇**: 직원 각자가 자기 잔디 대화·첨부를 자기 PC 폴더에 받는 **북마크**. 셀라 화면
+  `/jandi-backup`(`app/static/jandi_backup.html` · 사이드바 `잔디 백업`)에서 버튼을 북마크바로 끌어다
+  놓고, 로그인한 잔디 웹 탭(`https://팀.jandi.com/app`)에서 누르면 패널이 떠서 범위·폴더를 고른다
+- **본체**: `app/static/jandi-backup/jandi-backup.js` (순수 함수 + 패널). 화면이 같은 출처에서 이 파일을
+  읽어 `bookmarklet.js` 의 `toBookmarkletHref()` 로 **코드 전체를** `javascript:` 주소에 넣는다
+  (함수로 감싸고 `encodeURIComponent` — `%`·`#`·줄바꿈 보존). 빌드 단계가 없다 → 파일을 고치면
+  사람들이 버튼을 **다시 끌어다 놓아야** 반영된다
+- ⛔ **북마크는 실행 중 셀라를 부르지 않는다.** 셀라는 사설 주소라 공개 페이지(잔디)에서 부르면 Chrome 이
+  로컬 네트워크 접근 권한을 묻고, 무엇보다 대화가 서버로 새는 길이 된다. 바깥 요청은 잔디 메시지 API ·
+  잔디가 준 다운로드 주소 · 스티커 주소뿐 (`tests/test_jandi_backup.py` 가 소스에서 막는다)
+- ⛔ **대화·파일은 서버로 오지 않는다.** `/jandi-backup` 은 화면 하나뿐이고 API 가 없다.
+  File System Access API(`showDirectoryPicker`, Chrome·Edge 전용)로 브라우저가 폴더에 직접 쓴다.
+  ⚠️ `showDirectoryPicker` 는 클릭 핸들러 안에서 **await 전에** 불러야 한다 (사용자 제스처)
+- ⛔ **첨부 다운로드 주소는 약 1분 뒤 만료된다.** `FileApi.getImage` 를 파일마다, 시도마다 **받기 직전에**
+  부른다 — 미리 몰아 받으면 뒤쪽 파일이 전부 403 이 된다. 4xx(서버에서 지운 파일)는 재시도하지 않고
+  실패로 적는다. 50MB 이하는 SHA-256, 큰 파일은 스트림으로 쓰고 크기만 대조
+- 규모(실측 9/30): 방 484 · 기록 41.5만 · 첨부 1.7만 개 57GB. **방 하나를 다 모으면 바로 쓰고 버린다.**
+  방 동시 5(1:1 은 8) · 다운로드 동시 8. 방마다 `done.json` 을 **마지막에** 쓴다 — 같은 폴더로 다시 돌리면
+  끝난 방은 건너뛰고 실패한 첨부만 다시 받는다. 끝나지 않은 지난 백업(`backup_state.json` 의
+  `finishedAt` 이 null)은 다음 날에도 그 폴더에 이어 쓴다
+- 출력 형식은 `일정관리/qa_artifacts/jandi_backup/render.py` 와 **바이트 단위로 같다** (실데이터 484방
+  대조). 다른 점 하나: ⚠️ **옛 방식 파일 메시지**(`contentType: file`, 메시지 id = 파일 id, 2015~2023년
+  11,588건 · 약 65GB)를 render.py 는 파일 정보 JSON 원문으로 찍었고 받지도 않았다 — 여기서는
+  `[파일] 이름` 으로 적고 같은 id 로 받는다. ⚠️ 이 id 로 `getImage` 가 되는지는 실측 전이다
+- 시스템 기록(`message` 없음)은 원시 JSON 이 아니라 한국어 문장(16종, 모르면 `누구 · 종류`), 보낸 사람 `시스템`
+- ⚠️ 잔디 웹 **내부 구조**(앵귤러 서비스 `RoomTopicList`·`RoomChatDmList`·`RoomChatGroupList`·
+  `UserList`·`FileApi`, `$http`)에 기대므로 잔디 업데이트로 멈출 수 있다. 화면에 그렇게 적어 두었다
+- 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
+  19문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지)
+
+
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)
 
 - **파일**: `app/agents/cs_agent.py` (구글 시트 `[BD_BP] CS제품문의_모음집`, 13탭 ~900건)
