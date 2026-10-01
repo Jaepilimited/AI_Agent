@@ -56,8 +56,31 @@ def test_no_admin_token_skips_with_reason(monkeypatch):
     assert r.detail.startswith("건너뜀") and "토큰" in r.detail
 
 
-def test_unset_sheet_id_skips_with_reason(monkeypatch):
-    _install(monkeypatch, values=_dir(timedelta(hours=3)))
+def test_default_constant_used_when_env_unset(monkeypatch):
+    import app.core.mail_google as mg
+    from app.core.mail_sender import MAIL_TAB_DIR_SPREADSHEET_ID
+
+    _install(monkeypatch, values=_dir(timedelta(minutes=5)))
     monkeypatch.delenv("CELLA_MAIL_TAB_DIR_SPREADSHEET_ID")
+    seen = []
+
+    def _read(creds, sid, title):
+        seen.append(sid)
+        return _dir(timedelta(minutes=5))
+
+    monkeypatch.setattr(mg, "read_sheet", _read)
     r = sc._check_mail_sender_tab_directory()
-    assert r.ok and "건너뜀" in r.detail and "CELLA_MAIL_TAB_DIR_SPREADSHEET_ID" in r.detail
+    assert r.ok and seen == [MAIL_TAB_DIR_SPREADSHEET_ID]
+
+
+def test_read_failure_warns(monkeypatch):
+    _install(monkeypatch, raises=RuntimeError("HTTP 403 boom"))
+    r = sc._check_mail_sender_tab_directory()
+    assert not r.ok
+    assert "메일 발송 탭 목록 읽기 실패 — 관리자 토큰/권한 확인" in r.detail and "boom" in r.detail
+
+
+def test_empty_directory_warns(monkeypatch):
+    _install(monkeypatch, values=[["탭 제목", "탭 ID", "상위", "갱신 시각"]])
+    r = sc._check_mail_sender_tab_directory()
+    assert not r.ok

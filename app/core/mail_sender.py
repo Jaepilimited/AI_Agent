@@ -10,6 +10,8 @@ from app.core.mail_template import MailTemplate, normalize_key, render, unreplac
 
 DOC_ID = "1Gofa6pusFe2t8o-ft1Xz5Be-sxmmUux5sQbu5vJA6S4"
 TAB_DIR_SHEET = "_탭목록"
+# gmail_v2 스프레드시트 — 자가 점검이 `_탭목록` 갱신 시각을 읽는 곳 (env CELLA_MAIL_TAB_DIR_SPREADSHEET_ID 로 덮어쓴다)
+MAIL_TAB_DIR_SPREADSHEET_ID = "1n08f1VIna9hZH03Zdws-31-G7RFaYJ3T7Eg7vQk636c"
 DAILY_LIMIT = 2000
 MAX_MESSAGE_BYTES = 24 * 1024 * 1024
 TAB_DIR_STALE = timedelta(hours=1)

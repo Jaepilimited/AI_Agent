@@ -1314,19 +1314,18 @@ def _check_mail_sender_tab_directory() -> CheckResult:
     전부 "탭 없음" 으로 보인다. 서비스 계정은 사용자가 공유한 시트를 못 읽으므로
     **관리자 토큰**(jeffrey, 구글 연결 계정)으로 읽는다.
 
-    ⛔ 읽을 수 없으면 조용히 통과하지 않는다 — 건너뛴 이유를 detail 에 적는다
-       (이 파일의 CheckResult 는 ok/실패 둘뿐이라 skip 은 ok=True + "건너뜀 — 사유" 로 남긴다).
+    ⛔ 읽기 실패·빈 목록은 **경고**다 (영구 고장을 초록으로 가리지 않는다). 건너뜀(ok=True +
+       "건너뜀 — 사유")은 관리자 토큰이 없을 때뿐이다 — 그건 google_account_health 가 이미 알린다.
     """
     import os
 
     from app.core import mail_google
     from app.core.google_auth import GoogleAuthManager
-    from app.core.mail_sender import TAB_DIR_SHEET, TAB_DIR_STALE, parse_tab_directory
+    from app.core.mail_sender import (
+        MAIL_TAB_DIR_SPREADSHEET_ID, TAB_DIR_SHEET, TAB_DIR_STALE, parse_tab_directory,
+    )
 
-    sheet_id = (os.getenv("CELLA_MAIL_TAB_DIR_SPREADSHEET_ID") or "").strip()
-    if not sheet_id:
-        return CheckResult(True, "건너뜀 — CELLA_MAIL_TAB_DIR_SPREADSHEET_ID 미설정 "
-                                 "(gmail_v2 시트 ID 를 모르면 _탭목록 을 읽을 수 없다)")
+    sheet_id = (os.getenv("CELLA_MAIL_TAB_DIR_SPREADSHEET_ID") or "").strip() or MAIL_TAB_DIR_SPREADSHEET_ID
     email = "jeffrey@skin1004korea.com"
     outcome = GoogleAuthManager().load_credentials(email)
     if outcome.status != "ready" or outcome.credentials is None:
@@ -1335,8 +1334,8 @@ def _check_mail_sender_tab_directory() -> CheckResult:
     try:
         values = mail_google.read_sheet(outcome.credentials, sheet_id, TAB_DIR_SHEET)
     except Exception as exc:                          # noqa: BLE001
-        return CheckResult(True, f"건너뜀 — _탭목록 읽기 실패: {str(exc)[:160]} "
-                                 "(관리자 토큰에 메일 발송 권한이 없을 수 있다)")
+        return CheckResult(False, "메일 발송 탭 목록 읽기 실패 — 관리자 토큰/권한 확인: "
+                                  f"{str(exc)[:160]}")
     _, updated = parse_tab_directory(values)
     if updated is None:
         return CheckResult(False, "메일 발송 탭 목록 갱신 시각을 읽지 못함 — gmailv2 트리거 확인")

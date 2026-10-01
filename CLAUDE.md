@@ -1842,8 +1842,9 @@ CSV 도 같은 값이었다. **에러는 없었다.**
 - ⚠️ **한 시트는 한 도구에서만** — 같은 시트를 gmailv2 와 셀라가 동시에 돌리면 서로의 O/X 를 못 본다. 셀라는 `GET_LOCK` 으로 같은 시트 동시 작업을 막지만 Apps Script 는 막지 못한다
 - ⚠️ **운영 메모 (사람이 해야 하는 것)**:
   - gmailv2 Apps Script 편집기에서 `writeTabDirectory()` 를 부르는 **10분 시간 트리거를 손으로 만들어야 한다 — 현재 미생성.**
-    없으면 `템플릿 검증` 을 누를 때만 갱신된다. 자가 점검 `mail_sender_tab_directory` 가 1시간 넘게 낡으면 경고한다
-    (관리자 토큰·`CELLA_MAIL_TAB_DIR_SPREADSHEET_ID` 가 없으면 **건너뜀 + 사유**를 detail 에 남긴다 — 조용한 통과 아님)
+    없으면 `템플릿 검증` 을 누를 때만 갱신된다. 자가 점검 `mail_sender_tab_directory` 는 **기본으로 켜져 있다**
+    (`mail_sender.MAIL_TAB_DIR_SPREADSHEET_ID`, env `CELLA_MAIL_TAB_DIR_SPREADSHEET_ID` 로 덮어쓴다) — 1시간 넘게 낡으면 경고하고,
+    **`_탭목록` 읽기 실패·빈 목록도 경고**다. 건너뜀(+사유)은 관리자 토큰이 없을 때뿐이다 (그건 `google_account_health` 가 알린다)
   - 기존 구글 연결 사용자는 메일 페이지의 안내로 **재동의**한다 — 동의 창에서 **모든 체크박스를 켜야** 한다
     (하나라도 빼면 스코프가 모자라 발송 시작 전에 막힌다)
   - 방금 만든 탭은 최대 10분 늦게 보인다 — "탭 없음" 옆에 갱신 시각과 "잠시 뒤 다시" 를 적는다
