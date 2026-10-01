@@ -19,6 +19,9 @@ from bs4 import BeautifulSoup, NavigableString
 _RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 _VAR = re.compile(r"\{\s*([^{}<>]+?)\s*\}")
 _DROP_BODY_PROPS = {"max-width", "padding", "padding-top", "padding-bottom", "padding-left", "padding-right"}
+# 요소 선택자 규칙도 펼친다 (Docs 는 p{margin:0} 같은 규칙으로 문단·목록·표 간격을 잡는다)
+_ELEMENTS = frozenset({"p", "li", "ul", "ol", "td", "th", "table", "span", "h1", "h2", "h3", "h4", "h5", "h6"})
+_BRACED = re.compile(r"%7B(.*?)%7D", re.IGNORECASE)
 
 
 class TemplateError(ValueError):
@@ -36,21 +39,40 @@ def normalize_key(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def _class_styles(css: str) -> dict[str, str]:
+def _css_rules(css: str) -> tuple[dict[str, str], dict[str, str]]:
+    """(클래스 규칙, 요소 규칙). 요소 규칙은 `p`, `table td` 처럼 요소 이름만 쓴 선택자만 —
+    가상 클래스(:)·자식(>)·속성([])·클래스 붙은 요소(ol.x) 는 버린다."""
     # Strip @import statements (both url() and quoted forms)
     css = re.sub(r"@import[^;]*;", "", css)
     # Strip /* */ comments
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
 
-    out: dict[str, str] = {}
+    classes: dict[str, str] = {}
+    elements: dict[str, str] = {}
     for selectors, body in _RULE.findall(css):
+        decl = body.strip().rstrip(";")
+        if not decl:
+            continue
         for sel in selectors.split(","):
             m = re.fullmatch(r"\s*\.([A-Za-z0-9_-]+)\s*", sel)
             if m:
-                decl = body.strip().rstrip(";")
-                if decl:
-                    out[m.group(1)] = out.get(m.group(1), "") + decl + ";"
-    return out
+                classes[m.group(1)] = classes.get(m.group(1), "") + decl + ";"
+                continue
+            parts = sel.split()
+            if parts and all(re.fullmatch(r"[a-z][a-z0-9]*", t) for t in parts) and parts[-1] in _ELEMENTS:
+                elements[parts[-1]] = elements.get(parts[-1], "") + decl + ";"
+    return classes, elements
+
+
+def _unwrap_href(href: str) -> str:
+    """Docs 내보내기는 링크를 https://www.google.com/url?q=<대상>&sa=D&... 로 감싼다 (2026-10-01 실측: 4/4).
+    대상으로 되돌리고, %7B…%7D 로 인코딩된 {변수} 를 되살린다."""
+    u = urllib.parse.urlparse(href)
+    if u.netloc.lower() == "www.google.com" and u.path == "/url":
+        q = urllib.parse.parse_qs(u.query).get("q")
+        if q and q[0]:
+            href = q[0]
+    return _BRACED.sub(lambda m: "{" + urllib.parse.unquote(m.group(1)) + "}", href)
 
 
 def _drop_props(style: str, drop: set[str]) -> str:
@@ -69,18 +91,21 @@ def template_from_export_zip(zip_bytes: bytes) -> MailTemplate:
         raise TemplateError("내보내기 zip 에 HTML 이 없습니다")
     soup = BeautifulSoup(z.read(html_names[0]).decode("utf-8", "replace"), "lxml")
 
-    styles = _class_styles("".join(s.get_text() for s in soup.find_all("style")))
+    styles, element_styles = _css_rules("".join(s.get_text() for s in soup.find_all("style")))
     for s in soup.find_all("style"):
         s.decompose()
     body = soup.body
     if body is None:
         raise TemplateError("내보내기 HTML 에 본문이 없습니다")
     body_style = _drop_props("".join(styles.get(c, "") for c in body.get("class", [])), _DROP_BODY_PROPS)
-    for el in body.find_all(class_=True):
-        inline = "".join(styles.get(c, "") for c in el.get("class", []))
-        if inline or el.get("style"):
+    for el in body.find_all(True):  # 요소 규칙 → 클래스 규칙 → 원래 인라인 순 (뒤가 이긴다)
+        inline = element_styles.get(el.name, "") + "".join(styles.get(c, "") for c in el.get("class", []))
+        if inline:
             el["style"] = inline + (el.get("style") or "")
-        del el["class"]
+        if el.has_attr("class"):
+            del el["class"]
+    for a in body.find_all("a", href=True):  # 변수 처리보다 먼저 — {link} 가 감싸여 있으면 변수로 안 보인다
+        a["href"] = _unwrap_href(a["href"])
 
     subject = None
     for p in body.find_all("p"):

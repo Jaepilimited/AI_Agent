@@ -210,3 +210,55 @@ def test_mailto_address_injection_quoted():
     t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
     _, out = render(t, {"name": "x", "email": "a@b.com?bcc=x"})
     assert "?bcc=" not in out
+
+
+# ---------------------------------------------------------------------------
+# Final review — Docs 링크 감싸기 풀기, 요소 선택자 CSS
+# ---------------------------------------------------------------------------
+def _doc(body: str, css: str = "") -> bytes:
+    return _zip('<html><head><style type="text/css">' + css + '</style></head><body>'
+                '<p><span>&#51228;&#47785;: S</span></p>' + body + "</body></html>")
+
+
+def test_docs_wrapped_href_is_unwrapped():
+    href = ("https://www.google.com/url?q=https://form.example/a?x%3D1%26y%3D2"
+            "&amp;sa=D&amp;source=editors&amp;ust=1759300000000&amp;usg=AOvVaw0abc")
+    t = template_from_export_zip(_doc(f'<p><a href="{href}">FORM</a></p>'))
+    assert 'href="https://form.example/a?x=1&amp;y=2"' in t.html
+    assert "google.com/url" not in t.html and "usg=" not in t.html
+
+
+def test_docs_wrapped_variable_link_becomes_variable_again():
+    t = template_from_export_zip(_doc(
+        '<p><a href="https://www.google.com/url?q=%7Blink%7D&amp;sa=D&amp;source=editors&amp;usg=x">L</a></p>'
+        '<p><a href="https://www.google.com/url?q=https://x.com/?id%3D%257Bkol%2520id%257D&amp;sa=D">M</a></p>'))
+    assert find_variables(t) >= {"link", "kol id"}
+    _, html = render(t, {"link": "https://ok.example/p", "kol id": "k 1"})
+    assert 'href="https://ok.example/p"' in html
+    assert 'href="https://x.com/?id=k%201"' in html and not unreplaced_html(html)
+
+
+def test_non_wrapper_google_link_is_kept():
+    t = template_from_export_zip(_doc('<p><a href="https://www.google.com/maps?q=seoul">map</a></p>'))
+    assert 'href="https://www.google.com/maps?q=seoul"' in t.html
+
+
+def test_element_rules_are_inlined():
+    css = ('p{margin:0;color:#000000}li{font-size:11pt}table td,table th{padding:0}'
+           'ol.lst-kix_a-0{margin:9px}p:first-child{color:red}ul>li{color:blue}.c3{margin:5px}')
+    t = template_from_export_zip(_doc(
+        '<p>one</p><p class="c3">two</p><ul><li>i</li></ul><table><tr><td>a</td><th>b</th></tr></table>', css))
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(t.html, "lxml")
+    ps = soup.find_all("p")
+    assert all("margin:0" in p.get("style", "") for p in ps)
+    two = ps[1]["style"]
+    assert two.index("margin:0") < two.index("margin:5px")  # 클래스가 요소 규칙을 덮는다
+    assert "red" not in t.html and "blue" not in t.html and "9px" not in t.html
+    assert soup.find("li")["style"].startswith("font-size:11pt")
+    assert soup.find("td")["style"] == "padding:0;" and soup.find("th")["style"] == "padding:0;"
+
+
+def test_inline_style_wins_over_rules():
+    t = template_from_export_zip(_doc('<p class="c3" style="margin:7px">x</p>', "p{margin:0}.c3{margin:5px}"))
+    assert 'style="margin:0;margin:5px;margin:7px"' in t.html
