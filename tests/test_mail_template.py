@@ -4,7 +4,7 @@ import zipfile
 import pytest
 
 from app.core.mail_template import (
-    TemplateError, find_variables, render, template_from_export_zip, unreplaced,
+    TemplateError, find_variables, render, template_from_export_zip, unreplaced, unreplaced_html,
 )
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 20
@@ -79,4 +79,35 @@ def test_split_variable_is_reported():
     html = EXPORT.replace('<span class="c1">{ name }</span>', '<span>{KOL </span><span class="c1">ID}</span>')
     t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
     _, out = render(t, {"name": "x", "kol id": "y"})
-    assert unreplaced(out) == ["{KOL ID}"]
+    assert unreplaced_html(out) == ["{KOL ID}"]
+
+
+def test_css_with_import_and_comments():
+    html_with_import = EXPORT.replace(
+        '<style type="text/css">.c1{font-weight:700}',
+        '<style type="text/css">@import url(https://themes.googleusercontent.com/x);.c1{font-weight:700}'
+    )
+    t = template_from_export_zip(_zip(html_with_import, {"images/image1.png": PNG}))
+    assert "font-weight:700" in t.html
+
+
+def test_variables_in_href_attribute():
+    html = EXPORT.replace(
+        '<a class="c2" href="https://form.example">FORM</a>',
+        '<a class="c2" href="https://www.example.com?id={user_id}">FORM</a>'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    assert "user_id" in find_variables(t)
+    subject, html_out = render(t, {"name": "test", "user_id": "abc"})
+    assert "id=abc" in html_out
+    assert "{user_id}" not in html_out
+
+
+def test_unreplaced_plain_text_with_angle_brackets():
+    text = "a<b {x}"
+    assert unreplaced(text) == ["{x}"]
+
+
+def test_unreplaced_html_finds_attribute_variables():
+    html = '<a href="https://example.com?id={missing_id}">Link</a>'
+    assert unreplaced_html(html) == ["{missing_id}"]

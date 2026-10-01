@@ -10,6 +10,7 @@ import html as _html
 import io
 import mimetypes
 import re
+import urllib.parse
 import zipfile
 from dataclasses import dataclass
 
@@ -36,6 +37,11 @@ def normalize_key(s: str) -> str:
 
 
 def _class_styles(css: str) -> dict[str, str]:
+    # Strip @import statements
+    css = re.sub(r"@import\s+url\([^)]+\)\s*;", "", css)
+    # Strip /* */ comments
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
     out: dict[str, str] = {}
     for selectors, body in _RULE.findall(css):
         for sel in selectors.split(","):
@@ -113,7 +119,14 @@ def _text_of(template: MailTemplate) -> str:
 
 
 def find_variables(template: MailTemplate) -> set[str]:
-    return {normalize_key(m) for m in _VAR.findall(_text_of(template))}
+    variables = {normalize_key(m) for m in _VAR.findall(_text_of(template))}
+    # Also find variables in attribute values
+    soup = BeautifulSoup(template.html, "lxml")
+    for tag in soup.find_all():
+        for attr_value in tag.attrs.values():
+            if isinstance(attr_value, str):
+                variables.update(normalize_key(m) for m in _VAR.findall(attr_value))
+    return variables
 
 
 def _sub(text: str, values: dict[str, str], escape: bool) -> str:
@@ -129,13 +142,63 @@ def _sub(text: str, values: dict[str, str], escape: bool) -> str:
 def render(template: MailTemplate, values: dict[str, str]) -> tuple[str, str]:
     vals = {normalize_key(k): v for k, v in values.items()}
     soup = BeautifulSoup(template.html, "lxml")
+
+    # Replace variables in text nodes
     for node in list(soup.find_all(string=True)):
         if isinstance(node, NavigableString) and "{" in node:
             node.replace_with(BeautifulSoup(_sub(_html.escape(str(node)), vals, escape=True), "html.parser"))
+
+    # Replace variables in attribute values
+    for tag in soup.find_all():
+        for attr_name, attr_value in list(tag.attrs.items()):
+            if isinstance(attr_value, str) and "{" in attr_value:
+                # URL attributes: quote the value
+                if attr_name in ("href", "src"):
+                    def repl_url(m: re.Match) -> str:
+                        key = normalize_key(m.group(1))
+                        if key not in vals:
+                            return m.group(0)
+                        v = vals[key] or ""
+                        return urllib.parse.quote(v, safe='')
+                    tag[attr_name] = _VAR.sub(repl_url, attr_value)
+                else:
+                    # Other attributes: plain value
+                    def repl_plain(m: re.Match) -> str:
+                        key = normalize_key(m.group(1))
+                        if key not in vals:
+                            return m.group(0)
+                        return vals[key] or ""
+                    tag[attr_name] = _VAR.sub(repl_plain, attr_value)
+
     body = soup.body or soup
     return _sub(template.subject, vals, escape=False), "".join(str(c) for c in body.contents)
 
 
 def unreplaced(text: str) -> list[str]:
-    plain = BeautifulSoup(text, "lxml").get_text() if "<" in text else text
-    return [m.group(0) for m in re.finditer(r"\{[^{}]*\}", plain)]
+    """Find unreplaced variables in plain text (no HTML parsing)."""
+    return [m.group(0) for m in re.finditer(r"\{[^{}]*\}", text)]
+
+
+def unreplaced_html(html: str) -> list[str]:
+    """Find unreplaced variables in HTML (text nodes and attribute values)."""
+    soup = BeautifulSoup(html, "lxml")
+    found = []
+
+    # Find in concatenated text (handles split variables across nodes)
+    plain_text = soup.get_text()
+    found.extend(m.group(0) for m in re.finditer(r"\{[^{}]*\}", plain_text))
+
+    # Find in attribute values
+    for tag in soup.find_all():
+        for attr_value in tag.attrs.values():
+            if isinstance(attr_value, str):
+                found.extend(m.group(0) for m in re.finditer(r"\{[^{}]*\}", attr_value))
+
+    # Remove duplicates while preserving order
+    seen = set()
+    result = []
+    for item in found:
+        if item not in seen:
+            result.append(item)
+            seen.add(item)
+    return result
