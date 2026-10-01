@@ -22,7 +22,7 @@ from app.core import mail_sender_jobs as jobs
 from app.core.google_auth import GoogleAuthManager
 from app.core.mail_mime import build_mime
 from app.core.mail_sender import (
-    TAB_DIR_SHEET, template_cache_index_id, Issue, check, first_subjects, parse_rows, parse_tab_directory, pending,
+    MAIL_SPREADSHEETS, TAB_DIR_SHEET, template_cache_index_id, Issue, check, first_subjects, parse_rows, parse_tab_directory, pending,
 )
 from app.core.mail_template import TemplateError, render, template_from_export_zip
 
@@ -139,7 +139,8 @@ async def mail_sender_page(request: Request):
 async def status(user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_credentials, user.email)  # 토큰 파일 읽기·갱신 — 이벤트 루프 밖에서
     out = {"connected": creds is not None, "missing_scopes": [], "senders": [],
-           "login_url": "/auth/google/login?feature=mail", "me": user.email}
+           "login_url": "/auth/google/login?feature=mail", "me": user.email,
+           "spreadsheets": MAIL_SPREADSHEETS}
     if creds is None:
         return out
     try:

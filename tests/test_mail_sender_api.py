@@ -113,8 +113,9 @@ def test_preview_iframe_is_sandboxed():
 
 def test_js_handlers_are_guarded():
     js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
-    for h in ("ms-load", "ms-check", "ms-send-all"):
+    for h in ("ms-check", "ms-send-all"):
         assert re.search(rf'\$\("{h}"\)\.onclick = guard\(', js), h
+    assert "const loadSheets = guard(" in js and '$("ms-book").onchange = loadSheets' in js
     assert "guard(() => preview(" in js and "guard(() => busy(ts, () => testSend(" in js
 
 
@@ -674,3 +675,14 @@ def test_tab_missing_from_cache_is_that_managers_error(client):
         r = _check(client)
     assert r.status_code == 200
     assert any(i["row"] == 2 and "캐시" in i["message"] for i in r.json()["issues"])
+
+
+def test_spreadsheet_is_chosen_from_list_with_gmail_v2_default(client):
+    """2026-10-01 요청: 링크 붙여넣기 대신 목록에서 고른다 — 기본값은 gmail_v2."""
+    from app.core.mail_sender import MAIL_SPREADSHEETS
+    assert MAIL_SPREADSHEETS[0]["id"] == "1n08f1VIna9hZH03Zdws-31-G7RFaYJ3T7Eg7vQk636c"
+    with patch("app.api.mail_sender_api._credentials", return_value=None):
+        r = client.get("/api/mail-sender/status")
+    assert r.json()["spreadsheets"] == MAIL_SPREADSHEETS
+    html = (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")
+    assert 'id="ms-book"' in html and 'id="ms-url"' not in html

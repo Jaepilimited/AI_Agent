@@ -66,6 +66,8 @@ async function init() {
   }
   $("ms-main").hidden = false;
   refreshSendAll();
+  $("ms-book").replaceChildren(...(s.spreadsheets || []).map((b) => new Option(b.name, b.id)));
+  loadSheets();
   const replyTo = {};
   for (const a of s.senders) {
     const o = new Option(a.display ? `${a.display} <${a.email}>` : a.email, a.email, a.default, a.default);
@@ -83,11 +85,20 @@ async function init() {
   if (running && running.job) watchJob(running.job.id);
 }
 
-$("ms-load").onclick = guard(async () => {
-  const j = await api("/api/mail-sender/sheets", { spreadsheet: $("ms-url").value });
+// 스프레드시트는 서버가 준 목록에서 고른다 — 고르면 시트 목록을 바로 불러온다
+const LAST_SHEET = "msLastSheet";
+function remember(key, v) { try { localStorage.setItem(key, v); } catch (e) { /* 저장 불가 — 무시 */ } }
+function recall(key) { try { return localStorage.getItem(key) || ""; } catch (e) { return ""; } }
+
+const loadSheets = guard(async () => {
+  const j = await api("/api/mail-sender/sheets", { spreadsheet: $("ms-book").value });
   state.spreadsheet_id = j.spreadsheet_id;
   $("ms-sheet").replaceChildren(...j.sheets.map((t) => new Option(t, t)));
+  const last = recall(LAST_SHEET);
+  if (j.sheets.includes(last)) $("ms-sheet").value = last;
 });
+$("ms-book").onchange = loadSheets;
+$("ms-sheet").onchange = () => remember(LAST_SHEET, $("ms-sheet").value);
 
 // 본인 작업의 '발송 여부 불확실' 행 — 서버 재시작으로 중단된 작업도 여기서만 '확인했음' 을 누를 수 있다
 function renderUnknownJobs(list) {
@@ -110,6 +121,7 @@ $("ms-check").onclick = guard(runCheck);
 
 async function runCheck() {
   state.sheet = $("ms-sheet").value;
+  remember(LAST_SHEET, state.sheet);
   state.checkOk = false;
   refreshSendAll();
   text($("ms-summary"), "점검 중… (Docs 탭을 받아오는 데 수십 초 걸릴 수 있습니다)");
