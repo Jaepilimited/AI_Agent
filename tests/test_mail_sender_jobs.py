@@ -1,7 +1,17 @@
 # tests/test_mail_sender_jobs.py
+import re
+import socket
+import threading
+import time as _time
+from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock
 
+import httplib2
 import pytest
+import requests
+from google.auth.exceptions import RefreshError
+from googleapiclient.errors import HttpError
 
 from app.core import mail_sender_jobs as J
 from app.core.mail_sender import Columns, Row
@@ -82,3 +92,436 @@ def test_stop_request(db):
     deps.sleep = lambda s: J.request_stop(jid, "me@x.com")
     J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
     assert J.get_job(jid, "me@x.com")["status"] == "stopped" and len(sent) == 1
+
+
+# ---------------------------------------------------------------------------
+# 중복 발송 방지 보강 (리뷰 지적 사항)
+# ---------------------------------------------------------------------------
+def _http_error(status):
+    resp = httplib2.Response({"status": status})
+    resp.reason = "x"
+    return HttpError(resp, b'{"error": {"message": "x"}}')
+
+
+def _x_written(deps):
+    return [c for c in deps.write_cells.call_args_list if c.args[4].get(COLS.status) == "X"]
+
+
+def test_lowercase_o_is_skipped(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent, g_values={3: "o", 4: " O "}))
+    job = J.get_job(jid, "me@x.com")
+    assert (job["sent"], job["skipped"]) == (1, 2) and len(sent) == 1
+
+
+@pytest.mark.parametrize("where", ["send", "read"])
+def test_refresh_error_stops_job_and_returns_item_to_pending(db, where):
+    sent = []
+    calls = {"n": 0}
+
+    def send(c, raw):
+        calls["n"] += 1
+        if where == "send" and calls["n"] == 2:
+            raise RefreshError("invalid_grant")
+        sent.append(raw)
+        return "id"
+
+    def read(c, sid, sh, row, col):
+        if where == "read" and row == 3:
+            raise RefreshError("invalid_grant")
+        return ""
+
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(5))
+    deps = _deps(sent, send_side=send)
+    deps.read_cell = read
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped"
+    assert job["stop_reason"] == "구글 연결이 만료되었습니다 — 다시 연결 후 이어서 보내세요"
+    assert (job["sent"], job["failed"]) == (1, 0) and job["finished_at"] is not None
+    assert db.item_status(jid, 3) == "pending" and db.item_status(jid, 4) == "pending"
+    assert not _x_written(deps)
+
+
+def test_permission_403_stops_without_X(db):
+    def send(c, raw):
+        raise _http_error(403)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(4))
+    deps = _deps([], send_side=send)
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and "403" in job["stop_reason"] and job["failed"] == 0
+    assert db.item_status(jid, 2) == "pending" and not _x_written(deps)
+
+
+def test_db_failure_after_send_does_not_mark_failed(db):
+    real = db.set_item_status
+
+    def flaky(jid, row, status, error=None, message_id=None):
+        if status == "sent":
+            raise RuntimeError("DB 끊김")
+        return real(jid, row, status, error=error, message_id=message_id)
+
+    db.set_item_status = flaky
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps(sent)
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert job["failed"] == 0 and job["sent"] == 2 and len(sent) == 2
+    assert not _x_written(deps)
+    assert [c.args[4][COLS.status] for c in deps.write_cells.call_args_list] == ["O", "O"]
+    # DB 에 sent 를 못 남긴 행은 'sending' 으로 방치되지 않고 '불확실' 로 남는다 (재발송 금지)
+    assert db.item_status(jid, 2) == "unknown" and job["status"] == "done"
+
+
+def test_bump_failure_after_send_does_not_mark_failed(db):
+    real = db.bump
+
+    def flaky(jid, col, n=1):
+        if col == "sent":
+            raise RuntimeError("DB 끊김")
+        return real(jid, col, n)
+
+    db.bump = flaky
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps([])
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert job["failed"] == 0 and job["status"] == "done" and not _x_written(deps)
+    assert db.item_status(jid, 2) == "sent"
+
+
+def test_sheet_write_failure_after_send_is_not_a_failure(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps(sent)
+    deps.write_cells = MagicMock(side_effect=[RuntimeError("시트 쓰기 실패"), None])
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert (job["sent"], job["failed"], job["sheet_write_failed"]) == (2, 0, 1)
+    assert db.item_status(jid, 2) == "sent" and not _x_written(deps)
+    item = next(i for i in db.items[jid] if i["sheet_row"] == 2)
+    assert "시트 기록 실패" in item["error"]
+
+
+def test_sheet_write_failing_three_times_stops_job(db):
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(6))
+    deps = _deps(sent)
+    deps.write_cells = MagicMock(side_effect=RuntimeError("시트 쓰기 실패"))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and len(sent) == 3 and job["sheet_write_failed"] == 3
+    assert job["failed"] == 0 and "시트" in job["stop_reason"]
+
+
+@pytest.mark.parametrize("exc", [
+    TimeoutError("t"), socket.timeout("t"), ConnectionError("c"), ConnectionResetError("r"),
+    requests.exceptions.ConnectionError("c"), requests.exceptions.Timeout("t"),
+    httplib2.HttpLib2Error("h"), _http_error(500), _http_error(503),
+], ids=lambda e: type(e).__name__ + str(getattr(getattr(e, "resp", None), "status", "")))
+def test_transport_uncertain_send_is_unknown_not_X(db, exc):
+    calls = {"n": 0}
+
+    def send(c, raw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise exc
+        return "id"
+
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    deps = _deps([], send_side=send)
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    job = J.get_job(jid, "me@x.com")
+    assert (job["sent"], job["failed"], job["unknown"]) == (1, 0, 1)
+    assert db.item_status(jid, 2) == "unknown"
+    item = next(i for i in db.items[jid] if i["sheet_row"] == 2)
+    assert item["error"].startswith("발송 여부 불확실 — 보낸편지함 확인")
+    assert not _x_written(deps)
+    notes = [c.args[4] for c in deps.write_cells.call_args_list if c.args[3] == 2]
+    assert notes == [{COLS.note: "발송 여부 불확실 — 보낸편지함 확인"}]
+    assert job["unknown_rows"] == [2]
+
+
+def test_uncertain_three_in_a_row_stops(db):
+    def send(c, raw):
+        raise TimeoutError("timed out")
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(6))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps([], send_side=send))
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["unknown"] == 3 and job["failed"] == 0
+
+
+def test_http_4xx_is_a_plain_failure(db):
+    def send(c, raw):
+        raise _http_error(400)
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    deps = _deps([], send_side=send)
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, deps)
+    assert J.get_job(jid, "me@x.com")["failed"] == 1 and len(_x_written(deps)) == 1
+
+
+def test_streak_key_ignores_message_text(db):
+    n = {"i": 0}
+
+    def send(c, raw):
+        n["i"] += 1
+        raise RuntimeError(f"insufficientPermissions req-{n['i']}")
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(10))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps([], send_side=send))
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["failed"] == 3
+
+
+def test_streak_key_uses_http_status(db):
+    codes = iter([400, 404, 400, 404])
+
+    def send(c, raw):
+        raise _http_error(next(codes))
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(4))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps([], send_side=send))
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "done" and job["failed"] == 4
+
+
+def test_error_kind():
+    assert J._error_kind(RuntimeError("a")) == J._error_kind(RuntimeError("b"))
+    assert J._error_kind(_http_error(400)) != J._error_kind(_http_error(404))
+
+
+def test_thread_main_crash_marks_stopped(db):
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+
+    def boom(_jid):
+        raise ValueError("boom")
+    db.pending_items = boom
+    J._thread_main(jid, object(), COLS, {"강하니": TPL}, _deps([]))
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["stop_reason"] == "내부 오류: boom"
+    assert job["finished_at"] is not None
+
+
+def test_thread_main_crash_mid_send_leaves_no_sending_item(db):
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    real_job = db.job
+    state = {"n": 0}
+
+    def flaky_job(j):  # 발송 뒤 루프 첫머리의 상태 조회에서 터진다
+        state["n"] += 1
+        if state["n"] == 3:
+            raise ValueError("db gone")
+        return real_job(j)
+    db.job = flaky_job
+    real_set = db.set_item_status
+
+    def no_sent(jid_, row, status, error=None, message_id=None):
+        if status == "sent":
+            raise RuntimeError("DB 끊김")
+        return real_set(jid_, row, status, error=error, message_id=message_id)
+    db.set_item_status = no_sent
+    J._thread_main(jid, object(), COLS, {"강하니": TPL}, _deps([]))
+    db.job = real_job
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and job["stop_reason"] == "내부 오류: db gone"
+    assert "sending" not in [i["status"] for i in db.items[jid]]
+    assert db.item_status(jid, 2) == "unknown"
+
+
+def test_start_job_thread_targets_thread_main(monkeypatch):
+    seen = {}
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), daemon=None, name=None):
+            seen.update(target=target, daemon=daemon)
+
+        def start(self):
+            seen["started"] = True
+    monkeypatch.setattr(J.threading, "Thread", FakeThread)
+    J.start_job_thread(1, object(), COLS, {})
+    assert seen == {"target": J._thread_main, "daemon": True, "started": True}
+
+
+def test_missing_template_is_clear_error(db):
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(1))
+    J.run_job(jid, object(), COLS, {}, _deps([]))
+    item = db.items[jid][0]
+    assert item["status"] == "failed" and item["error"] == "템플릿 없음: 강하니"
+
+
+def test_daily_limit_reached_mid_job_stops(db, monkeypatch):
+    monkeypatch.setattr(db, "sent_today", lambda owner: J.DAILY_LIMIT)
+    sent = []
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    J.run_job(jid, object(), COLS, {"강하니": TPL}, _deps(sent))
+    job = J.get_job(jid, "me@x.com")
+    assert job["status"] == "stopped" and not sent and "한도" in job["stop_reason"]
+    assert db.item_status(jid, 2) == "pending"
+
+
+def test_memory_store_concurrent_create_exactly_one(monkeypatch):
+    class Slow(J.MemoryStore):
+        def active_for_sheet(self, sid, sheet):
+            r = super().active_for_sheet(sid, sheet)
+            _time.sleep(0.05)
+            return r
+    monkeypatch.setattr(J, "_store", Slow())
+    ok, err = [], []
+
+    def go(owner):
+        try:
+            ok.append(J.create_job(owner, "sid", "gmail_a", owner, _rows(1)))
+        except RuntimeError as e:
+            err.append(str(e))
+    ts = [threading.Thread(target=go, args=(o,)) for o in ("a@x.com", "b@x.com")]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert len(ok) == 1 and len(err) == 1 and "이미 발송 중" in err[0]
+
+
+def test_store_whitelists():
+    s = J.MemoryStore()
+    jid = s.insert_job("me", "sid", "sh", "me", _rows(1))
+    for col in ("sent", "failed", "skipped", "unknown", "sheet_write_failed"):
+        s.bump(jid, col)
+    with pytest.raises(AssertionError):
+        s.bump(jid, "owner")
+    s.set_job(jid, status="done", stop_reason="x", finished_at=datetime.now())
+    with pytest.raises(AssertionError):
+        s.set_job(jid, owner="evil")
+    m = J.MariaStore.__new__(J.MariaStore)
+    m.db = MagicMock()
+    with pytest.raises(AssertionError):
+        m.bump(1, "id=0, owner")
+    with pytest.raises(AssertionError):
+        m.set_job(1, owner="x")
+    m.bump(1, "unknown", 2)
+    m.set_job(1, status="done")
+    assert m.db.execute.call_count == 2
+
+
+def test_memory_interrupt_all_sets_finished_at_and_unknown(db):
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(2))
+    db.set_item_status(jid, 2, "sending")
+    J.recover_after_restart()
+    job = J.get_job(jid, "me@x.com")
+    assert job["finished_at"] is not None and job["unknown"] == 1 and job["unknown_rows"] == [2]
+
+
+def test_unknown_rows_and_ack(db):
+    jid = J.create_job("me@x.com", "sid", "gmail_a", "me@x.com", _rows(3))
+    db.set_item_status(jid, 3, "sending")
+    db.set_item_status(jid, 4, "sending")
+    J.recover_after_restart()
+    assert J.unresolved_unknown("sid", "gmail_a") == [
+        {"job_id": jid, "sheet_row": 3, "owner": "me@x.com"},
+        {"job_id": jid, "sheet_row": 4, "owner": "me@x.com"}]
+    assert J.unresolved_unknown("sid", "other") == []
+    assert J.ack_unknown(jid, "you@x.com") is None  # 남의 작업
+    assert J.ack_unknown(jid, "me@x.com") == 2
+    assert db.item_status(jid, 3) == "acknowledged"
+    assert J.unresolved_unknown("sid", "gmail_a") == [] and J.get_job(jid, "me@x.com")["unknown_rows"] == []
+
+
+class _FakeCursor:
+    def __init__(self, log, active=None):
+        self.log, self.active = log, active
+        self.lastrowid = 42
+        self._last = ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=()):
+        self.log.append(("execute", sql, params))
+        self._last = sql
+
+    def executemany(self, sql, seq):
+        self.log.append(("executemany", sql, list(seq)))
+
+    def fetchone(self):
+        if "GET_LOCK" in self._last:
+            return {"got": 1}
+        if "FROM mail_send_jobs" in self._last:
+            return self.active
+        return None
+
+
+class _FakeConn:
+    def __init__(self, cur):
+        self.cur, self.log = cur, cur.log
+
+    def cursor(self):
+        return self.cur
+
+    def commit(self):
+        self.log.append(("commit",))
+
+    def rollback(self):
+        self.log.append(("rollback",))
+
+    def close(self):
+        self.log.append(("close",))
+
+
+def _maria(cur):
+    m = J.MariaStore.__new__(J.MariaStore)
+    m.db = MagicMock()
+    m.db.get_maria_conn.return_value = _FakeConn(cur)
+    return m
+
+
+def test_maria_insert_job_one_connection_lock_executemany_single_commit():
+    log = []
+    m = _maria(_FakeCursor(log))
+    assert m.insert_job("me", "sid", "gmail_a", "me", _rows(3)) == 42
+    m.db.get_maria_conn.assert_called_once()
+    sqls = [e[1] for e in log if e[0] in ("execute", "executemany")]
+    assert "GET_LOCK" in sqls[0] and "RELEASE_LOCK" in sqls[-1]
+    lock_name = log[0][2][0]
+    assert lock_name.startswith("mail_sheet:") and len(lock_name) <= 64
+    many = [e for e in log if e[0] == "executemany"]
+    assert len(many) == 1 and len(many[0][2]) == 3
+    commits = [i for i, e in enumerate(log) if e[0] == "commit"]
+    assert commits[-1] > log.index(many[0])
+    assert ("rollback",) not in log and log[-1] == ("close",)
+    assert m.db.execute.call_count == 0 and m.db.execute_lastid.call_count == 0
+
+
+def test_maria_insert_job_refuses_active_sheet_and_rolls_back_on_error():
+    log = []
+    m = _maria(_FakeCursor(log, active={"id": 1}))
+    with pytest.raises(RuntimeError, match="이미 발송 중"):
+        m.insert_job("me", "sid", "gmail_a", "me", _rows(1))
+    assert not [e for e in log if e[0] == "executemany"]
+    assert any("RELEASE_LOCK" in e[1] for e in log if e[0] == "execute")
+    log2 = []
+    cur2 = _FakeCursor(log2)
+    cur2.executemany = MagicMock(side_effect=RuntimeError("insert failed"))
+    m2 = _maria(cur2)
+    with pytest.raises(RuntimeError, match="insert failed"):
+        m2.insert_job("me", "sid", "gmail_a", "me", _rows(1))
+    assert ("rollback",) in log2 and any("RELEASE_LOCK" in e[1] for e in log2 if e[0] == "execute")
+    assert log2[-1] == ("close",)
+
+
+def test_ensure_tables_adds_new_counter_columns(monkeypatch, db):
+    import app.db.mariadb as M
+    ran = []
+    monkeypatch.setattr(M, "execute", lambda sql, params=(): ran.append(sql) or 0)
+    J.ensure_mail_sender_tables()
+    joined = "\n".join(ran)
+    assert "sheet_write_failed" in ran[0] and "`unknown`" in ran[0]
+    for col in ("sheet_write_failed", "`unknown`"):
+        assert re.search(rf"ALTER TABLE mail_send_jobs ADD COLUMN IF NOT EXISTS {col}", joined), col
+
+
+def test_no_unused_field_import():
+    src = Path(J.__file__).read_text(encoding="utf-8")
+    assert "dataclass, field" not in src
