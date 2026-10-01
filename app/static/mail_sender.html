@@ -20,6 +20,38 @@
 <body>
 <main class="ms-page">
   <header class="ms-head"><h1>메일 발송</h1><span id="ms-me" class="ms-muted"></span></header>
+  <details id="ms-help" class="ms-card ms-help" open>
+    <summary>사용 방법</summary>
+    <h3>순서</h3>
+    <ol>
+      <li><b>구글 연결</b> — 처음 한 번. 구글 화면에서 <b>모든 항목에 체크</b>하고 허용하세요.</li>
+      <li><b>스프레드시트 · 시트 · 보내는 주소</b>를 고릅니다. 「시트 열기 ↗」로 그 시트를 바로 열 수 있습니다.</li>
+      <li><b>점검</b> — 보낼 대상과 문제를 행마다 보여 줍니다. ❌ 가 하나라도 있으면 「전체 발송」이 잠깁니다.</li>
+      <li>행 오른쪽 <b>미리보기 · 나에게 테스트</b>로 실제 모양을 확인합니다 (테스트는 내 메일함으로만 갑니다).</li>
+      <li><b>전체 발송</b> — 확인 창의 인원·제목을 보고 누릅니다. 진행 중 「중지」 할 수 있고, 보낸 행은 시트 G열에 O, A열에 날짜가 적힙니다.</li>
+    </ol>
+    <h3>시트 양식 (기존 메일 툴과 같음)</h3>
+    <ul>
+      <li>열 위치가 정해져 있습니다: <b>A 날짜 · B 템플릿 탭 이름 · D 이메일 · G 전송여부 · H 비고</b>. 1행은 헤더, 2행부터 수신자.</li>
+      <li>B열은 Docs 템플릿 <b>탭 제목과 똑같이</b> 적습니다.</li>
+      <li>1행 헤더가 <code>{name}</code> · <code>{value1}</code> 처럼 중괄호면, 그 열 값이 템플릿의 같은 변수 자리에 들어갑니다. 템플릿에 있는 변수가 시트에 없으면 ❌ 로 막습니다.</li>
+      <li>G열이 <b>O</b> 인 행은 이미 보낸 것으로 보고 건너뜁니다.</li>
+    </ul>
+    <h3>첨부</h3>
+    <ul>
+      <li><b>공통 첨부</b>: 아래에서 파일을 고르면 이번 발송의 모든 수신자(테스트 포함)에게 붙습니다. 합계 15MB · 10개까지.</li>
+      <li><b>수신자별 첨부</b>: 시트 1행 I열 이후에 <code>첨부</code> 열을 만들고 행마다 Drive 링크를 적습니다 (여러 개는 줄바꿈·쉼표). 구글 문서·시트·슬라이드는 PDF 로 붙고, 내 계정에서 열 수 있는 파일이어야 합니다.</li>
+      <li>메일 한 통은 이미지·첨부 합쳐 24MB 를 넘을 수 없습니다 — 넘으면 점검에서 막습니다.</li>
+    </ul>
+    <h3>알아두기</h3>
+    <ul>
+      <li>Docs 템플릿을 고치거나 탭을 새로 만들면 <b>반영까지 최대 10분</b> 걸립니다 (점검에 "10분 뒤 다시" 로 보입니다).</li>
+      <li>행 사이 2.5초 간격으로 보냅니다 (100명 ≈ 4분). 하루 2,000통까지.</li>
+      <li>페이지를 닫아도 발송은 서버에서 계속됩니다 — 다시 열면 진행 상황이 보입니다.</li>
+      <li>같은 시트를 기존 Apps Script 와 <b>동시에</b> 돌리지 마세요.</li>
+      <li>"발송 여부 불확실" 행은 Gmail 보낸편지함에서 확인하고, 나간 행은 G열에 O 를 적은 뒤 「확인했음」을 누르세요.</li>
+    </ul>
+  </details>
   <section id="ms-connect" class="ms-card" hidden>
     <p id="ms-connect-msg"></p>
     <button id="ms-connect-btn" class="ms-btn">구글 연결 (메일 발송 권한)</button>
@@ -31,7 +63,7 @@
     <label>보내는 주소 <select id="ms-sender"></select></label> <span id="ms-reply-to" class="ms-muted"></span>
     <p class="ms-muted">공용 주소가 없으면 Gmail 설정 → 계정 → '다른 주소에서 메일 보내기' 에 등록하세요.
       한 시트는 한 툴로만 보내세요 (기존 Apps Script 와 동시에 돌리지 마세요).</p>
-    <p class="ms-muted">수신자별 첨부: 시트 1행에 '첨부' 열을 만들고(I열 이후) 행마다 Drive 링크를 적으세요 — 구글 문서는 PDF 로 붙습니다. 링크 파일은 내 계정에서 열 수 있어야 합니다.</p>
+    <p class="ms-muted">수신자별 첨부는 시트의 '첨부' 열(Drive 링크)로 — 자세한 건 위 「사용 방법」.</p>
     <label>공통 첨부 (모든 수신자에게, 합계 15MB) <input type="file" id="ms-files" multiple></label>
     <span id="ms-files-info" class="ms-muted"></span>
     <button id="ms-check" class="ms-btn">점검</button>

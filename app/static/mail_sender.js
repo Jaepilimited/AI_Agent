@@ -106,6 +106,10 @@ function updateOpenLink() {
   a.href = sid ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sid)}/edit` + (gid !== undefined ? `#gid=${gid}` : "") : "#";
 }
 $("ms-book").onchange = loadSheets;
+// 사용 방법은 한 번 접으면 다음에도 접힌 채로
+const HELP_CLOSED = "msHelpClosed";
+if (recall(HELP_CLOSED) === "1") $("ms-help").open = false;
+$("ms-help").addEventListener("toggle", () => remember(HELP_CLOSED, $("ms-help").open ? "" : "1"));
 $("ms-sheet").onchange = () => { remember(LAST_SHEET, $("ms-sheet").value); updateOpenLink(); };
 
 // 공통 첨부 — base64 로 읽어 JSON 으로 보낸다. 서버도 같은 한도로 다시 막는다.
