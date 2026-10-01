@@ -553,7 +553,9 @@ def test_status_google_error_in_sendas_is_200_with_error(client, exc):
     import requests
     from google.auth.exceptions import TransportError
     err = {"http403": _http_error(403), "auth": TransportError("t"), "net": requests.ConnectionError("c")}[exc]
-    with patch("app.api.mail_sender_api._credentials", return_value=object()),          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]),          patch("app.api.mail_sender_api.mail_google.send_as_addresses", side_effect=err):
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
+         patch("app.api.mail_sender_api.mail_google.send_as_addresses", side_effect=err):
         r = client.get("/api/mail-sender/status")
     j = r.json()
     assert r.status_code == 200 and j["senders"] == [] and j["error"]
@@ -564,3 +566,23 @@ def test_status_loads_credentials_off_the_event_loop():
     body = src[src.index("async def status("):src.index('@router.post("/api/mail-sender/sheets")')]
     assert "await asyncio.to_thread(_credentials, user.email)" in body
     assert "creds = _credentials(" not in body
+
+
+def test_check_returns_first_subject_per_manager_with_targets(client, mem_store):
+    from app.core.mail_sender import Row
+    from app.core.mail_template import MailTemplate
+    tpl = MailTemplate(subject="[S X {kol id}] Offer", html="<p>{kol id}</p>", images={})
+    rows = [Row(2, "강하니", "a@x.com", "O", {"kol id": "sent"}), Row(3, "강하니", "b@x.com", "", {"kol id": "first"}),
+            Row(4, "강하니", "c@x.com", "", {"kol id": "second"}), Row(5, "고도연", "d@x.com", "O", {"kol id": "x"})]
+    with _start_env(rows, load_side=lambda *a: (rows, _cols(), {"강하니": tpl, "고도연": tpl},
+                                                 {"강하니": "t.a", "고도연": "t.b"}, None)):
+        j = _check(client).json()
+    assert j["subjects"] == {"강하니": "[S X first] Offer"}  # 대상 없는 고도연은 없다
+
+
+def test_js_confirm_lists_subjects_and_sender():
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    assert "state.subjects = j.subjects" in js
+    body = js[js.index('$("ms-send-all").onclick'):js.index("function renderJob")]
+    assert "state.subjects" in body and "confirm(" in body
+    assert "명 · " in body and '$("ms-sender").value' in body and "innerHTML" not in body

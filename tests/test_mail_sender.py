@@ -170,3 +170,31 @@ def test_parse_rows_variable_header_with_spaces():
     rows, cols = parse_rows(sheet)
     assert "kol id" in cols.variables
     assert cols.variables["kol id"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Final review — 제목 줄바꿈, 이메일 형식, 확인 창 제목
+# ---------------------------------------------------------------------------
+def _one(email="a@x.com", values=None):
+    from app.core.mail_sender import Row
+    return [Row(2, "강하니", email, "", values or {"kol id": "k", "value1": "v"})]
+
+
+@pytest.mark.parametrize("bad", ["k\nBcc: evil@x.com", "k\r\nX", "k\rY"])
+def test_subject_with_line_break_is_error(bad):
+    issues = check(_one(values={"kol id": bad, "value1": "v"}), {"강하니": "t.a"}, NOW, {"강하니": TPL}, NOW)
+    assert any(i.level == "error" and i.row == 2 and "줄바꿈" in i.message for i in issues)
+
+
+@pytest.mark.parametrize("bad", ["a@x.com,b", "a@x.com;b@y.com", "a b@x.com", "a@x.com b@y.com", "a@x .com"])
+def test_email_with_separator_or_space_is_error(bad):
+    issues = check(_one(email=bad), {"강하니": "t.a"}, NOW, {"강하니": TPL}, NOW)
+    assert any(i.level == "error" and "이메일 형식" in i.message for i in issues), bad
+
+
+def test_first_subjects_per_manager():
+    from app.core.mail_sender import Row, first_subjects
+    rows = [Row(2, "강하니", "a@x.com", "", {"kol id": "first"}), Row(3, "강하니", "b@x.com", "", {"kol id": "second"}),
+            Row(4, "고도연", "c@x.com", "", {"kol id": "c"}), Row(5, "없는사람", "d@x.com", "", {})]
+    got = first_subjects(rows, {"강하니": TPL, "고도연": ValueError("bad")})
+    assert got == {"강하니": "[SKIN1004 X first] Offer"}

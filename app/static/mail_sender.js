@@ -4,7 +4,7 @@ const TERMINAL = ["done", "stopped", "interrupted"];
 const STATUS_LABEL = { running: "발송 중", stopping: "중지하는 중", done: "완료", stopped: "중지됨",
   interrupted: "중단됨(서버 재시작)" };
 // checkOk: 마지막 점검이 오류 없이 대상 1명 이상 / watching: 지켜보는 작업 id (그동안 전체 발송 잠금)
-let state = { spreadsheet_id: "", sheet: "", checkOk: false, watching: null };
+let state = { spreadsheet_id: "", sheet: "", checkOk: false, watching: null, subjects: {} };
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
@@ -128,6 +128,7 @@ async function runCheck() {
   }));
   renderUnknownJobs(j.unknown_jobs);
   $("ms-send-all").dataset.count = j.pending;
+  state.subjects = j.subjects || {};
   state.checkOk = j.errors === 0 && j.pending > 0;
   refreshSendAll();
 }
@@ -152,7 +153,9 @@ $("ms-send-all").onclick = guard(async () => {
   const btn = $("ms-send-all");
   if (btn.disabled) return;
   const n = btn.dataset.count;
-  if (!confirm(`${state.sheet} 시트의 ${n}명에게 '${$("ms-sender").value}' 로 발송합니다. 진행할까요?`)) return;
+  // 확인 창: N명 · 보내는 주소 · 담당자 탭별 제목 (첫 대상 행으로 치환한 것)
+  const subjects = Object.entries(state.subjects).map(([m, s]) => `  ${m} 탭: ${s}`).join("\n");
+  if (!confirm(`${state.sheet} 시트 · ${n}명 · 보내는 주소 ${$("ms-sender").value}\n${subjects}\n\n발송할까요?`)) return;
   // busy() 는 끝나면 버튼을 다시 켠다 — 작업을 지켜보는 동안 잠가 두려고 직접 다룬다
   btn.disabled = true;
   try {

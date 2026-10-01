@@ -20,7 +20,9 @@ from app.core import mail_google
 from app.core import mail_sender_jobs as jobs
 from app.core.google_auth import GoogleAuthManager
 from app.core.mail_mime import build_mime
-from app.core.mail_sender import DOC_ID, TAB_DIR_SHEET, Issue, check, parse_rows, parse_tab_directory, pending
+from app.core.mail_sender import (
+    DOC_ID, TAB_DIR_SHEET, Issue, check, first_subjects, parse_rows, parse_tab_directory, pending,
+)
 from app.core.mail_template import TemplateError, render, template_from_export_zip
 
 router = APIRouter()
@@ -248,6 +250,7 @@ async def check_sheet(body: SheetIn, user=Depends(get_current_user)):
     return {"rows": [{"row": r.row, "manager": r.manager, "email": r.email, "status": r.status} for r in rows],
             "issues": [i.__dict__ for i in issues],
             "pending": len(targets),
+            "subjects": first_subjects(targets, templates),  # 확인 창: 담당자 탭별 첫 대상 행의 제목
             "unknown_jobs": unknown_jobs,  # 본인 작업의 '확인했음' 대상 (중단된 작업 포함)
             "errors": sum(1 for i in issues if i.level == "error")}
 

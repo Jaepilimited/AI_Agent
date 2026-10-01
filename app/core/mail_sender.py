@@ -15,7 +15,8 @@ MAIL_TAB_DIR_SPREADSHEET_ID = "1n08f1VIna9hZH03Zdws-31-G7RFaYJ3T7Eg7vQk636c"
 DAILY_LIMIT = 2000
 MAX_MESSAGE_BYTES = 24 * 1024 * 1024
 TAB_DIR_STALE = timedelta(hours=1)
-_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# 쉼표·세미콜론·공백이 있으면 To 에 여러 명이 들어간다 — 한 행 한 사람만
+_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
 _KST = timezone(timedelta(hours=9))
 
 
@@ -102,6 +103,16 @@ def pending(rows: list[Row]) -> list[Row]:
     return [r for r in rows if r.email and r.status.strip().upper() != "O"]
 
 
+def first_subjects(rows: list[Row], templates: dict[str, MailTemplate | Exception]) -> dict[str, str]:
+    """담당자 탭별 첫 대상 행으로 치환한 제목 — 전체 발송 확인 창에 보인다. 템플릿 오류인 탭은 뺀다."""
+    out: dict[str, str] = {}
+    for r in rows:
+        tpl = templates.get(r.manager)
+        if r.manager not in out and isinstance(tpl, MailTemplate):
+            out[r.manager] = render(tpl, r.values)[0]
+    return out
+
+
 def estimate_size(template: MailTemplate) -> int:
     # base64 는 4/3 배 + 헤더 여유
     return int((len(template.html.encode()) + sum(len(b) for b, _ in template.images.values())) * 1.37) + 4096
@@ -138,6 +149,8 @@ def check(rows: list[Row], tab_dir: dict[str, str], dir_updated_at: datetime | N
         if estimate_size(tpl) > MAX_MESSAGE_BYTES:
             issues.append(Issue(r.row, "error", f"메일 용량 초과 예상 ({estimate_size(tpl) // 1024 // 1024}MB) — 이미지를 줄여 주세요"))
         subject, html = render(tpl, r.values)
+        if "\r" in subject or "\n" in subject:  # 헤더가 끊긴다 (Bcc: 같은 줄을 끼워 넣을 수 있다)
+            issues.append(Issue(r.row, "error", "제목에 줄바꿈이 들어갑니다 — 제목에 쓰는 시트 칸의 줄바꿈을 지우세요"))
         left = unreplaced(subject) + unreplaced_html(html)
         if left:
             issues.append(Issue(r.row, "error", f"치환 안 된 변수: {', '.join(left)} "
