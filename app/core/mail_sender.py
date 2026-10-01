@@ -59,7 +59,7 @@ def parse_rows(values: list[list[str]]) -> tuple[list[Row], Columns]:
             break
     else:
         raise ValueError("헤더를 찾지 못했습니다: Email · 담당자 · 전송여부 열이 필요합니다")
-    variables = {normalize_key(h[1:-1]): i for i, h in enumerate(headers)
+    variables = {normalize_key(h.strip()[1:-1]): i for i, h in enumerate(headers)
                  if h.strip().startswith("{") and h.strip().endswith("}")}
     cols = Columns(email=email, manager=manager, status=status,
                    note=note if note is not None else status + 1,
@@ -80,13 +80,24 @@ def parse_tab_directory(values: list[list[str]]) -> tuple[dict[str, str], dateti
     for raw in values[1:]:
         if len(raw) >= 2 and str(raw[0]).strip() and str(raw[1]).strip():
             tabs[str(raw[0]).strip()] = str(raw[1]).strip()
-            if len(raw) >= 4 and raw[3] and updated is None:
-                updated = datetime.fromisoformat(str(raw[3]).replace("Z", "+00:00"))
+            if len(raw) >= 4 and raw[3]:
+                try:
+                    ts_str = str(raw[3]).replace("Z", "+00:00")
+                    dt = datetime.fromisoformat(ts_str)
+                    # If naive (no timezone), assume UTC
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    # Use the minimum (oldest) timestamp
+                    if updated is None or dt < updated:
+                        updated = dt
+                except (ValueError, TypeError):
+                    # Unparseable timestamp, treat as unknown
+                    pass
     return tabs, updated
 
 
 def pending(rows: list[Row]) -> list[Row]:
-    return [r for r in rows if r.email and r.status != "O"]
+    return [r for r in rows if r.email and r.status.strip().upper() != "O"]
 
 
 def estimate_size(template: MailTemplate) -> int:

@@ -99,3 +99,74 @@ def test_check_rejects_oversized_template():
 def test_check_daily_limit():
     issues = _issues(sent_today=1999)
     assert any(i.row is None and "한도" in i.message and i.level == "error" for i in issues)
+
+
+# Fix Round 1 Tests
+
+def test_pending_case_insensitive_status():
+    """Status 'o' and ' O ' should be treated as sent and excluded from pending."""
+    sheet = [
+        ["Email", "담당자", "전송여부"],
+        ["a@x.com", "강하니", "o"],
+        ["b@x.com", "강하니", " O "],
+        ["c@x.com", "강하니", ""],
+    ]
+    rows, _ = parse_rows(sheet)
+    pending_rows = pending(rows)
+    assert [r.row for r in pending_rows] == [4]  # Only row 4 (empty status) is pending
+
+
+def test_parse_tab_directory_unparseable_time():
+    """Unparseable 갱신 시각 should be treated as None without raising."""
+    tab_dir = [["탭 제목", "탭 ID", "상위 탭", "갱신 시각"],
+               ["강하니", "t.a", "", "garbage"]]
+    tabs, updated = parse_tab_directory(tab_dir)
+    assert tabs["강하니"] == "t.a"
+    assert updated is None
+
+
+def test_parse_tab_directory_naive_timestamp():
+    """Naive ISO timestamp (no timezone) should be parsed as UTC."""
+    tab_dir = [["탭 제목", "탭 ID", "상위 탭", "갱신 시각"],
+               ["강하니", "t.a", "", "2026-10-01T08:55:00"]]
+    tabs, updated = parse_tab_directory(tab_dir)
+    assert tabs["강하니"] == "t.a"
+    assert updated == datetime(2026, 10, 1, 8, 55, tzinfo=timezone.utc)
+
+
+def test_check_with_unparseable_time_no_crash():
+    """check() should not crash with unparseable time and should warn about staleness."""
+    sheet = [
+        ["Email", "담당자", "전송여부"],
+        ["a@x.com", "강하니", ""],
+    ]
+    tab_dir = [["탭 제목", "탭 ID", "상위 탭", "갱신 시각"],
+               ["강하니", "t.a", "", "garbage"]]
+    rows, _ = parse_rows(sheet)
+    tabs, updated = parse_tab_directory(tab_dir)
+    issues = check(rows=pending(rows), tab_dir=tabs, dir_updated_at=updated,
+                  templates={"강하니": TPL}, now=NOW)
+    # Should have staleness warning with "기록 없음"
+    assert any(i.row is None and "탭 목록" in i.message and "기록 없음" in i.message for i in issues)
+
+
+def test_parse_tab_directory_uses_oldest_timestamp():
+    """Should use the oldest (minimum) timestamp across all rows."""
+    tab_dir = [["탭 제목", "탭 ID", "상위 탭", "갱신 시각"],
+               ["강하니", "t.a", "", "2026-10-01T10:00:00Z"],
+               ["고도연", "t.b", "", "2026-10-01T08:55:00Z"],
+               ["미영", "t.c", "", "2026-10-01T09:30:00Z"]]
+    tabs, updated = parse_tab_directory(tab_dir)
+    # Should be the minimum: 08:55:00Z
+    assert updated == datetime(2026, 10, 1, 8, 55, tzinfo=timezone.utc)
+
+
+def test_parse_rows_variable_header_with_spaces():
+    """Variable header key should strip outer spaces: ' {KOL ID} ' → 'kol id'."""
+    sheet = [
+        ["Email", "담당자", " {KOL ID} ", "전송여부"],
+        ["a@x.com", "강하니", "value1", ""],
+    ]
+    rows, cols = parse_rows(sheet)
+    assert "kol id" in cols.variables
+    assert cols.variables["kol id"] == 2
