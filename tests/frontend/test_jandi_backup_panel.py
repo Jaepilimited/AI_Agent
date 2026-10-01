@@ -10,6 +10,7 @@
 - 지워진 파일(404)은 실패로 적고 계속 가는가, 크기가 맞는가
 - 같은 폴더로 다시 돌리면 끝난 방은 건너뛰고 실패한 파일만 다시 받는가
 - 실행 중 셀라 쪽 주소로 나가는 요청이 하나도 없는가
+- `용량 미리 확인` 이 아무것도 쓰지 않고 방·기록·첨부·용량을 맞게 세는가, 실행 중 받은 용량 / 예상이 보이는가
 """
 
 import json
@@ -183,6 +184,9 @@ def test_full_backup_then_resume(browser):
             assert 0 <= fetches[0]["t"] - g["t"] < 5000
         assert g["mode"] == "ATTACHMENT" and g["hasContent"]
     assert state["filesFailed"] == 2   # 지워진 파일(404) · 404 스티커
+    # 미리 확인 없이 돌려도 방을 다 모으면 예상 용량이 다 찬다 (스티커는 크기를 몰라 예상에 없다)
+    assert state["bytesExpected"] == sum(SIZES.values()) + 33 and state["roomsUnsized"] == 0
+    assert "/ 예상 117B" in host.locator(".bd").inner_text()
     assert all(("jandi.com" in u) or ("jandi-box.com" in u) for u in requests), \
         [u for u in requests if "jandi" not in u]
 
@@ -226,6 +230,8 @@ def test_pause_and_stop_leave_a_resumable_folder(browser):
     host = _start(page, [])
     page.evaluate("window.__slow = 1500")
     host.locator("button[data-act=start]").click()
+    # 미리 확인 없이 시작하면 예상 용량은 모은 방만큼 — 그렇다고 적는다
+    host.locator("text=지금까지 확인된 용량").wait_for()
     host.locator("button[data-act=pause]").click()
     host.locator("text=일시정지됨").wait_for()
     assert page.evaluate("window.__jandiBackup.state.paused") is True
@@ -275,4 +281,74 @@ def test_cella_page_builds_a_bookmarklet_that_runs_in_jandi(browser):
     page.goto("https://team.jandi.com/app/")
     page.evaluate("href => { (0, eval)(decodeURIComponent(href.slice('javascript:'.length))); }", href)
     page.locator("#__jandi-backup-host").locator("text=토픽 1 / 1:1 1 / 그룹 1").wait_for()
+    ctx.close()
+
+
+def _cells(host):
+    rows = host.locator("[data-estimate] table tr").all_inner_texts()
+    return {r.split("	")[0]: r.split("	")[1:] for r in rows}
+
+
+def test_precheck_counts_without_writing_then_run_shows_expected(browser):
+    """용량 미리 확인: 읽기만 하고(폴더·첨부 주소 요청 없음) 종류별 숫자를 맞게 센다.
+    그 다음 시작하면 실행 화면이 처음부터 예상 용량을 안다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    requests = []
+    host = _start(page, requests)
+    host.locator("button[data-act=scan]", has_text="용량 미리 확인").click()
+    host.locator("text=미리 확인 결과").wait_for(timeout=20000)
+    cells = _cells(host)
+    # fixture: 비공개 토픽 1(기록 11 · 첨부 5개 117B, 옛 방식 44B 포함 · 스티커 2) · 빈 1:1 · 열람 제한 그룹(기록 1)
+    assert cells["토픽"] == ["1", "11", "5", "117B"], cells
+    assert cells["1:1"] == ["1", "0", "0", "0B"], cells
+    assert cells["그룹"] == ["1", "1", "0", "0B"], cells
+    assert cells["합계"] == ["3", "12", "5", "117B"], cells
+    text = host.locator(".bd").inner_text()
+    assert "스티커 2개" in text and "옛 방식 파일 1개 · 44B 포함" in text
+    assert "대화만" in text and "첨부 포함" in text and "약 1분 미만" in text
+    assert "20~60MB/s" in text and "회사 네트워크 기준 대략값, 실제 속도에 따라 달라집니다" in text
+    log = page.evaluate("window.__log")
+    assert log["getImageAt"] == [] and log["fetchAt"] == [], "미리 확인은 첨부를 건드리지 않는다"
+    assert not any("/rooms/90000002/" in p["url"] for p in log["pages"]), "빈 방은 부르지 않는다"
+    opfs = page.evaluate("async () => { const r = await navigator.storage.getDirectory(); const n = []; for await (const k of r.keys()) n.push(k); return n; }")
+    assert opfs == [], "미리 확인은 아무것도 쓰지 않는다"
+    scan = page.evaluate("JSON.parse(JSON.stringify(window.__jandiBackup.state.scan))")
+    assert scan["perRoom"]["90000001"]["bytes"] == 117 and scan["failed"] == 0
+
+    # 범위를 바꾸면 예전 숫자라고 표시하고, 되돌리면 지운다
+    host.locator("input[data-k=chat]").uncheck()
+    host.locator("text=고른 범위가 바뀌었습니다").wait_for()
+    assert "stale" in host.locator("[data-estimate]").get_attribute("class")
+    host.locator("input[data-k=chat]").check()
+    assert host.locator("text=고른 범위가 바뀌었습니다").count() == 0
+
+    # 시작 — 처음부터 예상 용량을 안다 (지금까지 확인된 용량 이 아니라 예상)
+    page.evaluate("window.__slow = 400")
+    host.locator("button[data-act=start]").click()
+    host.locator("[data-bytes]", has_text="/ 예상 117B").wait_for()
+    assert page.evaluate("window.__jandiBackup.state.phase") == "running"
+    assert "지금까지 확인된 용량" not in host.locator(".bd").inner_text()
+    assert host.locator("[data-speed]").count() == 1 and host.locator("[data-bytes-bar]").count() == 1
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    # 예상은 잔디가 적어 둔 크기(서버에서 지운 7000003 의 33B 포함), 받은 용량은 실제로 받은 것 + 스티커 5B
+    prog = page.evaluate("JSON.parse(JSON.stringify(window.__jandiBackup.state.progress))")
+    assert prog["bytesExpected"] == 117 and prog["roomsUnsized"] == 0
+    assert prog["bytes"] == sum(SIZES.values()) + 5
+    assert all(("jandi.com" in u) or ("jandi-box.com" in u) for u in requests)
+    ctx.close()
+
+
+def test_precheck_can_be_cancelled(browser):
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    page.evaluate("window.__slow = 1500")
+    host.locator("button[data-act=scan]").click()
+    host.locator("text=용량을 확인하는 중입니다").wait_for()
+    host.locator("button[data-act=cancel-scan]").click()
+    host.locator("text=용량 확인을 멈췄습니다").wait_for(timeout=20000)
+    assert page.evaluate("window.__jandiBackup.state.scan") is None
+    assert page.evaluate("window.__jandiBackup.state.phase") == "intro"
+    assert host.locator("button[data-act=start]").is_enabled()
     ctx.close()

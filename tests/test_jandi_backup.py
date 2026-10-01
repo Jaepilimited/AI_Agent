@@ -87,7 +87,9 @@ def test_page_builds_bookmarklet_from_same_origin_static_file():
     assert "toBookmarkletHref(code)" in page
     assert 'id="jb-bookmarklet"' in page and ">잔디 백업</a>" in page
     for phrase in ("셀라 서버는 이 내용을 받지도, 보지도 않습니다", "Chrome 또는 Edge", "잔디가 업데이트되면 멈출 수 있습니다",
-                   "수십 GB", "참여하지 않은 토픽", "편집 이력", "복원"):
+                   "수십 GB", "참여하지 않은 토픽", "편집 이력", "복원",
+                   # 얼마나 받는지(용량·시간) — 실측 참고값과 미리 확인 버튼 안내
+                   "얼마나 걸리나요", "용량 미리 확인", "484개", "약 123GB", "약 66GB", "약 7~10분", "약 40~60분"):
         assert phrase in page, phrase
 
 

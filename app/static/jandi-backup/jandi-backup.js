@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-01';
+  var VERSION = '2026-10-01.2';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -571,6 +571,134 @@
     return sec + '초';
   }
 
+  // ── 용량 미리 확인 · 남은 시간 (순수 함수) ─────────────────────────────────
+
+  // 다운로드 속도 가정 — 받기 전에는 실제 속도를 모른다. 회사망 기준 대략값 (2026-10-01 실측 50~90MB/s)
+  var SPEED_LOW = 20e6;
+  var SPEED_HIGH = 60e6;
+  // 미리 확인은 읽기만 한다 — 실제 백업은 같은 읽기에 방마다 파일 쓰기가 붙는다
+  var WRITE_OVERHEAD = 1.3;
+
+  function newTally() {
+    return { rooms: 0, records: 0, files: 0, bytes: 0, unknown: 0, stickers: 0, legacyFiles: 0, legacyBytes: 0 };
+  }
+
+  // 미리 확인: 한 쪽(기록 최대 100건)을 셈에 더하고 기록은 버린다.
+  // seenRecords · seenFiles 는 방 하나 동안만 쓰는 Set — 쪽이 겹쳐도 두 번 세지 않는다.
+  // 받을 파일은 실제 백업과 같은 collectFileJobs 로 고른다 (첨부·댓글 원본 첨부·옛 방식 파일 메시지·스티커)
+  function tallyPage(tally, records, seenRecords, seenFiles) {
+    var fresh = [];
+    (records || []).forEach(function (r) {
+      if (!r || typeof r !== 'object') return;
+      var key = String(r.id);
+      if (seenRecords.has(key)) return;
+      seenRecords.add(key);
+      fresh.push(r);
+    });
+    tally.records += fresh.length;
+    collectFileJobs(fresh).forEach(function (job) {
+      var key = String(job.id);
+      if (seenFiles.has(key)) return;
+      seenFiles.add(key);
+      if (job.kind === 'sticker') { tally.stickers++; return; }
+      var size = Number(job.size) || 0;
+      if (size > 0) {
+        tally.files++;
+        tally.bytes += size;
+        if (job.source === 'file_message') { tally.legacyFiles++; tally.legacyBytes += size; }
+      } else {
+        tally.unknown++;   // 크기가 없는 파일 — 대개 서버에서 지워졌다
+      }
+    });
+    return fresh.length;
+  }
+
+  function addTally(into, t) {
+    Object.keys(into).forEach(function (k) { into[k] += Number(t[k]) || 0; });
+    return into;
+  }
+
+  // 방별 결과 → 종류별(토픽은 비공개 포함)·전체 합계
+  function summarizeScan(rooms, perRoom) {
+    var out = { topic: newTally(), chat: newTally(), groupChat: newTally(), total: newTally() };
+    (rooms || []).forEach(function (room) {
+      var t = perRoom[String(room.id)];
+      if (!t) return;
+      var k = room.kind === 'private_topic' ? 'topic' : room.kind;
+      var one = addTally(newTally(), t);
+      one.rooms = 1;
+      if (out[k]) addTally(out[k], one);
+      addTally(out.total, one);
+    });
+    return out;
+  }
+
+  // 걸릴 시간 범위: 대화 = 미리 확인에 걸린 시간 (같은 API 일) ~ 쓰기 몫을 더한 값,
+  // 첨부 = 용량 ÷ 속도 (20~60MB/s 가정). 첨부 포함 = 대화 + 첨부 (방을 모으는 동안에도 받지만 넉넉히 더한다)
+  function estimateTimes(bytes, scanMs, speeds) {
+    var lo = (speeds && speeds.low) || SPEED_LOW;
+    var hi = (speeds && speeds.high) || SPEED_HIGH;
+    var msgMin = Math.max(0, Number(scanMs) || 0);
+    var msgMax = msgMin * WRITE_OVERHEAD;
+    var b = Math.max(0, Number(bytes) || 0);
+    var dlMin = b / hi * 1000;
+    var dlMax = b / lo * 1000;
+    return {
+      messages: [msgMin, msgMax], download: [dlMin, dlMax], withFiles: [msgMin + dlMin, msgMax + dlMax],
+      speedLow: lo, speedHigh: hi
+    };
+  }
+
+  // 대략값은 분 단위로 — "34분 12초" 처럼 정확해 보이게 적지 않는다
+  function fmtApprox(ms) {
+    var min = Math.round((Number(ms) || 0) / 60000);
+    if (min < 1) return '1분 미만';
+    if (min < 60) return min + '분';
+    var h = Math.floor(min / 60), m = min % 60;
+    return h + '시간' + (m ? ' ' + m + '분' : '');
+  }
+
+  function fmtRange(minMs, maxMs) {
+    var a = fmtApprox(minMs), b = fmtApprox(maxMs);
+    return a === b ? '약 ' + a : '약 ' + a + ' ~ ' + b;
+  }
+
+  // 속도 표본: 최근 windowMs 안의 {t, b}. 기준점으로 창 밖 표본 하나는 남긴다
+  function pushSample(samples, t, b, windowMs) {
+    samples.push({ t: t, b: b });
+    while (samples.length > 2 && samples[1].t <= t - windowMs) samples.shift();
+    return samples;
+  }
+
+  // 최근 창의 평균 속도 (바이트/초). 표본이 짧으면(minSpanMs 미만) 모른다 → null
+  function rollingRate(samples, minSpanMs) {
+    if (!samples || samples.length < 2) return null;
+    var a = samples[0], z = samples[samples.length - 1];
+    var span = z.t - a.t;
+    if (span < (minSpanMs || 3000)) return null;
+    return Math.max(0, (z.b - a.b) / span * 1000);
+  }
+
+  // 남은 시간 (다듬기 전). 용량을 알고 속도가 붙었으면 남은 용량 ÷ 속도, 아니면 방 수 비율로
+  function rawEta(o) {
+    if (o.useBytes && o.expectedComplete && o.expected > 0 && o.rate && o.rate > 1000) {
+      return { ms: Math.max(0, o.expected - o.bytes) / o.rate * 1000, basis: 'bytes' };
+    }
+    var f = o.roomsFrac;
+    if (f > 0.02 && f < 1 && o.elapsedMs > 0) return { ms: o.elapsedMs / f - o.elapsedMs, basis: 'rooms' };
+    return { ms: null, basis: null };
+  }
+
+  // 출렁임 줄이기: 지난 값에서 흐른 시간만큼 빼고(예측), 새 값 쪽으로 조금씩 당긴다 (지수 평활, 시상수 tauMs).
+  // 근거가 바뀌면(용량↔방 수) 새로 시작한다
+  function smoothEta(prev, raw, dtMs, tauMs) {
+    if (!raw || raw.ms === null || raw.ms === undefined) return null;
+    if (!prev || prev.ms === null || prev.basis !== raw.basis) return { ms: raw.ms, basis: raw.basis };
+    var predicted = Math.max(0, prev.ms - Math.max(0, dtMs));
+    var alpha = 1 - Math.exp(-Math.max(0, dtMs) / (tauMs || 20000));
+    return { ms: predicted + alpha * (raw.ms - predicted), basis: raw.basis };
+  }
+
   var lib = {
     VERSION: VERSION, KIND_LABEL: KIND_LABEL, truthy: truthy, pyDumps: pyDumps, localTime: localTime, dayKst: dayKst,
     escapeHtml: escapeHtml, quotePath: quotePath, sanitizeName: sanitizeName, roomFolderName: roomFolderName,
@@ -578,7 +706,10 @@
     sortRecords: sortRecords, csvCell: csvCell, csvRow: csvRow, renderRoom: renderRoom, summaryRow: summaryRow,
     sortRows: sortRows, buildTopIndex: buildTopIndex, buildReadme: buildReadme, collectFileJobs: collectFileJobs,
     pageParams: pageParams, decidePage: decidePage, isEmptyRoom: isEmptyRoom, teamNameFrom: teamNameFrom,
-    backupFolderName: backupFolderName, ymdKst: ymdKst, fmtBytes: fmtBytes, fmtDuration: fmtDuration
+    backupFolderName: backupFolderName, ymdKst: ymdKst, fmtBytes: fmtBytes, fmtDuration: fmtDuration,
+    SPEED_LOW: SPEED_LOW, SPEED_HIGH: SPEED_HIGH, newTally: newTally, tallyPage: tallyPage, summarizeScan: summarizeScan,
+    estimateTimes: estimateTimes, fmtApprox: fmtApprox, fmtRange: fmtRange, pushSample: pushSample,
+    rollingRate: rollingRate, rawEta: rawEta, smoothEta: smoothEta
   };
 
   if (typeof module !== 'undefined' && module && module.exports) {
@@ -633,14 +764,27 @@
     };
   }
 
+  // bytes = 이 PC 폴더에 있는 첨부 용량(이미 있던 것 포함) · fetched = 이번에 실제로 받은 용량(속도 계산용)
+  // bytesExpected = 방마다 (모은 방은 실제 작업 목록, 아직이면 미리 확인 값) 의 합 · roomsUnsized = 아직 모르는 방 수
+  function newProgress(roomsTotal) {
+    return {
+      roomsTotal: roomsTotal, roomsDone: 0, roomsSkipped: 0, roomsFailed: 0, filesTotal: 0, filesDone: 0, filesFailed: 0,
+      bytes: 0, fetched: 0, records: 0, bytesExpected: 0, roomsUnsized: roomsTotal
+    };
+  }
+
   function createApp(win, L) {
     var doc = win.document;
     var S = {
       version: L.VERSION, phase: 'intro', message: '', teamId: null, teamName: '', rooms: [], members: {},
       opts: { kinds: { topic: true, chat: true, groupChat: true }, attachments: true },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
-      progress: { roomsTotal: 0, roomsDone: 0, roomsSkipped: 0, roomsFailed: 0, filesTotal: 0, filesDone: 0, filesFailed: 0, bytes: 0, records: 0 },
-      current: {}, roomFailures: [], fileFailures: [], abort: null
+      progress: newProgress(0),
+      current: {}, roomFailures: [], fileFailures: [], abort: null,
+      // 용량 미리 확인 결과 — 방마다 숫자만 (기록은 버린다). 실행 중 예상 용량의 근거
+      scan: null, notice: '',
+      // 실행 중: 방마다 예상 용량에 넣어 둔 값 · 속도 표본 · 다듬은 남은 시간
+      roomBytes: {}, samples: [], rate: null, eta: null, etaAt: 0
     };
     var host = null, shadow = null, timer = null, ctlKey = '';
     var inj = null, http = null, fileApi = null;
@@ -657,7 +801,12 @@
       '.stat{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-variant-numeric:tabular-nums;margin:6px 0}' +
       '.stat b{font-weight:600}.warn{color:#a24f1b}.bar{height:6px;background:#e3e9ec;border-radius:3px;overflow:hidden;margin:6px 0}' +
       '.bar i{display:block;height:100%;background:#146b64}ul{margin:4px 0 8px;padding-left:18px;max-height:160px;overflow:auto}li{margin:1px 0;overflow-wrap:anywhere}' +
-      'code{background:#f2f5f7;padding:0 4px;border-radius:4px}';
+      'code{background:#f2f5f7;padding:0 4px;border-radius:4px}' +
+      '.tb{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin:4px 0 6px;font-size:12px}' +
+      '.tb th,.tb td{padding:3px 4px;text-align:right;border-bottom:1px solid #eef2f4;white-space:nowrap}' +
+      '.tb th:first-child,.tb td:first-child{text-align:left}.tb th{font-weight:600;color:#536675}.tb tr.sum td{font-weight:700;border-bottom:0}' +
+      '.est{border:1px solid #dde5e9;border-radius:8px;padding:8px 10px;margin:8px 0;background:#f8fafb}.est.stale{opacity:.6}' +
+      '.lbl{display:flex;justify-content:space-between;font-size:12px;color:#657582;margin-top:6px}.lbl+.bar{margin-top:2px}';
 
     function el(sel) { return shadow.querySelector(sel); }
 
@@ -696,6 +845,8 @@
         el('[data-act=again]').addEventListener('click', open);
       } else if (S.phase === 'intro') {
         renderIntro();
+      } else if (S.phase === 'scanning') {
+        renderScan();
       } else {
         renderProgress();
       }
@@ -713,16 +864,98 @@
         '<label><input type="checkbox" data-k="attachments"' + (S.opts.attachments ? ' checked' : '') + '> 첨부파일 포함</label>' +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
         '바탕화면 등에 빈 폴더를 하나 만들어 고르는 것을 권합니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
+        estimateHtml() +
         (supported ? '' : '<p class="warn">이 브라우저는 폴더 저장을 지원하지 않습니다. PC 의 Chrome 또는 Edge 에서 열어 주세요.</p>') +
+        '<button class="btn sub" type="button" data-act="scan">' + (S.scan ? '용량 다시 확인' : '용량 미리 확인') + '</button>' +
         '<button class="btn" type="button" data-act="start"' + (supported ? '' : ' disabled') + '>저장 폴더 선택 후 시작</button>' +
-        '<p class="muted" data-msg></p>');
+        '<p class="muted" data-msg>' + L.escapeHtml(S.notice || '') + '</p>');
       Array.prototype.forEach.call(shadow.querySelectorAll('input[type=checkbox]'), function (box) {
         box.addEventListener('change', function () {
           var k = box.getAttribute('data-k');
           if (k === 'attachments') S.opts.attachments = box.checked; else S.opts.kinds[k] = box.checked;
+          S.notice = '';
+          // 범위를 바꾸면 미리 확인 숫자가 지금 범위와 달라진다 — 표시만 갈아 끼운다
+          var est = el('[data-estimate]');
+          if (est) est.outerHTML = estimateHtml();
         });
       });
+      el('[data-act=scan]').addEventListener('click', onScanClick);
       el('[data-act=start]').addEventListener('click', onStartClick);
+    }
+
+    function kindsKey() {
+      return ['topic', 'chat', 'groupChat'].filter(function (k) { return !!S.opts.kinds[k]; }).join(',');
+    }
+
+    function scanStale() {
+      return !!S.scan && S.scan.kinds !== kindsKey();
+    }
+
+    function n(v) { return (Number(v) || 0).toLocaleString('en-US'); }
+
+    function estimateHtml() {
+      var sc = S.scan;
+      if (!sc || !sc.finishedAt) return '';
+      var sum = L.summarizeScan(S.rooms, sc.perRoom);
+      var tot = sum.total;
+      var stale = scanStale();
+      var row = function (label, t, cls) {
+        return '<tr' + (cls ? ' class="' + cls + '"' : '') + '><td>' + label + '</td><td>' + n(t.rooms) + '</td><td>' + n(t.records) +
+          '</td><td>' + n(t.files) + '</td><td>' + L.fmtBytes(t.bytes) + '</td></tr>';
+      };
+      var kinds = sc.kinds.split(',').filter(Boolean);
+      var label = { topic: '토픽', chat: '1:1', groupChat: '그룹' };
+      var times = L.estimateTimes(tot.bytes, sc.ms);
+      var extra = [];
+      if (tot.unknown) extra.push('삭제됨/크기 모름 ' + n(tot.unknown) + '개');
+      if (tot.stickers) extra.push('스티커 ' + n(tot.stickers) + '개 (작음)');
+      if (tot.legacyFiles) extra.push('2015~2023 옛 방식 파일 ' + n(tot.legacyFiles) + '개 · ' + L.fmtBytes(tot.legacyBytes) + ' 포함');
+      return '<div class="est' + (stale ? ' stale' : '') + '" data-estimate>' +
+        '<p><b>미리 확인 결과</b> <span class="muted">(확인에 ' + L.fmtDuration(sc.ms) + ')</span></p>' +
+        '<table class="tb"><thead><tr><th>종류</th><th>방</th><th>기록</th><th>첨부</th><th>용량</th></tr></thead><tbody>' +
+        kinds.map(function (k) { return row(label[k], sum[k]); }).join('') + row('합계', tot, 'sum') + '</tbody></table>' +
+        (extra.length ? '<p class="muted">' + extra.join('<br>') + '</p>' : '') +
+        '<div class="stat"><span>대화만</span><b data-eta-msg>' + L.fmtRange(times.messages[0], times.messages[1]) + '</b>' +
+        '<span>첨부 포함</span><b data-eta-all>' + L.fmtRange(times.withFiles[0], times.withFiles[1]) + '</b></div>' +
+        '<p class="muted">첨부 시간은 ' + Math.round(times.speedLow / 1e6) + '~' + Math.round(times.speedHigh / 1e6) +
+        'MB/s 로 잡은 값입니다 — 회사 네트워크 기준 대략값, 실제 속도에 따라 달라집니다.</p>' +
+        (sc.failed ? '<p class="warn">확인하지 못한 방 ' + sc.failed + '개 — 위 숫자에서 빠졌습니다.</p>' : '') +
+        (stale ? '<p class="warn">고른 범위가 바뀌었습니다 — 위 숫자는 이전 범위 기준입니다. 용량을 다시 확인하세요.</p>' : '') +
+        '</div>';
+    }
+
+    // 용량 미리 확인 — 대화를 읽기만 하고 아무것도 쓰지 않는다. 방마다 숫자만 남기고 기록은 버린다
+    function onScanClick() {
+      var selected = selectedRooms();
+      if (!selected.length) { introMessage('확인할 대화 종류를 하나 이상 고르세요.'); return; }
+      scan(selected);
+    }
+
+    function renderScan() {
+      var sc = S.scan;
+      if (!sc) return;
+      var tot = L.summarizeScan(S.rooms, sc.perRoom).total;
+      var frac = sc.total ? sc.done / sc.total : 0;
+      var cur = Object.keys(S.current).map(function (k) { return '<li>' + L.escapeHtml(S.current[k]) + '</li>'; }).join('');
+      var html = '<p><b>용량을 확인하는 중입니다.</b> 대화를 읽기만 하고 아무것도 저장하지 않습니다.</p>' +
+        '<div class="bar"><i style="width:' + Math.round(frac * 100) + '%"></i></div>' +
+        '<div class="stat">' +
+        '<span>방</span><b>' + sc.done + ' / ' + sc.total + (sc.failed ? ' (실패 ' + sc.failed + ')' : '') + '</b>' +
+        '<span>기록</span><b>' + n(tot.records) + '건</b>' +
+        '<span>첨부</span><b>' + n(tot.files) + '개 · ' + L.fmtBytes(tot.bytes) + '</b>' +
+        '<span>경과</span><b>' + L.fmtDuration(Date.now() - sc.startedAt) + '</b>' +
+        '</div>' + (cur ? '<p class="muted">지금 읽는 방</p><ul>' + cur + '</ul>' : '');
+      var live = el('[data-live]');
+      if (!live || !el('[data-act=cancel-scan]')) {
+        setBody('<div data-live></div><button class="btn sub" type="button" data-act="cancel-scan">확인 멈추기</button>');
+        live = el('[data-live]');
+        ctlKey = '';
+        el('[data-act=cancel-scan]').addEventListener('click', function () {
+          S.stopped = true;
+          this.disabled = true;
+        });
+      }
+      live.innerHTML = html;
     }
 
     function introMessage(text) {
@@ -766,7 +999,19 @@
       var elapsed = S.startedAt ? now - S.startedAt : 0;
       var handled = p.roomsDone + p.roomsSkipped + p.roomsFailed;
       var frac = p.roomsTotal ? handled / p.roomsTotal : 0;
-      var eta = (S.phase === 'running' && frac > 0.02 && frac < 1) ? '약 ' + L.fmtDuration(elapsed / frac - elapsed) + ' 남음 (대략)' : '';
+      var eta = '';
+      if (S.phase === 'running' && !S.paused && S.eta && S.eta.ms !== null) {
+        eta = '약 ' + (S.eta.ms < 120000 ? L.fmtDuration(S.eta.ms) : L.fmtApprox(S.eta.ms)) + ' 남음' +
+          (S.eta.basis === 'bytes' ? '' : ' (방 수 기준, 대략)');
+      }
+      var att = S.opts.attachments;
+      var complete = p.roomsUnsized <= 0;
+      var bfrac = p.bytesExpected > 0 ? Math.min(1, p.bytes / p.bytesExpected) : (complete && handled === p.roomsTotal ? 1 : 0);
+      var bytesLine = L.fmtBytes(p.bytes) + ' / ' + (complete
+        ? '예상 ' + L.fmtBytes(p.bytesExpected)
+        : '지금까지 확인된 용량 ' + L.fmtBytes(p.bytesExpected) + ' (계산 중)');
+      var speedLine = S.phase !== 'running' ? (elapsed > 0 && p.fetched ? '평균 ' + L.fmtBytes(p.fetched / elapsed * 1000) + '/s' : '-')
+        : S.paused ? '일시정지' : (S.rate === null ? '재는 중' : L.fmtBytes(S.rate) + '/s');
       var cur = Object.keys(S.current).map(function (k) { return '<li>' + L.escapeHtml(S.current[k]) + '</li>'; }).join('');
       var head;
       if (S.phase === 'running') head = S.paused ? '<p><b>일시정지됨</b> — 진행 중이던 파일만 마저 받습니다.</p>' : '<p><b>백업 중입니다.</b> 이 탭을 닫지 마세요. 패널은 닫아도 계속됩니다.</p>';
@@ -774,11 +1019,15 @@
       else if (S.phase === 'stopped') head = '<p><b>중지했습니다.</b> 끝난 방까지만 저장됐습니다. 같은 폴더를 골라 다시 시작하면 이어서 받습니다.</p>';
       else head = '<p><b>백업을 마쳤습니다.</b></p>';
       var html = head +
+        '<div class="lbl"><span>방</span><span>' + Math.round(frac * 100) + '%</span></div>' +
         '<div class="bar"><i style="width:' + Math.round(frac * 100) + '%"></i></div>' +
+        (att ? '<div class="lbl"><span>용량' + (complete ? '' : ' (확인된 만큼)') + '</span><span>' + Math.round(bfrac * 100) + '%</span></div>' +
+          '<div class="bar" data-bytes-bar><i style="width:' + Math.round(bfrac * 100) + '%"></i></div>' : '') +
         '<div class="stat">' +
         '<span>방</span><b>' + handled + ' / ' + p.roomsTotal + (p.roomsSkipped ? ' (이미 끝난 방 ' + p.roomsSkipped + ')' : '') + '</b>' +
         '<span>기록</span><b>' + p.records.toLocaleString('en-US') + '건</b>' +
-        '<span>첨부</span><b>' + p.filesDone.toLocaleString('en-US') + ' / ' + p.filesTotal.toLocaleString('en-US') + ' · ' + L.fmtBytes(p.bytes) + '</b>' +
+        '<span>첨부</span><b>' + p.filesDone.toLocaleString('en-US') + ' / ' + p.filesTotal.toLocaleString('en-US') + '개' + (att ? '' : ' · ' + L.fmtBytes(p.bytes)) + '</b>' +
+        (att ? '<span>받은 용량</span><b data-bytes>' + bytesLine + '</b><span>속도</span><b data-speed>' + speedLine + '</b>' : '') +
         '<span>실패</span><b' + (p.roomsFailed || p.filesFailed ? ' class="warn"' : '') + '>방 ' + p.roomsFailed + ' · 파일 ' + p.filesFailed + '</b>' +
         '<span>경과</span><b>' + L.fmtDuration(elapsed) + (eta ? ' · ' + eta : '') + '</b>' +
         '</div>';
@@ -799,7 +1048,7 @@
       // ⚠️ 0.7초마다 다시 그린다 — 버튼까지 매번 갈아 끼우면 누르는 사이에 버튼이 바뀌어 클릭이 사라진다.
       //    숫자 칸만 갈고, 버튼은 상태(진행·일시정지·중지중)가 바뀔 때만 새로 만든다
       var live = el('[data-live]');
-      if (!live) {
+      if (!live || !el('[data-ctl]')) {
         setBody('<div data-live></div><div data-ctl></div>');
         live = el('[data-live]');
         ctlKey = '';
@@ -1025,23 +1274,78 @@
       throw new Error('대화를 읽지 못했습니다 (' + errText(last) + ')');
     }
 
-    async function collectMessages(room) {
-      if (L.isEmptyRoom(room)) return { records: [], pages: [], stopReason: 'no_messages' };
+    // 방 하나의 쪽을 끝까지 넘긴다. onPage(기록 배열) → 이 쪽에서 새로 본 기록 수. 백업과 미리 확인이 같이 쓴다
+    async function walkMessages(room, onPage) {
       var url = MESSAGES_API + encodeURIComponent(S.teamId) + '/rooms/' + encodeURIComponent(room.id) + '/messages';
-      var recs = new Map(), pages = [], cursor = null;
+      var pages = [], cursor = null;
       for (var i = 0; i < 100000; i++) {
-        var params = L.pageParams(cursor);
-        var data = await getPage(url, params, room.id);
-        var added = 0;
-        data.records.forEach(function (r) { if (!recs.has(r.id)) added++; recs.set(r.id, r); });
-        S.progress.records += added;
+        var data = await getPage(url, L.pageParams(cursor), room.id);
+        var added = onPage(data.records);
         var d = L.decidePage(data, cursor);
         pages.push({ n: data.records.length, added: added, firstLinkId: data.firstLinkId, isLimited: !!data.isLimited, min: d.min });
-        S.current[room.id] = room.name + ' — 기록 ' + recs.size.toLocaleString('en-US') + '건';
-        if (d.done) return { records: Array.from(recs.values()), pages: pages, stopReason: d.stopReason };
+        if (d.done) return { pages: pages, stopReason: d.stopReason };
         cursor = d.min;
       }
-      return { records: Array.from(recs.values()), pages: pages, stopReason: 'page_limit' };
+      return { pages: pages, stopReason: 'page_limit' };
+    }
+
+    async function collectMessages(room) {
+      if (L.isEmptyRoom(room)) return { records: [], pages: [], stopReason: 'no_messages' };
+      var recs = new Map();
+      var walked = await walkMessages(room, function (records) {
+        var added = 0;
+        records.forEach(function (r) { if (!recs.has(r.id)) added++; recs.set(r.id, r); });
+        S.progress.records += added;
+        S.current[room.id] = room.name + ' — 기록 ' + recs.size.toLocaleString('en-US') + '건';
+        return added;
+      });
+      return { records: Array.from(recs.values()), pages: walked.pages, stopReason: walked.stopReason };
+    }
+
+    // 미리 확인 한 방: 숫자만 세고 기록은 쪽마다 버린다 (Set 두 개도 방이 끝나면 버린다)
+    async function scanRoom(room) {
+      var sc = S.scan;
+      var tally = L.newTally();
+      sc.perRoom[String(room.id)] = tally;
+      if (!L.isEmptyRoom(room)) {
+        var seenRecords = new Set(), seenFiles = new Set();
+        S.current[room.id] = room.name;
+        await walkMessages(room, function (records) {
+          var added = L.tallyPage(tally, records, seenRecords, seenFiles);
+          S.current[room.id] = room.name + ' — 기록 ' + tally.records.toLocaleString('en-US') + '건';
+          return added;
+        });
+      }
+      sc.done++;
+    }
+
+    async function scan(selected) {
+      S.phase = 'scanning';
+      S.stopped = false; S.paused = false; S.notice = ''; S.current = {};
+      var sc = S.scan = { kinds: kindsKey(), perRoom: {}, startedAt: Date.now(), finishedAt: 0, ms: 0, total: selected.length, done: 0, failed: 0 };
+      timer = win.setInterval(render, 700);
+      render();
+      try {
+        var onFail = function (room) { delete sc.perRoom[String(room.id)]; sc.failed++; sc.done++; };
+        await pool(selected.filter(function (r) { return r.kind !== 'chat'; }), 5, scanRoom, onFail);
+        if (!S.stopped) await pool(selected.filter(function (r) { return r.kind === 'chat'; }), 8, scanRoom, onFail);
+        if (S.stopped) {
+          S.scan = null;
+          S.notice = '용량 확인을 멈췄습니다.';
+        } else {
+          sc.finishedAt = Date.now();
+          sc.ms = sc.finishedAt - sc.startedAt;
+        }
+      } catch (e) {
+        S.scan = null;
+        S.notice = '용량을 확인하지 못했습니다: ' + errText(e);
+      } finally {
+        if (timer) win.clearInterval(timer);
+        timer = null;
+        S.stopped = false; S.current = {};
+        S.phase = 'intro';
+        render();
+      }
     }
 
     var downloads = new Semaphore(8);
@@ -1107,6 +1411,7 @@
             }
             S.progress.filesDone++;
             S.progress.bytes += size;
+            S.progress.fetched += size;
             return Object.assign(entry, { status: 'downloaded', size: size, sha256: sha });
           } catch (e) {
             if (S.stopped) throw new StopSignal();
@@ -1162,7 +1467,7 @@
       try { prevManifest = JSON.parse(await readTextIf(dir, 'files_manifest.json') || '[]'); } catch (e) { prevManifest = []; }
       if (doneText) {
         var failed = prevManifest.filter(function (f) { return f.status !== 'downloaded'; });
-        if (!S.opts.attachments || !failed.length) { S.progress.roomsSkipped++; return; }
+        if (!S.opts.attachments || !failed.length) { setRoomBytes(room, 0); S.progress.roomsSkipped++; return; }
         // 끝난 방 — 받지 못한 첨부만 다시
         S.current[room.id] = room.name + ' — 못 받은 첨부 ' + failed.length + '개 다시';
         var raw = JSON.parse(await readTextIf(dir, 'raw.json') || '{}');
@@ -1170,6 +1475,7 @@
         var failedIds = {};
         failed.forEach(function (f) { failedIds[String(f.id)] = true; });
         var jobs = L.collectFileJobs(records).filter(function (j) { return failedIds[String(j.id)]; });
+        setRoomBytes(room, jobBytes(jobs));
         var retried = await downloadAll(jobs, room, dir, prevManifest);
         var byId = {};
         retried.forEach(function (f) { byId[String(f.id)] = f; });
@@ -1181,6 +1487,7 @@
       S.current[room.id] = room.name + ' — 읽는 중';
       var collected = await collectMessages(room);
       var fileJobs = S.opts.attachments ? L.collectFileJobs(collected.records) : [];
+      setRoomBytes(room, jobBytes(fileJobs));   // 미리 확인 값을 실제 작업 목록으로 바로잡는다
       if (fileJobs.length) S.current[room.id] = room.name + ' — 첨부 ' + fileJobs.length + '개 받는 중';
       var manifest = await downloadAll(fileJobs, room, dir, prevManifest);
       await gate();
@@ -1188,17 +1495,48 @@
       S.progress.roomsDone++;
     }
 
-    async function pool(rooms, size, roomsDir, folders) {
+    function jobBytes(jobs) {
+      return jobs.reduce(function (s, j) { return s + (j.kind === 'sticker' ? 0 : Number(j.size) || 0); }, 0);
+    }
+
+    // 예상 용량 = 방마다 넣어 둔 값의 합. 처음 넣는 방이면 "아직 모르는 방" 이 하나 준다
+    function setRoomBytes(room, bytes) {
+      var id = String(room.id);
+      var had = has(S.roomBytes, id);
+      S.progress.bytesExpected += bytes - (had ? S.roomBytes[id] : 0);
+      S.roomBytes[id] = bytes;
+      if (!had) S.progress.roomsUnsized--;
+    }
+
+    // 0.7초마다: 속도 표본을 쌓고 남은 시간을 다듬는다
+    function tick() {
+      var now = Date.now();
+      var p = S.progress;
+      if (S.phase !== 'running' || S.paused) {
+        S.samples = []; S.rate = null; S.eta = null; S.etaAt = now;
+        return;
+      }
+      L.pushSample(S.samples, now, p.fetched, 15000);
+      S.rate = L.rollingRate(S.samples, 5000);
+      var handled = p.roomsDone + p.roomsSkipped + p.roomsFailed;
+      var raw = L.rawEta({
+        useBytes: S.opts.attachments, expectedComplete: p.roomsUnsized <= 0, expected: p.bytesExpected, bytes: p.bytes,
+        rate: S.rate, roomsFrac: p.roomsTotal ? handled / p.roomsTotal : 0, elapsedMs: now - S.startedAt
+      });
+      S.eta = L.smoothEta(S.eta, raw, now - (S.etaAt || now), 20000);
+      S.etaAt = now;
+    }
+
+    async function pool(rooms, size, fn, onFail) {
       var queue = rooms.slice();
       async function worker() {
         while (queue.length && !S.stopped) {
           var room = queue.shift();
           try {
-            await processRoom(room, roomsDir, folders);
+            await fn(room);
           } catch (e) {
             if (e && e.isStop) return;
-            S.progress.roomsFailed++;
-            S.roomFailures.push({ id: room.id, name: room.name, error: errText(e) });
+            onFail(room, e);
           } finally {
             delete S.current[room.id];
           }
@@ -1237,10 +1575,17 @@
       S.startedAt = Date.now();
       S.stopped = false; S.paused = false;
       S.abort = new AbortController();
-      S.progress = { roomsTotal: selected.length, roomsDone: 0, roomsSkipped: 0, roomsFailed: 0, filesTotal: 0, filesDone: 0, filesFailed: 0, bytes: 0, records: 0 };
+      S.progress = newProgress(selected.length);
       S.roomFailures = []; S.fileFailures = []; S.current = {};
+      S.roomBytes = {}; S.samples = []; S.rate = null; S.eta = null; S.etaAt = S.startedAt;
+      // 미리 확인한 방은 처음부터 예상 용량에 넣는다 (범위가 바뀌었어도 확인한 방 몫은 맞다)
+      var per = S.scan && S.scan.finishedAt ? S.scan.perRoom : {};
+      selected.forEach(function (r) {
+        var t = per[String(r.id)];
+        if (t) setRoomBytes(r, t.bytes);
+      });
       win.addEventListener('beforeunload', beforeUnload);
-      timer = win.setInterval(render, 700);
+      timer = win.setInterval(function () { tick(); render(); }, 700);
       render();
       try {
         var root = await chooseRoot(picked);
@@ -1251,8 +1596,14 @@
         await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION }, null, 1));
         var dms = selected.filter(function (r) { return r.kind === 'chat'; });
         var others = selected.filter(function (r) { return r.kind !== 'chat'; });
-        await pool(others, 5, roomsDir, folders);
-        if (!S.stopped) await pool(dms, 8, roomsDir, folders);
+        var work = function (room) { return processRoom(room, roomsDir, folders); };
+        var onFail = function (room, e) {
+          S.progress.roomsFailed++;
+          S.roomFailures.push({ id: room.id, name: room.name, error: errText(e) });
+          if (!has(S.roomBytes, String(room.id))) setRoomBytes(room, 0);
+        };
+        await pool(others, 5, work, onFail);
+        if (!S.stopped) await pool(dms, 8, work, onFail);
         await finalize(root, roomsDir, !S.stopped);
         S.phase = S.stopped ? 'stopped' : 'done';
       } catch (e) {
