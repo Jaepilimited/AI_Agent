@@ -1843,6 +1843,9 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   서버는 사용자 토큰으로 Drive `alt=media`(프록시 통과)로 받는다 (`mail_google.read_template_cache_index`·`cached_tab_zip`).
   ⚠️ 내보내기는 연속 9회쯤에서 429 — 탭 사이 4초, 429 면 다음 회차로 넘긴다. 탭 하나가 14MB 인 것도 있다(시트 셀 저장 불가).
   ⚠️ gmailv2 에 Drive 권한을 넣으면 담당자 전원 재승인 — 그래서 별도 프로젝트다.
+  ⚠️ 바뀐 탭 판정 지문은 **글자·링크 URL·이미지 ID 만**(documentTab 전체는 97탭에서 1~2분·두 번 읽으면 메모리 초과) +
+  **키 정렬 직렬화**(`canon_` — 고급 서비스 객체는 호출마다 키 순서가 달라 그냥 stringify 하면 매번 전 탭 '바뀜').
+  서식만 바꾼 변경은 지문에 안 잡혀 회차마다 가장 오래된 탭 3개(`REFRESH_PER_RUN`)를 새로 받는다.
 - **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
 - **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
   `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는
