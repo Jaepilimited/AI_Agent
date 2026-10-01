@@ -94,11 +94,19 @@ const loadSheets = guard(async () => {
   const j = await api("/api/mail-sender/sheets", { spreadsheet: $("ms-book").value });
   state.spreadsheet_id = j.spreadsheet_id;
   $("ms-sheet").replaceChildren(...j.sheets.map((t) => new Option(t, t)));
+  state.gids = j.gids || {};
   const last = recall(LAST_SHEET);
   if (j.sheets.includes(last)) $("ms-sheet").value = last;
+  updateOpenLink();
 });
+// 고른 시트를 구글 시트에서 바로 연다 (#gid= 로 그 탭까지)
+function updateOpenLink() {
+  const a = $("ms-open"), sid = state.spreadsheet_id, gid = (state.gids || {})[$("ms-sheet").value];
+  a.hidden = !sid;
+  a.href = sid ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sid)}/edit` + (gid !== undefined ? `#gid=${gid}` : "") : "#";
+}
 $("ms-book").onchange = loadSheets;
-$("ms-sheet").onchange = () => remember(LAST_SHEET, $("ms-sheet").value);
+$("ms-sheet").onchange = () => { remember(LAST_SHEET, $("ms-sheet").value); updateOpenLink(); };
 
 // 공통 첨부 — base64 로 읽어 JSON 으로 보낸다. 서버도 같은 한도로 다시 막는다.
 const FILES_MAX = 10;

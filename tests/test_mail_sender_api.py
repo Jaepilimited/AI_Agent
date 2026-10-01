@@ -67,7 +67,7 @@ def test_scope_check_failure_is_503_not_403(client):
 def test_google_failure_becomes_readable_502(client):
     with patch("app.api.mail_sender_api._credentials", return_value=object()), \
          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
-         patch("app.api.mail_sender_api.mail_google.sheet_titles",
+         patch("app.api.mail_sender_api.mail_google.sheet_gids",
                side_effect=RuntimeError("시트를 읽지 못했습니다")):
         r = client.post("/api/mail-sender/sheets", json={"spreadsheet": "abc"})
     assert r.status_code == 502
@@ -142,7 +142,7 @@ def test_check_refresh_error_is_409(client):
 def test_refresh_error_inside_route_is_409(client):
     with patch("app.api.mail_sender_api._credentials", return_value=object()), \
          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
-         patch("app.api.mail_sender_api.mail_google.sheet_titles", side_effect=_refresh_error()):
+         patch("app.api.mail_sender_api.mail_google.sheet_gids", side_effect=_refresh_error()):
         r = client.post("/api/mail-sender/sheets", json={"spreadsheet": "abc"})
     assert r.status_code == 409 and "다시 연결" in r.json()["detail"]
 
@@ -686,3 +686,13 @@ def test_spreadsheet_is_chosen_from_list_with_gmail_v2_default(client):
     assert r.json()["spreadsheets"] == MAIL_SPREADSHEETS
     html = (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")
     assert 'id="ms-book"' in html and 'id="ms-url"' not in html
+
+
+def test_sheets_returns_gids_for_open_link(client):
+    """'시트 열기' 링크 — gmail_ 시트만, 이름 → gid."""
+    with patch("app.api.mail_sender_api._credentials", return_value=object()),          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]),          patch("app.api.mail_sender_api.mail_google.sheet_gids",
+               return_value={"gmail_a": 11, "_탭목록": 22, "gmail_b": 0}):
+        j = client.post("/api/mail-sender/sheets", json={"spreadsheet": "abc"}).json()
+    assert j["sheets"] == ["gmail_a", "gmail_b"] and j["gids"] == {"gmail_a": 11, "gmail_b": 0}
+    js = (ROOT / "app/static/mail_sender.js").read_text(encoding="utf-8")
+    assert "#gid=${gid}" in js and 'id="ms-open"' in (ROOT / "app/static/mail_sender.html").read_text(encoding="utf-8")

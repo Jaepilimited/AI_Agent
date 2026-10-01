@@ -264,8 +264,9 @@ async def status(user=Depends(get_current_user)):
 async def sheets(body: SheetsIn, user=Depends(get_current_user)):
     creds = await asyncio.to_thread(_ready_creds, user)
     sid = mail_google.spreadsheet_id_from(body.spreadsheet)
-    titles = await asyncio.to_thread(mail_google.sheet_titles, creds, sid)
-    return {"spreadsheet_id": sid, "sheets": [t for t in titles if t.startswith("gmail_")]}
+    gids = await asyncio.to_thread(mail_google.sheet_gids, creds, sid)
+    titles = [t for t in gids if t.startswith("gmail_")]
+    return {"spreadsheet_id": sid, "sheets": titles, "gids": {t: gids[t] for t in titles}}
 
 
 def _row_message(rows, templates, row: int):

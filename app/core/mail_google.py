@@ -150,6 +150,13 @@ def sheet_titles(creds, spreadsheet_id: str) -> list[str]:
     return [s["properties"]["title"] for s in meta.get("sheets", [])]
 
 
+def sheet_gids(creds, spreadsheet_id: str) -> dict[str, int]:
+    """시트 이름 → gid — 화면의 '시트 열기' 링크(#gid=)에 쓴다."""
+    meta = _sheets(creds).spreadsheets().get(spreadsheetId=spreadsheet_id,
+                                             fields="sheets(properties(title,sheetId))").execute()
+    return {s["properties"]["title"]: s["properties"].get("sheetId", 0) for s in meta.get("sheets", [])}
+
+
 def read_sheet(creds, spreadsheet_id: str, title: str) -> list[list[str]]:
     res = _sheets(creds).spreadsheets().values().get(
         spreadsheetId=spreadsheet_id, range=_a1(title), valueRenderOption="FORMATTED_VALUE").execute()

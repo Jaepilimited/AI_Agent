@@ -6438,6 +6438,8 @@ html.dark .db-autocomplete-dropdown {
 .ms-btn { background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
           color: var(--text); padding: var(--space-xs) var(--space-md); font: inherit; font-size: var(--text-ui); cursor: pointer; }
 .ms-btn:hover { background: var(--bg-hover); }
+a.ms-btn { text-decoration: none; color: inherit; display: inline-block; }
+a.ms-btn[hidden] { display: none; }
 .ms-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .ms-btn-primary { background: var(--accent); border-color: var(--accent); color: var(--bg-surface); }
 .ms-btn-primary:hover { background: var(--accent-hover); }
