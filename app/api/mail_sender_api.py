@@ -22,7 +22,7 @@ from app.core import mail_sender_jobs as jobs
 from app.core.google_auth import GoogleAuthManager
 from app.core.mail_mime import build_mime
 from app.core.mail_sender import (
-    DOC_ID, TAB_DIR_SHEET, Issue, check, first_subjects, parse_rows, parse_tab_directory, pending,
+    TAB_DIR_SHEET, template_cache_index_id, Issue, check, first_subjects, parse_rows, parse_tab_directory, pending,
 )
 from app.core.mail_template import TemplateError, render, template_from_export_zip
 
@@ -95,12 +95,14 @@ def _load(creds, spreadsheet_id: str, sheet: str):
         raise
     tab_dir, updated = parse_tab_directory(tab_values)
     templates = {}
-    for manager in {r.manager for r in pending(rows)}:
+    managers = {r.manager for r in pending(rows)}
+    cache = mail_google.read_template_cache_index(creds, template_cache_index_id()) if managers else {}
+    for manager in managers:
         tab_id = tab_dir.get(manager)
         if not tab_id:
             continue
         try:
-            templates[manager] = template_from_export_zip(mail_google.export_tab_zip(creds, DOC_ID, tab_id))
+            templates[manager] = template_from_export_zip(mail_google.cached_tab_zip(creds, cache, tab_id))
         except (TemplateError, RuntimeError, requests.RequestException, zipfile.BadZipFile) as e:
             templates[manager] = e
     return rows, cols, templates, tab_dir, updated

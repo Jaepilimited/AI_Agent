@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 
 import requests
@@ -53,6 +54,42 @@ def export_tab_zip(creds, doc_id: str, tab_id: str) -> bytes:
     if r.content[:2] != b"PK":
         raise RuntimeError("구글이 로그인/권한 페이지를 돌려줬습니다 (zip 이 아님) — 구글 다시 연결")
     return r.content
+
+
+def drive_download(creds, file_id: str) -> bytes:
+    """Drive 파일 내용. ⚠️ `alt=media` 는 www.googleapis.com 에서 바로 내려와 WAS 프록시를 통과한다
+    (2026-10-01 실측). Docs 내보내기(`docs.google.com/.../export`)는 `*.googleusercontent.com` 으로
+    넘겨져 프록시에 막힌다 — 그래서 템플릿은 캐시(아래)에서 읽는다."""
+    r = AuthorizedSession(_fresh(creds)).get(
+        f"https://www.googleapis.com/drive/v3/files/{file_id}", params={"alt": "media"}, timeout=180)
+    if r.status_code == 404:
+        raise RuntimeError("템플릿 캐시 파일을 찾을 수 없습니다 — 10분 뒤 다시 점검하세요")
+    if r.status_code in (401, 403):
+        raise RuntimeError("템플릿 캐시에 접근 권한이 없습니다 — 회사 구글 계정으로 연결했는지 확인하세요")
+    if r.status_code != 200:
+        raise RuntimeError(f"템플릿 캐시 읽기 실패 (HTTP {r.status_code})")
+    return r.content
+
+
+def read_template_cache_index(creds, index_id: str) -> dict:
+    """'셀라 메일 템플릿 캐시' Apps Script 가 10분마다 쓰는 index.json — {tabs: {탭 ID: {fileId, hash, …}}}."""
+    if not index_id:
+        raise RuntimeError("템플릿 캐시가 설정되지 않았습니다 (CELLA_MAIL_TEMPLATE_CACHE_INDEX_ID)")
+    try:
+        index = json.loads(drive_download(creds, index_id).decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise RuntimeError("템플릿 캐시 목록(index.json)이 깨졌습니다 — 10분 뒤 다시 점검하세요") from e
+    return index if isinstance(index, dict) else {}
+
+
+def cached_tab_zip(creds, index: dict, tab_id: str) -> bytes:
+    entry = (index.get("tabs") or {}).get(tab_id)
+    if not entry or not entry.get("fileId"):
+        raise RuntimeError("이 탭이 아직 템플릿 캐시에 없습니다 — 새로 만든 탭이면 최대 10분 뒤 다시 점검하세요")
+    data = drive_download(creds, entry["fileId"])
+    if data[:2] != b"PK":
+        raise RuntimeError("템플릿 캐시 파일이 zip 이 아닙니다 — 10분 뒤 다시 점검하세요")
+    return data
 
 
 def _sheets(creds):

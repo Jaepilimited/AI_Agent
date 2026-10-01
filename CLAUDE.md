@@ -1834,6 +1834,15 @@ CSV 도 같은 값이었다. **에러는 없었다.**
 - **Entra 사용자 구글 연결** (2026-10-01): Entra 로그인은 늘 `ai.cravercorp.internal` 로 돌아오는데 구글은 `.internal` 콜백을
   받지 않는다 → `auth_routes._oauth_redirect_uri` 가 등록 콜백(`10.1.100.5.nip.io`)으로 보내고 서명된 state 의 `origin` 으로
   쿠키 있는 주소에 한 번 되돌린다 (`_origin_can_hop_back` — `PUBLIC_BASE_URL`·`ENTRA_REDIRECT_URI` 호스트만)
+- **템플릿은 Drive 캐시에서 읽는다** (2026-10-01): ⛔ 운영 WAS 프록시는 `*.googleusercontent.com` 을 막는데 Docs 탭
+  내보내기(`docs.google.com/.../export?format=zip&tab=`)는 **항상** `doc-*-docstext.googleusercontent.com` 으로 307 된다
+  (로컬엔 프록시가 없어 안 보였다). Drive `files.export` 는 97탭이라 `exportSizeLimitExceeded`. 그래서 별도 Apps Script
+  **「셀라 메일 템플릿 캐시」**(재필 소유, `1ArcgXAXMDTiIjga2pNiLwNA6Exoz-W-s4vDcRNbISvvr1VXQ_gTpvk60`, 10분 트리거
+  `syncTemplateCache`)가 내용 해시가 바뀐 탭만 zip 으로 Drive 폴더(`17iVKH0hF1oSTyIvt-QsCuFfJS7tpeQeo`, 도메인 링크 보기)에
+  저장하고 `index.json`(`MAIL_TEMPLATE_CACHE_INDEX_ID`, env `CELLA_MAIL_TEMPLATE_CACHE_INDEX_ID`)에 탭 ID → 파일 ID 를 적는다.
+  서버는 사용자 토큰으로 Drive `alt=media`(프록시 통과)로 받는다 (`mail_google.read_template_cache_index`·`cached_tab_zip`).
+  ⚠️ 내보내기는 연속 9회쯤에서 429 — 탭 사이 4초, 429 면 다음 회차로 넘긴다. 탭 하나가 14MB 인 것도 있다(시트 셀 저장 불가).
+  ⚠️ gmailv2 에 Drive 권한을 넣으면 담당자 전원 재승인 — 그래서 별도 프로젝트다.
 - **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
 - **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
   `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는

@@ -225,3 +225,41 @@ def test_send_as_addresses_returns_display_and_reply_to():
         got = mail_google.send_as_addresses(MagicMock())
     assert got == [{"email": "me@x.com", "display": "나", "reply_to": "", "default": True},
                    {"email": "mk@x.com", "display": "마케팅", "reply_to": "reply@x.com", "default": False}]
+
+
+# ---- 템플릿 캐시 (2026-10-01: 운영 프록시가 Docs 내보내기를 막아 Drive 캐시에서 읽는다) ----
+def _sess(status, content):
+    sess = MagicMock()
+    sess.get.return_value = MagicMock(status_code=status, content=content)
+    return sess
+
+
+def test_cached_tab_zip_downloads_by_file_id():
+    sess = _sess(200, b"PK" + bytes([3, 4]) + b"data")
+    with patch("app.core.mail_google.AuthorizedSession", return_value=sess):
+        data = mail_google.cached_tab_zip(MagicMock(), {"tabs": {"t.a": {"fileId": "F1"}}}, "t.a")
+    assert data.startswith(b"PK")
+    assert sess.get.call_args.args[0] == "https://www.googleapis.com/drive/v3/files/F1"
+    assert sess.get.call_args.kwargs["params"] == {"alt": "media"}
+
+
+def test_cached_tab_zip_missing_tab_says_wait():
+    with pytest.raises(RuntimeError, match="10분"):
+        mail_google.cached_tab_zip(MagicMock(), {"tabs": {}}, "t.new")
+
+
+@pytest.mark.parametrize("status,needle", [(404, "찾을 수 없"), (403, "권한"), (500, "HTTP 500")])
+def test_drive_download_errors_are_readable(status, needle):
+    with patch("app.core.mail_google.AuthorizedSession", return_value=_sess(status, b"x")):
+        with pytest.raises(RuntimeError, match=needle):
+            mail_google.drive_download(MagicMock(), "F1")
+
+
+def test_cache_index_parsing_and_unset_id():
+    with patch("app.core.mail_google.AuthorizedSession", return_value=_sess(200, b'{"tabs": {"t.a": {"fileId": "F"}}}')):
+        assert mail_google.read_template_cache_index(MagicMock(), "IDX")["tabs"]["t.a"]["fileId"] == "F"
+    with patch("app.core.mail_google.AuthorizedSession", return_value=_sess(200, b"<html>")):
+        with pytest.raises(RuntimeError, match="깨졌"):
+            mail_google.read_template_cache_index(MagicMock(), "IDX")
+    with pytest.raises(RuntimeError, match="설정"):
+        mail_google.read_template_cache_index(MagicMock(), "")

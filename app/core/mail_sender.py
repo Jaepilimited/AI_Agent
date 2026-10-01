@@ -12,6 +12,14 @@ DOC_ID = "1Gofa6pusFe2t8o-ft1Xz5Be-sxmmUux5sQbu5vJA6S4"
 TAB_DIR_SHEET = "_탭목록"
 # gmail_v2 스프레드시트 — 자가 점검이 `_탭목록` 갱신 시각을 읽는 곳 (env CELLA_MAIL_TAB_DIR_SPREADSHEET_ID 로 덮어쓴다)
 MAIL_TAB_DIR_SPREADSHEET_ID = "1n08f1VIna9hZH03Zdws-31-G7RFaYJ3T7Eg7vQk636c"
+# '셀라 메일 템플릿 캐시' Apps Script(재필 소유)가 쓰는 index.json 의 Drive 파일 ID
+# (env CELLA_MAIL_TEMPLATE_CACHE_INDEX_ID 로 덮어쓴다). 탭 zip 은 서버가 직접 못 받는다 — 프록시.
+MAIL_TEMPLATE_CACHE_INDEX_ID = "1O-v16uFccf4O3tj9hSIJSzH5axfSWer-"
+
+
+def template_cache_index_id() -> str:
+    import os
+    return (os.getenv("CELLA_MAIL_TEMPLATE_CACHE_INDEX_ID") or "").strip() or MAIL_TEMPLATE_CACHE_INDEX_ID
 DAILY_LIMIT = 2000
 MAX_MESSAGE_BYTES = 24 * 1024 * 1024
 TAB_DIR_STALE = timedelta(hours=1)

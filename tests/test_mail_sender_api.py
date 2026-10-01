@@ -154,7 +154,8 @@ def test_one_tab_timeout_is_that_managers_error_not_502(client):
     with patch("app.api.mail_sender_api._credentials", return_value=object()), \
          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
          patch("app.api.mail_sender_api.mail_google.read_sheet", side_effect=[sheet, tabs]), \
-         patch("app.api.mail_sender_api.mail_google.export_tab_zip", side_effect=requests.Timeout("timeout")):
+         patch("app.api.mail_sender_api.mail_google.read_template_cache_index", return_value={}), \
+         patch("app.api.mail_sender_api.mail_google.cached_tab_zip", side_effect=requests.Timeout("timeout")):
         r = client.post("/api/mail-sender/check", json={"spreadsheet_id": "x", "sheet": "gmail_a"})
     assert r.status_code == 200
     j = r.json()
@@ -625,7 +626,8 @@ def test_corrupt_zip_is_that_managers_error_not_500(client):
     with patch("app.api.mail_sender_api._credentials", return_value=object()), \
          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
          patch("app.api.mail_sender_api.mail_google.read_sheet", side_effect=[sheet, tabs]), \
-         patch("app.api.mail_sender_api.mail_google.export_tab_zip", return_value=b"PK\x03\x04 broken"):
+         patch("app.api.mail_sender_api.mail_google.read_template_cache_index", return_value={}), \
+         patch("app.api.mail_sender_api.mail_google.cached_tab_zip", return_value=b"PK\x03\x04 broken"):
         r = _check(client)
     assert r.status_code == 200
     j = r.json()
@@ -660,3 +662,15 @@ def test_sheet_format_problem_is_readable_400_not_500(client):
     with patch("app.api.mail_sender_api._credentials", return_value=object()),          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]),          patch("app.api.mail_sender_api.mail_google.read_sheet", return_value=[]):
         r = _check(client)
     assert r.status_code == 400 and "헤더" in r.json()["detail"]
+
+
+def test_tab_missing_from_cache_is_that_managers_error(client):
+    """캐시에 아직 없는 탭(새로 만든 탭) — 전체 실패가 아니라 그 담당자 행의 오류로 보인다."""
+    sheet, tabs = _sheet_and_tabs()
+    with patch("app.api.mail_sender_api._credentials", return_value=object()), \
+         patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
+         patch("app.api.mail_sender_api.mail_google.read_sheet", side_effect=[sheet, tabs]), \
+         patch("app.api.mail_sender_api.mail_google.read_template_cache_index", return_value={"tabs": {}}):
+        r = _check(client)
+    assert r.status_code == 200
+    assert any(i["row"] == 2 and "캐시" in i["message"] for i in r.json()["issues"])
