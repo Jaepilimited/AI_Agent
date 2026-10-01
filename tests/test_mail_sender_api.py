@@ -148,8 +148,8 @@ def test_refresh_error_inside_route_is_409(client):
 
 def test_one_tab_timeout_is_that_managers_error_not_502(client):
     import requests
-    header = ["Email", "담당자", "전송여부", "{kol id}"]
-    sheet = [header, ["a@x.com", "강하니", "", "k1"]]
+    header = ["Date", "담당자", "{kol id}", "Email", "", "", "전송여부"]
+    sheet = [header, ["", "강하니", "k1", "a@x.com", "", "", ""]]
     tabs = [["담당자", "탭", "", ""], ["강하니", "t.a", "", ""]]
     with patch("app.api.mail_sender_api._credentials", return_value=object()), \
          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]), \
@@ -615,7 +615,7 @@ def test_js_shows_reply_to_of_alias():
 
 
 def _sheet_and_tabs():
-    sheet = [["Email", "담당자", "전송여부", "{kol id}"], ["a@x.com", "강하니", "", "k1"]]
+    sheet = [["Date", "담당자", "{kol id}", "Email", "", "", "전송여부"], ["", "강하니", "k1", "a@x.com", "", "", ""]]
     tabs = [["담당자", "탭", "", ""], ["강하니", "t.a", "", ""]]
     return sheet, tabs
 
@@ -653,3 +653,10 @@ def test_js_popup_blocked_is_reported():
 def test_middleware_page_list_is_formatted():
     mw = (ROOT / "app/api/middleware.py").read_text(encoding="utf-8")
     assert re.search(r'"/mail-sender", "/', mw)
+
+
+def test_sheet_format_problem_is_readable_400_not_500(client):
+    """2026-10-01: 양식 오류(ValueError)가 원시 500 으로 나가 '오류: 500' 만 보였다."""
+    with patch("app.api.mail_sender_api._credentials", return_value=object()),          patch("app.api.mail_sender_api.mail_google.missing_mail_scopes", return_value=[]),          patch("app.api.mail_sender_api.mail_google.read_sheet", return_value=[]):
+        r = _check(client)
+    assert r.status_code == 400 and "헤더" in r.json()["detail"]

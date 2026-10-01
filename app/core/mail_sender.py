@@ -46,33 +46,30 @@ class Issue:
     message: str
 
 
-def _find(headers: list[str], *words: str) -> int | None:
-    for i, h in enumerate(headers):
-        if normalize_key(h) in words:
-            return i
-    return None
+# ⛔ 열은 **위치로** 읽는다 — 기존 Apps Script(gmailv2 CONFIG)와 똑같이.
+#    담당자마다 헤더 이름이 다르다 (B열이 `담당자` 인 시트도, `문서명` 인 시트도,
+#    G열이 `전송여부` 인 시트도 `전송 여부` 인 시트도 있다, 2026-10-01 실측).
+#    이름으로 찾으면 기존 툴로 잘 쓰던 시트가 여기서만 안 열린다.
+#    A 날짜 · B 탭 이름 · D 이메일 · G 전송여부 · H 비고, 1행 헤더, 2행부터 데이터.
+COL_DATE, COL_MANAGER, COL_EMAIL, COL_STATUS, COL_NOTE = 0, 1, 3, 6, 7
 
 
 def parse_rows(values: list[list[str]]) -> tuple[list[Row], Columns]:
-    for hi, headers in enumerate(values):
-        headers = [str(h) for h in headers]
-        email, manager = _find(headers, "email", "이메일"), _find(headers, "담당자")
-        status, note = _find(headers, "전송여부"), _find(headers, "비고")
-        if email is not None and manager is not None and status is not None:
-            break
-    else:
-        raise ValueError("헤더를 찾지 못했습니다: Email · 담당자 · 전송여부 열이 필요합니다")
+    if not values or not any(str(c).strip() for c in values[0]):
+        raise ValueError("시트 1행에 헤더가 없습니다 — 기존 메일 툴과 같은 양식(A 날짜 · B 탭 이름 · "
+                         "D 이메일 · G 전송여부 · H 비고)이어야 합니다")
+    headers = [str(h) for h in values[0]]
     variables = {normalize_key(h.strip()[1:-1]): i for i, h in enumerate(headers)
                  if h.strip().startswith("{") and h.strip().endswith("}")}
-    cols = Columns(email=email, manager=manager, status=status,
-                   note=note if note is not None else status + 1,
-                   date=_find(headers, "date", "전송날짜"), variables=variables)
+    cols = Columns(email=COL_EMAIL, manager=COL_MANAGER, status=COL_STATUS,
+                   note=COL_NOTE, date=COL_DATE, variables=variables)
     rows = []
-    for ri, raw in enumerate(values[hi + 1:], start=hi + 2):
+    for ri, raw in enumerate(values[1:], start=2):
         cell = lambda i: (str(raw[i]).strip() if i is not None and i < len(raw) else "")
         if not any(str(c).strip() for c in raw):
             continue
-        rows.append(Row(row=ri, manager=cell(manager), email=cell(email), status=cell(status),
+        rows.append(Row(row=ri, manager=cell(COL_MANAGER), email=cell(COL_EMAIL),
+                        status=cell(COL_STATUS),
                         values={k: cell(i) for k, i in variables.items()}))
     return rows, cols
 

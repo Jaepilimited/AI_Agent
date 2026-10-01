@@ -1828,6 +1828,12 @@ CSV 도 같은 값이었다. **에러는 없었다.**
 - **Docs 내보내기 변환 규칙** (2026-10-01 실측): 링크는 `https://www.google.com/url?q=<대상>&sa=D&…&usg=…` 로 **감싸여 온다**
   (실제 탭 링크 4/4) → `q` 로 되돌리고 `%7B…%7D` 를 `{변수}` 로 되살린다 (변수 처리보다 먼저). CSS 는 클래스 규칙만이 아니라
   **요소 규칙**(`p{margin:0}`·`table td,table th{…}` 등 p·li·ul·ol·td·th·table·span·h1~h6)도 인라인 — 요소 → 클래스 → 원래 인라인 순
+- **시트 열은 위치로 읽는다** (2026-10-01 실측): 기존 Apps Script `CONFIG` 와 같이 A 날짜 · B 탭 이름 · D 이메일 · G 전송여부 ·
+  H 비고, 1행 헤더·2행부터 데이터. ⛔ 헤더 이름으로 찾지 말 것 — 담당자마다 `담당자`/`문서명`, `전송여부`/`전송 여부` 로 달라
+  기존 툴로 잘 쓰던 시트가 여기서만 "헤더를 찾지 못했습니다" 500 이 났다. 변수(`{…}`)만 1행 헤더 이름으로 찾는다.
+- **Entra 사용자 구글 연결** (2026-10-01): Entra 로그인은 늘 `ai.cravercorp.internal` 로 돌아오는데 구글은 `.internal` 콜백을
+  받지 않는다 → `auth_routes._oauth_redirect_uri` 가 등록 콜백(`10.1.100.5.nip.io`)으로 보내고 서명된 state 의 `origin` 으로
+  쿠키 있는 주소에 한 번 되돌린다 (`_origin_can_hop_back` — `PUBLIC_BASE_URL`·`ENTRA_REDIRECT_URI` 호스트만)
 - **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
 - **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
   `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는

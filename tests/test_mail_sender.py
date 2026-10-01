@@ -30,14 +30,22 @@ def test_parse_rows_by_header_and_strip():
     assert rows[0].row == 2 and rows[0].manager == "강하니" and rows[0].values["kol id"] == "maria_jflores"
 
 
-def test_parse_rows_header_not_on_first_line():
-    rows, _ = parse_rows([["메모"], *SHEET])
-    assert rows[0].row == 3
+def test_parse_rows_reads_by_position_like_apps_script():
+    """헤더 이름이 달라도(`문서명`, `전송 여부`) 위치로 읽는다 — 2026-10-01 혜진 시트."""
+    sheet = [["", "문서명", "{name}", "Email", "{value1}", "{value2}", "전송 여부", "비고"],
+             ["2026. 9. 9", "박혜진_템플릿", "vera", "vera@gmail.com", "", "", "O", ""],
+             ["", "박혜진_템플릿", "siu", "siu@gmail.com", "x", "", "", ""]]
+    rows, cols = parse_rows(sheet)
+    assert (cols.manager, cols.email, cols.status, cols.note, cols.date) == (1, 3, 6, 7, 0)
+    assert [r.row for r in pending(rows)] == [3]
+    assert rows[1].manager == "박혜진_템플릿" and rows[1].values == {"name": "siu", "value1": "x", "value2": ""}
 
 
-def test_parse_rows_missing_header_raises():
-    with pytest.raises(ValueError, match="Email"):
-        parse_rows([["담당자", "전송여부"]])
+def test_parse_rows_empty_header_raises():
+    with pytest.raises(ValueError, match="헤더"):
+        parse_rows([["", ""], ["a", "b"]])
+    with pytest.raises(ValueError, match="헤더"):
+        parse_rows([])
 
 
 def test_pending_skips_O_and_blank_email():
@@ -106,10 +114,10 @@ def test_check_daily_limit():
 def test_pending_case_insensitive_status():
     """Status 'o' and ' O ' should be treated as sent and excluded from pending."""
     sheet = [
-        ["Email", "담당자", "전송여부"],
-        ["a@x.com", "강하니", "o"],
-        ["b@x.com", "강하니", " O "],
-        ["c@x.com", "강하니", ""],
+        ["Date", "담당자", "", "Email", "", "", "전송여부"],
+        ["", "강하니", "", "a@x.com", "", "", "o"],
+        ["", "강하니", "", "b@x.com", "", "", " O "],
+        ["", "강하니", "", "c@x.com", "", "", ""],
     ]
     rows, _ = parse_rows(sheet)
     pending_rows = pending(rows)
@@ -137,8 +145,8 @@ def test_parse_tab_directory_naive_timestamp():
 def test_check_with_unparseable_time_no_crash():
     """check() should not crash with unparseable time and should warn about staleness."""
     sheet = [
-        ["Email", "담당자", "전송여부"],
-        ["a@x.com", "강하니", ""],
+        ["Date", "담당자", "", "Email", "", "", "전송여부"],
+        ["", "강하니", "", "a@x.com", "", "", ""],
     ]
     tab_dir = [["탭 제목", "탭 ID", "상위 탭", "갱신 시각"],
                ["강하니", "t.a", "", "garbage"]]
@@ -164,8 +172,8 @@ def test_parse_tab_directory_uses_oldest_timestamp():
 def test_parse_rows_variable_header_with_spaces():
     """Variable header key should strip outer spaces: ' {KOL ID} ' → 'kol id'."""
     sheet = [
-        ["Email", "담당자", " {KOL ID} ", "전송여부"],
-        ["a@x.com", "강하니", "value1", ""],
+        ["Date", "담당자", " {KOL ID} ", "Email", "", "", "전송여부"],
+        ["", "강하니", "value1", "a@x.com", "", "", ""],
     ]
     rows, cols = parse_rows(sheet)
     assert "kol id" in cols.variables

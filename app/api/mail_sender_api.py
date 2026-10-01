@@ -56,6 +56,8 @@ def _google_errors(fn):
             raise HTTPException(502, f"구글 API 오류({code}): {getattr(e, 'reason', None) or e}") from e
         except (GoogleAuthError, requests.RequestException) as e:
             raise HTTPException(502, f"구글 연결에 실패했습니다: {e}") from e
+        except ValueError as e:   # 시트 양식 문제 등 — 사람이 고칠 수 있는 것
+            raise HTTPException(400, str(e) or "입력값을 확인해 주세요") from e
     return wrapper
 
 
