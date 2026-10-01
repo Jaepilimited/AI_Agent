@@ -496,3 +496,114 @@ def test_authenticated_callback_never_hops(client, fake_manager, monkeypatch):
 
     assert response.status_code == 200
     assert fake_manager.seen_email == "owner@example.com"
+
+
+# ── Entra 로 들어온 사람이 구글 연결을 못 하던 것 (2026-10-01) ─────────────────
+#
+# ⛔ Entra 에 등록된 회신 주소가 `https://ai.cravercorp.internal/...` 하나라서
+#    Entra 로그인은 **늘 그 이름으로 돌아온다** (10.1.100.5 로 들어와도). 그런데
+#    구글은 `.internal` 을 콜백으로 받지 않아 `/auth/google/login` 이 "이 주소에서는
+#    구글 연결을 할 수 없습니다" 로 막았다 — Entra 사용자 **전원**이 새 연결 불가.
+#
+# 고치는 방향: 사내 이름이면 **등록된 콜백(nip.io)** 으로 보내고, 사용자가 보던
+#   주소를 서명된 state 에 넣는다. 쿠키 없는 nip.io 콜백은 그 주소로 한 번 되돌린다.
+#   구글 → 10.1.100.5.nip.io/callback (쿠키 없음) → 302 → ai.cravercorp.internal/callback
+#   ⛔ 되돌릴 곳은 설정에 적힌 우리 주소뿐이다 (열린 리다이렉트 금지).
+
+INTERNAL = "ai.cravercorp.internal"
+REGISTERED = "http://10.1.100.5.nip.io/auth/google/callback"
+
+
+class _Settings:
+    google_oauth_redirect_uri = REGISTERED
+    public_base_url = "http://ai.cravercorp.internal"
+    entra_redirect_uri = "https://ai.cravercorp.internal/users/auth/openid_connect/callback"
+    jwt_secret_key = "s" * 64
+
+
+@pytest.fixture
+def internal_settings(monkeypatch):
+    monkeypatch.setattr(auth_routes, "get_settings", lambda: _Settings())
+
+
+def test_state_carries_origin_and_peek_reads_it(monkeypatch):
+    monkeypatch.setattr(google_oauth_state, "execute", lambda *_a, **_k: 1)
+    monkeypatch.setattr(google_oauth_state, "get_settings", lambda: _Settings())
+
+    token = google_oauth_state.issue_state(7, "owner@example.com", origin="https://" + INTERNAL)
+
+    assert google_oauth_state.peek_origin(token) == "https://" + INTERNAL
+    assert google_oauth_state.peek_origin(token + "x") == "", "위조된 state 는 되돌릴 곳이 없다"
+    assert google_oauth_state.peek_origin("signed") == ""
+    plain = google_oauth_state.issue_state(7, "owner@example.com")
+    assert google_oauth_state.peek_origin(plain) == ""
+
+
+def test_login_from_internal_name_uses_registered_callback(client, fake_manager, monkeypatch,
+                                                           internal_settings):
+    issued = {}
+    monkeypatch.setattr(auth_routes, "issue_state",
+                        lambda _uid, _email, origin="": issued.setdefault("origin", origin) and "signed")
+    sent = {}
+
+    def get_auth_url(user_email, *, state, redirect_uri="", **_extra):
+        sent["redirect_uri"] = redirect_uri
+        return "https://accounts.google.com/o/oauth2/auth?state=" + state
+
+    monkeypatch.setattr(fake_manager, "get_auth_url", get_auth_url)
+
+    response = client.get("/auth/google/login?feature=mail", follow_redirects=False,
+                          headers={"Host": INTERNAL, "X-Forwarded-Proto": "https"})
+
+    assert response.status_code == 307
+    assert sent["redirect_uri"] == REGISTERED
+    assert issued["origin"] == "https://" + INTERNAL
+
+
+def test_login_from_unknown_name_is_still_refused(client, fake_manager, internal_settings):
+    response = client.get("/auth/google/login", follow_redirects=False,
+                          headers={"Host": "evil.example"})
+
+    assert response.status_code == 400
+    assert "구글 연결을 할 수 없습니다" in response.text
+
+
+def test_cookieless_callback_hops_back_to_the_internal_origin(anonymous_client, fake_manager,
+                                                             monkeypatch, internal_settings):
+    monkeypatch.setattr(auth_routes, "peek_origin", lambda _s: "https://" + INTERNAL)
+
+    response = anonymous_client.get("/auth/google/callback?code=abc&state=signed",
+                                    headers={"host": NIP_HOST}, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    location = response.headers["location"]
+    assert location.startswith(f"https://{INTERNAL}/auth/google/callback?")
+    assert "code=abc" in location and "session_hop=1" in location
+    assert fake_manager.seen_email == ""
+
+
+def test_callback_never_hops_to_a_foreign_origin(anonymous_client, fake_manager,
+                                                 monkeypatch, internal_settings):
+    """⛔ 서명돼 있어도 우리 주소가 아니면 따라가지 않는다 — 원래 규칙(nip.io → IP)만."""
+    monkeypatch.setattr(auth_routes, "peek_origin", lambda _s: "https://evil.example")
+
+    response = anonymous_client.get("/auth/google/callback?code=abc&state=signed",
+                                    headers={"host": NIP_HOST}, follow_redirects=False)
+
+    assert response.headers["location"].startswith("http://10.1.100.5/auth/google/callback?")
+
+
+def test_hopped_callback_exchanges_with_the_registered_uri(client, fake_manager, monkeypatch,
+                                                          internal_settings):
+    """구글은 교환 때도 로그인 때와 같은 콜백 주소를 요구한다."""
+    monkeypatch.setattr(auth_routes, "consume_state",
+                        lambda _s, _u: {"email": "owner@example.com"})
+    used = {}
+    monkeypatch.setattr(fake_manager, "exchange_code",
+                        lambda _c, email, redirect_uri="": used.update(uri=redirect_uri))
+
+    response = client.get("/auth/google/callback?code=abc&state=signed&session_hop=1",
+                          headers={"host": INTERNAL, "X-Forwarded-Proto": "https"})
+
+    assert response.status_code == 200
+    assert used["uri"] == REGISTERED

@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from app.api.auth_middleware import get_current_user, get_optional_user
 from app.config import get_settings
 from app.core.google_auth import MAIL_SCOPES, GoogleAuthManager
-from app.core.google_oauth_state import consume_state, issue_state
+from app.core.google_oauth_state import consume_state, issue_state, peek_origin
 from app.core import password_reset_google
 from app.core.personal_briefing import get_user_refresh_lock
 from app.core.jandi_briefing import drop_pending_for_user
@@ -125,6 +125,57 @@ def _browsing_host(host: str) -> str:
     return f"{m.group(1)}{m.group(2) or ''}" if m else ""
 
 
+def _request_origin(request: Request) -> str:
+    """사용자가 지금 보고 있는 ``scheme://host``.
+
+    ⚠️ nginx 가 TLS 를 풀고 http 로 넘기므로 ``request.url.scheme`` 은 늘 http 다.
+       nginx 가 붙여 주는 ``X-Forwarded-Proto`` 를 먼저 본다.
+    """
+    proto = (request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower())
+    if proto not in ("http", "https"):
+        proto = "https" if request.url.scheme == "https" else "http"
+    return f"{proto}://{request.headers.get('host', '')}"
+
+
+def _hop_back_hosts() -> set:
+    """구글 콜백 뒤 되돌아가도 되는 사내 이름 — 설정에 적힌 우리 주소뿐이다."""
+    from urllib.parse import urlparse
+
+    settings = get_settings()
+    hosts = set()
+    for url in (getattr(settings, "public_base_url", ""), getattr(settings, "entra_redirect_uri", "")):
+        netloc = urlparse(url or "").netloc.lower()
+        if netloc:
+            hosts.add(netloc)
+    return hosts
+
+
+def _origin_can_hop_back(origin: str) -> bool:
+    """⛔ 열린 리다이렉트가 되지 않게 **우리 주소로만** 되돌린다."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse(origin or "")
+    return (parsed.scheme in ("http", "https") and not parsed.path.strip("/")
+            and not parsed.query and parsed.netloc.lower() in _hop_back_hosts())
+
+
+def _oauth_redirect_uri(request: Request) -> str:
+    """구글에 실제로 보낼 콜백 주소. 로그인과 콜백이 **반드시 같은 값**을 써야 한다.
+
+    ⛔ Entra 로그인은 늘 ``ai.cravercorp.internal`` 로 돌아온다 (Entra 에 등록된
+       회신 주소가 그것뿐이다, 2026-10-01). 그 이름은 구글에 등록할 수 없어서,
+       Entra 로 들어온 사람은 **아무도 구글 연결을 할 수 없었다.** 이런 사내
+       이름이면 등록된 콜백(``…nip.io``)으로 보내고, 콜백이 ``origin`` 을 보고
+       쿠키가 있는 사내 이름으로 한 번 되돌린다.
+    """
+    uri = _get_redirect_uri(request)
+    if _redirect_uri_is_usable(uri):
+        return uri
+    if _origin_can_hop_back(_request_origin(request)):
+        return get_settings().google_oauth_redirect_uri or ""
+    return ""
+
+
 async def _handle_password_reset_callback(request: Request, code: str, state: str):
     """구글이 보증한 신원으로 **본인이** 비밀번호를 되찾게 한다.
 
@@ -201,8 +252,8 @@ async def google_login(
     # ⛔ 쓸 수 없는 콜백 주소로 구글에 보내면 사용자는 "액세스 차단됨" 만 보고,
     #    에러는 구글 화면에서 끝나 **우리 로그에는 아무것도 남지 않는다.**
     #    보내기 전에 막고, 무엇을 하면 되는지 말해 준다.
-    redirect_uri = _get_redirect_uri(request)
-    if not _redirect_uri_is_usable(redirect_uri):
+    redirect_uri = _oauth_redirect_uri(request)
+    if not redirect_uri:
         logger.warning("google_login_unusable_redirect",
                        host=request.headers.get("host", ""), redirect_uri=redirect_uri)
         canonical = _canonical_browsing_url()
@@ -214,7 +265,12 @@ async def google_login(
             "지금 접속하신 주소는 구글에 등록할 수 없는 사내 전용 주소입니다. "
             "관리자에게 문의해 주세요."))
 
-    state = await asyncio.to_thread(issue_state, user.id, user.email)
+    # 사내 이름으로 들어온 사람은 콜백 뒤 이 주소로 되돌려야 쿠키가 실린다
+    origin = _request_origin(request)
+    if _redirect_uri_is_usable(_get_redirect_uri(request)):
+        state = await asyncio.to_thread(issue_state, user.id, user.email)
+    else:
+        state = await asyncio.to_thread(issue_state, user.id, user.email, origin=origin)
     extra = {"extra_scopes": MAIL_SCOPES} if feature == "mail" else {}
     auth_url = _get_auth_manager().get_auth_url(
         user.email, state=state, redirect_uri=redirect_uri, **extra
@@ -242,12 +298,20 @@ async def google_callback(
         # **딱 한 번** 쿠키가 있는 호스트로 되돌려 보낸다 (최상위 GET 이동이라
         # SameSite=Lax 쿠키가 실린다). ⛔ 여기서 코드를 교환하지 않는다 —
         # 인증 없이 교환하면 남의 세션에 계정을 붙일 수 있다.
-        target = "" if session_hop else _browsing_host(request.headers.get("host", ""))
+        target = ""
+        if not session_hop:
+            origin = peek_origin(state)
+            if _origin_can_hop_back(origin):
+                target = origin
+            else:
+                host = _browsing_host(request.headers.get("host", ""))
+                if host:
+                    scheme = "https" if request.url.scheme == "https" else "http"
+                    target = f"{scheme}://{host}"
         if target:
-            scheme = "https" if request.url.scheme == "https" else "http"
             query = f"{request.url.query}&session_hop=1" if request.url.query else "session_hop=1"
             logger.info("oauth_callback_session_hop", to_host=target)
-            return RedirectResponse(url=f"{scheme}://{target}/auth/google/callback?{query}")
+            return RedirectResponse(url=f"{target}/auth/google/callback?{query}")
 
 
         logger.warning("oauth_callback_no_session", hopped=bool(session_hop))
@@ -266,7 +330,8 @@ async def google_callback(
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
     try:
-        redirect_uri = _get_redirect_uri(request)
+        # ⚠️ 구글은 교환 때도 로그인 때와 **같은** 콜백 주소를 요구한다
+        redirect_uri = _oauth_redirect_uri(request) or _get_redirect_uri(request)
         async with get_user_refresh_lock(user.id):
             await asyncio.to_thread(
                 _get_auth_manager().exchange_code,

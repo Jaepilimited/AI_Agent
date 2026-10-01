@@ -42,8 +42,14 @@ def _cleanup_states() -> None:
     )
 
 
-def issue_state(user_id: int, user_email: str, now: datetime | None = None) -> str:
-    """Issue a signed state token and persist its one-time nonce server-side."""
+def issue_state(user_id: int, user_email: str, now: datetime | None = None,
+                origin: str = "") -> str:
+    """Issue a signed state token and persist its one-time nonce server-side.
+
+    ``origin`` 은 사용자가 보던 주소(``https://ai.cravercorp.internal``)다. 구글이
+    등록된 콜백(``…nip.io``)으로 돌려보내면 그곳엔 쿠키가 없으므로, 콜백이 이
+    값을 보고 쿠키가 있는 곳으로 한 번 되돌린다. 서명 안에 두어 위조할 수 없다.
+    """
     _cleanup_states()
     current = now or datetime.now(timezone.utc)
     nonce = secrets.token_urlsafe(32)
@@ -61,8 +67,26 @@ def issue_state(user_id: int, user_email: str, now: datetime | None = None) -> s
         "iat": current,
         "exp": expires,
     }
+    if origin:
+        payload["origin"] = origin
     secret = validate_jwt_secret(get_settings().jwt_secret_key)
     return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def peek_origin(token: str) -> str:
+    """서명·만료·용도가 맞는 state 의 ``origin`` 만 읽는다 (소모하지 않는다).
+
+    쿠키 없는 콜백이 되돌아갈 곳을 고를 때 쓴다 — 사용자가 아직 누군지 모르는
+    단계라 소모는 쿠키가 실린 두 번째 요청이 한다.
+    """
+    try:
+        payload = jwt.decode(token or "", validate_jwt_secret(get_settings().jwt_secret_key),
+                             algorithms=["HS256"])
+    except Exception:   # 위조·만료·서명키 문제 모두 "되돌아갈 곳 없음" 이다
+        return ""
+    if payload.get("purpose") != PURPOSE:
+        return ""
+    return str(payload.get("origin") or "")
 
 
 def consume_state(token: str, current_user_id: int, now: datetime | None = None) -> dict[str, object]:
