@@ -33,6 +33,7 @@ from app.api.attachment_api import router as attachment_router
 from app.api.coa_finder_api import router as coa_finder_router
 from app.api.sales_carryover_api import router as sales_carryover_router
 from app.api.mail_sender_api import router as mail_sender_router
+from app.api.jandi_backup_api import router as jandi_backup_router
 from app.api.conversation_api import conversation_router, ensure_message_columns
 from app.api.eval_api import eval_router
 from app.api.face_search_routes import router as face_search_router
@@ -412,7 +413,8 @@ def create_app() -> FastAPI:
     app.include_router(coa_finder_router)     # /coa-finder, /api/coa-finder/*
     app.include_router(sales_carryover_router)  # /sales-carryover, /api/sales-carryover/* — B2B 거래처 이월 대조
     app.include_router(mail_sender_router)  # /mail-sender, /api/mail-sender/*
-    app.include_router(attachment_router)   # /api/attachments/table — 엑셀·CSV → 표 텍스트
+    app.include_router(jandi_backup_router)     # /jandi-backup — 잔디 백업 북마크 배포 화면 (서버 API 없음)
+    app.include_router(attachment_router)     # /api/attachments/table — 엑셀·CSV → 표 텍스트
     app.include_router(reports_router)        # /api/reports/* — 본인이 만든 보고서만 열람
     app.include_router(notifications_router)   # /api/notifications/*
     app.include_router(sql_export_router)      # /api/sql-results/*csv — 본인이 조회한 결과만 다운로드
