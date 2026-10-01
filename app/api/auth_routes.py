@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.api.auth_middleware import get_current_user, get_optional_user
 from app.config import get_settings
-from app.core.google_auth import GoogleAuthManager
+from app.core.google_auth import MAIL_SCOPES, GoogleAuthManager
 from app.core.google_oauth_state import consume_state, issue_state
 from app.core import password_reset_google
 from app.core.personal_briefing import get_user_refresh_lock
@@ -191,9 +191,13 @@ async def _handle_password_reset_callback(request: Request, code: str, state: st
 @auth_router.get("/login")
 async def google_login(
     request: Request,
+    feature: str = "",
     user: User = Depends(get_current_user),
 ):
-    """Redirect the authenticated user to Google OAuth consent."""
+    """Redirect the authenticated user to Google OAuth consent.
+
+    ``feature=mail`` additionally requests the mail-sending scopes (incremental consent).
+    """
     # ⛔ 쓸 수 없는 콜백 주소로 구글에 보내면 사용자는 "액세스 차단됨" 만 보고,
     #    에러는 구글 화면에서 끝나 **우리 로그에는 아무것도 남지 않는다.**
     #    보내기 전에 막고, 무엇을 하면 되는지 말해 준다.
@@ -211,8 +215,9 @@ async def google_login(
             "관리자에게 문의해 주세요."))
 
     state = await asyncio.to_thread(issue_state, user.id, user.email)
+    extra = {"extra_scopes": MAIL_SCOPES} if feature == "mail" else {}
     auth_url = _get_auth_manager().get_auth_url(
-        user.email, state=state, redirect_uri=redirect_uri
+        user.email, state=state, redirect_uri=redirect_uri, **extra
     )
     return RedirectResponse(url=auth_url)
 

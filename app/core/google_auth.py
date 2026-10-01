@@ -9,6 +9,7 @@ Supports two token sources:
 import base64
 import hashlib
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/calendar.readonly",
 ]
+
+# 메일 발송 페이지(/mail-sender)에서만 증분 동의로 받는다 — SCOPES 에 넣으면
+# 인증서류 찾기만 쓰는 사람까지 재동의해야 한다.
+MAIL_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
+# include_granted_scopes 로 받은 토큰은 요청보다 넓은 스코프를 돌려준다 — oauthlib 의 '스코프 변경' 예외를 끈다
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 CredentialLoadStatus = Literal["ready", "disconnected", "invalid", "transient_error"]
 
@@ -172,7 +182,8 @@ class GoogleAuthManager:
             return CredentialLoadOutcome("disconnected", error_code="oauth_missing")
 
         try:
-            creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+            # ⛔ 저장된 스코프 그대로 로드 — SCOPES 로 좁혀 갱신하면 gmail.send 가 빠진 토큰이 돌아온다.
+            creds = Credentials.from_authorized_user_file(str(token_path))
             # Token file doesn't store expiry, so always proactively refresh
             # to ensure the access token is fresh (they expire after ~1 hour)
             if creds.refresh_token:
@@ -308,13 +319,21 @@ except:
                 return CredentialLoadOutcome("invalid", error_code="oauth_expired")
             return CredentialLoadOutcome("transient_error", error_code="google_error")
 
-    def get_auth_url(self, user_email: str, *, state: str, redirect_uri: str = "") -> str:
+    def get_auth_url(
+        self,
+        user_email: str,
+        *,
+        state: str,
+        redirect_uri: str = "",
+        extra_scopes: "list[str] | None" = None,
+    ) -> str:
         """Generate Google OAuth2 authorization URL.
 
         Args:
             user_email: User's email used as Google's login hint.
             state: Signed, single-use state issued by the authenticated application user.
             redirect_uri: Dynamic redirect URI from request host. Falls back to config.
+            extra_scopes: Additional scopes requested incrementally (e.g. MAIL_SCOPES).
 
         Returns:
             Authorization URL to redirect user to.
@@ -322,7 +341,7 @@ except:
         uri = redirect_uri or self.settings.google_oauth_redirect_uri
         flow = Flow.from_client_config(
             self._client_config(),
-            scopes=SCOPES,
+            scopes=SCOPES + list(extra_scopes or []),
             redirect_uri=uri,
         )
         auth_url, _ = flow.authorization_url(
@@ -330,6 +349,7 @@ except:
             prompt="consent",
             state=state,
             login_hint=user_email,
+            include_granted_scopes="true",
         )
         return auth_url
 
@@ -347,7 +367,7 @@ except:
         uri = redirect_uri or self.settings.google_oauth_redirect_uri
         flow = Flow.from_client_config(
             self._client_config(),
-            scopes=SCOPES,
+            scopes=SCOPES + MAIL_SCOPES,
             redirect_uri=uri,
         )
         flow.fetch_token(code=code)
