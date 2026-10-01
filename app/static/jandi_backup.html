@@ -48,6 +48,10 @@
                background: #17a673; color: #fff; font-size: 0.85em; }
     .jb-step p { margin: 4px 0; }
     .jb-step .jb-tip { color: var(--text-muted); font-size: 0.88em; }
+    /* 실제 화면 — 그림만으로는 '북마크바에 놓였는지' 헷갈려 해서 (2026-10-01) */
+    .jb-shot { grid-column: 1 / -1; margin: 4px 0 0; }
+    .jb-shot img { width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: 8px; }
+    .jb-shot figcaption { color: var(--text-muted); font-size: 0.88em; margin-top: 6px; }
     .jb-fig svg { width: 100%; height: auto; display: block; }
     .jb-fig .w { fill: var(--bg-elevated); stroke: var(--border-strong); }
     .jb-fig .s { fill: var(--bg-surface); stroke: var(--border); }
@@ -118,6 +122,10 @@
             <text class="m" x="176" y="80">← 여기에 놓기</text>
           </svg>
         </div>
+        <figure class="jb-shot">
+          <img src="/static/jandi-backup/bookmark-bar-done.png" alt="실제 화면 — 주소창 아래 북마크바 오른쪽 끝에 '잔디 백업' 북마크가 생기고, 마우스를 올리면 javascript: 로 시작하는 주소가 보인다" loading="lazy">
+          <figcaption><b>실제 화면</b> — 놓고 나면 주소창 아래 북마크바에 <b>잔디 백업</b>이 생깁니다 (맨 오른쪽 위). 마우스를 올렸을 때 <code>javascript:</code> 로 시작하는 주소가 보이면 성공입니다.</figcaption>
+        </figure>
       </li>
 
       <li class="jb-step">
