@@ -1822,7 +1822,12 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   `DOC_ID`·`TAB_DIR_SHEET`) / **템플릿**: `app/core/mail_template.py` (Docs 탭 내보내기 zip → 메일 HTML, 클래스 인라인,
   이미지 cid, 변수 치환·속성 포함·URL 스킴 허용목록, `unreplaced`/`unreplaced_html`) / **MIME**: `app/core/mail_mime.py`
   (`build_mime`, multipart/related) / **구글 호출**: `app/core/mail_google.py` (사용자 토큰 — 탭 내보내기·Sheets·sendAs·발송·tokeninfo 스코프 확인) /
-  **동의**: `app/core/google_auth.py` (`MAIL_SCOPES`, `/auth/google/login?feature=mail` 증분 동의, 승인된 스코프 저장·로드)
+  **동의**: `app/core/google_auth.py` (`MAIL_SCOPES`, `/auth/google/login?feature=mail` 증분 동의, 승인된 스코프 저장·로드).
+  페이지 진입 점검(`mail_google.missing_mail_scopes`)은 **`REQUIRED_MAIL_PAGE_SCOPES`** = `MAIL_SCOPES`(gmail.send·spreadsheets)
+  + `gmail.readonly`(sendAs.list) + `drive.readonly`(탭 내보내기)를 본다 — 세분화 동의에서 하나만 꺼도 403/500 이 되던 구멍 (2026-10-01)
+- **Docs 내보내기 변환 규칙** (2026-10-01 실측): 링크는 `https://www.google.com/url?q=<대상>&sa=D&…&usg=…` 로 **감싸여 온다**
+  (실제 탭 링크 4/4) → `q` 로 되돌리고 `%7B…%7D` 를 `{변수}` 로 되살린다 (변수 처리보다 먼저). CSS 는 클래스 규칙만이 아니라
+  **요소 규칙**(`p{margin:0}`·`table td,table th{…}` 등 p·li·ul·ol·td·th·table·span·h1~h6)도 인라인 — 요소 → 클래스 → 원래 인라인 순
 - **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
 - **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
   `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는
@@ -1834,9 +1839,16 @@ CSV 도 같은 값이었다. **에러는 없었다.**
 - ⛔ **확인(confirm) 없이 발송하지 않는다.** 미리보기·점검·테스트 발송을 거친 뒤 사람이 확정해야 작업이 시작된다
 - ⛔ **재시작 뒤 자동 이어보내기 없음.** 서버가 죽었다 살아나면 돌던 작업은 `interrupted`, 발송 중이던 행은 `unknown` 이 된다 — 사람이 보고 다시 시작한다
 - ⛔ **이미지는 링크로 넣지 않는다.** 본문 이미지는 항상 cid 첨부(multipart/related)다 — 수신자 메일 클라이언트가 외부 링크를 막으면 빈 칸이 된다
-- ⛔ **From 은 Gmail sendAs 가 수락한 주소만.** 목록에 없는 주소로 보내면 구글이 조용히 계정 기본 주소로 바꾼다 — 보내기 전에 거절한다
+- ⛔ **From 은 Gmail sendAs 가 수락한 주소만.** 목록에 없는 주소로 보내면 구글이 조용히 계정 기본 주소로 바꾼다 — 보내기 전에 거절한다.
+  From 은 그 별칭의 Gmail 표시 이름으로 `formataddr((표시 이름, 주소))`, 화면에 별칭의 답장 받는 주소(replyTo)를 보인다
 - ⛔ **권한·토큰 문제는 X(실패)로 기록하지 않는다.** 스코프 부족·토큰 만료는 "수신자 문제" 가 아니라 "작업 중단" 이다 — 시트에 X 를 쓰면 다음 사람이 그 행을 영영 건너뛴다
 - ⛔ **행마다 G(상태) 를 다시 읽는다.** 시작 시점 스냅샷만 믿으면 다른 사람이 같은 시트에서 보낸 행을 또 보낸다
+- ⛔ **행 번호는 발송 중에 바뀔 수 있다 (정렬·행 삽입).** 발송 직전 그 행의 **이메일·G 를 한 범위로** 읽어(`read_cells`)
+  이메일이 다르면 보내지도 **시트에 아무것도 쓰지도 않는다** ("시트 행이 바뀜 — 다시 점검"). O·X 를 쓰기 직전에도 같은 확인을
+  다시 하고, 바뀌었으면 쓰지 않는다 ("시트 기록 실패: 행이 바뀜" → `sheet_write_failed`). 메모(H)만 쓰는 경우는 확인하지 않는다
+- **시트 429·5xx·전송 오류는 2/4/8초 간격으로 재시도**(읽기·쓰기는 멱등) 한 뒤에야 기존 분류를 탄다. 429 멈춤 문구는
+  시트("구글 시트 사용량 한도(429)")와 Gmail("구글 발송 속도·한도 제한(429)")을 구분한다. ⚠️ 행마다 시트 읽기가 2번(발송 전·O 전)이라
+  사용자당 분당 읽기 한도(60)에 닿을 수 있다 — 재시도가 흡수하지만 느려지면 이 때문이다
 - ⛔ **이중 발송 금지 — 발송 기록으로 제외한다.** `sent` 는 **이메일** 기준(누구의 작업이든), `sending`/`unknown` 은 **행 또는 이메일** 기준으로 제외한다.
   `unknown` 행은 목록에 보여 주고 **작업 주인이 확인(ack)** 해야 풀린다. 전송 중 불확실한 오류(타임아웃 등)는 **X 가 아니라 `unknown`** — 실제로는 갔을 수 있다
 - ⚠️ **한 시트는 한 도구에서만** — 같은 시트를 gmailv2 와 셀라가 동시에 돌리면 서로의 O/X 를 못 본다. 셀라는 `GET_LOCK` 으로 같은 시트 동시 작업을 막지만 Apps Script 는 막지 못한다
