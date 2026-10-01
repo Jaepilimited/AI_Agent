@@ -37,8 +37,8 @@ def normalize_key(s: str) -> str:
 
 
 def _class_styles(css: str) -> dict[str, str]:
-    # Strip @import statements
-    css = re.sub(r"@import\s+url\([^)]+\)\s*;", "", css)
+    # Strip @import statements (both url() and quoted forms)
+    css = re.sub(r"@import[^;]*;", "", css)
     # Strip /* */ comments
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
 
@@ -152,13 +152,23 @@ def render(template: MailTemplate, values: dict[str, str]) -> tuple[str, str]:
     for tag in soup.find_all():
         for attr_name, attr_value in list(tag.attrs.items()):
             if isinstance(attr_value, str) and "{" in attr_value:
-                # URL attributes: quote the value
+                # URL attributes: smart quoting
                 if attr_name in ("href", "src"):
+                    stripped = attr_value.strip()
+                    # Check if entire value is a single variable
+                    full_var_match = re.fullmatch(r"\{\s*([^{}<>]+?)\s*\}", stripped)
+                    # Check if value starts with mailto:
+                    is_mailto = stripped.lower().startswith("mailto:")
+
                     def repl_url(m: re.Match) -> str:
                         key = normalize_key(m.group(1))
                         if key not in vals:
                             return m.group(0)
                         v = vals[key] or ""
+                        # Don't quote if entire value is single var or starts with mailto:
+                        if full_var_match or is_mailto:
+                            return v
+                        # Otherwise quote for embedded variables in URLs
                         return urllib.parse.quote(v, safe='')
                     tag[attr_name] = _VAR.sub(repl_url, attr_value)
                 else:

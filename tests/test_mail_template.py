@@ -91,6 +91,15 @@ def test_css_with_import_and_comments():
     assert "font-weight:700" in t.html
 
 
+def test_css_with_quoted_import():
+    html_with_quoted_import = EXPORT.replace(
+        '<style type="text/css">.c1{font-weight:700}',
+        '<style type="text/css">@import "https://themes.googleusercontent.com/a.css";.c1{font-weight:700}'
+    )
+    t = template_from_export_zip(_zip(html_with_quoted_import, {"images/image1.png": PNG}))
+    assert "font-weight:700" in t.html
+
+
 def test_variables_in_href_attribute():
     html = EXPORT.replace(
         '<a class="c2" href="https://form.example">FORM</a>',
@@ -111,3 +120,35 @@ def test_unreplaced_plain_text_with_angle_brackets():
 def test_unreplaced_html_finds_attribute_variables():
     html = '<a href="https://example.com?id={missing_id}">Link</a>'
     assert unreplaced_html(html) == ["{missing_id}"]
+
+
+def test_href_full_variable_not_quoted():
+    html = EXPORT.replace(
+        '<a class="c2" href="https://form.example">FORM</a>',
+        '<a class="c2" href="{link}">FORM</a>'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, html_out = render(t, {"name": "test", "link": "https://a.com/x?y=1"})
+    assert 'href="https://a.com/x?y=1"' in html_out
+    assert "%3A" not in html_out  # Should not be URL-encoded
+
+
+def test_href_mailto_variable_not_quoted():
+    html = EXPORT.replace(
+        '<a class="c2" href="https://form.example">FORM</a>',
+        '<a class="c2" href="mailto:{email}">FORM</a>'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, html_out = render(t, {"name": "test", "email": "a@b.com"})
+    assert 'href="mailto:a@b.com"' in html_out
+    assert "%40" not in html_out  # Should not be URL-encoded
+
+
+def test_href_embedded_variable_is_quoted():
+    html = EXPORT.replace(
+        '<a class="c2" href="https://form.example">FORM</a>',
+        '<a class="c2" href="https://www.example.com/search?q={query}">FORM</a>'
+    )
+    t = template_from_export_zip(_zip(html, {"images/image1.png": PNG}))
+    _, html_out = render(t, {"name": "test", "query": "hello world"})
+    assert "hello%20world" in html_out  # Should be URL-encoded
