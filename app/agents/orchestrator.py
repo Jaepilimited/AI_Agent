@@ -131,6 +131,9 @@ def _truncate_history_content(content, max_chars: int):
     return truncated
 
 
+_RE_TABLE_TAG = re.compile(r"\[실행된 쿼리 테이블:[^\]]*\]\s*")
+
+
 def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
     """Strip chart/SQL noise from assistant messages before sending to LLM history.
 
@@ -144,6 +147,11 @@ def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
         content = msg.get("content", "")
         if role in ("assistant", "model") and isinstance(content, str):
             content = _strip_assistant_noise(content)
+            # ⛔ 테이블 태그는 SQL 생성기용 앵커다. direct 모델에게 보이면 답변 첫머리에
+            #    그대로 따라 쓴다 — 실측(2026-09): 답변이 `[실행된 쿼리 테이블:
+            #    skin1004-319714.Sales_Integration.SALES_ALL_Backup]` 로 시작했다.
+            #    내부 테이블 경로를 본문에 쓰지 않는다는 규칙(붐따 #147)에도 걸린다.
+            content = _RE_TABLE_TAG.sub("", content)
         cleaned.append({**msg, "content": content})
 
     total_chars = sum(len(_content_to_text(msg.get("content", ""))) for msg in cleaned)
@@ -1289,6 +1297,7 @@ class OrchestratorAgent:
         enabled_sources: Optional[List[str]] = None,
         stream_callback=None,
         user_id: Optional[int] = None,
+        _followup_done: bool = False,
     ) -> dict:
         """Main entry point: analyze query -> delegate to Sub Agent -> return result.
 
@@ -1307,6 +1316,25 @@ class OrchestratorAgent:
         """
         messages = messages or []
         images = images or []
+
+        # ═══ 후속 질문 이어 받기 (2026-10-06) ═══
+        # ⛔ 라우팅·검색이 **현재 문장만** 보던 것을 막는다 — 후속 질문을 앞 대화로
+        #    채운 독립 질문으로 바꿔 그 질문으로 전 과정을 다시 탄다. 시각화 요청은
+        #    직전 SQL 을 그대로 다시 돌린다. ⚠️ 스트리밍 경로에도 **같은 관문**이 있다.
+        if not _followup_done:
+            _pre = await self._followup_prepare(
+                query, messages, user_email, images, can_view_fi)
+            if _pre["answer"] is not None:
+                return {"source": "bigquery", "answer": _pre["answer"]}
+            if _pre["note"]:
+                result = await self.route_and_execute(
+                    _pre["query"], messages, model_type, user_email, images,
+                    brand_filter, can_view_fi, enabled_sources, stream_callback,
+                    user_id, _followup_done=True)
+                if isinstance(result, dict) and result.get("answer"):
+                    result["answer"] = _pre["note"] + "\n\n" + result["answer"]
+                return result
+
         conversation_context = _build_conversation_context(messages)
         _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
         _sources_off_note = ""  # 소스가 꺼져 조회를 건너뛴 사실 (코드가 공시한다)
@@ -1657,6 +1685,7 @@ class OrchestratorAgent:
         can_view_fi: bool = False,
         enabled_sources=None,
         user_id=None,
+        _followup_done: bool = False,
     ):
         """Async generator: yields (type, data) tuples for real-time streaming.
 
@@ -1669,6 +1698,30 @@ class OrchestratorAgent:
 
         messages = messages or []
         images = images or []
+
+        # ═══ 후속 질문 이어 받기 — 비스트리밍(route_and_execute)과 같은 관문 ═══
+        # 해석 안내는 **첫 출력 앞**에 붙인다. 청크가 한 번이라도 나가면 API 는
+        # 마지막 done 을 버리므로(routes.py), 첫 청크 또는 첫 done 에 붙이면
+        # 어느 분기로 끝나든 정확히 한 번 나간다.
+        if not _followup_done:
+            _pre = await self._followup_prepare(
+                query, messages, user_email, images, can_view_fi)
+            if _pre["answer"] is not None:
+                yield ("source", "bigquery")
+                yield ("done", _pre["answer"])
+                return
+            if _pre["note"]:
+                _noted = False
+                async for _t, _d in self.route_and_stream(
+                        _pre["query"], messages, model_type, user_email, images,
+                        brand_filter, can_view_fi, enabled_sources, user_id,
+                        _followup_done=True):
+                    if not _noted and _t in ("chunk", "done"):
+                        _noted = True
+                        _d = _pre["note"] + "\n\n" + (_d or "")
+                    yield (_t, _d)
+                return
+
         conversation_context = _build_conversation_context(messages)
         _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
         _sources_off_note = ""  # 소스가 꺼져 조회를 건너뛴 사실 (코드가 공시한다)
@@ -2303,6 +2356,94 @@ class OrchestratorAgent:
                 pos = end
                 await _aio.sleep(0.015)  # 15ms — smooth, fast delivery
         yield ("done", "")
+
+    async def _followup_prepare(self, query: str, messages, user_email: str,
+                                images, can_view_fi: bool) -> dict:
+        """후속 질문을 정리한다 → {"query", "note", "answer"}.
+
+        - answer: 시각화 요청이라 직전 SQL 로 바로 답을 만든 경우 (라우팅 생략)
+        - note:   질문을 재작성했으면 답변 맨 앞에 붙일 해석 안내
+        ⛔ 어떤 실패도 원래 흐름을 막지 않는다 — 실패하면 원문 그대로 간다.
+        """
+        out = {"query": query, "note": "", "answer": None}
+        try:
+            from app.config import get_settings as _gs
+            if not getattr(_gs(), "followup_rewrite_enabled", True):
+                return out
+            from app.core import followup_rewrite as fr
+            if images or not messages or len(messages) < 3:
+                return out
+            q = (query or "").strip()
+            # 노션 저장·보고서는 각자 원문을 읽는 관문이 있다 — 바꾸지 않는다
+            if any(w in q for w in ("노션", "저장", "보고서", "리포트")):
+                return out
+            if fr.is_presentation_followup(q):
+                answer = await self._presentation_followup(q, messages, can_view_fi)
+                if answer is not None:
+                    out["answer"] = answer
+                return out
+            rw = await fr.rewrite(q, messages, user_email=user_email)
+            if rw.changed:
+                out["query"] = rw.standalone
+                out["note"] = fr.interpretation_note(rw)
+        except Exception as e:
+            logger.warning("followup_prepare_failed", error=str(e)[:160])
+        return out
+
+    async def _presentation_followup(self, query: str, messages, can_view_fi: bool):
+        """"시각화 해줘" — 직전 SQL 을 **그대로** 다시 돌려 그림만 붙인다.
+
+        ⛔ SQL 을 새로 만들면 숫자가 바뀐다 (실측: 같은 대화에서 2.6억 → 1.9억).
+        직전 답변(또는 그 앞 한 턴)에 SQL 이 없으면 None — 평소 흐름으로 간다.
+        """
+        prev_sql, prev_q = "", ""
+        seen_ai = 0
+        for i in range(len(messages) - 2, -1, -1):
+            m = messages[i]
+            if m.get("role") not in ("assistant", "model"):
+                continue
+            seen_ai += 1
+            sqls = _re_sql_in_details.findall(_content_to_text(m.get("content", "")))
+            if sqls:
+                prev_sql = sqls[-1].strip()
+                for j in range(i - 1, -1, -1):
+                    if messages[j].get("role") == "user":
+                        prev_q = _content_to_text(messages[j].get("content", "")).strip()
+                        break
+                break
+            if seen_ai >= 2:
+                break
+        if not prev_sql:
+            return None
+
+        from app.agents import sql_agent as _sa
+        allowed = _sa._allowed_tables_from_sources(None, can_view_fi)
+        ok, err = _sa.validate_sql(prev_sql, allowed_tables=allowed)
+        if not ok:
+            logger.warning("presentation_followup_invalid_sql", error=str(err)[:160])
+            return None
+        try:
+            bq = _sa.get_bigquery_client()
+            results = await asyncio.to_thread(
+                bq.execute_query, prev_sql, timeout=120.0, max_rows=10000)
+        except Exception as e:
+            logger.warning("presentation_followup_query_failed", error=str(e)[:160])
+            return None
+        title = (prev_q or "직전 조회")[:80]
+        details = f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{prev_sql}\n```\n</details>"
+        if not results:
+            return (f"### 📊 {title} — 시각화\n\n직전 조회 결과가 비어 있어 그릴 것이 없습니다."
+                    + details)
+        preview = _sa._build_smart_preview(results, prev_q or query)
+        chart = await asyncio.to_thread(
+            _sa._try_generate_chart, get_flash_client(),
+            f"{prev_q} 시각화 차트", prev_sql, preview, results)
+        logger.warning("presentation_followup_reused_sql", rows=len(results),
+                       chart=bool(chart and "chart-config" in chart))
+        body = chart.strip() if chart else "> ⚠️ 이 결과는 차트로 그릴 수 있는 숫자 열이 없습니다."
+        return (f"### 📊 {title} — 시각화\n\n"
+                f"> 직전 조회와 **같은 SQL** 로 다시 불러와 그렸습니다. 숫자는 직전 답변과 같습니다.\n\n"
+                f"{body}{details}")
 
     async def _needs_source(self, query: str, llm) -> bool:
         """이 질문은 사내 자료를 뒤져야 답할 수 있는가.

@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     #    `.env` 에 `SOURCE_GATE_ENABLED=false` 를 직접 넣고 `sudo systemctl restart
     #    ai-craver` 로 재기동한다 (모델명이 `.env` 때문에 안 바뀌던 것과 같은 함정).
     source_gate_enabled: bool = True
+    # 후속 질문을 앞 대화로 채워 독립 질문으로 바꾸고, 시각화 요청은 직전 SQL 을
+    # 다시 돌린다 (app/core/followup_rewrite.py). 끄면 도입 이전 동작이다.
+    followup_rewrite_enabled: bool = True
     # 4단계 — 첫머리 부정 + 정보 없음("아니 ;;")일 때의 고정 되묻기.
     # ⛔ 2단계와 **독립**이다. 한쪽을 끄려고 다른 쪽을 끄지 않아도 되게 따로 둔다.
     #    끄면 그 발화도 평소처럼 라우팅된다. 같은 방식으로 `.env` 에

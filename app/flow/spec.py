@@ -73,6 +73,13 @@ NODES: tuple[Node, ...] = (
     #    그림의 순서가 코드와 다르면 캔버스가 조용히 거짓말을 한다
     #    (2026-09-09: 실제로 4개가 코드와 다른 순서로 그려지고 있었고,
     #     6개는 아예 빠져 있었다. `flow_gates_match_code` 가 이제 매일 대조한다).
+    # 후속 질문 이어 받기 (2026-10-06) — 모든 관문보다 먼저 돈다. 짧은 후속 질문을
+    # 앞 대화로 채운 독립 질문으로 바꿔 **그 질문으로 전 과정을 다시 탄다**.
+    # 시각화 요청은 직전 SQL 을 그대로 다시 돌린다 (숫자가 바뀌지 않게).
+    Node("intercept.followup", "후속 질문 이어 받기",
+         fn="app.core.followup_rewrite.rewrite",
+         knobs=("followup_rewrite_enabled", "query_rewrites 저장"),
+         gate="if not _followup_done:"),
     Node("intercept.notion_save", "노션 저장 관문",
          fn="app.core.notion_save.handle",
          knobs=("저장 동사 + 노션 낱말", "NOTION_WRITE_TOKEN"),
@@ -323,7 +330,11 @@ def all_edges() -> tuple[Edge, ...]:
 EDGES: tuple[Edge, ...] = (
     # ⛔ 이 사슬의 **순서가 곧 코드의 순서**다 (orchestrator.route_and_execute /
     #    route_and_stream). 하나라도 어긋나면 캔버스가 거짓말을 한다.
-    Edge("input", "intercept.notion_save"),
+    Edge("input", "intercept.followup"),
+    Edge("intercept.followup", "route.bigquery",
+         label="시각화 요청 · 직전 SQL 재실행", conditional=True),
+    Edge("intercept.followup", "intercept.notion_save",
+         label="통과", conditional=True),
     Edge("intercept.notion_save", "route.direct",
          label="저장 요청 · 저장함", conditional=True),
     Edge("intercept.notion_save", "alias_expand", label="통과", conditional=True),

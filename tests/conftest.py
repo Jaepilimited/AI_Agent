@@ -9,6 +9,11 @@ import pytest
 # an explicit non-production key so importing app.main exercises the same guard.
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-jwt-secret-" + ("x" * 42))
 
+# 후속 질문 재작성은 Flash·BigQuery 를 부른다. 기존 라우팅 테스트가 대화 이력을 넣고
+# 진입점을 부르면 외부 호출이 끼어들어 느리고 비결정적이 된다 — 기본은 끄고,
+# 이 기능을 재는 테스트(test_followup_rewrite.py)만 직접 켠다.
+os.environ.setdefault("FOLLOWUP_REWRITE_ENABLED", "false")
+
 
 @pytest.fixture
 def password_login_on(monkeypatch):
