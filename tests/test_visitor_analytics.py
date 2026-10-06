@@ -252,3 +252,28 @@ def test_visitor_analytics_lives_in_admin_not_system_status():
     assert 'id="tab-visitors"' in admin_markup
     assert 'id="visitor-analytics"' in admin_markup
     assert 'if (tab.dataset.tab === "visitors") loadVisitorAnalytics' in script
+
+
+@pytest.mark.asyncio
+async def test_ninety_day_range_opens_once_more_than_thirty_days_are_tracked(monkeypatch):
+    """수집 57일째에 30일 화면만 열려 있어 8/11~9/6 기록을 볼 수 없었다 (2026-10-06)."""
+    from datetime import timedelta
+    started = date.today() - timedelta(days=56)
+    monkeypatch.setattr(admin_api, "_VISITOR_TRACKING_STARTED_ON", started)
+
+    async def fake_fetch(sql, params=()):
+        if "current_unique" in sql:
+            return [{}]
+        if "COUNT(*) AS cnt FROM users" in sql:
+            return [{"cnt": 0}]
+        return []
+
+    monkeypatch.setattr(admin_api, "_db_fetch_all", fake_fetch)
+    month = await admin_api.get_visitor_analytics(days=30, _=User(id=1, role="admin"))
+    assert month["availability"]["available_ranges"] == [30, 90]
+
+    quarter = await admin_api.get_visitor_analytics(days=90, _=User(id=1, role="admin"))
+    assert quarter["range"]["start"] == started.isoformat()
+    assert quarter["range"]["granularity"] == "day"
+    assert quarter["series"][0]["period"] == started.isoformat()
+    assert len(quarter["series"]) == 57

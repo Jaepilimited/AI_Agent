@@ -357,12 +357,20 @@ async def get_visitor_analytics(
     previous_end = requested_start - timedelta(days=1)
     tracked_days = max((today - _VISITOR_TRACKING_STARTED_ON).days + 1, 0)
     comparison_ready = _VISITOR_TRACKING_STARTED_ON <= previous_start
+    # 2026-10-06 사용자 지적: 8/11 부터 수집했는데 화면은 9/7 부터만 보였다.
+    # 30일보다 많이 쌓였으면 90일 범위를 연다 (시작은 수집일로 잘린다 — is_partial).
+    # 90일을 다 채울 때까지 기다리면 그 사이 쌓인 기록을 볼 길이 없다.
     available_ranges = [30]
-    if tracked_days >= 90:
+    if tracked_days > 30:
         available_ranges.append(90)
-    if tracked_days >= 365:
+    if tracked_days > 90:
         available_ranges.append(365)
-    granularity = "day" if days == 30 else ("week" if days == 90 else "month")
+    # 실제로 그리는 기간이 두 달 이하이면 일별로 그린다 (주별 8칸으로 뭉개지 않는다)
+    shown_days = (today - start).days + 1
+    if days == 30 or shown_days <= 62:
+        granularity = "day"
+    else:
+        granularity = "week" if days == 90 else "month"
     bucket_sql = {
         "day": "DATE(v.visit_date)",
         "week": "DATE_SUB(v.visit_date, INTERVAL WEEKDAY(v.visit_date) DAY)",

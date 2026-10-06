@@ -4036,7 +4036,7 @@
       if (enabled) {
         button.removeAttribute("title");
       } else {
-        button.title = buttonDays === 365 ? "1년치 데이터가 쌓인 후 사용할 수 있습니다" : buttonDays + "일치 데이터가 쌓인 후 사용할 수 있습니다";
+        button.title = buttonDays === 365 ? "90일 넘게 쌓인 후 사용할 수 있습니다" : "30일 넘게 쌓인 후 사용할 수 있습니다";
       }
     });
 
