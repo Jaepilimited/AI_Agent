@@ -111,7 +111,9 @@ def test_disclosure_is_appended_by_code_not_left_to_the_llm():
 
     from app.agents import sql_agent
     src = inspect.getsource(sql_agent.format_answer)
-    assert "_future_period_note(" in src
+    # 2026-10-06: 기간 공시 두 가지를 `_period_notes()` 하나로 묶었다 (#183)
+    assert "_period_notes(" in src or "_future_period_note(" in src
+    assert "_future_period_note(" in inspect.getsource(sql_agent._period_notes)
 
 
 # ── DATE 컬럼에 시각을 만들어 붙이면 요청이 죽는다 (2026-08-31 사용자 제보) ──

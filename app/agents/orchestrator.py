@@ -515,6 +515,59 @@ def _is_followup_utterance(query: str) -> bool:
     return bool(_FOLLOWUP_TAIL.search(body))
 
 
+
+# 붐따 #181 (2026-09-30): "회사 창립일 언제야?" → "정확한 일자 알려줘" 가 노션으로 가서
+# **"정확한 일자" 만으로** 벡터 검색을 했다 — 주어가 없어 무관한 업로드 일정이 나왔다.
+# 벡터 검색은 순수 질문만 쓰는 게 원칙이지만(대화 이력을 다 넣으면 정확도가 떨어진다),
+# **주제어가 하나도 없는 후속 발화**는 그 원칙의 예외다: 검색할 것이 없다.
+# 그때만 직전 사용자 질문을 앞에 붙인다. 주제어가 하나라도 남으면 손대지 않는다.
+_CONTEXTLESS_FILLER = tuple(sorted((
+    "정확한", "정확히", "정확하게", "자세히", "자세하게", "자세한", "구체적으로", "구체적인",
+    "더", "좀", "조금", "한번", "다시", "그거", "그건", "그게", "그것", "이거", "이건", "저거",
+    "그럼", "그러면", "그래서", "그", "이", "날짜", "일자", "날", "시기", "연도", "년도",
+    "내용", "정보", "링크", "출처", "위치", "경로", "근거", "원문", "문서",
+    "언제", "어디", "뭐", "무엇", "누구", "몇", "얼마",
+    "알려주세요", "알려줘", "알려", "말해줘", "말해", "보여줘", "줘", "주세요",
+    "인가요", "이야", "야", "요", "은", "는", "이", "가", "을", "를", "로", "으로", "도", "만",
+), key=len, reverse=True))
+
+
+def _is_contextless_followup(query: str) -> bool:
+    """주제어가 하나도 없는 짧은 후속 발화인가 ("정확한 일자 알려줘")."""
+    q = re.sub(r"[\s?？!.,~]+", " ", (query or "")).strip()
+    if not q or len(q) > 25:
+        return False
+    for tok in q.split():
+        rest = tok
+        changed = True
+        while rest and changed:
+            changed = False
+            for w in _CONTEXTLESS_FILLER:
+                if rest.startswith(w):
+                    rest = rest[len(w):]
+                    changed = True
+                    break
+        if rest:
+            return False
+    return True
+
+
+def _notion_search_query(query: str, messages) -> str:
+    """노션 벡터 검색에 넣을 질문 — 주제 없는 후속이면 직전 사용자 질문을 앞에 붙인다."""
+    if not _is_contextless_followup(query):
+        return query
+    prev = ""
+    for m in reversed((messages or [])[:-1]):
+        if m.get("role") == "user":
+            text = m.get("content")
+            if isinstance(text, list):
+                text = " ".join(p.get("text", "") for p in text if isinstance(p, dict))
+            text = (text or "").strip()
+            if text and text != (query or "").strip():
+                prev = text[:200]
+                break
+    return f"{prev} {query}".strip() if prev else query
+
 def _previous_route(conversation_context: str) -> Optional[str]:
     """직전 턴이 어느 경로로 답했는지 — **마지막 AI 답변**에 남은 표지로 판정한다.
 
@@ -3838,7 +3891,7 @@ class OrchestratorAgent:
         from app.agents.qdrant_agent import run as run_qdrant
         # 벡터 임베딩에는 순수 query만 사용 — 대화 히스토리를 넣으면 검색 정확도 하락
         try:
-            result = await run_qdrant(query, team_key=team_key, model_type=model_type)
+            result = await run_qdrant(_notion_search_query(query, messages), team_key=team_key, model_type=model_type)
             return {"source": "notion", "answer": result}
         except Exception as e:
             from app.agents.qdrant_agent import resolve_team_filter

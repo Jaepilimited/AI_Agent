@@ -516,6 +516,14 @@ python scripts/deploy_new_server.py was --dry
   - ⚠️ 스트리밍은 경로가 청크 경계에서 쪼개진다. 줄 단위로 버퍼링해 판정한다
   - ⚠️ 마스킹 대상은 **실재하는 데이터셋·프로젝트 이름**으로 판정한다. 생김새만으로 자르면
     `3.14.15`·`v1.2.3`·`2026.08.25` 같은 멀쩡한 문장이 뭉개진다
+- ⛔ **집계 단위가 섞인 표는 더하지 않는다** (2026-10-06 붐따 #183). SQL 이 `UNION ALL` 로
+  `전사 요약`·`국가별 비교`·`팀별 비교` 행을 한 표에 쌓았고, 요약 한 줄과 합계 블록이 그걸
+  다 더해 **실제의 약 3배(약 21,172억)** 를 냈다. `sql_agent._stacked_breakdown_axis()` 가
+  구분 값에 `…별` 이 둘 이상이거나 `전사/전체` 행이 함께 있으면 표 합계·요약 둘 다 건너뛰고,
+  합계 자리에 **왜 없는지** 적는다
+- ⛔ **진행 중인 이번 달을 다른 달과 견주면 코드가 먼저 말한다** (같은 #183 — 10/6 에 6일치
+  10월과 30일치 9월을 그대로 견줘 −29.36% 를 감소로 읽었다). `_partial_month_note()` 는
+  `_future_period_note()` 와 함께 `_period_notes(query, sql)` 하나로 **모든 경로**에 걸린다
 - **`GROUP BY` 없는 집계(`SUM`/`COUNT`)는 0건이어도 NULL 한 행을 돌려준다.** 빈 결과 판정을
   `if not results:` 로만 하면 이 케이스를 놓쳐 LLM이 원인을 지어낸다. 전 컬럼 NULL 단일 행은
   빈 결과로 정규화할 것 (`format_answer` 에 구현됨)
@@ -1848,6 +1856,16 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   서버는 사용자 토큰으로 Drive `alt=media`(프록시 통과)로 받는다 (`mail_google.read_template_cache_index`·`cached_tab_zip`).
   ⚠️ 내보내기는 연속 9회쯤에서 429 — 탭 사이 4초, 429 면 다음 회차로 넘긴다. 탭 하나가 14MB 인 것도 있다(시트 셀 저장 불가).
   ⚠️ gmailv2 에 Drive 권한을 넣으면 담당자 전원 재승인 — 그래서 별도 프로젝트다.
+  ⚠️ 바뀐 탭 판정 지문은 **글자·링크 URL·이미지 ID 만**(documentTab 전체는 97탭에서 1~2분·두 번 읽으면 메모리 초과) +
+  **키 정렬 직렬화**(`canon_` — 고급 서비스 객체는 호출마다 키 순서가 달라 그냥 stringify 하면 매번 전 탭 '바뀜').
+  서식만 바꾼 변경은 지문에 안 잡혀 회차마다 가장 오래된 탭 3개(`REFRESH_PER_RUN`)를 새로 받는다.
+- **첨부** (2026-10-01): ① **공통 첨부** — 화면에서 올린 파일(합계 15MB·10개, `_decode_attachments`)을 base64 JSON 으로 받아
+  test-send·jobs 에 붙인다. 작업에는 **메모리로만** 넘긴다(`start_job_thread(attachments=)` → `run_job` → `_compose`, DB 저장 없음 — 재시작 뒤 재개가 없으니 충분).
+  ② **수신자별 첨부** — 1행 헤더가 `첨부`/`첨부파일`/`attachment(s)` 인 열(고정 위치 A·B·D·G·H 제외)의 Drive 링크·ID(`drive_ids`).
+  구글 문서류는 `files/{id}/export?mimeType=application/pdf` 로 PDF, 폴더·설문 등은 오류. ⛔ `www.googleapis.com` Drive API(`drive_meta`·
+  `drive_attachment`)만 쓴다 — `docs.google.com` 내보내기는 `*.googleusercontent.com` 으로 넘겨져 WAS 프록시에 막힌다.
+  첨부 ID 는 `row_values["__attach__"]`(쉼표 구분)에 함께 저장(스키마 변경 없음), `_compose` 가 render 전에 빼고 작업 동안 ID 별 캐시로 받는다.
+  `/check`·`/jobs` 는 `_attachment_issues` 로 접근 권한·종류·합친 용량(`estimate_size` + 첨부×4/3 > 24MB)을 행 오류로 본다. 조립한 메일이 24MB 를 넘으면 보내지 않는다(`ensure_message_size`)
 - **설계/계획**: `docs/superpowers/specs/2026-09-30-mail-sender-design.md` (실측표 포함) · `docs/superpowers/plans/2026-10-01-mail-sender.md`
 - **왜 B안(탭 목록 시트 + 탭별 내보내기)인가** — 실측(2026-09-30, WAS):
   `docs.googleapis.com` · `*.googleusercontent.com` 은 **WAS 프록시가 CONNECT 403** 으로 막고, GCP 프로젝트(`skin1004-319714`)는
@@ -2755,6 +2773,10 @@ DB-HUB 에 멘션은 걸려 있는데 열어 보면 우리 워크스페이스가
 ## 노션 데이터 규칙
 
 - 사용자가 **노션을 명시적으로 언급하지 않는 한** 노션 데이터를 답변에 포함하지 않음
+- ⛔ **주제어 없는 후속 발화는 직전 질문과 함께 검색한다** (2026-10-06 붐따 #181).
+  "회사 창립일 언제야?" → "정확한 일자 알려줘" 가 `정확한 일자` 만으로 벡터 검색해 무관한
+  업로드 일정이 나왔다. 벡터 검색은 순수 질문만 쓰는 게 원칙이지만, 군더더기만 남는 발화는
+  예외다 (`orchestrator._notion_search_query`). 주제어가 하나라도 있으면 손대지 않는다
 - 노션 데이터는 **노션 트리 기능**(채팅, System Status, @@ 데이터소스 선택)에서만 활용
 - BigQuery 질문에 노션 데이터를 섞지 않을 것
 

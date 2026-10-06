@@ -3917,6 +3917,11 @@
 
   function _visitorChartLabel(period, granularity) {
     if (granularity === "month") return period.slice(0, 7).replace("-", ".");
+    // 일별은 30칸을 모두 세워야 해서 짧게 쓴다 (10.06 -> 10/6)
+    if (granularity === "day") {
+      var md = period.slice(5, 10).split("-");
+      return parseInt(md[0], 10) + "/" + parseInt(md[1], 10);
+    }
     return period.slice(5).replace("-", ".");
   }
 
@@ -3977,7 +3982,11 @@
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: textColor, maxTicksLimit: granularity === "day" ? 8 : 12, maxRotation: 0, font: { size: 10 } },
+            // 일별은 하루도 빼지 않는다 — 예전엔 8칸으로 건너뛰어 날짜 대부분이 안 보였다.
+            //    자리가 모자라면 눕힌다 (건너뛰지 않는다)
+            ticks: granularity === "day"
+              ? { color: textColor, autoSkip: false, maxRotation: 60, minRotation: 0, font: { size: 9 } }
+              : { color: textColor, maxTicksLimit: 12, maxRotation: 0, font: { size: 10 } },
             border: { display: false }
           },
           y: {

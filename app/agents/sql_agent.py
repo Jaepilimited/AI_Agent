@@ -2720,6 +2720,34 @@ def _future_period_note(sql: str, today=None) -> str:
             + "행이 함께 집계될 수 있습니다.")
 
 
+
+# 붐따 #183 (2026-10-06): "이번 달 전월 대비" 를 10/6 에 물었더니 6일치 10월과 30일치
+# 9월을 그대로 견줘 **−29.36%** 가 나왔고, 답변은 그걸 실적 감소로 읽었다. 숫자는
+# 정확한데 비교가 거짓말을 한다. 진행 중인 달을 끝난 달과 견주면 코드가 먼저 말한다.
+_RE_THIS_MONTH = re.compile(r"이번\s*달|당월|금월|이달|this\s*month", re.I)
+_RE_MONTH_COMPARE = re.compile(r"전월|지난\s*달|저번\s*달|전달|mom|대비|비교|증감|성장|줄었|늘었", re.I)
+
+
+def _partial_month_note(query: str, sql: str, today=None) -> str:
+    """진행 중인 이번 달을 다른 달과 견주는 질문이면 한 줄 공시 (아니면 빈 문자열)."""
+    if not query or not sql:
+        return ""
+    today = today or _date.today()
+    month_key = today.strftime("%Y-%m")
+    names_month = bool(_RE_THIS_MONTH.search(query)) or (
+        f"{today.month}월" in query and not re.search(r"(19|20)\d{2}", query.replace(str(today.year), "")))
+    if not names_month or not _RE_MONTH_COMPARE.search(query) or month_key not in sql:
+        return ""
+    nl = chr(10)
+    return (nl + nl + f"> ⚠️ 이번 달({today.month}월)은 아직 진행 중이라 오늘({today.month}/{today.day})까지 "
+            f"최대 {today.day}일치 실적입니다. 다 끝난 달과 그대로 견주면 줄어든 것처럼 보이니, "
+            f"같은 기간(1~{today.day}일)끼리 비교하거나 일평균으로 보세요.")
+
+
+def _period_notes(query: str, sql: str, today=None) -> str:
+    """기간 공시 두 가지 — 미래 행 포함 · 진행 중인 달 비교. 모든 경로가 이 함수 하나를 쓴다."""
+    return _future_period_note(sql, today) + _partial_month_note(query, sql, today)
+
 def _notice_result_answer(results) -> str:
     """조회 결과가 안내문 한 줄이면 그대로 보여줄 문자열, 아니면 빈 문자열."""
     try:
@@ -3060,7 +3088,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
 
 {_unit_note(sql)}{_amount_note(results, sql)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}{_cs_answer_fact(sql)}
-{_future_period_note(sql)}
+{_period_notes(query, sql)}
 오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
 ⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
 
@@ -3187,7 +3215,7 @@ def format_answer(state: AgentState) -> Dict[str, Any]:
                   + _log_fx_notice(sql, query)
                   + _qty_cov_notice(sql, results)
                   + _trunc_notice(results, _rows_withheld)
-                  + _mask_internal_paths(answer) + _future_period_note(sql))
+                  + _mask_internal_paths(answer) + _period_notes(query, sql))
         return {"answer": answer}
     except Exception as e:
         logger.error("answer_formatting_failed", error=str(e))
@@ -4250,6 +4278,39 @@ def _is_existing_total_row(row: dict) -> bool:
     return False
 
 
+
+# 붐따 #183 (2026-10-06): SQL 이 `UNION ALL` 로 **전사 요약 · 국가별 비교 · 팀별 비교**
+# 행을 한 표에 쌓았다. 같은 매출이 세 번 들어 있는데 코드가 그 열을 더해
+# 합계 2,117,227,721,237 · 요약 "총 매출액 약 21,172.3억" 을 냈다 — 실제의 약 3배.
+# 표는 옆에 맞게 있어서 오히려 더 믿긴다. 행의 **집계 단위가 섞여 있으면**
+# 어떤 열도 더하지 않는다.
+_STACKED_TOTAL_LABEL = re.compile(r"^(전사|전체|회사\s*전체|overall)(\s|$|_|\()", re.I)
+_STACKED_BREAKDOWN_LABEL = re.compile(r"별(\s*(비교|집계|합계|요약|기준|현황|실적))?$")
+
+
+def _stacked_breakdown_axis(rows: list) -> Optional[str]:
+    """한 표에 **서로 다른 집계 단위의 행**이 쌓였으면 그 구분 컬럼 이름을 돌려준다.
+
+    - 구분 값이 「국가별 비교」·「팀별」 처럼 **…별** 로 끝나는 것이 둘 이상이거나
+    - 「전사 요약」·「전체」 같은 전체 행이 다른 값과 함께 있을 때
+    ⚠️ 「합계」 행은 여기서 보지 않는다 — `_is_existing_total_row` 가 이미 뺀다.
+    """
+    if not rows or len(rows) < 2:
+        return None
+    for column in rows[0].keys():
+        seen = set()
+        for row in rows:
+            value = row.get(column)
+            if isinstance(value, str) and value.strip():
+                seen.add(value.strip())
+        if len(seen) < 2:
+            continue
+        breakdowns = sum(1 for v in seen if _STACKED_BREAKDOWN_LABEL.search(v))
+        overall = any(_STACKED_TOTAL_LABEL.match(v) for v in seen)
+        if breakdowns >= 2 or (overall and breakdowns >= 1):
+            return str(column)
+    return None
+
 def _additive_totals(results: list) -> tuple[list[dict], dict]:
     """Return detail rows and grounded sums for additive numeric columns."""
     from decimal import Decimal as _D
@@ -4263,6 +4324,12 @@ def _additive_totals(results: list) -> tuple[list[dict], dict]:
     detail_rows = [row for row in results if not _is_existing_total_row(row)]
     if not detail_rows:
         return [], {}
+
+    # 집계 단위가 섞인 표(전사·국가별·팀별을 한 표에)는 더하면 이중계상이다 (#183)
+    stacked_axis = _stacked_breakdown_axis(detail_rows)
+    if stacked_axis:
+        logger.info("totals_skipped_stacked_breakdown", axis=stacked_axis[:40])
+        return detail_rows, {}
 
     # 통화가 섞여 있으면 금액 합계는 뜻이 없다 (위 주석의 실제 사고)
     currency_axis = _mixed_currency_axis(detail_rows)
@@ -4297,6 +4364,11 @@ def _build_table_totals_markdown(results: list) -> str:
     arithmetic sum is not a useful business metric.
     """
     detail_rows, totals = _additive_totals(results)
+    if _stacked_breakdown_axis(detail_rows):
+        # ⚠️ 블록이 통째로 사라지면 그것도 조용한 실패다 — 왜 없는지 밝힌다
+        return ("#### 합계 (조회 결과 기준)\n\n"
+                "⚠️ 이 표에는 **집계 기준이 다른 행**(전체·국가별·팀별 등)이 함께 있어 "
+                "합계를 내지 않았습니다 — 더하면 같은 매출을 여러 번 셉니다.")
     currency_axis = _mixed_currency_axis(detail_rows)
     money_skipped = bool(currency_axis) and any(
         _is_additive_metric_column(c) and _is_money_column(c)
@@ -4549,6 +4621,10 @@ def _fast_summary_line(results: list) -> str:
     from app.core.answer_check import is_money_column, render_amount
 
     parts = []
+    # ⛔ 집계 단위가 섞인 표는 더하지 않는다 (#183 — 요약이 실제의 약 3배였다).
+    #    표 합계와 **같은 함수**로 판정한다
+    if _stacked_breakdown_axis([r for r in results if not _is_existing_total_row(r)]):
+        return ""
     cols = list(results[0].keys())
     for c in cols:
         cl = c.lower()
@@ -4653,7 +4729,7 @@ SQL 결과 ({len(results)}행):
 > - [구체적 후속 질문 3]
 
 {_unit_note(sql)}{_amount_note(results, sql)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}{_cs_answer_fact(sql)}
-{_future_period_note(sql)}
+{_period_notes(query, sql)}
 규칙: SQL 결과만 근거로. 금액 1억+ → "약 OO.O억원". 플레이스홀더 출력 금지.
 ⚠️ 후속 질문은 대괄호([]) 없이 완성된 실제 질문 문장으로 출력하라.
 ⚠️ 테이블명·프로젝트 ID·컬럼명 노출 금지. 출처는 '내부 데이터베이스'로만.
@@ -4835,7 +4911,7 @@ def run_sql_agent_stream(
         return
 
     # Shared by regular and fast streaming: the prompt promises this disclosure.
-    future_note = _future_period_note(sql)
+    future_note = _period_notes(query, sql)
     if future_note:
         yield future_note.lstrip() + "\n\n"
 
@@ -4892,7 +4968,7 @@ def run_sql_agent_stream(
 규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
 ⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
 {_unit_note(sql)}{_amount_note(results, sql)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}{_cs_answer_fact(sql)}
-{_future_period_note(sql)}
+{_period_notes(query, sql)}
 오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
 ⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
 {TEAM_DISPLAY_RULE}"""
