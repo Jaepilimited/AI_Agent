@@ -282,3 +282,10 @@ def test_direct_이력에는_내부_테이블_태그가_없다():
     out = _clean_messages_for_history(msgs)
     assert "실행된 쿼리 테이블" not in out[1]["content"]
     assert "219.7억" in out[1]["content"]
+
+
+def test_독립_질문의_첫머리_접속어는_뗀다(monkeypatch):
+    """프로덕션 실측(2026-10-06): 「그럼 2026년 9월 일본 매출 얼마야?」 로 안내됐다."""
+    _fake_llm(monkeypatch, "그럼 회사 창립일의 정확한 일자 알려줘")
+    rw = asyncio.run(fr.rewrite("정확한 일자 알려줘", _msgs("정확한 일자 알려줘")))
+    assert rw.changed and rw.standalone == "회사 창립일의 정확한 일자 알려줘"

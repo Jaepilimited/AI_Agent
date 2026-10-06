@@ -248,6 +248,8 @@ async def rewrite(query: str, messages: List[Dict], user_email: str = "") -> Rew
     except Exception as e:  # 타임아웃·파싱 실패 — 원문으로 간다
         logger.warning("followup_rewrite_failed", error=str(e)[:160], query=q[:80])
         return Rewrite(q, q, False, "llm_failed")
+    # 독립 질문에는 앞 대화를 잇는 첫머리 접속어가 필요 없다 ("그럼 2026년 9월 일본 …")
+    standalone = _LEAD.sub("", standalone).strip() or standalone
     bad = _validate(q, standalone, history)
     if bad:
         logger.warning("followup_rewrite_rejected", reason=bad, query=q[:80],
