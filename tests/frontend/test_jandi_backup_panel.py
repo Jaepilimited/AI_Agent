@@ -305,7 +305,7 @@ def test_precheck_counts_without_writing_then_run_shows_expected(browser):
     assert cells["그룹"] == ["1", "1", "0", "0B"], cells
     assert cells["합계"] == ["3", "12", "5", "117B"], cells
     text = host.locator(".bd").inner_text()
-    assert "스티커 2개" in text and "옛 방식 파일 1개 · 44B 포함" in text
+    assert "스티커 2개" in text and "예전 파일 1개 · 44B 포함" in text
     assert "대화만" in text and "첨부 포함" in text and "약 1분 미만" in text
     assert "20~60MB/s" in text and "회사 네트워크 기준 대략값, 실제 속도에 따라 달라집니다" in text
     log = page.evaluate("window.__log")

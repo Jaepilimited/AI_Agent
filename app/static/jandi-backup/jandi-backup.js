@@ -909,7 +909,7 @@
       var extra = [];
       if (tot.unknown) extra.push('삭제됨/크기 모름 ' + n(tot.unknown) + '개');
       if (tot.stickers) extra.push('스티커 ' + n(tot.stickers) + '개 (작음)');
-      if (tot.legacyFiles) extra.push('2015~2023 옛 방식 파일 ' + n(tot.legacyFiles) + '개 · ' + L.fmtBytes(tot.legacyBytes) + ' 포함');
+      if (tot.legacyFiles) extra.push('2015~2023년에 올린 예전 파일 ' + n(tot.legacyFiles) + '개 · ' + L.fmtBytes(tot.legacyBytes) + ' 포함');
       return '<div class="est' + (stale ? ' stale' : '') + '" data-estimate>' +
         '<p><b>미리 확인 결과</b> <span class="muted">(확인에 ' + L.fmtDuration(sc.ms) + ')</span></p>' +
         '<table class="tb"><thead><tr><th>종류</th><th>방</th><th>기록</th><th>첨부</th><th>용량</th></tr></thead><tbody>' +
