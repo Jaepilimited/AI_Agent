@@ -97,21 +97,32 @@ def test_비율_지표는_합치지_않고_제외사실을_적는다():
         "그린 것이 전부가 아닌데 아무 말도 하지 않았다")
 
 
-def test_기간이_너무_많으면_그리지_않되_이유를_남긴다():
+def test_기간이_너무_많으면_최근만_그리고_이유를_남긴다():
+    """2026-10-06: 생략하지 않는다 — 최근 MAX_PERIODS 개만 그리고 알린다."""
     rows = _monthly_rows(3, n_months=40)
     notes = []
     out = chart.build_chartjs_config(dict(CFG), rows, notes=notes)
-    assert out is None
-    assert notes, "차트를 못 그렸는데 사유가 비어 있다"
+    assert out is not None, "기간이 많다고 차트를 버렸다"
+    labels = json.loads(out)["data"]["labels"]
+    assert len(labels) == chart.MAX_PERIODS
+    assert labels[-1] == "2026-40", "최근이 아니라 앞쪽을 남겼다"
+    assert notes and "최근" in notes[0], "잘랐는데 말하지 않았다"
 
 
-def test_항목이_너무_많은_단일계열도_이유를_남긴다():
+def test_항목이_너무_많은_단일계열은_상위만_그리고_이유를_남긴다():
+    """2026-10-06: 생략하지 않는다 — 값이 큰 상위 TOP_N 개를 가로 막대로."""
     rows = [{"product_name": f"P{i:03d}", "total_revenue": float(i)} for i in range(60)]
     cfg = {"chart_type": "bar", "x_column": "product_name",
            "y_column": "total_revenue", "title": "제품별"}
     notes = []
-    assert chart.build_chartjs_config(cfg, rows, notes=notes) is None
-    assert notes
+    out = chart.build_chartjs_config(cfg, rows, notes=notes)
+    assert out is not None, "항목이 많다고 차트를 버렸다"
+    cfg_out = json.loads(out)
+    labels = cfg_out["data"]["labels"]
+    assert len(labels) == chart.TOP_N
+    assert labels[0] == "P059", "값이 큰 순이 아니다"
+    assert "상위" in cfg_out["options"]["plugins"]["title"]["text"], "제목에 잘랐다는 말이 없다"
+    assert notes and "상위" in notes[0] and "60" in notes[0]
 
 
 def test_notes_없이_불러도_예전처럼_동작한다():
@@ -120,13 +131,17 @@ def test_notes_없이_불러도_예전처럼_동작한다():
     assert chart.build_chartjs_config(dict(CFG), rows) is not None
 
 
-def test_너무_잘게_흩어져_있으면_접지_않고_이유를_말한다():
-    """'기타' 가 97%면 그 차트는 상위가 아니라 기타 하나를 보여주는 것이다."""
+def test_너무_잘게_흩어져_있으면_접지_않고_상위만_남기며_이유를_말한다():
+    """'기타' 가 97%면 접지 않는다 — 대신 상위 계열만 남기고 뺀 수를 적는다."""
     rows = [{"month": f"2026-{(i % 10) + 1:02d}", "product_name": f"P{i:03d}",
              "total_revenue": 1.0} for i in range(400)]
     notes = []
-    assert chart.build_chartjs_config(dict(CFG), rows, notes=notes) is None
-    assert notes and "상위" in notes[0], "생략만 하고 다음 수를 알려주지 않았다"
+    out = chart.build_chartjs_config(dict(CFG), rows, notes=notes)
+    assert out is not None
+    series = _series(out)
+    assert len(series) <= chart.MAX_SERIES
+    assert not any(k.startswith("기타") for k in series), "'기타' 가 대부분인 차트를 만들었다"
+    assert notes and "상위" in notes[0] and "제외" in notes[0]
 
 
 def test_고르게_나뉘어도_상위가_이야기를_가지면_그린다():

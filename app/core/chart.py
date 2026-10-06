@@ -46,6 +46,116 @@ _RE_NON_ADDITIVE = re.compile(
     re.IGNORECASE)
 
 
+# ⛔ **많다고 차트를 버리지 않는다** (2026-10-06 사용자 지시: *"그냥 조건없이 잘
+#    대답하면 안되나"*). 예전엔 항목이 25개를 넘으면 차트를 통째로 생략하고 "좁혀서
+#    다시 물어보라" 고 했다 — 시스템이 할 판단을 사람에게 넘긴 것이다. 이제는
+#    **그리는 값이 큰 상위 TOP_N 개**(시간축이면 **최근 MAX_PERIODS 개**)만 그리고,
+#    잘랐다는 사실을 제목과 안내에 적는다. 표는 그대로 전체가 나간다.
+#    ⚠️ 잘랐다는 말이 빠지면 "15개국이 전부" 로 읽히는 조용한 오답이 된다.
+TOP_N = 15
+
+# 합계 행 — 막대 하나가 나머지를 다 눌러 버려 차트에서 뺀다 (표에는 남는다).
+_TOTAL_LABELS = {"전체", "합계", "총합", "총계", "전사", "소계", "전체합계", "전사합계",
+                 "total", "grand total", "all", "sum", "subtotal"}
+
+# 집계 기준(레벨) 이름 → 질문에서 찾을 낱말. 기준 값이 이 낱말을 담고 있고
+# 질문이 같은 낱말을 쓰면 그 기준을 고른다.
+_LEVEL_WORDS = {
+    "팀": ("팀", "team"),
+    "국가": ("국가", "나라", "country"),
+    "대륙": ("대륙", "권역", "continent", "region"),
+    "채널": ("채널", "몰", "channel", "mall"),
+    "브랜드": ("브랜드", "brand"),
+    "제품": ("제품", "상품", "product", "sku"),
+    "플랫폼": ("플랫폼", "platform"),
+    "담당자": ("담당자", "담당", "manager"),
+}
+
+_RE_DATE_LABEL = re.compile(r"^(19|20)\d{2}([-/.년 ]\s*\d{1,2}(월)?([-/.]\d{1,2})?)?$")
+
+
+def _is_total_label(value: Any) -> bool:
+    return str(value).strip().lower() in _TOTAL_LABELS
+
+
+def _looks_like_time(labels: List[str]) -> bool:
+    """x 값이 날짜·연월이면 시간축이다 — 시간축은 값 순서가 아니라 최근을 남긴다."""
+    if not labels:
+        return False
+    hits = sum(1 for s in labels if _RE_DATE_LABEL.match(s.strip()))
+    return hits >= max(2, int(len(labels) * 0.8))
+
+
+def _is_numeric_value(v: Any) -> bool:
+    if v is None or isinstance(v, bool):
+        return False
+    try:
+        float(v)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _select_level(data: List[Dict[str, Any]], x_col: str, query: str,
+                  notes: Optional[List[str]]) -> List[Dict[str, Any]]:
+    """전사·국가·팀처럼 **집계 기준이 섞인 표**에서 기준 하나만 골라 그린다.
+
+    판정: x 가 아닌 글자 열 중 값이 2~8종이고, 그 값별로 x 집합이 **서로 겹치지
+    않는** 열을 기준 열로 본다. 겹치지 않는다는 것이 핵심이다 — 브랜드 × 국가 같은
+    교차표는 같은 국가가 브랜드마다 되풀이되므로 기준 열로 잡히지 않는다.
+    고르는 순서: 질문이 부른 기준 → 행이 가장 많은 기준(가장 잘게 나눈 쪽).
+    """
+    if len(data) < 4:
+        return data
+    keys = [k for k in data[0].keys() if k != x_col]
+    for col in keys:
+        values = [row.get(col) for row in data]
+        if any(_is_numeric_value(v) for v in values if v not in (None, "")):
+            continue
+        levels = list(OrderedDict.fromkeys(str(v) for v in values))
+        if not 2 <= len(levels) <= 8:
+            continue
+        xs_by_level: Dict[str, set] = {}
+        for row in data:
+            xs_by_level.setdefault(str(row.get(col)), set()).add(str(row.get(x_col, "")))
+        union = set().union(*xs_by_level.values())
+        if len(union) != sum(len(s) for s in xs_by_level.values()):
+            continue  # 교차표다 — 같은 항목이 여러 기준에 나온다
+        # 합계뿐인 기준(전사 1행)은 고를 대상이 아니다
+        real = [lv for lv in levels
+                if not (_is_total_label(lv) or all(_is_total_label(x) for x in xs_by_level[lv])
+                        or len(xs_by_level[lv]) == 1)]
+        if not real:
+            continue
+        q = (query or "").lower()
+        chosen = None
+        for lv in real:
+            for words in _LEVEL_WORDS.values():
+                if any(w in lv.lower() for w in words) and any(w in q for w in words):
+                    chosen = lv
+                    break
+            if chosen:
+                break
+        if chosen is None:
+            chosen = max(real, key=lambda lv: len(xs_by_level[lv]))
+        picked = [row for row in data if str(row.get(col)) == chosen]
+        logger.info("chart_level_selected", column=col, levels=levels, chosen=chosen,
+                    rows=len(picked))
+        _note(notes, f"표에 {'·'.join(levels)} 기준이 섞여 있어 차트는 "
+                     f"'{chosen}' 기준만 그렸습니다.")
+        return picked
+    return data
+
+
+def _drop_total_rows(data: List[Dict[str, Any]], x_col: str,
+                     notes: Optional[List[str]]) -> List[Dict[str, Any]]:
+    kept = [row for row in data if not _is_total_label(row.get(x_col, ""))]
+    if len(kept) == len(data) or len(kept) < 2:
+        return data
+    _note(notes, "합계 행은 다른 막대를 눌러 버려 차트에서 뺐습니다 (표에는 있습니다).")
+    return kept
+
+
 # 연도를 **나눠 달라**는 표현 / 기간 **범위**를 잇는 표현.
 # ⛔ 연도가 둘 보인다고 YoY 로 보면 "2025년 1월부터 2026년 6월까지" 같은 범위까지
 #    연도별로 쫪진다 — 없던 비교가 생긴다. 범위 표현이 있으면 YoY 가 아니다.
@@ -225,9 +335,13 @@ def _fold_series(
     if grand > 0:
         top_share = sum(totals[g] for g in top) / grand
         if top_share < _FOLD_MIN_TOP_SHARE:
+            # '기타' 가 대부분인 차트는 접지 않는다. 대신 **상위만 남기고 나머지를
+            # 뺀다** — 뺀 수는 dropped 로 올려 안내에 적힌다.
             logger.info("chart_fold_declined", groups=len(ranked),
                         top_share=round(top_share, 4))
-            return data, 0, 0
+            top = set(ranked[:MAX_SERIES])
+            return ([row for row in data if str(row.get(group_col, "")) in top],
+                    0, len(ranked) - len(top))
 
     x_order = list(OrderedDict.fromkeys(str(r.get(x_col, "")) for r in data))
     by_x: Dict[str, List[Dict[str, Any]]] = {}
@@ -351,6 +465,12 @@ def build_chartjs_config(
                 group_col = "__yoy_series"
                 x_label = x_label or "월"
 
+        # 집계 기준이 섞인 표(전사 + 국가 + 팀)는 기준 하나만, 합계 행은 뺀다.
+        # 계열 축이 따로 있으면 그 열이 계열이라 기준 판정을 하지 않는다.
+        if not group_col and isinstance(x_col, str):
+            data = _select_level(data, x_col, chart_config.get("_query", ""), notes)
+            data = _drop_total_rows(data, x_col, notes)
+
         # ⛔ **계열이 많다고 차트를 통째로 버리지 않는다** (붐따 #165, 2026-09-04).
         #    "랩인네이처 월별 매출, 제품별로도" → 월 10 × 제품 19 였는데, 계열 상한
         #    15 에 걸려 `return None` 이 났다. 화면에는 표만 남고 **아무 말도 없어서**
@@ -362,9 +482,10 @@ def build_chartjs_config(
             if folded:
                 logger.info("chart_series_folded", folded=folded)
             if dropped:
-                # 비율·평균은 합칠 수 없다. 뺐으면 뺐다고 적는다.
-                _note(notes, f"계열이 많아 상위 {MAX_SERIES}개만 그렸습니다 — "
-                             f"나머지 {dropped}개는 합산할 수 없는 지표라 제외했습니다.")
+                # 비율·평균은 합칠 수 없고, 고르게 흩어진 계열은 접어도 '기타' 만
+                # 남는다. 어느 쪽이든 뺐으면 뺐다고 적는다.
+                _note(notes, f"계열이 많아 합계가 큰 상위 {MAX_SERIES}개만 그렸습니다 — "
+                             f"나머지 {dropped}개는 제외했습니다 (표에는 있습니다).")
 
         # Readability limits
         max_items = {"bar": 15, "horizontal_bar": 20, "pie": 12, "line": 36}
@@ -376,18 +497,14 @@ def build_chartjs_config(
             unique_g = len(set(str(row.get(group_col, "")) for row in data))
             # 계열은 위에서 접혔다. 여기 남는 것은 **기간**이다 — 기간은 접을 수
             # 없다 (합치면 그건 다른 질문의 답이다).
-            if unique_x > MAX_PERIODS or unique_g > MAX_SERIES:
-                logger.warning("chart_skipped", reason="too_many_series",
-                               unique_x=unique_x, unique_groups=unique_g,
-                               chart_type=chart_type)
-                _note(notes, (
-                    f"기간이 {unique_x}개로 많아 차트는 생략했습니다 — "
-                    f"기간을 좁혀 다시 물어보시면 그려 드립니다."
-                    if unique_x > MAX_PERIODS else
-                    f"계열이 {unique_g}개로 많고 고르게 흩어져 있어 차트는 "
-                    f"생략했습니다 — 상위 몇 개만 보여 달라고 하시면 "
-                    f"그려 드립니다."))
-                return None  # Too many periods or groups
+            if unique_x > MAX_PERIODS:
+                # 기간은 합칠 수 없다 — 대신 **최근** MAX_PERIODS 개만 그린다.
+                x_seq = list(OrderedDict.fromkeys(str(r.get(x_col, "")) for r in data))
+                keep_x = set(x_seq[-MAX_PERIODS:])
+                data = [r for r in data if str(r.get(x_col, "")) in keep_x]
+                logger.info("chart_periods_trimmed", unique_x=unique_x, kept=MAX_PERIODS)
+                _note(notes, f"기간이 {unique_x}개라 최근 {MAX_PERIODS}개만 그렸습니다 "
+                             f"(표에는 전체가 있습니다).")
         elif chart_type == "pie" and len(data) > 10:
             _pie_y = y_col if isinstance(y_col, str) else y_col[0]
             data_sorted = sorted(data, key=lambda r: float(r.get(_pie_y, 0) or 0), reverse=True)
@@ -398,14 +515,33 @@ def build_chartjs_config(
             # Fallback: bar with too many items → switch to horizontal_bar (up to 25)
             if chart_type == "bar" and len(data) <= 25:
                 chart_type = "horizontal_bar"
-            elif len(data) <= 25:
+            elif len(data) <= 25 and chart_type != "line":
                 pass  # Allow up to 25 items for most chart types
+            elif chart_type == "line" or _looks_like_time(
+                    [str(r.get(x_col, "")) for r in data]):
+                # 시간축은 값 순서로 자르면 뜻이 없다 — 최근 것을 남긴다.
+                n_all = len(data)
+                keep = MAX_PERIODS if chart_type == "line" else TOP_N
+                data = data[-keep:]
+                logger.info("chart_items_trimmed", mode="recent", rows=n_all, kept=keep)
+                _note(notes, f"기간이 {n_all}개라 최근 {keep}개만 그렸습니다 "
+                             f"(표에는 전체가 있습니다).")
             else:
-                logger.warning("chart_skipped", reason="too_many_items",
-                               rows=len(data), limit=limit, chart_type=chart_type)
-                _note(notes, f"항목이 {len(data)}개로 많아 차트는 생략했습니다 — "
-                             f"상위 몇 개만 보여 달라고 하시면 그려 드립니다.")
-                return None
+                # 그리는 값이 큰 상위 TOP_N 개. 음수가 섞였으면(증감) 크기로 고른다.
+                n_all = len(data)
+                key_col = y_col if isinstance(y_col, str) else y_col[0]
+                vals = [float(r.get(key_col, 0) or 0) for r in data]
+                use_abs = any(v < 0 for v in vals)
+                data = sorted(
+                    data,
+                    key=lambda r: (abs if use_abs else (lambda v: v))(
+                        float(r.get(key_col, 0) or 0)),
+                    reverse=True)[:TOP_N]
+                chart_type = "horizontal_bar"
+                title = f"{title} (상위 {TOP_N})" if title else f"상위 {TOP_N}"
+                logger.info("chart_items_trimmed", mode="top", rows=n_all, kept=TOP_N)
+                _note(notes, f"항목이 {n_all}개라 {'크기가' if use_abs else '값이'} 큰 "
+                             f"상위 {TOP_N}개만 그렸습니다 (표에는 전체가 있습니다).")
 
         # --- Build Chart.js config ---
         labels = [str(row.get(x_col, "")) for row in data]
@@ -580,7 +716,7 @@ def build_chartjs_config(
         # Sort bars by value (descending) for non-time-series
         is_time_series = any(
             any(h in str(x).lower() for h in _TIME_HINTS) for x in labels
-        )
+        ) or _looks_like_time([str(x) for x in labels])
 
         if not is_time_series and chart_type in ("bar", "horizontal_bar") and len(datasets) == 1:
             pairs = list(zip(labels, datasets[0]["data"]))
@@ -737,11 +873,10 @@ def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_coun
 - 단일 숫자 결과(총 매출 1개)는 차트 불필요
 - 결과가 2행 이상이고 숫자 컬럼이 있으면 차트 권장
 
-## ⚠️ 가독성 판단 — 아래 경우 needs_chart: false
-- bar 차트: 카테고리가 15개 초과
-- horizontal_bar: 항목이 20개 초과
+## ⚠️ 항목 수 때문에 needs_chart: false 로 두지 마세요
+- 항목이 많으면 시스템이 **값이 큰 상위 15개**(시간축이면 **최근 36개**)만 그리고 그 사실을 표시합니다.
+- 표에 전사·국가·팀처럼 **집계 기준이 섞여 있어도** needs_chart: true 로 두고, 항목 이름 열을 x_column 으로 고르세요. 시스템이 질문에 맞는 기준 하나만 골라 그립니다.
 - pie/donut: 항목이 많아도 OK (시스템이 자동으로 Top 9 + 기타로 집계)
-- line: x축 고유값 36개 초과. 단, group_column이 있으면 x축 고유값 기준으로 판단
 
 ## 차트 타입 선택 (우선순위)
 - **line**: 월별/일별/분기별 추이, 시계열 데이터는 **반드시 line** 사용. "월별", "추이", "트렌드" 키워드가 있으면 무조건 line.

@@ -82,12 +82,13 @@ def test_a_date_range_is_not_a_year_comparison(q):
     assert chart.infer_chart_intent(q, []) == "trend"
 
 
-def test_readability_limit_still_drops_genuinely_huge_charts():
-    """상한 자체는 남는다 — 순서만 고친 것이지 제한을 없앤 게 아니다."""
+def test_huge_charts_are_trimmed_not_dropped():
+    """2026-10-06: 상한은 남되 버리지 않는다 — 계열은 상위 MAX_SERIES 개만 그린다."""
     rows = [{"month": f"2025-{(i % 12) + 1:02d}", "continent": f"C{i}",
              "revenue": 1.0} for i in range(400)]
     _, out = _build("YoY로", rows)
-    assert out is None
+    assert out is not None
+    assert len(out["data"]["datasets"]) <= chart.MAX_SERIES
 
 
 def test_wide_yoy_table_is_not_transposed():

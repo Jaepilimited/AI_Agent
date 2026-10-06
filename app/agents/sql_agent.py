@@ -3665,8 +3665,11 @@ def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results:
         #    자기가 잘못 물은 줄 알고 같은 질문을 되풀이한다 (#165 는 3회).
         # ⚠️ 차트가 나와도 온전하지 않으면(계열 제외) 같은 줄로 알린다.
         chart_notes = []
+        # 질문은 섞인 기준(전사·국가·팀) 중 무엇을 그릴지 고르는 데 쓴다.
+        config["_query"] = query
         chartjs_json = build_chartjs_config(config, results, notes=chart_notes)
-        note = ("\n\n> ⚠️ " + chart_notes[0]) if chart_notes else ""
+        # 잘랐거나 기준을 골랐으면 **전부** 적는다 — 하나만 보이면 나머지가 조용해진다.
+        note = ("\n\n> ⚠️ " + " ".join(chart_notes)) if chart_notes else ""
         if chartjs_json:
             return f"\n\n```chart-config\n{chartjs_json}\n```" + note
         logger.warning("chartjs_config_returned_none", note=chart_notes[:1])
