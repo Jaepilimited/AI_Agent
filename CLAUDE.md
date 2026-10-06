@@ -1941,8 +1941,15 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   첨부 포함 40~60분(회사망 50~90MB/s) — 안내 페이지 `얼마나 걸리나요` 에 같은 숫자
 - ⚠️ 잔디 웹 **내부 구조**(앵귤러 서비스 `RoomTopicList`·`RoomChatDmList`·`RoomChatGroupList`·
   `UserList`·`FileApi`, `$http`)에 기대므로 잔디 업데이트로 멈출 수 있다. 화면에 그렇게 적어 두었다
+- ⛔ **입사(잔디 가입일) 이전 대화는 받지 않는다** (2026-10-06 회사 판단). 기준일 = **JANDI 봇 1:1 대화(환영 메시지)의
+  첫 기록**의 KST 날짜 00:00 (`findWelcomeRooms` · `firstRecordMs` — firstLinkId+1 에서 `old` 한 장). 쪽 넘김은 기준일 이전
+  기록이 보이면 `cutoff` 로 멈추고 `cutoffRecords` 가 저장·첨부·미리 확인 모두에서 거른다(시각 모르는 기록·원본도 버림).
+  ⛔ 기준일을 못 찾으면 시작·미리 확인을 막는다(우회 옵션 없음). 기준일은 `backup_state.json`·README·raw.json 에 적고,
+  다른/없는 기준일 폴더는 "예전 방식으로 받은 폴더" 로 막는다. ⚠️ **클라이언트 측 거름이라 보안 경계가 아니다**
+  (본인이 잔디에서 직접 보거나 코드를 고치면 우회된다). ⚠️ 이미 끌어다 놓은 북마크는 **갱신되지 않는다** — 다시 끌어다
+  놓아야 한다. ⚠️ 봇 이름(`JANDI`)·DM 방 `members` 구조·firstLinkId 동작·feedback 의 `createdAt` 은 실측 전이다
 - 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
-  28문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인)
+  36문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인)
 
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)

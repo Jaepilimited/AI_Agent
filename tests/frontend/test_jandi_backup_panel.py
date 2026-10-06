@@ -11,6 +11,10 @@
 - 같은 폴더로 다시 돌리면 끝난 방은 건너뛰고 실패한 파일만 다시 받는가
 - 실행 중 셀라 쪽 주소로 나가는 요청이 하나도 없는가
 - `용량 미리 확인` 이 아무것도 쓰지 않고 방·기록·첨부·용량을 맞게 세는가, 실행 중 받은 용량 / 예상이 보이는가
+- 기준일(잔디 가입일 = JANDI 봇 대화의 첫 기록 날짜, 2026-10-06): 기준일 이전 기록·첨부는 저장도 미리 확인도
+  하지 않는가, 봇 대화를 못 찾으면 시작을 막는가, 기준일 없이 받은 예전 폴더를 고르면 막는가
+
+가짜 잔디의 JANDI 봇 대화(90000004)는 기준일을 정하려고 더한 1:1 방이다 — 그래서 1:1 이 2개, 방이 4개다.
 """
 
 import json
@@ -24,6 +28,11 @@ SCRIPT = (ROOT / "app/static/jandi-backup/jandi-backup.js").read_text(encoding="
 FX = json.loads((ROOT / "tests/fixtures/jandi_backup_room.json").read_text(encoding="utf-8"))
 
 SIZES = {"7000001": 11, "7000002": 22, "7000004": 7, "5000010": 44}
+WELCOME_MS = 1782862200000   # 2026-07-01 08:30 KST — JANDI 환영 메시지
+CUTOFF_MS = 1782831600000    # 2026-07-01 00:00 KST — 기준일
+CUTOFF_TEXT = "기준일: 2026-07-01 (잔디 가입일) — 이 날 이후 대화만 받습니다"
+CUTOFF_MISSING = "잔디 가입일을 확인하지 못해 백업을 시작할 수 없습니다. 셀라 담당자에게 알려 주세요."
+OLD_FOLDER = "예전 방식으로 받은 폴더입니다 — 새 빈 폴더를 고르세요"
 
 FAKE_JANDI = """<!doctype html><html><head><meta charset="utf-8"><title>대화 | TESTTEAM</title></head>
 <body><div id="app">잔디 흉내</div><script>
@@ -31,11 +40,23 @@ const FX = __FX__;
 const SIZES = __SIZES__;
 const log = window.__log = {pages: [], urls: [], getImageAt: [], fetchAt: []};
 const recs = FX.records;
+// JANDI 봇 대화 — 첫 장에는 최신 기록만 준다 (첫 기록은 firstLinkId 로 한 장 더 불러야 나온다)
+const WELCOME = [
+  {id: 9500, time: __WELCOME_MS__, fromEntity: 2002, status: 'created', message: {id: 9500, writerId: 2002, contentType: 'text', attachments: [], content: {body: '잔디 팀에 오신 것을 환영합니다~'}}},
+  {id: 9501, time: __WELCOME_MS__ + 60000, fromEntity: 2002, status: 'created', message: {id: 9501, writerId: 2002, contentType: 'text', attachments: [], content: {body: '이 JANDI 채팅은 다른 누구에게도 보여지지 않습니다!'}}}
+];
 function page(roomId, params) {
   if (String(roomId) === '90000003') return {roomId: 90000003, records: [{id: 9100, time: 1782864000000, fromEntity: 1001, status: 'event', info: {eventType: 'join'}}], firstLinkId: 9000, lastLinkId: 9100, isLimited: true};
-  const firstLinkId = 6000001;
-  if (!params.linkId) return {roomId: FX.roomId, records: recs.slice(5), firstLinkId, lastLinkId: 6000011, isLimited: false};
-  return {roomId: FX.roomId, records: recs.filter(r => r.id < params.linkId), firstLinkId, lastLinkId: 6000011, isLimited: false};
+  if (String(roomId) === '90000004') {
+    const rs = params.linkId ? WELCOME.filter(r => r.id < params.linkId) : WELCOME.slice(-1);
+    return {roomId: 90000004, records: rs, firstLinkId: 9500, lastLinkId: 9501, isLimited: false};
+  }
+  // window.__old = 기준일 무렵의 더 오래된 기록, window.__new = 최신 쪽에 붙는 기록 (시험마다 넣는다)
+  const all = (window.__old || []).concat(recs, window.__new || []);
+  const firstLinkId = Math.min(...all.map(r => r.id));
+  const lastLinkId = Math.max(...all.map(r => r.id));
+  if (!params.linkId) return {roomId: FX.roomId, records: recs.slice(5).concat(window.__new || []), firstLinkId, lastLinkId, isLimited: false};
+  return {roomId: FX.roomId, records: all.filter(r => r.id < params.linkId), firstLinkId, lastLinkId, isLimited: false};
 }
 const services = {
   $http: {get(url, cfg) {
@@ -51,10 +72,14 @@ const services = {
     ]; },
     isJoined(id) { return id !== 90000009; }
   },
-  RoomChatDmList: {_data: {entityId: {list: [{id: 90000002, type: 'chat', name: 'Lee O\\'Hara_이하라', teamId: 80000001, lastLinkId: 0, members: [1001, 1002]}]}}},
+  RoomChatDmList: {_data: {entityId: {list: [
+    {id: 90000002, type: 'chat', name: 'Lee O\\'Hara_이하라', teamId: 80000001, lastLinkId: 0, members: [1001, 1002]},
+    {id: 90000004, type: 'chat', name: '', teamId: 80000001, lastLinkId: 9501, members: [{id: 1001}, {id: 2002}]}
+  ]}}},
   RoomChatGroupList: {_data: {list: [{id: 90000003, type: 'groupChat', name: '', teamId: 80000001, lastLinkId: 9100, members: [1001, 1002, 1003]}]}},
   UserList: {toJSON() { return Object.values(FX.members); }},
-  BotList: {_data: {list: [{id: 2001, name: '잔디봇', status: 'enabled'}]}},
+  // window.__noJandiBot = 봇 목록에 JANDI 가 없다 (기준일을 못 찾는 계정)
+  BotList: {toJSON() { return [{id: 2001, name: '잔디봇', status: 'enabled'}].concat(window.__noJandiBot ? [] : [{id: 2002, name: 'JANDI', status: 'enabled'}]); }},
   FileApi: {getImage(opts) {
     log.getImageAt.push({id: String(opts.fileId), t: performance.now(), mode: opts.mode, hasContent: !!opts.content});
     const id = String(opts.fileId);
@@ -97,7 +122,7 @@ def _fulfill(route):
     url = route.request.url
     if url.startswith("https://team.jandi.com/app"):
         body = (FAKE_JANDI.replace("__FX__", json.dumps(FX).replace("</", "<\/"))
-                .replace("__SIZES__", json.dumps(SIZES)))
+                .replace("__SIZES__", json.dumps(SIZES)).replace("__WELCOME_MS__", str(WELCOME_MS)))
         return route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
     if url.startswith("https://files.jandi.com/dl/"):
         fid = url.split("/dl/")[1].split("?")[0]
@@ -119,14 +144,18 @@ def browser():
         b.close()
 
 
-def _start(page, requests):
+def _start(page, requests, before=None, wait_cutoff=True):
     page.on("request", lambda r: requests.append(r.url))
     page.route("**/*", _fulfill)
     page.add_init_script(INIT)
     page.goto("https://team.jandi.com/app/#!/room/90000001")
+    if before:
+        page.evaluate(before)
     page.evaluate(SCRIPT)   # 사용자가 소스를 그대로 붙여 넣어도 돈다 — 북마크도 같은 본문이다
     host = page.locator("#__jandi-backup-host")
-    host.locator("text=토픽 1 / 1:1 1 / 그룹 1").wait_for()
+    host.locator("text=토픽 1 / 1:1 2 / 그룹 1").wait_for()
+    if wait_cutoff:
+        host.locator(f"text={CUTOFF_TEXT}").wait_for()
     return host
 
 
@@ -189,16 +218,25 @@ def test_full_backup_then_resume(browser):
     assert "/ 예상 117B" in host.locator(".bd").inner_text()
     assert all(("jandi.com" in u) or ("jandi-box.com" in u) for u in requests), \
         [u for u in requests if "jandi" not in u]
+    # 기준일은 README · 전체 목록 · 상태 파일 · 방 원본에 남는다 (예전 폴더를 가려내는 근거)
+    assert json.loads(files[f"{top}/backup_state.json"]["text"])["cutoff"] == "2026-07-01"
+    assert "기준일: 2026-07-01 (잔디 가입일)" in files[f"{top}/README.txt"]["text"]
+    assert "기준일: 2026-07-01 (잔디 가입일)" in files[f"{top}/index.html"]["text"]
+    assert raw["cutoff"] == "2026-07-01"
+    # 기준일은 JANDI 대화의 첫 기록 — firstLinkId(9500) 다음 id 로 한 장 더 불렀다
+    assert {"count": 100, "type": "old", "linkId": 9501} in [p["params"] for p in log["pages"] if "/rooms/90000004/" in p["url"]]
 
     # 같은 폴더로 다시 — 끝난 방은 건너뛰고, 실패한 파일만 다시 요청한다
     page.evaluate("window.__log.getImageAt = []; window.__log.pages = []")
     page.reload()
     page.evaluate(SCRIPT)
     host = page.locator("#__jandi-backup-host")
+    host.locator(f"text={CUTOFF_TEXT}").wait_for()
     host.locator("button[data-act=start]").click()
     host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
     log2 = page.evaluate("window.__log")
-    assert log2["pages"] == [], "끝난 방의 대화를 다시 읽지 않는다"
+    # 패널을 열 때마다 기준일을 확인하느라 JANDI 대화(90000004)의 첫 기록은 다시 읽는다
+    assert [p for p in log2["pages"] if "/rooms/90000004/" not in p["url"]] == [], "끝난 방의 대화를 다시 읽지 않는다"
     assert sorted(g["id"] for g in log2["getImageAt"]) == ["7000003"]
     files2 = page.evaluate("window.__dumpOpfs()")
     assert len({k.split("/")[0] for k in files2}) == 1, "같은 날 다시 돌리면 같은 폴더에 이어 쓴다"
@@ -280,7 +318,7 @@ def test_cella_page_builds_a_bookmarklet_that_runs_in_jandi(browser):
 
     page.goto("https://team.jandi.com/app/")
     page.evaluate("href => { (0, eval)(decodeURIComponent(href.slice('javascript:'.length))); }", href)
-    page.locator("#__jandi-backup-host").locator("text=토픽 1 / 1:1 1 / 그룹 1").wait_for()
+    page.locator("#__jandi-backup-host").locator("text=토픽 1 / 1:1 2 / 그룹 1").wait_for()
     ctx.close()
 
 
@@ -299,11 +337,11 @@ def test_precheck_counts_without_writing_then_run_shows_expected(browser):
     host.locator("button[data-act=scan]", has_text="용량 미리 확인").click()
     host.locator("text=미리 확인 결과").wait_for(timeout=20000)
     cells = _cells(host)
-    # fixture: 비공개 토픽 1(기록 11 · 첨부 5개 117B, 옛 방식 44B 포함 · 스티커 2) · 빈 1:1 · 열람 제한 그룹(기록 1)
+    # fixture: 비공개 토픽 1(기록 11 · 첨부 5개 117B, 옛 방식 44B 포함 · 스티커 2) · 빈 1:1 + JANDI 대화(기록 2) · 열람 제한 그룹(기록 1)
     assert cells["토픽"] == ["1", "11", "5", "117B"], cells
-    assert cells["1:1"] == ["1", "0", "0", "0B"], cells
+    assert cells["1:1"] == ["2", "2", "0", "0B"], cells
     assert cells["그룹"] == ["1", "1", "0", "0B"], cells
-    assert cells["합계"] == ["3", "12", "5", "117B"], cells
+    assert cells["합계"] == ["4", "14", "5", "117B"], cells
     text = host.locator(".bd").inner_text()
     assert "스티커 2개" in text and "예전 파일 1개 · 44B 포함" in text
     assert "대화만" in text and "첨부 포함" in text and "약 1분 미만" in text
@@ -351,4 +389,109 @@ def test_precheck_can_be_cancelled(browser):
     assert page.evaluate("window.__jandiBackup.state.scan") is None
     assert page.evaluate("window.__jandiBackup.state.phase") == "intro"
     assert host.locator("button[data-act=start]").is_enabled()
+    ctx.close()
+
+
+# ── 기준일 (잔디 가입일) ─────────────────────────────────────────────────────
+
+OLD_AND_NEW = """
+window.__old = [
+  {id: 5999998, time: %(before)d, fromEntity: 1001, status: 'created', feedbackId: -1, messageId: 4000002,
+   message: {id: 4000002, writerId: 1001, contentType: 'text', createdAt: null, content: {body: '입사 전 대화'},
+             attachments: [{id: 7000099, contentType: 'file', content: {name: '입사 전 첨부.pdf', type: 'application/pdf', size: 9}}]}},
+  {id: 5999999, time: %(cutoff)d, fromEntity: 1002, status: 'created', feedbackId: -1, messageId: 4000003,
+   message: {id: 4000003, writerId: 1002, contentType: 'text', content: {body: '가입 당일 0시'}, attachments: []}}
+];
+window.__new = [
+  {id: 6000012, time: 1782864660000, fromEntity: 1001, status: 'created', feedbackType: 'text', feedbackId: 4000001, messageId: 5000020,
+   message: {id: 5000020, writerId: 1001, contentType: 'comment', feedbackId: 4000001, content: {body: '옛 글에 댓글'}, attachments: []},
+   feedback: {id: 4000001, contentType: 'text', createdAt: '2026-06-01T00:00:00.000Z', content: {body: '입사 전 원본'},
+              attachments: [{id: 7000098, contentType: 'file', content: {name: '입사 전 원본 첨부.txt', type: 'text/plain', size: 8}}]}}
+];
+""" % {"before": CUTOFF_MS - 60000, "cutoff": CUTOFF_MS}
+
+
+def test_cutoff_drops_records_and_files_before_join_date(browser):
+    """기준일 이전 기록·첨부·댓글 원본은 미리 확인에도, 저장(raw·csv·html·txt)에도, 첨부 요청에도 없다.
+    기준일 당일 00:00 기록은 들어간다. 쪽 넘김은 기준일 이전 기록이 보이는 장에서 cutoff 로 멈춘다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [], before=OLD_AND_NEW)
+    assert host.locator("[data-cutoff]").inner_text() == CUTOFF_TEXT
+    assert host.locator("button[data-act=start]").is_enabled()
+
+    host.locator("button[data-act=scan]").click()
+    host.locator("text=미리 확인 결과").wait_for(timeout=20000)
+    # 토픽 = 기존 11 + 당일 0시 1 + 새 댓글 1. 입사 전 첨부(9B)·원본 첨부(8B)는 세지 않는다
+    assert _cells(host)["토픽"] == ["1", "13", "5", "117B"]
+
+    page.evaluate("window.__slow = 300")
+    host.locator("button[data-act=start]").click()
+    host.locator("[data-live] [data-cutoff]", has_text="기준일 2026-07-01 (잔디 가입일) 이후 대화만").wait_for()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    log = page.evaluate("window.__log")
+    top = next(iter(files)).split("/")[0]
+    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
+    raw = json.loads(files[f"{room}/raw.json"]["text"])
+    assert raw["stopReason"] == "cutoff" and len(raw["pages"]) == 2
+    assert sorted(raw["records"]) == sorted(str(i) for i in [5999999] + list(range(6000001, 6000013)))
+    assert "feedback" not in raw["records"]["6000012"], "기준일 이전 원본은 떼어 낸다"
+    assert raw["records"]["6000012"]["message"]["content"]["body"] == "옛 글에 댓글", "댓글 자체는 남긴다"
+    assert raw["records"]["6000004"]["feedback"]["id"] == 5000002, "기준일 이후 원본은 그대로"
+    everything = "".join(f["text"] or "" for f in files.values())
+    for gone in ("입사 전 대화", "입사 전 원본", "입사 전 첨부", "입사 전 원본 첨부"):
+        assert gone not in everything, gone
+    assert "가입 당일 0시" in files[f"{room}/messages.csv"]["text"]
+    assert files[f"{room}/index.html"]["text"].count("<article ") == 13
+    ids = {str(f["id"]) for f in json.loads(files[f"{room}/files_manifest.json"]["text"])}
+    assert not ids & {"7000098", "7000099"}
+    assert not {g["id"] for g in log["getImageAt"]} & {"7000098", "7000099"}, "기준일 이전 첨부는 주소도 요청하지 않는다"
+    summary = {r["id"]: r for r in json.loads(files[f"{top}/summary.json"]["text"])}
+    assert summary["90000001"]["stop"] == "cutoff" and summary["90000001"]["records"] == 13
+    assert "처음 기록까지 가지 못한 방 1개" in files[f"{top}/index.html"]["text"], "기준일에서 멈춘 방은 끝난 방이다 (열람 제한 그룹만)"
+    ctx.close()
+
+
+def test_no_jandi_bot_conversation_blocks_start_and_precheck(browser):
+    """JANDI 봇 대화를 못 찾으면 기준일 없이 받지 않는다 — 시작·미리 확인 버튼이 꺼지고 안내가 보인다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    requests = []
+    host = _start(page, requests, before="window.__noJandiBot = true", wait_cutoff=False)
+    host.locator(f"text={CUTOFF_MISSING}").wait_for()
+    assert host.locator("button[data-act=start]").is_disabled()
+    assert host.locator("button[data-act=scan]").is_disabled()
+    assert page.evaluate("window.__jandiBackup.state.cutoff.state") == "missing"
+    # 버튼을 우회해 불러도 막힌다
+    page.evaluate("() => { window.showDirectoryPicker = async () => { throw new Error('부르면 안 된다'); }; }")
+    host.locator("button[data-act=start]").dispatch_event("click")
+    assert page.evaluate("window.__jandiBackup.state.phase") == "intro"
+    opfs = page.evaluate("async () => { const r = await navigator.storage.getDirectory(); const n = []; for await (const k of r.keys()) n.push(k); return n; }")
+    assert opfs == []
+    assert not [u for u in requests if "/messages" in u], "봇 대화가 없으면 대화를 읽지 않는다"
+    ctx.close()
+
+
+def test_folder_from_old_version_is_refused(browser):
+    """기준일 없이(예전 버전) 받았거나 다른 기준일로 받은 폴더를 고르면 이어 쓰지 않고 막는다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    for state in ({"teamId": 80000001, "finishedAt": None, "version": "2026-10-01.2"},
+                  {"teamId": 80000001, "finishedAt": None, "version": "2026-10-06.1", "cutoff": "2020-01-01"}):
+        page.evaluate("""async (state) => {
+          const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked', {create: true});
+          const name = '잔디백업_TESTTEAM_' + window.__jandiBackup.lib.ymdKst(Date.now());
+          const dir = await root.getDirectoryHandle(name, {create: true});
+          const w = await (await dir.getFileHandle('backup_state.json', {create: true})).createWritable();
+          await w.write(JSON.stringify(state)); await w.close();
+        }""", state)
+        host.locator("button[data-act=start]").click()
+        host.locator(f"text={OLD_FOLDER}").wait_for(timeout=20000)
+        files = page.evaluate("window.__dumpOpfs()")
+        assert all(k.endswith("/backup_state.json") for k in files), files.keys()
+        assert json.loads(next(iter(files.values()))["text"]) == state, "예전 폴더는 건드리지 않는다"
+        host.locator("button[data-act=again]").click()
+        host.locator(f"text={CUTOFF_TEXT}").wait_for()
     ctx.close()

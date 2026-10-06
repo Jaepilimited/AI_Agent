@@ -119,6 +119,120 @@ test('페이지 넘김: 접근 제한 · 처음 기록 · 제자리 · 계속', 
   assert.equal(L.decidePage({ records: recs('5'), firstLinkId: '5' }, null).stopReason, 'first_link_reached');
 });
 
+// ── 기준일 (잔디 가입일) ───────────────────────────────────────────────────
+
+const CUT = Date.parse('2021-05-02T15:00:00.000Z');   // 2021-05-03 00:00 KST
+const at = (iso) => Date.parse(iso);
+
+test('기준일: 첫 기록의 KST 날짜 00:00 — 그날 늦은 시각·UTC 로는 전날이어도 KST 날짜로', () => {
+  assert.deepEqual(L.cutoffFrom([at('2021-05-03T05:12:00.000Z')]), { ms: CUT, date: '2021-05-03' });
+  // UTC 로는 5/2 23:30 이지만 KST 로는 5/3 08:30
+  assert.deepEqual(L.cutoffFrom([at('2021-05-02T23:30:00.000Z')]), { ms: CUT, date: '2021-05-03' });
+  // KST 5/3 23:59 도 같은 날
+  assert.equal(L.cutoffFrom([at('2021-05-03T14:59:00.000Z')]).date, '2021-05-03');
+  // 후보가 여럿이면 가장 이른 것, 못 찾은 후보(null)는 무시
+  assert.equal(L.cutoffFrom([null, at('2022-01-01T00:00:00.000Z'), at('2021-05-03T00:00:00.000Z')]).date, '2021-05-03');
+  assert.equal(L.cutoffFrom([]), null);
+  assert.equal(L.cutoffFrom([null, null]), null);
+});
+
+test('기록 시각은 localTime 과 같은 규칙 (time 우선 · 밀리초/초 · ISO), 모르면 null', () => {
+  assert.equal(L.recordMs({ time: 1782864000000 }), 1782864000000);
+  assert.equal(L.recordMs({ time: 1782864000 }), 1782864000000);
+  assert.equal(L.recordMs({ createdAt: '2026-07-01T00:00:00.000Z' }), 1782864000000);
+  assert.equal(L.recordMs({ message: { createdAt: '2026-07-01T00:00:00.000Z' } }), 1782864000000);
+  assert.equal(L.recordMs({ id: 1 }), null);
+  assert.equal(L.recordMs({ time: '엉뚱한 값' }), null);
+  assert.equal(L.earliestMs([{ time: 30 }, { id: 2 }, { time: 10 }]), 10000);
+  assert.equal(L.earliestMs([]), null);
+});
+
+test('기준일 거르기: 당일 00:00 은 포함, 하루 전 23:59 는 제외, 시각 모르는 기록도 제외', () => {
+  const recs = [
+    { id: 1, time: CUT - 60000 },        // 5/2 23:59 KST
+    { id: 2, time: CUT },                // 5/3 00:00 KST
+    { id: 3, time: CUT + 3600000 },
+    { id: 4 }                            // 시각 없음
+  ];
+  assert.deepEqual(L.cutoffRecords(recs, CUT).map((r) => r.id), [2, 3]);
+  // 기준일이 없으면 거르지 않는다 (순수 함수 기본값 — 패널은 기준일 없이 시작하지 않는다)
+  assert.equal(L.cutoffRecords(recs, undefined).length, 4);
+});
+
+test('기준일 거르기: 댓글은 남기고 기준일 이전·시각 모르는 원본(feedback)만 떼어 낸다', () => {
+  const att = (id) => ({ id, content: { name: id + '.txt', size: 1 } });
+  const recs = [
+    { id: 10, time: CUT + 1000, message: { id: 1, attachments: [] }, feedback: { id: 90, createdAt: new Date(CUT - 1000).toISOString(), attachments: [att(901)] } },
+    { id: 11, time: CUT + 2000, message: { id: 2, attachments: [] }, feedback: { id: 91, createdAt: new Date(CUT + 1).toISOString(), attachments: [att(911)] } },
+    { id: 12, time: CUT + 3000, message: { id: 3, attachments: [] }, feedback: { id: 92, attachments: [att(921)] } }
+  ];
+  const kept = L.cutoffRecords(recs, CUT);
+  assert.deepEqual(kept.map((r) => r.id), [10, 11, 12], '댓글 자체는 기준일 이후라 남는다');
+  assert.equal('feedback' in kept[0], false);
+  assert.equal(kept[1].feedback.id, 91);
+  assert.equal('feedback' in kept[2], false, '원본 시각을 모르면 받지 않는다');
+  assert.ok('feedback' in recs[0], '입력 기록은 바꾸지 않는다');
+  // 첨부 수집은 거른 기록만 본다 — 기준일 이전 원본의 첨부는 받지 않는다
+  assert.deepEqual(L.collectFileJobs(kept).map((j) => j.id), [911]);
+});
+
+test('기준일 거르기: 한 장에 섞인 기록 — 이전 기록과 그 첨부는 저장·첨부 수집·미리 확인 어디에도 안 들어간다', () => {
+  const old = { id: 1, time: CUT - 1, message: { id: 1, contentType: 'text', attachments: [{ id: 501, content: { name: 'old.pdf', size: 100 } }], content: { body: '입사 전' } } };
+  const legacy = { id: 2, time: CUT - 86400000, message: { id: 502, contentType: 'file', attachments: [], content: { name: 'old.docx', size: 200 } } };
+  const now = { id: 3, time: CUT, message: { id: 3, contentType: 'text', attachments: [{ id: 503, content: { name: 'new.pdf', size: 7 } }], content: { body: '입사 날' } } };
+  const kept = L.cutoffRecords([old, legacy, now], CUT);
+  assert.deepEqual(kept.map((r) => r.id), [3]);
+  assert.deepEqual(L.collectFileJobs(kept).map((j) => j.id), [503]);
+  const out = L.renderRoom({ roomName: 'x', roomId: 1, members: {}, records: kept }, []);
+  assert.equal(out.count, 1);
+  assert.ok(!out.csv.includes('입사 전') && out.csv.includes('입사 날'));
+  const tally = L.newTally();
+  L.tallyPage(tally, kept, new Set(), new Set());
+  assert.deepEqual([tally.records, tally.files, tally.bytes, tally.legacyFiles], [1, 1, 7, 0]);
+});
+
+test('페이지 넘김: 기준일 이전 기록이 보이는 장에서 cutoff 로 멈춘다', () => {
+  const page = (...times) => ({ records: times.map((t, i) => ({ id: 100 + i, time: t })), firstLinkId: 1 });
+  assert.deepEqual(L.decidePage(page(CUT + 5, CUT - 1), 200, CUT), { done: true, stopReason: 'cutoff', min: 100 });
+  // 경계: 당일 00:00 만 있으면 계속 넘긴다
+  assert.equal(L.decidePage(page(CUT, CUT + 5), 200, CUT).done, false);
+  // 열람 제한보다 먼저 — 기준일까지 다 봤으면 제한은 상관없다
+  assert.equal(L.decidePage(Object.assign(page(CUT - 1), { isLimited: true }), 200, CUT).stopReason, 'cutoff');
+  // 시각 모르는 기록으로는 멈추지 않는다
+  assert.equal(L.decidePage({ records: [{ id: 150 }], firstLinkId: 1 }, 200, CUT).done, false);
+  // 기준일을 안 주면 예전과 같다
+  assert.equal(L.decidePage(page(CUT - 1), 200).done, false);
+});
+
+test('기준일 방 찾기: JANDI 봇(대소문자·공백 무시)이 멤버인 1:1 방', () => {
+  const rooms = [
+    { id: 1, kind: 'chat', memberIds: [7, 1001], rawName: '' },
+    { id: 2, kind: 'chat', memberIds: [7, 2001], rawName: '' },
+    { id: 3, kind: 'groupChat', memberIds: [7, 2001, 8] },
+    { id: 4, kind: 'chat', memberIds: [7, '2002'], rawName: '' }
+  ];
+  const bots = [{ id: 2001, name: ' jandi ' }, { id: 2002, name: 'JANDI' }, { id: 2003, name: '잔디봇' }];
+  assert.deepEqual(L.findWelcomeRooms(rooms, bots).map((r) => r.id), [2, 4], '그룹 대화는 아니다 · 여럿이면 모두 후보');
+  // 봇 목록에 없으면 방 이름이 JANDI 인 1:1 방
+  assert.deepEqual(L.findWelcomeRooms([{ id: 5, kind: 'chat', memberIds: [7, 9], rawName: 'JANDI' }], []).map((r) => r.id), [5]);
+  // 실패: 봇 없음 · 대화 없음
+  assert.deepEqual(L.findWelcomeRooms(rooms, [{ id: 2003, name: '잔디봇' }]), []);
+  assert.deepEqual(L.findWelcomeRooms([{ id: 3, kind: 'groupChat', memberIds: [2001] }], bots), []);
+  assert.deepEqual(L.findWelcomeRooms([], bots), []);
+  // 실패: 대화는 있지만 기록이 없다 → 첫 기록 시각 null → 기준일 없음
+  assert.equal(L.cutoffFrom([L.earliestMs([])]), null);
+});
+
+test('README·전체 목록에 기준일을 적고, 기준일에서 멈춘 방은 끝난 방이다', () => {
+  const readme = L.buildReadme({ teamName: 't', startedAt: 'x', attachments: true, cutoff: '2021-05-03' });
+  assert.ok(readme.includes('기준일: 2021-05-03 (잔디 가입일)'));
+  assert.ok(readme.includes('잔디에 들어오기 전(가입일 이전) 대화와 첨부'));
+  const index = L.buildTopIndex([{ id: '1', kind: 'topic', name: 'a', folder: 'f', records: 1, files: 0, saved: 0, bytes: 0, stop: 'cutoff' }],
+    { teamName: 't', date: 'd', cutoff: '2021-05-03' });
+  assert.ok(index.includes('기준일: 2021-05-03 (잔디 가입일)'));
+  assert.ok(!index.includes('처음 기록까지 가지 못한 방'));
+});
+
 test('메시지가 없는 방은 lastLinkId 칸이 있고 비었을 때만이다', () => {
   assert.equal(L.isEmptyRoom({ id: 1, lastLinkId: 0 }), true);
   assert.equal(L.isEmptyRoom({ id: 1, lastLinkId: null }), true);

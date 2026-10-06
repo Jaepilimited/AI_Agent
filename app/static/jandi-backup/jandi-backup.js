@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-01.2';
+  var VERSION = '2026-10-06.1';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -429,13 +429,13 @@
         escapeHtml(r.name || r.id) + '</a></td><td>' + fmtInt(r.records) + '</td><td>' + fmtInt(r.saved) + '/' + fmtInt(r.files) +
         '</td><td>' + fmtInt((r.bytes || 0) / 1e6) + 'MB</td><td>' + dayKst(r.first) + ' ~ ' + dayKst(r.last) + '</td></tr>';
     }).join('');
-    var unfinished = rows.filter(function (r) { return r.stop !== 'first_link_reached' && r.stop !== 'no_messages'; });
+    var unfinished = rows.filter(function (r) { return r.stop !== 'first_link_reached' && r.stop !== 'no_messages' && r.stop !== 'cutoff'; });
     var note = unfinished.length
       ? '<p>처음 기록까지 가지 못한 방 ' + unfinished.length + '개 — 잔디가 열람을 제한했거나(access_limit) 수집이 멈췄습니다. summary.json 의 stop 을 보세요.</p>'
       : '';
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>잔디 백업 — ' + escapeHtml(team) + '</title>\n' +
       '<style>body{font:14px/1.6 system-ui,sans-serif;background:#f2f5f7;color:#172b36;margin:0}main{max-width:1100px;margin:auto;padding:24px}input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #bac7cf;border-radius:8px;font:inherit;margin:12px 0}table{width:100%;border-collapse:collapse;background:#fff}td,th{padding:6px 10px;border-bottom:1px solid #e3e9ec;text-align:left}td:nth-child(n+3){text-align:right;white-space:nowrap}a{color:#146b64}[hidden]{display:none}</style></head>\n' +
-      '<body><main><h1>잔디 백업 (' + escapeHtml(team) + ')</h1><p>백업일 ' + escapeHtml(meta.date || '') + ' · 방 ' + rows.length + '개 · 기록 ' + fmtInt(totalRecords) +
+      '<body><main><h1>잔디 백업 (' + escapeHtml(team) + ')</h1><p><b>기준일: ' + escapeHtml(meta.cutoff || '') + ' (잔디 가입일)</b> — 이 날 이후 대화만 들어 있습니다</p><p>백업일 ' + escapeHtml(meta.date || '') + ' · 방 ' + rows.length + '개 · 기록 ' + fmtInt(totalRecords) +
       '건 · 첨부 ' + fmtInt(totalSaved) + '/' + fmtInt(totalFiles) + '개 (' + fmtFixed(totalBytes / 1e9, 1) + 'GB)</p>\n' +
       '<p>방 이름을 누르면 해당 방의 대화 뷰어가 열립니다. 각 방 폴더에 CSV·TXT·원본 JSON·첨부파일이 있습니다. 무엇이 들어 있고 무엇이 빠졌는지는 README.txt 에 적었습니다.</p>' + note + '\n' +
       '<input id="q" type="search" placeholder="방 이름 검색"><table><thead><tr><th>종류</th><th>방</th><th>기록</th><th>첨부(저장/전체)</th><th>용량</th><th>기간</th></tr></thead><tbody>' + trs + '</tbody></table></main>\n' +
@@ -446,6 +446,7 @@
     return '﻿' + [
       '잔디 백업 — ' + (meta.teamName || meta.teamId),
       '백업 시작: ' + (meta.startedAt || '') + ' (한국 시간)',
+      '기준일: ' + (meta.cutoff || '') + ' (잔디 가입일) — 이 날 이후 대화만 들어 있습니다',
       '만든 도구: 셀라 잔디 백업 도우미 (' + VERSION + ')',
       '',
       '[여는 방법]',
@@ -454,7 +455,7 @@
       '- rooms 폴더 아래 방마다 폴더가 있습니다:',
       '  index.html(대화 뷰어) · messages.csv(엑셀용) · messages.txt(텍스트) · raw.json(잔디 원본 데이터)',
       '  files_manifest.json(첨부파일 목록·크기·SHA-256·실패 사유) · attachments(첨부파일)',
-      '- summary.json: 방별 기록 수·첨부 수·용량·기간·수집 종료 사유(stop)',
+      '- summary.json: 방별 기록 수·첨부 수·용량·기간·수집 종료 사유(stop — cutoff 는 기준일까지 다 받은 방)',
       '',
       '[들어 있는 것]',
       '- 백업한 계정이 볼 수 있는 대화만: 참여 중인 토픽(공개·비공개), 1:1 대화, 그룹 대화 중 고른 것',
@@ -462,6 +463,7 @@
       '- ' + (meta.attachments ? '첨부파일과 스티커 이미지 (받지 못한 파일은 files_manifest.json 에 사유와 함께 적힘)' : '첨부파일은 이번 백업에서 제외했습니다 (뷰어에 "미저장" 으로 표시)'),
       '',
       '[들어 있지 않은 것]',
+      '- 잔디에 들어오기 전(가입일 이전) 대화와 첨부',
       '- 참여하지 않은 토픽, 이 계정이 볼 수 없는 대화',
       '- 이미 삭제된 메시지·파일, 수정 전 내용(편집 이력)',
       '- 잔디가 열람을 제한한 오래된 기록 (그런 방은 summary.json 의 stop 이 access_limit)',
@@ -517,8 +519,87 @@
     return cursor === null || cursor === undefined ? { count: 100 } : { count: 100, type: 'old', linkId: cursor };
   }
 
-  // 응답 한 장을 보고 더 넘길지 정한다. min = 이 장에서 가장 작은 기록 id
-  function decidePage(data, cursor) {
+  // ── 기준일 (잔디 가입일) ────────────────────────────────────────────────────
+  // 입사 전 대화는 받지 않는다 (2026-10-06 회사 판단). 기준일 = JANDI 봇 대화의 첫 기록 날짜 KST 00:00
+
+  // 기록 시각(ms). localTime 과 같은 규칙 — 숫자는 밀리초/초, 문자열은 ISO. 모르면 null
+  function recordMs(r) {
+    if (!r || typeof r !== 'object') return null;
+    var v = pick(r, 'time', has(r, 'createdAt') ? r.createdAt : (r.message && typeof r.message === 'object' ? r.message.createdAt : undefined));
+    if (typeof v === 'number') return isFinite(v) ? (v > 1e11 ? v : v * 1000) : null;
+    if (v === null || v === undefined || v === '') return null;
+    var ms = Date.parse(String(v));
+    return isNaN(ms) ? null : ms;
+  }
+
+  // 그 시각이 속한 KST 날짜의 00:00 (ms)
+  function kstDayStart(ms) {
+    return Math.floor((ms + KST_MS) / 86400000) * 86400000 - KST_MS;
+  }
+
+  function earliestMs(records) {
+    var best = null;
+    (records || []).forEach(function (r) {
+      var t = recordMs(r);
+      if (t !== null && (best === null || t < best)) best = t;
+    });
+    return best;
+  }
+
+  // 시각을 모르는 기록은 기준일 이후라고 단정할 수 없다 — 받지 않는다
+  function beforeCutoff(r, cutoffMs) {
+    var t = recordMs(r);
+    return t === null || t < cutoffMs;
+  }
+
+  // 한 장(쪽)을 기준일로 거른다. 댓글이 가리키는 원본(feedback)도 기준일 이전·시각 모름이면 떼어 낸다 (댓글은 남김).
+  // 쪽 단위로만 판단한다 — 미리 확인(tallyPage)과 백업이 같은 결과를 내야 해서
+  function cutoffRecords(records, cutoffMs) {
+    if (typeof cutoffMs !== 'number' || !isFinite(cutoffMs)) return (records || []).slice();
+    var out = [];
+    (records || []).forEach(function (r) {
+      if (!r || typeof r !== 'object' || beforeCutoff(r, cutoffMs)) return;
+      if (has(r, 'feedback') && r.feedback && typeof r.feedback === 'object' && beforeCutoff(r.feedback, cutoffMs)) {
+        var copy = Object.assign({}, r);
+        delete copy.feedback;
+        r = copy;
+      }
+      out.push(r);
+    });
+    return out;
+  }
+
+  function isJandiBot(bot) {
+    return !!bot && typeof bot === 'object' && String(bot.name || bot.displayName || '').trim().toLowerCase() === 'jandi';
+  }
+
+  // 환영 메시지가 있는 방 = JANDI 봇이 멤버인 1:1 방. 봇 목록에서 못 찾으면 방 이름이 JANDI 인 1:1 방
+  // (실제 잔디의 봇 대화 모양은 실측 전이다 — 후보가 여럿이면 부르는 쪽이 가장 이른 첫 기록을 쓴다)
+  function findWelcomeRooms(rooms, bots) {
+    var botIds = {};
+    (bots || []).forEach(function (b) { if (isJandiBot(b) && b.id !== undefined && b.id !== null) botIds[String(b.id)] = true; });
+    var chats = (rooms || []).filter(function (r) { return r && r.kind === 'chat'; });
+    var byMember = chats.filter(function (r) {
+      return (r.memberIds || []).some(function (id) { return botIds[String(id)]; });
+    });
+    if (byMember.length) return byMember;
+    return chats.filter(function (r) { return isJandiBot({ name: r.rawName }); });
+  }
+
+  // 후보 방들의 첫 기록 시각 → 기준일 { ms, date }. 하나도 없으면 null (백업을 시작하지 않는다)
+  function cutoffFrom(firstTimes) {
+    var best = null;
+    (firstTimes || []).forEach(function (t) {
+      if (typeof t === 'number' && isFinite(t) && (best === null || t < best)) best = t;
+    });
+    if (best === null) return null;
+    var ms = kstDayStart(best);
+    return { ms: ms, date: dayKst(ms) };
+  }
+
+  // 응답 한 장을 보고 더 넘길지 정한다. min = 이 장에서 가장 작은 기록 id.
+  // cutoffMs 를 주면 기준일 이전 기록이 보이는 장에서 멈춘다 (그보다 오래된 쪽은 볼 필요가 없다)
+  function decidePage(data, cursor, cutoffMs) {
     var recs = Array.isArray(data.records) ? data.records : [];
     var min = null;
     recs.forEach(function (r) {
@@ -526,6 +607,10 @@
       if (isFinite(id) && (min === null || id < min)) min = id;
     });
     var first = data.firstLinkId !== null && data.firstLinkId !== undefined && data.firstLinkId !== '' ? Number(data.firstLinkId) : NaN;
+    if (typeof cutoffMs === 'number' && isFinite(cutoffMs) && recs.some(function (r) {
+      var t = recordMs(r);
+      return t !== null && t < cutoffMs;
+    })) return { done: true, stopReason: 'cutoff', min: min };
     if (data.isLimited) return { done: true, stopReason: 'access_limit', min: min };
     if (!recs.length || min === null) return { done: true, stopReason: 'first_link_reached', min: min };
     if (isFinite(first) && min <= first) return { done: true, stopReason: 'first_link_reached', min: min };
@@ -705,7 +790,8 @@
     attachmentFileName: attachmentFileName, makeNamer: makeNamer, describeEvent: describeEvent, recordView: recordView,
     sortRecords: sortRecords, csvCell: csvCell, csvRow: csvRow, renderRoom: renderRoom, summaryRow: summaryRow,
     sortRows: sortRows, buildTopIndex: buildTopIndex, buildReadme: buildReadme, collectFileJobs: collectFileJobs,
-    pageParams: pageParams, decidePage: decidePage, isEmptyRoom: isEmptyRoom, teamNameFrom: teamNameFrom,
+    pageParams: pageParams, decidePage: decidePage, recordMs: recordMs, kstDayStart: kstDayStart, earliestMs: earliestMs,
+    cutoffRecords: cutoffRecords, findWelcomeRooms: findWelcomeRooms, cutoffFrom: cutoffFrom, isEmptyRoom: isEmptyRoom, teamNameFrom: teamNameFrom,
     backupFolderName: backupFolderName, ymdKst: ymdKst, fmtBytes: fmtBytes, fmtDuration: fmtDuration,
     SPEED_LOW: SPEED_LOW, SPEED_HIGH: SPEED_HIGH, newTally: newTally, tallyPage: tallyPage, summarizeScan: summarizeScan,
     estimateTimes: estimateTimes, fmtApprox: fmtApprox, fmtRange: fmtRange, pushSample: pushSample,
@@ -783,11 +869,16 @@
       current: {}, roomFailures: [], fileFailures: [], abort: null,
       // 용량 미리 확인 결과 — 방마다 숫자만 (기록은 버린다). 실행 중 예상 용량의 근거
       scan: null, notice: '',
+      // 기준일(잔디 가입일) — { state: 'loading' | 'ok' | 'missing', ms, date }. ok 가 아니면 시작·미리 확인을 막는다
+      cutoff: { state: 'loading' }, bots: [],
       // 실행 중: 방마다 예상 용량에 넣어 둔 값 · 속도 표본 · 다듬은 남은 시간
       roomBytes: {}, samples: [], rate: null, eta: null, etaAt: 0
     };
     var host = null, shadow = null, timer = null, ctlKey = '';
     var inj = null, http = null, fileApi = null;
+
+    var CUTOFF_MISSING = '잔디 가입일을 확인하지 못해 백업을 시작할 수 없습니다. 셀라 담당자에게 알려 주세요.';
+    var OLD_FOLDER = '예전 방식으로 받은 폴더입니다 — 새 빈 폴더를 고르세요';
 
     var STYLE = ':host{all:initial}.p{position:fixed;top:16px;right:16px;width:380px;max-height:calc(100vh - 32px);overflow:auto;z-index:2147483000;' +
       'background:#fff;color:#172b36;border:1px solid #c9d4da;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);' +
@@ -806,7 +897,8 @@
       '.tb th,.tb td{padding:3px 4px;text-align:right;border-bottom:1px solid #eef2f4;white-space:nowrap}' +
       '.tb th:first-child,.tb td:first-child{text-align:left}.tb th{font-weight:600;color:#536675}.tb tr.sum td{font-weight:700;border-bottom:0}' +
       '.est{border:1px solid #dde5e9;border-radius:8px;padding:8px 10px;margin:8px 0;background:#f8fafb}.est.stale{opacity:.6}' +
-      '.lbl{display:flex;justify-content:space-between;font-size:12px;color:#657582;margin-top:6px}.lbl+.bar{margin-top:2px}';
+      '.lbl{display:flex;justify-content:space-between;font-size:12px;color:#657582;margin-top:6px}.lbl+.bar{margin-top:2px}' +
+      '.cut{border:1px solid #146b64;background:#eef7f5;border-radius:8px;padding:7px 10px;margin:8px 0;font-weight:600}.cut.bad{border-color:#a24f1b;background:#fdf3ec;color:#a24f1b}';
 
     function el(sel) { return shadow.querySelector(sel); }
 
@@ -852,11 +944,20 @@
       }
     }
 
+    function cutoffHtml() {
+      var cut = S.cutoff;
+      if (cut.state === 'ok') return '<p class="cut" data-cutoff>기준일: ' + L.escapeHtml(cut.date) + ' (잔디 가입일) — 이 날 이후 대화만 받습니다</p>';
+      if (cut.state === 'missing') return '<p class="cut bad" data-cutoff>' + CUTOFF_MISSING + '</p>';
+      return '<p class="cut" data-cutoff>잔디 가입일(기준일)을 확인하는 중입니다…</p>';
+    }
+
     function renderIntro() {
       var c = counts();
       var supported = typeof win.showDirectoryPicker === 'function';
+      var ready = S.cutoff.state === 'ok';
       setBody(
         '<p>이 계정이 볼 수 있는 잔디 대화와 첨부파일을 <b>내 PC 폴더</b>에 저장합니다. 셀라 서버로는 아무것도 보내지 않습니다.</p>' +
+        cutoffHtml() +
         '<p class="muted">팀: ' + L.escapeHtml(S.teamName || S.teamId) + ' · 토픽 ' + c.topic + ' / 1:1 ' + c.chat + ' / 그룹 ' + c.groupChat + '</p>' +
         '<label><input type="checkbox" data-k="topic"' + (S.opts.kinds.topic ? ' checked' : '') + '> 토픽 (공개·비공개, 참여 중인 것) ' + c.topic + '개</label>' +
         '<label><input type="checkbox" data-k="chat"' + (S.opts.kinds.chat ? ' checked' : '') + '> 1:1 대화 ' + c.chat + '개</label>' +
@@ -866,8 +967,8 @@
         '바탕화면 등에 빈 폴더를 하나 만들어 고르는 것을 권합니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
         estimateHtml() +
         (supported ? '' : '<p class="warn">이 브라우저는 폴더 저장을 지원하지 않습니다. PC 의 Chrome 또는 Edge 에서 열어 주세요.</p>') +
-        '<button class="btn sub" type="button" data-act="scan">' + (S.scan ? '용량 다시 확인' : '용량 미리 확인') + '</button>' +
-        '<button class="btn" type="button" data-act="start"' + (supported ? '' : ' disabled') + '>저장 폴더 선택 후 시작</button>' +
+        '<button class="btn sub" type="button" data-act="scan"' + (ready ? '' : ' disabled') + '>' + (S.scan ? '용량 다시 확인' : '용량 미리 확인') + '</button>' +
+        '<button class="btn" type="button" data-act="start"' + (supported && ready ? '' : ' disabled') + '>저장 폴더 선택 후 시작</button>' +
         '<p class="muted" data-msg>' + L.escapeHtml(S.notice || '') + '</p>');
       Array.prototype.forEach.call(shadow.querySelectorAll('input[type=checkbox]'), function (box) {
         box.addEventListener('change', function () {
@@ -926,6 +1027,7 @@
 
     // 용량 미리 확인 — 대화를 읽기만 하고 아무것도 쓰지 않는다. 방마다 숫자만 남기고 기록은 버린다
     function onScanClick() {
+      if (S.cutoff.state !== 'ok') { introMessage(CUTOFF_MISSING); return; }
       var selected = selectedRooms();
       if (!selected.length) { introMessage('확인할 대화 종류를 하나 이상 고르세요.'); return; }
       scan(selected);
@@ -969,6 +1071,7 @@
         introMessage('이 브라우저는 폴더 저장을 지원하지 않습니다. PC 의 Chrome 또는 Edge 에서 열어 주세요.');
         return;
       }
+      if (S.cutoff.state !== 'ok') { introMessage(CUTOFF_MISSING); return; }
       var selected = selectedRooms();
       if (!selected.length) { introMessage('저장할 대화 종류를 하나 이상 고르세요.'); return; }
       var picking;
@@ -1019,6 +1122,7 @@
       else if (S.phase === 'stopped') head = '<p><b>중지했습니다.</b> 끝난 방까지만 저장됐습니다. 같은 폴더를 골라 다시 시작하면 이어서 받습니다.</p>';
       else head = '<p><b>백업을 마쳤습니다.</b></p>';
       var html = head +
+        '<p class="muted" data-cutoff>기준일 ' + L.escapeHtml(S.cutoff.date || '') + ' (잔디 가입일) 이후 대화만</p>' +
         '<div class="lbl"><span>방</span><span>' + Math.round(frac * 100) + '%</span></div>' +
         '<div class="bar"><i style="width:' + Math.round(frac * 100) + '%"></i></div>' +
         (att ? '<div class="lbl"><span>용량' + (complete ? '' : ' (확인된 만큼)') + '</span><span>' + Math.round(bfrac * 100) + '%</span></div>' +
@@ -1121,6 +1225,11 @@
         if (id === undefined || id === null || seen[String(id)]) return;
         seen[String(id)] = true;
         var room = { id: id, kind: kind, name: r.name || fallbackName || String(id), teamId: r.teamId };
+        // 1:1 방은 멤버 id 와 원래 이름을 남긴다 — 기준일(JANDI 봇 대화) 찾기용
+        if (kind === 'chat') {
+          room.memberIds = (Array.isArray(r.members) ? r.members : []).map(function (m) { return m && typeof m === 'object' ? m.id : m; });
+          room.rawName = r.name || '';
+        }
         if (has(r, 'lastLinkId')) room.lastLinkId = r.lastLinkId;
         if (r.viewType) room.viewType = r.viewType;
         rooms.push(room);
@@ -1160,6 +1269,7 @@
       fileApi = svc('FileApi');
       if (!http) throw new Error('잔디 앱 구조가 바뀌어 대화를 읽을 수 없습니다. (잔디 업데이트로 이 도구가 멈췄을 수 있습니다.)');
       S.members = readMembers();
+      S.bots = listFrom(svc('BotList'), true);
       S.rooms = readRooms(S.members);
       var withTeam = S.rooms.filter(function (r) { return r.teamId; })[0];
       S.teamId = withTeam ? withTeam.teamId : null;
@@ -1238,11 +1348,31 @@
       for await (var entry of picked.values()) {
         if (entry.kind !== 'directory' || entry.name.indexOf(prefix) !== 0 || entry.name === today) continue;
         var state = await readTextIf(entry, 'backup_state.json');
-        var finished = false;
-        try { finished = !!(state && JSON.parse(state).finishedAt); } catch (e) { finished = false; }
-        if (!finished && (!best || entry.name > best.name)) best = entry;   // 끝나지 않은 지난 백업은 이어서
+        var finished = false, sameCutoff = false;
+        try {
+          var st = state ? JSON.parse(state) : null;
+          finished = !!(st && st.finishedAt);
+          sameCutoff = !!(st && st.cutoff === S.cutoff.date);
+        } catch (e) { finished = false; }
+        // 끝나지 않은 지난 백업은 이어서 — 같은 기준일로 받던 것만
+        if (!finished && sameCutoff && (!best || entry.name > best.name)) best = entry;
       }
       return best || picked.getDirectoryHandle(today, { create: true });
+    }
+
+    // 이미 받은 것이 있는 폴더는 같은 기준일로 받은 것이어야 한다 — 예전 버전은 기준일 이전 기록을 담고 있을 수 있다
+    async function checkRootCutoff(root) {
+      var state = await readTextIf(root, 'backup_state.json');
+      if (state !== null) {
+        var st = null;
+        try { st = JSON.parse(state); } catch (e) { st = null; }
+        if (!st || st.cutoff !== S.cutoff.date) throw new Error(OLD_FOLDER);
+        return;
+      }
+      var roomsDir = await dirIf(root, 'rooms');
+      if (roomsDir) {
+        for await (var entry of roomsDir.values()) { if (entry) throw new Error(OLD_FOLDER); }
+      }
     }
 
     async function existingRoomFolders(roomsDir) {
@@ -1274,14 +1404,58 @@
       throw new Error('대화를 읽지 못했습니다 (' + errText(last) + ')');
     }
 
-    // 방 하나의 쪽을 끝까지 넘긴다. onPage(기록 배열) → 이 쪽에서 새로 본 기록 수. 백업과 미리 확인이 같이 쓴다
+    function roomUrl(room) {
+      return MESSAGES_API + encodeURIComponent(S.teamId) + '/rooms/' + encodeURIComponent(room.id) + '/messages';
+    }
+
+    // 방의 첫 기록 시각. firstLinkId 를 알면 그 바로 다음 id 에서 'old' 로 한 장만 더 부른다 (메모장으로 많이 쓴 방도 두 번에 끝).
+    // 모르거나 그 장이 비면 처음까지 넘긴다
+    async function firstRecordMs(room) {
+      if (L.isEmptyRoom(room)) return null;
+      var url = roomUrl(room);
+      var data = await getPage(url, L.pageParams(null), room.id);
+      var best = L.earliestMs(data.records);
+      var first = data.firstLinkId !== null && data.firstLinkId !== undefined && data.firstLinkId !== '' ? Number(data.firstLinkId) : NaN;
+      var d = L.decidePage(data, null);
+      if (d.done) return best;
+      if (isFinite(first)) {
+        var head = await getPage(url, L.pageParams(first + 1), room.id);
+        var t = L.earliestMs(head.records);
+        if (t !== null) return best === null ? t : Math.min(best, t);
+      }
+      var cursor = d.min;
+      for (var i = 0; i < 5000; i++) {
+        var page = await getPage(url, L.pageParams(cursor), room.id);
+        var pt = L.earliestMs(page.records);
+        if (pt !== null && (best === null || pt < best)) best = pt;
+        var dd = L.decidePage(page, cursor);
+        if (dd.done) break;
+        cursor = dd.min;
+      }
+      return best;
+    }
+
+    // 기준일 = JANDI 봇 대화(환영 메시지)의 첫 기록 날짜. 못 찾으면 missing — 백업·미리 확인을 막는다
+    async function findCutoff() {
+      var rooms = L.findWelcomeRooms(S.rooms, S.bots);
+      var times = [];
+      for (var i = 0; i < rooms.length; i++) {
+        try { times.push(await firstRecordMs(rooms[i])); } catch (e) { /* 다른 후보로 */ }
+      }
+      var cut = L.cutoffFrom(times);
+      return cut ? { state: 'ok', ms: cut.ms, date: cut.date } : { state: 'missing' };
+    }
+
+    // 방 하나의 쪽을 넘긴다 — 기준일 이전 기록이 보이는 장에서 멈춘다. onPage(기준일로 거른 기록 배열) → 이 쪽에서 새로 본 기록 수.
+    // 백업과 미리 확인이 같이 쓴다
     async function walkMessages(room, onPage) {
-      var url = MESSAGES_API + encodeURIComponent(S.teamId) + '/rooms/' + encodeURIComponent(room.id) + '/messages';
+      if (S.cutoff.state !== 'ok') throw new Error(CUTOFF_MISSING);
+      var url = roomUrl(room);
       var pages = [], cursor = null;
       for (var i = 0; i < 100000; i++) {
         var data = await getPage(url, L.pageParams(cursor), room.id);
-        var added = onPage(data.records);
-        var d = L.decidePage(data, cursor);
+        var added = onPage(L.cutoffRecords(data.records, S.cutoff.ms));
+        var d = L.decidePage(data, cursor, S.cutoff.ms);
         pages.push({ n: data.records.length, added: added, firstLinkId: data.firstLinkId, isLimited: !!data.isLimited, min: d.min });
         if (d.done) return { pages: pages, stopReason: d.stopReason };
         cursor = d.min;
@@ -1445,7 +1619,7 @@
       var meta = {
         roomId: room.id, roomName: room.name, kind: room.kind, teamId: S.teamId, viewType: room.viewType || null,
         stopReason: collected.stopReason, pages: collected.pages, collectedAt: new Date().toISOString(),
-        tool: 'cella-jandi-backup ' + L.VERSION, members: S.members
+        tool: 'cella-jandi-backup ' + L.VERSION, cutoff: S.cutoff.date, members: S.members
       };
       await writeText(dir, 'files_manifest.json', JSON.stringify(manifest, null, 1));
       await writeRaw(dir, meta, collected.records);
@@ -1455,7 +1629,7 @@
       await writeText(dir, 'messages.txt', out.txt);
       var row = L.summaryRow(room, folder, collected.records, manifest, collected.stopReason);
       // ⚠️ done.json 은 맨 마지막 — 이것이 있어야 다음 실행이 이 방을 건너뛴다
-      await writeText(dir, 'done.json', JSON.stringify({ row: row, finishedAt: new Date().toISOString(), version: L.VERSION }, null, 1));
+      await writeText(dir, 'done.json', JSON.stringify({ row: row, finishedAt: new Date().toISOString(), version: L.VERSION, cutoff: S.cutoff.date }, null, 1));
       return row;
     }
 
@@ -1471,7 +1645,7 @@
         // 끝난 방 — 받지 못한 첨부만 다시
         S.current[room.id] = room.name + ' — 못 받은 첨부 ' + failed.length + '개 다시';
         var raw = JSON.parse(await readTextIf(dir, 'raw.json') || '{}');
-        var records = raw.records ? Object.keys(raw.records).map(function (k) { return raw.records[k]; }) : [];
+        var records = L.cutoffRecords(raw.records ? Object.keys(raw.records).map(function (k) { return raw.records[k]; }) : [], S.cutoff.ms);
         var failedIds = {};
         failed.forEach(function (f) { failedIds[String(f.id)] = true; });
         var jobs = L.collectFileJobs(records).filter(function (j) { return failedIds[String(j.id)]; });
@@ -1559,14 +1733,14 @@
         } catch (e) { /* 깨진 표식 — 다음 실행에서 다시 받는다 */ }
       }
       rows = L.sortRows(rows);
-      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments };
+      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments, cutoff: S.cutoff.date };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
       await writeText(root, 'README.txt', L.buildReadme(meta));
       await writeText(root, 'backup_state.json', JSON.stringify({
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
-        roomFailures: S.roomFailures, version: L.VERSION
+        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date
       }, null, 1));
     }
 
@@ -1591,9 +1765,10 @@
         var root = await chooseRoot(picked);
         S.root = root;
         S.rootName = root.name;
+        await checkRootCutoff(root);
         var roomsDir = await root.getDirectoryHandle('rooms', { create: true });
         var folders = await existingRoomFolders(roomsDir);
-        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION }, null, 1));
+        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date }, null, 1));
         var dms = selected.filter(function (r) { return r.kind === 'chat'; });
         var others = selected.filter(function (r) { return r.kind !== 'chat'; });
         var work = function (room) { return processRoom(room, roomsDir, folders); };
@@ -1608,7 +1783,9 @@
         S.phase = S.stopped ? 'stopped' : 'done';
       } catch (e) {
         S.phase = 'error';
-        S.message = '백업이 멈췄습니다: ' + errText(e) + ' — 같은 폴더를 골라 다시 시작하면 끝난 방은 건너뜁니다.';
+        // 예전 폴더는 이어 받으면 안 된다 — "같은 폴더로 다시" 안내를 붙이지 않는다
+        S.message = e && e.message === OLD_FOLDER ? OLD_FOLDER
+          : '백업이 멈췄습니다: ' + errText(e) + ' — 같은 폴더를 골라 다시 시작하면 끝난 방은 건너뜁니다.';
       } finally {
         S.finishedAt = Date.now();
         win.removeEventListener('beforeunload', beforeUnload);
@@ -1617,6 +1794,8 @@
         render();
       }
     }
+
+    var cutoffSeq = 0;
 
     function open() {
       if (!host || !host.isConnected) mount();
@@ -1628,7 +1807,16 @@
         S.phase = 'error';
         S.message = e.message || String(e);
       }
+      if (S.phase !== 'intro') { render(); return; }
+      // 기준일은 잔디 API 를 불러야 안다 — 그동안 시작·미리 확인 버튼은 꺼 둔다. 다시 열면 늦게 온 앞 결과는 버린다
+      var seq = ++cutoffSeq;
+      S.cutoff = { state: 'loading' };
       render();
+      findCutoff().then(function (cut) {
+        if (seq !== cutoffSeq) return;
+        S.cutoff = cut;
+        if (S.phase === 'intro') render();
+      });
     }
 
     return {
