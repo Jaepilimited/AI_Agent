@@ -167,7 +167,7 @@ function renderUnknownJobs(list) {
     const p = document.createElement("p");
     p.textContent = `작업 #${u.job_id}: ${u.rows.join(", ")}행 — 발송 여부 불확실. Gmail 보낸편지함에서 확인하고, ` +
       "실제로 나간 행은 시트 전송여부 열에 O 를 적은 뒤 '확인했음' 을 누르세요 (O 가 없는 행은 다시 대상이 됩니다)";
-    const b = document.createElement("button"); b.className = "ms-btn"; b.textContent = "확인했음";
+    const b = document.createElement("button"); b.className = "ms-btn tool-btn"; b.textContent = "확인했음";
     b.onclick = guard(() => busy(b, async () => {
       if (!confirm(`${u.rows.join(", ")}행을 보낸편지함에서 확인했고, 나간 행은 O 로 표시했습니까?`)) return;
       await api(`/api/mail-sender/jobs/${u.job_id}/ack-unknown`, {});
@@ -199,16 +199,28 @@ async function runCheck() {
     const tr = document.createElement("tr");
     const iss = byRow[r.row] || [];
     const isSent = (r.status || "").trim().toUpperCase() === "O";
-    const mark = isSent ? "보냄" : iss.some((i) => i.level === "error") ? "❌" : iss.length ? "⚠️" : "✅";
-    const email = r.attachments ? `${r.email} 📎${r.attachments}` : r.email;
-    for (const v of [r.row, r.manager, email, r.status || "",mark + " " + iss.map((i) => i.message).join(" / ")]) {
+    // 점검 결과는 이모지가 아니라 글자 표식으로 — 글꼴마다 모양이 달라지고 색만으로 뜻을 두지 않는다
+    const level = isSent ? "sent" : iss.some((i) => i.level === "error") ? "error" : iss.length ? "warn" : "ok";
+    const MARK = { sent: "보냄", error: "오류", warn: "확인", ok: "정상" };
+    const email = r.attachments ? `${r.email} · 첨부 ${r.attachments}` : r.email;
+    for (const v of [r.row, r.manager, email, r.status || ""]) {
       const td = document.createElement("td"); td.textContent = v; tr.append(td);
     }
+    const chk = document.createElement("td");
+    const badge = document.createElement("span"); badge.className = "ms-mark ms-mark-" + level;
+    badge.textContent = MARK[level];
+    chk.append(badge);
+    if (iss.length) {
+      const msg = document.createElement("span"); msg.className = "ms-mark-msg";
+      msg.textContent = iss.map((i) => i.message).join(" / ");
+      chk.append(msg);
+    }
+    tr.append(chk);
     const td = document.createElement("td");
     if (!isSent) {
-      const pv = document.createElement("button"); pv.className = "ms-btn"; pv.textContent = "미리보기";
+      const pv = document.createElement("button"); pv.className = "ms-btn tool-btn"; pv.textContent = "미리보기";
       pv.onclick = guard(() => preview(r.row));
-      const ts = document.createElement("button"); ts.className = "ms-btn"; ts.textContent = "나에게 테스트";
+      const ts = document.createElement("button"); ts.className = "ms-btn tool-btn"; ts.textContent = "나에게 테스트";
       ts.onclick = guard(() => busy(ts, () => testSend(r.row)));
       td.append(pv, ts);
     }

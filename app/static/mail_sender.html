@@ -7,6 +7,7 @@
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/tools.css">
   <script>
     if (localStorage.theme === "dark") {
       document.documentElement.classList.replace("light", "dark");
@@ -15,78 +16,141 @@
   <style>
     /* style.css 는 채팅 SPA 용이라 html, body 에 overflow:hidden 을 건다 — 표가 긴 이 페이지에선 되살린다 */
     html, body { height: auto; overflow: auto; }
+    .ms-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 18px; align-items: end; }
+    .ms-grid select { width: 100%; }
+    .ms-sheet-row { display: flex; gap: 8px; align-items: center; }
+    .ms-sheet-row select { flex: 1; min-width: 0; }
+    .ms-notes { margin: 14px 0 0; padding: 0; list-style: none; color: var(--text-secondary); font-size: 12.5px; line-height: 1.7; }
+    .ms-files { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .ms-files .tool-row { margin-top: 8px; }
+    #ms-reply-to:empty { display: none; }
+    #ms-reply-to { color: var(--text-muted); font-size: 12px; }
+    #ms-summary { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+    #ms-global-issues { margin: 10px 0 0; padding-left: 1.2em; font-size: 13px; }
+    #ms-global-issues:empty { display: none; }
+    .ms-table td { vertical-align: middle; }
+    .ms-table td:last-child { white-space: nowrap; text-align: right; }
+    .ms-table td:last-child .tool-btn { height: 30px; padding: 0 10px; font-size: 12.5px; }
+    .ms-table td:last-child .tool-btn + .tool-btn { margin-left: 6px; }
+    .ms-mark { display: inline-block; min-width: 34px; padding: 1px 8px; margin-right: 8px; border-radius: 999px;
+               border: 1px solid var(--border-strong); font-size: 11.5px; font-weight: 600; text-align: center;
+               color: var(--text-secondary); }
+    .ms-mark-error { color: var(--error); border-color: var(--error); }
+    .ms-mark-warn { color: var(--warning); border-color: var(--warning); }
+    .ms-mark-ok { color: var(--success); border-color: var(--success); }
+    .ms-mark-msg { color: var(--text-secondary); font-size: 12.5px; }
+    .ms-foot { display: flex; justify-content: flex-end; margin-top: 16px; }
+    #ms-job-bar { width: 100%; height: 6px; margin-top: 10px; accent-color: var(--text); }
+    #ms-job-text { margin: 0; font-weight: 600; }
+    .ms-err:empty { display: none; }
+    #ms-preview { padding: 22px 24px; }
+    #ms-preview h3 { margin: 0 0 6px; font-size: 16px; }
+    #ms-preview form { display: flex; justify-content: flex-end; margin-top: 14px; }
+    @media (max-width: 860px) { .ms-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body>
-<main class="ms-page">
-  <header class="ms-head"><h1>메일 발송</h1><span id="ms-me" class="ms-muted"></span></header>
-  <details id="ms-help" class="ms-card ms-help" open>
-    <summary>사용 방법</summary>
-    <h3>순서</h3>
-    <ol>
-      <li><b>구글 연결</b> — 처음 한 번. 구글 화면에서 <b>모든 항목에 체크</b>하고 허용하세요.</li>
-      <li><b>스프레드시트 · 시트 · 보내는 주소</b>를 고릅니다. 「시트 열기 ↗」로 그 시트를 바로 열 수 있습니다.</li>
-      <li><b>점검</b> — 보낼 대상과 문제를 행마다 보여 줍니다. ❌ 가 하나라도 있으면 「전체 발송」이 잠깁니다.</li>
-      <li>행 오른쪽 <b>미리보기 · 나에게 테스트</b>로 실제 모양을 확인합니다 (테스트는 내 메일함으로만 갑니다).</li>
-      <li><b>전체 발송</b> — 확인 창의 인원·제목을 보고 누릅니다. 진행 중 「중지」 할 수 있고, 보낸 행은 시트 G열에 O, A열에 날짜가 적힙니다.</li>
-    </ol>
-    <h3>시트 양식 (기존 메일 툴과 같음)</h3>
-    <ul>
-      <li>열 위치가 정해져 있습니다: <b>A 날짜 · B 템플릿 탭 이름 · D 이메일 · G 전송여부 · H 비고</b>. 1행은 헤더, 2행부터 수신자.</li>
-      <li>B열은 Docs 템플릿 <b>탭 제목과 똑같이</b> 적습니다.</li>
-      <li>1행 헤더가 <code>{name}</code> · <code>{value1}</code> 처럼 중괄호면, 그 열 값이 템플릿의 같은 변수 자리에 들어갑니다. 템플릿에 있는 변수가 시트에 없으면 ❌ 로 막습니다.</li>
-      <li>G열이 <b>O</b> 인 행은 이미 보낸 것으로 보고 건너뜁니다.</li>
-    </ul>
-    <h3>첨부</h3>
-    <ul>
-      <li><b>공통 첨부</b>: 아래에서 파일을 고르면 이번 발송의 모든 수신자(테스트 포함)에게 붙습니다. 합계 15MB · 10개까지.</li>
-      <li><b>수신자별 첨부</b>: 시트 1행 I열 이후에 <code>첨부</code> 열을 만들고 행마다 Drive 링크를 적습니다 (여러 개는 줄바꿈·쉼표). 구글 문서·시트·슬라이드는 PDF 로 붙고, 내 계정에서 열 수 있는 파일이어야 합니다.</li>
-      <li>메일 한 통은 이미지·첨부 합쳐 24MB 를 넘을 수 없습니다 — 넘으면 점검에서 막습니다.</li>
-    </ul>
-    <h3>알아두기</h3>
-    <ul>
-      <li>Docs 템플릿을 고치거나 탭을 새로 만들면 <b>반영까지 최대 10분</b> 걸립니다 (점검에 "10분 뒤 다시" 로 보입니다).</li>
-      <li>행 사이 2.5초 간격으로 보냅니다 (100명 ≈ 4분). 하루 2,000통까지.</li>
-      <li>페이지를 닫아도 발송은 서버에서 계속됩니다 — 다시 열면 진행 상황이 보입니다.</li>
-      <li>같은 시트를 기존 Apps Script 와 <b>동시에</b> 돌리지 마세요.</li>
-      <li>"발송 여부 불확실" 행은 Gmail 보낸편지함에서 확인하고, 나간 행은 G열에 O 를 적은 뒤 「확인했음」을 누르세요.</li>
-    </ul>
-  </details>
-  <section id="ms-connect" class="ms-card" hidden>
-    <p id="ms-connect-msg"></p>
-    <button id="ms-connect-btn" class="ms-btn">구글 연결 (메일 발송 권한)</button>
+<body class="tool" style="--tool-width: 1100px">
+<header class="tool-bar">
+  <div class="tool-bar-inner">
+    <a class="tool-back" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Cella</a>
+    <span class="tool-crumb-sep" aria-hidden="true">/</span>
+    <span class="tool-crumb">메일 발송</span>
+    <span id="ms-me" class="tool-bar-meta"></span>
+  </div>
+</header>
+<main class="tool-main ms-page">
+  <div class="tool-head">
+    <h1>메일 발송</h1>
+    <p class="tool-lead">스프레드시트의 수신자 목록과 Docs 템플릿으로 한 사람씩 메일을 보냅니다. 점검 · 미리보기 · 나에게 테스트를 거친 뒤 전체 발송합니다.</p>
+    <details id="ms-help" class="tool-guide ms-help">
+      <summary>사용 방법 · 시트 양식 · 첨부</summary>
+      <div class="tool-guide-body">
+      <h3>순서</h3>
+      <ol>
+        <li><b>구글 연결</b> — 처음 한 번. 구글 화면에서 <b>모든 항목에 체크</b>하고 허용하세요.</li>
+        <li><b>스프레드시트 · 시트 · 보내는 주소</b>를 고릅니다. 「시트 열기」로 그 시트를 바로 열 수 있습니다.</li>
+        <li><b>점검</b> — 보낼 대상과 문제를 행마다 보여 줍니다. <b>오류</b>가 하나라도 있으면 「전체 발송」이 잠깁니다.</li>
+        <li>행 오른쪽 <b>미리보기 · 나에게 테스트</b>로 실제 모양을 확인합니다 (테스트는 내 메일함으로만 갑니다).</li>
+        <li><b>전체 발송</b> — 확인 창의 인원·제목을 보고 누릅니다. 진행 중 「중지」 할 수 있고, 보낸 행은 시트 G열에 O, A열에 날짜가 적힙니다.</li>
+      </ol>
+      <h3>시트 양식 (기존 메일 툴과 같음)</h3>
+      <ul>
+        <li>열 위치가 정해져 있습니다: <b>A 날짜 · B 템플릿 탭 이름 · D 이메일 · G 전송여부 · H 비고</b>. 1행은 헤더, 2행부터 수신자.</li>
+        <li>B열은 Docs 템플릿 <b>탭 제목과 똑같이</b> 적습니다.</li>
+        <li>1행 헤더가 <code>{name}</code> · <code>{value1}</code> 처럼 중괄호면, 그 열 값이 템플릿의 같은 변수 자리에 들어갑니다. 템플릿에 있는 변수가 시트에 없으면 <b>오류</b>로 막습니다.</li>
+        <li>G열이 <b>O</b> 인 행은 이미 보낸 것으로 보고 건너뜁니다.</li>
+      </ul>
+      <h3>첨부</h3>
+      <ul>
+        <li><b>공통 첨부</b>: 아래에서 파일을 고르면 이번 발송의 모든 수신자(테스트 포함)에게 붙습니다. 합계 15MB · 10개까지.</li>
+        <li><b>수신자별 첨부</b>: 시트 1행 I열 이후에 <code>첨부</code> 열을 만들고 행마다 Drive 링크를 적습니다 (여러 개는 줄바꿈·쉼표). 구글 문서·시트·슬라이드는 PDF 로 붙고, 내 계정에서 열 수 있는 파일이어야 합니다.</li>
+        <li>메일 한 통은 이미지·첨부 합쳐 24MB 를 넘을 수 없습니다 — 넘으면 점검에서 막습니다.</li>
+      </ul>
+      <h3>알아두기</h3>
+      <ul>
+        <li>Docs 템플릿을 고치거나 탭을 새로 만들면 <b>반영까지 최대 10분</b> 걸립니다 (점검에 "10분 뒤 다시" 로 보입니다).</li>
+        <li>행 사이 2.5초 간격으로 보냅니다 (100명 ≈ 4분). 하루 2,000통까지.</li>
+        <li>페이지를 닫아도 발송은 서버에서 계속됩니다 — 다시 열면 진행 상황이 보입니다.</li>
+        <li>같은 시트를 기존 Apps Script 와 <b>동시에</b> 돌리지 마세요.</li>
+        <li>"발송 여부 불확실" 행은 Gmail 보낸편지함에서 확인하고, 나간 행은 G열에 O 를 적은 뒤 「확인했음」을 누르세요.</li>
+      </ul>
+      </div>
+    </details>
+  </div>
+
+  <section id="ms-connect" class="tool-panel" hidden>
+    <p id="ms-connect-msg" style="margin:0 0 12px"></p>
+    <button id="ms-connect-btn" class="tool-btn tool-btn--primary">구글 연결 (메일 발송 권한)</button>
   </section>
-  <section id="ms-main" class="ms-card" hidden>
-    <label>스프레드시트 <select id="ms-book"></select></label>
-    <label>시트 <select id="ms-sheet"></select></label>
-    <a id="ms-open" class="ms-btn" target="_blank" rel="noopener" hidden>시트 열기 ↗</a>
-    <label>보내는 주소 <select id="ms-sender"></select></label> <span id="ms-reply-to" class="ms-muted"></span>
-    <p class="ms-muted">공용 주소가 없으면 Gmail 설정 → 계정 → '다른 주소에서 메일 보내기' 에 등록하세요.
-      한 시트는 한 툴로만 보내세요 (기존 Apps Script 와 동시에 돌리지 마세요).</p>
-    <p class="ms-muted">수신자별 첨부는 시트의 '첨부' 열(Drive 링크)로 — 자세한 건 위 「사용 방법」.</p>
-    <label>공통 첨부 (모든 수신자에게, 합계 15MB) <input type="file" id="ms-files" multiple></label>
-    <span id="ms-files-info" class="ms-muted"></span>
-    <button id="ms-check" class="ms-btn">점검</button>
+
+  <section id="ms-main" class="tool-panel" hidden>
+    <h2 class="tool-panel-title">보낼 목록</h2>
+    <div class="ms-grid">
+      <label class="tool-field"><span class="tool-field-label">스프레드시트</span> <select id="ms-book"></select></label>
+      <label class="tool-field"><span class="tool-field-label">시트</span>
+        <span class="ms-sheet-row"><select id="ms-sheet"></select><a id="ms-open" class="tool-btn" target="_blank" rel="noopener" hidden>시트 열기</a></span>
+      </label>
+      <label class="tool-field"><span class="tool-field-label">보내는 주소</span> <select id="ms-sender"></select></label>
+    </div>
+    <span id="ms-reply-to" class="ms-muted"></span>
+    <ul class="ms-notes">
+      <li>공용 주소가 없으면 Gmail 설정 → 계정 → '다른 주소에서 메일 보내기' 에 등록하세요.
+        한 시트는 한 툴로만 보내세요 (기존 Apps Script 와 동시에 돌리지 마세요).</li>
+      <li>수신자별 첨부는 시트의 '첨부' 열(Drive 링크)로 — 자세한 건 위 「사용 방법」.</li>
+    </ul>
+    <div class="ms-files">
+      <label class="tool-field-label" for="ms-files">공통 첨부 — 모든 수신자에게, 합계 15MB</label>
+      <div class="tool-row">
+        <input type="file" id="ms-files" multiple>
+        <span id="ms-files-info" class="tool-hint"></span>
+        <div class="tool-row-end"><button id="ms-check" class="tool-btn tool-btn--primary">점검</button></div>
+      </div>
+    </div>
   </section>
-  <section id="ms-result" class="ms-card" hidden>
+
+  <section id="ms-result" class="tool-panel" hidden>
     <p id="ms-summary"></p>
     <ul id="ms-global-issues"></ul>
     <div id="ms-unknown-jobs"></div>
-    <table class="ms-table"><thead><tr><th>행</th><th>담당자</th><th>이메일</th><th>상태</th><th>점검</th><th></th></tr></thead>
-      <tbody id="ms-rows"></tbody></table>
-    <button id="ms-send-all" class="ms-btn ms-btn-primary" disabled>전체 발송</button>
+    <div class="tool-table-wrap">
+      <table class="tool-table ms-table"><thead><tr><th>행</th><th>담당자</th><th>이메일</th><th>상태</th><th>점검</th><th></th></tr></thead>
+        <tbody id="ms-rows"></tbody></table>
+    </div>
+    <div class="ms-foot"><button id="ms-send-all" class="tool-btn tool-btn--primary" disabled>전체 발송</button></div>
   </section>
-  <section id="ms-job" class="ms-card" hidden>
+
+  <section id="ms-job" class="tool-panel" hidden>
     <p id="ms-job-text"></p><progress id="ms-job-bar" max="100" value="0"></progress>
     <p id="ms-job-err" class="ms-err"></p>
     <div id="ms-unknown" hidden>
       <p id="ms-unknown-text" class="ms-warn"></p>
-      <button id="ms-ack" class="ms-btn">확인했음</button>
+      <button id="ms-ack" class="tool-btn">확인했음</button>
     </div>
-    <button id="ms-stop" class="ms-btn">중지</button>
+    <div class="ms-foot"><button id="ms-stop" class="tool-btn">중지</button></div>
   </section>
+
   <dialog id="ms-preview"><h3 id="ms-pv-subject"></h3><p id="ms-pv-attach" class="ms-muted" hidden></p><div id="ms-pv-body"></div>
-    <form method="dialog"><button class="ms-btn">닫기</button></form></dialog>
+    <form method="dialog"><button class="tool-btn">닫기</button></form></dialog>
 </main>
 <script src="/static/mail_sender.js"></script>
 </body>

@@ -7,6 +7,7 @@
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
   <link rel="icon" type="image/png" href="/static/favicon.png">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/tools.css">
   <script>
     if (localStorage.theme === "dark") {
       document.documentElement.classList.replace("light", "dark");
@@ -143,7 +144,14 @@
 
   </style>
 </head>
-<body>
+<body class="tool">
+  <header class="tool-bar">
+    <div class="tool-bar-inner" style="max-width:1000px;padding:0 24px">
+      <a class="tool-back" href="/"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Cella</a>
+      <span class="tool-crumb-sep" aria-hidden="true">/</span>
+      <span class="tool-crumb">잔디 백업</span>
+    </div>
+  </header>
   <div class="jb-wrap">
     <p class="jb-app">잔디 백업 도우미</p>
     <div class="jb-head">
