@@ -2755,40 +2755,73 @@ html.dark .db-autocomplete-dropdown {
    G-0. SIDEBAR DASHBOARD BUTTON
    ============================================================ */
 .sidebar-dashboard {
-  padding: 6px 12px;
+  padding: 0 8px;
   flex-shrink: 0;
+}
+
+/* 하단 도구는 상자가 아니라 목록이다 (2026-10-06 사용자 요청: "AI 스럽지 않게").
+   버튼마다 테두리 상자를 씌워 9개가 쌓이면 화면이 무거워지고 위계가 사라진다 —
+   묶음 제목으로 나누고, 행은 마우스를 올렸을 때만 바탕이 생긴다. */
+.sidebar-section-label {
+  flex-shrink: 0;
+  padding: 14px 20px 4px;
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  user-select: none;
+}
+.sidebar-section-label--first {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 .sidebar-dashboard-btn {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 10px;
   width: 100%;
-  padding: var(--space-sm) var(--space-md);
+  min-height: 32px;
+  padding: 0 12px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-input);
+  border: 0;
+  background: transparent;
   color: var(--text-secondary);
   font-family: var(--font-main);
   font-size: var(--text-ui);
   font-weight: 500;
+  text-align: left;
   cursor: pointer;
-  transition: background-color var(--duration-short) ease, color var(--duration-short) ease, border-color var(--duration-short) ease;
+  transition: background-color var(--duration-short) ease, color var(--duration-short) ease;
 }
 
 .sidebar-dashboard-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-dim);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-dashboard-btn:active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-dashboard-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .sidebar-dashboard-btn svg {
   flex-shrink: 0;
-  opacity: 0.7;
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.7;
+  color: var(--text-muted);
+  transition: color var(--duration-short) ease;
 }
 
 .sidebar-dashboard-btn:hover svg {
-  opacity: 1;
+  color: var(--text);
 }
 
 /* ============================================================
@@ -3185,13 +3218,9 @@ html.dark .db-autocomplete-dropdown {
 
 .visitor-analytics[aria-busy="true"] .visitor-kpi strong { color: var(--text-muted); }
 
-/* Sidebar bottom buttons (Dashboard + System Status) */
+/* Sidebar bottom buttons — 구분선은 `.sidebar-section-label--first` 가 맡는다 */
 .sidebar-bottom-btn {
-  padding: 4px 12px;
-}
-.sidebar-bottom-btn:first-of-type {
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
+  padding: 1px 8px;
 }
 
 /* Inline status indicator (inside System Status button, right side) */
@@ -4385,11 +4414,6 @@ html.dark .db-autocomplete-dropdown {
   margin: 0 0 var(--space-sm);
 }
 
-/* Admin button accent */
-.sidebar-admin-btn:hover {
-  border-color: var(--accent) !important;
-  color: var(--accent) !important;
-}
 
 /* ============================================================
    H. RESPONSIVE
