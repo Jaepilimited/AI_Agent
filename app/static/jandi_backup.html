@@ -34,6 +34,10 @@
     .jb-lead { margin-top: 10px; font-size: 1.05rem; color: var(--text-secondary); max-width: 40em; }
     .jb-stuck { font-size: 0.95rem; font-weight: 700; color: var(--jb-orange); text-decoration: underline;
                 text-underline-offset: 4px; padding: 6px 0; }
+    /* 10-06 변경 안내 — 예전 북마크를 쓰는 사람이 바꾸도록 맨 위에 */
+    .jb-notice { margin: 14px 0 4px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--jb-orange);
+                 background: color-mix(in srgb, var(--jb-orange) 8%, transparent); max-width: 44em; line-height: 1.6; }
+    .jb-notice b { color: var(--jb-orange); }
     .jb-stuck:hover { text-decoration-thickness: 2px; }
 
     /* ── 3단계 ── 줄마다: 큰 숫자 · 한 문장 · 움직이는 그림 */
@@ -159,6 +163,11 @@
       <a class="jb-stuck" href="#jb-help" data-open="jb-help">안 될 때</a>
     </div>
     <p class="jb-lead">잔디에 쌓인 내 대화와 첨부파일을 내 PC 폴더에 그대로 저장합니다. <b>입사(잔디 가입) 이후 대화만 받습니다.</b></p>
+    <div class="jb-notice" role="note">
+      <b>10월 6일부터 바뀌었습니다</b> — 회사 방침에 따라 <b>입사(잔디 가입) 이전 대화와 첨부는 받지 않습니다.</b><br>
+      그 전에 즐겨찾기 줄에 <b>잔디 백업</b>을 만든 분은 그것을 <b>지우고</b> 아래 1번 버튼을 <b>다시 끌어다 놓으세요.</b>
+      새 버전은 백업 창 위쪽에 <b>"기준일: YYYY-MM-DD (잔디 가입일)"</b> 이 보입니다 — 안 보이면 예전 버전입니다.
+    </div>
 
     <ol class="jb-steps">
       <li class="jb-step">
@@ -254,6 +263,16 @@
               끝나면 패널에 <b>받지 못한 첨부</b> 목록이 사유와 함께 나오고, 방마다 <code>files_manifest.json</code> 에도 남습니다.
               다시 받으려면 2번부터 다시 하고 <b>같은 폴더</b>를 고르세요 — 받은 것은 건너뛰고 못 받은 첨부만 다시 받습니다.
               그래도 남는 파일은 잔디에서 지워진 파일일 가능성이 큽니다.</dd>
+            <dt>백업 창에 "기준일" 이 안 보여요</dt>
+            <dd>예전 버전 북마크입니다. 즐겨찾기 줄의 <b>잔디 백업</b>을 지우고(오른쪽 클릭 → 삭제) 이 페이지의 1번 버튼을 다시 끌어다 놓으세요.</dd>
+            <dt>"잔디 가입일을 확인하지 못해 백업을 시작할 수 없습니다" 라고 나와요</dt>
+            <dd>기준일은 잔디 왼쪽 목록의 <b>JANDI (나와의 대화)</b> 첫 메시지(환영 메시지) 날짜로 정합니다. 그 대화가 안 보이면 이렇게 나옵니다.
+              백업 창 화면을 캡처해서 셀라 담당자에게 보내 주세요.</dd>
+            <dt>기준일은 어떻게 정해지나요? 바꿀 수 있나요?</dt>
+            <dd>잔디 계정이 처음 생길 때 <b>JANDI (나와의 대화)</b> 에 오는 환영 메시지 날짜입니다 — 대부분 입사일과 같습니다. 그날 대화부터 받습니다.
+              회사 방침이라 백업 창에서 바꿀 수 없습니다.</dd>
+            <dt>"예전 방식으로 받은 폴더입니다" 라고 나와요</dt>
+            <dd>10월 6일 전에 받은 폴더를 고른 것입니다. 바탕화면에 <b>새 빈 폴더</b>를 만들어 고르세요.</dd>
             <dt>어느 날부터 갑자기 안 돼요</dt>
             <dd>이 도구는 잔디 웹 화면의 내부 구조를 이용해서, <b>잔디가 업데이트되면 멈출 수 있습니다.</b>
               이 페이지에서 초록 버튼을 다시 끌어다 놓아 최신으로 바꾸고, 그래도 안 되면 셀라 담당자에게 알려 주세요.</dd>
