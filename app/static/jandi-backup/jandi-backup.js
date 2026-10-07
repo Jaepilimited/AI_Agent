@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-07.6';
+  var VERSION = '2026-10-07.7';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];

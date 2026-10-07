@@ -920,20 +920,36 @@ test('남은 시간 다듬기: 흐른 시간만큼 줄이고 새 값 쪽으로 �
 
 const CODE = fs.readFileSync(SRC, 'utf8');
 
-test('북마크 주소에는 본체 전체가 들어가고, 되돌리면 그대로다', () => {
+// 북마크 주소 → 실제로 도는 코드 (주소의 %XX 를 풀고, base64 를 UTF-8 로)
+function hrefPayload(href) {
+  const outer = decodeURIComponent(href.slice('javascript:'.length));
+  const m = /atob\("([A-Za-z0-9+/=]+)"\)/.exec(outer);
+  return { outer, inner: m ? Buffer.from(m[1], 'base64').toString('utf8') : null };
+}
+
+test('북마크 주소에는 본체 전체가 들어가고, 되돌리면 그대로다 (주석 줄·들여쓰기만 빠진다)', () => {
   const href = B.toBookmarkletHref(CODE);
   assert.ok(href.startsWith('javascript:'));
   const body = href.slice('javascript:'.length);
   assert.ok(!/[\s#%]/.test(body.replace(/%[0-9A-F]{2}/g, '')), '날 것의 공백·#·% 가 남지 않는다');
-  assert.equal(decodeURIComponent(body), B.wrapBookmarkletCode(CODE));
-  assert.ok(decodeURIComponent(body).includes(CODE.trim().slice(-40)));
-  // 문법이 살아 있다 (컴파일만)
-  new Function(decodeURIComponent(body)); // eslint-disable-line no-new-func
+  const { outer, inner } = hrefPayload(href);
+  assert.equal(inner, B.wrapBookmarkletCode(B.shrinkCode(CODE)));
+  assert.ok(inner.includes(CODE.trim().split('\n').pop().trim()), '본체 끝까지 들어 있다');
+  new Function(outer); // eslint-disable-line no-new-func
+  new Function(inner); // eslint-disable-line no-new-func
+});
+
+test('북마크 주소는 끌어다 놓기가 되는 길이 — 16.7만 자에서는 됐고 29.6만 자에서 안 됐다 (2026-10-07)', () => {
+  assert.ok(B.toBookmarkletHref(CODE).length < 165000, String(B.toBookmarkletHref(CODE).length));
+  // 줄 앞 공백을 지워도 안전하려면 본체에 여러 줄 백틱 문자열이 없어야 한다
+  assert.ok(!CODE.includes('`'), '본체에 백틱이 생기면 shrinkCode 를 다시 봐야 한다');
+  assert.equal(B.shrinkCode('  a = 1; // 끝 주석은 남는다\n\n    // 줄 주석\n\tb = "// 문자열";\n'), 'a = 1; // 끝 주석은 남는다\nb = "// 문자열";');
 });
 
 function runBookmarklet(sandbox) {
-  const code = decodeURIComponent(B.toBookmarkletHref(CODE).slice('javascript:'.length));
-  vm.runInNewContext(code, sandbox, { timeout: 2000 });
+  const { outer } = hrefPayload(B.toBookmarkletHref(CODE));
+  sandbox.atob = (b) => Buffer.from(b, 'base64').toString('latin1');
+  vm.runInNewContext(outer, sandbox, { timeout: 2000 });
   return sandbox;
 }
 
