@@ -375,6 +375,43 @@ test('미리 확인 합계: 종류별(비공개 토픽은 토픽) · 전체, 확
   assert.deepEqual([s.total.rooms, s.total.records, s.total.files, s.total.bytes], [4, 167, 6, 6e9 + 2e6]);
 });
 
+// ── 이모티콘(스티커) 거르기 ─────────────────────────────────────────────────
+
+test('받을 파일 고르기: 이모티콘을 끄면 스티커 작업만 빠지고, 첨부를 끄면 아무것도 없다', () => {
+  const jobs = L.collectFileJobs(FX.records);
+  const ids = (js) => js.map((j) => String(j.id));
+  assert.deepEqual(ids(L.pickFileJobs(jobs, { attachments: true, stickers: false })), ['7000001', '7000002', '7000003', '7000004', '5000010']);
+  assert.deepEqual(ids(L.pickFileJobs(jobs, { attachments: true, stickers: true })), ids(jobs));
+  assert.deepEqual(L.pickFileJobs(jobs, { attachments: false, stickers: true }), []);
+  assert.equal(jobs.length, 7, '원래 목록은 그대로');
+});
+
+test('미리 확인 합계: 이모티콘을 끄면 스티커 수가 빠진다 (용량·첨부 수는 그대로)', () => {
+  const t = L.newTally();
+  L.tallyPage(t, FX.records, new Set(), new Set());
+  const rooms = [{ id: 1, kind: 'topic' }];
+  const on = L.summarizeScan(rooms, { 1: t }, null, { stickers: true }).total;
+  const off = L.summarizeScan(rooms, { 1: t }, null, { stickers: false }).total;
+  assert.equal(on.stickers, 2);
+  assert.equal(off.stickers, 0);
+  assert.deepEqual([off.files, off.bytes, off.records], [on.files, on.bytes, on.records]);
+  assert.equal(t.stickers, 2, '방별 원래 숫자는 건드리지 않는다 — 옵션을 다시 켜면 그대로 보인다');
+});
+
+test('이모티콘을 받지 않은 방 뷰어·CSV: 스티커 메시지는 남기고 이미지 대신 (이모티콘)', () => {
+  const out = L.renderRoom({ roomName: 'x', members: FX.members, records: FX.records, stickers: false }, FX.manifest);
+  assert.ok(!out.html.includes('[스티커'));
+  assert.ok(!out.html.includes('sticker_155_2'), '받아 둔 스티커 파일이 있어도 이미지로 잇지 않는다');
+  assert.ok(out.html.includes('<div class="text">(이모티콘)'));
+  assert.ok(out.csv.includes('(이모티콘)') && out.txt.includes('(이모티콘)'));
+  assert.equal(out.count, 11, '스티커 메시지도 기록으로 남는다');
+  const readmeOff = L.buildReadme({ teamName: 't', attachments: true, stickers: false });
+  assert.ok(readmeOff.includes('이모티콘: 받지 않음'));
+  assert.ok(!readmeOff.includes('스티커 이미지'));
+  const readmeOn = L.buildReadme({ teamName: 't', attachments: true, stickers: true });
+  assert.ok(readmeOn.includes('이모티콘: 받음') && readmeOn.includes('첨부파일과 스티커 이미지'));
+});
+
 // ── 방 고르기 (필요 없는 방 빼기) ───────────────────────────────────────────
 
 test('미리 확인 합계: 방 고르기에서 뺀 방은 종류별·전체 합계에서 빠진다', () => {

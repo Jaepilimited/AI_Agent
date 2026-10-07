@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-07.1';
+  var VERSION = '2026-10-07.2';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -245,8 +245,10 @@
     if (kind === 'file' && !has(original, 'body') && !has(original, 'text') && (original.name || original.title)) {
       text = '[파일] ' + (original.name || original.title);
     }
+    // 이모티콘을 받지 않은 백업(ctx.stickers === false)은 이미지 대신 '(이모티콘)' 글자만
+    var noStickers = ctx.stickers === false;
     if (isSticker) {
-      text = '[스티커 ' + pyStr(pick(original, 'groupId', '')) + '/' + pyStr(pick(original, 'stickerId', '')) + ']' +
+      text = (noStickers ? '(이모티콘)' : '[스티커 ' + pyStr(pick(original, 'groupId', '')) + '/' + pyStr(pick(original, 'stickerId', '')) + ']') +
         (truthy(original.body) ? '\n' + String(original.body) : '');
     }
     if (truthy(record.poll)) {
@@ -274,7 +276,7 @@
 
     var ids = [];
     var attNames = {};
-    if (isSticker) {
+    if (isSticker && !noStickers) {
       var stickerId = 'sticker_' + pyStr(pick(original, 'groupId', '')) + '_' + pyStr(pick(original, 'stickerId', ''));
       if (has(files, stickerId)) ids.push(stickerId);
     }
@@ -361,10 +363,10 @@
     return files;
   }
 
-  // data = { roomName, roomId, members, records(배열 또는 id→기록) } → { html, csv, txt, count }
+  // data = { roomName, roomId, members, records(배열 또는 id→기록), stickers(false 면 이모티콘을 글자로) } → { html, csv, txt, count }
   function renderRoom(data, manifest) {
     var files = manifestMap(manifest);
-    var ctx = { name: makeNamer(data.members), files: files };
+    var ctx = { name: makeNamer(data.members), files: files, stickers: data.stickers };
     var records = data.records || [];
     if (!Array.isArray(records)) records = Object.keys(records).map(function (k) { return records[k]; });
     records = sortRecords(records);
@@ -457,6 +459,7 @@
       '잔디 백업 — ' + (meta.teamName || meta.teamId),
       '백업 시작: ' + (meta.startedAt || '') + ' (한국 시간)',
       '기준일: ' + (meta.cutoff || '') + ' (잔디 가입일) — 이 날 이후 대화만 들어 있습니다',
+      '이모티콘: ' + (meta.stickers ? '받음' : '받지 않음 (대화에는 "(이모티콘)" 으로 표시)'),
       '만든 도구: 셀라 잔디 백업 도우미 (' + VERSION + ')',
       '',
       '[여는 방법]',
@@ -470,7 +473,7 @@
       '[들어 있는 것]',
       '- 백업한 계정이 볼 수 있는 대화만: 참여 중인 토픽(공개·비공개), 1:1 대화, 그룹 대화 중 고른 것',
       '- 메시지·댓글·스티커·투표·시스템 기록(초대·참여·나감·공지 등)',
-      '- ' + (meta.attachments ? '첨부파일과 스티커 이미지 (받지 못한 파일은 files_manifest.json 에 사유와 함께 적힘)' : '첨부파일은 이번 백업에서 제외했습니다 (뷰어에 "미저장" 으로 표시)'),
+      '- ' + (meta.attachments ? (meta.stickers ? '첨부파일과 스티커 이미지' : '첨부파일') + ' (받지 못한 파일은 files_manifest.json 에 사유와 함께 적힘)' : '첨부파일은 이번 백업에서 제외했습니다 (뷰어에 "미저장" 으로 표시)'),
       '',
       '[들어 있지 않은 것]',
       '- 잔디에 들어오기 전(가입일 이전) 대화와 첨부',
@@ -523,6 +526,12 @@
       });
     });
     return jobs;
+  }
+
+  // 실제로 받을 파일 — 첨부를 끄면 없음, 이모티콘을 끄면 스티커 작업을 뺀다 (opts = { attachments, stickers })
+  function pickFileJobs(jobs, opts) {
+    if (!opts || !opts.attachments) return [];
+    return opts.stickers ? jobs.slice() : jobs.filter(function (j) { return j.kind !== 'sticker'; });
   }
 
   // ── 페이지 넘김 판정 ────────────────────────────────────────────────────────
@@ -715,15 +724,18 @@
     return into;
   }
 
-  // 방별 결과 → 종류별(토픽은 비공개 포함)·전체 합계. isSelected 를 주면 그 방만 (방 고르기에서 뺀 방은 합계에서 빠진다)
-  function summarizeScan(rooms, perRoom, isSelected) {
+  // 방별 결과 → 종류별(토픽은 비공개 포함)·전체 합계. isSelected 를 주면 그 방만 (방 고르기에서 뺀 방은 합계에서 빠진다).
+  // opts.stickers === false 면 스티커를 세지 않는다 — 미리 확인은 늘 세 두고, 옵션을 바꾸면 합계에서만 뺀다(다시 확인 불필요)
+  function summarizeScan(rooms, perRoom, isSelected, opts) {
     var out = { topic: newTally(), chat: newTally(), groupChat: newTally(), total: newTally() };
+    var noStickers = !!opts && opts.stickers === false;
     (rooms || []).forEach(function (room) {
       var t = perRoom[String(room.id)];
       if (!t || (isSelected && !isSelected(room))) return;
       var k = room.kind === 'private_topic' ? 'topic' : room.kind;
       var one = addTally(newTally(), t);
       one.rooms = 1;
+      if (noStickers) one.stickers = 0;
       if (out[k]) addTally(out[k], one);
       addTally(out.total, one);
     });
@@ -846,7 +858,7 @@
     SPEED_LOW: SPEED_LOW, SPEED_HIGH: SPEED_HIGH, newTally: newTally, tallyPage: tallyPage, summarizeScan: summarizeScan,
     estimateTimes: estimateTimes, fmtApprox: fmtApprox, fmtRange: fmtRange, pushSample: pushSample,
     rollingRate: rollingRate, rawEta: rawEta, smoothEta: smoothEta, reconcileExcluded: reconcileExcluded,
-    unscannedRooms: unscannedRooms, sortPickRooms: sortPickRooms, excludedList: excludedList
+    unscannedRooms: unscannedRooms, sortPickRooms: sortPickRooms, excludedList: excludedList, pickFileJobs: pickFileJobs
   };
 
   if (typeof module !== 'undefined' && module && module.exports) {
@@ -915,7 +927,7 @@
     var S = {
       version: L.VERSION, phase: 'intro', message: '', teamId: null, teamName: '', rooms: [], members: {},
       // excluded = 방 고르기에서 뺀 방 { id: true } — 기본은 모두 받는다. 잔디 탭 localStorage 에 팀별로 기억한다
-      opts: { kinds: { topic: true, chat: true, groupChat: true }, attachments: true, excluded: {} },
+      opts: { kinds: { topic: true, chat: true, groupChat: true }, attachments: true, excluded: {}, stickers: false },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
       progress: newProgress(0),
       current: {}, roomFailures: [], fileFailures: [], abort: null,
@@ -1021,6 +1033,8 @@
         '<label><input type="checkbox" data-k="groupChat"' + (S.opts.kinds.groupChat ? ' checked' : '') + '> 그룹 대화 ' + c.groupChat + '개</label>' +
         pickHtml() +
         '<label><input type="checkbox" data-k="attachments"' + (S.opts.attachments ? ' checked' : '') + '> 첨부파일 포함</label>' +
+        // 이모티콘은 기본으로 받지 않는다 — 첨부를 끄면 고를 수 없다
+        '<label><input type="checkbox" data-k="stickers"' + (S.opts.stickers ? ' checked' : '') + (S.opts.attachments ? '' : ' disabled') + '> 이모티콘(스티커) 포함</label>' +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
         '바탕화면 등에 빈 폴더를 하나 만들어 고르는 것을 권합니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
         estimateHtml() +
@@ -1031,10 +1045,18 @@
       Array.prototype.forEach.call(shadow.querySelectorAll('input[data-k]'), function (box) {
         box.addEventListener('change', function () {
           var k = box.getAttribute('data-k');
-          if (k === 'attachments') S.opts.attachments = box.checked; else S.opts.kinds[k] = box.checked;
+          if (k === 'attachments') {
+            S.opts.attachments = box.checked;
+            el('input[data-k=stickers]').disabled = !box.checked;
+          } else if (k === 'stickers') {
+            S.opts.stickers = box.checked;
+            saveStickers();
+          } else {
+            S.opts.kinds[k] = box.checked;
+          }
           S.notice = '';
           // 종류를 끄면 그 방은 방 고르기 목록에서도 사라진다
-          if (k !== 'attachments') refreshPick(true);
+          if (S.opts.kinds.hasOwnProperty(k)) refreshPick(true);
           // 범위를 바꾸면 미리 확인 숫자가 지금 범위와 달라진다 — 표시만 갈아 끼운다
           refreshEstimate();
         });
@@ -1148,6 +1170,23 @@
       S.opts.excluded = L.reconcileExcluded(saved, S.rooms);
     }
 
+    // 이모티콘(스티커) 받기 — 첨부를 받을 때만. 기억은 방 제외와 같은 규칙(팀별 localStorage, 막혀도 동작)
+    function stickersOn() { return !!(S.opts.attachments && S.opts.stickers); }
+
+    function fileOpts() { return { attachments: S.opts.attachments, stickers: stickersOn() }; }
+
+    function stickersKey() { return 'jandiBackupStickers:' + S.teamId; }
+
+    function saveStickers() {
+      try { win.localStorage.setItem(stickersKey(), S.opts.stickers ? '1' : '0'); } catch (e) { /* 기억 못 해도 동작 */ }
+    }
+
+    function loadStickers() {
+      var v = null;
+      try { v = win.localStorage.getItem(stickersKey()); } catch (e) { v = null; }
+      S.opts.stickers = v === '1';
+    }
+
     function kindsKey() {
       return ['topic', 'chat', 'groupChat'].filter(function (k) { return !!S.opts.kinds[k]; }).join(',');
     }
@@ -1165,7 +1204,7 @@
     function estimateHtml() {
       var sc = S.scan;
       if (!sc || !sc.finishedAt) return '';
-      var sum = L.summarizeScan(S.rooms, sc.perRoom, notExcluded);
+      var sum = L.summarizeScan(S.rooms, sc.perRoom, notExcluded, { stickers: stickersOn() });
       var tot = sum.total;
       var stale = scanStale();
       var row = function (label, t, cls) {
@@ -1206,7 +1245,7 @@
     function renderScan() {
       var sc = S.scan;
       if (!sc) return;
-      var tot = L.summarizeScan(S.rooms, sc.perRoom).total;
+      var tot = L.summarizeScan(S.rooms, sc.perRoom, null, { stickers: stickersOn() }).total;
       var frac = sc.total ? sc.done / sc.total : 0;
       var cur = Object.keys(S.current).map(function (k) { return '<li>' + L.escapeHtml(S.current[k]) + '</li>'; }).join('');
       var html = '<p><b>용량을 확인하는 중입니다.</b> 대화를 읽기만 하고 아무것도 저장하지 않습니다.</p>' +
@@ -1801,11 +1840,11 @@
       var meta = {
         roomId: room.id, roomName: room.name, kind: room.kind, teamId: S.teamId, viewType: room.viewType || null,
         stopReason: collected.stopReason, pages: collected.pages, collectedAt: new Date().toISOString(),
-        tool: 'cella-jandi-backup ' + L.VERSION, cutoff: S.cutoff.date, members: S.members
+        tool: 'cella-jandi-backup ' + L.VERSION, cutoff: S.cutoff.date, stickers: stickersOn(), members: S.members
       };
       await writeText(dir, 'files_manifest.json', JSON.stringify(manifest, null, 1));
       await writeRaw(dir, meta, collected.records);
-      var out = L.renderRoom({ roomName: room.name, roomId: room.id, members: S.members, records: collected.records }, manifest);
+      var out = L.renderRoom({ roomName: room.name, roomId: room.id, members: S.members, records: collected.records, stickers: stickersOn() }, manifest);
       await writeText(dir, 'index.html', out.html);
       await writeText(dir, 'messages.csv', out.csv);
       await writeText(dir, 'messages.txt', out.txt);
@@ -1822,7 +1861,7 @@
       var prevManifest = [];
       try { prevManifest = JSON.parse(await readTextIf(dir, 'files_manifest.json') || '[]'); } catch (e) { prevManifest = []; }
       if (doneText) {
-        var failed = prevManifest.filter(function (f) { return f.status !== 'downloaded'; });
+        var failed = prevManifest.filter(function (f) { return f.status !== 'downloaded' && (stickersOn() || f.kind !== 'sticker'); });
         if (!S.opts.attachments || !failed.length) { setRoomBytes(room, 0); S.progress.roomsSkipped++; return; }
         // 끝난 방 — 받지 못한 첨부만 다시
         S.current[room.id] = room.name + ' — 못 받은 첨부 ' + failed.length + '개 다시';
@@ -1830,7 +1869,7 @@
         var records = L.cutoffRecords(raw.records ? Object.keys(raw.records).map(function (k) { return raw.records[k]; }) : [], S.cutoff.ms);
         var failedIds = {};
         failed.forEach(function (f) { failedIds[String(f.id)] = true; });
-        var jobs = L.collectFileJobs(records).filter(function (j) { return failedIds[String(j.id)]; });
+        var jobs = L.pickFileJobs(L.collectFileJobs(records), fileOpts()).filter(function (j) { return failedIds[String(j.id)]; });
         setRoomBytes(room, jobBytes(jobs));
         var retried = await downloadAll(jobs, room, dir, prevManifest);
         var byId = {};
@@ -1842,7 +1881,7 @@
       }
       S.current[room.id] = room.name + ' — 읽는 중';
       var collected = await collectMessages(room);
-      var fileJobs = S.opts.attachments ? L.collectFileJobs(collected.records) : [];
+      var fileJobs = L.pickFileJobs(L.collectFileJobs(collected.records), fileOpts());
       setRoomBytes(room, jobBytes(fileJobs));   // 미리 확인 값을 실제 작업 목록으로 바로잡는다
       if (fileJobs.length) S.current[room.id] = room.name + ' — 첨부 ' + fileJobs.length + '개 받는 중';
       var manifest = await downloadAll(fileJobs, room, dir, prevManifest);
@@ -1915,7 +1954,7 @@
         } catch (e) { /* 깨진 표식 — 다음 실행에서 다시 받는다 */ }
       }
       rows = L.sortRows(rows);
-      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments, cutoff: S.cutoff.date,
+      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments, stickers: stickersOn(), cutoff: S.cutoff.date,
         excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }) };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
@@ -1923,7 +1962,7 @@
       await writeText(root, 'backup_state.json', JSON.stringify({
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
-        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds()
+        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), stickers: stickersOn()
       }, null, 1));
     }
 
@@ -1951,7 +1990,7 @@
         await checkRootCutoff(root);
         var roomsDir = await root.getDirectoryHandle('rooms', { create: true });
         var folders = await existingRoomFolders(roomsDir);
-        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds() }, null, 1));
+        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), stickers: stickersOn() }, null, 1));
         var dms = selected.filter(function (r) { return r.kind === 'chat'; });
         var others = selected.filter(function (r) { return r.kind !== 'chat'; });
         var work = function (room) { return processRoom(room, roomsDir, folders); };
@@ -1986,6 +2025,7 @@
       try {
         prepare();
         loadExcluded();
+        loadStickers();
         S.phase = 'intro';
       } catch (e) {
         S.phase = 'error';

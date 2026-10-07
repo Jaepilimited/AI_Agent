@@ -33,6 +33,8 @@ CUTOFF_MS = 1782831600000    # 2026-07-01 00:00 KST — 기준일
 CUTOFF_TEXT = "기준일: 2026-07-01 (잔디 가입일) — 이 날 이후 대화만 받습니다"
 CUTOFF_MISSING = "잔디 가입일을 확인하지 못해 백업을 시작할 수 없습니다. 셀라 담당자에게 알려 주세요."
 OLD_FOLDER = "예전 방식으로 받은 폴더입니다 — 새 빈 폴더를 고르세요"
+# 이모티콘(스티커) 받기는 기본 꺼짐 — 켜 둔 상태(팀별 localStorage)로 시작한다
+STICKERS_ON = "localStorage.setItem('jandiBackupStickers:80000001', '1')"
 
 FAKE_JANDI = """<!doctype html><html><head><meta charset="utf-8"><title>대화 | TESTTEAM</title></head>
 <body><div id="app">잔디 흉내</div><script>
@@ -163,7 +165,7 @@ def test_full_backup_then_resume(browser):
     ctx = browser.new_context()
     page = ctx.new_page()
     requests = []
-    host = _start(page, requests)
+    host = _start(page, requests, before=STICKERS_ON)   # 스티커 받기·실패까지 보려고 켠다 (기본은 꺼짐)
     host.locator("button[data-act=start]").click()
     host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
     files = page.evaluate("window.__dumpOpfs()")
@@ -333,7 +335,7 @@ def test_precheck_counts_without_writing_then_run_shows_expected(browser):
     ctx = browser.new_context()
     page = ctx.new_page()
     requests = []
-    host = _start(page, requests)
+    host = _start(page, requests, before=STICKERS_ON)
     host.locator("button[data-act=scan]", has_text="용량 미리 확인").click()
     host.locator("text=미리 확인 결과").wait_for(timeout=20000)
     cells = _cells(host)
@@ -640,6 +642,59 @@ def test_room_pick_with_precheck_numbers_and_all_excluded(browser):
     assert page.evaluate("window.__jandiBackup.state.phase") == "intro"
     opfs = page.evaluate("async () => { const r = await navigator.storage.getDirectory(); const n = []; for await (const k of r.keys()) n.push(k); return n; }")
     assert opfs == []
+    ctx.close()
+
+
+def test_stickers_off_by_default_not_downloaded_and_remembered(browser):
+    """이모티콘(스티커)은 기본으로 받지 않는다 — 스티커 주소를 부르지 않고, 뷰어·CSV 에는 '(이모티콘)' 글자로 남는다.
+    켜면 미리 확인 합계에 스티커가 다시 보이고, 팀별로 기억된다. 첨부를 끄면 고를 수 없다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    requests = []
+    host = _start(page, requests)
+    box = host.locator("input[data-k=stickers]")
+    assert not box.is_checked() and box.is_enabled()
+    host.locator("input[data-k=attachments]").uncheck()
+    assert box.is_disabled(), "첨부를 끄면 이모티콘은 고를 수 없다"
+    host.locator("input[data-k=attachments]").check()
+    assert box.is_enabled()
+
+    host.locator("button[data-act=scan]").click()
+    host.locator("text=미리 확인 결과").wait_for(timeout=20000)
+    assert _cells(host)["합계"] == ["4", "14", "5", "117B"]
+    assert "스티커" not in host.locator("[data-estimate]").inner_text()
+    host.locator("input[data-k=stickers]").check()
+    assert "스티커 2개" in host.locator("[data-estimate]").inner_text(), "옵션을 바꾸면 다시 확인 없이 합계가 바뀐다"
+    assert page.evaluate("localStorage.getItem('jandiBackupStickers:80000001')") == "1"
+    host.locator("input[data-k=stickers]").uncheck()
+    assert "스티커" not in host.locator("[data-estimate]").inner_text()
+    assert "stale" not in host.locator("[data-estimate]").get_attribute("class")
+
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    assert not [u for u in requests if "files-sticker" in u], "스티커는 받지 않는다"
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
+    manifest = json.loads(files[f"{room}/files_manifest.json"]["text"])
+    assert not [f for f in manifest if f.get("kind") == "sticker"] and len(manifest) == 5
+    assert not any("sticker_" in k for k in files)
+    viewer = files[f"{room}/index.html"]["text"]
+    assert viewer.count("<article ") == 11 and "(이모티콘)" in viewer and "[스티커" not in viewer
+    assert "(이모티콘)" in files[f"{room}/messages.csv"]["text"]
+    assert "이모티콘: 받지 않음" in files[f"{top}/README.txt"]["text"]
+    assert json.loads(files[f"{top}/backup_state.json"]["text"])["stickers"] is False
+    assert json.loads(files[f"{room}/raw.json"]["text"])["stickers"] is False
+    prog = page.evaluate("JSON.parse(JSON.stringify(window.__jandiBackup.state.progress))")
+    assert prog["filesFailed"] == 1 and prog["bytes"] == sum(SIZES.values()), "실패는 지워진 첨부 하나뿐, 스티커 5B 없음"
+
+    # 켜 둔 것은 다시 열어도 기억한다
+    page.evaluate("localStorage.setItem('jandiBackupStickers:80000001', '1')")
+    page.reload()
+    page.evaluate(SCRIPT)
+    host = page.locator("#__jandi-backup-host")
+    host.locator(f"text={CUTOFF_TEXT}").wait_for()
+    assert host.locator("input[data-k=stickers]").is_checked()
     ctx.close()
 
 
