@@ -677,7 +677,7 @@ test('워드 나누기: 5,000건 또는 사진 합 50MB 중 먼저 — 빈 몫�
 
 test('README·전체 목록: 방별 워드 안내 한 줄, 방 이름 옆 워드 링크(나눈 방은 번호)', () => {
   const readme = L.buildReadme({ teamName: 't', attachments: true, docx: true });
-  assert.ok(readme.includes('방별 워드: rooms/<방>/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다'));
+  assert.ok(readme.includes('방별 워드: rooms/<방>/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다'));
   assert.ok(!L.buildReadme({ teamName: 't', attachments: true }).includes('방별 워드'));
   const rows = [
     { id: '1', kind: 'topic', name: 'a', folder: '토픽_1_a', records: 1, files: 0, saved: 0, bytes: 0, stop: 'cutoff', docx: ['대화.docx'] },
@@ -685,7 +685,7 @@ test('README·전체 목록: 방별 워드 안내 한 줄, 방 이름 옆 워드
     { id: '3', kind: 'topic', name: 'c', folder: '토픽_3_c', records: 1, files: 0, saved: 0, bytes: 0, stop: 'cutoff' }
   ];
   const index = L.buildTopIndex(rows, { teamName: 't', docx: true });
-  assert.ok(index.includes('방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다'));
+  assert.ok(index.includes('방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다'));
   assert.ok(index.includes('<a class="docx" href="rooms/' + L.quotePath('토픽_1_a') + '/' + L.quotePath('대화.docx') + '">워드</a>'));
   assert.ok(index.includes('">워드 1</a>') && index.includes('">워드 2</a>'));
   assert.equal((index.match(/class="docx"/g) || []).length, 3);
@@ -768,7 +768,7 @@ test('올리기 묶음: 방 폴더 단위로 900개 이하, 큰 방은 첨부 �
 test('올리기 순서.txt 와 상위 index: 경고 · 워드만 폴더 · 묶음 줄', () => {
   const batches = L.uploadBatches([{ path: 'rooms/[KR] NOTICE', files: 865, parts: [] }, { path: 'rooms/<B>', files: 1100, parts: [{ path: 'rooms/<B>/attachments', files: 1100 }] }], 5);
   const txt = L.uploadPlanText(batches, ['팀즈에 올릴 파일']);
-  assert.ok(txt.startsWith("﻿팀즈·OneDrive 에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.\r\n"));
+  assert.ok(txt.startsWith("﻿팀즈에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.\r\n"));
   assert.ok(txt.includes('\r\n1번 묶음 (870개): 백업 폴더 맨 위 파일 (index.html · README.txt 등), rooms/[KR] NOTICE\r\n'));
   assert.ok(txt.includes('2번 묶음 (1,100개 — 1,000개를 넘습니다. 이 폴더 안의 파일을 나눠서 올리세요): rooms/<B>/attachments'));
   assert.ok(txt.includes('워드만: 팀즈에 올릴 파일 (폴더 하나씩)'));

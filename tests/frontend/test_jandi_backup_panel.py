@@ -785,7 +785,7 @@ def test_room_pick_works_when_local_storage_is_blocked(browser):
     ctx.close()
 
 
-# ── 방별 워드(.docx) — 팀즈·OneDrive 에서 보기용 (2026-10-07) ─────────────────
+# ── 방별 워드(.docx) — 팀즈에서 보기용 (2026-10-07) ─────────────────
 
 def _png(w, h):
     """반투명 빨강 RGBA PNG — 워드에 넣을 때 흰 배경 JPEG 로 줄어야 한다."""
@@ -877,8 +877,8 @@ def test_word_docs_photos_links_and_index(browser):
     summary = {r["id"]: r for r in json.loads(files[f"{top}/summary.json"]["text"])}
     assert summary["90000001"]["docx"] == ["대화.docx"]
     index = files[f"{top}/index.html"]["text"]
-    assert index.count('class="docx"') == 4 and "팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다" in index
-    assert "방별 워드: rooms/<방>/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다" in files[f"{top}/README.txt"]["text"]
+    assert index.count('class="docx"') == 4 and "팀즈에 올리면 웹에서 바로 읽힙니다" in index
+    assert "방별 워드: rooms/<방>/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다" in files[f"{top}/README.txt"]["text"]
     assert json.loads(files[f"{top}/backup_state.json"]["text"])["docx"] is True
     ctx.close()
 
@@ -995,7 +995,7 @@ def test_upload_limit_splits_attachments_teams_folders_and_plan(browser):
     # 올리기 순서: 묶음마다 한도 이하 (넘는 건 혼자 + 표시)
     plan = files[f"{top}/올리기 순서.txt"]["text"]
     # 브라우저 text() 는 BOM 을 걷고 읽는다 — 있든 없든 본문으로 본다
-    assert plan.lstrip("\ufeff").startswith("팀즈·OneDrive 에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다.")
+    assert plan.lstrip("\ufeff").startswith("팀즈에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다.")
     lines = [l for l in plan.split("\r\n") if "번 묶음 (" in l]
     assert lines and all(int(l.split("(")[1].split("개")[0].replace(",", "")) <= 3 or "넘습니다" in l for l in lines), lines
     assert any(l.endswith(f": rooms/{TOPIC_DIR}/attachments_1") for l in lines)

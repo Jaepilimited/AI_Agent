@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-07.5';
+  var VERSION = '2026-10-07.6';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -407,8 +407,8 @@
     return { html: html, csv: csv.join(''), txt: txt, count: records.length };
   }
 
-  // ── 워드(.docx) — 팀즈·OneDrive 웹 미리보기용 ──────────────────────────────
-  // index.html 은 팀즈·OneDrive 웹에서 열리지 않는다. 외부 라이브러리 없이(북마크는 바깥을 부르지 않는다)
+  // ── 워드(.docx) — 팀즈 웹 미리보기용 ──────────────────────────────
+  // index.html 은 팀즈 웹에서 열리지 않는다. 외부 라이브러리 없이(북마크는 바깥을 부르지 않는다)
   // 최소 OOXML 을 무압축(STORE) ZIP 으로 묶는다. 방마다 DOCX_PER 건씩 나눠 한 파일씩 만들고 버린다
 
   var DOCX_PER = 5000;
@@ -702,7 +702,7 @@
   var UPLOAD_LIMIT = 900;
   var TEAMS_DIR = '팀즈에 올릴 파일';
   var UPLOAD_PLAN_FILE = '올리기 순서.txt';
-  var UPLOAD_WARNING = "팀즈·OneDrive 에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.";
+  var UPLOAD_WARNING = "팀즈에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.";
   var TOP_FILES_LABEL = '백업 폴더 맨 위 파일 (index.html · README.txt 등)';
 
   function isAttachmentDir(name) { return /^attachments(_\d+)?$/.test(String(name || '')); }
@@ -828,7 +828,7 @@
     var note = unfinished.length
       ? '<p>처음 기록까지 가지 못한 방 ' + unfinished.length + '개 — 잔디가 열람을 제한했거나(access_limit) 수집이 멈췄습니다. summary.json 의 stop 을 보세요.</p>'
       : '';
-    if (meta.docx) note += '<p>방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다 (index.html 은 PC 에서만 열립니다)</p>';
+    if (meta.docx) note += '<p>방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다 (index.html 은 PC 에서만 열립니다)</p>';
     if (meta.uploadBatches && meta.uploadBatches.length) {
       note += '<h2 id="upload">올리기 순서</h2><p><b>' + escapeHtml(UPLOAD_WARNING) + '</b></p>' +
         (meta.teamsDirs && meta.teamsDirs.length ? '<p>워드만: ' + meta.teamsDirs.map(escapeHtml).join(', ') + ' (폴더 하나씩)</p>' : '') +
@@ -872,9 +872,9 @@
       '  index.html(대화 뷰어) · messages.csv(엑셀용) · messages.txt(텍스트) · raw.json(잔디 원본 데이터)',
       '  files_manifest.json(첨부파일 목록·크기·SHA-256·실패 사유) · attachments(첨부파일)',
       '- summary.json: 방별 기록 수·첨부 수·용량·기간·수집 종료 사유(stop — cutoff 는 기준일까지 다 받은 방)',
-      meta.docx ? '- 방별 워드: rooms/<방>/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다' : null,
+      meta.docx ? '- 방별 워드: rooms/<방>/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다' : null,
       meta.docx ? '  (기록이 5,000건을 넘는 방은 대화_1.docx, 대화_2.docx … 로 나눴습니다. index.html 은 PC 에서만 열립니다)' : null,
-      meta.uploadBatches ? '- 팀즈·OneDrive 에 올릴 때: 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. ' + UPLOAD_PLAN_FILE + ' 의 묶음대로 하나씩,' : null,
+      meta.uploadBatches ? '- 팀즈에 올릴 때: 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. ' + UPLOAD_PLAN_FILE + ' 의 묶음대로 하나씩,' : null,
       meta.uploadBatches ? "  워드만이면 '" + TEAMS_DIR + "' 폴더를 올리세요. 첨부가 많은 방은 attachments_1, attachments_2 … 로 나눠 저장했습니다." : null,
       '',
       '[들어 있는 것]',
@@ -1426,7 +1426,7 @@
       version: L.VERSION, phase: 'intro', message: '', teamId: null, teamName: '', rooms: [], members: {},
       // excluded = 방 고르기에서 뺀 방 { id: true } — 기본은 모두 받는다. 잔디 탭 localStorage 에 팀별로 기억한다
       // files = 받을 첨부 종류 { doc, photo, video, other, sticker } — 기본은 업무용(문서·사진). 하나도 없으면 대화만
-      // docx = 방별 워드(팀즈·OneDrive 보기용) 만들기 — 기본 켜짐
+      // docx = 방별 워드(팀즈 보기용) 만들기 — 기본 켜짐
       opts: { kinds: { topic: true, chat: true, groupChat: true }, excluded: {}, files: Object.assign({}, L.FILE_PRESETS.work), docx: true },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
       progress: newProgress(0),
@@ -1534,9 +1534,9 @@
         '<label><input type="checkbox" data-k="groupChat"' + (S.opts.kinds.groupChat ? ' checked' : '') + '> 그룹 대화 ' + c.groupChat + '개</label>' +
         pickHtml() +
         filesHtml() +
-        '<label><input type="checkbox" data-opt="docx"' + (S.opts.docx ? ' checked' : '') + '> 워드 문서 만들기 (팀즈·OneDrive에서 보기용)</label>' +
+        '<label><input type="checkbox" data-opt="docx"' + (S.opts.docx ? ' checked' : '') + '> 워드 문서 만들기 (팀즈에서 보기용)</label>' +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
-        '바탕화면 등에 빈 폴더를 하나 만들어 고르는 것을 권합니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
+        'C 드라이브에 새 폴더(예: C:\\잔디백업)를 만들어 고르세요 — 바탕화면은 자동 동기화돼 보안 검사 창이 뜰 수 있습니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
         estimateHtml() +
         (supported ? '' : '<p class="warn">이 브라우저는 폴더 저장을 지원하지 않습니다. PC 의 Chrome 또는 Edge 에서 열어 주세요.</p>') +
         '<button class="btn sub" type="button" data-act="scan"' + (ready ? '' : ' disabled') + '>' + (S.scan ? '용량 다시 확인' : '용량 미리 확인') + '</button>' +
@@ -1857,7 +1857,7 @@
         return run(dir, selected);
       }, function (e) {
         if (e && e.name === 'AbortError') return;
-        introMessage('폴더를 열지 못했습니다: ' + errText(e) + ' — 다른 폴더(바탕화면 안의 새 폴더 등)를 골라 보세요.');
+        introMessage('폴더를 열지 못했습니다: ' + errText(e) + ' — 다른 폴더(C 드라이브의 새 폴더 등)를 골라 보세요.');
       });
     }
 
