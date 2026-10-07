@@ -1948,8 +1948,12 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   다른/없는 기준일 폴더는 "예전 방식으로 받은 폴더" 로 막는다. ⚠️ **클라이언트 측 거름이라 보안 경계가 아니다**
   (본인이 잔디에서 직접 보거나 코드를 고치면 우회된다). ⚠️ 이미 끌어다 놓은 북마크는 **갱신되지 않는다** — 다시 끌어다
   놓아야 한다. ⚠️ 봇 이름(`JANDI`)·DM 방 `members` 구조·firstLinkId 동작·feedback 의 `createdAt` 은 실측 전이다
+- **방 고르기**(2026-10-07, 필요 없는 방 빼기): 패널의 접힌 `방 고르기` 에서 방마다 체크를 끈다(검색 · 보이는 방 모두 선택/빼기,
+  미리 확인 후엔 방 옆에 기록·첨부 · 용량 큰 순). `S.opts.excluded` → 잔디 탭 localStorage `jandiBackupExcluded:<teamId>`(id 배열,
+  열 때 지금 방 목록과 맞춤). 받을 방 = 종류 AND 제외 아님 — 미리 확인 합계도 뺀 방을 빼고 센다(다시 넣은 방에 값이 없으면 다시 확인 표시).
+  README·index 에 `제외한 방 N개`+이름(50개까지), `backup_state.json` 에 `excluded`. 이어 받을 때 뺀 방은 건너뛰고 받아 둔 폴더는 지우지 않는다
 - 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
-  36문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인)
+  41문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
 
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)

@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-06.1';
+  var VERSION = '2026-10-07.1';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -433,6 +433,11 @@
     var note = unfinished.length
       ? '<p>처음 기록까지 가지 못한 방 ' + unfinished.length + '개 — 잔디가 열람을 제한했거나(access_limit) 수집이 멈췄습니다. summary.json 의 stop 을 보세요.</p>'
       : '';
+    var ex = excludedList(meta.excluded);
+    if (ex.count) {
+      note += '<p>제외한 방 ' + ex.count + '개 (백업 창의 방 고르기에서 뺀 방 — 받지 않았습니다): ' +
+        ex.names.map(escapeHtml).join(', ') + (ex.more ? ' 외 ' + ex.more + '개' : '') + '</p>';
+    }
     return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>잔디 백업 — ' + escapeHtml(team) + '</title>\n' +
       '<style>body{font:14px/1.6 system-ui,sans-serif;background:#f2f5f7;color:#172b36;margin:0}main{max-width:1100px;margin:auto;padding:24px}input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #bac7cf;border-radius:8px;font:inherit;margin:12px 0}table{width:100%;border-collapse:collapse;background:#fff}td,th{padding:6px 10px;border-bottom:1px solid #e3e9ec;text-align:left}td:nth-child(n+3){text-align:right;white-space:nowrap}a{color:#146b64}[hidden]{display:none}</style></head>\n' +
       '<body><main><h1>잔디 백업 (' + escapeHtml(team) + ')</h1><p><b>기준일: ' + escapeHtml(meta.cutoff || '') + ' (잔디 가입일)</b> — 이 날 이후 대화만 들어 있습니다</p><p>백업일 ' + escapeHtml(meta.date || '') + ' · 방 ' + rows.length + '개 · 기록 ' + fmtInt(totalRecords) +
@@ -443,6 +448,11 @@
   }
 
   function buildReadme(meta) {
+    var ex = excludedList(meta.excluded);
+    var exLines = ex.count
+      ? ['- 제외한 방 ' + ex.count + '개 (백업 창의 방 고르기에서 뺀 방):'].concat(
+        ex.names.map(function (nm) { return '    ' + nm; }), ex.more ? ['    외 ' + ex.more + '개'] : [])
+      : [];
     return '﻿' + [
       '잔디 백업 — ' + (meta.teamName || meta.teamId),
       '백업 시작: ' + (meta.startedAt || '') + ' (한국 시간)',
@@ -466,15 +476,17 @@
       '- 잔디에 들어오기 전(가입일 이전) 대화와 첨부',
       '- 참여하지 않은 토픽, 이 계정이 볼 수 없는 대화',
       '- 이미 삭제된 메시지·파일, 수정 전 내용(편집 이력)',
-      '- 잔디가 열람을 제한한 오래된 기록 (그런 방은 summary.json 의 stop 이 access_limit)',
+      '- 잔디가 열람을 제한한 오래된 기록 (그런 방은 summary.json 의 stop 이 access_limit)'
+    ].concat(exLines, [
       '',
       '[알아 둘 것]',
       '- 열람용 보관본입니다. 잔디로 다시 가져와 복원할 수 없습니다.',
       '- 작성자 이름은 백업 시점의 표시 이름입니다.',
       '- 이 파일들은 이 PC 에서만 만들어졌습니다. 셀라 서버는 대화 내용을 받지 않았습니다.',
       '- 같은 폴더를 골라 다시 실행하면 끝난 방(done.json 이 있는 방)은 건너뛰고, 받지 못한 첨부파일만 다시 받습니다.',
+      '  그때 방 고르기에서 뺀 방은 받지 않습니다 (전에 받아 둔 그 방 폴더는 지우지 않습니다).',
       ''
-    ].join('\r\n');
+    ]).join('\r\n');
   }
 
   // ── 첨부 작업 목록 ─────────────────────────────────────────────────────────
@@ -703,12 +715,12 @@
     return into;
   }
 
-  // 방별 결과 → 종류별(토픽은 비공개 포함)·전체 합계
-  function summarizeScan(rooms, perRoom) {
+  // 방별 결과 → 종류별(토픽은 비공개 포함)·전체 합계. isSelected 를 주면 그 방만 (방 고르기에서 뺀 방은 합계에서 빠진다)
+  function summarizeScan(rooms, perRoom, isSelected) {
     var out = { topic: newTally(), chat: newTally(), groupChat: newTally(), total: newTally() };
     (rooms || []).forEach(function (room) {
       var t = perRoom[String(room.id)];
-      if (!t) return;
+      if (!t || (isSelected && !isSelected(room))) return;
       var k = room.kind === 'private_topic' ? 'topic' : room.kind;
       var one = addTally(newTally(), t);
       one.rooms = 1;
@@ -716,6 +728,44 @@
       addTally(out.total, one);
     });
     return out;
+  }
+
+  // ── 방 고르기 (순수 함수) ─────────────────────────────────────────────────
+
+  // 저장해 둔 제외 id 를 지금 방 목록과 맞춘다 — 나간 방·없어진 id 는 버린다
+  function reconcileExcluded(savedIds, rooms) {
+    var live = {};
+    (rooms || []).forEach(function (r) { if (r) live[String(r.id)] = true; });
+    var out = {};
+    (Array.isArray(savedIds) ? savedIds : []).forEach(function (id) {
+      if (id !== null && id !== undefined && live[String(id)]) out[String(id)] = true;
+    });
+    return out;
+  }
+
+  // 고른 방 중 미리 확인 값이 없는 방 (확인에 실패한 방은 빼고) — 다시 넣은 방이 있으면 다시 확인해야 한다
+  function unscannedRooms(rooms, perRoom, failedIds) {
+    return (rooms || []).filter(function (r) {
+      var id = String(r.id);
+      return !has(perRoom, id) && !(failedIds && failedIds[id]);
+    });
+  }
+
+  // 방 고르기 목록 순서: 미리 확인 결과가 있으면 용량 큰 순(큰 방을 빼기 쉽게), 없으면 이름순
+  function sortPickRooms(rooms, perRoom) {
+    var per = perRoom || null;
+    var size = function (r) { var t = per && per[String(r.id)]; return t ? Number(t.bytes) || 0 : -1; };
+    return (rooms || []).slice().sort(function (a, b) {
+      if (per) { var d = size(b) - size(a); if (d) return d; }
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ko') || (String(a.id) < String(b.id) ? -1 : 1);
+    });
+  }
+
+  // README·전체 목록에 적을 제외한 방 이름 — 최대 max 개 + 나머지 수
+  function excludedList(names, max) {
+    var all = (names || []).map(String);
+    var lim = max || 50;
+    return { count: all.length, names: all.slice(0, lim), more: Math.max(0, all.length - lim) };
   }
 
   // 걸릴 시간 범위: 대화 = 미리 확인에 걸린 시간 (같은 API 일) ~ 쓰기 몫을 더한 값,
@@ -795,7 +845,8 @@
     backupFolderName: backupFolderName, ymdKst: ymdKst, fmtBytes: fmtBytes, fmtDuration: fmtDuration,
     SPEED_LOW: SPEED_LOW, SPEED_HIGH: SPEED_HIGH, newTally: newTally, tallyPage: tallyPage, summarizeScan: summarizeScan,
     estimateTimes: estimateTimes, fmtApprox: fmtApprox, fmtRange: fmtRange, pushSample: pushSample,
-    rollingRate: rollingRate, rawEta: rawEta, smoothEta: smoothEta
+    rollingRate: rollingRate, rawEta: rawEta, smoothEta: smoothEta, reconcileExcluded: reconcileExcluded,
+    unscannedRooms: unscannedRooms, sortPickRooms: sortPickRooms, excludedList: excludedList
   };
 
   if (typeof module !== 'undefined' && module && module.exports) {
@@ -863,7 +914,8 @@
     var doc = win.document;
     var S = {
       version: L.VERSION, phase: 'intro', message: '', teamId: null, teamName: '', rooms: [], members: {},
-      opts: { kinds: { topic: true, chat: true, groupChat: true }, attachments: true },
+      // excluded = 방 고르기에서 뺀 방 { id: true } — 기본은 모두 받는다. 잔디 탭 localStorage 에 팀별로 기억한다
+      opts: { kinds: { topic: true, chat: true, groupChat: true }, attachments: true, excluded: {} },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
       progress: newProgress(0),
       current: {}, roomFailures: [], fileFailures: [], abort: null,
@@ -898,7 +950,12 @@
       '.tb th:first-child,.tb td:first-child{text-align:left}.tb th{font-weight:600;color:#536675}.tb tr.sum td{font-weight:700;border-bottom:0}' +
       '.est{border:1px solid #dde5e9;border-radius:8px;padding:8px 10px;margin:8px 0;background:#f8fafb}.est.stale{opacity:.6}' +
       '.lbl{display:flex;justify-content:space-between;font-size:12px;color:#657582;margin-top:6px}.lbl+.bar{margin-top:2px}' +
-      '.cut{border:1px solid #146b64;background:#eef7f5;border-radius:8px;padding:7px 10px;margin:8px 0;font-weight:600}.cut.bad{border-color:#a24f1b;background:#fdf3ec;color:#a24f1b}';
+      '.cut{border:1px solid #146b64;background:#eef7f5;border-radius:8px;padding:7px 10px;margin:8px 0;font-weight:600}.cut.bad{border-color:#a24f1b;background:#fdf3ec;color:#a24f1b}' +
+      '.pick{border:1px solid #dde5e9;border-radius:8px;margin:6px 0;padding:0 8px}.pick summary{cursor:pointer;padding:6px 0;font-weight:600}' +
+      '.pick input[type=search]{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #bac7cf;border-radius:6px;font:inherit}' +
+      '.pick .row .btn{padding:5px;font-size:12px;font-weight:500}' +
+      '.pl{max-height:260px;overflow:auto;margin:6px 0 8px;border-top:1px solid #eef2f4}.pl label{margin:0;padding:3px 0;border-bottom:1px solid #eef2f4;font-size:12px}' +
+      '.pl .nm{flex:1;min-width:0;overflow-wrap:anywhere}.pl .kd,.pl .sz{color:#657582;white-space:nowrap;font-size:11px}.pl label.off .nm{color:#8a99a3}.pl label[hidden]{display:none}';
 
     function el(sel) { return shadow.querySelector(sel); }
 
@@ -962,6 +1019,7 @@
         '<label><input type="checkbox" data-k="topic"' + (S.opts.kinds.topic ? ' checked' : '') + '> 토픽 (공개·비공개, 참여 중인 것) ' + c.topic + '개</label>' +
         '<label><input type="checkbox" data-k="chat"' + (S.opts.kinds.chat ? ' checked' : '') + '> 1:1 대화 ' + c.chat + '개</label>' +
         '<label><input type="checkbox" data-k="groupChat"' + (S.opts.kinds.groupChat ? ' checked' : '') + '> 그룹 대화 ' + c.groupChat + '개</label>' +
+        pickHtml() +
         '<label><input type="checkbox" data-k="attachments"' + (S.opts.attachments ? ' checked' : '') + '> 첨부파일 포함</label>' +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
         '바탕화면 등에 빈 폴더를 하나 만들어 고르는 것을 권합니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
@@ -970,34 +1028,144 @@
         '<button class="btn sub" type="button" data-act="scan"' + (ready ? '' : ' disabled') + '>' + (S.scan ? '용량 다시 확인' : '용량 미리 확인') + '</button>' +
         '<button class="btn" type="button" data-act="start"' + (supported && ready ? '' : ' disabled') + '>저장 폴더 선택 후 시작</button>' +
         '<p class="muted" data-msg>' + L.escapeHtml(S.notice || '') + '</p>');
-      Array.prototype.forEach.call(shadow.querySelectorAll('input[type=checkbox]'), function (box) {
+      Array.prototype.forEach.call(shadow.querySelectorAll('input[data-k]'), function (box) {
         box.addEventListener('change', function () {
           var k = box.getAttribute('data-k');
           if (k === 'attachments') S.opts.attachments = box.checked; else S.opts.kinds[k] = box.checked;
           S.notice = '';
+          // 종류를 끄면 그 방은 방 고르기 목록에서도 사라진다
+          if (k !== 'attachments') refreshPick(true);
           // 범위를 바꾸면 미리 확인 숫자가 지금 범위와 달라진다 — 표시만 갈아 끼운다
-          var est = el('[data-estimate]');
-          if (est) est.outerHTML = estimateHtml();
+          refreshEstimate();
         });
       });
+      bindPick();
       el('[data-act=scan]').addEventListener('click', onScanClick);
       el('[data-act=start]').addEventListener('click', onStartClick);
+    }
+
+    // ── 방 고르기 (필요 없는 방 빼기) ─────────────────────────────────────────
+    // 방이 850개쯤 된다 — 목록은 문자열 한 번으로 그리고, 검색은 줄을 숨기기만 한다(선택 상태는 그대로)
+
+    var pickOpen = false, pickQuery = '';
+    var PICK_KIND = { topic: '토픽', private_topic: '비공개', chat: '1:1', groupChat: '그룹' };
+
+    function kindOn(r) { return !!S.opts.kinds[r.kind === 'private_topic' ? 'topic' : r.kind]; }
+
+    function pickSummary() {
+      return '방 고르기 (' + S.rooms.filter(kindOn).length + '개 중 ' + selectedRooms().length + '개 받음)';
+    }
+
+    function pickRowsHtml() {
+      var per = S.scan && S.scan.finishedAt ? S.scan.perRoom : null;
+      return L.sortPickRooms(S.rooms.filter(kindOn), per).map(function (r) {
+        var id = String(r.id);
+        var off = !!S.opts.excluded[id];
+        var t = per && per[id];
+        var nm = String(r.name || id);
+        return '<label' + (off ? ' class="off"' : '') + ' data-q="' + L.escapeHtml(nm.toLocaleLowerCase()) + '"><input type="checkbox" data-room="' + L.escapeHtml(id) + '"' +
+          (off ? '' : ' checked') + '><span class="nm">' + L.escapeHtml(nm) + '</span><span class="kd">' + (PICK_KIND[r.kind] || '') + '</span>' +
+          '<span class="sz">' + (t ? '기록 ' + n(t.records) + '건 · 첨부 ' + L.fmtBytes(t.bytes) : '') + '</span></label>';
+      }).join('');
+    }
+
+    function pickHtml() {
+      return '<details class="pick" data-pick' + (pickOpen ? ' open' : '') + '><summary data-pick-sum>' + pickSummary() + '</summary>' +
+        '<input type="search" data-pick-q placeholder="방 이름 검색" aria-label="방 이름 검색" value="' + L.escapeHtml(pickQuery) + '">' +
+        '<div class="row"><button class="btn sub" type="button" data-act="pick-all">보이는 방 모두 선택</button>' +
+        '<button class="btn sub" type="button" data-act="pick-none">보이는 방 모두 빼기</button></div>' +
+        '<div class="pl" data-pick-list>' + pickRowsHtml() + '</div></details>';
+    }
+
+    function filterPick() {
+      var q = pickQuery.trim().toLocaleLowerCase();
+      Array.prototype.forEach.call(shadow.querySelectorAll('[data-pick-list] label'), function (row) {
+        row.hidden = !!q && row.getAttribute('data-q').indexOf(q) < 0;
+      });
+    }
+
+    // relist = 목록을 다시 그린다 (종류가 바뀔 때). 아니면 요약 숫자만
+    function refreshPick(relist) {
+      var sum = el('[data-pick-sum]');
+      if (sum) sum.textContent = pickSummary();
+      var list = el('[data-pick-list]');
+      if (relist && list) { list.innerHTML = pickRowsHtml(); filterPick(); }
+    }
+
+    function refreshEstimate() {
+      var est = el('[data-estimate]');
+      if (est) est.outerHTML = estimateHtml();
+    }
+
+    function setExcluded(id, off) {
+      if (off) S.opts.excluded[id] = true; else delete S.opts.excluded[id];
+    }
+
+    function pickChanged() {
+      S.notice = '';
+      saveExcluded();
+      refreshPick(false);
+      refreshEstimate();
+    }
+
+    function bindPick() {
+      var det = el('[data-pick]');
+      if (!det) return;
+      det.addEventListener('toggle', function () { pickOpen = det.open; });
+      el('[data-pick-q]').addEventListener('input', function () { pickQuery = this.value; filterPick(); });
+      el('[data-pick-list]').addEventListener('change', function (e) {
+        var box = e.target;
+        if (!box || !box.hasAttribute('data-room')) return;
+        setExcluded(box.getAttribute('data-room'), !box.checked);
+        box.parentNode.className = box.checked ? '' : 'off';
+        pickChanged();
+      });
+      var bulk = function (on) {
+        Array.prototype.forEach.call(shadow.querySelectorAll('[data-pick-list] label'), function (row) {
+          if (row.hidden) return;
+          var box = row.querySelector('input');
+          box.checked = on;
+          row.className = on ? '' : 'off';
+          setExcluded(box.getAttribute('data-room'), !on);
+        });
+        pickChanged();
+      };
+      el('[data-act=pick-all]').addEventListener('click', function () { bulk(true); });
+      el('[data-act=pick-none]').addEventListener('click', function () { bulk(false); });
+      filterPick();
+    }
+
+    // 제외 목록은 잔디 탭의 localStorage 에 팀별로 — 막혀 있어도(사생활 모드 등) 그냥 이번만 쓴다
+    function excludedKey() { return 'jandiBackupExcluded:' + S.teamId; }
+
+    function saveExcluded() {
+      try { win.localStorage.setItem(excludedKey(), JSON.stringify(Object.keys(S.opts.excluded))); } catch (e) { /* 기억 못 해도 동작 */ }
+    }
+
+    function loadExcluded() {
+      var saved = [];
+      try { saved = JSON.parse(win.localStorage.getItem(excludedKey()) || '[]'); } catch (e) { saved = []; }
+      S.opts.excluded = L.reconcileExcluded(saved, S.rooms);
     }
 
     function kindsKey() {
       return ['topic', 'chat', 'groupChat'].filter(function (k) { return !!S.opts.kinds[k]; }).join(',');
     }
 
+    // 종류가 바뀌었거나, 다시 넣은 방 중 미리 확인 값이 없는 방이 있으면 다시 확인해야 한다 (빼기만 했으면 합계만 준다)
     function scanStale() {
-      return !!S.scan && S.scan.kinds !== kindsKey();
+      if (!S.scan) return false;
+      return S.scan.kinds !== kindsKey() || L.unscannedRooms(selectedRooms(), S.scan.perRoom, S.scan.failedIds).length > 0;
     }
+
+    function notExcluded(r) { return !S.opts.excluded[String(r.id)]; }
 
     function n(v) { return (Number(v) || 0).toLocaleString('en-US'); }
 
     function estimateHtml() {
       var sc = S.scan;
       if (!sc || !sc.finishedAt) return '';
-      var sum = L.summarizeScan(S.rooms, sc.perRoom);
+      var sum = L.summarizeScan(S.rooms, sc.perRoom, notExcluded);
       var tot = sum.total;
       var stale = scanStale();
       var row = function (label, t, cls) {
@@ -1021,7 +1189,9 @@
         '<p class="muted">첨부 시간은 ' + Math.round(times.speedLow / 1e6) + '~' + Math.round(times.speedHigh / 1e6) +
         'MB/s 로 잡은 값입니다 — 회사 네트워크 기준 대략값, 실제 속도에 따라 달라집니다.</p>' +
         (sc.failed ? '<p class="warn">확인하지 못한 방 ' + sc.failed + '개 — 위 숫자에서 빠졌습니다.</p>' : '') +
-        (stale ? '<p class="warn">고른 범위가 바뀌었습니다 — 위 숫자는 이전 범위 기준입니다. 용량을 다시 확인하세요.</p>' : '') +
+        (!stale ? '' : sc.kinds !== kindsKey()
+          ? '<p class="warn">고른 범위가 바뀌었습니다 — 위 숫자는 이전 범위 기준입니다. 용량을 다시 확인하세요.</p>'
+          : '<p class="warn">미리 확인하지 않은 방을 다시 넣었습니다 — 그 방은 위 숫자에 없습니다. 용량을 다시 확인하세요.</p>') +
         '</div>';
     }
 
@@ -1029,7 +1199,7 @@
     function onScanClick() {
       if (S.cutoff.state !== 'ok') { introMessage(CUTOFF_MISSING); return; }
       var selected = selectedRooms();
-      if (!selected.length) { introMessage('확인할 대화 종류를 하나 이상 고르세요.'); return; }
+      if (!selected.length) { introMessage(noRoomsText('확인할')); return; }
       scan(selected);
     }
 
@@ -1073,7 +1243,7 @@
       }
       if (S.cutoff.state !== 'ok') { introMessage(CUTOFF_MISSING); return; }
       var selected = selectedRooms();
-      if (!selected.length) { introMessage('저장할 대화 종류를 하나 이상 고르세요.'); return; }
+      if (!selected.length) { introMessage(noRoomsText('저장할')); return; }
       var picking;
       try {
         picking = win.showDirectoryPicker({ id: 'jandi-backup', mode: 'readwrite', startIn: 'desktop' });
@@ -1089,11 +1259,23 @@
       });
     }
 
+    // 받을 방 = 종류가 켜져 있고 방 고르기에서 빼지 않은 방. 시작·미리 확인 모두 이것을 쓴다
     function selectedRooms() {
-      return S.rooms.filter(function (r) {
-        var k = r.kind === 'private_topic' ? 'topic' : r.kind;
-        return !!S.opts.kinds[k];
-      });
+      return S.rooms.filter(function (r) { return kindOn(r) && notExcluded(r); });
+    }
+
+    // 방 고르기에서 뺀 방 (README·전체 목록·상태 파일에 적는다)
+    function excludedRooms() {
+      return S.rooms.filter(function (r) { return !notExcluded(r); });
+    }
+
+    function excludedIds() {
+      return excludedRooms().map(function (r) { return String(r.id); });
+    }
+
+    // 고른 방이 0개 — 종류를 다 껐는지, 방 고르기에서 다 뺐는지에 따라 안내를 달리한다
+    function noRoomsText(verb) {
+      return kindsKey() ? verb + ' 방이 없습니다. 방 고르기에서 받을 방을 하나 이상 체크하세요.' : verb + ' 대화 종류를 하나 이상 고르세요.';
     }
 
     function renderProgress() {
@@ -1496,11 +1678,11 @@
     async function scan(selected) {
       S.phase = 'scanning';
       S.stopped = false; S.paused = false; S.notice = ''; S.current = {};
-      var sc = S.scan = { kinds: kindsKey(), perRoom: {}, startedAt: Date.now(), finishedAt: 0, ms: 0, total: selected.length, done: 0, failed: 0 };
+      var sc = S.scan = { kinds: kindsKey(), perRoom: {}, startedAt: Date.now(), finishedAt: 0, ms: 0, total: selected.length, done: 0, failed: 0, failedIds: {} };
       timer = win.setInterval(render, 700);
       render();
       try {
-        var onFail = function (room) { delete sc.perRoom[String(room.id)]; sc.failed++; sc.done++; };
+        var onFail = function (room) { delete sc.perRoom[String(room.id)]; sc.failedIds[String(room.id)] = true; sc.failed++; sc.done++; };
         await pool(selected.filter(function (r) { return r.kind !== 'chat'; }), 5, scanRoom, onFail);
         if (!S.stopped) await pool(selected.filter(function (r) { return r.kind === 'chat'; }), 8, scanRoom, onFail);
         if (S.stopped) {
@@ -1733,14 +1915,15 @@
         } catch (e) { /* 깨진 표식 — 다음 실행에서 다시 받는다 */ }
       }
       rows = L.sortRows(rows);
-      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments, cutoff: S.cutoff.date };
+      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments, cutoff: S.cutoff.date,
+        excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }) };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
       await writeText(root, 'README.txt', L.buildReadme(meta));
       await writeText(root, 'backup_state.json', JSON.stringify({
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
-        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date
+        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds()
       }, null, 1));
     }
 
@@ -1768,7 +1951,7 @@
         await checkRootCutoff(root);
         var roomsDir = await root.getDirectoryHandle('rooms', { create: true });
         var folders = await existingRoomFolders(roomsDir);
-        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date }, null, 1));
+        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds() }, null, 1));
         var dms = selected.filter(function (r) { return r.kind === 'chat'; });
         var others = selected.filter(function (r) { return r.kind !== 'chat'; });
         var work = function (room) { return processRoom(room, roomsDir, folders); };
@@ -1802,6 +1985,7 @@
       host.style.display = '';
       try {
         prepare();
+        loadExcluded();
         S.phase = 'intro';
       } catch (e) {
         S.phase = 'error';

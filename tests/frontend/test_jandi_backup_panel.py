@@ -495,3 +495,165 @@ def test_folder_from_old_version_is_refused(browser):
         host.locator("button[data-act=again]").click()
         host.locator(f"text={CUTOFF_TEXT}").wait_for()
     ctx.close()
+
+
+# ── 방 고르기 (필요 없는 방 빼기, 2026-10-07) ────────────────────────────────
+
+TOPIC = "90000001"   # 비공개 토픽 — 기록 11 · 첨부 117B (가장 큰 방)
+GROUP = "90000003"   # 열람 제한 그룹 — 기록 1
+
+
+def _pick(host):
+    """방 고르기를 펼친다 (기본은 접혀 있다)."""
+    det = host.locator("[data-pick]")
+    if det.get_attribute("open") is None:
+        host.locator("[data-pick-sum]").click()
+    return det
+
+
+def _visible_rooms(host):
+    return host.locator("[data-pick-list] label:visible input").evaluate_all("els => els.map(e => e.dataset.room)")
+
+
+def test_room_pick_search_exclude_run_and_remember(browser):
+    """검색해서 뺀 방은 폴더가 안 생기고 README·목록·상태 파일에 '제외한 방' 으로 남는다.
+    다시 열면 제외가 기억되고(없어진 id 는 버림), 같은 폴더로 이어 받을 때 이번에 뺀 방은 건너뛰되 지우지 않는다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    summary = host.locator("[data-pick-sum]")
+    assert summary.inner_text() == "방 고르기 (4개 중 4개 받음)"
+    assert host.locator("[data-pick]").get_attribute("open") is None, "기본은 접혀 있다"
+    _pick(host)
+    assert sorted(_visible_rooms(host)) == sorted([TOPIC, "90000002", GROUP, "90000004"])
+    host.locator("[data-pick-q]").fill("기획")
+    assert _visible_rooms(host) == [TOPIC], "검색은 방 이름으로"
+    host.locator("[data-pick-q]").fill("PARK JIWOO")   # 그룹 방 이름 = 멤버 이름 — 대소문자 무시
+    assert _visible_rooms(host) == [GROUP]
+    host.locator("[data-pick-q]").fill("기획")
+    host.locator("button[data-act=pick-none]").click()
+    assert summary.inner_text() == "방 고르기 (4개 중 3개 받음)"
+    host.locator("[data-pick-q]").fill("")
+    assert len(_visible_rooms(host)) == 4, "검색을 지워도 선택 상태는 그대로"
+    assert not host.locator(f"input[data-room='{TOPIC}']").is_checked()
+    assert host.locator(f"input[data-room='{GROUP}']").is_checked()
+    assert page.evaluate("localStorage.getItem('jandiBackupExcluded:80000001')") == json.dumps([TOPIC])
+
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    log = page.evaluate("window.__log")
+    top = next(iter(files)).split("/")[0]
+    assert not any(f"_{TOPIC}_" in k for k in files), "뺀 방은 폴더가 생기지 않는다"
+    assert not any(f"/rooms/{TOPIC}/" in p["url"] for p in log["pages"]), "뺀 방은 읽지도 않는다"
+    assert log["getImageAt"] == []
+    assert page.evaluate("window.__jandiBackup.state.progress.roomsTotal") == 3
+    summary_rows = {r["id"] for r in json.loads(files[f"{top}/summary.json"]["text"])}
+    assert summary_rows == {"90000002", GROUP, "90000004"}
+    room_name = FX["roomName"]
+    readme = files[f"{top}/README.txt"]["text"]
+    assert "제외한 방 1개" in readme and room_name in readme
+    index = files[f"{top}/index.html"]["text"]
+    assert "제외한 방 1개" in index and room_name.replace("<", "&lt;").replace(">", "&gt;") in index
+    assert json.loads(files[f"{top}/backup_state.json"]["text"])["excluded"] == [TOPIC]
+
+    # 새로 열면 기억한다 — 이제 없는 방 id 는 버린다
+    page.evaluate(f"localStorage.setItem('jandiBackupExcluded:80000001', JSON.stringify(['{TOPIC}', '123456']))")
+    page.evaluate("window.__log.pages = []; window.__log.getImageAt = []")
+    page.reload()
+    page.evaluate(SCRIPT)
+    host = page.locator("#__jandi-backup-host")
+    host.locator(f"text={CUTOFF_TEXT}").wait_for()
+    assert host.locator("[data-pick-sum]").inner_text() == "방 고르기 (4개 중 3개 받음)"
+    assert page.evaluate("JSON.parse(JSON.stringify(window.__jandiBackup.state.opts.excluded))") == {TOPIC: True}
+
+    # 같은 폴더로 이어 받기: 토픽을 다시 넣고 그룹을 뺀다 → 토픽만 새로 받고, 받아 둔 그룹 폴더는 그대로
+    _pick(host)
+    host.locator(f"input[data-room='{TOPIC}']").check()
+    host.locator(f"input[data-room='{GROUP}']").uncheck()
+    assert page.evaluate("localStorage.getItem('jandiBackupExcluded:80000001')") == json.dumps([GROUP])
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files2 = page.evaluate("window.__dumpOpfs()")
+    log2 = page.evaluate("window.__log")
+    assert len({k.split("/")[0] for k in files2}) == 1
+    assert any(k.endswith(f"_{TOPIC}_[테스트] 기획 _팀_ 방/done.json") for k in files2)
+    group_files = {k: v for k, v in files.items() if f"_{GROUP}_" in k}
+    assert group_files and all(files2.get(k) == v for k, v in group_files.items()), "전에 받은 방 폴더는 지우지 않는다"
+    assert not any(f"/rooms/{GROUP}/" in p["url"] for p in log2["pages"])
+    state = json.loads(files2[f"{top}/backup_state.json"]["text"])
+    assert state["excluded"] == [GROUP] and state["finishedAt"]
+    ctx.close()
+
+
+def test_room_pick_with_precheck_numbers_and_all_excluded(browser):
+    """미리 확인 후 방 옆에 기록·첨부 숫자가 보이고 큰 방이 위로 온다. 빼면 합계가 그만큼 줄고 다시 확인하라고 하지 않는다.
+    확인할 때 빠져 있던 방을 다시 넣으면 다시 확인하라고 한다. 모두 빼면 시작·미리 확인이 막힌다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    _pick(host)
+    assert host.locator("[data-pick-list] .sz").all_inner_texts() == ["", "", "", ""], "미리 확인 전에는 숫자가 없다"
+
+    host.locator("button[data-act=scan]").click()
+    host.locator("text=미리 확인 결과").wait_for(timeout=20000)
+    assert _cells(host)["합계"] == ["4", "14", "5", "117B"]
+    _pick(host)
+    rows = host.locator("[data-pick-list] label")
+    assert rows.first.locator("input").get_attribute("data-room") == TOPIC, "용량 큰 방이 맨 위"
+    assert rows.first.locator(".sz").inner_text() == "기록 11건 · 첨부 117B"
+    assert rows.first.locator(".kd").inner_text() == "비공개"
+    assert host.locator(f"[data-pick-list] label:has(input[data-room='{GROUP}']) .sz").inner_text() == "기록 1건 · 첨부 0B"
+
+    host.locator(f"input[data-room='{TOPIC}']").uncheck()
+    cells = _cells(host)
+    assert cells["토픽"] == ["0", "0", "0", "0B"] and cells["합계"] == ["3", "3", "0", "0B"], cells
+    assert "stale" not in host.locator("[data-estimate]").get_attribute("class"), "빼기만 하면 다시 확인할 필요 없다"
+    host.locator(f"input[data-room='{TOPIC}']").check()
+    assert _cells(host)["합계"] == ["4", "14", "5", "117B"]
+
+    # 그룹을 빼고 다시 확인 → 그룹은 확인하지 않았다 → 다시 넣으면 다시 확인하라고 한다
+    host.locator(f"input[data-room='{GROUP}']").uncheck()
+    host.locator("button[data-act=scan]", has_text="용량 다시 확인").click()
+    host.locator("[data-estimate]:not(.stale)").wait_for(timeout=20000)
+    assert _cells(host)["합계"] == ["3", "13", "5", "117B"]
+    assert GROUP not in page.evaluate("Object.keys(window.__jandiBackup.state.scan.perRoom)")
+    assert host.locator("[data-pick]").get_attribute("open") is not None, "펼친 상태를 기억한다"
+    host.locator(f"input[data-room='{GROUP}']").check()
+    host.locator("text=미리 확인하지 않은 방을 다시 넣었습니다").wait_for()
+    assert "stale" in host.locator("[data-estimate]").get_attribute("class")
+
+    # 종류를 끄면 그 방은 목록에서 사라진다
+    host.locator("input[data-k=groupChat]").uncheck()
+    assert host.locator(f"input[data-room='{GROUP}']").count() == 0
+    assert host.locator("[data-pick-sum]").inner_text() == "방 고르기 (3개 중 3개 받음)"
+    host.locator("input[data-k=groupChat]").check()
+
+    # 모두 빼면 시작·미리 확인이 막힌다
+    host.locator("button[data-act=pick-none]").click()
+    assert host.locator("[data-pick-sum]").inner_text() == "방 고르기 (4개 중 0개 받음)"
+    page.evaluate("() => { window.showDirectoryPicker = async () => { throw new Error('부르면 안 된다'); }; }")
+    host.locator("button[data-act=start]").click()
+    host.locator("[data-msg]", has_text="저장할 방이 없습니다. 방 고르기에서 받을 방을 하나 이상 체크하세요.").wait_for()
+    host.locator("button[data-act=scan]").click()
+    host.locator("[data-msg]", has_text="확인할 방이 없습니다").wait_for()
+    assert page.evaluate("window.__jandiBackup.state.phase") == "intro"
+    opfs = page.evaluate("async () => { const r = await navigator.storage.getDirectory(); const n = []; for await (const k of r.keys()) n.push(k); return n; }")
+    assert opfs == []
+    ctx.close()
+
+
+def test_room_pick_works_when_local_storage_is_blocked(browser):
+    """localStorage 가 막혀도(접근하면 예외) 방 고르기는 동작한다 — 기억만 못 한다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    block = "Object.defineProperty(window, 'localStorage', {get() { throw new Error('막힘'); }})"
+    host = _start(page, [], before=block)
+    _pick(host)
+    host.locator(f"input[data-room='{GROUP}']").uncheck()
+    assert host.locator("[data-pick-sum]").inner_text() == "방 고르기 (4개 중 3개 받음)"
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    assert not any(f"_{GROUP}_" in k for k in files)
+    ctx.close()

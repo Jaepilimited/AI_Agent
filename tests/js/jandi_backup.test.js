@@ -375,6 +375,61 @@ test('미리 확인 합계: 종류별(비공개 토픽은 토픽) · 전체, 확
   assert.deepEqual([s.total.rooms, s.total.records, s.total.files, s.total.bytes], [4, 167, 6, 6e9 + 2e6]);
 });
 
+// ── 방 고르기 (필요 없는 방 빼기) ───────────────────────────────────────────
+
+test('미리 확인 합계: 방 고르기에서 뺀 방은 종류별·전체 합계에서 빠진다', () => {
+  const rooms = [{ id: 1, kind: 'topic' }, { id: 2, kind: 'private_topic' }, { id: 3, kind: 'chat' }];
+  const mk = (records, files, bytes) => Object.assign(L.newTally(), { records, files, bytes });
+  const per = { 1: mk(100, 3, 5e9), 2: mk(50, 1, 1e9), 3: mk(10, 2, 2e6) };
+  const excluded = { 1: true };
+  const s = L.summarizeScan(rooms, per, (r) => !excluded[String(r.id)]);
+  assert.deepEqual([s.topic.rooms, s.topic.records, s.topic.bytes], [1, 50, 1e9]);
+  assert.deepEqual([s.total.rooms, s.total.records, s.total.files, s.total.bytes], [2, 60, 3, 1e9 + 2e6]);
+  // 고르는 함수를 안 주면 예전처럼 모두
+  assert.equal(L.summarizeScan(rooms, per).total.rooms, 3);
+});
+
+test('제외 id 를 지금 방 목록과 맞춘다 — 없어진 id·이상한 값은 버리고 숫자/문자 id 는 같게', () => {
+  const rooms = [{ id: 10 }, { id: 20 }, { id: '30' }];
+  assert.deepEqual(L.reconcileExcluded(['10', 30, '999', null, 20], rooms), { 10: true, 20: true, 30: true });
+  assert.deepEqual(L.reconcileExcluded(['999'], rooms), {});
+  assert.deepEqual(L.reconcileExcluded('깨진 값', rooms), {});
+  assert.deepEqual(L.reconcileExcluded(null, rooms), {});
+});
+
+test('다시 확인 판정: 고른 방 중 미리 확인 값이 없는 방 (확인에 실패한 방은 제외)', () => {
+  const per = { 1: L.newTally(), 2: L.newTally() };
+  assert.deepEqual(L.unscannedRooms([{ id: 1 }, { id: 2 }], per, {}), [], '빼기만 하면 다시 확인할 필요 없다');
+  assert.deepEqual(L.unscannedRooms([{ id: 1 }], per, {}), []);
+  assert.deepEqual(L.unscannedRooms([{ id: 1 }, { id: 3 }], per, {}).map((r) => r.id), [3], '확인 때 빠져 있던 방을 다시 넣었다');
+  assert.deepEqual(L.unscannedRooms([{ id: 1 }, { id: 3 }], per, { 3: true }), [], '확인에 실패한 방은 따로 알린다');
+});
+
+test('방 고르기 순서: 미리 확인 전에는 이름순, 후에는 용량 큰 순(같으면 이름순, 값 없는 방은 끝)', () => {
+  const rooms = [{ id: 1, name: '다' }, { id: 2, name: '가' }, { id: 3, name: '나' }, { id: 4, name: '라' }];
+  assert.deepEqual(L.sortPickRooms(rooms, null).map((r) => r.name), ['가', '나', '다', '라']);
+  const t = (bytes) => Object.assign(L.newTally(), { bytes });
+  assert.deepEqual(L.sortPickRooms(rooms, { 1: t(5), 2: t(0), 3: t(9) }).map((r) => r.name), ['나', '다', '가', '라']);
+  assert.deepEqual(rooms.map((r) => r.id), [1, 2, 3, 4], '원래 배열은 그대로');
+});
+
+test('README·전체 목록: 제외한 방 수와 이름(최대 50개 + 외 N개), 없으면 아무 말 없음', () => {
+  const names = Array.from({ length: 53 }, (_, i) => '방' + (i + 1));
+  names[0] = '공지 <알림>';
+  const meta = { teamName: 't', date: 'd', cutoff: '2021-05-03', attachments: true, excluded: names };
+  const readme = L.buildReadme(meta);
+  assert.ok(readme.includes('제외한 방 53개'));
+  assert.ok(readme.includes('    공지 <알림>\r\n') && readme.includes('    방50\r\n') && !readme.includes('방51'));
+  assert.ok(readme.includes('    외 3개'));
+  const index = L.buildTopIndex([], meta);
+  assert.ok(index.includes('제외한 방 53개'));
+  assert.ok(index.includes('공지 &lt;알림&gt;, 방2') && index.includes('방50 외 3개') && !index.includes('방51'));
+  for (const m of [{ teamName: 't' }, { teamName: 't', excluded: [] }]) {
+    assert.ok(!L.buildReadme(m).includes('제외한 방'));
+    assert.ok(!L.buildTopIndex([], m).includes('제외한 방'));
+  }
+});
+
 test('용량 표기: GB 한 자리 · MB 정수', () => {
   assert.equal(L.fmtBytes(123.4e9), '123.4GB');
   assert.equal(L.fmtBytes(66e9), '66.0GB');
