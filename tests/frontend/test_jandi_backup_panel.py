@@ -17,7 +17,13 @@
 가짜 잔디의 JANDI 봇 대화(90000004)는 기준일을 정하려고 더한 1:1 방이다 — 그래서 1:1 이 2개, 방이 4개다.
 """
 
+import base64
+import io
 import json
+import struct
+import xml.etree.ElementTree as ET
+import zipfile
+import zlib
 from pathlib import Path
 
 import pytest
@@ -106,7 +112,11 @@ window.__dumpOpfs = async () => {
     for await (const [name, h] of dir.entries()) {
       const p = prefix + name;
       if (h.kind === 'directory') await walk(h, p + '/');
-      else { const f = await h.getFile(); out[p] = {size: f.size, text: f.size < 200000 ? await f.text() : null}; }
+      else {
+        const f = await h.getFile();
+        out[p] = {size: f.size, text: f.size < 200000 ? await f.text() : null};
+        if (p.endsWith('.docx')) { const b = new Uint8Array(await f.arrayBuffer()); let s = ''; for (const x of b) s += String.fromCharCode(x); out[p].b64 = btoa(s); }
+      }
     }
   }
   await walk(await (await navigator.storage.getDirectory()).getDirectoryHandle('picked'), '');
@@ -128,6 +138,9 @@ def _fulfill(route):
         return route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
     if url.startswith("https://files.jandi.com/dl/"):
         fid = url.split("/dl/")[1].split("?")[0]
+        if fid in PHOTOS:   # 진짜 그림 (워드에 넣는 사진)
+            return route.fulfill(status=200, content_type="application/octet-stream",
+                                 headers={"Access-Control-Allow-Origin": "*"}, body=PHOTOS[fid])
         return route.fulfill(status=200, content_type="application/octet-stream",
                              headers={"Access-Control-Allow-Origin": "*"}, body=b"x" * SIZES[fid])
     if url == "https://jandi-box.com/files-sticker/155/2":
@@ -769,4 +782,139 @@ def test_room_pick_works_when_local_storage_is_blocked(browser):
     host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
     files = page.evaluate("window.__dumpOpfs()")
     assert not any(f"_{GROUP}_" in k for k in files)
+    ctx.close()
+
+
+# ── 방별 워드(.docx) — 팀즈·OneDrive 에서 보기용 (2026-10-07) ─────────────────
+
+def _png(w, h):
+    """반투명 빨강 RGBA PNG — 워드에 넣을 때 흰 배경 JPEG 로 줄어야 한다."""
+    def chunk(tag, data):
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    raw = b"".join(b"\x00" + bytes([255, 0, 0, 128]) * w for _ in range(h))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
+PHOTOS = {"7000301": _png(2000, 1000)}
+# 토픽에 진짜 사진 한 장(현장.png, 2000×1000)을 더한다. 픽스처의 회의 사진.png 는 가짜 바이트라 그림으로 못 읽는다(→ 이름 줄만)
+REAL_PHOTO = """
+SIZES['7000301'] = %d;
+window.__new = [
+  {id: 6000014, time: 1782864800000, fromEntity: 1002, status: 'created', feedbackId: -1, messageId: 5000040,
+   message: {id: 5000040, writerId: 1002, contentType: 'text', content: {body: '현장 사진\\n둘째 줄'},
+             attachments: [{id: 7000301, contentType: 'file', content: {name: '현장.png', type: 'image/png', size: %d}}]}}
+];
+""" % (len(PHOTOS["7000301"]), len(PHOTOS["7000301"]))
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
+
+
+def _open_docx(entry):
+    z = zipfile.ZipFile(io.BytesIO(base64.b64decode(entry["b64"])))
+    assert z.testzip() is None
+    parts = {}
+    for info in z.infolist():
+        assert info.compress_type == zipfile.ZIP_STORED and info.flag_bits & 0x800
+        data = z.read(info.filename)
+        if info.filename.endswith((".xml", ".rels")):
+            parts[info.filename] = ET.fromstring(data)   # 잘 닫힌 XML 이어야 한다
+        else:
+            parts[info.filename] = data
+    return parts
+
+
+def _paragraphs(document):
+    return ["".join(t.text or "" for t in p.iter(W + "t")) for p in document.iter(W + "p")]
+
+
+def test_word_docs_photos_links_and_index(browser):
+    """기본으로 방마다 대화.docx 를 만든다 — zipfile·ElementTree 로 열리고, 받은 진짜 사진은 줄인 JPEG 로 media 에,
+    받은 첨부는 attachments/… 상대 경로 링크, 그림으로 못 읽는 사진은 이름 줄만. 상위 목록·README 에 워드 안내와 링크."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [], before=REAL_PHOTO)
+    assert host.locator("input[data-opt=docx]").is_checked(), "기본 켜짐"
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=30000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
+    assert files[f"{room}/attachments/7000301_현장.png"]["size"] == len(PHOTOS["7000301"]), "원본은 attachments 에 그대로"
+    parts = _open_docx(files[f"{room}/대화.docx"])
+    assert sorted(parts) == sorted(["[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels", "word/document.xml",
+                                    "word/styles.xml", "docProps/core.xml", "word/media/image1.jpg"])
+    jpg = parts["word/media/image1.jpg"]
+    assert jpg[:3] == b"\xff\xd8\xff" and len(jpg) < len(PHOTOS["7000301"]), "줄인 JPEG"
+    types = {d.get("Extension"): d.get("ContentType") for d in parts["[Content_Types].xml"]}
+    assert types["jpg"] == "image/jpeg" and types["png"] == "image/png"
+    rels = {r.get("Id"): r for r in parts["word/_rels/document.xml.rels"].iter(REL + "Relationship")}
+    images = [r for r in rels.values() if r.get("Type").endswith("/image")]
+    assert [r.get("Target") for r in images] == ["media/image1.jpg"]
+    links = {r.get("Target") for r in rels.values() if r.get("Type").endswith("/hyperlink")}
+    assert all(r.get("TargetMode") == "External" for r in rels.values() if r.get("Type").endswith("/hyperlink"))
+    assert "attachments/7000301_%ED%98%84%EC%9E%A5.png" in links
+    assert any(t.startswith("attachments/7000002_") for t in links) and not any("7000003" in t for t in links), "못 받은 첨부는 링크 없음"
+    doc = parts["word/document.xml"]
+    blips = [b.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
+             for b in doc.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}blip")]
+    assert blips == [images[0].get("Id")], "사진은 한 장 — 가짜 바이트인 회의 사진.png 는 그림 없이"
+    ext = next(doc.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}extent"))
+    assert (ext.get("cx"), ext.get("cy")) == ("5400000", "2700000"), "1280×640 으로 줄이고 본문 폭 15cm 에 맞춤"
+    for h in doc.iter(W + "hyperlink"):
+        assert h.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") in rels
+    paras = _paragraphs(doc)
+    assert paras[0] == FX["roomName"]
+    assert paras[1] == "TESTTEAM · 2026-07-01 ~ 2026-07-01 · 기록 12건 · 기준일 2026-07-01 이후"
+    assert "2026-07-01 (수)" in paras and "현장 사진둘째 줄" in paras
+    assert "📎 회의 사진.png (attachments/7000001_회의 사진.png)" in paras
+    assert "📎 지워진 파일.pdf (미저장)" in paras and "(이모티콘)" in paras
+    assert any(p.startswith("↳ 댓글: ") for p in paras)
+    # 다른 방도 각자 대화.docx (빈 방 포함)
+    for folder in {k.split("/")[2] for k in files if k.startswith(f"{top}/rooms/")}:
+        assert f"{top}/rooms/{folder}/대화.docx" in files, folder
+        _open_docx(files[f"{top}/rooms/{folder}/대화.docx"])
+    summary = {r["id"]: r for r in json.loads(files[f"{top}/summary.json"]["text"])}
+    assert summary["90000001"]["docx"] == ["대화.docx"]
+    index = files[f"{top}/index.html"]["text"]
+    assert index.count('class="docx"') == 4 and "팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다" in index
+    assert "방별 워드: rooms/<방>/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다" in files[f"{top}/README.txt"]["text"]
+    assert json.loads(files[f"{top}/backup_state.json"]["text"])["docx"] is True
+    ctx.close()
+
+
+def test_word_option_off_then_on_rebuilds_from_raw_without_reading(browser):
+    """워드를 끄면 만들지 않고(팀별로 기억), 다시 켜고 같은 폴더로 이어 받으면 끝난 방은 raw.json 으로 워드만 만든다 — 대화는 다시 읽지 않는다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    host.locator("input[data-opt=docx]").uncheck()
+    assert page.evaluate("localStorage.getItem('jandiBackupDocx:80000001')") == "0"
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    assert not any("/대화" in k and k.endswith(".docx") for k in files), "워드를 끄면 만들지 않는다 (첨부 .docx 는 별개)"
+    assert "방별 워드" not in files[f"{top}/README.txt"]["text"] and 'class="docx"' not in files[f"{top}/index.html"]["text"]
+
+    page.evaluate("window.__log.pages = []; window.__log.getImageAt = []")
+    page.reload()
+    page.evaluate(SCRIPT)
+    host = page.locator("#__jandi-backup-host")
+    host.locator(f"text={CUTOFF_TEXT}").wait_for()
+    assert not host.locator("input[data-opt=docx]").is_checked(), "끈 것을 기억한다"
+    host.locator("input[data-opt=docx]").check()
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    log = page.evaluate("window.__log")
+    assert [p for p in log["pages"] if "/rooms/90000004/" not in p["url"]] == [], "대화를 다시 읽지 않는다"
+    assert sorted(g["id"] for g in log["getImageAt"]) == ["7000003"]
+    files2 = page.evaluate("window.__dumpOpfs()")
+    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
+    paras = _paragraphs(_open_docx(files2[f"{room}/대화.docx"])["word/document.xml"])
+    assert paras[1].endswith("기록 11건 · 기준일 2026-07-01 이후")
+    assert sum(1 for k in files2 if k.endswith("/대화.docx")) == 4
+    done = json.loads(files2[f"{room}/done.json"]["text"])
+    assert done["row"]["docx"] == ["대화.docx"]
+    assert files2[f"{top}/index.html"]["text"].count('class="docx"') == 4
     ctx.close()

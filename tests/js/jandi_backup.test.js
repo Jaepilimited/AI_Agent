@@ -486,6 +486,211 @@ test('README: 받은 첨부 종류 한 줄, 고르지 않은 종류, 대화만',
   assert.ok(!none.includes('고르지 않은 첨부 종류'));
 });
 
+// ── 방별 워드(.docx) — 무압축 ZIP + 최소 OOXML ──────────────────────────────
+
+// 만든 ZIP 을 다시 읽는다: EOCD → 중앙 디렉터리 → 로컬 헤더 → 데이터 (CRC 를 새로 계산해 대조)
+function readZip(bytes) {
+  const buf = Buffer.from(bytes);
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  assert.ok(eocd >= 0 && eocd === buf.length - 22, 'EOCD 는 맨 끝 22바이트');
+  const count = buf.readUInt16LE(eocd + 10);
+  assert.equal(buf.readUInt16LE(eocd + 8), count);
+  const cenSize = buf.readUInt32LE(eocd + 12);
+  let at = buf.readUInt32LE(eocd + 16);
+  assert.equal(at + cenSize, eocd, '중앙 디렉터리는 EOCD 바로 앞');
+  const out = {};
+  for (let i = 0; i < count; i++) {
+    assert.equal(buf.readUInt32LE(at), 0x02014b50);
+    const flags = buf.readUInt16LE(at + 8), method = buf.readUInt16LE(at + 10), crc = buf.readUInt32LE(at + 16);
+    const size = buf.readUInt32LE(at + 20), usize = buf.readUInt32LE(at + 24), nlen = buf.readUInt16LE(at + 28);
+    const xlen = buf.readUInt16LE(at + 30), clen = buf.readUInt16LE(at + 32), off = buf.readUInt32LE(at + 42);
+    const name = buf.slice(at + 46, at + 46 + nlen).toString('utf8');
+    assert.equal(flags & 0x0800, 0x0800, 'UTF-8 이름 표시');
+    assert.equal(method, 0, '무압축');
+    assert.equal(size, usize);
+    assert.equal(buf.readUInt32LE(off), 0x04034b50, name + ' 로컬 헤더');
+    assert.equal(buf.readUInt32LE(off + 14), crc);
+    assert.equal(buf.slice(off + 30, off + 30 + buf.readUInt16LE(off + 26)).toString('utf8'), name);
+    const start = off + 30 + buf.readUInt16LE(off + 26) + buf.readUInt16LE(off + 28);
+    const data = buf.slice(start, start + size);
+    assert.equal(L.crc32(data), crc, name + ' CRC');
+    out[name] = data.toString('utf8');
+    at += 46 + nlen + xlen + clen;
+  }
+  return out;
+}
+
+// 간단한 XML 검사: 선언 하나, 태그가 짝을 이루고 하나의 뿌리로 닫힌다, 금지 문자·날 & 가 없다
+function assertWellFormed(xml, label) {
+  assert.ok(/^<\?xml version="1\.0" encoding="UTF-8" standalone="yes"\?>\n</.test(xml), label + ' 선언');
+  assert.ok(!/[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]/.test(xml), label + ' 금지 문자');
+  assert.ok(!/&(?!amp;|lt;|gt;|quot;|apos;|#\d+;|#x[0-9a-fA-F]+;)/.test(xml), label + ' 날 &');
+  const body = xml.replace(/^<\?xml[^>]*\?>\n/, '');
+  const stack = [];
+  let roots = 0;
+  const re = /<(\/?)([A-Za-z_][\w:.-]*)((?:\s+[\w:.-]+="[^"<]*")*)\s*(\/?)>|<|>/g;
+  let m;
+  while ((m = re.exec(body))) {
+    assert.ok(m[2], label + ' 짝 없는 < 또는 > @' + m.index);
+    if (m[1]) assert.equal(stack.pop(), m[2], label + ' 닫는 태그 ' + m[2]);
+    else if (!m[4]) { if (!stack.length) roots++; stack.push(m[2]); }
+    else if (!stack.length) roots++;
+  }
+  assert.deepEqual(stack, [], label + ' 안 닫힌 태그');
+  assert.equal(roots, 1, label + ' 뿌리 하나');
+}
+
+test('CRC32 는 표준 값 (123456789 → CBF43926)', () => {
+  assert.equal(L.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
+  assert.equal(L.crc32(new Uint8Array(0)), 0);
+});
+
+test('무압축 ZIP: 다시 읽으면 이름·CRC·내용이 그대로 (한글 이름 · 빈 파일)', () => {
+  const zip = L.zipStore([{ name: 'a.txt', data: 'hello' }, { name: '폴더/한글.xml', data: '<x>가</x>' }, { name: 'empty', data: new Uint8Array(0) }], Date.UTC(2026, 9, 7, 3, 4, 6));
+  const files = readZip(zip);
+  assert.deepEqual(Object.keys(files), ['a.txt', '폴더/한글.xml', 'empty']);
+  assert.equal(files['폴더/한글.xml'], '<x>가</x>');
+  assert.equal(files.empty, '');
+});
+
+test('XML 글자: 이스케이프하고 XML 1.0 금지 문자(제어문자·짝 잃은 서러게이트·FFFE)를 지운다, 이모지는 남긴다', () => {
+  assert.equal(L.xmlText('a<b>&"c"'), 'a&lt;b&gt;&amp;&quot;c&quot;');
+  assert.equal(L.xmlText('x\x00\x01\x08\x0B\x0C\x1Fy\t\n\rz'), 'xy\t\n\rz');
+  assert.equal(L.xmlText('a\uD800b\uDC00c￾d'), 'abcd');
+  assert.equal(L.xmlText('😀 가'), '😀 가');
+  assert.equal(L.xmlText(null), '');
+});
+
+test('워드 파일 이름: 5,000건까지 대화.docx, 넘으면 대화_1.docx … (오래된 순)', () => {
+  assert.deepEqual(L.docxFileNames(0), ['대화.docx']);
+  assert.deepEqual(L.docxFileNames(5000), ['대화.docx']);
+  assert.deepEqual(L.docxFileNames(5001), ['대화_1.docx', '대화_2.docx']);
+  assert.deepEqual(L.docxFileNames(12000), ['대화_1.docx', '대화_2.docx', '대화_3.docx']);
+  assert.deepEqual(L.docxFileNames(7, 3), ['대화_1.docx', '대화_2.docx', '대화_3.docx']);
+  assert.equal(L.DOCX_PER, 5000);
+  assert.equal(L.dayLabel('2024-03-05'), '2024-03-05 (화)');
+  assert.equal(L.dayLabel('2026-07-01'), '2026-07-01 (수)');
+});
+
+test('방 워드: 열리는 ZIP·잘 닫힌 XML, 제목·요약 줄·날짜 구분·보낸 사람·댓글·첨부·시스템', () => {
+  const recs = L.sortRecords(FX.records.concat([
+    { id: 6000099, time: Date.UTC(2026, 6, 2, 1, 0), fromEntity: 1001, message: { id: 5000099, writerId: 1001, contentType: 'text', content: { body: '둘째 날\n줄바꿈 \x07 벨 & <꺾쇠>' } } }
+  ]));
+  const bytes = L.buildRoomDocx({ title: '[테스트] 기획 <팀> 방', team: 'TESTTEAM', cutoff: '2026-07-01', members: FX.members,
+    manifest: FX.manifest, cats: { doc: true, photo: true }, records: recs, part: 1, parts: 1, mtime: Date.UTC(2026, 9, 7) });
+  const files = readZip(bytes);
+  assert.deepEqual(Object.keys(files).sort(), ['[Content_Types].xml', '_rels/.rels', 'docProps/core.xml', 'word/_rels/document.xml.rels', 'word/document.xml', 'word/styles.xml']);
+  for (const [name, xml] of Object.entries(files)) assertWellFormed(xml, name);
+  const doc = files['word/document.xml'];
+  const text = (xml) => xml.replace(/^<\?xml[^>]*\?>\n/, '').replace(/<w:br\/>/g, '\n').replace(/<\/w:p>/g, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  const plain = text(doc);
+  assert.ok(plain.startsWith('[테스트] 기획 <팀> 방\nTESTTEAM · 2026-07-01 ~ 2026-07-02 · 기록 12건 · 기준일 2026-07-01 이후\n'));
+  assert.ok(plain.includes('2026-07-01 (수)\n') && plain.includes('2026-07-02 (목)\n'), '날짜가 바뀔 때마다 구분');
+  assert.ok(doc.includes('<w:pStyle w:val="DateHead"/>'));
+  assert.ok(doc.includes('<w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">Kim Minsu_김민수</w:t></w:r><w:r><w:rPr><w:color w:val="767676"/>'), '이름 굵게, 시간 작은 회색');
+  assert.ok(plain.includes('Kim Minsu_김민수  09:01\n안녕하세요 <script>alert(1)</script> & "따옴표"\n'));
+  assert.ok(plain.includes('둘째 날\n줄바꿈  벨 & <꺾쇠>'), '줄바꿈 보존 · 금지 문자 제거');
+  assert.ok(plain.includes('↳ 댓글: [파일] 옛날 보고서.docx'), '댓글 원본 한 줄 요약');
+  assert.ok(plain.includes('📎 회의 사진.png (attachments/7000001_회의 사진.png)'));
+  // 받은 첨부는 상대 경로 링크 (인코딩, External). 받지 못한 첨부는 링크 없음
+  const rels = files['word/_rels/document.xml.rels'];
+  assert.ok(rels.includes('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' +
+    L.quotePath('attachments/7000002_매출 현황 - 2026..xlsx') + '" TargetMode="External"/>'));
+  const links = [...doc.matchAll(/<w:hyperlink r:id="([^"]+)">.*?<w:t xml:space="preserve">([^<]*)<\/w:t>/g)].map((m) => m[2]);
+  assert.deepEqual(links, ['📎 회의 사진.png', '📎 매출 현황 - 2026..xlsx', '📎 옛날 보고서.docx']);
+  for (const m of doc.matchAll(/<w:hyperlink r:id="([^"]+)"/g)) assert.ok(rels.includes('Id="' + m[1] + '"'), m[1]);
+  assert.ok(!doc.includes('<w:drawing>'), '줄인 사진을 안 넘기면 그림 없이 이름 줄만');
+  assert.ok(plain.includes('📎 지워진 파일.pdf (미저장)'));
+  assert.ok(plain.includes('(이모티콘)') && !plain.includes('sticker_155_2'), '이모티콘을 안 받았으면 글자만');
+  assert.ok(/<w:pStyle w:val="Small"\/><\/w:pPr><w:r><w:t xml:space="preserve">09:00  \[시스템\] /.test(doc), '시스템 기록은 작은 회색 글씨');
+  assert.ok(files['docProps/core.xml'].includes('<dc:title>[테스트] 기획 &lt;팀&gt; 방</dc:title>'));
+  assert.ok(files['word/_rels/document.xml.rels'].includes('Target="styles.xml"'));
+  // 받지 않은 종류
+  const off = readZip(L.buildRoomDocx({ title: 'x', members: FX.members, manifest: [], cats: { photo: true }, records: L.sortRecords(FX.records), part: 2, split: true }));
+  assert.ok(text(off['word/document.xml']).includes('📎 매출 현황 - 2026..xlsx (받지 않음: 문서)'));
+  assert.ok(text(off['word/document.xml']).startsWith('x (2부)\n'), '나눈 파일은 제목에 몇 번째인지');
+  assert.ok(!off['word/document.xml'].includes('<w:hyperlink'), '받지 않은 첨부는 링크 없이');
+});
+
+test('워드 사진: 넘겨받은 줄인 바이트를 media 로 넣고 관계·content-type·drawing 을 맞춘다, 넓으면 15cm 로 줄인다', () => {
+  const jpg = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 0xFF, 0xD9]);
+  const recs = L.sortRecords(FX.records);
+  const bytes = L.buildRoomDocx({ title: 'x', members: FX.members, manifest: FX.manifest, cats: L.FILE_PRESETS.work, records: recs,
+    images: { 7000001: { bytes: jpg, width: 1280, height: 960 }, 9999999: { bytes: jpg, width: 10, height: 10 } } });
+  const files = readZip(bytes);
+  assert.deepEqual(Object.keys(files).filter((n) => n.startsWith('word/media/')), ['word/media/image1.jpg'], '쓰인 사진만 넣는다');
+  for (const [name, xml] of Object.entries(files)) if (name.endsWith('.xml') || name.endsWith('.rels')) assertWellFormed(xml, name);
+  assert.ok(files['[Content_Types].xml'].includes('<Default Extension="jpg" ContentType="image/jpeg"/>'));
+  assert.ok(files['[Content_Types].xml'].includes('<Default Extension="png" ContentType="image/png"/>'));
+  assert.ok(files['word/_rels/document.xml.rels'].includes('<Relationship Id="rIdImg1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.jpg"/>'));
+  const doc = files['word/document.xml'];
+  for (const ns of ['xmlns:r=', 'xmlns:wp=', 'xmlns:a=', 'xmlns:pic=']) assert.ok(doc.includes(ns), ns);
+  assert.equal((doc.match(/<w:drawing>/g) || []).length, 1);
+  assert.ok(doc.includes('<a:blip r:embed="rIdImg1"/>'));
+  // 1280×960px → 12,192,000 EMU 는 본문 폭(5,400,000)을 넘는다 → 비율대로
+  assert.ok(doc.includes('<wp:extent cx="5400000" cy="4050000"/>'));
+  assert.ok(doc.indexOf('<w:drawing>') < doc.indexOf('📎 회의 사진.png'), '사진은 그 메시지 자리, 이름 줄 앞');
+  assert.deepEqual(L.imageExtent(100, 50), { cx: 952500, cy: 476250 });
+  assert.ok(Buffer.from(bytes).indexOf(Buffer.from(jpg)) > 0, '사진 바이트는 그대로');
+});
+
+test('워드 사진 고르기: 받은 사진만 (HEIC·받지 못함·문서·이상한 경로 제외)', () => {
+  const files = L.manifestMap([
+    { id: 1, name: 'a.png', path: 'attachments/1_a.png', status: 'downloaded' },
+    { id: 2, name: 'b.HEIC', path: 'attachments/2_b.HEIC', status: 'downloaded' },
+    { id: 3, name: 'c.jpg', path: 'attachments/3_c.jpg', status: 'failed' },
+    { id: 4, name: 'd.pdf', path: 'attachments/4_d.pdf', status: 'downloaded' },
+    { id: 5, name: '스캔', type: 'image/jpeg', path: 'attachments/5_스캔', status: 'downloaded' },
+    { id: 6, name: 'e.png', path: '../e.png', status: 'downloaded' }
+  ]);
+  const rec = { id: 10, message: { id: 20, attachments: [1, 2, 3, 4, 5, 6, 1].map((id) => ({ id, content: {} })) } };
+  assert.deepEqual(L.recordPhotos(rec, files), [{ id: '1', path: 'attachments/1_a.png' }, { id: '5', path: 'attachments/5_스캔' }]);
+  assert.deepEqual(L.recordPhotos({ id: 1 }, files), [], '시스템 기록');
+  // fixture: 사진 1장
+  assert.deepEqual(L.sortRecords(FX.records).flatMap((r) => L.recordPhotos(r, L.manifestMap(FX.manifest))).map((p) => p.id), ['7000001']);
+});
+
+test('워드 나누기: 5,000건 또는 사진 합 50MB 중 먼저 — 빈 몫에는 하나는 넣고, 처음이자 마지막 몫이면 대화.docx', () => {
+  const MB = 1024 * 1024;
+  assert.equal(L.DOCX_MAX_BYTES, 50 * MB);
+  assert.equal(L.docxWouldOverflow(0, 0, 999 * MB), false, '빈 몫');
+  assert.equal(L.docxWouldOverflow(4999, 0, 0), false);
+  assert.equal(L.docxWouldOverflow(5000, 0, 0), true);
+  assert.equal(L.docxWouldOverflow(10, 49 * MB, MB), false);
+  assert.equal(L.docxWouldOverflow(10, 49 * MB, MB + 1), true);
+  assert.equal(L.docxWouldOverflow(2, 0, 0, 2), true);
+  assert.equal(L.docxPartName(1, false), '대화.docx');
+  assert.equal(L.docxPartName(1, true), '대화_1.docx');
+  assert.equal(L.docxPartName(3, false), '대화_3.docx');
+  // 흉내: 기록마다 사진 크기(MB), 3건씩
+  const sizes = [30, 15, 10, 1, 60, 0, 0];
+  const parts = [];
+  let cur = [], bytes = 0;
+  sizes.forEach((mb, i) => {
+    if (L.docxWouldOverflow(cur.length, bytes, mb * MB, 3)) { parts.push(cur); cur = []; bytes = 0; }
+    cur.push(i); bytes += mb * MB;
+  });
+  parts.push(cur);
+  assert.deepEqual(parts, [[0, 1], [2, 3], [4], [5, 6]]);
+});
+
+test('README·전체 목록: 방별 워드 안내 한 줄, 방 이름 옆 워드 링크(나눈 방은 번호)', () => {
+  const readme = L.buildReadme({ teamName: 't', attachments: true, docx: true });
+  assert.ok(readme.includes('방별 워드: rooms/<방>/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다'));
+  assert.ok(!L.buildReadme({ teamName: 't', attachments: true }).includes('방별 워드'));
+  const rows = [
+    { id: '1', kind: 'topic', name: 'a', folder: '토픽_1_a', records: 1, files: 0, saved: 0, bytes: 0, stop: 'cutoff', docx: ['대화.docx'] },
+    { id: '2', kind: 'topic', name: 'b', folder: '토픽_2_b', records: 1, files: 0, saved: 0, bytes: 0, stop: 'cutoff', docx: ['대화_1.docx', '대화_2.docx'] },
+    { id: '3', kind: 'topic', name: 'c', folder: '토픽_3_c', records: 1, files: 0, saved: 0, bytes: 0, stop: 'cutoff' }
+  ];
+  const index = L.buildTopIndex(rows, { teamName: 't', docx: true });
+  assert.ok(index.includes('방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다'));
+  assert.ok(index.includes('<a class="docx" href="rooms/' + L.quotePath('토픽_1_a') + '/' + L.quotePath('대화.docx') + '">워드</a>'));
+  assert.ok(index.includes('">워드 1</a>') && index.includes('">워드 2</a>'));
+  assert.equal((index.match(/class="docx"/g) || []).length, 3);
+});
+
 // ── 방 고르기 (필요 없는 방 빼기) ───────────────────────────────────────────
 
 test('미리 확인 합계: 방 고르기에서 뺀 방은 종류별·전체 합계에서 빠진다', () => {

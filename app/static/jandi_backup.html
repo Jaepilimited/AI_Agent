@@ -75,6 +75,7 @@
     .jb-done { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 0 28px; align-items: center;
                padding: 22px 0; border-bottom: 1px solid var(--border-strong); font-size: 1.05rem; }
     .jb-done svg { width: 40px; height: 40px; }
+    .jb-done .jb-word { font-size: 0.95rem; color: var(--text-secondary); }
     .jb-rules { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .jb-rule { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 10px;
                background: color-mix(in srgb, var(--jb-orange) 9%, var(--bg-surface));
@@ -217,7 +218,11 @@
 
     <div class="jb-done">
       <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#17a673"/><path d="M12 20.5 l5.5 5.5 L28.5 14.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <p>다 끝나면 고른 폴더 안의 <b>index.html</b> 을 더블클릭하세요. 인터넷 없이도 방별 대화를 검색하며 볼 수 있습니다.</p>
+      <div>
+        <p>다 끝나면 고른 폴더 안의 <b>index.html</b> 을 더블클릭하세요. 인터넷 없이도 방별 대화를 검색하며 볼 수 있습니다.</p>
+        <p class="jb-word">팀즈에서 보려면 백업 폴더를 팀즈나 OneDrive 에 올리고 방 폴더의 <b>대화.docx</b> 를 여세요. index.html 은 PC 에서만 열립니다.
+          워드에는 사진이 들어가고, 첨부는 PC 워드에서 클릭하면 열립니다(팀즈 웹에서는 방 폴더의 attachments 를 여세요).</p>
+      </div>
     </div>
 
     <div class="jb-rules">

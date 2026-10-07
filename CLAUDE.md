@@ -1958,8 +1958,15 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   꺼진 종류는 `pickFileJobs` 가 빼고, 뷰어·CSV 에 이름만 `(받지 않음: 동영상)`, 이모티콘은 `(이모티콘)` 글자(전에 받아 둔 파일은 잇는다).
   미리 확인은 방별로 **종류별 몫**(`tally.cats`)을 세 두고 `summarizeScan(..., { cats })`·`viewTally` 가 켜진 종류만 더한다 — 바꿔도 다시 확인 불필요.
   README `받은 첨부 종류: 문서, 사진` · `backup_state.json`·raw.json 에 `fileCats`. 이어 받을 때 꺼진 종류의 실패 파일은 다시 받지 않는다
+- **방별 워드**(2026-10-07, 팀즈·OneDrive 웹에서는 index.html 이 안 열린다): 옵션 `워드 문서 만들기`(기본 켜짐, 팀별 localStorage
+  `jandiBackupDocx:<teamId>`). 외부 라이브러리 없이 `buildRoomDocx` 가 최소 OOXML 을 **무압축 ZIP**(`zipStore` · `crc32` · UTF-8 이름)으로
+  묶는다. ⚠️ XML 1.0 금지 문자(제어문자·짝 잃은 서러게이트)는 `xmlText` 가 지운다 — 남기면 워드가 '손상된 파일' 이라 한다.
+  받은 사진(HEIC 제외)은 브라우저가 줄여(`createImageBitmap` → 긴 변 1280px · JPEG 0.8 · 흰 배경) `word/media` 에 넣고, 못 줄이면 이름 줄만.
+  받은 첨부는 `attachments/…` 상대 경로 하이퍼링크(External). 기록 5,000건 또는 사진 합 50MB 마다 `대화_N.docx` 로 나눈다(하나면 `대화.docx`).
+  끝난 방에 워드가 없으면 이어 받을 때 raw.json 으로 만든다(대화 다시 안 읽음). ⚠️ XML 이름공간 URL 은 요청이 아니다 —
+  셀라 미호출 시험은 이 세 호스트(openxmlformats·purl·w3)만 따로 허용한다
 - 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
-  47문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
+  56문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
 
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)

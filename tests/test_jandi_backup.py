@@ -64,7 +64,12 @@ def test_bookmarklet_never_calls_cella_at_runtime():
                    'createElement("script")', "location.origin", "postMessage("):
         assert banned not in code, f"북마크 본체에 {banned!r} 가 있다"
     hosts = set(re.findall(r"https?://([A-Za-z0-9.\-]+)", code))
-    assert hosts and all(h.endswith(("jandi.com", "jandi-box.com")) or h.startswith("팀이름") for h in hosts), hosts
+    # 워드(.docx) XML 이름공간은 주소 모양의 이름일 뿐 요청하지 않는다 (아래 fetch·http.get 검사가 요청 길을 막는다)
+    xml_namespaces = {"schemas.openxmlformats.org", "purl.org", "www.w3.org"}
+    assert hosts and all(h.endswith(("jandi.com", "jandi-box.com")) or h.startswith("팀이름") or h in xml_namespaces
+                         for h in hosts), hosts
+    for ns in re.findall(r"https?://(?:schemas\.openxmlformats\.org|purl\.org|www\.w3\.org)[^'\"\s]*", code):
+        assert ns.startswith(("http://schemas.openxmlformats.org/", "http://purl.org/dc/", "http://www.w3.org/2001/XMLSchema-instance")), ns
     # fetch 는 잔디가 준 다운로드 주소(url 변수) 하나에만 쓴다
     assert set(re.findall(r"\bfetch\(([^,)]+)", code)) == {"url"}
     # $http 는 잔디 메시지 API 로만
@@ -98,7 +103,10 @@ def test_page_builds_bookmarklet_from_same_origin_static_file():
                    "<summary>백업 전에</summary>", "업무 기록이 아닌 방은 용량만 차지합니다",
                    "사적인 대화방은 받지 않는 것을 권합니다", "이모티콘은 기본으로 받지 않습니다",
                    # 첨부 종류 프리셋 — 기본은 업무용
-                   "<b>대화만 / 업무용 / 전부</b> 중에 고르세요", "기본은 업무용(대화·문서·사진)이고 동영상·이모티콘은 빠집니다"):
+                   "<b>대화만 / 업무용 / 전부</b> 중에 고르세요", "기본은 업무용(대화·문서·사진)이고 동영상·이모티콘은 빠집니다",
+                   # 방별 워드 — 팀즈·OneDrive 에서 보기
+                   "방 폴더의 <b>대화.docx</b> 를 여세요. index.html 은 PC 에서만 열립니다",
+                   "워드에는 사진이 들어가고, 첨부는 PC 워드에서 클릭하면 열립니다(팀즈 웹에서는 방 폴더의 attachments 를 여세요)"):
         assert phrase in page, phrase
 
 
