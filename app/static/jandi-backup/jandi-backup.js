@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-07.7';
+  var VERSION = '2026-10-08.1';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -415,7 +415,8 @@
   var WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
   var CRC_TABLE = null;
 
-  function crc32(bytes) {
+  // crc 를 이어서 셀 수 있다 — crc32(뒤 조각, crc32(앞 조각)) = crc32(전체)
+  function crc32(bytes, prev) {
     if (!CRC_TABLE) {
       CRC_TABLE = new Uint32Array(256);
       for (var n = 0; n < 256; n++) {
@@ -424,7 +425,7 @@
         CRC_TABLE[n] = c >>> 0;
       }
     }
-    var crc = 0xFFFFFFFF;
+    var crc = ((prev || 0) ^ 0xFFFFFFFF) >>> 0;
     for (var i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
     return (crc ^ 0xFFFFFFFF) >>> 0;
   }
@@ -442,35 +443,108 @@
     return out;
   }
 
-  // 무압축 ZIP — 로컬 헤더 · 중앙 디렉터리 · EOCD. 이름은 UTF-8 (일반 비트 11). 시각은 mtimeMs 의 KST
+  // ── 무압축(STORE) ZIP 조각 — 워드(메모리)와 팀즈용 zip(스트리밍)이 같이 쓴다. ZIP64 는 쓰지 않는다 ──
+  // flags: 0x0800 = 이름이 UTF-8, 0x0008 = 크기·CRC 를 데이터 뒤 디스크립터에 (읽으면서 쓰므로 미리 모른다)
+
+  function dosStamp(ms) {
+    var d = new Date((typeof ms === 'number' ? ms : Date.now()) + KST_MS);
+    return [(d.getUTCHours() << 11) | (d.getUTCMinutes() << 5) | (d.getUTCSeconds() >> 1),
+      ((Math.max(1980, d.getUTCFullYear()) - 1980) << 9) | ((d.getUTCMonth() + 1) << 5) | d.getUTCDate()];
+  }
+
+  // 정수 칸들을 리틀엔디언으로 — [값, 바이트 수] 목록 + 뒤에 붙일 바이트
+  function le(fields, tail) {
+    var n = 0;
+    fields.forEach(function (f) { n += f[1]; });
+    var v = new DataView(new ArrayBuffer(n)), at = 0;
+    fields.forEach(function (f) {
+      if (f[1] === 4) v.setUint32(at, f[0] >>> 0, true); else v.setUint16(at, f[0], true);
+      at += f[1];
+    });
+    return tail ? concatBytes([new Uint8Array(v.buffer), tail]) : new Uint8Array(v.buffer);
+  }
+
+  function zipHeader(name, flags, stamp, crc, size) {
+    return le([[0x04034b50, 4], [20, 2], [flags, 2], [0, 2], [stamp[0], 2], [stamp[1], 2], [crc, 4], [size, 4], [size, 4], [name.length, 2], [0, 2]], name);
+  }
+
+  function zipDescriptor(crc, size) {
+    return le([[0x08074b50, 4], [crc, 4], [size, 4], [size, 4]]);
+  }
+
+  function zipCentral(name, flags, stamp, crc, size, offset) {
+    return le([[0x02014b50, 4], [20, 2], [20, 2], [flags, 2], [0, 2], [stamp[0], 2], [stamp[1], 2], [crc, 4], [size, 4], [size, 4],
+      [name.length, 2], [0, 2], [0, 2], [0, 2], [0, 2], [0, 4], [offset, 4]], name);
+  }
+
+  function zipEnd(count, cenSize, cenOffset) {
+    return le([[0x06054b50, 4], [0, 2], [0, 2], [count, 2], [count, 2], [cenSize, 4], [cenOffset, 4], [0, 2]]);
+  }
+
+  // 메모리 ZIP (워드) — 이름 UTF-8, 크기·CRC 를 헤더에
   function zipStore(entries, mtimeMs) {
-    var d = new Date((typeof mtimeMs === 'number' ? mtimeMs : Date.now()) + KST_MS);
-    var dosTime = (d.getUTCHours() << 11) | (d.getUTCMinutes() << 5) | (d.getUTCSeconds() >> 1);
-    var dosDate = ((Math.max(1980, d.getUTCFullYear()) - 1980) << 9) | ((d.getUTCMonth() + 1) << 5) | d.getUTCDate();
-    var parts = [], central = [], offset = 0;
+    var stamp = dosStamp(mtimeMs), parts = [], central = [], offset = 0;
     entries.forEach(function (e) {
       var name = utf8(e.name);
       var data = typeof e.data === 'string' ? utf8(e.data) : e.data;
       var crc = crc32(data);
-      var lh = new DataView(new ArrayBuffer(30));
-      lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
-      lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true); lh.setUint32(14, crc, true);
-      lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
-      var ch = new DataView(new ArrayBuffer(46));
-      ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
-      ch.setUint16(10, 0, true); ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true); ch.setUint32(16, crc, true);
-      ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true);
-      ch.setUint32(42, offset, true);   // 나머지(추가 칸·설명·디스크·속성)는 0
-      parts.push(new Uint8Array(lh.buffer), name, data);
-      central.push(new Uint8Array(ch.buffer), name);
-      offset += 30 + name.length + data.length;
+      var head = zipHeader(name, 0x0800, stamp, crc, data.length);
+      central.push(zipCentral(name, 0x0800, stamp, crc, data.length, offset));
+      parts.push(head, data);
+      offset += head.length + data.length;
     });
-    var cenSize = 0;
-    central.forEach(function (a) { cenSize += a.length; });
-    var end = new DataView(new ArrayBuffer(22));
-    end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
-    end.setUint32(12, cenSize, true); end.setUint32(16, offset, true);
-    return concatBytes(parts.concat(central, [new Uint8Array(end.buffer)]));
+    var cen = concatBytes(central);
+    return concatBytes(parts.concat([cen, zipEnd(entries.length, cen.length, offset)]));
+  }
+
+  // 스트리밍 ZIP — sink(바이트) 로 바로 쓴다. add(이름, next) 의 next() 는 다음 조각(없으면 null) — 파일 통째로 메모리에 올리지 않는다
+  function zipWriter(sink, mtimeMs) {
+    var stamp = dosStamp(mtimeMs), central = [], offset = 0;
+    async function put(b) { await sink(b); offset += b.length; }
+    return {
+      add: async function (name, next) {
+        var nb = utf8(name), start = offset, crc = 0, size = 0, chunk;
+        await put(zipHeader(nb, 0x0808, stamp, 0, 0));
+        while ((chunk = await next())) { crc = crc32(chunk, crc); size += chunk.length; await put(chunk); }
+        await put(zipDescriptor(crc, size));
+        central.push(zipCentral(nb, 0x0808, stamp, crc, size, start));
+        return size;
+      },
+      finish: async function () {
+        var at = offset, cen = concatBytes(central);
+        await put(cen);
+        await put(zipEnd(central.length, cen.length, at));
+        return offset;
+      }
+    };
+  }
+
+  // 팀즈용 zip 나누기 — zip 하나에 ZIP_MAX_BYTES·ZIP_MAX_ENTRIES 까지 (ZIP64 없이 4GB 안쪽).
+  // 한 방(group)은 되도록 한 zip 에 — 지금 zip 에 안 들어가도 새 zip 에는 들어가면 새로 연다. 그보다 크면 어쩔 수 없이 나눈다.
+  // 파일 하나가 한도를 넘으면 zip 에 넣지 않고 big 으로. files = [{ path, size, group }]
+  var ZIP_MAX_BYTES = 3.5 * 1024 * 1024 * 1024;
+  var ZIP_MAX_ENTRIES = 60000;
+
+  function zipPlan(files, maxBytes, maxEntries) {
+    var mb = maxBytes || ZIP_MAX_BYTES, me = maxEntries || ZIP_MAX_ENTRIES;
+    var groups = [], byKey = {}, big = [], zips = [], cur = null;
+    (files || []).forEach(function (f) {
+      if (f.size > mb) { big.push(f); return; }
+      var g = byKey[f.group];
+      if (!g) { g = byKey[f.group] = { files: [], size: 0 }; groups.push(g); }
+      g.files.push(f);
+      g.size += f.size;
+    });
+    groups.forEach(function (g) {
+      var fitsFresh = g.size <= mb && g.files.length <= me;
+      if (cur && fitsFresh && (cur.size + g.size > mb || cur.files.length + g.files.length > me)) cur = null;
+      g.files.forEach(function (f) {
+        if (!cur || cur.size + f.size > mb || cur.files.length + 1 > me) { cur = { files: [], size: 0 }; zips.push(cur); }
+        cur.files.push(f);
+        cur.size += f.size;
+      });
+    });
+    return { zips: zips, big: big };
   }
 
   // XML 1.0 에서 금지된 글자(제어문자·짝 잃은 서러게이트·FFFE/FFFF)를 지우고 이스케이프한다 — 남기면 워드가 '손상된 파일' 이라 한다
@@ -701,10 +775,7 @@
 
   var UPLOAD_LIMIT = 900;
   var TEAMS_DIR = '팀즈에 올릴 파일';
-  var UPLOAD_PLAN_FILE = '올리기 순서.txt';
-  var UPLOAD_WARNING = "팀즈에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.";
-  var TOP_FILES_LABEL = '백업 폴더 맨 위 파일 (index.html · README.txt 등)';
-
+  var TEAMS_LINE = "팀즈에는 '" + TEAMS_DIR + "' 폴더를 통째로 올리세요. 워드는 팀즈에서 바로 읽히고, zip 은 전체 보관본입니다(받아서 풀면 index.html 로 검색). 백업 폴더 전체를 올리지는 마세요.";
   function isAttachmentDir(name) { return /^attachments(_\d+)?$/.test(String(name || '')); }
 
   // 한 방의 첨부 저장 폴더 — limit 개 이하면 attachments, 넘으면 받는 순서대로 attachments_1, _2 … 에 limit 개씩
@@ -736,46 +807,6 @@
     var folders = [];
     for (var i = 0; i < files.length; i += lim) folders.push(files.slice(i, i + lim));
     return folders.map(function (list, k) { return { dir: folders.length > 1 ? TEAMS_DIR + '_' + (k + 1) : TEAMS_DIR, files: list }; });
-  }
-
-  // 올리기 묶음 — 방 폴더 단위로 limit 개 이하씩 담는다. 한 방이 limit 개를 넘으면 첨부 폴더(attachments·attachments_N)
-  // 단위로 쪼개 담는다. 그래도 넘는 폴더(예전 버전의 큰 attachments)는 혼자 한 묶음 + over 표시.
-  // rooms = [{ path: 'rooms/방폴더', files: 전체 파일 수, parts: [{ path: 'rooms/방폴더/attachments_1', files }] }]
-  function uploadBatches(rooms, topFiles, limit) {
-    var lim = limit || UPLOAD_LIMIT;
-    var units = [];
-    if (topFiles) units.push({ label: TOP_FILES_LABEL, files: topFiles });
-    (rooms || []).forEach(function (r) {
-      var parts = (r.parts || []).filter(function (x) { return x.files > 0; });
-      if (r.files <= lim || !parts.length) { units.push({ label: r.path, files: r.files }); return; }
-      var inParts = parts.reduce(function (a, x) { return a + x.files; }, 0);
-      if (r.files - inParts > 0) {
-        units.push({ label: r.path + ' (' + parts.map(function (x) { return x.path.split('/').pop(); }).join(', ') + ' 폴더 빼고)', files: r.files - inParts });
-      }
-      parts.forEach(function (x) { units.push({ label: x.path, files: x.files }); });
-    });
-    var batches = [], cur = null;
-    units.forEach(function (u) {
-      if (!u.files) return;
-      if (!cur || (cur.items.length && cur.files + u.files > lim)) { cur = { files: 0, items: [] }; batches.push(cur); }
-      cur.items.push(u.label);
-      cur.files += u.files;
-    });
-    batches.forEach(function (b) { b.over = b.files > lim; });
-    return batches;
-  }
-
-  function uploadBatchLine(b, i) {
-    return (i + 1) + '번 묶음 (' + fmtInt(b.files) + '개' + (b.over ? ' — 1,000개를 넘습니다. 이 폴더 안의 파일을 나눠서 올리세요' : '') + '): ' + b.items.join(', ');
-  }
-
-  function uploadPlanText(batches, teamsDirs) {
-    var lines = [UPLOAD_WARNING, ''];
-    if (teamsDirs && teamsDirs.length) lines.push('워드만: ' + teamsDirs.join(', ') + ' (폴더 하나씩)', '');
-    lines.push('[전체를 올릴 때 — 백업 폴더 안에서 한 묶음씩]');
-    (batches || []).forEach(function (b, i) { lines.push(uploadBatchLine(b, i)); });
-    lines.push('', "'팀즈에 올릴 파일' 폴더는 워드만 따로 올릴 때 쓰는 것이라 위 묶음에 넣지 않았습니다.", '');
-    return '\ufeff' + lines.join('\r\n');
   }
 
   // ── 전체 목록 (finalize_all.py 의 index.html · summary.json) ────────────────
@@ -829,11 +860,7 @@
       ? '<p>처음 기록까지 가지 못한 방 ' + unfinished.length + '개 — 잔디가 열람을 제한했거나(access_limit) 수집이 멈췄습니다. summary.json 의 stop 을 보세요.</p>'
       : '';
     if (meta.docx) note += '<p>방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다 (index.html 은 PC 에서만 열립니다)</p>';
-    if (meta.uploadBatches && meta.uploadBatches.length) {
-      note += '<h2 id="upload">올리기 순서</h2><p><b>' + escapeHtml(UPLOAD_WARNING) + '</b></p>' +
-        (meta.teamsDirs && meta.teamsDirs.length ? '<p>워드만: ' + meta.teamsDirs.map(escapeHtml).join(', ') + ' (폴더 하나씩)</p>' : '') +
-        '<ol class="upload">' + meta.uploadBatches.map(function (b, i) { return '<li>' + escapeHtml(uploadBatchLine(b, i)) + '</li>'; }).join('') + '</ol>';
-    }
+    if (meta.teams) note += '<p><b>' + TEAMS_LINE + '</b></p>';
     var ex = excludedList(meta.excluded);
     if (ex.count) {
       note += '<p>제외한 방 ' + ex.count + '개 (백업 창의 방 고르기에서 뺀 방 — 받지 않았습니다): ' +
@@ -874,8 +901,8 @@
       '- summary.json: 방별 기록 수·첨부 수·용량·기간·수집 종료 사유(stop — cutoff 는 기준일까지 다 받은 방)',
       meta.docx ? '- 방별 워드: rooms/<방>/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다' : null,
       meta.docx ? '  (기록이 5,000건을 넘는 방은 대화_1.docx, 대화_2.docx … 로 나눴습니다. index.html 은 PC 에서만 열립니다)' : null,
-      meta.uploadBatches ? '- 팀즈에 올릴 때: 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. ' + UPLOAD_PLAN_FILE + ' 의 묶음대로 하나씩,' : null,
-      meta.uploadBatches ? "  워드만이면 '" + TEAMS_DIR + "' 폴더를 올리세요. 첨부가 많은 방은 attachments_1, attachments_2 … 로 나눠 저장했습니다." : null,
+      meta.teams ? '- ' + TEAMS_LINE : null,
+      meta.zipBig && meta.zipBig.length ? '- zip 에 넣지 못한 큰 파일 (원본은 rooms 에 있음): ' + meta.zipBig.join(', ') : null,
       '',
       '[들어 있는 것]',
       '- 백업한 계정이 볼 수 있는 대화만: 참여 중인 토픽(공개·비공개), 1:1 대화, 그룹 대화 중 고른 것',
@@ -1355,8 +1382,9 @@
     DOCX_PER: DOCX_PER, DOCX_MAX_BYTES: DOCX_MAX_BYTES, crc32: crc32, zipStore: zipStore, xmlText: xmlText, dayLabel: dayLabel,
     docxFileNames: docxFileNames, docxWouldOverflow: docxWouldOverflow, docxPartName: docxPartName, recordPhotos: recordPhotos,
     imageExtent: imageExtent, manifestMap: manifestMap, buildRoomDocx: buildRoomDocx,
-    UPLOAD_LIMIT: UPLOAD_LIMIT, TEAMS_DIR: TEAMS_DIR, UPLOAD_PLAN_FILE: UPLOAD_PLAN_FILE, isAttachmentDir: isAttachmentDir,
-    attachmentDirs: attachmentDirs, teamsUploadFolders: teamsUploadFolders, uploadBatches: uploadBatches, uploadPlanText: uploadPlanText
+    UPLOAD_LIMIT: UPLOAD_LIMIT, TEAMS_DIR: TEAMS_DIR, isAttachmentDir: isAttachmentDir, attachmentDirs: attachmentDirs,
+    teamsUploadFolders: teamsUploadFolders, zipHeader: zipHeader, zipDescriptor: zipDescriptor, zipCentral: zipCentral, zipEnd: zipEnd,
+    dosStamp: dosStamp, zipWriter: zipWriter, zipPlan: zipPlan, ZIP_MAX_BYTES: ZIP_MAX_BYTES, ZIP_MAX_ENTRIES: ZIP_MAX_ENTRIES
   };
 
   if (typeof module !== 'undefined' && module && module.exports) {
@@ -1427,7 +1455,7 @@
       // excluded = 방 고르기에서 뺀 방 { id: true } — 기본은 모두 받는다. 잔디 탭 localStorage 에 팀별로 기억한다
       // files = 받을 첨부 종류 { doc, photo, video, other, sticker } — 기본은 업무용(문서·사진). 하나도 없으면 대화만
       // docx = 방별 워드(팀즈 보기용) 만들기 — 기본 켜짐
-      opts: { kinds: { topic: true, chat: true, groupChat: true }, excluded: {}, files: Object.assign({}, L.FILE_PRESETS.work), docx: true },
+      opts: { kinds: { topic: true, chat: true, groupChat: true }, excluded: {}, files: Object.assign({}, L.FILE_PRESETS.work), docx: true, zip: true },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
       progress: newProgress(0),
       current: {}, roomFailures: [], fileFailures: [], abort: null,
@@ -1535,6 +1563,7 @@
         pickHtml() +
         filesHtml() +
         '<label><input type="checkbox" data-opt="docx"' + (S.opts.docx ? ' checked' : '') + '> 워드 문서 만들기 (팀즈에서 보기용)</label>' +
+        '<label><input type="checkbox" data-opt="zip"' + (S.opts.zip ? ' checked' : '') + '> 팀즈용 zip 만들기 (전체 보관용 · 백업 용량만큼 디스크를 더 씁니다)</label>' +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
         'C 드라이브에 새 폴더(예: C:\\잔디백업)를 만들어 고르세요 — 바탕화면은 자동 동기화돼 보안 검사 창이 뜰 수 있습니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
         estimateHtml() +
@@ -1554,9 +1583,13 @@
         });
       });
       bindFiles();
-      el('input[data-opt=docx]').addEventListener('change', function () {
-        S.opts.docx = this.checked;
-        try { win.localStorage.setItem(docxKey(), S.opts.docx ? '1' : '0'); } catch (e) { /* 기억 못 해도 동작 */ }
+      // 워드·zip 켜기 — 팀별로 기억 (기본 켜짐)
+      Array.prototype.forEach.call(shadow.querySelectorAll('input[data-opt]'), function (box) {
+        box.addEventListener('change', function () {
+          var k = box.getAttribute('data-opt');
+          S.opts[k] = box.checked;
+          try { win.localStorage.setItem(optKey(k), box.checked ? '1' : '0'); } catch (e) { /* 기억 못 해도 동작 */ }
+        });
       });
       bindPick();
       el('[data-act=scan]').addEventListener('click', onScanClick);
@@ -1738,13 +1771,15 @@
       });
     }
 
-    // 방별 워드 만들기 — 팀별로 기억 (기본 켜짐)
-    function docxKey() { return 'jandiBackupDocx:' + S.teamId; }
+    // 방별 워드 · 팀즈용 zip 만들기 — 팀별로 기억 (기본 켜짐). 키: jandiBackupDocx / jandiBackupZip
+    function optKey(k) { return 'jandiBackup' + k.charAt(0).toUpperCase() + k.slice(1) + ':' + S.teamId; }
 
     function loadDocx() {
-      var v = null;
-      try { v = win.localStorage.getItem(docxKey()); } catch (e) { v = null; }
-      S.opts.docx = v !== '0';
+      ['docx', 'zip'].forEach(function (k) {
+        var v = null;
+        try { v = win.localStorage.getItem(optKey(k)); } catch (e) { v = null; }
+        S.opts[k] = v !== '0';
+      });
     }
 
     // 이번 백업에서 받을 첨부 종류 (복사본 — 실행 중에는 바뀌지 않는다)
@@ -1919,10 +1954,17 @@
         '<span>실패</span><b' + (p.roomsFailed || p.filesFailed ? ' class="warn"' : '') + '>방 ' + p.roomsFailed + ' · 파일 ' + p.filesFailed + '</b>' +
         '<span>경과</span><b>' + L.fmtDuration(elapsed) + (eta ? ' · ' + eta : '') + '</b>' +
         '</div>';
+      if (S.zip) {
+        html += '<p data-zip>팀즈용 zip 만드는 중 ' + S.zip.k + '/' + S.zip.n + ' · ' + L.fmtBytes(S.zip.done) + ' / ' + L.fmtBytes(S.zip.total) + '</p>';
+      }
       if (S.phase === 'running' || S.phase === 'stopping') {
         if (cur) html += '<p class="muted">지금 받는 방</p><ul>' + cur + '</ul>';
       } else {
         html += '<p>고른 폴더 안 <code>' + L.escapeHtml(S.rootName) + '</code> 의 <b>index.html</b> 을 브라우저로 여세요. 무엇이 들어 있는지는 README.txt 에 적었습니다.</p>';
+        if (S.zipBig && S.zipBig.length) {
+          html += '<p class="warn">zip 에 넣지 못한 큰 파일 ' + S.zipBig.length + '개 (원본은 rooms 에 있음)</p><ul>' +
+            S.zipBig.map(function (x) { return '<li>' + L.escapeHtml(x) + '</li>'; }).join('') + '</ul>';
+        }
         if (S.roomFailures.length) {
           html += '<p class="warn">받지 못한 방 ' + S.roomFailures.length + '개 (다시 실행하면 그 방만 다시 받습니다)</p><ul>' +
             S.roomFailures.map(function (f) { return '<li>' + L.escapeHtml(f.name + ' — ' + f.error) + '</li>'; }).join('') + '</ul>';
@@ -2615,54 +2657,79 @@
       await Promise.all(workers);
     }
 
-    // 「팀즈에 올릴 파일」 폴더 — 지난 것은 지우고 새로. 방별 워드를 방 이름으로 평평하게 복사 (폴더당 UPLOAD_LIMIT 개)
+    // 「팀즈에 올릴 파일」 폴더 — 지난 것(이전 zip 포함)은 지우고 새로. 방별 워드를 방 이름으로 평평하게 복사 (폴더당 UPLOAD_LIMIT 개).
+    // 워드를 끄고 zip 만 켰으면 폴더 하나에 zip 만. 돌려주는 값 = zip 을 둘 폴더 (여럿이면 _1)
     async function writeTeamsFolders(root, roomsDir, rows) {
       var old = [];
       for await (var e of root.values()) {
         if (e.kind === 'directory' && (e.name === L.TEAMS_DIR || e.name.indexOf(L.TEAMS_DIR + '_') === 0)) old.push(e.name);
       }
       for (var i = 0; i < old.length; i++) { try { await root.removeEntry(old[i], { recursive: true }); } catch (err) { /* 남아도 덮어쓴다 */ } }
-      var plan = L.teamsUploadFolders(rows, L.UPLOAD_LIMIT);
+      var plan = S.opts.docx ? L.teamsUploadFolders(rows, L.UPLOAD_LIMIT) : [];
       for (var k = 0; k < plan.length; k++) {
         var out = await root.getDirectoryHandle(plan[k].dir, { create: true });
         for (var j = 0; j < plan[k].files.length; j++) {
           var f = plan[k].files[j];
-          var parts = f.src.split('/');   // rooms/<방 폴더>/<워드>
+          var parts = f.src.split('/');
           try {
             var src = await (await (await roomsDir.getDirectoryHandle(parts[1])).getFileHandle(parts[2])).getFile();
             await writeText(out, f.name, src);
           } catch (err) { /* 워드가 없어진 방 — 건너뛴다 */ }
         }
       }
-      return plan.map(function (x) { return x.dir; });
+      return root.getDirectoryHandle(plan.length ? plan[0].dir : L.TEAMS_DIR, { create: true });
     }
 
-    async function countFiles(dir) {
-      var n = 0;
-      for await (var e of dir.values()) n += e.kind === 'directory' ? await countFiles(e) : 1;
-      return n;
-    }
-
-    // 올리기 묶음 — 방 폴더마다 파일 수(첨부 폴더는 따로)를 세어 UPLOAD_LIMIT 개 이하로 묶는다. 파일은 복사하지 않는다
-    async function planUploads(root, roomsDir) {
-      var rooms = [];
-      for await (var e of roomsDir.values()) {
-        if (e.kind !== 'directory') continue;
-        var total = 0, parts = [];
-        for await (var c of e.values()) {
-          if (c.kind !== 'directory') { total++; continue; }
-          var n = await countFiles(c);
-          total += n;
-          if (L.isAttachmentDir(c.name)) parts.push({ path: 'rooms/' + e.name + '/' + c.name, files: n });
+    // 백업 폴더 안 파일 전부 (「팀즈에 올릴 파일」 폴더들은 빼고) — 핸들만 들고, 내용은 zip 에 쓸 때 읽는다
+    async function listBackupFiles(dir, prefix, out) {
+      for await (var e of dir.values()) {
+        if (e.kind === 'directory') {
+          if (!prefix && (e.name === L.TEAMS_DIR || e.name.indexOf(L.TEAMS_DIR + '_') === 0)) continue;
+          await listBackupFiles(e, prefix + e.name + '/', out);
+        } else {
+          var path = prefix + e.name;
+          out.push({ path: path, size: (await e.getFile()).size, handle: e, group: /^rooms\//.test(path) ? path.split('/').slice(0, 2).join('/') : '' });
         }
-        parts.sort(function (a, b) { return a.path < b.path ? -1 : 1; });
-        rooms.push({ path: 'rooms/' + e.name, files: total, parts: parts });
       }
-      rooms.sort(function (a, b) { return a.path < b.path ? -1 : 1; });
-      var top = {};
-      ['summary.json', 'index.html', 'README.txt', 'backup_state.json', L.UPLOAD_PLAN_FILE].forEach(function (nm) { top[nm] = true; });
-      for await (var t of root.values()) { if (t.kind !== 'directory') top[t.name] = true; }
-      return L.uploadBatches(rooms, Object.keys(top).length, L.UPLOAD_LIMIT);
+      return out;
+    }
+
+    // 팀즈용 zip — 백업 폴더 전체를 <백업폴더>_N.zip 에 (풀면 <백업폴더>/… 한 폴더). 무압축 · 데이터 디스크립터 · 스트리밍.
+    // 일시정지·중지를 따른다 — 중지하면 이번에 만든 zip 은 모두 지운다 (반쪽짜리 보관본을 남기지 않는다)
+    async function writeZips(teamsDir, files, plan) {
+      var made = [], total = 0, done = 0;
+      plan.zips.forEach(function (z) { total += z.size; });
+      try {
+        for (var k = 0; k < plan.zips.length; k++) {
+          var name = S.rootName + '_' + (k + 1) + '.zip';
+          made.push(name);
+          var w = await (await teamsDir.getFileHandle(name, { create: true })).createWritable();
+          try {
+            var zw = L.zipWriter(function (b) { return w.write(b); });
+            for (var i = 0; i < plan.zips[k].files.length; i++) {
+              var f = plan.zips[k].files[i];
+              var reader = (await f.handle.getFile()).stream().getReader();
+              S.zip = { k: k + 1, n: plan.zips.length, done: done, total: total };
+              done += await zw.add(S.rootName + '/' + f.path, async function () {
+                await gate();
+                var r = await reader.read();
+                if (!r.done) S.zip.done += r.value.length;
+                return r.done ? null : r.value;
+              });
+            }
+            await zw.finish();
+            await w.close();
+          } catch (e) {
+            try { await w.abort(); } catch (e2) { /* 이미 닫힘 */ }
+            throw e;
+          }
+        }
+      } catch (e) {
+        for (var j = 0; j < made.length; j++) { try { await teamsDir.removeEntry(made[j]); } catch (e3) { /* 없음 */ } }
+        if (!(e && e.isStop)) throw e;
+      } finally {
+        S.zip = null;
+      }
     }
 
     async function finalize(root, roomsDir, finished) {
@@ -2677,19 +2744,30 @@
         } catch (e) { /* 깨진 표식 — 다음 실행에서 다시 받는다 */ }
       }
       rows = L.sortRows(rows);
-      var teamsDirs = S.opts.docx ? await writeTeamsFolders(root, roomsDir, rows) : [];
-      var batches = await planUploads(root, roomsDir);
+      // 예전 버전이 만든 올리기 순서 파일은 걷는다
+      try { await root.removeEntry('올리기 순서.txt'); } catch (e) { /* 없음 */ }
+      var zipping = finished && S.opts.zip;
+      var teamsDir = S.opts.docx || zipping ? await writeTeamsFolders(root, roomsDir, rows) : null;
       var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: attOn(), fileCats: L.fileCatList(S.opts.files), docx: S.opts.docx, cutoff: S.cutoff.date,
-        excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }), uploadBatches: batches, teamsDirs: teamsDirs };
+        excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }), teams: !!teamsDir, zipBig: [] };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
       await writeText(root, 'README.txt', L.buildReadme(meta));
-      await writeText(root, L.UPLOAD_PLAN_FILE, L.uploadPlanText(batches, teamsDirs));
       await writeText(root, 'backup_state.json', JSON.stringify({
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
-        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files), docx: S.opts.docx
+        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files),
+        docx: S.opts.docx, zip: zipping
       }, null, 1));
+      if (!zipping) return;
+      var files = await listBackupFiles(root, '', []);
+      var plan = L.zipPlan(files, L.ZIP_MAX_BYTES, L.ZIP_MAX_ENTRIES);
+      S.zipBig = plan.big.map(function (f) { return f.path; });
+      if (S.zipBig.length) {
+        meta.zipBig = S.zipBig;
+        await writeText(root, 'README.txt', L.buildReadme(meta));   // 크기는 zip 에 쓸 때 다시 읽는다
+      }
+      await writeZips(teamsDir, files, plan);
     }
 
     async function run(picked, selected) {
@@ -2699,7 +2777,7 @@
       S.abort = new AbortController();
       S.progress = newProgress(selected.length);
       S.roomFailures = []; S.fileFailures = []; S.current = {};
-      S.roomBytes = {}; S.samples = []; S.rate = null; S.eta = null; S.etaAt = S.startedAt;
+      S.roomBytes = {}; S.samples = []; S.rate = null; S.eta = null; S.etaAt = S.startedAt; S.zip = null; S.zipBig = [];
       // 미리 확인한 방은 처음부터 예상 용량에 넣는다 (범위가 바뀌었어도 확인한 방 몫은 맞다)
       var per = S.scan && S.scan.finishedAt ? S.scan.perRoom : {};
       selected.forEach(function (r) {

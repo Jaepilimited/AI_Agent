@@ -115,7 +115,8 @@ window.__dumpOpfs = async () => {
       else {
         const f = await h.getFile();
         out[p] = {size: f.size, text: f.size < 200000 ? await f.text() : null};
-        if (p.endsWith('.docx')) { const b = new Uint8Array(await f.arrayBuffer()); let s = ''; for (const x of b) s += String.fromCharCode(x); out[p].b64 = btoa(s); }
+        // 워드·zip 은 zipfile 로 다시 열고, zip 안 내용은 원본 바이트와 대조한다 — 모든 파일의 바이트를 돌려준다
+        const b = new Uint8Array(await f.arrayBuffer()); let s = ''; for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); out[p].b64 = btoa(s);
       }
     }
   }
@@ -958,10 +959,10 @@ def _reopen(page):
     return host
 
 
-def test_upload_limit_splits_attachments_teams_folders_and_plan(browser):
+def test_upload_limit_splits_attachments_and_teams_folders(browser):
     """한도를 넘는 방의 첨부는 attachments_1·_2 에 나눠 저장하고 뷰어·워드 링크도 그 경로. 「팀즈에 올릴 파일」 은
-    방 이름으로 평평하게 한도마다 폴더, 올리기 순서.txt·상위 index 에 한도 이하 묶음. 같은 폴더를 원래 한도로 이어 받으면
-    attachments_N 의 파일을 그대로 인정하고, 팀즈 폴더는 새로 만든다."""
+    방 이름으로 평평하게 한도마다 폴더(zip 은 _1 에). 같은 폴더를 원래 한도로 이어 받으면
+    attachments_N 의 파일을 그대로 인정하고, 팀즈 폴더는 새로 만든다. (올리기 순서.txt 는 2026-10-08 걷어냈다 — 없어야 한다)"""
     ctx = browser.new_context()
     page = ctx.new_page()
     host = _start(page, [])
@@ -985,29 +986,14 @@ def test_upload_limit_splits_attachments_teams_folders_and_plan(browser):
     links = {r.get("Target") for r in parts["word/_rels/document.xml.rels"].iter(REL + "Relationship") if r.get("Type").endswith("/hyperlink")}
     assert any(t.startswith("attachments_2/5000010_") for t in links)
 
-    # 팀즈에 올릴 파일: 워드 4개 → 3 + 1, 방 이름으로
+    # 팀즈에 올릴 파일: 워드 4개 → 3 + 1, 방 이름으로. 팀즈용 zip 은 _1 에
     teams = sorted(k[len(top) + 1:] for k in files if k.startswith(f"{top}/팀즈에 올릴 파일"))
-    assert [t.split("/")[0] for t in teams].count("팀즈에 올릴 파일_1") == 3
-    assert [t.split("/")[0] for t in teams].count("팀즈에 올릴 파일_2") == 1
+    docs = [t.split("/")[0] for t in teams if t.endswith(".docx")]
+    assert docs.count("팀즈에 올릴 파일_1") == 3 and docs.count("팀즈에 올릴 파일_2") == 1
+    assert [t for t in teams if t.endswith(".zip")] == [f"팀즈에 올릴 파일_1/{top}_1.zip"]
     assert "팀즈에 올릴 파일_1/[테스트] 기획 _팀_ 방.docx" in teams
     assert files[f"{top}/팀즈에 올릴 파일_1/[테스트] 기획 _팀_ 방.docx"]["b64"] == files[f"{room}/대화.docx"]["b64"], "그대로 복사"
-
-    # 올리기 순서: 묶음마다 한도 이하 (넘는 건 혼자 + 표시)
-    plan = files[f"{top}/올리기 순서.txt"]["text"]
-    # 브라우저 text() 는 BOM 을 걷고 읽는다 — 있든 없든 본문으로 본다
-    assert plan.lstrip("\ufeff").startswith("팀즈에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다.")
-    lines = [l for l in plan.split("\r\n") if "번 묶음 (" in l]
-    assert lines and all(int(l.split("(")[1].split("개")[0].replace(",", "")) <= 3 or "넘습니다" in l for l in lines), lines
-    assert any(l.endswith(f": rooms/{TOPIC_DIR}/attachments_1") for l in lines)
-    assert any(l.endswith(f": rooms/{TOPIC_DIR}/attachments_2") for l in lines)
-    assert any(f"rooms/{TOPIC_DIR} (attachments_1, attachments_2 폴더 빼고)" in l for l in lines)
-    assert not any("팀즈에 올릴 파일" in l for l in lines), "워드만 폴더는 묶음에 넣지 않는다"
-    # 묶음 합 = 백업 폴더 파일 수 (팀즈 폴더 제외)
-    total = sum(int(l.split("(")[1].split("개")[0].replace(",", "")) for l in lines)
-    assert total == sum(1 for k in files if "/팀즈에 올릴 파일" not in k)
-    index = files[f"{top}/index.html"]["text"]
-    assert '<h2 id="upload">올리기 순서</h2>' in index and "attachments_2</li>" in index
-    assert "올리기 순서.txt 의 묶음대로" in files[f"{top}/README.txt"]["text"]
+    assert f"{top}/올리기 순서.txt" not in files and "올리기 순서" not in files[f"{top}/index.html"]["text"]
 
     # 원래 한도(900)로 이어 받기 — 표식·목록을 지운 방도 attachments_N 의 파일을 인정하고, 못 받은 것만 다시
     page.evaluate(FORGET_TOPIC)
@@ -1021,7 +1007,7 @@ def test_upload_limit_splits_attachments_teams_folders_and_plan(browser):
     assert manifest2 == {k: manifest[k]["path"] for k in ("7000001", "7000002", "7000004", "5000010")}, "원래 자리 그대로"
     assert page.evaluate(ROOM_DIRS) == ["attachments_1", "attachments_2"], "새 배정(attachments/)으로 옮기거나 빈 폴더를 만들지 않는다"
     assert [d for d in page.evaluate(TOP_DIRS) if d.startswith("팀즈")] == ["팀즈에 올릴 파일"], "지난 팀즈 폴더는 지우고 새로"
-    assert sum(1 for k in files2 if k.startswith(f"{top}/팀즈에 올릴 파일/")) == 4
+    assert sum(1 for k in files2 if k.startswith(f"{top}/팀즈에 올릴 파일/") and k.endswith(".docx")) == 4
     ctx.close()
 
 
@@ -1044,4 +1030,145 @@ def test_resume_old_attachments_folder_with_split_limit(browser):
     manifest = json.loads(files[f"{top}/rooms/{TOPIC_DIR}/files_manifest.json"]["text"])
     assert {f["path"].split("/")[0] for f in manifest if f["status"] == "downloaded"} == {"attachments"}
     assert page.evaluate(ROOM_DIRS) == ["attachments"], "못 받은 파일 때문에 빈 attachments_N 이 생기지 않는다"
+    ctx.close()
+
+
+# ── 팀즈용 zip — 「팀즈에 올릴 파일」 폴더 하나만 올리면 끝 (2026-10-08) ─────────────
+# 무압축 · 암호 없음 · 데이터 디스크립터. 회사 보안 검사가 zip 안까지 검사한다(사용자 확인) — 검사를 피하는 용도가 아니다
+
+def _zips(files, top):
+    return sorted(k for k in files if k.startswith(f"{top}/팀즈에 올릴 파일") and k.endswith(".zip"))
+
+
+def _open_zip(entry):
+    z = zipfile.ZipFile(io.BytesIO(base64.b64decode(entry["b64"])))
+    assert z.testzip() is None
+    for info in z.infolist():
+        assert info.compress_type == zipfile.ZIP_STORED and info.flag_bits == 0x0808, (info.filename, info.flag_bits)
+    return z
+
+
+def _backup_files(files, top):
+    """백업 폴더 안 파일 (「팀즈에 올릴 파일」 폴더 빼고) → zip 안 이름."""
+    return {k: v for k, v in files.items() if not k.startswith(f"{top}/팀즈에 올릴 파일")}
+
+
+def test_teams_zip_is_the_whole_backup(browser):
+    """기본으로 「팀즈에 올릴 파일」 에 <백업폴더>_1.zip — 백업 폴더 전체가 <백업폴더>/… 로 들어 있고 내용 바이트가 같다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    assert host.locator("input[data-opt=zip]").is_checked() and host.locator("input[data-opt=docx]").is_checked(), "기본 켜짐"
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    assert _zips(files, top) == [f"{top}/팀즈에 올릴 파일/{top}_1.zip"]
+    z = _open_zip(files[f"{top}/팀즈에 올릴 파일/{top}_1.zip"])
+    backup = _backup_files(files, top)
+    assert sorted(z.namelist()) == sorted(backup), "백업 폴더 전체 = zip 항목 (풀면 한 폴더)"
+    for name, v in backup.items():
+        assert z.read(name) == base64.b64decode(v["b64"]), name
+    assert sum(1 for k in files if k.startswith(f"{top}/팀즈에 올릴 파일/") and k.endswith(".docx")) == 4
+    line = "팀즈에는 '팀즈에 올릴 파일' 폴더를 통째로 올리세요."
+    assert line in files[f"{top}/README.txt"]["text"] and line in files[f"{top}/index.html"]["text"]
+    assert json.loads(files[f"{top}/backup_state.json"]["text"])["zip"] is True
+    assert f"{top}/올리기 순서.txt" not in files
+    ctx.close()
+
+
+def test_teams_zip_split_and_big_files(browser):
+    """작은 한도(크기 4,000B · 항목 12개)면 zip 이 여럿으로 나뉘고, 한도보다 큰 파일은 zip 에 넣지 않고 README·패널에 남긴다.
+    모든 파일은 zip 하나에만 들어 있거나(내용 같음) 큰 파일 목록에 있다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    page.evaluate("window.__jandiBackup.lib.ZIP_MAX_BYTES = 4000; window.__jandiBackup.lib.ZIP_MAX_ENTRIES = 12")
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    zips = _zips(files, top)
+    assert len(zips) >= 2 and zips[0].endswith(f"{top}_1.zip") and zips[1].endswith(f"{top}_2.zip")
+    backup = _backup_files(files, top)
+    big = [k for k, v in backup.items() if v["size"] > 4000]
+    assert big, "fixture 에 4,000B 넘는 파일이 있어야 한다 (raw.json 등)"
+    seen = {}
+    for zname in zips:
+        z = _open_zip(files[zname])
+        assert len(z.namelist()) <= 12
+        assert sum(i.file_size for i in z.infolist()) <= 4000
+        for name in z.namelist():
+            assert name not in seen, f"{name} 이 두 zip 에"
+            seen[name] = zname
+            assert z.read(name) == base64.b64decode(backup[name]["b64"]), name
+    readme = files[f"{top}/README.txt"]["text"]
+    assert set(seen) | set(big) == set(backup) and not set(seen) & set(big)
+    assert "zip 에 넣지 못한 큰 파일 (원본은 rooms 에 있음): " in readme
+    for name in big:
+        if name != f"{top}/README.txt":
+            assert name[len(top) + 1:] in readme, name
+    assert f"zip 에 넣지 못한 큰 파일 {len(big)}개" in host.locator(".bd").inner_text()
+    ctx.close()
+
+
+def test_teams_zip_and_word_options(browser):
+    """zip 끔(워드만) · zip 만(워드 끔) · 둘 다 끔(폴더 없음). 팀별로 기억한다."""
+    def run(before):
+        ctx = browser.new_context()
+        page = ctx.new_page()
+        host = _start(page, [], before=before)
+        host.locator("button[data-act=start]").click()
+        host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+        files = page.evaluate("window.__dumpOpfs()")
+        top = next(iter(files)).split("/")[0]
+        teams = sorted(k[len(top) + 1:] for k in files if k.startswith(f"{top}/팀즈에 올릴 파일"))
+        dirs = page.evaluate(TOP_DIRS)
+        state = json.loads(files[f"{top}/backup_state.json"]["text"])
+        ctx.close()
+        return top, teams, dirs, state
+
+    top, teams, dirs, state = run("localStorage.setItem('jandiBackupZip:80000001', '0')")
+    assert teams and all(t.endswith(".docx") for t in teams) and state["zip"] is False
+    top, teams, dirs, state = run("localStorage.setItem('jandiBackupDocx:80000001', '0')")
+    assert teams == [f"팀즈에 올릴 파일/{top}_1.zip"], "워드를 꺼도 zip 은 만든다"
+    top, teams, dirs, state = run("localStorage.setItem('jandiBackupDocx:80000001', '0'); localStorage.setItem('jandiBackupZip:80000001', '0')")
+    assert teams == [] and not [d for d in dirs if d.startswith("팀즈")], "둘 다 끄면 폴더를 만들지 않는다"
+    # 체크박스를 끄면 기억한다
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    host.locator("input[data-opt=zip]").uncheck()
+    assert page.evaluate("localStorage.getItem('jandiBackupZip:80000001')") == "0"
+    ctx.close()
+
+
+SLOW_ZIP_WRITES = """
+(() => {
+  // zip 을 만들기 시작하면 쓰기를 느리게 해서 중지를 누를 틈을 만든다
+  const proto = FileSystemWritableFileStream.prototype, orig = proto.write;
+  proto.write = async function (d) {
+    if (window.__jandiBackup && window.__jandiBackup.state.zip) await new Promise(r => setTimeout(r, 40));
+    return orig.call(this, d);
+  };
+})();
+"""
+
+
+def test_stop_during_zip_leaves_no_zip(browser):
+    """zip 을 만드는 중 중지하면 만들던 zip(과 이번에 만든 zip)을 지운다 — 반쪽 보관본이 남지 않는다. 진행 줄이 보인다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    page.on("dialog", lambda d: d.accept())
+    host = _start(page, [], before=SLOW_ZIP_WRITES)
+    page.evaluate("window.__jandiBackup.lib.ZIP_MAX_ENTRIES = 5")
+    host.locator("button[data-act=start]").click()
+    host.locator("[data-zip]", has_text="팀즈용 zip 만드는 중").wait_for(timeout=20000)
+    assert " / " in host.locator("[data-zip]").inner_text()
+    host.locator("button[data-act=stop]").click()
+    host.locator("text=중지했습니다").wait_for(timeout=30000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    assert _zips(files, top) == [], "미완성 zip 없음"
+    assert sum(1 for k in files if k.startswith(f"{top}/팀즈에 올릴 파일/") and k.endswith(".docx")) == 4, "워드는 그대로"
     ctx.close()

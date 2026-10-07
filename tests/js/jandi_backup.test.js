@@ -509,10 +509,17 @@ function readZip(bytes) {
     assert.equal(method, 0, '무압축');
     assert.equal(size, usize);
     assert.equal(buf.readUInt32LE(off), 0x04034b50, name + ' 로컬 헤더');
-    assert.equal(buf.readUInt32LE(off + 14), crc);
+    assert.equal(buf.readUInt16LE(off + 6), flags, name + ' 로컬·중앙 flags 같음');
     assert.equal(buf.slice(off + 30, off + 30 + buf.readUInt16LE(off + 26)).toString('utf8'), name);
     const start = off + 30 + buf.readUInt16LE(off + 26) + buf.readUInt16LE(off + 28);
     const data = buf.slice(start, start + size);
+    if (flags & 0x0008) {
+      assert.deepEqual([buf.readUInt32LE(off + 14), buf.readUInt32LE(off + 18), buf.readUInt32LE(off + 22)], [0, 0, 0], name + ' 로컬 헤더는 0');
+      assert.deepEqual([buf.readUInt32LE(start + size), buf.readUInt32LE(start + size + 4), buf.readUInt32LE(start + size + 8), buf.readUInt32LE(start + size + 12)],
+        [0x08074b50, crc, size, size], name + ' 데이터 디스크립터');
+    } else {
+      assert.equal(buf.readUInt32LE(off + 14), crc);
+    }
     assert.equal(L.crc32(data), crc, name + ' CRC');
     out[name] = data.toString('utf8');
     at += 46 + nlen + xlen + clen;
@@ -735,50 +742,83 @@ test('팀즈에 올릴 파일: 방 이름으로 평평하게, 나뉜 방은 (N�
   assert.deepEqual(L.teamsUploadFolders([]), []);
 });
 
-test('올리기 묶음: 방 폴더 단위로 900개 이하, 큰 방은 첨부 폴더 단위로 쪼개고, 그래도 넘는 폴더는 혼자 + 표시', () => {
-  const rooms = [
-    { path: 'rooms/A', files: 500, parts: [{ path: 'rooms/A/attachments', files: 490 }] },
-    { path: 'rooms/B', files: 395, parts: [] },
-    { path: 'rooms/C', files: 1, parts: [] },
-    { path: 'rooms/NEWS', files: 1810, parts: [{ path: 'rooms/NEWS/attachments_1', files: 900 }, { path: 'rooms/NEWS/attachments_2', files: 900 }] },
-    { path: 'rooms/OLD', files: 1210, parts: [{ path: 'rooms/OLD/attachments', files: 1200 }] },
-    { path: 'rooms/D', files: 0, parts: [] }
-  ];
-  const b = L.uploadBatches(rooms, 5);
-  assert.deepEqual(b.map((x) => [x.files, x.items, x.over]), [
-    [900, ['백업 폴더 맨 위 파일 (index.html · README.txt 등)', 'rooms/A', 'rooms/B'], false],
-    [11, ['rooms/C', 'rooms/NEWS (attachments_1, attachments_2 폴더 빼고)'], false],
-    [900, ['rooms/NEWS/attachments_1'], false],
-    [900, ['rooms/NEWS/attachments_2'], false],
-    [10, ['rooms/OLD (attachments 폴더 빼고)'], false],
-    [1200, ['rooms/OLD/attachments'], true]
-  ]);
-  assert.ok(b.every((x) => x.over || x.files <= 900));
-  // 경계: 900 은 한 묶음, 901 은 둘
-  assert.equal(L.uploadBatches([{ path: 'rooms/X', files: 899, parts: [] }], 1).length, 1);
-  assert.equal(L.uploadBatches([{ path: 'rooms/X', files: 900, parts: [] }], 1).length, 2);
-  // 900개짜리 방 하나는 그대로 한 묶음 (쪼개지 않는다)
-  assert.deepEqual(L.uploadBatches([{ path: 'rooms/X', files: 900, parts: [{ path: 'rooms/X/attachments', files: 880 }] }], 0).map((x) => x.items), [['rooms/X']]);
-  assert.deepEqual(L.uploadBatches([], 0), []);
-  // 작은 한도
-  assert.deepEqual(L.uploadBatches([{ path: 'rooms/a', files: 2, parts: [] }, { path: 'rooms/b', files: 2, parts: [] }], 1, 3).map((x) => x.items),
-    [['백업 폴더 맨 위 파일 (index.html · README.txt 등)', 'rooms/a'], ['rooms/b']]);
+// ── 팀즈용 zip (전체 보관본) ─────────────────────────────────────────────
+
+test('CRC32 는 이어서 셀 수 있다 (조각으로 나눠 세도 같다)', () => {
+  const all = new TextEncoder().encode('123456789');
+  assert.equal(L.crc32(all.slice(4), L.crc32(all.slice(0, 4))), 0xCBF43926);
+  assert.equal(L.crc32(new Uint8Array(0), 0xCBF43926), 0xCBF43926);
 });
 
-test('올리기 순서.txt 와 상위 index: 경고 · 워드만 폴더 · 묶음 줄', () => {
-  const batches = L.uploadBatches([{ path: 'rooms/[KR] NOTICE', files: 865, parts: [] }, { path: 'rooms/<B>', files: 1100, parts: [{ path: 'rooms/<B>/attachments', files: 1100 }] }], 5);
-  const txt = L.uploadPlanText(batches, ['팀즈에 올릴 파일']);
-  assert.ok(txt.startsWith("﻿팀즈에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.\r\n"));
-  assert.ok(txt.includes('\r\n1번 묶음 (870개): 백업 폴더 맨 위 파일 (index.html · README.txt 등), rooms/[KR] NOTICE\r\n'));
-  assert.ok(txt.includes('2번 묶음 (1,100개 — 1,000개를 넘습니다. 이 폴더 안의 파일을 나눠서 올리세요): rooms/<B>/attachments'));
-  assert.ok(txt.includes('워드만: 팀즈에 올릴 파일 (폴더 하나씩)'));
-  const index = L.buildTopIndex([], { teamName: 't', uploadBatches: batches, teamsDirs: ['팀즈에 올릴 파일'] });
-  assert.ok(index.includes('<h2 id="upload">올리기 순서</h2>'));
-  assert.ok(index.includes('<li>1번 묶음 (870개): 백업 폴더 맨 위 파일 (index.html · README.txt 등), rooms/[KR] NOTICE</li>'));
-  assert.ok(index.includes('rooms/&lt;B&gt;/attachments'));
-  assert.ok(!L.buildTopIndex([], { teamName: 't' }).includes('올리기 순서'));
-  const readme = L.buildReadme({ teamName: 't', uploadBatches: batches });
-  assert.ok(readme.includes('올리기 순서.txt 의 묶음대로') && readme.includes("'팀즈에 올릴 파일' 폴더"));
+test('zip 조각: 로컬 헤더 · 데이터 디스크립터 · 중앙 디렉터리 · EOCD 값', () => {
+  const name = new TextEncoder().encode('가/a.txt');
+  const stamp = L.dosStamp(Date.UTC(2026, 9, 8, 1, 2, 4));   // KST 10:02:04
+  assert.deepEqual(stamp, [(10 << 11) | (2 << 5) | 2, ((2026 - 1980) << 9) | (10 << 5) | 8]);
+  const h = Buffer.from(L.zipHeader(name, 0x0808, stamp, 0, 0));
+  assert.equal(h.length, 30 + name.length);
+  assert.deepEqual([h.readUInt32LE(0), h.readUInt16LE(4), h.readUInt16LE(6), h.readUInt16LE(8), h.readUInt32LE(14), h.readUInt32LE(18), h.readUInt16LE(26), h.readUInt16LE(28)],
+    [0x04034b50, 20, 0x0808, 0, 0, 0, name.length, 0]);
+  assert.equal(h.slice(30).toString('utf8'), '가/a.txt');
+  const d = Buffer.from(L.zipDescriptor(0xDEADBEEF, 12345));
+  assert.deepEqual([d.length, d.readUInt32LE(0), d.readUInt32LE(4), d.readUInt32LE(8), d.readUInt32LE(12)], [16, 0x08074b50, 0xDEADBEEF, 12345, 12345]);
+  const c = Buffer.from(L.zipCentral(name, 0x0808, stamp, 0xDEADBEEF, 12345, 3000000000));
+  assert.deepEqual([c.readUInt32LE(0), c.readUInt16LE(8), c.readUInt16LE(10), c.readUInt32LE(16), c.readUInt32LE(20), c.readUInt32LE(24), c.readUInt16LE(28), c.readUInt32LE(42)],
+    [0x02014b50, 0x0808, 0, 0xDEADBEEF, 12345, 12345, name.length, 3000000000], '4GB 안쪽 오프셋은 32비트 그대로');
+  const e = Buffer.from(L.zipEnd(60000, 777, 3500000000));
+  assert.deepEqual([e.length, e.readUInt32LE(0), e.readUInt16LE(8), e.readUInt16LE(10), e.readUInt32LE(12), e.readUInt32LE(16)], [22, 0x06054b50, 60000, 60000, 777, 3500000000]);
+});
+
+test('스트리밍 zip: 조각으로 받아 바로 쓰고, 다시 읽으면 이름 · CRC · 내용이 그대로 (빈 파일 · 한글 경로)', async () => {
+  const out = [];
+  const zw = L.zipWriter(async (b) => { out.push(Buffer.from(b)); }, Date.UTC(2026, 9, 8));
+  const chunks = (list) => { let i = 0; return async () => (i < list.length ? new TextEncoder().encode(list[i++]) : null); };
+  assert.equal(await zw.add('잔디백업_T_20261008/rooms/방/messages.txt', chunks(['안녕', '하세요', '\n'])), 16);
+  assert.equal(await zw.add('잔디백업_T_20261008/빈 파일', chunks([])), 0);
+  assert.equal(await zw.add('잔디백업_T_20261008/index.html', chunks(['<html>', '</html>'])), 13);
+  const total = await zw.finish();
+  const bytes = Buffer.concat(out);
+  assert.equal(total, bytes.length);
+  const files = readZip(bytes);
+  assert.deepEqual(files, { '잔디백업_T_20261008/rooms/방/messages.txt': '안녕하세요\n', '잔디백업_T_20261008/빈 파일': '', '잔디백업_T_20261008/index.html': '<html></html>' });
+  assert.equal(bytes.readUInt16LE(6), 0x0808, '데이터 디스크립터 + UTF-8');
+});
+
+test('zip 나누기: 3.5GB · 60,000개 한도, 한 방은 되도록 한 zip, 너무 큰 파일은 빼고 따로', () => {
+  assert.equal(L.ZIP_MAX_BYTES, 3.5 * 1024 * 1024 * 1024);
+  assert.equal(L.ZIP_MAX_ENTRIES, 60000);
+  const f = (path, size) => ({ path, size, group: path.startsWith('rooms/') ? path.split('/').slice(0, 2).join('/') : '' });
+  const files = [f('index.html', 5), f('rooms/A/1', 40), f('rooms/A/2', 40), f('rooms/B/1', 30), f('rooms/B/2', 30), f('rooms/C/huge', 101),
+    f('rooms/D/1', 60), f('rooms/D/2', 60), f('rooms/E/1', 1)];
+  const plan = L.zipPlan(files, 100, 1000);
+  assert.deepEqual(plan.zips.map((z) => [z.files.map((x) => x.path), z.size]), [
+    [['index.html', 'rooms/A/1', 'rooms/A/2'], 85],
+    [['rooms/B/1', 'rooms/B/2'], 60],
+    [['rooms/D/1'], 60],          // D(120) 은 zip 하나보다 커서 어쩔 수 없이 나뉜다
+    [['rooms/D/2', 'rooms/E/1'], 61]
+  ]);
+  assert.deepEqual(plan.big.map((x) => x.path), ['rooms/C/huge']);
+  // 경계: 딱 한도는 들어가고, 1 넘으면 빠진다
+  assert.deepEqual(L.zipPlan([f('a', 100)], 100).zips.length, 1);
+  assert.deepEqual(L.zipPlan([f('a', 101)], 100).big.length, 1);
+  // 개수 한도: 3개씩, 방(2개)은 쪼개지 않는다
+  const many = L.zipPlan([f('x', 1), f('rooms/A/1', 1), f('rooms/A/2', 1), f('rooms/B/1', 1), f('rooms/B/2', 1)], 1000, 3);
+  assert.deepEqual(many.zips.map((z) => z.files.map((x) => x.path)), [['x', 'rooms/A/1', 'rooms/A/2'], ['rooms/B/1', 'rooms/B/2']]);
+  // 모든 파일은 한 zip 에만 (큰 파일 제외)
+  const seen = plan.zips.flatMap((z) => z.files.map((x) => x.path));
+  assert.equal(new Set(seen).size, seen.length);
+  assert.equal(seen.length + plan.big.length, files.length);
+  assert.deepEqual(L.zipPlan([]), { zips: [], big: [] });
+});
+
+test('README·상위 index: 팀즈에는 「팀즈에 올릴 파일」 폴더만, zip 에 못 넣은 큰 파일', () => {
+  const line = "팀즈에는 '팀즈에 올릴 파일' 폴더를 통째로 올리세요. 워드는 팀즈에서 바로 읽히고, zip 은 전체 보관본입니다(받아서 풀면 index.html 로 검색). 백업 폴더 전체를 올리지는 마세요.";
+  const readme = L.buildReadme({ teamName: 't', teams: true, zipBig: ['rooms/A/attachments/큰 영상.mp4'] });
+  assert.ok(readme.includes('- ' + line));
+  assert.ok(readme.includes('zip 에 넣지 못한 큰 파일 (원본은 rooms 에 있음): rooms/A/attachments/큰 영상.mp4'));
+  assert.ok(!readme.includes('올리기 순서'));
+  assert.ok(L.buildTopIndex([], { teamName: 't', teams: true }).includes(line.replace(/'/g, "'")));
+  assert.ok(!L.buildTopIndex([], { teamName: 't' }).includes('팀즈에 올릴 파일'));
+  assert.ok(!L.buildReadme({ teamName: 't' }).includes('팀즈에 올릴 파일'));
 });
 
 // ── 방 고르기 (필요 없는 방 빼기) ───────────────────────────────────────────
