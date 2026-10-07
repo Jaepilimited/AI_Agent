@@ -375,41 +375,115 @@ test('미리 확인 합계: 종류별(비공개 토픽은 토픽) · 전체, 확
   assert.deepEqual([s.total.rooms, s.total.records, s.total.files, s.total.bytes], [4, 167, 6, 6e9 + 2e6]);
 });
 
-// ── 이모티콘(스티커) 거르기 ─────────────────────────────────────────────────
+// ── 첨부 종류 (문서 · 사진 · 동영상 · 기타 · 이모티콘) + 프리셋 ─────────────
 
-test('받을 파일 고르기: 이모티콘을 끄면 스티커 작업만 빠지고, 첨부를 끄면 아무것도 없다', () => {
+test('첨부 종류: 확장자 우선(대소문자 무시), 없으면 mime, 그래도 모르면 기타', () => {
+  const c = (name, type, kind) => L.fileCategory({ name, type, kind });
+  for (const n of ['a.pdf', 'b.DOCX', 'c.xls', 'd.xlsx', 'e.csv', 'f.ppt', 'g.pptx', 'h.hwp', 'i.hwpx', 'j.txt']) assert.equal(c(n), 'doc', n);
+  for (const n of ['a.jpg', 'b.JPEG', 'c.png', 'd.gif', 'e.bmp', 'f.webp', 'g.heic', 'h.heif']) assert.equal(c(n), 'photo', n);
+  for (const n of ['a.mp4', 'b.MOV', 'c.avi', 'd.wmv', 'e.mkv', 'f.m4v', 'g.webm']) assert.equal(c(n), 'video', n);
+  for (const n of ['a.zip', 'b.7z', 'c.mp3', 'd.m4a']) assert.equal(c(n), 'other', n);
+  // 확장자가 mime 보다 먼저
+  assert.equal(c('사진.png', 'application/octet-stream'), 'photo');
+  assert.equal(c('영상.mp4', 'image/png'), 'video');
+  // 확장자가 없거나 모르면 mime
+  assert.equal(c('스캔본', 'image/jpeg'), 'photo');
+  assert.equal(c('녹화', 'video/quicktime'), 'video');
+  assert.equal(c('보고서', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), 'doc');
+  assert.equal(c('예전 보고서', 'application/msword'), 'doc');
+  assert.equal(c('메모', 'text/plain; charset=utf-8'), 'doc');
+  assert.equal(c('계약서', 'application/pdf'), 'doc');
+  assert.equal(c('한글', 'application/x-hwp'), 'doc');
+  assert.equal(c('파일.xyz', 'pdf'), 'doc', '잔디가 짧게 적은 종류');
+  assert.equal(c('파일', 'image'), 'photo');
+  // 모르면 기타
+  assert.equal(c('압축', 'application/zip'), 'other');
+  assert.equal(c('이름만'), 'other');
+  assert.equal(c(''), 'other');
+  assert.equal(L.fileCategory(null), 'other');
+  // 이모티콘은 이름이 .png 여도 이모티콘
+  assert.equal(c('sticker_155_2.png', null, 'sticker'), 'sticker');
+  // fixture 방: 사진 1 · 문서 4(xlsx·pdf·txt·옛 docx) · 이모티콘 2
+  assert.deepEqual(L.collectFileJobs(FX.records).map((j) => L.fileCategory(j)), ['photo', 'doc', 'doc', 'doc', 'doc', 'sticker', 'sticker']);
+});
+
+test('받을 파일 고르기: 켜진 종류만, 하나도 없으면 대화만(빈 목록)', () => {
   const jobs = L.collectFileJobs(FX.records);
   const ids = (js) => js.map((j) => String(j.id));
-  assert.deepEqual(ids(L.pickFileJobs(jobs, { attachments: true, stickers: false })), ['7000001', '7000002', '7000003', '7000004', '5000010']);
-  assert.deepEqual(ids(L.pickFileJobs(jobs, { attachments: true, stickers: true })), ids(jobs));
-  assert.deepEqual(L.pickFileJobs(jobs, { attachments: false, stickers: true }), []);
+  assert.deepEqual(ids(L.pickFileJobs(jobs, L.FILE_PRESETS.work)), ['7000001', '7000002', '7000003', '7000004', '5000010']);
+  assert.deepEqual(ids(L.pickFileJobs(jobs, L.FILE_PRESETS.all)), ids(jobs));
+  assert.deepEqual(L.pickFileJobs(jobs, L.FILE_PRESETS.messages), []);
+  assert.deepEqual(ids(L.pickFileJobs(jobs, { photo: true })), ['7000001']);
+  assert.deepEqual(ids(L.pickFileJobs(jobs, { sticker: true })), ['sticker_155_2', 'sticker_160_11']);
   assert.equal(jobs.length, 7, '원래 목록은 그대로');
 });
 
-test('미리 확인 합계: 이모티콘을 끄면 스티커 수가 빠진다 (용량·첨부 수는 그대로)', () => {
-  const t = L.newTally();
-  L.tallyPage(t, FX.records, new Set(), new Set());
-  const rooms = [{ id: 1, kind: 'topic' }];
-  const on = L.summarizeScan(rooms, { 1: t }, null, { stickers: true }).total;
-  const off = L.summarizeScan(rooms, { 1: t }, null, { stickers: false }).total;
-  assert.equal(on.stickers, 2);
-  assert.equal(off.stickers, 0);
-  assert.deepEqual([off.files, off.bytes, off.records], [on.files, on.bytes, on.records]);
-  assert.equal(t.stickers, 2, '방별 원래 숫자는 건드리지 않는다 — 옵션을 다시 켜면 그대로 보인다');
+test('프리셋: 대화만 · 업무용(문서+사진) · 전부, 같은 게 없으면 직접 고름(null) · 기본은 업무용', () => {
+  assert.equal(L.presetOf(L.FILE_PRESETS.messages), 'messages');
+  assert.equal(L.presetOf({ doc: true, photo: true }), 'work');
+  assert.equal(L.presetOf(L.FILE_PRESETS.all), 'all');
+  assert.equal(L.presetOf({ doc: true, photo: true, sticker: true }), null);
+  assert.equal(L.presetOf({ video: true }), null);
+  assert.equal(L.anyFileCat(L.FILE_PRESETS.messages), false);
+  assert.equal(L.anyFileCat({ other: true }), true);
+  // 기억해 둔 값 읽기 — 없으면 업무용, 예전 이모티콘 설정은 이모티콘 칸에, 새 값이 있으면 새 값
+  assert.equal(L.presetOf(L.loadFileCats(null, null)), 'work');
+  assert.equal(L.presetOf(L.loadFileCats('깨짐', null)), 'work');
+  assert.deepEqual(L.fileCatList(L.loadFileCats(null, '1')), ['doc', 'photo', 'sticker']);
+  assert.deepEqual(L.fileCatList(L.loadFileCats(null, '0')), ['doc', 'photo']);
+  assert.deepEqual(L.fileCatList(L.loadFileCats(['video'], '1')), ['video']);
+  assert.deepEqual(L.fileCatList(L.loadFileCats([], '1')), [], '대화만 으로 기억한 것');
 });
 
-test('이모티콘을 받지 않은 방 뷰어·CSV: 스티커 메시지는 남기고 이미지 대신 (이모티콘)', () => {
-  const out = L.renderRoom({ roomName: 'x', members: FX.members, records: FX.records, stickers: false }, FX.manifest);
-  assert.ok(!out.html.includes('[스티커'));
-  assert.ok(!out.html.includes('sticker_155_2'), '받아 둔 스티커 파일이 있어도 이미지로 잇지 않는다');
-  assert.ok(out.html.includes('<div class="text">(이모티콘)'));
-  assert.ok(out.csv.includes('(이모티콘)') && out.txt.includes('(이모티콘)'));
-  assert.equal(out.count, 11, '스티커 메시지도 기록으로 남는다');
-  const readmeOff = L.buildReadme({ teamName: 't', attachments: true, stickers: false });
-  assert.ok(readmeOff.includes('이모티콘: 받지 않음'));
-  assert.ok(!readmeOff.includes('스티커 이미지'));
-  const readmeOn = L.buildReadme({ teamName: 't', attachments: true, stickers: true });
-  assert.ok(readmeOn.includes('이모티콘: 받음') && readmeOn.includes('첨부파일과 스티커 이미지'));
+test('미리 확인 합계: 종류별로 세어 두고 켜진 종류만 더한다 (다시 확인 없이)', () => {
+  const t = L.newTally();
+  L.tallyPage(t, FX.records, new Set(), new Set());
+  // 동영상 하나를 더 센다 (크기 1000)
+  L.tallyPage(t, [{ id: 99, message: { id: 990, contentType: 'text', content: { body: 'v' }, attachments: [{ id: 801, content: { name: '행사.mp4', size: 1000 } }] } }], new Set(), new Set());
+  const rooms = [{ id: 1, kind: 'topic' }];
+  const sum = (cats) => L.summarizeScan(rooms, { 1: t }, null, { cats }).total;
+  const all = sum(L.FILE_PRESETS.all);
+  assert.deepEqual([all.records, all.files, all.bytes, all.stickers, all.legacyFiles], [12, 6, 1117, 2, 1]);
+  const work = sum(L.FILE_PRESETS.work);
+  assert.deepEqual([work.records, work.files, work.bytes, work.stickers, work.legacyFiles, work.legacyBytes], [12, 5, 117, 0, 1, 44]);
+  const photo = sum({ photo: true });
+  assert.deepEqual([photo.files, photo.bytes, photo.legacyFiles], [1, 11, 0]);
+  const none = sum(L.FILE_PRESETS.messages);
+  assert.deepEqual([none.records, none.files, none.bytes, none.stickers], [12, 0, 0, 0], '대화만 이어도 기록 수는 그대로');
+  // 종류를 안 주면 예전처럼 모두
+  assert.deepEqual([L.summarizeScan(rooms, { 1: t }).total.files, L.summarizeScan(rooms, { 1: t }).total.bytes], [6, 1117]);
+  assert.equal(L.viewTally(t, { video: true }).bytes, 1000);
+});
+
+test('고르지 않은 종류: 뷰어·CSV 에 이름만 남기고 (받지 않음: 종류), 이모티콘은 (이모티콘)', () => {
+  const manifest = FX.manifest.filter((f) => !/^7000001$|^sticker_/.test(String(f.id)));   // 사진·이모티콘은 이번에 안 받음
+  const out = L.renderRoom({ roomName: 'x', members: FX.members, records: FX.records, cats: { doc: true } }, manifest);
+  assert.ok(out.html.includes('<span class="missing">회의 사진.png (받지 않음: 사진)</span>'));
+  assert.ok(!out.html.includes('href="attachments/7000001'));
+  assert.ok(out.html.includes('<div class="text">(이모티콘)') && !out.html.includes('[스티커'));
+  assert.ok(out.csv.includes('회의 사진.png (받지 않음: 사진)') && out.txt.includes('(받지 않음: 사진)'));
+  assert.ok(out.html.includes('지워진 파일.pdf — 미저장'), '켜진 종류인데 못 받은 파일은 예전처럼 미저장');
+  assert.equal(out.count, 11, '메시지는 그대로 남는다');
+  // 옛 방식 파일 메시지도 종류를 끄면 (받지 않음)
+  const noDoc = L.renderRoom({ roomName: 'x', members: FX.members, records: FX.records, cats: { photo: true } }, []);
+  assert.ok(noDoc.html.includes('옛날 보고서.docx (받지 않음: 문서)'));
+  // 전에 받아 둔 파일은 종류를 꺼도 잇는다
+  const kept = L.renderRoom({ roomName: 'x', members: FX.members, records: FX.records, cats: { doc: true } }, FX.manifest);
+  assert.ok(kept.html.includes('href="attachments/7000001'));
+  // 종류를 안 주면(예전 모양) render.py 와 같은 결과 그대로
+  const plain = L.renderRoom({ roomName: 'x', members: FX.members, records: FX.records }, FX.manifest);
+  assert.ok(plain.html.includes('[스티커 155/2]') && !plain.html.includes('받지 않음'));
+});
+
+test('README: 받은 첨부 종류 한 줄, 고르지 않은 종류, 대화만', () => {
+  const work = L.buildReadme({ teamName: 't', attachments: true, fileCats: ['doc', 'photo'] });
+  assert.ok(work.includes('받은 첨부 종류: 문서, 사진\r\n'));
+  assert.ok(work.includes('고르지 않은 첨부 종류: 동영상, 기타, 이모티콘'));
+  const all = L.buildReadme({ teamName: 't', attachments: true, fileCats: ['doc', 'photo', 'video', 'other', 'sticker'] });
+  assert.ok(all.includes('받은 첨부 종류: 문서, 사진, 동영상, 기타, 이모티콘') && !all.includes('고르지 않은 첨부 종류'));
+  const none = L.buildReadme({ teamName: 't', attachments: false, fileCats: [] });
+  assert.ok(none.includes('받은 첨부 종류: 없음 (대화만)') && none.includes('첨부파일은 이번 백업에서 제외했습니다'));
+  assert.ok(!none.includes('고르지 않은 첨부 종류'));
 });
 
 // ── 방 고르기 (필요 없는 방 빼기) ───────────────────────────────────────────

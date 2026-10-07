@@ -1952,12 +1952,14 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   미리 확인 후엔 방 옆에 기록·첨부 · 용량 큰 순). `S.opts.excluded` → 잔디 탭 localStorage `jandiBackupExcluded:<teamId>`(id 배열,
   열 때 지금 방 목록과 맞춤). 받을 방 = 종류 AND 제외 아님 — 미리 확인 합계도 뺀 방을 빼고 센다(다시 넣은 방에 값이 없으면 다시 확인 표시).
   README·index 에 `제외한 방 N개`+이름(50개까지), `backup_state.json` 에 `excluded`. 이어 받을 때 뺀 방은 건너뛰고 받아 둔 폴더는 지우지 않는다
-- **이모티콘(스티커)은 기본으로 받지 않는다**(2026-10-07): 패널 `이모티콘(스티커) 포함`(첨부를 끄면 비활성, 팀별 localStorage
-  `jandiBackupStickers:<teamId>`). 끄면 `pickFileJobs` 가 스티커 작업을 빼고, 뷰어·CSV·TXT 는 스티커 메시지를 `(이모티콘)` 글자로 남긴다.
-  미리 확인은 방별로 스티커 수를 늘 세 두고 `summarizeScan(..., { stickers })` 합계에서만 뺀다 — 옵션을 바꿔도 다시 확인할 필요 없다.
-  README `이모티콘: 받음/받지 않음` · `backup_state.json`·raw.json 에 `stickers`
+- **첨부 종류 선택**(2026-10-07): 프리셋 `대화만`·`업무용`(문서+사진, **기본**)·`전부` + 종류 체크 5개(문서·사진·동영상·기타·이모티콘,
+  같은 프리셋이 없으면 `직접 고름`). 분류는 `fileCategory(job)` 하나 — 이름 확장자 우선, 없으면 mime, 모르면 기타. 팀별 localStorage
+  `jandiBackupFiles:<teamId>`(예전 `jandiBackupStickers` 는 이모티콘 칸으로 읽음). 하나도 안 켜면 대화만(첨부 폴더도 안 만든다).
+  꺼진 종류는 `pickFileJobs` 가 빼고, 뷰어·CSV 에 이름만 `(받지 않음: 동영상)`, 이모티콘은 `(이모티콘)` 글자(전에 받아 둔 파일은 잇는다).
+  미리 확인은 방별로 **종류별 몫**(`tally.cats`)을 세 두고 `summarizeScan(..., { cats })`·`viewTally` 가 켜진 종류만 더한다 — 바꿔도 다시 확인 불필요.
+  README `받은 첨부 종류: 문서, 사진` · `backup_state.json`·raw.json 에 `fileCats`. 이어 받을 때 꺼진 종류의 실패 파일은 다시 받지 않는다
 - 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
-  44문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
+  47문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
 
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)

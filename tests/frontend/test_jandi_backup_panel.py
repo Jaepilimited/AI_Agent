@@ -33,8 +33,8 @@ CUTOFF_MS = 1782831600000    # 2026-07-01 00:00 KST — 기준일
 CUTOFF_TEXT = "기준일: 2026-07-01 (잔디 가입일) — 이 날 이후 대화만 받습니다"
 CUTOFF_MISSING = "잔디 가입일을 확인하지 못해 백업을 시작할 수 없습니다. 셀라 담당자에게 알려 주세요."
 OLD_FOLDER = "예전 방식으로 받은 폴더입니다 — 새 빈 폴더를 고르세요"
-# 이모티콘(스티커) 받기는 기본 꺼짐 — 켜 둔 상태(팀별 localStorage)로 시작한다
-STICKERS_ON = "localStorage.setItem('jandiBackupStickers:80000001', '1')"
+# 첨부 종류 기본은 업무용(문서·사진) — 이모티콘까지 모두 받는 '전부' 를 기억해 둔 상태로 시작한다
+ALL_FILES = "localStorage.setItem('jandiBackupFiles:80000001', JSON.stringify(['doc', 'photo', 'video', 'other', 'sticker']))"
 
 FAKE_JANDI = """<!doctype html><html><head><meta charset="utf-8"><title>대화 | TESTTEAM</title></head>
 <body><div id="app">잔디 흉내</div><script>
@@ -165,7 +165,7 @@ def test_full_backup_then_resume(browser):
     ctx = browser.new_context()
     page = ctx.new_page()
     requests = []
-    host = _start(page, requests, before=STICKERS_ON)   # 스티커 받기·실패까지 보려고 켠다 (기본은 꺼짐)
+    host = _start(page, requests, before=ALL_FILES)   # 스티커 받기·실패까지 보려고 '전부' (기본은 업무용)
     host.locator("button[data-act=start]").click()
     host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
     files = page.evaluate("window.__dumpOpfs()")
@@ -335,7 +335,7 @@ def test_precheck_counts_without_writing_then_run_shows_expected(browser):
     ctx = browser.new_context()
     page = ctx.new_page()
     requests = []
-    host = _start(page, requests, before=STICKERS_ON)
+    host = _start(page, requests, before=ALL_FILES)
     host.locator("button[data-act=scan]", has_text="용량 미리 확인").click()
     host.locator("text=미리 확인 결과").wait_for(timeout=20000)
     cells = _cells(host)
@@ -645,56 +645,114 @@ def test_room_pick_with_precheck_numbers_and_all_excluded(browser):
     ctx.close()
 
 
-def test_stickers_off_by_default_not_downloaded_and_remembered(browser):
-    """이모티콘(스티커)은 기본으로 받지 않는다 — 스티커 주소를 부르지 않고, 뷰어·CSV 에는 '(이모티콘)' 글자로 남는다.
-    켜면 미리 확인 합계에 스티커가 다시 보이고, 팀별로 기억된다. 첨부를 끄면 고를 수 없다."""
+# ── 첨부 종류 (대화만 / 업무용 / 전부 + 종류 5개, 2026-10-07) ───────────────
+
+# 토픽에 동영상·압축 첨부가 붙은 기록 하나를 더한다 (가짜 잔디는 SIZES 에 없는 파일을 404 로 준다)
+VIDEO_AND_ZIP = """
+window.__new = [
+  {id: 6000013, time: 1782864700000, fromEntity: 1001, status: 'created', feedbackId: -1, messageId: 5000030,
+   message: {id: 5000030, writerId: 1001, contentType: 'text', content: {body: '행사 영상'},
+             attachments: [{id: 7000201, contentType: 'file', content: {name: '행사.mp4', type: 'video/mp4', size: 1000}},
+                           {id: 7000202, contentType: 'file', content: {name: '자료.zip', type: 'application/zip', size: 500}}]}}
+];
+"""
+
+
+def _file_boxes(host):
+    return {c: host.locator(f"input[data-fc={c}]").is_checked() for c in ("doc", "photo", "video", "other", "sticker")}
+
+
+def test_file_kinds_presets_precheck_and_resume(browser):
+    """기본은 업무용(문서·사진). 프리셋·체크박스를 바꾸면 미리 확인 합계가 다시 확인 없이 바뀐다.
+    업무용으로 받으면 동영상·압축·이모티콘은 요청하지 않고 뷰어에 (받지 않음: 동영상) 으로 남는다.
+    '전부' 로 받다 실패한 동영상·이모티콘은, 같은 폴더를 업무용으로 이어 받을 때 다시 요청하지 않는다."""
     ctx = browser.new_context()
     page = ctx.new_page()
     requests = []
-    host = _start(page, requests)
-    box = host.locator("input[data-k=stickers]")
-    assert not box.is_checked() and box.is_enabled()
-    host.locator("input[data-k=attachments]").uncheck()
-    assert box.is_disabled(), "첨부를 끄면 이모티콘은 고를 수 없다"
-    host.locator("input[data-k=attachments]").check()
-    assert box.is_enabled()
+    host = _start(page, requests, before=VIDEO_AND_ZIP)
+    name = host.locator("[data-preset-name]")
+    assert name.inner_text() == "업무용"
+    assert _file_boxes(host) == {"doc": True, "photo": True, "video": False, "other": False, "sticker": False}
+    assert host.locator("[data-preset=work]").get_attribute("aria-pressed") == "true"
 
     host.locator("button[data-act=scan]").click()
     host.locator("text=미리 확인 결과").wait_for(timeout=20000)
-    assert _cells(host)["합계"] == ["4", "14", "5", "117B"]
-    assert "스티커" not in host.locator("[data-estimate]").inner_text()
-    host.locator("input[data-k=stickers]").check()
-    assert "스티커 2개" in host.locator("[data-estimate]").inner_text(), "옵션을 바꾸면 다시 확인 없이 합계가 바뀐다"
-    assert page.evaluate("localStorage.getItem('jandiBackupStickers:80000001')") == "1"
-    host.locator("input[data-k=stickers]").uncheck()
-    assert "스티커" not in host.locator("[data-estimate]").inner_text()
-    assert "stale" not in host.locator("[data-estimate]").get_attribute("class")
+    assert _cells(host)["합계"] == ["4", "15", "5", "117B"]
+    scans = page.evaluate("window.__log.pages.length")
 
+    host.locator("[data-preset=all]").click()
+    assert name.inner_text() == "전부" and all(_file_boxes(host).values())
+    assert _cells(host)["합계"] == ["4", "15", "7", "2KB"], "동영상 1000B + 압축 500B 가 바로 더해진다"
+    assert "스티커 2개" in host.locator("[data-estimate]").inner_text()
+    host.locator("input[data-fc=video]").uncheck()
+    assert name.inner_text() == "직접 고름"
+    assert _cells(host)["합계"] == ["4", "15", "6", "617B"]
+    host.locator("[data-preset=messages]").click()
+    assert name.inner_text() == "대화만" and not any(_file_boxes(host).values())
+    assert _cells(host)["합계"] == ["4", "15", "0", "0B"]
+    assert "stale" not in host.locator("[data-estimate]").get_attribute("class")
+    assert page.evaluate("window.__log.pages.length") == scans, "종류를 바꿔도 다시 읽지 않는다"
+    assert page.evaluate("localStorage.getItem('jandiBackupFiles:80000001')") == "[]"
+
+    # 전부로 받는다 — 동영상·압축은 가짜 잔디에 없어서(404) 실패, 404 스티커도 실패
+    host.locator("[data-preset=all]").click()
     host.locator("button[data-act=start]").click()
     host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
-    assert not [u for u in requests if "files-sticker" in u], "스티커는 받지 않는다"
     files = page.evaluate("window.__dumpOpfs()")
     top = next(iter(files)).split("/")[0]
     room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
-    manifest = json.loads(files[f"{room}/files_manifest.json"]["text"])
-    assert not [f for f in manifest if f.get("kind") == "sticker"] and len(manifest) == 5
-    assert not any("sticker_" in k for k in files)
-    viewer = files[f"{room}/index.html"]["text"]
-    assert viewer.count("<article ") == 11 and "(이모티콘)" in viewer and "[스티커" not in viewer
-    assert "(이모티콘)" in files[f"{room}/messages.csv"]["text"]
-    assert "이모티콘: 받지 않음" in files[f"{top}/README.txt"]["text"]
-    assert json.loads(files[f"{top}/backup_state.json"]["text"])["stickers"] is False
-    assert json.loads(files[f"{room}/raw.json"]["text"])["stickers"] is False
-    prog = page.evaluate("JSON.parse(JSON.stringify(window.__jandiBackup.state.progress))")
-    assert prog["filesFailed"] == 1 and prog["bytes"] == sum(SIZES.values()), "실패는 지워진 첨부 하나뿐, 스티커 5B 없음"
+    failed = {str(f["id"]) for f in json.loads(files[f"{room}/files_manifest.json"]["text"]) if f["status"] == "failed"}
+    assert failed == {"7000003", "7000201", "7000202", "sticker_160_11"}
+    assert "받은 첨부 종류: 문서, 사진, 동영상, 기타, 이모티콘" in files[f"{top}/README.txt"]["text"]
 
-    # 켜 둔 것은 다시 열어도 기억한다
-    page.evaluate("localStorage.setItem('jandiBackupStickers:80000001', '1')")
+    # 같은 폴더를 업무용으로 이어 받기 — 꺼진 종류(동영상·기타·이모티콘)는 다시 요청하지 않고, 받아 둔 이모티콘은 둔다
+    page.evaluate("window.__log.getImageAt = []; window.__log.fetchAt = []")
     page.reload()
+    page.evaluate(VIDEO_AND_ZIP)
     page.evaluate(SCRIPT)
     host = page.locator("#__jandi-backup-host")
     host.locator(f"text={CUTOFF_TEXT}").wait_for()
-    assert host.locator("input[data-k=stickers]").is_checked()
+    assert host.locator("[data-preset-name]").inner_text() == "전부", "팀별로 기억한다"
+    host.locator("[data-preset=work]").click()
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    log = page.evaluate("window.__log")
+    assert sorted(g["id"] for g in log["getImageAt"]) == ["7000003"], "켜진 종류의 실패 파일만 다시"
+    assert not [f for f in log["fetchAt"] if "files-sticker" in f["url"]]
+    files2 = page.evaluate("window.__dumpOpfs()")
+    assert files2[f"{room}/attachments/sticker_155_2_sticker_155_2.png"]["size"] == 5, "이미 받은 파일은 지우지 않는다"
+    viewer = files2[f"{room}/index.html"]["text"]
+    assert "행사.mp4 (받지 않음: 동영상)" in viewer and "자료.zip (받지 않음: 기타)" in viewer
+    assert "(이모티콘)" in viewer
+    state = json.loads(files2[f"{top}/backup_state.json"]["text"])
+    assert state["fileCats"] == ["doc", "photo"]
+    assert "받은 첨부 종류: 문서, 사진" in files2[f"{top}/README.txt"]["text"]
+    ctx.close()
+
+
+def test_file_kinds_messages_only_makes_no_attachment_folder(browser):
+    """대화만 = 첨부 종류가 하나도 없다 — 첨부 주소·스티커를 부르지 않고 attachments 폴더도 만들지 않는다.
+    예전 이모티콘 설정(jandiBackupStickers='1')은 업무용 + 이모티콘으로 읽는다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    requests = []
+    host = _start(page, requests, before="localStorage.setItem('jandiBackupStickers:80000001', '1')")
+    assert host.locator("[data-preset-name]").inner_text() == "직접 고름"
+    assert _file_boxes(host) == {"doc": True, "photo": True, "video": False, "other": False, "sticker": True}
+    host.locator("[data-preset=messages]").click()
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    log = page.evaluate("window.__log")
+    assert log["getImageAt"] == [] and log["fetchAt"] == []
+    files = page.evaluate("window.__dumpOpfs()")
+    assert not any("/attachments/" in k for k in files)
+    top = next(iter(files)).split("/")[0]
+    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
+    assert json.loads(files[f"{room}/files_manifest.json"]["text"]) == []
+    viewer = files[f"{room}/index.html"]["text"]
+    assert viewer.count("<article ") == 11 and "회의 사진.png (받지 않음: 사진)" in viewer
+    assert "받은 첨부 종류: 없음 (대화만)" in files[f"{top}/README.txt"]["text"]
+    assert host.locator("[data-bytes]").count() == 0, "대화만이면 받은 용량 줄을 보이지 않는다"
     ctx.close()
 
 

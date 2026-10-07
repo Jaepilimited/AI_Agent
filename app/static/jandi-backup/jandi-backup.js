@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-07.2';
+  var VERSION = '2026-10-07.3';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -245,8 +245,9 @@
     if (kind === 'file' && !has(original, 'body') && !has(original, 'text') && (original.name || original.title)) {
       text = '[파일] ' + (original.name || original.title);
     }
-    // 이모티콘을 받지 않은 백업(ctx.stickers === false)은 이미지 대신 '(이모티콘)' 글자만
-    var noStickers = ctx.stickers === false;
+    // 첨부 종류를 골라 받은 백업(ctx.cats) — 꺼진 종류는 링크 대신 '(받지 않음: 동영상)', 이모티콘은 '(이모티콘)' 글자만
+    var cats = ctx.cats || null;
+    var noStickers = !!cats && !cats.sticker;
     if (isSticker) {
       text = (noStickers ? '(이모티콘)' : '[스티커 ' + pyStr(pick(original, 'groupId', '')) + '/' + pyStr(pick(original, 'stickerId', '')) + ']') +
         (truthy(original.body) ? '\n' + String(original.body) : '');
@@ -276,6 +277,7 @@
 
     var ids = [];
     var attNames = {};
+    var attTypes = {};
     if (isSticker && !noStickers) {
       var stickerId = 'sticker_' + pyStr(pick(original, 'groupId', '')) + '_' + pyStr(pick(original, 'stickerId', ''));
       if (has(files, stickerId)) ids.push(stickerId);
@@ -286,9 +288,14 @@
       if (a && typeof a === 'object') {
         var ac = a.content || {};
         attNames[String(fid)] = ac.name || ac.title || String(fid);
+        attTypes[String(fid)] = ac.type || null;
       }
     });
-    if (has(files, messageId)) ids.unshift(messageId);
+    var legacyFile = kind === 'file' && (original.name || original.title);
+    if (has(files, messageId) || (cats && legacyFile && !cats[fileCategory({ name: original.name || original.title, type: original.type })])) {
+      ids.unshift(messageId);
+      if (legacyFile) { attNames[messageId] = original.name || original.title; attTypes[messageId] = original.type || null; }
+    }
     var seen = {};
     var attHtml = [];
     var attText = [];
@@ -300,6 +307,14 @@
       var ok = entry.status === 'downloaded' && path && path.split('/').indexOf('..') < 0 && path.charAt(0) !== '/';
       var url = ok ? quotePath(path) : null;
       var filename = entry.name || attNames[fid] || String(fid);
+      // 이번에 안 받은 종류 (전에 받아 둔 파일이 있으면 그대로 잇는다)
+      var skipped = !url && cats ? fileCategory({ name: filename, type: entry.type || attTypes[fid] }) : null;
+      if (skipped && cats[skipped]) skipped = null;
+      if (skipped) {
+        attText.push(filename + ' (받지 않음: ' + FILE_CAT_LABEL[skipped] + ')');
+        attHtml.push('<span class="missing">' + escapeHtml(filename) + ' (받지 않음: ' + FILE_CAT_LABEL[skipped] + ')</span>');
+        return;
+      }
       attText.push(filename + (url ? ' [' + entry.path + ']' : ' [미저장]'));
       if (url) {
         attHtml.push('<a class="file" href="' + escapeHtml(url) + '">' + escapeHtml(filename) + '</a>');
@@ -363,10 +378,10 @@
     return files;
   }
 
-  // data = { roomName, roomId, members, records(배열 또는 id→기록), stickers(false 면 이모티콘을 글자로) } → { html, csv, txt, count }
+  // data = { roomName, roomId, members, records(배열 또는 id→기록), cats(받은 첨부 종류 — 꺼진 종류는 '받지 않음' 표시) } → { html, csv, txt, count }
   function renderRoom(data, manifest) {
     var files = manifestMap(manifest);
-    var ctx = { name: makeNamer(data.members), files: files, stickers: data.stickers };
+    var ctx = { name: makeNamer(data.members), files: files, cats: data.cats || null };
     var records = data.records || [];
     if (!Array.isArray(records)) records = Object.keys(records).map(function (k) { return records[k]; });
     records = sortRecords(records);
@@ -455,11 +470,15 @@
       ? ['- 제외한 방 ' + ex.count + '개 (백업 창의 방 고르기에서 뺀 방):'].concat(
         ex.names.map(function (nm) { return '    ' + nm; }), ex.more ? ['    외 ' + ex.more + '개'] : [])
       : [];
+    // 받은 첨부 종류 — 예전 모양(meta.attachments)이면 모두 또는 없음
+    var on = Array.isArray(meta.fileCats) ? FILE_CATS.filter(function (c) { return meta.fileCats.indexOf(c) >= 0; }) : (meta.attachments ? FILE_CATS.slice() : []);
+    var off = FILE_CATS.filter(function (c) { return on.indexOf(c) < 0; });
+    var labels = function (list) { return list.map(function (c) { return FILE_CAT_LABEL[c]; }).join(', '); };
     return '﻿' + [
       '잔디 백업 — ' + (meta.teamName || meta.teamId),
       '백업 시작: ' + (meta.startedAt || '') + ' (한국 시간)',
       '기준일: ' + (meta.cutoff || '') + ' (잔디 가입일) — 이 날 이후 대화만 들어 있습니다',
-      '이모티콘: ' + (meta.stickers ? '받음' : '받지 않음 (대화에는 "(이모티콘)" 으로 표시)'),
+      '받은 첨부 종류: ' + (on.length ? labels(on) : '없음 (대화만)'),
       '만든 도구: 셀라 잔디 백업 도우미 (' + VERSION + ')',
       '',
       '[여는 방법]',
@@ -473,10 +492,11 @@
       '[들어 있는 것]',
       '- 백업한 계정이 볼 수 있는 대화만: 참여 중인 토픽(공개·비공개), 1:1 대화, 그룹 대화 중 고른 것',
       '- 메시지·댓글·스티커·투표·시스템 기록(초대·참여·나감·공지 등)',
-      '- ' + (meta.attachments ? (meta.stickers ? '첨부파일과 스티커 이미지' : '첨부파일') + ' (받지 못한 파일은 files_manifest.json 에 사유와 함께 적힘)' : '첨부파일은 이번 백업에서 제외했습니다 (뷰어에 "미저장" 으로 표시)'),
+      '- ' + (on.length ? '첨부파일: ' + labels(on) + ' (받지 못한 파일은 files_manifest.json 에 사유와 함께 적힘)' : '첨부파일은 이번 백업에서 제외했습니다 (뷰어에 "받지 않음" 으로 표시)'),
       '',
       '[들어 있지 않은 것]',
       '- 잔디에 들어오기 전(가입일 이전) 대화와 첨부',
+      on.length && off.length ? '- 고르지 않은 첨부 종류: ' + labels(off) + ' (뷰어에 "받지 않음", 이모티콘은 "(이모티콘)" 으로 표시)' : null,
       '- 참여하지 않은 토픽, 이 계정이 볼 수 없는 대화',
       '- 이미 삭제된 메시지·파일, 수정 전 내용(편집 이력)',
       '- 잔디가 열람을 제한한 오래된 기록 (그런 방은 summary.json 의 stop 이 access_limit)'
@@ -489,7 +509,7 @@
       '- 같은 폴더를 골라 다시 실행하면 끝난 방(done.json 이 있는 방)은 건너뛰고, 받지 못한 첨부파일만 다시 받습니다.',
       '  그때 방 고르기에서 뺀 방은 받지 않습니다 (전에 받아 둔 그 방 폴더는 지우지 않습니다).',
       ''
-    ]).join('\r\n');
+    ]).filter(function (line) { return line !== null; }).join('\r\n');
   }
 
   // ── 첨부 작업 목록 ─────────────────────────────────────────────────────────
@@ -528,10 +548,78 @@
     return jobs;
   }
 
-  // 실제로 받을 파일 — 첨부를 끄면 없음, 이모티콘을 끄면 스티커 작업을 뺀다 (opts = { attachments, stickers })
-  function pickFileJobs(jobs, opts) {
-    if (!opts || !opts.attachments) return [];
-    return opts.stickers ? jobs.slice() : jobs.filter(function (j) { return j.kind !== 'sticker'; });
+  // ── 첨부 종류 (문서 · 사진 · 동영상 · 기타 · 이모티콘) ──────────────────────
+
+  var FILE_CATS = ['doc', 'photo', 'video', 'other', 'sticker'];
+  var FILE_CAT_LABEL = { doc: '문서', photo: '사진', video: '동영상', other: '기타', sticker: '이모티콘' };
+  // 기본은 업무용 — 동영상·이모티콘은 크기에 비해 쓸모가 적다
+  var FILE_PRESETS = {
+    messages: { doc: false, photo: false, video: false, other: false, sticker: false },
+    work: { doc: true, photo: true, video: false, other: false, sticker: false },
+    all: { doc: true, photo: true, video: true, other: true, sticker: true }
+  };
+  var PRESET_LABEL = { messages: '대화만', work: '업무용', all: '전부' };
+  var EXT_CAT = {};
+  ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.ppt', '.pptx', '.hwp', '.hwpx', '.txt', '.rtf', '.odt', '.ods', '.odp', '.md']
+    .forEach(function (e) { EXT_CAT[e] = 'doc'; });
+  ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.heif'].forEach(function (e) { EXT_CAT[e] = 'photo'; });
+  ['.mp4', '.mov', '.avi', '.wmv', '.mkv', '.m4v', '.webm'].forEach(function (e) { EXT_CAT[e] = 'video'; });
+  ['.zip', '.7z', '.rar', '.alz', '.egg', '.tar', '.gz', '.mp3', '.m4a', '.wav', '.aac', '.ogg', '.flac', '.exe', '.dmg', '.apk']
+    .forEach(function (e) { EXT_CAT[e] = 'other'; });
+
+  // 파일 하나의 종류 — 이름의 확장자 우선, 없거나 모르면 mime(job.type), 그래도 모르면 기타
+  function fileCategory(job) {
+    if (!job) return 'other';
+    if (job.kind === 'sticker') return 'sticker';
+    var ext = extOf(String(job.name || ''));
+    if (has(EXT_CAT, ext)) return EXT_CAT[ext];
+    var t = String(job.type || '').toLowerCase().split(';')[0].trim();
+    if (!t) return 'other';
+    if (t.indexOf('image/') === 0) return 'photo';
+    if (t.indexOf('video/') === 0) return 'video';
+    if (t.indexOf('text/') === 0 || t === 'application/pdf' || /msword|ms-excel|ms-powerpoint|officedocument|opendocument|hwp|haansoft|rtf/.test(t)) return 'doc';
+    // 잔디가 'pdf'·'image' 처럼 짧게 적는 경우
+    if (t.indexOf('/') < 0) {
+      if (has(EXT_CAT, '.' + t)) return EXT_CAT['.' + t];
+      if (t === 'image') return 'photo';
+      if (t === 'video') return 'video';
+    }
+    return 'other';
+  }
+
+  // 켜진 종류의 파일만 받는다. cats 가 없으면 모두
+  function pickFileJobs(jobs, cats) {
+    if (!cats) return jobs.slice();
+    return jobs.filter(function (j) { return !!cats[fileCategory(j)]; });
+  }
+
+  // 지금 체크 상태가 어느 프리셋과 같은지 — 같은 게 없으면 null ('직접 고름')
+  function presetOf(cats) {
+    var names = Object.keys(FILE_PRESETS);
+    for (var i = 0; i < names.length; i++) {
+      var p = FILE_PRESETS[names[i]];
+      if (FILE_CATS.every(function (c) { return !!(cats && cats[c]) === p[c]; })) return names[i];
+    }
+    return null;
+  }
+
+  function anyFileCat(cats) {
+    return FILE_CATS.some(function (c) { return !!(cats && cats[c]); });
+  }
+
+  // 저장해 둔 종류 목록(배열) → { 종류: bool }. 없거나 깨졌으면 업무용, 예전 이모티콘 설정(legacyStickers '1'/'0')은 이모티콘 칸에
+  function loadFileCats(saved, legacyStickers) {
+    var out = Object.assign({}, FILE_PRESETS.work);
+    if (Array.isArray(saved)) {
+      FILE_CATS.forEach(function (c) { out[c] = saved.indexOf(c) >= 0; });
+    } else if (legacyStickers === '1' || legacyStickers === '0') {
+      out.sticker = legacyStickers === '1';
+    }
+    return out;
+  }
+
+  function fileCatList(cats) {
+    return FILE_CATS.filter(function (c) { return !!(cats && cats[c]); });
   }
 
   // ── 페이지 넘김 판정 ────────────────────────────────────────────────────────
@@ -702,21 +790,38 @@
       fresh.push(r);
     });
     tally.records += fresh.length;
+    // 종류별 몫(tally.cats)도 따로 세어 둔다 — 합계는 켜진 종류만 더하므로, 종류를 바꿔도 다시 확인할 필요가 없다
+    if (!tally.cats) tally.cats = {};
     collectFileJobs(fresh).forEach(function (job) {
       var key = String(job.id);
       if (seenFiles.has(key)) return;
       seenFiles.add(key);
-      if (job.kind === 'sticker') { tally.stickers++; return; }
-      var size = Number(job.size) || 0;
-      if (size > 0) {
-        tally.files++;
-        tally.bytes += size;
-        if (job.source === 'file_message') { tally.legacyFiles++; tally.legacyBytes += size; }
-      } else {
-        tally.unknown++;   // 크기가 없는 파일 — 대개 서버에서 지워졌다
-      }
+      var cat = fileCategory(job);
+      var c = tally.cats[cat] || (tally.cats[cat] = newTally());
+      [tally, c].forEach(function (t) {
+        if (job.kind === 'sticker') { t.stickers++; return; }
+        var size = Number(job.size) || 0;
+        if (size > 0) {
+          t.files++;
+          t.bytes += size;
+          if (job.source === 'file_message') { t.legacyFiles++; t.legacyBytes += size; }
+        } else {
+          t.unknown++;   // 크기가 없는 파일 — 대개 서버에서 지워졌다
+        }
+      });
     });
     return fresh.length;
+  }
+
+  // 방 하나의 숫자를 켜진 첨부 종류로 본다 (cats 가 없거나 종류별 몫이 없는 예전 모양이면 그대로)
+  function viewTally(t, cats) {
+    var one = newTally();
+    if (!cats || !t.cats) return addTally(one, t);
+    one.records = Number(t.records) || 0;
+    FILE_CATS.forEach(function (c) {
+      if (cats[c] && t.cats[c]) addTally(one, Object.assign({}, t.cats[c], { records: 0, rooms: 0 }));
+    });
+    return one;
   }
 
   function addTally(into, t) {
@@ -725,17 +830,15 @@
   }
 
   // 방별 결과 → 종류별(토픽은 비공개 포함)·전체 합계. isSelected 를 주면 그 방만 (방 고르기에서 뺀 방은 합계에서 빠진다).
-  // opts.stickers === false 면 스티커를 세지 않는다 — 미리 확인은 늘 세 두고, 옵션을 바꾸면 합계에서만 뺀다(다시 확인 불필요)
+  // opts.cats 를 주면 켜진 첨부 종류만 더한다 — 미리 확인은 종류별로 늘 세 두고, 종류를 바꾸면 합계에서만 바뀐다(다시 확인 불필요)
   function summarizeScan(rooms, perRoom, isSelected, opts) {
     var out = { topic: newTally(), chat: newTally(), groupChat: newTally(), total: newTally() };
-    var noStickers = !!opts && opts.stickers === false;
     (rooms || []).forEach(function (room) {
       var t = perRoom[String(room.id)];
       if (!t || (isSelected && !isSelected(room))) return;
       var k = room.kind === 'private_topic' ? 'topic' : room.kind;
-      var one = addTally(newTally(), t);
+      var one = viewTally(t, opts && opts.cats);
       one.rooms = 1;
-      if (noStickers) one.stickers = 0;
       if (out[k]) addTally(out[k], one);
       addTally(out.total, one);
     });
@@ -858,7 +961,9 @@
     SPEED_LOW: SPEED_LOW, SPEED_HIGH: SPEED_HIGH, newTally: newTally, tallyPage: tallyPage, summarizeScan: summarizeScan,
     estimateTimes: estimateTimes, fmtApprox: fmtApprox, fmtRange: fmtRange, pushSample: pushSample,
     rollingRate: rollingRate, rawEta: rawEta, smoothEta: smoothEta, reconcileExcluded: reconcileExcluded,
-    unscannedRooms: unscannedRooms, sortPickRooms: sortPickRooms, excludedList: excludedList, pickFileJobs: pickFileJobs
+    unscannedRooms: unscannedRooms, sortPickRooms: sortPickRooms, excludedList: excludedList, pickFileJobs: pickFileJobs,
+    FILE_CATS: FILE_CATS, FILE_PRESETS: FILE_PRESETS, fileCategory: fileCategory, presetOf: presetOf, anyFileCat: anyFileCat,
+    loadFileCats: loadFileCats, fileCatList: fileCatList, viewTally: viewTally
   };
 
   if (typeof module !== 'undefined' && module && module.exports) {
@@ -927,7 +1032,8 @@
     var S = {
       version: L.VERSION, phase: 'intro', message: '', teamId: null, teamName: '', rooms: [], members: {},
       // excluded = 방 고르기에서 뺀 방 { id: true } — 기본은 모두 받는다. 잔디 탭 localStorage 에 팀별로 기억한다
-      opts: { kinds: { topic: true, chat: true, groupChat: true }, attachments: true, excluded: {}, stickers: false },
+      // files = 받을 첨부 종류 { doc, photo, video, other, sticker } — 기본은 업무용(문서·사진). 하나도 없으면 대화만
+      opts: { kinds: { topic: true, chat: true, groupChat: true }, excluded: {}, files: Object.assign({}, L.FILE_PRESETS.work) },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
       progress: newProgress(0),
       current: {}, roomFailures: [], fileFailures: [], abort: null,
@@ -967,7 +1073,8 @@
       '.pick input[type=search]{width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #bac7cf;border-radius:6px;font:inherit}' +
       '.pick .row .btn{padding:5px;font-size:12px;font-weight:500}' +
       '.pl{max-height:260px;overflow:auto;margin:6px 0 8px;border-top:1px solid #eef2f4}.pl label{margin:0;padding:3px 0;border-bottom:1px solid #eef2f4;font-size:12px}' +
-      '.pl .nm{flex:1;min-width:0;overflow-wrap:anywhere}.pl .kd,.pl .sz{color:#657582;white-space:nowrap;font-size:11px}.pl label.off .nm{color:#8a99a3}.pl label[hidden]{display:none}';
+      '.pl .nm{flex:1;min-width:0;overflow-wrap:anywhere}.pl .kd,.pl .sz{color:#657582;white-space:nowrap;font-size:11px}.pl label.off .nm{color:#8a99a3}.pl label[hidden]{display:none}' +
+      '.btn.sub.on{background:#146b64;color:#fff}.fc{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}';
 
     function el(sel) { return shadow.querySelector(sel); }
 
@@ -1032,9 +1139,7 @@
         '<label><input type="checkbox" data-k="chat"' + (S.opts.kinds.chat ? ' checked' : '') + '> 1:1 대화 ' + c.chat + '개</label>' +
         '<label><input type="checkbox" data-k="groupChat"' + (S.opts.kinds.groupChat ? ' checked' : '') + '> 그룹 대화 ' + c.groupChat + '개</label>' +
         pickHtml() +
-        '<label><input type="checkbox" data-k="attachments"' + (S.opts.attachments ? ' checked' : '') + '> 첨부파일 포함</label>' +
-        // 이모티콘은 기본으로 받지 않는다 — 첨부를 끄면 고를 수 없다
-        '<label><input type="checkbox" data-k="stickers"' + (S.opts.stickers ? ' checked' : '') + (S.opts.attachments ? '' : ' disabled') + '> 이모티콘(스티커) 포함</label>' +
+        filesHtml() +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
         '바탕화면 등에 빈 폴더를 하나 만들어 고르는 것을 권합니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
         estimateHtml() +
@@ -1045,22 +1150,15 @@
       Array.prototype.forEach.call(shadow.querySelectorAll('input[data-k]'), function (box) {
         box.addEventListener('change', function () {
           var k = box.getAttribute('data-k');
-          if (k === 'attachments') {
-            S.opts.attachments = box.checked;
-            el('input[data-k=stickers]').disabled = !box.checked;
-          } else if (k === 'stickers') {
-            S.opts.stickers = box.checked;
-            saveStickers();
-          } else {
-            S.opts.kinds[k] = box.checked;
-          }
+          S.opts.kinds[k] = box.checked;
           S.notice = '';
           // 종류를 끄면 그 방은 방 고르기 목록에서도 사라진다
-          if (S.opts.kinds.hasOwnProperty(k)) refreshPick(true);
+          refreshPick(true);
           // 범위를 바꾸면 미리 확인 숫자가 지금 범위와 달라진다 — 표시만 갈아 끼운다
           refreshEstimate();
         });
       });
+      bindFiles();
       bindPick();
       el('[data-act=scan]').addEventListener('click', onScanClick);
       el('[data-act=start]').addEventListener('click', onStartClick);
@@ -1170,22 +1268,79 @@
       S.opts.excluded = L.reconcileExcluded(saved, S.rooms);
     }
 
-    // 이모티콘(스티커) 받기 — 첨부를 받을 때만. 기억은 방 제외와 같은 규칙(팀별 localStorage, 막혀도 동작)
-    function stickersOn() { return !!(S.opts.attachments && S.opts.stickers); }
+    // ── 첨부 종류 (대화만 / 업무용 / 전부 + 종류 5개) ────────────────────────
+    // 기억은 방 제외와 같은 규칙(팀별 localStorage, 막혀도 동작). 예전 이모티콘 설정(jandiBackupStickers)은 이모티콘 칸에 반영
 
-    function fileOpts() { return { attachments: S.opts.attachments, stickers: stickersOn() }; }
+    var FILE_LABEL = { doc: '문서', photo: '사진', video: '동영상', other: '기타 (압축·음성 등)', sticker: '이모티콘' };
+    var PRESET_NAMES = { messages: '대화만', work: '업무용', all: '전부' };
 
-    function stickersKey() { return 'jandiBackupStickers:' + S.teamId; }
+    function attOn() { return L.anyFileCat(S.opts.files); }
 
-    function saveStickers() {
-      try { win.localStorage.setItem(stickersKey(), S.opts.stickers ? '1' : '0'); } catch (e) { /* 기억 못 해도 동작 */ }
+    function filesKey() { return 'jandiBackupFiles:' + S.teamId; }
+
+    function saveFiles() {
+      try { win.localStorage.setItem(filesKey(), JSON.stringify(L.fileCatList(S.opts.files))); } catch (e) { /* 기억 못 해도 동작 */ }
     }
 
-    function loadStickers() {
-      var v = null;
-      try { v = win.localStorage.getItem(stickersKey()); } catch (e) { v = null; }
-      S.opts.stickers = v === '1';
+    function loadFiles() {
+      var saved = null, legacy = null;
+      try {
+        saved = JSON.parse(win.localStorage.getItem(filesKey()) || 'null');
+        legacy = win.localStorage.getItem('jandiBackupStickers:' + S.teamId);
+      } catch (e) { saved = null; }
+      S.opts.files = L.loadFileCats(saved, legacy);
     }
+
+    function presetText() {
+      var p = L.presetOf(S.opts.files);
+      return p ? PRESET_NAMES[p] : '직접 고름';
+    }
+
+    function filesHtml() {
+      var p = L.presetOf(S.opts.files);
+      return '<p class="lbl"><span>첨부</span><span data-preset-name>' + presetText() + '</span></p>' +
+        '<div class="row">' + ['messages', 'work', 'all'].map(function (k) {
+          return '<button class="btn sub' + (p === k ? ' on' : '') + '" type="button" data-preset="' + k + '" aria-pressed="' + (p === k) + '">' + PRESET_NAMES[k] + '</button>';
+        }).join('') + '</div>' +
+        '<div class="fc">' + L.FILE_CATS.map(function (c) {
+          return '<label><input type="checkbox" data-fc="' + c + '"' + (S.opts.files[c] ? ' checked' : '') + '> ' + FILE_LABEL[c] + '</label>';
+        }).join('') + '</div>';
+    }
+
+    // 체크 상태가 바뀌면: 프리셋 표시 · 기억 · 미리 확인 합계 (다시 확인 없이 켜진 종류만 더한다)
+    function filesChanged() {
+      var p = L.presetOf(S.opts.files);
+      el('[data-preset-name]').textContent = presetText();
+      Array.prototype.forEach.call(shadow.querySelectorAll('[data-preset]'), function (b) {
+        var on = b.getAttribute('data-preset') === p;
+        b.className = 'btn sub' + (on ? ' on' : '');
+        b.setAttribute('aria-pressed', String(on));
+      });
+      S.notice = '';
+      saveFiles();
+      refreshEstimate();
+    }
+
+    function bindFiles() {
+      Array.prototype.forEach.call(shadow.querySelectorAll('input[data-fc]'), function (box) {
+        box.addEventListener('change', function () {
+          S.opts.files[box.getAttribute('data-fc')] = box.checked;
+          filesChanged();
+        });
+      });
+      Array.prototype.forEach.call(shadow.querySelectorAll('[data-preset]'), function (btn) {
+        btn.addEventListener('click', function () {
+          S.opts.files = Object.assign({}, L.FILE_PRESETS[btn.getAttribute('data-preset')]);
+          Array.prototype.forEach.call(shadow.querySelectorAll('input[data-fc]'), function (box) {
+            box.checked = !!S.opts.files[box.getAttribute('data-fc')];
+          });
+          filesChanged();
+        });
+      });
+    }
+
+    // 이번 백업에서 받을 첨부 종류 (복사본 — 실행 중에는 바뀌지 않는다)
+    function fileCats() { return Object.assign({}, S.opts.files); }
 
     function kindsKey() {
       return ['topic', 'chat', 'groupChat'].filter(function (k) { return !!S.opts.kinds[k]; }).join(',');
@@ -1204,7 +1359,7 @@
     function estimateHtml() {
       var sc = S.scan;
       if (!sc || !sc.finishedAt) return '';
-      var sum = L.summarizeScan(S.rooms, sc.perRoom, notExcluded, { stickers: stickersOn() });
+      var sum = L.summarizeScan(S.rooms, sc.perRoom, notExcluded, { cats: S.opts.files });
       var tot = sum.total;
       var stale = scanStale();
       var row = function (label, t, cls) {
@@ -1245,7 +1400,7 @@
     function renderScan() {
       var sc = S.scan;
       if (!sc) return;
-      var tot = L.summarizeScan(S.rooms, sc.perRoom, null, { stickers: stickersOn() }).total;
+      var tot = L.summarizeScan(S.rooms, sc.perRoom, null, { cats: S.opts.files }).total;
       var frac = sc.total ? sc.done / sc.total : 0;
       var cur = Object.keys(S.current).map(function (k) { return '<li>' + L.escapeHtml(S.current[k]) + '</li>'; }).join('');
       var html = '<p><b>용량을 확인하는 중입니다.</b> 대화를 읽기만 하고 아무것도 저장하지 않습니다.</p>' +
@@ -1328,7 +1483,7 @@
         eta = '약 ' + (S.eta.ms < 120000 ? L.fmtDuration(S.eta.ms) : L.fmtApprox(S.eta.ms)) + ' 남음' +
           (S.eta.basis === 'bytes' ? '' : ' (방 수 기준, 대략)');
       }
-      var att = S.opts.attachments;
+      var att = attOn();
       var complete = p.roomsUnsized <= 0;
       var bfrac = p.bytesExpected > 0 ? Math.min(1, p.bytes / p.bytesExpected) : (complete && handled === p.roomsTotal ? 1 : 0);
       var bytesLine = L.fmtBytes(p.bytes) + ' / ' + (complete
@@ -1840,11 +1995,11 @@
       var meta = {
         roomId: room.id, roomName: room.name, kind: room.kind, teamId: S.teamId, viewType: room.viewType || null,
         stopReason: collected.stopReason, pages: collected.pages, collectedAt: new Date().toISOString(),
-        tool: 'cella-jandi-backup ' + L.VERSION, cutoff: S.cutoff.date, stickers: stickersOn(), members: S.members
+        tool: 'cella-jandi-backup ' + L.VERSION, cutoff: S.cutoff.date, fileCats: L.fileCatList(S.opts.files), members: S.members
       };
       await writeText(dir, 'files_manifest.json', JSON.stringify(manifest, null, 1));
       await writeRaw(dir, meta, collected.records);
-      var out = L.renderRoom({ roomName: room.name, roomId: room.id, members: S.members, records: collected.records, stickers: stickersOn() }, manifest);
+      var out = L.renderRoom({ roomName: room.name, roomId: room.id, members: S.members, records: collected.records, cats: fileCats() }, manifest);
       await writeText(dir, 'index.html', out.html);
       await writeText(dir, 'messages.csv', out.csv);
       await writeText(dir, 'messages.txt', out.txt);
@@ -1861,15 +2016,16 @@
       var prevManifest = [];
       try { prevManifest = JSON.parse(await readTextIf(dir, 'files_manifest.json') || '[]'); } catch (e) { prevManifest = []; }
       if (doneText) {
-        var failed = prevManifest.filter(function (f) { return f.status !== 'downloaded' && (stickersOn() || f.kind !== 'sticker'); });
-        if (!S.opts.attachments || !failed.length) { setRoomBytes(room, 0); S.progress.roomsSkipped++; return; }
+        // 이번에 꺼진 종류는 다시 받지 않는다 (이미 받은 파일은 둔다)
+        var failed = L.pickFileJobs(prevManifest.filter(function (f) { return f.status !== 'downloaded'; }), S.opts.files);
+        if (!failed.length) { setRoomBytes(room, 0); S.progress.roomsSkipped++; return; }
         // 끝난 방 — 받지 못한 첨부만 다시
         S.current[room.id] = room.name + ' — 못 받은 첨부 ' + failed.length + '개 다시';
         var raw = JSON.parse(await readTextIf(dir, 'raw.json') || '{}');
         var records = L.cutoffRecords(raw.records ? Object.keys(raw.records).map(function (k) { return raw.records[k]; }) : [], S.cutoff.ms);
         var failedIds = {};
         failed.forEach(function (f) { failedIds[String(f.id)] = true; });
-        var jobs = L.pickFileJobs(L.collectFileJobs(records), fileOpts()).filter(function (j) { return failedIds[String(j.id)]; });
+        var jobs = L.pickFileJobs(L.collectFileJobs(records), S.opts.files).filter(function (j) { return failedIds[String(j.id)]; });
         setRoomBytes(room, jobBytes(jobs));
         var retried = await downloadAll(jobs, room, dir, prevManifest);
         var byId = {};
@@ -1881,7 +2037,7 @@
       }
       S.current[room.id] = room.name + ' — 읽는 중';
       var collected = await collectMessages(room);
-      var fileJobs = L.pickFileJobs(L.collectFileJobs(collected.records), fileOpts());
+      var fileJobs = L.pickFileJobs(L.collectFileJobs(collected.records), S.opts.files);
       setRoomBytes(room, jobBytes(fileJobs));   // 미리 확인 값을 실제 작업 목록으로 바로잡는다
       if (fileJobs.length) S.current[room.id] = room.name + ' — 첨부 ' + fileJobs.length + '개 받는 중';
       var manifest = await downloadAll(fileJobs, room, dir, prevManifest);
@@ -1915,7 +2071,7 @@
       S.rate = L.rollingRate(S.samples, 5000);
       var handled = p.roomsDone + p.roomsSkipped + p.roomsFailed;
       var raw = L.rawEta({
-        useBytes: S.opts.attachments, expectedComplete: p.roomsUnsized <= 0, expected: p.bytesExpected, bytes: p.bytes,
+        useBytes: attOn(), expectedComplete: p.roomsUnsized <= 0, expected: p.bytesExpected, bytes: p.bytes,
         rate: S.rate, roomsFrac: p.roomsTotal ? handled / p.roomsTotal : 0, elapsedMs: now - S.startedAt
       });
       S.eta = L.smoothEta(S.eta, raw, now - (S.etaAt || now), 20000);
@@ -1954,7 +2110,7 @@
         } catch (e) { /* 깨진 표식 — 다음 실행에서 다시 받는다 */ }
       }
       rows = L.sortRows(rows);
-      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: S.opts.attachments, stickers: stickersOn(), cutoff: S.cutoff.date,
+      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: attOn(), fileCats: L.fileCatList(S.opts.files), cutoff: S.cutoff.date,
         excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }) };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
@@ -1962,7 +2118,7 @@
       await writeText(root, 'backup_state.json', JSON.stringify({
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
-        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), stickers: stickersOn()
+        roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files)
       }, null, 1));
     }
 
@@ -1978,7 +2134,7 @@
       var per = S.scan && S.scan.finishedAt ? S.scan.perRoom : {};
       selected.forEach(function (r) {
         var t = per[String(r.id)];
-        if (t) setRoomBytes(r, t.bytes);
+        if (t) setRoomBytes(r, L.viewTally(t, S.opts.files).bytes);   // 켜진 첨부 종류 몫만
       });
       win.addEventListener('beforeunload', beforeUnload);
       timer = win.setInterval(function () { tick(); render(); }, 700);
@@ -1990,7 +2146,7 @@
         await checkRootCutoff(root);
         var roomsDir = await root.getDirectoryHandle('rooms', { create: true });
         var folders = await existingRoomFolders(roomsDir);
-        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), stickers: stickersOn() }, null, 1));
+        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files) }, null, 1));
         var dms = selected.filter(function (r) { return r.kind === 'chat'; });
         var others = selected.filter(function (r) { return r.kind !== 'chat'; });
         var work = function (room) { return processRoom(room, roomsDir, folders); };
@@ -2025,7 +2181,7 @@
       try {
         prepare();
         loadExcluded();
-        loadStickers();
+        loadFiles();
         S.phase = 'intro';
       } catch (e) {
         S.phase = 'error';
