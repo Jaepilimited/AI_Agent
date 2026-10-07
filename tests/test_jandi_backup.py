@@ -105,8 +105,9 @@ def test_page_builds_bookmarklet_from_same_origin_static_file():
                    # 첨부 종류 프리셋 — 기본은 업무용
                    "<b>대화만 / 업무용 / 전부</b> 중에 고르세요", "기본은 업무용(대화·문서·사진)이고 동영상·이모티콘은 빠집니다",
                    # 방별 워드 — 팀즈·OneDrive 에서 보기
-                   "방 폴더의 <b>대화.docx</b> 를 여세요. index.html 은 PC 에서만 열립니다",
-                   "워드에는 사진이 들어가고, 첨부는 PC 워드에서 클릭하면 열립니다(팀즈 웹에서는 방 폴더의 attachments 를 여세요)"):
+                   # index.html 과 대화.docx 구분 표 (2026-10-07)
+                   "<th>index.html</th><th>대화.docx (방 폴더마다)</th>", "<b>모든 방을 한 번에</b> 검색",
+                   "팀즈 웹에서는 방 폴더의 attachments", "index.html 은 팀즈·OneDrive 웹에서는 열리지 않고 내려받기만 됩니다"):
         assert phrase in page, phrase
 
 
