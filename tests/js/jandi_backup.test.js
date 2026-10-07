@@ -691,6 +691,96 @@ test('README·전체 목록: 방별 워드 안내 한 줄, 방 이름 옆 워드
   assert.equal((index.match(/class="docx"/g) || []).length, 3);
 });
 
+
+// ── 올리기 나누기 (회사 DLP 는 한 번에 1,000개까지) ─────────────────────────
+
+test('첨부 폴더 배정: 900개까지 attachments, 901개부터 받는 순서대로 attachments_N 에 900개씩', () => {
+  assert.equal(L.UPLOAD_LIMIT, 900);
+  const jobs = (n) => Array.from({ length: n }, (_, i) => ({ id: 'f' + i }));
+  const count = (map) => Object.values(map).reduce((a, d) => ((a[d] = (a[d] || 0) + 1), a), {});
+  assert.deepEqual(count(L.attachmentDirs(jobs(900))), { attachments: 900 });
+  assert.deepEqual(count(L.attachmentDirs(jobs(901))), { attachments_1: 900, attachments_2: 1 });
+  assert.deepEqual(count(L.attachmentDirs(jobs(2000))), { attachments_1: 900, attachments_2: 900, attachments_3: 200 });
+  const m = L.attachmentDirs(jobs(901));
+  assert.equal(m.f0, 'attachments_1');
+  assert.equal(m.f899, 'attachments_1');
+  assert.equal(m.f900, 'attachments_2');
+  assert.deepEqual(L.attachmentDirs(jobs(7), 3), { f0: 'attachments_1', f1: 'attachments_1', f2: 'attachments_1', f3: 'attachments_2', f4: 'attachments_2', f5: 'attachments_2', f6: 'attachments_3' });
+  assert.deepEqual(L.attachmentDirs([]), {});
+  for (const n of ['attachments', 'attachments_1', 'attachments_12']) assert.ok(L.isAttachmentDir(n), n);
+  for (const n of ['attachments_', 'attachments_x', 'Attachments', 'attachments_1/x', '']) assert.ok(!L.isAttachmentDir(n), n);
+});
+
+test('팀즈에 올릴 파일: 방 이름으로 평평하게, 나뉜 방은 (N부), 금지 문자·겹침(대소문자 무시)은 다듬고, 900개씩 폴더', () => {
+  const rows = [
+    { id: '1', name: '공지: 전체/알림', folder: '토픽_1_공지', docx: ['대화.docx'] },
+    { id: '2', name: '큰 방', folder: '토픽_2_큰 방', docx: ['대화_1.docx', '대화_2.docx'] },
+    { id: '3', name: '공지_ 전체_알림', folder: '토픽_3_x', docx: ['대화.docx'] },
+    { id: '4', name: 'ABC', folder: '토픽_4', docx: ['대화.docx'] },
+    { id: '5', name: 'abc', folder: '토픽_5', docx: ['대화.docx'] },
+    { id: '6', name: '워드 없음', folder: '토픽_6' },
+    { id: '7', name: '...', folder: '토픽_7', docx: ['대화.docx'] }
+  ];
+  const plan = L.teamsUploadFolders(rows);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].dir, '팀즈에 올릴 파일');
+  assert.deepEqual(plan[0].files.map((f) => f.name), [
+    '공지_ 전체_알림.docx', '큰 방 (1부).docx', '큰 방 (2부).docx', '공지_ 전체_알림 (2).docx', 'ABC.docx', 'abc (2).docx', 'room.docx']);
+  assert.deepEqual(plan[0].files.slice(0, 3).map((f) => f.src), ['rooms/토픽_1_공지/대화.docx', 'rooms/토픽_2_큰 방/대화_1.docx', 'rooms/토픽_2_큰 방/대화_2.docx']);
+  // 경계: 900개는 번호 없는 폴더 하나, 901개는 _1·_2
+  const many = (n) => Array.from({ length: n }, (_, i) => ({ id: String(i), name: '방' + i, folder: 'f' + i, docx: ['대화.docx'] }));
+  assert.deepEqual(L.teamsUploadFolders(many(900)).map((x) => [x.dir, x.files.length]), [['팀즈에 올릴 파일', 900]]);
+  assert.deepEqual(L.teamsUploadFolders(many(901)).map((x) => [x.dir, x.files.length]), [['팀즈에 올릴 파일_1', 900], ['팀즈에 올릴 파일_2', 1]]);
+  assert.deepEqual(L.teamsUploadFolders(many(7), 3).map((x) => x.files.length), [3, 3, 1]);
+  assert.deepEqual(L.teamsUploadFolders([]), []);
+});
+
+test('올리기 묶음: 방 폴더 단위로 900개 이하, 큰 방은 첨부 폴더 단위로 쪼개고, 그래도 넘는 폴더는 혼자 + 표시', () => {
+  const rooms = [
+    { path: 'rooms/A', files: 500, parts: [{ path: 'rooms/A/attachments', files: 490 }] },
+    { path: 'rooms/B', files: 395, parts: [] },
+    { path: 'rooms/C', files: 1, parts: [] },
+    { path: 'rooms/NEWS', files: 1810, parts: [{ path: 'rooms/NEWS/attachments_1', files: 900 }, { path: 'rooms/NEWS/attachments_2', files: 900 }] },
+    { path: 'rooms/OLD', files: 1210, parts: [{ path: 'rooms/OLD/attachments', files: 1200 }] },
+    { path: 'rooms/D', files: 0, parts: [] }
+  ];
+  const b = L.uploadBatches(rooms, 5);
+  assert.deepEqual(b.map((x) => [x.files, x.items, x.over]), [
+    [900, ['백업 폴더 맨 위 파일 (index.html · README.txt 등)', 'rooms/A', 'rooms/B'], false],
+    [11, ['rooms/C', 'rooms/NEWS (attachments_1, attachments_2 폴더 빼고)'], false],
+    [900, ['rooms/NEWS/attachments_1'], false],
+    [900, ['rooms/NEWS/attachments_2'], false],
+    [10, ['rooms/OLD (attachments 폴더 빼고)'], false],
+    [1200, ['rooms/OLD/attachments'], true]
+  ]);
+  assert.ok(b.every((x) => x.over || x.files <= 900));
+  // 경계: 900 은 한 묶음, 901 은 둘
+  assert.equal(L.uploadBatches([{ path: 'rooms/X', files: 899, parts: [] }], 1).length, 1);
+  assert.equal(L.uploadBatches([{ path: 'rooms/X', files: 900, parts: [] }], 1).length, 2);
+  // 900개짜리 방 하나는 그대로 한 묶음 (쪼개지 않는다)
+  assert.deepEqual(L.uploadBatches([{ path: 'rooms/X', files: 900, parts: [{ path: 'rooms/X/attachments', files: 880 }] }], 0).map((x) => x.items), [['rooms/X']]);
+  assert.deepEqual(L.uploadBatches([], 0), []);
+  // 작은 한도
+  assert.deepEqual(L.uploadBatches([{ path: 'rooms/a', files: 2, parts: [] }, { path: 'rooms/b', files: 2, parts: [] }], 1, 3).map((x) => x.items),
+    [['백업 폴더 맨 위 파일 (index.html · README.txt 등)', 'rooms/a'], ['rooms/b']]);
+});
+
+test('올리기 순서.txt 와 상위 index: 경고 · 워드만 폴더 · 묶음 줄', () => {
+  const batches = L.uploadBatches([{ path: 'rooms/[KR] NOTICE', files: 865, parts: [] }, { path: 'rooms/<B>', files: 1100, parts: [{ path: 'rooms/<B>/attachments', files: 1100 }] }], 5);
+  const txt = L.uploadPlanText(batches, ['팀즈에 올릴 파일']);
+  assert.ok(txt.startsWith("﻿팀즈·OneDrive 에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.\r\n"));
+  assert.ok(txt.includes('\r\n1번 묶음 (870개): 백업 폴더 맨 위 파일 (index.html · README.txt 등), rooms/[KR] NOTICE\r\n'));
+  assert.ok(txt.includes('2번 묶음 (1,100개 — 1,000개를 넘습니다. 이 폴더 안의 파일을 나눠서 올리세요): rooms/<B>/attachments'));
+  assert.ok(txt.includes('워드만: 팀즈에 올릴 파일 (폴더 하나씩)'));
+  const index = L.buildTopIndex([], { teamName: 't', uploadBatches: batches, teamsDirs: ['팀즈에 올릴 파일'] });
+  assert.ok(index.includes('<h2 id="upload">올리기 순서</h2>'));
+  assert.ok(index.includes('<li>1번 묶음 (870개): 백업 폴더 맨 위 파일 (index.html · README.txt 등), rooms/[KR] NOTICE</li>'));
+  assert.ok(index.includes('rooms/&lt;B&gt;/attachments'));
+  assert.ok(!L.buildTopIndex([], { teamName: 't' }).includes('올리기 순서'));
+  const readme = L.buildReadme({ teamName: 't', uploadBatches: batches });
+  assert.ok(readme.includes('올리기 순서.txt 의 묶음대로') && readme.includes("'팀즈에 올릴 파일' 폴더"));
+});
+
 // ── 방 고르기 (필요 없는 방 빼기) ───────────────────────────────────────────
 
 test('미리 확인 합계: 방 고르기에서 뺀 방은 종류별·전체 합계에서 빠진다', () => {

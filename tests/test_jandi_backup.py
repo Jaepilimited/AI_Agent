@@ -107,7 +107,11 @@ def test_page_builds_bookmarklet_from_same_origin_static_file():
                    # 방별 워드 — 팀즈·OneDrive 에서 보기
                    # index.html 과 대화.docx 구분 표 (2026-10-07)
                    "<th>index.html</th><th>대화.docx (방 폴더마다)</th>", "<b>모든 방을 한 번에</b> 검색",
-                   "팀즈 웹에서는 방 폴더의 attachments", "index.html 은 팀즈·OneDrive 웹에서는 열리지 않고 내려받기만 됩니다"):
+                   "팀즈 웹에서는 방 폴더의 attachments", "index.html 은 팀즈·OneDrive 웹에서는 열리지 않고 내려받기만 됩니다",
+                   # 올리기 나누기 — 회사 보안 검사(DLP)는 한 번에 1,000개까지
+                   "백업 폴더를 통째로 올리지 마세요. 회사 보안 검사는 한 번에 1,000개까지라 넘으면 멈춥니다.",
+                   "<b>팀즈에 올릴 파일</b> 폴더(워드만)나 <b>올리기 순서.txt</b> 의 묶음대로 하나씩 올리세요",
+                   "<dt>올리다가 보안 검사 창이 멈춰요 (1,000개 한도)</dt>"):
         assert phrase in page, phrase
 
 

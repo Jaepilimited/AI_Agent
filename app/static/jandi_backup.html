@@ -80,6 +80,8 @@
     .jb-two thead th { color: var(--text); font-weight: 700; }
     .jb-two tbody th { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
     .jb-done .jb-word { font-size: 0.95rem; color: var(--text-secondary); }
+    .jb-done .jb-upload { font-size: 0.95rem; margin-top: 6px; padding: 8px 12px; border-radius: 8px;
+                          background: color-mix(in srgb, var(--jb-orange) 9%, var(--bg-surface)); }
     .jb-rules { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .jb-rule { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 10px;
                background: color-mix(in srgb, var(--jb-orange) 9%, var(--bg-surface));
@@ -234,6 +236,7 @@
           </tbody>
         </table>
         <p class="jb-word">index.html 은 팀즈·OneDrive 웹에서는 열리지 않고 내려받기만 됩니다.</p>
+        <p class="jb-upload">백업 폴더를 통째로 올리지 마세요. 회사 보안 검사는 한 번에 1,000개까지라 넘으면 멈춥니다. <b>팀즈에 올릴 파일</b> 폴더(워드만)나 <b>올리기 순서.txt</b> 의 묶음대로 하나씩 올리세요.</p>
       </div>
     </div>
 
@@ -277,6 +280,10 @@
             <dt>너무 오래 걸려요</dt>
             <dd>시간 대부분은 첨부파일입니다. 대화만 필요하면 백업 창에서 <b>대화만</b>을 고르세요. 훨씬 빨리 끝납니다.
               필요 없는 방은 백업 창의 <b>방 고르기</b>에서 체크를 끄면 받지 않습니다 (공지·알림 방처럼 큰 방을 빼면 빨라집니다).</dd>
+            <dt>올리다가 보안 검사 창이 멈춰요 (1,000개 한도)</dt>
+            <dd>회사 보안 검사는 한 번에 1,000개 파일까지만 검사하고, 넘으면 멈춰서 올리기도 멈춥니다. 백업 폴더를 통째로 올리지 말고
+              워드만 필요하면 <b>팀즈에 올릴 파일</b> 폴더를(여러 개면 하나씩), 전부 올리려면 백업 폴더의 <b>올리기 순서.txt</b> 에 적힌 묶음대로
+              하나씩 올리세요. 묶음마다 900개 이하입니다. 첨부가 900개를 넘는 방은 <code>attachments_1</code>, <code>attachments_2</code> … 로 나눠 저장돼 있습니다.</dd>
             <dt>진행 화면에 "실패 · 파일 2" 처럼 나와요</dt>
             <dd>첨부파일을 <b>세 번 다시 시도하고도 못 받은 개수</b>입니다. 대화 기록은 그대로 받고 있으니 계속 두셔도 됩니다.
               흔한 이유는 잔디 서버에서 <b>이미 지워진 파일</b>이고, 그 밖에 잠깐 끊긴 네트워크나 받다 깨진 파일(크기가 맞지 않음)도 있습니다.

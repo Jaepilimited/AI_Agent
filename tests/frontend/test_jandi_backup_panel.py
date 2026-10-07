@@ -918,3 +918,130 @@ def test_word_option_off_then_on_rebuilds_from_raw_without_reading(browser):
     assert done["row"]["docx"] == ["대화.docx"]
     assert files2[f"{top}/index.html"]["text"].count('class="docx"') == 4
     ctx.close()
+
+
+# ── 올리기 나누기 — 회사 DLP 는 한 번에 1,000개까지 (2026-10-07) ─────────────
+# 한도(lib.UPLOAD_LIMIT, 실제 900)를 3 으로 줄여 나눔을 본다
+
+TOPIC_DIR = "비공개토픽_90000001_[테스트] 기획 _팀_ 방"
+LIMIT_3 = "window.__jandiBackup.lib.UPLOAD_LIMIT = 3"
+FORGET_TOPIC = """async () => {
+  const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked');
+  for await (const [name, top] of root.entries()) {
+    const room = await (await top.getDirectoryHandle('rooms')).getDirectoryHandle('%s');
+    await room.removeEntry('done.json'); await room.removeEntry('files_manifest.json');
+  }
+}""" % TOPIC_DIR
+ROOM_DIRS = """async () => {
+  const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked');
+  for await (const [name, top] of root.entries()) {
+    const room = await (await top.getDirectoryHandle('rooms')).getDirectoryHandle('%s');
+    const out = []; for await (const [n, h] of room.entries()) if (h.kind === 'directory') out.push(n);
+    return out.sort();
+  }
+}""" % TOPIC_DIR
+TOP_DIRS = """async () => {
+  const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked');
+  for await (const [name, top] of root.entries()) {
+    const out = []; for await (const [n, h] of top.entries()) if (h.kind === 'directory') out.push(n);
+    return out.sort();
+  }
+}"""
+
+
+def _reopen(page):
+    page.evaluate("window.__log.pages = []; window.__log.getImageAt = []")
+    page.reload()
+    page.evaluate(SCRIPT)
+    host = page.locator("#__jandi-backup-host")
+    host.locator(f"text={CUTOFF_TEXT}").wait_for()
+    return host
+
+
+def test_upload_limit_splits_attachments_teams_folders_and_plan(browser):
+    """한도를 넘는 방의 첨부는 attachments_1·_2 에 나눠 저장하고 뷰어·워드 링크도 그 경로. 「팀즈에 올릴 파일」 은
+    방 이름으로 평평하게 한도마다 폴더, 올리기 순서.txt·상위 index 에 한도 이하 묶음. 같은 폴더를 원래 한도로 이어 받으면
+    attachments_N 의 파일을 그대로 인정하고, 팀즈 폴더는 새로 만든다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    page.evaluate(LIMIT_3)
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    room = f"{top}/rooms/{TOPIC_DIR}"
+    manifest = {str(f["id"]): f for f in json.loads(files[f"{room}/files_manifest.json"]["text"])}
+    # 받는 순서 7000001, 7000002, 7000003(404), 7000004, 5000010 → 3개씩
+    assert {k: manifest[k]["path"].split("/")[0] for k in manifest} == {
+        "7000001": "attachments_1", "7000002": "attachments_1", "7000003": "attachments_1",
+        "7000004": "attachments_2", "5000010": "attachments_2"}
+    for fid in ("7000001", "7000002", "7000004", "5000010"):
+        assert files[f"{room}/{manifest[fid]['path']}"]["size"] == SIZES[fid]
+    assert page.evaluate(ROOM_DIRS) == ["attachments_1", "attachments_2"], "attachments/ 는 만들지 않는다"
+    viewer = files[f"{room}/index.html"]["text"]
+    assert 'href="attachments_1/7000001_' in viewer and 'href="attachments_2/5000010_' in viewer
+    parts = _open_docx(files[f"{room}/대화.docx"])
+    links = {r.get("Target") for r in parts["word/_rels/document.xml.rels"].iter(REL + "Relationship") if r.get("Type").endswith("/hyperlink")}
+    assert any(t.startswith("attachments_2/5000010_") for t in links)
+
+    # 팀즈에 올릴 파일: 워드 4개 → 3 + 1, 방 이름으로
+    teams = sorted(k[len(top) + 1:] for k in files if k.startswith(f"{top}/팀즈에 올릴 파일"))
+    assert [t.split("/")[0] for t in teams].count("팀즈에 올릴 파일_1") == 3
+    assert [t.split("/")[0] for t in teams].count("팀즈에 올릴 파일_2") == 1
+    assert "팀즈에 올릴 파일_1/[테스트] 기획 _팀_ 방.docx" in teams
+    assert files[f"{top}/팀즈에 올릴 파일_1/[테스트] 기획 _팀_ 방.docx"]["b64"] == files[f"{room}/대화.docx"]["b64"], "그대로 복사"
+
+    # 올리기 순서: 묶음마다 한도 이하 (넘는 건 혼자 + 표시)
+    plan = files[f"{top}/올리기 순서.txt"]["text"]
+    # 브라우저 text() 는 BOM 을 걷고 읽는다 — 있든 없든 본문으로 본다
+    assert plan.lstrip("\ufeff").startswith("팀즈·OneDrive 에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다.")
+    lines = [l for l in plan.split("\r\n") if "번 묶음 (" in l]
+    assert lines and all(int(l.split("(")[1].split("개")[0].replace(",", "")) <= 3 or "넘습니다" in l for l in lines), lines
+    assert any(l.endswith(f": rooms/{TOPIC_DIR}/attachments_1") for l in lines)
+    assert any(l.endswith(f": rooms/{TOPIC_DIR}/attachments_2") for l in lines)
+    assert any(f"rooms/{TOPIC_DIR} (attachments_1, attachments_2 폴더 빼고)" in l for l in lines)
+    assert not any("팀즈에 올릴 파일" in l for l in lines), "워드만 폴더는 묶음에 넣지 않는다"
+    # 묶음 합 = 백업 폴더 파일 수 (팀즈 폴더 제외)
+    total = sum(int(l.split("(")[1].split("개")[0].replace(",", "")) for l in lines)
+    assert total == sum(1 for k in files if "/팀즈에 올릴 파일" not in k)
+    index = files[f"{top}/index.html"]["text"]
+    assert '<h2 id="upload">올리기 순서</h2>' in index and "attachments_2</li>" in index
+    assert "올리기 순서.txt 의 묶음대로" in files[f"{top}/README.txt"]["text"]
+
+    # 원래 한도(900)로 이어 받기 — 표식·목록을 지운 방도 attachments_N 의 파일을 인정하고, 못 받은 것만 다시
+    page.evaluate(FORGET_TOPIC)
+    host = _reopen(page)
+    assert page.evaluate("window.__jandiBackup.lib.UPLOAD_LIMIT") == 900
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    assert sorted(g["id"] for g in page.evaluate("window.__log")["getImageAt"]) == ["7000003"]
+    files2 = page.evaluate("window.__dumpOpfs()")
+    manifest2 = {str(f["id"]): f["path"] for f in json.loads(files2[f"{room}/files_manifest.json"]["text"]) if f["status"] == "downloaded"}
+    assert manifest2 == {k: manifest[k]["path"] for k in ("7000001", "7000002", "7000004", "5000010")}, "원래 자리 그대로"
+    assert page.evaluate(ROOM_DIRS) == ["attachments_1", "attachments_2"], "새 배정(attachments/)으로 옮기거나 빈 폴더를 만들지 않는다"
+    assert [d for d in page.evaluate(TOP_DIRS) if d.startswith("팀즈")] == ["팀즈에 올릴 파일"], "지난 팀즈 폴더는 지우고 새로"
+    assert sum(1 for k in files2 if k.startswith(f"{top}/팀즈에 올릴 파일/")) == 4
+    ctx.close()
+
+
+def test_resume_old_attachments_folder_with_split_limit(browser):
+    """예전처럼 attachments/ 하나에 받아 둔 방을, 한도를 넘는 방이 된 뒤(한도 3) 이어 받아도 이미 있는 파일은 attachments/ 그대로 인정한다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    assert page.evaluate(ROOM_DIRS) == ["attachments"]
+    page.evaluate(FORGET_TOPIC)
+    host = _reopen(page)
+    page.evaluate(LIMIT_3)
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    assert sorted(g["id"] for g in page.evaluate("window.__log")["getImageAt"]) == ["7000003"], "받아 둔 파일은 다시 받지 않는다"
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    manifest = json.loads(files[f"{top}/rooms/{TOPIC_DIR}/files_manifest.json"]["text"])
+    assert {f["path"].split("/")[0] for f in manifest if f["status"] == "downloaded"} == {"attachments"}
+    assert page.evaluate(ROOM_DIRS) == ["attachments"], "못 받은 파일 때문에 빈 attachments_N 이 생기지 않는다"
+    ctx.close()

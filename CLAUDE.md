@@ -1965,8 +1965,14 @@ CSV 도 같은 값이었다. **에러는 없었다.**
   받은 첨부는 `attachments/…` 상대 경로 하이퍼링크(External). 기록 5,000건 또는 사진 합 50MB 마다 `대화_N.docx` 로 나눈다(하나면 `대화.docx`).
   끝난 방에 워드가 없으면 이어 받을 때 raw.json 으로 만든다(대화 다시 안 읽음). ⚠️ XML 이름공간 URL 은 요청이 아니다 —
   셀라 미호출 시험은 이 세 호스트(openxmlformats·purl·w3)만 따로 허용한다
+- **올리기 나누기**(2026-10-07 실사용 제보): ⛔ 회사 DLP 는 한 번에 **1,000개 파일까지만** 검사하고 넘으면 멈춘다. 검사를 피하지 않는다
+  (압축으로 묶지 않는다) — 한 번에 올리는 양을 `UPLOAD_LIMIT`(900) 이하로 나누게 할 뿐이다. ① 첨부가 900개를 넘는 방은 받는 순서대로
+  `attachments_1/`·`_2/` … (`attachmentDirs`). 이어 받을 때 이미 있는 파일은 어느 첨부 폴더(예전 `attachments/` 포함)에 있든 원래 자리
+  그대로 인정하고, 찾으려고 빈 폴더를 만들지 않는다. ② 끝날 때(워드 켜짐) `팀즈에 올릴 파일/`(900개 넘으면 `_1`·`_2`)에 방별 워드를
+  방 이름으로 평평하게 복사 — 매번 지우고 새로(`teamsUploadFolders`). ③ `올리기 순서.txt` + 상위 index `올리기 순서` 절: 방 폴더 단위
+  900개 이하 묶음, 큰 방은 첨부 폴더 단위로 쪼갬(`uploadBatches`, 파일 복사 없음). 한도는 `lib.UPLOAD_LIMIT` — 시험은 3 으로 줄여 본다
 - 회귀: `tests/test_jandi_backup.py`(화면·배선·셀라 미호출 + `node --test tests/js/jandi_backup.test.js`
-  56문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
+  60문항) · `tests/frontend/test_jandi_backup_panel.py`(가짜 잔디 화면 + OPFS 로 전체 흐름·재개·중지·미리 확인·방 고르기)
 
 
 ## CS/BP 제품 Q&A 캐시 — **매시 갱신한다** (2026-09-03)

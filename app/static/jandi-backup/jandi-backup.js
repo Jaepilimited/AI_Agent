@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-07.4';
+  var VERSION = '2026-10-07.5';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -695,6 +695,89 @@
     ].concat(media), o.mtime);
   }
 
+  // ── 올리기 나누기 — 회사 DLP(업로드 보안 검사)는 한 번에 1,000개까지만 검사한다 ─────────────
+  // 검사를 피하지 않는다(압축으로 묶지 않는다). 한 번에 올리는 양을 UPLOAD_LIMIT 개 이하로 나누게 할 뿐이다.
+  // 한도는 lib 에 둔다 — 브라우저 쪽은 부를 때마다 L.UPLOAD_LIMIT 를 읽는다(시험에서 작게 줄여 나눔을 본다)
+
+  var UPLOAD_LIMIT = 900;
+  var TEAMS_DIR = '팀즈에 올릴 파일';
+  var UPLOAD_PLAN_FILE = '올리기 순서.txt';
+  var UPLOAD_WARNING = "팀즈·OneDrive 에 올릴 때 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. 아래 묶음대로 하나씩 올리세요. 워드만 올리려면 '팀즈에 올릴 파일' 폴더를 쓰세요.";
+  var TOP_FILES_LABEL = '백업 폴더 맨 위 파일 (index.html · README.txt 등)';
+
+  function isAttachmentDir(name) { return /^attachments(_\d+)?$/.test(String(name || '')); }
+
+  // 한 방의 첨부 저장 폴더 — limit 개 이하면 attachments, 넘으면 받는 순서대로 attachments_1, _2 … 에 limit 개씩
+  function attachmentDirs(jobs, limit) {
+    var lim = limit || UPLOAD_LIMIT;
+    var out = {};
+    (jobs || []).forEach(function (j, i) {
+      out[String(j.id)] = jobs.length <= lim ? 'attachments' : 'attachments_' + (Math.floor(i / lim) + 1);
+    });
+    return out;
+  }
+
+  // 「팀즈에 올릴 파일」 — 방별 워드를 방 이름으로 평평하게, 폴더당 limit 개. limit 개 이하면 번호 없는 폴더 하나.
+  // rows = summary 행 (시각순 정렬된 것), 이름은 윈도우 규칙으로 다듬고 겹치면(대소문자 무시) ' (2)'
+  function teamsUploadFolders(rows, limit) {
+    var lim = limit || UPLOAD_LIMIT;
+    var used = {}, files = [];
+    (rows || []).forEach(function (r) {
+      var base = sanitizeName(r.name || String(r.id), 80) || 'room';
+      (Array.isArray(r.docx) ? r.docx : []).forEach(function (d) {
+        var m = /^대화_(\d+)\.docx$/.exec(d);
+        var stem = base + (m ? ' (' + m[1] + '부)' : '');
+        var name = stem + '.docx';
+        for (var n = 2; used[name.toLowerCase()]; n++) name = stem + ' (' + n + ').docx';
+        used[name.toLowerCase()] = true;
+        files.push({ src: 'rooms/' + r.folder + '/' + d, name: name });
+      });
+    });
+    var folders = [];
+    for (var i = 0; i < files.length; i += lim) folders.push(files.slice(i, i + lim));
+    return folders.map(function (list, k) { return { dir: folders.length > 1 ? TEAMS_DIR + '_' + (k + 1) : TEAMS_DIR, files: list }; });
+  }
+
+  // 올리기 묶음 — 방 폴더 단위로 limit 개 이하씩 담는다. 한 방이 limit 개를 넘으면 첨부 폴더(attachments·attachments_N)
+  // 단위로 쪼개 담는다. 그래도 넘는 폴더(예전 버전의 큰 attachments)는 혼자 한 묶음 + over 표시.
+  // rooms = [{ path: 'rooms/방폴더', files: 전체 파일 수, parts: [{ path: 'rooms/방폴더/attachments_1', files }] }]
+  function uploadBatches(rooms, topFiles, limit) {
+    var lim = limit || UPLOAD_LIMIT;
+    var units = [];
+    if (topFiles) units.push({ label: TOP_FILES_LABEL, files: topFiles });
+    (rooms || []).forEach(function (r) {
+      var parts = (r.parts || []).filter(function (x) { return x.files > 0; });
+      if (r.files <= lim || !parts.length) { units.push({ label: r.path, files: r.files }); return; }
+      var inParts = parts.reduce(function (a, x) { return a + x.files; }, 0);
+      if (r.files - inParts > 0) {
+        units.push({ label: r.path + ' (' + parts.map(function (x) { return x.path.split('/').pop(); }).join(', ') + ' 폴더 빼고)', files: r.files - inParts });
+      }
+      parts.forEach(function (x) { units.push({ label: x.path, files: x.files }); });
+    });
+    var batches = [], cur = null;
+    units.forEach(function (u) {
+      if (!u.files) return;
+      if (!cur || (cur.items.length && cur.files + u.files > lim)) { cur = { files: 0, items: [] }; batches.push(cur); }
+      cur.items.push(u.label);
+      cur.files += u.files;
+    });
+    batches.forEach(function (b) { b.over = b.files > lim; });
+    return batches;
+  }
+
+  function uploadBatchLine(b, i) {
+    return (i + 1) + '번 묶음 (' + fmtInt(b.files) + '개' + (b.over ? ' — 1,000개를 넘습니다. 이 폴더 안의 파일을 나눠서 올리세요' : '') + '): ' + b.items.join(', ');
+  }
+
+  function uploadPlanText(batches, teamsDirs) {
+    var lines = [UPLOAD_WARNING, ''];
+    if (teamsDirs && teamsDirs.length) lines.push('워드만: ' + teamsDirs.join(', ') + ' (폴더 하나씩)', '');
+    lines.push('[전체를 올릴 때 — 백업 폴더 안에서 한 묶음씩]');
+    (batches || []).forEach(function (b, i) { lines.push(uploadBatchLine(b, i)); });
+    lines.push('', "'팀즈에 올릴 파일' 폴더는 워드만 따로 올릴 때 쓰는 것이라 위 묶음에 넣지 않았습니다.", '');
+    return '\ufeff' + lines.join('\r\n');
+  }
+
   // ── 전체 목록 (finalize_all.py 의 index.html · summary.json) ────────────────
 
   function fmtInt(n) {
@@ -746,6 +829,11 @@
       ? '<p>처음 기록까지 가지 못한 방 ' + unfinished.length + '개 — 잔디가 열람을 제한했거나(access_limit) 수집이 멈췄습니다. summary.json 의 stop 을 보세요.</p>'
       : '';
     if (meta.docx) note += '<p>방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다 (index.html 은 PC 에서만 열립니다)</p>';
+    if (meta.uploadBatches && meta.uploadBatches.length) {
+      note += '<h2 id="upload">올리기 순서</h2><p><b>' + escapeHtml(UPLOAD_WARNING) + '</b></p>' +
+        (meta.teamsDirs && meta.teamsDirs.length ? '<p>워드만: ' + meta.teamsDirs.map(escapeHtml).join(', ') + ' (폴더 하나씩)</p>' : '') +
+        '<ol class="upload">' + meta.uploadBatches.map(function (b, i) { return '<li>' + escapeHtml(uploadBatchLine(b, i)) + '</li>'; }).join('') + '</ol>';
+    }
     var ex = excludedList(meta.excluded);
     if (ex.count) {
       note += '<p>제외한 방 ' + ex.count + '개 (백업 창의 방 고르기에서 뺀 방 — 받지 않았습니다): ' +
@@ -786,6 +874,8 @@
       '- summary.json: 방별 기록 수·첨부 수·용량·기간·수집 종료 사유(stop — cutoff 는 기준일까지 다 받은 방)',
       meta.docx ? '- 방별 워드: rooms/<방>/대화.docx — 팀즈·OneDrive 에 올리면 웹에서 바로 읽힙니다' : null,
       meta.docx ? '  (기록이 5,000건을 넘는 방은 대화_1.docx, 대화_2.docx … 로 나눴습니다. index.html 은 PC 에서만 열립니다)' : null,
+      meta.uploadBatches ? '- 팀즈·OneDrive 에 올릴 때: 한 번에 1,000개를 넘기면 회사 보안 검사가 멈춥니다. ' + UPLOAD_PLAN_FILE + ' 의 묶음대로 하나씩,' : null,
+      meta.uploadBatches ? "  워드만이면 '" + TEAMS_DIR + "' 폴더를 올리세요. 첨부가 많은 방은 attachments_1, attachments_2 … 로 나눠 저장했습니다." : null,
       '',
       '[들어 있는 것]',
       '- 백업한 계정이 볼 수 있는 대화만: 참여 중인 토픽(공개·비공개), 1:1 대화, 그룹 대화 중 고른 것',
@@ -1264,7 +1354,9 @@
     loadFileCats: loadFileCats, fileCatList: fileCatList, viewTally: viewTally,
     DOCX_PER: DOCX_PER, DOCX_MAX_BYTES: DOCX_MAX_BYTES, crc32: crc32, zipStore: zipStore, xmlText: xmlText, dayLabel: dayLabel,
     docxFileNames: docxFileNames, docxWouldOverflow: docxWouldOverflow, docxPartName: docxPartName, recordPhotos: recordPhotos,
-    imageExtent: imageExtent, manifestMap: manifestMap, buildRoomDocx: buildRoomDocx
+    imageExtent: imageExtent, manifestMap: manifestMap, buildRoomDocx: buildRoomDocx,
+    UPLOAD_LIMIT: UPLOAD_LIMIT, TEAMS_DIR: TEAMS_DIR, UPLOAD_PLAN_FILE: UPLOAD_PLAN_FILE, isAttachmentDir: isAttachmentDir,
+    attachmentDirs: attachmentDirs, teamsUploadFolders: teamsUploadFolders, uploadBatches: uploadBatches, uploadPlanText: uploadPlanText
   };
 
   if (typeof module !== 'undefined' && module && module.exports) {
@@ -2216,19 +2308,29 @@
 
     var downloads = new Semaphore(8);
 
-    async function downloadOne(job, room, attDir, prev) {
+    // 받을 자리: 이 방의 배정(attachments 또는 attachments_N). 이미 받은 파일은 어느 첨부 폴더에 있든(예전 attachments/ 포함)
+    // 원래 자리 그대로 인정한다. at = { dirName, getDir(name), existing: [이 방에 있던 첨부 폴더 이름] }
+    async function downloadOne(job, room, at, prev) {
       var fileName = L.attachmentFileName(job.id, job.name);
       var entry = { roomId: room.id, id: job.id, name: job.name, size: job.size, type: job.type };
       if (job.kind) entry.kind = job.kind;
-      entry.path = 'attachments/' + fileName;
+      var old = prev[String(job.id)];
+      var oldDir = old && /^attachments(_\d+)?\//.test(String(old.path || '')) ? String(old.path).split('/')[0] : null;
       var known = job.size || 0;
-      var have = await sizeIf(attDir, fileName);
-      if (have !== null && (known ? have === known : have > 0)) {
-        var old = prev[String(job.id)];
-        S.progress.filesDone++;
-        S.progress.bytes += have;
-        return Object.assign(entry, { status: 'downloaded', size: have, sha256: old && old.sha256 ? old.sha256 : null });
+      // 이미 있던 첨부 폴더에서만 찾는다 (찾으려고 빈 폴더를 만들지 않는다) — 예전 자리 · 배정된 자리 · 나머지 순
+      var places = [oldDir, at.dirName].concat(at.existing).filter(function (d, i, a) { return d && a.indexOf(d) === i && at.existing.indexOf(d) >= 0; });
+      for (var pi = 0; pi < places.length; pi++) {
+        var have = await sizeIf(await at.getDir(places[pi]), fileName);
+        if (have !== null && (known ? have === known : have > 0)) {
+          S.progress.filesDone++;
+          S.progress.bytes += have;
+          return Object.assign(entry, { path: places[pi] + '/' + fileName, status: 'downloaded', size: have, sha256: old && old.sha256 ? old.sha256 : null });
+        }
       }
+      // 새로 받는 파일 — 실패했던 파일은 예전 자리(있으면), 아니면 배정된 폴더
+      var dirName = oldDir && at.existing.indexOf(oldDir) >= 0 ? oldDir : at.dirName;
+      entry.path = dirName + '/' + fileName;
+      var attDir = null;   // 쓸 때 만든다 — 못 받은 파일 때문에 빈 폴더가 생기지 않게
       await downloads.acquire();
       var lastErr = '받지 못함';
       try {
@@ -2267,8 +2369,10 @@
               size = buf.byteLength;
               if (known && size !== known) throw new Error('크기 불일치 ' + size + '/' + known);
               sha = hex(await win.crypto.subtle.digest('SHA-256', buf));
+              attDir = attDir || await at.getDir(dirName);
               await writeText(attDir, fileName, buf);
             } else {
+              attDir = attDir || await at.getDir(dirName);
               var fh = await attDir.getFileHandle(fileName, { create: true });
               var w = await fh.createWritable();
               await res.body.pipeTo(w, { signal: S.abort.signal });
@@ -2289,7 +2393,7 @@
         downloads.release();
       }
       try {
-        var leftover = await sizeIf(attDir, fileName);
+        var leftover = attDir ? await sizeIf(attDir, fileName) : null;   // attDir = 이번에 받으려던 폴더 (만든 적 없으면 남은 것도 없다)
         if (leftover !== null && (!known || leftover !== known)) await attDir.removeEntry(fileName);
       } catch (e) { /* 지우지 못해도 다음 실행에서 크기로 걸러진다 */ }
       S.progress.filesDone++;
@@ -2298,13 +2402,25 @@
       return Object.assign(entry, { status: 'failed', error: lastErr });
     }
 
-    async function downloadAll(jobs, room, roomDir, prevList) {
+    // dirs = 파일 id → 첨부 폴더 이름 (방 전체 작업 목록으로 정한 것 — 실패 재시도처럼 일부만 받을 때도 같은 자리)
+    async function downloadAll(jobs, room, roomDir, prevList, dirs) {
       if (!jobs.length) return [];
-      var attDir = await roomDir.getDirectoryHandle('attachments', { create: true });
       var prev = {};
       (prevList || []).forEach(function (f) { if (f && f.id !== undefined) prev[String(f.id)] = f; });
+      var existing = [];
+      for await (var e of roomDir.values()) { if (e.kind === 'directory' && L.isAttachmentDir(e.name)) existing.push(e.name); }
+      existing.sort();
+      var handles = {};
+      var getDir = function (name) {
+        if (!handles[name]) handles[name] = roomDir.getDirectoryHandle(name, { create: true });
+        return handles[name];
+      };
+      var fallback = L.attachmentDirs(jobs, L.UPLOAD_LIMIT);
       S.progress.filesTotal += jobs.length;
-      return Promise.all(jobs.map(function (j) { return downloadOne(j, room, attDir, prev); }));
+      return Promise.all(jobs.map(function (j) {
+        var dirName = (dirs && dirs[String(j.id)]) || fallback[String(j.id)];
+        return downloadOne(j, room, { dirName: dirName, getDir: getDir, existing: existing }, prev);
+      }));
     }
 
     async function writeRoomOutputs(dir, room, folder, collected, manifest) {
@@ -2425,9 +2541,10 @@
         var records = L.cutoffRecords(raw.records ? Object.keys(raw.records).map(function (k) { return raw.records[k]; }) : [], S.cutoff.ms);
         var failedIds = {};
         failed.forEach(function (f) { failedIds[String(f.id)] = true; });
-        var jobs = L.pickFileJobs(L.collectFileJobs(records), S.opts.files).filter(function (j) { return failedIds[String(j.id)]; });
+        var allJobs = L.pickFileJobs(L.collectFileJobs(records), S.opts.files);
+        var jobs = allJobs.filter(function (j) { return failedIds[String(j.id)]; });
         setRoomBytes(room, jobBytes(jobs));
-        var retried = await downloadAll(jobs, room, dir, prevManifest);
+        var retried = await downloadAll(jobs, room, dir, prevManifest, L.attachmentDirs(allJobs, L.UPLOAD_LIMIT));
         var byId = {};
         retried.forEach(function (f) { byId[String(f.id)] = f; });
         var merged = prevManifest.map(function (f) { return byId[String(f.id)] || f; });
@@ -2440,7 +2557,7 @@
       var fileJobs = L.pickFileJobs(L.collectFileJobs(collected.records), S.opts.files);
       setRoomBytes(room, jobBytes(fileJobs));   // 미리 확인 값을 실제 작업 목록으로 바로잡는다
       if (fileJobs.length) S.current[room.id] = room.name + ' — 첨부 ' + fileJobs.length + '개 받는 중';
-      var manifest = await downloadAll(fileJobs, room, dir, prevManifest);
+      var manifest = await downloadAll(fileJobs, room, dir, prevManifest, L.attachmentDirs(fileJobs, L.UPLOAD_LIMIT));
       await gate();
       await writeRoomOutputs(dir, room, folder, collected, manifest);
       S.progress.roomsDone++;
@@ -2498,6 +2615,56 @@
       await Promise.all(workers);
     }
 
+    // 「팀즈에 올릴 파일」 폴더 — 지난 것은 지우고 새로. 방별 워드를 방 이름으로 평평하게 복사 (폴더당 UPLOAD_LIMIT 개)
+    async function writeTeamsFolders(root, roomsDir, rows) {
+      var old = [];
+      for await (var e of root.values()) {
+        if (e.kind === 'directory' && (e.name === L.TEAMS_DIR || e.name.indexOf(L.TEAMS_DIR + '_') === 0)) old.push(e.name);
+      }
+      for (var i = 0; i < old.length; i++) { try { await root.removeEntry(old[i], { recursive: true }); } catch (err) { /* 남아도 덮어쓴다 */ } }
+      var plan = L.teamsUploadFolders(rows, L.UPLOAD_LIMIT);
+      for (var k = 0; k < plan.length; k++) {
+        var out = await root.getDirectoryHandle(plan[k].dir, { create: true });
+        for (var j = 0; j < plan[k].files.length; j++) {
+          var f = plan[k].files[j];
+          var parts = f.src.split('/');   // rooms/<방 폴더>/<워드>
+          try {
+            var src = await (await (await roomsDir.getDirectoryHandle(parts[1])).getFileHandle(parts[2])).getFile();
+            await writeText(out, f.name, src);
+          } catch (err) { /* 워드가 없어진 방 — 건너뛴다 */ }
+        }
+      }
+      return plan.map(function (x) { return x.dir; });
+    }
+
+    async function countFiles(dir) {
+      var n = 0;
+      for await (var e of dir.values()) n += e.kind === 'directory' ? await countFiles(e) : 1;
+      return n;
+    }
+
+    // 올리기 묶음 — 방 폴더마다 파일 수(첨부 폴더는 따로)를 세어 UPLOAD_LIMIT 개 이하로 묶는다. 파일은 복사하지 않는다
+    async function planUploads(root, roomsDir) {
+      var rooms = [];
+      for await (var e of roomsDir.values()) {
+        if (e.kind !== 'directory') continue;
+        var total = 0, parts = [];
+        for await (var c of e.values()) {
+          if (c.kind !== 'directory') { total++; continue; }
+          var n = await countFiles(c);
+          total += n;
+          if (L.isAttachmentDir(c.name)) parts.push({ path: 'rooms/' + e.name + '/' + c.name, files: n });
+        }
+        parts.sort(function (a, b) { return a.path < b.path ? -1 : 1; });
+        rooms.push({ path: 'rooms/' + e.name, files: total, parts: parts });
+      }
+      rooms.sort(function (a, b) { return a.path < b.path ? -1 : 1; });
+      var top = {};
+      ['summary.json', 'index.html', 'README.txt', 'backup_state.json', L.UPLOAD_PLAN_FILE].forEach(function (nm) { top[nm] = true; });
+      for await (var t of root.values()) { if (t.kind !== 'directory') top[t.name] = true; }
+      return L.uploadBatches(rooms, Object.keys(top).length, L.UPLOAD_LIMIT);
+    }
+
     async function finalize(root, roomsDir, finished) {
       var rows = [];
       for await (var entry of roomsDir.values()) {
@@ -2510,11 +2677,14 @@
         } catch (e) { /* 깨진 표식 — 다음 실행에서 다시 받는다 */ }
       }
       rows = L.sortRows(rows);
+      var teamsDirs = S.opts.docx ? await writeTeamsFolders(root, roomsDir, rows) : [];
+      var batches = await planUploads(root, roomsDir);
       var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: attOn(), fileCats: L.fileCatList(S.opts.files), docx: S.opts.docx, cutoff: S.cutoff.date,
-        excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }) };
+        excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }), uploadBatches: batches, teamsDirs: teamsDirs };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
       await writeText(root, 'README.txt', L.buildReadme(meta));
+      await writeText(root, L.UPLOAD_PLAN_FILE, L.uploadPlanText(batches, teamsDirs));
       await writeText(root, 'backup_state.json', JSON.stringify({
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
