@@ -4200,19 +4200,35 @@ def _amount_note(results: list, sql: str = "") -> str:
     return "\n".join(lines)
 
 
-def _is_additive_metric_column(column: str) -> bool:
+def _name_excludes_total(column: str) -> bool:
+    """이름이 **더하면 안 되는 지표**라고 말하는가 (비율·평균·식별자·날짜…).
+
+    ⛔ 이름이 모자라 못 알아보는 것과 **이름이 더하지 말라고 말하는 것**은 다르다.
+       둘을 `_is_additive_metric_column` 의 `False` 하나로 뭉개면, SQL 선언으로
+       보증된 열(`COUNT(...) AS …`)을 받아들일 때 비율까지 함께 더해진다.
+       그래서 제외 목록을 읽는 곳을 여기 **한 곳**으로 둔다.
+    """
     normalized, parts = _metric_name_parts(column)
     if not normalized:
-        return False
-
+        return True
     # English words use token boundaries so `country` is not mistaken for `count`.
     # Korean metric names are commonly unseparated, so substring matching is needed.
     for token in _TOTAL_EXCLUDED_TOKENS:
         if token.isascii():
             if token in parts or normalized.startswith(token + "_") or normalized.endswith("_" + token):
-                return False
+                return True
         elif token in normalized:
-            return False
+            return True
+    return False
+
+
+def _is_additive_metric_column(column: str) -> bool:
+    normalized, parts = _metric_name_parts(column)
+    if not normalized:
+        return False
+
+    if _name_excludes_total(column):
+        return False
 
     for token in _TOTAL_ADDITIVE_TOKENS:
         if token.isascii():
@@ -4337,13 +4353,30 @@ def _additive_totals(results: list) -> tuple[list[dict], dict]:
     # 통화가 섞여 있으면 금액 합계는 뜻이 없다 (위 주석의 실제 사고)
     currency_axis = _mixed_currency_axis(detail_rows)
 
+    # ⛔ **COUNT 로 센 열은 이름이 아니라 선언으로 더한다** (붐따 #185).
+    #    제보: "합계 부분에 환불액 합계는 표기되나 건수 합계는 표기되지 않음".
+    #    `COUNT(*) AS refund_records` 를 이름으로 판정하니 `records` 가 지표어
+    #    목록에 없어 **합계에서 조용히 빠졌다** — 금액 줄만 있는 합계표가 나가고
+    #    사람은 "건수는 합계를 못 내는 값인가" 로 읽는다. 바로 옆 국내 표는
+    #    `record_count` 라 `count` 에 **우연히** 걸려 더해졌다. 우연에 기대고 있었다.
+    # ⚠️ 이름 목록을 늘리는 방식으로는 끝나지 않는다 (records·cases·tickets…).
+    #    SQL 이 `COUNT(...) AS 별칭` 으로 **선언**한 것을 이미 뽑아 두고 쓰지
+    #    않고 있었다 (`cs_metrics.prepare_results` 의 `count_columns`).
+    # ⚠️ 선언은 **제외 이름을 이기지 못한다** — `COUNT(...) AS conversion_rate`
+    #    같은 열까지 더하면 이 방어가 거꾸로 선다.
+    declared_counts = {column for column in (getattr(results, "count_columns", ()) or ())
+                       if not _name_excludes_total(column)}
+
     totals = {}
     for column in results[0].keys():
         if column in getattr(results, "non_additive_columns", ()):
             continue
-        if not _is_additive_metric_column(column):
+        counted = column in declared_counts
+        if not counted and not _is_additive_metric_column(column):
             continue
-        if currency_axis and _is_money_column(column):
+        # ⚠️ 건수는 통화와 무관하게 더해도 된다 — 통화 축에서 빼는 것은 **금액**뿐이다.
+        #    `refunds_without_krw` 처럼 이름에 통화가 들어간 **건수**가 실제로 있다.
+        if currency_axis and not counted and _is_money_column(column):
             logger.info("totals_skipped_mixed_currency",
                         column=str(column)[:40], axis=currency_axis[:40])
             continue

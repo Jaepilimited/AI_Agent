@@ -139,7 +139,11 @@ def validation_error(sql: str) -> str:
 
 
 class CSResultRows(list):
-    """SQL에서 고유 집계한 열과 통화 정보를 화면 합계까지 전달한다."""
+    """SQL에서 고유 집계한 열과 통화 정보를 화면 합계까지 전달한다.
+
+    `count_columns`(SQL이 `COUNT(...) AS 별칭`으로 센 열)는 CS뿐 아니라
+    **모든 조회**에 실린다 — 화면 합계가 이름을 짐작하지 않고 선언을 읽게 한다.
+    """
 
     def __init__(self, rows, non_additive_columns, tables, count_columns=()):
         super().__init__(rows)
@@ -149,11 +153,15 @@ class CSResultRows(list):
 
 
 def prepare_results(sql: str, results):
-    tables = tables_in_sql(sql)
-    if not tables or not results:
+    if not results:
         return results
+    tables = tables_in_sql(sql)
     columns = set(results[0])
-    if len(tables) > 1:
+    if not tables:
+        # CS 테이블이 아니면 고유 집계 규칙은 없다. 그래도 COUNT 선언은 싣는다 —
+        # 건수 합계가 이름 짐작으로 조용히 빠지던 자리다 (붐따 #185).
+        excluded = set()
+    elif len(tables) > 1:
         # 국내 처리기록 + 해외 환불을 하나의 CS 합계로 섞지 않는다.
         excluded = columns
     else:
