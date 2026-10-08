@@ -64,10 +64,7 @@ def test_bookmarklet_never_calls_cella_at_runtime():
                    'createElement("script")', "location.origin", "postMessage("):
         assert banned not in code, f"북마크 본체에 {banned!r} 가 있다"
     hosts = set(re.findall(r"https?://([A-Za-z0-9.\-]+)", code))
-    # 워드(.docx) XML 이름공간은 주소 모양의 이름일 뿐 요청하지 않는다 (아래 fetch·http.get 검사가 요청 길을 막는다)
-    xml_namespaces = {"schemas.openxmlformats.org", "purl.org", "www.w3.org"}
-    assert hosts and all(h.endswith(("jandi.com", "jandi-box.com")) or h.startswith("팀이름") or h in xml_namespaces
-                         for h in hosts), hosts
+    assert hosts and all(h.endswith(("jandi.com", "jandi-box.com")) or h.startswith("팀이름") for h in hosts), hosts
     for ns in re.findall(r"https?://(?:schemas\.openxmlformats\.org|purl\.org|www\.w3\.org)[^'\"\s]*", code):
         assert ns.startswith(("http://schemas.openxmlformats.org/", "http://purl.org/dc/", "http://www.w3.org/2001/XMLSchema-instance")), ns
     # fetch 는 잔디가 준 다운로드 주소(url 변수) 하나에만 쓴다
@@ -104,17 +101,18 @@ def test_page_builds_bookmarklet_from_same_origin_static_file():
                    "사적인 대화방은 받지 않는 것을 권합니다", "이모티콘은 기본으로 받지 않습니다",
                    # 첨부 종류 프리셋 — 기본은 업무용
                    "<b>대화만 / 업무용 / 전부</b> 중에 고르세요", "기본은 업무용(대화·문서·사진)이고 동영상·이모티콘은 빠집니다",
-                   # 방별 워드 — 팀즈에서 보기
-                   # index.html 과 대화.docx 구분 표 (2026-10-07)
-                   "<th>index.html</th><th>대화.docx (방 폴더마다)</th>", "<b>모든 방을 한 번에</b> 검색",
-                   "팀즈 웹에서는 방 폴더의 attachments", "index.html 은 팀즈 웹에서는 열리지 않고 내려받기만 됩니다",
-                   # 팀즈에는 「팀즈에 올릴 파일」 폴더만 (워드 + 전체 보관용 zip, 2026-10-08) — 회사 보안 검사는 한 번에 1,000개까지
-                   "팀즈에는 <b>팀즈에 올릴 파일</b> 폴더를 통째로 끌어다 놓으세요.",
-                   "zip 은 전체 보관본입니다(받아서 풀면 index.html 로 검색). 백업 폴더 전체를 올리지는 마세요.",
+                   # 다 끝나면 — 폴더 구성 그림 + 두 줄 (2026-10-08, 워드 없이 zip 만)
+                   'class="jb-tree"', "<code>├─ index.html</code><span>← PC 보관용: 더블클릭하면 전체 검색</span>",
+                   "<code>├─ rooms\\…</code><span>← index.html 이 보여 주는 대화·사진·첨부 (직접 열 일 없음, 지우지 마세요)</span>",
+                   "<code>└─ 팀즈에 올릴 파일\\</code>", "잔디백업_…_1.zip</code><span>← 팀즈용: 대화·사진·첨부 전부</span>",
+                   "<b>PC 에서 볼 때</b>: index.html 을 더블클릭하세요. 인터넷 없이 방별 대화를 검색하며 볼 수 있습니다.",
+                   "<b>팀즈에 보관할 때</b>: 「팀즈에 올릴 파일」 폴더를 통째로 끌어다 놓으세요. 팀즈에서 받아 풀면 index.html 로 그대로 볼 수 있습니다. 백업 폴더 전체를 올리지는 마세요.",
+                   # 회사 보안 검사는 한 번에 1,000개까지 — 「팀즈에 올릴 파일」 폴더만
                    "<dt>올리다가 보안 검사 창이 멈춰요 (1,000개 한도)</dt>",
                    "백업 폴더 전체 대신 <b>팀즈에 올릴 파일</b> 폴더만 올리세요"):
         assert phrase in page, phrase
-    for gone in ("올리기 순서", "묶음대로"):   # 걷어낸 안내 (2026-10-08)
+    # 걷어낸 안내 — 올리기 순서 묶음(10-08), 방별 워드(10-08 사용자 결정: index.html 이 대신한다)
+    for gone in ("올리기 순서", "묶음대로", "워드", "docx", "jb-two"):
         assert gone not in page, gone
 
 

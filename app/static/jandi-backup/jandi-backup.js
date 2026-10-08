@@ -17,7 +17,7 @@
 (function (root) {
   'use strict';
 
-  var VERSION = '2026-10-08.1';
+  var VERSION = '2026-10-08.2';
   var KST_MS = 9 * 3600 * 1000;
   var KIND_LABEL = { topic: '토픽', private_topic: '비공개토픽', chat: '1대1', groupChat: '그룹DM' };
   var KIND_ORDER = ['topic', 'private_topic', 'chat', 'groupChat'];
@@ -299,7 +299,6 @@
     var seen = {};
     var attHtml = [];
     var attText = [];
-    var attList = [];
     ids.forEach(function (fid) {
       if (seen[fid]) return;
       seen[fid] = true;
@@ -311,8 +310,6 @@
       // 이번에 안 받은 종류 (전에 받아 둔 파일이 있으면 그대로 잇는다)
       var skipped = !url && cats ? fileCategory({ name: filename, type: entry.type || attTypes[fid] }) : null;
       if (skipped && cats[skipped]) skipped = null;
-      attList.push({ id: fid, name: filename, type: entry.type || attTypes[fid] || null, path: url ? String(entry.path) : null, url: url,
-        skipped: skipped ? FILE_CAT_LABEL[skipped] : null });
       if (skipped) {
         attText.push(filename + ' (받지 않음: ' + FILE_CAT_LABEL[skipped] + ')');
         attHtml.push('<span class="missing">' + escapeHtml(filename) + ' (받지 않음: ' + FILE_CAT_LABEL[skipped] + ')</span>');
@@ -334,7 +331,7 @@
       reply + '<div class="text">' + escapeHtml(text) + '</div>' + attHtml.join('') + '</article>';
     return {
       messageId: messageId, linkId: linkId, stamp: stamp, sender: sender, kind: kind, text: text,
-      parent: parent === '' ? '' : String(parent), attachmentsText: attText, attachments: attList, article: article
+      parent: parent === '' ? '' : String(parent), attachmentsText: attText, article: article
     };
   }
 
@@ -407,12 +404,8 @@
     return { html: html, csv: csv.join(''), txt: txt, count: records.length };
   }
 
-  // ── 워드(.docx) — 팀즈 웹 미리보기용 ──────────────────────────────
-  // index.html 은 팀즈 웹에서 열리지 않는다. 외부 라이브러리 없이(북마크는 바깥을 부르지 않는다)
-  // 최소 OOXML 을 무압축(STORE) ZIP 으로 묶는다. 방마다 DOCX_PER 건씩 나눠 한 파일씩 만들고 버린다
+  // ── 팀즈용 zip — 외부 라이브러리 없이(북마크는 바깥을 부르지 않는다) 무압축(STORE) ZIP 을 직접 쓴다 ──
 
-  var DOCX_PER = 5000;
-  var WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
   var CRC_TABLE = null;
 
   // crc 를 이어서 셀 수 있다 — crc32(뒤 조각, crc32(앞 조각)) = crc32(전체)
@@ -443,7 +436,7 @@
     return out;
   }
 
-  // ── 무압축(STORE) ZIP 조각 — 워드(메모리)와 팀즈용 zip(스트리밍)이 같이 쓴다. ZIP64 는 쓰지 않는다 ──
+  // ── 무압축(STORE) ZIP 조각. ZIP64 는 쓰지 않는다 ──
   // flags: 0x0800 = 이름이 UTF-8, 0x0008 = 크기·CRC 를 데이터 뒤 디스크립터에 (읽으면서 쓰므로 미리 모른다)
 
   function dosStamp(ms) {
@@ -479,22 +472,6 @@
 
   function zipEnd(count, cenSize, cenOffset) {
     return le([[0x06054b50, 4], [0, 2], [0, 2], [count, 2], [count, 2], [cenSize, 4], [cenOffset, 4], [0, 2]]);
-  }
-
-  // 메모리 ZIP (워드) — 이름 UTF-8, 크기·CRC 를 헤더에
-  function zipStore(entries, mtimeMs) {
-    var stamp = dosStamp(mtimeMs), parts = [], central = [], offset = 0;
-    entries.forEach(function (e) {
-      var name = utf8(e.name);
-      var data = typeof e.data === 'string' ? utf8(e.data) : e.data;
-      var crc = crc32(data);
-      var head = zipHeader(name, 0x0800, stamp, crc, data.length);
-      central.push(zipCentral(name, 0x0800, stamp, crc, data.length, offset));
-      parts.push(head, data);
-      offset += head.length + data.length;
-    });
-    var cen = concatBytes(central);
-    return concatBytes(parts.concat([cen, zipEnd(entries.length, cen.length, offset)]));
   }
 
   // 스트리밍 ZIP — sink(바이트) 로 바로 쓴다. add(이름, next) 의 next() 는 다음 조각(없으면 null) — 파일 통째로 메모리에 올리지 않는다
@@ -547,236 +524,18 @@
     return { zips: zips, big: big };
   }
 
-  // XML 1.0 에서 금지된 글자(제어문자·짝 잃은 서러게이트·FFFE/FFFF)를 지우고 이스케이프한다 — 남기면 워드가 '손상된 파일' 이라 한다
-  var XML_BAD = /[^\x09\x0A\x0D\x20-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
-
-  function xmlText(s) {
-    return String(s === null || s === undefined ? '' : s).replace(XML_BAD, '')
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  var RPR_BOLD = '<w:b/><w:bCs/>';
-  var RPR_SMALL = '<w:color w:val="767676"/><w:sz w:val="16"/><w:szCs w:val="16"/>';
-
-  // 글자 한 덩이 — 줄바꿈은 <w:br/> 로
-  function wRun(text, rpr) {
-    var lines = String(text === null || text === undefined ? '' : text).replace(/\r\n?/g, '\n').split('\n');
-    return '<w:r>' + (rpr ? '<w:rPr>' + rpr + '</w:rPr>' : '') + lines.map(function (line) {
-      return '<w:t xml:space="preserve">' + xmlText(line) + '</w:t>';
-    }).join('<w:br/>') + '</w:r>';
-  }
-
-  function wPara(runs, style) {
-    return '<w:p>' + (style ? '<w:pPr><w:pStyle w:val="' + style + '"/></w:pPr>' : '') + runs + '</w:p>';
-  }
-
-  function dayLabel(day) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
-    if (!m) return day;
-    return day + ' (' + WEEKDAY[new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()] + ')';
-  }
-
-  // 원본 한 줄 요약 — 첫 줄, 60글자까지
-  function oneLine(s) {
-    var line = String(s || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean)[0] || '';
-    var cs = chars(line);
-    return cs.length > 60 ? cs.slice(0, 60).join('') + '…' : line;
-  }
-
-  function feedbackSummary(fb) {
-    if (!fb || typeof fb !== 'object') return '';
-    var c = fb.content;
-    if (c && typeof c === 'object') return oneLine(c.body || c.text || (c.name || c.title ? '[파일] ' + (c.name || c.title) : ''));
-    return oneLine(c);
-  }
-
-  // 기록 수만으로 본 워드 파일 이름들 (오래된 순). 하나로 충분하면 대화.docx
-  function docxFileNames(count, per) {
-    var n = Math.max(1, Math.ceil((Number(count) || 0) / (per || DOCX_PER)));
-    if (n === 1) return ['대화.docx'];
-    var out = [];
-    for (var i = 1; i <= n; i++) out.push('대화_' + i + '.docx');
-    return out;
-  }
-
-  // 나누기: 기록 DOCX_PER 건 또는 넣은 사진 합 DOCX_MAX_BYTES 중 먼저 닿는 쪽. 사진 크기는 줄여 봐야 알아서
-  // 미리 몇 개로 나뉠지 모른다 — 한 몫을 닫을 때 뒤에 더 있으면 대화_N.docx, 처음이자 마지막이면 대화.docx
-  var DOCX_MAX_BYTES = 50 * 1024 * 1024;
-
-  function docxWouldOverflow(count, bytes, addBytes, per, maxBytes) {
-    if (!count) return false;   // 빈 몫에는 아무리 커도 하나는 넣는다
-    return count + 1 > (per || DOCX_PER) || bytes + (addBytes || 0) > (maxBytes || DOCX_MAX_BYTES);
-  }
-
-  function docxPartName(index, more) {
-    return index === 1 && !more ? '대화.docx' : '대화_' + index + '.docx';
-  }
-
-  // 기록 하나에서 워드에 넣을 사진 — 디스크에 받은 사진(HEIC/HEIF 는 브라우저가 못 그려 뺀다)
-  function recordPhotos(record, files) {
-    var message = record && truthy(record.message) ? record.message : null;
-    if (!message) return [];
-    var ids = (message.attachments || []).map(function (a) { return String((a && typeof a === 'object') ? pick(a, 'id', a.fileId) : a); });
-    var mid = String(message.id || record.id || '');
-    if (has(files, mid)) ids.unshift(mid);
-    var seen = {}, out = [];
-    ids.forEach(function (fid) {
-      if (seen[fid] || !has(files, fid)) return;
-      seen[fid] = true;
-      var e = files[fid];
-      var path = String(e.path || '').replace(/\\/g, '/');
-      if (e.status !== 'downloaded' || !path || path.split('/').indexOf('..') >= 0 || path.charAt(0) === '/') return;
-      if (/\.(heic|heif)$/i.test(String(e.name || path))) return;
-      if (fileCategory({ name: e.name || path, type: e.type }) !== 'photo') return;
-      out.push({ id: fid, path: path });
-    });
-    return out;
-  }
-
-  // 그림 크기(EMU = 픽셀 × 9525). 본문 폭(약 15cm) 을 넘으면 비율대로 줄인다
-  var EMU_PER_PX = 9525;
-  var DOCX_IMAGE_MAX_EMU = 5400000;
-
-  function imageExtent(width, height) {
-    var cx = Math.max(1, Math.round(width)) * EMU_PER_PX, cy = Math.max(1, Math.round(height)) * EMU_PER_PX;
-    if (cx > DOCX_IMAGE_MAX_EMU) { cy = Math.round(cy * DOCX_IMAGE_MAX_EMU / cx); cx = DOCX_IMAGE_MAX_EMU; }
-    return { cx: cx, cy: cy };
-  }
-
-  var NS_W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-  var NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
-  var NS_PKG = 'http://schemas.openxmlformats.org/package/2006/relationships';
-  var NS_WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
-  var NS_A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
-  var NS_PIC = 'http://schemas.openxmlformats.org/drawingml/2006/picture';
-  var RPR_LINK = '<w:color w:val="0563C1"/><w:u w:val="single"/>';
-
-  function drawingXml(rid, n, ext, name) {
-    return '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
-      '<wp:extent cx="' + ext.cx + '" cy="' + ext.cy + '"/><wp:docPr id="' + n + '" name="' + xmlText(name) + '"/>' +
-      '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
-      '<a:graphic><a:graphicData uri="' + NS_PIC + '"><pic:pic><pic:nvPicPr><pic:cNvPr id="' + n + '" name="' + xmlText(name) + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
-      '<pic:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
-      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + ext.cx + '" cy="' + ext.cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
-      '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
-  }
-
-  var DOCX_STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-    '<w:styles xmlns:w="' + NS_W + '">' +
-    '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="Malgun Gothic" w:cs="Malgun Gothic"/>' +
-    '<w:sz w:val="20"/><w:szCs w:val="20"/><w:lang w:val="ko-KR" w:eastAsia="ko-KR"/></w:rPr></w:rPrDefault>' +
-    '<w:pPrDefault><w:pPr><w:spacing w:after="40" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>' +
-    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' +
-    '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:qFormat/>' +
-    '<w:pPr><w:spacing w:after="60"/></w:pPr><w:rPr><w:b/><w:bCs/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style>' +
-    '<w:style w:type="paragraph" w:styleId="Small"><w:name w:val="Small"/><w:basedOn w:val="Normal"/>' +
-    '<w:rPr><w:color w:val="767676"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>' +
-    '<w:style w:type="paragraph" w:styleId="DateHead"><w:name w:val="Date Head"/><w:basedOn w:val="Normal"/>' +
-    '<w:pPr><w:keepNext/><w:spacing w:before="240" w:after="80"/><w:pBdr><w:bottom w:val="single" w:sz="4" w:space="1" w:color="C9D4DA"/></w:pBdr></w:pPr>' +
-    '<w:rPr><w:b/><w:bCs/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style>' +
-    '<w:style w:type="paragraph" w:styleId="Message"><w:name w:val="Message"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:after="120"/></w:pPr></w:style>' +
-    '</w:styles>';
-
-  // 방 하나(의 한 몫) → .docx 바이트.
-  // o = { title, team, cutoff, records(시각순), members, manifest, cats, part, split(나눈 파일이면 true), mtime,
-  //       images: { 파일id: { bytes(이미 줄인 JPEG), width, height } } — 브라우저가 줄여서 넘긴다. 없는 사진은 이름 줄만 }
-  function buildRoomDocx(o) {
-    var ctx = { name: makeNamer(o.members), files: manifestMap(o.manifest), cats: o.cats || null };
-    var images = o.images || {};
-    var recs = o.records || [];
-    var body = [], rels = [], media = [], mediaOf = {};
-    var summaries = {};
-    var lastDay = null, firstDay = '', endDay = '', drawN = 0;
-    rels.push('<Relationship Id="rId1" Type="' + NS_R + '/styles" Target="styles.xml"/>');
-    function imageRel(fid) {
-      if (has(mediaOf, fid)) return mediaOf[fid];
-      var n = media.length + 1;
-      var it = { rid: 'rIdImg' + n, file: 'image' + n + '.jpg' };
-      media.push({ name: 'word/media/' + it.file, data: images[fid].bytes });
-      rels.push('<Relationship Id="' + it.rid + '" Type="' + NS_R + '/image" Target="media/' + it.file + '"/>');
-      mediaOf[fid] = it;
-      return it;
-    }
-    function linkRel(url) {
-      var rid = 'rIdLink' + (rels.length + 1);
-      rels.push('<Relationship Id="' + rid + '" Type="' + NS_R + '/hyperlink" Target="' + xmlText(url) + '" TargetMode="External"/>');
-      return rid;
-    }
-    recs.forEach(function (r) {
-      var v = recordView(r, ctx);
-      var day = v.stamp.slice(0, 10), time = v.stamp.slice(11, 16);
-      if (day) { if (!firstDay) firstDay = day; endDay = day; }
-      if (day && day !== lastDay) { body.push(wPara(wRun(dayLabel(day)), 'DateHead')); lastDay = day; }
-      if (!truthy(r.message)) {
-        body.push(wPara(wRun((time ? time + '  ' : '') + v.text), 'Small'));
-        return;
-      }
-      body.push(wPara(wRun(v.sender, RPR_BOLD) + wRun('  ' + time, RPR_SMALL)));
-      if (v.parent) {
-        var sum = feedbackSummary(r.feedback) || summaries[v.parent] || '';
-        body.push(wPara(wRun('↳ 댓글: ' + (sum || '원본 ' + v.parent)), 'Small'));
-      }
-      body.push(wPara(wRun(v.text), v.attachments.length ? null : 'Message'));
-      v.attachments.forEach(function (a, i) {
-        var last = i === v.attachments.length - 1 ? 'Message' : null;
-        var img = a.path && has(images, a.id) && images[a.id] && images[a.id].bytes ? images[a.id] : null;
-        if (img) {
-          var it = imageRel(a.id);
-          drawN++;
-          body.push(drawingXml(it.rid, drawN, imageExtent(img.width, img.height), a.name));
-        }
-        // 받은 첨부는 상대 경로 링크 (PC 워드에서 누르면 열린다). 받지 않은 것은 링크 없이
-        var label = a.url
-          ? '<w:hyperlink r:id="' + linkRel(a.url) + '">' + wRun('📎 ' + a.name, RPR_LINK) + '</w:hyperlink>'
-          : wRun('📎 ' + a.name);
-        var note = a.path ? a.path : a.skipped ? '받지 않음: ' + a.skipped : '미저장';
-        body.push(wPara(label + wRun(' (' + note + ')', RPR_SMALL), last));
-      });
-      summaries[v.messageId] = oneLine(v.text);
-    });
-    var title = (o.title || '') + (o.split ? ' (' + o.part + '부)' : '');
-    var meta = [o.team || '', firstDay ? firstDay + ' ~ ' + endDay : '', '기록 ' + fmtInt(recs.length) + '건',
-      o.cutoff ? '기준일 ' + o.cutoff + ' 이후' : ''].filter(Boolean).join(' · ');
-    var documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document xmlns:w="' + NS_W + '" xmlns:r="' + NS_R +
-      '" xmlns:wp="' + NS_WP + '" xmlns:a="' + NS_A + '" xmlns:pic="' + NS_PIC + '"><w:body>' +
-      wPara(wRun(title), 'Title') + wPara(wRun(meta), 'Small') + body.join('') +
-      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>' +
-      '</w:body></w:document>';
-    var now = new Date(typeof o.mtime === 'number' ? o.mtime : Date.now()).toISOString().replace(/\.\d+Z$/, 'Z');
-    return zipStore([
-      { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
-        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
-        '<Default Extension="xml" ContentType="application/xml"/>' +
-        '<Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="jpeg" ContentType="image/jpeg"/><Default Extension="png" ContentType="image/png"/>' +
-        '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
-        '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
-        '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
-        '</Types>' },
-      { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="' + NS_PKG + '">' +
-        '<Relationship Id="rId1" Type="' + NS_R + '/officeDocument" Target="word/document.xml"/>' +
-        '<Relationship Id="rId2" Type="' + NS_PKG + '/metadata/core-properties" Target="docProps/core.xml"/>' +
-        '</Relationships>' },
-      { name: 'word/_rels/document.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="' + NS_PKG + '">' +
-        rels.join('') + '</Relationships>' },
-      { name: 'word/document.xml', data: documentXml },
-      { name: 'word/styles.xml', data: DOCX_STYLES },
-      { name: 'docProps/core.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
-        '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" ' +
-        'xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' +
-        '<dc:title>' + xmlText(title) + '</dc:title><dc:creator>셀라 잔디 백업 도우미</dc:creator>' +
-        '<dcterms:created xsi:type="dcterms:W3CDTF">' + now + '</dcterms:created></cp:coreProperties>' }
-    ].concat(media), o.mtime);
-  }
-
   // ── 올리기 나누기 — 회사 DLP(업로드 보안 검사)는 한 번에 1,000개까지만 검사한다 ─────────────
   // 검사를 피하지 않는다(압축으로 묶지 않는다). 한 번에 올리는 양을 UPLOAD_LIMIT 개 이하로 나누게 할 뿐이다.
   // 한도는 lib 에 둔다 — 브라우저 쪽은 부를 때마다 L.UPLOAD_LIMIT 를 읽는다(시험에서 작게 줄여 나눔을 본다)
 
   var UPLOAD_LIMIT = 900;
   var TEAMS_DIR = '팀즈에 올릴 파일';
-  var TEAMS_LINE = "팀즈에는 '" + TEAMS_DIR + "' 폴더를 통째로 올리세요. 워드는 팀즈에서 바로 읽히고, zip 은 전체 보관본입니다(받아서 풀면 index.html 로 검색). 백업 폴더 전체를 올리지는 마세요.";
+  var TEAMS_LINE = "팀즈에는 '" + TEAMS_DIR + "' 폴더를 통째로 올리세요(zip). 팀즈에서 받아 풀면 index.html 로 그대로 볼 수 있습니다. 백업 폴더 전체를 올리지는 마세요.";
   function isAttachmentDir(name) { return /^attachments(_\d+)?$/.test(String(name || '')); }
+
+  // 예전 버전이 만든 방별 워드 — 방 폴더 바로 아래 대화.docx · 대화_N.docx 만. zip 에 넣지 않고 지운다
+  // (attachments* 안의 .docx 는 잔디에 올린 진짜 첨부 — 건드리지 않는다). path = 백업 폴더 기준 'rooms/<방>/<이름>'
+  function isOldWordCopy(path) { return /^rooms\/[^\/]+\/대화(_\d+)?\.docx$/.test(String(path || '')); }
 
   // 한 방의 첨부 저장 폴더 — limit 개 이하면 attachments, 넘으면 받는 순서대로 attachments_1, _2 … 에 limit 개씩
   function attachmentDirs(jobs, limit) {
@@ -786,27 +545,6 @@
       out[String(j.id)] = jobs.length <= lim ? 'attachments' : 'attachments_' + (Math.floor(i / lim) + 1);
     });
     return out;
-  }
-
-  // 「팀즈에 올릴 파일」 — 방별 워드를 방 이름으로 평평하게, 폴더당 limit 개. limit 개 이하면 번호 없는 폴더 하나.
-  // rows = summary 행 (시각순 정렬된 것), 이름은 윈도우 규칙으로 다듬고 겹치면(대소문자 무시) ' (2)'
-  function teamsUploadFolders(rows, limit) {
-    var lim = limit || UPLOAD_LIMIT;
-    var used = {}, files = [];
-    (rows || []).forEach(function (r) {
-      var base = sanitizeName(r.name || String(r.id), 80) || 'room';
-      (Array.isArray(r.docx) ? r.docx : []).forEach(function (d) {
-        var m = /^대화_(\d+)\.docx$/.exec(d);
-        var stem = base + (m ? ' (' + m[1] + '부)' : '');
-        var name = stem + '.docx';
-        for (var n = 2; used[name.toLowerCase()]; n++) name = stem + ' (' + n + ').docx';
-        used[name.toLowerCase()] = true;
-        files.push({ src: 'rooms/' + r.folder + '/' + d, name: name });
-      });
-    });
-    var folders = [];
-    for (var i = 0; i < files.length; i += lim) folders.push(files.slice(i, i + lim));
-    return folders.map(function (list, k) { return { dir: folders.length > 1 ? TEAMS_DIR + '_' + (k + 1) : TEAMS_DIR, files: list }; });
   }
 
   // ── 전체 목록 (finalize_all.py 의 index.html · summary.json) ────────────────
@@ -847,19 +585,14 @@
     var totalBytes = 0, totalRecords = 0, totalSaved = 0, totalFiles = 0;
     var trs = rows.map(function (r) {
       totalBytes += r.bytes || 0; totalRecords += r.records || 0; totalSaved += r.saved || 0; totalFiles += r.files || 0;
-      var words = Array.isArray(r.docx) ? r.docx : [];
-      var wordLinks = words.map(function (w, i) {
-        return ' <a class="docx" href="rooms/' + quotePath(r.folder) + '/' + quotePath(w) + '">워드' + (words.length > 1 ? ' ' + (i + 1) : '') + '</a>';
-      }).join('');
       return '<tr><td>' + escapeHtml(KIND_LABEL[r.kind] || r.kind) + '</td><td><a href="rooms/' + quotePath(r.folder) + '/index.html">' +
-        escapeHtml(r.name || r.id) + '</a>' + wordLinks + '</td><td>' + fmtInt(r.records) + '</td><td>' + fmtInt(r.saved) + '/' + fmtInt(r.files) +
+        escapeHtml(r.name || r.id) + '</a></td><td>' + fmtInt(r.records) + '</td><td>' + fmtInt(r.saved) + '/' + fmtInt(r.files) +
         '</td><td>' + fmtInt((r.bytes || 0) / 1e6) + 'MB</td><td>' + dayKst(r.first) + ' ~ ' + dayKst(r.last) + '</td></tr>';
     }).join('');
     var unfinished = rows.filter(function (r) { return r.stop !== 'first_link_reached' && r.stop !== 'no_messages' && r.stop !== 'cutoff'; });
     var note = unfinished.length
       ? '<p>처음 기록까지 가지 못한 방 ' + unfinished.length + '개 — 잔디가 열람을 제한했거나(access_limit) 수집이 멈췄습니다. summary.json 의 stop 을 보세요.</p>'
       : '';
-    if (meta.docx) note += '<p>방별 워드: rooms/&lt;방&gt;/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다 (index.html 은 PC 에서만 열립니다)</p>';
     if (meta.teams) note += '<p><b>' + TEAMS_LINE + '</b></p>';
     var ex = excludedList(meta.excluded);
     if (ex.count) {
@@ -899,8 +632,6 @@
       '  index.html(대화 뷰어) · messages.csv(엑셀용) · messages.txt(텍스트) · raw.json(잔디 원본 데이터)',
       '  files_manifest.json(첨부파일 목록·크기·SHA-256·실패 사유) · attachments(첨부파일)',
       '- summary.json: 방별 기록 수·첨부 수·용량·기간·수집 종료 사유(stop — cutoff 는 기준일까지 다 받은 방)',
-      meta.docx ? '- 방별 워드: rooms/<방>/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다' : null,
-      meta.docx ? '  (기록이 5,000건을 넘는 방은 대화_1.docx, 대화_2.docx … 로 나눴습니다. index.html 은 PC 에서만 열립니다)' : null,
       meta.teams ? '- ' + TEAMS_LINE : null,
       meta.zipBig && meta.zipBig.length ? '- zip 에 넣지 못한 큰 파일 (원본은 rooms 에 있음): ' + meta.zipBig.join(', ') : null,
       '',
@@ -1379,11 +1110,9 @@
     unscannedRooms: unscannedRooms, sortPickRooms: sortPickRooms, excludedList: excludedList, pickFileJobs: pickFileJobs,
     FILE_CATS: FILE_CATS, FILE_PRESETS: FILE_PRESETS, fileCategory: fileCategory, presetOf: presetOf, anyFileCat: anyFileCat,
     loadFileCats: loadFileCats, fileCatList: fileCatList, viewTally: viewTally,
-    DOCX_PER: DOCX_PER, DOCX_MAX_BYTES: DOCX_MAX_BYTES, crc32: crc32, zipStore: zipStore, xmlText: xmlText, dayLabel: dayLabel,
-    docxFileNames: docxFileNames, docxWouldOverflow: docxWouldOverflow, docxPartName: docxPartName, recordPhotos: recordPhotos,
-    imageExtent: imageExtent, manifestMap: manifestMap, buildRoomDocx: buildRoomDocx,
-    UPLOAD_LIMIT: UPLOAD_LIMIT, TEAMS_DIR: TEAMS_DIR, isAttachmentDir: isAttachmentDir, attachmentDirs: attachmentDirs,
-    teamsUploadFolders: teamsUploadFolders, zipHeader: zipHeader, zipDescriptor: zipDescriptor, zipCentral: zipCentral, zipEnd: zipEnd,
+    crc32: crc32,
+    UPLOAD_LIMIT: UPLOAD_LIMIT, TEAMS_DIR: TEAMS_DIR, isAttachmentDir: isAttachmentDir, isOldWordCopy: isOldWordCopy, attachmentDirs: attachmentDirs,
+    zipHeader: zipHeader, zipDescriptor: zipDescriptor, zipCentral: zipCentral, zipEnd: zipEnd,
     dosStamp: dosStamp, zipWriter: zipWriter, zipPlan: zipPlan, ZIP_MAX_BYTES: ZIP_MAX_BYTES, ZIP_MAX_ENTRIES: ZIP_MAX_ENTRIES
   };
 
@@ -1454,8 +1183,8 @@
       version: L.VERSION, phase: 'intro', message: '', teamId: null, teamName: '', rooms: [], members: {},
       // excluded = 방 고르기에서 뺀 방 { id: true } — 기본은 모두 받는다. 잔디 탭 localStorage 에 팀별로 기억한다
       // files = 받을 첨부 종류 { doc, photo, video, other, sticker } — 기본은 업무용(문서·사진). 하나도 없으면 대화만
-      // docx = 방별 워드(팀즈 보기용) 만들기 — 기본 켜짐
-      opts: { kinds: { topic: true, chat: true, groupChat: true }, excluded: {}, files: Object.assign({}, L.FILE_PRESETS.work), docx: true, zip: true },
+      // zip = 팀즈용 zip 만들기 — 기본 켜짐
+      opts: { kinds: { topic: true, chat: true, groupChat: true }, excluded: {}, files: Object.assign({}, L.FILE_PRESETS.work), zip: true },
       root: null, rootName: '', startedAt: 0, finishedAt: 0, paused: false, stopped: false,
       progress: newProgress(0),
       current: {}, roomFailures: [], fileFailures: [], abort: null,
@@ -1562,7 +1291,6 @@
         '<label><input type="checkbox" data-k="groupChat"' + (S.opts.kinds.groupChat ? ' checked' : '') + '> 그룹 대화 ' + c.groupChat + '개</label>' +
         pickHtml() +
         filesHtml() +
-        '<label><input type="checkbox" data-opt="docx"' + (S.opts.docx ? ' checked' : '') + '> 워드 문서 만들기 (팀즈에서 보기용)</label>' +
         '<label><input type="checkbox" data-opt="zip"' + (S.opts.zip ? ' checked' : '') + '> 팀즈용 zip 만들기 (전체 보관용 · 백업 용량만큼 디스크를 더 씁니다)</label>' +
         '<p class="muted">첨부파일을 포함하면 수십 GB · 몇 시간이 걸릴 수 있습니다. 디스크 여유를 확인하고, 끝날 때까지 이 탭을 닫지 마세요. ' +
         'C 드라이브에 새 폴더(예: C:\\잔디백업)를 만들어 고르세요 — 바탕화면은 자동 동기화돼 보안 검사 창이 뜰 수 있습니다. 같은 폴더로 다시 실행하면 이어서 받습니다.</p>' +
@@ -1583,7 +1311,7 @@
         });
       });
       bindFiles();
-      // 워드·zip 켜기 — 팀별로 기억 (기본 켜짐)
+      // zip 켜기 — 팀별로 기억 (기본 켜짐)
       Array.prototype.forEach.call(shadow.querySelectorAll('input[data-opt]'), function (box) {
         box.addEventListener('change', function () {
           var k = box.getAttribute('data-opt');
@@ -1771,15 +1499,13 @@
       });
     }
 
-    // 방별 워드 · 팀즈용 zip 만들기 — 팀별로 기억 (기본 켜짐). 키: jandiBackupDocx / jandiBackupZip
+    // 팀즈용 zip 만들기 — 팀별로 기억 (기본 켜짐). 키: jandiBackupZip
     function optKey(k) { return 'jandiBackup' + k.charAt(0).toUpperCase() + k.slice(1) + ':' + S.teamId; }
 
-    function loadDocx() {
-      ['docx', 'zip'].forEach(function (k) {
-        var v = null;
-        try { v = win.localStorage.getItem(optKey(k)); } catch (e) { v = null; }
-        S.opts[k] = v !== '0';
-      });
+    function loadOpts() {
+      var v = null;
+      try { v = win.localStorage.getItem(optKey('zip')); } catch (e) { v = null; }
+      S.opts.zip = v !== '0';
     }
 
     // 이번 백업에서 받을 첨부 종류 (복사본 — 실행 중에는 바뀌지 않는다)
@@ -2478,88 +2204,9 @@
       await writeText(dir, 'messages.csv', out.csv);
       await writeText(dir, 'messages.txt', out.txt);
       var row = L.summaryRow(room, folder, collected.records, manifest, collected.stopReason);
-      row.docx = S.opts.docx ? await writeRoomDocx(dir, room, collected.records, manifest) : [];
       // ⚠️ done.json 은 맨 마지막 — 이것이 있어야 다음 실행이 이 방을 건너뛴다
       await writeText(dir, 'done.json', JSON.stringify({ row: row, finishedAt: new Date().toISOString(), version: L.VERSION, cutoff: S.cutoff.date }, null, 1));
       return row;
-    }
-
-    // 사진 줄이기 — 긴 변 1280px · JPEG 0.8, 투명은 흰 배경. 못 하면(HEIC·깨진 파일·너무 큼·미지원) null → 이름 줄만
-    async function shrinkPhoto(dir, path) {
-      try {
-        if (typeof win.createImageBitmap !== 'function') return null;
-        var parts = path.split('/');
-        var d = dir;
-        for (var i = 0; i < parts.length - 1; i++) d = await d.getDirectoryHandle(parts[i]);
-        var file = await (await d.getFileHandle(parts[parts.length - 1])).getFile();
-        var bmp = await win.createImageBitmap(file);
-        var scale = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
-        var w = Math.max(1, Math.round(bmp.width * scale)), h = Math.max(1, Math.round(bmp.height * scale));
-        var canvas = typeof win.OffscreenCanvas === 'function' ? new win.OffscreenCanvas(w, h) : Object.assign(doc.createElement('canvas'), { width: w, height: h });
-        var g = canvas.getContext('2d');
-        g.fillStyle = '#fff';
-        g.fillRect(0, 0, w, h);
-        g.drawImage(bmp, 0, 0, w, h);
-        if (bmp.close) bmp.close();
-        var blob = canvas.convertToBlob ? await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 })
-          : await new Promise(function (res) { canvas.toBlob(res, 'image/jpeg', 0.8); });
-        if (!blob) return null;
-        return { bytes: new Uint8Array(await blob.arrayBuffer()), width: w, height: h };
-      } catch (e) {
-        return null;
-      }
-    }
-
-    // 방별 워드 — 예전에 만든 것(나눈 개수가 달랐을 수 있다)은 지우고, 기록 DOCX_PER 건 또는 사진 합 DOCX_MAX_BYTES 마다
-    // 한 파일씩 만들어 쓰고 버린다
-    async function writeRoomDocx(dir, room, records, manifest) {
-      var old = [];
-      for await (var key of dir.keys()) { if (/^대화(_\d+)?\.docx$/.test(key)) old.push(key); }
-      for (var j = 0; j < old.length; j++) { try { await dir.removeEntry(old[j]); } catch (e) { /* 덮어쓴다 */ } }
-      var sorted = L.sortRecords(records);
-      var files = L.manifestMap(manifest);
-      var names = [], part = [], images = {}, bytes = 0;
-      var flush = async function (more) {
-        var name = L.docxPartName(names.length + 1, more);
-        S.current[room.id] = room.name + ' — 워드 ' + name;
-        var out = L.buildRoomDocx({
-          title: room.name, team: S.teamName, cutoff: S.cutoff.date, members: S.members, manifest: manifest, cats: fileCats(),
-          records: part, images: images, part: names.length + 1, split: more || names.length > 0
-        });
-        await writeText(dir, name, out);
-        names.push(name);
-        part = []; images = {}; bytes = 0;
-      };
-      for (var i = 0; i < sorted.length; i++) {
-        var add = {}, addBytes = 0;
-        var photos = L.recordPhotos(sorted[i], files);
-        for (var k = 0; k < photos.length; k++) {
-          if (has(images, photos[k].id) || has(add, photos[k].id)) continue;
-          var img = await shrinkPhoto(dir, photos[k].path);
-          if (img) { add[photos[k].id] = img; addBytes += img.bytes.length; }
-        }
-        if (L.docxWouldOverflow(part.length, bytes, addBytes)) await flush(true);
-        part.push(sorted[i]);
-        Object.assign(images, add);
-        bytes += addBytes;
-      }
-      await flush(false);
-      return names;
-    }
-
-    async function hasDocx(dir) {
-      return (await sizeIf(dir, '대화.docx')) !== null || (await sizeIf(dir, '대화_1.docx')) !== null;
-    }
-
-    // 끝난 방인데 워드가 없다 (예전 버전·워드를 끄고 받은 방) — raw.json 으로 만든다. 대화를 다시 받지 않는다
-    async function rebuildDocx(dir, room, doneText, manifest) {
-      S.current[room.id] = room.name + ' — 워드 만드는 중';
-      var raw = JSON.parse(await readTextIf(dir, 'raw.json') || '{}');
-      var records = L.cutoffRecords(raw.records ? Object.keys(raw.records).map(function (k) { return raw.records[k]; }) : [], S.cutoff.ms);
-      var names = await writeRoomDocx(dir, room, records, manifest);
-      var done = JSON.parse(doneText);
-      if (done && done.row) done.row.docx = names;
-      await writeText(dir, 'done.json', JSON.stringify(done, null, 1));
     }
 
     async function processRoom(room, roomsDir, folders) {
@@ -2573,7 +2220,6 @@
         var failed = L.pickFileJobs(prevManifest.filter(function (f) { return f.status !== 'downloaded'; }), S.opts.files);
         if (!failed.length) {
           setRoomBytes(room, 0);
-          if (S.opts.docx && !(await hasDocx(dir))) await rebuildDocx(dir, room, doneText, prevManifest);
           S.progress.roomsSkipped++;
           return;
         }
@@ -2657,27 +2303,35 @@
       await Promise.all(workers);
     }
 
-    // 「팀즈에 올릴 파일」 폴더 — 지난 것(이전 zip 포함)은 지우고 새로. 방별 워드를 방 이름으로 평평하게 복사 (폴더당 UPLOAD_LIMIT 개).
-    // 워드를 끄고 zip 만 켰으면 폴더 하나에 zip 만. 돌려주는 값 = zip 을 둘 폴더 (여럿이면 _1)
-    async function writeTeamsFolders(root, roomsDir, rows) {
-      var old = [];
+    // 「팀즈에 올릴 파일」 — zip 만 담는 폴더 하나. 우리가 만든 것(이전 zip · 예전 버전의 워드 사본 · 「팀즈에 올릴 파일_N」)은 지우고 새로.
+    // 그 밖의 파일(사용자가 넣은 것)은 두고, zip 을 안 만들면 비었을 때만 폴더를 지운다. rooms 안 원본은 건드리지 않는다
+    async function prepareTeamsDir(root, make) {
+      var dir = null, gone = [];
       for await (var e of root.values()) {
-        if (e.kind === 'directory' && (e.name === L.TEAMS_DIR || e.name.indexOf(L.TEAMS_DIR + '_') === 0)) old.push(e.name);
+        if (e.kind !== 'directory') continue;
+        if (e.name === L.TEAMS_DIR) dir = e;
+        else if (e.name.indexOf(L.TEAMS_DIR + '_') === 0 && /^\d+$/.test(e.name.slice(L.TEAMS_DIR.length + 1))) gone.push(e.name);
       }
-      for (var i = 0; i < old.length; i++) { try { await root.removeEntry(old[i], { recursive: true }); } catch (err) { /* 남아도 덮어쓴다 */ } }
-      var plan = S.opts.docx ? L.teamsUploadFolders(rows, L.UPLOAD_LIMIT) : [];
-      for (var k = 0; k < plan.length; k++) {
-        var out = await root.getDirectoryHandle(plan[k].dir, { create: true });
-        for (var j = 0; j < plan[k].files.length; j++) {
-          var f = plan[k].files[j];
-          var parts = f.src.split('/');
-          try {
-            var src = await (await (await roomsDir.getDirectoryHandle(parts[1])).getFileHandle(parts[2])).getFile();
-            await writeText(out, f.name, src);
-          } catch (err) { /* 워드가 없어진 방 — 건너뛴다 */ }
+      for (var i = 0; i < gone.length; i++) { try { await root.removeEntry(gone[i], { recursive: true }); } catch (err) { /* 남아도 된다 */ } }
+      if (dir) {
+        var ours = [], others = 0;
+        for await (var f of dir.values()) {
+          if (f.kind === 'file' && /\.(zip|docx)$/i.test(f.name)) ours.push(f.name); else others++;
         }
+        for (var j = 0; j < ours.length; j++) { try { await dir.removeEntry(ours[j]); } catch (err) { /* 남아도 된다 */ } }
+        if (!make && !others) { try { await root.removeEntry(L.TEAMS_DIR); } catch (err) { /* 남아도 된다 */ } }
       }
-      return root.getDirectoryHandle(plan.length ? plan[0].dir : L.TEAMS_DIR, { create: true });
+      return make ? root.getDirectoryHandle(L.TEAMS_DIR, { create: true }) : null;
+    }
+
+    // 예전 버전이 방 폴더에 만든 대화.docx · 대화_N.docx 를 지운다 (첨부 폴더 안은 보지 않는다)
+    async function removeOldWordCopies(roomsDir) {
+      for await (var room of roomsDir.values()) {
+        if (room.kind !== 'directory') continue;
+        var gone = [];
+        for await (var f of room.values()) { if (f.kind === 'file' && L.isOldWordCopy('rooms/' + room.name + '/' + f.name)) gone.push(f.name); }
+        for (var i = 0; i < gone.length; i++) { try { await room.removeEntry(gone[i]); } catch (e) { /* zip 에서는 빠진다 */ } }
+      }
     }
 
     // 백업 폴더 안 파일 전부 (「팀즈에 올릴 파일」 폴더들은 빼고) — 핸들만 들고, 내용은 zip 에 쓸 때 읽는다
@@ -2688,6 +2342,7 @@
           await listBackupFiles(e, prefix + e.name + '/', out);
         } else {
           var path = prefix + e.name;
+          if (L.isOldWordCopy(path)) continue;   // 지우지 못했어도 zip 에는 넣지 않는다
           out.push({ path: path, size: (await e.getFile()).size, handle: e, group: /^rooms\//.test(path) ? path.split('/').slice(0, 2).join('/') : '' });
         }
       }
@@ -2747,8 +2402,9 @@
       // 예전 버전이 만든 올리기 순서 파일은 걷는다
       try { await root.removeEntry('올리기 순서.txt'); } catch (e) { /* 없음 */ }
       var zipping = finished && S.opts.zip;
-      var teamsDir = S.opts.docx || zipping ? await writeTeamsFolders(root, roomsDir, rows) : null;
-      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: attOn(), fileCats: L.fileCatList(S.opts.files), docx: S.opts.docx, cutoff: S.cutoff.date,
+      var teamsDir = await prepareTeamsDir(root, zipping);
+      await removeOldWordCopies(roomsDir);
+      var meta = { teamId: S.teamId, teamName: S.teamName, date: L.dayKst(S.startedAt), startedAt: L.localTime(S.startedAt), attachments: attOn(), fileCats: L.fileCatList(S.opts.files), cutoff: S.cutoff.date,
         excluded: excludedRooms().map(function (r) { return String(r.name || r.id); }), teams: !!teamsDir, zipBig: [] };
       await writeText(root, 'summary.json', JSON.stringify(rows, null, 1));
       await writeText(root, 'index.html', L.buildTopIndex(rows, meta));
@@ -2757,7 +2413,7 @@
         teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(),
         finishedAt: finished ? new Date().toISOString() : null, rooms: rows.length,
         roomFailures: S.roomFailures, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files),
-        docx: S.opts.docx, zip: zipping
+        zip: zipping
       }, null, 1));
       if (!zipping) return;
       var files = await listBackupFiles(root, '', []);
@@ -2794,7 +2450,7 @@
         await checkRootCutoff(root);
         var roomsDir = await root.getDirectoryHandle('rooms', { create: true });
         var folders = await existingRoomFolders(roomsDir);
-        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files), docx: S.opts.docx }, null, 1));
+        await writeText(root, 'backup_state.json', JSON.stringify({ teamId: S.teamId, teamName: S.teamName, startedAt: new Date(S.startedAt).toISOString(), finishedAt: null, version: L.VERSION, cutoff: S.cutoff.date, excluded: excludedIds(), fileCats: L.fileCatList(S.opts.files) }, null, 1));
         var dms = selected.filter(function (r) { return r.kind === 'chat'; });
         var others = selected.filter(function (r) { return r.kind !== 'chat'; });
         var work = function (room) { return processRoom(room, roomsDir, folders); };
@@ -2830,7 +2486,7 @@
         prepare();
         loadExcluded();
         loadFiles();
-        loadDocx();
+        loadOpts();
         S.phase = 'intro';
       } catch (e) {
         S.phase = 'error';

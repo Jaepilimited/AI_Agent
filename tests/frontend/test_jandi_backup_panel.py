@@ -20,10 +20,7 @@
 import base64
 import io
 import json
-import struct
-import xml.etree.ElementTree as ET
 import zipfile
-import zlib
 from pathlib import Path
 
 import pytest
@@ -139,9 +136,6 @@ def _fulfill(route):
         return route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
     if url.startswith("https://files.jandi.com/dl/"):
         fid = url.split("/dl/")[1].split("?")[0]
-        if fid in PHOTOS:   # 진짜 그림 (워드에 넣는 사진)
-            return route.fulfill(status=200, content_type="application/octet-stream",
-                                 headers={"Access-Control-Allow-Origin": "*"}, body=PHOTOS[fid])
         return route.fulfill(status=200, content_type="application/octet-stream",
                              headers={"Access-Control-Allow-Origin": "*"}, body=b"x" * SIZES[fid])
     if url == "https://jandi-box.com/files-sticker/155/2":
@@ -786,141 +780,6 @@ def test_room_pick_works_when_local_storage_is_blocked(browser):
     ctx.close()
 
 
-# ── 방별 워드(.docx) — 팀즈에서 보기용 (2026-10-07) ─────────────────
-
-def _png(w, h):
-    """반투명 빨강 RGBA PNG — 워드에 넣을 때 흰 배경 JPEG 로 줄어야 한다."""
-    def chunk(tag, data):
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-    raw = b"".join(b"\x00" + bytes([255, 0, 0, 128]) * w for _ in range(h))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
-
-
-PHOTOS = {"7000301": _png(2000, 1000)}
-# 토픽에 진짜 사진 한 장(현장.png, 2000×1000)을 더한다. 픽스처의 회의 사진.png 는 가짜 바이트라 그림으로 못 읽는다(→ 이름 줄만)
-REAL_PHOTO = """
-SIZES['7000301'] = %d;
-window.__new = [
-  {id: 6000014, time: 1782864800000, fromEntity: 1002, status: 'created', feedbackId: -1, messageId: 5000040,
-   message: {id: 5000040, writerId: 1002, contentType: 'text', content: {body: '현장 사진\\n둘째 줄'},
-             attachments: [{id: 7000301, contentType: 'file', content: {name: '현장.png', type: 'image/png', size: %d}}]}}
-];
-""" % (len(PHOTOS["7000301"]), len(PHOTOS["7000301"]))
-W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-REL = "{http://schemas.openxmlformats.org/package/2006/relationships}"
-
-
-def _open_docx(entry):
-    z = zipfile.ZipFile(io.BytesIO(base64.b64decode(entry["b64"])))
-    assert z.testzip() is None
-    parts = {}
-    for info in z.infolist():
-        assert info.compress_type == zipfile.ZIP_STORED and info.flag_bits & 0x800
-        data = z.read(info.filename)
-        if info.filename.endswith((".xml", ".rels")):
-            parts[info.filename] = ET.fromstring(data)   # 잘 닫힌 XML 이어야 한다
-        else:
-            parts[info.filename] = data
-    return parts
-
-
-def _paragraphs(document):
-    return ["".join(t.text or "" for t in p.iter(W + "t")) for p in document.iter(W + "p")]
-
-
-def test_word_docs_photos_links_and_index(browser):
-    """기본으로 방마다 대화.docx 를 만든다 — zipfile·ElementTree 로 열리고, 받은 진짜 사진은 줄인 JPEG 로 media 에,
-    받은 첨부는 attachments/… 상대 경로 링크, 그림으로 못 읽는 사진은 이름 줄만. 상위 목록·README 에 워드 안내와 링크."""
-    ctx = browser.new_context()
-    page = ctx.new_page()
-    host = _start(page, [], before=REAL_PHOTO)
-    assert host.locator("input[data-opt=docx]").is_checked(), "기본 켜짐"
-    host.locator("button[data-act=start]").click()
-    host.locator("text=백업을 마쳤습니다").wait_for(timeout=30000)
-    files = page.evaluate("window.__dumpOpfs()")
-    top = next(iter(files)).split("/")[0]
-    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
-    assert files[f"{room}/attachments/7000301_현장.png"]["size"] == len(PHOTOS["7000301"]), "원본은 attachments 에 그대로"
-    parts = _open_docx(files[f"{room}/대화.docx"])
-    assert sorted(parts) == sorted(["[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels", "word/document.xml",
-                                    "word/styles.xml", "docProps/core.xml", "word/media/image1.jpg"])
-    jpg = parts["word/media/image1.jpg"]
-    assert jpg[:3] == b"\xff\xd8\xff" and len(jpg) < len(PHOTOS["7000301"]), "줄인 JPEG"
-    types = {d.get("Extension"): d.get("ContentType") for d in parts["[Content_Types].xml"]}
-    assert types["jpg"] == "image/jpeg" and types["png"] == "image/png"
-    rels = {r.get("Id"): r for r in parts["word/_rels/document.xml.rels"].iter(REL + "Relationship")}
-    images = [r for r in rels.values() if r.get("Type").endswith("/image")]
-    assert [r.get("Target") for r in images] == ["media/image1.jpg"]
-    links = {r.get("Target") for r in rels.values() if r.get("Type").endswith("/hyperlink")}
-    assert all(r.get("TargetMode") == "External" for r in rels.values() if r.get("Type").endswith("/hyperlink"))
-    assert "attachments/7000301_%ED%98%84%EC%9E%A5.png" in links
-    assert any(t.startswith("attachments/7000002_") for t in links) and not any("7000003" in t for t in links), "못 받은 첨부는 링크 없음"
-    doc = parts["word/document.xml"]
-    blips = [b.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
-             for b in doc.iter("{http://schemas.openxmlformats.org/drawingml/2006/main}blip")]
-    assert blips == [images[0].get("Id")], "사진은 한 장 — 가짜 바이트인 회의 사진.png 는 그림 없이"
-    ext = next(doc.iter("{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}extent"))
-    assert (ext.get("cx"), ext.get("cy")) == ("5400000", "2700000"), "1280×640 으로 줄이고 본문 폭 15cm 에 맞춤"
-    for h in doc.iter(W + "hyperlink"):
-        assert h.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id") in rels
-    paras = _paragraphs(doc)
-    assert paras[0] == FX["roomName"]
-    assert paras[1] == "TESTTEAM · 2026-07-01 ~ 2026-07-01 · 기록 12건 · 기준일 2026-07-01 이후"
-    assert "2026-07-01 (수)" in paras and "현장 사진둘째 줄" in paras
-    assert "📎 회의 사진.png (attachments/7000001_회의 사진.png)" in paras
-    assert "📎 지워진 파일.pdf (미저장)" in paras and "(이모티콘)" in paras
-    assert any(p.startswith("↳ 댓글: ") for p in paras)
-    # 다른 방도 각자 대화.docx (빈 방 포함)
-    for folder in {k.split("/")[2] for k in files if k.startswith(f"{top}/rooms/")}:
-        assert f"{top}/rooms/{folder}/대화.docx" in files, folder
-        _open_docx(files[f"{top}/rooms/{folder}/대화.docx"])
-    summary = {r["id"]: r for r in json.loads(files[f"{top}/summary.json"]["text"])}
-    assert summary["90000001"]["docx"] == ["대화.docx"]
-    index = files[f"{top}/index.html"]["text"]
-    assert index.count('class="docx"') == 4 and "팀즈에 올리면 웹에서 바로 읽힙니다" in index
-    assert "방별 워드: rooms/<방>/대화.docx — 팀즈에 올리면 웹에서 바로 읽힙니다" in files[f"{top}/README.txt"]["text"]
-    assert json.loads(files[f"{top}/backup_state.json"]["text"])["docx"] is True
-    ctx.close()
-
-
-def test_word_option_off_then_on_rebuilds_from_raw_without_reading(browser):
-    """워드를 끄면 만들지 않고(팀별로 기억), 다시 켜고 같은 폴더로 이어 받으면 끝난 방은 raw.json 으로 워드만 만든다 — 대화는 다시 읽지 않는다."""
-    ctx = browser.new_context()
-    page = ctx.new_page()
-    host = _start(page, [])
-    host.locator("input[data-opt=docx]").uncheck()
-    assert page.evaluate("localStorage.getItem('jandiBackupDocx:80000001')") == "0"
-    host.locator("button[data-act=start]").click()
-    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
-    files = page.evaluate("window.__dumpOpfs()")
-    top = next(iter(files)).split("/")[0]
-    assert not any("/대화" in k and k.endswith(".docx") for k in files), "워드를 끄면 만들지 않는다 (첨부 .docx 는 별개)"
-    assert "방별 워드" not in files[f"{top}/README.txt"]["text"] and 'class="docx"' not in files[f"{top}/index.html"]["text"]
-
-    page.evaluate("window.__log.pages = []; window.__log.getImageAt = []")
-    page.reload()
-    page.evaluate(SCRIPT)
-    host = page.locator("#__jandi-backup-host")
-    host.locator(f"text={CUTOFF_TEXT}").wait_for()
-    assert not host.locator("input[data-opt=docx]").is_checked(), "끈 것을 기억한다"
-    host.locator("input[data-opt=docx]").check()
-    host.locator("button[data-act=start]").click()
-    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
-    log = page.evaluate("window.__log")
-    assert [p for p in log["pages"] if "/rooms/90000004/" not in p["url"]] == [], "대화를 다시 읽지 않는다"
-    assert sorted(g["id"] for g in log["getImageAt"]) == ["7000003"]
-    files2 = page.evaluate("window.__dumpOpfs()")
-    room = f"{top}/rooms/비공개토픽_90000001_[테스트] 기획 _팀_ 방"
-    paras = _paragraphs(_open_docx(files2[f"{room}/대화.docx"])["word/document.xml"])
-    assert paras[1].endswith("기록 11건 · 기준일 2026-07-01 이후")
-    assert sum(1 for k in files2 if k.endswith("/대화.docx")) == 4
-    done = json.loads(files2[f"{room}/done.json"]["text"])
-    assert done["row"]["docx"] == ["대화.docx"]
-    assert files2[f"{top}/index.html"]["text"].count('class="docx"') == 4
-    ctx.close()
-
-
 # ── 올리기 나누기 — 회사 DLP 는 한 번에 1,000개까지 (2026-10-07) ─────────────
 # 한도(lib.UPLOAD_LIMIT, 실제 900)를 3 으로 줄여 나눔을 본다
 
@@ -959,10 +818,9 @@ def _reopen(page):
     return host
 
 
-def test_upload_limit_splits_attachments_and_teams_folders(browser):
-    """한도를 넘는 방의 첨부는 attachments_1·_2 에 나눠 저장하고 뷰어·워드 링크도 그 경로. 「팀즈에 올릴 파일」 은
-    방 이름으로 평평하게 한도마다 폴더(zip 은 _1 에). 같은 폴더를 원래 한도로 이어 받으면
-    attachments_N 의 파일을 그대로 인정하고, 팀즈 폴더는 새로 만든다. (올리기 순서.txt 는 2026-10-08 걷어냈다 — 없어야 한다)"""
+def test_upload_limit_splits_attachments(browser):
+    """한도를 넘는 방의 첨부는 attachments_1·_2 에 나눠 저장하고 뷰어 링크도 그 경로. 같은 폴더를 원래 한도로 이어 받으면
+    attachments_N 의 파일을 그대로 인정한다. 「팀즈에 올릴 파일」 은 zip 만 (워드 사본·_N 나눔은 2026-10-08 걷어냄)."""
     ctx = browser.new_context()
     page = ctx.new_page()
     host = _start(page, [])
@@ -982,17 +840,10 @@ def test_upload_limit_splits_attachments_and_teams_folders(browser):
     assert page.evaluate(ROOM_DIRS) == ["attachments_1", "attachments_2"], "attachments/ 는 만들지 않는다"
     viewer = files[f"{room}/index.html"]["text"]
     assert 'href="attachments_1/7000001_' in viewer and 'href="attachments_2/5000010_' in viewer
-    parts = _open_docx(files[f"{room}/대화.docx"])
-    links = {r.get("Target") for r in parts["word/_rels/document.xml.rels"].iter(REL + "Relationship") if r.get("Type").endswith("/hyperlink")}
-    assert any(t.startswith("attachments_2/5000010_") for t in links)
-
-    # 팀즈에 올릴 파일: 워드 4개 → 3 + 1, 방 이름으로. 팀즈용 zip 은 _1 에
+    # 팀즈에 올릴 파일: zip 하나뿐 (워드 사본 · 「팀즈에 올릴 파일_N」 없음), 한도 3 이어도 폴더를 나누지 않는다
     teams = sorted(k[len(top) + 1:] for k in files if k.startswith(f"{top}/팀즈에 올릴 파일"))
-    docs = [t.split("/")[0] for t in teams if t.endswith(".docx")]
-    assert docs.count("팀즈에 올릴 파일_1") == 3 and docs.count("팀즈에 올릴 파일_2") == 1
-    assert [t for t in teams if t.endswith(".zip")] == [f"팀즈에 올릴 파일_1/{top}_1.zip"]
-    assert "팀즈에 올릴 파일_1/[테스트] 기획 _팀_ 방.docx" in teams
-    assert files[f"{top}/팀즈에 올릴 파일_1/[테스트] 기획 _팀_ 방.docx"]["b64"] == files[f"{room}/대화.docx"]["b64"], "그대로 복사"
+    assert teams == [f"팀즈에 올릴 파일/{top}_1.zip"]
+    assert not any(k.endswith(".docx") and "/attachments" not in k for k in files), "방별 워드를 만들지 않는다"
     assert f"{top}/올리기 순서.txt" not in files and "올리기 순서" not in files[f"{top}/index.html"]["text"]
 
     # 원래 한도(900)로 이어 받기 — 표식·목록을 지운 방도 attachments_N 의 파일을 인정하고, 못 받은 것만 다시
@@ -1006,8 +857,7 @@ def test_upload_limit_splits_attachments_and_teams_folders(browser):
     manifest2 = {str(f["id"]): f["path"] for f in json.loads(files2[f"{room}/files_manifest.json"]["text"]) if f["status"] == "downloaded"}
     assert manifest2 == {k: manifest[k]["path"] for k in ("7000001", "7000002", "7000004", "5000010")}, "원래 자리 그대로"
     assert page.evaluate(ROOM_DIRS) == ["attachments_1", "attachments_2"], "새 배정(attachments/)으로 옮기거나 빈 폴더를 만들지 않는다"
-    assert [d for d in page.evaluate(TOP_DIRS) if d.startswith("팀즈")] == ["팀즈에 올릴 파일"], "지난 팀즈 폴더는 지우고 새로"
-    assert sum(1 for k in files2 if k.startswith(f"{top}/팀즈에 올릴 파일/") and k.endswith(".docx")) == 4
+    assert [d for d in page.evaluate(TOP_DIRS) if d.startswith("팀즈")] == ["팀즈에 올릴 파일"]
     ctx.close()
 
 
@@ -1058,7 +908,8 @@ def test_teams_zip_is_the_whole_backup(browser):
     ctx = browser.new_context()
     page = ctx.new_page()
     host = _start(page, [])
-    assert host.locator("input[data-opt=zip]").is_checked() and host.locator("input[data-opt=docx]").is_checked(), "기본 켜짐"
+    assert host.locator("input[data-opt=zip]").is_checked(), "기본 켜짐"
+    assert host.locator("input[data-opt=docx]").count() == 0 and "워드" not in host.locator(".bd").inner_text(), "워드 옵션 없음"
     host.locator("button[data-act=start]").click()
     host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
     files = page.evaluate("window.__dumpOpfs()")
@@ -1069,8 +920,9 @@ def test_teams_zip_is_the_whole_backup(browser):
     assert sorted(z.namelist()) == sorted(backup), "백업 폴더 전체 = zip 항목 (풀면 한 폴더)"
     for name, v in backup.items():
         assert z.read(name) == base64.b64decode(v["b64"]), name
-    assert sum(1 for k in files if k.startswith(f"{top}/팀즈에 올릴 파일/") and k.endswith(".docx")) == 4
-    line = "팀즈에는 '팀즈에 올릴 파일' 폴더를 통째로 올리세요."
+    assert sorted(k for k in files if k.startswith(f"{top}/팀즈에 올릴 파일/")) == [f"{top}/팀즈에 올릴 파일/{top}_1.zip"], "zip 만"
+    assert not any(n.endswith(".docx") and "/attachments" not in n for n in z.namelist()), "zip 에 워드 없음"
+    line = "팀즈에는 '팀즈에 올릴 파일' 폴더를 통째로 올리세요(zip)."
     assert line in files[f"{top}/README.txt"]["text"] and line in files[f"{top}/index.html"]["text"]
     assert json.loads(files[f"{top}/backup_state.json"]["text"])["zip"] is True
     assert f"{top}/올리기 순서.txt" not in files
@@ -1112,34 +964,71 @@ def test_teams_zip_split_and_big_files(browser):
     ctx.close()
 
 
-def test_teams_zip_and_word_options(browser):
-    """zip 끔(워드만) · zip 만(워드 끔) · 둘 다 끔(폴더 없음). 팀별로 기억한다."""
-    def run(before):
-        ctx = browser.new_context()
-        page = ctx.new_page()
-        host = _start(page, [], before=before)
-        host.locator("button[data-act=start]").click()
-        host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
-        files = page.evaluate("window.__dumpOpfs()")
-        top = next(iter(files)).split("/")[0]
-        teams = sorted(k[len(top) + 1:] for k in files if k.startswith(f"{top}/팀즈에 올릴 파일"))
-        dirs = page.evaluate(TOP_DIRS)
-        state = json.loads(files[f"{top}/backup_state.json"]["text"])
-        ctx.close()
-        return top, teams, dirs, state
-
-    top, teams, dirs, state = run("localStorage.setItem('jandiBackupZip:80000001', '0')")
-    assert teams and all(t.endswith(".docx") for t in teams) and state["zip"] is False
-    top, teams, dirs, state = run("localStorage.setItem('jandiBackupDocx:80000001', '0')")
-    assert teams == [f"팀즈에 올릴 파일/{top}_1.zip"], "워드를 꺼도 zip 은 만든다"
-    top, teams, dirs, state = run("localStorage.setItem('jandiBackupDocx:80000001', '0'); localStorage.setItem('jandiBackupZip:80000001', '0')")
-    assert teams == [] and not [d for d in dirs if d.startswith("팀즈")], "둘 다 끄면 폴더를 만들지 않는다"
-    # 체크박스를 끄면 기억한다
+def test_teams_zip_option(browser):
+    """zip 을 끄면 「팀즈에 올릴 파일」 폴더를 만들지 않는다. 팀별로 기억한다."""
     ctx = browser.new_context()
     page = ctx.new_page()
     host = _start(page, [])
     host.locator("input[data-opt=zip]").uncheck()
     assert page.evaluate("localStorage.getItem('jandiBackupZip:80000001')") == "0"
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    assert not [d for d in page.evaluate(TOP_DIRS) if d.startswith("팀즈")], "zip 을 끄면 폴더를 만들지 않는다"
+    assert json.loads(files[f"{top}/backup_state.json"]["text"])["zip"] is False
+    assert "팀즈에 올릴 파일" not in files[f"{top}/README.txt"]["text"]
+    host = _reopen(page)
+    assert not host.locator("input[data-opt=zip]").is_checked(), "끈 것을 기억한다"
+    ctx.close()
+
+
+OLD_WORD_LEFTOVERS = """async () => {
+  // 예전 버전(10-07)이 남긴 것: 방 폴더의 대화.docx · 대화_2.docx, 「팀즈에 올릴 파일」 의 워드 사본, 「팀즈에 올릴 파일_2」,
+  // 그리고 사용자가 넣은 메모 하나와 첨부 폴더 안의 진짜 .docx 첨부
+  const root = await (await navigator.storage.getDirectory()).getDirectoryHandle('picked');
+  const put = async (dir, name, text) => { const w = await (await dir.getFileHandle(name, {create: true})).createWritable(); await w.write(text); await w.close(); };
+  for await (const [name, top] of root.entries()) {
+    const room = await (await top.getDirectoryHandle('rooms')).getDirectoryHandle('%s');
+    await put(room, '대화.docx', 'old word');
+    await put(room, '대화_2.docx', 'old word 2');
+    await put(await room.getDirectoryHandle('attachments'), '9999_회의록.docx', 'real attachment');
+    const teams = await top.getDirectoryHandle('팀즈에 올릴 파일', {create: true});
+    await put(teams, '[테스트] 기획 _팀_ 방.docx', 'copy');
+    await put(teams, '메모.txt', 'user note');
+    await put(await top.getDirectoryHandle('팀즈에 올릴 파일_2', {create: true}), 'x.docx', 'copy');
+  }
+}""" % TOPIC_DIR
+
+
+def test_old_word_copies_are_removed_and_kept_out_of_zip(browser):
+    """예전 버전의 워드를 정리한다 — 방 폴더의 대화*.docx · 팀즈 폴더의 워드 사본 · 「팀즈에 올릴 파일_N」 은 지우고 zip 에도 넣지 않는다.
+    첨부 폴더 안의 .docx(진짜 첨부)와 사용자가 팀즈 폴더에 넣은 다른 파일은 남는다."""
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    host = _start(page, [])
+    page.evaluate("localStorage.setItem('jandiBackupZip:80000001', '0')")
+    host = _reopen(page)
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    page.evaluate(OLD_WORD_LEFTOVERS)
+    page.evaluate("localStorage.setItem('jandiBackupZip:80000001', '1')")
+    host = _reopen(page)
+    host.locator("button[data-act=start]").click()
+    host.locator("text=백업을 마쳤습니다").wait_for(timeout=20000)
+    files = page.evaluate("window.__dumpOpfs()")
+    top = next(iter(files)).split("/")[0]
+    room = f"{top}/rooms/{TOPIC_DIR}"
+    assert f"{room}/대화.docx" not in files and f"{room}/대화_2.docx" not in files, "방 폴더의 예전 워드는 지운다"
+    assert files[f"{room}/attachments/9999_회의록.docx"]["text"] == "real attachment", "첨부 폴더 안 .docx 는 그대로"
+    assert not [d for d in page.evaluate(TOP_DIRS) if d.startswith("팀즈에 올릴 파일_")], "「팀즈에 올릴 파일_N」 은 지운다"
+    teams = sorted(k[len(top) + 1:] for k in files if k.startswith(f"{top}/팀즈에 올릴 파일"))
+    assert teams == ["팀즈에 올릴 파일/메모.txt", f"팀즈에 올릴 파일/{top}_1.zip"], "워드 사본은 지우고 사용자 파일은 남긴다"
+    z = _open_zip(files[f"{top}/팀즈에 올릴 파일/{top}_1.zip"])
+    names = z.namelist()
+    assert f"{room}/attachments/9999_회의록.docx" in names, "진짜 첨부 .docx 는 zip 에"
+    assert not any(n.rsplit("/", 1)[-1].startswith("대화") and n.endswith(".docx") for n in names), "예전 워드는 zip 에 없음"
+    assert not any("팀즈에 올릴 파일" in n for n in names)
     ctx.close()
 
 
@@ -1170,5 +1059,4 @@ def test_stop_during_zip_leaves_no_zip(browser):
     files = page.evaluate("window.__dumpOpfs()")
     top = next(iter(files)).split("/")[0]
     assert _zips(files, top) == [], "미완성 zip 없음"
-    assert sum(1 for k in files if k.startswith(f"{top}/팀즈에 올릴 파일/") and k.endswith(".docx")) == 4, "워드는 그대로"
     ctx.close()
