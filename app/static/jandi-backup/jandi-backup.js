@@ -2312,11 +2312,20 @@
         if (e.name === L.TEAMS_DIR) dir = e;
         else if (e.name.indexOf(L.TEAMS_DIR + '_') === 0 && /^\d+$/.test(e.name.slice(L.TEAMS_DIR.length + 1))) gone.push(e.name);
       }
-      for (var i = 0; i < gone.length; i++) { try { await root.removeEntry(gone[i], { recursive: true }); } catch (err) { /* 남아도 된다 */ } }
+      // ⛔ 통째로 지우지 않는다 — 우리가 넣은 워드 사본만 지우고, 비었을 때만 폴더를 지운다
+      for (var i = 0; i < gone.length; i++) {
+        try {
+          var sub = await root.getDirectoryHandle(gone[i]), left = 0, copies = [];
+          for await (var g of sub.values()) { if (g.kind === 'file' && /\.docx$/i.test(g.name)) copies.push(g.name); else left++; }
+          for (var k = 0; k < copies.length; k++) { try { await sub.removeEntry(copies[k]); } catch (err) { left++; } }
+          if (!left) await root.removeEntry(gone[i]);
+        } catch (err) { /* 남아도 된다 */ }
+      }
       if (dir) {
         var ours = [], others = 0;
         for await (var f of dir.values()) {
-          if (f.kind === 'file' && /\.(zip|docx)$/i.test(f.name)) ours.push(f.name); else others++;
+          // 우리 것 = 이 도구의 zip(잔디백업_…zip) · 예전 버전의 워드 사본(.docx). 사용자가 넣은 다른 zip 은 둔다
+          if (f.kind === 'file' && (/^잔디백업_.*\.zip$/i.test(f.name) || /\.docx$/i.test(f.name))) ours.push(f.name); else others++;
         }
         for (var j = 0; j < ours.length; j++) { try { await dir.removeEntry(ours[j]); } catch (err) { /* 남아도 된다 */ } }
         if (!make && !others) { try { await root.removeEntry(L.TEAMS_DIR); } catch (err) { /* 남아도 된다 */ } }
