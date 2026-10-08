@@ -6,6 +6,10 @@ from __future__ import annotations
 
 import re
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 DOMESTIC_TABLE = "skin1004-319714.cs_dashboard.domestic_cs_records"
 OVERSEAS_TABLE = "skin1004-319714.cs_dashboard.overseas_cs_refunds"
 DASHBOARD_URL = "http://34.64.99.254:8061/"
@@ -177,11 +181,29 @@ def prepare_results(sql: str, results):
     return CSResultRows(results, excluded, tables, count_columns)
 
 
+def _coverage_notice(sql: str) -> str:
+    """적재가 질문한 기간에 못 미치면 **맨 앞에** 그 사실을 붙인다 (붐따 #184).
+
+    ⛔ 호출부를 늘리지 않는다 — `notice()` 는 이미 모든 답변 경로에 걸려 있다.
+       경로마다 따로 붙이면 한쪽만 고쳐져 답이 갈린다 (이 저장소의 단골 실패).
+    ⚠️ 실패해도 답변을 막지 않는다. 공시를 못 붙이는 것이, 조회가 죽었다고
+       멀쩡한 답변을 죽이는 것보다 낫다.
+    """
+    try:
+        from app.core.cs_freshness import notice_for_sql
+        return notice_for_sql(sql)
+    except Exception:                                      # noqa: BLE001
+        logger.warning("cs_coverage_notice_failed", exc_info=True)
+        return ""
+
+
 def notice(sql: str, results=None) -> str:
     """모든 답변 경로에서 표보다 먼저 보여 주는 집계 범위 안내."""
     tables = tables_in_sql(sql)
     lines = []
     low = (sql or "").casefold()
+    # ⛔ 적재 끝일은 **다른 모든 줄보다 앞**이다 — 숫자가 왜 다른지부터 답한다
+    coverage = _coverage_notice(sql)
     if DOMESTIC_TABLE in tables:
         lines.append("국내 자료는 **CS 처리 기록** 단위입니다. 고유 CS 사건 수와 다르며, 주문수는 중복 주문을 제외합니다.")
         if "compensation" in low:
@@ -210,7 +232,10 @@ def notice(sql: str, results=None) -> str:
         lines.append(f"관련 화면: [{label}]({DASHBOARD_URL}{path}) · 화면에서 기간과 조건을 선택할 수 있습니다.")
     if OVERSEAS_TABLE in tables:
         lines.append(f"관련 화면: [해외 CS 대시보드]({DASHBOARD_URL}global/dashboard) · 화면에서 기간과 조건을 선택할 수 있습니다.")
-    return "".join("> " + line + "\n" for line in lines) + ("\n" if lines else "")
+    body = "".join("> " + line + "\n" for line in lines)
+    if not coverage and not body:
+        return ""
+    return coverage + body + "\n"
 
 
 def answer_fact(sql: str) -> str:

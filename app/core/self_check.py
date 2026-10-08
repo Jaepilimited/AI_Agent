@@ -622,6 +622,35 @@ def _check_logistics_quantity_outlier() -> CheckResult:
         + (" 외" if len(rows) > 3 else ""))
 
 
+def _check_cs_data_freshness() -> CheckResult:
+    """CS 테이블의 **가장 최근 기준일**이 멈춰 있지 않은가 (붐따 #184).
+
+    ⛔ **실측 사고 (2026-10-08)**: `cs_dashboard.domestic_cs_records` 의 마지막
+       접수일이 **2026-09-16** 이었다 — 3주 넘게 한 행도 안 들어왔다. 9월을 물으면
+       셀라는 28건, 같은 기간 대시보드는 54건이었고 **에러도 경고도 없었다.**
+       사용자가 두 화면을 나란히 놓고서야 드러났다.
+
+    ⚠️ 이 두 테이블의 ETL 은 **우리 것이 아니다** (`cs_metrics` 머리말). 그래서
+       매일 보이게 만드는 것이 우리가 할 수 있는 전부다.
+    ⚠️ 행 수 급감(점검 감지)·수정 시각 감시로는 **못 잡는다** — 줄어든 것이 아니라
+       **늘지 않은 것**이고, 그건 조회해도 '안전한' 모양이다.
+    ⚠️ 판정은 `cs_freshness` **한 곳**이 한다 — 답변에 붙는 공시와 같은 함수여야
+       화면과 답변이 어긋나지 않는다. 조회 실패는 '낡음' 으로 세지 않는다.
+    """
+    from app.core.cs_freshness import stale_tables
+
+    stale = stale_tables()
+    if not stale:
+        return CheckResult(True, "CS 적재 기준일 정상")
+    worst = max(stale, key=lambda r: r["days_behind"])
+    detail = " · ".join(
+        f"{r['label']} {r['coverage_end']:%Y-%m-%d}({r['days_behind']}일 전)"
+        for r in stale)
+    return CheckResult(
+        False,
+        f"CS 적재가 {worst['days_behind']}일 밀렸다 — 대시보드와 숫자가 갈린다: {detail}")
+
+
 def _check_notion_unshared() -> CheckResult:
     """노션에 걸어 뒀는데 **학습되지 않은** 자료가 새로 생겼는가.
 
@@ -1459,6 +1488,9 @@ CHECKS: list[Check] = [
     Check("notion_unshared", "datasource", SEV_WARNING,
           "노션에 걸었는데 학습 안 된 자료가 새로 생겼는가 (미공유)",
           _check_notion_unshared),
+    Check("cs_data_freshness", "datasource", SEV_WARNING,
+          "CS 테이블 적재 기준일이 멈춰 있지 않은가 (대시보드와 숫자가 갈린다)",
+          _check_cs_data_freshness),
     Check("data_freshness", "datasource", SEV_WARNING,
           "파생 사본이 원본을 따라가고 있는가 (나이가 아니라 뒤처짐)",
           _check_data_freshness),
