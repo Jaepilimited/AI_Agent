@@ -51,6 +51,17 @@
   (`sleep 12` 가 짧을 때). `systemctl is-active` 와 `/health` 를 직접 확인할 것
 - 💡 프론트 검증: `node --check <js>` · 브라우저 테스트는 Playwright (`tests/frontend/`).
   ⚠️ `pytest --timeout` 은 없다 (플러그인 미설치)
+- ⛔ **스위트는 `Python311` 로 돌려라 — 그냥 `python` 은 hermes venv 이고 `bs4` 가 없다**
+  (2026-10-08 실측). 메일 모듈 5개가 **수집 단계에서** 죽어 `122 errors` 가 쏟아지고,
+  그 연쇄로 멀쩡한 테스트 13건까지 실패로 보인다. **배포 관문도 같은 이유로 막힌다**
+  ("[스위트] 결과를 읽지 못했습니다"). ⚠️ 그 venv 가 Python311 **기반**이라 traceback 에
+  Python311 경로가 찍힌다 — 그걸 보고 "Python311 에 bs4 가 없다" 고 읽으면 반대로 간다.
+  ⚠️ 여러 세션이 적어 둔 *"테스트가 들쭉날쭉하다"*(매번 다른 모듈이 실패)의 상당수가
+  이것이다. 제대로 돌리면 **4,584 통과 · 실패 0** 이다. ⛔ 전역 `pip install` 로 때우지
+  마라 (별도 실행 중인 프로세스와 충돌한 전례가 있다) — PATH 로 고른다:
+  `PATH="/c/Users/DB_PC/AppData/Local/Programs/Python/Python311:$PATH" python -m pytest tests/ --ignore=tests/frontend -q`
+  (배포도 같은 PATH 를 앞에 붙여 돌린다. `deploy_preflight.suite_python()` 이
+  **이름이 아니라 import 가 되는지 물어** 고르므로 그것만으로 관문이 되살아난다)
 
 ## 배포 규칙 (최우선) — 2026-07-30 신규 서버 이관 완료
 
