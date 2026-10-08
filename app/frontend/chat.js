@@ -5697,9 +5697,11 @@
   //      · 기본은 **간략 보기** — 하위 그래프·@@ 병렬 가지를 접어 배율 0.75 를 만든다
   //    ⛔ 접을 때 엣지를 지우지 않고 **이어 붙인다**(`_flowContract`). 도달 관계가 그대로
   //    남아야 접힌 그림도 거짓말을 하지 않는다 — 몇 단계를 접었는지 엣지에 적는다.
+  // ⚠️ 2026-10-08: 그래도 계층 배치(LR)는 관문 사슬 때문에 가로가 길어 배율 0.31 이었다.
+  //    단계 열 배치로 바꿨다 (아래 `_FLOW_STAGES`) — 한눈에 보기 배율 0.79.
   var _flowNetwork = null;
   var _flowGraph = null;
-  var _flowCollapsed = true;   // 기본 = 간략 보기
+  var _flowCollapsed = true;   // 기본 = 한눈에 보기
   var _FLOW_HIDDEN_GROUPS = { sub: 1, branch: 1 };
 
   function _flowNodeColor(group) {
@@ -5738,6 +5740,89 @@
     return out;
   }
 
+  // ── 단계 열 배치 (2026-10-08) ──
+  // ⛔ 예전 그림은 vis 계층 배치(LR)라 사전 관문 12개가 **한 줄로** 이어져 가로가
+  //    끝없이 길었다 — 화면에 맞추면 배율 0.31, 글자가 4px 였다 (실측). 사용자:
+  //    "예전 스타일이 더 보기 좋은데 … 한번에 보이도록". 그래서 **같은 색 상자 + 화살표**
+  //    는 그대로 두고, 노드를 처리 단계별 **세로 열** 에 쌓는다. 열이 8개라 가로가
+  //    화면 안에 들어오고, 열 머리글이 "지금 어느 단계인가" 를 말해 준다.
+  // ⚠️ 열은 노드 id 접두사로 정한다. id 는 `app/flow/spec.py` 가 코드에서 만든다 —
+  //    모르는 id 가 오면 group 으로 열을 고른다 (새 노드가 화면에서 사라지지 않게).
+  var _FLOW_STAGES = ["입력", "전처리", "사전 관문", "라우팅", "경로", "처리·검증", "LLM", "응답"];
+  var _FLOW_PRE = { "intercept.followup": 1, "intercept.notion_save": 1, "alias_expand": 1, "at_parse": 1 };
+
+  function _flowStageOf(n) {
+    var id = n.id || "";
+    if (id === "input") return 0;
+    if (id === "response") return 7;
+    if (_FLOW_PRE[id]) return 1;
+    if (id.indexOf("intercept.") === 0) return 2;
+    if (id === "multi_prefix.merge") return 4;
+    if (id === "answer_check") return 5;
+    if (id === "llm.claude" || id === "llm.gemini") return 5;
+    if (n.group === "llm") return 6;
+    if (n.group === "route" || n.group === "branch") return 4;
+    if (n.group === "sub") return 5;
+    if (n.group === "io") return 7;
+    return 3;   // 라우터·소스 지정·필터·병렬 시작
+  }
+
+  // 사전 관문을 상자 하나로 묶는다. ⛔ 엣지를 지우지 않고 **묶음으로 옮긴다** —
+  // 관문 하나라도 어떤 경로로 이어지면 묶음도 그 경로로 이어진다 (도달 관계 보존).
+  var _FLOW_GATE_GROUP = "group.gates";
+
+  function _flowMergeGates(nodes, edges) {
+    var members = nodes.filter(function(n) { return _flowStageOf(n) === 2; });
+    if (members.length < 2) return { nodes: nodes, edges: edges, members: [] };
+    var inGroup = {};
+    members.forEach(function(n) { inGroup[n.id] = 1; });
+    var merged = {}, out = [];
+    edges.forEach(function(e) {
+      var s = inGroup[e.src] ? _FLOW_GATE_GROUP : e.src;
+      var d = inGroup[e.dst] ? _FLOW_GATE_GROUP : e.dst;
+      if (s === d) return;                    // 관문 사이 '통과' 사슬은 묶음 안의 일이다
+      if (s !== e.src || d !== e.dst) {
+        var key = s + "→" + d;
+        if (!merged[key]) {
+          merged[key] = { src: s, dst: d, conditional: true, count: 0 };
+          out.push(merged[key]);
+        }
+        merged[key].count += 1;
+        return;
+      }
+      out.push(e);
+    });
+    out.forEach(function(e) {
+      if (e.count) e.label = e.src === _FLOW_GATE_GROUP && e.count > 1 ? "관문 " + e.count + "개" : "";
+    });
+    var group = { id: _FLOW_GATE_GROUP, label: "사전 관문 " + members.length + "개",
+                  group: "main", members: members, isGroup: true };
+    var rest = nodes.filter(function(n) { return !inGroup[n.id]; });
+    rest.push(group);
+    return { nodes: rest, edges: out, members: members };
+  }
+
+  // 같은 열 안의 세로 순서 — 그래프 엣지를 따라 먼저 닿는 것을 위에 둔다.
+  function _flowOrder(nodes, edges) {
+    var indeg = {}, adj = {}, rank = {};
+    nodes.forEach(function(n) { indeg[n.id] = 0; adj[n.id] = []; });
+    edges.forEach(function(e) {
+      if (adj[e.src] && indeg[e.dst] !== undefined) { adj[e.src].push(e.dst); indeg[e.dst]++; }
+    });
+    var queue = nodes.filter(function(n) { return !indeg[n.id]; }).map(function(n) { return n.id; });
+    var i = 0;
+    while (queue.length) {
+      var id = queue.shift();
+      if (rank[id] !== undefined) continue;
+      rank[id] = i++;
+      adj[id].forEach(function(nx) { if (--indeg[nx] <= 0) queue.push(nx); });
+    }
+    nodes.forEach(function(n) { if (rank[n.id] === undefined) rank[n.id] = i++; });
+    return rank;
+  }
+
+  var _FLOW_COL_W = 230, _FLOW_ROW_H = 74;
+
   function renderFlowCanvas() {
     if (!_flowGraph) return;
     var container = document.getElementById("flow-canvas");
@@ -5750,65 +5835,158 @@
     }
     // ⚠️ vis-network 는 <canvas> 에 그린다. canvas 2D 의 fillStyle 은 CSS 커스텀
     //    프로퍼티 문자열을 해석하지 못해 조용히 무시되고 기본값(검정)으로 남는다 —
-    //    DOM 이 아니라서 undefined_css_vars 정적 검사도 못 잡는다. 여기서 실제
-    //    색상값으로 풀어서 넘긴다 (열 때마다 다시 읽어 현재 테마를 반영).
+    //    여기서 실제 색상값으로 풀어서 넘긴다 (열 때마다 다시 읽어 현재 테마를 반영).
     var _cs = getComputedStyle(document.documentElement);
-    // ⚠️ --text-muted 는 라이트 모드에서 rgba(0,0,0,0.30) 이라 캔버스 글자로는
-    //    사실상 안 보인다 (2026-08-24 스크린샷) — --text-secondary 를 쓴다.
     var edgeLabelColor = (_cs.getPropertyValue("--text-secondary") || "").trim() || "#8a8a8a";
+    var laneText = (_cs.getPropertyValue("--text") || "").trim() || "#333";
+    var laneFill = (_cs.getPropertyValue("--border") || "").trim() || "rgba(128,128,128,0.25)";
+
+    var shown = _flowGraph.nodes.filter(function(n) { return !hidden[n.id]; });
+    var rawEdges = _flowCollapsed ? _flowContract(_flowGraph, hidden) : _flowGraph.edges;
+    var members = [];
+    if (_flowCollapsed) {
+      var m = _flowMergeGates(shown, rawEdges);
+      shown = m.nodes; rawEdges = m.edges; members = m.members;
+    }
+
+    var rank = _flowOrder(shown, rawEdges);
+    var cols = {};
+    shown.forEach(function(n) {
+      var s = n.isGroup ? 2 : _flowStageOf(n);
+      (cols[s] = cols[s] || []).push(n);
+    });
+    var maxRows = 1;
+    Object.keys(cols).forEach(function(s) {
+      cols[s].sort(function(a, b) { return rank[a.id] - rank[b.id]; });
+      maxRows = Math.max(maxRows, cols[s].length);
+    });
+
     var byId = {};
     var nodes = [];
-    _flowGraph.nodes.forEach(function(n) {
-      byId[n.id] = n;
-      if (hidden[n.id]) return;
-      // ⚠️ 화살표 없이 홀로 뜬 노드는 두 가지일 수 있다 — 엣지를 빠뜨렸거나, 정말
-      //    도달할 수 없거나. 서버가 이유 문구를 주면 후자다. 흐릿한 점선 테두리 +
-      //    라벨의 (도달 불가) 로 "그리다 만 것"과 구분한다.
-      if (n.unreachable) {
-        nodes.push({
-          id: n.id, label: n.label + "\n(도달 불가)", shape: "box",
-          color: { background: "rgba(120,120,120,0.18)", border: "#8a8a8a" },
-          shapeProperties: { borderDashes: [4, 4] },
-          font: { color: "#8a8a8a", size: 14 },
-          widthConstraint: { maximum: 130 }
-        });
-        return;
-      }
-      var color = _flowNodeColor(n.group);
-      nodes.push({
-        id: n.id, label: n.label, shape: "box",
-        color: { background: color, border: color },
-        font: { color: "#fff", size: 14 },
-        widthConstraint: { maximum: 130 }
+    Object.keys(cols).forEach(function(s) {
+      var list = cols[s];
+      var top = -((list.length - 1) * _FLOW_ROW_H) / 2;
+      list.forEach(function(n, i) {
+        byId[n.id] = n;
+        var base = {
+          id: n.id, x: Number(s) * _FLOW_COL_W, y: top + i * _FLOW_ROW_H, fixed: true,
+          shape: "box", margin: 10,
+          widthConstraint: { minimum: 150, maximum: 170 },
+          font: { color: "#fff", size: 15, face: "Pretendard, 'Malgun Gothic', sans-serif" }
+        };
+        if (n.unreachable) {
+          base.label = n.label + "\n(도달 불가)";
+          base.color = { background: "rgba(120,120,120,0.18)", border: "#8a8a8a" };
+          base.shapeProperties = { borderDashes: [4, 4] };
+          base.font.color = "#8a8a8a";
+        } else if (n.isGroup) {
+          base.label = n.label + "\n클릭하면 목록";
+          base.color = { background: "#2f8a5f", border: "#1e6b46" };
+          base.borderWidth = 2;
+          base.font = { color: "#fff", size: 16, face: base.font.face, multi: false };
+        } else {
+          var c = _flowNodeColor(n.group);
+          base.label = n.label;
+          base.color = { background: c, border: c, highlight: { background: c, border: "#222" } };
+        }
+        nodes.push(base);
       });
     });
-    var rawEdges = _flowCollapsed ? _flowContract(_flowGraph, hidden) : _flowGraph.edges;
+
     var edges = rawEdges.map(function(e) {
+      var sameCol = byId[e.src] && byId[e.dst]
+        && _flowStageOf(byId[e.src]) === _flowStageOf(byId[e.dst]);
+      // 한눈에 보기에서는 라벨을 그리지 않는다 — 라우팅 열에서 서로 겹쳐 읽히지 않았다
+      // (실측 스크린샷). 대신 마우스를 올리면 뜨고, 자세히 보기에서는 그린다.
       return {
-        from: e.src, to: e.dst, label: e.label || undefined,
-        arrows: "to",
+        from: e.src, to: e.dst,
+        label: (!_flowCollapsed && e.label) ? e.label : undefined,
+        title: e.label || undefined,
+        arrows: { to: { enabled: true, scaleFactor: 0.6 } },
         dashes: !!e.conditional,
-        color: { color: e.contracted ? "rgba(138,99,210,0.75)"
-                       : e.conditional ? "#c76a00" : "rgba(128,128,128,0.5)" },
-        font: { size: 11, color: edgeLabelColor, strokeWidth: 0 }
+        width: e.conditional ? 1 : 1.6,
+        smooth: sameCol ? { enabled: true, type: "curvedCW", roundness: 0.25 }
+                        : { enabled: true, type: "cubicBezier", forceDirection: "horizontal", roundness: 0.5 },
+        color: { color: e.contracted ? "rgba(138,99,210,0.7)"
+                       : e.conditional ? "rgba(199,106,0,0.55)" : "rgba(110,110,110,0.75)",
+                 highlight: "#111", hover: "#111" },
+        font: { size: 11, color: edgeLabelColor, strokeWidth: 3,
+                strokeColor: (_cs.getPropertyValue("--bg-surface") || "").trim() || "#fff",
+                align: "middle" }
       };
     });
+
     container.innerHTML = "";
     _flowNetwork = new vis.Network(container,
       { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) },
       {
-        layout: { hierarchical: { direction: 'LR', sortMethod: "directed",
-                                  levelSeparation: 165, nodeSpacing: 80 } },
+        layout: { hierarchical: false },
         physics: false,
-        interaction: { hover: true, tooltipDelay: 200, navigationButtons: true, keyboard: false }
+        interaction: { hover: true, tooltipDelay: 200, navigationButtons: false,
+                       keyboard: false, dragNodes: false, selectConnectedEdges: true,
+                       hoverConnectedEdges: true }
       });
-    // ⚠️ 기본 배율은 그래프를 화면 밖으로 밀어낸다 (LR 계층이라 가로가 길다).
-    //    첫 그리기 뒤 한 번 맞춰 넣지 않으면 사용자는 "빈 캔버스" 로 겪는다.
+    // 단계 머리글 — 열마다 이름을 그린다. 그림이 "어느 단계" 인지 말해야
+    // 상자 모음이 아니라 흐름으로 읽힌다.
+    var headerY = -((maxRows - 1) * _FLOW_ROW_H) / 2 - 62;
+    var bottomY = ((maxRows - 1) * _FLOW_ROW_H) / 2 + 40;
+    _flowNetwork.on("beforeDrawing", function(ctx) {
+      Object.keys(cols).forEach(function(s) {
+        var x = Number(s) * _FLOW_COL_W;
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = laneFill;
+        ctx.fillRect(x - _FLOW_COL_W / 2 + 12, headerY - 20, _FLOW_COL_W - 24, bottomY - headerY + 20);
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = laneText;
+        ctx.font = "bold 16px Pretendard, 'Malgun Gothic', sans-serif";
+        ctx.textAlign = "center";
+        var count = cols[s].reduce(function(acc, n) { return acc + (n.isGroup ? n.members.length : 1); }, 0);
+        ctx.fillText((Number(s) + 1) + ". " + _FLOW_STAGES[s] + "  " + count, x, headerY + 6);
+        ctx.restore();
+      });
+    });
     _flowNetwork.once("afterDrawing", function() { _flowNetwork.fit({ animation: false }); });
     _flowNetwork.on("click", function(params) {
       if (!params.nodes || !params.nodes.length) { hideFlowDetail(); return; }
-      showFlowDetail(byId[params.nodes[0]]);
+      var n = byId[params.nodes[0]];
+      if (n && n.isGroup) { showFlowGroupDetail(n); return; }
+      showFlowDetail(n);
     });
+  }
+
+  // 묶음 상자를 누르면 안에 든 관문을 **순서대로** 보여 준다 — 묶었다고 숨긴 게 아니다.
+  function showFlowGroupDetail(g) {
+    var detail = document.getElementById("flow-detail");
+    if (!detail || !g) return;
+    var items = (g.members || []).map(function(n) {
+      return "<li style='margin:4px 0'><b>" + escapeHtml(n.label) + "</b>"
+        + (n.fn ? "<br><code style='font-size:11px'>" + escapeHtml(n.fn) + "</code>" : "")
+        + "</li>";
+    }).join("");
+    detail.innerHTML =
+      "<button class='flow-close' aria-label='닫기'>×</button>" +
+      "<h3 style='margin:0 0 8px;font-size:14px'>" + escapeHtml(g.label) + "</h3>" +
+      "<p style='margin:0 0 8px;color:var(--text-secondary)'>분류기보다 먼저 도는 관문입니다. "
+      + "위에서부터 차례로 보고, 걸리면 그 자리에서 답하거나 경로를 정합니다. "
+      + "화살표는 이 관문들이 실제로 잇는 곳을 묶어서 그린 것입니다.</p>" +
+      "<ol style='padding-left:18px;margin:0'>" + items + "</ol>" +
+      "<button type='button' class='admin-btn-secondary' id='btn-flow-expand-gates' "
+      + "style='margin-top:10px'>자세히 보기로 펼치기</button>";
+    detail.hidden = false;
+    var close = detail.querySelector(".flow-close");
+    if (close) close.addEventListener("click", hideFlowDetail);
+    var expand = document.getElementById("btn-flow-expand-gates");
+    if (expand) expand.addEventListener("click", function() { _setFlowCollapsed(false); });
+  }
+
+  function _setFlowCollapsed(on) {
+    _flowCollapsed = on;
+    var btn = document.getElementById("btn-flow-collapse");
+    if (btn) btn.textContent = _flowCollapsed ? "자세히 보기" : "한눈에 보기";
+    hideFlowDetail();
+    renderFlowCanvas();
   }
 
   function hideFlowDetail() {
@@ -5851,7 +6029,7 @@
         _flowGraph = g;
         renderFlowCanvas();
         if (hint) {
-          hint.textContent = "노드를 클릭하면 실행 지점·설정값이 나옵니다. "
+          hint.textContent = "상자를 누르면 실행 지점·설정값이, 화살표에 마우스를 올리면 조건이 나옵니다. "
             + "노드 " + g.nodes.length + "개 · 엣지 " + g.edges.length + "개"
             + (g.generated_at ? " · 생성 " + g.generated_at : "");
         }
@@ -5870,9 +6048,7 @@
   var _btnFlowCollapse = document.getElementById("btn-flow-collapse");
   if (_btnFlowCollapse) {
     _btnFlowCollapse.addEventListener("click", function() {
-      _flowCollapsed = !_flowCollapsed;
-      _btnFlowCollapse.textContent = _flowCollapsed ? "자세히 보기" : "간략 보기";
-      renderFlowCanvas();
+      _setFlowCollapsed(!_flowCollapsed);
     });
   }
   var _btnFlowFit = document.getElementById("btn-flow-fit");

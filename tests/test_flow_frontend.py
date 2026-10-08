@@ -31,11 +31,28 @@ def test_flow_tab_is_wired_in_js():
     assert "function loadFlowCanvas" in js
 
 
-def test_js_uses_hierarchical_layout_not_physics():
-    """⚠️ 흐름도는 좌→우 계층 배치다. 위키 그래프의 물리엔진을 그대로 쓰면
-    노드가 뭉쳐서 흐름으로 읽히지 않는다."""
+def test_js_uses_stage_columns_not_physics():
+    """⚠️ 흐름도는 좌→우 **단계 열** 배치다 (2026-10-08). 물리엔진은 노드가 뭉치고,
+    vis 계층 배치(LR)는 사전 관문 사슬 때문에 가로가 길어 화면에 맞추면 배율이
+    0.31 이었다(글자 4px). 사용자: "한번에 보이도록"."""
     js = _read("app/frontend/chat.js")
-    assert "hierarchical" in js and "'LR'" in js
+    start = js.index("function renderFlowCanvas(")
+    block = js[start:js.index("function hideFlowDetail", start)]
+    assert "physics: false" in block
+    assert "hierarchical: false" in block, "계층 배치로 돌아가면 다시 가로로 끝없이 길어진다"
+    assert "_flowStageOf(" in block and "fixed: true" in block
+    assert "_FLOW_STAGES" in js and "사전 관문" in js
+
+
+def test_overview_groups_gates_without_dropping_connections():
+    """한눈에 보기는 사전 관문을 상자 하나로 묶는다. ⛔ 엣지를 지우지 않고 **묶음으로
+    옮겨야** 한다 — 관문 하나라도 잇는 경로는 묶음도 잇는다 (도달 관계 보존).
+    묶음을 누르면 관문 목록을 보여 준다 (숨긴 것이 아니라 묶은 것이다)."""
+    js = _read("app/frontend/chat.js")
+    block = js[js.index("function _flowMergeGates("):js.index("function _flowOrder(")]
+    assert "edges.forEach" in block and "inGroup[e.src] ? _FLOW_GATE_GROUP" in block
+    assert "if (s === d) return;" in block, "관문 사이 사슬만 묶음 안으로 사라져야 한다"
+    assert "function showFlowGroupDetail(" in js and "자세히 보기로 펼치기" in js
 
 
 def test_flow_canvas_vis_options_no_css_var():
