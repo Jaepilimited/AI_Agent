@@ -1,24 +1,39 @@
 # Cluster 10
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 3
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 13
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent의 핵심 라우팅 및 정보 검색 아키텍처를 담당합니다. 사용자의 질문을 분석하여 적절한 서브 에이전트로 분배하는 오케스트레이터와, 노션(Notion) 워크스페이스 및 MariaDB에 저장된 스킨1004 제품 정보를 안전하게 조회하는 기능을 제공합니다.
+사용자 인증(Entra ID, Google OAuth), 세션 관리, 사용자 권한 디렉토리 및 마이그레이션 등 코어 보안 및 계정 관리 기능을 담당합니다. 또한 대화 기록 익명화, 시스템 서킷 브레이커/점검 모드 제어, 지식 위키 신뢰도 검증 및 벡터 임베딩 생성과 같은 안전성 및 기반 유틸리티를 제공합니다.
 
 ## Key Files
-- `app/agents/orchestrator.py` — 사용자 질의를 분석하고 적절한 전문 서브 에이전트(Specialized Sub Agent)로 작업을 위임하며, 대화 맥락(Conversation Context)을 유지하는 컨트롤 타워 역할을 수행합니다.
-- `app/agents/notion_agent.py` — MCP 의존성 없이 Notion API를 직접 호출하여 허용된(Allowlisted) 페이지 및 데이터베이스의 블록 콘텐츠를 검색하고 답변을 생성합니다.
-- `app/core/product_info.py` — 노션의 `스킨1004 전제품 한 눈에 파악하기` 데이터를 MariaDB로 동기화하고 관리하는 제품 정보 스펙 모듈입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/entra_auth.py` — 사내 계정 통합을 위한 Microsoft Entra ID (OIDC) 로그인 처리
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/session_auth.py` — 계정 연동과 분리된 독립 Cella 세션 검증
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/user_directory.py` — Entra ID 인증 기반 직원 정보 및 권한 디렉토리 관리
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/user_directory_migration.py` — 기존 AD 권한 체계에서 Cella 디렉토리로 스키마 이전
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/google_auth.py` — 사용자별 GWS 접근을 위한 Google OAuth2 토큰/인증 관리
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/google_oauth_state.py` — 일회용 OAuth state 토큰 생성 및 검증
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/password_reset_google.py` — Google 연동 계정을 통한 자체 비밀번호 재설정
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/anonymization.py` — 대화 및 피드백 소유권 식별을 위한 HMAC-SHA256 가명화 헬퍼
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/safety.py` — MaintenanceManager(점검 모드) 및 CircuitBreaker 장애 차단기
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/embeddings.py` — 벡터 검색용 BGE-M3 임베딩 모델 인터페이스
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge/trust.py` — 검색된 knowledge-wiki 팩트의 신뢰 상태 및 안전성 검증 헬퍼
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/mailer.py` — 사내 SMTP 릴레이 메일 발송 모듈 (현재 포트 차단 상태)
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/IT_REQUEST_MAIL_JANDI.md` — AI Craver 알림 발송 경로 개방 요청 문서
 
 ## Key Concepts
-- **Orchestrator (오케스트레이터)**: v3.0 이상 버전에서 도입된 핵심 구조로, 단순한 쿼리 분석(Query Analyzer)을 넘어 여러 전문 서브 에이전트에게 역할을 위임하고 대화의 연속성(Context Continuity)을 보장합니다.
-- **Notion Sub Agent**: 보안을 위해 사전에 지정된 화이트리스트(Allowlist) 범위 내의 노션 페이지와 데이터베이스만 접근하여 정보를 탐색하는 에이전트입니다.
-- **제품 정보 vs 제품 Q&A**: 2026-09-04 지침에 따라 엄격히 구분됩니다. `product_info.py`가 다루는 **제품 정보**는 스킨1004의 공식 제품 라인 및 상세 스펙(CS 데이터 영역)을 의미하며, 실제 고객 문의 대응 기록인 **제품 Q&A**(`[BD_BP] CS제품문의_모음집` 시트, 914건)와는 명확히 분리되어 처리됩니다.
+- **Entra ID OIDC & User Directory**: 기존 로컬 DB(`users.password_hash`) 및 분산 관리되던 비밀번호 체계를 사내 Microsoft Entra ID로 일원화하고, Microsoft Graph API를 통해 사내 직원 디렉토리와 권한을 동기화합니다.
+- **User Pseudonymization**: `anon_id = hmac_sha256(salt, str(user_id))[:16]` 형태로 사용자를 가명화하여, UI 사이드바 그룹핑 기능은 유지하면서 개인 식별성을 분리합니다.
+- **Safety (Maintenance & CircuitBreaker)**: BigQuery `__TABLES__` 행 수 변경 감지 등을 활용한 시스템 점검 모드 전환 및 외부 서비스 장애 전파를 막는 서킷 브레이커를 지원합니다.
+- **Trust State**: 어시스턴트 과거 답변에서 마이닝된 knowledge-wiki 데이터의 신뢰 수준을 평가하여 안전한 컨텍스트 주입 여부를 결정합니다.
 
 ## How It Fits In
-이 클러스터는 AI Agent 시스템의 중추 신경계 역할을 합니다. 외부 사용자의 입력이 들어오면 `orchestrator.py`가 이를 수신하여 분석한 뒤, 노션 내부 지식 검색이 필요할 경우 `notion_agent.py`를 호출하고, 정형화된 스킨1004 제품 스펙 정보가 필요할 경우 `product_info.py`를 통해 MariaDB의 데이터를 조회하여 최적의 답변을 구성합니다.
+- **Cluster 16 & Cluster 24**: `session_auth.py`와 `user_directory.py`는 Cluster 16의 Entra ID 인증 및 Cluster 24의 Service Token/Microsoft Graph API 및 AD 사용자 데이터와 연계됩니다.
+- **Cluster 09**: `user_directory_migration.py`의 스키마 마이그레이션과 `trust.py`의 knowledge-wiki 신뢰도 검증 로직이 지식 기반 및 스키마 관리와 연결됩니다.
+- **Cluster 14**: `google_auth.py`와 `anonymization.py`를 통해 Google OAuth2 및 사용자 가명화 파이프라인과 통합됩니다.
+- **Cluster 25**: `safety.py`의 MaintenanceManager와 CircuitBreaker 인터페이스를 통해 시스템 전반의 운영 안전성을 제어합니다.
 
 ## Common Questions This Page Answers
-- 사용자의 질문이 들어왔을 때 어떤 서브 에이전트가 처리할지 어떻게 결정하나요?
-- 노션(Notion) 연동 시 보안을 위해 접근 가능한 페이지를 어떻게 제한하나요?
-- 스킨1004의 공식 제품 스펙 정보와 일반 CS 제품 Q&A 데이터는 코드상에서 어떻게 다르게 취급되나요?
+- 기존 사내 AD 기반 계정/비밀번호 체계에서 Entra ID OIDC 인증으로 어떻게 전환되었는가?
+- 대화 내역 조회 시 개인정보를 노출하지 않으면서 본인의 대화 목록을 그룹핑하는 방식은 무엇인가?
+- 구글 계정 연동 사용자와 미연동 사용자의 비밀번호 복구 경로는 어떻게 분기되는가?
+- 시스템 장애 감지(서킷 브레이커) 및 점검 모드 자동 전환의 메커니즘은 어떻게 동작하는가?

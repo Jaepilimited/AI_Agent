@@ -1,24 +1,33 @@
-# Cluster 25
+# Cluster 25: Enterprise AI Architecture, Routing & Update History
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 47
 
 ## Purpose
-본 클러스터는 SKIN1004 AI Agent 프로젝트의 핵심 진입점이 되는 API 엔드포인트를 정의합니다. 외부 클라이언트(예: Open WebUI)와의 연동을 위한 OpenAI 호환 API 규격을 제공하고, AI 에이전트의 지식 기반이 되는 마크다운(MD) 문서 및 메모리 파일을 시각화하고 편집할 수 있는 관리 도구용 API를 담당합니다.
+SKIN1004 Enterprise AI Agent의 시스템 진화 과정(PRD, 업데이트 로그, QA 리포트)과 라우팅/상태 관리 코어를 다루는 문서 및 기반 모듈 클러스터입니다. 비즈니스 쿼리를 분석해 적절한 데이터 소스로 전달하는 라우터 판정 로직, 엔터프라이즈 프롬프트 포맷, 워크플로우 상태 정의, 그리고 BigQuery 성능 최적화와 보안 거버넌스 사양을 망라합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/harness_api.py` — AI Knowledge Base Editor API로, `CLAUDE.md` 및 메모리 파일을 읽고 편집하며 섹션 간 연결 그래프를 생성하는 기능을 제공합니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/routes.py` — Open WebUI 등 외부 시스템과의 통합을 위한 OpenAI 호환 API 엔드포인트를 제공합니다.
+- `app/models/state.py` — LangGraph 워크플로우 전반의 공통 agent state 정의
+- `app/core/route_intent.py` — orchestrator 분리를 위한 1단계 라우팅 순수 함수 (`source gate` 판정)
+- `app/core/prompt_fragments.py` — 다중 에이전트 전반에 재사용되는 엔터프라이즈 포맷 프롬프트 조각
+- `docs/ROUTING_TRIGGERS.md` — 질문 의도에 따른 데이터 소스 라우팅 매핑 가이드
+- `docs/FI_ACCESS_CONTROL.md` — 재무 손익(FI) 데이터 접근 제어 및 권한 통제 구현 계획
+- `docs/SKIN1004_AI_Technical_Architecture.md` — 시스템 전반의 기술 아키텍처 사양
+- `docs/SKIN1004_Enterprise_AI_PRD_v6.md` — 엔터프라이즈 AI 시스템 최신 제품 요구사항 명세서
+- `docs/superpowers/specs/2026-04-20-bigquery-performance-design.md` — BigQuery 응답 속도 개선 설계
+- `docs/superpowers/specs/2026-07-07-nightly-debug-system-design.md` — 야간 자동 디버깅 및 자가 개선 시스템 사양
 
 ## Key Concepts
-- **AI Knowledge Base Editor**: AI 에이전트가 프로젝트를 이해하는 기반이 되는 `CLAUDE.md` 파일과 메모리 파일들을 시각화하고 직접 편집할 수 있게 해주는 도구입니다.
-- **OpenAI-compatible API**: Open WebUI와 같은 표준 클라이언트가 별도의 커스텀 구현 없이 SKIN1004 AI Agent와 통신할 수 있도록 `/v1/chat/completions` 등의 표준 규격을 제공하는 인터페이스입니다.
+- **Source Gate Router**: `orchestrator.py` 비대화를 방지하고, 사용자 질문이 외부/내부 데이터 소스를 필요로 하는지 1단계에서 순수 함수(`route_intent.py`)로 분기 처리하는 구조.
+- **FI Access Control**: 재무 손익 데이터 접근 권한을 관리하여 엔터프라이즈 거버넌스를 준수하는 보안 체계.
+- **Wide to Long Ad Migration**: 통합 마케팅 광고 테이블을 wide 형태에서 long 형태로 구조화하여 쿼리 효율을 높이는 작업 (`2026-04-17-integrated-ad-migration-design.md`).
+- **Nightly Debug System**: 일과 후 자동 검증 및 이상 징후 분석을 수행하는 야간 디버깅 파이프라인.
 
 ## How It Fits In
-이 클러스터는 외부 요청을 수신하여 시스템 내부의 핵심 비즈니스 로직으로 라우팅하는 게이트웨이 역할을 합니다.
-- `app/api/routes.py`는 OpenAI 호환 API 규격(`concept:openai_compatible_api`, cluster_28)을 구현하여 외부 클라이언트의 요청을 처리합니다.
-- 수신된 요청은 내부의 오케스트레이터 에이전트(`concept:orchestrator_agent`, cluster_10)로 전달되어 메인 워크플로우를 트리거합니다.
-- 요청 처리 과정에서 메가와리(megawari) 등 특정 브랜드 컨텍스트를 필터링하기 위해 브랜드 필터(`concept:brand_filter`, cluster_12)를 적용합니다.
+- **Cluster 24 (Security & RBAC)**: `app/models/state.py` 내 사용자 context를 통해 역할 기반 접근 제어(`concept:role_based_access_control`)를 수행합니다.
+- **Cluster 18 (Performance & Benchmarks)**: `2026-04-20-bigquery-performance-design.md`는 SSE 스트리밍(`concept:sse_streaming`)과 연계되며, QA 보고서는 벤치마크(`concept:qa_300_benchmark`) 지표를 추적합니다.
+- **Cluster 29 (Routing Guards)** & **Cluster 31 (Anti-Hallucination)**: `docs/update_log_2026-03-16.md`에 기술된 라우팅 가드와 환각 방지 검증 체계와 연결되어 정확도를 보장합니다.
 
 ## Common Questions This Page Answers
-- Open WebUI와 SKIN1004 AI Agent를 연동하기 위해 어떤 API 엔드포인트를 사용해야 하나요?
-- AI 에이전트의 지식 기반이 되는 `CLAUDE.md`나 메모리 파일을 웹 인터페이스에서 시각화하고 수정하려면 어떤 API를 호출해야 하나요?
+- 사용자 질문이 어떤 기준으로 광고 마케팅, 재무, 일반 응답으로 분기되는가? (`docs/ROUTING_TRIGGERS.md`, `app/core/route_intent.py`)
+- 재무 손익(FI) 민감 데이터의 열람 권한 및 LLM 외부 유출 방지는 어떻게 설계되어 있는가? (`docs/FI_ACCESS_CONTROL.md`, `docs/SECURITY_LLM_API_DATA_GOVERNANCE.md`)
+- BigQuery 조회 지연을 줄이기 위한 구조 개선 및 성능 최적화 히스토리는 무엇인가? (`docs/superpowers/specs/2026-04-20-bigquery-performance-design.md`)

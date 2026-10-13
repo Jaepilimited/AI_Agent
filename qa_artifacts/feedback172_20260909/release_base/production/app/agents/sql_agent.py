@@ -1,0 +1,4514 @@
+"""Text-to-SQL Agent using LangGraph.
+
+Workflow: generate_sql → validate_sql → execute_sql → format_answer
+"""
+
+import hashlib
+import json
+import calendar
+import re
+from collections import OrderedDict
+from datetime import date as _date, datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import structlog
+from langgraph.graph import END, StateGraph
+
+from app.config import get_settings
+from app.core.bigquery import get_bigquery_client
+import concurrent.futures
+
+from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
+from app.core.prompt_fragments import LANGUAGE_DETECTION_RULE
+from app.core.sales_outlook import (
+    SQL_PROMPT_RULE as _SALES_OUTLOOK_RULE,
+    build_company_sql as _build_company_outlook_sql,
+    is_month_close_query as _is_month_close_query,
+    render_answer as _render_sales_outlook,
+)
+from app.core.security import (
+    FI_ACCESS_DENIED_MESSAGE,
+    SOURCE_SCOPE_DENIED_PREFIX,
+    sanitize_sql,
+    validate_sql,
+)
+from app.models.state import AgentState
+
+logger = structlog.get_logger(__name__)
+
+
+# ── SQL Cache ──────────────────────────────────────────────
+# Caches (query → SQL) to skip LLM generation for repeated questions.
+# In-memory LRU + MariaDB persistence.
+
+_sql_cache: OrderedDict = OrderedDict()  # query_hash → (sql, cached_at) (LRU order)
+_SQL_CACHE_MAX = 500
+
+# ⛔ 실측(2026-08-31): 프로덕션 762건 중 589건(77%)이 7일을 넘겼고, 가장 오래된
+#    것은 3개월 전이었다. 가장 많이 재사용된 항목(66회)이 "2026년 월별 매출 추이"
+#    — **매달 정답이 바뀌는 질문**이었다. 7일을 넘긴 SQL 은 서빙하지 않고 다시 만든다.
+_SQL_CACHE_TTL_DAYS = 7
+
+
+# 질문이 상대 기간을 담고 있으면 **캐시에 쓰지도, 캐시에서 읽지도 않는다**
+# (`_is_relative_period_query` 가 호출부에서 lookup/store 를 통째로 건너뛴다 — 아래
+# `_cache_key`/`_cache_lookup`/`_cache_store` 호출부 참고). 예전엔 오늘 날짜를 캐시
+# 키에 접어 넣어 "하루 단위로만" 갱신했는데, **그 하루 안에서는 여전히 캐시가
+# 정답을 대신했다** — 규칙을 뒤집었으므로 그 방식은 걷어낸다.
+_RELATIVE_DATE_KEYWORDS = (
+    "이번 달", "이번달", "지난 달", "지난달", "올해", "작년", "어제", "오늘",
+    "최근", "요즘", "이번 주", "이번주", "지난 주", "지난주", "this month", "last month",
+    "현재까지", "지금까지",
+)
+
+# 올해 연도가 구체적 하위 기간(월·분기·반기)과 함께 쓰이면, 그 하위 기간이
+# **이미 끝났는지**로 상대/절대를 가른다 — "2026년 상반기"는 반기가 끝난 뒤엔
+# 절대 기간이지만 "2026년 하반기"는 지금(하반기 중)은 여전히 진행 중이다.
+# 하위 기간이 아예 없는 맨 연도("2026년 매출")는 항상 상대 기간으로 본다.
+_QUARTER_END_MONTH = {1: 3, 2: 6, 3: 9, 4: 12}
+_RE_YEAR_QUALIFIER = re.compile(
+    r"(?P<year>\d{4})년\s*"
+    r"(?:(?P<month>\d{1,2})\s*월"
+    r"|(?P<quarter>[1-4])\s*분기"
+    r"|Q(?P<quarterq>[1-4])"
+    r"|(?P<half1>상반기)"
+    r"|(?P<half2>하반기))?"
+)
+
+
+def _is_relative_period_query(query: str) -> bool:
+    """질문의 정답이 오늘 날짜에 따라 바뀌는가 — 그렇다면 캐시 대상이 아니다.
+
+    ⚠️ 올해 연도를 부분일치로만 찾으면 이미 끝난 "2026년 상반기"까지 걸려
+       멀쩡히 절대 기간인 질문을 캐시에서 빼는 과잉 매칭이 된다. 구체적 하위
+       기간이 붙어 있으면 그 기간이 끝났는지 계산해서 판정한다.
+    """
+    if not query:
+        return False
+    normalized = re.sub(r"\s+", " ", query.strip().lower())
+    if any(kw.lower() in normalized for kw in _RELATIVE_DATE_KEYWORDS):
+        return True
+
+    today = _date.today()
+    for m in _RE_YEAR_QUALIFIER.finditer(query):
+        year = int(m.group("year"))
+        if year != today.year:
+            continue  # 올해가 아니면(과거 연도) 늘 절대 기간이다
+        month = m.group("month")
+        quarter = m.group("quarter") or m.group("quarterq")
+        if month:
+            end_month = int(month)
+        elif quarter:
+            end_month = _QUARTER_END_MONTH[int(quarter)]
+        elif m.group("half1"):
+            end_month = 6
+        elif m.group("half2"):
+            end_month = 12
+        else:
+            return True  # 하위 기간 없는 맨 연도 — 항상 진행 중
+        end_day = calendar.monthrange(year, end_month)[1]
+        if _date(year, end_month, end_day) >= today:
+            return True  # 그 하위 기간이 아직 안 끝났다 — 진행 중
+    return False
+
+
+def _cache_key(query: str, brand_filter: Optional[str] = None) -> str:
+    """Normalize query and build cache key hash.
+
+    ⚠️ 상대 기간 질문은 여기 오기 전에 호출부가 걸러낸다
+       (`_is_relative_period_query`) — 이 함수는 이미 캐시해도 되는 질문만 받는다.
+    """
+    normalized = re.sub(r"\s+", " ", query.strip().lower())
+    raw = f"{normalized}|{brand_filter or ''}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _build_brand_section(brand_filter: Optional[str]) -> str:
+    """Prompt fragment enforcing the user's group brand restriction."""
+    if not brand_filter:
+        return ""
+    brands = [b.strip() for b in brand_filter.split(",") if b.strip()]
+    brand_in = ", ".join(f"'{b}'" for b in brands)
+    return (
+        f"\n\n## ⚠️ 브랜드 필터 (최우선 적용)\n"
+        f"매출/제품 관련 SQL에 반드시 `WHERE Brand IN ({brand_in})` 조건을 추가하세요.\n"
+    )
+
+
+def _extract_tables_from_sql(sql: str) -> set:
+    """Extract BigQuery table paths from SQL for cache validation."""
+    return set(re.findall(r'`(skin1004-319714\.[^`]+)`', sql))
+
+
+# Large tables that MUST have a date filter for acceptable scan performance.
+_LARGE_TABLES_REQUIRING_DATE_FILTER = [
+    "SALES_ALL_Backup",
+    "integrated_ad",
+    "Integrated_marketing_cost",
+]
+
+
+# 전 테이블 공통: Country 값은 한국어 국가명. 프롬프트 지시(기본 규칙 + 스키마 경고
+# + 말미 리마인더)에도 LLM이 확률적으로 영어 리터럴을 뽑는 사례가 남는다
+# (2026-08-10 '인도네시아쪽은?' 실측 — 같은 코드에서 한국어/영어가 갈렸다).
+# 프롬프트는 확률을 높일 뿐이므로, 생성 후 결정적으로 교정한다.
+_COUNTRY_EN2KR = {
+    "INDONESIA": "인도네시아", "USA": "미국", "UNITED STATES": "미국",
+    "AMERICA": "미국", "JAPAN": "일본", "CHINA": "중국", "TAIWAN": "대만",
+    "HONG KONG": "홍콩", "KOREA": "한국", "SOUTH KOREA": "한국",
+    "THAILAND": "태국", "VIETNAM": "베트남", "SINGAPORE": "싱가포르",
+    "MALAYSIA": "말레이시아", "PHILIPPINES": "필리핀", "AUSTRALIA": "호주",
+    "GERMANY": "독일", "UK": "영국", "UNITED KINGDOM": "영국",
+    "FRANCE": "프랑스", "CANADA": "캐나다", "INDIA": "인도", "RUSSIA": "러시아",
+    "SPAIN": "스페인", "ITALY": "이탈리아", "NETHERLANDS": "네덜란드",
+    "POLAND": "폴란드", "BRAZIL": "브라질", "MEXICO": "멕시코",
+    "SAUDI ARABIA": "사우디아라비아", "UAE": "아랍에미리트",
+    "UNITED ARAB EMIRATES": "아랍에미리트", "EGYPT": "이집트",
+    "KAZAKHSTAN": "카자흐스탄", "UKRAINE": "우크라이나",
+    "CAMBODIA": "캄보디아", "MYANMAR": "미얀마", "LAOS": "라오스",
+}
+
+_re_country_eq = re.compile(
+    r"(Country\s*(?:=|!=|<>)\s*)'([A-Za-z][A-Za-z .]*)'", re.IGNORECASE)
+_re_country_like = re.compile(
+    r"(Country\s+LIKE\s*)'(%?)([A-Za-z][A-Za-z .]*)(%?)'", re.IGNORECASE)
+_re_country_in = re.compile(
+    r"(Country\s+(?:NOT\s+)?IN\s*\()([^)]*)(\))", re.IGNORECASE)
+
+
+def _localize_country_literals(sql: str) -> str:
+    """Country 비교의 영어 국가명 리터럴을 한국어로 교정 (사전에 없는 값은 유지)."""
+    def _eq(m):
+        kr = _COUNTRY_EN2KR.get(m.group(2).strip().upper())
+        return m.group(1) + "'" + kr + "'" if kr else m.group(0)
+
+    def _like(m):
+        kr = _COUNTRY_EN2KR.get(m.group(3).strip().upper())
+        if not kr:
+            return m.group(0)
+        return m.group(1) + "'" + m.group(2) + kr + m.group(4) + "'"
+
+    def _in(m):
+        body = re.sub(
+            r"'([A-Za-z][A-Za-z .]*)'",
+            lambda mm: "'" + _COUNTRY_EN2KR.get(
+                mm.group(1).strip().upper(), mm.group(1)) + "'",
+            m.group(2))
+        return m.group(1) + body + m.group(3)
+
+    sql = _re_country_eq.sub(_eq, sql)
+    sql = _re_country_like.sub(_like, sql)
+    sql = _re_country_in.sub(_in, sql)
+    return sql
+
+
+# ── 팀명 ↔ Team_NEW 코드 (2026-08-11 공식 팀명 확정) ─────────────────────────
+# 회사 구조 질문과 SQL 교정이 같은 원본을 보도록 core의 조직 상수를 재사용한다.
+# 데이터에는 코드(B2B1·JBT…)만 들어 있는데 사내에서는 한글 팀명을 쓴다.
+from app.core.org_structure import TEAM_CODE2KR, TEAM_DIVISIONS
+
+TEAM_CODE2DIVISION = {
+    code: div for div, codes in TEAM_DIVISIONS.items() for code in codes
+}
+
+# 답변에 쓰는 팀 표기 규칙 — 포맷 프롬프트 3곳(비스트리밍·스트리밍·fast-answer)이
+# 같은 문구를 쓰도록 한 곳에 둔다. 예전에는 세 곳이 제각각 "KBT=국내사업" 같은
+# 비공식 설명을 들고 있었다.
+TEAM_DISPLAY_RULE = (
+    "⚠️ 팀 표기(임의 해석 금지): 아래가 공식 팀명이다. 표·차트 라벨·본문 모두 "
+    "`한글팀명(코드)` 형식으로 쓰라 (예: `영업1팀(B2B1)`).\n"
+    + ", ".join(f"{c}={kr}" for c, kr in TEAM_CODE2KR.items())
+    + "\n`기타`·`OP` 는 정식 팀이 아니다. JBT 를 좀비뷰티 등 다른 의미로 지어내지 마라 "
+    "(2026-08-07 실제 오답)."
+)
+
+# 조회 키는 공백 제거 + 끝의 '팀' 제거 형태 ('영업 1팀' · '영업1' · '영업1팀' 모두 매칭)
+_TEAM_KR2CODE = {
+    "영업1": "B2B1", "영업2": "B2B2",
+    "유통1": "DT1", "유통2": "DT2",
+    "유통1본부": "DT1", "유통2본부": "DT2",
+    "동남아시아1": "EAST1", "동남아시아2": "EAST2",
+    "동남아1": "EAST1", "동남아2": "EAST2",
+    "서구권마케팅": "WEST_MKT", "서구권이커머스": "WEST_Ecomm",
+    "중국사업": "CBT", "일본사업": "JBT", "한국사업": "KBT",
+    "브랜드커뮤니케이션": "BCM", "브랜드컴": "BCM",
+}
+
+# 광고 테이블(integrated_ad)의 팀 컬럼명은 `team` 이고 값 체계는 Team_NEW 와 같다
+# (2026-08-11 실측: EAST1·EAST2·WEST_MKT·WEST_Ecomm·CBT·JBT·KBT·기타).
+# 두 컬럼이 같은 교정을 받아야 "서구권마케팅팀 광고비" 가 통한다.
+# `\bteam\b` 는 `Team_NEW` 와 겹치지 않는다 ('_' 가 단어 문자라 경계가 서지 않음).
+_TEAM_COL = r"\b(?:Team_NEW|team)\b"
+_re_team_eq = re.compile(rf"({_TEAM_COL}\s*)(=|!=|<>)(\s*)'([^']*)'", re.IGNORECASE)
+_re_team_like = re.compile(
+    rf"({_TEAM_COL}\s+(?:NOT\s+)?LIKE\s*)'(%?)([^%']*)(%?)'", re.IGNORECASE)
+# ⚠️ 본문을 `[^)]*` 로 잡으면 리터럴 안의 괄호에서 잘린다 — 표시형 '영업1팀(B2B1)' 이
+# 바로 그 경우다. 따옴표 문자열은 통째로 삼키고, 그 밖에서만 ')' 를 끝으로 본다.
+_re_team_in = re.compile(
+    rf"({_TEAM_COL}\s+(?:NOT\s+)?IN\s*\()((?:'[^']*'|[^)])*)(\))", re.IGNORECASE)
+
+# 표시형 '영업1팀(B2B1)' 에서 코드만 뽑는다. 답변 표가 이 형식이라 다음 턴 컨텍스트에
+# 그대로 들어가고, LLM 이 그 문자열을 필터로 쓰면 0건이 난다 — 우리가 만든 표기가
+# 스스로 판 함정이므로 여기서 되돌린다 (2026-08-11 재검토에서 발견).
+_re_code_in_parens = re.compile(r"\(([A-Za-z0-9_]+)\)\s*$")
+
+
+def _team_code(literal: str) -> Optional[str]:
+    """한글 팀명 또는 표시형('영업1팀(B2B1)') → 코드. 팀명이 아니면 None."""
+    raw = (literal or "").strip()
+    m = _re_code_in_parens.search(raw)
+    if m and m.group(1) in TEAM_CODE2KR:
+        return m.group(1)
+    key = re.sub(r"\s+", "", raw)
+    key = re.sub(r"팀$", "", key)
+    return _TEAM_KR2CODE.get(key)
+
+
+def _relabel_team_values(results):
+    """결과 행의 팀 코드를 '한글팀명(코드)' 로 치환한다.
+
+    표기를 LLM 지시에만 맡기면 확률적으로 코드가 그대로 나온다. 값 자체를 바꾸면
+    표·차트 라벨·인사이트가 한 번에 맞는다 (차트는 이 값을 라벨로 그대로 쓴다).
+    """
+    if not results:
+        return results
+    # 컬럼명이 team/Team_NEW 만은 아니다 — LLM 이 `Team AS team_code` 처럼 별칭을
+    # 붙이면 정확 일치로는 놓친다 (2026-08-11 '본부별 마케팅비' 에서 코드 노출).
+    # 값이 팀 코드일 때만 바꾸므로 team_count 같은 숫자 컬럼은 영향이 없다.
+    team_cols = [k for k in results[0].keys() if "team" in k.lower() or "팀" in k]
+    if not team_cols:
+        return results
+    for row in results:
+        for col in team_cols:
+            v = row.get(col)
+            # 프로모션 테이블은 team_id 가 'east1'·'west-mkt' 형식이라 코드 표와
+            # 키가 다르다 — 두 체계 모두 한글 팀명으로 보이게 한다
+            kr = TEAM_CODE2KR.get(v) or _PROMO_ID2KR.get(v)
+            if kr:
+                row[col] = f"{kr}({v})"
+    return results
+
+
+# ── 프로모션 캘린더(promotion_calendar.promotion) 전용 값 체계 ──────────────
+# 이 테이블만 팀·국가 표기가 다르다 (2026-08-11 실측):
+#   team_id      = 소문자·하이픈  east1 / west-mkt / west-ecomm / kbt / jbt / cbt / bcm
+#   country_code = 2글자 ISO      ID / MY / PH / KR / US / SG / JP / AU / CN / GLOBAL
+# 다른 테이블은 Team_NEW 대문자 코드와 **한국어 국가명**을 쓴다. 섞이면 0건이 난다
+# — 광고 테이블에서 똑같이 당했으므로 처음부터 결정적으로 교정한다.
+_PROMO_TEAM_ID = {code: code.lower().replace("_", "-") for code in TEAM_CODE2KR}
+_PROMO_ID2KR = {pid: TEAM_CODE2KR[code] for code, pid in _PROMO_TEAM_ID.items()}
+
+_COUNTRY_KR2ISO = {
+    "인도네시아": "ID", "말레이시아": "MY", "필리핀": "PH", "한국": "KR",
+    "미국": "US", "싱가포르": "SG", "일본": "JP", "호주": "AU", "중국": "CN",
+    "글로벌": "GLOBAL", "전세계": "GLOBAL",
+    "대만": "TW", "베트남": "VN", "태국": "TH", "영국": "GB", "독일": "DE",
+    "캐나다": "CA", "프랑스": "FR", "스페인": "ES", "인도": "IN",
+}
+
+_re_promo_team = re.compile(
+    r"(\bteam_id\b\s*(?:=|!=|<>)\s*)'([^']*)'", re.IGNORECASE)
+_re_promo_team_in = re.compile(
+    r"(\bteam_id\b\s+(?:NOT\s+)?IN\s*\()((?:'[^']*'|[^)])*)(\))", re.IGNORECASE)
+_re_country_code = re.compile(
+    r"(\bcountry_code\b\s*(?:=|!=|<>)\s*)'([^']*)'", re.IGNORECASE)
+_re_country_code_in = re.compile(
+    r"(\bcountry_code\b\s+(?:NOT\s+)?IN\s*\()((?:'[^']*'|[^)])*)(\))", re.IGNORECASE)
+
+
+# Team_NEW 코드는 대소문자가 섞여 있다('WEST_Ecomm') — 대문자 키로 찾을 수 있게 색인
+_TEAM_CODE_CI = {code.upper(): code for code in TEAM_CODE2KR}
+
+
+def _promo_team_id(literal: str) -> Optional[str]:
+    """한글 팀명·Team_NEW 코드·표시형 → promotion.team_id 값."""
+    raw = (literal or "").strip()
+    if raw.lower() in set(_PROMO_TEAM_ID.values()):
+        return None  # 이미 올바른 형식
+    code = _team_code(raw) or _TEAM_CODE_CI.get(raw.upper())
+    return _PROMO_TEAM_ID.get(code) if code else None
+
+
+def _iso_country(literal: str) -> Optional[str]:
+    """한국어 국가명 → 2글자 ISO 코드 (이미 코드면 None)."""
+    raw = re.sub(r"\s+", "", literal or "")
+    return _COUNTRY_KR2ISO.get(raw)
+
+
+# ⛔ **묻지 않은 브랜드 필터가 매출을 조용히 깎고 있었다** (2026-08-14 제보로 확인).
+#    "26년 7월 미국·인도네시아·말레이시아·호주·멕시코·캐나다 매출" 질문에
+#    LLM 이 `Brand IN ('SK','CL','CBT')` 를 스스로 붙여 **우마(UM)를 통째로 뺐다**:
+#
+#        멕시코  8.15억  ← 답변      /  9.32억  실제  (UM 1.17억 누락)
+#        미국   86.55억  ← 답변      / 219.34억 실제  (UM 132.79억 누락 · 61%)
+#        캐나다  6.56억  ← 답변      /  17.83억 실제  (UM 11.27억 누락 · 63%)
+#
+#    답변은 조회 조건에 "대상 브랜드: SK, CL, CBT"라고 적었지만, 국가별 매출을 물은
+#    사람이 그 줄을 브랜드 한정으로 읽을 이유가 없다. **틀린 티가 안 나는 실패다.**
+#
+#    원인은 프롬프트가 자기 자신과 모순인 것이다 — 73행은 "국가별 매출 → 브랜드
+#    필터 없이"인데 4곳이 "Brand IN ('SK','CL') 필수"라고 적혀 있었다(그중 하나는
+#    국가 질문 예시였다). 프롬프트를 고쳐도 지시는 확률일 뿐이라 여기서 보증한다 —
+#    국가 리터럴·팀 리터럴 교정과 같은 계열이다.
+#
+#    ⚠️ 제품/라인 질문에서는 이 필터가 **맞다** (UM·CBT 는 제품명이 100% 비어 있다).
+#       그래서 질문에 제품어나 브랜드명이 하나라도 있으면 건드리지 않는다.
+_BRAND_TERMS = ("브랜드", "스킨천사", "스킨1004", "skin1004", "우마", "umma", "um ",
+                "좀비뷰티", "좀비", "커먼랩스", "commonlabs", "라인별")
+_PRODUCT_TERMS = ("제품", "품목", "sku", "라인", "카테고리", "세트", "앰플", "크림",
+                  "토너", "선크림", "패드", "클렌징", "마스크", "세럼", "에센스")
+# 스킨천사 계열만 남기고 UM/DD 를 빼는 필터 (이것만 대상으로 한다)
+_SUBSET_BRAND_RE = re.compile(
+    r"\s*AND\s+Brand\s+IN\s*\(\s*(?:'(?:SK|CL|CBT)'\s*,?\s*){2,3}\)", re.I)
+
+
+def _strip_unrequested_brand_filter(sql: str, question: str) -> str:
+    """묻지 않은 브랜드 축소를 걷어낸다. **프롬프트가 이미 정한 규칙을 강제할 뿐이다.**"""
+    if not sql or not question or not _SUBSET_BRAND_RE.search(sql):
+        return sql
+    q = question.lower()
+    if any(t in q for t in _BRAND_TERMS) or any(t in q for t in _PRODUCT_TERMS):
+        return sql                      # 브랜드·제품을 물었으면 그 필터가 맞다
+    cleaned = _SUBSET_BRAND_RE.sub("", sql)
+    if cleaned != sql:
+        logger.warning("brand_filter_stripped", question=question[:120],
+                       removed=_SUBSET_BRAND_RE.search(sql).group(0).strip())
+    return cleaned
+
+
+def _localize_promotion_literals(sql: str) -> str:
+    """promotion 테이블 전용 리터럴 교정 (team_id·country_code)."""
+    def _sub_one(m, fn):
+        v = fn(m.group(2))
+        return m.group(1) + "'" + v + "'" if v else m.group(0)
+
+    def _sub_in(m, fn):
+        body = re.sub(
+            r"'([^']*)'",
+            lambda mm: "'" + (fn(mm.group(1)) or mm.group(1)) + "'",
+            m.group(2))
+        return m.group(1) + body + m.group(3)
+
+    sql = _re_promo_team.sub(lambda m: _sub_one(m, _promo_team_id), sql)
+    sql = _re_promo_team_in.sub(lambda m: _sub_in(m, _promo_team_id), sql)
+    sql = _re_country_code.sub(lambda m: _sub_one(m, _iso_country), sql)
+    sql = _re_country_code_in.sub(lambda m: _sub_in(m, _iso_country), sql)
+    return sql
+
+
+# ── LOG(Export_control.export_logistics) 전용 값 체계 ────────────────────────
+# ⛔ **이 테이블의 `order_team` 은 세 번째 값 체계다** (2026-09-03 실측 2,527행).
+#    `Team_NEW` 코드도, promotion 의 소문자·하이픈도 아니다 — 사람이 손으로 적어
+#    넣은 값이 그대로 쌓여 **한 팀이 최대 4가지 표기**로 흩어져 있다:
+#
+#        영업1(934) · 영업1팀(328)              ← 같은 팀. 둘 다 세지 않으면 26%가 빠진다
+#        GMWM(65) · GM WEST MKT(5) · 서구권마케팅팀(11)
+#        BCM_플래그십 파트 · BCM_플래그십 · BCM_플 · 브랜드커뮤니케이션팀_플래그십
+#
+#    `order_team = 'B2B1'` 로 물으면 **2건**이 나온다 (실제 1,262건). 에러가 아니라
+#    조용한 오답이다 — 그래서 국가·팀·프로모션 리터럴과 같은 방식으로 코드가 보증한다.
+# ⚠️ 값은 **실측으로** 채웠다. 새 표기가 생기면 `미분류` 로 떨어져 눈에 보인다
+#    (조용히 사라지지 않는다 — CASE 의 ELSE 를 없애지 마라).
+_LOG_TEAM_VARIANTS: dict = {
+    "B2B1":       ["영업1", "영업1팀", "B2B1"],
+    "B2B2":       ["영업2", "영업2팀", "B2B2"],
+    "CBT":        ["CBT", "GM CBT", "중국사업팀"],
+    "JBT":        ["JBT", "GM JBT", "일본사업팀"],
+    "KBT":        ["KBT", "GM KBT", "한국사업팀"],
+    "EAST1":      ["GME1", "GM EAST1", "동남아시아1팀"],
+    "EAST2":      ["GME2", "GM EAST2", "동남아시아2팀"],
+    "WEST_MKT":   ["GMWM", "GM WEST MKT", "서구권마케팅팀"],
+    "WEST_Ecomm": ["GMWE", "GM WEST ECOMM", "서구권이커머스팀"],
+    "BCM":        ["BCM_플래그십 파트", "BCM_플래그십", "BCM_플",
+                   "브랜드커뮤니케이션팀_플래그십"],
+}
+# 어느 표기로 물어도 같은 팀으로 읽는다 (공백·대소문자 무시)
+_LOG_TEAM_LOOKUP: dict = {}
+for _code, _vals in _LOG_TEAM_VARIANTS.items():
+    for _v in _vals:
+        _LOG_TEAM_LOOKUP[re.sub(r"\s+", "", _v).upper()] = _code
+    _LOG_TEAM_LOOKUP[re.sub(r"\s+", "", TEAM_CODE2KR[_code]).upper()] = _code
+
+_re_log_team = re.compile(
+    r"(\border_team\b\s*)(=|!=|<>)\s*'([^']*)'", re.IGNORECASE)
+_re_log_team_in = re.compile(
+    r"(\border_team\b\s+)(NOT\s+)?IN\s*\(((?:'[^']*'|[^)])*)\)", re.IGNORECASE)
+
+
+def _log_team_variants(literal: str) -> Optional[list]:
+    """LOG `order_team` 리터럴 → 그 팀의 실제 표기 전부. 모르는 값이면 None."""
+    code = _LOG_TEAM_LOOKUP.get(re.sub(r"\s+", "", literal or "").upper())
+    return list(_LOG_TEAM_VARIANTS[code]) if code else None
+
+
+def _localize_logistics_literals(sql: str) -> str:
+    """LOG 테이블 전용 리터럴 교정 — `order_team` 표기 흩어짐을 IN 목록으로 편다.
+
+    ⚠️ 국가(`country`)는 매출과 **같은 한글 국가명**이라 손대지 않는다 (실측 124개).
+    """
+    if not sql or "order_team" not in sql.lower():
+        return sql
+
+    def _one(m):
+        variants = _log_team_variants(m.group(3))
+        if not variants:
+            return m.group(0)
+        vals = ", ".join("'" + v.replace("'", "''") + "'" for v in variants)
+        neg = "NOT " if m.group(2) in ("!=", "<>") else ""
+        # ⚠️ `order_team='영업1팀'` 처럼 등호에 공백이 없으면 group(1) 끝에 공백이
+        #    없다 — 그대로 이으면 `order_teamIN (...)` 이 되어 SQL 이 깨진다
+        return f"{m.group(1).rstrip()} {neg}IN ({vals})"
+
+    def _in(m):
+        out, changed = [], False
+        for lit in re.findall(r"'([^']*)'", m.group(3)):
+            variants = _log_team_variants(lit)
+            if variants and variants != [lit]:
+                changed = True
+                out.extend(variants)
+            else:
+                out.append(lit)
+        if not changed:
+            return m.group(0)
+        seen, uniq = set(), []
+        for v in out:
+            if v not in seen:
+                seen.add(v)
+                uniq.append(v)
+        vals = ", ".join("'" + v.replace("'", "''") + "'" for v in uniq)
+        return f"{m.group(1).rstrip()} {m.group(2) or ''}IN ({vals})"
+
+    fixed = _re_log_team.sub(_one, sql)
+    fixed = _re_log_team_in.sub(_in, fixed)
+    if fixed != sql:
+        logger.info("logistics_team_literals_expanded")
+    return fixed
+
+
+def build_logistics_team_section() -> str:
+    """LOG `order_team` 정규화 표·CASE 를 코드 상수에서 만든다.
+
+    ⛔ 프롬프트에 같은 표를 손으로 또 적지 마라 — 두 벌이 되면 반드시 갈린다
+    (`build_team_section()` 과 같은 사상).
+    """
+    rows = "\n".join(
+        f"| {TEAM_CODE2KR[code]} | `{code}` | "
+        + " · ".join(f"`{v}`" for v in vals) + " |"
+        for code, vals in _LOG_TEAM_VARIANTS.items()
+    )
+    case_lines = "\n".join(
+        "    WHEN order_team IN ("
+        + ", ".join(f"'{v}'" for v in vals)
+        + f") THEN '{TEAM_CODE2KR[code]}({code})'"
+        for code, vals in _LOG_TEAM_VARIANTS.items()
+    )
+    return f"""#### ⛔ `order_team` 은 한 팀이 여러 표기로 흩어져 있다 (실측)
+
+| 공식 팀명 | 코드 | 이 테이블에 실제로 들어 있는 표기 |
+|---|---|---|
+{rows}
+
+- ❌ `WHERE order_team = 'B2B1'` → **2건**. 실제 영업1팀은 1,262건이다
+- ✅ `WHERE order_team IN ('영업1','영업1팀','B2B1')`
+- **팀별로 나눌 때는 반드시 아래 CASE 로 묶는다.** 그냥 `GROUP BY order_team` 하면
+  같은 팀이 여러 줄로 쪼개져 순위가 통째로 틀린다:
+  ```sql
+  CASE
+{case_lines}
+    ELSE '미분류'
+  END AS team
+  ```
+- ⚠️ `ELSE '미분류'` 를 지우지 마라 — 새 표기(`'서구권이커머스팀, 서구권마케팅팀'`
+  처럼 두 팀이 함께 적힌 값·빈 값)가 **조용히 사라지는** 대신 눈에 보여야 한다
+- 유통1/2팀(`DT1`·`DT2`)은 이 테이블에 발주가 없다"""
+
+
+def _division_codes(literal: str) -> Optional[list]:
+    """본부명 리터럴 → 소속 팀 코드 목록. 본부명이 아니면 None."""
+    return TEAM_DIVISIONS.get(re.sub(r"\s+", "", literal or ""))
+
+
+def _unclip_team_rows(sql: str, question: str) -> str:
+    """팀별 집계에 걸린 작은 `LIMIT` 을 걷어낸다.
+
+    ⛔ 실측(2026-08-27, 붐따 #127 — 닫혔지만 재현됐다): 질문이 "팀은 총 9개임"
+       이라고 (틀리게) 단정하자 LLM 이 그 전제를 믿고 `LIMIT 9` 를 걸었다.
+       실제 팀은 12개라 **JBT(20.3억)·KBT(20.2억)·BCM(2.7억)이 잘렸고**,
+       답변은 "총 9개 팀의 전체 매출" 이라고 단정했다 — 42.8억(4.2%)이 조용히
+       빠진 채 100%% 로 표시됐다. 자른 사실은 어디에도 없었다.
+
+    ⚠️ **사용자가 상위 N 을 명시했으면 건드리지 않는다** ("팀별 매출 TOP 3").
+       그때는 자르는 것이 질문의 뜻이다 — 늘리면 묻지 않은 것을 답하게 된다.
+    ⚠️ 팀 수는 `TEAM_CODE2KR` 한 곳에서 온다. 새 팀이 생겨도 따라온다.
+    """
+    if not sql or "team_new" not in sql.lower():
+        return sql
+    if not re.search(r"group\s+by", sql, re.IGNORECASE):
+        return sql
+    if re.search(r"top\s*\d|상위\s*\d|top\s*n", question or "", re.IGNORECASE):
+        return sql
+
+    match = re.search(r"\bLIMIT\s+(\d+)\s*$", sql.strip(), re.IGNORECASE)
+    if not match:
+        return sql
+    limit = int(match.group(1))
+    if limit >= len(TEAM_CODE2KR):
+        return sql
+
+    logger.warning("sql_team_rows_clipped", limit=limit, teams=len(TEAM_CODE2KR),
+                   question=(question or "")[:80])
+    return re.sub(r"\bLIMIT\s+\d+\s*$", f"LIMIT {len(TEAM_CODE2KR)}",
+                  sql.strip(), flags=re.IGNORECASE)
+
+def _fix_logistics_amount(sql: str) -> str:
+    """수출 물류 금액을 유상+무상으로 고친다 (붐따 #159).
+
+    ⚠️ 고쳐 쓰는 것은 **집계 안뿐**이다 — 그 밖은 `logistics_amount.notice()` 가
+       고치지 않고 공시한다. 이유는 그 모듈 머리말에 있다 (별칭·파서 없음).
+    """
+    try:
+        from app.core.logistics_amount import fix_sql
+        return fix_sql(sql)
+    except Exception as e:                    # noqa: BLE001
+        logger.warning("logistics_amount_fix_failed", error=str(e)[:160])
+        return sql
+
+
+def _localize_team_literals(sql: str) -> str:
+    """팀 비교의 한글 팀명·본부명을 코드로 교정 (사전에 없는 값은 유지).
+
+    - 팀명   → 코드            `= '영업1팀'`       → `= 'B2B1'`
+    - 표시형 → 코드            `= '영업1팀(B2B1)'` → `= 'B2B1'`
+    - 본부명 → 소속 코드 IN절  `= '영업1본부'`     → `IN ('B2B1','B2B2')`
+    """
+    def _eq(m):
+        col, op, gap, lit = m.group(1), m.group(2), m.group(3), m.group(4)
+        codes = _division_codes(lit)
+        if codes:
+            # 본부는 단일 값이 아니라 팀 묶음이다 — 비교 연산 자체를 바꾼다
+            joined = ", ".join(f"'{c}'" for c in codes)
+            return f"{col}{'NOT IN' if op in ('!=', '<>') else 'IN'} ({joined})"
+        code = _team_code(lit)
+        return f"{col}{op}{gap}'{code}'" if code else m.group(0)
+
+    def _like(m):
+        code = _team_code(m.group(3))
+        if not code:
+            return m.group(0)
+        return m.group(1) + "'" + m.group(2) + code + m.group(4) + "'"
+
+    def _in(m):
+        def _one(mm):
+            lit = mm.group(1)
+            codes = _division_codes(lit)
+            if codes:                      # 본부명은 소속 팀 코드들로 펼친다
+                return ", ".join(f"'{c}'" for c in codes)
+            return "'" + (_team_code(lit) or lit) + "'"
+
+        return m.group(1) + re.sub(r"'([^']*)'", _one, m.group(2)) + m.group(3)
+
+    sql = _re_team_eq.sub(_eq, sql)
+    sql = _re_team_like.sub(_like, sql)
+    sql = _re_team_in.sub(_in, sql)
+    return sql
+
+
+# 사용자가 말하는 별칭 → 실재하는 값. 두 컬럼에 각각 대응이 있다.
+#   Continent1 은 `중남미` 하나로 통합돼 있고, Continent2 가 남/중을 나눠 갖는다.
+_CONTINENT_ALIAS_TO_C2 = {"남미": "남아메리카", "중미": "중앙아메리카"}
+_CONTINENT_ALIAS_TO_C1 = {"남미": "중남미", "중미": "중남미"}
+# Continent2 로 옮겨도 안전한 값들 (별칭 + 이미 Continent2 표기인 것)
+_C2_SAFE_VALUES = set(_CONTINENT_ALIAS_TO_C2) | set(_CONTINENT_ALIAS_TO_C2.values())
+
+_RE_CONTINENT_ALIAS = re.compile(r"""(['"])(남미|중미)\1""")
+_RE_C1_PREDICATE = re.compile(
+    r"""Continent1\s*(?:=|(?:NOT\s+)?IN)\s*(\([^)]*\)|'[^']*'|"[^"]*")""",
+    re.IGNORECASE,
+)
+_RE_QUOTED_VALUE = re.compile(r"""(['"])([^'"]*)\1""")
+
+
+# ── 달을 지목한 질문의 기간 (붐따 #143·#144, 2026-08-24) ────────────────────
+# ⛔ 같은 질문 두 번에 총량이 1,805 / 11,865 로 갈렸다. SQL 두 개의 차이는 딱 하나,
+#    기간의 끝이었다 ('2026-08-24 23:59:59' vs '2026-08-31 23:59:59').
+#    프롬프트 15항이 "오늘 이후 행을 제외하라" 고 해서 LLM 이 확률적으로 잘랐는데,
+#    **자른 사실을 답변 어디에도 적지 않았다.** 달을 못 박은 질문이면 그 달 전체여야
+#    하고, 무엇보다 **매번 같아야** 한다 — 보증은 프롬프트가 아니라 코드가 한다.
+# ⚠️ 사용자가 기간 범위를 직접 말했으면(부터·까지·~) 건드리지 않는다. 스스로 자른
+#    기간을 늘리면 묻지 않은 것을 답하게 된다.
+_RE_MONTH_WORD = re.compile(r"(?<![0-9])(1[0-2]|0?[1-9])\s*월(?!말|초|중)")
+_RE_RANGE_WORD = re.compile(r"부터|까지|~|사이|이후|이전")
+_RE_BETWEEN_DATES = re.compile(
+    r"(BETWEEN\s*')(\d{4})-(\d{2})-(\d{2})([^']*)('\s*AND\s*')(\d{4})-(\d{2})-(\d{2})([^']*)(')",
+    re.IGNORECASE)
+
+
+def _normalize_named_period(sql: str, query: str) -> str:
+    """달을 지목한 질문이면 그 달 **전체**로 맞춘다 (조용히 잘린 상한을 되돌린다)."""
+    if not sql or not query:
+        return sql
+    if not _RE_MONTH_WORD.search(query) or _RE_RANGE_WORD.search(query):
+        return sql
+
+    def _fix(m: "re.Match") -> str:
+        y0, mo0, d0 = m.group(2), m.group(3), m.group(4)
+        y1, mo1, d1 = m.group(7), m.group(8), m.group(9)
+        # 같은 달이고, 1일에 시작하고, 말일보다 앞에서 끝날 때만 되돌린다
+        if (y0, mo0) != (y1, mo1) or d0 != "01":
+            return m.group(0)
+        last = calendar.monthrange(int(y1), int(mo1))[1]
+        if int(d1) >= last:
+            return m.group(0)
+        logger.warning("named_period_extended", month=f"{y1}-{mo1}",
+                       clamped_to=f"{y1}-{mo1}-{d1}", extended_to=f"{y1}-{mo1}-{last:02d}",
+                       query=query[:80])
+        # ⛔ **시각을 만들어 붙이지 마라 — 원본 표기를 그대로 쓴다** (2026-08-31 실측).
+        #    여기서 `23:59:59` 를 무조건 덧붙이고 있었다. 매출 `Date` 는 DATETIME 이라
+        #    괜찮았지만 광고 `integrated_ad.date` 는 **DATE** 라 캐스팅이 안 돼
+        #    "Could not cast literal ... to type DATE" 로 **요청이 죽었다.**
+        #    ⚠️ 늘리는 것은 날짜의 몫이지 표기의 몫이 아니다. 상한이 원래
+        #       `23:59:59` 였으면 group(10) 이 그것을 그대로 갖고 있다.
+        return (f"{m.group(1)}{y0}-{mo0}-{d0}{m.group(5)}{m.group(6)}"
+                f"{y1}-{mo1}-{last:02d}{m.group(10)}{m.group(11)}")
+
+    return _RE_BETWEEN_DATES.sub(_fix, sql)
+
+
+def _localize_continent_literals(sql: str) -> str:
+    """사용자가 말하는 `남미`·`중미` 를 실재하는 대륙 값으로 교정한다.
+
+    데이터에는 `Continent1='중남미'` 로 통합돼 있고, 더 잘게는
+    `Continent2` 에 `남아메리카`·`중앙아메리카` 로 있다. 프롬프트 지시만으로는
+    확률적이라 후처리가 보증한다 (국가·팀 리터럴과 같은 계열).
+
+    ⛔ **컬럼을 통째로 치환하면 안 된다.** 조건이 섞여 있을 때
+       `Continent1 IN ('남미','유럽')` → `Continent2 IN ('남아메리카','유럽')` 이 되는데
+       **`유럽` 은 Continent2 에 없다.** 절반이 조용히 0건이 되고, 답변은 그걸
+       "유럽 매출이 없다" 로 설명한다 — 에러가 없어 가장 늦게 발견되는 부류다.
+
+    그래서 조건에 든 값을 먼저 보고 정한다:
+      · 전부 남/중미 계열이면 → 더 정확한 `Continent2` 로 옮긴다
+      · 하나라도 Continent1 에만 있는 값이면 → 컬럼을 두고 `중남미` 로 접는다
+        (범위가 넓어질 뿐, 없는 값을 만들지 않는다)
+    """
+    if not sql or not _RE_CONTINENT_ALIAS.search(sql):
+        return sql
+
+    # 1) Continent1 조건에 실린 값을 전부 모아 옮겨도 되는지 판정한다.
+    literals: List[str] = []
+    for pred in _RE_C1_PREDICATE.findall(sql):
+        literals.extend(v for _q, v in _RE_QUOTED_VALUE.findall(pred))
+    can_move = bool(literals) and all(v in _C2_SAFE_VALUES for v in literals)
+
+    if can_move:
+        sql = _RE_CONTINENT_ALIAS.sub(
+            lambda m: f"{m.group(1)}{_CONTINENT_ALIAS_TO_C2[m.group(2)]}{m.group(1)}", sql)
+        # SELECT·GROUP BY 도 같이 옮겨야 라벨과 필터가 어긋나지 않는다.
+        return re.sub(r"Continent1\b", "Continent2", sql, flags=re.IGNORECASE)
+
+    # 2) 섞여 있다 — 컬럼을 두고 같은 컬럼에 실재하는 값으로 접는다.
+    sql = _RE_CONTINENT_ALIAS.sub(
+        lambda m: f"{m.group(1)}{_CONTINENT_ALIAS_TO_C1[m.group(2)]}{m.group(1)}", sql)
+
+    # 남미·중미가 둘 다 중남미로 접히면 IN 목록에 같은 값이 두 번 남는다.
+    def _dedupe(match: "re.Match") -> str:
+        pred = match.group(0)
+        inner = match.group(1)
+        if not inner.startswith("("):
+            return pred
+        seen, kept = set(), []
+        for quote, value in _RE_QUOTED_VALUE.findall(inner):
+            if value in seen:
+                continue
+            seen.add(value)
+            kept.append(f"{quote}{value}{quote}")
+        return pred.replace(inner, "(" + ",".join(kept) + ")")
+
+    return _RE_C1_PREDICATE.sub(_dedupe, sql)
+
+
+# ── 대륙 값이 반대 컴럼에 걸렸을 때 (붐따 #120) ───────────────
+# "유럽" 을 `Continent2` 에 걸어 0건이 나갔고, 답변은 "대륙 필드가 세분화돼 있어서"
+# 라고 설명했다 — 사실이 아니다. `Continent1` 에는 '유럽' 이 있다.
+# ⛔ 값을 손으로 적지 않는다 — 어느 컴럼에 무엇이 있는지는 `value_lists` 가 매일 실측한다.
+# ⚠️ 한쪽에만 있는 값일 때만 옮긴다. 양쪽에 다 있는 값(북미·중동)이나 섞인 조건은
+#    건드리지 않는다 — 통째로 옮기면 절반이 조용히 0건이 된다 (기존 주석과 같은 이유).
+_RE_CONT_PRED = re.compile(
+    r"Continent([12])\s*(?:=|IN)\s*('[^']*'|\([^)]*\))", re.IGNORECASE)
+
+
+def _fix_continent_column(sql: str) -> str:
+    """대륙 값이 반대 컴럼에 걸려 0건이 나는 것을 막는다."""
+    if not sql:
+        return sql
+    preds = _RE_CONT_PRED.findall(sql)
+    if not preds:
+        return sql
+    from app.core import value_lists
+    c1, c2 = value_lists.values("Continent1"), value_lists.values("Continent2")
+    if not c1 or not c2:
+        return sql  # 모르면 건드리지 않는다
+    only1, only2 = set(c1) - set(c2), set(c2) - set(c1)
+    targets = set()
+    for col, blob in preds:
+        vals = [v for _q, v in _RE_QUOTED_VALUE.findall(blob)]
+        if not vals:
+            return sql
+        if col == "2" and all(v in only1 for v in vals):
+            targets.add("1")
+        elif col == "1" and all(v in only2 for v in vals):
+            targets.add("2")
+        else:
+            targets.add(col)
+    if len(targets) != 1:
+        return sql  # 섞여 있다 — 통째로 옮길 수 없다
+    target = targets.pop()
+    other = "2" if target == "1" else "1"
+    if not re.search("Continent" + other + r"\b", sql, re.IGNORECASE):
+        return sql
+    logger.warning("continent_column_fixed", to="Continent" + target, sql=sql[:160])
+    return re.sub("Continent" + other + r"\b", "Continent" + target, sql,
+                  flags=re.IGNORECASE)
+
+
+def _enforce_partition_filter(
+    sql: str,
+    query: str,
+    cache_key: Optional[str] = None,
+    brand_filter: Optional[str] = None,
+    can_view_fi: bool = False,
+    allowed_tables: Optional[set] = None,
+) -> str:
+    """If SQL targets a large table without any date filter, request Flash re-gen.
+
+    Returns the original sql unchanged when:
+    - No large table is targeted
+    - A date filter is already present inside the WHERE clause (case-insensitive)
+
+    Returns a re-generated sql when:
+    - A large table is targeted AND no date filter found in WHERE clause
+
+    Note: wiki_context is intentionally omitted from the re-gen prompt — the
+    sql_generator.txt already includes full schema context; adding wiki text
+    would add latency without improving filter correctness.
+
+    Args:
+        cache_key: If provided and rewrite succeeds, updates the SQL cache so
+                   subsequent identical queries get the corrected SQL (not the
+                   filterless one that would trigger enforcement every time).
+    """
+    if not sql:
+        return sql
+
+    targets_large = any(t in sql for t in _LARGE_TABLES_REQUIRING_DATE_FILTER)
+    if not targets_large:
+        return sql
+
+    where_match = re.search(r'\bWHERE\b(.*)', sql, re.IGNORECASE | re.DOTALL)
+    has_date_filter = bool(
+        where_match and re.search(r'\bdate\b', where_match.group(1), re.IGNORECASE)
+    )
+    if has_date_filter:
+        return sql
+
+    logger.info("partition_filter_missing_rewrite", sql=sql[:200])
+    retry_prompt = (
+        _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
+        + f"\n\n## 사용자 질문\n{query}"
+        + "\n\n⚠️⚠️ 이전 SQL이 대형 테이블 전체를 스캔합니다 (매우 느림)!"
+        + "\n반드시 WHERE Date BETWEEN ... AND ... 날짜 조건을 추가하세요."
+        + "\n기간 미지정 시 기본값: DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) ~ CURRENT_DATE()"
+        + "\nSELECT * 금지 — 필요한 컬럼만 선택하세요."
+        + _build_brand_section(brand_filter)
+    )
+    try:
+        llm = get_flash_client()
+        new_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
+        new_sql = sanitize_sql(new_sql)
+        new_sql = _localize_country_literals(new_sql)
+        new_sql = _localize_team_literals(new_sql)
+        new_sql = _localize_promotion_literals(new_sql)
+        new_sql = _localize_logistics_literals(new_sql)
+        new_sql = _fix_logistics_amount(new_sql)
+        new_sql = _normalize_named_period(new_sql, query)
+        new_sql = _fix_continent_column(new_sql)
+        new_sql = _strip_unrequested_brand_filter(new_sql, query)
+        if new_sql and len(new_sql) > 10:
+            if allowed_tables is None:
+                allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
+            is_valid, _ = validate_sql(new_sql, allowed_tables=allowed_tables)
+            if is_valid:
+                logger.info("partition_filter_rewritten", new_sql=new_sql[:200])
+                if cache_key:
+                    _cache_store(cache_key, query, new_sql, brand_filter)
+                return new_sql
+    except Exception as e:
+        logger.warning("partition_filter_rewrite_failed", error=str(e))
+    return sql
+
+
+def _cache_lookup(query_hash: str, allowed_tables: Optional[set] = None) -> Optional[str]:
+    """Check cache, then validate cached SQL only uses allowed tables."""
+    sql = None
+
+    # 1. In-memory (age-check *before* trusting it — LRU order alone doesn't
+    #    expire a hot entry. A popular stale row is exactly the failure mode
+    #    that slipped past the old code: 66 hits kept it resident forever.)
+    if query_hash in _sql_cache:
+        cached_sql, cached_at = _sql_cache[query_hash]
+        if (datetime.now() - cached_at).days >= _SQL_CACHE_TTL_DAYS:
+            _sql_cache.pop(query_hash, None)  # stale — fall through, don't serve
+        else:
+            _sql_cache.move_to_end(query_hash)
+            sql = cached_sql
+
+    # 2. MariaDB persistent cache — TTL by `created_at`, NOT `last_used_at`.
+    #    `last_used_at` gets bumped on every hit, so a popular-but-stale entry
+    #    (the actual 66-hit incident) would never age out under that column.
+    #    `created_at` only changes when `_cache_store` regenerates the row.
+    if sql is None:
+        try:
+            from app.db.mariadb import fetch_one
+            row = fetch_one(
+                "SELECT generated_sql FROM sql_cache "
+                "WHERE query_hash = %s AND created_at > NOW() - INTERVAL %s DAY",
+                (query_hash, _SQL_CACHE_TTL_DAYS),
+            )
+            if row:
+                sql = row["generated_sql"]
+                _sql_cache[query_hash] = (sql, datetime.now())  # warm in-memory
+        except Exception as e:
+            logger.debug("sql_cache_db_miss", error=str(e))
+
+    if sql is None:
+        return None
+
+    # 3. Validate: cached SQL must only use currently allowed tables
+    if allowed_tables is not None:
+        sql_tables = _extract_tables_from_sql(sql)
+        if sql_tables and not sql_tables.issubset(allowed_tables):
+            logger.info("sql_cache_table_mismatch",
+                        cached_tables=list(sql_tables),
+                        allowed=list(allowed_tables))
+            return None  # Cache hit but targets disallowed table → skip
+
+    # Real hit (survived the table-filter check) → bump hit metric, fire-and-forget.
+    # ⚠️ This intentionally does NOT touch `created_at` — bumping it here would
+    #    let a popular stale entry keep resetting its own freshness clock on
+    #    every hit, which is the exact bug being fixed (see TTL comment above).
+    try:
+        from app.db.mariadb import execute
+        execute(
+            "UPDATE sql_cache SET hit_count = hit_count + 1, last_used_at = NOW() "
+            "WHERE query_hash = %s",
+            (query_hash,),
+        )
+    except Exception as e:
+        logger.debug("sql_cache_hit_count_update_failed", error=str(e))
+
+    return sql
+
+
+def _cache_forget(query_hash: str) -> None:
+    """캐시에서 지운다 — 규칙 위반이 확인된 SQL 은 남겨 두면 계속 나간다."""
+    _sql_cache.pop(query_hash, None)
+    try:
+        from app.db.mariadb import execute
+
+        execute("DELETE FROM sql_cache WHERE query_hash = %s", (query_hash,))
+    except Exception as e:
+        logger.warning("sql_cache_forget_failed", error=str(e)[:120])
+
+def _cache_store(query_hash: str, query: str, sql: str, brand_filter: Optional[str] = None) -> None:
+    """Store in both in-memory and MariaDB."""
+    now = datetime.now()
+    # In-memory LRU: evict least-recently-used if full
+    if query_hash in _sql_cache:
+        _sql_cache.move_to_end(query_hash)
+    elif len(_sql_cache) >= _SQL_CACHE_MAX:
+        _sql_cache.popitem(last=False)  # Remove LRU entry
+    _sql_cache[query_hash] = (sql, now)
+
+    # MariaDB — regenerating a stale row resets `created_at` too. Without that
+    # the row would stay "born 3 months ago" forever and _cache_lookup would
+    # call it stale again on the very next request, regenerating every time
+    # instead of caching the freshly-generated SQL.
+    try:
+        from app.db.mariadb import execute
+        execute(
+            "INSERT INTO sql_cache (query_hash, query_text, generated_sql, brand_filter) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON DUPLICATE KEY UPDATE generated_sql = VALUES(generated_sql), "
+            "created_at = NOW(), last_used_at = NOW()",
+            (query_hash, query[:500], sql, brand_filter),
+        )
+    except Exception as e:
+        logger.debug("sql_cache_store_failed", error=str(e))
+
+def invalidate_cache_for_query(query: str, brand_filter: Optional[str] = None) -> None:
+    """👎 피드백 시 해당 쿼리의 SQL 캐시 무효화."""
+    key = _cache_key(query, brand_filter)
+    _sql_cache.pop(key, None)
+    try:
+        from app.db.mariadb import execute
+        execute("DELETE FROM sql_cache WHERE query_hash = %s", (key,))
+        logger.info("sql_cache_invalidated", query=query[:80])
+    except Exception as e:
+        logger.debug("sql_cache_invalidate_failed", error=str(e))
+
+
+# Load prompts
+PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
+
+# Schema cache: per-table individual caches for lazy loading
+_schema_cache_sales: str = ""
+_schema_cache_tables: Dict[str, str] = {}  # table_path -> schema text
+
+def _kw_hit(kw, query_lower: str) -> bool:
+    """테이블 트리거 낱말 하나가 질문에 걸리는가.
+
+    튜플이면 **모두** 들어 있어야 한다 (AND). 장소·채널 이름처럼 다른 도메인과
+    겹치는 낱말을 좁히기 위한 것이다 — `("플래그십", "리뷰")` 는 매출 질문을 건드리지 않는다.
+    """
+    if isinstance(kw, tuple):
+        return all(k in query_lower for k in kw)
+    return kw in query_lower
+
+
+# Marketing / review / ad tables with keyword triggers for lazy loading
+MARKETING_TABLES = [
+    ("skin1004-319714.marketing_analysis.integrated_ad", "통합 광고 데이터",
+     ["광고", "ad", "advertising", "클릭", "노출", "roas", "cpc", "cpm", "ctr", "cvr", "전환",
+      "틱톡광고", "페이스북광고", "메타광고 비용", "메타 광고비", "구글광고", "카카오", "네이버광고",
+      "meta", "메타", "tiktok", "google", "amazon ads", "amazonads", "아마존광고",
+      "snapchat", "스냅챗", "tokopedia", "토코피디아", "rakuten", "라쿠텐",
+      "x광고", "twitter광고", "트위터광고", "dsp", "qoo10광고", "큐텐광고",
+      "계정별", "팀별 광고", "매체별", "account_name"]),
+    ("skin1004-319714.marketing_analysis.Integrated_marketing_cost", "통합 마케팅 비용",
+     ["마케팅", "마캐팅", "marketing", "비용", "roi", "매체", "팀별"]),
+    ("skin1004-319714.marketing_analysis.shopify_analysis_sales", "Shopify 판매 데이터",
+     ["shopify", "쇼피파이", "반품", "return", "환불"]),
+    ("skin1004-319714.Platform_Data.raw_data", "플랫폼 메트릭스",
+     ["플랫폼", "platform", "순위", "rank", "가격", "할인", "채널별 제품", "채널별 가격"]),
+    ("skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS", "인플루언서 마케팅",
+     ["인플루언서", "influencer", "팔로워", "캠페인", "kol",
+      "cpv", "조회수", "좋아요", "댓글수", "저장수", "공유수", "시딩",
+      "유가 협업", "무가 협업", "에이전시", "티어", "마케팅 성과"]),
+    ("skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance", "아마존 검색 분석",
+     ["아마존 검색", "amazon search", "장바구니", "cart", "ctr", "전환율", "asin"]),
+    # ⛔ **통합 테이블이 정본이다** (2026-08-18). 몰별 테이블만 있던 탓에 "국내몰 리뷰"가
+    #    스마트스토어만 세고(42,427 중 4,140), "플래그십 리뷰"는 조회조차 못 했다
+    #    (이주훈 님 제보). 통합분을 먼저 두어 키워드가 이쪽에 먼저 걸리게 한다.
+    ("skin1004-319714.Review_Data.Korea_mall_Review", "국내몰 리뷰(통합)",
+     ["국내몰 리뷰", "국내 리뷰", "국내몰리뷰", "올리브영 리뷰", "무신사 리뷰", "musinsa 리뷰",
+      "지그재그 리뷰", "ably 리뷰", "에이블리 리뷰", "w컨셉 리뷰", "29cm 리뷰",
+      "스마트스토어 리뷰", "smartstore review", "네이버 리뷰", "국내자사몰 리뷰"]),
+    ("skin1004-319714.Review_Data.Oversea_mall_Review", "해외몰 리뷰(통합)",
+     ["해외몰 리뷰", "해외 리뷰", "해외몰리뷰", "아마존 리뷰", "amazon review",
+      "큐텐 리뷰", "qoo10 review", "큐텐리뷰", "쇼피 리뷰", "shopee review", "쇼피리뷰",
+      "해외 자사몰 리뷰"]),
+    # ⚠️ `플래그십`·`명동`·`뉴욕 매장` 은 **매출 채널 이름이기도 하다** (사용자 지적 2026-08-19).
+    #    단독 낱말로 두면 "플래그십 매출" 에도 리뷰 스키마가 붙어 LLM 이 엉뚱한 테이블을
+    #    고를 수 있다. 장소 낱말은 **리뷰 낱말과 함께일 때만** 트리거한다 (튜플 = AND).
+    ("skin1004-319714.Review_Data.Store_Review", "매장(플래그십) 리뷰",
+     ["매장 리뷰", "오프라인 리뷰", "스토어 리뷰", "매장별 리뷰",
+      "구글맵", "네이버 플레이스", "shopname", "별점",
+      ("플래그십", "리뷰"), ("플래그십", "후기"), ("플래그십", "평점"),
+      ("명동", "리뷰"), ("명동", "후기"), ("명동", "평점"),
+      ("뉴욕", "리뷰"), ("뉴욕", "후기"), ("뉴욕", "평점")]),
+    ("skin1004-319714.ad_data.meta data_test", "메타 광고 라이브러리",
+     ["메타 광고", "meta ad", "페이스북 광고 라이브러리", "인스타 광고"]),
+    ("skin1004-319714.promotion_calendar.promotion", "프로모션 캘린더",
+     ["프로모션", "promotion", "행사", "이벤트", "프로모", "기획전",
+      "캘린더", "일정", "스케줄", "schedule", "언제 하", "예정",
+      "블랙프라이데이", "black friday", "메가와리 일정", "런칭", "launch"]),
+    # ⚠️ 짧고 흔한 낱말(`발주`·`출고`·`수출`)만으로는 트리거하지 않는다 —
+    #    "발주 수량"·"수출 매출" 은 매출/제품 질문이다. 물류 축 낱말과 함께일 때만 건다
+    #    (`("플래그십","리뷰")` 튜플 규칙과 같은 계열).
+    ("skin1004-319714.Export_control.export_logistics", "수출 물류",
+     ["물류", "선적", "출고일", "포워더", "forwarder", "인코텀즈", "incoterms",
+      # ⛔ 맨 `eta`·`etd` 금지 — `meta`(메타 광고)·`retail` 안에 들어 있어
+      #    광고 질문마다 이 스키마가 함께 실린다 (에러가 아니라 프롬프트 낭비다)
+      "도착예정", "출항", "출항일", "b/l", "bl no", "선하증권", "컨테이너", "팔레트", "cbm",
+      "통관", "수출신고", "유니패스", "unipass", "cnee", "consignee",
+      "관세", "부가세", "운송비", "특송", "해상운송", "항공운송", "fta",
+      ("발주", "물류"), ("발주", "선적"), ("발주", "출고"), ("발주", "건수"),
+      ("수출", "건수"), ("수출", "진행"), ("수출", "일정"), ("수출", "현황"),
+      ("출고", "지연"), ("납기", "지연")]),
+]
+
+# Backward-compatible flat schema cache (filled on first full load)
+_schema_cache: str = ""
+
+
+_prompt_cache: dict = {}
+
+
+def _mask_fi_prompt(prompt: str) -> str:
+    """Remove the FI routing row and table section without touching neighbors."""
+    prompt = re.sub(
+        r"(?m)^\|[^\r\n]*`FI_LLM_Flat`[^\r\n]*\|\s*\r?\n?",
+        "",
+        prompt,
+    )
+    return re.sub(
+        r"(?ms)^## 테이블 14: FI_LLM_Flat[^\r\n]*(?:\r?\n).*?(?=^## |\Z)",
+        "",
+        prompt,
+    )
+
+
+def build_team_section() -> str:
+    """팀·본부 매핑 프롬프트 섹션을 코드 상수에서 생성한다.
+
+    ⚠️ 조직 매핑을 프롬프트 텍스트에도 적어두면 조직이 바뀔 때 코드와 어긋난다.
+    실제로 TEAM_DIVISIONS 를 만들어놓고 프롬프트에는 같은 표를 손으로 또 적어
+    두 곳이 따로 놀았다 (2026-08-11 재검토). 진실은 코드 상수 하나뿐이다.
+    """
+    rows = "\n".join(
+        f"| {kr} | `{code}` | {TEAM_CODE2DIVISION.get(code, '-')} |"
+        for code, kr in TEAM_CODE2KR.items()
+    )
+    case_lines = []
+    for div, codes in TEAM_DIVISIONS.items():
+        cond = (f"Team_NEW = '{codes[0]}'" if len(codes) == 1
+                else "Team_NEW IN (" + ",".join(f"'{c}'" for c in codes) + ")")
+        case_lines.append(f"    WHEN {cond} THEN '{div}'")
+    case_sql = "  CASE\n" + "\n".join(case_lines) + "\n  END AS division"
+    div_rows = "\n".join(
+        f"| **{div}** | " + " · ".join(f"`{c}`({TEAM_CODE2KR[c]})" for c in codes) + " |"
+        for div, codes in TEAM_DIVISIONS.items()
+    )
+    return f"""#### ⭐ 공식 팀명 ↔ 코드 ↔ 본부 (조직도 기준 — 둘 다 통해야 한다)
+
+**데이터에는 코드만 들어 있다.** 사용자가 한글 팀명으로 물어도 SQL 에는 **반드시 코드**를 쓴다.
+
+| 공식 팀명 | 코드 | 본부 |
+|---|---|---|
+{rows}
+
+- ✅ `WHERE Team_NEW = 'B2B1'` ← "영업1팀 매출 알려줘"
+- ❌ `WHERE Team_NEW = '영업1팀'` ← **0건이 난다. 한글 팀명은 데이터에 없다**
+- "동남아1팀"·"영업 1팀"처럼 줄여 쓰거나 띄어 써도 같은 팀이다
+- **`기타`·`OP` 는 정식 팀이 아니다** — "팀별"로 나눌 때는
+  `AND Team_NEW NOT IN ('기타','OP')` 로 제외한다
+
+#### ⭐ 본부(Division) → 소속 팀
+
+| 본부 | 소속 팀 |
+|---|---|
+{div_rows}
+
+- "본부별"·"사업부별" 질문은 이 그룹으로 묶는다:
+  ```sql
+{case_sql}
+  ```
+- 조직도 팀명의 `GM ` 접두(`GM CBT` 등)는 **데이터에 없다** — 떼고 코드로 조회
+- 조직도에는 유통 쪽에 리테일_UMMA·리테일1~3 / 뉴비즈1·2·코스트코 같은 이름이
+  더 있지만 `Team_NEW` 에는 없다. 그 단위로 물으면 **나눌 수 없다고 안내**할 것
+  (코스트코·ULTA 거래는 전부 `DT2`)"""
+
+
+def _load_prompt(filename: str, can_view_fi: bool = False) -> str:
+    """Load a prompt template from the prompts directory (cached after first read)."""
+    cache_key = (filename, bool(can_view_fi))
+    if cache_key not in _prompt_cache:
+        prompt_path = PROMPTS_DIR / filename
+        prompt = prompt_path.read_text(encoding="utf-8")
+        prompt = prompt.replace("{{TEAM_SECTION}}", build_team_section())
+        prompt = prompt.replace("{{LOG_TEAM_SECTION}}",
+                                build_logistics_team_section())
+        # ⛔ 환산 조인식은 `logistics_fx` 한 곳에서만 만든다 — 프롬프트에 손으로
+        #    적으면 사본이 갈리고, 갈리면 에러가 아니라 조용한 오답이 된다
+        from app.core.logistics_fx import build_prompt_section as _fx_section
+        prompt = prompt.replace("{{LOG_FX_SECTION}}", _fx_section())
+        prompt = prompt.replace("{{SALES_OUTLOOK_SECTION}}", _SALES_OUTLOOK_RULE)
+        # ⛔ 손으로 적은 값 목록은 **반드시 낡는다.** `{{VALUES:이름}}` 을 실측으로 채운다.
+        #    2026-08-18 실측: Continent1 의 `남미`·`중미` 가 **`중남미` 로 통합**됐는데
+        #    프롬프트만 옛 값을 들고 있었다 → "남미 매출" 은 0건이 난다.
+        #    같은 부류로 에콰도르(191개 중 12개만 나열)·메가와리(2026 Q2 누락)를 겪었다.
+        # ⚠️ 캐시가 없으면 그 줄만 빠진다 — 배치가 채우고, 자가 점검이 감시한다.
+        try:
+            from app.core.value_lists import fill as _fill_values
+            prompt = _fill_values(prompt)
+        except Exception as _e:
+            logger.warning("value_list_fill_failed", error=str(_e)[:140])
+        if not can_view_fi:
+            prompt = _mask_fi_prompt(prompt)
+        _prompt_cache[cache_key] = prompt
+    return _prompt_cache[cache_key]
+
+
+# --- Schema context helpers (shared by generate_sql and the tool-loop agent) ---
+
+
+def _source_table_map(settings) -> dict:
+    """데이터소스(@@) 이름 → BigQuery 테이블 경로.
+
+    허용목록 계산과 "어느 소스를 켜야 하나" 안내가 같은 표를 봐야 어긋나지 않는다.
+    """
+    return {
+        "매출": [settings.sales_table_full_path],
+        "제품": [f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"],
+        "광고": ["skin1004-319714.marketing_analysis.integrated_ad"],
+        "마케팅": ["skin1004-319714.marketing_analysis.Integrated_marketing_cost"],
+        "Shopify": ["skin1004-319714.marketing_analysis.shopify_analysis_sales"],
+        "플랫폼": ["skin1004-319714.Platform_Data.raw_data"],
+        "인플루언서": ["skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"],
+        "아마존검색": ["skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"],
+        "프로모션": ["skin1004-319714.promotion_calendar.promotion"],
+        # ⚠️ 환율표를 함께 연다 — 없으면 한화 환산 SQL 이 "허용되지 않은
+        #    테이블" 로 막힌다. `@@물류` 로만 테스트하면 늦게 발견된다
+        "물류": ["skin1004-319714.Export_control.export_logistics",
+                 "skin1004-319714.Sales_Integration.Exchange_Rate"],
+        # ⛔ 리뷰는 국내/해외/매장 **통합 3종**이 정본이다 (2026-08-18 확정).
+        #    구 몰별 소스(아마존·큐텐·쇼피·스마트스토어)를 남겨 두면 화이트리스트에
+        #    없는 테이블을 가리켜 "허용되지 않은 테이블" 로 막힌다 — @@ 로만 쓰면
+        #    발견이 늦다. 별칭으로 옛 이름을 흡수한다.
+        "국내몰 리뷰": ["skin1004-319714.Review_Data.Korea_mall_Review"],
+        "해외몰 리뷰": ["skin1004-319714.Review_Data.Oversea_mall_Review"],
+        "매장 리뷰": ["skin1004-319714.Review_Data.Store_Review"],
+        "메타광고": ["skin1004-319714.ad_data.meta data_test"],
+        "손익": ["skin1004-319714.Sales_Integration.FI_LLM_Flat"],
+    }
+
+
+def _canonical_source(name: str) -> str:
+    """저장된 소스 이름을 **현재 키**로 옮긴다 (별칭·옛 이름 흡수).
+
+    ⛔ **실사용 장애 (2026-09-04)**: `@@` 키를 `LOG` → `물류` 로 바꿨더니,
+       브라우저(localStorage)에 `LOG` 를 저장해 둔 사용자가 물류 질문마다
+       *"허용되지 않은 테이블입니다"* 를 받았다. 로그 실측: 16:56·16:58·16:59
+       세 요청이 그렇게 죽었다.
+       ⚠️ **에러 화면도 아니고 조회 실패로 보인다** — 사용자는 데이터가 없는 줄 안다.
+    ⚠️ 이름을 바꿀 때마다 같은 일이 난다. 한 번 겪었으니 **키가 아니라 별칭까지**
+       보고 옮긴다 — 앞으로의 개명도 여기서 흡수된다.
+    ⚠️ 프론트 저장분은 서버가 고칠 수 없다. 보정은 **서버에서** 해야 한다.
+    """
+    if not name:
+        return name
+    try:
+        from app.agents.orchestrator import OrchestratorAgent
+        target = str(name).strip().lower()
+        for entry in OrchestratorAgent.get_db_registry():
+            if str(entry.get("key", "")).lower() == target:
+                return entry["key"]
+            if any(str(a).lower() == target for a in entry.get("aliases", [])):
+                return entry["key"]
+    except Exception as e:
+        logger.warning("canonical_source_failed", name=str(name)[:40], error=str(e)[:120])
+    return name
+
+
+def _allowed_tables_from_sources(
+    enabled_sources,
+    can_view_fi: bool = False,
+) -> Optional[set]:
+    """Map enabled_sources labels to allowed BigQuery table paths.
+
+    Returns None when no filtering applies (all tables allowed).
+    """
+    settings = get_settings()
+    _SOURCE_TABLE_MAP = _source_table_map(settings)
+    if enabled_sources is None:
+        if can_view_fi:
+            return None
+        allowed_tables = set(settings.allowed_tables)
+    else:
+        allowed_tables = set()
+        for src in enabled_sources:
+            for tp in _SOURCE_TABLE_MAP.get(_canonical_source(src), []):
+                allowed_tables.add(tp)
+    if not can_view_fi:
+        allowed_tables.discard("skin1004-319714.Sales_Integration.FI_LLM_Flat")
+    return allowed_tables
+
+
+def _source_scope_message(error_msg: str, enabled_sources) -> Optional[str]:
+    """데이터소스(@@) 선택 때문에 막힌 것이면, 어떤 소스를 켜야 하는지 알려준다.
+
+    이 안내가 없으면 "데이터를 조회하지 못했습니다" 로 흘러가 사용자가 시스템
+    오류로 오해한다. 실제로는 선택 범위 밖을 물었을 뿐이고, 소스만 바꾸면 된다.
+    """
+    if not enabled_sources:
+        return None  # 소스를 안 골랐으면 범위 문제가 아니다
+    m = re.search(r"허용되지 않은 테이블입니다:\s*(\S+)", error_msg or "")
+    if not m:
+        return None
+    table = m.group(1).strip()
+
+    # 테이블 → 소스 이름 역매핑 (같은 표를 두 곳에서 쓰지 않도록 재사용)
+    settings = get_settings()
+    reverse = {}
+    for src, paths in _source_table_map(settings).items():
+        for tp in paths:
+            reverse[tp] = src
+    needed = reverse.get(table)
+
+    picked = ", ".join(f"@@{s}" for s in enabled_sources)
+    head = f"{SOURCE_SCOPE_DENIED_PREFIX}({picked})로는 이 질문에 답할 수 없습니다."
+    gap = chr(10) * 2
+    if needed:
+        return (
+            head + gap
+            + f"이 데이터는 **@@{needed}** 에 있습니다. 입력창에 `@@{needed}` 를 "
+            + "추가로 선택하시면 바로 조회해 드리겠습니다."
+        )
+    return (
+        head + gap
+        + "필요한 데이터가 선택 범위 밖에 있습니다. 데이터소스 선택을 해제하거나 "
+        + "다른 소스를 골라 다시 질문해 주세요."
+    )
+
+
+def _build_schema_context(query: str, allowed_tables: Optional[set],
+                          conv_context: str = "") -> str:
+    """Assemble the lazy-loaded schema context block for a query.
+
+    conv_context 도 키워드 매칭에 포함해야 한다 — "광고비 얼마야?" 다음에
+    "6월과 비교해줘"가 오면 현재 질문엔 '광고' 단어가 없어 광고 테이블 스키마가
+    빠지고, LLM 은 보이는 매출 스키마로 SQL 을 써서 주제가 매출로 넘어간다
+    (2026-08-10 실사용 제보). 맥락 꼬리(최근 3000자)만 매칭에 쓴다 —
+    직전 AI 답변이 1500자로 절단되므로 그보다 넓어야 마지막 답변 전체
+    (선두의 '[실행된 쿼리 테이블: ...]' 태그 포함)가 윈도에 들어온다.
+    """
+    _match_text = (query + " " + (conv_context or "")[-3000:]).lower()
+    # 맥락에 등장한 테이블(직전 실행 SQL·태그)은 키워드 매칭과 무관하게 스키마를
+    # 결정적으로 포함한다 — 후속 질문에 주제 단어가 없어도 직전 테이블 스키마가
+    # 반드시 실리도록 (2026-08-10 아키텍처 변경). allowed_tables 화이트리스트는
+    # 그대로 존중한다 (FI 방어선 유지).
+    _ctx_tables = set(re.findall(
+        r"skin1004-319714\.[A-Za-z_]\w*\.[A-Za-z_]\w*", conv_context or ""))
+    global _schema_cache_sales, _schema_cache_tables
+    bq = get_bigquery_client()
+    settings = get_settings()
+
+    # 1) Determine which schemas to include
+    include_sales = (allowed_tables is None) or (settings.sales_table_full_path in allowed_tables)
+
+    # 1b) Determine Product inclusion
+    product_path = f"{settings.gcp_project_id}.{settings.bq_dataset_sales}.Product"
+    include_product = (allowed_tables is None and (product_path in _ctx_tables or any(kw in _match_text for kw in ["제품", "product", "sku", "카테고리"]))) or \
+                      (allowed_tables is not None and product_path in allowed_tables)
+
+    # 2) Lazy-load: only include marketing tables whose keywords match AND are allowed
+    query_lower = _match_text
+    # @@ 로 소스를 좁힌 경우(허용 테이블 소수)는 키워드 매칭과 무관하게 그 테이블
+    # 스키마를 반드시 싣는다 — 안 실으면 LLM 이 없는 컬럼("media")을 지어내거나
+    # 다른 테이블로 이탈해 소스 안내로 튕긴다 (2026-08-06 Playwright 전수 테스트:
+    # @@메타광고 '플랫폼별 분포' / @@아마존검색 키워드 질문 6건). 일반 라우팅
+    # (allowed 가 None 이거나 대형 세트)에서는 기존 키워드 lazy-load 를 유지한다.
+    force_all_allowed = allowed_tables is not None and len(allowed_tables) <= 5
+    matched_entries = [
+        (t[0], t[1], t[2]) for t in MARKETING_TABLES
+        if (force_all_allowed and t[0] in allowed_tables)
+        or (not force_all_allowed
+            and (t[0] in _ctx_tables or any(_kw_hit(kw, query_lower) for kw in t[2]))
+            and (allowed_tables is None or t[0] in allowed_tables))
+    ]
+
+    # ── Parallel schema fetch: sales + product + marketing in one pool ──
+    # Build list of uncached fetch jobs. Each job is a tuple:
+    #   (kind, table_path, label)
+    # kind ∈ {"sales", "product", "marketing"} — used to route the result
+    # back into the correct cache slot after fetching.
+    fetch_jobs = []
+    if include_sales and not _schema_cache_sales:
+        fetch_jobs.append(("sales", settings.sales_table_full_path, None))
+    if include_product and product_path not in _schema_cache_tables:
+        fetch_jobs.append(("product", product_path, "제품 마스터"))
+    for tp, lb, _ in matched_entries:
+        if tp not in _schema_cache_tables:
+            fetch_jobs.append(("marketing", tp, lb))
+
+    if fetch_jobs:
+        def _fetch_schema(kind, table_path, label):
+            try:
+                tbl_schema = bq.get_table_schema(table_path)
+                tbl_lines = [
+                    f"  - {col['name']} ({col['type']}): {col['description']}"
+                    for col in tbl_schema
+                ]
+                table_short = table_path.rsplit(".", 1)[-1]
+                if kind == "sales":
+                    text = f"\n\n### 실제 테이블 스키마 ({table_short})\n" + "\n".join(tbl_lines)
+                elif kind == "product":
+                    text = f"\n\n### 제품 마스터 (Product)\n" + "\n".join(tbl_lines)
+                else:  # marketing
+                    text = f"\n\n### {label} ({table_short})\n" + "\n".join(tbl_lines)
+                    # 국가 리터럴 규칙은 SALES_ALL 섹션에만 있어 lazy-load 테이블엔
+                    # 적용되지 않았다 — 'INDONESIA' 영문 필터로 0건 (2026-08-10 UI 실측)
+                    if any(col["name"] == "Country" for col in tbl_schema):
+                        text += ("\n  ⚠️ Country 값은 한국어 국가명('인도네시아', '미국', "
+                                 "'독일' 등) — 영어 국가명('Indonesia' 등)으로 필터하면 0건이 난다")
+                return kind, table_path, text
+            except Exception as e:
+                # Preserve original per-table warning labels
+                warn_label = (
+                    "SALES_ALL_Backup" if kind == "sales"
+                    else "Product" if kind == "product"
+                    else table_path
+                )
+                logger.warning("schema_fetch_failed", table=warn_label, error=str(e))
+                return kind, table_path, ""
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(fetch_jobs), 5)) as pool:
+            futures = [pool.submit(_fetch_schema, k, tp, lb) for k, tp, lb in fetch_jobs]
+            for f in concurrent.futures.as_completed(futures):
+                kind, tp, schema_text = f.result()
+                if kind == "sales":
+                    # Only update cache on success; on failure leave empty so next call retries
+                    if schema_text:
+                        _schema_cache_sales = schema_text
+                elif kind == "product":
+                    # Original behavior: don't cache failures for Product (retry next call)
+                    if schema_text:
+                        _schema_cache_tables[tp] = schema_text
+                else:  # marketing — original cached empty string on failure
+                    _schema_cache_tables[tp] = schema_text
+
+    # ── Assemble schema_context in stable order: sales → product → marketing ──
+    schema_context = _schema_cache_sales if include_sales else ""
+    if include_product:
+        schema_context += _schema_cache_tables.get(product_path, "")
+    for table_path, _, _ in matched_entries:
+        schema_context += _schema_cache_tables.get(table_path, "")
+
+    logger.info("schema_context_built", total_tables=1 + len(matched_entries), query_matched=len(matched_entries))
+    return schema_context
+
+
+def _build_date_context() -> str:
+    """Today/this-month/last-month prompt block for date disambiguation."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    this_year = datetime.now().year
+    this_month = datetime.now().month
+    last_month = this_month - 1 if this_month > 1 else 12
+    last_month_year = this_year if this_month > 1 else this_year - 1
+    return (
+        f"\n\n## ⚠️ 오늘 날짜 (최우선 적용)\n"
+        f"오늘: {today}\n"
+        f"- **이번 달** = {this_year}년 {this_month}월 → `EXTRACT(YEAR FROM Date) = {this_year} AND EXTRACT(MONTH FROM Date) = {this_month}`\n"
+        f"- **지난 달** = {last_month_year}년 {last_month}월 → `EXTRACT(YEAR FROM Date) = {last_month_year} AND EXTRACT(MONTH FROM Date) = {last_month}`\n"
+        f"- **올해** = {this_year}년 → `EXTRACT(YEAR FROM Date) = {this_year}`\n"
+        f"- ⛔ '이번 달'이라고 하면 반드시 {this_month}월! 다른 월로 바꾸지 마세요. 데이터가 적어도 {this_month}월이 맞습니다."
+    )
+
+
+_PERIOD_RANK_TIME_TERMS = ("월별", "주별", "주차별", "일별", "분기별", "연도별")
+_PERIOD_RANK_DIM_TERMS = ("업체별", "거래처별", "바이어별", "제품별", "sku별", "채널별")
+_PERIOD_RANK_TOP_TERMS = (
+    "상위", "주요", "핵심", "비중있는", "비중 있는", "비중이 큰", "top", "랭킹",
+)
+#: 기간축 하나로 낼 수 있는 행 수의 현실적 상한 (월 단위 10년치). 전역 LIMIT 이
+#: 이보다 크면 기간을 잘라낼 수가 없다.
+_PERIOD_ROWS_SAFE = 120
+
+_RE_TRAILING_LIMIT = re.compile(r"\bLIMIT\s+(\d+)\s*;?\s*$", re.IGNORECASE)
+_RE_GROUP_BY = re.compile(
+    r"\bGROUP\s+BY\b(.*?)(?=\bHAVING\b|\bQUALIFY\b|\bWINDOW\b|\bORDER\s+BY\b|"
+    r"\bLIMIT\b|\bUNION\b|\)\s*(?:,|AS\b|SELECT\b)|\Z)",
+    re.IGNORECASE | re.DOTALL)
+
+
+def _period_rank_truncation_possible(sql: str) -> bool:
+    """전역 LIMIT 이 **실제로** 기간을 잘라낼 수 있는가.
+
+    ⛔ 왜 필요한가 (2026-08-27 실측). 기간별 순위 관문이 14일간 11회 발동해 요청
+       **3건을 죽였는데, 죽은 3건을 읽어보니 전부 오탐이었다**:
+
+         · 프로모션 캘린더 행 목록 — `GROUP BY` 가 아예 없다 (집계가 아니다)
+         · 월별 JBT 매출 추이 — 축이 기간 하나뿐이라 **기간당 1행**이다
+         · 월별 JBT 아젤라산 매출 추이 — 같다
+
+       셋 다 잘릴 수가 없는 SQL 인데 "요청 기간이 잘릴 수 있다" 며 답을 못 받았다.
+
+    ⚠️ 발동 자체는 오탐이 아니다. 판정(`_requires_partitioned_period_ranking`)이
+       대화 맥락에서 `주요`·`상위` 를 물려받는 것은 **의도된 설계**이고, 실제 사고
+       (B2B 업체별 월 매출이 전역 LIMIT 에 잘린 건)를 막는 방어선이다. 트리거를
+       좁히면 그 사고가 되살아난다. 고칠 곳은 **결과가 요청 사망이라는 쪽**이다.
+
+    그래서 "순위 창이 없다" 가 아니라 **"없는데 실제로 잘린다"** 일 때만 막는다:
+
+      · 끝에 전역 `LIMIT n` 이 없다        → 자를 것이 없다
+      · `GROUP BY` 가 없다                 → 집계가 아니라 행 목록이다
+      · `GROUP BY` 축이 기간 하나뿐이다    → 기간당 1행이라 n 이 기간 수보다 크면 못 자른다
+      · 축이 둘 이상(기간 × 항목)          → **여기가 진짜 위험 구간이다**
+
+    ⚠️ 판정은 **안전한 쪽으로 기운다** — CTE 가 여럿이면 축이 가장 많은 `GROUP BY` 를
+       기준으로 본다. `GROUP BY ALL` 처럼 셀 수 없으면 위험으로 본다.
+       모르면 막는 쪽이 맞다 (조용히 잘린 표가 이 프로젝트에서 가장 나쁜 실패다).
+    """
+    if not sql:
+        return False
+    limit = _RE_TRAILING_LIMIT.search(sql.strip())
+    if not limit:
+        return False
+    groups = _RE_GROUP_BY.findall(sql)
+    if not groups:
+        return False
+    axes = 0
+    for clause in groups:
+        body = clause.strip()
+        if not body:
+            continue
+        if body.upper().startswith("ALL"):
+            return True          # 셀 수 없다 → 막는 쪽으로
+        # ⚠️ 함수 인자 안의 쉼표를 축으로 세면 안 된다 (`DATE_TRUNC(Date, MONTH)`)
+        depth = 0
+        count = 1
+        for ch in body:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                count += 1
+        axes = max(axes, count)
+    if axes >= 2:
+        return True
+    return int(limit.group(1)) < _PERIOD_ROWS_SAFE
+
+
+# ⛔ **여기 있던 `_requires_current_date_cap` / `_has_current_date_cap` 은 걷어냈다**
+#    (2026-08-27). 2026-08-14 에 "과거 실적 질문이면 `Date <= CURRENT_DATETIME()`
+#    상한을 강제한다" 로 넣은 관문인데, **2026-08-25 에 사용자가 규칙을 뒤집었다**:
+#    "오늘 이후 행을 잘라내지 마라 — 발주·예정 물량은 미래 날짜가 정상 데이터다"
+#    (커밋 99e81b8). 규칙은 뒤집혔는데 이 관문만 남아 **서로 반대되는 규칙 두 벌**이
+#    돌고 있었다.
+#
+#    ⚠️ 게다가 판정이 처음부터 깨져 있었다. 상한 정규식이 따옴표 뒤에 날짜만 오는
+#       형태(`Date <= '2026-08-25'`)만 인정해서, LLM 이 실제로 쓰는 두 가지를
+#       **상한이 있는데도 없다고** 읽었다:
+#         · `Date <= '2026-08-25 23:59:59'`  (시간이 붙었다)
+#         · `date <= DATE('2026-08-27')`      (DATE() 로 감쌌다)
+#       실측(프로덕션 14일): 발동 10회 중 **9회가 오탐**이었다 — 거부당한 SQL 을
+#       하나씩 읽어보니 상한이 멀쩡히 들어 있었다. 그 탓에 요청 5건이 죽었고,
+#       한 사용자는 같은 질문을 5분간 5번 던져 5번 다 "SQL이 생성되지
+#       않았습니다" 를 받았다.
+#       ⚠️ 반대로 "성공 몇 회" 는 **셀 수 없다** — 성공 로그가 INFO 라 프로덕션에서
+#          통째로 버려진다 (14일간 앱 INFO 0건). 관문의 효과를 로그 건수로 논하지 마라.
+#
+#    미래 행이 섞이는 것은 **막지 않고 공시한다** — `_future_period_note()` 가
+#    조회 상한이 오늘 이후면 답변 끝에 한 줄을 붙인다 (스트리밍·비스트리밍 공용).
+#    ⛔ 상한을 다시 강제하지 마라. 되살리려면 8/25 결정을 먼저 뒤집어야 한다.
+
+
+def _requires_partitioned_period_ranking(query: str, conversation_context: str = "") -> bool:
+    """기간별 고카디널리티 TOP 분석이 전역 LIMIT으로 잘릴 위험이 있는가."""
+    text = f"{conversation_context}\n{query}".lower()
+    return (
+        any(term in text for term in _PERIOD_RANK_TIME_TERMS)
+        and any(term in text for term in _PERIOD_RANK_DIM_TERMS)
+        and any(term in text for term in _PERIOD_RANK_TOP_TERMS)
+    )
+
+
+def _has_partitioned_period_ranking(sql: str) -> bool:
+    """기간별 순위 창을 계산하고 TOP N 필터까지 실제 적용했는가."""
+    sql = sql or ""
+    window_aliases = re.findall(
+        r"\b(?:ROW_NUMBER|RANK|DENSE_RANK)\s*\(\s*\)\s*OVER\s*\("
+        r"[\s\S]*?\bPARTITION\s+BY\b[\s\S]*?\)\s+AS\s+`?([A-Za-z_]\w*)`?",
+        sql,
+        re.IGNORECASE,
+    )
+    rank_limit = r"(?:<=|<|=)\s*\d+|BETWEEN\s+1\s+AND\s+\d+"
+    for alias in window_aliases:
+        if re.search(
+            rf"\b(?:WHERE|AND|QUALIFY)\b[\s\S]*?\b{re.escape(alias)}\b\s*(?:{rank_limit})",
+            sql,
+            re.IGNORECASE,
+        ):
+            return True
+
+    # BigQuery QUALIFY는 별칭 없이 창 함수를 직접 필터링할 수도 있다.
+    return bool(re.search(
+        rf"\bQUALIFY\b[\s\S]*?\b(?:ROW_NUMBER|RANK|DENSE_RANK)\s*\(\s*\)"
+        rf"\s*OVER\s*\([\s\S]*?\bPARTITION\s+BY\b[\s\S]*?\)\s*(?:{rank_limit})",
+        sql,
+        re.IGNORECASE,
+    ))
+
+
+# --- LangGraph Nodes ---
+
+
+def _brand_named_in(question: str) -> str:
+    """질문이 브랜드를 지목했는가 — 지목했으면 그 이름을 돌려준다.
+
+    ⛔ 어휘는 보고서가 이미 쓰는 `registry._BRAND_FILTERS` 를 **그대로** 쓴다.
+       같은 규칙을 두 곳에서 따로 적으면 언젠가 한쪽만 고쳐진다.
+    """
+    try:
+        from app.reports.registry import _BRAND_FILTERS
+    except Exception:
+        return ""
+    lowered = (question or "").lower().replace(" ", "")
+    for word in _BRAND_FILTERS:
+        if word.replace(" ", "") in lowered:
+            return word
+    return ""
+
+
+def _sql_filters_brand(sql: str) -> bool:
+    """SQL 이 브랜드를 실제로 거르는가 (`SELECT` 목록에만 있는 것은 아니다)."""
+    lowered = (sql or "").lower()
+    return "brand" in lowered and (
+        "where" in lowered or "case when" in lowered or "having" in lowered)
+
+def generate_sql(state: AgentState) -> Dict[str, Any]:
+    """Generate SQL from natural language query.
+
+    Args:
+        state: Current agent state with user query.
+
+    Returns:
+        Updated state with generated_sql.
+    """
+    query = state["query"]
+    brand_filter = state.get("brand_filter")
+    enabled_sources = state.get("enabled_sources")
+    can_view_fi = bool(state.get("can_view_fi", False))
+    logger.info("generating_sql", query=query, enabled_sources=enabled_sources)
+
+    # Feedback 172: an explicit company-wide month outlook has fixed arithmetic.
+    # Validation and access-scope checks still run before any query is executed.
+    try:
+        outlook_sql = _build_company_outlook_sql(query, brand_filter=brand_filter)
+    except ValueError:
+        return {"generated_sql": None, "error": "조회 권한의 브랜드 조건을 확인할 수 없습니다."}
+    if outlook_sql:
+        return {"generated_sql": outlook_sql, "error": None}
+
+    # Use Flash for SQL generation (Pro is too slow due to thinking mode)
+    llm = get_flash_client()
+    system_prompt = _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
+
+    # Get table schemas (lazy: only include tables relevant to the query)
+    allowed_tables = _allowed_tables_from_sources(enabled_sources, can_view_fi)
+    if allowed_tables is not None:
+        logger.info("sql_table_filter", allowed_count=len(allowed_tables), sources=enabled_sources)
+
+    # ── SQL Cache: skip LLM if cached SQL uses only allowed tables ──
+    conv_context = state.get("conversation_context", "")
+    # Only cache standalone questions (not follow-ups) whose answer doesn't
+    # move with the calendar ("이번 달", bare current-year, ...).
+    if not conv_context and not _is_relative_period_query(query):
+        cache_key = _cache_key(query, brand_filter)
+        cached_sql = _cache_lookup(cache_key, allowed_tables)
+        # ⛔ **캐시에도 같은 보증을 건다.** 브랜드를 지목했는데 브랜드를 안 거르는
+        #    SQL 이 캐시에 남아 있으면, 아래 재생성 보증을 통째로 건너뛴다 —
+        #    실측(2026-08-27): 코드를 고쳐 배포했는데 답이 그대로 5,577.5억이었다.
+        #    "고쳤는데 그대로면 캐시를 의심하라" 는 규칙이 그대로 재현됐다.
+        #    ⚠️ 나쁜 행은 지운다 — 남겨 두면 다음 사람에게 또 나간다.
+        if cached_sql and _brand_named_in(query) and not _sql_filters_brand(cached_sql):
+            logger.warning("sql_cache_brand_filter_missing", query=query[:60])
+            _cache_forget(cache_key)
+            cached_sql = None
+        if cached_sql:
+            logger.info("sql_cache_hit", query=query[:60], cache_key=cache_key)
+            return {"generated_sql": cached_sql, "error": None, "_sql_from_cache": True}
+
+    schema_context = _build_schema_context(query, allowed_tables, conv_context)
+
+    # ── 조직이 이미 검증한 비슷한 질문을 **참고 예시로** 붙인다 (2026-08-27) ──
+    # ⛔ 답을 재생하는 것이 아니다. `sql_cache` 와 달리 SQL 은 여전히 새로 만들어지고,
+    #    검증·실행·후처리 방어선을 하나도 건너뛰지 않는다. 예시는 컬럼 선택과 조인
+    #    방식을 알려줄 뿐이다.
+    # ⚠️ 후속 질문(대화 맥락이 있는 것)에는 붙이지 않는다 — 앞 대화가 진짜 의도이고,
+    #    비슷해 **보이는** 예시가 오히려 방향을 틀 수 있다.
+    example_section = ""
+    if not conv_context:
+        try:
+            from app.core.sql_examples import pick, render
+            example_section = render(pick(query, allowed_tables))
+        except Exception as _e:      # 자산이 없거나 실패해도 생성은 그대로 간다
+            logger.warning("sql_examples_skipped", error=str(_e)[:120])
+
+    this_year = datetime.now().year
+    this_month = datetime.now().month
+    last_month = this_month - 1 if this_month > 1 else 12
+    last_month_year = this_year if this_month > 1 else this_year - 1
+    date_context = _build_date_context()
+
+    # Include conversation context if available
+    conv_context = state.get("conversation_context", "")
+    conv_section = ""
+    if conv_context:
+        conv_section = f"\n\n## 이전 대화 맥락\n{conv_context}\n\n위 대화 맥락을 참고하여 사용자의 현재 질문에 포함된 '그거', '아까', '다시', '2월은?', '시각화해줘', '차트로 보여줘' 같은 참조를 이해하세요.\n⚠️ 현재 질문이 'B2B', '올해만', '월별로' 같은 짧은 단어/구라면 이것은 새 질문이 아니라 **직전 대화에 대한 답이나 조건 추가**다. 직전 AI 답변이 조건을 되물었다면(예: 'B2B/B2C 구분이 필요하시면 알려주세요'), 직전 사용자 질문에 이 조건을 결합한 하나의 요청으로 해석해 SQL을 생성하라. 예: 직전 질문 '국가별 첫 거래일자 확인' + 현재 답 'B2B' → 해당 국가들의 B2B 기준 MIN(Date) 조회. 직전 질문의 의도를 버리고 현재 단어만으로 일반 현황 조회를 만들면 안 된다.\n⚠️ **주제(지표·테이블) 유지**: 직전 AI 답변에 '[실행된 쿼리 테이블: ...]' 표시가 있으면 '지난달이랑 비교해줘', '국가별로 나눠줘', '작년 같은 기간은?' 같은 후속 질문은 **그 테이블·그 지표 기준**으로 SQL을 생성하라. 직전 주제가 광고비·인플루언서·리뷰·판매수량·쇼피파이·손익이었는데 후속 질문에 주제 단어가 없다고 매출(SALES_ALL_Backup)로 갈아타지 마라 — 사용자가 '매출은?', '그럼 판매액은?'처럼 명시적으로 주제를 바꿀 때만 테이블을 바꾼다.\n⚠️ '시각화해줘', '차트로 그려줘' 같은 후속 요청이 오면, 이전 답변에서 사용된 동일한 데이터 범위/조건/집계 수준으로 SQL을 생성하세요. 이전에 분기별 비교였다면 분기별로, 월별이었다면 월별로 유지하세요.\n⚠️ 이전 답변에서 특정 판매처(Company_Name), 국가(Country), 채널(Mall_Classification)이 나열된 상태에서 사용자가 '판매처별', '국가별', '채널별' 후속 질문을 하면, 이전 답변에 등장한 그 항목들을 WHERE 조건으로 포함하세요. 예: 이전에 예스아시아닷컴코리아·Stylevana가 나왔으면 다음 SQL에도 Company_Name IN ('예스아시아닷컴코리아', 'Stylevana', ...)를 추가."
+        conv_section += (
+            "\n⚠️ **정정/항의형 후속 질문**: '내가 ~라고 했지', '언급도 안 했어', "
+            "'그거 말고', '다시 뽑아줘'는 새 독립 질문이 아니다. 직전 사용자 요청과 "
+            "직전 실행 SQL을 기준으로 잘못 추가된 SELECT·CASE·WHERE 조건을 제거하거나 "
+            "요청한 기간/축을 복구해 SQL을 다시 생성하라. 사용자가 언급하지 않았다고 "
+            "지적한 제품·라인을 새 필터로 해석하지 마라."
+        )
+
+    # Brand filter injection: only if user has a group filter assigned
+    brand_filter = state.get("brand_filter")
+    brand_section = _build_brand_section(brand_filter)
+    # No brand_filter (admin/unassigned) → SQL 프롬프트의 기본 규칙 따름
+
+    sql_only_reminder = "\n\n⛔ 최종 지시: SELECT로 시작하는 BigQuery SQL만 출력하라. 설명/안내/되묻기 텍스트 출력 시 시스템 오류 발생. 질문이 모호하면 **먼저 이전 대화 맥락으로 의도를 해소**하고, 맥락으로도 해소되지 않을 때만 합리적 기본값(최근 3개월, TOP 10 등)으로 SQL 생성.\n⚠️ 국가 필터: 모든 테이블의 Country 값은 **한국어 국가명**이다 — WHERE Country='인도네시아' (O), Country='Indonesia'/'INDONESIA' (X, 0건이 난다)."
+    _period_rank_required = _requires_partitioned_period_ranking(query, conv_context)
+    if _period_rank_required:
+        sql_only_reminder += (
+            "\n⛔ 이 질문은 기간별 고카디널리티 TOP 분석이다. 반드시 "
+            "1단계 CTE에서 기간축·항목축별 SUM을 먼저 끝내고, 2단계 CTE에서 그 집계 결과의 "
+            "기간 별칭을 PARTITION BY에 사용해 ROW_NUMBER()/RANK()/DENSE_RANK()를 계산하라. "
+            "GROUP BY와 같은 SELECT에서 원본 Date를 윈도 함수에 다시 참조하면 BigQuery 오류가 난다. "
+            "그 뒤 바깥 WHERE rank <= N 또는 QUALIFY ... <= N으로 "
+            "각 기간의 TOP N을 실제 필터링하라. 순위 컬럼만 만들고 필터하지 않는 것도 금지한다. "
+            "기간 오름차순 + 전역 LIMIT만 둔 SQL은 앞쪽 기간만 남기므로 금지한다."
+        )
+    # 직전 실행 테이블 앵커 — conv_section 중간의 일반 지시만으론 LLM이 후속
+    # 질문에서 매출로 회귀한다(2026-08-10 판매수량·쇼피파이 시나리오 실측).
+    # 프롬프트 맨 끝, 최종 지시 바로 옆에 마지막 실행 테이블을 명시해 고정한다.
+    # ⚠️ @@ 로 소스를 좁힌 경우(allowed_tables 존재) 화이트리스트 밖 테이블은
+    # 앵커에서 제외한다 — 안 그러면 "직전 테이블을 유지하라"는 앵커와 "허용
+    # 테이블만 사용하라"는 스코프 지시가 충돌해 검증 실패 SQL 을 유도한다.
+    _prev_tbl_tags = re.findall(r"\[실행된 쿼리 테이블: ([^\]]+)\]", conv_context)
+    _prev_tbls = []
+    if _prev_tbl_tags:
+        _prev_tbls = [t.strip() for t in _prev_tbl_tags[-1].split(",")]
+        if allowed_tables is not None:
+            _prev_tbls = [t for t in _prev_tbls if t in allowed_tables]
+    if _prev_tbls:
+        sql_only_reminder += (
+            f"\n⚠️ 직전 답변의 실행 테이블: {', '.join(_prev_tbls)} — 현재 질문이 "
+            "'~별로 나눠줘', '비교해줘', '작년 같은 기간은?' 같은 후속이면 **이 테이블과 "
+            "그 지표(광고비/판매수량/리뷰/손익 등)** 기준으로 SQL을 생성하라. 기간만 바꾸고 "
+            "테이블·지표는 유지한다. 직전 질문에 특정 제품·브랜드·국가 필터가 있었으면 "
+            "(예: '센텔라 100 앰플 판매수량' → '국가별로 나눠줘') 그 필터도 그대로 유지한다. "
+            "사용자가 '매출은?'처럼 명시적으로 지표를 바꿔 물을 때만 다른 테이블로 전환한다."
+        )
+    # Inject current month into ambiguous date references in the query itself
+    _month_keywords = {"이번 달": f"{this_year}년 {this_month}월(이번 달)", "이번달": f"{this_year}년 {this_month}월(이번달)", "지난 달": f"{last_month_year}년 {last_month}월(지난 달)", "지난달": f"{last_month_year}년 {last_month}월(지난달)"}
+    _resolved_query = query
+    for _mk, _mv in _month_keywords.items():
+        if _mk in _resolved_query:
+            _resolved_query = _resolved_query.replace(_mk, _mv)
+
+    # 학습된 스킬: 과거 👍 SQL 중 현재 질문과 단어가 겹치는 예시를 few-shot으로 주입.
+    # "톤브 앰플 백" 같은 축약/오타 표현이 반복돼도, 한 번 올바르게 풀린 SET LIKE
+    # 패턴이 있으면 프롬프트에 정적 매핑표를 매번 손으로 안 늘려도 재사용된다.
+    skill_section = ""
+    try:
+        from app.agents.skill_memory import load_skill_context
+        skill_section = load_skill_context("bigquery", query)
+        if skill_section:
+            skill_section = f"\n\n{skill_section}"
+    except Exception:
+        pass
+
+    # 사용자가 @@ 로 소스를 지정한 경우: 허용 테이블을 명시적으로 강제한다.
+    # 스키마만 실어주면 LLM 이 "광고 플랫폼별 분포" 같은 일반적 표현에서
+    # 프롬프트 본문에 나오는 다른 테이블(통합 광고 등)로 이탈해 실행이 거부된다
+    # (2026-08-06 Playwright 전수 테스트: @@메타광고 1건·@@아마존검색 4건).
+    table_scope_section = ""
+    if allowed_tables is not None and 0 < len(allowed_tables) <= 5:
+        _tl = "\n".join(f"- `{t}`" for t in sorted(allowed_tables))
+        table_scope_section = (
+            "\n\n## ⛔ 사용 가능 테이블 (사용자가 데이터소스를 직접 지정함)\n"
+            f"{_tl}\n"
+            "위 테이블만 사용하라 — 목록 밖 테이블을 참조하면 실행이 거부된다. "
+            "질문 표현이 이 테이블의 컬럼과 정확히 일치하지 않으면 가장 가까운 컬럼으로 "
+            "재해석해서 SQL 을 생성하라 (예: '키워드 검색 순위' → 이 테이블에 키워드 컬럼이 "
+            "없고 ASIN 단위라면 제품(ASIN_Title)별 노출수/클릭수 순위로, '플랫폼별 분포' → "
+            "publisher_platform 같은 실제 존재하는 컬럼으로). "
+            "단, 개념 자체가 테이블에 없어 대체가 부정확해지는 경우(예: 고객 식별자가 없는데 "
+            "'고객 수')는 다른 값을 그 개념인 척 단정하지 말고, 컬럼 별칭에 실제 기준을 "
+            "드러내라 — 예: COUNT(DISTINCT Order_name) AS unique_order_count (고객 수 아님, "
+            "주문 수). 답변 단계가 이 별칭을 보고 한계를 설명할 수 있어야 한다."
+        )
+
+    full_prompt = f"{system_prompt}{schema_context}{table_scope_section}{conv_section}{brand_section}{skill_section}{example_section}\n\n{date_context}\n\n## 사용자 질문\n{_resolved_query}{sql_only_reminder}"
+
+    try:
+        sql = llm.generate(full_prompt, temperature=0.0, max_output_tokens=10000)
+        sql = sanitize_sql(sql)
+
+        # ⛔ **브랜드를 지목했는데 브랜드를 안 거르면 전사 매출이 나간다.**
+        #    실측(2026-08-27, 붐따 #100): "SKIN1004 상반기 매출액" 에
+        #    `WHERE Date BETWEEN ...` 만 걸린 SQL 이 나가 **5,577.5억**을 답했다.
+        #    스킨천사 브랜드는 4,322.0억 — **1,255억(29%) 부풀려진 오답**이다.
+        #    붐따는 처리 완료로 닫혀 있었는데 실제로는 고쳐지지 않았다.
+        #    ⚠️ `SKIN1004` 는 **회사명이자 브랜드명**이라 LLM 이 "우리 회사 전체"
+        #       로 읽는다. 프롬프트에 표가 있어도 확률이라 새어 나간다 — 보증은 코드다.
+        _brand_word = _brand_named_in(_resolved_query)
+        if _brand_word and sql and not _sql_filters_brand(sql):
+            logger.warning("sql_brand_filter_missing", brand=_brand_word,
+                           query=query[:80])
+            brand_retry = llm.generate(
+                full_prompt
+                + f"\n\n⛔ 방금 만든 SQL 에 브랜드 조건이 없습니다. 질문은"
+                  f" '{_brand_word}' 라는 **브랜드**를 지목했습니다 (회사 전체가"
+                  f" 아닙니다). 위 브랜드 표의 조건을 `WHERE` 에 반드시 넣어"
+                  f" 다시 만드세요.",
+                temperature=0.0, max_output_tokens=10000)
+            brand_retry = sanitize_sql(brand_retry)
+            if brand_retry and _sql_filters_brand(brand_retry):
+                logger.info("sql_brand_filter_recovered", brand=_brand_word)
+                sql = brand_retry
+            else:
+                # ⚠️ 되살리지 못했으면 **조용히 넘기지 않는다.** 답변 단계가
+                #    전사 집계라는 사실을 밝힐 수 있게 상태에 남긴다.
+                logger.error("sql_brand_filter_unrecovered", brand=_brand_word)
+
+        # ⛔ 팀별 집계를 조용히 자르지 않는다 (위 `_unclip_team_rows` 주석 참조)
+        sql = _unclip_team_rows(sql, _resolved_query)
+
+        # Retry once if LLM returned text/truncated SQL instead of valid SQL
+        if not sql or len(sql) < 10:
+            logger.warning("sql_generation_empty_retry", query=query[:80])
+            retry_prompt = (
+                full_prompt
+                + "\n\n⛔ 이전 시도에서 SQL이 잘리거나 유효하지 않았습니다. "
+                "⚠️ 질문에 여러 항목(매출+마케팅비용 등)이 포함되면, **가장 핵심 항목(매출)만 SQL로 생성**하세요. "
+                "나머지는 답변에서 '별도 질문 필요'로 안내. "
+                "UNION ALL 사용 금지! CASE WHEN 패턴만 사용! "
+                "반드시 괄호가 모두 닫힌 완전한 SQL을 출력하세요."
+            )
+            sql = llm.generate(retry_prompt, temperature=0.1, max_output_tokens=10000)
+            sql = sanitize_sql(sql)
+            if sql:
+                logger.info("sql_generation_retry_success", sql=sql[:200])
+
+        # 월별 업체 TOP처럼 행이 많은 교차분석은 전역 LIMIT이 앞쪽 기간만 남겨도
+        # 문법·보안 검증을 모두 통과한다. 프롬프트만으로는 정정 후 재생성에서 다시
+        # 퇴행한 실측이 있어, 실행 전에 구조를 검사하고 한 번 더 생성한다.
+        _rank_missing = bool(sql) and _period_rank_required and not (
+            _has_partitioned_period_ranking(sql))
+        # ⛔ 순위 창이 없다고 바로 막지 않는다 — **실제로 잘릴 때만** 막는다.
+        #    (위 `_period_rank_truncation_possible` 주석: 오탐으로 요청 3건이 죽었다)
+        if _rank_missing and not _period_rank_truncation_possible(sql):
+            # ⚠️ WARNING 으로 남긴다. 프로덕션은 앱 INFO 를 통째로 버려서
+            #    INFO 로 적으면 이 판단이 몇 번 돌았는지 영영 셀 수 없다.
+            logger.warning("sql_period_rank_no_truncation_risk", sql=sql[:200])
+            _rank_missing = False
+        if _rank_missing:
+            logger.warning("sql_period_rank_missing_retry", sql=sql[:300])
+            rank_retry_prompt = (
+                full_prompt
+                + f"\n\n⛔ 이전 SQL은 기간별 순위 창 없이 전역 LIMIT을 사용해 요청 기간을 "
+                  f"잘라낼 수 있어 거부됐다:\n```sql\n{sql}\n```\n"
+                  "반드시 ROW_NUMBER()/RANK()/DENSE_RANK() OVER "
+                  "(PARTITION BY 기간축 ORDER BY 지표 DESC)로 순위를 만든 뒤, 바깥 WHERE "
+                  "rank <= N 또는 QUALIFY ... <= N으로 각 기간 TOP N을 실제 필터링한 "
+                  "완전한 SQL만 다시 출력하라. 순위 컬럼만 만들고 필터하지 마라."
+            )
+            rank_retry_sql = sanitize_sql(
+                llm.generate(rank_retry_prompt, temperature=0.0, max_output_tokens=10000)
+            )
+            if rank_retry_sql and _has_partitioned_period_ranking(rank_retry_sql):
+                sql = rank_retry_sql
+                logger.info("sql_period_rank_retry_success", sql=sql[:300])
+            else:
+                logger.error("sql_period_rank_retry_failed", sql=(rank_retry_sql or "")[:300])
+                return {
+                    "generated_sql": None,
+                    "error": (
+                        "요청 기간이 잘릴 수 있는 SQL을 안전하게 교정하지 못했습니다. "
+                        "기간별 상위 개수를 명시해 다시 질문해 주세요."
+                    ),
+                }
+
+        # Fix English media names → Korean (influencer table uses Korean values)
+        if sql and "influencer_input_ALL_TEAMS" in sql:
+            sql = sql.replace("%Instagram%", "%인스타그램%")
+            sql = sql.replace("%TikTok%", "%틱톡%")
+            sql = sql.replace("%YouTube%", "%유튜브%")
+            sql = sql.replace("%Facebook%", "%페이스북%")
+            sql = sql.replace('"Instagram"', '"인스타그램"')
+            sql = sql.replace('"TikTok"', '"틱톡"')
+            sql = sql.replace('"YouTube"', '"유튜브"')
+            sql = sql.replace('"Facebook"', '"페이스북"')
+            sql = sql.replace("'Instagram'", "'인스타그램'")
+            sql = sql.replace("'TikTok'", "'틱톡'")
+            sql = sql.replace("'YouTube'", "'유튜브'")
+            sql = sql.replace("'Facebook'", "'페이스북'")
+
+        # Country 영어 리터럴 → 한국어 (전 테이블 공통 규칙)
+        if sql:
+            sql = _localize_country_literals(sql)
+            sql = _localize_team_literals(sql)
+            sql = _localize_continent_literals(sql)
+            sql = _fix_continent_column(sql)
+            sql = _localize_promotion_literals(sql)
+            sql = _localize_logistics_literals(sql)
+            sql = _fix_logistics_amount(sql)
+            sql = _normalize_named_period(sql, query)
+            sql = _strip_unrequested_brand_filter(sql, query)
+
+        logger.info("sql_generated", sql=sql[:200])
+
+        # Cache store happens in validate_sql_node, after validate_sql() passes
+        # (Fix D) — avoids persisting SQL that turns out to be broken/unparsable.
+        return {"generated_sql": sql, "error": None}
+    except Exception as e:
+        logger.error("sql_generation_failed", error=str(e))
+        return {"generated_sql": None, "error": f"SQL 생성 실패: {str(e)}"}
+
+
+def validate_sql_node(state: AgentState) -> Dict[str, Any]:
+    """Validate generated SQL for safety.
+
+    Args:
+        state: Current agent state with generated_sql.
+
+    Returns:
+        Updated state with sql_valid flag.
+    """
+    sql = state.get("generated_sql")
+    if not sql:
+        return {"sql_valid": False, "error": "SQL이 생성되지 않았습니다."}
+
+    allowed_tables = _allowed_tables_from_sources(
+        state.get("enabled_sources"),
+        bool(state.get("can_view_fi", False)),
+    )
+    is_valid, error_msg = validate_sql(sql, allowed_tables=allowed_tables)
+
+    if not is_valid:
+        logger.warning("sql_validation_failed", error=error_msg, sql=sql[:200])
+        if error_msg == FI_ACCESS_DENIED_MESSAGE:
+            return {"sql_valid": False, "error": FI_ACCESS_DENIED_MESSAGE}
+        _scope = _source_scope_message(error_msg, state.get("enabled_sources"))
+        if _scope:
+            return {"sql_valid": False, "error": _scope}
+        return {"sql_valid": False, "error": f"SQL 검증 실패: {error_msg}"}
+
+    logger.info("sql_validation_passed", sql=sql[:200])
+
+    # Cache only SQL that has passed validation (Fix D — avoid caching broken
+    # SQL). Skip when it was already served from cache (already stored), this
+    # is a conversational follow-up, or the question's answer moves with the
+    # calendar (same conditions as generate_sql used).
+    _query = state.get("query", "")
+    if (not state.get("_sql_from_cache") and not state.get("conversation_context")
+            and not _is_relative_period_query(_query)):
+        _brand_filter = state.get("brand_filter")
+        _cache_store(_cache_key(_query, _brand_filter), _query, sql, _brand_filter)
+
+    return {"sql_valid": True, "error": None}
+
+
+def _retry_with_stronger_model(
+    query: str,
+    failed_sql: str,
+    bq,
+    brand_filter: Optional[str] = None,
+    can_view_fi: bool = False,
+    allowed_tables: Optional[set] = None,
+) -> Optional[Dict[str, Any]]:
+    """Escalate a zero-result product-name query from Flash to Claude Opus.
+
+    Flash is used for SQL gen purely for speed; it occasionally misreads an
+    abbreviated/colloquial product name (e.g. "톤브 앰플 백") and produces a SET
+    LIKE pattern that matches nothing real. Rather than slow down every query
+    with a smarter model, only pay that cost when Flash's guess demonstrably
+    failed (0 rows back). Returns None if the escalation itself fails or also
+    returns nothing new — caller falls back to the original (empty) result.
+    """
+    try:
+        llm = get_llm_client(MODEL_CLAUDE)
+        # sql_generator.txt (~70KB, fully static) goes in system_instruction so
+        # ClaudeClient._wrap_system can mark it as a cache breakpoint — see
+        # app/core/llm.py. Only the retry-specific content is the user turn.
+        retry_prompt = (
+            f"## 사용자 질문\n{query}"
+            + f"\n\n⚠️ 이전 시도에서 아래 SQL을 생성했으나 조회 결과가 0건이었습니다:\n```sql\n{failed_sql}\n```"
+            + "\n사용자가 언급한 제품명이 축약어·오타·구어체 표현일 수 있습니다 "
+              "(예: '톤브 앰플 백' = '톤 브라이트닝 앰플 100ml'). "
+              "위 제품 SKU 목록을 참고해 실제로 존재하는 제품과 다시 매칭한 SQL을 생성하세요. "
+              "여전히 확신이 없으면 라인명까지만 필터링한 더 넓은 LIKE 패턴을 사용하세요."
+            + _build_brand_section(brand_filter)
+        )
+        retry_sql = llm.generate(
+            retry_prompt,
+            system_instruction=_load_prompt("sql_generator.txt", can_view_fi=can_view_fi),
+            temperature=0.0, max_output_tokens=10000,
+        )
+        retry_sql = sanitize_sql(retry_sql)
+        retry_sql = _localize_country_literals(retry_sql)
+        retry_sql = _localize_team_literals(retry_sql)
+        retry_sql = _localize_promotion_literals(retry_sql)
+        retry_sql = _localize_logistics_literals(retry_sql)
+        retry_sql = _normalize_named_period(retry_sql, query)
+        retry_sql = _fix_continent_column(retry_sql)
+        retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
+        if not retry_sql:
+            return None
+
+        if allowed_tables is None:
+            allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
+        is_valid, validation_error = validate_sql(
+            retry_sql,
+            allowed_tables=allowed_tables,
+        )
+        if not is_valid:
+            logger.warning("sql_product_escalation_invalid", error=validation_error, sql=retry_sql[:200])
+            return None
+
+        results = bq.execute_query(retry_sql, timeout=300.0, max_rows=1000)
+        logger.info("sql_product_escalation", query=query[:80], row_count=len(results), sql=retry_sql[:200])
+        return {"sql_result": results, "error": None, "generated_sql": retry_sql}
+    except Exception as e:
+        logger.warning("sql_product_escalation_failed", error=str(e)[:200])
+        return None
+
+
+def execute_sql(state: AgentState) -> Dict[str, Any]:
+    """Execute validated SQL against BigQuery.
+
+    Args:
+        state: Current agent state with validated SQL.
+
+    Returns:
+        Updated state with sql_result.
+    """
+    sql = state.get("generated_sql")
+    if not sql or not state.get("sql_valid"):
+        return {"sql_result": None, "error": "실행할 수 없는 SQL입니다."}
+
+    # ⛔ **실행 전에 참조 턴과 말이 맞는지 본다.** 후속 질문이 가리킨 턴의 필터가
+    #    새 SQL 에서 말없이 사라지면 다른 것을 세게 된다 — 같은 대화에서 매출이
+    #    300억 달라진 사고가 그것이다 (붐따 #116).
+    # ⚠️ 지금은 **계측만** 한다. 막거나 고치지 않는다 — 오탐이 조회를 끊으면
+    #    답변 수치 검증(answer_check)을 계측으로 시작한 이유와 같은 문제가 생긴다.
+    try:
+        from app.core.turn_state import (extract_states, resolve_reference,
+                                         verify_alignment)
+        _msgs = state.get("messages") or []
+        _q = state.get("query") or ""
+        if _msgs:
+            _states = extract_states(_msgs)
+            _ref = resolve_reference(_q, _states)
+            if _ref:
+                verify_alignment(sql, _ref, _q)      # 어긋나면 WARNING 을 남긴다
+    except Exception as _e:
+        logger.warning("turn_alignment_skipped", error=str(_e)[:120])
+
+    can_view_fi = bool(state.get("can_view_fi", False))
+    allowed_tables = _allowed_tables_from_sources(
+        state.get("enabled_sources"),
+        can_view_fi,
+    )
+    is_valid, validation_error = validate_sql(sql, allowed_tables=allowed_tables)
+    if not is_valid:
+        logger.warning("sql_pre_execution_validation_failed", error=validation_error, sql=sql[:200])
+        if validation_error == FI_ACCESS_DENIED_MESSAGE:
+            error = FI_ACCESS_DENIED_MESSAGE
+        else:
+            error = (_source_scope_message(validation_error, state.get("enabled_sources"))
+                     or f"SQL 검증 실패: {validation_error}")
+        return {"sql_result": None, "error": error}
+
+    logger.info("executing_sql", sql=sql[:200])
+
+    try:
+        bq = get_bigquery_client()
+        results = bq.execute_query(sql, timeout=300.0, max_rows=1000)
+        logger.info("sql_executed", row_count=len(results))
+
+        # Product-filtered query returned nothing → likely an abbreviated/unfamiliar
+        # product name that Flash guessed wrong (e.g. "톤브 앰플 백"). Escalate ONCE
+        # to a stronger model instead of always paying that latency cost up front.
+        if len(results) == 0 and re.search(r"`?SET`?\s+LIKE|\bProduct\s+LIKE", sql, re.IGNORECASE):
+            escalated = _retry_with_stronger_model(
+                state.get("query", ""),
+                sql,
+                bq,
+                brand_filter=state.get("brand_filter"),
+                can_view_fi=can_view_fi,
+                allowed_tables=allowed_tables,
+            )
+            if escalated is not None:
+                return escalated
+
+        # ⛔ **행이 나온 것만** 자산으로 쌓는다. 0건 SQL 을 예시로 굳히면 다음 사람도
+        #    같은 방향으로 0건을 낸다 (`sql_cache` 가 0건도 재생하던 것과 같은 함정).
+        # ⚠️ 후속 질문은 쌓지 않는다 — 앞 대화 없이는 그 SQL 이 왜 그런지 설명되지 않는다.
+        if results and not state.get("conversation_context"):
+            try:
+                from app.core.sql_examples import record
+                record(state.get("query", ""), sql, len(results))
+            except Exception as _e:   # 자산 축적이 답변을 막으면 본말이 뒤집힌다
+                logger.warning("sql_example_skipped", error=str(_e)[:120])
+        return {"sql_result": results, "error": None}
+    except Exception as e:
+        error_str = str(e)
+        # 구문 오류·컬럼명 오류 → 오류 메시지를 실어 1회 재생성.
+        # ⚠️ "Syntax error" 만 잡으면 "Unrecognized name"(없는 컬럼)이 재시도 없이
+        # 사용자에게 그대로 노출된다 (2026-08-06 @@아마존검색 'Date' 컬럼 사고).
+        # "incompatible types"(UNION ALL 컬럼 타입 불일치)도 재생성 대상 —
+        # 2026-08-10 실사용자 '마차이' 리뷰 질문이 재시도 없이 오류 노출됨
+        if any(k in error_str for k in (
+            "Syntax error", "Unrecognized name", "incompatible types",
+            "neither grouped nor aggregated",
+        )):
+            logger.warning("sql_syntax_error_retry", error=error_str[:200], original_sql=sql[:300])
+            try:
+                llm = get_flash_client()
+                query = state.get("query", "")
+                # @@ 로 좁힌 소스는 기본 프롬프트에 스키마가 없다 — 재생성에도 스키마와
+                # 테이블 스코프를 실어야 같은 컬럼 오류를 반복하지 않는다.
+                # conv_context 도 전달 — 재생성 경로에서만 맥락이 빠지면 후속 질문이
+                # 오류를 만났을 때 재생성본이 주제 이탈한다 (2026-08-10 검토에서 발견)
+                _conv_ctx = state.get("conversation_context", "")
+                _schema_ctx = _build_schema_context(query, allowed_tables, _conv_ctx)
+                _scope = ""
+                if allowed_tables is not None and 0 < len(allowed_tables) <= 5:
+                    _scope = ("\n\n## ⛔ 사용 가능 테이블\n"
+                              + "\n".join(f"- `{t}`" for t in sorted(allowed_tables))
+                              + "\n위 테이블만 사용하고, 컬럼명은 위 스키마의 정확한 이름만 사용하라 "
+                              "(모든 테이블에 Date 컬럼이 있는 게 아니다).")
+                _syntax_rules = ""
+                if "Syntax error" in error_str:
+                    _syntax_rules = (
+                        "\n1. 질문에 여러 항목(매출+마케팅비 등)이 있으면 **매출 SQL만 생성**"
+                        "\n2. UNION ALL 금지! CASE WHEN 패턴만 사용!"
+                        "\n3. 모든 괄호를 반드시 닫을 것! CTE 사용 시 WITH ... AS (...) SELECT ... 완전한 형태"
+                        "\n4. 짧고 간결한 SQL만! 20줄 이내!"
+                    )
+                if "neither grouped nor aggregated" in error_str:
+                    _syntax_rules += (
+                        "\n1. GROUP BY 집계와 ROW_NUMBER/RANK 계산을 같은 SELECT에 두지 말 것"
+                        "\n2. 첫 CTE에서 기간·항목별 SUM 집계를 완료하고, 다음 CTE에서 "
+                        "집계된 기간 별칭으로 PARTITION BY 할 것"
+                        "\n3. 윈도 함수에서 GROUP BY 이전 원본 Date를 다시 참조하지 말 것"
+                    )
+                _conv_retry = ""
+                if _conv_ctx:
+                    _conv_retry = (
+                        "\n\n## 이전 대화 맥락 (정정 후 재생성에도 반드시 유지)\n"
+                        + _conv_ctx
+                    )
+                _period_retry_required = _requires_partitioned_period_ranking(
+                    query, _conv_ctx
+                )
+                _period_retry_rule = ""
+                if _period_retry_required:
+                    _period_retry_rule = (
+                        "\n⛔ 기간별 주요 항목 분석이므로 첫 CTE에서 기간·항목별 집계를 "
+                        "완료하고, 다음 CTE에서 집계된 기간 별칭으로 ROW_NUMBER() OVER "
+                        "(PARTITION BY 기간별칭 ORDER BY 지표 DESC)를 계산한 뒤 바깥 WHERE "
+                        "rank <= N으로 실제 필터링하라."
+                    )
+                retry_prompt = (
+                    _load_prompt("sql_generator.txt", can_view_fi=can_view_fi)
+                    + _schema_ctx + _scope + _conv_retry
+                    + f"\n\n## 사용자 질문\n{query}"
+                    + f"\n\n⛔⛔⛔ 이전 SQL이 다음 오류로 실패했다:\n{error_str[:300]}\n"
+                    + "오류 원인을 고쳐 SQL을 다시 작성하라. 컬럼명은 스키마에 있는 정확한 이름만 사용."
+                    + _syntax_rules + _period_retry_rule
+                    + _build_brand_section(state.get("brand_filter"))
+                )
+                retry_sql = llm.generate(retry_prompt, temperature=0.0, max_output_tokens=10000)
+                from app.core.security import sanitize_sql
+                retry_sql = sanitize_sql(retry_sql)
+                retry_sql = _localize_country_literals(retry_sql)
+                retry_sql = _localize_team_literals(retry_sql)
+                retry_sql = _localize_promotion_literals(retry_sql)
+                retry_sql = _localize_logistics_literals(retry_sql)
+                retry_sql = _normalize_named_period(retry_sql, query)
+                retry_sql = _fix_continent_column(retry_sql)
+                retry_sql = _strip_unrequested_brand_filter(retry_sql, query)
+                if retry_sql:
+                    if (_period_retry_required
+                            and not _has_partitioned_period_ranking(retry_sql)
+                            and _period_rank_truncation_possible(retry_sql)):
+                        logger.error(
+                            "sql_retry_period_rank_missing",
+                            sql=retry_sql[:300],
+                        )
+                        retry_sql = ""
+                if retry_sql:
+                    is_valid, _verr = validate_sql(
+                        retry_sql,
+                        allowed_tables=allowed_tables,
+                    )
+                    if not is_valid:
+                        logger.error("sql_retry_validation_failed", error=_verr[:200])
+                        # fall through to the existing failure return below (do NOT execute)
+                    else:
+                        logger.info("sql_retry_executing", sql=retry_sql[:200])
+                        results = bq.execute_query(retry_sql, timeout=300.0, max_rows=1000)
+                        logger.info("sql_retry_success", row_count=len(results))
+                        conv_ctx = state.get("conversation_context", "")
+                        retry_brand_filter = state.get("brand_filter")
+                        if not conv_ctx and not _is_relative_period_query(query):
+                            _ck = _cache_key(query, retry_brand_filter)
+                            _cache_store(_ck, query, retry_sql, retry_brand_filter)
+                        return {"sql_result": results, "error": None, "generated_sql": retry_sql}
+            except Exception as retry_e:
+                logger.error("sql_retry_also_failed", error=str(retry_e)[:200])
+        logger.error("sql_execution_failed", error=error_str[:200])
+        return {"sql_result": None, "error": f"SQL 실행 실패: {error_str}"}
+
+
+# Friendly display names for BigQuery tables
+_TABLE_DISPLAY_NAMES = {
+    "SALES_ALL_Backup": "통합 매출 (SALES_ALL)",
+    "integrated_ad": "통합 광고 데이터",
+    "Integrated_marketing_cost": "통합 마케팅 비용",
+    "shopify_analysis_sales": "Shopify 판매",
+    "raw_data": "플랫폼 메트릭스",
+    "influencer_input_ALL_TEAMS": "인플루언서 마케팅",
+    "amazon_search_analytics_catalog_performance": "아마존 검색 분석",
+    "Amazon_Review": "아마존 리뷰",
+    "Qoo10_Review": "큐텐 리뷰",
+    "Shopee_Review": "쇼피 리뷰",
+    "Smartstore_Review": "스마트스토어 리뷰",
+    "meta data_test": "메타 광고 라이브러리",
+    "Product": "제품 마스터",
+}
+
+
+def _extract_table_sources(sql: str) -> str:
+    """Extract table names from SQL and return a friendly source string."""
+    if not sql:
+        return "BigQuery"
+    # Match backtick-quoted full paths: `project.dataset.table`
+    matches = re.findall(r'`([^`]+)`', sql)
+    table_names = set()
+    for m in matches:
+        parts = m.split(".")
+        if len(parts) >= 2:
+            table_short = parts[-1]
+            display = _TABLE_DISPLAY_NAMES.get(table_short, table_short)
+            table_names.add(display)
+    if not table_names:
+        # Fallback: try unquoted FROM/JOIN table references
+        from_matches = re.findall(r'(?:FROM|JOIN)\s+([\w.-]+)', sql, re.IGNORECASE)
+        for fm in from_matches:
+            parts = fm.split(".")
+            table_short = parts[-1]
+            display = _TABLE_DISPLAY_NAMES.get(table_short, table_short)
+            table_names.add(display)
+    if not table_names:
+        return "BigQuery"
+    return " + ".join(sorted(table_names))
+
+
+
+# 프롬프트의 DISTINCT 국가 목록을 단일 소스로 재사용한다 (목록을 코드에 또 두지 않는다).
+_COUNTRY_VALUES: list = []
+
+
+def _all_countries() -> list:
+    """국가 목록 — **값 목록 캐시**에서 온다 (프롬프트 파싱 아님).
+
+    ⛔ 예전엔 `prompts/sql_generator.txt` 의 DISTINCT 줄을 정규식으로 파싱했다.
+       그 줄이 `{{VALUES:Country}}` 자리표시자로 바뀌면서 파싱이 빈 목록을
+       돌려줬고, "에콰도르는 실재한다" 는 판정이 통째로 죽었다 (2026-08-18).
+       사본을 없애는 작업이 **사본을 읽던 코드**를 깨뜨린 것이다 — 같은 캐시를 본다.
+    """
+    global _COUNTRY_VALUES
+    if _COUNTRY_VALUES:
+        return _COUNTRY_VALUES
+    try:
+        from app.core.value_lists import _cached
+        _COUNTRY_VALUES = _cached("Country") or []
+    except Exception:
+        _COUNTRY_VALUES = []
+    return _COUNTRY_VALUES
+
+def _continent_hint(column: str) -> str:
+    """대륙 유효 값 힌트 — ⛔ **손으로 적지 않는다. 매일 실측된 목록을 그대로 준다.**
+
+    ⛔ 2026-08-27 실측: 여기에 손으로 적어 둔 목록 두 벌이 **둘 다 낡아 있었다.**
+
+        Continent1 적어둔 것: … 남미 … 중미      실제: … 중남미 …
+        Continent2 적어둔 것: … 북아프리카 …      실제: (없다)
+
+       즉 **없는 값을 "유효 값"이라 알려주고, 있는 값은 빼고** 있었다. 이 힌트는
+       0건일 때 LLM 에게 주는 목록이라, 그대로 2026-08-24 오답이 재현되는 자리다 —
+       그때도 프롬프트의 손 목록(남미·중미)을 믿고 0건을 낸 뒤 **그 목록을 근거로
+       인용하며** "값은 정상 존재하므로 데이터가 없는 것" 이라고 단정했다.
+       조회도 설명도 틀렸는데 둘 다 자신 있었다.
+
+    ⚠️ CLAUDE.md 가 이미 못 박아 둔 규칙이다: "여기에 값을 나열하지 마라. 프롬프트에도
+       마찬가지다. 손으로 적으면 반드시 낡고, 낡으면 **에러가 아니라 0건**이다."
+       그런데 프롬프트만 고치고 이 힌트는 남아 있었다 — 사본은 언제나 한쪽만 고쳐진다.
+
+    ⚠️ 실측 목록을 못 얻으면 **아무 목록도 주지 않는다.** 추측한 목록을 주는 것보다
+       "모른다"가 낫다 — 목록이 있으면 LLM 은 그것을 근거로 단정하기 때문이다.
+    """
+    from app.core.value_lists import values
+
+    vals = values(column)
+    if not vals:
+        return (f"{column} 유효 값을 지금 확인할 수 없다. ⛔ 목록을 추측하지 말고, "
+                f"특정 값이 '존재하지 않는다'고 단정하지도 마라.")
+    line = f"{column} 유효 값: " + ", ".join(vals)
+    if column == "Continent2":
+        # 광역 대륙을 세부 권역 컬럼에서 찾는 오류가 잦다 (유럽 → 0건, 2026-08 실제 발생).
+        # ⚠️ 어느 값이 없는지도 **실측 목록으로 판정**한다 — 이것마저 손으로 적으면
+        #    같은 결함이 한 줄 아래에서 되살아난다.
+        absent = [v for v in ("유럽", "아시아", "동유럽") if v not in vals]
+        if absent:
+            line += (" (⚠️ " + "·".join(absent) + "은 Continent2에 없다. "
+                     "광역 대륙은 Continent1을 써야 한다)")
+    return line
+
+
+def _country_hint(sql: str) -> str:
+    """0건일 때 국가 값을 **실제 목록과 대조해** 알려준다 (추측하게 두지 않는다)."""
+    import re as _re
+    known = _all_countries()
+    used = _re.findall(r"Country\s*(?:=|LIKE|IN)\s*\(?\s*'([^']+)'", sql or "", _re.I)
+    used += _re.findall(r"'([^']+)'", " ".join(
+        _re.findall(r"Country\s+IN\s*\(([^)]*)\)", sql or "", _re.I)))
+    seen, checked = set(), []
+    for v in used:
+        v = v.strip().strip("%")
+        if v and v not in seen:
+            seen.add(v)
+            checked.append(v)
+    if not known or not checked:
+        return "Country는 한국어 국가명이다 (실제 목록은 위 DISTINCT 절 참조)."
+    ok = [v for v in checked if v in known]
+    bad = [v for v in checked if v not in known]
+    parts = []
+    if ok:
+        parts.append(
+            f"⚠️ {', '.join(ok)} 는 **실재하는 국가다** (DISTINCT 목록에 있음). "
+            f"0건인 이유를 국가 값 탓으로 돌리지 마라 — 기간·거래처·제품 등 **다른 조건**이 원인이다")
+    for v in bad:
+        near = [k for k in known if v[:2] and v[:2] in k][:5]
+        parts.append(f"'{v}' 는 Country 목록에 없다"
+                     + (f" (비슷한 값: {', '.join(near)})" if near else ""))
+    return " / ".join(parts)
+
+
+
+# ⛔ **금액 컬럼을 "수량" 으로 부르는 오답이 실제로 나갔다** (2026-08-14).
+#    "에콰도르 Valkirias FOC" 답변이 `SUM(FOC)` 376,968.4 를 **"377,000개"** 라고 썼다.
+#    `FOC` 는 `Production_Cost2` 와 같은 값, 즉 **원가 금액(원)** 이다 — 프롬프트 스키마엔
+#    "FOC 금액" 이라고 맞게 적혀 있었는데도 서술 단계에서 뒤집혔다. 수량 컬럼은
+#    `Total_Qty`·`FOC_Qty` 뿐이고 그건 `Product` 테이블에만 있다.
+#    금액을 개수로 읽으면 **자릿수가 그대로라 틀린 티가 안 난다** — 가장 위험한 종류다.
+_MONEY_COLS = ("Sales1_R", "Sales2_R", "Sales1_R_FOC", "Sales2_R_FOC", "FOC",
+               "Production_Cost2", "Production_Cost", "Discount_Coupon",
+               "Service_Fee", "ad_spend_krw", "conversion_value_krw")
+_QTY_COLS = ("Total_Qty", "FOC_Qty")
+
+
+# ── 내부 테이블 경로는 답변 본문에 나가지 않는다 (붐따 #147, 2026-08-25) ─────
+# "프로모션 캘린더 경로 알려줘" 에 `skin1004-319714.promotion_calendar.promotion` 을
+# 표로 내놨다. 제보: "빅쿼리 경로를 알려주면안됨. 보안이슈. 내가 말한건 url".
+# ⛔ 프롬프트에는 이미 "테이블명·프로젝트 ID 노출 금지" 가 적혀 있었는데도 샜다 —
+#    프롬프트는 확률이고 보증은 코드다 (FI 방어선과 같은 사상).
+# ⚠️ `실행된 쿼리` 블록과 코드 펜스는 **건드리지 않는다.** 그건 "이 숫자가 어디서
+#    나왔나" 를 확인하는 근거다. 본문에 경로를 **답으로 제시하는 것**이 문제였다.
+_MASKED = "(내부 경로 비공개)"
+# 데이터셋·테이블은 `_`/영문 식별자다. 소수점·버전(3.14.15, v1.2.3)과 섞이지 않도록
+# **각 조각에 영문자가 하나 이상**이고 숫자만으로는 이뤄지지 않을 것을 요구한다.
+_IDENT = r"[A-Za-z][A-Za-z0-9_-]*"
+_RE_INTERNAL_PATH = re.compile(
+    r"`?\b(?:" + _IDENT + r"\.)?" + _IDENT + r"\." + _IDENT + r"\b`?")
+_RE_SAFE_SEGMENT = re.compile(r"(```[\s\S]*?```|<details[\s\S]*?</details>)")
+
+
+def _known_path_parts() -> set:
+    """마스킹 대상 판정에 쓰는 **실재하는** 데이터셋·프로젝트 이름."""
+    parts = set()
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+    except Exception:
+        return parts
+    pid = (getattr(settings, "gcp_project_id", "") or "").strip()
+    if pid:
+        parts.add(pid)
+    try:
+        table_map = _source_table_map(settings) or {}
+    except Exception:
+        table_map = {}
+    for paths in table_map.values():
+        for full in (paths if isinstance(paths, (list, tuple)) else [paths]):
+            for token in str(full).split("."):
+                if token:
+                    parts.add(token)
+    return parts
+
+
+def _mask_internal_paths(text: str) -> str:
+    """본문에 드러난 내부 경로를 가린다 (코드 펜스·실행된 쿼리는 그대로)."""
+    if not text:
+        return text
+    known = _known_path_parts()
+    if not known:
+        return text
+
+    def _mask_one(m: "re.Match") -> str:
+        hit = m.group(0).strip("`")
+        return _MASKED if any(p in hit.split(".") for p in known) else m.group(0)
+
+    out = []
+    for seg in _RE_SAFE_SEGMENT.split(text):
+        if seg.startswith("```") or seg.startswith("<details"):
+            out.append(seg)          # 근거 블록은 손대지 않는다
+        else:
+            out.append(_RE_INTERNAL_PATH.sub(_mask_one, seg))
+    return "".join(out)
+
+
+def _mask_stream(chunks, transform=None):
+    """스트리밍 청크에도 같은 마스킹을 건다.
+
+    `transform` 은 완성된 줄에만 걸리는 추가 교정이다 (금액 단위 되돌리기).
+    같은 줄 버퍼를 쓰므로 스트리밍 지연이 늘지 않는다.
+
+    ⚠️ 경로가 청크 경계에서 쪼개질 수 있다 (`…promotion_ca` + `lendar…`).
+       꿀어서 보내면 방어가 절반만 듣는다 — 마지막 줄 조각을 붙잡았다가 다음 청크와
+       이어 붙여 판정한다. 줄 단위로 뮸루므로 첫 토큰 체감은 거의 그대로다.
+    """
+    def _clean(text: str) -> str:
+        out = _mask_internal_paths(text)
+        return transform(out) if transform else out
+
+    buf = ""
+    for chunk in chunks:
+        buf += chunk or ""
+        cut = buf.rfind(chr(10))
+        if cut < 0:
+            continue
+        head, buf = buf[:cut + 1], buf[cut + 1:]
+        yield _clean(head)
+    if buf:
+        yield _clean(buf)
+
+
+def _unit_note(sql: str) -> str:
+    """SQL 이 고른 컬럼에서 **단위를 결정적으로** 뽑아 서술 단계에 못 박는다."""
+    up = (sql or "").upper()
+    money = [c for c in _MONEY_COLS if c.upper() in up]
+    qty = [c for c in _QTY_COLS if c.upper() in up]
+    if not money and not qty:
+        return ""
+    lines = ["", "⚠️ **단위 (SQL 이 고른 컬럼에서 확정된 사실 — 추측 금지)**:"]
+    if money:
+        lines.append(
+            "- " + ", ".join(money) + " 는 **금액(원)** 이다. 값에 '개'·'수량'·'개수'·"
+            "'EA' 를 붙이지 마라. 표 헤더도 '금액' 또는 '원' 으로 쓸 것"
+            + ("" if qty else " — 이 결과에는 **수량 컬럼이 없다.** 수량을 답하지 마라"))
+    if qty:
+        lines.append("- " + ", ".join(qty) + " 만 **수량(개)** 이다")
+    return "\n".join(lines)
+
+
+def _qty_coverage_fact(sql: str, results: list) -> str:
+    """수량을 셀 수 없는 브랜드가 걸렸으면 그 사실을 서술 단계에 못 박는다.
+
+    ⚠️ 보증은 `qty_coverage.notice()` 가 한다 — 이건 공시와 **어긋난 문장**
+       ("총 판매수량 0개")이 나가는 것을 줄이려는 것이다.
+    """
+    try:
+        from app.core.qty_coverage import prompt_fact
+        return prompt_fact(sql, results)
+    except Exception as e:                    # noqa: BLE001
+        # ⚠️ 프롬프트를 조립하는 중이다 — 여기서 터지면 답변 자체가 죽는다.
+        #    공시는 `notice()` 가 따로 하므로 사실이 통째로 사라지지는 않는다
+        logger.warning("qty_coverage_fact_failed", error=str(e)[:160])
+        return ""
+
+
+def _truncation_fact(results: list, rows_withheld: bool) -> str:
+    """표가 전체가 아니라는 사실을 서술 단계에 못 박는다.
+
+    ⚠️ 보증은 `result_truncation.notice()` 가 한다.
+    """
+    try:
+        from app.core.result_truncation import prompt_fact
+        return prompt_fact(results, rows_withheld)
+    except Exception as e:                    # noqa: BLE001
+        logger.warning("truncation_fact_failed", error=str(e)[:160])
+        return ""
+
+
+# ── 미래 날짜는 포함한다. 대신 포함했다고 말한다 (2026-08-25 사용자 확정) ────
+# 발주·예정 물량은 미래 날짜가 정상이고 그것이 사용자의 대시보드 기준이다 (붐따 #143·#144).
+# ⛔ 다만 **말없이 포함하면** 매출 추이에 아직 일어나지 않은 달이 섞여도 아무도 모른다 —
+#    말없이 자르던 것과 같은 종류의 조용한 오답이다. 포함은 하되 **공시는 코드가** 한다.
+#    프롬프트에 적으면 확률이고, 확률로는 "안 적힌 답변"이 반드시 나온다.
+_RE_UPPER_BOUND = re.compile(
+    # ⚠️ LLM 은 상한을 세 가지로 쓴다 — 세 가지 다 읽어야 공시가 맞는다:
+    #      `<= '2026-08-27'` · `<= '2026-08-27 23:59:59'` · `<= DATE('2026-08-27')`
+    #   ⛔ 예전에는 `DATE(...)` 로 감싼 형태를 못 읽어 **미래 행이 섞여도 아무 말도
+    #      안 했다.** 같은 맹점으로 상한 강제 관문이 9회 전부 오탐을 냈다 (2026-08-27).
+    r"(?:<=|<|AND)\s*(?:DATE|DATETIME|TIMESTAMP)?\s*\(?\s*"
+    r"'(\d{4}-\d{2}-\d{2})(?:[ T][\d:]+)?'", re.IGNORECASE)
+
+
+def _future_period_note(sql: str, today=None) -> str:
+    """조회 상한이 오늘 이후면 그 사실을 한 줄로 돌려준다 (아니면 빈 문자열)."""
+    if not sql:
+        return ""
+    today = today or _date.today()
+    bounds = []
+    for m in _RE_UPPER_BOUND.finditer(sql):
+        try:
+            bounds.append(_date.fromisoformat(m.group(1)))
+        except ValueError:
+            continue
+    future = [b for b in bounds if b > today]
+    if not future:
+        return ""
+    nl = chr(10)
+    return (nl + nl + "> ⚠️ 이 조회 기간은 오늘("
+            + today.strftime("%Y-%m-%d") + ") 이후인 "
+            + max(future).strftime("%Y-%m-%d")
+            + " 까지를 포함합니다. 발주·예정 물량처럼 아직 일어나지 않은 "
+            + "행이 함께 집계될 수 있습니다.")
+
+
+def _notice_result_answer(results) -> str:
+    """조회 결과가 안내문 한 줄이면 그대로 보여줄 문자열, 아니면 빈 문자열."""
+    try:
+        from app.core.notice_result import extract, render
+        text = extract(results)
+        return render(text) if text else ""
+    except Exception as e:                    # noqa: BLE001
+        logger.warning("notice_result_failed", error=str(e)[:160])
+        return ""
+
+
+def _outlook_result_answer(query: str, sql: str, results) -> Optional[str]:
+    """Keep registered future revenue and unsupported forecasts out of prose generation."""
+    answer = _render_sales_outlook(query, sql, results)
+    if answer is None:
+        return None
+    future_note = _future_period_note(sql)
+    if future_note:
+        answer = future_note.lstrip() + "\n\n" + answer
+    return answer + f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
+
+
+def format_answer(state: AgentState) -> Dict[str, Any]:
+    """Format SQL results into a natural language answer with optional chart.
+
+    Args:
+        state: Current agent state with sql_result.
+
+    Returns:
+        Updated state with answer (and chart if applicable).
+    """
+    query = state["query"]
+    sql = state.get("generated_sql", "")
+    results = state.get("sql_result")
+    error = state.get("error")
+
+    # Handle error cases
+    if error == FI_ACCESS_DENIED_MESSAGE:
+        return {"answer": FI_ACCESS_DENIED_MESSAGE}
+    # 데이터소스 범위 안내는 오류가 아니라 사용자 안내다 — 그대로 보여준다
+    if error and str(error).startswith(SOURCE_SCOPE_DENIED_PREFIX):
+        return {"answer": error}
+    if error:
+        return {
+            "answer": f"죄송합니다. 질문을 처리하는 중 오류가 발생했습니다.\n\n오류: {error}"
+        }
+
+    # GROUP BY 없는 집계 쿼리(SUM/COUNT 단독)는 매칭 데이터가 0건이어도
+    # 값이 전부 NULL인 행 1개를 돌려준다. 그대로 두면 "0건" 경로를 못 타고
+    # LLM이 빈 결과를 놓친 채 원인을 지어낸다 (2028년 미래 날짜 질문에
+    # "신규 진출 여부 확인 필요"로 답한 사례, 2026-08). 빈 결과로 정규화한다.
+    if results and len(results) == 1 and all(v is None for v in results[0].values()):
+        logger.info("sql_result_all_null_treated_as_empty", sql=(sql or "")[:200])
+        results = None
+
+    results = _relabel_team_values(results)
+
+    # ⛔ 안내문 한 줄짜리 결과는 **LLM 을 태우지 않는다** — 태웠더니 없는 표를
+    #    지어내 "내부 데이터베이스에서 확인할 수 있는 지표" 라고 소개했다
+    #    (붐따 #153). 지어낼 여지를 남기지 않는 것이 이 처리의 전부다.
+    _notice_only = _notice_result_answer(results)
+    if _notice_only:
+        return {"answer": _notice_only}
+
+    _outlook_answer = _outlook_result_answer(query, sql, results)
+    if _outlook_answer is not None:
+        return {"answer": _outlook_answer}
+
+    if not results:
+        # 0건 질문에서 미인식 용어를 후보로 수집 (백그라운드 — 응답을 늦추지 않는다).
+        # 스트리밍 경로도 0건이면 format_answer 를 타므로 이 한 곳이면 된다.
+        try:
+            import threading as _th
+
+            from app.core.term_aliases import collect_candidates as _cc
+            _th.Thread(target=_cc, args=(query,), daemon=True).start()
+        except Exception:
+            pass
+        # Build context hints for valid column values referenced in SQL
+        _value_hints = []
+        sql_upper = (sql or "").upper()
+        if "TEAM_NEW" in sql_upper:
+            # ⚠️ 예전에는 GM_EAST1·DD_DT1 같은 구버전 코드를 힌트로 넣고 있었다.
+            # 프롬프트 본문에는 "구버전 — 없음!"이라 적혀 있는 값들이라, 0건일 때
+            # 존재하지도 않는 코드를 대안으로 안내하게 된다 (2026-08-11 발견).
+            _value_hints.append(
+                "Team_NEW 유효 값(코드 = 공식 팀명): "
+                + ", ".join(f"{c} = {kr}" for c, kr in TEAM_CODE2KR.items())
+                + " (⚠️ GM_EAST1·GM_Ecomm·GM_MKT·DD_DT1·DD_DT2·GM_WEST 는 구버전이라 존재하지 않는다)"
+            )
+        if "COUNTRY" in sql_upper:
+            # ⛔ **부분 목록을 "유효 값" 으로 주지 마라.** 예전엔 191개 중 12개만 나열하고
+            #    "등" 을 붙였는데, LLM 이 그걸 전체 목록으로 읽고 **실재하는 국가를 없다고
+            #    단정했다** — "에콰도르 Valkirias FOC" 질문에 "에콰도르는 유효 국가 목록에
+            #    존재하지 않는다" 고 답했다 (2026-08-14 사용자 제보). 실제로는 2,448건·33.8억
+            #    (2022-08~2026-08) 이 있고 Valkirias 거래처도 있었다.
+            #    Team_NEW·Continent 힌트가 **전체 목록**을 주는 것과 같은 이유다.
+            _value_hints.append(_country_hint(sql))
+        # 광역 대륙명을 Continent2에서 찾는 오류가 잦다 (유럽 → 0건, 2026-08 실제 발생).
+        # 유효 값을 그대로 넘겨 LLM이 원인을 추측하지 않고 대조로 짚게 한다.
+        if "CONTINENT1" in sql_upper:
+            _value_hints.append(_continent_hint("Continent1"))
+        if "CONTINENT2" in sql_upper:
+            _value_hints.append(_continent_hint("Continent2"))
+        # ⛔ **유효 값 목록만으로는 추측을 못 막는다.** 국가 힌트를 전체 목록으로 고쳤더니
+        #    같은 질문에서 이번엔 거래처명을 의심했다 (2026-08-14). 목록을 붙일 수 없는
+        #    컬럼(거래처·제품)이 늘 남기 때문이다. **필터를 하나씩 빼고 실제로 세어**
+        #    범인을 짚는다 — 0행일 때만 도는 조회 1회다.
+        try:
+            from app.core.zero_row import diagnose as _diagnose
+            _dx = _diagnose(sql, get_bigquery_client())
+            if _dx:
+                _value_hints.append(_dx)
+        except Exception as _e:
+            logger.warning("zero_row_diagnose_skipped", error=str(_e)[:150])
+
+        _hints_text = "\n".join(_value_hints)
+
+        # Try Flash LLM for helpful empty-result message (with timeout), else template
+        try:
+            empty_llm = get_flash_client()
+            # 오늘 날짜를 반드시 넣는다. 없으면 LLM이 현재 연도를 추측해
+            # "작년은 2024년" 같은 틀린 원인 분석을 내놓는다 (2026-08 실제 발생).
+            _today = datetime.now()
+            _range_note = ""
+            # 미래 기간을 물으면 그게 0건의 확정적 원인이다. 짚어주지 않으면
+            # LLM 이 "신규 진출 여부" 같은 엉뚱한 원인을 지어낸다.
+            _years = [int(y) for y in re.findall(r"\b(20\d{2})\b", sql or "")]
+            if _years and min(_years) > _today.year:
+                _range_note += (
+                    f"\n⚠️ 이 SQL 은 {min(_years)}년을 조회하는데 오늘은 {_today.year}년이다. "
+                    "**미래 기간이라 데이터가 있을 수 없다**는 것이 0행의 확정적 원인이다. "
+                    "다른 원인을 추측하지 말고 이 점을 명확히 안내하라."
+                )
+            if "FI_LLM_Flat" in (sql or ""):
+                _range_note = (
+                    "\n⚠️ 이 질문이 쓰는 재무 손익 테이블(FI_LLM_Flat)은 **2026-01 ~ 2026-06** 만 "
+                    "보유하고 있다. 요청 기간이 이 범위 밖이면 그것이 0행의 확정적 원인이므로, "
+                    "다른 원인을 추측하지 말고 보유 기간을 명확히 안내한 뒤 그 범위로 다시 제안할 것."
+                )
+            empty_prompt = f"""사용자가 "{query}"라고 질문했고, SQL 결과가 0행입니다:
+```sql
+{sql}
+```
+오늘 날짜: {_today.strftime('%Y-%m-%d')} (올해={_today.year}, 작년={_today.year - 1})
+{f"유효 값: {_hints_text}" if _hints_text else ""}{_range_note}
+⚠️ 원인 분석 방법: 위에 "유효 값" 목록이 있으면 **SQL의 필터 리터럴을 그 목록과 먼저 대조하라.**
+목록에 없는 값으로 필터했다면 **그것이 0행의 확정적 원인**이다 — 다른 원인을 나열하지 말고
+어느 값이 왜 잘못됐는지, 올바른 컬럼·값이 무엇인지 한 가지로 단정해 답하라.
+대조해도 원인이 없을 때만 추정 원인을 제시하되, 추정임을 밝혀라.
+
+간결하게: 1) 해당 조건의 데이터가 없다는 안내 2) 위 방법으로 짚은 원인 3) 구체적인 대안 질문 2개. 한국어. ⚠️ "조회하지 못했습니다" 표현 사용 금지! "해당 조건의 데이터가 존재하지 않습니다" 사용."""
+            # ⚠️ with 블록으로 감싸지 마라. 블록을 빠져나갈 때 shutdown(wait=True)가
+            # 걸려 아래 8초 타임아웃이 무의미해진다 (LLM 이 멈추면 그만큼 그대로 대기).
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            try:
+                f = pool.submit(empty_llm.generate, empty_prompt, None, 0.3)
+                answer = f.result(timeout=8.0)
+            finally:
+                pool.shutdown(wait=False)
+            if answer and len(answer) > 30:
+                return {"answer": answer}
+        except (concurrent.futures.TimeoutError, Exception):
+            pass
+        # Template fallback — more helpful than a single line
+        return {
+            "answer": (
+                "### 📊 데이터 조회 결과\n\n"
+                "해당 조건의 데이터가 조회되지 않았습니다.\n\n"
+                "#### 확인 사항\n"
+                "- 국가명이나 채널명(쇼피/아마존/틱톡/라자다 등)이 정확한지 확인해 주세요\n"
+                "- 해당 국가에 해당 채널이 존재하는지 확인이 필요합니다 (예: 일본 아마존은 데이터 없음)\n"
+                "- 조회 기간을 넓혀서 다시 질문해 보세요\n\n"
+                "---\n\n"
+                "> 💡 **이런 식으로 질문해 보세요**\n"
+                "> - \"2024년 미국 아마존 월별 매출 알려줘\"\n"
+                "> - \"베트남 쇼피 2025년 매출 알려줘\"\n"
+                "> - \"태국 라자다 분기별 매출 추이\""
+            )
+        }
+
+    # Use Flash for answer formatting (faster, 3-5s vs 15-25s with Pro)
+    llm = get_flash_client()
+
+    # Limit result preview for prompt — smart strategy based on result shape.
+    # ⛔ 예전엔 `if len(results) > 100:` 이 `_is_timeseries` 분기보다 먼저 걸려,
+    # 146행짜리 "2020~2026 월별 B2C/B2B 매출" 질문이 순위 질문과 똑같이
+    # `_build_smart_preview` 의 "매출 상위 15행" 표본으로 들어갔다. 매출이
+    # 해가 갈수록 커지니 상위 15행이 전부 2024~2026년이었고, LLM 은 2020~2023년을
+    # 본 적조차 없이 "2025년부터 데이터가 있다"는 답을 냈다 — 총합만 전체
+    # 146행 기준으로 맞았다(2026-08-31 실측 재현). `_bounded_result_preview` 가
+    # 시계열 모양을 행 수보다 먼저 본다 — 상세 설계는 그 함수 docstring 참고.
+    result_preview, _rows_withheld = _bounded_result_preview(results, query)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_kr = datetime.now().strftime("%Y년 %m월 %d일")
+
+    # Extract actual table names for source attribution
+    table_source = _extract_table_sources(sql)
+
+    # Detect data date range from results for scope verification
+    _date_cols = [k for k in (results[0].keys() if results else [])
+                  if any(d in k.lower() for d in ("date", "month", "year", "날짜", "연도", "월"))]
+    _date_vals = set()
+    for row in results[:100]:
+        for dc in _date_cols:
+            v = row.get(dc)
+            if v is not None:
+                _date_vals.add(str(v))
+    data_range_hint = f"데이터에 포함된 날짜/기간 값: {sorted(_date_vals)[:20]}" if _date_vals else ""
+
+    # Pre-build conditional warnings (avoid backslash in f-string)
+    # ⚠️ 예전엔 `len(results) > 15` 로 판정했다 — 146행이 피벗으로 전부 표현돼도
+    # "상위 프리뷰"라고 잘못 경고해, LLM이 멀쩡한 전체 데이터를 스스로 또 잘라내는
+    # 원인이 될 수 있었다. 실제로 행이 빠졌는지(`_rows_withheld`)로 판정한다.
+    _preview_warning = ""
+    if _rows_withheld:
+        _preview_warning = f"⚠️ 위 JSON은 전체 {len(results)}행 중 일부만 담은 프리뷰입니다. 나머지 데이터도 존재하므로 프리뷰 기반으로 데이터 범위를 단정하지 마세요."
+
+    _limit_warning = ""
+    if len(results) >= 1000:
+        _limit_warning = (
+            f"⚠️ 결과가 {len(results)}행으로 LIMIT 1,000에 도달했습니다. "
+            "전체 데이터 중 일부만 포함되어 있습니다. "
+            '답변 마지막에 반드시 다음 경고를 추가하세요: '
+            '\'> ⚠️ 조회 결과가 1,000행 제한에 도달하여 일부 데이터만 표시되었습니다. '
+            '더 구체적인 조건으로 검색해주세요.\''
+        )
+
+    # 브랜드 표기 규칙 (2026-08-05 재정의)
+    #   브랜드는 스킨천사 · 우마(UM) · 좀비뷰티 · 커먼랩스 넷뿐이다.
+    #   Brand='CBT' 는 팀 값이 잘못 들어간 행이고 실제로는 스킨천사 매출이므로 SK 에 합산한다.
+    #   이전 규칙은 "CBT(중국사업 부문)로 병기"였는데, 그러면 브랜드별 표에 팀이 별도 행으로
+    #   남는다 — 노션 AI Tester 에 "cbt가 브랜드로 되어있습니다" 제보가 올라온 원인.
+    _brand_warning = ""
+    if re.search(r"Brand\s+(IN\s*\(|=\s*')[^)]*\b(CBT|UM|DD)\b", sql, re.IGNORECASE):
+        _brand_warning = (
+            "⚠️ **브랜드 표기 (매우 중요!)**: 브랜드는 **스킨천사(SKIN1004) · 우마(umma) · "
+            "좀비뷰티 · 커먼랩스** 넷뿐입니다.\n"
+            "- **`CBT` 는 브랜드가 아니라 스킨천사 매출입니다.** 조회 결과에 CBT 가 별도로 나오면 "
+            "**SK(스킨천사)와 합산해서** 하나의 항목으로 제시하세요. "
+            "\"중국사업부문\" 같은 별도 행으로 남기지 마세요.\n"
+            "- `UM` 은 **우마(umma)** 라는 별도 브랜드입니다.\n"
+            "- CBT·JBT·KBT 등은 **팀**입니다. 브랜드로 나열하지 마세요."
+        )
+
+    # 팀 표기 — 데이터는 코드, 사내 공식 명칭은 한글이다 (2026-08-11 확정).
+    # 코드를 그대로 내면 사용자가 자기 팀을 못 알아본다. 한글명을 앞세우고 코드를 병기한다.
+    _team_warning = ""
+    if re.search(r"Team_NEW", sql, re.IGNORECASE):
+        _team_warning = (
+            "⚠️ **팀 표기 (중요!)**: 조회 결과의 팀 코드는 **공식 한글 팀명으로 바꿔서** 제시하세요. "
+            "표·차트 라벨·본문 모두 `한글팀명(코드)` 형식으로 씁니다 (예: `영업1팀(B2B1)`).\n"
+            + "\n".join(f"- `{c}` → **{kr}**" for c, kr in TEAM_CODE2KR.items())
+            + "\n- 위 목록에 없는 값(`기타`·`OP` 등)은 정식 팀이 아니므로 "
+            "'기타'로 묶거나 표에서 제외하고, 그 사실을 한 줄로 밝히세요."
+        )
+
+    _ingredient_keywords = ("성분", "나이아신아마이드", "레티놀", "히알루론산", "판테놀", "세라마이드")
+    _ingredient_query = any(kw in query for kw in _ingredient_keywords) and any(
+        kw in query for kw in ("포함", "미포함", "함유", "안 들어", "안들어", "없는")
+    )
+    if _ingredient_query and re.search(r"(NOT\s+)?LIKE\s+'%", sql, re.IGNORECASE):
+        _ingredient_warning = (
+            "⚠️ **성분 데이터 한계 경고 (매우 중요!)**: 이 조회는 제품명(product_name) 텍스트 매칭으로 "
+            "성분 포함/미포함을 판단한 것이며, 실제 배합 성분(포뮬레이션) 테이블을 조회한 것이 아닙니다. "
+            "제품명에 성분명이 없다고 해서 그 제품에 실제로 해당 성분이 들어있지 않은 것은 아닙니다. "
+            "답변 요약 바로 아래에 반드시 다음 경고를 그대로 포함하세요: "
+            "\"⚠️ 본 결과는 제품명 기반 조회이며, 전체 제품의 실제 배합 성분 데이터는 보유하고 있지 않아 "
+            "정확한 성분 포함/미포함 여부와 다를 수 있습니다.\" "
+            "이 결과를 확정적인 '미포함 TOP' 순위처럼 단정적으로 제시하지 마세요."
+        )
+    else:
+        _ingredient_warning = ""
+
+    # B2B 할인 0원을 "할인을 안 했다"로 서술하는 것을 막는다.
+    # Discount_Coupon 에는 B2B 값이 구조적으로 들어오지 않는다 — 0 은 '없음'이 아니라 '해당 없음'이다.
+    # ⚠️ 프롬프트(sql_generator.txt)에만 적어두면 SQL 생성에는 반영돼도 **서술 프롬프트에는
+    #    닿지 않아** 답변이 그대로 오도한다 (2026-08-12 실측). 서술 단계에서 다시 막는다.
+    _b2b_discount_warning = ""
+    if re.search(r"Discount_Coupon", sql, re.IGNORECASE) and re.search(
+        r"Sales_Type\s*=\s*'B2B'", sql, re.IGNORECASE
+    ):
+        _b2b_discount_warning = (
+            "⚠️ **B2B 할인 서술 규칙 (필수)**: `Discount_Coupon` 은 B2C 전용 항목이라 "
+            "B2B 는 전 구간 0원으로 적재됩니다. 합계 0원을 **'할인을 하지 않았다'로 서술하지 마세요.** "
+            "요약에 \"이 항목은 B2C 전용이라 B2B 는 집계되지 않습니다\"를 반드시 포함하고, "
+            "'프로모션이 없었는지 확인이 필요하다', '정가 거래 중심으로 보인다' 같은 "
+            "추측성 해석은 붙이지 마세요. B2B 의 무상 지원은 FOC(무상 출고)로 확인한다고 안내하세요."
+        )
+
+    _result_header = f"총 {len(results)}행"
+    if _rows_withheld:
+        _result_header += ", 아래는 그중 일부 프리뷰"
+
+    prompt = f"""다음은 사용자의 질문과 BigQuery 실행 결과입니다.
+결과를 바탕으로 사용자에게 **구조화된 분석 보고서** 형태로 답변을 작성하세요.
+
+{LANGUAGE_DETECTION_RULE}
+
+## 오늘 날짜
+{today_kr} (오늘 기준)
+
+## 사용자 질문
+{query}
+
+## 실행된 SQL
+```sql
+{sql}
+```
+
+## 실행 결과 ({_result_header})
+```json
+{result_preview}
+```
+{_preview_warning}
+{_limit_warning}
+{data_range_hint}
+
+## 답변 형식 (반드시 아래 섹션 구조를 따르세요)
+
+### 📊 [질문에 맞는 간결한 제목]
+#### 요약
+[1-2문장으로 핵심 결론만. 가장 중요한 수치는 **굵게** 표시. 장황한 설명 금지!]
+#### 상세 데이터 (표)
+[마크다운 표로 정리. 숫자는 오른쪽 정렬(---:). 시계열은 전체 행 표시]
+#### 분석 및 인사이트
+[2-3개 bullet만. 각 1줄 이내. 비중/변화율/추세 중심. 문단형 서술 금지!]
+---
+*조회 기준: {today} | 내부 데이터베이스*
+> 💡 **이런 것도 물어보세요**
+> - [구체적 후속 질문 1 — 다른 기간/국가/제품 등 범위 확장]
+> - [구체적 후속 질문 2 — 관련 데이터 심화 분석]
+> - [구체적 후속 질문 3 — 다른 관점의 분석]
+
+⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문 3개]" 같은 플레이스홀더 텍스트를 절대 출력하지 마세요. 실제 사용자가 클릭해서 바로 질문할 수 있는 구체적 문장이어야 합니다.
+
+{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_future_period_note(sql)}
+오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
+⚠️ **데이터 출처 보안**: 답변 본문에서 테이블명(`SALES_ALL_Backup`, `Product`, `SALES_ALL` 등), 프로젝트 ID(`skin1004-319714`), 데이터셋명, 컬럼명(`Sales1_R`, `Total_Qty` 등)을 절대 노출하지 마세요. 출처를 언급해야 하면 '내부 데이터베이스'라고만 표현하세요.
+
+⚠️ **분량 제한 (최우선)**:
+- 전체 답변 8000자 이내 (표 포함). 8000자 초과 시 **요약 모드**로 전환:
+  - 상위 10건만 표시하고 나머지는 "외 N건" 으로 생략
+  - 상세 데이터 대신 집계/요약 통계만 제공
+  - ⛔ "전체 데이터가 필요하시면 말씀해주세요" 같은 안내 문구를 직접 쓰지 마세요.
+    실제로 그렇게 요청해도 아무 일도 일어나지 않던 문제가 있었습니다(2026-08-31).
+    데이터가 생략됐을 때 전체 다운로드 링크는 **시스템이 답변 끝에 자동으로
+    붙입니다** — 당신이 안내 문장을 쓸 필요가 없습니다.
+- 요약은 2문장 이내, 인사이트는 bullet 3개 이내 (각 1줄)
+- 장황한 해석/배경설명/가정 금지. 숫자와 팩트만!
+- SQL FORMAT 이슈 설명 금지 — 데이터 그대로 보여주기만 하면 됨
+
+## 작성 규칙
+- SQL 결과 데이터만 사용 (외부 정보 절대 금지)
+- 금액 표기: 1억 이상 → "약 12.3억원" 형태(실제 숫자 대입!), 1억 미만 → 천 단위 쉼표(예: 7,700만원). 퍼센트 소수점 1자리. ⚠️ "OO.O억원" 같은 플레이스홀더 출력 절대 금지! 반드시 실제 계산된 숫자를 넣으세요
+- 3행 이상 비교 → 마크다운 표 필수. 시계열은 전체 행 표시 (생략 금지)
+- 제품명(SET) 영어 원본 그대로 공백 포함 (한국어 번역 금지, 언더스코어 사용 금지)
+- 단순 수치 1개만 → "상세 데이터" 생략, 요약만
+- 기간 부족 시 첫 줄에 ⚠️ 표시. 질문 범위와 데이터 범위 불일치 시 명시
+- 비즈니스 인사이트 필수: 비중, 변화율, 추세, 집중도, 비교 관점
+- 조건 설명(브랜드, 기간)은 답변 끝에 짧게 괄호로
+- ⛔ 테이블명·데이터셋·프로젝트 ID 노출 금지. 출처는 '내부 데이터베이스'로만 쓴다.
+  "경로/위치가 어디냐"고 물어도 BigQuery 경로를 답으로 내지 마라 — 보안 이슈다.
+  (코드가 한 번 더 가리지만, 여기서 안 쓰는 것이 먼저다)
+- ⚠️ 진행 중인 달: 오늘은 {today_kr}입니다. 월별 추이·비교에 현재 월({today[:7]})이 있으면 **아직 끝나지 않은 달이라 최종 수치가 아니라는 점**을 밝히고, 추세에서 그 달을 완성된 과거 달과 나란히 놓고 비교하지 마세요.
+  ⛔ **"OO일까지의 부분 집계" 처럼 마감일을 지어내지 마라.** 조회는 오늘까지로 자르지 않고 **달 전체**를 본다 (2026-08-25 확정). 발주·예정처럼 오늘 이후 날짜 행도 함께 집계되므로 "8월 25일까지" 같은 문장은 **거짓**이 된다. 기간을 숨기거나 지어내지 말고, 조회가 어디까지였는지는 코드가 따로 붙인다.
+{_brand_warning}
+{_team_warning}
+{_ingredient_warning}
+{_b2b_discount_warning}
+"""
+
+    try:
+        # Answer generation: foreground. Chart: parallel with short timeout.
+        # User sees answer immediately; chart appended only if ready fast enough.
+        # ⚠️ with 블록으로 감싸지 마라. 블록 종료 시 shutdown(wait=True)가 걸려
+        # 아래 "차트 8초 넘으면 건너뛴다"는 로직이 무력화된다 — 느린 차트가
+        # 답변 전체를 그만큼 붙잡는다. 스트리밍 경로처럼 shutdown(wait=False)로 푼다.
+        chart_markdown = None
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        try:
+            answer_future = executor.submit(llm.generate, prompt, None, 0.05, 65536)
+            chart_llm = get_flash_client()
+            chart_future = executor.submit(
+                _try_generate_chart, chart_llm, query, sql, result_preview, results
+            )
+
+            answer = answer_future.result(timeout=120.0)
+            # Give chart up to 8s after answer is ready; skip if slow
+            try:
+                chart_markdown = chart_future.result(timeout=8.0)
+            except concurrent.futures.TimeoutError:
+                chart_markdown = None
+                logger.info("chart_generation_skipped_timeout")
+        finally:
+            executor.shutdown(wait=False)
+
+        if chart_markdown:
+            insight_markers = ["#### 분석 및 인사이트", "#### 분석", "### 분석 및 인사이트", "### 분석"]
+            inserted = False
+            for marker in insight_markers:
+                if marker in answer:
+                    answer = answer.replace(marker, f"#### 시각화\n{chart_markdown}\n\n{marker}", 1)
+                    inserted = True
+                    break
+            if not inserted:
+                answer = answer + f"\n\n#### 시각화\n{chart_markdown}"
+
+        # 합계는 답변 작성 LLM에 맡기지 않는다. 표는 잘 만들면서 합계 행만
+        # 빠뜨리는 붐따가 반복됐고, 사용자가 화면의 값을 손으로 더해야 했다.
+        # 조회 원본의 합산 가능한 열만 코드로 계산해 분석 절 앞에 붙인다.
+        totals_block = _build_table_totals_markdown(results)
+        if totals_block:
+            answer = _insert_table_totals(answer, totals_block)
+
+        # 배율만 틀린 금액 표기는 되돌린다 (스트리밍 경로와 같은 함수를 쓴다).
+        _repair = None
+        try:
+            from app.core.answer_check import money_scale_repairer
+            _repair = money_scale_repairer(results)
+        except Exception:
+            pass
+        if _repair:
+            answer = _repair(answer)
+
+        # 답변 속 수치가 조회 결과에서 나온 것인지 확인한다 (아래 함수 주석 참고).
+        answer += _number_check_notice(answer, results, query)
+
+        # 프리뷰가 일부 행을 못 보여줬으면(_rows_withheld) 전체를 받을 실제
+        # 방법을 답변에 붙인다. LLM이 스스로 "요청해주세요" 라고 써도 그 뒤에
+        # 아무 장치가 없었다(2026-08-31, 같은 질문 재발 사고) — 코드가 실제
+        # 링크로 대체·보증한다.
+        answer = _attach_full_data_download(
+            answer, results, state.get("user_id"), _rows_withheld, query)
+
+        answer += f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
+
+        # ⛔ 물류 수량 이상치는 **코드가 공시한다.** 프롬프트에 규칙을 넣고 배포한
+        #    뒤에도 "총 202,602,265,193개 · 압도적인 수출 규모" 가 그대로 나갔다
+        #    (2026-09-03 실측). 프롬프트는 확률이고 보증은 코드다.
+        # ⛔ **표보다 먼저 말한다** — 맨 뒤에 붙였더니 후속 질문 제안·실행된 쿼리
+        #    뒤로 밀려 정작 숫자를 읽는 사람 눈에 닿지 않았다 (2026-09-03 실측).
+        #    OP 재고 신선도 공시와 같은 규칙이다.
+        from app.core.logistics_quality import notice_for_sql as _log_qty_notice
+        # ⛔ 수량을 셀 수 없는 브랜드(UM·CBT)의 `0` 도 같은 자리에서 공시한다 —
+        #    표의 0 은 "안 팔렸다" 로 읽히는데 실제로는 **모르는 것**이다
+        #    (붐따 #156·#157). 물류 공시와 나란히 둬서 순서가 갈리지 않게 한다.
+        from app.core.qty_coverage import notice as _qty_cov_notice
+        # ⛔ 표가 전체가 아니면 그렇다고 말한다 — 프롬프트가 이미 알려주는데도
+        #    "총 8건" 이라고 단정한 사고가 두 번 났다 (붐따 #158·#160).
+        from app.core.result_truncation import notice as _trunc_notice
+        from app.core.logistics_amount import notice as _log_amt_notice
+        # ⛔ 한화 환산은 하지 않고, **못 한다고 말한다** — 그러지 않으면 LLM 이
+        #    물류비를 「한화 수출금액」이라고 내놓는다 (붐따 #162)
+        from app.core.logistics_amount import krw_notice as _log_krw_notice
+        from app.core.logistics_fx import notice as _log_fx_notice
+        answer = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                  + _log_krw_notice(sql, query)
+                  + _log_fx_notice(sql, query)
+                  + _qty_cov_notice(sql, results)
+                  + _trunc_notice(results, _rows_withheld)
+                  + _mask_internal_paths(answer) + _future_period_note(sql))
+        return {"answer": answer}
+    except Exception as e:
+        logger.error("answer_formatting_failed", error=str(e))
+        # Fallback: return raw results
+        return {
+            "answer": f"SQL 실행 결과 ({len(results)}행):\n```json\n{result_preview}\n```"
+        }
+
+
+# --- LLM-facing result preview — 2026-08-31 (같은 질문 두 번째 사고) ---
+#
+# "인도네시아의 2020년-2026년 현재까지의 B2C, B2B 월별 매출"(146행)이 표에
+# 2025년부터만 보였다. 첫 조치(행 상한 15→200)로는 안 고쳐졌다 — 실측해 보니
+# 146행 전부가 LLM 프롬프트에 들어갔고 총합도 정확했다. 진짜 원인은
+# `_build_smart_preview`가 "매출 상위 15행"을 뽑는데, 그 전략이 **시계열
+# 질문에도 그대로 적용된 것**이었다 (`len(results) > 100` 이 `_is_timeseries`
+# 분기보다 먼저 걸린다). 매출은 해가 갈수록 커지므로 상위 15행이 전부
+# 2024~2026년이었고, LLM은 2020~2023년을 아예 본 적이 없었다.
+#
+# 그래서 시계열 모양은 행 수 판정보다 먼저 시도한다 — 값 기준 표본이 기간을
+# 가리는 것이 원래 사고의 정체이기 때문이다.
+
+_TIMESERIES_KEYWORDS = ("월별", "주차별", "주별", "일별", "분기별", "추이", "트렌드", "변동")
+
+
+def _is_timeseries_query(query: str) -> bool:
+    return any(kw in query for kw in _TIMESERIES_KEYWORDS)
+
+
+def _is_product_col(col_name: str) -> bool:
+    """Product name columns (SET) use underscores instead of spaces."""
+    cl = col_name.lower()
+    return any(kw in cl for kw in ("product", "set", "제품", "item_name", "sku_name"))
+
+
+def _display_round(v):
+    """프롬프트에 넣는 수치를 **화면에 찍힐 정밀도로 미리 줄인다.**
+
+    ⛔ 원화 매출을 `33399393.5798` 로 넘기지 마라. 소수점 네 자리가 자릿수 구분의
+       미끼가 된다 — 실제로 Flash 가 표에 `33,399,393,579.80`(정확히 1,000배)을
+       적었고 요약은 "약 828.7억원"이 됐다. 진짜 값은 **8,287만원**이었다
+       (2026-08-31 사용자 제보: *"억대가 아닌데 억대로 나옴"*). 코드가 계산한
+       합계표는 옆에서 8,403만원이라고 맞게 적고 있었는데도 아무도 못 봤다.
+    ⚠️ 표를 그리는 `_fast_fmt_cell` 과 **같은 규칙**을 쓴다. 어긋나면 LLM 이 받은
+       값과 코드가 찍는 값이 달라져, 본문과 합계표가 서로 다른 숫자를 말한다.
+    ⚠️ 비율·배수(ROAS 3.42 등)는 소수점이 뜻을 가지므로 두 자리까지 남긴다.
+    """
+    import math as _math
+    from decimal import Decimal as _D
+
+    if isinstance(v, bool) or not isinstance(v, (float, _D)):
+        return v
+    f = float(v)
+    if not _math.isfinite(f):
+        return v
+    if f == int(f) or abs(f) >= 10000:
+        return int(round(f))
+    return round(f, 2)
+
+
+def _humanize_row(row: dict, max_text_len: int = 80) -> dict:
+    humanized = {}
+    for k, v in row.items():
+        if isinstance(v, str) and _is_product_col(k):
+            v = v.replace("_", " ")
+        if isinstance(v, str) and len(v) > max_text_len:
+            humanized[k] = v[:max_text_len] + "..."
+        else:
+            humanized[k] = _display_round(v)
+    return humanized
+
+
+def _rows_to_json_preview(results: list) -> str:
+    return json.dumps([_humanize_row(r) for r in results], ensure_ascii=False, indent=2, default=str)
+
+
+def _even_span_sample_preview(results: list, limit: int = 40) -> str:
+    """Last-resort preview for a time series too large to pivot or send whole.
+
+    Never sorts by value — that is exactly what hid 2020-2023 behind
+    2024-2026 in production (Indonesia B2C/B2B monthly, 146 rows,
+    2026-08-31). Instead takes an even stride across the *original* row
+    order — BigQuery's own `ORDER BY month`, per
+    `prompts/sql_generator.txt`'s "월별 추이" convention — so both ends of
+    the requested span stay represented even when the whole thing can't
+    fit in the prompt budget.
+    """
+    n = len(results)
+    if n <= limit:
+        sample = results
+    else:
+        step = n / limit
+        idx = sorted({int(i * step) for i in range(limit)} | {0, n - 1})
+        sample = [results[i] for i in idx]
+    preview = {
+        "note": (
+            f"시간순 균등 표본 {len(sample)}행 (전체 {n}행 중 — 값 크기가 아니라 "
+            "기간 전체를 고르게 대표하도록 뽑음. 값 기준으로 뽑으면 최근/큰 값 "
+            "구간만 남아 이전 기간이 없는 것처럼 보인다)"
+        ),
+        "sample": [_humanize_row(r) for r in sample],
+    }
+    return json.dumps(preview, ensure_ascii=False, indent=2, default=str)
+
+
+def _build_result_preview(results: list, query: str) -> "tuple[str, bool]":
+    """Build the LLM-facing preview of SQL results.
+
+    Returns (preview_text, rows_withheld). `rows_withheld` is True only
+    when the preview does NOT represent every row's contribution — e.g. a
+    top-N-by-value sample. A pivoted time series is NOT withheld even
+    though it renders far fewer *lines* than `results` has rows: every
+    row's value is folded into a pivot cell, nothing is dropped, only
+    reshaped (`_try_pivot_timeseries` keeps every time period; only the
+    number of *groups* is capped, and a plain B2C/B2B split has just two).
+    """
+    if not results:
+        return "[]", False
+
+    is_ts = _is_timeseries_query(query)
+
+    if is_ts:
+        if len(results) <= 60:
+            # Small enough to just send every row — nothing withheld.
+            return _rows_to_json_preview(results), False
+
+        pivot = _try_pivot_timeseries(results, query)
+        if pivot and len(pivot) <= 5000:
+            return pivot, False
+
+        if len(results) <= 100:
+            # Pivot didn't apply (e.g. no clear group column) but still
+            # small enough to send whole.
+            return _rows_to_json_preview(results), False
+
+        # Can't pivot, too many rows to send whole. The one case where a
+        # time-series question genuinely can't show every row — but it
+        # still must not be a value-biased slice.
+        return _even_span_sample_preview(results), True
+
+    if len(results) > 100:
+        try:
+            return _build_smart_preview(results, query), True
+        except Exception as e:
+            logger.warning("smart_preview_failed_fallback", error=str(e))
+            return _rows_to_json_preview(results[:15]), True
+
+    if len(results) > 15:
+        return _rows_to_json_preview(results[:15]), True
+
+    return _rows_to_json_preview(results), False
+
+
+def _bounded_result_preview(results: list, query: str, hard_cap: int = 5000) -> "tuple[str, bool]":
+    """`_build_result_preview` plus an absolute size safety net.
+
+    Even a compact preview (pivot, smart-sample) can occasionally exceed
+    the prompt budget. This never re-sorts by value on its own way out —
+    it just takes the first few rows and marks the result as withheld.
+    """
+    preview, withheld = _build_result_preview(results, query)
+    if len(preview) > hard_cap:
+        preview = _rows_to_json_preview(results[:8])
+        withheld = True
+    return preview, withheld
+
+
+# 채팅에 답할 때는 코드가 실제 사실을 판정하고, LLM은 그 사실을 문장으로만
+# 고른다는 이 프로젝트의 원칙과 같다 — "전체 데이터가 필요하시면
+# 말씀해주세요/요청해주세요" 처럼 LLM이 스스로 지어내는 안내는 아무 장치도
+# 없는 빈 약속이었다("RAW 파일을 줘"가 두 번 반복됐다, 2026-08-31). 프롬프트도
+# 이 문구를 쓰지 말라고 지시하지만(확률), 실제로 새어 나온 문장은 여기서
+# 지운다(보증).
+_EMPTY_DOWNLOAD_PROMISE_RE = re.compile(
+    r"[^\n]*전체[^\n]*데이터[^\n]*필요[^\n]*주세요[^\n]*\n?"
+)
+
+
+# "몇십 행이면 이미 스프레드시트다" — 130행짜리 월별 표가 피벗으로 프롬프트에
+# 전부 들어가면(rows_withheld=False) 예전엔 링크가 아예 없었다. 사용자 반응:
+# "csv로 준다며? 행이 많으면"(2026-08-31). 2행짜리 답에는 달지 않는다 — 잡음이다.
+_CSV_OFFER_MIN_ROWS = 20
+
+
+def _attach_full_data_download(
+    answer: str, results: list, user_id: Optional[int], rows_withheld: bool,
+    query: str = "",
+) -> str:
+    """Strip any empty "요청해주세요" promise and attach a real CSV download.
+
+    ⛔ 예전엔 `rows_withheld`(LLM 프리뷰에서 실제로 빠진 행이 있었는가)일 때만
+       링크를 달았다 — 프리뷰가 전부 담았으면(피벗 등) 결과가 몇 백 행이어도
+       내려받을 방법이 없었다. 지금은 두 조건 중 하나면 단다:
+         ① 실제로 숨긴 게 있다(rows_withheld) — 크기와 무관하다, 화면 밖에
+            있는 것 자체가 이유다
+         ② 숨긴 건 없지만 결과가 `_CSV_OFFER_MIN_ROWS` 이상 — 화면에 다
+            보여줬어도 몇십 행이면 엑셀로 옮기고 싶을 만하다
+    ⚠️ 문구를 갈라 둔다. "전체"는 **화면에 없는 것까지 준다**는 주장이라
+       rows_withheld 일 때만 쓴다 — 아닐 땐 이미 다 보여준 것을 내려받는
+       것뿐이라 "전체"를 붙이면 숨긴 걸 더 주는 것처럼 거짓 주장이 된다.
+    """
+    answer = _EMPTY_DOWNLOAD_PROMISE_RE.sub("", answer)
+    # ⛔ 있는 기능을 없다고 쓴 문장을 지운다 (붐따 #161) — "엑셀 파일 생성은
+    #    지원하지 않습니다" 가 실제로 나갔고, 사용자는 그 말을 믿고 물러섰다
+    from app.core.file_request import strip_denials, wants_file
+    answer = strip_denials(answer)
+    if not user_id or not results:
+        return answer
+    # ⛔ **달라고 했으면 행 수를 따지지 않는다.** 8행짜리 결과가 두 조건 어디에도
+    #    안 걸려 "엑셀로 뽑아줘" 에 아무것도 안 붙었다 (붐따 #161). 잡음을
+    #    걱정한 조건이었는데, 사용자가 요청했을 때는 그게 잡음이 아니다
+    asked = wants_file(query)
+    if not asked and not rows_withheld and len(results) < _CSV_OFFER_MIN_ROWS:
+        return answer
+    try:
+        from app.core.sql_result_store import save as _save_full_result
+        cols = list(results[0].keys())
+        labels = {c: _COL_LABELS.get(c.lower(), c) for c in cols}
+        token = _save_full_result(user_id, cols, results, labels=labels)
+        if rows_withheld:
+            answer += f"\n\n> 📄 [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
+        else:
+            answer += f"\n\n> 📄 [CSV로 다운로드 (총 {len(results)}행)](/api/sql-results/{token}/csv)"
+        if asked:
+            # ⚠️ 우리가 주는 것은 CSV 다 — 엑셀에서 바로 열리지만 .xlsx 는 아니다.
+            #    "엑셀 파일" 이라고 부르면 확장자가 다른 것을 숨기게 된다
+            answer += ("\n> (엑셀에서 바로 열리는 CSV 입니다 — .xlsx 파일 자체를 "
+                       "만들지는 못합니다)")
+    except Exception as e:
+        logger.warning("format_answer_csv_offer_failed", error=str(e)[:150])
+    return answer
+
+
+def _try_pivot_timeseries(results: list, query: str) -> str:
+    """Pivot grouped time-series data into a compact table for LLM.
+
+    Converts long-format (month, mall, revenue) → pivot (mall rows × month columns).
+    Returns markdown table string, or empty string if pivot fails.
+    """
+    if not results or len(results) < 3:
+        return ""
+    try:
+        keys = list(results[0].keys())
+        if len(keys) < 3:
+            return ""
+
+        # Detect time column (first string column with time-like values)
+        time_col = None
+        group_col = None
+        value_col = None
+
+        # ⚠️ 예전엔 결과 앞 10행 + 하드코딩된 연도(2024~2026)만 봤다. 시계열이
+        # 이른 연도부터 시작하면(예: 2020년) 앞 10행이 전부 2020년이라 아무
+        # 연도도 걸리지 않아 시간 열 자체를 못 찾고 피벗이 조용히 실패했다 —
+        # "이른 기간을 놓친다"는 이 파일 전체가 고치려는 문제와 같은 모양의
+        # 함정이 감지 로직 안에도 있었다(2026-08-31 테스트 작성 중 발견).
+        # 앞·뒤 표본을 함께 보고, 연도는 패턴(20xx)으로 판정한다.
+        _sample_rows = results[:5] + results[-5:] if len(results) > 10 else results
+        for k in keys:
+            vals = [str(r.get(k, "")) for r in _sample_rows]
+            is_time = any(
+                re.search(r"20\d{2}", v) or any(h in v for h in ("월", "분기", "Q1", "Q2", "Q3", "Q4"))
+                for v in vals
+            )
+            if is_time and not time_col:
+                time_col = k
+                continue
+            # Numeric column
+            try:
+                float(results[0].get(k, 0) or 0)
+                if not value_col:
+                    value_col = k
+            except (ValueError, TypeError):
+                if not group_col:
+                    group_col = k
+
+        if not (time_col and group_col and value_col):
+            return ""
+
+        # Build pivot
+        from collections import OrderedDict
+        time_order = list(OrderedDict.fromkeys(str(r.get(time_col, "")) for r in results))
+        # ⚠️ 원본 등장 순서에만 기댔었다 — SQL이 `ORDER BY month` 를 안 넣거나
+        # 다른 축으로 먼저 정렬하면 시간 열 순서가 뒤섞일 수 있다. 이 프로젝트
+        # 월/분기/일 표기는 전부 `YYYY-MM`류 ISO 접두 형식이라
+        # (`prompts/sql_generator.txt` "월별: FORMAT_DATETIME('%Y-%m', ...)")
+        # 문자열 정렬만으로 시간순이 보장된다.
+        time_order = sorted(time_order)
+        groups = list(OrderedDict.fromkeys(str(r.get(group_col, "")) for r in results))
+
+        pivot = {}
+        group_totals = {}
+        for r in results:
+            t = str(r.get(time_col, ""))
+            g = str(r.get(group_col, ""))
+            v = float(r.get(value_col, 0) or 0)
+            if g not in pivot:
+                pivot[g] = {}
+                group_totals[g] = 0
+            pivot[g][t] = v
+            group_totals[g] += v
+
+        # Sort groups by total descending, limit to top 20
+        groups = sorted(groups, key=lambda g: group_totals.get(g, 0), reverse=True)[:20]
+
+        # Build markdown table
+        header = f"| {group_col} | " + " | ".join(time_order) + " | 합계 |"
+        separator = "|---:" + "|---:" * len(time_order) + "|---:|"
+        rows = []
+        for g in groups:
+            vals = [pivot.get(g, {}).get(t, 0) for t in time_order]
+            total = sum(vals)
+            formatted = [f"{int(v):,}" for v in vals]
+            rows.append(f"| {g} | " + " | ".join(formatted) + f" | {int(total):,} |")
+
+        table = f"## 피벗 테이블 ({group_col} × {time_col}, 값: {value_col})\n\n{header}\n{separator}\n" + "\n".join(rows)
+        table += f"\n\n*총 {len(results)}행 → 피벗: {len(groups)}그룹 × {len(time_order)}기간*"
+        logger.info("pivot_timeseries_built", groups=len(groups), periods=len(time_order))
+        return table
+    except Exception as e:
+        logger.warning("pivot_timeseries_failed", error=str(e))
+        return ""
+
+
+def _build_smart_preview(results: list, query: str) -> str:
+    """Build a smart preview for large result sets (>100 rows).
+
+    Instead of blindly sending the first 20 rows (which may be alphabetically
+    biased), this produces an aggregate summary + top-20-by-revenue sample
+    so the LLM can write a meaningful answer.
+    """
+    if not results:
+        return "[]"
+
+    keys = list(results[0].keys())
+
+    # Auto-detect revenue/quantity columns by name AND by checking actual data types
+    _rev_keywords = ("revenue", "sales", "매출", "amount", "금액")
+    _qty_keywords = ("qty", "quantity", "수량")
+    # Use exact word boundaries to avoid "Country" matching "count"
+    rev_cols = [k for k in keys if any(w == k.lower() or k.lower().startswith(w) or k.lower().endswith(w) or f"_{w}" in k.lower() or f"{w}_" in k.lower() for w in _rev_keywords)]
+    qty_cols = [k for k in keys if any(w == k.lower() or k.lower().startswith(w) or k.lower().endswith(w) or f"_{w}" in k.lower() or f"{w}_" in k.lower() for w in _qty_keywords)]
+
+    # Validate detected columns are actually numeric by sampling first row
+    def _is_numeric_col(col_name: str) -> bool:
+        for row in results[:5]:
+            v = row.get(col_name)
+            if v is not None:
+                try:
+                    float(v)
+                    return True
+                except (ValueError, TypeError):
+                    return False
+        return False
+
+    rev_cols = [c for c in rev_cols if _is_numeric_col(c)]
+    qty_cols = [c for c in qty_cols if _is_numeric_col(c)]
+
+    # Detect dimension columns (everything that's not a metric)
+    metric_cols = set(rev_cols + qty_cols)
+    dim_cols = [k for k in keys if k not in metric_cols]
+
+    # Aggregate summary
+    summary_parts = [f"총 행수: {len(results)}"]
+    for dc in dim_cols:
+        unique_vals = set(str(row.get(dc, "")) for row in results if row.get(dc) is not None)
+        summary_parts.append(f"고유 {dc} 수: {len(unique_vals)}")
+        if len(unique_vals) <= 15:
+            summary_parts.append(f"  값: {sorted(unique_vals)}")
+
+    for rc in rev_cols:
+        total = sum(float(row.get(rc) or 0) for row in results)
+        summary_parts.append(f"총 {rc}: {total:,.0f}")
+    for qc in qty_cols:
+        total = sum(float(row.get(qc) or 0) for row in results)
+        summary_parts.append(f"총 {qc}: {total:,.0f}")
+
+    # Sort by first revenue column DESC and take top 20
+    sort_col = rev_cols[0] if rev_cols else (qty_cols[0] if qty_cols else None)
+    if sort_col:
+        sorted_rows = sorted(results, key=lambda r: float(r.get(sort_col) or 0), reverse=True)
+    else:
+        sorted_rows = results
+    top_rows = sorted_rows[:15]
+
+    # ⛔ 여기 있던 것은 `_humanize_row` 의 **사본**이었다 — 긴 문자열만 자르고
+    #    수치는 원본 그대로 넘겼다. 그래서 100행 넘는 결과에서는 `_display_round`
+    #    가 걸리지 않아 1,000배 사고의 미끼(원 단위 소수점)가 그대로 남았다.
+    #    제품명 언더스코어 처리도 이쪽에만 빠져 있었다. 한 곳을 쓴다.
+    truncated_rows = [_humanize_row(row) for row in top_rows]
+
+    preview = {
+        "summary": "\n".join(summary_parts),
+        "top_15_sample": truncated_rows,
+    }
+    return json.dumps(preview, ensure_ascii=False, indent=2, default=str)
+
+
+def _try_generate_chart(llm, query: str, sql: str, result_preview: str, results: list) -> str:
+    """Attempt to generate an interactive chart for the SQL results.
+
+    Returns a ```chart-config``` markdown block with Chart.js JSON, or empty string.
+    The frontend renders this interactively with animations and tooltips.
+    """
+    from app.core.chart import build_chartjs_config, get_chart_config_prompt, apply_chart_intent
+
+    # ⚠️ 원문을 INFO 로만 남기면 프로덕션에서 사라진다 — stdlib 기본 레벨이 WARNING 이라
+    # 앱 INFO 로그는 한 줄도 저널에 남지 않는다 (2026-08-11 확인: info 0 / warn 91 / err 46).
+    # 실패를 진단하려면 실패 경로에서 원문을 함께 남겨야 한다.
+    config_json = ""
+    try:
+        # Truncate SQL and results to prevent prompt overflow → chart config JSON truncation
+        sql_short = sql[:300] + "..." if len(sql) > 300 else sql
+        preview_short = result_preview[:800] + "..." if len(result_preview) > 800 else result_preview
+        config_prompt = get_chart_config_prompt(query, sql_short, preview_short, len(results))
+        config_json = llm.generate_json(config_prompt)
+        logger.info("chart_config_raw", config_json=config_json[:500])
+        config = json.loads(config_json)
+        # Chart semantics are server-owned.  The model may suggest labels and
+        # columns, but YoY/trend/share intent is normalized deterministically.
+        config = apply_chart_intent(config, query, results)
+
+        # Force chart when user explicitly requested visualization
+        _CHART_REQUEST = ("차트", "그래프", "시각화", "그려", "그려줘", "chart", "graph", "시각화해", "도표", "플롯", "분기별", "월별", "추이", "비중")
+        user_requested_chart = any(kw in query.lower() for kw in _CHART_REQUEST)
+        if not config.get("needs_chart"):
+            if user_requested_chart:
+                logger.info("chart_forced_by_user_request", config=config)
+                config["needs_chart"] = True
+            else:
+                logger.info("chart_not_needed", config=config)
+                return ""
+
+        # Force line chart for monthly/time-series queries
+        _TREND_HINTS = ("월별", "월간", "추이", "트렌드", "trend", "monthly")
+        if any(h in query.lower() for h in _TREND_HINTS):
+            if config.get("chart_type") in ("bar", "grouped_bar", "stacked_bar"):
+                logger.info("chart_type_overridden_to_line", original=config["chart_type"], reason="trend query")
+                config["chart_type"] = "line"
+
+        logger.info("chart_requested", chart_type=config.get("chart_type"), group_column=config.get("group_column"))
+
+        # Build Chart.js config JSON (rendered interactively by frontend)
+        # ⛔ 차트를 못 그리면 **말한다.** 예전엔 빈 문자열을 돌려줘 화면에
+        #    아무 흔적도 남지 않았다 — 붐따 #145 「차트가 안나옴」 · #165
+        #    「월별인데 시각화를 못나타냄」 이 둘 다 이 침묵이었다. 사용자는
+        #    자기가 잘못 물은 줄 알고 같은 질문을 되풀이한다 (#165 는 3회).
+        # ⚠️ 차트가 나와도 온전하지 않으면(계열 제외) 같은 줄로 알린다.
+        chart_notes = []
+        chartjs_json = build_chartjs_config(config, results, notes=chart_notes)
+        note = ("\n\n> ⚠️ " + chart_notes[0]) if chart_notes else ""
+        if chartjs_json:
+            return f"\n\n```chart-config\n{chartjs_json}\n```" + note
+        logger.warning("chartjs_config_returned_none", note=chart_notes[:1])
+        return note
+    except Exception as e:
+        logger.error("chart_generation_skipped", error=str(e), error_type=type(e).__name__,
+                     raw=config_json[:600], raw_len=len(config_json), query=query[:80])
+        return ""
+
+
+# --- Routing Functions ---
+
+
+def should_execute(state: AgentState) -> str:
+    """Decide whether to execute SQL or return error.
+
+    Args:
+        state: Current agent state.
+
+    Returns:
+        Next node name.
+    """
+    if state.get("sql_valid"):
+        return "execute_sql"
+    return "format_answer"
+
+
+def should_retry(state: AgentState) -> str:
+    """Decide whether to retry SQL generation.
+
+    Args:
+        state: Current agent state.
+
+    Returns:
+        Next node name.
+    """
+    retry_count = state.get("retry_count", 0)
+    if state.get("error") and retry_count < 2:
+        return "generate_sql"
+    return "format_answer"
+
+
+# --- Build Graph ---
+
+
+def build_sql_agent_graph() -> StateGraph:
+    """Build the Text-to-SQL LangGraph workflow.
+
+    Returns:
+        Compiled LangGraph StateGraph.
+    """
+    workflow = StateGraph(AgentState)
+
+    # Add nodes
+    workflow.add_node("generate_sql", generate_sql)
+    workflow.add_node("validate_sql", validate_sql_node)
+    workflow.add_node("execute_sql", execute_sql)
+    workflow.add_node("format_answer", format_answer)
+
+    # Define edges
+    workflow.set_entry_point("generate_sql")
+    workflow.add_edge("generate_sql", "validate_sql")
+    workflow.add_conditional_edges(
+        "validate_sql",
+        should_execute,
+        {
+            "execute_sql": "execute_sql",
+            "format_answer": "format_answer",
+        },
+    )
+    workflow.add_edge("execute_sql", "format_answer")
+    workflow.add_edge("format_answer", END)
+
+    return workflow.compile()
+
+
+# Module-level compiled graph
+sql_agent = build_sql_agent_graph()
+
+
+def _extract_previous_sql(conversation_context: str) -> str:
+    """Extract the last executed SQL from conversation context.
+
+    Looks for SQL blocks in previous assistant messages.
+    """
+    import re as _re
+    # Match SQL in code blocks
+    matches = _re.findall(r'```sql\s*\n(.*?)\n```', conversation_context, _re.DOTALL)
+    if matches:
+        return matches[-1].strip()
+    # Match SELECT statements directly
+    select_matches = _re.findall(
+        r'(SELECT\s+[\s\S]*?LIMIT\s+\d+)',
+        conversation_context,
+        _re.IGNORECASE,
+    )
+    if select_matches:
+        return select_matches[-1].strip()
+    return ""
+
+
+def _prepend_data_update_notice(answer: str, sql: str) -> str:
+    """Put an exact-table refresh disclosure before a BigQuery answer."""
+    from app.core.safety import data_update_notice_for_sql
+
+    notice = data_update_notice_for_sql(sql)
+    if not notice:
+        return answer
+    logger.info("data_update_notice_added", tables=_extract_table_sources(sql))
+    return f"{notice}\n\n{answer}" if answer else notice
+
+
+async def run_sql_agent_unlimited(
+    previous_sql: str,
+    query: str,
+    model_type: str = MODEL_GEMINI,
+    can_view_fi: bool = False,
+) -> str:
+    """Re-run a previous SQL query without the LIMIT restriction.
+
+    Used when user confirms they want full data after a 10000-row truncation warning.
+
+    Args:
+        previous_sql: The SQL from the previous query to re-run.
+        query: Original user query for context.
+        model_type: LLM model type.
+
+    Returns:
+        Formatted answer with full data.
+    """
+    import re as _re
+
+    if not previous_sql:
+        return "이전 쿼리를 찾을 수 없습니다. 원래 질문을 다시 해주세요."
+
+    # Remove LIMIT clause from SQL
+    unlimited_sql = _re.sub(r'\s*LIMIT\s+\d+\s*$', '', previous_sql, flags=_re.IGNORECASE).strip()
+
+    logger.info("sql_agent_unlimited_rerun", sql=unlimited_sql[:200])
+
+    # Validate
+    allowed_tables = _allowed_tables_from_sources(None, can_view_fi)
+    is_valid, error_msg = validate_sql(
+        unlimited_sql,
+        allowed_tables=allowed_tables,
+    )
+    if not is_valid:
+        if error_msg == FI_ACCESS_DENIED_MESSAGE:
+            return FI_ACCESS_DENIED_MESSAGE
+        return f"SQL 검증 실패: {error_msg}"
+
+    try:
+        bq = get_bigquery_client()
+        results = bq.execute_query(unlimited_sql, timeout=300.0, max_rows=100000)
+        total_rows = len(results)
+        logger.info("sql_unlimited_executed", row_count=total_rows)
+
+        if not results:
+            return "조회 결과가 없습니다."
+
+        # Format with Flash
+        llm = get_flash_client()
+        # For very large results, provide summary only
+        if total_rows > 500:
+            preview = _build_smart_preview(results, query)
+        else:
+            preview = json.dumps(results[:50], ensure_ascii=False, indent=2, default=str)
+
+        prompt = f"""사용자가 전체 데이터를 요청했습니다. LIMIT 없이 재실행한 결과입니다.
+
+## 사용자 질문
+{query}
+
+## 실행 결과 (총 {total_rows}행)
+```json
+{preview}
+```
+
+## 답변 규칙
+1. 총 {total_rows}행의 전체 데이터를 조회했다고 안내하세요.
+2. 핵심 요약 (상위 항목, 합계 등)을 마크다운 표로 보여주세요.
+3. 데이터가 너무 많아 전부 표시할 수 없는 경우 상위 항목 요약 + 전체 통계를 제공하세요.
+4. 한국어로 답변하세요.
+5. 금액: 1억 이상은 "약 OO.O억원", 1억 미만은 천 단위 쉼표."""
+
+        answer = llm.generate(prompt, temperature=0.05)
+        totals_block = _build_table_totals_markdown(results)
+        answer = _insert_table_totals(answer, totals_block) if totals_block else answer
+        return _prepend_data_update_notice(answer, unlimited_sql)
+
+    except Exception as e:
+        logger.error("sql_unlimited_failed", error=str(e))
+        return f"전체 데이터 조회 중 오류가 발생했습니다: {str(e)}"
+
+
+async def run_sql_agent(
+    query: str,
+    conversation_context: str = "",
+    model_type: str = MODEL_GEMINI,
+    brand_filter: Optional[str] = None,
+    enabled_sources: Optional[list] = None,
+    can_view_fi: bool = False,
+    user_id: Optional[int] = None,
+) -> str:
+    """Run the Text-to-SQL agent on a query.
+
+    Args:
+        query: Natural language question about data.
+        conversation_context: Previous conversation context for reference resolution.
+        model_type: "gemini" or "claude" — which LLM to use.
+        brand_filter: Comma-separated brand codes (e.g. "SK,CL,CBT" or "UM").
+        enabled_sources: List of enabled source keys (e.g. ["BigQuery 제품"]) for table filtering.
+        user_id: Authenticated caller — lets `format_answer` offer a CSV
+            download of the full result when its preview had to withhold rows.
+
+    Returns:
+        Natural language answer based on SQL results.
+    """
+    initial_state: AgentState = {
+        "query": query,
+        "route_type": "text_to_sql",
+        "generated_sql": None,
+        "sql_valid": None,
+        "sql_result": None,
+        "retrieved_docs": None,
+        "doc_relevance": None,
+        "answer": "",
+        "needs_retry": False,
+        "retry_count": 0,
+        "error": None,
+        "messages": None,
+        "conversation_context": conversation_context,
+        "model_type": model_type,
+        "brand_filter": brand_filter,
+        "can_view_fi": can_view_fi,
+        "enabled_sources": enabled_sources,
+        "user_id": user_id,
+    }
+
+    import asyncio
+    logger.info("sql_agent_started", query=query)
+
+    def _run_sync() -> str:
+        state = dict(initial_state)
+        state.update(generate_sql(state))
+        state.update(validate_sql_node(state))
+        if state.get("sql_valid"):
+            conv_ctx = state.get("conversation_context", "")
+            ck = (_cache_key(query, brand_filter)
+                  if not conv_ctx and not _is_relative_period_query(query) else None)
+            state["generated_sql"] = _enforce_partition_filter(
+                state.get("generated_sql", ""), query,
+                cache_key=ck, brand_filter=brand_filter,
+                can_view_fi=can_view_fi,
+                allowed_tables=_allowed_tables_from_sources(enabled_sources, can_view_fi),
+            )
+            state.update(execute_sql(state))
+        state.update(format_answer(state))
+        return _prepend_data_update_notice(
+            state.get("answer", ""), state.get("generated_sql", "")
+        )
+
+    answer = await asyncio.to_thread(_run_sync)
+    logger.info("sql_agent_completed", answer_length=len(answer))
+    return answer
+
+
+# --- Fast-answer experiment (BQ_FAST_ANSWER=1): template table first, short LLM insights after ---
+
+_COL_LABELS = {
+    "total_revenue": "매출액 (원)", "revenue": "매출액 (원)", "sales": "매출액 (원)",
+    "total_quantity": "판매수량 (개)", "total_qty": "판매수량 (개)", "quantity": "판매수량 (개)",
+    "total_orders": "주문 건수", "product_name": "제품", "product": "제품",
+    "cost_krw": "광고비 (원)", "ad_spend_krw": "광고비 (원)",
+    "conversion_value_krw": "전환가치 (원)", "impressions": "노출수",
+    "clicks": "클릭수", "conversions": "전환수", "cart_adds": "장바구니 추가수",
+    "op_income": "영업이익 (원)", "operating_income": "영업이익 (원)",
+    "gross_profit": "매출총이익 (원)", "direct_cost": "직접비 (원)",
+    "sales1_r": "매출액 (원)", "change_amount": "증감액 (원)",
+    "country": "국가", "month": "월", "quarter": "분기", "year": "연도",
+    "mall_classification": "채널", "company_name": "판매처", "team_new": "팀",
+    "brand": "브랜드", "line": "라인", "date": "날짜", "continent1": "대륙", "continent2": "권역",
+}
+
+
+# 표의 숫자라고 전부 더할 수 있는 것은 아니다. ROAS·CTR·평균·단가·날짜를
+# 더하면 숫자는 나오지만 의미는 틀린다. 아래 계약은 "합산 가능한 원시/금액/건수"
+# 만 허용하고 파생 비율·시점·식별자는 먼저 제외한다.
+_TOTAL_EXCLUDED_TOKENS = (
+    "rate", "ratio", "share", "percent", "percentage", "pct", "average", "avg",
+    "mean", "median", "roas", "roi", "ctr", "cvr", "cpc", "cpm", "cpa", "cpv",
+    "margin", "growth", "rank", "score", "price", "unit_price", "per_unit", "per",
+    "id", "identifier", "code", "number",
+    "date", "time", "year", "month", "quarter", "week", "day", "hour",
+    "stock", "inventory", "balance",
+    "비율", "비중", "퍼센트", "평균", "단가", "순위", "점수", "성장률", "증감률",
+    "날짜", "일자", "연도", "분기", "시간", "재고", "잔액", "번호", "코드", "식별자",
+)
+_TOTAL_ADDITIVE_TOKENS = (
+    "revenue", "sales", "amount", "cost", "spend", "expense", "fee", "profit",
+    "foc", "discount", "coupon", "qty", "quantity", "count", "order", "orders",
+    "impression", "impressions", "click", "clicks", "conversion", "conversions",
+    "purchase", "purchases", "view", "views", "page_view", "add_to_cart",
+    "cart_add", "cart_adds", "income", "loss", "like", "likes", "comment", "comments",
+    "follower", "followers", "units", "volume", "total", "sum",
+    "매출", "금액", "비용", "광고비", "원가", "이익", "수량", "판매량", "건수",
+    "주문", "노출", "클릭", "전환", "구매", "조회", "장바구니", "합계", "총액", "수수료",
+)
+
+
+def _metric_name_parts(column: str) -> tuple[str, set[str]]:
+    normalized = re.sub(r"[^0-9a-zA-Z가-힣]+", "_", str(column)).strip("_").lower()
+    parts = {p for p in normalized.split("_") if p}
+    # `sales1`·`revenue2` 처럼 지표어에 일련번호가 붙으면 낱말이 통째로 달라져
+    # 지표를 못 알아본다. `Sales1_Amount`·`Sales2_Amount` 두 열이 나란히
+    # **"수치 합계"** 로 나와 어느 쪽이 어느 값인지 알 수 없었다 (2026-08-31 실제
+    # 답변). 숫자를 뗀 형태도 함께 본다 — 세 글자 이상만 (q1·h1 은 지표어가 아니다).
+    parts |= {m.group(1) for p in list(parts)
+              if (m := re.fullmatch(r"([a-z]{3,})(\d+)", p))}
+    return normalized, parts
+
+
+def _metric_display_label(column: str) -> str:
+    """Translate metric aliases without exposing internal column identifiers."""
+    normalized, parts = _metric_name_parts(column)
+    if normalized in _COL_LABELS:
+        return _COL_LABELS[normalized]
+
+    qualifiers = []
+    year = next((p for p in parts if re.fullmatch(r"20\d{2}", p)), "")
+    if year:
+        qualifiers.append(year + "년")
+    month_names = {
+        "january": "1월", "jan": "1월", "february": "2월", "feb": "2월",
+        "march": "3월", "mar": "3월", "april": "4월", "apr": "4월",
+        "may": "5월", "june": "6월", "jun": "6월", "july": "7월", "jul": "7월",
+        "august": "8월", "aug": "8월", "september": "9월", "sep": "9월",
+        "october": "10월", "oct": "10월", "november": "11월", "nov": "11월",
+        "december": "12월", "dec": "12월",
+    }
+    for token, label in month_names.items():
+        if token in parts:
+            qualifiers.append(label)
+            break
+    qualifier_names = (
+        ({"current", "cur", "now"}, "현재"),
+        ({"previous", "prev"}, "이전"),
+        ({"performance"}, "퍼포먼스"),
+        ({"influencer"}, "인플루언서"),
+        ({"marketing"}, "마케팅"),
+        ({"b2b"}, "B2B"),
+        ({"b2c"}, "B2C"),
+    )
+    for aliases, label in qualifier_names:
+        if parts & aliases and label not in qualifiers:
+            qualifiers.append(label)
+
+    # Specific metrics precede generic cost/count tokens.
+    if "revenue" in parts or "sales" in parts or "매출" in normalized:
+        metric = "매출액 (원)"
+    elif "gross" in parts and "profit" in parts:
+        metric = "매출총이익 (원)"
+    elif parts & {"profit", "income"} or "이익" in normalized:
+        metric = "이익 (원)"
+    elif "loss" in parts:
+        metric = "손실 (원)"
+    elif parts & {"qty", "quantity", "units", "volume"} or any(
+            word in normalized for word in ("수량", "판매량")):
+        metric = "수량 (개)"
+    elif "impression" in parts or "impressions" in parts or "노출" in normalized:
+        metric = "노출수"
+    elif "click" in parts or "clicks" in parts or "클릭" in normalized:
+        metric = "클릭수"
+    elif "conversion" in parts or "conversions" in parts or "전환" in normalized:
+        metric = "전환수"
+    elif "purchase" in parts or "purchases" in parts or "구매" in normalized:
+        metric = "구매수"
+    elif parts & {"view", "views"} or "조회" in normalized:
+        metric = "조회수"
+    elif normalized.startswith("cart_add") or "장바구니" in normalized:
+        metric = "장바구니 추가수"
+    elif parts & {"follower", "followers"}:
+        metric = "팔로워 수"
+    elif parts & {"like", "likes"}:
+        metric = "좋아요 수"
+    elif parts & {"comment", "comments"}:
+        metric = "댓글 수"
+    elif "order" in parts or "orders" in parts or "주문" in normalized:
+        metric = "주문 건수"
+    elif "count" in parts or "건수" in normalized:
+        metric = "건수"
+    elif "foc" in parts:
+        metric = "FOC 합계"
+    elif parts & {"discount", "coupon"} or "할인" in normalized:
+        metric = "할인액 (원)"
+    elif "fee" in parts or "수수료" in normalized:
+        metric = "수수료 (원)"
+    elif "ad" in parts and parts & {"cost", "spend", "expense"}:
+        metric = "광고비 (원)"
+    elif parts & {"cost", "spend", "expense"} or any(
+            word in normalized for word in ("비용", "광고비", "원가")):
+        metric = "비용 (원)"
+    else:
+        # The classifier only calls this for an additive column; keep the label
+        # useful without leaking an unfamiliar SQL alias.
+        metric = "수치 합계"
+    return " ".join(qualifiers + [metric])
+
+
+def _distinct_metric_labels(columns) -> list:
+    """지표 라벨을 **서로 구분되게** 만든다.
+
+    ⛔ 라벨이 겹치면 합계표가 어느 열의 합인지 말하지 못한다 — 실제 답변에
+       "수치 합계 84,034,602 / 수치 합계 45,464,682" 두 줄이 나란히 나갔다.
+       열 이름의 일련번호(`Sales1_Amount` → 1)로 가르고, 그것도 겹치면 순번으로 민다.
+    ⚠️ 합계표와 프롬프트의 금액 환산 문구가 **같은 라벨**을 써야 한다. 갈라 두면
+       한쪽만 고쳐진다.
+    """
+    columns = list(columns)
+    base = [_metric_display_label(c) for c in columns]
+    out, used = [], set()
+    for index, column in enumerate(columns):
+        label = base[index]
+        if base.count(label) > 1:
+            serial = re.search(r"[a-z]{3,}(\d+)", str(column).lower())
+            label = f"{label} #{serial.group(1) if serial else index + 1}"
+            bump = index + 1
+            while label in used:
+                bump += 1
+                label = f"{base[index]} #{bump}"
+        used.add(label)
+        out.append(label)
+    return out
+
+
+def _amount_note(results: list) -> str:
+    """합계를 **코드가 환산해서** 프롬프트에 박는다 — 환산은 산술이라 맡기면 틀린다.
+
+    실제 사고(2026-08-31): 표는 `82,871,719` 로 맞게 적어 놓고 요약 문장에만
+    "약 828.7억원" 이라고 썼다 (10만으로 나눴다). 1억 미만이라 '억'을 쓰면 안 되는
+    값이었다. 문자열을 미리 주면 LLM 이 할 일은 **복사**뿐이다.
+    ⚠️ 보증은 여전히 코드가 한다 (`answer_check.repair_money_scale`) — 이건 확률을
+       높이는 쪽이고, 배선이 아니라 프롬프트라는 것을 잊지 마라.
+    """
+    from app.core.answer_check import render_amount
+
+    detail_rows, totals = _additive_totals(results)
+    # ⛔ 통화가 섞였으면 **합계를 주지 않고, 내지 말라고 말한다** (2026-09-03 실측).
+    #    코드가 안 주면 LLM 이 스스로 더한다 — USD+KRW+JPY 를 더해 "총 수출 금액
+    #    약 266.8억원" 이라고 쓴 답변이 실제로 나갔다. 표는 옆에 맞게 있었다.
+    if _mixed_currency_axis(detail_rows):
+        return ("\n⚠️ **통화가 여러 개다 — 금액을 합치지 마라.** 서로 다른 통화를"
+                " 더한 값은 뜻이 없다. 여기서 환율로 환산하지도 마라 —"
+                " 환산은 조회 단계에서 월말환율로 한다."
+                " 요약에도 '총 금액' 을 쓰지 말고 **통화별로 각각** 말해라."
+                " 합계를 말해도 되는 것은 건수·수량뿐이다."
+                # ⛔ 2026-09-04 실측: 합계는 안 냈는데 표에서 달러 값에
+                #    원화 표기를 붙였다 — 환산이 아니라 라벨이 거짓말이다
+                " ⛔ 외화 금액에 '원'·'만원'·'억원' 을 붙이지 마라 —"
+                " 통화 코드를 그대로 쓴다 (USD 8,322,054 를 '약 832만원'"
+                " 이라고 쓴 답변이 실제로 나갔다).")
+    if not totals:
+        return ""
+    lines = ["", "⚠️ **금액 환산 (코드가 계산한 확정값 — 직접 나누지 마라)**:"]
+    for label, total in zip(_distinct_metric_labels(totals), totals.values()):
+        try:
+            value = float(total)
+        except (TypeError, ValueError):
+            continue
+        lines.append(f"- {label} 합계 = **{render_amount(value)}** ({round(value):,}원)")
+    lines.append("- 위에 없는 금액은 **원 단위 숫자에 쉼표만** 찍어 써라. "
+                 "1억 미만에 '억'을 쓰지 마라 (8,287만원을 828.7억원이라 쓴 사고가 있었다)")
+    return "\n".join(lines)
+
+
+def _is_additive_metric_column(column: str) -> bool:
+    normalized, parts = _metric_name_parts(column)
+    if not normalized:
+        return False
+
+    # English words use token boundaries so `country` is not mistaken for `count`.
+    # Korean metric names are commonly unseparated, so substring matching is needed.
+    for token in _TOTAL_EXCLUDED_TOKENS:
+        if token.isascii():
+            if token in parts or normalized.startswith(token + "_") or normalized.endswith("_" + token):
+                return False
+        elif token in normalized:
+            return False
+
+    for token in _TOTAL_ADDITIVE_TOKENS:
+        if token.isascii():
+            if token in parts or normalized.startswith(token) or normalized.endswith(token):
+                return True
+        elif token in normalized:
+            return True
+    return False
+
+
+# ⛔ **통화가 섞인 표에서 금액을 더하지 마라** (2026-09-03 프로덕션 실측).
+#    수출 물류(@@물류)의 `amount` 는 통화가 `unit` 에 따로 있다. "통화별로 나눠서"
+#    라고 물어 표는 **맞게** 나왔는데, 코드가 만든 `합계 (조회 결과 기준)` 가
+#    USD 90,992,472 + KRW 17,449,032,193 + JPY 571,831,029 … 를 그냥 더해
+#    **26,677,833,361** 을 찍었고, 요약은 그걸 받아 "총 수출 금액 약 266.8억원"
+#    이라고 썼다. 달러와 엔과 원을 더한 숫자다 — **에러가 아니라 조용한 오답**이고,
+#    표가 옆에 맞게 있어서 오히려 더 믿긴다.
+# ⚠️ 건수·수량은 통화와 무관하게 더해도 된다 — **금액 컬럼만** 뺀다.
+_CURRENCY_AXIS_TOKENS = ("currency", "curr", "unit", "통화", "화폐")
+# 통화 코드처럼 보이는 값 (ISO 4217 3글자 + 우리가 실제로 쓰는 표기)
+_re_currency_value = re.compile(r"^[A-Z]{3}$")
+
+
+def _is_money_column(column: str) -> bool:
+    """⛔ 판정은 `answer_check` 한 곳에서만 한다 — 금액 배율 교정이 같은 목록을
+    본다. 여기에 사본을 두면 한쪽만 고쳐진다 (이 프로젝트의 단골 함정)."""
+    from app.core.answer_check import is_money_column
+    return is_money_column(column)
+
+
+def _mixed_currency_axis(rows: list) -> Optional[str]:
+    """행이 **여러 통화로 쪼개져 있으면** 그 축 컬럼 이름을 돌려준다.
+
+    이름만으로 정하지 않는다 — `unit`(단위)은 통화가 아닌 뜻으로도 쓰인다.
+    **값이 통화 코드처럼 생겼고 두 종류 이상**일 때만 통화 축으로 본다.
+    """
+    if not rows:
+        return None
+    for column in rows[0].keys():
+        _, parts = _metric_name_parts(column)
+        if not any(t in parts or t in str(column).lower()
+                   for t in _CURRENCY_AXIS_TOKENS):
+            continue
+        seen = set()
+        for row in rows:
+            value = row.get(column)
+            if isinstance(value, str) and value.strip():
+                seen.add(value.strip())
+        if len(seen) < 2:
+            continue
+        # 통화 코드로 읽히는 값이 절반을 넘어야 통화 축이다 (`통화미상` 같은
+        # 라벨이 섞여도 통과하지만, `개`·`박스` 같은 단위 표는 걸리지 않는다)
+        codes = sum(1 for v in seen if _re_currency_value.match(v.upper()))
+        if codes * 2 > len(seen):
+            return str(column)
+    return None
+
+
+def _is_existing_total_row(row: dict) -> bool:
+    for value in row.values():
+        if not isinstance(value, str):
+            continue
+        label = value.strip().strip("* ").lower()
+        if label in {"합계", "총합", "total", "grand total"}:
+            return True
+    return False
+
+
+def _additive_totals(results: list) -> tuple[list[dict], dict]:
+    """Return detail rows and grounded sums for additive numeric columns."""
+    from decimal import Decimal as _D
+    import math as _math
+
+    if not results or len(results) < 2:
+        return list(results or []), {}
+
+    detail_rows = [row for row in results if not _is_existing_total_row(row)]
+    if not detail_rows:
+        return [], {}
+
+    # 통화가 섞여 있으면 금액 합계는 뜻이 없다 (위 주석의 실제 사고)
+    currency_axis = _mixed_currency_axis(detail_rows)
+
+    totals = {}
+    for column in results[0].keys():
+        if not _is_additive_metric_column(column):
+            continue
+        if currency_axis and _is_money_column(column):
+            logger.info("totals_skipped_mixed_currency",
+                        column=str(column)[:40], axis=currency_axis[:40])
+            continue
+        values = []
+        for row in detail_rows:
+            value = row.get(column)
+            if isinstance(value, bool) or not isinstance(value, (int, float, _D)):
+                continue
+            number = float(value)
+            if _math.isfinite(number):
+                values.append(value)
+        if values:
+            totals[column] = sum(values)
+    return detail_rows, totals
+
+
+def _build_table_totals_markdown(results: list) -> str:
+    """Build a deterministic sum table from all returned detail rows.
+
+    Ratios, averages, dates and identifiers are deliberately omitted because their
+    arithmetic sum is not a useful business metric.
+    """
+    detail_rows, totals = _additive_totals(results)
+    currency_axis = _mixed_currency_axis(detail_rows)
+    money_skipped = bool(currency_axis) and any(
+        _is_additive_metric_column(c) and _is_money_column(c)
+        for c in (results[0].keys() if results else []))
+    if not totals:
+        # ⚠️ 금액만 있는 표였다면 블록이 통째로 사라진다 — 그건 조용한 실패다.
+        #    왜 합계가 없는지 한 줄로 밝힌다
+        if money_skipped:
+            return ("#### 합계 (조회 결과 기준)\n\n"
+                    "⚠️ 통화가 여러 개라 금액 합계를 내지 않았습니다 — "
+                    "서로 다른 통화를 더한 값은 뜻이 없습니다. 통화별 금액은 위 표를 보세요.")
+        return ""
+
+    lines = [
+        "#### 합계 (조회 결과 기준)",
+        "",
+        "| 지표 | 합계 |",
+        "|---|---:|",
+    ]
+    for label, total in zip(_distinct_metric_labels(totals), totals.values()):
+        lines.append(f"| {label} | **{_fast_fmt_cell(total)}** |")
+    lines.extend(["", f"*조회 결과 전체 {len(detail_rows)}행 기준*"])
+    if money_skipped:
+        lines.append("")
+        lines.append("⚠️ 통화가 여러 개라 **금액 합계는 내지 않았습니다** — "
+                     "서로 다른 통화를 더한 값은 뜻이 없습니다.")
+    return "\n".join(lines)
+
+
+def _insert_table_totals(answer: str, totals_block: str) -> str:
+    """Place the code-calculated totals immediately before narrative analysis."""
+    if not totals_block:
+        return answer
+    for marker in ("#### 분석 및 인사이트", "### 분석 및 인사이트", "#### 분석", "### 분석"):
+        if marker in answer:
+            return answer.replace(marker, totals_block + "\n\n" + marker, 1)
+    return answer.rstrip() + "\n\n" + totals_block
+
+
+#: 정정 표에 실을 행 수. 원본을 다시 보여주는 것이 목적이라 길 필요는 없다.
+_CORRECTION_MAX_ROWS = 30
+
+
+def _number_check_notice(answer: str, results: list, query: str,
+                         route: str = "bigquery") -> str:
+    """답변 속 **금액급 수치가 조회 결과로 설명되지 않으면** 원본을 덧붙인다.
+
+    ⛔ 이 검증은 2026-08-13 에 만들어 놓고 **프로덕션 경로에 붙이질 않았다.**
+       호출부가 `format_answer`(비스트리밍) 한 곳뿐이었는데, 채팅은
+       `run_sql_agent_stream` 으로 나간다 (`chat.js` 가 `stream: true`). 그래서
+       계측조차 실사용 트래픽에서는 한 번도 돌지 않았고, "미검증률 0%" 는
+       **아무도 안 쓰는 경로에서 잰 값**이었다.
+       그 사이 실제 사고가 났다 — 8,287만원짜리 3개월 매출을 표에 정확히
+       1,000배로 적고 요약에 "약 828.7억원" 이라고 썼다 (2026-08-31 사용자 제보:
+       *"억대가 아닌데 억대로 나옴"*). 같은 답변 안의 코드 계산 합계표는
+       8,403만원이라고 맞게 적혀 있었다. 검증을 돌려 보면 이 답변은 미검증률
+       91.7% 로 걸린다 — **잡을 수 있었는데 배선이 없었다.**
+
+    ⚠️ **문장을 버리지는 않는다.** 채팅 수치는 상당수가 파생값(비중·증감률·평균·
+       차이)이라 폐기는 과하다. 대신 **조회 원본을 나란히 붙여** 사용자가 대조할
+       수 있게 한다 — 숫자를 만드는 것은 끝까지 코드다.
+    ⚠️ 보여주는 것은 `significant`(금액 단위를 달았거나 1만 이상)뿐이다. 반올림된
+       퍼센트까지 들고 나오면 매번 뜨는 경고가 되고, 그러면 아무도 안 읽는다.
+    """
+    try:
+        from app.core.answer_check import log_verification
+        res = log_verification(answer, results, query, route=route)
+        if not res.get("significant"):
+            return ""
+        table = _fast_table_markdown(results, max_rows=_CORRECTION_MAX_ROWS)
+        return (
+            "\n\n> ⚠️ **본문 수치 중 일부를 조회 결과로 확인하지 못했습니다** — "
+            "아래가 실제 조회된 값입니다. 본문과 다르면 **아래 값이 맞습니다.**\n\n"
+            "#### 조회 결과 원본\n" + table
+        )
+    except Exception as e:            # 검증 실패가 답변을 막으면 안 된다
+        logger.warning("answer_number_check_skipped", error=str(e)[:150])
+        return ""
+
+
+def _stream_with_table_totals(chunks, totals_block: str):
+    """Inject totals before the streamed analysis heading without buffering the answer."""
+    if not totals_block:
+        yield from chunks
+        return
+
+    markers = ("#### 분석 및 인사이트", "### 분석 및 인사이트", "#### 분석", "### 분석")
+    keep = max(len(marker) for marker in markers) - 1
+    pending = ""
+    inserted = False
+    for chunk in chunks:
+        if inserted:
+            yield chunk
+            continue
+        pending += chunk
+        matches = [(pending.find(marker), marker) for marker in markers if marker in pending]
+        if matches:
+            index, _ = min(matches, key=lambda item: item[0])
+            yield pending[:index] + totals_block + "\n\n" + pending[index:]
+            pending = ""
+            inserted = True
+        elif len(pending) > keep:
+            yield pending[:-keep]
+            pending = pending[-keep:]
+    if pending:
+        yield pending
+    if not inserted:
+        yield "\n\n" + totals_block
+
+
+def _fast_fmt_cell(v) -> str:
+    from decimal import Decimal as _D
+    if v is None:
+        return "-"
+    if isinstance(v, bool):
+        return str(v)
+    if isinstance(v, (int, float, _D)):
+        f = float(v)
+        # Monetary/large values: whole numbers read better than stray decimals
+        if f == int(f) or abs(f) >= 10000:
+            return f"{round(f):,}"
+        return f"{f:,.2f}"
+    return str(v)
+
+
+# 채팅 표 기본 행 상한. 15는 너무 낮았다 — "인도네시아 2020~2026 월별 B2C/B2B
+# 매출"이 146행을 돌려받고도 15행만 보여, 어느 15행이 남을지가 SQL의 ORDER BY에
+# 좌우된 끝에 "2025년부터 데이터가 있다"는 잘못된 결론으로 이어졌다(2026-08-31).
+# 200이면 다년 월별 리포트(예: 7년×12개월×2 구분 = 168행) 정도는 통째로 보이면서도
+# BigQuery 실행 자체의 상한(1000행, `execute_sql`)보다는 충분히 낮게 유지된다.
+# 그래도 잘리는 결과는 각주가 남고(아래), 잘린 나머지는 CSV 다운로드로 받는다
+# (`user_id` 가 있을 때만 — `app/core/sql_result_store.py`).
+_FAST_TABLE_MAX_ROWS = 200
+
+
+def _fast_table_markdown(
+    results: list, max_rows: int = _FAST_TABLE_MAX_ROWS, user_id: Optional[int] = None
+) -> str:
+    cols = list(results[0].keys())
+    heads = [_COL_LABELS.get(c.lower(), c) for c in cols]
+    lines = ["| " + " | ".join(heads) + " |", "|" + "|".join([" :--- "] * len(cols)) + "|"]
+    for row in results[:max_rows]:
+        lines.append("| " + " | ".join(_fast_fmt_cell(row.get(c)) for c in cols) + " |")
+
+    detail_rows, totals = _additive_totals(results)
+    dimension_cols = [c for c in cols if c not in totals]
+    if totals and dimension_cols:
+        label_col = dimension_cols[0]
+        cells = []
+        for c in cols:
+            if c == label_col:
+                cells.append("**합계**")
+            elif c in totals:
+                cells.append(f"**{_fast_fmt_cell(totals[c])}**")
+            else:
+                cells.append("-")
+        lines.append("| " + " | ".join(cells) + " |")
+    table = "\n".join(lines)
+    if len(results) > max_rows:
+        note = (
+            f"\n\n*(전체 {len(results)}행 중 상위 {max_rows}행 표시"
+            + (f" · 합계는 전체 {len(detail_rows)}행 기준" if totals else "")
+            + ")*"
+        )
+        # 잘린 나머지를 실제로 받을 방법을 준다 — 각주만 있고 손에 쥘 게 없으면
+        # "RAW 파일을 줘"가 반복된다(2026-08-31 실사용자 재질문).
+        if user_id:
+            try:
+                from app.core.sql_result_store import save as _save_full_result
+                labels = {c: h for c, h in zip(cols, heads)}
+                token = _save_full_result(user_id, cols, results, labels=labels)
+                note += f" · [CSV로 전체 {len(results)}행 받기](/api/sql-results/{token}/csv)"
+            except Exception as _e:
+                logger.warning("sql_result_csv_offer_failed", error=str(_e)[:150])
+        table += note
+    return table
+
+
+def _fast_summary_line(results: list) -> str:
+    """One-line computed summary: totals of revenue/qty-like numeric columns."""
+    from decimal import Decimal as _D
+    parts = []
+    cols = list(results[0].keys())
+    for c in cols:
+        cl = c.lower()
+        vals = [r.get(c) for r in results if isinstance(r.get(c), (int, float, _D))]
+        if not vals:
+            continue
+        total = float(sum(float(v) for v in vals))
+        if "revenue" in cl or "sales" in cl or "매출" in cl:
+            uk = total / 100_000_000
+            parts.append(f"총 매출액 **약 {uk:,.1f}억원** ({int(total):,}원)")
+        elif "qty" in cl or "quantity" in cl or "수량" in cl:
+            parts.append(f"총 판매수량 **{int(total):,}개**")
+        elif "order" in cl:
+            parts.append(f"총 주문 **{int(total):,}건**")
+    return " · ".join(parts)
+
+
+def _fast_answer_stream(
+    query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end,
+    user_id: Optional[int] = None,
+):
+    """Yield template-rendered table instantly, then short LLM insights.
+
+    Removes the 3-4s full-answer LLM generation from the critical path: the
+    user sees title+summary+table the moment BigQuery returns, and only the
+    insights/follow-up section is model-generated (short prompt, short output).
+    """
+    import concurrent.futures
+    import time as _time
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    _t_tpl = _time.perf_counter()
+
+    title = re.sub(r"\s*(알려줘|보여줘|알려주세요|보여주세요|줄래\??|해줘)\s*$", "", query.strip())
+    out_head = f"### 📊 {title}\n\n"
+    summary = _fast_summary_line(results)
+    if summary:
+        out_head += f"#### 요약\n{summary}\n\n"
+    fast_table = _fast_table_markdown(results, user_id=user_id)
+    out_head += f"#### 상세 데이터\n{fast_table}\n"
+    # 차원 열이 전혀 없는 특수한 다중 행 결과는 표 안에 '합계' 라벨을 넣을
+    # 자리가 없다. 이 경우에도 별도 합계 표로 보증한다.
+    if "**합계**" not in fast_table:
+        totals_block = _build_table_totals_markdown(results)
+        if totals_block:
+            out_head += "\n" + totals_block + "\n"
+    yield out_head
+
+    # Chart in background while insights stream
+    result_preview = _build_smart_preview(results, query) if len(results) > 100 else json.dumps(
+        results[:50], ensure_ascii=False, indent=2, default=str
+    )
+    _chart_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    chart_future = _chart_executor.submit(
+        _try_generate_chart, get_flash_client(), query, sql, result_preview, results
+    )
+
+    wiki_block = f"\n## 참고 팩트(지식 위키 — 결과 보완용으로만)\n{wiki_context}\n" if wiki_context else ""
+    insight_prompt = f"""사용자 질문: {query}
+SQL 결과 ({len(results)}행):
+{result_preview}
+{wiki_block}
+결과 표는 이미 사용자에게 표시되었다. 표/수치 나열을 반복하지 말고 아래 형식만 출력하라:
+
+#### 분석 및 인사이트
+- [결과에서 도출한 구체적 인사이트 2~3개, 비율·비교 등 계산 활용]
+
+---
+*조회 기준: {today} | 내부 데이터베이스*
+> 💡 **이런 것도 물어보세요**
+> - [구체적 후속 질문 1]
+> - [구체적 후속 질문 2]
+> - [구체적 후속 질문 3]
+
+규칙: SQL 결과만 근거로. 금액 1억+ → "약 OO.O억원". 플레이스홀더 출력 금지.
+⚠️ 후속 질문은 대괄호([]) 없이 완성된 실제 질문 문장으로 출력하라.
+⚠️ 테이블명·프로젝트 ID·컬럼명 노출 금지. 출처는 '내부 데이터베이스'로만.
+{TEAM_DISPLAY_RULE}"""
+
+    llm = get_flash_client()
+    _t_ins = _time.perf_counter()
+    yield "\n"
+    from app.core.answer_check import money_scale_repairer
+    for chunk in _mask_stream(
+            llm.generate_stream(insight_prompt, temperature=0.1, max_output_tokens=1500),
+            transform=money_scale_repairer(results)):
+        yield chunk
+    _t_end = _time.perf_counter()
+
+    try:
+        chart_markdown = chart_future.result(timeout=8.0)
+        if chart_markdown:
+            yield f"\n\n#### 시각화\n{chart_markdown}"
+    except (concurrent.futures.TimeoutError, Exception):
+        pass
+    _chart_executor.shutdown(wait=False)
+
+    yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
+
+    logger.info(
+        "bq_fast_timing",
+        sql_gen_ms=round((_t_gen - _t0) * 1000),
+        bq_exec_ms=round((_t_exec_end - _t_exec_start) * 1000),
+        template_ms=round((_t_ins - _t_tpl) * 1000),
+        insights_ms=round((_t_end - _t_ins) * 1000),
+        total_ms=round((_t_end - _t0) * 1000),
+        rows=len(results),
+    )
+
+
+def run_sql_agent_stream(
+    query: str,
+    conversation_context: str = "",
+    model_type: str = MODEL_GEMINI,
+    brand_filter: Optional[str] = None,
+    enabled_sources: Optional[list] = None,
+    wiki_context: str = "",
+    can_view_fi: bool = False,
+    user_id: Optional[int] = None,
+):
+    """Streaming version of run_sql_agent. Yields text chunks during format_answer.
+
+    Runs SQL generation + validation + execution synchronously, then streams
+    the answer formatting via generate_stream.
+
+    Yields:
+        str: text chunks as the answer is generated.
+    """
+    # Experimental single-session tool-loop path (dev A/B: BQ_TOOL_LOOP=1 on
+    # skin1004-dev only — see ecosystem.windows.config.js). Prod keeps the
+    # legacy generate→execute→format pipeline below.
+    import os
+    if os.getenv("BQ_TOOL_LOOP") == "1" and not _is_month_close_query(query):
+        from app.agents.sql_tool_agent import run_sql_tool_loop_stream
+        yield from run_sql_tool_loop_stream(
+            query,
+            conversation_context=conversation_context,
+            brand_filter=brand_filter,
+            enabled_sources=enabled_sources,
+            wiki_context=wiki_context,
+            can_view_fi=can_view_fi,
+        )
+        return
+
+    initial_state: AgentState = {
+        "query": query,
+        "route_type": "text_to_sql",
+        "generated_sql": None, "sql_valid": None, "sql_result": None,
+        "retrieved_docs": None, "doc_relevance": None,
+        "answer": "", "needs_retry": False, "retry_count": 0,
+        "error": None, "messages": None,
+        "conversation_context": conversation_context,
+        "model_type": model_type,
+        "brand_filter": brand_filter,
+        "can_view_fi": can_view_fi,
+        "enabled_sources": enabled_sources,
+        "user_id": user_id,
+    }
+
+    # Run SQL generation + validation + execution (non-streaming)
+    import time as _time
+    _t0 = _time.perf_counter()
+    state = dict(initial_state)
+    state.update(generate_sql(state))
+    _t_gen = _time.perf_counter()
+    state.update(validate_sql_node(state))
+    _t_exec_start = _t_exec_end = _time.perf_counter()
+    if state.get("sql_valid"):
+        conv_ctx = state.get("conversation_context", "")
+        ck = (_cache_key(query, brand_filter)
+              if not conv_ctx and not _is_relative_period_query(query) else None)
+        state["generated_sql"] = _enforce_partition_filter(
+            state.get("generated_sql", ""), query,
+            cache_key=ck, brand_filter=brand_filter,
+            can_view_fi=can_view_fi,
+            allowed_tables=_allowed_tables_from_sources(enabled_sources, can_view_fi),
+        )
+        _t_exec_start = _time.perf_counter()
+        state.update(execute_sql(state))
+        _t_exec_end = _time.perf_counter()
+
+    sql = state.get("generated_sql", "")
+    results = state.get("sql_result")
+    error = state.get("error")
+
+    update_notice = _prepend_data_update_notice("", sql)
+    if update_notice:
+        yield update_notice + "\n\n"
+
+    # Error / empty → yield full message (no streaming needed)
+    if error or not results:
+        state.update(format_answer(state))
+        yield state.get("answer", "")
+        return
+
+    # 팀 코드 → 한글 팀명 (fast-answer 의 결정적 표까지 함께 적용된다)
+    results = _relabel_team_values(results)
+
+    # ⛔ 안내문 한 줄이면 여기서 끝낸다 (붐따 #153). 두 경로에 **함께** 걸어야
+    #    한다 — 채팅은 스트리밍으로 나가므로 한쪽만 고치면 실사용에서 빠진다
+    _notice_only = _notice_result_answer(results)
+    if _notice_only:
+        yield _notice_only
+        return
+
+    _outlook_answer = _outlook_result_answer(query, sql, results)
+    if _outlook_answer is not None:
+        yield _outlook_answer
+        return
+
+    # Shared by regular and fast streaming: the prompt promises this disclosure.
+    future_note = _future_period_note(sql)
+    if future_note:
+        yield future_note.lstrip() + "\n\n"
+
+    # Fast-answer experiment (dev A/B: BQ_FAST_ANSWER=1): template table
+    # instantly from rows, LLM only for short insights.
+    if os.getenv("BQ_FAST_ANSWER") == "1":
+        yield from _fast_answer_stream(
+            query, sql, results, wiki_context, _t0, _t_gen, _t_exec_start, _t_exec_end,
+            user_id=user_id,
+        )
+        return
+
+    # Build format prompt (same as format_answer but stream the LLM call)
+    from app.core.llm import get_flash_client
+    llm = get_flash_client()
+
+    # ⛔ 이 경로가 실제 프로덕션 경로다 (`chat.js` 가 `stream: true` 로 호출한다 —
+    # `BQ_FAST_ANSWER` 는 dev 전용). 예전엔 `format_answer` 보다도 더 단순해서
+    # `_is_timeseries` 판정 자체가 없었다 — ">100행이면 매출 상위 15행" 만 있어
+    # 시계열 질문에서도 값 기준 표본을 그대로 썼다. 같은 셋을 쓴다
+    # (`_bounded_result_preview`, docstring에 146행 인도네시아 사고 상세 있음).
+    result_preview, _rows_withheld = _bounded_result_preview(results, query)
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_kr = datetime.now().strftime("%Y년 %m월 %d일")
+    table_source = _extract_table_sources(sql)
+
+    wiki_block = ""
+    if wiki_context:
+        wiki_block = (
+            "\n## 참고: 이전 대화에서 추출된 관련 팩트 (지식 위키)\n"
+            f"{wiki_context}\n"
+            "⚠️ 위 팩트는 참고용입니다. SQL 실행 결과가 최신 원본이므로 결과를 우선하되, "
+            "팩트가 결과를 보완하거나 맥락을 제공할 때만 인용하세요.\n"
+        )
+
+    prompt = f"""## SQL 실행 결과
+사용자 질문: {query}
+실행된 SQL:
+```sql
+{sql}
+```
+결과 ({len(results)}행):
+{result_preview}
+{wiki_block}
+## 답변 형식
+### 📊 [제목] → #### 요약 → #### 상세 데이터 (표) → #### 분석 및 인사이트
+---
+*조회 기준: {today} | 내부 데이터베이스*
+> 💡 **이런 것도 물어보세요**
+> - [구체적 후속 질문 1 — 다른 기간/국가/제품 등 범위 확장]
+> - [구체적 후속 질문 2 — 관련 데이터 심화 분석]
+> - [구체적 후속 질문 3 — 다른 관점의 분석]
+
+규칙: SQL 결과만 사용. 금액 1억+→"약 OO.O억원". 표 필수. 인사이트 필수. 조건은 끝에 괄호로.
+⚠️ 반드시 구체적인 후속 질문 3개를 생성하세요. "[후속 질문]" 같은 플레이스홀더를 절대 출력하지 마세요.
+{_unit_note(sql)}{_amount_note(results)}{_qty_coverage_fact(sql, results)}{_truncation_fact(results, _rows_withheld)}
+{_future_period_note(sql)}
+오늘은 {today}입니다. 데이터에 존재하는 날짜 수는 경과 일수나 기준일이 아닙니다.
+⚠️ 데이터 출처 보안: 테이블명, 프로젝트 ID, 컬럼명을 답변 본문에 노출하지 마세요. 출처 언급 시 '내부 데이터베이스'라고만 표현하세요.
+{TEAM_DISPLAY_RULE}"""
+
+    # Start chart generation in background BEFORE streaming answer
+    import concurrent.futures
+    _chart_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    chart_llm = get_flash_client()
+    chart_future = _chart_executor.submit(_try_generate_chart, chart_llm, query, sql, result_preview, results)
+
+    # Stream answer (chart generates in parallel)
+    _t_stream_start = _time.perf_counter()
+    _t_first_token = None
+    totals_block = _build_table_totals_markdown(results)
+    # ⛔ 억·만 환산을 LLM 에게 시키지 마라 — 산술이고, LLM 의 산술은 확률이다.
+    #    표가 맞는데 요약만 "82,871,719원 → 약 828.7억원"으로 나간 적이 있다
+    #    (2026-08-31 2회차 제보). 배율만 틀린 표기는 코드가 되돌린다.
+    from app.core.answer_check import money_scale_repairer
+    answer_chunks = _mask_stream(
+        llm.generate_stream(prompt, temperature=0.05, max_output_tokens=10000),
+        transform=money_scale_repairer(results),
+    )
+    # ⛔ 흘려보낸 답변을 그냥 버리지 마라 — 수치 검증이 이 경로에 없어서 1,000배
+    #    오답이 그대로 나갔다 (`_number_check_notice` 주석). 이미 나간 글자를
+    #    되돌릴 수는 없으므로 **모아 두었다가 끝에 원본을 붙인다.**
+    # ⛔ 수량 이상치 공시는 **답변보다 먼저** 흘린다 (비스트리밍과 같은 순서).
+    # ⚠️ 두 경로에 **함께** 걸어야 한다 — 한쪽만 고치면 경로에 따라 답이 갈린다
+    from app.core.logistics_quality import notice_for_sql as _log_qty_notice
+    from app.core.qty_coverage import notice as _qty_cov_notice
+    from app.core.result_truncation import notice as _trunc_notice
+    from app.core.logistics_amount import notice as _log_amt_notice
+    from app.core.logistics_amount import krw_notice as _log_krw_notice
+    from app.core.logistics_fx import notice as _log_fx_notice
+    _qty_notice = (_log_qty_notice(sql) + _log_amt_notice(sql)
+                   + _log_krw_notice(sql, query)
+                   + _log_fx_notice(sql, query)
+                   + _qty_cov_notice(sql, results)
+                   + _trunc_notice(results, _rows_withheld))
+    if _qty_notice:
+        yield _qty_notice
+
+    _streamed = []
+    for chunk in _stream_with_table_totals(answer_chunks, totals_block):
+        if _t_first_token is None:
+            _t_first_token = _time.perf_counter()
+        _streamed.append(chunk)
+        yield chunk
+    _t_stream_end = _time.perf_counter()
+
+    check_notice = _number_check_notice("".join(_streamed), results, query)
+    if check_notice:
+        yield check_notice
+    logger.info(
+        "bq_stage_timing",
+        sql_gen_ms=round((_t_gen - _t0) * 1000),
+        bq_exec_ms=round((_t_exec_end - _t_exec_start) * 1000),
+        answer_first_token_ms=round(((_t_first_token or _t_stream_end) - _t_stream_start) * 1000),
+        answer_stream_ms=round((_t_stream_end - _t_stream_start) * 1000),
+        total_ms=round((_t_stream_end - _t0) * 1000),
+        rows=len(results),
+    )
+
+    # Chart should be done by now (ran in parallel with answer streaming)
+    try:
+        chart_markdown = chart_future.result(timeout=8.0)
+        if chart_markdown:
+            yield f"\n\n#### 시각화\n{chart_markdown}"
+    except (concurrent.futures.TimeoutError, Exception):
+        pass
+    _chart_executor.shutdown(wait=False)
+
+    # 표에 못 보여준 행이 있었으면(_rows_withheld) 전체를 CSV로 받는 실제 링크를
+    # 붙인다. 이 경로는 이미 스트리밍이 끝난 텍스트를 손볼 수 없으므로(LLM이
+    # 스스로 빈 약속을 썼어도 지울 수 없다) 프롬프트에서 그런 문구를 아예
+    # 지시하지 않는 대신, 여기서 실제 다운로드를 추가로 붙인다.
+    download_note = _attach_full_data_download(
+        "", results, user_id, _rows_withheld, query)
+    if download_note:
+        yield download_note
+
+    yield f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"

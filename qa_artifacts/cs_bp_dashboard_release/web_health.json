@@ -1,0 +1,15 @@
+{
+  "nginx": "active",
+  "/health": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "service": "Craver AI Agent"
+    }
+  },
+  "/frontend/chat.js": {
+    "status": 200,
+    "bp_migration": true,
+    "dashboard_url": true
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "deployed_files": 11,
+  "systemd": "active",
+  "health": 200,
+  "probes": {
+    "/health": 200,
+    "/login": 200,
+    "/auth/entra/status": 200,
+    "/api/auth/methods": 200,
+    "auth_methods": {
+      "password": false,
+      "entra": true
+    },
+    "/frontend/chat.js": 200,
+    "legacy GET /api/auth/me": 401,
+    "legacy GET /api/admin/directory/users": 401,
+    "legacy POST /v1/chat/completions": 401,
+    "legacy GET /face-search/stats": 401,
+    "legacy GET /face-search/thumb/entra-session-probe": 401,
+    "legacy GET /api/harness/tree": 401,
+    "legacy GET /": 302,
+    "legacy GET /coa-finder": 302,
+    "legacy GET /harness": 302,
+    "legacy GET /frontend/chat.html": 302,
+    "legacy GET /auth/google/login": 302,
+    "public callback /auth/entra/callback": 400,
+    "public callback /users/auth/openid_connect/callback": 400
+  },
+  "permissions_unchanged": true,
+  "before": {
+    "users": {
+      "count": 85,
+      "sha256": "2d5b3a2a98168bca1e558c5be93f036d57e9511fe0d2dcc59c1c15bc7d51b94c"
+    },
+    "directory_permissions": {
+      "count": 521,
+      "sha256": "18cd47d275169c9d8f6514cb511e36963ccbe013c5bcaae32b032fe65c8c0223"
+    },
+    "groups": {
+      "count": 2,
+      "sha256": "03dd8758843647a971800c7118e18b04cda19d5bace79be61797526ebd3e940d"
+    },
+    "memberships": {
+      "count": 281,
+      "sha256": "341d56947d4a4a26cb496f4d5cf728f1c84071ea897023a3c89acfbc2f9c1500"
+    }
+  },
+  "after": {
+    "users": {
+      "count": 85,
+      "sha256": "2d5b3a2a98168bca1e558c5be93f036d57e9511fe0d2dcc59c1c15bc7d51b94c"
+    },
+    "directory_permissions": {
+      "count": 521,
+      "sha256": "18cd47d275169c9d8f6514cb511e36963ccbe013c5bcaae32b032fe65c8c0223"
+    },
+    "groups": {
+      "count": 2,
+      "sha256": "03dd8758843647a971800c7118e18b04cda19d5bace79be61797526ebd3e940d"
+    },
+    "memberships": {
+      "count": 281,
+      "sha256": "341d56947d4a4a26cb496f4d5cf728f1c84071ea897023a3c89acfbc2f9c1500"
+    }
+  },
+  "backup": "/home/jeffrey/AI_Agent/.release_backups/entra_session_20260909"
+}

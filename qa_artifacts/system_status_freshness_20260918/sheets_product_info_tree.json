@@ -1,0 +1,20 @@
+{
+  "queried_at_kst": "2026-09-18T15:48:58.512362+09:00",
+  "product_info": {
+    "origin": "Notion",
+    "root_page_id": "3362b428-3b00-8050-b4b6-c75fe4f7f54a",
+    "root_last_edited_utc": "2026-04-06T10:49:00.000Z",
+    "line_rows": 8,
+    "source_product_pages": 55,
+    "stored_product_rows": 55,
+    "stored_newest_sync": "2026-09-18 04:20:29",
+    "latest_source_product_modified_kst": "2026-04-13 16:05:00+09:00",
+    "stored_missing_from_source": [],
+    "source_pages_not_copied": [],
+    "metadata_differences": [],
+    "source_pages_newer_than_copy": [],
+    "api_requests": 19,
+    "body_content_compared": false,
+    "production_module_sha256": "1d7644e3aaae73216e9830575df0d39968253e011222f0357e894a51221d09fd"
+  }
+}

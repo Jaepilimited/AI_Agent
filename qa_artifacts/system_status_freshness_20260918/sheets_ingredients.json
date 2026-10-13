@@ -1,0 +1,12 @@
+{
+  "queried_at_kst": "2026-09-18T15:40:52.659995+09:00",
+  "ingredients": {
+    "source_rows": 84,
+    "stored_rows": 84,
+    "matches": true,
+    "source_hash": "94114f5aac9e4c15930b8fd22a00f9ab824f1be2e1cd6a0c2b4c1733eefc8bdd",
+    "stored_hash": "94114f5aac9e4c15930b8fd22a00f9ab824f1be2e1cd6a0c2b4c1733eefc8bdd",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0
+  }
+}

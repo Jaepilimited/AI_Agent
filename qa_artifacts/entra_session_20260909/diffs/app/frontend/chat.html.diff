@@ -1,0 +1,11 @@
+--- was/app/frontend/chat.html
++++ next/app/frontend/chat.html
+@@ -469,7 +469,7 @@
+         <button class="admin-btn-secondary" id="btn-sync-directory">Entra 동기화</button>
+         <span id="admin-directory-status" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)"></span>
+       </div>
+-      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">Entra ID로 로그인하면 별도 회원가입 없이 셀라 계정이 연결됩니다. 첫 로그인 전에도 손익·방문자 권한과 그룹을 미리 배정할 수 있습니다.</p>
++      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">모든 직원은 Entra ID로 로그인해야 합니다. 기존 계정·권한은 로그인 후 자동 승계됩니다. 로그인 전에도 권한과 그룹을 미리 배정할 수 있습니다.</p>
+       <div class="admin-toolbar">
+         <select id="admin-dept-filter" class="admin-select">
+           <option value="">전체 부서</option>

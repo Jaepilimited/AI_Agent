@@ -1,0 +1,144 @@
+{
+  "feedback_id": 172,
+  "feedback_created_on": "2026-09-08",
+  "staged_at_utc": "2026-09-09T00:16:22.901123+00:00",
+  "production_captured_at_utc": "2026-09-09T00:15:08.331816+00:00",
+  "production_snapshot_directory": "production_refresh_20260909T001505510980Z",
+  "files": {
+    "app/core/sales_outlook.py": {
+      "before": null,
+      "after": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "workspace_sha256": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "deploy": true,
+      "hunks": []
+    },
+    "app/agents/sql_agent.py": {
+      "before": "aeeceb6a7c4725c2b1c8238d1b0f77456772d8d3ea934ad3c1f9548092603199",
+      "after": "db9db52489b1df9f9c8cb3d9b94e413f4c81fffbefac0533ea910e2eade2f028",
+      "workspace_sha256": "712921809328903783d4fc5c956acc112a5845a01f4337a3fa74a767046be498",
+      "deploy": true,
+      "hunks": [
+        {
+          "baseline_start": 20,
+          "baseline_end": 27,
+          "old_sha256": "20cbcb038ee6ea0cb0a714516c76d9f15d5b2f4ca2471de829bdb1e01b37726e",
+          "new_sha256": "26f6b6b109200492f53587b41c291356f2ead103f33228634a4dd9399fc9c7b5",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 1116,
+          "baseline_end": 1123,
+          "old_sha256": "b526712eeb9dd24d10f14f893a2c73466916b9518fbd833e38b96efeb5b3a359",
+          "new_sha256": "621d7bac1ce1d773326aa33b875ed9ad0f79dab9f34d33408316271a343d5bec",
+          "status": "inserted_at_unique_right_context"
+        },
+        {
+          "baseline_start": 1564,
+          "baseline_end": 1571,
+          "old_sha256": "3dcabed029d6ef4e59bf8e356191cc54f74ccc6d7da32c24eedc189b04bcdd9f",
+          "new_sha256": "179ff555b1c7cb6fb60ea8ab5f9a7f3304dabc6d01215a4a35de80a403c82d2f",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 2460,
+          "baseline_end": 2467,
+          "old_sha256": "26e92d06ba479c89f4a741dee779231526fe47e790649f1e87366cdeaa55844a",
+          "new_sha256": "3ba9708975c5029f09940ef82edf88f87709e9bbe6d8a5b3abb3bca520a83bdd",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 2501,
+          "baseline_end": 2508,
+          "old_sha256": "2bc0c48c45c25381890707b8cd59dc1216a45935389a1732cc64c52940f986aa",
+          "new_sha256": "5bcb7b1fd35958d70af5c0bc14a6640498692127d1ba9c4ec3d5d4904ac8917c",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 2772,
+          "baseline_end": 2779,
+          "old_sha256": "bc2672e46c297871f49ddf680560f9a156f46fa1ea1b91a41d22b7aca1d0a91a",
+          "new_sha256": "85b728b55b25aaf9c9b4ad4cb279fbdd3689a41727b51638cfe6a228c9dfa2b1",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 4260,
+          "baseline_end": 4268,
+          "old_sha256": "3ee4cc0d7b25145fbc8de6f721e50e0dc93e8181fbdc828934bfc023c57f985f",
+          "new_sha256": "b6042a09f8049b4ceb40c9b03bf08970819a613af6736bb3a427dc4940cdda58",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 4333,
+          "baseline_end": 4340,
+          "old_sha256": "6a65fbd6fcd48cc54088cbecc0b23f28e60e8c45e7924c4a744bd9b54aa5c21b",
+          "new_sha256": "63ccbec43617dd4cda2f8f72b8e9ea6671f5ddf8ceddd3d2de9bf16036a3f05d",
+          "status": "applied"
+        },
+        {
+          "baseline_start": 4386,
+          "baseline_end": 4393,
+          "old_sha256": "2909fe7cf8ec7a1017932ef18ff399dc53c533b23036798cd8913d19c5ab198e",
+          "new_sha256": "ee520f6167a82459df8c36dd5443a55377e894f27d1184cbaa9f6703a97ea5a0",
+          "status": "applied"
+        }
+      ]
+    },
+    "prompts/sql_generator.txt": {
+      "before": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "after": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "workspace_sha256": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "deploy": true,
+      "hunks": [
+        {
+          "baseline_start": 350,
+          "baseline_end": 357,
+          "old_sha256": "19ae96ddceb1eb9b5a04a0102db1b42c2fb7a904a7b0e72adc62918f597739b5",
+          "new_sha256": "20d5c84d0d5d2699cd75fa311134c1f02ca74e8c99bd25d5bb275174917f26c6",
+          "status": "already_present_exact"
+        }
+      ]
+    },
+    "app/core/feedback_inbox.py": {
+      "before": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+      "after": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "workspace_sha256": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "deploy": true,
+      "hunks": [
+        {
+          "baseline_start": 85,
+          "baseline_end": 92,
+          "old_sha256": "a792fc327f097a690b375c39fffa082757bce3f55fe2a533b4858d751b444a35",
+          "new_sha256": "2944a42a87164ba9ec716c2de11064f05288adc01bcfe8c420bfbac54044a899",
+          "status": "applied"
+        }
+      ]
+    },
+    "tests/test_sales_outlook.py": {
+      "after": "b3c4e9b495583a4b50559e7fa8864554c0d0c58f5d2c3d18e39af6b2381f1a6b",
+      "deploy": false
+    },
+    "tests/test_sales_outlook_integration.py": {
+      "after": "bd769213a1276653cd1ccebfeee95df57a035b7a68ae81570b72bde0d7b054a5",
+      "deploy": false
+    },
+    "tests/test_named_period.py": {
+      "after": "391f9bf5869c5b87641c0f3ad6c27efab6d569a94b4a6b707f47c2cdb29e6716",
+      "deploy": false
+    },
+    "tests/test_feedback_resolution_sync.py": {
+      "after": "a477e81582d9711fea82a7cac5060d2827d9c41e0370d84367f4dd29b7da7f14",
+      "deploy": false
+    },
+    "tests/conftest.py": {
+      "after": "eaafc463cfa8c8494e5c7dc2708204e8ad9cd40302169b15bbf75e4ca3af8639",
+      "deploy": false
+    }
+  },
+  "tests": [
+    "tests/test_sales_outlook.py",
+    "tests/test_sales_outlook_integration.py",
+    "tests/test_named_period.py",
+    "tests/test_feedback_resolution_sync.py"
+  ],
+  "test_support_sha256": "b39766e7e56de3e01dd86ad6fe379f8a87d735b4658f42ac64e9d8f348024b2a"
+}

@@ -1,0 +1,604 @@
+--- production/app/flow/spec.py
++++ candidate/app/flow/spec.py
+@@ -41,6 +41,7 @@
+     #      `flow_gates_match_code` 가 **실패로 올린다** — 조용히 낡지 않는다.
+     group: str = "main"
+     unreachable: str = ""          # 비어 있지 않으면 "도달 불가" + 그 이유
++    description: str = ""
+ 
+ 
+ @dataclass(frozen=True)
+@@ -54,7 +55,7 @@
+ _ORCH = "app.agents.orchestrator"
+ 
+ NODES: tuple[Node, ...] = (
+-    Node("input", "USER INPUT", group="io"),
++    Node("input", "질문 입력", group="io"),
+     # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 **전에 한 번만** 돈다.
+     # 질문 문자열을 바꾸므로 뒤의 모든 판정이 이 결과를 본다.
+     Node("alias_expand", "은어·오타 보정",
+@@ -79,6 +80,7 @@
+     Node("intercept.followup", "후속 질문 이어 받기",
+          fn="app.core.followup_rewrite.rewrite",
+          knobs=("followup_rewrite_enabled", "query_rewrites 저장"),
++         description="짧은 후속 질문에 앞 대화의 맥락을 채워 다시 처리합니다. 시각화만 요청하면 직전 SQL을 재실행합니다.",
+          gate="if not _followup_done:"),
+     Node("intercept.notion_save", "노션 저장 관문",
+          fn="app.core.notion_save.handle",
+@@ -162,27 +164,31 @@
+                 "orchestrator._GUARDED")),
+     Node("router.llm", "라우터 · LLM 재판정", fn=f"{_ORCH}.OrchestratorAgent._classify_with_llm",
+          knobs=("prompts/query_analyzer.txt",)),
+-
+-    Node("route_filter.allowed", "enabled-source filter",
++    Node("router.source_gate", "사내 자료 필요 여부",
++         fn=f"{_ORCH}.OrchestratorAgent._needs_source",
++         knobs=("source_gate_enabled",),
++         description="확신이 낮은 300자 이하 질문 중 판정 가능한 질문만 확인합니다. 자료가 필요하면 경로를 재판정하고, 필요 없으면 일반 답변으로 보냅니다."),
++
++    Node("route_filter.allowed", "선택한 소스 확인",
+          fn=f"{_ORCH}.OrchestratorAgent._allowed_routes",
+          knobs=("orchestrator._SOURCE_ROUTE_MAP",)),
+ 
+-    Node("multi_prefix.fanout", "@@ multi-source parallel fan-out",
++    Node("multi_prefix.fanout", "여러 소스 병렬 실행",
+          fn=f"{_ORCH}.OrchestratorAgent._build_multi_prefix_tasks",
+          knobs=("orchestrator.MULTI_PREFIX_ROUTE_TARGETS",)),
+-    Node("multi_prefix.merge", "@@ multi-source merge", group="main"),
+-
+-    Node("route.direct", "direct", group="route"),
+-    Node("route.bigquery", "bigquery", group="route",
++    Node("multi_prefix.merge", "병렬 결과 합치기", group="main"),
++
++    Node("route.direct", "일반 답변", group="route"),
++    Node("route.bigquery", "데이터 조회", group="route",
+          subgraph="app.agents.sql_agent.build_sql_agent_graph"),
+-    Node("route.notion", "notion", group="route"),
+-    Node("route.cs", "cs", group="route"),
+-    Node("route.gws", "gws", group="route"),
+-    Node("route.multi", "multi", group="route"),
+-    Node("route.model_rights", "model_rights", group="route"),
+-    Node("route.report", "report", group="route"),
+-    Node("route.inventory", "inventory", group="route"),
+-    Node("route.awards", "awards", group="route"),
++    Node("route.notion", "사내 문서 검색", group="route"),
++    Node("route.cs", "국내 CS", group="route"),
++    Node("route.gws", "메일·캘린더", group="route"),
++    Node("route.multi", "복합 자료 조회", group="route"),
++    Node("route.model_rights", "초상권 확인", group="route"),
++    Node("route.report", "보고서 생성", group="route"),
++    Node("route.inventory", "재고 조회", group="route"),
++    Node("route.awards", "수상·랭킹 조회", group="route"),
+     # ⚠️ 여기 있던 `route.team` 은 2026-08-25 에 **배선째 걷어냈다.** 도달 불가 표시는
+     #    "지우지도 화살표를 긋지도 않는" 세 번째 선택지였는데, 코드를 실제로 지운
+     #    다음에는 그 표시 자체가 낡은 사실이 된다. 팀 자료는 이제 벡터 색인의 링크
+@@ -214,7 +220,7 @@
+     #     그러면 "답변 포맷 뒤에 Claude 를 부른다" 는 거짓 그림이 된다. 그래서 안 그린다
+     #   ⚠️ Bedrock 은 우리 코드가 부르지 않는다 — 게이트웨이(LiteLLM)가 뒤에서 부른다.
+     #     그래서 fn 이 없다. 계정·리전·모델 배포는 전부 플랫폼 운영자 몫이다
+-    Node("llm.claude", "Claude Opus 5 · ClaudeClient",
++    Node("llm.claude", "Claude · ClaudeClient",
+          fn="app.core.llm.ClaudeClient",
+          knobs=("ANTHROPIC_OPUS_MODEL", "ANTHROPIC_EFFORT"), group="llm"),
+     Node("llm.gateway", "사내 LLM 게이트웨이 (LiteLLM)",
+@@ -287,8 +293,9 @@
+ 
+ 
+ def generated_nodes() -> tuple[Node, ...]:
++    labels = {n.id.removeprefix("route."): n.label for n in NODES if n.group == "route"}
+     return tuple(
+-        Node(f"multi_prefix.branch.{target}", f"@@ branch: {target}", group="branch")
++        Node(f"multi_prefix.branch.{target}", f"@@ 병렬: {labels.get(target, target)}", group="branch")
+         for target in multi_prefix_targets()
+     )
+ 
+@@ -296,8 +303,11 @@
+ def generated_edges() -> tuple[Edge, ...]:
+     routes = classifier_routes()
+     return (
+-        Edge("router.keyword", "router.llm", label="not confident", conditional=True),
+-        Edge("router.keyword", "route_filter.allowed", label="confident", conditional=True),
++        Edge("router.keyword", "router.llm", label="불확실 · 자료 관문 비활성/문맥상 우회", conditional=True),
++        Edge("router.keyword", "router.source_gate", label="불확실 · 짧은 질문 · 관문 활성", conditional=True),
++        Edge("router.source_gate", "router.llm", label="사내 자료 필요", conditional=True),
++        Edge("router.source_gate", "route_filter.allowed", label="자료 불필요 · direct", conditional=True),
++        Edge("router.keyword", "route_filter.allowed", label="확신 · 직접 잠금 · 시스템 작업 · 긴 질문", conditional=True),
+         Edge("router.llm", "route_filter.allowed", label="classified", conditional=True),
+         *tuple(
+             Edge("route_filter.allowed", route,
+@@ -361,8 +371,8 @@
+          label="회사 기본 사실", conditional=True),
+     Edge("intercept.company", "intercept.fi_guard", label="통과", conditional=True),
+ 
+-    Edge("intercept.fi_guard", "route.bigquery",
+-         label="권한 없음 · 거절", conditional=True),
++    Edge("intercept.fi_guard", "response",
++         label="권한 없음 · 조회 없이 거절", conditional=True),
+     Edge("intercept.fi_guard", "intercept.ingredient", label="통과", conditional=True),
+ 
+     Edge("intercept.ingredient", "route.bigquery",
+@@ -415,8 +425,9 @@
+     Edge("route.report", "llm.claude", label="해석 문장 (insight)", conditional=True),
+     Edge("route.report", "llm.gemini", label="계획 (planner)", conditional=True),
+     Edge("router.llm", "llm.gemini", label="재판정"),
++    Edge("router.source_gate", "llm.gemini", label="자료 필요 여부 판정"),
+     Edge("llm.claude", "llm.gateway",
+-         label="LLM_GATEWAY_URL·KEY 설정 (2026-09-28~ 켜짐)", conditional=True),
++         label="LLM_GATEWAY_URL·KEY 모두 설정", conditional=True),
+     Edge("llm.claude", "llm.anthropic", label="미설정 · 직접 호출", conditional=True),
+     Edge("llm.gateway", "llm.bedrock", label="OpenAI 호환 → Bedrock · 가드레일 · Langfuse"),
+ )
+--- production/app/flow/graph.py
++++ candidate/app/flow/graph.py
+@@ -8,9 +8,10 @@
+ 
+ import importlib
+ from dataclasses import dataclass
+-from typing import Any, Dict, List, Tuple
+-
+-from app.flow import spec
++from typing import Any, Dict, List, Tuple
++
++from app.config import get_settings
++from app.flow import spec
+ from app.flow.spec import Edge, Node
+ 
+ _SENTINELS = ("__start__", "__end__")
+@@ -78,9 +79,9 @@
+ def _as_dict(n: Node) -> Dict[str, Any]:
+     # `unreachable` 은 **빈 문자열이 정상**이고, 값이 있으면 그 자체가 이유 문구다.
+     # 화면에서 흐릿하게·점선으로 그려 "엣지를 빠뜨린 것"과 구분한다.
+-    return {"id": n.id, "label": n.label, "fn": n.fn, "group": n.group,
+-            "knobs": list(n.knobs), "has_subgraph": bool(n.subgraph),
+-            "unreachable": n.unreachable}
++    return {"id": n.id, "label": n.label, "fn": n.fn, "group": n.group,
++            "knobs": list(n.knobs), "has_subgraph": bool(n.subgraph),
++            "unreachable": n.unreachable, "description": n.description}
+ 
+ 
+ def build() -> Dict[str, Any]:
+@@ -96,7 +97,22 @@
+     """
+     nodes_spec = spec.all_nodes()
+     edges_spec = spec.all_edges()
+-    nodes: List[Dict[str, Any]] = [_as_dict(n) for n in nodes_spec]
++    nodes: List[Dict[str, Any]] = [_as_dict(n) for n in nodes_spec]
++    # The diagram describes the process serving this request. Expose model IDs
++    # and transport choice only; gateway credentials and URLs stay private.
++    settings = get_settings()
++    gateway_active = bool(settings.llm_gateway_url.strip() and settings.llm_gateway_key.strip())
++    for node in nodes:
++        if node["id"] == "llm.claude":
++            node["label"] = f"{settings.anthropic_opus_model} · ClaudeClient"
++            node["description"] = "현재 서버 설정의 Claude 모델입니다. 전송 경로는 게이트웨이 URL과 키 설정 여부로 결정됩니다."
++        elif node["id"] == "llm.gemini":
++            node["label"] = f"{settings.gemini_flash_model} · Google API"
++            node["description"] = "현재 서버 설정의 Flash 모델입니다. 경로 재판정과 자료 필요 여부 판정에 사용합니다."
++        elif node["id"] in ("llm.gateway", "llm.anthropic"):
++            active = gateway_active if node["id"] == "llm.gateway" else not gateway_active
++            node["active"] = active
++            node["description"] = "현재 서버 설정에서 사용하는 전송 경로입니다." if active else "설정 조건이 바뀌면 사용하는 대체 전송 경로입니다."
+ 
+     subgraphs: Dict[str, SubGraph] = {
+         n.id: expand_langgraph(n.subgraph, prefix=n.id.split(".")[-1])
+@@ -104,10 +120,13 @@
+     }
+ 
+     # 하위 그래프가 대신할 상위 노드의 직행 엣지는 뺀다 (2단계에서 이탈점이 잇는다)
+-    edges: List[Dict[str, Any]] = [
++    edges: List[Dict[str, Any]] = [
+         {"src": e.src, "dst": e.dst, "label": e.label, "conditional": e.conditional}
+-        for e in edges_spec if e.src not in subgraphs
+-    ]
++        for e in edges_spec if e.src not in subgraphs
++    ]
++    for edge in edges:
++        if edge["src"] == "llm.claude" and edge["dst"] in ("llm.gateway", "llm.anthropic"):
++            edge["active"] = gateway_active if edge["dst"] == "llm.gateway" else not gateway_active
+ 
+     for parent_id, sub in subgraphs.items():
+         nodes.extend({**_as_dict(s), "parent": parent_id} for s in sub.nodes)
+--- production/app/core/static_checks.py
++++ candidate/app/core/static_checks.py
+@@ -837,16 +837,17 @@
+ 
+     # 라우터 노드의 나가는 엣지 = 분류기가 낼 수 있는 값. 하나라도 어긋나면
+     # 화면이 "이 질문은 저기로 갈 수 있다"고 없는 길을 알려준다 (13개 거짓 엣지 사고).
+-    for router in ("router.keyword", "router.llm"):
++    for router in ("router.keyword", "router.llm", "router.source_gate"):
+         # ⚠️ LLM 층(`llm.*`)은 라우팅 위상이 아니라 "어느 모델을 부르나" 를 그린 곁가지다
+         #    (2026-09-30). 재판정이 Gemini 를 부른다는 엣지는 사실이지만 라우트가 아니므로
+         #    여기 비교에서 뺀다 — 안 빼면 이 검사가 참인 그림을 어긋남으로 올린다
+         router_edges = {e["dst"] for e in built["edges"]
+                         if e["src"] == router and not e["dst"].startswith("llm.")}
+-        expected_edges = (
+-            {"router.llm", "route_filter.allowed"}
+-            if router == "router.keyword" else {"route_filter.allowed"}
+-        )
++        expected_edges = {
++            "router.keyword": {"router.llm", "router.source_gate", "route_filter.allowed"},
++            "router.llm": {"route_filter.allowed"},
++            "router.source_gate": {"router.llm", "route_filter.allowed"},
++        }[router]
+         if router_edges != expected_edges:
+             problems.append(
+                 f"{router} topology differs (+{sorted(router_edges - expected_edges)} "
+--- production/app/frontend/chat.html
++++ candidate/app/frontend/chat.html
+@@ -459,10 +459,23 @@
+     <!-- ⚠️ 크기는 CSS 가 정한다 (`.flow-layout`). 인라인으로 되돌리지 마라 —
+          420px 서랍 안에 캔버스+320px 패널을 나란히 놓은 탓에 그림이 30px
+          폭으로 눌려 있었다 (2026-08-25 실측). 이 탭은 `flow-mode` 로 서랍을 넓힌다. -->
+-    <div class="admin-tab-content" id="tab-flow">
+-      <div class="flow-layout">
+-        <div class="flow-main">
+-          <div class="flow-toolbar">
++    <div class="admin-tab-content" id="tab-flow">
++      <header class="flow-heading">
++        <div><span class="flow-eyebrow">SYSTEM ARCHITECTURE</span><h2>질문에서 답변까지</h2><p>실행 중인 서버 코드에서 추출한 처리 구조입니다.</p></div>
++        <button type="button" class="admin-btn-secondary" id="btn-flow-refresh">새로고침</button>
++      </header>
++      <div class="flow-meta" id="flow-meta" aria-live="polite"></div>
++      <div class="flow-viewbar">
++        <div class="flow-view-switch" role="group" aria-label="아키텍처 보기 방식">
++          <button type="button" id="btn-flow-overview" aria-pressed="true">구조 한눈에</button>
++          <button type="button" id="btn-flow-network" aria-pressed="false">연결 그래프</button>
++        </div>
++        <label class="flow-search">노드 검색<input id="flow-search" type="search" placeholder="이름 · 실행 지점 · 설정값" autocomplete="off"></label>
++      </div>
++      <div class="flow-layout">
++        <div class="flow-main">
++          <div id="flow-overview"></div>
++          <div class="flow-toolbar" id="flow-graph-controls" hidden>
+             <button class="admin-btn-secondary" id="btn-flow-collapse">자세히 보기</button>
+             <button class="admin-btn-secondary" id="btn-flow-fit">전체 보기</button>
+             <button class="admin-btn-secondary" id="btn-flow-zoom-in" aria-label="확대">+</button>
+@@ -478,13 +491,13 @@
+               <span><i class="flow-line flow-line-cond"></i>조건부</span>
+             </span>
+           </div>
+-          <div id="flow-canvas"></div>
++          <div id="flow-canvas" hidden></div>
+           <!-- 상세는 오버레이다. 옆에 나란히 두면 320px 을 캔버스에서 뺏어가는데,
+                가로로 긴 계층 그래프에서 그 폭이 곧 글자 크기다 (2026-08-25 실측). -->
+-          <div id="flow-detail" class="flow-side" hidden></div>
++          <div id="flow-detail" class="flow-side" role="region" aria-label="노드 상세" tabindex="-1" hidden></div>
+         </div>
+       </div>
+-      <div class="flow-hint" id="flow-hint">노드를 클릭하면 실행 지점·설정값이 나옵니다.</div>
++      <div class="flow-hint" id="flow-hint" role="status">구조를 불러오는 중입니다.</div>
+     </div>
+     <!-- Tab: Groups -->
+     <div class="admin-tab-content active" id="tab-groups">
+--- production/app/frontend/chat.js
++++ candidate/app/frontend/chat.js
+@@ -4901,7 +4901,8 @@
+     var activeTabName = activeTab ? activeTab.dataset.tab : "groups";
+     drawer.classList.toggle("visitor-mode", activeTabName === "visitors");
+     drawer.classList.toggle("flow-mode", activeTabName === "flow");
+-    if (activeTabName === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
++    if (activeTabName === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
++    if (activeTabName === "flow") loadFlowCanvas();
+     // Hide write-actions for non-admin
+     document.getElementById("btn-create-group").style.display = isAdmin() ? "" : "none";
+     document.getElementById("btn-sync-directory").style.display = isAdmin() ? "" : "none";
+@@ -5699,8 +5700,70 @@
+   //    남아야 접힌 그림도 거짓말을 하지 않는다 — 몇 단계를 접었는지 엣지에 적는다.
+   var _flowNetwork = null;
+   var _flowGraph = null;
+-  var _flowCollapsed = true;   // 기본 = 간략 보기
+-  var _FLOW_HIDDEN_GROUPS = { sub: 1, branch: 1 };
++  var _flowCollapsed = true;   // 기본 = 간략 보기
++  var _flowView = "overview";
++  var _flowSelected = null;
++  var _flowReturnFocus = null;
++  var _flowRequest = 0;
++  var _FLOW_HIDDEN_GROUPS = { sub: 1, branch: 1 };
++
++  // Categories describe responsibilities, not an invented execution sequence.
++  function _flowCategory(n) {
++    if (n.id === "response" || n.id === "answer_check") return "output";
++    if (n.group === "llm") return "llm";
++    if (n.group === "route" || n.group === "sub" || n.group === "branch" || n.id.indexOf("multi_prefix.") === 0) return "routes";
++    if (n.id === "source_gate" || n.id.indexOf("router.") === 0 || n.id.indexOf("route_filter.") === 0) return "routing";
++    return "input";
++  }
++
++  function renderFlowOverview() {
++    var overview = document.getElementById("flow-overview");
++    if (!overview || !_flowGraph) return;
++    var search = document.getElementById("flow-search");
++    var query = (search ? search.value : "").trim().toLowerCase();
++    var categories = [
++      ["input", "입력과 사전 처리", "질문 정리 · 라우터 이전 관문"],
++      ["routing", "경로 선택", "분류 · 사용 가능한 경로 확인"],
++      ["routes", "경로별 처리", "실행 경로 · 병렬 분기 · 하위 단계"],
++      ["llm", "모델 호출", "LLM 전송과 대체 경로"],
++      ["output", "답변과 검증", "응답 검사 · 최종 출력"]
++    ];
++    var visible = 0;
++    overview.innerHTML = "<p class='flow-overview-note'>역할별로 묶은 구조입니다. 열의 순서가 실행 순서는 아닙니다. 노드를 선택하면 실제 연결을 확인할 수 있습니다.</p>" +
++      "<div class='flow-columns'>" + categories.map(function(category) {
++        var members = _flowGraph.nodes.filter(function(n) { return _flowCategory(n) === category[0]; });
++        var filtered = members.filter(function(n) {
++          return [n.label, n.id, n.fn, n.description, (n.knobs || []).join(" ")].join(" ").toLowerCase().indexOf(query) !== -1;
++        });
++        visible += filtered.length;
++        if (query && !filtered.length) return "";
++        return "<section class='flow-column flow-category-" + category[0] + "'><header><h3>" + category[1] + "<span>" + filtered.length + "</span></h3><p>" + category[2] + "</p></header><div class='flow-node-list'>" + filtered.map(function(n) {
++          var index = _flowGraph.nodes.indexOf(n);
++          var badge = n.unreachable ? "도달 불가" : n.active === true ? "현재 사용" : n.active === false ? "비활성" : n.group === "sub" ? "하위 단계" : n.group === "branch" ? "병렬 분기" : "";
++          return "<button type='button' class='flow-node" + (n.unreachable ? " is-unreachable" : "") + "' data-flow-index='" + index + "' aria-pressed='" + (n.id === _flowSelected) + "'>" +
++            "<span class='flow-node-top'><span class='flow-node-number'>" + String(members.indexOf(n) + 1).padStart(2, "0") + "</span>" + (badge ? "<span class='flow-node-badge'>" + badge + "</span>" : "") + "</span>" +
++            "<strong>" + escapeHtml(n.label) + "</strong><span class='flow-node-id'>" + escapeHtml(n.id) + "</span>" +
++            (n.description ? "<span class='flow-node-description'>" + escapeHtml(n.description) + "</span>" : "") + "</button>";
++        }).join("") + "</div></section>";
++      }).join("") + "</div>";
++    if (!visible) overview.innerHTML += "<div class='flow-state'>검색 결과가 없습니다. 다른 이름이나 실행 지점을 입력해 주세요.</div>";
++    overview.querySelectorAll("[data-flow-index]").forEach(function(button) {
++      button.addEventListener("click", function() { _flowReturnFocus = button; showFlowDetail(_flowGraph.nodes[Number(button.dataset.flowIndex)]); });
++    });
++  }
++
++  function setFlowView(view) {
++    _flowView = view;
++    hideFlowDetail();
++    document.getElementById("flow-overview").hidden = view !== "overview";
++    document.getElementById("flow-canvas").hidden = view !== "network";
++    document.getElementById("flow-graph-controls").hidden = view !== "network";
++    document.getElementById("flow-search").closest("label").hidden = view !== "overview";
++    document.getElementById("btn-flow-overview").setAttribute("aria-pressed", String(view === "overview"));
++    document.getElementById("btn-flow-network").setAttribute("aria-pressed", String(view === "network"));
++    if (view === "network") renderFlowCanvas();
++    else renderFlowOverview();
++  }
+ 
+   function _flowNodeColor(group) {
+     // ⚠️ 이 색은 범례(`style.css` 의 `.flow-dot-*`)와 **같은 값**이다.
+@@ -5738,10 +5801,15 @@
+     return out;
+   }
+ 
+-  function renderFlowCanvas() {
++  function renderFlowCanvas() {
+     if (!_flowGraph) return;
+     var container = document.getElementById("flow-canvas");
+-    if (!container) return;
++    if (!container) return;
++    if (_flowNetwork) { _flowNetwork.destroy(); _flowNetwork = null; }
++    if (typeof vis === "undefined") {
++      container.innerHTML = "<div class='flow-state'>연결 그래프 도구를 불러오지 못했습니다. 구조 한눈에 보기에서 연결을 확인할 수 있습니다.</div>";
++      return;
++    }
+     var hidden = {};
+     if (_flowCollapsed) {
+       _flowGraph.nodes.forEach(function(n) {
+@@ -5811,21 +5879,29 @@
+     });
+   }
+ 
+-  function hideFlowDetail() {
++  function hideFlowDetail() {
+     var detail = document.getElementById("flow-detail");
+-    if (detail) detail.hidden = true;
++    if (detail) detail.hidden = true;
++    _flowSelected = null;
++    document.querySelectorAll(".flow-node[aria-pressed='true']").forEach(function(button) { button.setAttribute("aria-pressed", "false"); });
+   }
+ 
+   function showFlowDetail(n) {
+     var detail = document.getElementById("flow-detail");
+-    if (!detail || !n) return;
++    if (!detail || !n) return;
++    _flowSelected = n.id;
++    document.querySelectorAll(".flow-node[data-flow-index]").forEach(function(button) {
++      button.setAttribute("aria-pressed", String(_flowGraph.nodes[Number(button.dataset.flowIndex)].id === n.id));
++    });
+     var knobs = (n.knobs || []).map(function(k) {
+       return "<li><code>" + escapeHtml(k) + "</code></li>";
+     }).join("");
+     detail.innerHTML =
+       "<button class='flow-close' aria-label='닫기'>×</button>" +
+-      "<h3 style='margin:0 0 8px;font-size:14px'>" + escapeHtml(n.label) + "</h3>" +
+-      "<div style='color:var(--text-muted);font-size:11px'>" + escapeHtml(n.id) + "</div>" +
++      "<h3>" + escapeHtml(n.label) + "</h3>" +
++      "<div class='flow-detail-id'>" + escapeHtml(n.id) + "</div>" +
++      (n.description ? "<p>" + escapeHtml(n.description) + "</p>" : "") +
++      (typeof n.active === "boolean" ? "<p class='flow-node-badge'>" + (n.active ? "현재 사용 중인 호출 경로" : "현재 비활성 호출 경로") + "</p>" : "") +
+       (n.unreachable ? "<p style='margin:10px 0 4px;color:#c76a00'><b>도달 불가</b><br>"
+                        + escapeHtml(n.unreachable) + "</p>" : "") +
+       (n.fn ? "<p style='margin:10px 0 4px'><b>실행 지점</b><br><code>"
+@@ -5835,32 +5911,65 @@
+       (n.has_subgraph ? "<p style='color:var(--text-secondary)'>하위 그래프 있음 "
+                         + "(LangGraph 에서 자동 추출"
+                         + (_flowCollapsed ? " · '자세히 보기' 에서 펼쳐진다" : "") + ")</p>" : "");
+-    detail.hidden = false;
+-    var close = detail.querySelector(".flow-close");
+-    if (close) close.addEventListener("click", hideFlowDetail);
+-  }
+-
+-  function loadFlowCanvas() {
+-    var hint = document.getElementById("flow-hint");
+-    hideFlowDetail();
++    [ ["들어오는 연결", "dst", "src"], ["나가는 연결", "src", "dst"] ].forEach(function(direction) {
++      var links = _flowGraph.edges.filter(function(edge) { return edge[direction[1]] === n.id; });
++      detail.innerHTML += "<section class='flow-connections'><h4>" + direction[0] + " <span>" + links.length + "</span></h4>" + (links.length ? links.map(function(edge) {
++        var index = _flowGraph.nodes.findIndex(function(node) { return node.id === edge[direction[2]]; });
++        return index < 0 ? "" : "<button type='button' data-flow-link='" + index + "'><strong>" + escapeHtml(_flowGraph.nodes[index].label) + "</strong><span>" + escapeHtml(edge.label || (edge.conditional ? "조건부 연결" : "직접 연결")) + "</span></button>";
++      }).join("") : "<p>등록된 연결 없음</p>") + "</section>";
++    });
++    detail.hidden = false;
++    detail.focus({ preventScroll: true });
++    detail.querySelectorAll("[data-flow-link]").forEach(function(button) { button.addEventListener("click", function() { showFlowDetail(_flowGraph.nodes[Number(button.dataset.flowLink)]); }); });
++    var close = detail.querySelector(".flow-close");
++    if (close) close.addEventListener("click", function() { hideFlowDetail(); if (_flowReturnFocus && _flowReturnFocus.isConnected) _flowReturnFocus.focus(); });
++    detail.onkeydown = function(event) { if (event.key === "Escape") { event.preventDefault(); close.click(); } };
++  }
++
++  function loadFlowCanvas() {
++    var hint = document.getElementById("flow-hint");
++    var meta = document.getElementById("flow-meta");
++    var overview = document.getElementById("flow-overview");
++    var canvas = document.getElementById("flow-canvas");
++    var refresh = document.getElementById("btn-flow-refresh");
++    var request = ++_flowRequest;
++    hideFlowDetail();
++    _flowGraph = null;
++    if (_flowNetwork) { _flowNetwork.destroy(); _flowNetwork = null; }
++    meta.textContent = "";
++    hint.textContent = "서버 코드에서 구조를 불러오는 중…";
++    overview.innerHTML = canvas.innerHTML = "<div class='flow-state'>아키텍처를 불러오는 중…</div>";
++    refresh.disabled = true;
+     // ⚠️ 이 앱의 admin fetch 는 **세션 쿠키** 방식이다. 헤더를 직접 붙이지 마라 —
+     //    `authHeaders()` 같은 헬퍼는 이 파일에 없다 (2026-08-24 확인).
+-    fetch("/api/admin/flow")
++    fetch("/api/admin/flow", { cache: "no-store" })
+       .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+-      .then(function(g) {
+-        _flowGraph = g;
+-        renderFlowCanvas();
+-        if (hint) {
+-          hint.textContent = "노드를 클릭하면 실행 지점·설정값이 나옵니다. "
+-            + "노드 " + g.nodes.length + "개 · 엣지 " + g.edges.length + "개"
+-            + (g.generated_at ? " · 생성 " + g.generated_at : "");
++      .then(function(g) {
++        if (request !== _flowRequest) return;
++        if (!g || !Array.isArray(g.nodes) || !Array.isArray(g.edges)) throw new Error("올바르지 않은 응답");
++        if (!g.nodes.length) throw new Error("표시할 노드가 없습니다");
++        _flowGraph = g;
++        setFlowView(_flowView);
++        var generated = g.generated_at ? new Date(g.generated_at) : null;
++        meta.textContent = "노드 " + g.nodes.length + "개 · 연결 " + g.edges.length + "개 · " +
++          (generated && !isNaN(generated.getTime()) ? "서버 생성 " + generated.toLocaleString("ko-KR") : "생성 시각 정보 없음");
++        if (hint) {
++          hint.textContent = "노드를 선택하면 실행 지점·설정값·실제 연결을 볼 수 있습니다. 연결 그래프의 간략 보기에서는 하위 단계와 병렬 분기를 접어 표시합니다.";
+         }
+       })
+-      .catch(function(e) {
+-        if (hint) hint.innerHTML = "<span style='color:#e05555'>흐름을 불러오지 못했습니다: "
+-                                   + escapeHtml(String(e)) + "</span>";
+-      });
+-  }
++      .catch(function(e) {
++        if (request !== _flowRequest) return;
++        _flowGraph = null;
++        overview.innerHTML = canvas.innerHTML = "<div class='flow-state'><strong>구조를 불러오지 못했습니다.</strong><p>" + escapeHtml(String(e)) + "</p><button type='button' class='admin-btn-secondary flow-retry'>다시 시도</button></div>";
++        document.querySelectorAll(".flow-retry").forEach(function(button) { button.addEventListener("click", loadFlowCanvas); });
++        hint.textContent = "새로고침 또는 다시 시도를 눌러 최신 구조를 불러와 주세요.";
++      }).finally(function() { if (request === _flowRequest) refresh.disabled = false; });
++  }
++
++  document.getElementById("btn-flow-refresh").addEventListener("click", loadFlowCanvas);
++  document.getElementById("btn-flow-overview").addEventListener("click", function() { setFlowView("overview"); });
++  document.getElementById("btn-flow-network").addEventListener("click", function() { setFlowView("network"); });
++  document.getElementById("flow-search").addEventListener("input", function() { hideFlowDetail(); renderFlowOverview(); });
+ 
+   // 캔버스 컨트롤 — 휠 확대만 있으면 트랙패드에서 길을 잃는다.
+   function _flowZoom(factor) {
+--- production/app/static/style.css
++++ candidate/app/static/style.css
+@@ -3813,11 +3813,10 @@
+   .flow-layout { height: auto; }
+   #flow-canvas { height: 58vh; }
+   .flow-side { position: static; width: auto; max-height: 220px; box-shadow: none; }
+-  .flow-legend { margin-left: 0; }
+-}
+-}
+-
+-#skin-admin-drawer .drawer-header {
++  .flow-legend { margin-left: 0; }
++}
++
++#skin-admin-drawer .drawer-header {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+@@ -6479,4 +6478,87 @@
+ .ms-frame { width: 100%; height: 60vh; border: 1px solid var(--border); }
+ #ms-preview { width: min(800px, 92vw); background: var(--bg-surface); color: var(--text);
+               border: 1px solid var(--border-strong); border-radius: var(--radius-md); }
+-#ms-job-bar { width: 100%; }
++#ms-job-bar { width: 100%; }
++
++/* Architecture reading surface: global rules, independent of legacy media scope. */
++#skin-admin-drawer.flow-mode { width: min(1600px, 97vw); }
++#skin-admin-drawer.flow-mode #admin-stats-bar { display: none; }
++#skin-admin-drawer.flow-mode .admin-tab { color: var(--text-secondary); }
++#skin-admin-drawer.flow-mode .admin-tab.active { color: var(--text); }
++#tab-flow .admin-btn-secondary { color: var(--text-secondary); }
++#tab-flow .admin-btn-secondary:disabled { opacity: .5; cursor: wait; }
++#tab-flow { padding: 22px; overflow-y: auto; }
++#tab-flow > * { flex-shrink: 0; }
++#tab-flow [hidden] { display: none !important; }
++.flow-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
++.flow-eyebrow { color: var(--text-secondary); font-size: 11px; letter-spacing: 1.6px; font-weight: 600; }
++.flow-heading h2 { margin: 7px 0; color: var(--text); font-size: 26px; font-weight: 650; letter-spacing: -1px; }
++.flow-heading p { margin: 0; font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
++.flow-meta { margin: 16px 0 20px; font-size: 12px; line-height: 1.6; color: var(--text-secondary); }
++.flow-viewbar { position: sticky; top: -22px; z-index: 1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--bg-sidebar); border-top: 1px solid var(--border); padding: 16px 0 12px; }
++.flow-view-switch { display: inline-flex; padding: 4px; border: 1px solid var(--border); background: var(--bg-surface); border-radius: 10px; gap: 4px; }
++.flow-view-switch button { color: var(--text-secondary); background: transparent; border: 0; border-radius: 6px; padding: 9px 14px; font: inherit; font-size: 13px; cursor: pointer; }
++.flow-view-switch button[aria-pressed="true"] { background: var(--bg-elevated); color: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.12); font-weight: 650; }
++.flow-search { display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-size: 12px; }
++.flow-search input { min-width: 245px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text); font: inherit; font-size: 13px; }
++#tab-flow .flow-layout { display: block; height: auto; min-height: 360px; margin-top: 16px; }
++#tab-flow .flow-main { position: relative; display: flex; flex-direction: column; min-width: 0; gap: 12px; }
++.flow-overview-note { margin: 0 0 18px; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
++.flow-columns { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; align-items: start; }
++.flow-column { min-width: 0; border-top: 3px solid var(--border); }
++.flow-category-input { border-top-color: #3aa675; }
++.flow-category-routing { border-top-color: #879661; }
++.flow-category-routes { border-top-color: #d59937; }
++.flow-category-llm { border-top-color: #368a99; }
++.flow-category-output { border-top-color: #8c79a8; }
++.flow-column > header { padding: 15px 2px 13px; }
++.flow-column h3 { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 0 0 5px; color: var(--text); font-size: 14px; font-weight: 650; }
++.flow-column h3 > span { color: var(--text-secondary); font-size: 12px; font-weight: 400; }
++.flow-column > header p { margin: 0; font-size: 11px; line-height: 1.6; color: var(--text-secondary); }
++.flow-node-list { display: grid; gap: 8px; }
++.flow-node { position: relative; display: flex; flex-direction: column; width: 100%; gap: 4px; padding: 11px 10px 11px 32px; text-align: left; color: var(--text); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 9px; cursor: pointer; font: inherit; transition: border-color .15s, background-color .15s; }
++.flow-node:hover { background: var(--bg-hover); border-color: var(--text-secondary); }
++.flow-node[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); background: var(--bg-elevated); }
++.flow-node:focus-visible, #tab-flow button:focus-visible, .flow-search input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
++.flow-node-top { display: contents; }
++.flow-node-number { position: absolute; top: 14px; left: 10px; font-size: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
++.flow-node .flow-node-badge { order: 3; align-self: flex-start; }
++.flow-node-badge { font-size: 10px; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
++.flow-node strong { font-size: 14px; line-height: 1.45; font-weight: 600; white-space: pre-line; overflow-wrap: anywhere; }
++.flow-node-id { color: var(--text-secondary); font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
++.flow-node-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
++.flow-node.is-unreachable { border-style: dashed; }
++#tab-flow #flow-canvas { flex: none; width: 100%; height: max(480px, 60vh); border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); }
++#tab-flow .flow-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
++#tab-flow .flow-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-left: 0; color: var(--text-secondary); font-size: 11px; }
++#tab-flow .flow-side { position: fixed; z-index: 2; top: 190px; right: 30px; width: 350px; max-width: calc(100vw - 48px); max-height: calc(100dvh - 218px); overflow: auto; box-sizing: border-box; padding: 24px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elevated); box-shadow: 0 12px 48px rgba(0,0,0,.22); color: var(--text); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
++#tab-flow .flow-side h3 { margin: 4px 24px 8px 0; font-size: 18px; line-height: 1.5; white-space: pre-line; }
++.flow-detail-id { color: var(--text-secondary); font-size: 12px; }
++#tab-flow .flow-close { position: absolute; right: 10px; top: 10px; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-surface); color: var(--text); font-size: 22px; cursor: pointer; }
++.flow-connections { margin-top: 20px; padding-top: 12px; border-top: 1px solid var(--border); }
++.flow-connections h4 { margin: 0 0 10px; font-size: 12px; color: var(--text-secondary); }
++.flow-connections h4 span { margin-left: 5px; }
++.flow-connections button { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-surface); color: var(--text); padding: 10px; margin-top: 6px; font: inherit; cursor: pointer; }
++.flow-connections button:hover { background: var(--bg-hover); }
++.flow-connections button strong { font-size: 13px; font-weight: 500; }
++.flow-connections button span, .flow-connections p { font-size: 12px; color: var(--text-secondary); }
++.flow-state { padding: 55px 20px; text-align: center; color: var(--text-secondary); font-size: 14px; line-height: 1.8; }
++#tab-flow .flow-hint { padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
++@media (max-width: 1150px) {
++  .flow-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }
++}
++@media (max-width: 700px) {
++  #skin-admin-drawer.flow-mode { width: 100vw; }
++  #tab-flow { padding: 16px; }
++  .flow-viewbar { top: -16px; }
++  .flow-heading h2 { font-size: 23px; }
++  .flow-heading { align-items: flex-start; gap: 12px; }
++  .flow-heading > button { flex-shrink: 0; }
++  .flow-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
++  .flow-search { width: 100%; }
++  .flow-search input { min-width: 0; flex: 1; }
++  #tab-flow .flow-side { top: auto; bottom: 16px; right: 16px; width: calc(100vw - 32px); max-width: none; max-height: 65dvh; }
++}
++@media (max-width: 420px) {
++  .flow-columns { grid-template-columns: minmax(0, 1fr); }
++}

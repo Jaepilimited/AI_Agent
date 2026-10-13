@@ -1,0 +1,14 @@
+{
+  "service": "active",
+  "ready_http": 200,
+  "ready": {
+    "status": "ready",
+    "notion_warmup": true,
+    "notion_pages": 10,
+    "bq_schema": true,
+    "cs_loaded": true,
+    "cs_db_count": 920
+  },
+  "hashes_match": true,
+  "files": 8
+}

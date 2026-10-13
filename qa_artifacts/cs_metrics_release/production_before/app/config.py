@@ -1,0 +1,270 @@
+"""SKIN1004 Enterprise AI - Configuration Management."""
+
+from functools import lru_cache
+from pathlib import Path
+from typing import List
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# ⛔ **서비스 모델 이름은 여기가 단일 소스다.** 예전엔 9곳에 하드코딩돼 있었고,
+#    그 사이 `conversation_api` 만 옛 이름(`skin1004-ai`)에 머물러 있었다 —
+#    `/v1/models` 가 내주는 목록과 대화가 기록하는 모델명이 서로 달랐다
+#    (2026-08-18 정리). 같은 값을 여러 곳에 적으면 한쪽만 고쳐진다.
+ALL_MODELS = "skin1004-Analysis"
+JWT_SECRET_MIN_BYTES = 32
+_INSECURE_JWT_SECRETS = {"skin1004-ai-secret-change-me"}
+
+
+def validate_jwt_secret(secret: str) -> str:
+    """Return a usable JWT key or fail before the application can serve traffic."""
+    normalized = (secret or "").strip()
+    if (
+        normalized in _INSECURE_JWT_SECRETS
+        or len(normalized.encode("utf-8")) < JWT_SECRET_MIN_BYTES
+    ):
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be explicitly set to at least 32 bytes "
+            "and must not use the public default"
+        )
+    return normalized
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # GCP
+    gcp_project_id: str = "skin1004-319714"
+    google_application_credentials: str = "C:/json_key/skin1004-319714-60527c477460.json"
+
+    # Gemini
+    gemini_model: str = "gemini-3.1-pro-preview"
+    gemini_flash_model: str = "gemini-3.8-flash"
+    gemini_api_key: str = ""
+
+    # BigQuery - Sales
+    bq_dataset_sales: str = "Sales_Integration"
+    bq_table_sales: str = "SALES_ALL_Backup"
+    bq_table_product: str = "Product"
+
+    # BigQuery - RAG
+    bq_dataset_rag: str = "AI_RAG"
+    bq_table_embeddings: str = "rag_embeddings"
+    bq_table_qa_logs: str = "qa_logs"
+
+    # Embedding
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_dim: int = 768
+
+    # Anthropic (v3.0) — Opus (complex) + Sonnet (light)
+    anthropic_api_key: str = ""
+    anthropic_opus_model: str = "claude-opus-5"
+    anthropic_sonnet_model: str = "claude-sonnet-5"
+    # Opus 5 는 thinking 이 기본 ON 이다. 깊이(low|medium|high|xhigh|max)가 지연과
+    # 직결되므로 값으로 둔다. **프로덕션 실측** (2026-08-13, 4문항×3회 중앙값,
+    # 캐시 회피용 문구를 붙여 매번 새 질문으로):
+    #     완료까지  low 11.0s → medium 13.3s (+2.3s, +20%)
+    # 첫 글자는 두 설정 모두 0.02s — 앱이 먼저 흘리므로 체감 지연은 완료 시간에 있다.
+    # 올릴 땐 반드시 다시 재고 올릴 것 (SDK 단독 측정은 앱 지연과 다르다).
+    anthropic_effort: str = "medium"
+
+    # 라우터 2단계 — "사내 자료를 뒤져야 하는가" 예/아니오 게이트 (2026-09-07)
+    # 확신 없는 분류(실사용 22.6%)에만 도는 추가 LLM 호출이다. 껐을 때의 동작은
+    # **도입 이전과 정확히 같다** — 바로 6지선다(`_classify_with_llm`)로 간다.
+    # ⛔ 이것이 사고 시의 레버다. 이 게이트가 SELF 를 틀리면 사내 자료가 필요한
+    #    질문에 자료 없이 답한다 — 그때 코드 수정·재배포 없이 끌 수 있어야 한다.
+    # ⚠️ `.env` 는 이 프로젝트의 배포에서 **제외된다**. 끄려면 WAS(10.1.150.5) 의
+    #    `.env` 에 `SOURCE_GATE_ENABLED=false` 를 직접 넣고 `sudo systemctl restart
+    #    ai-craver` 로 재기동한다 (모델명이 `.env` 때문에 안 바뀌던 것과 같은 함정).
+    source_gate_enabled: bool = True
+    # 4단계 — 첫머리 부정 + 정보 없음("아니 ;;")일 때의 고정 되묻기.
+    # ⛔ 2단계와 **독립**이다. 한쪽을 끄려고 다른 쪽을 끄지 않아도 되게 따로 둔다.
+    #    끄면 그 발화도 평소처럼 라우팅된다. 같은 방식으로 `.env` 에
+    #    `BARE_REJECTION_CLARIFY_ENABLED=false` + 재기동.
+    bare_rejection_clarify_enabled: bool = True
+
+    # Notion MCP (v3.0)
+    notion_mcp_token: str = ""
+    # 노션 쓰기 전용 인테그레이션 (읽기용 notion_mcp_token 과 분리한다 —
+    # 크롤러 토큰이 개인 페이지 쓰기 권한을 갖는 구조를 만들지 않는다)
+    notion_write_token: str = ""
+
+    # Google OAuth (GWS per-user auth)
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:3000/auth/google/callback"
+    gws_default_email: str = ""
+
+    # Microsoft Entra ID (OIDC 사내 계정 통합 — 2026-09-02 IT 요청)
+    # ⚠️ 비어 있으면 그 로그인 경로는 통째로 꺼진다. IT 가 값을 주면 켜진다.
+    # ⛔ redirect_uri 는 https 여야 한다 (예외 localhost) — Entra 규칙이다.
+    entra_tenant_id: str = ""
+    entra_client_id: str = ""
+    entra_client_secret: str = ""
+    entra_redirect_uri: str = ""
+    entra_employee_domains: str = ""
+
+    # Open WebUI integration (read OAuth tokens from its DB)
+    openwebui_db_path: str = ""
+    openwebui_secret_key: str = ""
+
+    # CS DB (Google Spreadsheet with Q&A data)
+    cs_spreadsheet_id: str = ""
+
+    # Server
+    host: str = "0.0.0.0"
+    port: int = 3000
+
+    # Chart — use empty string to auto-detect from request
+    chart_base_url: str = ""
+
+    # Auth (custom frontend)
+    jwt_secret_key: str = ""
+    sqlite_db_path: str = "C:/Users/DB_PC/.open-webui/data/skin1004_chat.db"
+    personal_briefing_enabled: bool = True
+
+    # 로컬 ID/PW 로그인 — signup·signin·비밀번호 재설정 2경로·관리자 임시
+    # 비밀번호 발급을 한꺼번에 켜고 끈다. 회사 계정(Entra ID)으로 옮기면서
+    # **기본을 꺼짐으로** 두되 코드는 지우지 않았다 (2026-09-08).
+    # ⛔ **지우지 말고 이 값으로만 끈다.** 85명 중 회사 계정을 연결한 사람이
+    #    아직 1명이라 못 들어오는 사람이 나올 수 있다 — 그때 30초 안에 되돌릴
+    #    길이 있어야 한다.
+    # ⚠️ `.env` 는 배포에서 제외된다 (`EXCLUDE_FILES`). 되살리는 방법은
+    #    **WAS 의 `.env` 에 `PASSWORD_LOGIN_ENABLED=true` 를 넣고 재기동**하는
+    #    것이다 (`sudo systemctl restart ai-craver`). 코드 배포가 필요 없는
+    #    것이 요점이다 — 이것이 장애 중에 당길 수 있는 유일한 레버다.
+    password_login_enabled: bool = False
+
+    # 출근 브리핑 잔디 전달 — DB_PC 릴레이가 SSH 터널로 꺼내 갈 때 쓰는 토큰.
+    # ⛔ 비어 있으면 /api/internal/briefing-outbox 는 404 다 (기본값으로 열리지 않는다).
+    #    서버는 잔디에 직접 못 붙는다 — WAS·APP 모두 wh.jandi.com 403 (2026-08-18 실측).
+    briefing_relay_token: str = ""
+
+    # Pseudonymization salt for anon_id derivation (hmac-sha256(salt, user_id)[:16]).
+    # Set via ANON_SALT env var. Empty default lets the server start in dev, but
+    # compute_anon_id() raises at call time if salt is missing, so production paths
+    # fail loudly rather than silently producing identical hashes for every user.
+    anon_salt: str = ""
+
+    # MariaDB (AD user management)
+    mariadb_host: str = "localhost"
+    mariadb_port: str = "3306"
+    mariadb_user: str = ""
+    mariadb_password: str = ""
+    mariadb_database: str = "skin1004_ai"
+
+    # LDAP / Active Directory
+    ad_server: str = ""
+    ad_user: str = ""
+    ad_password: str = ""
+    ad_search_base: str = ""
+
+    # 서버 이관 리다이렉트 (2026-07-30)
+    # 값이 있으면 모든 사용자 요청을 이 주소로 307 리다이렉트한다. 이관 후 기존 주소로
+    # 들어오는 접속 때문에 대화가 구 DB에만 쌓여 데이터가 갈라지는 것을 막는 장치.
+    # 되돌리려면 .env 에서 MIGRATED_REDIRECT_URL 을 비우고 재기동.
+    migrated_redirect_url: str = ""
+    # 자가 점검 결과를 잔디로 보낼지. 기본 꺼짐 —
+    # WAS 는 프록시에서 wh.jandi.com 이 막혀 있고, 운영상 잔디 알림을 쓰지 않기로 했다.
+    # 결과는 Admin > 자가 점검 탭과 사이드바 배지로 확인한다.
+    self_check_notify: bool = False
+
+    # 메일 발송 (사내 SMTP 릴레이) — 기본 꺼짐.
+    # ⛔ 2026-08-19 실측: WAS·APP 양쪽에서 SMTP 25/587 차단, 로컬 MTA 없음, 프록시는
+    #    HTTP 전용이라 릴레이 불가. IT 가 방화벽을 열고 발신 계정을 주면 아래 네 줄만
+    #    .env 에 넣고 재기동한다 — 코드 배포 없이 켜진다.
+    # 메일 본문에 넣을 접속 주소 (사내). 비어 있으면 상대 경로만 나간다
+    # 잔디·알림에 싣는 "이어서 물어보기" 주소. 사용자 브라우저가 여는 값이라
+    # **서버가 닿는지와 무관하다** — WAS 는 Web 계층으로 되돌아가지 못한다.
+    # ⚠️ 사내 DNS 에만 있는 이름이다 (WAS 에서 `ai.cravercorp.internal → 10.1.100.5`
+    #    로 해석되는 것을 확인했다. DB_PC 는 외부 DNS 를 써서 못 푼다 — 그건 그 장비가
+    #    다른 망에 있다는 뜻이지 도메인이 틀렸다는 뜻이 아니다).
+    # ⚠️ 스킴은 이전에 동작하던 값(`http://10.1.100.5`)을 따라 http 로 둔다.
+    #    TLS 를 붙였다면 여기만 https 로 바꾸면 된다.
+    public_base_url: str = "http://ai.cravercorp.internal"
+    mail_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "no-reply@cravercorp.com"
+    smtp_starttls: bool = True
+
+    # CORS
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:8000,http://172.16.1.250:3000,http://172.16.1.250:3001"
+    # Cookie
+    cookie_secure: bool = False
+
+    @property
+    def sales_table_full_path(self) -> str:
+        """Full BigQuery path for the sales table."""
+        return f"{self.gcp_project_id}.{self.bq_dataset_sales}.{self.bq_table_sales}"
+
+    @property
+    def product_table_full_path(self) -> str:
+        """Full BigQuery path for the product table."""
+        return f"{self.gcp_project_id}.{self.bq_dataset_sales}.{self.bq_table_product}"
+
+    @property
+    def embeddings_table_full_path(self) -> str:
+        """Full BigQuery path for the embeddings table."""
+        return f"{self.gcp_project_id}.{self.bq_dataset_rag}.{self.bq_table_embeddings}"
+
+    @property
+    def qa_logs_table_full_path(self) -> str:
+        """Full BigQuery path for the QA logs table."""
+        return f"{self.gcp_project_id}.{self.bq_dataset_rag}.{self.bq_table_qa_logs}"
+
+    @property
+    def gws_token_dir(self) -> str:
+        """Directory for storing per-user Google OAuth tokens."""
+        return "data/gws_tokens"
+
+    @property
+    def allowed_tables(self) -> List[str]:
+        """Tables allowed for Text-to-SQL queries."""
+        return [
+            # Sales
+            self.sales_table_full_path,
+            self.product_table_full_path,
+            # Marketing / Advertising
+            "skin1004-319714.marketing_analysis.integrated_ad",
+            "skin1004-319714.marketing_analysis.Integrated_marketing_cost",
+            "skin1004-319714.marketing_analysis.shopify_analysis_sales",
+            "skin1004-319714.Platform_Data.raw_data",
+            "skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS",
+            "skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance",
+            # Reviews — **이 셋이 전부다** (2026-08-18 사용자 확정).
+            # 데이터분석파트가 몰별 테이블을 국내/해외/매장으로 통합했고,
+            # 구 몰별 테이블(New_*)·파생 테이블(*_keyword 등)은 더 이상 쓰지 않는다.
+            # ⛔ 다시 넣지 마라 — 옛 4개만 있던 탓에 "국내몰 리뷰"가 스마트스토어만
+            #    세고(42,427 중 4,140) "플래그십 리뷰"는 조회조차 못 했다
+            #    (이주훈 님 제보 2026-08-14). 통합본과 구본이 공존하면 그 혼동이 되살아난다.
+            # ⚠️ `ALL_Review`(130,933)는 이름과 달리 **통합 전 4개 몰**이다. 넣지 말 것
+            "skin1004-319714.Review_Data.Korea_mall_Review",      # 국내몰 8채널 69,374
+            "skin1004-319714.Review_Data.Oversea_mall_Review",    # 해외몰 4채널 135,416
+            "skin1004-319714.Review_Data.Store_Review",           # 매장 3,490
+            # Ad data
+            "skin1004-319714.ad_data.meta data_test",
+            # Promotion calendar (실행 일정 — 팀·몰별 프로모션 스케줄)
+            "skin1004-319714.promotion_calendar.promotion",
+            # Export logistics (LOG — 수출 발주·선적·운송 관리대장)
+            "skin1004-319714.Export_control.export_logistics",
+            # 월말환율 (수출 물류 금액을 한화로 환산할 때만 쓴다 — 사내 확정 고시)
+            "skin1004-319714.Sales_Integration.Exchange_Rate",
+            # Financial P&L (FI Dashboard — monthly consolidated income statement)
+            "skin1004-319714.Sales_Integration.FI_LLM_Flat",
+        ]
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Get cached application settings."""
+    return Settings()

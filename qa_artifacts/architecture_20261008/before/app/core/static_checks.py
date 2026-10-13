@@ -1,0 +1,1287 @@
+# -*- coding: utf-8 -*-
+"""정적 검사 — 코드·자산을 읽어 **에러가 나지 않는 고장**을 찾는다.
+
+`tests/test_no_silent_failures.py`(개발 중 즉시 피드백)와 자가 점검(서버에서 매일)이
+**같은 함수를 부른다.** 같은 규칙을 두 번 구현하면 한쪽만 고쳐지는 것이 이 프로젝트에서
+반복된 실패라, 판정은 여기 한 곳에만 둔다.
+
+서버에는 pytest 도 tests/ 도 node 도 없다 — 그래서 검사 본체는 **표준 라이브러리만**
+쓰고, node 가 필요한 검사(템플릿 스크립트 문법)는 있을 때만 돈다.
+
+각 함수는 `(ok, detail)` 을 돌려주고 **부작용이 없다** (자가 점검 규칙).
+"""
+from __future__ import annotations
+
+import ast
+import glob
+import io
+import os
+import re
+from typing import List, Tuple
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _read(rel: str) -> str:
+    with io.open(os.path.join(ROOT, rel), encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def _exists(rel: str) -> bool:
+    return os.path.exists(os.path.join(ROOT, rel))
+
+
+# ── 1) 정의되지 않은 CSS 변수 ────────────────────────────────────────────────
+
+def undefined_css_vars() -> Tuple[bool, str]:
+    """없는 변수는 **에러가 아니라 폴백**이라 오타를 아무도 못 잡는다.
+
+    피드백 입력창이 `--panel`·`--input-bg`(존재한 적 없는 이름)를 써서 라이트 모드에서
+    어두운 배경에 어두운 글자가 됐던 사고를 잡는다 (2026-08-13 사용자 제보).
+
+    ⚠️ `app/static/*.html` 도 훑는다(2026-08-31 추가 — `coa_finder.html` 이 이 목록
+    밖이라 개발 테스트에서만 지켜지고 있었다). `dashboard.html`·`ai_harness.html`·
+    `presentation.html` 처럼 **자기 완결형**으로 자체 `--db-*`·`--blue` 같은 변수를
+    스스로 정의해 쓰는 페이지가 이미 있다 — 아래 `local` 이 파일 자신이 정의한
+    변수를 예외로 봐 주기 때문에 style.css 밖의 변수를 써도 오탐이 나지 않는다.
+    이 예외가 없으면 그 세 파일에서만 28건이 조용히 걸린다(2026-08-31 실측).
+    """
+    if not _exists("app/static/style.css"):
+        return True, "style.css 없음 — 건너뜀"
+    defined = set(re.findall(r"(--[a-zA-Z0-9_-]+)\s*:", _read("app/static/style.css")))
+    bad: List[str] = []
+    for pat in ("app/static/*.css", "app/static/*.js",
+                "app/frontend/*.html", "app/frontend/*.js",
+                "app/static/*.html"):
+        for path in glob.glob(os.path.join(ROOT, pat)):
+            with io.open(path, encoding="utf-8", errors="replace") as fh:
+                txt = fh.read()
+            # 그 파일 자신이 정의한 변수는 style.css 에 없어도 예외로 본다
+            # (자기 완결형 페이지는 style.css 를 쓰지 않는다)
+            local = set(re.findall(r"(--[a-zA-Z0-9_-]+)\s*:", txt))
+            for i, line in enumerate(txt.splitlines(), 1):
+                for m in re.finditer(r"var\(\s*(--[a-zA-Z0-9_-]+)\s*[,)]", line):
+                    if m.group(1) not in defined and m.group(1) not in local:
+                        bad.append(f"{os.path.basename(path)}:{i} {m.group(1)}")
+    return (not bad), ("정의되지 않은 변수 참조 " + ", ".join(bad[:6])
+                       if bad else "미정의 참조 없음")
+
+
+# ── 2) `@@` 데이터소스 — 프론트와 서버가 같은 목록을 보는가 ──────────────────
+
+def front_source_keys() -> set:
+    """서버가 단일 소스다 — 프론트는 `/api/datasources` 로 목록을 받는다 (2026-08-13).
+
+    ⛔ 예전엔 `chat.js` 가 같은 목록을 하드코딩해 갖고 있었다. 그래서 서버만 고치면
+       조용히 어긋났고, `@@Google Workspace` 질문 오염과 `초상권` 라우트 누락이
+       거기서 나왔다. 지금은 프론트 키 = 서버 키다.
+    """
+    from app.agents.orchestrator import OrchestratorAgent
+    return {e["key"] for e in OrchestratorAgent._DB_REGISTRY}
+
+
+def _front_group_names() -> set:
+    """`chat.js` 의 GROUP_BY_NAME — 서버 그룹 이름을 화면 그룹에 잇는 표."""
+    if not _exists("app/frontend/chat.js"):
+        return set()
+    m = re.search(r"var GROUP_BY_NAME = \{(.*?)\};", _read("app/frontend/chat.js"), re.S)
+    return set(re.findall(r'"([^"]+)"\s*:', m.group(1))) if m else set()
+
+
+def at_source_parity() -> Tuple[bool, str]:
+    """`@@` 목록이 화면까지 온전히 도달하는가.
+
+    두 가지를 본다:
+      1. **프론트가 목록을 다시 하드코딩하지 않았는가** — 사본이 생기면 또 어긋난다
+      2. 서버 그룹이 전부 `GROUP_BY_NAME` 에 있는가 — 없는 그룹의 소스는 **화면에서
+         통째로 사라진다** (에러 없이)
+    그리고 모든 키가 `@@키 질문` 에서 **깨끗이 걷히는지** 확인한다.
+    """
+    if not _exists("app/frontend/chat.js"):
+        return True, "chat.js 없음 — 건너뜀"
+    js = _read("app/frontend/chat.js")
+
+    i = js.find("var SOURCE_GROUPS = [")
+    j = js.find("];", i) if i >= 0 else -1
+    literal = js[i:j] if j > i else ""
+    if re.search(r"keys:\s*\[\s*[\"']", literal):
+        return False, "프론트가 @@ 목록을 다시 하드코딩했다 — /api/datasources 로 받아야 한다"
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    srv_groups = {e.get("group", "") for e in OrchestratorAgent._DB_REGISTRY}
+    missing_groups = sorted(g for g in srv_groups if g and g not in _front_group_names())
+    if missing_groups:
+        return False, f"GROUP_BY_NAME 에 없는 서버 그룹 {missing_groups} — 화면에서 사라진다"
+
+    dirty = []
+    for e in OrchestratorAgent._DB_REGISTRY:
+        entry, clean = OrchestratorAgent.parse_db_prefix(f"@@{e['key']} 매출 알려줘")
+        if not entry or clean.strip() != "매출 알려줘":
+            dirty.append(f"{e['key']}→{clean.strip()!r}")
+    if dirty:
+        return False, f"파싱 후 질문 오염 {dirty[:4]}"
+    return True, f"@@ 소스 {len(srv_groups)}그룹 · 키 {len(OrchestratorAgent._DB_REGISTRY)}개 정상"
+
+
+# ── 2b) 오케스트레이터 클래스 본문이 끊기지 않았는가 ────────────────────────
+
+def orchestrator_class_intact() -> Tuple[bool, str]:
+    """클래스 안에 **들여쓰기 없는 `def`** 를 넣으면 거기서 클래스가 끝난다.
+
+    ⛔ 실제로 그랬다 (2026-09-03): 대표 제품 목록을 실측 주입으로 바꾸면서
+       헬퍼를 `def _build_direct_system_prompt` **앞**에 모듈 레벨로 끼워 넣었더니,
+       뒤에 있던 `_BIZ_CONTEXT`·`_SEARCH_KEYWORDS` 가 통째로 클래스 밖으로 나갔다.
+       **import 는 멀쩡히 되고**, 라우팅이 그 속성을 만질 때서야
+       `AttributeError` 가 난다 — 테스트 68건이 한 번에 깨졌다.
+       (그 상태가 프로덕션에 한 번 배포됐다. 그래서 서버에서도 매일 본다.)
+
+    ⚠️ 이름 목록을 손으로 늘리지 마라 — 라우팅이 실제로 쓰는 것만 고정한다.
+    """
+    if not _exists("app/agents/orchestrator.py"):
+        return True, "건너뜀"
+    import ast
+
+    tree = ast.parse(_read("app/agents/orchestrator.py"))
+    node = next((n for n in tree.body
+                 if isinstance(n, ast.ClassDef) and n.name == "OrchestratorAgent"), None)
+    if node is None:
+        return False, "OrchestratorAgent 클래스를 찾지 못했다"
+    names = set()
+    for st in node.body:
+        if isinstance(st, ast.Assign):
+            names |= {t.id for t in st.targets if isinstance(t, ast.Name)}
+        elif isinstance(st, ast.AnnAssign) and isinstance(st.target, ast.Name):
+            names.add(st.target.id)
+        elif isinstance(st, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(st.name)
+    required = {
+        "_DB_REGISTRY", "_DATA_KEYWORDS", "_BIZ_CONTEXT", "_SEARCH_KEYWORDS",
+        "_CS_KEYWORDS", "_TEAM_KEYWORDS", "_GUARDED",
+        "_keyword_classify_ex", "route_and_execute", "route_and_stream",
+        "_build_direct_system_prompt",
+    }
+    missing = sorted(required - names)
+    if missing:
+        return False, f"클래스 본문이 끊겼다 — 밖으로 나간 것 {missing}"
+    return True, f"클래스 본문 정상 (속성·메서드 {len(names)}개)"
+
+
+# ── 3) direct 프롬프트 단일 소스 ────────────────────────────────────────────
+
+def prompt_single_source() -> Tuple[bool, str]:
+    """프롬프트 사본이 늘면 경로에 따라 답이 갈린다.
+
+    두 벌이던 시절 한쪽만 고쳐 *"보고서라는 별도 메뉴는 없습니다"* 라고 답했다.
+    """
+    if not _exists("app/agents/orchestrator.py"):
+        return True, "건너뜀"
+    src = _read("app/agents/orchestrator.py")
+    tree = ast.parse(src)
+    neutralizer = next(
+        (
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == "_strip_model_claim"
+        ),
+        None,
+    )
+    if neutralizer is not None:
+        lines = src.splitlines(keepends=True)
+        del lines[neutralizer.lineno - 1:neutralizer.end_lineno]
+        src = "".join(lines)
+    n = src.count("당신은 Craver의 AI 어시스턴트입니다")
+    return (n == 1), f"direct 프롬프트 사본 {n}개 (1이어야 정상)"
+
+
+# ── 4) 자산 캐시 지문이 실제로 켜져 있는가 ────────────────────────────────────
+
+def asset_stamping_wired() -> Tuple[bool, str]:
+    """`?v=` 는 이제 **서빙할 때 내용 해시로 붙는다** (2026-08-31).
+
+    ⛔ 손으로 번호를 세던 시절로 돌아가지 않게 두 가지를 함께 본다:
+       1. HTML 에 **손으로 적은 `?v=<숫자>`** 가 없어야 한다 — 남아 있으면 다음 사람이
+          그걸 보고 또 올린다. 지문이 덮어쓰므로 숫자는 죽은 값이다
+       2. 지문을 붙이는 자리(`asset_version` 미들웨어)와 캐시를 켜는 자리
+          (`VersionedStaticFiles`)가 `main.py` 에 살아 있어야 한다
+    ⚠️ 배선이 끊기면 나는 것은 에러가 아니라 **캐시가 조용히 안 켜지는 것**이다.
+       실제로 마운트 경로를 잘못 이어 붙여 한 번 그랬다.
+    """
+    problems = []
+    for rel in ("app/frontend/chat.html", "app/frontend/login.html",
+                "app/frontend/eval_review.html", "app/static/coa_finder.html"):
+        if not _exists(rel):
+            continue
+        hand = re.findall(r"/(?:frontend|static)/[\w./-]+\.(?:js|css)\?v=(\d+)", _read(rel))
+        if hand:
+            problems.append(f"{rel} 에 손으로 적은 ?v={','.join(hand[:3])}")
+    main = _read("app/main.py") if _exists("app/main.py") else ""
+    for needle, what in (("asset_version.rewrite_html", "HTML 지문 주입"),
+                         ("VersionedStaticFiles", "지문 일치 시 장기 캐시"),
+                         ("asset_version.matches", "낡은 URL 은 캐시 금지")):
+        if needle not in main:
+            problems.append(f"main.py 에 {what}({needle}) 배선 없음")
+    return (not problems), ("; ".join(problems) if problems
+                            else "자산 캐시 지문 배선 정상")
+
+
+def survey_wiring() -> Tuple[bool, str]:
+    """만족도 설문 배선 — **끊기면 에러가 아니라 팝업이 조용히 사라진다.**
+
+    노출 판정은 서버(`/api/auth/me` 의 `survey_prompt`)가 하고 프론트는 그 이름을
+    읽는다. 이름이 어긋나면 아무 로그도 없이 아무에게도 안 뜬다 — `@@` 목록이
+    프론트/서버 두 벌이라 조용히 갈렸던 그 사고와 같은 종류다.
+    """
+    problems = []
+    auth = _read("app/api/auth_api.py") if _exists("app/api/auth_api.py") else ""
+    chat = _read("app/frontend/chat.js") if _exists("app/frontend/chat.js") else ""
+    api = _read("app/api/survey_api.py") if _exists("app/api/survey_api.py") else ""
+    css = _read("app/static/style.css") if _exists("app/static/style.css") else ""
+    admin = _read("app/api/admin_api.py") if _exists("app/api/admin_api.py") else ""
+
+    if '"survey_prompt"' not in auth:
+        problems.append("/me 응답에 survey_prompt 가 없다")
+    if "survey_prompt" not in chat:
+        problems.append("chat.js 가 survey_prompt 를 읽지 않는다")
+    if "maybeShowSatisfactionSurvey()" not in chat:
+        problems.append("답변 완료 지점에서 설문을 띄우지 않는다")
+    if '"/api/survey"' not in chat:
+        problems.append("chat.js 가 /api/survey 로 보내지 않는다")
+    if 'prefix="/api/survey"' not in api:
+        problems.append("survey_api 의 경로가 /api/survey 가 아니다")
+    # 모달 스타일이 없으면 폴백으로 밀려 라이트 모드에서 안 보이는 그 사고가 난다
+    if ".sv-star" not in css:
+        problems.append("style.css 에 설문 모달 스타일(.sv-star)이 없다")
+    # 처리함에서 소스를 안 보내면 설문 id 로 붐따 행을 고친다
+    if "data-fb-source" not in chat:
+        problems.append("처리함이 상태 변경에 source 를 붙이지 않는다")
+    if "body.source" not in admin:
+        problems.append("admin_api 가 source 를 읽지 않는다")
+    return (not problems), ("; ".join(problems) if problems else "설문 배선 정상")
+
+
+# ── 5) 라우팅 키워드 삼킴 충돌 (경로가 갈리는 것만) ──────────────────────────
+
+_ROUTE_OF = {
+    "_DATA_KEYWORDS": "bigquery", "_BIZ_CONTEXT": "bigquery", "_FULLDATA_KEYWORDS": "bigquery",
+    "_NOTION_KEYWORDS": "notion", "_TEAM_KEYWORDS": "notion", "_HOWTO_KEYWORDS": "notion",
+    "_CS_KEYWORDS": "cs", "_GWS_KEYWORDS": "gws",
+    "_SEARCH_KEYWORDS": "direct", "_EXTERNAL_KEYWORDS": "multi",
+}
+# 기준선 — **실제 질문으로 하나씩 돌려 확인한** 충돌만 여기 둔다 (2026-08-13).
+# 충돌이 있어도 검사 순서·가드 덕분에 옳게 라우팅되면 문제가 아니다.
+#   확인한 질문 예: "네이버 검색광고 성과"→bigquery · "다우오피스 사용법"→notion ·
+#   "배송 얼마나 걸려?"→cs · "회의실 예약 어떻게 해"→notion · "팀별 자료 어디있어"→notion ·
+#   "할인행사 효과 분석해줘"→multi · "이번달 일정 보여줘"→gws
+# ⚠️ **새로 뜨는 것은 반드시 질문으로 확인하고 넣어라.** 그냥 추가하면 이 검사는
+#    아무것도 지키지 않는 목록이 된다.
+KNOWN_COLLISIONS = {
+    ("환율", "전환율"),          # `_GUARDED` 로 경계 확인 — 전환율은 bigquery
+    ("경쟁", "경쟁사"), ("경쟁", "경쟁사 순위"),
+    ("경쟁사", "경쟁사 순위"),   # "경쟁사 순위"→multi. 데이터+외부 맥락이라 허용
+    ("검색", "파일 검색"), ("검색", "네이버 검색광고"),
+    ("메타", "메타 광고"), ("메타", "메타광고"),
+    ("반품", "반품 정책"), ("반품", "반품정책"),   # _COMPOUND_NOTION 이 의도적으로 notion
+    ("일정", "출시 일정"), ("오늘", "오늘 일정"), ("이번달", "이번달 일정"),
+    ("성과", "성과금"), ("성과", "성과급"),
+    ("스킨", "스킨케어"), ("스킨", "스킨1004"),
+    ("다우", "다우오피스"), ("데이터", "데이터 허브"),
+    ("얼마", "배송 얼마나"), ("정책", "정책변화"), ("팀별", "팀별 자료"),
+    ("할인", "할인행사"), ("행사", "할인행사"), ("회의", "회의실 예약"),
+}
+
+
+def keyword_collisions() -> Tuple[bool, str]:
+    """짧은 낱말이 **경로가 다른** 긴 낱말에 삼켜지는가.
+
+    `라인` ⊂ `가이드라인`, `환율` ⊂ `전환율` 이 이 방식으로 드러났다. 같은 경로끼리는
+    충돌해도 결과가 같으므로 세지 않는다. 검토가 끝난 것은 KNOWN_COLLISIONS 로 뺀다.
+    """
+    from app.agents.orchestrator import OrchestratorAgent as O
+
+    o = O.__new__(O)
+    kw = {}
+    for name, route in _ROUTE_OF.items():
+        for w in getattr(o, name, []) or []:
+            kw.setdefault(w.lower(), set()).add(route)
+    han = re.compile(r"[가-힣]")
+    new = []
+    for a, ra in kw.items():
+        if len(a) < 2 or not han.search(a):
+            continue
+        for b, rb in kw.items():
+            if a == b or a not in b or len(b) <= len(a) or (ra & rb):
+                continue
+            if (a, b) in KNOWN_COLLISIONS:
+                continue
+            new.append(f"'{a}'⊂'{b}'")
+    return (not new), ("새 충돌 " + ", ".join(sorted(set(new))[:6]) if new
+                       else "경로가 갈리는 새 충돌 없음")
+
+
+def asset_sanity() -> Tuple[bool, str]:
+    """프론트 자산이 비었거나 뭉텅 잘리지 않았는가.
+
+    ⛔ 스크립트로 파일을 쓰다 실패하면 `open(w)` 가 **이미 자른 뒤**라 0바이트가 남는다.
+       실제로 두 번 겪었다 (2026-07, 2026-08-13). 화면은 백지가 되고 서버는 200 을 준다.
+    """
+    MIN = {"app/frontend/chat.js": 150_000, "app/static/style.css": 50_000,
+           "app/frontend/chat.html": 5_000}
+    bad = []
+    for rel, floor in MIN.items():
+        if not _exists(rel):
+            bad.append(f"{rel} 없음"); continue
+        n = os.path.getsize(os.path.join(ROOT, rel))
+        if n < floor:
+            bad.append(f"{rel} {n}바이트 (최소 {floor})")
+    return (not bad), ("; ".join(bad) if bad else "프론트 자산 크기 정상")
+
+
+def chart_label_bounds() -> Tuple[bool, str]:
+    """막대 라벨이 **플롯 경계**를 보는가.
+
+    2026-08-31 제보: `69.9억` 이 `6` 으로 잘렸다. 라벨을 막대 바깥에만 그렸는데
+    플롯 오른쪽 끝까지 찬 막대는 그 자리가 없다. 겹침(`_collides`)만 보고
+    **경계는 안 봤다.**
+
+    나쁜 점은 방향이다 — 값이 클수록 막대가 길고, 길수록 잘린다.
+    즉 **가장 중요한 숫자가 사라지고**, 캔버스는 에러 없이 그려진다.
+    """
+    js = _read("app/frontend/chat.js")
+    start = js.find('id: "inlineBarLabels"')
+    if start < 0:
+        return False, "inlineBarLabels 플러그인을 찾지 못했다"
+    body = js[start:start + 4000]
+    missing = [name for name in ("chartArea", "area.right", "area.top")
+               if name not in body]
+    if missing:
+        return False, "막대 라벨이 경계를 안 본다 (없는 참조: " + ", ".join(missing) + ")"
+    # 막대 안쪽에 넣을 땐 글자색을 바꿔야 한다 — 안 바꾸면 묻혀서 잘린 것과 같다.
+    if '"#fff"' not in body:
+        return False, "막대 안쪽 라벨의 글자색 전환이 없다 (채운 막대에 묻힌다)"
+
+    # ⛔ 선 그래프도 같은 경계를 봐야 한다. 막대만 고쳐 두고 선을 빼놨더니
+    #    최고점 라벨이 `chartArea.top` 위(= 범례 자리)로 올라가 범례 글자와
+    #    겹쳐 찍혔다 (2026-09-01 제보). 같은 규칙을 두 경로에 걸어야 한다 —
+    #    이 저장소에서 "한쪽 경로만 고쳐 답이 갈리던" 사고가 이미 여러 번 났다.
+    lstart = js.find('id: "inlineLineLabels"')
+    if lstart < 0:
+        return False, "inlineLineLabels 플러그인을 찾지 못했다"
+    lbody = js[lstart:lstart + 4000]
+    lneed = [
+        ("플롯 영역을 읽지 않는다", r"chartArea"),
+        ("위쪽 경계와 비교하지 않는다", r"<\s*_top\b"),
+        ("아래쪽 경계와 비교하지 않는다", r">\s*_bottom\b"),
+        ("경계에 걸렸을 때 점 아래로 뒤집지 않는다", r"textBaseline\s*=\s*_below"),
+    ]
+    lmissing = [why for why, pat in lneed if not re.search(pat, lbody)]
+    if lmissing:
+        return False, ("선 라벨이 플롯 경계를 안 본다 — 최고점 라벨이 범례와 겹친다: "
+                       + ", ".join(lmissing))
+    return True, "막대·선 라벨이 플롯 경계를 본다"
+
+
+def fi_prompt_masking() -> Tuple[bool, str]:
+    """권한 없는 사용자용 프롬프트에서 손익(FI) 섹션이 **실제로** 지워지는가.
+
+    ⛔ 이 검사가 없으면 조용히 뚫린다. `_mask_fi_prompt()` 는 프롬프트의 제목
+       (`## 테이블 14: FI_LLM_Flat …`)과 라우팅 표 행을 **정규식으로** 지운다.
+       프롬프트에서 번호를 바꾸거나 제목을 손보면 정규식이 안 맞고, **에러 없이**
+       FI 스키마가 권한 없는 사용자 프롬프트에 실린다.
+       기존 테스트는 합성 픽스처만 봤다 — 실제 파일이 바뀌어도 통과한다.
+
+    두 방향을 함께 본다:
+      ① 원본에는 FI 가 **있어야** 한다 (없어졌으면 검사 자체가 무의미해진 것)
+      ② 마스킹 후에는 FI 흔적이 **하나도 없어야** 한다
+    """
+    from app.agents.sql_agent import PROMPTS_DIR, _mask_fi_prompt
+
+    path = PROMPTS_DIR / "sql_generator.txt"
+    if not path.exists():
+        return False, "sql_generator.txt 없음"
+    raw = path.read_text(encoding="utf-8")
+
+    if "FI_LLM_Flat" not in raw:
+        return False, "원본 프롬프트에 FI_LLM_Flat 이 없다 — 마스킹 대상이 사라졌거나 이름이 바뀌었다"
+
+    masked = _mask_fi_prompt(raw)
+    # 표기 변형까지 본다 — 테이블명·데이터셋·필수 필터 컬럼
+    # ⚠️ `Sales_Integration` 은 매출·제품 테이블의 데이터셋이기도 하다 — FI 표식이 아니다.
+    #    (이 검사를 처음 켰을 때 그것 때문에 오탐이 났다)
+    leaks = [tok for tok in ("FI_LLM_Flat", "Record_Type", "SGA_DETAIL")
+             if tok in masked]
+    if leaks:
+        return False, f"마스킹 후에도 FI 흔적이 남았다: {', '.join(leaks)}"
+
+    removed = len(raw) - len(masked)
+    if removed < 500:
+        return False, f"지워진 분량이 {removed}자뿐 — 섹션이 아니라 한 줄만 지워졌을 수 있다"
+    return True, f"FI 섹션 {removed:,}자 제거 확인"
+
+
+# ── 8) 자동 주입 컬럼의 값을 손으로 다시 나열했는가 ─────────────────────────
+
+# 부정형 문장은 "이 값은 없다" 를 가르치는 정상 서술이라 열거로 세면 안 된다.
+_NEGATIVE_CONTEXT = re.compile(r"없다|없음|아니다|금지|마라|오답|쓰지|틀린")
+
+# SQL 예시(`WHERE Country IN ('중국','대만','홍콩')`)는 값을 **문서화**한 게 아니라
+# 쿼리를 보여준 것이다. 낡아도 조용한 오답을 만들지 않으므로 열거로 세지 않는다.
+# 위험한 것은 연산자 없이 "쓸 수 있는 값은 A, B, C" 라고 **적어 둔** 쪽이다.
+_SQL_OPERATOR = re.compile(r"\b(IN|LIKE|WHEN|WHERE|AND|OR)\b|[!=<>]=?")
+
+# 한 호흡에 인용부호 값이 이만큼 이상 나오면 '목록을 적은 것' 으로 본다.
+_ENUMERATION_MIN = 3
+
+_QUOTED = re.compile(r"[`'\"]([^`'\"\n]{1,20})[`'\"]")
+
+
+# 확인을 마친 예외. ⚠️ **뜰 때마다 실제 줄을 읽고 넣어라** — 그냥 쌓으면
+# `KNOWN_COLLISIONS` 와 같은 이유로 아무것도 안 지키는 목록이 된다.
+# 줄 번호가 아니라 내용으로 건다 (줄 번호는 편집마다 어긋난다).
+_KNOWN_HANDWRITTEN_OK = (
+    # `Integrated_marketing_cost.Team` 값 목록이다. `Team_NEW` 는 "같은 코드 체계" 라고
+    # **비교 언급**될 뿐, 이 줄이 문서화하는 컬럼이 아니다. 그 테이블 컬럼은 자동 주입
+    # 대상이 아니라 대조할 실측 목록 자체가 없다 (2026-08-24 확인).
+    "integrated_ad·Team_NEW 와",
+)
+
+
+def _autofilled_columns(prompt: str) -> List[str]:
+    """`{{VALUES:X}}` 가 실제로 박혀 있는 컬럼만 대상으로 삼는다.
+
+    ⚠️ 목록을 손으로 들고 있으면 이 검사 자체가 낡는다 — 검사가 막으려는 실패를
+       검사가 저지르는 꼴이다. 프롬프트에서 직접 읽는다.
+    """
+    return sorted(set(re.findall(r"\{\{VALUES:([A-Za-z_0-9]+)\}\}", prompt)))
+
+
+def _mentions_column(line: str, column: str) -> bool:
+    """⚠️ 부분 문자열 매치 금지 — `Category` 가 `SM_Main_Category` 안에서 잡힌다.
+
+    이 프로젝트에서 `'라인'`⊂`'가이드라인'`, `'환율'`⊂`'전환율'` 로 이미 겪은 부류다.
+    """
+    return re.search(rf"(?<![A-Za-z_0-9]){re.escape(column)}(?![A-Za-z_0-9])", line) is not None
+
+
+def prompt_no_handwritten_value_lists() -> Tuple[bool, str]:
+    """자동 주입되는 컬럼의 값 목록을 프롬프트 본문에 손으로 나열하지 않았는가.
+
+    ⛔ 2026-08-24 실제 오답: `{{VALUES:Continent1}}` 로 실측 목록(…중남미…)을 넣어두고도
+       규칙 본문에 옛 목록(남미·중미)이 ✅ 표시와 함께 남아 있었다. LLM 은 **손으로 적힌
+       쪽**을 믿고 0건을 냈고, 이어서 그 목록을 근거로 인용하며 "남미·중미 값은 정상
+       존재하므로 데이터가 없는 것" 이라고 단정했다 — 조회도 설명도 틀렸다.
+
+    `value_lists.py` 가 없애려던 실패인데 **사본을 하나만 지워서** 살아남았다.
+    이 검사는 "값 목록은 한 곳(자동 주입)에서만 온다" 를 강제한다.
+
+    ⚠️ 부정형("Continent2 에는 '유럽'·'아시아' 가 없다")은 가르치는 문장이라 통과시킨다.
+    """
+    rel = "prompts/sql_generator.txt"
+    if not _exists(rel):
+        return True, "건너뜀 (프롬프트 없음)"
+    prompt = _read(rel)
+    columns = _autofilled_columns(prompt)
+    if not columns:
+        return True, "건너뜀 (자동 주입 컬럼 없음)"
+    offenders: List[str] = []
+    for lineno, line in enumerate(prompt.split("\n"), 1):
+        if "{{VALUES:" in line or _NEGATIVE_CONTEXT.search(line):
+            continue
+        if _SQL_OPERATOR.search(line):      # 쿼리 예시는 문서화가 아니다
+            continue
+        if any(marker in line for marker in _KNOWN_HANDWRITTEN_OK):
+            continue
+        hit = next((c for c in columns if _mentions_column(line, c)), None)
+        if not hit:
+            continue
+        if len(_QUOTED.findall(line)) >= _ENUMERATION_MIN:
+            offenders.append(f"{rel}:{lineno} ({hit})")
+    if offenders:
+        return False, (
+            f"자동 주입 컬럼의 값을 손으로 나열한 곳 {len(offenders)}건: "
+            + ", ".join(offenders[:4])
+            + " — 목록은 {{VALUES:컬럼}} 한 곳에서만 와야 한다"
+        )
+    return True, f"손으로 적은 값 목록 없음 ({len(columns)}개 컬럼: {', '.join(columns)})"
+
+
+#: 값 목록을 코드에서 **만들어** 쓴 표시. 이게 있으면 손 목록이 아니다.
+_DERIVED_MARK = ("join(", "values(", ".items()", "format(")
+
+
+def source_no_handwritten_value_lists() -> Tuple[bool, str]:
+    """LLM 에게 주는 값 목록을 **파이썬 소스에** 손으로 적어 두지 않았는가.
+
+    ⛔ 2026-08-27 실측 — 위 `prompt_no_handwritten_value_lists` 가 프롬프트만 보는
+       사이, `sql_agent.py` 의 0건 진단 힌트에 같은 목록이 손으로 적힌 채 남아
+       **둘 다 낡아 있었다**:
+
+           적어둔 Continent1: … 남미 … 중미        실제: … 중남미 …
+           적어둔 Continent2: … 북아프리카 …        실제: (없다)
+
+       **없는 값을 "유효 값" 이라 알려주고 있는 값은 빼고** 있었다. 이 힌트는 하필
+       0건일 때만 나가므로, 2026-08-24 오답("남미·중미는 정상 존재하므로 데이터가
+       없는 것")이 그대로 재현되는 자리였다.
+
+    ⚠️ 사본을 하나만 지워서 살아남은 것이 이 결함의 본질이다. 그때 프롬프트만
+       고치고 소스는 그대로 뒀다 — 그래서 검사도 두 곳을 함께 봐야 한다.
+
+    판정: 문자열에 `유효 값` 이라 적어 놓고 그 자리에서 쉼표로 값을 늘어놓았는데,
+    그 목록을 코드로 만든 흔적(`join(`·`values(` 등)이 근처에 없으면 손 목록이다.
+    """
+    offenders: List[str] = []
+    scanned = 0
+    for base, _dirs, files in os.walk(os.path.join(ROOT, "app")):
+        if "__pycache__" in base:
+            continue
+        for fn in files:
+            if not fn.endswith(".py"):
+                continue
+            path = os.path.join(base, fn)
+            rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+            scanned += 1
+            with io.open(path, encoding="utf-8", errors="replace") as fh:
+                lines = fh.read().split("\n")
+            for lineno, line in enumerate(lines, 1):
+                if "유효 값" not in line or line.lstrip().startswith("#"):
+                    continue
+                # 값을 코드로 만들었는지는 이어지는 몇 줄까지 본다 (문자열 + join 형태)
+                window = "\n".join(lines[lineno - 1:lineno + 3])
+                if any(mark in window for mark in _DERIVED_MARK):
+                    continue
+                tail = line.split("유효 값", 1)[1]
+                if tail.count(",") >= _ENUMERATION_MIN:
+                    offenders.append(f"{rel}:{lineno}")
+    if offenders:
+        return False, (
+            f"소스에 손으로 적은 값 목록 {len(offenders)}건: " + ", ".join(offenders[:4])
+            + " — 목록은 value_lists.values() 처럼 실측에서 와야 한다")
+    return True, f"소스에 손으로 적은 값 목록 없음 (파이썬 {scanned}개 확인)"
+
+
+# ── 9) 흐름 선언 ↔ 코드 일치 ────────────────────────────────────────────────
+
+def classifier_return_routes() -> set:
+    """`_keyword_classify_ex` 본문에서 **실제로 반환하는** 라우트 리터럴을 읽는다.
+
+    ⛔ 이 파싱이 pytest 안에만 있으면 **서버에서는 영원히 안 돈다.** 바로 오늘
+       (2026-08-24) 같은 모양의 사고를 겪었다 — `static_value_list_dupes` 가
+       `SC.ALL` 에는 있는데 `self_check.CHECKS` 에 등록되지 않아, 그날 아침 만든
+       방어가 pytest 에서는 초록인 채 **서버에서는 죽어 있었다**(`dca36c3`).
+       그래서 판정은 여기 한 곳에 두고, 이미 등록된 `flow_spec_matches_code` 가
+       부른다 — 새 검사 id 를 만들지 않으므로 등록을 빠뜨릴 자리 자체가 없다.
+
+    ⚠️ 빈 집합은 "반환이 없다" 가 아니라 **정규식이 낡았다**는 뜻이다. 호출부가
+       빈 집합을 통과시키면 `==` 비교가 공허하게 성립할 수 있으니 반드시 실패로
+       다뤄야 한다.
+    """
+    import inspect
+
+    from app.agents.orchestrator import OrchestratorAgent
+
+    src = inspect.getsource(OrchestratorAgent._keyword_classify_ex)
+    return set(re.findall(r'return\s*\(\s*"([a-z_]+)"\s*,', src))
+
+
+def _declared_gate_chain(spec_mod) -> List[str]:
+    """캔버스 사슬을 `input` 부터 걸어 관문이 나오는 **순서**를 얻는다.
+
+    ⛔ `NODES` 선언 순서를 쓰면 안 된다 — 그건 목록이지 흐름이 아니다.
+       그림이 말하는 순서는 **엣지**다.
+    """
+    gates = {n.id for n in spec_mod.NODES if n.gate}
+    nxt: Dict[str, str] = {}
+    for edge in spec_mod.EDGES:
+        if not edge.conditional or edge.label == "통과":
+            nxt.setdefault(edge.src, edge.dst)
+    order, cur, seen = [], "input", set()
+    while cur and cur not in seen:
+        seen.add(cur)
+        if cur in gates:
+            order.append(cur)
+        cur = nxt.get(cur)
+    return order
+
+
+def _gate_order_in(source: str, func: str, tokens: Dict[str, str]) -> List[str]:
+    """`func` 본문에서 관문 호출부가 나오는 순서. 주석 줄은 세지 않는다."""
+    import re as _re
+
+    lines = source.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if f"async def {func}" in l)
+    except StopIteration:
+        return []
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if _re.match(r"\s{4}(async )?def ", lines[i]):
+            end = i
+            break
+    hits = []
+    for node_id, token in tokens.items():
+        for i in range(start, end):
+            body = lines[i].strip()
+            if body.startswith("#") or not body:
+                continue
+            if any(t in lines[i] for t in token.split("|")):
+                hits.append((i, node_id))
+                break
+    return [nid for _, nid in sorted(hits)]
+
+
+def _early_return_gates(source: str, func: str, stop_token: str) -> List[Tuple[int, int, str]]:
+    """`func` 안에서 **분류기 앞의 조기 return 관문**을 구조로 찾는다.
+
+    ⛔ 낱말 목록으로 찾지 않는다 — 목록은 낡고, 낡으면 새 관문이 조용히 빠진다
+       (이 검사가 생긴 이유가 정확히 그것이다). 대신 **모양**을 본다:
+       `if <조건>: … return …` 이 분류기 호출보다 위에 있으면 관문이다.
+
+    ⚠️ 조각은 **줄 창(window)으로 자르지 않는다.** 창은 무딘 도구라 넓히면 이웃
+       관문이 서로를 가려 주고(실측 15개 중 8개가 그렇게 숨었다) 좁히면 멀쩡한
+       관문이 미선언으로 잡힌다. 대신 `if` 조건에 쓰인 **변수가 대입된 줄**을
+       AST 로 따라가 함께 싣는다 — `if _org_answer:` 는 그 변수를 만든
+       `answer_team_country_scope(...)` 줄과 한 덩어리다.
+
+    Returns: (시작줄, 끝줄, 판정에 쓸 소스 조각)
+    """
+    import ast as _ast
+
+    try:
+        tree = _ast.parse(source)
+    except SyntaxError:
+        return []
+    target = None
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)) and node.name == func:
+            target = node
+            break
+    if target is None:
+        return []
+
+    lines = source.splitlines()
+    stop = None
+    for i in range(target.lineno, min(target.end_lineno or len(lines), len(lines))):
+        if stop_token in lines[i]:
+            stop = i + 1
+            break
+    stop = stop or (target.end_lineno or len(lines))
+
+    # 변수 → 그 변수를 만든 줄들 (같은 이름이 여러 번 대입되면 전부)
+    assigned: Dict[str, List[int]] = {}
+    for node in _ast.walk(target):
+        if isinstance(node, (_ast.Assign, _ast.AnnAssign, _ast.AugAssign)):
+            targets = node.targets if isinstance(node, _ast.Assign) else [node.target]
+            flat = []
+            for t in targets:
+                flat.extend(t.elts if isinstance(t, (_ast.Tuple, _ast.List)) else [t])
+            for t in flat:
+                if isinstance(t, _ast.Name):
+                    assigned.setdefault(t.id, []).append(node.lineno)
+
+    # 바깥 `if` 의 조건 줄 — 중첩된 조기 return 은 그것을 감싼 관문의 일부다
+    #  (`@@` 파싱 블록 안의 "질문을 입력해주세요" 안내 같은 것).
+    enclosing: Dict[int, List[int]] = {}
+
+    def _descend(node, stack):
+        for child in _ast.iter_child_nodes(node):
+            if isinstance(child, _ast.If):
+                enclosing[child.lineno] = list(stack)
+                _descend(child, stack + [child.lineno])
+            else:
+                _descend(child, stack)
+
+    _descend(target, [])
+
+    blocks = []
+    for stmt in _ast.walk(target):
+        if not isinstance(stmt, _ast.If) or stmt.lineno >= stop:
+            continue
+        if not any(isinstance(n, _ast.Return) for n in stmt.body):
+            continue
+        want = {n.id for n in _ast.walk(stmt.test) if isinstance(n, _ast.Name)}
+        rows = {stmt.lineno, *enclosing.get(stmt.lineno, ())}
+        for name in want:
+            for ln in assigned.get(name, ()):
+                if ln < stmt.lineno:
+                    rows.update(range(ln, min(ln + 4, stmt.lineno + 1)))
+        # 조건이 곧 호출인 경우(`if images:` · `if _rep_reg.wants_report(q):`)도 담긴다
+        chunk = "\n".join(lines[r - 1] for r in sorted(rows) if 0 < r <= len(lines))
+        blocks.append((stmt.lineno, stmt.end_lineno or stmt.lineno, chunk))
+    return blocks
+
+
+def flow_gates_match_code() -> Tuple[bool, str]:
+    """캔버스가 그리는 **관문 순서**가 코드와 같은가.
+
+    ⛔ **왜 따로 있나** (2026-09-09). `flow_spec_matches_code` 는 라우트만 본다 —
+       노드가 가리키는 함수가 있는가, 코드가 낼 수 있는 라우트가 캔버스에 있는가.
+       **관문이 통째로 빠져도 통과한다.** 실제로 그랬다: 분류기 앞에서 도는 관문
+       12개 중 **6개가 캔버스에 없었고**, 남은 것들은 **코드와 다른 순서**로
+       그려지고 있었는데 검사는 매일 "일치" 라고 답했다.
+
+    ⛔ **순서가 뜻을 갖는다.** 위에 있는 관문이 먼저 잡으면 아래는 못 본다 —
+       유통기한이 재고보다 위여야 하고(둘 다 '재고' 를 신호로 쓴다), 노션 저장은
+       `@@` 파싱보다 위여야 한다(`@@물류` 를 켠 채로도 저장돼야 한다).
+       그림의 순서가 코드와 다르면 **캔버스가 조용히 거짓말을 한다.**
+
+    ⚠️ 두 경로(비스트리밍·스트리밍)가 서로 다른 것도 여기서 잡는다 — 이 저장소가
+       여러 번 겪은 사고다(direct 프롬프트 두 벌 · 답변 검증 한쪽만 배선).
+
+    ⚠️ **완전하지 않다 — 실측을 적어 둔다.** 선언에서 관문 하나를 지우는 실험에서
+       15개 중 **12개를 잡았다.** 못 잡은 셋(`alias_expand`·`intercept.fi_guard`·
+       `intercept.model_rights`)은 그 블록이 다른 관문이 이미 덮은 바깥 `if` 안에
+       들어 있어서다. **새로 생긴 관문이 선언되지 않는 것**(2026-09-09 에 실제로
+       6개가 그랬다)은 잡고, 있던 선언을 지우는 것은 일부만 잡는다.
+    """
+    from pathlib import Path
+
+    try:
+        from app.flow import spec
+    except Exception as e:                                  # noqa: BLE001
+        return False, f"흐름 선언 로드 실패: {str(e)[:120]}"
+
+    tokens = {n.id: n.gate for n in spec.NODES if n.gate}
+    if not tokens:
+        return False, "관문 노드에 호출부 표식(gate)이 하나도 없다"
+    declared = _declared_gate_chain(spec)
+    missing_chain = [nid for nid in tokens if nid not in declared]
+    if missing_chain:
+        return False, f"사슬에 이어지지 않은 관문 노드: {', '.join(sorted(missing_chain))}"
+
+    src = (Path(__file__).resolve().parent.parent / "agents"
+           / "orchestrator.py").read_text(encoding="utf-8")
+    problems: List[str] = []
+    orders = {}
+    for func in ("route_and_execute", "route_and_stream"):
+        orders[func] = _gate_order_in(src, func, tokens)
+        absent = [nid for nid in declared if nid not in orders[func]]
+        if absent:
+            problems.append(f"{func} 에 없는 관문: {', '.join(absent)}")
+
+    if orders["route_and_execute"] != orders["route_and_stream"]:
+        problems.append("비스트리밍과 스트리밍의 관문 순서가 다르다")
+    elif orders["route_and_execute"] != declared:
+        problems.append(f"캔버스 {declared} ≠ 코드 {orders['route_and_execute']}")
+
+    # ⛔ **코드 → 캔버스** 방향. 이게 없으면 관문을 지우거나 새로 만들어도
+    #    검사가 통과한다 — 2026-09-09 에 실제로 6개가 그렇게 빠져 있었다.
+    #    낱말 목록이 아니라 **모양**으로 찾는다: 분류기 앞의 `if …: return …`.
+    blocks = _early_return_gates(src, "route_and_execute", "_keyword_classify_ex")
+    # ⛔ **잎 블록만 센다.** 바깥 `if` 하나로 묶어 세면 그 안의 관문들이 서로를
+    #    가려 준다 — 실측으로 15개 중 8개가 그렇게 숨었다. 진짜 관문은 잎이다.
+    leaves = [b for b in blocks
+              if not any(o is not b and b[0] <= o[0] and o[1] <= b[1] for o in blocks)]
+    for lineno, _end, chunk in leaves:
+        if any(t in chunk for token in tokens.values() for t in token.split("|")):
+            continue
+        head = next((l.strip() for l in chunk.splitlines()
+                     if l.strip().startswith("if ")), "")
+        problems.append(
+            f"orchestrator.py:{lineno} 의 관문이 캔버스에 없다 ({head[:60]})")
+
+    if problems:
+        return False, " / ".join(problems)[:400]
+    return True, f"관문 {len(declared)}개 · 두 경로와 캔버스 순서 일치"
+
+
+def flow_spec_matches_code() -> Tuple[bool, str]:
+    """캔버스가 그리는 흐름이 실제 코드와 같은가.
+
+    ⛔ 이 검사가 죽으면 **기능 전체가 무의미하다.** 그림이 코드와 갈리는 순간
+       캔버스는 이 프로젝트의 네 번째 "사본이 갈린 사고"가 된다
+       (direct 프롬프트 두 벌 / @@ 목록 두 벌 / Continent1 값 두 벌).
+
+    두 방향을 본다:
+      · 선언 → 코드 : 노드가 가리키는 함수가 실제로 있는가
+      · 코드 → 선언 : 코드가 만들 수 있는 **모든 경로**가 캔버스에 노드로 있는가
+
+    ⛔ 예전엔 역방향이 `_DB_REGISTRY` 의 라우트 6종만 봤다 (bigquery·cs·gws·
+       model_rights·notion·report). `direct`·`team`·`multi` 는 `@@` 로 고를 수
+       없는 라우터 전용이라 **이 검사에 아예 안 보였다** — 열 번째 non-`@@` 경로를
+       추가하면 캔버스 어디에도 안 나오는데 검사는 계속 "일치" 라고 답했을 것이다
+       (2026-08-24 리뷰 지적). 지금은 세 출처의 합집합을 본다:
+         · `ROUTER_ROUTES`  — 분류기가 낼 수 있는 값
+         · `HANDLER_ROUTES` — `_handle_*` 실행 핸들러가 있는 값
+         · `_DB_REGISTRY`   — `@@` 로 고를 수 있는 값
+       오늘 이 합집합은 정확히 캔버스의 라우트 노드 집합이라 곧바로 통과하고,
+       **다음에 추가될 경로부터** 잡는다.
+    """
+    try:
+        from app.agents.orchestrator import (HANDLER_ROUTES, ROUTER_ROUTES,
+                                             OrchestratorAgent)
+        from app.flow import graph, spec
+    except Exception as e:
+        return False, f"흐름 모듈 로드 실패: {str(e)[:120]}"
+
+    problems: List[str] = []
+    for node in spec.all_nodes():
+        for dotted in (node.fn, node.subgraph):
+            if not dotted:
+                continue
+            try:
+                graph.resolve(dotted)
+            except Exception as e:
+                problems.append(f"{node.id}→{dotted} ({type(e).__name__})")
+
+    try:
+        built = graph.build()
+        node_ids = {n["id"] for n in built["nodes"]}
+    except Exception as e:
+        return False, f"그래프 조립 실패: {str(e)[:120]}"
+
+    registry_routes = {e["route"] for e in OrchestratorAgent._DB_REGISTRY}
+    every_route = set(ROUTER_ROUTES) | set(HANDLER_ROUTES) | registry_routes
+    for route in sorted(every_route):
+        if f"route.{route}" not in node_ids:
+            problems.append(f"라우트 '{route}' 노드 없음")
+
+    # 라우터 노드의 나가는 엣지 = 분류기가 낼 수 있는 값. 하나라도 어긋나면
+    # 화면이 "이 질문은 저기로 갈 수 있다"고 없는 길을 알려준다 (13개 거짓 엣지 사고).
+    for router in ("router.keyword", "router.llm"):
+        # ⚠️ LLM 층(`llm.*`)은 라우팅 위상이 아니라 "어느 모델을 부르나" 를 그린 곁가지다
+        #    (2026-09-30). 재판정이 Gemini 를 부른다는 엣지는 사실이지만 라우트가 아니므로
+        #    여기 비교에서 뺀다 — 안 빼면 이 검사가 참인 그림을 어긋남으로 올린다
+        router_edges = {e["dst"] for e in built["edges"]
+                        if e["src"] == router and not e["dst"].startswith("llm.")}
+        expected_edges = (
+            {"router.llm", "route_filter.allowed"}
+            if router == "router.keyword" else {"route_filter.allowed"}
+        )
+        if router_edges != expected_edges:
+            problems.append(
+                f"{router} topology differs (+{sorted(router_edges - expected_edges)} "
+                f"-{sorted(expected_edges - router_edges)})")
+        drawn = {e["dst"][len("route."):] for e in built["edges"]
+                 if e["src"] == "route_filter.allowed" and e["dst"].startswith("route.")}
+        if drawn != set(ROUTER_ROUTES):
+            problems.append(
+                f"{router} 엣지≠분류기 (+{sorted(drawn - set(ROUTER_ROUTES))} "
+                f"−{sorted(set(ROUTER_ROUTES) - drawn)})")
+
+    # 위 검사는 `ROUTER_ROUTES` 상수가 맞다는 전제 위에 있다 — 상수가 코드와 갈리면
+    # 둘이 사이좋게 틀린다. 그래서 분류기 본문에서 직접 읽어 **양방향으로** 대조한다.
+    # ⛔ 부분집합(⊆)으로는 부족하다: 상수 쪽이 더 넓은 방향이 정확히 **거짓 화살표가
+    #    생기는 방향**이다 (라우터의 나가는 엣지를 이 상수에서 부챗살로 뽑기 때문).
+    #    실제로 상수에 없는 라우트를 하나 끼워 넣어도 ⊆ 는 그대로 참이었다.
+    direct_filter_edges = [
+        edge for edge in built["edges"]
+        if edge["src"] == "route_filter.allowed" and edge["dst"] == "route.direct"
+    ]
+    if (len(direct_filter_edges) != 1
+            or not spec.direct_filter_label_is_truthful(direct_filter_edges[0]["label"])):
+        problems.append("direct filter label must disclose native direct and disallowed downgrade")
+
+    try:
+        returned = classifier_return_routes()
+    except Exception as e:
+        problems.append(f"분류기 반환 리터럴 파싱 실패 ({type(e).__name__})")
+    else:
+        if not returned:
+            problems.append("분류기 반환 리터럴을 하나도 못 읽었다 — 정규식이 낡았다")
+        elif returned != set(ROUTER_ROUTES):
+            problems.append(
+                f"분류기≠ROUTER_ROUTES (상수에만 {sorted(set(ROUTER_ROUTES) - returned)} "
+                f"· 코드에만 {sorted(returned - set(ROUTER_ROUTES))})")
+
+    # 도달 불가로 표시한 노드에 화살표가 붙으면 표시와 그림이 서로 반대말을 한다
+    expected_prefix_targets = set(spec.multi_prefix_targets())
+    drawn_prefix_targets = {
+        e["dst"].removeprefix("multi_prefix.branch.") for e in built["edges"]
+        if e["src"] == "multi_prefix.fanout" and e["dst"].startswith("multi_prefix.branch.")
+    }
+    if drawn_prefix_targets != expected_prefix_targets:
+        problems.append(
+            f"@@ fan-out targets differ (+{sorted(drawn_prefix_targets - expected_prefix_targets)} "
+            f"-{sorted(expected_prefix_targets - drawn_prefix_targets)})")
+    for target in expected_prefix_targets:
+        branch = f"multi_prefix.branch.{target}"
+        if not any(e["src"] == branch and e["dst"] == "multi_prefix.merge"
+                   for e in built["edges"]):
+            problems.append(f"@@ fan-out branch '{target}' has no merge edge")
+
+    for node in spec.all_nodes():
+        if node.unreachable and any(
+                e["src"] == node.id or e["dst"] == node.id for e in built["edges"]):
+            problems.append(f"'{node.id}' 는 도달 불가로 적혔는데 엣지가 있다")
+
+    if problems:
+        return False, ("흐름 선언이 코드와 어긋난다 "
+                       f"{len(problems)}건: " + ", ".join(problems[:4]))
+    return True, f"노드 {len(node_ids)}개 · 선언과 코드 일치"
+
+
+# ── 소스에 섬이진 제어문자 (2026-08-25) ─────────────────────────
+# ⛔ 정규식을 고치다 `\b`(단어 경계)가 **진짜 백스페이스 문자(0x08)** 로 들어가면
+#    정규식은 에러 없이 컴파일되고 **영우녕 매치하지 않는다.** 화면에도 안 보인다 —
+#    에러가 안 나는 고장의 전형이다. 실제로 두 곳에서 나왔다:
+#      · `self_check.py` 의 답변 앞부분 유실 감지 정규식 (붐따 #106 과 같은 증상을
+#        잡으려던 검사가 정작 못 잡고 있었다)
+#      · `sql_agent.py` 의 대륙 컴럼 교정 (새로 넣다가 같은 방식으로 깨졌다)
+_CTRL = {8: "BACKSPACE", 7: "BELL", 11: "VTAB", 12: "FORMFEED"}
+_CTRL_SCAN = ("app", "prompts", "scripts", "tests")
+
+
+def stray_control_chars() -> Tuple[bool, str]:
+    """소스에 눈에 안 보이는 제어문자가 섮였는가."""
+    hits = []
+    for top in _CTRL_SCAN:
+        base = os.path.join(ROOT, top)
+        for dirpath, dirnames, names in os.walk(base):
+            dirnames[:] = [d for d in dirnames
+                           if d not in ("__pycache__", "node_modules", "charts")]
+            for n in names:
+                if not n.endswith((".py", ".txt", ".js", ".html")):
+                    continue
+                full = os.path.join(dirpath, n)
+                try:
+                    with io.open(full, encoding="utf-8", errors="strict") as fh:
+                        body = fh.read()
+                except (OSError, UnicodeDecodeError):
+                    continue
+                for code, label in _CTRL.items():
+                    if chr(code) in body:
+                        rel = os.path.relpath(full, ROOT).replace(os.sep, "/")
+                        line = body[:body.index(chr(code))].count(chr(10)) + 1
+                        hits.append(rel + ":" + str(line) + " " + label)
+    if hits:
+        return False, "제어문자가 소스에 섮였다 (정규식이 조용히 매치 안 된다): " + ", ".join(hits[:5])
+    return True, "제어문자 없음"
+
+
+# 화면을 통째로 채우고 **스스로** 스크롤 영역을 갖는 페이지들.
+# style.css 의 `overflow:hidden` 이 여기서는 의도된 것이라 예외로 둔다.
+# 새 페이지를 여기 넣기 전에 **실제로 열어서 끝까지 내려가는지 확인할 것** —
+# 그냥 추가하면 아무것도 안 지키는 목록이 된다.
+_VIEWPORT_LOCKED_PAGES = {
+    "chat.html",       # SPA — 메시지 목록이 style.css 안에서 자체 스크롤한다
+    "login.html",      # 한 화면에 들어간다
+    "dashboard.html",  # 자체 레이아웃 + 내부 overflow-y:auto
+}
+
+
+def page_scroll_restored() -> Tuple[bool, str]:
+    """`style.css` 를 쓰는 문서형 페이지가 스크롤을 되살렸는가.
+
+    `style.css` 는 채팅 SPA 용이라 `html, body { height:100%; overflow:hidden }` 을 건다.
+    테마 토큰(`--bg`·`--text`…)을 쓰려고 그 파일을 링크한 **평범한 문서 페이지**는
+    그 규칙까지 함께 물려받아 **스크롤이 통째로 죽는다.**
+
+    에러도 빈 화면도 아니다 — 첫 화면은 멀쩡히 그려지고 그 아래가 없는 것처럼 보인다.
+    실제로 `coa_finder.html` 이 96행을 찾아 놓고 두 번째 행부터 볼 수 없었다
+    (2026-09-01 사용자 제보). 같은 결함이 `eval_review.html` 에도 있었다.
+    """
+    if not _exists("app/static/style.css"):
+        return True, "style.css 없음 — 건너뜀"
+    if not re.search(r"html,\s*body\s*\{[^}]*overflow\s*:\s*hidden", _read("app/static/style.css")):
+        return True, "style.css 가 더 이상 overflow:hidden 을 걸지 않는다 — 검사 불필요"
+
+    bad: List[str] = []
+    for pat in ("app/static/*.html", "app/frontend/*.html"):
+        for path in glob.glob(os.path.join(ROOT, pat)):
+            name = os.path.basename(path)
+            if name in _VIEWPORT_LOCKED_PAGES:
+                continue
+            with io.open(path, encoding="utf-8", errors="replace") as fh:
+                txt = fh.read()
+            if "/static/style.css" not in txt:
+                continue
+            # body(또는 html, body) 를 고르는 규칙 중 overflow 를 hidden 이 아닌 값으로
+            # 되돌린 것이 하나라도 있으면 통과. 선언 순서상 페이지 <style> 이 나중이라 이긴다.
+            restored = False
+            for sel, body in re.findall(r"([^{}]*)\{([^}]*)\}", txt):
+                if not re.search(r"(^|,)\s*(html\s*,\s*)?body\s*$", sel.strip(), re.M):
+                    continue
+                m = re.search(r"overflow(-y)?\s*:\s*([a-z]+)", body)
+                if m and m.group(2) != "hidden":
+                    restored = True
+                    break
+            if not restored:
+                bad.append(name)
+    if bad:
+        return False, ("style.css 를 쓰면서 스크롤을 되살리지 않았다 "
+                       "(화면 밖 내용에 닿을 수 없다): " + ", ".join(sorted(bad)))
+    return True, "문서형 페이지 스크롤 정상"
+
+
+def qdrant_team_sources() -> Tuple[bool, str]:
+    """`@@팀` 지정이 벡터 색인의 team 값과 실제로 맞물리는가.
+
+    ⛔ 어긋나도 **에러가 아니라 0건**이다 — 그리고 0건은 화면에서 "자료가 없네요"
+       와 똑같이 생겼다. 실제 구조가 그렇다: 레지스트리 키(`GM EAST`)와 색인 값
+       (`[GM]EAST`)이 다르고, 그 사이를 `resolve_team_filter()` 의 손으로 적은
+       `TEAM_MAP` 이 잇는다. 색인 쪽 표기가 바뀌면 그 다리만 조용히 끊긴다.
+
+    그래서 판정은 **키가 아니라 결과**로 한다: `@@` 키를 리졸버에 넣어 나온 값으로
+    색인을 세어 조각이 잡히는지 본다.
+
+    실패로 세는 것은 **다리가 끊긴 경우 하나뿐**이다 (리졸버 결과는 색인에 없는데,
+    이름이 비슷한 값은 색인에 있다 = 표기가 바뀌었거나 TEAM_MAP 이 낡았다).
+    자료가 아예 없는 팀(JBT·B2B1)은 코드 결함이 아니라 데이터 공백이라 detail 로만
+    적는다 — 매일 같은 실패를 울리면 곧 아무도 안 본다.
+    """
+    import re as _re
+
+    from app.agents.qdrant_agent import index_team_counts, resolve_team_filter
+    from app.agents.orchestrator import OrchestratorAgent
+
+    counts = index_team_counts(refresh=True)
+    if not counts:
+        # ⚠️ 못 읽은 것을 통과로 세면 이 검사는 영원히 초록이다 (dangling check 와 같은 함정)
+        return False, "벡터 색인(notion_vectors_gemini.json)에서 팀 값을 하나도 읽지 못했다"
+
+    def _squash(text: str) -> str:
+        return _re.sub(r"[^0-9a-z]", "", text.lower())
+
+    keys = [e["key"] for e in OrchestratorAgent.get_db_registry() if e.get("route") == "notion"]
+    broken, empty, used = [], [], set()
+    for key in keys:
+        value = resolve_team_filter(key)
+        if counts.get(value):
+            used.add(value)
+            continue
+        near = [t for t in counts if _squash(t) == _squash(key) or _squash(key) in _squash(t)]
+        if near:
+            broken.append(f"{key} → '{value}' (색인엔 {near})")
+        else:
+            empty.append(key)
+
+    orphans = [t for t in counts if t not in used]
+    notes = [f"@@ 키 {len(keys)}개 · 색인 팀 {len(counts)}개"]
+    if empty:
+        notes.append(f"자료 0건인 팀: {', '.join(sorted(empty))}")
+    if orphans:
+        notes.append(f"색인엔 있으나 @@ 키가 없는 팀: {', '.join(sorted(orphans))}")
+    if broken:
+        return False, "팀 필터가 색인과 어긋났다 (지정해도 0건): " + " / ".join(broken)
+    return True, " · ".join(notes)
+
+
+def team_link_coverage() -> Tuple[bool, str]:
+    """팀 자료 링크(시트·드라이브)가 벡터 색인에 들어가 있는가.
+
+    ⛔ **클라우드를 센다. 로컬 JSON 이 아니다.** 검색은 Qdrant Cloud 를 조회하는데
+       로컬 JSON 에는 그 일부만 있다 (2026-08-25 실측: 클라우드 1,677 · 로컬 584).
+       파일 이름이 "소스 오브 트루스" 라고 주석에 적혀 있다고 해서 그게 검색이 보는
+       곳은 아니다 — 로컬을 세면 **실제와 다른 커버리지를 자신 있게 보고하게 된다**
+       (이 검사를 처음 쓸 때 내가 그렇게 틀렸다).
+
+    링크 카드 단계는 05:00 `qdrant_pipeline_daily` 안에서 돈다. 빠지면 에러 없이
+    검색 결과만 얇아지므로, 결과물(색인 안의 링크 카드 수)로 확인한다.
+    """
+    from app.core.team_link_index import _SOURCE, build_link_cards, load_rows, notion_page_id
+
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        from app.agents.qdrant_agent import COLLECTION, _get_client
+
+        client = _get_client()
+        in_index = client.count(
+            collection_name=COLLECTION,
+            count_filter=Filter(must=[FieldCondition(key="source",
+                                                     match=MatchValue(value=_SOURCE))]),
+            exact=True,
+        ).count
+    except ImportError as exc:
+        # ⚠️ 개발 PC 에는 `qdrant_client` 가 없다. 없는 것을 실패로 세면 **매일 빨간
+        #    줄이 하나 상주해** 진짜 실패가 묻힌다 — 이 파일이 node 검사에 쓰는 것과
+        #    같은 규약으로 건너뛴다 (서버에는 있으므로 거기서는 그대로 돈다).
+        return True, f"qdrant_client 없음 — 건너뜀 ({exc})"
+    except Exception as exc:
+        return False, f"Qdrant 색인에서 링크 카드를 세지 못했다: {exc}"
+
+    # ⚠️ 후보 수는 **파이프라인과 같은 방식**으로 센다. 중복 제거(이미 본문이 색인된
+    #    노션 페이지)를 빼먹으면 후보가 230 으로 부풀어 "53장이 빠졌다" 처럼 읽힌다 —
+    #    빠진 게 아니라 애초에 태우지 않기로 한 것들이다.
+    try:
+        import json as _json
+
+        from app.agents.qdrant_agent import _LOCAL_JSON
+
+        local = _json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+        local_points = local if isinstance(local, list) else (local.get("points") or [])
+        indexed_ids = set()
+        for pt in local_points:
+            payload = pt.get("payload", {})
+            if payload.get("source") == _SOURCE:
+                continue
+            pid = str(payload.get("page_id", "")).replace("-", "").lower()
+            if pid:
+                indexed_ids.add(pid)
+            nid = notion_page_id(str(payload.get("page_url", "")))
+            if nid:
+                indexed_ids.add(nid)
+        expected = len(build_link_cards(load_rows(), indexed_page_ids=indexed_ids))
+    except Exception as exc:
+        return False, f"team_resources 를 읽지 못했다: {exc}"
+
+    if expected and in_index == 0:
+        return False, (f"링크 카드가 색인에 하나도 없다 (태울 것 {expected}장) — "
+                       "05:00 파이프라인의 링크 단계가 돌지 않았다: "
+                       "python -X utf8 scripts/notion_qdrant_pipeline.py --links")
+    return True, f"링크 카드 색인 {in_index}장 · 후보 {expected}장"
+
+
+def notion_pages_without_date() -> Tuple[bool, str]:
+    """수정일 없이 색인된 노션 문서가 있는가 (2026-08-25, 붐따 #105).
+
+    ⛔ `last_edited_time == ""` 는 버그가 아니라 **표식**이다 (`ingest_page.py`):
+       노션 인테그레이션에 공유되지 않아 **공개 링크를 긁어** 넣은 페이지다.
+       그런 문서는 날짜가 없으므로 **"값이 다르면 최신 문서를 따르라" 규칙이 작동하지
+       않는다.** 실제로 야근 식대 답변이 2023년 문서의 10,000원을 골랐고, 15,000원이
+       적힌 `복리후생` 은 날짜가 없어 밀렸다.
+
+    에러가 나지 않는 고장이다 — 검색은 되고 답도 나오는데 **낡은 값이 이긴다.**
+    목록은 `docs/notion_unshared_pages.md`, 해결은 노션에서 인테그레이션 공유다.
+
+    ⚠️ `source='google_sheets'` 링크 카드는 원래 노션 수정일이 없다 — 세지 않는다.
+    """
+    try:
+        from app.agents.qdrant_agent import COLLECTION
+    except ImportError as exc:
+        return True, f"qdrant_client 없음 — 건너뜀 ({exc})"
+
+    # ⚠️ 공용 클라이언트는 timeout=15 다. WAS→Qdrant Cloud 는 프록시를 타서 그보다
+    #    오래 걸린다 — 실제로 타임아웃으로 실패했다 (2026-08-25). **네트워크 지연을
+    #    데이터 문제로 보고하면** 잘못된 이유로 매일 빨간 줄이 서고, 진짜 실패가 묻힌다.
+    #    전용 클라이언트로 넉넉히 기다리고, 그래도 안 되면 **실패가 아니라 건너뜀**이다.
+    # ⛔ **`last_edited_time` 으로 필터를 걸지 마라.** Qdrant 는 필터 키마다 payload
+    #    인덱스를 요구하는데 이 저장소에는 그걸 만드는 코드가 없어(`create_payload_index`
+    #    호출 0건) 검사가 처음부터 400 으로 실패하고 있었다 (2026-08-25 발견).
+    #    인덱스를 만들어 고치면 **컬렉션을 다시 만들 때 조용히 다시 깨진다** — 인덱스는
+    #    코드가 아니라 서버 상태라 사라져도 아무도 모른다. 포인트가 1,500개 남짓이니
+    #    훑어서 센다 (같은 파일의 `static_team_links`·`static_stale_copies` 도 같은 방식).
+    try:
+        from qdrant_client import QdrantClient
+
+        from app.agents.qdrant_agent import _qdrant_api_key, _qdrant_url
+        client = QdrantClient(url=_qdrant_url(), api_key=_qdrant_api_key(), timeout=60)
+        total = undated = 0
+        offset = None
+        while True:
+            batch, offset = client.scroll(collection_name=COLLECTION, limit=500,
+                                          offset=offset, with_payload=True,
+                                          with_vectors=False)
+            for point in batch:
+                payload = point.payload or {}
+                if payload.get("source") != "notion":
+                    continue
+                total += 1
+                if not str(payload.get("last_edited_time") or "").strip():
+                    undated += 1
+            if offset is None:
+                break
+    except Exception as exc:
+        if "timed out" in str(exc).lower() or "timeout" in type(exc).__name__.lower():
+            return True, f"Qdrant 응답 지연 — 건너뜀 ({exc})"
+        return False, f"Qdrant 색인을 세지 못했다: {exc}"
+
+    if not total:
+        return False, "notion 소스 청크가 0개다 — 색인이 비었는지 확인할 것"
+    if not undated:
+        return True, f"수정일 없는 노션 청크 없음 (notion {total}개)"
+    pct = undated * 100.0 / total
+    return False, (f"수정일 없이 색인된 노션 청크 {undated}/{total} ({pct:.1f}%) — "
+                   f"인테그레이션 미공유 페이지다. 낡은 값이 최신을 이긴다. "
+                   f"목록: docs/notion_unshared_pages.md")
+
+
+def qdrant_stale_page_copies() -> Tuple[bool, str]:
+    """파이프라인이 소유한 페이지에 **다른 id 의 옛 조각**이 남아 있는가.
+
+    ⛔ 2026-08-25 에 564개가 그렇게 쌓여 있었다. 원인은 두 가지가 겹친 것이다:
+       ① 크롤이 멘션 페이지 안으로 안 내려가 최신본을 못 만들었고(58페이지만 봤다),
+       ② 업로드가 id 정규화를 건너뛴 배치를 "완료" 로 찍어 사본이 갈렸다.
+       그 결과 검색에서 **4개월 된 조각이 최신을 이겼다** (0.783 vs 0.661).
+
+    낡은 조각은 에러를 내지 않는다 — 그냥 옛 사실을 자신 있게 답할 뿐이다.
+    그래서 결과물로 감시한다: 로컬(=파이프라인 산출물)이 소유한 page_id 인데
+    로컬에 없는 id 의 포인트가 클라우드에 있으면 그건 옛 사본이다.
+
+    ⚠️ `page_id` 가 없는 포인트(구글시트 임베딩 등)와 파이프라인이 모르는 페이지는
+       세지 않는다 — 그건 다른 적재기의 몫이고, 여기서 울리면 매일 울린다.
+    """
+    import json as _json
+
+    from app.agents.qdrant_agent import COLLECTION, _LOCAL_JSON, _get_client, _normalize_id
+
+    try:
+        raw = _json.loads(_LOCAL_JSON.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return False, f"로컬 색인을 읽지 못했다: {exc}"
+    local = raw if isinstance(raw, list) else (raw.get("points") or [])
+    local_ids = {str(_normalize_id(p.get("id"), p.get("payload", {}))) for p in local}
+    owned = {str(p.get("payload", {}).get("page_id") or "").replace("-", "").lower()
+             for p in local}
+    owned.discard("")
+
+    try:
+        client = _get_client()
+        stale, offset = [], None
+        while True:
+            batch, offset = client.scroll(collection_name=COLLECTION, limit=500,
+                                          offset=offset, with_payload=True,
+                                          with_vectors=False)
+            for pt in batch:
+                if str(pt.id) in local_ids:
+                    continue
+                page = str((pt.payload or {}).get("page_id") or "").replace("-", "").lower()
+                if page and page in owned:
+                    stale.append((pt.payload or {}).get("page_title"))
+            if offset is None:
+                break
+    except Exception as exc:
+        return False, f"Qdrant 를 훑지 못했다: {exc}"
+
+    if stale:
+        from collections import Counter
+
+        top = ", ".join(f"{t}({c})" for t, c in Counter(stale).most_common(3))
+        return False, (f"같은 문서의 옛 조각 {len(stale)}개가 색인에 남아 있다 — "
+                       f"검색에서 최신본과 경쟁한다: {top}")
+    return True, f"옛 사본 없음 (파이프라인 소유 페이지 {len(owned)}개)"
+
+
+# ⛔ 살아 있는 데이터(Qdrant·MariaDB 현재 상태)에 기대는 검사들.
+#
+#    코드가 틀려서 실패하는 게 아니라 **데이터가 그런 상태라서** 실패한다 —
+#    `static_notion_dates` 는 노션에서 페이지 22개를 공유해야 풀리고, `static_team_links`
+#    는 야간 파이프라인이 돌아야 채워진다. 개발 테스트에서 이걸 빨간 줄로 두면 그 줄이
+#    상수가 되고, 상수가 된 경보는 아무도 안 본다.
+#
+#    → pytest 는 건너뛰고, **서버 자가 점검(매일 07:30)이 본다.** 등록 여부는
+#      `test_every_static_check_is_registered_in_self_check` 가 계속 확인한다.
+LIVE_DATA_CHECKS = frozenset({
+    "static_team_links",     # Qdrant 조회
+    "static_stale_copies",   # Qdrant 조회
+    "static_notion_dates",   # Qdrant 조회 + 노션 공유 상태
+})
+
+ALL = [
+    ("static_assets", asset_sanity, "프론트 자산 온전성"),
+    ("static_value_list_dupes", prompt_no_handwritten_value_lists,
+     "자동 주입 컬럼 값을 손으로 다시 나열했는가"),
+    ("static_value_list_src", source_no_handwritten_value_lists,
+     "소스에 손으로 적은 값 목록"),
+    ("static_css_vars", undefined_css_vars, "정의되지 않은 CSS 변수"),
+    ("static_at_sources", at_source_parity, "@@ 데이터소스 프론트/서버 일치"),
+    ("static_orch_class", orchestrator_class_intact,
+     "오케스트레이터 클래스 본문이 끊기지 않았는가"),
+    ("static_prompt_copies", prompt_single_source, "direct 프롬프트 단일 소스"),
+    ("static_asset_stamp", asset_stamping_wired, "자산 캐시 지문 배선"),
+    ("static_kw_collision", keyword_collisions, "라우팅 키워드 삼킴 충돌"),
+    ("static_fi_mask", fi_prompt_masking, "손익 프롬프트 마스킹 실동작"),
+    ("static_flow_spec", flow_spec_matches_code, "흐름 선언 ↔ 코드 일치"),
+    ("static_flow_gates", flow_gates_match_code,
+     "캔버스의 관문 순서가 코드(두 경로)와 같은가"),
+    ("static_ctrl_chars", stray_control_chars, "소스에 섞인 제어문자"),
+    ("static_page_scroll", page_scroll_restored,
+     "style.css 를 쓰는 문서 페이지가 스크롤을 되살렸는가"),
+    ("static_chart_labels", chart_label_bounds, "막대 라벨이 플롯 경계를 보는가"),
+    ("static_qdrant_teams", qdrant_team_sources, "@@팀 ↔ 벡터 색인 팀 값 일치"),
+    ("static_team_links", team_link_coverage, "팀 자료 링크가 벡터 색인에 있는가"),
+    ("static_notion_dates", notion_pages_without_date,
+     "수정일 없이 색인된 노션 문서 (낡은 값이 최신을 이긴다)"),
+    ("static_stale_copies", qdrant_stale_page_copies, "같은 문서의 옛 조각이 남아 있는가"),
+    ("static_survey_wiring", survey_wiring, "만족도 설문 배선 (/me ↔ 프론트 ↔ 처리함)"),
+]

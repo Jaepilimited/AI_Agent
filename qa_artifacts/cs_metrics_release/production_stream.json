@@ -1,0 +1,7 @@
+{
+  "source": [
+    "bigquery"
+  ],
+  "answer": "> 국내 자료는 **CS 처리 기록** 단위입니다. 고유 CS 사건 수와 다르며, 주문수는 중복 주문을 제외합니다.\n\n### 📊 2026년 8월 국내 CS 처리 기록은 총 몇 건이야?\n\n#### 상세 데이터\n| 처리 기록 수 | 고유 주문 수 | 주문 식별값 미기재 건수 |\n| :--- | :--- | :--- |\n| 51 | 47 | 0 |\n\n#### 분석 및 인사이트\n- **주문당 처리 빈도**: 2026년 8월 국내 CS 처리 기록 51건은 고유 주문 47건에서 발생하여, 주문 1건당 평균 약 1.09건의 CS 처리가 이루어졌습니다. 이는 대부분의 문의가 단건 처리로 종결되었으나 일부 주문에 대해 복수 회차의 처리가 진행되었음을 보여줍니다.\n- **주문 식별자 정합성**: 전체 CS 처리 기록 51건 중 주문 식별 번호가 누락된 건은 0건(0.0%)으로, 모든 처리 내역이 특정 주문과 명확히 매칭되어 관리되고 있습니다.\n\n---\n*조회 기준: 2026-09-16 | 내부 데이터베이스*\n> 💡 **이런 것도 물어보세요**\n> - 2026년 8월 국내 CS 처리 기록을 유형별(취소, 교환, 반품 등)로 나누어 보면 어떻게 되나요?\n> - 2026년 8월에 2회 이상 CS 처리가 발생한 주문 건들의 구체적인 사유는 무엇인가요?\n> - 2026년 7월 대비 8월 국내 CS 처리 건수와 고유 주문수의 증감 추이는 어떤가요?\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT\n  COUNT(*) AS total_processing_records,\n  COUNT(DISTINCT order_key) AS distinct_orders,\n  COUNTIF(order_key IS NULL) AS records_without_order_key\nFROM `skin1004-319714.cs_dashboard.domestic_cs_records`\nWHERE received_at BETWEEN '2026-08-01' AND '2026-08-31'\nLIMIT 10000\n```\n</details>",
+  "seconds": 13.04
+}

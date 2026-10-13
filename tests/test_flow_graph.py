@@ -172,6 +172,124 @@ def test_keyword_fallback_reaches_llm_before_allowed_route_filter():
                    for edge in out["edges"])
 
 
+def test_source_need_gate_has_both_outcomes_and_a_bypass():
+    out = graph.build()
+    pairs = {(edge["src"], edge["dst"]) for edge in out["edges"]}
+    assert ("router.keyword", "router.source_gate") in pairs
+    assert ("router.keyword", "router.llm") in pairs
+    assert ("router.source_gate", "router.llm") in pairs
+    assert ("router.source_gate", "route_filter.allowed") in pairs
+    assert ("router.source_gate", "llm.gemini") in pairs
+
+
+@pytest.mark.parametrize("target", ["router.llm", "route_filter.allowed"])
+def test_flow_check_rejects_missing_source_gate_outcome(monkeypatch, target):
+    from app.core import static_checks as SC
+
+    original = spec.all_edges
+    monkeypatch.setattr(spec, "all_edges", lambda: tuple(
+        edge for edge in original()
+        if (edge.src, edge.dst) != ("router.source_gate", target)
+    ))
+    ok, detail = SC.flow_spec_matches_code()
+    assert not ok and "router.source_gate" in detail
+
+
+def test_fi_denial_returns_without_sql_execution():
+    out = graph.build()
+    denied = [edge for edge in out["edges"]
+              if edge["src"] == "intercept.fi_guard" and "권한 없음" in edge["label"]]
+    assert len(denied) == 1 and denied[0]["dst"] == "response"
+
+
+@pytest.mark.parametrize("url,key,uses_gateway", [
+    ("https://private.example", "private-key", True),
+    ("https://private.example", "", False),
+    ("", "private-key", False),
+    ("  ", "private-key", False),
+    ("", "", False),
+])
+def test_runtime_models_and_transport_are_current_without_exposing_secrets(
+        monkeypatch, url, key, uses_gateway):
+    import json
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(graph, "get_settings", lambda: SimpleNamespace(
+        anthropic_opus_model="configured-claude-model",
+        gemini_flash_model="configured-flash-model",
+        llm_gateway_url=url, llm_gateway_key=key,
+        sales_table_full_path="configured-project.sales.Sales",
+        gcp_project_id="configured-project", bq_dataset_sales="sales",
+        mariadb_database="configured-db",
+    ))
+    out = graph.build()
+    nodes = {node["id"]: node for node in out["nodes"]}
+    assert "configured-claude-model" in nodes["llm.claude"]["label"]
+    assert "configured-flash-model" in nodes["llm.gemini"]["label"]
+    assert nodes["llm.gateway"]["active"] is uses_gateway
+    assert nodes["llm.anthropic"]["active"] is not uses_gateway
+    edges = {(edge["src"], edge["dst"]): edge for edge in out["edges"]}
+    assert edges[("llm.claude", "llm.gateway")]["active"] is uses_gateway
+    assert edges[("llm.claude", "llm.anthropic")]["active"] is not uses_gateway
+    encoded = json.dumps(out)
+    assert "private.example" not in encoded and "private-key" not in encoded
+
+
+def test_sources_follow_registry_and_runtime_table_mapping(monkeypatch):
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.agents import sql_agent
+
+    monkeypatch.setattr(OrchestratorAgent, "_DB_REGISTRY", [
+        {"key": "new-source", "label": "New source", "route": "bigquery"},
+        {"key": "new-docs", "label": "New docs", "route": "notion"},
+    ])
+    monkeypatch.setattr(sql_agent, "_source_table_map", lambda settings: {
+        "new-source": ["new-project.new_dataset.new_table"],
+    })
+    sources = graph.source_metadata(graph.get_settings())
+    assert sources == [
+        {"id": "new-source", "label": "New source", "kind": "데이터베이스",
+         "route": "bigquery", "tables": ["new-project.new_dataset.new_table"]},
+        {"id": "new-docs", "label": "New docs", "kind": "문서",
+         "route": "notion", "tables": []},
+    ]
+
+
+def test_sources_have_real_route_links_and_no_invented_service_tables():
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.agents.sql_agent import _source_table_map
+
+    out = graph.build()
+    by_id = {source["id"]: source for source in out["sources"]}
+    nodes = {node["id"] for node in out["nodes"]}
+    assert set(by_id) == {entry["key"] for entry in OrchestratorAgent._DB_REGISTRY}
+    assert all("route." + source["route"] in nodes for source in out["sources"])
+    for source, tables in _source_table_map(graph.get_settings()).items():
+        assert by_id[source]["tables"] == tables
+    assert by_id["gws"]["kind"] == "서비스" and by_id["gws"]["tables"] == []
+    assert by_id["B2B1"]["kind"] == "문서" and by_id["B2B1"]["tables"] == []
+
+
+def test_mariadb_sources_use_configured_database_and_actual_schema_without_queries(monkeypatch):
+    from types import SimpleNamespace
+    from app.agents import sql_agent
+    from app.core import inventory
+    from app.db import mariadb
+
+    def unexpected_query(*args, **kwargs):
+        pytest.fail("Architecture metadata must not open a database connection")
+
+    monkeypatch.setattr(mariadb, "_get_pool", unexpected_query)
+    monkeypatch.setattr(sql_agent, "_source_table_map", lambda settings: {})
+    monkeypatch.setattr(inventory, "_DDL", "CREATE TABLE IF NOT EXISTS renamed_inventory (id INT)")
+    by_id = {source["id"]: source for source in graph.source_metadata(
+        SimpleNamespace(mariadb_database="runtime_ai"))}
+    assert by_id["OP"]["tables"] == ["runtime_ai.renamed_inventory", "runtime_ai.op_inventory_expiry"]
+    assert by_id["수상"]["tables"] == ["runtime_ai.awards_rankings"]
+    assert by_id["초상권"]["tables"] == [
+        "runtime_ai.model_rights", "runtime_ai.model_right_periods", "runtime_ai.model_faces"]
+
+
 def test_flow_check_rejects_missing_keyword_to_llm_fallback():
     """The production static check must catch an unreachable LLM classifier."""
     from app.core import static_checks as SC

@@ -1,23 +1,30 @@
 # Cluster 41
 
-> Auto-generated 2026-07-08T03:00:19.681328+09:00 · Files: 2
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 7
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 애플리케이션의 보안 인프라와 사용자 인증(Authentication) 및 API 요청 흐름 관리를 담당합니다. Active Directory(AD)와 연동된 부서 및 이름 정보를 기반으로 사용자 인증을 처리하고, CORS 설정 및 요청 로깅과 같은 공통 미들웨어 기능을 제공하여 안전하고 투명한 API 환경을 구축합니다.
+Cluster 41은 Claude Code 세션을 위한 정적 코드 및 문서 지식 그래프(Knowledge Map) 파이프라인을 정의합니다. 런타임 대화 팩트 마이닝인 `app.knowledge`와 분리되어, 프로젝트 전반의 파일들을 탐색·분석하고 위키 및 그래프 산출물로 내보내는 정적 분석 인프라를 담당합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/auth_api.py` — MariaDB를 사용자 저장소로 사용하여 회원가입(signup), 로그인(signin), 현재 로그인 사용자 정보 조회(me), 로그아웃(logout) 등의 인증 API 엔드포인트를 제공합니다. AD 연동 부서 및 이름 정보를 활용한 로그인을 지원합니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/middleware.py` — 애플리케이션 전반에 적용되는 CORS(Cross-Origin Resource Sharing) 설정, 사용자 인증 여부 검증, 그리고 들어오는 모든 API 요청에 대한 로깅을 수행하는 미들웨어입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/__init__.py` — Knowledge Map 패키지 진입점 및 모듈 역할 정의
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/builder.py` — 탐색부터 캐시, 파싱, 플래시 분석, 그래프 생성, 내보내기까지의 빌드 오케스트레이터
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/semantic.py` — Gemini Flash 기반으로 파일별 개념(concepts), 관계(relations), 요약(summary)을 추출하는 시맨틱 패스
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/exporters.py` — `graph.json`, `wiki/*.md`, `GRAPH_REPORT.md`, `wiki/index.md`, `wiki/log.md` 등 산출물 작성기
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/specs/2026-04-16-knowledge-map-design.md` — SKIN1004 Knowledge Map 아키텍처 및 시스템 설계 문서
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/plans/2026-04-16-knowledge-map.md` — Knowledge Map 구축 실행 계획 문서
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/update_log_2026-04-16.md` — Knowledge Map v1.0 릴리스 및 업데이트 로그
 
 ## Key Concepts
-- **AD 연동 로그인 (AD-linked Login)**: 사용자의 부서(department)와 이름(name) 정보를 Active Directory(AD)와 연동하여 인증을 수행하고, 해당 정보를 MariaDB에 매핑하여 관리합니다.
-- **인증 미들웨어 (Authentication Middleware)**: 보호된 API 엔드포인트에 접근하는 요청을 가로채어 유효한 인증 세션이 존재하는지 사전에 검증합니다.
-- **요청 로깅 (Request Logging)**: API 서버로 유입되는 HTTP 요청의 메타데이터를 기록하여 시스템 모니터링 및 디버깅을 용이하게 합니다.
+- **Knowledge Map**: SKIN1004 AI Agent 코드베이스 및 문서를 구조화하여 Claude Code 세션에서 참조할 수 있도록 지원하는 정적 지식 그래프.
+- **Build Pipeline (`builder.py`)**: `discover → cache → parse → flash → graph → export`의 순차적 흐름으로 정적 분석을 수행하는 전체 빌드 라이프사이클.
+- **Gemini Flash Semantic Pass (`semantic.py`)**: 파일 단위 파싱 후 LLM(Gemini Flash)을 통해 시맨틱 정보(핵심 개념, 의존 관계, 문서 요약)를 추출하는 단계.
+- **Multi-artifact Exporters (`exporters.py`)**: 분석된 그래프 데이터를 JSON 포맷(`graph.json`) 및 다양한 마크다운 위키 페이지(`wiki/*.md`, `wiki/index.md`, `GRAPH_REPORT.md`)로 렌더링하는 모듈.
 
 ## How It Fits In
-이 클러스터는 다른 비즈니스 로직 클러스터들과 직접적인 코드 의존 관계가 명시되지는 않았으나, SKIN1004 AI Agent 시스템 전체의 관문 역할을 수행합니다. 모든 API 요청은 `middleware.py`를 거쳐 CORS 및 로깅 처리가 완료된 후 각 엔드포인트로 라우팅되며, `auth_api.py`를 통해 인증된 사용자만이 메가와리(megawari) 분석이나 상품 관리 등 시스템 내 권한이 필요한 기능에 안전하게 접근할 수 있도록 보장합니다.
+이 클러스터는 감지된 외부 클러스터 의존성이 없습니다(독립적인 정적 분석 도구 세트). 대화 런타임에서 작동하는 `app.knowledge`와 명확히 분리되어 동작하며, 코드베이스 전체 문맥을 마크다운 문서 및 지식 그래프 형태로 Claude Code에 제공하는 기반 역할을 수행합니다.
 
 ## Common Questions This Page Answers
-- 사용자 로그인 및 회원가입 시 어떤 데이터베이스와 인증 체계를 사용하나요? (`C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/auth_api.py`에서 MariaDB와 AD 연동 부서+이름 정보를 사용합니다.)
-- API 요청에 대한 CORS 허용 설정과 글로벌 로깅은 어디에서 정의하나요? (`C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/api/middleware.py`에서 일괄 처리합니다.)
-- 현재 로그인한 사용자의 세션 상태나 상세 정보를 확인하려면 어떤 엔드포인트를 호출해야 하나요? (`auth_api.py`에 정의된 `me` 엔드포인트를 호출합니다.)
+- Knowledge Map의 빌드 단계(`builder.py`)는 어떤 순서로 진행되는가?
+- 런타임 지식 마이닝(`app.knowledge`)과 `app.knowledge_map`의 차이점은 무엇인가?
+- Gemini Flash 시맨틱 분석 결과는 어떤 형식의 파일들(`graph.json`, 위키 마크다운 등)로 생성되는가?
+- Knowledge Map v1.0 설계 및 구현 계획은 어떤 문서에서 확인할 수 있는가?

@@ -1,0 +1,195 @@
+{
+  "queried_at_kst": "2026-09-18T15:51:05.672597+09:00",
+  "source_selfchecks": [
+    {
+      "check_id": "awards_sheet_freshness",
+      "ok": 1,
+      "detail": "206행 · 마지막 적재 3시간 전",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "pr_sheet_freshness",
+      "ok": 1,
+      "detail": "356건 · 원본 09-16 18:39 · 사본 09-18 04:50 (뒤처짐 없음)",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "cs_cache",
+      "ok": 1,
+      "detail": "CS Q&A 923건 · 0시간 전 적재",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "data_freshness",
+      "ok": 1,
+      "detail": "파생 사본 10종 모두 최신",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "freshness_coverage",
+      "ok": 1,
+      "detail": "감시 등록 10종 · 빠진 소스 없음",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "static_stale_copies",
+      "ok": 0,
+      "detail": "같은 문서의 옛 조각 20개가 색인에 남아 있다 — 검색에서 최신본과 경쟁한다: Affiliate 업무 캘린더(8), 미팅록(7), 스킨1004 제품 라인업 (3)",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "static_notion_dates",
+      "ok": 0,
+      "detail": "수정일 없이 색인된 노션 청크 53/467 (11.3%) — 인테그레이션 미공유 페이지다. 낡은 값이 최신을 이긴다. 목록: docs/notion_unshared_pages.md",
+      "created_at": "2026-09-18 07:31:22"
+    }
+  ],
+  "value_cache": [
+    {
+      "name": "AdCountry",
+      "n": 201,
+      "updated_at": "2026-09-18 03:50:14"
+    },
+    {
+      "name": "AdMedia",
+      "n": 20,
+      "updated_at": "2026-09-18 03:50:13"
+    },
+    {
+      "name": "Brand",
+      "n": 4,
+      "updated_at": "2026-09-18 03:50:10"
+    },
+    {
+      "name": "Category",
+      "n": 10,
+      "updated_at": "2026-09-18 03:50:07"
+    },
+    {
+      "name": "Continent1",
+      "n": 10,
+      "updated_at": "2026-09-18 03:50:02"
+    },
+    {
+      "name": "Continent2",
+      "n": 16,
+      "updated_at": "2026-09-18 03:50:04"
+    },
+    {
+      "name": "Country",
+      "n": 190,
+      "updated_at": "2026-09-18 03:50:01"
+    },
+    {
+      "name": "DomesticCSChannel",
+      "n": 9,
+      "updated_at": "2026-09-18 03:50:20"
+    },
+    {
+      "name": "DomesticCSClaimType",
+      "n": 5,
+      "updated_at": "2026-09-18 03:50:22"
+    },
+    {
+      "name": "DomesticCSCompensation",
+      "n": 8,
+      "updated_at": "2026-09-18 03:50:27"
+    },
+    {
+      "name": "DomesticCSReason",
+      "n": 10,
+      "updated_at": "2026-09-18 03:50:26"
+    },
+    {
+      "name": "DomesticCSStatus",
+      "n": 4,
+      "updated_at": "2026-09-18 03:50:24"
+    },
+    {
+      "name": "Line",
+      "n": 16,
+      "updated_at": "2026-09-18 03:50:05"
+    },
+    {
+      "name": "LogIncoterms",
+      "n": 6,
+      "updated_at": "2026-09-18 03:50:17"
+    },
+    {
+      "name": "LogTeam",
+      "n": 27,
+      "updated_at": "2026-09-18 03:50:16"
+    },
+    {
+      "name": "LogTransport",
+      "n": 7,
+      "updated_at": "2026-09-18 03:50:19"
+    },
+    {
+      "name": "NotionUnshared",
+      "n": 3,
+      "updated_at": "2026-09-18 05:03:05"
+    },
+    {
+      "name": "NotionUnsharedSeen",
+      "n": 3,
+      "updated_at": "2026-09-18 07:30:48"
+    },
+    {
+      "name": "OverseasCSCountry",
+      "n": 27,
+      "updated_at": "2026-09-18 03:50:30"
+    },
+    {
+      "name": "OverseasCSNormalization",
+      "n": 3,
+      "updated_at": "2026-09-18 03:50:33"
+    },
+    {
+      "name": "OverseasCSReason",
+      "n": 21,
+      "updated_at": "2026-09-18 03:50:32"
+    },
+    {
+      "name": "OverseasCSStatus",
+      "n": 3,
+      "updated_at": "2026-09-18 03:50:29"
+    },
+    {
+      "name": "Sales_Type",
+      "n": 2,
+      "updated_at": "2026-09-18 03:50:11"
+    },
+    {
+      "name": "Team_NEW",
+      "n": 14,
+      "updated_at": "2026-09-18 03:50:08"
+    },
+    {
+      "name": "TopProducts",
+      "n": 45,
+      "updated_at": "2026-09-18 03:50:34"
+    }
+  ],
+  "last_notion_success": {
+    "job_id": "qdrant_pipeline_daily",
+    "started_at": "2026-09-17 05:00:00",
+    "finished_at": "2026-09-17 05:05:21",
+    "ok": 1,
+    "detail": "{'new': 0, 'updated': 7, 'deleted': 0, 'unchanged': 84, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}"
+  },
+  "source_files": {
+    "app/core/safety.py": {
+      "sha256": "b4d471e6f96ddcdc1827ab5497a8faeecbab3bece2068d72918c90c5e4b3d67f"
+    },
+    "app/frontend/chat.js": {
+      "sha256": "345148e44a23c6e44c69568b2f8eb8d619679b53011d94521a6d2ee72a43bca3"
+    },
+    "app/agents/orchestrator.py": {
+      "sha256": "53188272f7d169252ca121f3fb4ad127d261b76db7aeedf52903f41d7e9fdafd"
+    },
+    "app/core/cs_dashboard.py": {
+      "sha256": "c472bb6b0ffc594cb1be9d933036a6be0283bd9dbb3e87ce057aeb39a04edc8d"
+    }
+  }
+}

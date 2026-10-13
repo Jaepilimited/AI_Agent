@@ -1,0 +1,14 @@
+--- phase1/app/agents/sql_agent.py
++++ amendment/app/agents/sql_agent.py
+@@ -2480,9 +2480,8 @@
+     answer = _render_sales_outlook(query, sql, results)
+     if answer is None:
+         return None
+-    future_note = _future_period_note(sql)
+-    if future_note:
+-        answer = future_note.lstrip() + "\n\n" + answer
++    # The renderer discloses the validated month and future registration dates.
++    # A generic SQL upper bound can be exclusive and outside that month.
+     return answer + f"\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\n{sql}\n```\n</details>"
+ 
+ 

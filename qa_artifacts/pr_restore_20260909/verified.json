@@ -1,0 +1,117 @@
+{
+  "datasources_http": 401,
+  "pr_sources": [
+    {
+      "key": "PR",
+      "aliases": [
+        "pr",
+        "\ud64d\ubcf4",
+        "\ubcf4\ub3c4\uc790\ub8cc",
+        "\ud504\ub808\uc778"
+      ],
+      "label": "PR",
+      "desc": "\ud504\ub808\uc778 PR \uc774\uc288 (\ub9ac\uc2a4\ud2b8 \ud0ed)",
+      "group": "\ube0c\ub79c\ub4dc \uc131\uacfc",
+      "icon": "sheet",
+      "route": "notion"
+    }
+  ],
+  "scheduler_http": 401,
+  "pr_jobs": [
+    {
+      "hour": 4,
+      "minute": 50,
+      "id": "pr_issues_sync_daily"
+    }
+  ],
+  "scheduler_enabled": true,
+  "pr_job_start_logs": [],
+  "status": {
+    "count": 356,
+    "rows": 356,
+    "loaded": true,
+    "synced_at": "2026-09-09T16:22:58",
+    "sheet_updated_at": "2026-09-09T11:33:38",
+    "unknown_teams": {
+      "(\ubbf8\uae30\uc7ac)": 3,
+      "B2B3": 31,
+      "BOP": 10,
+      "BP": 23,
+      "GM EAST 1": 2,
+      "GM EAST 2": 7,
+      "GM EAST1": 4,
+      "GM WEST MKT": 1,
+      "KM": 7,
+      "KM + DD": 1,
+      "gm west mkt": 1,
+      "\ube0c\ub79c\ub4dc\uc0c1\ud488\ud300\n\ub098\ud558\ub098\ub2d8": 2,
+      "\uc601\uc5c52\n\uc774\uc9c0\uc601\ub2d8\n\uc774\uc0c8\ub2d8": 2,
+      "\uc774\ud574\uc778": 2,
+      "\uc77c\ubcf8\uc0ac\uc5c5\ud300\n\uc2e0\ud61c\uc601\ub2d8\n\uac15\ub300\uc601\ub2d8": 3,
+      "\uc804\uccb4": 1
+    },
+    "month_unknown": 81,
+    "month_inferred": 28,
+    "baseline_month_unknown": 81,
+    "baseline_month_inferred": 28,
+    "sheet_metadata_available": true,
+    "sheet_metadata_error": null,
+    "pending_recovery": false,
+    "error": null,
+    "first_month": "2024-06",
+    "last_month": "2026-11",
+    "written": 0,
+    "deleted": 0,
+    "embedded": 0,
+    "reused": 356,
+    "empty": false,
+    "ok": true,
+    "dry_run": false,
+    "cleanup_refused": 0
+  },
+  "index_count": 356,
+  "source_filter_count": 356,
+  "checks": {
+    "pr_vectors_present": {
+      "ok": true,
+      "detail": "PR \uc0ac\ubcf8 356\uac74 \u00b7 \uac80\uc0c9 \uc800\uc7a5\uc18c 356\uac74"
+    },
+    "pr_sheet_freshness": {
+      "ok": true,
+      "detail": "356\uac74 \u00b7 \uc6d0\ubcf8 09-09 11:33 \u00b7 \uc0ac\ubcf8 09-09 16:22 (\ub4a4\ucc98\uc9d0 \uc5c6\uc74c)"
+    },
+    "pr_unknown_team": {
+      "ok": false,
+      "detail": "\ubbf8\ub4f1\ub85d \uc791\uc131\ud300(\uc6d0\ubb38 \uc720\uc9c0): {'(\ubbf8\uae30\uc7ac)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '\ube0c\ub79c\ub4dc\uc0c1\ud488\ud300\\n\ub098\ud558\ub098\ub2d8': 2, '\uc601\uc5c52\\n\uc774\uc9c0\uc601\ub2d8\\n\uc774\uc0c8\ub2d8': 2, '\uc774\ud574\uc778': 2, '\uc77c\ubcf8\uc0ac\uc5c5\ud300\\n\uc2e0\ud61c\uc601\ub2d8\\n\uac15\ub300\uc601\ub2d8': 3, '\uc804\uccb4': 1}"
+    },
+    "pr_month_unresolved": {
+      "ok": true,
+      "detail": "\uc791\uc131\uc6d4 \ubbf8\uc0c1 81\uac74 \u00b7 \ucd94\uc815 28\uac74 (\ucd5c\ucd08 \uc801\uc7ac \uae30\uc900 \ubbf8\uc0c1 81\uac74 \u00b7 \ucd94\uc815 28\uac74)"
+    }
+  },
+  "answers": {
+    "PR \uc774\uc288\uc5d0\uc11c \ube0c\ub77c\uc9c8 Sephora \uc785\uc810 \ub0b4\uc6a9 \uc54c\ub824\uc918": {
+      "http": 200,
+      "source": "notion",
+      "answer": "PR \uc774\uc288 \ubb38\uc11c\uc5d0\uc11c \ud655\uc778\ub41c **\ube0c\ub77c\uc9c8 \uc138\ud3ec\ub77c(Sephora Brasil) \uc785\uc810** \uad00\ub828 \ub0b4\uc6a9\uc740 \ub2e4\uc74c\uacfc \uac19\uc2b5\ub2c8\ub2e4.\n\n---\n\n### [PR \uc774\uc288] SKIN1004 \ube0c\ub77c\uc9c8 \uc138\ud3ec\ub77c \ubc0f \uc8fc\uc694 \uc720\ud1b5\ub9dd \uc785\uc810\n\n(\uc791\uc131\uc6d4: 2026-08)\n\n* **\uc138\ud3ec\ub77c \ubc0f \uc8fc\uc694 \ucc44\ub110 \uc785\uc810 \ud655\uc815**:\n  * SKIN1004\ub294 **Sephora Brasil** \uc785\uc810\uc744 \ube44\ub86f\ud574 Raia Drogasil(RD Group) \ub4f1 \ube0c\ub77c\uc9c8 \uc8fc\uc694 \uc57d\uad6d \uccb4\uc778\uc774 \ud3ec\ud568\ub41c **ABRAFARMA \uadf8\ub8f9\uc0ac \ucd1d 19\uac1c \ub9ac\ud14c\uc77c \ucc44\ub110\uacfc\uc758 \uacc4\uc57d\uc744 \uccb4\uacb0**\ud588\uc2b5\ub2c8\ub2e4.\n  * \uc774\ub97c \ud1b5\ud574 \ud604\uc9c0 **\uc57d 2,500\uac1c \ub9e4\uc7a5\uc5d0 \uc785\uc810\uc744 \ud655\uc815**\ud588\uc2b5\ub2c8\ub2e4.\n* **\uc9c4\ucd9c \uc758\uc758 \ubc0f \ubc30\uacbd**:\n  * \ub2e8\uc21c K-\ubdf0\ud2f0 \uc804\ubb38 \ucc44\ub110\uc774\ub098 \uc628\ub77c\uc778 \ud310\ub9e4\uc5d0 \ud55c\uc815\ub418\uc9c0 \uc54a\uace0, \ube0c\ub77c\uc9c8 \uc18c\ube44\uc790\ub4e4\uc774 \uc77c\uc0c1\uc801\uc73c\ub85c \uc774\uc6a9\ud558\ub294 \ub300\ud615 \ubdf0\ud2f0\u00b7\uc57d\uad6d \uc720\ud1b5\ub9dd\uae4c\uc9c0 \ud310\ub9e4 \uae30\ubc18\uc744 \ud655\ub300\ud55c \uc131\uacfc\uc785\ub2c8\ub2e4.\n  * \ube0c\ub77c\uc9c8\uc740 \uc218\uc785 \uc7a5\ubcbd\uacfc \uc81c\ud488 \ub4f1\ub85d \uc808\ucc28\uac00 \uae4c\ub2e4\ub85c\uc6b4 \uc2dc\uc7a5\uc774\uc9c0\ub9cc, \ubcf8\uaca9 \uc9c4\ucd9c \uc57d 3\ub144 \uc804\ubd80\ud130 \uc804\ub7b5\uc2dc\uc7a5\uc73c\ub85c \uc120\uc815\ud574 \uc120\uc81c\uc801\uc73c\ub85c \uc81c\ud488 \ub4f1\ub85d\uacfc \uc720\ud1b5\ub9dd \uad6c\ucd95 \ud22c\uc790\ub97c \uc9c4\ud589\ud574 \uc628 \uacb0\uacfc\uc785\ub2c8\ub2e4.\n* **\ud5a5\ud6c4 \uacc4\ud68d \ubc0f \uc5f0\uacc4 \ud65c\ub3d9**:\n  * \uc57d 2,500\uac1c \uc785\uc810 \ub9e4\uc7a5\uc758 \uc548\uc815\uc801\uc778 \ub860\uce6d \ubc0f \ud310\ub9e4 \ud65c\uc131\ud654\uc5d0 \uc9d1\uc911\ud560 \uc608\uc815\uc785\ub2c8\ub2e4.\n  * \uc911\ub0a8\ubbf8 \uc18c\ube44\uc790 \uc804\uc6a9 \uae30\ud68d \uc81c\ud488\uc778 **\u2018LATAM EDITION\u2019** \uad6c\uc131 \ub4f1 \ud604\uc9c0\ud654 \uc804\ub7b5\uc744 \uac15\ud654\ud558\uace0 \uc788\uc2b5\ub2c8\ub2e4.\n  * \uc624\ub294 8\uc6d4 \ube0c\ub77c\uc9c8 \uc720\ud1b5\uc5c5\uacc4 \uad00\uacc4\uc790\ub4e4\uc774 \ucc38\uc5ec\ud558\ub294 ABRAFARMA\uc758 \u2018Future Trends\u2019 \ud589\uc0ac \ub2e8\ub3c5 \ubd80\uc2a4 \ucc38\uac00 \ubc0f \uc911\uae30\ubd80 \uc8fc\uad00 \u2018K-Beauty GLOW WEEK in Brazil\u2019 \ubd80\uc2a4 \uc6b4\uc601\uc774 \uc608\uc815\ub418\uc5b4 \uc788\uc2b5\ub2c8\ub2e4.\n\n---\n*PR \uc774\uc288 \uc790\ub8cc \u00b7 \ub9ac\uc2a4\ud2b8 \ud0ed*\n\n> \ud83d\udca1 **\uc774\ub7f0 \uac83\ub3c4 \ubb3c\uc5b4\ubcf4\uc138\uc694**\n> - \ube0c\ub77c\uc9c8 \uc678\uc5d0 \uba55\uc2dc\ucf54 \ub4f1 \ub2e4\ub978 \ub0a8\ubbf8 \uad6d\uac00\uc758 Sephora \uc785\uc810 \ud604\ud669\uc774 \uad81\uae08\ud558\uc2e0\uac00\uc694?\n> - \ube0c\ub77c\uc9c8 \uc57d\uad6d \uccb4\uc778(Raia \ub4f1)\uc758 \uad6c\uccb4\uc801\uc778 \uc785\uc810 \uc9c4\ud589 \uc774\ub825\uc774 \uad81\uae08\ud558\uc2e0\uac00\uc694?\n[PR \uc774\uc288 \uc6d0\ubcf8 \uc2dc\ud2b8 \u00b7 \ub9ac\uc2a4\ud2b8 \ud0ed](https://docs.google.com/spreadsheets/d/1MLuwW74Nvv33YW6cVG5qW4uJLGuj3miUqcky9r20A8c/edit?gid=0)"
+    },
+    "@@PR Music Bank World Tour Barcelona 2026 \ub0b4\uc6a9 \uc54c\ub824\uc918": {
+      "http": 200,
+      "source": "notion",
+      "answer": "**Music Bank World Tour Barcelona 2026 \uc5f0\uacc4 \ud504\ub85c\ubaa8\uc158** \uad00\ub828 \ubb38\uc11c \ub0b4\uc6a9\uc740 \ub2e4\uc74c\uacfc \uac19\uc2b5\ub2c8\ub2e4.\n\n---\n\n### 1. \ud589\uc0ac \uac1c\uc694 [\uc791\uc131\uc6d4: 2026-09]\n- **\ud589\uc0ac\uba85**: Music Bank World Tour Barcelona 2026\n- **\uc77c\uc815**: 2026\ub144 9\uc6d4 12\uc77c\n- **\uc7a5\uc18c**: \uc2a4\ud398\uc778 \ubc14\ub974\uc140\ub85c\ub098 Estadi Ol\u00edmpic Llu\u00eds Companys\n- **\ucd9c\uc5f0\uc9c4**: ATEEZ, ENHYPEN, NMIXX, xikers, NCT WISH, CORTIS, ALPHA DRIVE ONE\n- **MC**: \ubc30\uc6b0 \ubc15\ubcf4\uac80\n- **\ud504\ub85c\ubaa8\uc158 \ub300\uc0c1**: \uc804\uccb4 \uacf5\uc5f0 \uad00\uac1d \ubc0f DREAM EXPERIENCE \ud2f0\ucf13 \uad6c\ub9e4\uc790 850\uba85\n\n---\n\n### 2. \uc8fc\uc694 \ud504\ub85c\ubaa8\uc158 \uacc4\ud68d\n- **\uc804\uccb4 \uad00\uac1d \ub300\uc0c1**: \uacf5\uc5f0\uc7a5 \ub300\ud615 \uc2a4\ud06c\ub9b0\uc744 \ud1b5\ud574 SKIN1004 \ube0c\ub79c\ub4dc \uc601\uc0c1\uc744 \uc0c1\uc601\ud560 \uc608\uc815\uc785\ub2c8\ub2e4.\n- **DREAM EXPERIENCE \uad6c\ub9e4\uc790 \ub300\uc0c1 (850\uba85)**:\n  - \uc6b0\uc120 \uc785\uc7a5, \uc120\ud638 \uad00\ub78c \uad6c\uc5ed, \uc804\uc6a9 \uc6f0\ucef4 \ucf00\uc774\ud130\ub9c1 \ubc0f \ud2b9\ubcc4 \uad7f\uc988 \ud61c\ud0dd\uc774 \ud3ec\ud568\ub41c \ud2f0\ucf13 \uad6c\ub9e4\uc790\ub97c \ub300\uc0c1\uc73c\ub85c \ubcc4\ub3c4 \ud504\ub85c\ubaa8\uc158\uc744 \uc9c4\ud589\ud560 \uacc4\ud68d\uc785\ub2c8\ub2e4.\n  - \uc6f0\ucef4\ud329\uc5d0 SKIN1004 \uc81c\ud488\uc744 \uc120\ubb3c\ub85c \uc81c\uacf5\ud569\ub2c8\ub2e4.\n  - \uc804\uc6a9 \uacf5\uac04\uc5d0 \ube0c\ub79c\ub4dc \ud14c\uc774\ube14\uc744 \ub9c8\ub828\ud558\uc5ec \uc81c\ud488 \uc18c\uac1c \ubc0f \ud14c\uc2a4\ud2b8 \uae30\ud68c\ub97c \uc81c\uacf5\ud560 \uc608\uc815\uc785\ub2c8\ub2e4.\n\n---\n\n### 3. \ubc30\uacbd \ubc0f \uae30\ub300 \ud6a8\uacfc\n- SKIN1004\ub294 2\ub144 \uc804 \ub9c8\ub4dc\ub9ac\ub4dc Music Bank\uc5d0 \uc774\uc5b4 \uc62c\ud574 \ubc14\ub974\uc140\ub85c\ub098 \ud589\uc0ac\uc5d0\ub3c4 \ucc38\uc5ec\ud558\uba70 \uc2a4\ud398\uc778 \ub0b4 \ube0c\ub79c\ub4dc \ud65c\ub3d9\uc744 \uc9c0\uc18d \ud655\ub300\ud558\uace0 \uc788\uc2b5\ub2c8\ub2e4.\n- \ub2e8\uc21c\ud55c \ube0c\ub79c\ub4dc \ub178\ucd9c\uc744 \ub118\uc5b4 \uc2a4\ud398\uc778 \ud604\uc9c0 \uc18c\ube44\uc790\uc758 \uc81c\ud488 \uad00\uc2ec\uacfc \uc2e4\uc81c \uad6c\ub9e4\ub85c \uc774\uc5b4\uc9c0\ub294 \uc811\uc810\uc744 \ub9c8\ub828\ud558\uace0, \ud604\uc9c0 \ud30c\ud2b8\ub108\uc758 \ud5a5\ud6c4 \uc720\ud1b5 \ubc0f \ub9c8\ucf00\ud305 \ud65c\ub3d9\uc5d0\ub3c4 \uae0d\uc815\uc801\uc778 \ud6a8\uacfc\ub97c \uc904 \uac83\uc73c\ub85c \uae30\ub300\ud558\uace0 \uc788\uc2b5\ub2c8\ub2e4.\n\n---\n*\ucd9c\ucc98: [PR \uc774\uc288 \u00b7 2026-09 \u00b7 \uc9c4\ud589/9\uc6d4 2\uc8fc\ucc28](https://docs.google.com/spreadsheets/d/1MLuwW74Nvv33YW6cVG5qW4uJLGuj3miUqcky9r20A8c/edit?gid=0&range=G390)*\n*PR \uc774\uc288 \uc790\ub8cc \u00b7 \ub9ac\uc2a4\ud2b8 \ud0ed*\n\n---\n\n> \ud83d\udca1 **\uc774\ub7f0 \uac83\ub3c4 \ubb3c\uc5b4\ubcf4\uc138\uc694**\n> - \uc2a4\ud398\uc778 \ub0b4 \ub2e4\ub978 \uc624\ud504\ub77c\uc778 \ud589\uc0ac(Tradegate Planet Skin One Day Class, Primor \ud589\uc0ac \ub4f1) \ub0b4\uc6a9\uc774 \uad81\uae08\ud558\uc2e0\uac00\uc694?\n> - 2026\ub144\uc5d0 \uc608\uc815\ub41c \ub2e4\ub978 \ud574\uc678 \uc624\ud504\ub77c\uc778 \ud398\uc2a4\ud2f0\ubc8c(\ud540\ub780\ub4dc Yeppo Korea Festival \ub4f1) \uc815\ubcf4\uac00 \ud544\uc694\ud558\uc2e0\uac00\uc694?"
+    }
+  },
+  "hashes": {
+    "app/core/pr_issues.py": "51ebf5690784e57c7e6903baa571a19504597ce10ce23251c1479f79344a25cb",
+    "app/agents/orchestrator.py": "97b9a07acda77a5e71ca4b181134e72d84a60f04929209b7915c3a21ee83437e",
+    "app/agents/qdrant_agent.py": "bb5c3aa2af2a49fcf14253300a0eeca56d42317114926c46c77e732850e3820f",
+    "app/main.py": "25fdbe169a382cf96c258d37ec55f5a6191d9a4d713b67278214d390b4522077",
+    "app/core/self_check.py": "3ea4d6f905ade0d42cd80338fd1460df04c5a17c80f98dd6d1cad3b411d4370e",
+    "app/core/data_freshness.py": "7126f403df07c53afd77b280eaa0b4705418a279c80177822f4ceb0802cbc6f7",
+    "app/core/safety.py": "79b62873ac5ef221a8a5c300a054f1d55bfebab4d9c3e3a05703fd8159ace880",
+    "data/golden_set.json": "172397e42f38c3a70df4268bfc3ee79476362dd2c517d0722d5e84ade80a5579",
+    "tests/test_pr_issues.py": "37547f4af830779573ee09787998bb1ce9158d6910c5cce5dd161ff63e3aaf23",
+    "tests/test_pr_routing.py": "234b1fe4da96dc0fc5397b007ae5bcb11890aef33d2f4376743cc19bb30476dc",
+    "tests/test_pr_monitoring.py": "3dd63059c12f8dfd038782fcb4ed719d78dafc43ef1d453caee02cf2aec9c5b5"
+  }
+}

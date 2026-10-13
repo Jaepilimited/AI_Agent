@@ -1,0 +1,178 @@
+{
+  "was": {
+    "app/api/admin_api.py": {
+      "before": "48036e30942215714f9e93db55e9bae014b8a4929dd20bfe6501268d751abe1c",
+      "after": "97166f8279120273c0c9452d3a6ec63c304d74fc97d821daa50b55ef1421a2ab"
+    },
+    "app/api/admin_group_api.py": {
+      "before": "e4201be6b9644cda50be6d5610d6f1b8434f929cd4e8a54cbf95556873c95a5e",
+      "after": "fc3e11108ce2846fb0d78573eb574b695ad39fe9f8466404ecf6e00cd6b6bbd0"
+    },
+    "app/api/auth_api.py": {
+      "before": "66a07d4cff98b6ec26daa31617416b4cca39e474d25051aeb1c4e5d498e42827",
+      "after": "2e68f51966e16c91429e95eec40c4835772a20683a1aafa201e7f3d0606589c6"
+    },
+    "app/api/auth_middleware.py": {
+      "before": "422646ed66a49071bdbaf181d85483b564187086cdf3192c663dc53c8cd0487b",
+      "after": "3460fbfbde7684b3f184f8324cee65fdb91bb9b7bf1aa60ae1db8aaa51d45d87"
+    },
+    "app/api/entra_routes.py": {
+      "before": "5219c5a81d8befd7d42d1f82c69c90640f0d3155836ad6e9db28a730183b3517",
+      "after": "7c5d8f4c7a465ebe367f8ece824613a4366fc200f36561dec150495029cdbed4"
+    },
+    "app/api/routes.py": {
+      "before": "e345b0b252f179cd32540eddf40679869df8d5ca3ed5b704da275cf3ad83396f",
+      "after": "35a799fd37b404614379ef76c4fbd6fcccd02c41edb975b46a8ea3f93f496496"
+    },
+    "app/config.py": {
+      "before": "b1cdb9b09b28e7d20f033269698ba1358cf926d84d29e8e35dce515f4269808f",
+      "after": "9e3a1684f11505010fff60197f6701d9c2584f7cb395d68c94c417622890b6d5"
+    },
+    "app/core/briefing.py": {
+      "before": "a5f24940579c4967e0532e1f3ba34b7392abecb932cfdbabb771beb56a2a97ac",
+      "after": "ff703c73831d8dbe1e111f066e1f4d322540010efb43d8224c27f7261fc95bd5"
+    },
+    "app/core/entra_auth.py": {
+      "before": "001e78a09670cae11e352018c1f95ef7d83816bf3c1956d7b27cec32b4f6bcbe",
+      "after": "9334114a82816618e09e9e7618730f473b2a1c2c4bfaa2fcd9116c03a306f0b6"
+    },
+    "app/core/feedback_inbox.py": {
+      "before": "d4ab2e74682aea0693a4c922eac9611b540c4de6f711b17e9a0d1058f1b638ab",
+      "after": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a"
+    },
+    "app/core/password_reset.py": {
+      "before": "c922a6ab14985f8dd03fab6dd910220e7207037212d865231f6f2b418cce69db",
+      "after": "21cb99578110212ef474667b5c74bc87c85f4bfacee59bb989b6dfecb7f9384f"
+    },
+    "app/core/password_reset_google.py": {
+      "before": "a184131621fad0c1b485d476fdb7fce3ad63a2580a90e1ccd5c5c9c9c3e3b329",
+      "after": "0d7f9ea6b29c3dfc5e4cb5f54be7234dc8665c9b21d74c9c6475b3754bb6e539"
+    },
+    "app/core/personal_briefing.py": {
+      "before": "4ceffa242352d449fef3bb95da02f3986a1223776a6c00150577310fa779a937",
+      "after": "274a38f4a5d7bcd3a9d19a2ffbaa49c58193527cebe6e2bc7187814b6bb413a7"
+    },
+    "app/core/query_profile.py": {
+      "before": "e5bc2198bb8fdd853bfc395b89f23e1849a096dbe8cc79c755e024bf25f65189",
+      "after": "ae73a1d1f6c387c7d7c0e8ac36a2be5d88b8fdabb365c7bd04dde0d6a5fe4df2"
+    },
+    "app/core/saved_questions.py": {
+      "before": "6c42fc9f951b8694874515f0ae90b289bbcaf3f4e598f5bf5e4de96f295db383",
+      "after": "5c7d395f0d72672d524c06c4f6f797daf4bb706810ba88fc4d2b16da558dbc2e"
+    },
+    "app/core/self_check.py": {
+      "before": "d95753fc27defcccec319f4ab27b4a222c7100edebe4e09db8f85ec31b25cf3f",
+      "after": "677568032f2723a48c9032413709f3a59a752bf04be637a5fc436b8307e2244b"
+    },
+    "app/core/user_directory.py": {
+      "before": null,
+      "after": "548c43824d357298988fcb00b36fc95d948410883a2224db82a36c1ac4721d0a"
+    },
+    "app/core/user_directory_migration.py": {
+      "before": null,
+      "after": "375923c4f9a109653931587fbe9043acbc700239cdf6cca21770cb78e67a2470"
+    },
+    "app/db/mariadb.py": {
+      "before": "b2c82096f0860ab0c3a0594a441e8eabfdef17869a4da6dfcd1daa404c5a85f0",
+      "after": "23dbd2f353dd635de19ac84322cb78f94de53eed81a613493d0c74255584e889"
+    },
+    "app/db/models.py": {
+      "before": "69dab52dc0c2ba318c7663a73774dff80d53b9c4800fb8a3866bd56f69d65b0f",
+      "after": "e579cc7184491330d7c6e62119e998441f05f078d731b4d7e95d3b06f0a12df9"
+    },
+    "app/frontend/chat.html": {
+      "before": "eb99be1ecfb52937c01c5a5dcadb918ff47feeee4ea31e0296eded711ae8082b",
+      "after": "75c0d12521173606380cc9071895a605beedc6352335376c1722bbac3aea4e81"
+    },
+    "app/frontend/chat.js": {
+      "before": "47a8b7b3f79fd7d2f854b08e9a195d7e6c058ca585c86a953550ce84b2fa50eb",
+      "after": "f159b3cc3ae522820198d2bf7b24a204630940cd2dd94b8aa0c82882d8c2dc62"
+    },
+    "app/main.py": {
+      "before": "50e8ba4a7074dc4212b6885fa58b2e942d42affa72cc5197d3d294ad698656c6",
+      "after": "504d7152d788b36b8b440977629ff66569c9d1d111b50dbe676ac17650e67491"
+    },
+    "app/reports/store.py": {
+      "before": "2dd30ae9a3fa42f5a736974b7a6dcc0aba7f56d339cde4a9b80c4cd4ba62b9c3",
+      "after": "e3d0500625ae02ebda09e612c1a456fa8a9ac92fbae59c4a0d8bff48d82dcaf8"
+    },
+    "deploy/crontab.app-server": {
+      "before": "451eabcc52f6f6b9c72d2f209ddcc12573e454007da97acdd723d1e4a87f4e09",
+      "after": "da5e3bb97b0ff4c9679a1267812364122bfdaa87991e377a2cbfacac39f26190"
+    },
+    "scripts/sync_ad_users.py": {
+      "before": "43d630d270741441bb48eeda8fa9d5b453111d25e2f8a425ddd8d74fb2a0c7dc",
+      "after": "e75933e573d5d132c9471722e8237e09d21464b152024105d425a56da8f4c445"
+    },
+    "scripts/sync_entra_users.py": {
+      "before": null,
+      "after": "7a9979ba7e55ea88dd0b5cc09c1e337db4c891f666ccb5dafcb4be20d309ffe3"
+    }
+  },
+  "app": {
+    "app/config.py": {
+      "before": "2edd241b64ec720d7bb924def939cfa91213490017d67d8d4ac23205c3c692da",
+      "after": "a3df6a47446cbd5c0f89786a1222e58e0c6872e474e195426a657dd8d5b2ee8c"
+    },
+    "app/core/briefing.py": {
+      "before": "a5f24940579c4967e0532e1f3ba34b7392abecb932cfdbabb771beb56a2a97ac",
+      "after": "ff703c73831d8dbe1e111f066e1f4d322540010efb43d8224c27f7261fc95bd5"
+    },
+    "app/core/feedback_inbox.py": {
+      "before": "aeef1d892fb312aa625964066fe34552d6328c9c0b95bb56fa6c7088f45f6470",
+      "after": "34278d4cbf536aca962a0d47fce19a64956ceae78802a8f0203a6d957d3acab1"
+    },
+    "app/core/password_reset.py": {
+      "before": "c922a6ab14985f8dd03fab6dd910220e7207037212d865231f6f2b418cce69db",
+      "after": "21cb99578110212ef474667b5c74bc87c85f4bfacee59bb989b6dfecb7f9384f"
+    },
+    "app/core/password_reset_google.py": {
+      "before": "ad92a8f5755d1d0f18bea774dd1be5d92bc1351f35d6d6331585392cc5feff39",
+      "after": "1805d473f9c3dc574d32d33d119d470dac537a33c2fb35e01c12c4acb56c196f"
+    },
+    "app/core/personal_briefing.py": {
+      "before": "7e7e1cc0799130d2d40bd0ebe3d53e3764302234ac771f74196fc968e5ebff2a",
+      "after": "059abca70070bc77b702c4139fa84696a1b11d4696626e34c0749e5fbd3f0315"
+    },
+    "app/core/query_profile.py": {
+      "before": "e5bc2198bb8fdd853bfc395b89f23e1849a096dbe8cc79c755e024bf25f65189",
+      "after": "ae73a1d1f6c387c7d7c0e8ac36a2be5d88b8fdabb365c7bd04dde0d6a5fe4df2"
+    },
+    "app/core/saved_questions.py": {
+      "before": "6c42fc9f951b8694874515f0ae90b289bbcaf3f4e598f5bf5e4de96f295db383",
+      "after": "5c7d395f0d72672d524c06c4f6f797daf4bb706810ba88fc4d2b16da558dbc2e"
+    },
+    "app/core/self_check.py": {
+      "before": "aa9e11cb74fc7486948e37142aaa716e301cad4f536d7e90d321fc56c29b1bde",
+      "after": "c72f5654d40acb640db5540a78aedcd6ad4df0201495f37feb1e2ba24eb15063"
+    },
+    "app/core/user_directory.py": {
+      "before": null,
+      "after": "548c43824d357298988fcb00b36fc95d948410883a2224db82a36c1ac4721d0a"
+    },
+    "app/core/user_directory_migration.py": {
+      "before": null,
+      "after": "375923c4f9a109653931587fbe9043acbc700239cdf6cca21770cb78e67a2470"
+    },
+    "app/db/mariadb.py": {
+      "before": "cea3193d7a9227f6f7326d8f8ad8974467b1ce9702cbd21f7ae4db676092aa02",
+      "after": "23dbd2f353dd635de19ac84322cb78f94de53eed81a613493d0c74255584e889"
+    },
+    "app/db/models.py": {
+      "before": "d72972aaee5810ea3f22438302a9b8c051e118e3615b59ffc3f6acd2aa2ebac0",
+      "after": "e579cc7184491330d7c6e62119e998441f05f078d731b4d7e95d3b06f0a12df9"
+    },
+    "app/reports/store.py": {
+      "before": "2dd30ae9a3fa42f5a736974b7a6dcc0aba7f56d339cde4a9b80c4cd4ba62b9c3",
+      "after": "e3d0500625ae02ebda09e612c1a456fa8a9ac92fbae59c4a0d8bff48d82dcaf8"
+    },
+    "scripts/sync_ad_users.py": {
+      "before": "43d630d270741441bb48eeda8fa9d5b453111d25e2f8a425ddd8d74fb2a0c7dc",
+      "after": "e75933e573d5d132c9471722e8237e09d21464b152024105d425a56da8f4c445"
+    },
+    "scripts/sync_entra_users.py": {
+      "before": null,
+      "after": "7a9979ba7e55ea88dd0b5cc09c1e337db4c891f666ccb5dafcb4be20d309ffe3"
+    }
+  }
+}

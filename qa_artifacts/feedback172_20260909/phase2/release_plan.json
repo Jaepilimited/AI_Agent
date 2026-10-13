@@ -1,0 +1,76 @@
+{
+  "feedback_id": 172,
+  "feedback_created_on": "2026-09-08",
+  "staged_at_utc": "2026-09-09T00:29:32.295887+00:00",
+  "production_captured_at_utc": "2026-09-09T00:23:51.623205+00:00",
+  "production_snapshot_directory": "phase1/release_candidate",
+  "files": {
+    "app/core/sales_outlook.py": {
+      "before": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "after": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "workspace_sha256": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "deploy": true,
+      "hunks": []
+    },
+    "app/agents/sql_agent.py": {
+      "before": "db9db52489b1df9f9c8cb3d9b94e413f4c81fffbefac0533ea910e2eade2f028",
+      "after": "2b8e2be9645848aa3d16f7ea161ed9e34913f603bd6d0d4a4f49b166584249ec",
+      "workspace_sha256": "7ecaef837b14b09e4c41fc00519c065dfb0dd3cfb89b876d14fdff70df343b88",
+      "deploy": true,
+      "hunks": [
+        {
+          "function": "_outlook_result_answer",
+          "status": "exact_snippet_amendment",
+          "removed_lines": 3,
+          "added_comment_lines": 2,
+          "old_sha256": "9ed0d9ed3f88b5d7f778d9e2ae16618e28145b891da8944dcde0f50cc8d8f57b",
+          "new_sha256": "8a95364d0e43e3074dbc0691ea95ac9a711b5712cb4eb76cabd960c9427e2606"
+        }
+      ]
+    },
+    "prompts/sql_generator.txt": {
+      "before": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "after": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "workspace_sha256": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "deploy": true,
+      "hunks": []
+    },
+    "app/core/feedback_inbox.py": {
+      "before": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "after": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "workspace_sha256": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "deploy": true,
+      "hunks": []
+    },
+    "tests/test_sales_outlook.py": {
+      "after": "b3c4e9b495583a4b50559e7fa8864554c0d0c58f5d2c3d18e39af6b2381f1a6b",
+      "deploy": false
+    },
+    "tests/test_sales_outlook_integration.py": {
+      "after": "8255919d82507557071c9277d53e2ce548358be8f8938b3f0bfb38fb93916082",
+      "deploy": false
+    },
+    "tests/test_named_period.py": {
+      "after": "391f9bf5869c5b87641c0f3ad6c27efab6d569a94b4a6b707f47c2cdb29e6716",
+      "deploy": false
+    },
+    "tests/test_feedback_resolution_sync.py": {
+      "after": "a477e81582d9711fea82a7cac5060d2827d9c41e0370d84367f4dd29b7da7f14",
+      "deploy": false
+    },
+    "tests/conftest.py": {
+      "after": "eaafc463cfa8c8494e5c7dc2708204e8ad9cd40302169b15bbf75e4ca3af8639",
+      "deploy": false
+    }
+  },
+  "tests": [
+    "tests/test_sales_outlook.py",
+    "tests/test_sales_outlook_integration.py",
+    "tests/test_named_period.py",
+    "tests/test_feedback_resolution_sync.py"
+  ],
+  "test_support_sha256": "b39766e7e56de3e01dd86ad6fe379f8a87d735b4658f42ac64e9d8f348024b2a",
+  "amends_plan_sha256": "c361174d1aee5af4129cce8f1f4e8eb33f3b69363b6ae961eb37b783457bb49e",
+  "amendment": "Remove redundant generic future-date notice from deterministic outlook prose.",
+  "preimage_basis": "Phase 1 published candidate hashes, confirmed by its saved live verification."
+}

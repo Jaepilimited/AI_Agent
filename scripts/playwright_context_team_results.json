@@ -1,0 +1,112 @@
+[
+  {
+    "id": "team_filter_carryover",
+    "status": "PASS",
+    "turns": [
+      {
+        "turn": 1,
+        "q": "올해 영업1팀 매출 알려줘",
+        "fails": [],
+        "elapsed": 10.2,
+        "sql": "SQLCopySELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2026-01-01' AND '2026-12-31' AND Team_NEW = 'B2B1' LIMIT 1000 SELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2026-01-01' AND '2026-12-31' AND Team_NEW = 'B2B1' LIMIT 1000",
+        "answer_head": "16:05\nBigQuery\n📊 올해 영업1팀 매출\n요약\n\n총 매출액 약 1,726.3억원 (172,627,180,696원)\n\n상세 데이터\n표 복사\n매출액 (원)\n172,627,180,696\n분석 및 인사이트\n올해 영업1팀(B2B1)의 누적 매출: 올해 영업1팀(B2B1)의 총 매출액은 약 1,726.3억 원(172,627,180,696.47원)을 기록하고 있습니다.\n\n조회 기준: 2026-08-18 | 내부 데이터베이스\n\n실행된 쿼리"
+      },
+      {
+        "turn": 2,
+        "q": "작년은?",
+        "fails": [],
+        "elapsed": 11.6,
+        "sql": "SQLCopySELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2025-01-01' AND '2025-12-31' AND Team_NEW = 'B2B1' LIMIT 1000 SELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2025-01-01' AND '2025-12-31' AND Team_NEW = 'B2B1' LIMIT 1000",
+        "answer_head": "16:05\nBigQuery\n📊 작년은?\n요약\n\n총 매출액 약 1,728.1억원 (172,805,202,869원)\n\n상세 데이터\n표 복사\n매출액 (원)\n172,805,202,870\n분석 및 인사이트\n제공된 데이터에 따르면 작년 총매출은 약 1,728.1억 원(172,805,202,869.88원)을 기록하였습니다.\n이는 연간 전체 실적을 나타내는 수치로, 향후 분기별 또는 팀별 세부 매출 기여도를 분석하여 핵심 성장 동력을 파악할 필요가 있습니다."
+      }
+    ]
+  },
+  {
+    "id": "division_drilldown",
+    "status": "PASS",
+    "turns": [
+      {
+        "turn": 1,
+        "q": "올해 본부별 매출 알려줘",
+        "fails": [],
+        "elapsed": 10.1,
+        "sql": "SQLCopySELECT CASE WHEN Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') THEN '글로벌마케팅본부' WHEN Team_NEW IN ('B2B1','B2B2') THEN '영업1본부' WHEN Team_NEW = 'DT1' THEN '유통1본부' WHEN Team_NEW = 'DT2' THEN '유통2본부' WHEN Team_NEW = 'BCM' THEN '상품본부' ELSE '기타/미분류' END AS division, SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN",
+        "answer_head": "16:05\nBigQuery\n📊 올해 본부별 매출\n요약\n\n총 매출액 약 7,771.1억원 (777,109,064,428원)\n\n상세 데이터\n표 복사\ndivision\t매출액 (원)\n영업1본부\t295,845,035,933\n글로벌마케팅본부\t277,308,467,240\n유통2본부\t107,682,884,369\n유통1본부\t94,300,000,000\n상품본부\t1,972,676,886\n분석 및 인사이트\n영업 및 마케팅 본부의 매출 주도: 영업1본부(약 2,958"
+      },
+      {
+        "turn": 2,
+        "q": "글로벌마케팅본부만 팀별로 나눠줘",
+        "fails": [],
+        "elapsed": 11.7,
+        "sql": "SQLCopySELECT Team_NEW AS team, SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2026-01-01' AND '2026-12-31' AND Team_NEW IN ('CBT','EAST1','EAST2','JBT','KBT','WEST_Ecomm','WEST_MKT') GROUP BY team ORDER BY total_revenue DESC LIMIT 1000 SELECT Team_NEW AS team, SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES",
+        "answer_head": "16:06\nBigQuery\n📊 글로벌마케팅본부만 팀별로 나눠줘\n요약\n\n총 매출액 약 2,773.1억원 (277,308,467,240원)\n\n상세 데이터\n표 복사\nteam\t매출액 (원)\n서구권마케팅팀(WEST_MKT)\t68,265,849,255\n동남아시아1팀(EAST1)\t66,071,261,539\n서구권이커머스팀(WEST_Ecomm)\t37,398,360,358\n중국사업팀(CBT)\t35,281,538,456\n일본사업팀(JBT)\t29,234,240,8"
+      }
+    ]
+  },
+  {
+    "id": "qty_metric_carryover",
+    "status": "PASS",
+    "turns": [
+      {
+        "turn": 1,
+        "q": "올해 팀별 판매수량 알려줘",
+        "fails": [],
+        "elapsed": 13.1,
+        "sql": "SQLCopySELECT Team_NEW AS team, SUM(Total_Qty) AS total_quantity FROM `skin1004-319714.Sales_Integration.Product` WHERE Date >= '2026-01-01' AND Date <= '2026-12-31' AND Brand IN ('SK', 'CL') AND Product != 'Sachet' AND Team_NEW IS NOT NULL AND Team_NEW NOT IN ('기타', 'OP') GROUP BY team ORDER BY total_quantity DESC LIMIT 1000 SELECT Team_NEW AS team, SUM(Total_Qty) AS total_quantity FROM `skin1004",
+        "answer_head": "16:06\nBigQuery\n📊 올해 팀별 판매수량\n요약\n\n총 판매수량 54,995,244개\n\n상세 데이터\n표 복사\nteam\t판매수량 (개)\n영업1팀(B2B1)\t20,627,624\n영업2팀(B2B2)\t16,329,122\n동남아시아1팀(EAST1)\t6,285,850\n서구권마케팅팀(WEST_MKT)\t5,894,098\n일본사업팀(JBT)\t2,194,913\n서구권이커머스팀(WEST_Ecomm)\t1,766,957\n동남아시아2팀(EAST2)\t1,548,75"
+      },
+      {
+        "turn": 2,
+        "q": "영업2팀만 보여줘",
+        "fails": [],
+        "elapsed": 11.6,
+        "sql": "SQLCopySELECT Team_NEW AS team, SUM(Total_Qty) AS total_quantity FROM `skin1004-319714.Sales_Integration.Product` WHERE Date >= '2026-01-01' AND Date <= '2026-12-31' AND Brand IN ('SK', 'CL') AND Product != 'Sachet' AND Team_NEW = 'B2B2' GROUP BY team ORDER BY total_quantity DESC LIMIT 1000 SELECT Team_NEW AS team, SUM(Total_Qty) AS total_quantity FROM `skin1004-319714.Sales_Integration.Product` W",
+        "answer_head": "16:06\nBigQuery\n📊 영업2팀만\n요약\n\n총 판매수량 16,329,122개\n\n상세 데이터\n표 복사\nteam\t판매수량 (개)\n영업2팀(B2B2)\t16,329,122\n분석 및 인사이트\n영업2팀(B2B2)의 누적 판매량: 영업2팀(B2B2)은 현재까지 총 16,329,122개의 누적 판매 수량(total_quantity)을 기록하며 견고한 판매 실적을 유지하고 있습니다.\n판매 규모 분석: 영업2팀(B2B2)의 총 판매량은 약 1,632.9만 "
+      }
+    ]
+  },
+  {
+    "id": "at_source_carryover",
+    "status": "PASS",
+    "turns": [
+      {
+        "turn": 1,
+        "q": "@@메타광고 광고 플랫폼별 분포 알려줘",
+        "fails": [],
+        "elapsed": 11.6,
+        "sql": "SQLCopySELECT platform, COUNT(DISTINCT ad_archive_id) AS ad_count, ROUND(COUNT(DISTINCT ad_archive_id) * 100.0 / SUM(COUNT(DISTINCT ad_archive_id)) OVER(), 2) AS percentage FROM `skin1004-319714.ad_data.meta data_test`, UNNEST(JSON_EXTRACT_ARRAY(publisher_platform)) AS platform WHERE collect_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) GROUP BY platform ORDER BY ad_count DESC LIMIT 200 SELECT",
+        "answer_head": "16:06\nBigQuery\n📊 광고 플랫폼별 분포\n상세 데이터\n표 복사\nplatform\tad_count\tpercentage\n\"INSTAGRAM\"\t142,997\t25.49\n\"FACEBOOK\"\t129,822\t23.14\n\"THREADS\"\t118,369\t21.10\n\"AUDIENCE_NETWORK\"\t102,235\t18.22\n\"MESSENGER\"\t50,344\t8.97\n\"WHATSAPP\"\t17,277\t3.08\n분석 및 인사이트\n인스타그램과 페이스북의 높은 "
+      },
+      {
+        "turn": 2,
+        "q": "인스타그램만 보여줘",
+        "fails": [],
+        "elapsed": 13.2,
+        "sql": "SQLCopySELECT platform, COUNT(DISTINCT ad_archive_id) AS ad_count, ROUND(COUNT(DISTINCT ad_archive_id) * 100.0 / SUM(COUNT(DISTINCT ad_archive_id)) OVER(), 2) AS percentage FROM `skin1004-319714.ad_data.meta data_test`, UNNEST(JSON_EXTRACT_ARRAY(publisher_platform)) AS platform WHERE collect_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY) AND LOWER(publisher_platform) LIKE '%instagram%' AND LOWE",
+        "answer_head": "16:06\nBigQuery\n📊 인스타그램만\n상세 데이터\n표 복사\nplatform\tad_count\tpercentage\n\"INSTAGRAM\"\t13,454\t77.74\n\"THREADS\"\t3,586\t20.72\n\"WHATSAPP\"\t156\t0.90\n\"MESSENGER\"\t104\t0.60\n\"AUDIENCE_NETWORK\"\t7\t0.04\n분석 및 인사이트\n인스타그램의 압도적인 비중: 인스타그램(INSTAGRAM)의 광고 수는 13,454건으로, 전체 플랫폼 광고 "
+      }
+    ]
+  },
+  {
+    "id": "pronoun_reference",
+    "status": "PASS",
+    "turns": [
+      {
+        "turn": 1,
+        "q": "올해 일본사업팀 매출 알려줘",
+        "fails": [],
+        "elapsed": 11.7,
+        "sql": "SQLCopySELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2026-01-01' AND '2026-12-31' AND Team_NEW = 'JBT' LIMIT 1000 SELECT SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2026-01-01' AND '2026-12-31' AND Team_NEW = 'JBT' LIMIT 1000",
+        "answer_head": "16:07\nBigQuery\n📊 올해 일본사업팀 매출\n요약\n\n총 매출액 약 292.3억원 (29,234,240,822원)\n\n상세 데이터\n표 복사\n매출액 (원)\n29,234,240,822\n분석 및 인사이트\n올해 일본사업팀(JBT)의 누적 매출액은 약 292.3억원(29,234,240,822.46원)을 기록하고 있습니다.\n이는 과거 2026년 3월 31일에 발생했던 단일 거래 최대 매출액인 약 207.0억원보다 약 41.2% 높은 수치로, 일본 시장"
+      },
+      {
+        "turn": 2,
+        "q": "그거 월별로 보여줘",
+        "fails": [],
+        "elapsed": 11.6,
+        "sql": "SQLCopySELECT FORMAT_DATETIME('%Y-%m', Date) AS month, SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Date BETWEEN '2026-01-01' AND '2026-12-31' AND Team_NEW = 'JBT' GROUP BY month ORDER BY month LIMIT 1000 SELECT FORMAT_DATETIME('%Y-%m', Date) AS month, SUM(Sales1_R) AS total_revenue FROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup` WHERE Da",
+        "answer_head": "16:07\nBigQuery\n📊 그거 월별로\n요약\n\n총 매출액 약 292.3억원 (29,234,240,822원)\n\n상세 데이터\n표 복사\n월\t매출액 (원)\n2026-01\t1,972,680,278\n2026-02\t4,281,153,867\n2026-03\t6,759,726,857\n2026-04\t2,625,757,833\n2026-05\t4,794,246,744\n2026-06\t5,132,234,457\n2026-07\t2,033,654,254\n2026-08\t1,6"
+      }
+    ]
+  }
+]

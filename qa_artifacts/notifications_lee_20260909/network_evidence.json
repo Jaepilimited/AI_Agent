@@ -1,0 +1,246 @@
+{
+  "queried_at": "2026-09-09T12:47:54.474646",
+  "journal_exit_code": 0,
+  "counts": {
+    "GET /api/notifications 200": 737,
+    "POST /api/notifications/viewed 200": 7,
+    "GET /api/notifications 401": 181,
+    "POST /api/notifications/viewed 401": 8
+  },
+  "recent_events": [
+    {
+      "at": "1788924768462125",
+      "message": "INFO:     10.1.100.5:57412 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788924769568092",
+      "message": "INFO:     10.1.100.5:57412 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788924805496271",
+      "message": "INFO:     10.1.100.5:52784 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788924925507355",
+      "message": "INFO:     10.1.100.5:49574 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788924942515583",
+      "message": "INFO:     10.1.100.5:34124 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925024310009",
+      "message": "INFO:     10.1.100.5:51822 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925024310009",
+      "message": "INFO:     10.1.100.5:51826 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925026875019",
+      "message": "INFO:     10.1.100.5:51826 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925035181098",
+      "message": "INFO:     10.1.100.5:45434 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925036336414",
+      "message": "INFO:     10.1.100.5:45434 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925036338604",
+      "message": "INFO:     10.1.100.5:45436 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925038736365",
+      "message": "INFO:     10.1.100.5:45436 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925064498904",
+      "message": "INFO:     10.1.100.5:45804 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925066456366",
+      "message": "INFO:     10.1.100.5:45804 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925066459054",
+      "message": "INFO:     10.1.100.5:45814 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925067484439",
+      "message": "INFO:     10.1.100.5:45814 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925067941658",
+      "message": "INFO:     10.1.100.5:45830 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925074562516",
+      "message": "INFO:     10.1.100.5:38056 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925089565311",
+      "message": "INFO:     10.1.100.5:46424 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925089565311",
+      "message": "INFO:     10.1.100.5:46420 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925091107596",
+      "message": "INFO:     10.1.100.5:46420 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925091734358",
+      "message": "INFO:     10.1.100.5:46420 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925091734358",
+      "message": "INFO:     10.1.100.5:46424 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925092639537",
+      "message": "INFO:     10.1.100.5:46424 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925093414360",
+      "message": "INFO:     10.1.100.5:46424 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925093415695",
+      "message": "INFO:     10.1.100.5:46420 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925093943675",
+      "message": "INFO:     10.1.100.5:46420 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925105524065",
+      "message": "INFO:     10.1.100.5:43006 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925141082531",
+      "message": "INFO:     10.1.100.5:53134 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925141083353",
+      "message": "INFO:     10.1.100.5:53146 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925159530751",
+      "message": "INFO:     10.1.100.5:50658 - \"POST /api/notifications/viewed HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925159561169",
+      "message": "INFO:     10.1.100.5:50658 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925162095105",
+      "message": "INFO:     10.1.100.5:50658 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925184094971",
+      "message": "INFO:     10.1.100.5:38726 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925223494604",
+      "message": "INFO:     10.1.100.5:39736 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925225545383",
+      "message": "INFO:     10.1.100.5:39736 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925266800365",
+      "message": "INFO:     10.1.100.5:58664 - \"POST /api/notifications/viewed HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925266802252",
+      "message": "INFO:     10.1.100.5:58692 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925268147259",
+      "message": "INFO:     10.1.100.5:58664 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925327320362",
+      "message": "INFO:     10.1.100.5:45518 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925338738866",
+      "message": "INFO:     10.1.100.5:41804 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925379533544",
+      "message": "INFO:     10.1.100.5:37812 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925399435498",
+      "message": "INFO:     10.1.100.5:42364 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925405477360",
+      "message": "INFO:     10.1.100.5:42024 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925441639097",
+      "message": "INFO:     10.1.100.5:37600 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925525507464",
+      "message": "INFO:     10.1.100.5:50646 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925528498806",
+      "message": "INFO:     10.1.100.5:50678 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925576962093",
+      "message": "INFO:     10.1.100.5:40798 - \"GET /api/notifications HTTP/1.1\" 200 OK"
+    },
+    {
+      "at": "1788925638741831",
+      "message": "INFO:     10.1.100.5:38700 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    },
+    {
+      "at": "1788925646466461",
+      "message": "INFO:     10.1.100.5:47902 - \"GET /api/notifications HTTP/1.1\" 401 Unauthorized"
+    }
+  ],
+  "named_user_login_times": [],
+  "source_modified_at": {
+    "app/core/session_auth.py": "2026-09-09T09:13:16.981762",
+    "app/api/auth_middleware.py": "2026-09-09T09:13:17.716940",
+    "app/frontend/chat.js": "2026-09-09T09:24:35.896553"
+  },
+  "named_user_visits": [
+    {
+      "visit_date": "2026-09-09",
+      "first_seen_at": "2026-09-09 09:17:05",
+      "last_seen_at": "2026-09-09 09:17:05",
+      "visit_count": 1
+    },
+    {
+      "visit_date": "2026-09-08",
+      "first_seen_at": "2026-09-08 09:47:57",
+      "last_seen_at": "2026-09-08 15:25:27",
+      "visit_count": 2
+    }
+  ],
+  "http": {
+    "/health": {
+      "status": 200,
+      "bytes": 43
+    },
+    "/frontend/chat.js": {
+      "status": 200,
+      "bytes": 333736
+    },
+    "/static/style.css": {
+      "status": 200,
+      "bytes": 182769
+    }
+  }
+}

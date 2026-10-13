@@ -1,0 +1,194 @@
+--- before/app/core/coa_finder.py
++++ release/app/core/coa_finder.py
+@@ -9,6 +9,7 @@
+ import io
+ import re
+ from dataclasses import dataclass
++from datetime import datetime, timedelta, timezone
+ from typing import Iterable, Optional, Sequence
+ 
+ # 헤더 낱말. ⛔ "몇 번째 행" 으로 박지 마라 — 안내문이 늘면 조용히 0건이 난다
+@@ -319,10 +320,9 @@
+     name: str
+     size: int
+     web_link: str
+-    # 드라이브의 수정 시각(RFC3339). 후보가 여럿일 때 사람이 **열지 않고도**
+-    # 고를 수 있게 화면에 크기와 함께 적는다.
+-    # ⚠️ 판정에는 쓰지 않는다 — 최신이라고 그 롯트의 것이 아니다. 표시 전용이다.
+-    # ⚠️ 기본값을 둬 옛 호출부가 그대로 돈다 (`_dedup_key` 도 이 값을 보지 않는다)
++    # 드라이브의 수정 시각(RFC3339). 같은 롯트·제품으로 좁힌 후보끼리만
++    # 최신 문서를 고르는 데 쓴다. 날짜가 없거나 애매하면 사람이 고른다.
++    # 기본값은 옛 호출부와 날짜 없는 파일을 그대로 지원한다.
+     modified: str = ""
+ 
+ 
+@@ -363,12 +363,67 @@
+     return (_strip_copy_markers(stem).casefold(), ext.casefold(), f.size)
+ 
+ 
++_RFC3339_MODIFIED = re.compile(
++    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?"
++    r"(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)"
++)
++_KST = timezone(timedelta(hours=9))
++_UNKNOWN_MODIFIED_NOTE = (
++    "최종 수정일이 없거나 날짜·시간대를 확인할 수 없는 파일이 있어 "
++    "최신 1개를 고르지 않았습니다. 직접 선택하세요"
++)
++
++
++def _modified_instant(value: str) -> Optional[datetime]:
++    """시간대가 명시된 Drive 수정 시각만 UTC 시점으로 읽는다."""
++    if not isinstance(value, str) or not _RFC3339_MODIFIED.fullmatch(value):
++        return None
++    try:
++        parsed = datetime.fromisoformat(value.replace("Z", "+00:00").replace("z", "+00:00"))
++        return parsed.astimezone(timezone.utc)
++    except (ValueError, OverflowError):
++        return None
++
++
+ def _dedup(files: Sequence[DriveFile]) -> tuple[DriveFile, ...]:
+-    """같은 파일의 사본을 접는다. 먼저 온 것을 남긴다."""
++    """날짜가 있는 사본 중 최신을 남긴다. 모두 날짜가 없거나 같으면 먼저 온 것을 남긴다."""
+     seen: dict[tuple, DriveFile] = {}
+     for f in files:
+-        seen.setdefault(_dedup_key(f), f)
++        key = _dedup_key(f)
++        if key not in seen:
++            seen[key] = f
++            continue
++        modified = _modified_instant(f.modified)
++        previous = _modified_instant(seen[key].modified)
++        if modified is not None and (previous is None or modified > previous):
++            seen[key] = f
+     return tuple(seen.values())
++
++
++def _latest_match(files: Sequence[DriveFile], label: str) -> tuple[Optional[DriveFile], str]:
++    """이미 일치한 후보만 비교한다. 접히는 사본의 날짜 누락도 숨기지 않는다."""
++    dated = []
++    for file in files:
++        modified = _modified_instant(file.modified)
++        if modified is None:
++            return None, _UNKNOWN_MODIFIED_NOTE
++        dated.append((modified, file))
++    newest = max(modified for modified, _ in dated)
++    latest_files = [file for modified, file in dated if modified == newest]
++    documents = {_dedup_key(file) for file in latest_files}
++    if len(documents) > 1:
++        return None, (f"최종 수정일이 같은 최신 문서가 {len(documents)}건이라 "
++                      "최신 1개를 고르지 않았습니다. 직접 선택하세요")
++    try:
++        displayed = newest.astimezone(_KST).strftime("%Y-%m-%d %H:%M:%S")
++    except OverflowError:
++        return None, _UNKNOWN_MODIFIED_NOTE
++    if newest.microsecond:
++        displayed += f".{newest.microsecond:06d}".rstrip("0")
++    return latest_files[0], (
++        f"검색된 {label} {len(files)}건 중 최종 수정일 {displayed} KST인 "
++        "최신 1개를 선택했습니다"
++    )
+ 
+ 
+ def _is_delimited_match(name: str, lot: str) -> bool:
+@@ -414,7 +469,13 @@
+         if delimited:
+             exact = _dedup(delimited)
+             if len(exact) > 1:
+-                return Verdict(MANY, exact, f"{len(exact)}건 — 어느 것인지 확인이 필요합니다")
++                note = f"{len(exact)}건 — 어느 것인지 확인이 필요합니다"
++                if len(lot) > _SHORT_LOT_LEN:
++                    latest, reason = _latest_match(delimited, "같은 롯트의 COA")
++                    if latest is not None:
++                        return Verdict(FOUND, (latest,), reason)
++                    note += " · " + reason
++                return Verdict(MANY, exact, note)
+             if len(lot) <= _SHORT_LOT_LEN:
+                 return Verdict(CHECK, exact,
+                                f"롯트가 {len(lot)}자로 짧아 다른 코드에 걸렸을 수 있습니다")
+@@ -559,7 +620,8 @@
+                            extra={"sku": row.sku, "error": str(exc)[:200]})
+             msds = Verdict(FAILED, (), _QUERY_FAILED_NOTE + _failure_cause(exc))
+         else:
+-            files = _dedup(_filter_by_name(_to_files(raw), query_terms, "msds"))
++            matched = _filter_by_name(_to_files(raw), query_terms, "msds")
++            files = _dedup(matched)
+             note = "제품명으로 찾았습니다 (롯트 무관)"
+             # ⛔ 제품명의 용량이 MSDS 를 통째로 못 찾게 만들고 있었다 (2026-09-04
+             #    사용자 제보, 프로덕션 실측). MSDS 는 **제형 단위** 문서라 파일명에
+@@ -574,7 +636,8 @@
+                 relaxed = drop_volume(query_terms)
+                 if relaxed != query_terms:
+                     # 같은 응답에서 낱말만 풀어 본 뒤, 그래도 없으면 다시 조회한다
+-                    files = _dedup(_filter_by_name(_to_files(raw), relaxed, "msds"))
++                    matched = _filter_by_name(_to_files(raw), relaxed, "msds")
++                    files = _dedup(matched)
+                     if not files:
+                         try:
+                             raw2 = search(creds, " ".join(relaxed + ["MSDS"]),
+@@ -584,8 +647,8 @@
+                                            extra={"sku": row.sku,
+                                                   "error": str(exc)[:200]})
+                             raw2 = []
+-                        files = _dedup(_filter_by_name(_to_files(raw2), relaxed,
+-                                                       "msds"))
++                        matched = _filter_by_name(_to_files(raw2), relaxed, "msds")
++                        files = _dedup(matched)
+                     if files:
+                         # ⛔ 넓혀 찾았으면 반드시 밝힌다 — 안 쓴 낱말로 찾은 결과를
+                         #    그대로 주면 사용자가 용량이 맞는 문서라고 읽는다
+@@ -603,7 +666,18 @@
+             elif len(files) == 1:
+                 msds = Verdict(FOUND, files, note)
+             else:
+-                msds = Verdict(MANY, files, note)
++                # 조회에 쓰지 않은 제품 고유어도 확인해야 다른 변형 제품을
++                # 최신이라는 이유로 확정하지 않는다. 용량은 기존처럼 선호다.
++                unchecked = [t for t in terms[4:] if not _VOLUME.fullmatch(t.strip())
++                             and any(t.casefold() not in f.name.casefold() for f in matched)]
++                if unchecked:
++                    latest = None
++                    reason = (f"제품명 낱말({', '.join(unchecked)})을 모든 후보 파일명에서 "
++                              "확인할 수 없어 최신 1개를 고르지 않았습니다. 직접 선택하세요")
++                else:
++                    latest, reason = _latest_match(matched, "같은 제품의 MSDS")
++                msds = Verdict(FOUND if latest is not None else MANY,
++                               (latest,) if latest is not None else files, note + " · " + reason)
+     elif row.description:
+         msds = Verdict(NONE, (), "제품명에서 검색에 쓸 낱말을 찾지 못했습니다")
+     else:
+--- before/app/api/coa_finder_api.py
++++ release/app/api/coa_finder_api.py
+@@ -117,8 +117,8 @@
+         return {
+             "status": v.status,
+             "note": v.note,
+-            # ⚠️ `modified` 는 화면 표시 전용이다 — 다운로드 요청은 이 값을
+-            #    보내지도 읽지도 않는다 (ZIP 이름은 판정과 롯트만으로 정해진다)
++            # 최신 파일 선택에 사용한 수정일도 화면에 전달한다. 다운로드는
++            # 선택된 파일 ID를 사용하며 수정일로 다시 선택하지 않는다.
+             "files": [{"id": f.id, "name": f.name, "link": f.web_link,
+                        "size": f.size, "modified": f.modified}
+                       for f in v.files],
+--- before/app/static/coa_finder.html
++++ release/app/static/coa_finder.html
+@@ -67,12 +67,14 @@
+   <div class="cf-wrap">
+     <h1>인증서류 찾기 (COA · MSDS)</h1>
+     <p class="cf-intro">엑셀에서 SKU · DESCRIPTION · LOT 열을 복사해 붙여넣거나
+-      .xlsx 파일을 올리세요. 공유드라이브에서 롯트가 정확히 일치하는 파일만 찾습니다.<br>
++      .xlsx 파일을 올리세요. 공유드라이브에서 COA는 정확한 롯트로, MSDS는 제품으로 찾습니다.<br>
++      같은 롯트의 COA나 같은 제품의 MSDS가 여러 개면 <b>드라이브 최종 수정일 기준 최신 1개</b>를 자동 선택합니다.
++      수정일을 확인할 수 없거나 최신 시각이 같으면 후보를 그대로 표시합니다.
++      이때는 파일별 크기·수정일을 보고 필요한 것만 체크하세요.<br>
++      <b>COA(제품)</b>은 다른 롯트의 증명서이므로 별도로 선택해야 합니다.
+       받은 ZIP 안은 <code>COA/</code> · <code>MSDS/</code> · <code>제품COA/</code> 폴더로 나뉘고,
+       한 종류만 따로 받을 수도 있습니다.<br>
+-      후보가 <b>여러건</b>인 칸은 파일마다 체크박스가 붙습니다 — 필요한 것만 골라 받으세요.
+-      후보 줄의 크기·수정일을 보면 열지 않고도 고를 때가 많습니다.
+-      다만 골라도 어느 것이 맞는지 확인된 것은 아니라서, 확정되지 않은 파일은
++      수동으로 골라도 어느 것이 맞는지 확인된 것은 아니라서, 확정되지 않은 파일은
+       ZIP 안 <code>_확인필요_목록.txt</code> 에 사유와 함께 적힙니다
+       (파일 이름은 원래대로 나갑니다).</p>
+ 

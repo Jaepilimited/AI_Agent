@@ -1,0 +1,52 @@
+{
+  "for_date": "2026-08-07",
+  "source": "frankfurter.app",
+  "rates": [
+    {
+      "currency": "USD",
+      "krw": 1415.95,
+      "unit": 1
+    },
+    {
+      "currency": "JPY",
+      "krw": 894.2466,
+      "unit": 100
+    },
+    {
+      "currency": "CNY",
+      "krw": 209.845,
+      "unit": 1
+    },
+    {
+      "currency": "EUR",
+      "krw": 1633.2922,
+      "unit": 1
+    },
+    {
+      "currency": "SGD",
+      "krw": 1105.4337,
+      "unit": 1
+    },
+    {
+      "currency": "PHP",
+      "krw": 23.263,
+      "unit": 1
+    },
+    {
+      "currency": "MYR",
+      "krw": 346.1134,
+      "unit": 1
+    },
+    {
+      "currency": "IDR",
+      "krw": 7.9343,
+      "unit": 100
+    },
+    {
+      "currency": "AUD",
+      "krw": 996.8671,
+      "unit": 1
+    }
+  ],
+  "only_missing": true
+}

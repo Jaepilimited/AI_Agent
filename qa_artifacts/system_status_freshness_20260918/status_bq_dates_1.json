@@ -1,0 +1,130 @@
+{
+  "queried_at_kst": "2026-09-18T15:46:06.669036+09:00",
+  "results": [
+    {
+      "id": "skin1004-319714.Sales_Integration.FI_LLM_Flat",
+      "rows": [
+        {
+          "n": 31863574,
+          "min_Year_Month": "2026-01",
+          "max_Year_Month": "2026-06",
+          "nonnull_Year_Month": 31863574
+        }
+      ],
+      "dry_bytes": 286772166,
+      "billed_bytes": 287309824,
+      "query_job_id": "1485e796-9d3a-485d-b6be-e4da1a4ac449"
+    },
+    {
+      "id": "skin1004-319714.Sales_Integration.Product",
+      "rows": [
+        {
+          "n": 1274095,
+          "min_Date": "1900-01-01 00:00:00",
+          "max_Date": "2026-12-31 00:00:00",
+          "nonnull_Date": 1274095,
+          "latest_nonfuture_Date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 10192760,
+      "billed_bytes": 10485760,
+      "query_job_id": "278f2314-8a59-47fb-9071-ad3e8af9d407"
+    },
+    {
+      "id": "skin1004-319714.Sales_Integration.SALES_ALL_Backup",
+      "rows": [
+        {
+          "n": 33777977,
+          "min_Date": "1900-01-01 00:00:00",
+          "max_Date": "2026-12-31 00:00:00",
+          "nonnull_Date": 33777977,
+          "latest_nonfuture_Date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 270223816,
+      "billed_bytes": 270532608,
+      "query_job_id": "b651c204-eab2-41af-bc85-64ff9ce26556"
+    },
+    {
+      "id": "skin1004-319714.ad_data.meta data_test",
+      "rows": [
+        {
+          "n": 4491936,
+          "min_collect_date": "2025-11-20",
+          "max_collect_date": "2026-09-18",
+          "nonnull_collect_date": 4491936,
+          "latest_nonfuture_collect_date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 35935488,
+      "billed_bytes": 36700160,
+      "query_job_id": "d7b95aa9-0f14-4dc9-ac33-ea637805db4b"
+    },
+    {
+      "id": "skin1004-319714.cs_dashboard.domestic_cs_records",
+      "rows": [
+        {
+          "n": 552,
+          "min_received_at": "2025-11-20",
+          "max_received_at": "2026-09-16",
+          "nonnull_received_at": 551,
+          "latest_nonfuture_received_at": "2026-09-16",
+          "min_completed_at": "2025-11-26",
+          "max_completed_at": "2026-09-14",
+          "nonnull_completed_at": 369,
+          "latest_nonfuture_completed_at": "2026-09-14",
+          "min_loaded_at": "2026-09-16 23:00:14.136345+00:00",
+          "max_loaded_at": "2026-09-16 23:00:14.136345+00:00",
+          "nonnull_loaded_at": 552,
+          "latest_nonfuture_loaded_at": "2026-09-17",
+          "min_ingested_at": "2026-09-16 23:00:14.136345+00:00",
+          "max_ingested_at": "2026-09-16 23:00:14.136345+00:00",
+          "nonnull_ingested_at": 552,
+          "latest_nonfuture_ingested_at": "2026-09-17",
+          "min_source_fetched_at": "2026-09-16 23:00:14.136345+00:00",
+          "max_source_fetched_at": "2026-09-16 23:00:14.136345+00:00",
+          "nonnull_source_fetched_at": 552,
+          "latest_nonfuture_source_fetched_at": "2026-09-17"
+        }
+      ],
+      "dry_bytes": 20608,
+      "billed_bytes": 10485760,
+      "query_job_id": "7904475b-a8f1-4a7c-8b2b-35b7bc3016fb"
+    },
+    {
+      "id": "skin1004-319714.cs_dashboard.overseas_cs_refunds",
+      "rows": [
+        {
+          "n": 1204,
+          "min_received_at": "2026-08-19 20:57:03+00:00",
+          "max_received_at": "2026-08-19 20:57:03+00:00",
+          "nonnull_received_at": 1,
+          "latest_nonfuture_received_at": "2026-08-20",
+          "min_completed_at": "2026-01-01 08:04:04+00:00",
+          "max_completed_at": "2026-09-18 05:45:31+00:00",
+          "nonnull_completed_at": 1166,
+          "latest_nonfuture_completed_at": "2026-09-18",
+          "min_refund_created_at": "2026-01-01 08:04:05+00:00",
+          "max_refund_created_at": "2026-09-18 05:45:33+00:00",
+          "nonnull_refund_created_at": 1204,
+          "latest_nonfuture_refund_created_at": "2026-09-18",
+          "min_refund_processed_at": "2026-01-01 08:04:05+00:00",
+          "max_refund_processed_at": "2026-09-18 05:45:33+00:00",
+          "nonnull_refund_processed_at": 1204,
+          "latest_nonfuture_refund_processed_at": "2026-09-18",
+          "min_shopify_updated_at": "2026-01-01 08:10:06+00:00",
+          "max_shopify_updated_at": "2026-09-18 05:45:34+00:00",
+          "nonnull_shopify_updated_at": 1204,
+          "latest_nonfuture_shopify_updated_at": "2026-09-18",
+          "min_ingested_at": "2026-09-11 05:46:30.716315+00:00",
+          "max_ingested_at": "2026-09-18 06:00:05.344496+00:00",
+          "nonnull_ingested_at": 1204,
+          "latest_nonfuture_ingested_at": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 47864,
+      "billed_bytes": 10485760,
+      "query_job_id": "0f5a26b6-d4d3-41bd-8314-24972b410ecc"
+    }
+  ]
+}

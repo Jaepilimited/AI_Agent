@@ -1,0 +1,10 @@
+{
+  "domestic": {
+    "error_type": "HTTPError",
+    "error": "HTTP Error 403: Forbidden"
+  },
+  "overseas": {
+    "error_type": "HTTPError",
+    "error": "HTTP Error 403: Forbidden"
+  }
+}

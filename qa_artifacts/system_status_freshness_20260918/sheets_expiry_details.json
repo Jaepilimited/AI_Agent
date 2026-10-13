@@ -1,0 +1,55 @@
+{
+  "queried_at_kst": "2026-09-18T15:43:46.226369+09:00",
+  "expiry_differences": {
+    "source_only_keys": 3,
+    "copy_only_keys": 3,
+    "changed_rows": 0,
+    "changes": [],
+    "source_only": [
+      {
+        "sku": "EUSKA065",
+        "item_name": "(EU)스킨1004_(미니)(네모R1)마다가스카르센텔라히알루-테카플럼핑앰플30ml",
+        "expiry_date": "2029-07-10",
+        "lot": "FG021",
+        "qty": 18447
+      },
+      {
+        "sku": "KRSKA037",
+        "item_name": "(KR)스킨1004_마다가스카르센텔라히알루-테카플럼핑앰플50ml",
+        "expiry_date": "2029-07-10",
+        "lot": "FG021",
+        "qty": 16400
+      },
+      {
+        "sku": "USSKA108",
+        "item_name": "(US,CA)스킨1004_(미니)마다가스카르센텔라히알루-테카플럼핑앰플30ml",
+        "expiry_date": "2029-07-10",
+        "lot": "FG021",
+        "qty": 4454
+      }
+    ],
+    "stored_only": [
+      {
+        "sku": "EUSKA065",
+        "item_name": "(EU)스킨1004_(미니)(네모R1)마다가스카르센텔라히알루-테카플럼핑앰플30ml",
+        "expiry_date": "2029-07-10",
+        "lot": "fg021",
+        "qty": 18447
+      },
+      {
+        "sku": "KRSKA037",
+        "item_name": "(KR)스킨1004_마다가스카르센텔라히알루-테카플럼핑앰플50ml",
+        "expiry_date": "2029-07-10",
+        "lot": "fg021",
+        "qty": 16400
+      },
+      {
+        "sku": "USSKA108",
+        "item_name": "(US,CA)스킨1004_(미니)마다가스카르센텔라히알루-테카플럼핑앰플30ml",
+        "expiry_date": "2029-07-10",
+        "lot": "fg021",
+        "qty": 4454
+      }
+    ]
+  }
+}

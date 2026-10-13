@@ -1,0 +1,8 @@
+{
+  "queried_at_kst": "2026-09-18T15:43:19.425090+09:00",
+  "BP_source": {
+    "normalized_rows": 923,
+    "content_hash": "83898e1ae328cf384a0a89cfcd1b9f45bd586a4b17f5ab5c5eb17ed23fbee0d4"
+  },
+  "note": "Read-only source load; does not inspect or refresh live process memory."
+}

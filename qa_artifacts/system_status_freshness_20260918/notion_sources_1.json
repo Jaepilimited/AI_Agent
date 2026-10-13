@@ -1,0 +1,360 @@
+{
+  "queried_at_kst": "2026-09-18 15:45:52.085377+09:00",
+  "requested": 28,
+  "results": [
+    {
+      "page_id": "2a46714bbf6881f2b41df47382af9f4e",
+      "teams": [
+        "PEOPLE"
+      ],
+      "http_status": 404,
+      "endpoint": "databases"
+    },
+    {
+      "page_id": "2a86714bbf68814cbce8c0a58644c160",
+      "teams": [
+        "PEOPLE"
+      ],
+      "http_status": 404,
+      "endpoint": "databases"
+    },
+    {
+      "page_id": "2aa2b4283b008027adc5cdfd2e37d923",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-11-13T03:53:00.000Z",
+      "created_time": "2025-11-13T00:39:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2b02b4283b00805fa4e8f89bae479e28",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-11-20T03:59:00.000Z",
+      "created_time": "2025-11-19T23:44:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2b82b4283b0080d7abdaf6d1eaa67984",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-11-27T03:58:00.000Z",
+      "created_time": "2025-11-27T01:29:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2b928ccf8b9a4e7ba51db7fb2a2e2d57",
+      "teams": [
+        "PEOPLE"
+      ],
+      "http_status": 200,
+      "endpoint": "databases",
+      "object": "database",
+      "last_edited_time": "2023-03-31T05:54:00.000Z",
+      "created_time": "2021-09-17T01:16:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2bf2b4283b0080a58943f4d636d0ffa6",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-04T05:42:00.000Z",
+      "created_time": "2025-12-04T00:29:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2c62b4283b00808e8df9f880e1aad560",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-11T03:29:00.000Z",
+      "created_time": "2025-12-11T01:18:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2cc2b4283b008004b80ecea4dcdcd111",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-01-07T05:01:00.000Z",
+      "created_time": "2025-12-17T23:55:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d12b4283b008058841ee546dee2d9a1",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "databases",
+      "object": "database",
+      "last_edited_time": "2026-08-20T06:56:00.000Z",
+      "created_time": "2025-12-22T05:15:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d12b4283b0080fc9f24d518649c6f20",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-06-24T01:37:00.000Z",
+      "created_time": "2025-12-22T05:15:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d32b4283b0080d385b4d0e9e3fc29a9",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-07-16T05:08:00.000Z",
+      "created_time": "2025-12-24T05:40:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008008bb9fcfdb4ca6b6fd",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-08-20T05:19:00.000Z",
+      "created_time": "2025-12-30T07:48:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b00800992d7c9d982554004",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-06-05T08:35:00.000Z",
+      "created_time": "2025-12-30T07:36:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008015abd3fd7ac0510d44",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:15:00.000Z",
+      "created_time": "2025-12-30T08:51:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008022973ac7639ca4c240",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:21:00.000Z",
+      "created_time": "2025-12-30T08:20:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b00802f8b52d766c1ab1c12",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:14:00.000Z",
+      "created_time": "2025-12-30T08:34:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008045baf8f582236e0a83",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:14:00.000Z",
+      "created_time": "2025-12-30T07:52:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008048a03de5bb5216d231",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:31:00.000Z",
+      "created_time": "2025-12-30T09:22:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008051b47af3c3afbffd53",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-05-26T00:46:00.000Z",
+      "created_time": "2025-12-30T08:36:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008053a413eb8592a140cd",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:32:00.000Z",
+      "created_time": "2025-12-30T08:33:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008054a52ee4d35fe787d4",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:22:00.000Z",
+      "created_time": "2025-12-30T08:27:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008058a179c9a410a0571d",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:30:00.000Z",
+      "created_time": "2025-12-30T08:40:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008079ace0f4e1fae563b2",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-02-11T01:35:00.000Z",
+      "created_time": "2025-12-30T07:53:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b00807d8bd8fe1493b21a90",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:17:00.000Z",
+      "created_time": "2025-12-30T09:01:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b0080899966d102d0892f03",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-03T05:07:00.000Z",
+      "created_time": "2025-12-30T09:05:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b008099b981eb14ce4ba988",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-05-06T02:59:00.000Z",
+      "created_time": "2025-12-30T07:50:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "2d92b4283b0080a1a6cdded78bcc7db7",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2025-12-30T09:17:00.000Z",
+      "created_time": "2025-12-30T09:09:00.000Z",
+      "archived": false,
+      "in_trash": false
+    }
+  ]
+}

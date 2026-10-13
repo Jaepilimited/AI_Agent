@@ -1,0 +1,13 @@
+{
+  "deployed_files": 3,
+  "systemd": "active",
+  "coa_latest": true,
+  "msds_latest": true,
+  "ties_and_unknown_dates_manual": true,
+  "wrong_lot_rejected": true,
+  "page_updated": true,
+  "health": 200,
+  "password": false,
+  "entra": true,
+  "backup": "/home/jeffrey/AI_Agent/.release_backups/coa_latest_20260909"
+}

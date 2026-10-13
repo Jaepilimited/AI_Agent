@@ -1,0 +1,235 @@
+{
+  "case": "items",
+  "query": "2026년 8월 접수 상품별 처리 기록 수와 상품수량 알려줘",
+  "sources": [
+    "국내CS"
+  ],
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "SELECT\n  COALESCE(NULLIF(TRIM(item.product_name), ''), '상품 미상') AS product_name,\n  COUNT(DISTINCT cs.record_id) AS processing_records,\n  SUM(item.quantity) AS total_item_quantity,\n  COUNTIF(item.quantity IS NULL) AS items_without_quantity\nFROM `skin1004-319714.cs_dashboard.domestic_cs_records` cs,\n  UNNEST(cs.items) item\nWHERE cs.received_at BETWEEN '2026-08-01' AND '2026-08-31'\nGROUP BY product_name\nORDER BY processing_records DESC, total_item_quantity DESC\nLIMIT 1000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 15ml",
+      "processing_records": 11,
+      "total_item_quantity": 16,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 50ml x 2ea (트윈 팩)",
+      "processing_records": 10,
+      "total_item_quantity": 10,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 50ml",
+      "processing_records": 9,
+      "total_item_quantity": 12,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 앰플 100ml",
+      "processing_records": 7,
+      "total_item_quantity": 10,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "상품 미상",
+      "processing_records": 5,
+      "total_item_quantity": null,
+      "items_without_quantity": 5
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 앰플 30ml",
+      "processing_records": 4,
+      "total_item_quantity": 5,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 하이드레이팅 마스크 23ml",
+      "processing_records": 4,
+      "total_item_quantity": 4,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 워터겔시트 앰플 마스크 25ml",
+      "processing_records": 3,
+      "total_item_quantity": 6,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 톤 브라이트닝 톤업 선스크린 50ml",
+      "processing_records": 2,
+      "total_item_quantity": 3,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 퀵 카밍 패드 세트",
+      "processing_records": 2,
+      "total_item_quantity": 2,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "(KR)스킨1004_(굿즈)히알루-시카선세럼미니키링",
+      "processing_records": 2,
+      "total_item_quantity": 2,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 앰플 폼 125ml",
+      "processing_records": 2,
+      "total_item_quantity": 2,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 포어마이징 벨벳 피니쉬 선스크린 50ml",
+      "processing_records": 2,
+      "total_item_quantity": 2,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 퀵 카밍 패드 리필 파우치(70매)",
+      "processing_records": 1,
+      "total_item_quantity": 4,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 에어핏 선크림 라이트_50ml",
+      "processing_records": 1,
+      "total_item_quantity": 3,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 트래블 키트 (한국화장품ver)",
+      "processing_records": 1,
+      "total_item_quantity": 2,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 프로바이오시카 인텐시브 앰플 95ml",
+      "processing_records": 1,
+      "total_item_quantity": 2,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "(KR)스킨1004_(굿즈)소프트매트파우치",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 프로바이오시카 인텐시브 앰플 30ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 포어마이징 퀵 클레이 스틱 마스크 27g",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 젠틀 클렌징 밀크 200ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 티트리카 릴렉싱 마스크 24ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 앰플 55ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 증정용 샤쉐 패키지_완제품(KBT)_A",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 테카 앰플 50ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 톤 브라이트닝 트래블 키트",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 블루 세럼 30ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 50ml (twin pack)",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 에어핏 선크림 라이트 50ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 100ml_책판",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 톤 브라이트닝 캡슐 앰플 100ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 트래블 키트",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-테카 플럼핑 앰플 50ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 퀵 카밍 패드 70매",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 라이트 클렌징 오일 200ml",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    },
+    {
+      "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 젤리핏 앰플 패드 60pads",
+      "processing_records": 1,
+      "total_item_quantity": 1,
+      "items_without_quantity": 0
+    }
+  ],
+  "seconds": 20.23,
+  "fast_answer": "1",
+  "tool_loop": null
+}

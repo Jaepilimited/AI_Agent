@@ -1,0 +1,30 @@
+--- phase1/tests/test_sales_outlook_integration.py
++++ amendment/tests/test_sales_outlook_integration.py
+@@ -89,7 +89,11 @@
+ 
+ @pytest.mark.parametrize("mode", ["nonstream", "regular", "fast", "tool"])
+ def test_registered_current_and_future_are_rendered_without_model(monkeypatch, mode):
+-    setup_stream(monkeypatch, ROWS)
++    sql = agent._build_company_outlook_sql(QUESTION, today=date(2026, 9, 8))
++    setup_stream(monkeypatch, ROWS, sql=sql)
++    future_note = agent._future_period_note
++    monkeypatch.setattr(agent, "_future_period_note",
++                        lambda sql: future_note(sql, today=date(2026, 9, 8)))
+     monkeypatch.setattr(agent, "get_flash_client", no_model)
+     monkeypatch.setattr(agent, "get_llm_client", no_model)
+     if mode == "fast":
+@@ -100,11 +104,13 @@
+     if mode != "nonstream":
+         answer = "".join(agent.run_sql_agent_stream(QUESTION))
+     else:
+-        answer = agent.format_answer({"query": QUESTION, "generated_sql": OLD_SQL,
++        answer = agent.format_answer({"query": QUESTION, "generated_sql": sql,
+                                       "sql_result": ROWS})["answer"]
+     body = answer.split("<details>")[0]
+     assert "122.0" in body and "534.6" in body and "656.6" in body
+     assert "2026-09-08" in body and "2026-09-30" in body
++    assert "2026-09-09 ~ 2026-09-30" in body
++    assert "2026-10-01" not in body  # Exclusive SQL boundary is outside the reported month.
+     assert "1,231" not in body and "16일간" not in body
+     assert "Sales1_R" not in body and "SALES_ALL_Backup" not in body
+ 

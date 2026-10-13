@@ -1,0 +1,22 @@
+{
+  "files": {
+    "app/core/fx_rates.py": {
+      "before": "dc947b1042034b4ae4999096450dc07984af4cb957c0ed03c0701d4bd20a9fec",
+      "after": "5d152fda5b5296aae1ad909eb37fd621bafd5aa02ddf035bc5793e69b1355bdd"
+    },
+    "tests/test_fx_monthly_basis.py": {
+      "before": "1215ea6b64b52a7c492f934c6d5315c48a31d6caf81cbb73bd8b056d16e90db4",
+      "after": "80b32c8e8444bafcb88b13abd1d12b0432e4477738026db86ce1c79368e9edae"
+    },
+    "tests/test_work_briefing.py": {
+      "before": null,
+      "after": "409bd5321c84c9e20a6b46718b02610d883fc9bc162f49711ce4ededa92a036e"
+    }
+  },
+  "focused_exit": 0,
+  "focused_passed": 99,
+  "suite_reviewed": true,
+  "suite_exit": 0,
+  "suite_passed": 3405,
+  "suite_skipped": 21
+}

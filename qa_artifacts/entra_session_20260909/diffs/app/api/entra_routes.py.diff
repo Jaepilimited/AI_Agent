@@ -1,0 +1,12 @@
+--- was/app/api/entra_routes.py
++++ next/app/api/entra_routes.py
+@@ -134,7 +134,8 @@
+     brand_filter = await asyncio.to_thread(_lookup_brand_filter, int(user["id"]))
+     token = _create_token(int(user["id"]), claims.get("preferred_username", "") or "",
+                           brand_filter=brand_filter,
+-                          role=user.get("role", "user"))
++                          role=user.get("role", "user"), auth_provider="entra",
++                          entra_oid=claims["oid"], entra_tid=claims["tid"])
+     redirect = RedirectResponse(url=pending.get("next_path") or "/", status_code=303)
+     _set_cookie(redirect, token)
+     logger.warning("entra_login_success", user_id=int(user["id"]))

@@ -1,0 +1,24 @@
+{
+  "queried_at_kst": "2026-09-18T15:42:36.472317+09:00",
+  "sources": {
+    "BP": {
+      "modified_at_kst": "2026-09-18T11:51:38.156000+09:00"
+    },
+    "OP": {
+      "error_type": "HttpError",
+      "http_status": 404
+    },
+    "awards": {
+      "modified_at_kst": "2026-09-07T15:58:04.370000+09:00"
+    },
+    "rights": {
+      "modified_at_kst": "2026-09-15T12:04:54.749000+09:00"
+    },
+    "ingredients": {
+      "modified_at_kst": "2026-09-17T17:39:44.656000+09:00"
+    },
+    "PR": {
+      "modified_at_kst": "2026-09-16T18:39:43.243000+09:00"
+    }
+  }
+}

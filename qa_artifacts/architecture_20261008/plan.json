@@ -1,0 +1,26 @@
+{
+  "app/flow/spec.py": {
+    "before": "2314c6befd093911481d1d98906bd4b06d4e92077441e33c98a22ea528806727",
+    "after": "a83215f9134d2f009d5068db86b384079d42d9a46d2ed00e7606ce01ace2c04f"
+  },
+  "app/flow/graph.py": {
+    "before": "484d8a0eb4ff7a2b8373c5d8e266fbd858da32fc7abf889f331ea91978dd28ef",
+    "after": "231a4a8f15a8e489bda1c6ce061b4659bc400e4a8df70e3e6c026e209d807e6f"
+  },
+  "app/core/static_checks.py": {
+    "before": "50a6e28b34b3750d1a22f6343c38082e9b292f145c4304a713e040b17b1c3087",
+    "after": "d700650689875a4b36e016480edaf4f18c3774b51b5c4378d7b73219101ceda0"
+  },
+  "app/frontend/chat.html": {
+    "before": "bab0602c87f26d46d1619e0bbc67747f0c491770cad41b51bfb4a8a92582539a",
+    "after": "23ec121c5831c80fac304fd689ae12d975f1ffa91af330b01a34a6bcbe6074ab"
+  },
+  "app/frontend/chat.js": {
+    "before": "cb09cc3c13f3f647c8b8caceaaf078fa96aee4d8b6173214eda1f8c9da635a5f",
+    "after": "2e42c09c1a0c0f3bd3b10d0db1d25ef39af34136b8cc517bfc6dc2da746d818c"
+  },
+  "app/static/style.css": {
+    "before": "091eab6d363c4a9d3959fc6b5855e30889da6a54521e69d9052c2e3ce6d4df3c",
+    "after": "b5119572da8d45baa5bec12e4b5c03af8ece422ffeefa7692e2e58d388d685ba"
+  }
+}

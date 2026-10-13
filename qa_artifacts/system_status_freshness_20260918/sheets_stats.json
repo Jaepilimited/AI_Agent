@@ -1,0 +1,379 @@
+{
+  "queried_at_kst": "2026-09-18T15:40:05.392385+09:00",
+  "clock": {
+    "db_now": "2026-09-18 15:40:05",
+    "db_utc": "2026-09-18 06:40:05",
+    "tz": "SYSTEM"
+  },
+  "copies": {
+    "op_inventory": {
+      "n": 15018,
+      "oldest_sync": "2026-09-18 11:20:02",
+      "newest_sync": "2026-09-18 11:20:02",
+      "sync_versions": 1,
+      "source_stamps": [
+        {
+          "sheet_updated_at": "2026. 9. 18",
+          "n": 15018
+        }
+      ]
+    },
+    "op_inventory_expiry": {
+      "n": 3264,
+      "oldest_sync": "2026-09-18 11:20:06",
+      "newest_sync": "2026-09-18 11:20:06",
+      "sync_versions": 1,
+      "source_stamps": [
+        {
+          "sheet_updated_at": "9/17 마감 재고 현황",
+          "n": 3264
+        }
+      ]
+    },
+    "awards_rankings": {
+      "n": 206,
+      "oldest_sync": "2026-09-18 04:40:02",
+      "newest_sync": "2026-09-18 04:40:02",
+      "sync_versions": 1
+    },
+    "model_rights": {
+      "n": 34,
+      "oldest_sync": "2026-09-18 04:30:02",
+      "newest_sync": "2026-09-18 04:30:02",
+      "sync_versions": 1
+    },
+    "model_right_periods": {
+      "n": 301,
+      "oldest_sync": "2026-09-18 04:30:02",
+      "newest_sync": "2026-09-18 04:30:02",
+      "sync_versions": 1
+    },
+    "product_ingredients": {
+      "n": 84,
+      "oldest_sync": "2026-09-18 04:00:04",
+      "newest_sync": "2026-09-18 04:00:04",
+      "sync_versions": 1
+    },
+    "product_ingredient_map": {
+      "n": 116,
+      "oldest_sync": "2026-09-18 04:00:04",
+      "newest_sync": "2026-09-18 04:00:04",
+      "sync_versions": 1
+    }
+  },
+  "jobs": {
+    "op_inventory_sync_daily": {
+      "latest": [
+        {
+          "started_at": "2026-09-18 11:20:00",
+          "finished_at": "2026-09-18 11:20:06",
+          "ok": 1,
+          "detail": "{'rows': 19116, 'skus': 2238, 'sheet_updated_at': '2026. 9. 18', 'written': 19116, 'dry_run': False, 'expiry': {'rows': 3264, 'skus': 1580, 'sheet_updated_at': '9/17 마감 재고 현황', 'written': 3264, 'removed': 46}}",
+          "duration_ms": 6399
+        },
+        {
+          "started_at": "2026-09-17 16:20:00",
+          "finished_at": "2026-09-17 16:20:06",
+          "ok": 1,
+          "detail": "{'rows': 19102, 'skus': 2237, 'sheet_updated_at': '2026. 9. 17', 'written': 19102, 'dry_run': False, 'expiry': {'rows': 3134, 'skus': 1575, 'sheet_updated_at': '9/15 마감 재고 현황', 'written': 3134}}",
+          "duration_ms": 6736
+        },
+        {
+          "started_at": "2026-09-17 11:20:00",
+          "finished_at": "2026-09-17 11:20:06",
+          "ok": 1,
+          "detail": "{'rows': 19096, 'skus': 2236, 'sheet_updated_at': '2026. 9. 17', 'written': 19096, 'dry_run': False, 'removed': 163, 'expiry': {'rows': 3134, 'skus': 1575, 'sheet_updated_at': '9/15 마감 재고 현황', 'written': 3134}}",
+          "duration_ms": 6584
+        }
+      ],
+      "last_success": [
+        {
+          "started_at": "2026-09-18 11:20:00",
+          "finished_at": "2026-09-18 11:20:06",
+          "detail": "{'rows': 19116, 'skus': 2238, 'sheet_updated_at': '2026. 9. 18', 'written': 19116, 'dry_run': False, 'expiry': {'rows': 3264, 'skus': 1580, 'sheet_updated_at': '9/17 마감 재고 현황', 'written': 3264, 'removed': 46}}"
+        }
+      ],
+      "last_failure": [],
+      "last_seven_days": [
+        {
+          "ok": 1,
+          "n": 14
+        }
+      ]
+    },
+    "awards_sync_daily": {
+      "latest": [
+        {
+          "started_at": "2026-09-18 04:40:00",
+          "finished_at": "2026-09-18 04:40:02",
+          "ok": 1,
+          "detail": "{'rows': 206, 'written': 206, 'empty': False, 'dry_run': False}",
+          "duration_ms": 2529
+        },
+        {
+          "started_at": "2026-09-17 04:40:00",
+          "finished_at": "2026-09-17 04:40:02",
+          "ok": 1,
+          "detail": "{'rows': 206, 'written': 206, 'empty': False, 'dry_run': False}",
+          "duration_ms": 1993
+        },
+        {
+          "started_at": "2026-09-16 04:40:00",
+          "finished_at": "2026-09-16 04:40:02",
+          "ok": 1,
+          "detail": "{'rows': 206, 'written': 206, 'empty': False, 'dry_run': False}",
+          "duration_ms": 2143
+        }
+      ],
+      "last_success": [
+        {
+          "started_at": "2026-09-18 04:40:00",
+          "finished_at": "2026-09-18 04:40:02",
+          "detail": "{'rows': 206, 'written': 206, 'empty': False, 'dry_run': False}"
+        }
+      ],
+      "last_failure": [],
+      "last_seven_days": [
+        {
+          "ok": 1,
+          "n": 7
+        }
+      ]
+    },
+    "model_rights_sync_daily": {
+      "latest": [
+        {
+          "started_at": "2026-09-18 04:30:00",
+          "finished_at": "2026-09-18 04:30:04",
+          "ok": 1,
+          "detail": "{'models': 34, 'periods': 301, 'tabs': 3}",
+          "duration_ms": 4403
+        },
+        {
+          "started_at": "2026-09-17 04:30:00",
+          "finished_at": "2026-09-17 04:30:04",
+          "ok": 1,
+          "detail": "{'models': 34, 'periods': 301, 'tabs': 3}",
+          "duration_ms": 4445
+        },
+        {
+          "started_at": "2026-09-16 04:30:00",
+          "finished_at": "2026-09-16 04:30:04",
+          "ok": 1,
+          "detail": "{'models': 34, 'periods': 301, 'tabs': 3}",
+          "duration_ms": 4369
+        }
+      ],
+      "last_success": [
+        {
+          "started_at": "2026-09-18 04:30:00",
+          "finished_at": "2026-09-18 04:30:04",
+          "detail": "{'models': 34, 'periods': 301, 'tabs': 3}"
+        }
+      ],
+      "last_failure": [
+        {
+          "started_at": "2026-08-12 04:30:00",
+          "finished_at": "2026-08-12 04:31:00",
+          "detail": "TimeoutError: The read operation timed out"
+        }
+      ],
+      "last_seven_days": [
+        {
+          "ok": 1,
+          "n": 7
+        }
+      ]
+    },
+    "ingredient_sync_daily": {
+      "latest": [
+        {
+          "started_at": "2026-09-18 04:00:00",
+          "finished_at": "2026-09-18 04:00:05",
+          "ok": 1,
+          "detail": "{'sheet_products': 84, 'with_ingredients': 84, 'bq_products': 248, 'matched': 116, 'unmatched': 132}",
+          "duration_ms": 5775
+        },
+        {
+          "started_at": "2026-09-17 04:00:00",
+          "finished_at": "2026-09-17 04:00:15",
+          "ok": 1,
+          "detail": "{'sheet_products': 84, 'with_ingredients': 84, 'bq_products': 248, 'matched': 116, 'unmatched': 132}",
+          "duration_ms": 15448
+        },
+        {
+          "started_at": "2026-09-16 04:00:00",
+          "finished_at": "2026-09-16 04:00:05",
+          "ok": 1,
+          "detail": "{'sheet_products': 84, 'with_ingredients': 84, 'bq_products': 248, 'matched': 116, 'unmatched': 132}",
+          "duration_ms": 5694
+        }
+      ],
+      "last_success": [
+        {
+          "started_at": "2026-09-18 04:00:00",
+          "finished_at": "2026-09-18 04:00:05",
+          "detail": "{'sheet_products': 84, 'with_ingredients': 84, 'bq_products': 248, 'matched': 116, 'unmatched': 132}"
+        }
+      ],
+      "last_failure": [
+        {
+          "started_at": "2026-08-27 04:00:00",
+          "finished_at": "2026-08-27 04:01:00",
+          "detail": "TimeoutError: The read operation timed out"
+        }
+      ],
+      "last_seven_days": [
+        {
+          "ok": 1,
+          "n": 7
+        }
+      ]
+    },
+    "cs_cache_hourly": {
+      "latest": [
+        {
+          "started_at": "2026-09-18 15:40:00",
+          "finished_at": "2026-09-18 15:40:02",
+          "ok": 1,
+          "detail": "CS Q&A 923건",
+          "duration_ms": 2213
+        },
+        {
+          "started_at": "2026-09-18 14:40:00",
+          "finished_at": "2026-09-18 14:40:39",
+          "ok": 1,
+          "detail": "CS Q&A 923건",
+          "duration_ms": 39619
+        },
+        {
+          "started_at": "2026-09-18 13:40:00",
+          "finished_at": "2026-09-18 13:40:02",
+          "ok": 1,
+          "detail": "CS Q&A 923건",
+          "duration_ms": 2776
+        }
+      ],
+      "last_success": [
+        {
+          "started_at": "2026-09-18 15:40:00",
+          "finished_at": "2026-09-18 15:40:02",
+          "detail": "CS Q&A 923건"
+        }
+      ],
+      "last_failure": [
+        {
+          "started_at": "2026-09-09 19:40:00",
+          "finished_at": "2026-09-09 19:41:00",
+          "detail": "RuntimeError: cs 시트 재로딩 실패 — 옛 캐시 유지"
+        }
+      ],
+      "last_seven_days": [
+        {
+          "ok": 1,
+          "n": 168
+        }
+      ]
+    },
+    "pr_issues_sync_daily": {
+      "latest": [
+        {
+          "started_at": "2026-09-18 04:50:00",
+          "finished_at": "2026-09-18 04:50:07",
+          "ok": 1,
+          "detail": "{'rows': 356, 'count': 356, 'unknown_teams': {'(미기재)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '브랜드상품팀\\n나하나님': 2, '영업2\\n이지영님\\n이새님': 2, '이해인': 2, '일본사업팀\\n신혜영님\\n강대영님': 3, '전체': 1}, 'month_unknown': 81, 'month_inferred': 28, 'first_month': '2024-06', 'last_month': '2026-11', 'written': 0, 'deleted': ",
+          "duration_ms": 7407
+        },
+        {
+          "started_at": "2026-09-17 04:50:00",
+          "finished_at": "2026-09-17 04:50:07",
+          "ok": 1,
+          "detail": "{'rows': 356, 'count': 356, 'unknown_teams': {'(미기재)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '브랜드상품팀\\n나하나님': 2, '영업2\\n이지영님\\n이새님': 2, '이해인': 2, '일본사업팀\\n신혜영님\\n강대영님': 3, '전체': 1}, 'month_unknown': 81, 'month_inferred': 28, 'first_month': '2024-06', 'last_month': '2026-11', 'written': 0, 'deleted': ",
+          "duration_ms": 7488
+        },
+        {
+          "started_at": "2026-09-16 04:50:00",
+          "finished_at": "2026-09-16 04:50:08",
+          "ok": 1,
+          "detail": "{'rows': 356, 'count': 356, 'unknown_teams': {'(미기재)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '브랜드상품팀\\n나하나님': 2, '영업2\\n이지영님\\n이새님': 2, '이해인': 2, '일본사업팀\\n신혜영님\\n강대영님': 3, '전체': 1}, 'month_unknown': 81, 'month_inferred': 28, 'first_month': '2024-06', 'last_month': '2026-11', 'written': 0, 'deleted': ",
+          "duration_ms": 8349
+        }
+      ],
+      "last_success": [
+        {
+          "started_at": "2026-09-18 04:50:00",
+          "finished_at": "2026-09-18 04:50:07",
+          "detail": "{'rows': 356, 'count': 356, 'unknown_teams': {'(미기재)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '브랜드상품팀\\n나하나님': 2, '영업2\\n이지영님\\n이새님': 2, '이해인': 2, '일본사업팀\\n신혜영님\\n강대영님': 3, '전체': 1}, 'month_unknown': 81, 'month_inferred': 28, 'first_month': '2024-06', 'last_month': '2026-11', 'written': 0, 'deleted': "
+        }
+      ],
+      "last_failure": [],
+      "last_seven_days": [
+        {
+          "ok": 1,
+          "n": 7
+        }
+      ]
+    }
+  },
+  "pr_manifest": {
+    "count": 356,
+    "rows": 356,
+    "loaded": true,
+    "synced_at": "2026-09-18T04:50:00",
+    "sheet_updated_at": "2026-09-16T18:39:43",
+    "unknown_teams": {
+      "(미기재)": 3,
+      "B2B3": 31,
+      "BOP": 10,
+      "BP": 23,
+      "GM EAST 1": 2,
+      "GM EAST 2": 7,
+      "GM EAST1": 4,
+      "GM WEST MKT": 1,
+      "KM": 7,
+      "KM + DD": 1,
+      "gm west mkt": 1,
+      "브랜드상품팀\n나하나님": 2,
+      "영업2\n이지영님\n이새님": 2,
+      "이해인": 2,
+      "일본사업팀\n신혜영님\n강대영님": 3,
+      "전체": 1
+    },
+    "month_unknown": 81,
+    "month_inferred": 28,
+    "baseline_month_unknown": 81,
+    "baseline_month_inferred": 28,
+    "sheet_metadata_available": true,
+    "sheet_metadata_error": null,
+    "pending_recovery": false,
+    "error": null,
+    "first_month": "2024-06",
+    "last_month": "2026-11",
+    "written": 0,
+    "deleted": 0,
+    "embedded": 0,
+    "reused": 356,
+    "empty": false,
+    "ok": true,
+    "dry_run": false,
+    "cleanup_refused": 0
+  },
+  "source_hashes": {
+    "app/core/inventory.py": "50e8c0547e8af67f3045aac9deda679df1b62d48fbde6329ae8c8a6804544f32",
+    "app/core/awards.py": "f7d77af86c122ea1bd58a3d88b021c1e2f7ebae4349dbbbbf8ec8f99a51cbd96",
+    "app/core/model_rights.py": "d25e21e59c9a05c0dd8e3bfdf5cb7650084629b56e9cbf62d9f3cdb8414fe8df",
+    "app/core/ingredients.py": "86d1b6fe95a27a5c8a3117903eda1674ebe592b4a78f49a81355ee75bad4fc55",
+    "app/core/pr_issues.py": "51ebf5690784e57c7e6903baa571a19504597ce10ce23251c1479f79344a25cb",
+    "app/agents/cs_agent.py": "d62270c6c81b3f8a47f955f61cedf1a26a1fbdd0d788e17a9181a3c4928601e9",
+    "app/main.py": "bd0d8342da39927c1043318e8452abc97b1635920c22754346861eda54e42881"
+  },
+  "local_source_matches_remote": {
+    "app/core/inventory.py": true,
+    "app/core/awards.py": true,
+    "app/core/model_rights.py": true,
+    "app/core/ingredients.py": true,
+    "app/core/pr_issues.py": true,
+    "app/agents/cs_agent.py": true,
+    "app/main.py": true
+  }
+}

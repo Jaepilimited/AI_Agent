@@ -1,0 +1,110 @@
+{
+  "observed_at_utc": "2026-09-09T00:23:01.203363+00:00",
+  "target": "was",
+  "api_inventory_matches": [
+    "face_search_routes.py",
+    "harness_api.py"
+  ],
+  "files": {
+    "app/api/auth_api.py": {
+      "exists": true,
+      "bytes": 37478,
+      "sha256": "2e68f51966e16c91429e95eec40c4835772a20683a1aafa201e7f3d0606589c6"
+    },
+    "app/api/auth_middleware.py": {
+      "exists": true,
+      "bytes": 6132,
+      "sha256": "3460fbfbde7684b3f184f8324cee65fdb91bb9b7bf1aa60ae1db8aaa51d45d87"
+    },
+    "app/api/middleware.py": {
+      "exists": true,
+      "bytes": 3136,
+      "sha256": "c31286d9bcd38f817444b056ef108f9d99e072d9f650b72e701d6188b184814f"
+    },
+    "app/api/entra_routes.py": {
+      "exists": true,
+      "bytes": 6666,
+      "sha256": "7c5d8f4c7a465ebe367f8ece824613a4366fc200f36561dec150495029cdbed4"
+    },
+    "app/api/face_search_api.py": {
+      "exists": false
+    },
+    "app/api/face_search_routes.py": {
+      "exists": true,
+      "bytes": 18442,
+      "sha256": "9bd293299b10b2ba5dd4ab5e24843d7b8ee57936a87918dad22e3ec3bf1d81b1"
+    },
+    "app/api/coa_finder_api.py": {
+      "exists": true,
+      "bytes": 24934,
+      "sha256": "640a39521a4f570cf45b8de3b2d568b84e19d972be1a8b54ebbfe92f3f885e45"
+    },
+    "app/api/harness_api.py": {
+      "exists": true,
+      "bytes": 8284,
+      "sha256": "3c3a21bb70045633805693ab547e7478f2560eb7ac654cb0d9ea61b99a6fc6b7"
+    },
+    "app/core/session_auth.py": {
+      "exists": false
+    },
+    "app/core/entra_auth.py": {
+      "exists": true,
+      "bytes": 14412,
+      "sha256": "9334114a82816618e09e9e7618730f473b2a1c2c4bfaa2fcd9116c03a306f0b6"
+    },
+    "app/core/self_check.py": {
+      "exists": true,
+      "bytes": 84881,
+      "sha256": "677568032f2723a48c9032413709f3a59a752bf04be637a5fc436b8307e2244b"
+    },
+    "app/core/golden_runner.py": {
+      "exists": true,
+      "bytes": 17794,
+      "sha256": "233975d8f42fff93014c95df2351880e43c870361930c7f22d828104729339cd"
+    },
+    "app/frontend/chat.js": {
+      "exists": true,
+      "bytes": 330863,
+      "sha256": "f159b3cc3ae522820198d2bf7b24a204630940cd2dd94b8aa0c82882d8c2dc62"
+    },
+    "app/frontend/chat.html": {
+      "exists": true,
+      "bytes": 33266,
+      "sha256": "75c0d12521173606380cc9071895a605beedc6352335376c1722bbac3aea4e81"
+    },
+    "app/main.py": {
+      "exists": true,
+      "bytes": 60892,
+      "sha256": "504d7152d788b36b8b440977629ff66569c9d1d111b50dbe676ac17650e67491"
+    },
+    "app/config.py": {
+      "exists": true,
+      "bytes": 13424,
+      "sha256": "9e3a1684f11505010fff60197f6701d9c2584f7cb395d68c94c417622890b6d5"
+    }
+  },
+  "aggregates": {
+    "observed_at_utc": "2026-09-09T00:23:03.307959+00:00",
+    "visit_date_kst": "2026-09-09",
+    "database_clock": {
+      "database_now": "2026-09-09 09:23:03",
+      "database_date": "2026-09-09"
+    },
+    "users": {
+      "total": 85,
+      "entra_linked": "5",
+      "entra_unlinked": "80",
+      "active": "85"
+    },
+    "today_visitors": {
+      "distinct_users": 2,
+      "entra_linked_users": 2,
+      "entra_unlinked_users": 0
+    },
+    "auth_methods_http_status": 200,
+    "auth_methods": {
+      "password": false,
+      "entra": true
+    }
+  }
+}

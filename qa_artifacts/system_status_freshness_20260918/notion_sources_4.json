@@ -1,0 +1,370 @@
+{
+  "queried_at_kst": "2026-09-18 15:48:55.027668+09:00",
+  "requested": 28,
+  "results": [
+    {
+      "page_id": "32e2b4283b0080c8a8cbf2b0603137ad",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "databases",
+      "object": "database",
+      "last_edited_time": "2026-09-15T07:12:00.000Z",
+      "created_time": "2026-03-25T09:14:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "32e2b4283b0080ceae37c08c040f3c11",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-03-31T03:05:00.000Z",
+      "created_time": "2026-03-25T09:27:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "32f2b4283b008046a8d3e0bd4451d885",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-10T02:00:00.000Z",
+      "created_time": "2026-03-26T01:37:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "32f2b4283b0080798889cef42af41a9b",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-10T01:46:00.000Z",
+      "created_time": "2026-03-26T02:27:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3342b4283b0080ea8b44f4fbc57f34f5",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-07T06:32:00.000Z",
+      "created_time": "2026-03-31T07:11:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3342b4283b0080f8aa84d9c8b487c54c",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-07T03:26:00.000Z",
+      "created_time": "2026-03-31T08:03:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3352b4283b00804f9d26c5f8a267d6ae",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-07-15T02:56:00.000Z",
+      "created_time": "2026-04-01T02:14:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3362b4283b00800caa6bce94e1efb871",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-22T05:27:00.000Z",
+      "created_time": "2026-04-02T01:49:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3362b4283b008050b4b6c75fe4f7f54a",
+      "teams": [
+        "CS"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-06T10:49:00.000Z",
+      "created_time": "2026-04-02T01:47:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3362b4283b0080a7a0ebef03cf60a704",
+      "teams": [
+        "CS"
+      ],
+      "http_status": 200,
+      "endpoint": "databases",
+      "object": "database",
+      "last_edited_time": "2026-04-06T10:35:00.000Z",
+      "created_time": "2026-04-02T02:30:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3362b4283b0080af8e00f82c182320df",
+      "teams": [
+        "CS"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-06T10:49:00.000Z",
+      "created_time": "2026-04-02T01:48:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33a2b4283b00801e9547d1711be6d1c8",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-13T08:58:00.000Z",
+      "created_time": "2026-04-06T02:54:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33a2b4283b00806db703f2afd099af00",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-13T06:39:00.000Z",
+      "created_time": "2026-04-06T01:39:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33a2b4283b008094ac3afa3547628fdf",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-07-21T03:09:00.000Z",
+      "created_time": "2026-04-06T09:10:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33a2b4283b0080d4bb75ddfe271d0452",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-10T02:00:00.000Z",
+      "created_time": "2026-04-06T01:38:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33b2b4283b008032b7d7ce313f35f0f1",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-14T06:09:00.000Z",
+      "created_time": "2026-04-07T06:29:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33b2b4283b0080348c6fcbde62043589",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-14T05:12:00.000Z",
+      "created_time": "2026-04-07T06:45:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33b2b4283b00805896b7edfec68ddb8e",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-16T00:40:00.000Z",
+      "created_time": "2026-04-07T06:54:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33b2b4283b00807a8d9fdba69e6bf49f",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-05-14T06:07:00.000Z",
+      "created_time": "2026-04-07T07:20:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33c2b4283b0080419504ce71e65a2fbf",
+      "teams": [
+        "B2B2"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-08T09:31:00.000Z",
+      "created_time": "2026-04-08T09:26:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33d2b4283b00804b84cee682aebb3d57",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-15T05:16:00.000Z",
+      "created_time": "2026-04-09T08:08:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33d2b4283b0080a1b19cdfdddccc4261",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-05-11T03:54:00.000Z",
+      "created_time": "2026-04-09T02:14:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33d2b4283b0080a5b816df6e172a3753",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "databases",
+      "object": "database",
+      "last_edited_time": "2026-07-01T02:45:00.000Z",
+      "created_time": "2026-04-09T08:08:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33d2b4283b0080f39c47c7d06b296239",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-05-13T01:25:00.000Z",
+      "created_time": "2026-04-09T08:06:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "33e2b4283b008029ade0cb2cfa0c08cc",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-17T09:22:00.000Z",
+      "created_time": "2026-04-10T02:00:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3412b4283b008042b1c3f4c6a0fafd18",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-08-21T09:39:00.000Z",
+      "created_time": "2026-04-13T06:22:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3412b4283b008062ac74ce14b0ae5075",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "pages",
+      "object": "page",
+      "last_edited_time": "2026-04-28T04:52:00.000Z",
+      "created_time": "2026-04-13T02:23:00.000Z",
+      "archived": false,
+      "in_trash": false
+    },
+    {
+      "page_id": "3442b4283b00808ea1b8d928b13f803c",
+      "teams": [
+        "[GM]WEST"
+      ],
+      "http_status": 200,
+      "endpoint": "databases",
+      "object": "database",
+      "last_edited_time": "2026-09-14T05:25:00.000Z",
+      "created_time": "2026-04-16T05:25:00.000Z",
+      "archived": false,
+      "in_trash": false
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+--- was/app/core/self_check.py
++++ next/app/core/self_check.py
+@@ -918,18 +918,17 @@
+     내용이 맞는지는 보지 않는다 — LLM 표현 변동으로 오탐이 나기 때문이다.
+     """
+     import httpx as _httpx
+-    import jwt as _pyjwt
+ 
+     from app.config import get_settings
++    from app.core.session_auth import create_service_token
+ 
+     s = get_settings()
+     adm = fetch_one("SELECT id, email, role FROM users WHERE role='admin' ORDER BY id LIMIT 1")
+     if not adm:
+         return CheckResult(False, "admin 계정이 없어 카나리아를 돌릴 수 없다")
+-    token = _pyjwt.encode(
+-        {"user_id": adm["id"], "email": adm["email"], "role": "admin", "brand_filter": "",
+-         "exp": datetime.now(timezone.utc) + timedelta(minutes=15)},
+-        s.jwt_secret_key, algorithm="HS256",
++    token = create_service_token(
++        adm["id"], adm["email"], role="admin",
++        service="self_check", lifetime_seconds=900,
+     )
+ 
+     problems = []

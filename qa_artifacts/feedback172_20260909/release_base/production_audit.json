@@ -1,0 +1,35 @@
+{
+  "checked_at_utc": "2026-09-09T00:15:08.750903+00:00",
+  "files": {
+    "app/core/sales_outlook.py": {
+      "exists": false,
+      "sha256": null,
+      "modified_at_utc": null
+    },
+    "app/agents/sql_agent.py": {
+      "exists": true,
+      "sha256": "aeeceb6a7c4725c2b1c8238d1b0f77456772d8d3ea934ad3c1f9548092603199",
+      "modified_at_utc": "2026-09-09T00:05:19.649890+00:00"
+    },
+    "prompts/sql_generator.txt": {
+      "exists": true,
+      "sha256": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "modified_at_utc": "2026-09-09T00:03:37.136545+00:00"
+    },
+    "app/core/feedback_inbox.py": {
+      "exists": true,
+      "sha256": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+      "modified_at_utc": "2026-09-08T03:06:24.509022+00:00"
+    },
+    "tests/test_sales_outlook.py": {
+      "exists": false,
+      "sha256": null,
+      "modified_at_utc": null
+    },
+    "tests/test_sales_outlook_integration.py": {
+      "exists": false,
+      "sha256": null,
+      "modified_at_utc": null
+    }
+  }
+}

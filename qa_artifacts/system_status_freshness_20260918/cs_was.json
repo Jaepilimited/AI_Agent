@@ -1,0 +1,22 @@
+{
+  "checked_at": "2026-09-18T06:48:50.848166+00:00",
+  "results": [
+    {
+      "region": "domestic",
+      "checked_at": "2026-09-18T06:48:50.773676+00:00",
+      "url": "http://34.64.99.254:8061/api/dashboard/summary",
+      "http_status": 403,
+      "error": "HTTP Error 403: Forbidden",
+      "proxy_error": "ERR_ACCESS_DENIED 0"
+    },
+    {
+      "region": "overseas",
+      "checked_at": "2026-09-18T06:48:50.775044+00:00",
+      "url": "http://34.64.99.254:8061/api/overseas/dashboard/summary",
+      "http_status": 403,
+      "error": "HTTP Error 403: Forbidden",
+      "proxy_error": "ERR_ACCESS_DENIED 0"
+    }
+  ],
+  "location": "was"
+}

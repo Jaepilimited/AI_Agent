@@ -1,26 +1,20 @@
 # Cluster 26
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 1
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 시스템에서 사용자의 참여율과 질문 전환율을 높이기 위한 핵심 알림 채널인 **잔디(Jandi) 알림**과 **노션(Notion) 출근 브리핑**의 발송 및 대기열 관리를 담당합니다. 실측 데이터 기반의 비즈니스 요구사항에 맞춰, 각 채널의 특성에 최적화된 전송 메커니즘을 제공합니다.
+`app/core` 디렉터리를 Python 패키지로 인식하도록 설정하는 초기화 모듈입니다. SKIN1004 AI Agent 시스템의 핵심 기반 로직(`core`)을 모듈화하기 위한 진입점 역할을 수행합니다.
 
 ## Key Files
-- `app/core/jandi_notify.py` — 셀라(Sella) 알림을 잔디 채널로 전송하며, 출근 브리핑과 동일한 대기열 및 릴레이 시스템을 공유하여 처리합니다.
-- `app/core/notion_briefing.py` — 사용자별 대상 노션 페이지에 출근 브리핑 콘텐츠를 전달하고 발송 대기열을 관리합니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/__init__.py` — `core` 디렉터리를 Python 패키지로 지정하는 비어 있는 초기화 파일
 
 ## Key Concepts
-- **잔디 알림 (Jandi Notification)** — 낮은 브리핑 열람률(8.1%) 대비 높은 질문 전환율(23.7%)을 개선하기 위해, DB_PC 릴레이가 `pending()` 상태의 건을 꺼내어 웹훅(Webhook)으로 신속하게 쏘아 보내는 알림 방식입니다.
-- **노션 출근 브리핑 (Notion Briefing)** — 사용자의 노션 페이지에 직접 브리핑을 기록하는 방식입니다. 잔디와 달리 별도의 외부 릴레이 없이, WAS(Web Application Server)가 프록시를 통해 노션 API에 직접 데이터를 쓰는 방식으로 동작합니다.
-- **대기열 분리 (Queue Separation)** — 동일한 브리핑 콘텐츠라도 잔디는 릴레이 기반 웹훅으로, 노션은 WAS 직접 프록시 호출로 처리하기 때문에 전송 아키텍처의 차이에 따라 대기열을 분리하여 관리합니다.
+- `app/core` — 애플리케이션의 핵심 기반 로직 및 공통 컴포넌트가 위치하는 패키지 디렉터리
+- Package Initialization — 해당 디렉터리 내부 모듈들이 프로젝트 내 다른 영역에서 정상적으로 import될 수 있도록 패키지 네임스페이스를 선언하는 역할
 
 ## How It Fits In
-이 클러스터는 알림 및 브리핑의 최종 배달(Delivery) 레이어 역할을 합니다.
-- `app/core/jandi_notify.py`는 **cluster_12**의 `concept:jandi_notification`을 구현하여, 시스템 내부의 알림 이벤트를 잔디 메신저 포맷으로 변환하고 전송합니다.
-- `app/core/notion_briefing.py`는 **cluster_08**의 `concept:user_notion_targets`를 구현하여, 브리핑 대상이 되는 사용자별 노션 페이지 정보를 참조하고 해당 페이지에 브리핑 데이터를 동기화합니다.
+현재 명시된 교차 클러스터 연관 관계(cross-cluster relations)는 탐지되지 않았습니다. 단독 패키지 초기화 파일로 존재하며, 추후 `app/core` 하위에 추가될 수 있는 공통 설정이나 유틸리티 모듈의 기본 네임스페이스 역할을 담당합니다.
 
 ## Common Questions This Page Answers
-- **잔디 알림과 노션 브리핑의 대기열 처리 방식은 어떻게 다른가요?**
-  - 잔디 알림은 DB_PC 릴레이가 대기열 테이블에서 `pending()` 상태의 데이터를 가져가 웹훅으로 발송하는 반면, 노션 브리핑은 WAS가 프록시를 통해 노션 API에 직접 쓰기 작업을 수행하므로 릴레이를 거치지 않습니다.
-- **이 알림 시스템이 고안된 배경(실측 지표)은 무엇인가요?**
-  - 브리핑 열람률은 8.1%로 낮았으나, 일단 열어본 날의 질문 전환율은 23.7%로 매우 높게 나타났습니다. 따라서 사용자의 접근성이 높은 잔디와 노션 채널을 통해 브리핑 도달율을 극대화하고자 설계되었습니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/__init__.py` 파일의 실제 역할과 구현 내용은 무엇인가요?
+- `app/core` 디렉터리가 Python 패키지로 올바르게 인식되고 있나요?

@@ -1,0 +1,11 @@
+{
+  "backup": "/home/jeffrey/architecture-backups/20261008-154349",
+  "published": [
+    "app/flow/spec.py",
+    "app/flow/graph.py",
+    "app/core/static_checks.py",
+    "app/frontend/chat.html",
+    "app/frontend/chat.js",
+    "app/static/style.css"
+  ]
+}

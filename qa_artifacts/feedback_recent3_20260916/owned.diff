@@ -1,0 +1,215 @@
+--- before/app/agents/orchestrator.py
++++ after/app/agents/orchestrator.py
+@@ -478,7 +478,8 @@
+ #    *실패 답변에도 들어가는 낱말은 표지가 될 수 없다.*
+ # ⚠️ 순서로 때우지 마라 (cs 를 앞에 두는 식). 표지 자체가 고유해야 한다.
+ _ROUTE_MARKERS = (
+-    ("bigquery", ("[직전 실행 SQL", "[실행된 쿼리 테이블:", "CS 대시보드 기준", "CS 대시보드 ·", "내부 데이터베이스", "```chart-config")),
++    ("bigquery", ("[직전 실행 SQL", "[실행된 쿼리 테이블:", "CS 대시보드 기준", "CS 대시보드 ·",
++                  "국내 CS 상세 기록 · 주문번호", "내부 데이터베이스", "```chart-config")),
+     # BP가 실제 원본 링크와 함께 붙이는 고유 표지다. 문서 내용을 설명하며
+     # "사내 문서에서"라고 썼더라도 합쳐진 BP 검색을 다음 턴에 유지한다.
+     ("cs", ("BP 자료 원본 · 제품 Q&A와 CS 문서",)),
+@@ -787,6 +788,30 @@
+     if not db_entry:
+         return None
+     return [e["key"] for e in db_entry]
++
++
++def _cs_order_routing(query, conversation_context, enabled_sources, db_entry=None,
++                      single_source_entry=None) -> tuple[bool, str]:
++    """Keep order details ahead of BP history without expanding source selection."""
++    from app.core.cs_order_details import is_order_detail_query
++
++    if not is_order_detail_query(query, conversation_context):
++        return False, ""
++    explicit = db_entry or ([single_source_entry] if single_source_entry else [])
++    if any(entry.get("route") != "bigquery" for entry in explicit):
++        # A deliberate BP/document choice still owns its usual route.
++        return False, ""
++    scoped_sources = _scope_sources(enabled_sources, db_entry)
++    if scoped_sources is None:
++        return True, ""
++    for source in scoped_sources:
++        entry = OrchestratorAgent._single_enabled_source_entry([source])
++        if entry and entry["key"] == "국내CS":
++            return True, ""
++    return True, (
++        "**국내 CS 소스가 꺼져 있어 주문 정보를 조회하지 않았습니다.**\n\n"
++        "System Status에서 **국내CS**를 켜거나, 질문 앞에 `@@국내CS`를 붙여 다시 요청해 주세요."
++    )
+ 
+ 
+ def _euro(word: str) -> str:
+@@ -1267,9 +1292,15 @@
+             None if db_entry else self._single_enabled_source_entry(enabled_sources)
+         )
+ 
++        _cs_order_query, _cs_order_notice = _cs_order_routing(
++            clean_query, conversation_context, enabled_sources, db_entry, single_source_entry,
++        )
++        if _cs_order_notice:
++            return {"source": "direct", "answer": _cs_order_notice}
++
+         # Dashboard 탭의 URL은 화면과 같은 JSON 카탈로그에서 결정적으로 답한다.
+         # "프로모션 일정" 같은 데이터 질문은 링크 의도가 없으므로 기존 BQ 경로를 탄다.
+-        if not db_entry and single_source_entry is None:
++        if not db_entry and single_source_entry is None and not _cs_order_query:
+             from app.core.dashboard_links import answer_dashboard_link_query
+             _dashboard_answer = answer_dashboard_link_query(query)
+             if _dashboard_answer:
+@@ -1429,6 +1460,8 @@
+ 
+         if _single_route:
+             route = _single_route
++        elif _cs_order_query:
++            route = "bigquery"
+         elif _should_continue_bigquery_for_correction(query, conversation_context):
+             route = "bigquery"
+             logger.info("bigquery_correction_followup", query=query[:100])
+@@ -1622,8 +1655,16 @@
+             None if db_entry else self._single_enabled_source_entry(enabled_sources)
+         )
+ 
++        _cs_order_query, _cs_order_notice = _cs_order_routing(
++            clean_query, conversation_context, enabled_sources, db_entry, single_source_entry,
++        )
++        if _cs_order_notice:
++            yield ("source", "direct")
++            yield ("done", _cs_order_notice)
++            return
++
+         # 비스트리밍 경로와 동일한 공유 카탈로그 fast path.
+-        if not db_entry and single_source_entry is None:
++        if not db_entry and single_source_entry is None and not _cs_order_query:
+             from app.core.dashboard_links import answer_dashboard_link_query
+             _dashboard_answer = answer_dashboard_link_query(query)
+             if _dashboard_answer:
+@@ -1864,6 +1905,8 @@
+ 
+         if _single_route:
+             route, _confident = _single_route, True
++        elif _cs_order_query:
++            route, _confident = "bigquery", True
+         elif _should_continue_bigquery_for_correction(query, conversation_context):
+             route, _confident = "bigquery", True
+             logger.info("stream_bigquery_correction_followup", query=query[:100])
+@@ -2817,10 +2860,11 @@
+         if self._is_definition_question(q):
+             return ("direct", True)
+ 
+-        # 국내·해외 CS 운영 통계는 제품 Q&A나 팀 문서가 아닌 BigQuery 실적이다.
++        # CS 운영 통계·주문 상세는 제품 Q&A나 팀 문서가 아닌 BigQuery 기록이다.
+         # 일반 분류 안에서 판정해야 사용자가 끈 소스는 아래 허용 경로 필터가 막는다.
++        from app.core.cs_order_details import is_order_detail_query
+         from app.core.cs_metrics import is_cs_metrics_query
+-        if is_cs_metrics_query(query):
++        if is_order_detail_query(query) or is_cs_metrics_query(query):
+             return ("bigquery", True)
+ 
+         if self._is_pr_lookup_query(query):
+@@ -3094,9 +3138,10 @@
+         """
+         if source_explicit:
+             return False
+-        # CS 대시보드는 자체 기본 기간을 쓴다. 매출 판매몰을 다시 묻지 않는다.
++        # CS 대시보드·주문 상세에는 매출의 기간·판매몰을 다시 묻지 않는다.
++        from app.core.cs_order_details import is_order_detail_query
+         from app.core.cs_metrics import is_cs_metrics_query
+-        if is_cs_metrics_query(query):
++        if is_order_detail_query(query, conversation_context) or is_cs_metrics_query(query):
+             return False
+         if len(query.strip()) > 40:
+             return False
+--- before/app/agents/sql_agent.py
++++ after/app/agents/sql_agent.py
+@@ -3706,6 +3706,16 @@
+     Returns:
+         Natural language answer based on SQL results.
+     """
++    # 주문 상세는 실제 주문번호로 조회하고 날짜·송장·상품을 일정한 형태로 낸다.
++    # SQL 캐시나 빠른 표 경로가 필수 열을 빠뜨리지 않도록 먼저 처리한다.
++    from app.core.cs_order_details import answer_query as order_detail_answer
++    answer = await order_detail_answer(
++        query, enabled_sources=enabled_sources, conversation_context=conversation_context,
++        brand_filter=brand_filter,
++    )
++    if answer is not None:
++        return answer
++
+     # CS 화면에서 제공하는 지표는 그 화면의 집계 API를 우선 사용한다.
+     # 브랜드 필터는 대시보드가 지원하지 않으므로 기존 상세 조회로 처리한다.
+     if not brand_filter:
+@@ -4557,6 +4567,15 @@
+     Yields:
+         str: text chunks as the answer is generated.
+     """
++    from app.core.cs_order_details import answer_query_sync as order_detail_answer
++    answer = order_detail_answer(
++        query, enabled_sources=enabled_sources, conversation_context=conversation_context,
++        brand_filter=brand_filter,
++    )
++    if answer is not None:
++        yield answer
++        return
++
+     if not brand_filter:
+         from app.core.cs_dashboard import answer_query_sync as dashboard_answer
+         answer = dashboard_answer(
+--- before/prompts/sql_generator.txt
++++ after/prompts/sql_generator.txt
+@@ -1770,7 +1770,7 @@
+ ## 테이블 17: domestic_cs_records (국내 CS — 처리 기록)
+ 
+ 테이블: `skin1004-319714.cs_dashboard.domestic_cs_records`
+-소스: `@@국내CS` (BigQuery). 기존 `@@CS`는 CS 문서, `@@BP`는 제품 Q&A이며 이 집계와 별개다.
++소스: `@@국내CS` (BigQuery). `@@CS`는 `@@BP`의 별칭으로 제품 Q&A·CS 문서를 함께 검색하며 이 집계와 별개다.
+ 
+ **한 행 = 원본에서 묶은 처리 기록 1건.** `record_id`는 현재 스냅샷의 키이며 평생 유일한 CS 접수 ID가 아니다.
+ 같은 주문에 반품·재배송 기록이 함께 있을 수 있다. `COUNT(*)`는 **처리 기록 수**, 주문 수는
+@@ -1786,6 +1786,7 @@
+ | process_status | STRING | 표준 처리 상태. 실제 값: {{VALUES:DomesticCSStatus}} |
+ | received_at | DATE | **접수일. 기본 기간 기준** |
+ | completed_at | DATE | 완료일. 완료 기간 질문에만 사용 |
++| outbound_invoice_nos / return_invoice_nos | ARRAY<STRING> | 출고 송장번호 / 회수 송장번호. 빈 배열은 원본 미기재이며 발송·회수하지 않았다는 뜻이 아님 |
+ | reason_normalized | STRING | 집계용 단일 표준 사유. 실제 값: {{VALUES:DomesticCSReason}} |
+ | reasons_normalized / reasons / reason_details | ARRAY<STRING> | 복수 표준 사유 / 원본 사유 / 상세 사유. 배열을 펼치면 한 기록이 여러 행이 됨 |
+ | purchase_amount / paid_amount | NUMERIC | 네이버 원본 구매금액 / 자사몰·입점몰 실결제금액. 서로 다른 기준 |
+@@ -1828,6 +1829,12 @@
+    여러 처리 기록을 더한 값을 고유 주문의 결제액이라고 부르지 마라.
+ 9. `raw_rows`·`raw_headers` 등 원본 셀 전체를 기본 집계 결과에 노출하지 마라.
+    처리 기록 수를 영구 고유 CS 수로, 국내 기록과 해외 환불의 합을 전체 CS 접수 수로 부르지 마라.
++10. **주문 상세는 실제 `order_no`로 정확히 조회한다.** `record_id`·`order_key`는 내부 관리 키라
++    기본 SELECT·답변에서 제외한다(고유 건수 집계에는 계속 사용). 주문번호 일부로 생성 키를 LIKE 검색하지 마라.
++    접수일·완료일·유형·상태·사유와 `outbound_invoice_nos`·`return_invoice_nos`를 함께 가져온다.
++    상품은 `ARRAY(SELECT AS STRUCT product_name, quantity FROM UNNEST(items))`로 보존한다.
++    수량 NULL 때문에 `CONCAT` 전체가 NULL이 되어 상품명까지 사라지게 하지 마라.
++    동일 주문의 여러 처리 기록을 별도로 보여주고, 미기재 날짜·송장·보상액을 없거나 0이라고 단정하지 마라.
+ 
+ ### 예시
+ 
+--- before/app/flow/spec.py
++++ after/app/flow/spec.py
+@@ -77,6 +77,10 @@
+          fn="app.core.notion_save.handle",
+          knobs=("저장 동사 + 노션 낱말", "NOTION_WRITE_TOKEN"),
+          gate='notion_save.handle'),
++    Node("intercept.cs_order_scope", "국내 CS 주문 소스 확인",
++         fn=f"{_ORCH}._cs_order_routing",
++         knobs=("국내CS 선택 범위",),
++         gate='_cs_order_routing('),
+     Node("intercept.dashboard_link", "대시보드 링크 관문",
+          fn="app.core.dashboard_links.answer_dashboard_link_query",
+          knobs=("dashboard 카탈로그 JSON",),
+@@ -300,7 +304,10 @@
+ 
+     Edge("alias_expand", "at_parse"),
+ 
+-    Edge("at_parse", "intercept.dashboard_link"),
++    Edge("at_parse", "intercept.cs_order_scope"),
++    Edge("intercept.cs_order_scope", "route.direct",
++         label="국내CS 미선택 · 조회 없이 안내", conditional=True),
++    Edge("intercept.cs_order_scope", "intercept.dashboard_link", label="통과", conditional=True),
+     Edge("intercept.dashboard_link", "route.direct",
+          label="대시보드 링크 질문", conditional=True),
+     Edge("intercept.dashboard_link", "intercept.team_country", label="통과", conditional=True),

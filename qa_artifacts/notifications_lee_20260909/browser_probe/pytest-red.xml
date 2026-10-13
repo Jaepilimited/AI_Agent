@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="12" skipped="0" tests="14" time="47.352" timestamp="2026-09-09T12:51:52.643195+09:00" hostname="jeffrey-desktop2"><testcase classname="tests.frontend.test_notifications_drawer" name="test_loading_is_visible_before_the_response" time="6.059"><failure message="AssertionError: Locator expected to contain text '불러오는 중'&#10;Actual value:  &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;       - unexpected value &quot;&quot;">tests\frontend\test_notifications_drawer.py:139: in test_loading_is_visible_before_the_response
+    expect(ui.page.locator("#notif-items")).to_contain_text("불러오는 중")
+E   AssertionError: Locator expected to contain text '불러오는 중'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       14 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E          - unexpected value ""</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_loading_does_not_mark_unseen_briefings_as_viewed" time="0.357"><failure message="AssertionError: assert ['POST'] == []&#10;  &#10;  Left contains one more item: 'POST'&#10;  Use -v to get more diff">tests\frontend\test_notifications_drawer.py:145: in test_loading_does_not_mark_unseen_briefings_as_viewed
+    assert ui.viewed == []
+E   AssertionError: assert ['POST'] == []
+E     
+E     Left contains one more item: 'POST'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_failed_loading_explains_the_problem_and_can_retry[http]" time="5.418"><failure message="AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'&#10;Actual value:  &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;       - unexpected value &quot;&quot;">tests\frontend\test_notifications_drawer.py:152: in test_failed_loading_explains_the_problem_and_can_retry
+    expect(box).to_contain_text("알림을 불러오지 못했습니다")
+E   AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       14 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E          - unexpected value ""</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_failed_loading_explains_the_problem_and_can_retry[network]" time="5.370"><failure message="AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'&#10;Actual value:  &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;       - unexpected value &quot;&quot;">tests\frontend\test_notifications_drawer.py:152: in test_failed_loading_explains_the_problem_and_can_retry
+    expect(box).to_contain_text("알림을 불러오지 못했습니다")
+E   AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       14 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E          - unexpected value ""</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_failed_loading_explains_the_problem_and_can_retry[json]" time="5.336"><failure message="AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'&#10;Actual value:  &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;       - unexpected value &quot;&quot;">tests\frontend\test_notifications_drawer.py:152: in test_failed_loading_explains_the_problem_and_can_retry
+    expect(box).to_contain_text("알림을 불러오지 못했습니다")
+E   AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       14 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E          - unexpected value ""</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_failed_loading_explains_the_problem_and_can_retry[failure3]" time="5.295"><failure message="AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'&#10;Actual value: 새 알림이 없습니다. &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    - locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;    - unexpected value &quot;&quot;&#10;    13 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;…&lt;/div&gt;&#10;       - unexpected value &quot;새 알림이 없습니다.&quot;&#10;&#10;Aria snapshot:&#10;- text: 새 알림이 없습니다.">tests\frontend\test_notifications_drawer.py:152: in test_failed_loading_explains_the_problem_and_can_retry
+    expect(box).to_contain_text("알림을 불러오지 못했습니다")
+E   AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'
+E   Actual value: 새 알림이 없습니다. 
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       - locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E       - unexpected value ""
+E       13 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;…&lt;/div&gt;
+E          - unexpected value "새 알림이 없습니다."
+E   
+E   Aria snapshot:
+E   - text: 새 알림이 없습니다.</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_expired_notification_session_reaches_login[401]" time="5.334"><failure message="AssertionError: Page URL expected to be 'http://notifications.test/login'&#10;Actual value: http://notifications.test/chat &#10;Call log:&#10;  - Expect &quot;to_have_url&quot; with timeout 5000ms&#10;    14 × unexpected value &quot;http://notifications.test/chat&quot;&#10;&#10;Aria snapshot:&#10;- navigation &quot;대화 목록&quot;:&#10;  - link &quot;Cella Cella&quot;:&#10;    - /url: &quot;#&quot;&#10;    - img &quot;Cella&quot;&#10;    - text: Cella&#10;  - button &quot;새 대화&quot;:&#10;    - img&#10;  - button &quot;사이드바 접기&quot;:&#10;    - img&#10;  - img&#10;  - textbox &quot;대화 검색&quot;:&#10;    - /placeholder: 대화 검색...&#10;  - list &quot;대화 목록&quot;: 💬 새 대화를 시작해보세요&#10;  - button &quot;Dashboard&quot;:&#10;    - img&#10;    - text: Dashboard&#10;  - button &quot;인증서류 찾기&quot;:&#10;    - img&#10;    - text: 인증서류 찾기&#10;  - button &quot;System Status&quot;:&#10;    - img&#10;    - text: System Status&#10;  - button &quot;알림 2&quot;:&#10;    - img&#10;    - text: 알림 2&#10;  - text: 알 알림 검사&#10;  - button &quot;설정&quot;&#10;  - button &quot;로그아웃&quot;:&#10;    - img&#10;- main:&#10;  - button &quot;대화 전체 복사&quot;:&#10;    - img&#10;  - button &quot;Google 연결&quot;:&#10;    - img&#10;    - text: Google 연결&#10;  - log &quot;대화 메시지&quot;:&#10;    - heading &quot;알림 검사님,&quot; [level=1]&#10;    - heading &quot;What do you crave?&quot; [level=1]&#10;    - button &quot;일본 매출&quot;&#10;    - button &quot;광고 ROAS&quot;&#10;    - button &quot;리뷰 분석&quot;&#10;    - button &quot;재고&quot;&#10;    - button &quot;제품 사용법&quot;&#10;    - button &quot;사내문서&quot;&#10;    - button &quot;오늘 메일&quot;&#10;    - region &quot;Today&quot;:&#10;      - heading &quot;Today&quot; [level=2]&#10;      - text: 저장된 정보 없음&#10;      - button &quot;Today 새로고침&quot;:&#10;        - img&#10;  - button &quot;Attach image&quot;:&#10;    - img&#10;  - 'textbox &quot;메시지를 입력하세요... (@@: 데이터소스 지정 · Shift+Enter: 줄바꿈)&quot;':&#10;    - /placeholder: &quot;메시지를 입력하세요...  (@@: 데이터소스 지정 · Shift+Enter: 줄바꿈)&quot;&#10;    - text: 인증 후 이어서 보낼 질문&#10;  - button &quot;Send&quot;:&#10;    - img&#10;  - complementary &quot;셀라 화면 가이드&quot;:&#10;    - status:&#10;      - strong: 기능 안내&#10;      - paragraph: “알림 2” 기능을 실행합니다.&#10;      - button &quot;숨기기&quot;&#10;- dialog &quot;Dashboard&quot;:&#10;  - button &quot;×&quot;&#10;  - iframe&#10;- dialog &quot;System Status&quot;:&#10;  - text: System Status&#10;  - button &quot;×&quot;&#10;- dialog &quot;알림&quot;:&#10;  - text: 알림&#10;  - button &quot;브리핑 끄기&quot;&#10;  - button &quot;모두 읽음&quot;&#10;  - button &quot;×&quot;&#10;- dialog &quot;Knowledge Wiki&quot;:&#10;  - text: Knowledge Wiki&#10;  - button &quot;×&quot;&#10;  - button &quot;지도&quot;&#10;  - button &quot;🧠 인사이트&quot;&#10;  - button &quot;최근 추출&quot;&#10;  - button &quot;🚩 신고&quot;&#10;  - button &quot;관계 그래프&quot;&#10;- dialog &quot;Admin&quot;:&#10;  - text: Admin&#10;  - button &quot;×&quot;&#10;  - button &quot;그룹 관리&quot;&#10;  - button &quot;셀라 사용자&quot;&#10;  - button &quot;방문자&quot;&#10;  - button &quot;성장 지표&quot;&#10;  - button &quot;자가 점검&quot;&#10;  - button &quot;골든셋&quot;&#10;  - button &quot;붐따 처리함&quot;&#10;  - button &quot;아키텍처&quot;&#10;  - button &quot;+ 새 그룹&quot;&#10;- button &quot;Toggle theme&quot;:&#10;  - img">tests\frontend\test_notifications_drawer.py:164: in test_expired_notification_session_reaches_login
+    expect(ui.page).to_have_url("http://notifications.test/login")
+E   AssertionError: Page URL expected to be 'http://notifications.test/login'
+E   Actual value: http://notifications.test/chat 
+E   Call log:
+E     - Expect "to_have_url" with timeout 5000ms
+E       14 × unexpected value "http://notifications.test/chat"
+E   
+E   Aria snapshot:
+E   - navigation "대화 목록":
+E     - link "Cella Cella":
+E       - /url: "#"
+E       - img "Cella"
+E       - text: Cella
+E     - button "새 대화":
+E       - img
+E     - button "사이드바 접기":
+E       - img
+E     - img
+E     - textbox "대화 검색":
+E       - /placeholder: 대화 검색...
+E     - list "대화 목록": 💬 새 대화를 시작해보세요
+E     - button "Dashboard":
+E       - img
+E       - text: Dashboard
+E     - button "인증서류 찾기":
+E       - img
+E       - text: 인증서류 찾기
+E     - button "System Status":
+E       - img
+E       - text: System Status
+E     - button "알림 2":
+E       - img
+E       - text: 알림 2
+E     - text: 알 알림 검사
+E     - button "설정"
+E     - button "로그아웃":
+E       - img
+E   - main:
+E     - button "대화 전체 복사":
+E       - img
+E     - button "Google 연결":
+E       - img
+E       - text: Google 연결
+E     - log "대화 메시지":
+E       - heading "알림 검사님," [level=1]
+E       - heading "What do you crave?" [level=1]
+E       - button "일본 매출"
+E       - button "광고 ROAS"
+E       - button "리뷰 분석"
+E       - button "재고"
+E       - button "제품 사용법"
+E       - button "사내문서"
+E       - button "오늘 메일"
+E       - region "Today":
+E         - heading "Today" [level=2]
+E         - text: 저장된 정보 없음
+E         - button "Today 새로고침":
+E           - img
+E     - button "Attach image":
+E       - img
+E     - 'textbox "메시지를 입력하세요... (@@: 데이터소스 지정 · Shift+Enter: 줄바꿈)"':
+E       - /placeholder: "메시지를 입력하세요...  (@@: 데이터소스 지정 · Shift+Enter: 줄바꿈)"
+E       - text: 인증 후 이어서 보낼 질문
+E     - button "Send":
+E       - img
+E     - complementary "셀라 화면 가이드":
+E       - status:
+E         - strong: 기능 안내
+E         - paragraph: “알림 2” 기능을 실행합니다.
+E         - button "숨기기"
+E   - dialog "Dashboard":
+E     - button "×"
+E     - iframe
+E   - dialog "System Status":
+E     - text: System Status
+E     - button "×"
+E   - dialog "알림":
+E     - text: 알림
+E     - button "브리핑 끄기"
+E     - button "모두 읽음"
+E     - button "×"
+E   - dialog "Knowledge Wiki":
+E     - text: Knowledge Wiki
+E     - button "×"
+E     - button "지도"
+E     - button "🧠 인사이트"
+E     - button "최근 추출"
+E     - button "🚩 신고"
+E     - button "관계 그래프"
+E   - dialog "Admin":
+E     - text: Admin
+E     - button "×"
+E     - button "그룹 관리"
+E     - button "셀라 사용자"
+E     - button "방문자"
+E     - button "성장 지표"
+E     - button "자가 점검"
+E     - button "골든셋"
+E     - button "붐따 처리함"
+E     - button "아키텍처"
+E     - button "+ 새 그룹"
+E   - button "Toggle theme":
+E     - img</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_expired_notification_session_reaches_login[401-header]" time="0.375"><failure message="AssertionError: assert ['POST'] == []&#10;  &#10;  Left contains one more item: 'POST'&#10;  Use -v to get more diff">tests\frontend\test_notifications_drawer.py:165: in test_expired_notification_session_reaches_login
+    assert ui.viewed == []
+E   AssertionError: assert ['POST'] == []
+E     
+E     Left contains one more item: 'POST'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_success_displays_feedback_note_and_keeps_briefing_follow_up" time="0.810" /><testcase classname="tests.frontend.test_notifications_drawer" name="test_successful_empty_list_explains_that_there_are_no_notifications" time="0.386" /><testcase classname="tests.frontend.test_notifications_drawer" name="test_closing_during_loading_does_not_mark_the_late_result_viewed" time="0.760"><failure message="AssertionError: assert ['POST'] == []&#10;  &#10;  Left contains one more item: 'POST'&#10;  Use -v to get more diff">tests\frontend\test_notifications_drawer.py:193: in test_closing_during_loading_does_not_mark_the_late_result_viewed
+    assert ui.viewed == []
+E   AssertionError: assert ['POST'] == []
+E     
+E     Left contains one more item: 'POST'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_late_failure_from_a_closed_drawer_cannot_replace_reopened_contents" time="0.820"><failure message="AssertionError: assert ['POST', 'POST'] == ['POST']&#10;  &#10;  Left contains one more item: 'POST'&#10;  Use -v to get more diff">tests\frontend\test_notifications_drawer.py:205: in test_late_failure_from_a_closed_drawer_cannot_replace_reopened_contents
+    assert ui.viewed == ["POST"]
+E   AssertionError: assert ['POST', 'POST'] == ['POST']
+E     
+E     Left contains one more item: 'POST'
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_background_badge_refresh_does_not_erase_a_failed_drawer" time="5.345"><failure message="AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'&#10;Actual value:  &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;       - unexpected value &quot;&quot;">tests\frontend\test_notifications_drawer.py:210: in test_background_badge_refresh_does_not_erase_a_failed_drawer
+    expect(ui.page.locator("#notif-items")).to_contain_text("알림을 불러오지 못했습니다")
+E   AssertionError: Locator expected to contain text '알림을 불러오지 못했습니다'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       14 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E          - unexpected value ""</failure></testcase><testcase classname="tests.frontend.test_notifications_drawer" name="test_background_badge_refresh_does_not_replace_a_loading_drawer" time="5.464"><failure message="AssertionError: Locator expected to contain text '불러오는 중'&#10;Actual value:  &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; with timeout 5000ms&#10;  - waiting for locator(&quot;#notif-items&quot;)&#10;    14 × locator resolved to &lt;div id=&quot;notif-items&quot; class=&quot;status-drawer-body&quot;&gt;&lt;/div&gt;&#10;       - unexpected value &quot;&quot;">tests\frontend\test_notifications_drawer.py:219: in test_background_badge_refresh_does_not_replace_a_loading_drawer
+    expect(ui.page.locator("#notif-items")).to_contain_text("불러오는 중")
+E   AssertionError: Locator expected to contain text '불러오는 중'
+E   Actual value:  
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator("#notif-items")
+E       14 × locator resolved to &lt;div id="notif-items" class="status-drawer-body"&gt;&lt;/div&gt;
+E          - unexpected value ""</failure></testcase></testsuite></testsuites>

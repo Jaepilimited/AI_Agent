@@ -1,0 +1,46 @@
+{
+  "app/core/session_auth.py": {
+    "before": null,
+    "after": "f26f55204a9e9d06ec5294c6c462b2abd2b7e5dd2121a707d410b29b17d4505c"
+  },
+  "app/api/auth_api.py": {
+    "before": "2e68f51966e16c91429e95eec40c4835772a20683a1aafa201e7f3d0606589c6",
+    "after": "ebc9d71db39183bffa16cc1d79cc1bbf5b3db614be9f6afdae91ef4ec73c1406"
+  },
+  "app/api/auth_middleware.py": {
+    "before": "3460fbfbde7684b3f184f8324cee65fdb91bb9b7bf1aa60ae1db8aaa51d45d87",
+    "after": "318082aa9ba625b4eabd366758765645154d5bfea94c10f7ad26e18d5cdf5b9c"
+  },
+  "app/api/middleware.py": {
+    "before": "c31286d9bcd38f817444b056ef108f9d99e072d9f650b72e701d6188b184814f",
+    "after": "af4d1683a3695a6130948e5a04a5106161345eee9d65722139ca62cda96a70e4"
+  },
+  "app/api/entra_routes.py": {
+    "before": "7c5d8f4c7a465ebe367f8ece824613a4366fc200f36561dec150495029cdbed4",
+    "after": "b1aa85edfacad2b43a77b1fdeeba355c6a4240b3539254359aef8cfebe5eac4e"
+  },
+  "app/api/coa_finder_api.py": {
+    "before": "640a39521a4f570cf45b8de3b2d568b84e19d972be1a8b54ebbfe92f3f885e45",
+    "after": "75e7f1a502f5599130d4c803c37224dd0f1c4e98b4deeaf1de48c8cb3465d6c9"
+  },
+  "app/main.py": {
+    "before": "504d7152d788b36b8b440977629ff66569c9d1d111b50dbe676ac17650e67491",
+    "after": "670f5627b9d4be61586519e9edde721b5c150bfce910d489b1c5b18674b4c53c"
+  },
+  "app/core/golden_runner.py": {
+    "before": "233975d8f42fff93014c95df2351880e43c870361930c7f22d828104729339cd",
+    "after": "f425e1b97906607778dbc6be00d3e511ff10b85bd35f4d51a4175d26a3efd16b"
+  },
+  "app/core/self_check.py": {
+    "before": "677568032f2723a48c9032413709f3a59a752bf04be637a5fc436b8307e2244b",
+    "after": "b07e34708c139dcdc7846660255da06cd85d6e573efbf8765724e6a8a3c5bab2"
+  },
+  "app/frontend/chat.js": {
+    "before": "f159b3cc3ae522820198d2bf7b24a204630940cd2dd94b8aa0c82882d8c2dc62",
+    "after": "d491fe0eb15c5ab1b94d9a5af57f4d57d8309e545eb35a713d91998c57317441"
+  },
+  "app/frontend/chat.html": {
+    "before": "75c0d12521173606380cc9071895a605beedc6352335376c1722bbac3aea4e81",
+    "after": "b87ad0a0cf9f927fa606a29556465e49aeebc3927f1b59a35bee114ab4207c21"
+  }
+}

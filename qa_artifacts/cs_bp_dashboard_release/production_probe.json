@@ -1,0 +1,75 @@
+{
+  "registry": [
+    {
+      "key": "국내CS",
+      "aliases": [
+        "국내 CS",
+        "domestic cs",
+        "domestic_cs"
+      ],
+      "label": "국내CS",
+      "desc": "대시보드 국내 CS 현황·처리 기록·사유·보상",
+      "group": "고객지원",
+      "icon": "headset",
+      "route": "bigquery",
+      "url": "http://34.64.99.254:8061/",
+      "url_label": "대시보드"
+    },
+    {
+      "key": "해외CS",
+      "aliases": [
+        "해외 CS",
+        "overseas cs",
+        "overseas_cs",
+        "글로벌 CS",
+        "글로벌CS"
+      ],
+      "label": "해외CS",
+      "desc": "대시보드 CS 현황·Shopify 환불 상세",
+      "group": "고객지원",
+      "icon": "headset",
+      "route": "bigquery",
+      "url": "http://34.64.99.254:8061/",
+      "url_label": "대시보드"
+    },
+    {
+      "key": "BP",
+      "aliases": [
+        "bp",
+        "뷰티파트너",
+        "제품qa",
+        "제품문의",
+        "고객상담",
+        "CS",
+        "cs",
+        "cs문서",
+        "cs자료",
+        "notion_cs"
+      ],
+      "label": "BP",
+      "desc": "제품 Q&A·CS 문서 (성분·사용법·제품정보·응대 규정)",
+      "group": "Notion",
+      "icon": "flask",
+      "route": "cs",
+      "url": "https://docs.google.com/spreadsheets/d/1eVko7HkJ8xHNwErLqOH97qL3xGGfIU_fyk2E6so7Nf8/edit",
+      "url_label": "제품 Q&A",
+      "links": [
+        {
+          "label": "제품 Q&A",
+          "url": "https://docs.google.com/spreadsheets/d/1eVko7HkJ8xHNwErLqOH97qL3xGGfIU_fyk2E6so7Nf8/edit"
+        },
+        {
+          "label": "CS 제품 문서",
+          "url": "https://www.notion.so/1004-3362b4283b008050b4b6c75fe4f7f54a"
+        }
+      ]
+    }
+  ],
+  "bp_question": "센텔라 앰플 사용법과 제품정보를 알려줘",
+  "bp_answer": "### 🧴 [센텔라] 마다가스카르 센텔라 앰플 제품 정보 및 사용법 안내\n\n#### 답변\n**마다가스카르 센텔라 앰플**은 **마다가스카르산 병풀추출물**을 함유하여 민감하고 트러블이 잦은 피부의 진정과 피부 장벽 케어를 돕는 **약산성** 워터 타입 앰플입니다. 세안 후 스킨케어 첫 단계 또는 토너 사용 후 단계에서 **아침, 저녁 데일리**로 부담 없이 사용하실 수 있습니다.\n\n#### 상세 정보\n**1. 사용법**\n1. 세안 후 스킨케어 첫 단계 또는 토너로 피부결을 정돈한 후 사용합니다.\n2. 앰플 적당량을 스포이드로 덜어 얼굴 전체에 **부드럽게 펴 발라줍니다**.\n3. 피부 컨디션에 따라 가볍게 두드려 흡수시키며, 사용량을 자유롭게 조절합니다.\n4. 강한 자극을 주며 문지를 경우 보습막 형성 성분(셀룰로오스검)이 밀릴 수 있으므로 부드럽게 흡수시켜 주시기 바랍니다.\n\n**2. 제품 특징 및 주요 정보**\n- **주요 효능**: 피부 진정 및 피부 장벽 케어\n- **제형**: 끈적임 없이 산뜻한 워터 타입 제형\n- **피부 타입**: 모든 피부 타입 사용 가능 (민감성·트러블성 피부 데일리 사용 권장)\n- **테스트**: 피부 자극 테스트 완료 및 여드름성 피부 사용 적합 판정 완료\n- **pH 특성**: 건강한 피부를 위한 **약산성** 포뮬러\n- **전성분**: 정제수, 글리세린, 부틸렌글라이콜, 병풀추출물, 1,2-헥산다이올, 셀룰로오스검, 에틸헥실글리세린\n\n#### 참고 사항\n- **활용 팁**: 자극받아 예민해진 피부에는 2~3번 가볍게 레이어링하여 덧바르거나, 화장솜에 앰플을 듬뿍 적셔 팩처럼 올려두면 데일리 집중 진정 케어로 활용하기 좋습니다.\n- **성분 안내**: 해당 제품은 병풀을 용매로 추출하여 제조한 제품으로, 추출 과정의 용매가 보존제 역할을 하여 추출 후 별도의 화학 보존제가 첨가되지 않습니다.\n\n---\n**BP 자료 원본 · 제품 Q&A와 CS 문서**\n- [제품 Q&A](https://docs.google.com/spreadsheets/d/1eVko7HkJ8xHNwErLqOH97qL3xGGfIU_fyk2E6so7Nf8/edit)\n- [CS 제품 문서](https://www.notion.so/1004-3362b4283b008050b4b6c75fe4f7f54a)\n- [마다가스카르 센텔라 앰플](https://www.notion.so/3362b4283b00812b9778d8c144f29274)\n\n> 💡 **이런 것도 물어보세요**\n> - 센텔라 앰플 55ml와 100ml 용량별 전성분이 같은가요?\n> - 센텔라 앰플 사용 시 밀림 현상이 발생할 때 어떻게 해야 하나요?\n> - 센텔라 앰플 폼과 함께 사용하는 루틴이 궁금해요.",
+  "dashboard": {
+    "국내": "**국내 CS 대시보드 · 2026-08-01 ~ 2026-08-31**\n\n현재 셀라에서 대시보드 집계를 불러오지 못했습니다. 원본 화면에서 확인해 주세요.\n\n[CS 대시보드에서 요약 보기](http://34.64.99.254:8061/dashboard?scope=all&channel=all&claimType=all&status=all&startDate=2026-08-01&endDate=2026-08-31)",
+    "해외": "**해외 CS 대시보드 · 2026-08-01 ~ 2026-08-31**\n\n현재 셀라에서 대시보드 집계를 불러오지 못했습니다. 원본 화면에서 확인해 주세요.\n\n[CS 대시보드에서 요약 보기](http://34.64.99.254:8061/global/dashboard?scope=all&channel=all&claimType=all&status=all&startDate=2026-08-01&endDate=2026-08-31)"
+  },
+  "elapsed_seconds": 7.96
+}

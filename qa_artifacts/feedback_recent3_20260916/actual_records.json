@@ -1,0 +1,572 @@
+{
+  "schema": [
+    {
+      "name": "record_id",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "Snapshot record key, source tab + representative NO + order. Not a guaranteed lifetime CS ID."
+    },
+    {
+      "name": "channel",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "Normalized sales channel; manual 네이버 maps to 스마트스토어."
+    },
+    {
+      "name": "order_no",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "Original order identifier as text."
+    },
+    {
+      "name": "source_tab",
+      "type": "STRING",
+      "mode": "REQUIRED",
+      "description": "naver_auto or channels_manual; provenance, not sales channel."
+    },
+    {
+      "name": "source_file",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "source_file_sha256",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "source_nos",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "source_row_numbers",
+      "type": "INTEGER",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "grouping_rule",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "Provisional grouping rule. Record count is not a verified unique CS count."
+    },
+    {
+      "name": "quality_flags",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "claim_type",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "claim_type_raw",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "process_status",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "process_status_raw",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "received_at",
+      "type": "DATE",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "DATE",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "reasons",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "reason_details",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "shipping_fee_raw",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "head_office_collection_raw",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "outbound_invoice_nos",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "return_invoice_nos",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "redelivery_references",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": "CS_RP_ API values; not product barcodes, not shipment tracking numbers."
+    },
+    {
+      "name": "purchase_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+    },
+    {
+      "name": "paid_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+    },
+    {
+      "name": "discount_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+    },
+    {
+      "name": "return_shipping_fee",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+    },
+    {
+      "name": "compensation_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+    },
+    {
+      "name": "currency",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "KRW"
+    },
+    {
+      "name": "items",
+      "type": "RECORD",
+      "mode": "REPEATED",
+      "description": "Source receipt lines, including redelivery placeholders."
+    },
+    {
+      "name": "items.source_row",
+      "type": "INTEGER",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.source_no",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.barcode",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.barcode_raw",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.redelivery_reference",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.product_name",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.erp_code",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.quantity",
+      "type": "INTEGER",
+      "mode": "NULLABLE",
+      "description": "CS_RP_ placeholder zero with no product becomes NULL; raw quantity is preserved."
+    },
+    {
+      "name": "items.quantity_raw",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.is_gift",
+      "type": "BOOLEAN",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.purchase_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.paid_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.discount_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.return_shipping_fee",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "items.compensation_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections",
+      "type": "RECORD",
+      "mode": "REPEATED",
+      "description": "Receipt-side and inspection-side products are independent."
+    },
+    {
+      "name": "inspections.source_row",
+      "type": "INTEGER",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.barcode",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.product_name",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.erp_code",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.quantity",
+      "type": "INTEGER",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.lot_no",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.manufactured_on_raw",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.expires_on_raw",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.inspection_result",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.disposition",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "inspections.note",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "raw_headers",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "raw_rows",
+      "type": "RECORD",
+      "mode": "REPEATED",
+      "description": "All original cells in positional order, including duplicate header names."
+    },
+    {
+      "name": "raw_rows.source_row",
+      "type": "INTEGER",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "raw_rows.values",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "loaded_at",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "order_key",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "Channel + order identifier. COUNT DISTINCT for order count."
+    },
+    {
+      "name": "source_system",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "google_sheets or csv_snapshot"
+    },
+    {
+      "name": "record_hash",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "SHA256 of record content excluding ingestion metadata; not a primary key."
+    },
+    {
+      "name": "etl_run_id",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "ingested_at",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "source_fetched_at",
+      "type": "TIMESTAMP",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "rule_version",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": ""
+    },
+    {
+      "name": "reasons_normalized",
+      "type": "STRING",
+      "mode": "REPEATED",
+      "description": ""
+    },
+    {
+      "name": "reason_normalized",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "Single reporting category; multiple categories become 복합 사유."
+    },
+    {
+      "name": "source_order_amount",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "Original source amount, NOT a comparable net-paid amount."
+    },
+    {
+      "name": "source_order_amount_basis",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "purchase_amount_raw or paid_amount_raw; do not combine as net paid."
+    },
+    {
+      "name": "compensation_eligibility",
+      "type": "STRING",
+      "mode": "NULLABLE",
+      "description": "eligible_recorded, missing, excluded_cancelled, excluded_not_completed, review_duplicate, review_grouping, review_negative"
+    },
+    {
+      "name": "eligible_recorded_compensation",
+      "type": "NUMERIC",
+      "mode": "NULLABLE",
+      "description": "Completed, noncancelled, nonambiguous recorded amount. Not payment-confirmed cash disbursement. NULL when excluded/unknown."
+    }
+  ],
+  "rows": [
+    {
+      "order_no": "139515930570616967",
+      "channel": "지그재그",
+      "claim_type": "collection",
+      "process_status": "completed",
+      "received_at": "2025-12-16",
+      "completed_at": "2025-12-22",
+      "reason_normalized": "기타",
+      "reasons": [
+        "기타"
+      ],
+      "reason_details": [
+        "송장 중복출력 이슈 건 상품회수"
+      ],
+      "outbound_invoice_nos": [
+        "540658923226"
+      ],
+      "return_invoice_nos": [
+        "844325444023"
+      ],
+      "compensation_amount": null,
+      "items": [
+        {
+          "product_name": "스킨1004 마다가스카르 센텔라 톤 브라이트닝 캡슐 앰플 100ml_책판",
+          "quantity": 1
+        },
+        {
+          "product_name": "스킨1004 마다가스카르 센텔라 톤 브라이트닝 부스팅 토너 210ml_책판",
+          "quantity": 1
+        },
+        {
+          "product_name": "스킨1004 마다가스카르 센텔라 톤 브라이트닝 클렌징 젤 폼 125ml_책판",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "order_no": "2026081423496661",
+      "channel": "스마트스토어",
+      "claim_type": "redelivery",
+      "process_status": "completed",
+      "received_at": "2026-08-20",
+      "completed_at": "2026-08-24",
+      "reason_normalized": "파손·불량",
+      "reasons": [
+        "파손 및 불량"
+      ],
+      "reason_details": [],
+      "outbound_invoice_nos": [],
+      "return_invoice_nos": [],
+      "compensation_amount": null,
+      "items": [
+        {
+          "product_name": null,
+          "quantity": null
+        }
+      ]
+    },
+    {
+      "order_no": "2026081423496661",
+      "channel": "스마트스토어",
+      "claim_type": "return",
+      "process_status": "completed",
+      "received_at": "2026-08-20",
+      "completed_at": "2026-08-24",
+      "reason_normalized": "파손·불량",
+      "reasons": [
+        "파손 및 불량"
+      ],
+      "reason_details": [
+        "상품 박스 불량"
+      ],
+      "outbound_invoice_nos": [
+        "537418082563"
+      ],
+      "return_invoice_nos": [
+        "573867634314"
+      ],
+      "compensation_amount": null,
+      "items": [
+        {
+          "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 50ml",
+          "quantity": 1
+        }
+      ]
+    },
+    {
+      "order_no": "2026082224631661",
+      "channel": "스마트스토어",
+      "claim_type": "return",
+      "process_status": "completed",
+      "received_at": "2026-08-22",
+      "completed_at": "2026-08-27",
+      "reason_normalized": "변심",
+      "reasons": [
+        "단순 변심"
+      ],
+      "reason_details": [],
+      "outbound_invoice_nos": [
+        "537453096961"
+      ],
+      "return_invoice_nos": [
+        "573869698301"
+      ],
+      "compensation_amount": "35000",
+      "items": [
+        {
+          "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 50ml x 2ea (트윈 팩)",
+          "quantity": 1
+        },
+        {
+          "product_name": "스킨1004 마다가스카르 센텔라 히알루-시카 워터핏 선 세럼 15ml",
+          "quantity": 1
+        }
+      ]
+    }
+  ]
+}

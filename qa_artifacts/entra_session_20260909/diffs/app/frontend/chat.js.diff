@@ -1,0 +1,189 @@
+--- was/app/frontend/chat.js
++++ next/app/frontend/chat.js
+@@ -5,6 +5,64 @@
+ 
+ (function () {
+   "use strict";
++
++  var _authRedirectStarted = false;
++  var _questionPendingReauth = "";
++  var _reauthDraftKey = "cella:reauth-question";
++  var _originalFetch = window.fetch.bind(window);
++
++  function _privateApiUrl(input) {
++    try {
++      var url = new URL(input && input.url ? input.url : input, window.location.href);
++      return url.origin === window.location.origin && /^\/(api|v1)\//.test(url.pathname) ? url : null;
++    } catch (e) { return null; }
++  }
++
++  function _loginRequiredError() {
++    var error = new Error("Entra ID 로그인이 필요합니다.");
++    error.name = "CellaLoginRequiredError";
++    return error;
++  }
++
++  function _redirectToLogin() {
++    if (_authRedirectStarted) return;
++    _authRedirectStarted = true;
++    var draft = (chatInput && chatInput.value) || _questionPendingReauth;
++    if (draft && currentUser && currentUser.id) {
++      try {
++        sessionStorage.setItem(_reauthDraftKey, JSON.stringify({ userId: currentUser.id, text: draft }));
++      } catch (e) { /* The login redirect must also work when browser storage is unavailable. */ }
++    }
++    window.location.assign("/login");
++  }
++
++  function _restoreReauthDraft() {
++    try {
++      var saved = sessionStorage.getItem(_reauthDraftKey);
++      if (!saved) return;
++      sessionStorage.removeItem(_reauthDraftKey);
++      var draft = JSON.parse(saved);
++      if (draft.userId === currentUser.id && typeof draft.text === "string" && !chatInput.value) {
++        chatInput.value = draft.text;
++        chatInput.dispatchEvent(new Event("input"));
++      }
++    } catch (e) { /* A missing draft does not prevent sign-in. */ }
++  }
++
++  window.fetch = function(input, options) {
++    var privateUrl = _privateApiUrl(input);
++    if (_authRedirectStarted && privateUrl) return Promise.reject(_loginRequiredError());
++    return _originalFetch(input, options).then(function(response) {
++      var sameOriginResponse = !response.url || new URL(response.url, window.location.href).origin === window.location.origin;
++      if (privateUrl && sameOriginResponse && response.status === 401 &&
++          response.headers.get("X-Cella-Auth") === "login-required") {
++        _redirectToLogin();
++        throw _loginRequiredError();
++      }
++      if (_authRedirectStarted && privateUrl) throw _loginRequiredError();
++      return response;
++    });
++  };
+ 
+   // ===== Markdown links (출처/소스 링크 포함) — 항상 새 창으로 =====
+   if (window.marked && typeof marked.use === "function") {
+@@ -1040,7 +1098,7 @@
+   async function init() {
+     try {
+       var resp = await fetch("/api/auth/me");
+-      if (!resp.ok) { window.location.href = "/login"; return; }
++      if (!resp.ok) { _redirectToLogin(); return; }
+       currentUser = await resp.json();
+       applyGroupAssignmentState();
+       // 만족도 설문 — 띄울지는 서버가 정한다 (접속일수 10일차부터 20일 간격)
+@@ -1061,7 +1119,7 @@
+         return;
+       }
+     } catch (e) {
+-      window.location.href = "/login";
++      _redirectToLogin();
+       return;
+     }
+ 
+@@ -1080,13 +1138,13 @@
+         if (currentUser.must_change_password) {
+           // 서버가 아직 플래그를 지운 것으로 안 보인다 — 앱을 반쯤 켜인 채로
+           // 두는 대신 다시 로그인 경로로 보내 확실한 상태에서 다시 시작한다.
+-          window.location.href = "/login";
++          _redirectToLogin();
+           return;
+         }
+         _finishInit();
+       })
+       .catch(function () {
+-        window.location.href = "/login";
++        _redirectToLogin();
+       });
+   }
+ 
+@@ -1119,6 +1177,7 @@
+     }
+ 
+     setupEventListeners();
++    _restoreReauthDraft();
+     showAdminButton();
+     await loadConversations();
+     updateTheme();
+@@ -2292,6 +2351,7 @@
+   }
+ 
+   async function sendMessage() {
++    if (_authRedirectStarted) return;
+     if (requiresGroupAssignment()) {
+       applyGroupAssignmentState();
+       return;
+@@ -2322,6 +2382,7 @@
+     //    서버(`route_and_execute` → `parse_db_prefix`)는 질문 문자열의 `@@` 를 직접
+     //    해석한다. 떼고 저장하면 "@@보고서 일본 매출" 이 그냥 조회로 되살아난다.
+     var userQuestionForSave = text;
++    _questionPendingReauth = text;
+ 
+     // Parse @@ source selections from input text (최장 일치 — 공백 포함 키 지원)
+     var _parsed = parseSourceTokens(text);
+@@ -2393,6 +2454,7 @@
+     // Save only text to DB (no images in SQLite). Target convoIdAtSend
+     // explicitly — the user could switch conversations during this await.
+     await saveMessageTo(convoIdAtSend, "user", text || "[Image]", userQuestionForSave);
++    if (_authRedirectStarted) return;
+     scrollToBottom();
+ 
+     // Use in-memory messages for API (reliable, no DOM parsing)
+@@ -2439,6 +2501,7 @@
+         }),
+         signal: currentAbortController.signal,
+       });
++      if (!response.ok) throw new Error("요청에 실패했습니다. (HTTP " + response.status + ")");
+ 
+       // The server accepted the request and opened the response stream.
+       _renderAnswerLoading(contentEl, _preRoute);
+@@ -2508,6 +2571,13 @@
+         }
+       }
+     } catch (e) {
++      if (_authRedirectStarted || e.name === "CellaLoginRequiredError") {
++        _stopTokenDrain();
++        aiMsgEl.remove();
++        isStreaming = false;
++        currentAbortController = null;
++        return;
++      }
+       if (e.name === "AbortError") {
+         _stopTokenDrain();  // Stop token drain to prevent freeze
+         var typing = aiMsgEl.querySelector(".typing-indicator");
+@@ -2621,6 +2691,7 @@
+ 
+     isStreaming = false;
+     currentAbortController = null;
++    _questionPendingReauth = "";
+   }
+ 
+   // ===== Follow-up Suggestions =====
+@@ -6142,12 +6213,10 @@
+           var groupBadge = u.group_names
+             ? '<span class="admin-ad-group-badge">' + escapeHtml(u.group_names) + '</span>'
+             : '<span class="admin-ad-group-badge none">미배정</span>';
+-          var accountBadge = u.user_id
+-            ? '<span class="admin-ad-group-badge">셀라 계정 있음</span>'
+-            : '<span class="admin-ad-group-badge none">첫 로그인 대기</span>';
+-          var identityBadge = u.entra_linked
+-            ? '<span class="admin-ad-group-badge">Entra 연결</span>'
+-            : '<span class="admin-ad-group-badge none">Entra 연결 대기</span>';
++          var hasEntraSignin = !!(u.entra_linked && u.user_id && u.last_signin_at);
++          var identityBadge = hasEntraSignin
++            ? '<span class="admin-ad-group-badge">Entra 로그인 완료</span>'
++            : '<span class="admin-ad-group-badge none">Entra 로그인 필요</span>';
+ 
+           html += '<div class="admin-ad-user">';
+           html += '<div class="admin-ad-avatar">' + escapeHtml(initial) + '</div>';
+@@ -6155,7 +6224,7 @@
+           html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small></div>';
+           html += '<div class="admin-ad-email">' + escapeHtml(u.email || "N/A") + '</div>';
+           html += '<div class="admin-ad-dept">' + escapeHtml(deptShort) + '</div>';
+-          html += '<div class="admin-directory-state" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">' + identityBadge + accountBadge + '</div>';
++          html += '<div class="admin-directory-state" style="margin-top:4px">' + identityBadge + '</div>';
+           html += '</div>';
+           html += groupBadge;
+           if (isAdmin()) {

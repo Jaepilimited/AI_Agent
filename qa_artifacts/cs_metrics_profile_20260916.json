@@ -1,0 +1,1041 @@
+{
+  "metadata": [
+    {
+      "table": "skin1004-319714.cs_dashboard.domestic_cs_records",
+      "num_rows": 551,
+      "modified": "2026-09-16 00:40:45.437000+00:00",
+      "description": "Domestic Google Sheets current snapshot. Validated full refresh; source NO is not a lifetime CS ID. Use domestic_cs_reporting and domestic_cs_summary for reporting. Record count is processing records, not unique CS cases. eligible_recorded_compensation is a conservative completed-record amount, not confirmed payment. Uncertain records remain in raw data with quality flags. Pipeline audit: domestic_etl_runs. Sheets read only; domestic database objects only.",
+      "schema": [
+        {
+          "name": "record_id",
+          "type": "STRING",
+          "mode": "REQUIRED",
+          "description": "Snapshot record key, source tab + representative NO + order. Not a guaranteed lifetime CS ID."
+        },
+        {
+          "name": "channel",
+          "type": "STRING",
+          "mode": "REQUIRED",
+          "description": "Normalized sales channel; manual 네이버 maps to 스마트스토어."
+        },
+        {
+          "name": "order_no",
+          "type": "STRING",
+          "mode": "REQUIRED",
+          "description": "Original order identifier as text."
+        },
+        {
+          "name": "source_tab",
+          "type": "STRING",
+          "mode": "REQUIRED",
+          "description": "naver_auto or channels_manual; provenance, not sales channel."
+        },
+        {
+          "name": "source_file",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "source_file_sha256",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "source_nos",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "source_row_numbers",
+          "type": "INTEGER",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "grouping_rule",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "Provisional grouping rule. Record count is not a verified unique CS count."
+        },
+        {
+          "name": "quality_flags",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "claim_type",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "claim_type_raw",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "process_status",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "process_status_raw",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "received_at",
+          "type": "DATE",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "completed_at",
+          "type": "DATE",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "reasons",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "reason_details",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "shipping_fee_raw",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "head_office_collection_raw",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "outbound_invoice_nos",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "return_invoice_nos",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "redelivery_references",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": "CS_RP_ API values; not product barcodes, not shipment tracking numbers."
+        },
+        {
+          "name": "purchase_amount",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+        },
+        {
+          "name": "paid_amount",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+        },
+        {
+          "name": "discount_amount",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+        },
+        {
+          "name": "return_shipping_fee",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+        },
+        {
+          "name": "compensation_amount",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "SUM of supplied source-row amounts within this record; all missing remains NULL. Never sum again after expanding items."
+        },
+        {
+          "name": "currency",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "KRW"
+        },
+        {
+          "name": "items",
+          "type": "RECORD",
+          "mode": "REPEATED",
+          "fields": [
+            {
+              "name": "source_row",
+              "type": "INTEGER",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "source_no",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "barcode",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "barcode_raw",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "redelivery_reference",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "product_name",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "erp_code",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "quantity",
+              "type": "INTEGER",
+              "mode": "NULLABLE",
+              "description": "CS_RP_ placeholder zero with no product becomes NULL; raw quantity is preserved."
+            },
+            {
+              "name": "quantity_raw",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "is_gift",
+              "type": "BOOLEAN",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "purchase_amount",
+              "type": "NUMERIC",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "paid_amount",
+              "type": "NUMERIC",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "discount_amount",
+              "type": "NUMERIC",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "return_shipping_fee",
+              "type": "NUMERIC",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "compensation_amount",
+              "type": "NUMERIC",
+              "mode": "NULLABLE",
+              "description": ""
+            }
+          ],
+          "description": "Source receipt lines, including redelivery placeholders."
+        },
+        {
+          "name": "inspections",
+          "type": "RECORD",
+          "mode": "REPEATED",
+          "fields": [
+            {
+              "name": "source_row",
+              "type": "INTEGER",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "barcode",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "product_name",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "erp_code",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "quantity",
+              "type": "INTEGER",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "lot_no",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "manufactured_on_raw",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "expires_on_raw",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "inspection_result",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "disposition",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "note",
+              "type": "STRING",
+              "mode": "NULLABLE",
+              "description": ""
+            }
+          ],
+          "description": "Receipt-side and inspection-side products are independent."
+        },
+        {
+          "name": "raw_headers",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "raw_rows",
+          "type": "RECORD",
+          "mode": "REPEATED",
+          "fields": [
+            {
+              "name": "source_row",
+              "type": "INTEGER",
+              "mode": "NULLABLE",
+              "description": ""
+            },
+            {
+              "name": "values",
+              "type": "STRING",
+              "mode": "REPEATED",
+              "description": ""
+            }
+          ],
+          "description": "All original cells in positional order, including duplicate header names."
+        },
+        {
+          "name": "loaded_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "order_key",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "Channel + order identifier. COUNT DISTINCT for order count."
+        },
+        {
+          "name": "source_system",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "google_sheets or csv_snapshot"
+        },
+        {
+          "name": "record_hash",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "SHA256 of record content excluding ingestion metadata; not a primary key."
+        },
+        {
+          "name": "etl_run_id",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "ingested_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "source_fetched_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "rule_version",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": ""
+        },
+        {
+          "name": "reasons_normalized",
+          "type": "STRING",
+          "mode": "REPEATED",
+          "description": ""
+        },
+        {
+          "name": "reason_normalized",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "Single reporting category; multiple categories become 복합 사유."
+        },
+        {
+          "name": "source_order_amount",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "Original source amount, NOT a comparable net-paid amount."
+        },
+        {
+          "name": "source_order_amount_basis",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "purchase_amount_raw or paid_amount_raw; do not combine as net paid."
+        },
+        {
+          "name": "compensation_eligibility",
+          "type": "STRING",
+          "mode": "NULLABLE",
+          "description": "eligible_recorded, missing, excluded_cancelled, excluded_not_completed, review_duplicate, review_grouping, review_negative"
+        },
+        {
+          "name": "eligible_recorded_compensation",
+          "type": "NUMERIC",
+          "mode": "NULLABLE",
+          "description": "Completed, noncancelled, nonambiguous recorded amount. Not payment-confirmed cash disbursement. NULL when excluded/unknown."
+        }
+      ]
+    },
+    {
+      "table": "skin1004-319714.cs_dashboard.overseas_cs_refunds",
+      "num_rows": 1252,
+      "modified": "2026-09-15 02:28:07.530000+00:00",
+      "description": "One row per Shopify overseas refund for the CS dashboard",
+      "schema": [
+        {
+          "name": "shopify_refund_id",
+          "type": "STRING",
+          "mode": "REQUIRED"
+        },
+        {
+          "name": "shopify_refund_gid",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "shopify_return_id",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "shopify_order_id",
+          "type": "STRING",
+          "mode": "REQUIRED"
+        },
+        {
+          "name": "order_number",
+          "type": "STRING",
+          "mode": "REQUIRED"
+        },
+        {
+          "name": "shopify_customer_id",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "customer_email",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "intake_type",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "process_status",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "return_status",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "received_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "completed_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "refund_created_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "refund_processed_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "shopify_updated_at",
+          "type": "TIMESTAMP",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "country_code",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "country_name",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "return_type_raw",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "return_type_normalized",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "reason_detail",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "refund_note_raw",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "normalization_status",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "outbound_tracking_numbers",
+          "type": "STRING",
+          "mode": "REPEATED"
+        },
+        {
+          "name": "payment_amount_usd",
+          "type": "NUMERIC",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "refund_amount_usd",
+          "type": "NUMERIC",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "fx_basis",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "fx_date",
+          "type": "DATE",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "usd_krw_rate",
+          "type": "NUMERIC",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "payment_amount_krw",
+          "type": "NUMERIC",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "refund_amount_krw",
+          "type": "NUMERIC",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "refund_transaction_succeeded",
+          "type": "BOOLEAN",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "source_system",
+          "type": "STRING",
+          "mode": "REQUIRED"
+        },
+        {
+          "name": "etl_run_id",
+          "type": "STRING",
+          "mode": "REQUIRED"
+        },
+        {
+          "name": "ingested_at",
+          "type": "TIMESTAMP",
+          "mode": "REQUIRED"
+        },
+        {
+          "name": "record_hash",
+          "type": "STRING",
+          "mode": "NULLABLE"
+        },
+        {
+          "name": "raw_payload",
+          "type": "JSON",
+          "mode": "NULLABLE"
+        }
+      ]
+    }
+  ],
+  "profiles": {
+    "domestic": [
+      {
+        "records": 551,
+        "unique_records": 551,
+        "orders": 497,
+        "no_order_key": 1,
+        "first_received": "2025-11-20",
+        "last_received": "2026-09-15",
+        "first_completed": "2025-11-26",
+        "last_completed": "2026-09-14",
+        "last_ingested": "2026-09-16 00:40:17.564974+00:00",
+        "multi_item_records": 320,
+        "with_inspections": 399
+      }
+    ],
+    "overseas": [
+      {
+        "refunds": 1252,
+        "unique_refunds": 1252,
+        "orders": 1242,
+        "no_received": 1191,
+        "first_refund": "2026-01-01 08:04:05+00:00",
+        "last_refund": "2026-09-15 01:25:39+00:00",
+        "last_completed": "2026-09-15 01:25:37+00:00",
+        "last_ingested": "2026-09-15 02:06:38.311472+00:00",
+        "missing_krw": 57,
+        "with_intake_type": 0
+      }
+    ],
+    "domestic_values": [
+      {
+        "field": "channel",
+        "value": "스마트스토어",
+        "n": 491
+      },
+      {
+        "field": "channel",
+        "value": "무신사",
+        "n": 23
+      },
+      {
+        "field": "channel",
+        "value": "지그재그",
+        "n": 15
+      },
+      {
+        "field": "channel",
+        "value": "자사몰",
+        "n": 12
+      },
+      {
+        "field": "channel",
+        "value": "올리브영",
+        "n": 3
+      },
+      {
+        "field": "channel",
+        "value": "에이블리",
+        "n": 3
+      },
+      {
+        "field": "channel",
+        "value": "W컨셉",
+        "n": 2
+      },
+      {
+        "field": "channel",
+        "value": "화해",
+        "n": 1
+      },
+      {
+        "field": "channel",
+        "value": "코스트코코리아",
+        "n": 1
+      },
+      {
+        "field": "claim_type",
+        "value": "return",
+        "n": 426
+      },
+      {
+        "field": "claim_type",
+        "value": "redelivery",
+        "n": 74
+      },
+      {
+        "field": "claim_type",
+        "value": "exchange",
+        "n": 33
+      },
+      {
+        "field": "claim_type",
+        "value": "cancellation",
+        "n": 12
+      },
+      {
+        "field": "claim_type",
+        "value": "collection",
+        "n": 6
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "eligible_recorded",
+        "n": 333
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "missing",
+        "n": 170
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "excluded_cancelled",
+        "n": 27
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "review_duplicate",
+        "n": 7
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "excluded_not_completed",
+        "n": 6
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "review_grouping",
+        "n": 4
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "review_negative",
+        "n": 3
+      },
+      {
+        "field": "compensation_eligibility",
+        "value": "review_missing_order",
+        "n": 1
+      },
+      {
+        "field": "process_status",
+        "value": "completed",
+        "n": 478
+      },
+      {
+        "field": "process_status",
+        "value": "cancelled",
+        "n": 55
+      },
+      {
+        "field": "process_status",
+        "value": "in_progress",
+        "n": 13
+      },
+      {
+        "field": "process_status",
+        "value": "scheduled",
+        "n": 5
+      },
+      {
+        "field": "reason_normalized",
+        "value": "변심",
+        "n": 196
+      },
+      {
+        "field": "reason_normalized",
+        "value": "주문 오류",
+        "n": 129
+      },
+      {
+        "field": "reason_normalized",
+        "value": "배송 문제",
+        "n": 61
+      },
+      {
+        "field": "reason_normalized",
+        "value": "파손·불량",
+        "n": 54
+      },
+      {
+        "field": "reason_normalized",
+        "value": "미기재",
+        "n": 45
+      },
+      {
+        "field": "reason_normalized",
+        "value": "피부 이상반응",
+        "n": 33
+      },
+      {
+        "field": "reason_normalized",
+        "value": "기타",
+        "n": 29
+      },
+      {
+        "field": "reason_normalized",
+        "value": "이물",
+        "n": 2
+      },
+      {
+        "field": "reason_normalized",
+        "value": "상품·사은품 누락",
+        "n": 1
+      },
+      {
+        "field": "reason_normalized",
+        "value": "서비스 불만족",
+        "n": 1
+      }
+    ],
+    "overseas_values": [
+      {
+        "field": "country_name",
+        "value": "United States",
+        "n": 424
+      },
+      {
+        "field": "country_name",
+        "value": "Spain",
+        "n": 354
+      },
+      {
+        "field": "country_name",
+        "value": "Mexico",
+        "n": 246
+      },
+      {
+        "field": "country_name",
+        "value": null,
+        "n": 68
+      },
+      {
+        "field": "country_name",
+        "value": "Canada",
+        "n": 36
+      },
+      {
+        "field": "country_name",
+        "value": "France",
+        "n": 25
+      },
+      {
+        "field": "country_name",
+        "value": "Italy",
+        "n": 14
+      },
+      {
+        "field": "country_name",
+        "value": "Germany",
+        "n": 12
+      },
+      {
+        "field": "country_name",
+        "value": "United Arab Emirates",
+        "n": 12
+      },
+      {
+        "field": "country_name",
+        "value": "Argentina",
+        "n": 12
+      },
+      {
+        "field": "country_name",
+        "value": "Colombia",
+        "n": 9
+      },
+      {
+        "field": "country_name",
+        "value": "Australia",
+        "n": 7
+      },
+      {
+        "field": "country_name",
+        "value": "Belgium",
+        "n": 5
+      },
+      {
+        "field": "country_name",
+        "value": "Russia",
+        "n": 5
+      },
+      {
+        "field": "country_name",
+        "value": "United Kingdom",
+        "n": 3
+      },
+      {
+        "field": "country_name",
+        "value": "Armenia",
+        "n": 3
+      },
+      {
+        "field": "country_name",
+        "value": "Switzerland",
+        "n": 2
+      },
+      {
+        "field": "country_name",
+        "value": "Latvia",
+        "n": 2
+      },
+      {
+        "field": "country_name",
+        "value": "Slovakia",
+        "n": 2
+      },
+      {
+        "field": "country_name",
+        "value": "Ireland",
+        "n": 2
+      },
+      {
+        "field": "country_name",
+        "value": "Kazakhstan",
+        "n": 2
+      },
+      {
+        "field": "country_name",
+        "value": "Georgia",
+        "n": 1
+      },
+      {
+        "field": "country_name",
+        "value": "Poland",
+        "n": 1
+      },
+      {
+        "field": "country_name",
+        "value": "Finland",
+        "n": 1
+      },
+      {
+        "field": "country_name",
+        "value": "Netherlands",
+        "n": 1
+      },
+      {
+        "field": "country_name",
+        "value": "Lithuania",
+        "n": 1
+      },
+      {
+        "field": "country_name",
+        "value": "Saudi Arabia",
+        "n": 1
+      },
+      {
+        "field": "country_name",
+        "value": "Greece",
+        "n": 1
+      },
+      {
+        "field": "normalization_status",
+        "value": "unstructured",
+        "n": 965
+      },
+      {
+        "field": "normalization_status",
+        "value": "empty",
+        "n": 287
+      },
+      {
+        "field": "process_status",
+        "value": "completed",
+        "n": 1196
+      },
+      {
+        "field": "process_status",
+        "value": "in_progress",
+        "n": 30
+      },
+      {
+        "field": "process_status",
+        "value": "unknown",
+        "n": 26
+      },
+      {
+        "field": "return_type_normalized",
+        "value": null,
+        "n": 1252
+      }
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "queried_at_kst": "2026-09-18T15:42:36.653209+09:00",
+  "models": {
+    "source_rows": 34,
+    "stored_rows": 34,
+    "matches": true,
+    "source_hash": "bdde0e78d42597ee4ef18e7eb5971b27b992c276bf3e33f50156c66cf8a72e94",
+    "stored_hash": "bdde0e78d42597ee4ef18e7eb5971b27b992c276bf3e33f50156c66cf8a72e94",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0
+  },
+  "periods": {
+    "source_rows": 301,
+    "stored_rows": 301,
+    "matches": true,
+    "source_hash": "29cfd5c34ec9ecdb3ac5b97a3647fb7d75d996c72313e5c8e971053da12d7efc",
+    "stored_hash": "29cfd5c34ec9ecdb3ac5b97a3647fb7d75d996c72313e5c8e971053da12d7efc",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0
+  },
+  "source_tabs": 3
+}

@@ -1,0 +1,771 @@
+"""Chart generation module — outputs Chart.js config JSON.
+
+Instead of rendering server-side PNGs (slow, static), this module builds
+Chart.js configuration objects that the frontend renders interactively
+with animations, tooltips, responsive sizing, and theme-aware colors.
+
+Flow: LLM decides chart config → build_chartjs_config() → JSON in markdown
+      → frontend detectAndRenderCharts() → Chart.js canvas
+"""
+
+import json
+import os.path
+import re
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional
+
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+# Labels containing these are treated as time-series (no value-sort, line-friendly)
+_TIME_HINTS = {"월", "년", "분기", "주차", "week", "month", "quarter",
+               "jan", "feb", "mar", "apr", "may", "jun",
+               "jul", "aug", "sep", "oct", "nov", "dec"}
+
+# Column names that look like time periods (revenue_2025_q3, sales_2026_01, ...)
+_RE_TIME_COL = re.compile(r"(20\d{2}|q[1-4]|분기|월|주차|quarter|month|week)", re.IGNORECASE)
+_RE_YEAR_MONTH = re.compile(r"^(20\d{2})[-/.](0?[1-9]|1[0-2])(?:[-/.]\d{1,2})?$")
+
+# 한 차트에 그릴 계열 수의 상한. 색이 12개뿐이라 이보다 많으면 색이 되풀이돼
+# 범례가 어느 선을 가리키는지 알 수 없게 된다.
+MAX_SERIES = 10
+# x축(기간) 상한 — 이쪽은 접을 수 없다. 기간을 합치면 그건 다른 질문의 답이다.
+MAX_PERIODS = 36
+
+# ⛔ 접는 것이 늘 이득은 아니다. 상위 계열이 전체의 10% 도 안 되면 그 차트는
+#    상위를 보여주는 것이 아니라 **'기타' 하나를 보여주는 것**이다. 그럴 땐
+#    그리지 않고 이유를 말한다 (400개 계열을 9개 + 기타로 접으면 기타가 97%다).
+_FOLD_MIN_TOP_SHARE = 0.10
+
+# ⛔ 더하면 안 되는 지표. '기타' 로 묶는 것은 **합치는 것**이라, 비율·평균을
+#    묶으면 통계처럼 생긴 거짓말이 된다 (`insight.py` 가 숫자를 못 쓰게 한 것과
+#    같은 이유). 판정이 애매하면 묶지 않는 쪽으로 기운다 — 안전한 쪽 실패다.
+_RE_NON_ADDITIVE = re.compile(
+    r"(률|율|비중|비율|평균|중앙|rate|ratio|pct|percent|avg|mean|share|margin|roas)",
+    re.IGNORECASE)
+
+
+# 연도를 **나눠 달라**는 표현 / 기간 **범위**를 잇는 표현.
+# ⛔ 연도가 둘 보인다고 YoY 로 보면 "2025년 1월부터 2026년 6월까지" 같은 범위까지
+#    연도별로 쫪진다 — 없던 비교가 생긴다. 범위 표현이 있으면 YoY 가 아니다.
+_RE_YEAR = re.compile(r"20\d{2}")
+_RANGE_HINT = re.compile(r"부터|까지|~|사이|이후|이전")
+_SPLIT_HINT = re.compile(r"라벨|각각|따로|나눠|나누어|분리|구분|비교|vs|대비")
+
+
+def infer_chart_intent(query: str, data: List[Dict[str, Any]]) -> str:
+    """Deterministically classify chart intent; never leave YoY to the LLM."""
+    q = (query or "").lower()
+    if re.search(r"yoy|전년|전년도|작년|연도별\s*(비교|추이)|\b20\d{2}\s*(vs|대|대비)\s*20\d{2}", q):
+        return "yoy"
+    # "2025년 라벨1 2026년 라벨2" — yoy·전년 이란 말은 없지만 연도별로 나눠 달라는 뜻이다
+    # (붐따 #146: 이걸 trend 로 봐서 한 선 안에 두 해가 이어져 그려졌다)
+    if (len(set(_RE_YEAR.findall(q))) >= 2 and _SPLIT_HINT.search(q)
+            and not _RANGE_HINT.search(q)):
+        return "yoy"
+    if re.search(r"월별|월간|시계열|추이|트렌드|trend|monthly|time\s*series", q):
+        return "trend"
+    if re.search(r"비중|구성비|점유율|share", q):
+        return "share"
+    return "comparison"
+
+
+def apply_chart_intent(config: Dict[str, Any], query: str, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Apply server-owned chart semantics after (not before) LLM config."""
+    intent = infer_chart_intent(query, data)
+    config = dict(config)
+    config["chart_intent"] = intent
+    if intent in ("yoy", "trend"):
+        config["chart_type"] = "line"
+    # ⛔ 예전엔 여기서 `group_column = None` 으로 지우고 YoY 분기를 타게 했다.
+    #    그러면 대륙·팀 같은 **진짜 그룹 축이 사라져** 두 대륙을 물어도 어느 쪽 선인지
+    #    알 수 없고, 무엇보다 긴 형식 그대로 행 수 상한에 걸려 **차트가 통째로 사라졌다**
+    #    (붐따 #145). 빌더가 그룹 × 연도로 합쳐 시리즈를 만든다 — 여기선 건드리지 않는다.
+    return config
+
+# Modern color palette — vibrant, accessible, distinct
+COLORS = [
+    "rgba(99, 102, 241, 0.85)",   # Indigo
+    "rgba(245, 158, 11, 0.85)",   # Amber
+    "rgba(16, 185, 129, 0.85)",   # Emerald
+    "rgba(239, 68, 68, 0.85)",    # Red
+    "rgba(139, 92, 246, 0.85)",   # Violet
+    "rgba(6, 182, 212, 0.85)",    # Cyan
+    "rgba(249, 115, 22, 0.85)",   # Orange
+    "rgba(132, 204, 22, 0.85)",   # Lime
+    "rgba(236, 72, 153, 0.85)",   # Pink
+    "rgba(20, 184, 166, 0.85)",   # Teal
+    "rgba(59, 130, 246, 0.85)",   # Blue
+    "rgba(168, 85, 247, 0.85)",   # Purple
+]
+
+# Solid (opacity=1) variants — used for borders and point fills
+COLORS_SOLID = [c.replace("0.85)", "1)") for c in COLORS]
+BORDERS = COLORS_SOLID  # alias for backward compat
+
+
+def _format_short(val: float) -> str:
+    """Short format for data labels."""
+    if abs(val) >= 1e9:
+        return f"{val / 1e9:.1f}B"
+    elif abs(val) >= 1e6:
+        return f"{val / 1e6:.1f}M"
+    elif abs(val) >= 1e3:
+        return f"{val / 1e3:.0f}K"
+    else:
+        return f"{val:,.0f}"
+
+
+# ── 시리즈 라벨은 측정값을 가리켜야 한다 (붐따 #138) ─────────────────────────
+# Chart.js 는 툴팁·범례를 `<dataset.label>: <값>` 으로 그린다. 거기에 x축이
+# 무엇인지("제품명")를 넣으면 화면에 **"제품명: 25,541,542,845"** 가 뜬다.
+# 그 자리에 와야 할 것은 "총 매출" 이다.
+# ⛔ 코드가 LLM 이 준 `y_label` 을 그대로 믿었다. 라벨은 숫자가 아니라 **말**이라
+#    틀려도 에러가 안 나고, 표는 멀쩡한데 차트만 이상해 보인다.
+# ⚠️ 값 목록이 아니라 **측정값을 뜻하는 낱말**의 목록이다 — 새 지표가 생겨도
+#    "매출·수량·비중…" 중 하나는 들어가므로 값 목록처럼 낡지 않는다.
+_MEASURE_WORDS = (
+    "매출", "금액", "수량", "개수", "건수", "비중", "비율", "증감", "성장",
+    "광고비", "비용", "원가", "이익", "단가", "평균", "합계", "총", "원", "%",
+    "revenue", "sales", "amount", "qty", "quantity", "count", "cost",
+    "spend", "ratio", "share", "rate", "total", "avg", "sum", "profit",
+)
+
+
+def _series_label(y_label: str, y_col) -> str:
+    """단일 시리즈의 이름 — 측정값을 가리키는 말일 때만 LLM 의 라벨을 쓴다."""
+    col = y_col if isinstance(y_col, str) else (y_col[0] if y_col else "")
+    text = (y_label or "").strip()
+    if text and any(w in text.lower() for w in _MEASURE_WORDS):
+        return text
+    return col or text or "값"
+
+
+def _find_numeric_column(data: List[Dict], exclude: List[str]) -> Optional[str]:
+    """Find a numeric column in the data, excluding specified columns."""
+    if not data:
+        return None
+    row = data[0]
+    for col, val in row.items():
+        if col in exclude:
+            continue
+        try:
+            float(val if val is not None else 0)
+            return col
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def _pivot_grouped_data(data: List[Dict], x_col: str, y_col: str, group_col: str):
+    """Pivot long-format grouped data into {group: [values]} for multi-series."""
+    x_order = list(OrderedDict.fromkeys(str(row.get(x_col, "")) for row in data))
+    groups = list(OrderedDict.fromkeys(str(row.get(group_col, "")) for row in data))
+
+    pivot = {x: {} for x in x_order}
+    group_totals = {g: 0.0 for g in groups}
+
+    for row in data:
+        x = str(row.get(x_col, ""))
+        g = str(row.get(group_col, ""))
+        v = float(row.get(y_col, 0) or 0)
+        pivot[x][g] = v
+        group_totals[g] += v
+
+    # ⛔ 여기서 `[:10]` 으로 잘라내던 자리다. 상한을 통과한 11~15개짜리 차트에서
+    #    **시리즈가 말없이 사라졌다** — 범례에도 안 남으니 아무도 모른다.
+    #    개수는 `_fold_series()` 가 위에서 정하고, 여기서는 정렬만 한다.
+    groups = sorted(groups, key=lambda g: group_totals[g], reverse=True)
+
+    return x_order, groups, pivot
+
+
+def _note(notes: Optional[List[str]], text: str) -> None:
+    """차트가 온전하지 않은 이유를 호출부로 올린다.
+
+    ⛔ 이 자리에서 조용히 `return None` 하면 화면에는 **아무 말도 없이** 차트만
+       사라진다 (붐따 #145·#165). 사유는 사용자에게 닿아야 한다.
+    """
+    if notes is not None and text and text not in notes:
+        notes.append(text)
+
+
+def _fold_series(
+    data: List[Dict[str, Any]], x_col: str, y_col: str, group_col: str,
+    y_label: str = "",
+) -> tuple:
+    """계열이 너무 많으면 상위만 남기고 나머지를 하나로 접는다.
+
+    ⛔ 예전에는 계열이 15개를 넘으면 **차트를 통째로 버렸다**(`return None`).
+       19개 제품의 월별 매출을 물은 사용자는 표만 받고 아무 설명도 못 들었다.
+
+    Returns:
+        (rows, folded, dropped) — folded 는 '기타' 로 합친 계열 수,
+        dropped 는 합칠 수 없어 **뺀** 계열 수. 둘 다 0이면 손대지 않은 것이다.
+    """
+    groups, totals = [], {}
+    for row in data:
+        g = str(row.get(group_col, ""))
+        if g not in totals:
+            totals[g] = 0.0
+            groups.append(g)
+        totals[g] += float(row.get(y_col, 0) or 0)
+    if len(groups) <= MAX_SERIES:
+        return data, 0, 0
+
+    ranked = sorted(groups, key=lambda g: totals[g], reverse=True)
+    additive = not _RE_NON_ADDITIVE.search(f"{y_col} {y_label}")
+    keep = MAX_SERIES - 1 if additive else MAX_SERIES
+    top = set(ranked[:keep])
+    rest = len(ranked) - len(top)
+
+    # 너무 잘게 흩어져 있으면 접어도 읽을 것이 없다 — 상한에 맡기고 이유를 말한다.
+    grand = sum(totals.values())
+    if grand > 0:
+        top_share = sum(totals[g] for g in top) / grand
+        if top_share < _FOLD_MIN_TOP_SHARE:
+            logger.info("chart_fold_declined", groups=len(ranked),
+                        top_share=round(top_share, 4))
+            return data, 0, 0
+
+    x_order = list(OrderedDict.fromkeys(str(r.get(x_col, "")) for r in data))
+    by_x: Dict[str, List[Dict[str, Any]]] = {}
+    for row in data:
+        by_x.setdefault(str(row.get(x_col, "")), []).append(row)
+
+    out: List[Dict[str, Any]] = []
+    for x in x_order:
+        rest_sum, has_rest = 0.0, False
+        for row in by_x.get(x, []):
+            if str(row.get(group_col, "")) in top:
+                out.append(row)
+            else:
+                rest_sum += float(row.get(y_col, 0) or 0)
+                has_rest = True
+        if additive and has_rest:
+            # ⚠️ 합계를 보존한다 — '기타' 는 버린 것이 아니라 합친 것이다.
+            out.append({x_col: x, group_col: f"기타 {rest}개", y_col: rest_sum})
+    return out, (rest if additive else 0), (0 if additive else rest)
+
+
+def build_chartjs_config(
+    chart_config: Dict[str, Any],
+    data: List[Dict[str, Any]],
+    notes: Optional[List[str]] = None,
+) -> Optional[str]:
+    """Build a Chart.js configuration JSON string.
+
+    Returns:
+        JSON string for Chart.js, or None if generation fails.
+    """
+    try:
+        chart_type = chart_config.get("chart_type", "bar")
+        x_col = chart_config.get("x_column", "")
+        y_col = chart_config.get("y_column", "")
+        title = chart_config.get("title", "")
+        x_label = chart_config.get("x_label", "")
+        y_label = chart_config.get("y_label", "")
+        group_col = chart_config.get("group_column")
+
+        if not data or not x_col or not y_col:
+            # ⛔ 사유 없이 None 을 돌려주던 자리다. 주간 42건이 진단 정보 0으로
+            #    사라지고 있었다 (2026-08-18 로그 분석). 어느 경로로 죽었는지
+            #    남겨야 고칠 수 있다 — 이 저장소의 "조용한 실패" 원칙과 같다.
+            logger.warning("chart_skipped", reason="missing_columns",
+                           rows=len(data or []), x_col=x_col, y_col=y_col)
+            _note(notes, "그릴 축을 정하지 못해 차트는 생략했습니다.")
+            return None
+
+        # Validate x_column exists in data — auto-fix if not found
+        data_keys = list(data[0].keys()) if data else []
+        if x_col not in data_keys:
+            # Try case-insensitive match
+            x_lower = x_col.lower()
+            matched = [k for k in data_keys if k.lower() == x_lower]
+            if matched:
+                x_col = matched[0]
+            else:
+                # Pick first non-numeric column as x
+                for k in data_keys:
+                    try:
+                        float(data[0].get(k, ""))
+                    except (ValueError, TypeError):
+                        x_col = k
+                        break
+
+        if isinstance(y_col, str) and y_col not in data_keys:
+            y_lower = y_col.lower()
+            matched = [k for k in data_keys if k.lower() == y_lower]
+            if matched:
+                y_col = matched[0]
+            else:
+                y_col = _find_numeric_column(data, exclude=[x_col]) or y_col
+
+        # Validate y_column is numeric — auto-fix if needed
+        if isinstance(y_col, str):
+            sample_val = data[0].get(y_col)
+            try:
+                float(sample_val if sample_val is not None else 0)
+            except (ValueError, TypeError):
+                sample_x = data[0].get(x_col)
+                try:
+                    float(sample_x if sample_x is not None else "")
+                    x_col, y_col = y_col, x_col
+                except (ValueError, TypeError):
+                    fixed = _find_numeric_column(data, exclude=[x_col, y_col])
+                    if fixed:
+                        x_col = y_col
+                        y_col = fixed
+                    else:
+                        logger.warning("chart_skipped", reason="no_numeric_column",
+                                       x_col=x_col, y_col=y_col, rows=len(data))
+                        _note(notes, "그릴 수 있는 숫자 열이 없어 차트는 생략했습니다.")
+                        return None
+
+        # ⛔ **정규화가 상한 검사보다 먼저다.** 예전엔 순서가 반대였고, 그래서
+        #    대륙 2개 × 20개월 = 40행이 긴 형식 그대로 행 수 상한(25/36)에 걸려
+        #    `return None` 으로 **차트가 통째로 사라졌다** (붐따 #145 "차트가 안나옴").
+        #    정규화하면 월 12 × 시리즈 4 라 여유롭게 통과한다. 상한 자체는 그대로 둔다.
+        if (chart_type == "line" and chart_config.get("chart_intent") == "yoy"
+                and isinstance(x_col, str)):
+            parsed = [_RE_YEAR_MONTH.match(str(r.get(x_col, ""))) for r in data]
+            years = {m.group(1) for m in parsed if m}
+            if len(years) >= 2 and sum(bool(m) for m in parsed) >= 4:
+                # 그룹 축(대륙·팀…)이 실제로 둘 이상일 때만 라벨에 함께 적는다.
+                # 하나뿐인데 붙이면 "남아메리카 2025" 처럼 군더더기가 된다.
+                multi_group = bool(group_col) and len(
+                    {str(r.get(group_col, "")) for r in data}) > 1
+                yoy_rows = []
+                for row, match in zip(data, parsed):
+                    if not match:
+                        continue
+                    item = dict(row)
+                    year = match.group(1)
+                    item["__yoy_series"] = (
+                        f"{row.get(group_col, '')} {year}" if multi_group else year)
+                    item["__yoy_month"] = f"{int(match.group(2))}월"
+                    yoy_rows.append(item)
+                data = yoy_rows
+                x_col = "__yoy_month"
+                group_col = "__yoy_series"
+                x_label = x_label or "월"
+
+        # ⛔ **계열이 많다고 차트를 통째로 버리지 않는다** (붐따 #165, 2026-09-04).
+        #    "랩인네이처 월별 매출, 제품별로도" → 월 10 × 제품 19 였는데, 계열 상한
+        #    15 에 걸려 `return None` 이 났다. 화면에는 표만 남고 **아무 말도 없어서**
+        #    사용자는 같은 질문을 세 번 다시 물었다. 이제 상위 계열만 남기고
+        #    나머지는 '기타 N개' 로 **합쳐서** 그린다 — 합계는 보존된다.
+        if group_col and isinstance(y_col, str):
+            data, folded, dropped = _fold_series(
+                data, x_col, y_col, group_col, y_label=y_label)
+            if folded:
+                logger.info("chart_series_folded", folded=folded)
+            if dropped:
+                # 비율·평균은 합칠 수 없다. 뺐으면 뺐다고 적는다.
+                _note(notes, f"계열이 많아 상위 {MAX_SERIES}개만 그렸습니다 — "
+                             f"나머지 {dropped}개는 합산할 수 없는 지표라 제외했습니다.")
+
+        # Readability limits
+        max_items = {"bar": 15, "horizontal_bar": 20, "pie": 12, "line": 36}
+        limit = max_items.get(chart_type, 20)
+
+        # For grouped charts, check unique x-values (not total rows)
+        if group_col and chart_type in ("line", "stacked_bar", "grouped_bar"):
+            unique_x = len(set(str(row.get(x_col, "")) for row in data))
+            unique_g = len(set(str(row.get(group_col, "")) for row in data))
+            # 계열은 위에서 접혔다. 여기 남는 것은 **기간**이다 — 기간은 접을 수
+            # 없다 (합치면 그건 다른 질문의 답이다).
+            if unique_x > MAX_PERIODS or unique_g > MAX_SERIES:
+                logger.warning("chart_skipped", reason="too_many_series",
+                               unique_x=unique_x, unique_groups=unique_g,
+                               chart_type=chart_type)
+                _note(notes, (
+                    f"기간이 {unique_x}개로 많아 차트는 생략했습니다 — "
+                    f"기간을 좁혀 다시 물어보시면 그려 드립니다."
+                    if unique_x > MAX_PERIODS else
+                    f"계열이 {unique_g}개로 많고 고르게 흩어져 있어 차트는 "
+                    f"생략했습니다 — 상위 몇 개만 보여 달라고 하시면 "
+                    f"그려 드립니다."))
+                return None  # Too many periods or groups
+        elif chart_type == "pie" and len(data) > 10:
+            _pie_y = y_col if isinstance(y_col, str) else y_col[0]
+            data_sorted = sorted(data, key=lambda r: float(r.get(_pie_y, 0) or 0), reverse=True)
+            top_items = data_sorted[:9]
+            others_val = sum(float(r.get(_pie_y, 0) or 0) for r in data_sorted[9:])
+            data = top_items + [{x_col: "기타", _pie_y: others_val}]
+        elif len(data) > limit:
+            # Fallback: bar with too many items → switch to horizontal_bar (up to 25)
+            if chart_type == "bar" and len(data) <= 25:
+                chart_type = "horizontal_bar"
+            elif len(data) <= 25:
+                pass  # Allow up to 25 items for most chart types
+            else:
+                logger.warning("chart_skipped", reason="too_many_items",
+                               rows=len(data), limit=limit, chart_type=chart_type)
+                _note(notes, f"항목이 {len(data)}개로 많아 차트는 생략했습니다 — "
+                             f"상위 몇 개만 보여 달라고 하시면 그려 드립니다.")
+                return None
+
+        # --- Build Chart.js config ---
+        labels = [str(row.get(x_col, "")) for row in data]
+        datasets = []
+
+        # Wide time-columns on categorical rows (product × quarter 등):
+        # x축을 기간으로 전치하고 각 행(제품)을 시리즈로 — 제품명이 x축에
+        # 깔려 라벨이 겹치는 차트를 방지한다.
+        # ⛔ **x 컬럼 이름이 기간이면 행이 시간축이다 — 전치하면 축이 뒤집힌다.**
+        #    프로덕션 실측 (2026-08-25): LLM 이 YoY 를 넓은 형태로 뽑아
+        #    `month | south_america_2025_sales | …` 가 왔는데, x 값이 '01'·'08' 같은
+        #    **맨숫자**라 `_TIME_HINTS` 에 안 걸리고 열 이름에는 2025·2026 이 있어
+        #    시간처럼 보였다. 결과: x축이 계열명, **선이 '08'·'07'(월)** 인 차트.
+        #    값이 시간처럼 안 보여도 **컬럼 이름**이 기간이면 전치하지 않는다.
+        x_is_period = bool(_RE_TIME_COL.search(str(x_col)))
+        transpose = (
+            chart_type in ("line", "grouped_bar")
+            and isinstance(y_col, list)
+            and len(y_col) >= 2
+            and len(data) >= 2
+            and all(_RE_TIME_COL.search(str(c)) for c in y_col)
+            and not x_is_period
+            and not any(any(h in str(x).lower() for h in _TIME_HINTS) for x in labels)
+        )
+
+        if transpose:
+            chart_type = "line"
+            cjs_rows = sorted(
+                data,
+                key=lambda r: sum(float(r.get(c, 0) or 0) for c in y_col),
+                reverse=True,
+            )[:10]
+            # 기간 라벨 정리: revenue_2025_q3 → 2025 Q3
+            labels = [str(c) for c in y_col]
+            _pfx = os.path.commonprefix(labels)
+            # 구분자 경계까지만 접두사로 인정 (2025 연도 중간을 자르지 않게)
+            _cut = max(_pfx.rfind("_"), _pfx.rfind(" "))
+            _pfx = _pfx[: _cut + 1] if _cut >= 0 else ""
+            if len(_pfx) >= 3:
+                labels = [(l[len(_pfx):] or l) for l in labels]
+            # 공통 접미사도 제거 ("Q1 sales"/"Q2 sales" → "Q1"/"Q2").
+            # 접두사만 걷어내면 측정값 이름이 눈금마다 반복돼 축이 지저분해진다.
+            _sfx = os.path.commonprefix([l[::-1] for l in labels])[::-1]
+            _scut = min((_sfx.find(c) for c in ("_", " ") if c in _sfx), default=-1)
+            _sfx = _sfx[_scut:] if _scut >= 0 else ""
+            if len(_sfx) >= 2:
+                _stripped = [l[: -len(_sfx)].strip("_ ") for l in labels]
+                # 잘라낸 뒤에도 서로 구분되고 비어 있지 않을 때만 채택
+                if all(_stripped) and len(set(_stripped)) == len(_stripped):
+                    labels = _stripped
+            labels = [
+                re.sub(r"(?i)\bq([1-4])\b", lambda m: "Q" + m.group(1),
+                       l.strip("_ ").replace("_", " "))
+                for l in labels
+            ]
+            # 전치하면 x축은 더 이상 행 엔티티(국가·제품)가 아니라 기간이다.
+            # 원래 x_label("국가")을 그대로 두면 축 제목이 거짓말을 한다.
+            x_label = "기간"
+            for i, row in enumerate(cjs_rows):
+                border = COLORS_SOLID[i % len(COLORS_SOLID)]
+                datasets.append({
+                    "label": str(row.get(x_col, "")),
+                    "data": [float(row.get(c, 0) or 0) for c in y_col],
+                    "backgroundColor": COLORS[i % len(COLORS)],
+                    "borderColor": border,
+                    "borderWidth": 2.5,
+                    "fill": False,
+                    "tension": 0.35,
+                    "pointRadius": 2.5,
+                    "pointHoverRadius": 5,
+                    "pointHitRadius": 8,
+                    "pointBackgroundColor": border,
+                })
+
+        # Handle grouped data (pivot)
+        elif group_col and isinstance(y_col, str):
+            x_order, groups, pivot = _pivot_grouped_data(data, x_col, y_col, group_col)
+            labels = x_order
+            for i, g in enumerate(groups):
+                color = COLORS[i % len(COLORS)]
+                border = COLORS_SOLID[i % len(COLORS_SOLID)]
+                if group_col == "__yoy_year":
+                    # Conventional YoY styling: current year blue/solid,
+                    # prior year neutral gray/dashed.
+                    if str(g) == "2026":
+                        color, border = "rgba(37, 99, 235, 0.85)", "rgba(37, 99, 235, 1)"
+                    elif str(g) == "2025":
+                        color, border = "rgba(107, 114, 128, 0.18)", "rgba(107, 114, 128, 1)"
+                values = [pivot[x].get(g, 0) for x in x_order]
+                ds = {
+                    "label": g,
+                    "data": values,
+                    "backgroundColor": color,
+                    "borderColor": border,
+                    "borderWidth": 2,
+                }
+                if chart_type == "line":
+                    ds["fill"] = False
+                    ds["tension"] = 0.35
+                    ds["pointRadius"] = 2.5
+                    ds["pointHoverRadius"] = 5
+                    ds["pointHitRadius"] = 8
+                    ds["pointBackgroundColor"] = border
+                    ds["borderWidth"] = 2.5
+                    if group_col == "__yoy_year" and str(g) == "2025":
+                        ds["borderDash"] = [6, 4]
+                datasets.append(ds)
+
+        elif isinstance(y_col, list):
+            # Multiple y columns
+            for i, col in enumerate(y_col):
+                color = COLORS[i % len(COLORS)]
+                border = COLORS_SOLID[i % len(COLORS_SOLID)]
+                values = [float(row.get(col, 0) or 0) for row in data]
+                ds = {
+                    "label": col,
+                    "data": values,
+                    "backgroundColor": color,
+                    "borderColor": border,
+                    "borderWidth": 2,
+                }
+                if chart_type == "line":
+                    ds["fill"] = False
+                    ds["tension"] = 0.35
+                    ds["pointRadius"] = 2.5
+                    ds["pointHoverRadius"] = 5
+                    ds["pointHitRadius"] = 8
+                    ds["pointBackgroundColor"] = border
+                    ds["borderWidth"] = 2.5
+                datasets.append(ds)
+        else:
+            # Single series
+            values = [float(row.get(y_col, 0) or 0) for row in data]
+
+            if chart_type == "pie":
+                datasets.append({
+                    "data": values,
+                    "backgroundColor": COLORS[:len(values)],
+                    "borderColor": ["rgba(255,255,255,0.8)"] * len(values),
+                    "borderWidth": 2,
+                    "hoverOffset": 8,
+                })
+            else:
+                # Bar/line with gradient effect via per-bar colors
+                if chart_type in ("bar", "horizontal_bar") and len(values) <= 15:
+                    bg = COLORS[:len(values)]
+                    bd = BORDERS[:len(values)]
+                else:
+                    bg = COLORS[0]
+                    bd = BORDERS[0]
+
+                ds = {
+                    "label": _series_label(y_label, y_col),
+                    "data": values,
+                    "backgroundColor": bg,
+                    "borderColor": bd,
+                    "borderWidth": 2,
+                    "borderRadius": 6,
+                }
+                if chart_type == "line":
+                    ds["fill"] = "origin"
+                    ds["backgroundColor"] = COLORS[0].replace("0.85)", "0.15)")
+                    ds["borderColor"] = COLORS_SOLID[0]
+                    ds["tension"] = 0.35
+                    ds["pointRadius"] = 2.5
+                    ds["pointHoverRadius"] = 5
+                    ds["pointHitRadius"] = 8
+                    ds["pointBackgroundColor"] = COLORS_SOLID[0]
+                    ds["borderWidth"] = 2.5
+                datasets.append(ds)
+
+        # Sort bars by value (descending) for non-time-series
+        is_time_series = any(
+            any(h in str(x).lower() for h in _TIME_HINTS) for x in labels
+        )
+
+        if not is_time_series and chart_type in ("bar", "horizontal_bar") and len(datasets) == 1:
+            pairs = list(zip(labels, datasets[0]["data"]))
+            pairs.sort(key=lambda p: p[1], reverse=True)
+            labels = [p[0] for p in pairs]
+            datasets[0]["data"] = [p[1] for p in pairs]
+            if isinstance(datasets[0].get("backgroundColor"), list):
+                # Keep color mapping consistent after sort
+                datasets[0]["backgroundColor"] = COLORS[:len(labels)]
+                datasets[0]["borderColor"] = BORDERS[:len(labels)]
+
+        # Map chart types to Chart.js types
+        cjs_type = {
+            "bar": "bar",
+            "horizontal_bar": "bar",
+            "line": "line",
+            "pie": "doughnut",  # Doughnut looks more modern than pie
+            "grouped_bar": "bar",
+            "stacked_bar": "bar",
+        }.get(chart_type, "bar")
+
+        is_horizontal = chart_type == "horizontal_bar"
+
+        # Build config
+        config = {
+            "type": cjs_type,
+            "data": {
+                "labels": labels,
+                "datasets": datasets,
+            },
+            "options": {
+                "responsive": True,
+                "maintainAspectRatio": False,
+                "animation": {
+                    "duration": 800,
+                    "easing": "easeOutQuart",
+                },
+                "plugins": {
+                    "title": {
+                        "display": bool(title),
+                        "text": title,
+                        "font": {"size": 16, "weight": "bold"},
+                        "padding": {"bottom": 16},
+                    },
+                    "legend": {
+                        "display": len(datasets) > 1 or chart_type == "pie",
+                        "position": "top",
+                        "labels": {
+                            "usePointStyle": True,
+                            "padding": 16,
+                            "font": {"size": 12},
+                        },
+                    },
+                    "tooltip": {
+                        "backgroundColor": "rgba(0,0,0,0.8)",
+                        "titleFont": {"size": 13},
+                        "bodyFont": {"size": 12},
+                        "cornerRadius": 8,
+                        "padding": 12,
+                        "displayColors": True,
+                    },
+                },
+            },
+        }
+
+        # Axis config (not for pie/doughnut)
+        if cjs_type != "doughnut":
+            _all_vals = []
+            for _ds in datasets:
+                _all_vals.extend([v for v in _ds.get("data", []) if isinstance(v, (int, float)) and v != 0])
+            _max_val = max(_all_vals) if _all_vals else 100
+            _has_decimals = _max_val < 10 and any(v != int(v) for v in _all_vals if isinstance(v, (int, float)))
+            y_ticks = {"font": {"size": 11}}
+            if _has_decimals:
+                y_ticks["precision"] = 2
+                # Force decimal step size for small value ranges
+                if _max_val <= 1:
+                    y_ticks["stepSize"] = 0.2
+                elif _max_val <= 5:
+                    y_ticks["stepSize"] = 0.5
+                elif _max_val < 10:
+                    y_ticks["stepSize"] = 1
+
+            x_axis = {
+                "title": {"display": bool(x_label), "text": x_label, "font": {"size": 13}},
+                "grid": {"display": False},
+                "ticks": {"font": {"size": 11}},
+            }
+            y_axis = {
+                # ⚠️ 축 제목도 같다 — 매출 축에 "제품명" 이 붙으면 축이 거짓말을 한다 (#138)
+                "title": {"display": bool(y_label),
+                          "text": _series_label(y_label, y_col),
+                          "font": {"size": 13}},
+                "grid": {"color": "rgba(0,0,0,0.06)"},
+                "ticks": y_ticks,
+                "beginAtZero": True,
+            }
+
+            # 선 그래프는 값 라벨을 점 **위**에 그린다. 축을 데이터에 딱 맞추면
+            # 최고점이 플롯 천장에 붙어 라벨 자리가 없어지고, 그러면 라벨이
+            # 범례 위로 올라가 겹쳐 찍힌다 (2026-09-01 제보).
+            # ⚠️ 이건 자리를 만들어 주는 것일 뿐 **보증이 아니다** — 겹치지 않는다는
+            #    보증은 chat.js 의 경계 판정이 한다. 둘 다 있어야 한다:
+            #    여백만 두면 데이터 모양에 따라 다시 붙고, 경계 판정만 두면
+            #    최고점 라벨이 늘 점 아래로 뒤집혀 읽기 나쁘다.
+            if chart_type == "line":
+                y_axis["grace"] = "8%"
+
+            if is_horizontal:
+                config["options"]["indexAxis"] = "y"
+                x_axis, y_axis = y_axis, x_axis
+                y_axis["ticks"]["font"] = {"size": 11}
+
+            # Rotate x labels if many items
+            if len(labels) > 8 and not is_horizontal:
+                x_axis["ticks"]["maxRotation"] = 45
+
+            config["options"]["scales"] = {"x": x_axis, "y": y_axis}
+
+            # Stacked
+            if chart_type == "stacked_bar":
+                config["options"]["scales"]["x"]["stacked"] = True
+                config["options"]["scales"]["y"]["stacked"] = True
+
+        else:
+            # Doughnut options
+            config["options"]["cutout"] = "55%"
+            config["options"]["plugins"]["legend"]["position"] = "right"
+
+        logger.info("chartjs_config_built", chart_type=chart_type, labels=len(labels), datasets=len(datasets))
+        return json.dumps(config, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error("chartjs_config_failed", error=str(e))
+        return None
+
+
+def get_chart_config_prompt(query: str, sql: str, results_preview: str, row_count: int) -> str:
+    """Build a prompt for the LLM to decide chart configuration."""
+    return f"""사용자의 질문과 SQL 결과를 분석해서 시각화가 적절한지 판단하고, 차트 설정을 JSON으로 반환하세요.
+
+## 사용자 질문
+{query}
+
+## SQL
+{sql}
+
+## 결과 ({row_count}행)
+{results_preview}
+
+## 판단 기준
+- 사용자가 "시각화", "차트", "그래프", "보여줘", "비교", "추이", "트렌드", "도표", "플롯", "그려", "그려줘", "시각화해", "막대그래프", "원형그래프", "꺾은선", "파이차트", "바차트", "그래프로", "차트로" 등을 요청하면 차트를 생성
+- 비교 데이터(국가별, 월별, 플랫폼별 등)는 차트가 효과적
+- 단일 숫자 결과(총 매출 1개)는 차트 불필요
+- 결과가 2행 이상이고 숫자 컬럼이 있으면 차트 권장
+
+## ⚠️ 가독성 판단 — 아래 경우 needs_chart: false
+- bar 차트: 카테고리가 15개 초과
+- horizontal_bar: 항목이 20개 초과
+- pie/donut: 항목이 많아도 OK (시스템이 자동으로 Top 9 + 기타로 집계)
+- line: x축 고유값 36개 초과. 단, group_column이 있으면 x축 고유값 기준으로 판단
+
+## 차트 타입 선택 (우선순위)
+- **line**: 월별/일별/분기별 추이, 시계열 데이터는 **반드시 line** 사용. "월별", "추이", "트렌드" 키워드가 있으면 무조건 line.
+  - 그룹별(국가별/몰별/브랜드별) 비교가 있으면 group_column 지정 → 멀티라인 차트
+  - 단일 시계열이면 영역(fill) 라인 차트
+  - 결과가 "항목(제품/국가) 행 × 기간 컬럼" 와이드 형태면: chart_type=line, y_column에 기간 컬럼 배열 지정 → 시스템이 기간을 x축으로 자동 전치 (항목명을 x축에 두지 마세요)
+- bar: 카테고리별 비교 — **카테고리 5개 이하 + 이름이 짧을 때만** (시계열 아닐 때만)
+- **horizontal_bar**: 제품명, 브랜드명, SKU명 등 긴 텍스트 라벨이면 **반드시 사용**
+- pie: 비율/구성 (전체 대비 비중). 항목 수 상관없음 (시스템이 Top 9 + 기타 자동 집계)
+- grouped_bar: 여러 지표를 카테고리별로 비교 (시계열 아닐 때만)
+- stacked_bar: 누적 비교
+
+## ⚠️ 핵심: 시계열(월별/일별/분기별) 데이터는 line 차트가 기본. bar로 선택하지 마세요.
+
+## 반환 JSON 형식
+{{
+  "needs_chart": true/false,
+  "chart_type": "bar|horizontal_bar|line|pie|grouped_bar|stacked_bar",
+  "x_column": "결과 컬럼명",
+  "y_column": "결과 컬럼명" 또는 ["컬럼1", "컬럼2"],
+  "group_column": "그룹 컬럼명 (없으면 null)",
+  "title": "차트 제목 (한국어)",
+  "x_label": "X축 라벨",
+  "y_label": "Y축 라벨"
+}}
+
+needs_chart가 false이면 다른 필드는 비워두세요."""

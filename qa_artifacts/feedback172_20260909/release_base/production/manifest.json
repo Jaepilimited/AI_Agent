@@ -1,0 +1,66 @@
+{
+  "captured_at_utc": "2026-09-09T00:05:16.977284+00:00",
+  "files": [
+    {
+      "path": "app/agents/sql_agent.py",
+      "exists": true,
+      "sha256": "bc1585e4922bc6cdac9b95eaea663b63e3644dbdedbdd3cbc58548459f611957",
+      "bytes": 235861
+    },
+    {
+      "path": "prompts/sql_generator.txt",
+      "exists": true,
+      "sha256": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "bytes": 109873
+    },
+    {
+      "path": "app/core/feedback_inbox.py",
+      "exists": true,
+      "sha256": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+      "bytes": 39066
+    },
+    {
+      "path": "app/core/sales_outlook.py",
+      "exists": false,
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "path": "tests/test_sales_outlook.py",
+      "exists": false,
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "path": "tests/test_sales_outlook_integration.py",
+      "exists": false,
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "path": "tests/test_named_period.py",
+      "exists": false,
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "path": "tests/test_feedback_resolution_sync.py",
+      "exists": true,
+      "sha256": "a477e81582d9711fea82a7cac5060d2827d9c41e0370d84367f4dd29b7da7f14",
+      "bytes": 4749
+    },
+    {
+      "path": "tests/conftest.py",
+      "exists": false,
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "path": "requirements.txt",
+      "exists": true,
+      "sha256": "db015b750d41baac33018ce2078a8219d0fef96f40dd9b1513d0703a3b0f9710",
+      "bytes": 5081
+    }
+  ],
+  "pytest_available": false
+}

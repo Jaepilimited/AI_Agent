@@ -1,0 +1,63 @@
+{
+  "checked_at": "2026-09-18T06:49:52.918890+00:00",
+  "results": [
+    {
+      "region": "domestic",
+      "url": "http://34.64.99.254:8061/api/dashboard/summary?startDate=2026-09-17&endDate=2026-09-18&scope=all&channel=all&claimType=all&status=all",
+      "source": "google_sheets",
+      "period": {
+        "start": "2026-09-17",
+        "end": "2026-09-18"
+      },
+      "lastUpdated": "2026-09-18T11:23:49+09:00",
+      "total": 4,
+      "dailyTrend": [
+        {
+          "date": "2026-09-17",
+          "total": 3,
+          "return": 3,
+          "exchange": 0,
+          "redelivery": 0,
+          "excluded": 0
+        },
+        {
+          "date": "2026-09-18",
+          "total": 1,
+          "return": 1,
+          "exchange": 0,
+          "redelivery": 0,
+          "excluded": 0
+        }
+      ]
+    },
+    {
+      "region": "overseas",
+      "url": "http://34.64.99.254:8061/api/overseas/dashboard/summary?startDate=2026-09-17&endDate=2026-09-18&scope=all&channel=all&claimType=all&status=all",
+      "source": "bigquery_overseas",
+      "period": {
+        "start": "2026-09-17",
+        "end": "2026-09-18"
+      },
+      "lastUpdated": "2026-09-18T15:21:48+09:00",
+      "total": 2,
+      "dailyTrend": [
+        {
+          "date": "2026-09-17",
+          "total": 0,
+          "return": 0,
+          "exchange": 0,
+          "redelivery": 0,
+          "excluded": 0
+        },
+        {
+          "date": "2026-09-18",
+          "total": 2,
+          "return": 2,
+          "exchange": 0,
+          "redelivery": 0,
+          "excluded": 0
+        }
+      ]
+    }
+  ]
+}

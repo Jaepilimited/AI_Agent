@@ -1,0 +1,49 @@
+--- was/app/api/auth_api.py
++++ next/app/api/auth_api.py
+@@ -234,7 +234,8 @@
+     }
+ 
+ 
+-def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: str = "user") -> str:
++def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: str = "user", *,
++                  auth_provider: str = "password", entra_oid: str = "", entra_tid: str = "") -> str:
+     settings = get_settings()
+     payload = {
+         "user_id": user_id,
+@@ -242,7 +243,12 @@
+         "exp": datetime.now(timezone.utc) + timedelta(days=_TOKEN_EXPIRE_DAYS),
+         "brand_filter": brand_filter,
+         "role": role,
++        "purpose": "session",
++        "auth_provider": auth_provider,
++        "iat": datetime.now(timezone.utc),
+     }
++    if auth_provider == "entra":
++        payload.update(entra_oid=entra_oid, entra_tid=entra_tid)
+     return jwt.encode(payload, validate_jwt_secret(settings.jwt_secret_key), algorithm=_ALGORITHM)
+ 
+ 
+@@ -541,14 +547,21 @@
+ 
+ 
+ @auth_api_router.get("/me")
+-async def me(response: Response, user: User = Depends(get_current_user)):
++async def me(response: Response, user: User = Depends(get_current_user), *, request: Request):
+     """Get current authenticated user. Refreshes cookie (sliding session)."""
+     # Sliding refresh, debounced: only re-issue cookie if last refresh was > _ME_REFRESH_COOLDOWN ago.
+     now = time.time()
+     last = _me_last_refresh.get(user.id, 0)
+     if now - last > _ME_REFRESH_COOLDOWN:
+         bf = await asyncio.to_thread(_lookup_brand_filter, user.id)
+-        fresh_token = _create_token(user.id, user.email or "", brand_filter=bf, role=user.role)
++        # Authentication proof belongs to this request, never the shared User cache
++        # or directory linkage. Refresh cannot turn a legacy login into Entra.
++        claims = request.state.session_claims
++        fresh_token = _create_token(
++            user.id, user.email or "", brand_filter=bf, role=user.role,
++            auth_provider=claims.get("auth_provider") or "password",
++            entra_oid=claims.get("entra_oid", ""), entra_tid=claims.get("entra_tid", ""),
++        )
+         _set_cookie(response, fresh_token)
+         _me_last_refresh[user.id] = now
+         _me_last_refresh.move_to_end(user.id)

@@ -1,0 +1,75 @@
+{
+  "archived_at_utc": "2026-09-09T00:38:38.296507+00:00",
+  "stopped_plan_sha256": "990f3366af0b61bd262ddbd79c175a3d7be89f4f067cc2fc6b74a32f97fbd276",
+  "publication_status": "Stopped by production preimage guard before writes; saved publish/verify evidence still belongs to phase 1.",
+  "files": {
+    "release_plan.json": {
+      "sha256": "990f3366af0b61bd262ddbd79c175a3d7be89f4f067cc2fc6b74a32f97fbd276",
+      "bytes": 3403
+    },
+    "release_review.diff": {
+      "sha256": "44c40a09b5fd54456c806170b4be7c463c49eb941cc31279bb9a97d821bdafaa",
+      "bytes": 599
+    },
+    "amendment_test_review.diff": {
+      "sha256": "98aaef15e2909c8adb054db5eb04cde783b272c25536ad86c51a3f05009bb53f",
+      "bytes": 1603
+    },
+    "release_publish_result.json": {
+      "sha256": "29d1d3080797386f6264f80080c2f6f402006babafac410ecafd4b0dac811168",
+      "bytes": 573
+    },
+    "release_verify_result.json": {
+      "sha256": "05606924d9df81156a037db6e5998eb90195015a6e2344640b1e8eb60c6e56a2",
+      "bytes": 1960
+    },
+    "smoke_evidence.json": {
+      "sha256": "8cad6ffb7185517d4f21bed28854888a7d17b086143cc8e207a30944464567e7",
+      "bytes": 8060
+    },
+    "smoke.py": {
+      "sha256": "7dd82f851789b196612d96ca9d86e1dfaf11c03f6b5ebdef03d789a2541a31b7",
+      "bytes": 10625
+    },
+    "release.py": {
+      "sha256": "710f6c668233febe62ce1bd8150d94ceb58c70344ede18336f6a50dcb6b73a7d",
+      "bytes": 29968
+    },
+    "release_candidate/app/agents/sql_agent.py": {
+      "sha256": "2b8e2be9645848aa3d16f7ea161ed9e34913f603bd6d0d4a4f49b166584249ec",
+      "bytes": 230794
+    },
+    "release_candidate/app/core/feedback_inbox.py": {
+      "sha256": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "bytes": 39872
+    },
+    "release_candidate/app/core/sales_outlook.py": {
+      "sha256": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "bytes": 18675
+    },
+    "release_candidate/prompts/sql_generator.txt": {
+      "sha256": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "bytes": 109873
+    },
+    "release_candidate/tests/conftest.py": {
+      "sha256": "eaafc463cfa8c8494e5c7dc2708204e8ad9cd40302169b15bbf75e4ca3af8639",
+      "bytes": 1696
+    },
+    "release_candidate/tests/test_feedback_resolution_sync.py": {
+      "sha256": "a477e81582d9711fea82a7cac5060d2827d9c41e0370d84367f4dd29b7da7f14",
+      "bytes": 4749
+    },
+    "release_candidate/tests/test_named_period.py": {
+      "sha256": "391f9bf5869c5b87641c0f3ad6c27efab6d569a94b4a6b707f47c2cdb29e6716",
+      "bytes": 7116
+    },
+    "release_candidate/tests/test_sales_outlook.py": {
+      "sha256": "b3c4e9b495583a4b50559e7fa8864554c0d0c58f5d2c3d18e39af6b2381f1a6b",
+      "bytes": 12828
+    },
+    "release_candidate/tests/test_sales_outlook_integration.py": {
+      "sha256": "8255919d82507557071c9277d53e2ce548358be8f8938b3f0bfb38fb93916082",
+      "bytes": 7639
+    }
+  }
+}

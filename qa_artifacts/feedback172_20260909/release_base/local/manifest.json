@@ -1,0 +1,35 @@
+{
+    "captured_at_utc":  "2026-09-08T23:59:08.5517543Z",
+    "files":  [
+                  {
+                      "exists":  false,
+                      "path":  "app/core/sales_outlook.py"
+                  },
+                  {
+                      "path":  "app/agents/sql_agent.py",
+                      "sha256":  "bb0038ecee7b82f3c6277df357147b6a24fa24584adcdc6fa65a3d41b48dd588",
+                      "bytes":  233802,
+                      "exists":  true
+                  },
+                  {
+                      "path":  "prompts/sql_generator.txt",
+                      "sha256":  "91e2963f8c54f2abc9d73fd3da0060c0c35fb094eede8d289824aad8927d4e74",
+                      "bytes":  109847,
+                      "exists":  true
+                  },
+                  {
+                      "path":  "app/core/feedback_inbox.py",
+                      "sha256":  "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+                      "bytes":  39066,
+                      "exists":  true
+                  },
+                  {
+                      "exists":  false,
+                      "path":  "tests/test_sales_outlook.py"
+                  },
+                  {
+                      "exists":  false,
+                      "path":  "tests/test_sales_outlook_integration.py"
+                  }
+              ]
+}

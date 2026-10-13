@@ -1,0 +1,40 @@
+{
+  "service": "active",
+  "/health": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "service": "Craver AI Agent"
+    }
+  },
+  "/health/ready": {
+    "status": 200,
+    "body": {
+      "status": "ready",
+      "notion_warmup": true,
+      "notion_pages": 10,
+      "bq_schema": true,
+      "cs_loaded": true,
+      "cs_db_count": 920
+    }
+  },
+  "/api/datasources": {
+    "status": 401
+  },
+  "frontend": {
+    "status": 200,
+    "cs_sources": true
+  },
+  "cs_cache_counts": {
+    "DomesticCSChannel": 9,
+    "DomesticCSClaimType": 5,
+    "DomesticCSStatus": 4,
+    "DomesticCSReason": 10,
+    "DomesticCSCompensation": 8,
+    "OverseasCSStatus": 3,
+    "OverseasCSCountry": 27,
+    "OverseasCSReason": 0,
+    "OverseasCSNormalization": 2
+  },
+  "hashes_match": true
+}

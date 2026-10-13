@@ -1,0 +1,638 @@
+{
+  "audited_at_kst": "2026-09-18 15:40–15:53",
+  "source_metadata_unique_ids": 171,
+  "source_http_status_counts": {
+    "200": 154,
+    "404": 17
+  },
+  "source_api_read_scope": "기존 Cloud/WAS 로컬에 색인된 Notion 문서 ID + 미공유 기록. 신규 미색인 문서 전수 발견, 공개 웹 본문 및 DB 내부 행 전수 검증은 포함하지 않음.",
+  "latest_pipeline_attempt": {
+    "job_id": "qdrant_pipeline_daily",
+    "started_at": "2026-09-18 05:00:00",
+    "finished_at": null,
+    "ok": null,
+    "detail": null,
+    "duration_ms": null
+  },
+  "latest_successful_pipeline": {
+    "job_id": "qdrant_pipeline_daily",
+    "started_at": "2026-09-17 05:00:00",
+    "finished_at": "2026-09-17 05:05:21",
+    "ok": 1,
+    "detail": "{'new': 0, 'updated': 7, 'deleted': 0, 'unchanged': 84, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+    "duration_ms": 321616
+  },
+  "latest_pipeline_interruption_evidence": {
+    "queried_at_kst": "2026-09-18 15:45:16.999475+09:00",
+    "systemd": [
+      "MainPID=283891",
+      "NRestarts=3",
+      "ExecMainStartTimestamp=Fri 2026-09-18 14:16:28 KST",
+      "ActiveState=active",
+      "SubState=running",
+      "ActiveEnterTimestamp=Fri 2026-09-18 14:16:28 KST"
+    ],
+    "systemd_exit": 0,
+    "journal_exit": 0,
+    "journal_events": [
+      {
+        "at_kst": "2026-09-18 05:03:05.889344+09:00",
+        "markers": [
+          "로컬 JSON 저장"
+        ],
+        "pid": "280355"
+      },
+      {
+        "at_kst": "2026-09-18 05:03:05.922149+09:00",
+        "markers": [
+          "동기화 완료"
+        ],
+        "pid": "280355"
+      },
+      {
+        "at_kst": "2026-09-18 05:03:05.922465+09:00",
+        "markers": [
+          "404스킵"
+        ],
+        "pid": "280355"
+      },
+      {
+        "at_kst": "2026-09-18 05:03:19.621353+09:00",
+        "markers": [
+          "Started"
+        ],
+        "pid": "281979"
+      }
+    ],
+    "pid_presence_verification": {
+      "old_pipeline_pid_280355_present": false,
+      "replacement_pid_281979_present": false
+    }
+  },
+  "cloud_total_chunks": 6352,
+  "cloud_link_cards": 4291,
+  "local_json_mtime_kst": "2026-09-18 05:03:05.888270+09:00",
+  "rows": [
+    {
+      "label": "B2B1",
+      "team": "B2B1",
+      "classification": "미확인",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 0,
+      "body_chunks": 0,
+      "body_documents": 0,
+      "metadata_counts": {},
+      "metadata_chunk_counts": {},
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 0,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 0,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "HUB의 빈 문단 1개(텍스트 0자), Qdrant 본문·링크 카드 0개. 현재 원본에 학습할 내용 없음."
+    },
+    {
+      "label": "B2B2",
+      "team": "B2B2",
+      "classification": "실패",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 2876,
+      "body_chunks": 139,
+      "body_documents": 45,
+      "metadata_counts": {
+        "all_current": 44,
+        "stale_only": 1
+      },
+      "metadata_chunk_counts": {
+        "all_current": 91,
+        "stale_only": 48
+      },
+      "stale_documents": 1,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 1,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 0,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 2737,
+      "current_catalog_cards": 107,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 14,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "원본 2026-06-29 수정 문서 1개가 2026-04-13 사본으로 남음(48청크). 현재 링크 카드 해시 107개는 모두 존재하나 과거 카드 해시 14개도 잔존."
+    },
+    {
+      "label": "BCM",
+      "team": "BCM",
+      "classification": "최신 확정",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 75,
+      "body_chunks": 16,
+      "body_documents": 3,
+      "metadata_counts": {
+        "all_current": 3
+      },
+      "metadata_chunk_counts": {
+        "all_current": 16
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 0,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 59,
+      "current_catalog_cards": 2,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "기존 본문 3문서의 원본 수정시각이 모두 일치. 현재 목록의 링크 카드 2개도 해시 일치. 본문 전체 재수집 검증은 아님."
+    },
+    {
+      "label": "BP (CS 문서)",
+      "team": "CS",
+      "classification": "최신 확정",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 1507,
+      "body_chunks": 74,
+      "body_documents": 4,
+      "metadata_counts": {
+        "all_current": 4
+      },
+      "metadata_chunk_counts": {
+        "all_current": 74
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 0,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 1433,
+      "current_catalog_cards": 63,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 1,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "기존 CS 본문 4문서의 원본 수정시각이 모두 일치. 현재 링크 63개 해시는 모두 존재. 현재 카드 목록에 없는 과거 카드 1개 잔존. BP 제품 Q&A·제품정보는 별도 감사 범위."
+    },
+    {
+      "label": "Craver",
+      "team": "Craver",
+      "classification": "미확인",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 6,
+      "body_chunks": 6,
+      "body_documents": 2,
+      "metadata_counts": {
+        "unmapped_inline": 1,
+        "no_comparable_date": 1
+      },
+      "metadata_chunk_counts": {
+        "unmapped_inline": 3,
+        "no_comparable_date": 3
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 1,
+      "live_content_hash_confirmed_documents": 1,
+      "cloud_link_cards": 0,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "현재 HUB 본문 1,545자를 같은 청크 규칙으로 해시 대조: 주사본 3청크 모두 일치. 다른 적재기의 옛 inline 사본 3청크는 별도 식별·검증 불가."
+    },
+    {
+      "label": "DB",
+      "team": "DB",
+      "classification": "미확인",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 19,
+      "body_chunks": 19,
+      "body_documents": 2,
+      "metadata_counts": {
+        "unmapped_inline": 1,
+        "all_current": 1
+      },
+      "metadata_chunk_counts": {
+        "unmapped_inline": 1,
+        "all_current": 18
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 1,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 0,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "일반 본문 1문서의 수정시각 일치. 별도 inline 사본 1개는 원본 수정시각을 보유하지 않음."
+    },
+    {
+      "label": "JBT",
+      "team": "JBT",
+      "classification": "미확인",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 31,
+      "body_chunks": 2,
+      "body_documents": 1,
+      "metadata_counts": {
+        "source_unavailable": 1
+      },
+      "metadata_chunk_counts": {
+        "source_unavailable": 2
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 1,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 29,
+      "current_catalog_cards": 1,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "본문 원본 1문서가 Notion API 404. 현재 링크 카드 해시는 존재하나 연결된 본문 최신 여부는 확인 불가."
+    },
+    {
+      "label": "KBT",
+      "team": "KBT",
+      "classification": "최신 확정",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 4,
+      "body_chunks": 4,
+      "body_documents": 1,
+      "metadata_counts": {
+        "all_current": 1
+      },
+      "metadata_chunk_counts": {
+        "all_current": 4
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 0,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 0,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "기존 본문 1문서(4청크)의 원본 수정시각 일치. 본문 전체 재수집 검증은 아님."
+    },
+    {
+      "label": "PEOPLE",
+      "team": "PEOPLE",
+      "classification": "미확인",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 244,
+      "body_chunks": 244,
+      "body_documents": 16,
+      "metadata_counts": {
+        "source_unavailable": 15,
+        "all_current": 1
+      },
+      "metadata_chunk_counts": {
+        "source_unavailable": 59,
+        "all_current": 185
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 15,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 0,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 0,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "16개 문서 중 1개 수정시각 일치, 15개는 Notion API 404. 공개 사이트 등의 현재 본문 해시는 재수집하지 않았음."
+    },
+    {
+      "label": "GM EAST",
+      "team": "[GM]EAST",
+      "classification": "미확인",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 216,
+      "body_chunks": 194,
+      "body_documents": 5,
+      "metadata_counts": {
+        "all_current": 5
+      },
+      "metadata_chunk_counts": {
+        "all_current": 194
+      },
+      "stale_documents": 0,
+      "mixed_current_old_documents": 0,
+      "stale_before_todays_schedule": 0,
+      "changed_after_todays_schedule": 0,
+      "unverifiable_documents": 0,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 22,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 2,
+      "local_cloud_hash_mismatch_chunks": 119,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "기존 5문서 원본 수정시각은 모두 일치하지만 현재 WAS 로컬 색인과 Cloud의 119청크 내용 해시가 다름. 원본 DB 내부 행 전체 해시는 대조하지 않아 어느 사본이 최신인지 확정 불가."
+    },
+    {
+      "label": "GM WEST",
+      "team": "[GM]WEST",
+      "classification": "실패",
+      "scope": "기존 색인 문서 메타데이터",
+      "cloud_chunks": 673,
+      "body_chunks": 662,
+      "body_documents": 94,
+      "metadata_counts": {
+        "stale_only": 18,
+        "all_current": 74,
+        "source_unavailable": 1,
+        "current_plus_old": 1
+      },
+      "metadata_chunk_counts": {
+        "stale_only": 249,
+        "all_current": 406,
+        "source_unavailable": 1,
+        "current_plus_old": 6
+      },
+      "stale_documents": 18,
+      "mixed_current_old_documents": 1,
+      "stale_before_todays_schedule": 15,
+      "changed_after_todays_schedule": 3,
+      "unverifiable_documents": 1,
+      "live_content_hash_confirmed_documents": 0,
+      "cloud_link_cards": 11,
+      "current_catalog_cards": 0,
+      "missing_current_card_hashes": 0,
+      "historical_card_hashes_not_in_current_card_set": 1,
+      "local_cloud_hash_mismatch_chunks": 0,
+      "last_successful_shared_pipeline_kst": "2026-09-17 05:05:21",
+      "last_successful_catalog_sync_kst": "2026-09-18 01:01:14",
+      "note": "94문서 중 18개가 원본보다 오래됨(15개는 금일 05:00 이전 변경, 3개는 오늘 배치 이후 변경). 1개는 최신·옛청크 혼재, 1개 원본404. 74개는 모든 청크 수정시각 일치."
+    }
+  ],
+  "stale_documents": [
+    {
+      "team": "B2B2",
+      "page_id": "07d3489594fa4db6829d1fee397ecdf1",
+      "indexed_dates": [
+        "2026-04-13T02:30:00.000Z"
+      ],
+      "source_last_edited": "2026-06-29T01:09:00.000Z",
+      "chunks": 48,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33b2b4283b00807a8d9fdba69e6bf49f",
+      "indexed_dates": [
+        "2026-04-14T00:26:00.000Z"
+      ],
+      "source_last_edited": "2026-05-14T06:07:00.000Z",
+      "chunks": 14,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "2fb2b4283b0080b2ad9ffbc5414cb310",
+      "indexed_dates": [
+        "2026-04-06T09:10:00.000Z"
+      ],
+      "source_last_edited": "2026-09-14T07:56:00.000Z",
+      "chunks": 88,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "2d32b4283b0080d385b4d0e9e3fc29a9",
+      "indexed_dates": [
+        "2026-04-10T05:45:00.000Z"
+      ],
+      "source_last_edited": "2026-07-16T05:08:00.000Z",
+      "chunks": 15,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "31a2b4283b008060b1b8de97c1d1ee39",
+      "indexed_dates": [
+        "2026-03-30T07:14:00.000Z"
+      ],
+      "source_last_edited": "2026-05-11T03:54:00.000Z",
+      "chunks": 6,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33b2b4283b0080348c6fcbde62043589",
+      "indexed_dates": [
+        "2026-04-10T01:38:00.000Z"
+      ],
+      "source_last_edited": "2026-04-14T05:12:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33b2b4283b00805896b7edfec68ddb8e",
+      "indexed_dates": [
+        "2026-04-10T01:38:00.000Z"
+      ],
+      "source_last_edited": "2026-04-16T00:40:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "7762b4283b008204a9e2818e93adb6d6",
+      "indexed_dates": [
+        "2026-02-10T07:14:00.000Z"
+      ],
+      "source_last_edited": "2026-07-22T07:42:00.000Z",
+      "chunks": 8,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33b2b4283b008032b7d7ce313f35f0f1",
+      "indexed_dates": [
+        "2026-04-14T01:46:00.000Z"
+      ],
+      "source_last_edited": "2026-04-14T06:09:00.000Z",
+      "chunks": 9,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "3412b4283b008062ac74ce14b0ae5075",
+      "indexed_dates": [
+        "2026-04-13T05:39:00.000Z"
+      ],
+      "source_last_edited": "2026-04-28T04:52:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "3362b4283b00800caa6bce94e1efb871",
+      "indexed_dates": [
+        "2026-04-13T02:18:00.000Z"
+      ],
+      "source_last_edited": "2026-04-22T05:27:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33d2b4283b0080a1b19cdfdddccc4261",
+      "indexed_dates": [
+        "2026-04-09T02:22:00.000Z"
+      ],
+      "source_last_edited": "2026-05-11T03:54:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "3412b4283b008042b1c3f4c6a0fafd18",
+      "indexed_dates": [
+        "2026-04-13T06:27:00.000Z"
+      ],
+      "source_last_edited": "2026-08-21T09:39:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "32e2b4283b0080899cb4f34aaf13df17",
+      "indexed_dates": [
+        "2026-04-01T00:47:00.000Z"
+      ],
+      "source_last_edited": "2026-08-19T01:33:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33e2b4283b008029ade0cb2cfa0c08cc",
+      "indexed_dates": [
+        "2026-04-13T03:00:00.000Z"
+      ],
+      "source_last_edited": "2026-04-17T09:22:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "33d2b4283b00804b84cee682aebb3d57",
+      "indexed_dates": [
+        "2026-04-13T06:22:00.000Z"
+      ],
+      "source_last_edited": "2026-04-15T05:16:00.000Z",
+      "chunks": 1,
+      "state": "stale_only",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "2e12b4283b00807db535da1cd0088f0f",
+      "indexed_dates": [
+        "2026-09-08T07:25:00.000Z",
+        "2026-09-15T01:57:00.000Z",
+        "2026-09-17T06:46:00.000Z"
+      ],
+      "source_last_edited": "2026-09-18T01:45:00.000Z",
+      "chunks": 88,
+      "state": "stale_only",
+      "changed_after_todays_schedule": true
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "2e22b4283b00806e98f5d83edf50b825",
+      "indexed_dates": [
+        "2026-09-10T02:09:00.000Z"
+      ],
+      "source_last_edited": "2026-09-18T00:32:00.000Z",
+      "chunks": 10,
+      "state": "stale_only",
+      "changed_after_todays_schedule": true
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "3d72b4283b0080c8aef5f708ac847af1",
+      "indexed_dates": [
+        "2026-09-14T08:05:00.000Z",
+        "2026-09-15T03:12:00.000Z"
+      ],
+      "source_last_edited": "2026-09-15T03:12:00.000Z",
+      "chunks": 6,
+      "state": "current_plus_old",
+      "changed_after_todays_schedule": false
+    },
+    {
+      "team": "[GM]WEST",
+      "page_id": "fffe501bc5c049649666962435430429",
+      "indexed_dates": [
+        "2026-09-11T09:36:00.000Z"
+      ],
+      "source_last_edited": "2026-09-18T02:54:00.000Z",
+      "chunks": 2,
+      "state": "stale_only",
+      "changed_after_todays_schedule": true
+    }
+  ],
+  "craver_live_hash_match_chunks": 3,
+  "b2b1_source_empty": true,
+  "excluded_scope": [
+    "PR(source_kind=pr_issues), 다른 담당이 원본 시트 감사",
+    "source=google_sheets 342청크(팀 없음), 별도 시트 감사",
+    "IT 및 임베딩 된 구글시트는 System Status 숨김"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "queried_at_kst": "2026-09-18T15:45:06.964156+09:00",
+  "expiry_lot_case_normalized": {
+    "source_rows": 3264,
+    "stored_rows": 3264,
+    "matches": true,
+    "source_hash": "b3974fd123b1255f8213fdfff7730ea0f7c5162b985e8cb4ef605cc6c3edfe94",
+    "stored_hash": "b3974fd123b1255f8213fdfff7730ea0f7c5162b985e8cb4ef605cc6c3edfe94",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0
+  },
+  "lot_storage": [
+    {
+      "COLUMN_NAME": "lot",
+      "COLLATION_NAME": "utf8mb4_general_ci"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "nginx": "active",
+  "/health": {
+    "status": 200,
+    "cs_sources": "{\"status\":\"ok\",\"service\":\"Craver AI Agent\"}"
+  },
+  "/frontend/chat.js": {
+    "status": 200,
+    "cs_sources": true
+  },
+  "listeners": "State  Recv-Q Send-Q Local Address:Port Peer Address:PortProcess\nLISTEN 0      4096      127.0.0.54:53        0.0.0.0:*          \nLISTEN 0      4096   127.0.0.53%lo:53        0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:443       0.0.0.0:*          \nLISTEN 0      4096         0.0.0.0:22        0.0.0.0:*          \nLISTEN 0      511          0.0.0.0:80        0.0.0.0:*          \nLISTEN 0      4096            [::]:22           [::]:*          \n"
+}

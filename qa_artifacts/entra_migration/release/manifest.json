@@ -1,0 +1,276 @@
+{
+  "was": {
+    "app/api/admin_api.py": {
+      "remote_sha256": "48036e30942215714f9e93db55e9bae014b8a4929dd20bfe6501268d751abe1c",
+      "local_sha256": "97166f8279120273c0c9452d3a6ec63c304d74fc97d821daa50b55ef1421a2ab",
+      "diff_lines": 20
+    },
+    "app/api/admin_group_api.py": {
+      "remote_sha256": "e4201be6b9644cda50be6d5610d6f1b8434f929cd4e8a54cbf95556873c95a5e",
+      "local_sha256": "fc3e11108ce2846fb0d78573eb574b695ad39fe9f8466404ecf6e00cd6b6bbd0",
+      "diff_lines": 212
+    },
+    "app/api/auth_api.py": {
+      "remote_sha256": "66a07d4cff98b6ec26daa31617416b4cca39e474d25051aeb1c4e5d498e42827",
+      "local_sha256": "2e68f51966e16c91429e95eec40c4835772a20683a1aafa201e7f3d0606589c6",
+      "diff_lines": 108
+    },
+    "app/api/auth_middleware.py": {
+      "remote_sha256": "422646ed66a49071bdbaf181d85483b564187086cdf3192c663dc53c8cd0487b",
+      "local_sha256": "3460fbfbde7684b3f184f8324cee65fdb91bb9b7bf1aa60ae1db8aaa51d45d87",
+      "diff_lines": 83
+    },
+    "app/api/entra_routes.py": {
+      "remote_sha256": "5219c5a81d8befd7d42d1f82c69c90640f0d3155836ad6e9db28a730183b3517",
+      "local_sha256": "7c5d8f4c7a465ebe367f8ece824613a4366fc200f36561dec150495029cdbed4",
+      "diff_lines": 41
+    },
+    "app/api/routes.py": {
+      "remote_sha256": "e345b0b252f179cd32540eddf40679869df8d5ca3ed5b704da275cf3ad83396f",
+      "local_sha256": "24ea377078bbbe140f7f822bed20b769b16db338e3b8ff6e13dc3e4546202dbf",
+      "diff_lines": 46
+    },
+    "app/config.py": {
+      "remote_sha256": "b1cdb9b09b28e7d20f033269698ba1358cf926d84d29e8e35dce515f4269808f",
+      "local_sha256": "9e3a1684f11505010fff60197f6701d9c2584f7cb395d68c94c417622890b6d5",
+      "diff_lines": 10
+    },
+    "app/core/briefing.py": {
+      "remote_sha256": "a5f24940579c4967e0532e1f3ba34b7392abecb932cfdbabb771beb56a2a97ac",
+      "local_sha256": "ff703c73831d8dbe1e111f066e1f4d322540010efb43d8224c27f7261fc95bd5",
+      "diff_lines": 25
+    },
+    "app/core/entra_auth.py": {
+      "remote_sha256": "001e78a09670cae11e352018c1f95ef7d83816bf3c1956d7b27cec32b4f6bcbe",
+      "local_sha256": "9334114a82816618e09e9e7618730f473b2a1c2c4bfaa2fcd9116c03a306f0b6",
+      "diff_lines": 32
+    },
+    "app/core/feedback_inbox.py": {
+      "remote_sha256": "d4ab2e74682aea0693a4c922eac9611b540c4de6f711b17e9a0d1058f1b638ab",
+      "local_sha256": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+      "diff_lines": 11
+    },
+    "app/core/password_reset.py": {
+      "remote_sha256": "c922a6ab14985f8dd03fab6dd910220e7207037212d865231f6f2b418cce69db",
+      "local_sha256": "21cb99578110212ef474667b5c74bc87c85f4bfacee59bb989b6dfecb7f9384f",
+      "diff_lines": 11
+    },
+    "app/core/password_reset_google.py": {
+      "remote_sha256": "a184131621fad0c1b485d476fdb7fce3ad63a2580a90e1ccd5c5c9c9c3e3b329",
+      "local_sha256": "0d7f9ea6b29c3dfc5e4cb5f54be7234dc8665c9b21d74c9c6475b3754bb6e539",
+      "diff_lines": 37
+    },
+    "app/core/personal_briefing.py": {
+      "remote_sha256": "4ceffa242352d449fef3bb95da02f3986a1223776a6c00150577310fa779a937",
+      "local_sha256": "274a38f4a5d7bcd3a9d19a2ffbaa49c58193527cebe6e2bc7187814b6bb413a7",
+      "diff_lines": 11
+    },
+    "app/core/query_profile.py": {
+      "remote_sha256": "e5bc2198bb8fdd853bfc395b89f23e1849a096dbe8cc79c755e024bf25f65189",
+      "local_sha256": "ae73a1d1f6c387c7d7c0e8ac36a2be5d88b8fdabb365c7bd04dde0d6a5fe4df2",
+      "diff_lines": 11
+    },
+    "app/core/saved_questions.py": {
+      "remote_sha256": "6c42fc9f951b8694874515f0ae90b289bbcaf3f4e598f5bf5e4de96f295db383",
+      "local_sha256": "5c7d395f0d72672d524c06c4f6f797daf4bb706810ba88fc4d2b16da558dbc2e",
+      "diff_lines": 39
+    },
+    "app/core/self_check.py": {
+      "remote_sha256": "d95753fc27defcccec319f4ab27b4a222c7100edebe4e09db8f85ec31b25cf3f",
+      "local_sha256": "677568032f2723a48c9032413709f3a59a752bf04be637a5fc436b8307e2244b",
+      "diff_lines": 120
+    },
+    "app/core/user_directory.py": {
+      "remote_sha256": null,
+      "local_sha256": "548c43824d357298988fcb00b36fc95d948410883a2224db82a36c1ac4721d0a",
+      "diff_lines": 333
+    },
+    "app/core/user_directory_migration.py": {
+      "remote_sha256": null,
+      "local_sha256": "375923c4f9a109653931587fbe9043acbc700239cdf6cca21770cb78e67a2470",
+      "diff_lines": 396
+    },
+    "app/db/mariadb.py": {
+      "remote_sha256": "b2c82096f0860ab0c3a0594a441e8eabfdef17869a4da6dfcd1daa404c5a85f0",
+      "local_sha256": "23dbd2f353dd635de19ac84322cb78f94de53eed81a613493d0c74255584e889",
+      "diff_lines": 37
+    },
+    "app/db/models.py": {
+      "remote_sha256": "69dab52dc0c2ba318c7663a73774dff80d53b9c4800fb8a3866bd56f69d65b0f",
+      "local_sha256": "e579cc7184491330d7c6e62119e998441f05f078d731b4d7e95d3b06f0a12df9",
+      "diff_lines": 16
+    },
+    "app/frontend/chat.html": {
+      "remote_sha256": "eb99be1ecfb52937c01c5a5dcadb918ff47feeee4ea31e0296eded711ae8082b",
+      "local_sha256": "75c0d12521173606380cc9071895a605beedc6352335376c1722bbac3aea4e81",
+      "diff_lines": 60
+    },
+    "app/frontend/chat.js": {
+      "remote_sha256": "47a8b7b3f79fd7d2f854b08e9a195d7e6c058ca585c86a953550ce84b2fa50eb",
+      "local_sha256": "de1c6740fb2107df0cd7172deae3791b4619023ec7ab73a9d4b577708cd9710f",
+      "diff_lines": 478
+    },
+    "app/main.py": {
+      "remote_sha256": "50e8ba4a7074dc4212b6885fa58b2e942d42affa72cc5197d3d294ad698656c6",
+      "local_sha256": "504d7152d788b36b8b440977629ff66569c9d1d111b50dbe676ac17650e67491",
+      "diff_lines": 32
+    },
+    "app/reports/store.py": {
+      "remote_sha256": "2dd30ae9a3fa42f5a736974b7a6dcc0aba7f56d339cde4a9b80c4cd4ba62b9c3",
+      "local_sha256": "e3d0500625ae02ebda09e612c1a456fa8a9ac92fbae59c4a0d8bff48d82dcaf8",
+      "diff_lines": 65
+    },
+    "scripts/sync_ad_users.py": {
+      "remote_sha256": "43d630d270741441bb48eeda8fa9d5b453111d25e2f8a425ddd8d74fb2a0c7dc",
+      "local_sha256": "e75933e573d5d132c9471722e8237e09d21464b152024105d425a56da8f4c445",
+      "diff_lines": 11
+    },
+    "scripts/sync_entra_users.py": {
+      "remote_sha256": null,
+      "local_sha256": "7a9979ba7e55ea88dd0b5cc09c1e337db4c891f666ccb5dafcb4be20d309ffe3",
+      "diff_lines": 33
+    },
+    "deploy/crontab.app-server": {
+      "remote_sha256": "451eabcc52f6f6b9c72d2f209ddcc12573e454007da97acdd723d1e4a87f4e09",
+      "local_sha256": "720e9075546b5056c609b66167b882288b9ac91f8a7628316135837826106c85",
+      "diff_lines": 11
+    }
+  },
+  "app": {
+    "app/api/admin_api.py": {
+      "remote_sha256": "cd1471480cb3f8b07305cf3f4a61ea622c38377ea00e155656002c82f6e3fd86",
+      "local_sha256": "97166f8279120273c0c9452d3a6ec63c304d74fc97d821daa50b55ef1421a2ab",
+      "diff_lines": 120
+    },
+    "app/api/admin_group_api.py": {
+      "remote_sha256": "dafce5e7d4a965e5038c401a4e23f11fe0553c2e475c3c3c6ab2c0e15e0b4672",
+      "local_sha256": "fc3e11108ce2846fb0d78573eb574b695ad39fe9f8466404ecf6e00cd6b6bbd0",
+      "diff_lines": 221
+    },
+    "app/api/auth_api.py": {
+      "remote_sha256": "0daeaa89f55d75dded76e6b8643fc472751a44a67d7183213b6abd90b804bd49",
+      "local_sha256": "2e68f51966e16c91429e95eec40c4835772a20683a1aafa201e7f3d0606589c6",
+      "diff_lines": 306
+    },
+    "app/api/auth_middleware.py": {
+      "remote_sha256": "aa445edda135791272c81bb9af5d8acae2af7312fa25a0d1ae6bdd981de89ef4",
+      "local_sha256": "3460fbfbde7684b3f184f8324cee65fdb91bb9b7bf1aa60ae1db8aaa51d45d87",
+      "diff_lines": 83
+    },
+    "app/api/entra_routes.py": {
+      "remote_sha256": null,
+      "local_sha256": "7c5d8f4c7a465ebe367f8ece824613a4366fc200f36561dec150495029cdbed4",
+      "diff_lines": 144
+    },
+    "app/api/routes.py": {
+      "remote_sha256": "e345b0b252f179cd32540eddf40679869df8d5ca3ed5b704da275cf3ad83396f",
+      "local_sha256": "24ea377078bbbe140f7f822bed20b769b16db338e3b8ff6e13dc3e4546202dbf",
+      "diff_lines": 46
+    },
+    "app/config.py": {
+      "remote_sha256": "2edd241b64ec720d7bb924def939cfa91213490017d67d8d4ac23205c3c692da",
+      "local_sha256": "9e3a1684f11505010fff60197f6701d9c2584f7cb395d68c94c417622890b6d5",
+      "diff_lines": 84
+    },
+    "app/core/briefing.py": {
+      "remote_sha256": "a5f24940579c4967e0532e1f3ba34b7392abecb932cfdbabb771beb56a2a97ac",
+      "local_sha256": "ff703c73831d8dbe1e111f066e1f4d322540010efb43d8224c27f7261fc95bd5",
+      "diff_lines": 25
+    },
+    "app/core/entra_auth.py": {
+      "remote_sha256": null,
+      "local_sha256": "9334114a82816618e09e9e7618730f473b2a1c2c4bfaa2fcd9116c03a306f0b6",
+      "diff_lines": 333
+    },
+    "app/core/feedback_inbox.py": {
+      "remote_sha256": "aeef1d892fb312aa625964066fe34552d6328c9c0b95bb56fa6c7088f45f6470",
+      "local_sha256": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+      "diff_lines": 306
+    },
+    "app/core/password_reset.py": {
+      "remote_sha256": "c922a6ab14985f8dd03fab6dd910220e7207037212d865231f6f2b418cce69db",
+      "local_sha256": "21cb99578110212ef474667b5c74bc87c85f4bfacee59bb989b6dfecb7f9384f",
+      "diff_lines": 11
+    },
+    "app/core/password_reset_google.py": {
+      "remote_sha256": "ad92a8f5755d1d0f18bea774dd1be5d92bc1351f35d6d6331585392cc5feff39",
+      "local_sha256": "0d7f9ea6b29c3dfc5e4cb5f54be7234dc8665c9b21d74c9c6475b3754bb6e539",
+      "diff_lines": 161
+    },
+    "app/core/personal_briefing.py": {
+      "remote_sha256": "7e7e1cc0799130d2d40bd0ebe3d53e3764302234ac771f74196fc968e5ebff2a",
+      "local_sha256": "274a38f4a5d7bcd3a9d19a2ffbaa49c58193527cebe6e2bc7187814b6bb413a7",
+      "diff_lines": 173
+    },
+    "app/core/query_profile.py": {
+      "remote_sha256": "e5bc2198bb8fdd853bfc395b89f23e1849a096dbe8cc79c755e024bf25f65189",
+      "local_sha256": "ae73a1d1f6c387c7d7c0e8ac36a2be5d88b8fdabb365c7bd04dde0d6a5fe4df2",
+      "diff_lines": 11
+    },
+    "app/core/saved_questions.py": {
+      "remote_sha256": "6c42fc9f951b8694874515f0ae90b289bbcaf3f4e598f5bf5e4de96f295db383",
+      "local_sha256": "5c7d395f0d72672d524c06c4f6f797daf4bb706810ba88fc4d2b16da558dbc2e",
+      "diff_lines": 39
+    },
+    "app/core/self_check.py": {
+      "remote_sha256": "aa9e11cb74fc7486948e37142aaa716e301cad4f536d7e90d321fc56c29b1bde",
+      "local_sha256": "677568032f2723a48c9032413709f3a59a752bf04be637a5fc436b8307e2244b",
+      "diff_lines": 457
+    },
+    "app/core/user_directory.py": {
+      "remote_sha256": null,
+      "local_sha256": "548c43824d357298988fcb00b36fc95d948410883a2224db82a36c1ac4721d0a",
+      "diff_lines": 333
+    },
+    "app/core/user_directory_migration.py": {
+      "remote_sha256": null,
+      "local_sha256": "375923c4f9a109653931587fbe9043acbc700239cdf6cca21770cb78e67a2470",
+      "diff_lines": 396
+    },
+    "app/db/mariadb.py": {
+      "remote_sha256": "cea3193d7a9227f6f7326d8f8ad8974467b1ce9702cbd21f7ae4db676092aa02",
+      "local_sha256": "23dbd2f353dd635de19ac84322cb78f94de53eed81a613493d0c74255584e889",
+      "diff_lines": 37
+    },
+    "app/db/models.py": {
+      "remote_sha256": "d72972aaee5810ea3f22438302a9b8c051e118e3615b59ffc3f6acd2aa2ebac0",
+      "local_sha256": "e579cc7184491330d7c6e62119e998441f05f078d731b4d7e95d3b06f0a12df9",
+      "diff_lines": 16
+    },
+    "app/frontend/chat.html": {
+      "remote_sha256": "4ab43e7050d6132633ad3de6a3c0030bd2e01e5e83047d44c2990528d9ceacbe",
+      "local_sha256": "75c0d12521173606380cc9071895a605beedc6352335376c1722bbac3aea4e81",
+      "diff_lines": 124
+    },
+    "app/frontend/chat.js": {
+      "remote_sha256": "944fb986ef0af3fec8de06680739434677b8d9101d0dc3ff88fc161728364163",
+      "local_sha256": "de1c6740fb2107df0cd7172deae3791b4619023ec7ab73a9d4b577708cd9710f",
+      "diff_lines": 1208
+    },
+    "app/main.py": {
+      "remote_sha256": "26d705709388ac949f0072f8bfd2ccfb0cde72822fce42414df50227ed18736b",
+      "local_sha256": "504d7152d788b36b8b440977629ff66569c9d1d111b50dbe676ac17650e67491",
+      "diff_lines": 257
+    },
+    "app/reports/store.py": {
+      "remote_sha256": "2dd30ae9a3fa42f5a736974b7a6dcc0aba7f56d339cde4a9b80c4cd4ba62b9c3",
+      "local_sha256": "e3d0500625ae02ebda09e612c1a456fa8a9ac92fbae59c4a0d8bff48d82dcaf8",
+      "diff_lines": 65
+    },
+    "scripts/sync_ad_users.py": {
+      "remote_sha256": "43d630d270741441bb48eeda8fa9d5b453111d25e2f8a425ddd8d74fb2a0c7dc",
+      "local_sha256": "e75933e573d5d132c9471722e8237e09d21464b152024105d425a56da8f4c445",
+      "diff_lines": 11
+    },
+    "scripts/sync_entra_users.py": {
+      "remote_sha256": null,
+      "local_sha256": "7a9979ba7e55ea88dd0b5cc09c1e337db4c891f666ccb5dafcb4be20d309ffe3",
+      "diff_lines": 33
+    },
+    "deploy/crontab.app-server": {
+      "remote_sha256": "451eabcc52f6f6b9c72d2f209ddcc12573e454007da97acdd723d1e4a87f4e09",
+      "local_sha256": "720e9075546b5056c609b66167b882288b9ac91f8a7628316135837826106c85",
+      "diff_lines": 11
+    }
+  }
+}

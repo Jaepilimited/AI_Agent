@@ -1,0 +1,37 @@
+{
+  "queried_at_kst": "2026-09-18 15:52:30.410425+09:00",
+  "teams": [
+    {
+      "team": "Craver",
+      "block_id": "3282b428-3b00-8017-836b-c6bc77b3e965",
+      "last_edited_time": "2026-04-06T02:13:00.000Z",
+      "has_children": true,
+      "children_http_status": 200,
+      "child_types": {
+        "heading_2": 3,
+        "paragraph": 17,
+        "bulleted_list_item": 12
+      },
+      "child_text_chars": 1514,
+      "current_chunk_hashes": [
+        "33b8106df4b595f7c361a11db795daf975c073c032f7ed00395b093144fbf580",
+        "1f80ee02c1b1af0f954e5805411196768c71366abdbdd0eafb2cec17c1d784d1",
+        "df8cb0dd0edb3b35b4bd908ad8705bf101b97299acca5e9bc4b649db19698ff3"
+      ],
+      "current_text_chars": 1545
+    },
+    {
+      "team": "B2B1",
+      "block_id": "32e2b428-3b00-8031-a177-d2549cf1e7bd",
+      "last_edited_time": "2026-04-14T00:57:00.000Z",
+      "has_children": true,
+      "children_http_status": 200,
+      "child_types": {
+        "paragraph": 1
+      },
+      "child_text_chars": 0
+    }
+  ],
+  "hub_status": 200,
+  "hub_has_more": true
+}

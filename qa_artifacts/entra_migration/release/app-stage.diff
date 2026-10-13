@@ -1,0 +1,1136 @@
+--- app-baseline/app/config.py
++++ stage-app/app/config.py
+@@ -83,6 +83,13 @@
+     google_oauth_client_secret: str = ""
+     google_oauth_redirect_uri: str = "http://localhost:3000/auth/google/callback"
+     gws_default_email: str = ""
++
++    # Entra ID directory synchronization
++    entra_tenant_id: str = ""
++    entra_client_id: str = ""
++    entra_client_secret: str = ""
++    entra_redirect_uri: str = ""
++    entra_employee_domains: str = ""
+ 
+     # Open WebUI integration (read OAuth tokens from its DB)
+     openwebui_db_path: str = ""
+--- app-baseline/app/core/briefing.py
++++ stage-app/app/core/briefing.py
+@@ -136,7 +136,7 @@
+ def resolve_scope(department: str, team_map: Dict[str, str]) -> Dict[str, str]:
+     """이 사람에게 보여줄 축을 정한다.
+ 
+-    AD 부서 문자열에 공식 팀명이 들어 있으면 그 팀. ⚠️ 표기 공백이 다르다
++    사용자 부서 문자열에 공식 팀명이 들어 있으면 그 팀. ⚠️ 표기 공백이 다르다
+     ("서구권 마케팅팀" vs `서구권마케팅팀`) — 공백을 지우고 비교한다.
+     못 찾으면 전사로 두되, **왜 이 숫자를 보는지 문구에 밝힌다**.
+     """
+@@ -923,11 +923,11 @@
+     except Exception as e:
+         # 광고 집계 장애가 검증된 매출 브리핑까지 숨기면 안 된다.
+         logger.warning("briefing_marketing_failed", error=type(e).__name__)
+-    # ⚠️ 퇴사자에게 매일 매출 브리핑을 보내지 않는다 (AD 부서로 걸러진다)
++    # ⚠️ 퇴사자에게 매일 매출 브리핑을 보내지 않는다 (사용자 부서로 걸러진다)
+     users = fetch_all(
+         "SELECT u.id, u.display_name, COALESCE(a.email, u.email) AS email, "
+         "       COALESCE(a.department, '') AS department "
+-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE u.is_active = 1 AND COALESCE(u.briefing_opt_out, 0) = 0 "
+         "  AND COALESCE(a.department,'') NOT LIKE %s", ("%퇴사%",)) or []
+ 
+--- app-baseline/app/core/feedback_inbox.py
++++ stage-app/app/core/feedback_inbox.py
+@@ -188,7 +188,7 @@
+                 row = fetch_one(
+                     "SELECT COALESCE(a.email, u.email) AS email, f.comment "
+                     "FROM message_feedback f JOIN users u ON u.id = f.user_id "
+-                    "LEFT JOIN ad_users a ON a.id = u.ad_user_id WHERE f.id = %s",
++                    "LEFT JOIN directory_users a ON a.id = u.ad_user_id WHERE f.id = %s",
+                     (int(feedback_id),))
+                 if row and row.get("email"):
+                     label = {STATUS_DONE: "해결됨", STATUS_WONTFIX: "고치지 않음"}[status]
+--- app-baseline/app/core/password_reset.py
++++ stage-app/app/core/password_reset.py
+@@ -84,7 +84,7 @@
+         "       a.display_name, a.department, "
+         "       (u.id IS NOT NULL) AS registered "
+         "FROM password_reset_requests r "
+-        "JOIN ad_users a ON a.id = r.ad_user_id "
++        "JOIN directory_users a ON a.id = r.ad_user_id "
+         "LEFT JOIN users u ON u.ad_user_id = a.id "
+         "WHERE r.status = 'open' ORDER BY r.created_at LIMIT %s", (int(limit),)) or []
+ 
+--- app-baseline/app/core/password_reset_google.py
++++ stage-app/app/core/password_reset_google.py
+@@ -312,7 +312,7 @@
+     """
+     rows = fetch_all(
+         "SELECT DISTINCT LOWER(SUBSTRING_INDEX(email, '@', -1)) AS d "
+-        "FROM ad_users WHERE email LIKE %s",
++        "FROM directory_users WHERE email LIKE %s",
+         ("%@%",),
+     )
+     return {r["d"] for r in rows if r["d"] and r["d"] not in _PUBLIC_MAIL_DOMAINS}
+@@ -341,7 +341,7 @@
+ 
+     rows = fetch_all(
+         "SELECT u.id, u.display_name, u.ad_user_id FROM users u "
+-        "JOIN ad_users a ON u.ad_user_id = a.id "
++        "JOIN directory_users a ON u.ad_user_id = a.id "
+         "WHERE a.is_active = 1 AND LOWER(SUBSTRING_INDEX(a.email, '@', 1)) = %s",
+         (local,),
+     )
+--- app-baseline/app/core/personal_briefing.py
++++ stage-app/app/core/personal_briefing.py
+@@ -738,7 +738,7 @@
+         fetch_all,
+         "SELECT u.id,COALESCE(a.email,u.email) email,COALESCE(a.display_name,u.display_name) name,"
+         "COALESCE(a.department,'') department,u.role,u.allowed_models,u.ad_user_id "
+-        "FROM users u LEFT JOIN ad_users a ON a.id=u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id=u.ad_user_id "
+         # ⛔ `last_login` 으로 거르지 마라 — `/signin` 에서만 찍혀서 가입 직후
+         #    자동 로그인된 사람은 영영 NULL 이다 (활성 63명 중 28명, 2026-08-26 실측).
+         #    NULL 은 "안 쓴다" 가 아니라 "모른다" 다. 진짜 게이트는 아래 `has_credentials`
+--- app-baseline/app/core/query_profile.py
++++ stage-app/app/core/query_profile.py
+@@ -247,7 +247,7 @@
+ 
+             department_rows = fetch_all(
+                 "SELECT COALESCE(a.department, '') AS department FROM users u "
+-                "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++                "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+                 "WHERE COALESCE(a.email, u.email) = %s LIMIT 1",
+                 (user_email,),
+             ) or []
+--- app-baseline/app/core/saved_questions.py
++++ stage-app/app/core/saved_questions.py
+@@ -240,8 +240,15 @@
+             try:
+                 access = await asyncio.to_thread(
+                     fetch_one,
+-                    "SELECT a.email, a.can_view_fi FROM users u "
+-                    "JOIN ad_users a ON a.id = u.ad_user_id "
++                    "SELECT a.email, a.can_view_fi, u.role, "
++                    "(u.requires_group_assignment AND NOT EXISTS "
++                    "(SELECT 1 FROM user_groups ug JOIN access_groups g ON g.id=ug.group_id "
++                    "WHERE ug.ad_user_id=u.ad_user_id AND g.brand_filter IS NOT NULL "
++                    "AND g.brand_filter<>'')) AS requires_group_assignment, "
++                    "(SELECT GROUP_CONCAT(DISTINCT g.brand_filter) FROM user_groups ug "
++                    "JOIN access_groups g ON g.id=ug.group_id WHERE ug.ad_user_id=u.ad_user_id "
++                    "AND g.brand_filter IS NOT NULL AND g.brand_filter<>'') AS brand_filter FROM users u "
++                    "JOIN directory_users a ON a.id = u.ad_user_id "
+                     "WHERE u.id = %s AND u.is_active = 1 AND a.is_active = 1 LIMIT 1",
+                     (user_id,),
+                 )
+@@ -249,12 +256,17 @@
+                     # ⛔ 권한 조회 실패를 False로 대체하면 DB가 아닌 기본값이 보안 결정을 하게 된다.
+                     raise RuntimeError("사용자 FI 권한을 DB에서 확인할 수 없습니다")
+                 permission = bool(access["can_view_fi"])
++                is_admin = access.get("role") == "admin"
++                if access.get("requires_group_assignment") and not is_admin:
++                    raise RuntimeError("관리자의 데이터 조회 그룹 배정이 필요합니다")
+                 result = await orchestrator.route_and_execute(
+                     str(row["question"]),
+                     [],
+                     model,
+                     user_email=str(access.get("email") or ""),
+-                    can_view_fi=permission,
++                    can_view_fi=is_admin or permission,
++                    brand_filter=None if is_admin else (access.get("brand_filter") or None),
++                    user_id=user_id,
+                 )
+                 answer_value = result.get("answer", "") if isinstance(result, dict) else result
+                 answer = "" if answer_value is None else str(answer_value).strip()
+--- app-baseline/app/core/self_check.py
++++ stage-app/app/core/self_check.py
+@@ -166,7 +166,7 @@
+     "quality_snapshot_daily": (26, "품질 스냅샷 (00:05)"),
+     "self_check_daily": (26, "자가 점검 (07:30)"),
+     "weekly_growth_report": (24 * 8, "주간 성장 리포트 (월 00:10)"),
+-    "ad_sync": (26, "AD 동기화 (APP 서버 22:00)"),
++    "entra_directory_sync": (26, "Entra 사용자 동기화 (APP 서버 22:00)"),
+     "knowledge_map_build": (26, "지식맵 빌드 (WAS 03:00)"),
+     "ingredient_sync_daily": (26, "제품 전성분 적재 (04:00)"),
+     "op_inventory_sync_daily": (26, "OP 재고 시트 적재 (11:20·16:20)"),
+@@ -210,10 +210,12 @@
+ 
+ 
+ def _check_ad_sync_fresh() -> CheckResult:
+-    row = fetch_one("SELECT MAX(synced_at) AS m FROM ad_users")
+-    last = row and row.get("m")
++    row = fetch_one("SELECT succeeded_at,error_message FROM directory_sync_state WHERE id=1")
++    if row and row.get("error_message"):
++        return CheckResult(False, row["error_message"])
++    last = row and row.get("succeeded_at")
+     if not last:
+-        return CheckResult(False, "synced_at 기록이 없다")
++        return CheckResult(False, "Entra 전체 사용자 동기화 대기 — Graph 읽기 권한과 네트워크를 확인해 주세요.")
+     age_h = (datetime.now() - last).total_seconds() / 3600
+     # 매일 22:00 실행 → 26시간이면 한 번 걸렀다는 뜻
+     return CheckResult(age_h <= 26, f"마지막 동기화 {last} ({age_h:.1f}시간 전)")
+@@ -373,8 +375,8 @@
+ def _check_orphan_user_groups_ad() -> CheckResult:
+     return _orphan(
+         "SELECT COUNT(*) c FROM user_groups ug "
+-        "LEFT JOIN ad_users a ON ug.ad_user_id = a.id WHERE a.id IS NULL",
+-        "user_groups→ad_users",
++        "LEFT JOIN directory_users a ON ug.ad_user_id = a.id WHERE a.id IS NULL",
++        "user_groups→directory_users",
+     )
+ 
+ 
+@@ -405,7 +407,7 @@
+     활성 계정은 다음 AD sync 가 덮어쓰므로 손대지 않는다 (CLAUDE.md 규칙).
+     """
+     rows = fetch_all(
+-        "SELECT id, username, display_name, is_active FROM ad_users "
++        "SELECT id, username, display_name, is_active FROM directory_users "
+         f"WHERE {_ESCAPED_NAME_COND}"
+     )
+     inactive = [r for r in rows if not r["is_active"]]
+@@ -420,7 +422,7 @@
+ def _repair_name_encoding(payload: dict) -> str:
+     fixed = 0
+     for uid in payload.get("ids", []):
+-        row = fetch_one("SELECT display_name FROM ad_users WHERE id = %s", (uid,))
++        row = fetch_one("SELECT display_name FROM directory_users WHERE id = %s", (uid,))
+         raw = (row or {}).get("display_name") or ""
+         if "\\u" not in raw:
+             continue
+@@ -431,7 +433,7 @@
+         # 복원 결과가 여전히 이스케이프거나 비어 있으면 건드리지 않는다
+         if not decoded or "\\u" in decoded:
+             continue
+-        execute("UPDATE ad_users SET display_name = %s WHERE id = %s", (decoded, uid))
++        execute("UPDATE directory_users SET display_name = %s WHERE id = %s", (decoded, uid))
+         fixed += 1
+     return f"비활성 계정 이름 {fixed}건 복원"
+ 
+@@ -487,7 +489,7 @@
+ 
+ 
+ def _check_fi_grant_count() -> CheckResult:
+-    row = fetch_one("SELECT COUNT(*) c FROM ad_users WHERE can_view_fi = 1")
++    row = fetch_one("SELECT COUNT(*) c FROM directory_users WHERE can_view_fi = 1")
+     n = (row or {}).get("c", 0)
+     # 인원이 바뀌는 것 자체는 정상이다. 0명이면 설정이 날아간 것이고,
+     # 갑자기 대폭 늘면 사고다 — 둘 다 사람이 봐야 한다.
+@@ -991,7 +993,7 @@
+     rows = fetch_all(
+         "SELECT u.id, COALESCE(a.email, u.email) email, "
+         "COALESCE(a.display_name, u.display_name) name "
+-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE u.is_active = 1"
+     ) or []
+     mgr = GoogleAuthManager()
+@@ -1051,7 +1053,7 @@
+ 
+ CHECKS: list[Check] = [
+     Check("ad_sync_fresh", "batch", SEV_CRITICAL,
+-          "AD 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
++          "Entra 사용자 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
+     Check("wiki_extract_fresh", "batch", SEV_WARNING,
+           "위키 추출이 3시간 내 동작했는가", _check_wiki_extract_fresh),
+     Check("quality_snapshot_fresh", "batch", SEV_WARNING,
+@@ -1063,7 +1065,7 @@
+     Check("jandi_relay", "batch", SEV_WARNING,
+           "출근 브리핑 잔디 대기열이 비워지고 있는가 (DB_PC 릴레이)", _check_jandi_relay),
+     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
+-          "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
++          "user_groups 가 실재하는 셀라 사용자를 가리키는가", _check_orphan_user_groups_ad),
+     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,
+           "user_groups 가 실재하는 그룹을 가리키는가", _check_orphan_user_groups_grp),
+     Check("users_email_present", "integrity", SEV_WARNING,
+--- app-baseline/app/core/user_directory.py
++++ stage-app/app/core/user_directory.py
+@@ -0,0 +1,330 @@
++"""Cella-owned employees and permissions, authenticated by Entra ID."""
++from __future__ import annotations
++
++import secrets
++from urllib.parse import urlparse
++from uuid import UUID
++
++import bcrypt
++import requests
++import structlog
++
++from app.config import ALL_MODELS, get_settings
++from app.db.mariadb import execute, fetch_one, get_maria_conn
++
++logger = structlog.get_logger(__name__)
++_LOCK = "cella_directory_identity"
++_GRAPH = "https://graph.microsoft.com/v1.0/users"
++_SELECT = "id,displayName,mail,userPrincipalName,department,userType,accountEnabled"
++
++
++class DirectoryError(Exception):
++    def __init__(self, message: str, status: int = 403):
++        super().__init__(message)
++        self.status = status
++
++
++def _uuid(value: object) -> str:
++    try:
++        return str(UUID(str(value)))
++    except (ValueError, TypeError, AttributeError):
++        raise DirectoryError("회사 계정 식별자를 확인하지 못했습니다.") from None
++
++
++def require_active_identity(claims: dict) -> tuple[str, str]:
++    """Called only after cryptographic ID-token verification."""
++    tenant = _uuid(get_settings().entra_tenant_id)
++    if _uuid(claims.get("tid")) != tenant:
++        raise DirectoryError("회사 Entra ID 계정으로 로그인해 주세요.")
++    oid = _uuid(claims.get("oid"))
++    username = str(claims.get("preferred_username") or claims.get("upn") or "")
++    if str(claims.get("acct", "0")) != "0" or "#ext#" in username.lower():
++        raise DirectoryError("외부 게스트 계정은 셀라를 이용할 수 없습니다.")
++    idp = str(claims.get("idp") or "").lower().rstrip("/")
++    issuers = {f"https://sts.windows.net/{tenant}",
++               f"https://login.microsoftonline.com/{tenant}/v2.0"}
++    if idp and idp not in issuers:
++        raise DirectoryError("회사 소속 계정으로 로그인해 주세요.")
++    return tenant, oid
++
++
++def _email(value: object) -> str:
++    value = str(value or "").strip().lower()
++    if value.count("@") != 1 or len(value) > 255 or any(c.isspace() for c in value):
++        return ""
++    local, domain = value.split("@")
++    return value if local and "." in domain and "#ext#" not in local else ""
++
++
++def _profile(claims: dict) -> dict:
++    email = _email(claims.get("preferred_username")) or _email(claims.get("upn"))
++    email = email or _email(claims.get("email"))
++    return {"email": email, "display_name": str(claims.get("name") or "")[:200],
++            "department": str(claims.get("department") or "")[:200]}
++
++
++def _lock(cur) -> None:
++    cur.execute("SELECT GET_LOCK(%s, 15) AS acquired", (_LOCK,))
++    if not cur.fetchone().get("acquired"):
++        raise DirectoryError("사용자 정보를 처리 중입니다. 잠시 후 다시 시도해 주세요.", 503)
++
++
++def _unlock(cur) -> None:
++    cur.execute("SELECT RELEASE_LOCK(%s)", (_LOCK,))
++
++
++def _company_domains(cur) -> set[str]:
++    configured = getattr(get_settings(), "entra_employee_domains", "") or ""
++    if configured.strip():
++        return {v.strip().lower() for v in configured.split(",") if v.strip()}
++    # The imported staff roster is the bootstrap authority until Graph is enabled.
++    cur.execute("SELECT DISTINCT LOWER(SUBSTRING_INDEX(email, '@', -1)) AS domain "
++                "FROM directory_users WHERE email LIKE %s",
++                ("%@%",))
++    domains = {r["domain"] for r in cur.fetchall() if r.get("domain")}
++    return domains - {"gmail.com", "outlook.com", "hotmail.com", "live.com",
++                      "yahoo.com", "naver.com", "noemail.local"}
++
++
++def _find_person(cur, tenant: str, oid: str, email: str, *, graph_verified: bool = False) -> dict | None:
++    cur.execute("SELECT * FROM directory_users WHERE entra_tenant_id=%s AND entra_oid=%s "
++                "FOR UPDATE", (tenant, oid))
++    person = cur.fetchone()
++    if person:
++        return person
++    if not email or (not graph_verified and email.split("@")[1] not in _company_domains(cur)):
++        raise DirectoryError("회사 사용자 명단과 계정을 연결하지 못했습니다. 관리자에게 문의해 주세요.")
++    # One-time migration match. Bound identities are never reassigned by email.
++    cur.execute("SELECT * FROM directory_users "
++                "WHERE LOWER(SUBSTRING_INDEX(email, '@', 1))=%s FOR UPDATE",
++                (email.split("@")[0],))
++    matches = cur.fetchall()
++    if len(matches) > 1:
++        raise DirectoryError("동일한 계정 이름이 여러 명에게 연결돼 있습니다. 관리자에게 문의해 주세요.")
++    if not matches:
++        return None
++    person = matches[0]
++    if person.get("entra_oid") and (person["entra_oid"] != oid or
++                                    person.get("entra_tenant_id") != tenant):
++        raise DirectoryError("이미 다른 회사 계정과 연결된 사용자입니다. 관리자에게 문의해 주세요.")
++    return person
++
++
++def _insert_person(cur, tenant: str, oid: str, profile: dict) -> dict:
++    cur.execute("INSERT INTO directory_users "
++                "(username,display_name,email,department,is_active,can_view_fi,"
++                "can_view_visitor_analytics,entra_tenant_id,entra_oid,identity_source,synced_at) "
++                "VALUES (%s,%s,%s,%s,1,0,0,%s,%s,'entra',NOW())",
++                ("entra:" + oid, profile["display_name"], profile["email"],
++                 profile["department"], tenant, oid))
++    return {"id": cur.lastrowid, "is_active": 1, **profile}
++
++
++def _update_profile(cur, person: dict, tenant: str, oid: str, profile: dict,
++                    *, signed_in: bool = False, active: bool = True) -> None:
++    # Empty optional claims must not erase an imported department/name.
++    name = profile["display_name"] or person.get("display_name") or ""
++    email = profile["email"] or person.get("email") or ""
++    if signed_in and person.get("email"):
++        # A login UPN may use a different domain from the employee's mailbox.
++        # Keep the contact/OAuth address until a directory mail update supplies it.
++        email = person["email"]
++    department = profile["department"] or person.get("department") or ""
++    extra = ", last_signin_at=NOW()" if signed_in else ""
++    cur.execute("UPDATE directory_users SET display_name=%s,email=%s,department=%s,"
++                "entra_tenant_id=%s,entra_oid=%s,identity_source='entra',is_active=%s,"
++                "synced_at=NOW()" + extra + " WHERE id=%s",
++                (name, email, department, tenant, oid, int(active), person["id"]))
++
++
++def provision_from_claims(claims: dict) -> dict:
++    """Preserve the directory person; create a login account exactly once."""
++    tenant, oid = require_active_identity(claims)
++    profile = _profile(claims)
++    try:
++        conn = get_maria_conn()
++    except Exception as exc:
++        logger.warning("directory_connection_failed", error_type=type(exc).__name__)
++        raise DirectoryError("사용자 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", 503) from None
++    locked = False
++    try:
++        with conn.cursor() as cur:
++            _lock(cur)
++            locked = True
++            conn.begin()
++            person = _find_person(cur, tenant, oid, profile["email"])
++            if person is None:
++                person = _insert_person(cur, tenant, oid, profile)
++            if not person.get("is_active"):
++                raise DirectoryError("이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
++            cur.execute("SELECT id,role,email,entra_oid,is_active,ad_user_id FROM users "
++                        "WHERE ad_user_id=%s OR entra_oid=%s FOR UPDATE", (person["id"], oid))
++            accounts = cur.fetchall()
++            if len(accounts) > 1:
++                raise DirectoryError("사용자 연결이 중복돼 있습니다. 관리자에게 문의해 주세요.")
++            account = accounts[0] if accounts else None
++            created = account is None
++            if account:
++                if not account.get("is_active"):
++                    raise DirectoryError("이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
++                if account.get("entra_oid") not in (None, "", oid) or account["ad_user_id"] != person["id"]:
++                    raise DirectoryError("기존 사용자 연결을 확인해 주세요.", 409)
++                cur.execute("UPDATE users SET entra_oid=%s,last_login=NOW(),"
++                            "must_change_password=0 WHERE id=%s", (oid, account["id"]))
++            else:
++                password_hash = bcrypt.hashpw(secrets.token_urlsafe(48).encode(),
++                                               bcrypt.gensalt()).decode()
++                cur.execute("INSERT INTO users "
++                            "(email,password_hash,display_name,role,allowed_models,ad_user_id,"
++                            "is_active,last_login,entra_oid,must_change_password,requires_group_assignment) "
++                            "VALUES (%s,%s,%s,'user',%s,%s,1,NOW(),%s,0,%s)",
++                            (person.get("email") or profile["email"] or f"entra_{oid}@noemail.local",
++                             password_hash, profile["display_name"] or person.get("display_name") or "",
++                             ALL_MODELS, person["id"], oid, 1))
++                account = {"id": cur.lastrowid, "role": "user", "ad_user_id": person["id"]}
++            _update_profile(cur, person, tenant, oid, profile, signed_in=True)
++            conn.commit()
++            return {"id": int(account["id"]), "role": account["role"],
++                    "ad_user_id": int(person["id"]), "created": created}
++    except DirectoryError:
++        conn.rollback()
++        raise
++    except Exception as exc:
++        conn.rollback()
++        logger.warning("directory_provision_failed", error_type=type(exc).__name__)
++        raise DirectoryError("사용자 정보를 저장하지 못했습니다. 관리자에게 문의해 주세요.", 503) from None
++    finally:
++        if locked:
++            with conn.cursor() as cur:
++                _unlock(cur)
++        conn.close()
++
++
++def ensure_directory_sync_table() -> None:
++    execute("""CREATE TABLE IF NOT EXISTS directory_sync_state (
++        id TINYINT PRIMARY KEY, attempted_at DATETIME NULL, succeeded_at DATETIME NULL,
++        user_count INT NOT NULL DEFAULT 0, error_message VARCHAR(500) NULL
++    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
++
++
++def directory_sync_status() -> dict:
++    row = fetch_one("SELECT attempted_at,succeeded_at,user_count,error_message "
++                    "FROM directory_sync_state WHERE id=1") or {}
++    return {k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in row.items()}
++
++
++def _graph_users() -> list[dict]:
++    s = get_settings()
++    tenant = _uuid(s.entra_tenant_id)
++    try:
++        response = requests.post(
++            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
++            data={"client_id": s.entra_client_id, "client_secret": s.entra_client_secret,
++                  "grant_type": "client_credentials", "scope": "https://graph.microsoft.com/.default"},
++            timeout=15,
++        )
++        if response.status_code != 200:
++            raise DirectoryError("Entra 사용자 조회 인증을 확인해 주세요.", 503)
++        token_response = response.json()
++        if not isinstance(token_response, dict):
++            raise DirectoryError("Entra 사용자 조회 인증을 확인해 주세요.", 503)
++        token = token_response.get("access_token")
++        if not token:
++            raise DirectoryError("Entra 사용자 조회 인증을 확인해 주세요.", 503)
++        url, params, seen, users = _GRAPH, {"$select": _SELECT, "$top": 999}, set(), []
++        while url:
++            parsed = urlparse(url)
++            if parsed.scheme != "https" or parsed.netloc != "graph.microsoft.com" or url in seen:
++                raise DirectoryError("Entra 사용자 목록의 다음 페이지를 확인하지 못했습니다.", 503)
++            seen.add(url)
++            response = requests.get(url, params=params, headers={"Authorization": "Bearer " + token},
++                                    timeout=20)
++            if response.status_code == 403:
++                raise DirectoryError("Entra 전체 사용자 동기화 권한이 없습니다. IT 관리자에게 "
++                                     "Microsoft Graph User.Read.All 앱 권한과 관리자 동의를 요청해 주세요.", 503)
++            if response.status_code != 200:
++                raise DirectoryError("Entra 사용자 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.", 503)
++            page = response.json()
++            if not isinstance(page, dict) or not isinstance(page.get("value"), list):
++                raise DirectoryError("Entra 사용자 목록 응답을 확인하지 못했습니다.", 503)
++            users.extend(page["value"])
++            url, params = page.get("@odata.nextLink"), None
++        if not users:
++            raise DirectoryError("Entra 사용자 목록이 비어 있어 기존 사용자 정보를 유지했습니다.", 503)
++        return users
++    except requests.RequestException:
++        raise DirectoryError("Entra 사용자 조회 서버에 연결하지 못했습니다. "
++                             "graph.microsoft.com:443 네트워크 허용을 확인해 주세요.", 503) from None
++    except (ValueError, TypeError):
++        raise DirectoryError("Entra 사용자 목록 응답을 확인하지 못했습니다.", 503) from None
++
++
++def _apply_graph_users(users: list[dict]) -> int:
++    if not isinstance(users, list) or not users or any(not isinstance(user, dict) for user in users):
++        raise DirectoryError("Entra 사용자 목록이 불완전하여 기존 사용자 정보를 유지했습니다.", 503)
++    tenant = _uuid(get_settings().entra_tenant_id)
++    normalized = []
++    ids = set()
++    for user in users:
++        oid = _uuid(user.get("id"))
++        if oid in ids or user.get("userType") not in ("Member", "Guest") or not isinstance(user.get("accountEnabled"), bool):
++            raise DirectoryError("Entra 사용자 목록이 불완전하여 기존 사용자 정보를 유지했습니다.", 503)
++        ids.add(oid)
++        normalized.append((oid, user))
++    conn = get_maria_conn()
++    locked = False
++    try:
++        with conn.cursor() as cur:
++            _lock(cur)
++            locked = True
++            conn.begin()
++            count = 0
++            for oid, user in normalized:
++                profile = {"display_name": str(user.get("displayName") or "")[:200],
++                           "email": _email(user.get("mail")) or _email(user.get("userPrincipalName")),
++                           "department": str(user.get("department") or "")[:200]}
++                cur.execute("SELECT * FROM directory_users WHERE entra_tenant_id=%s AND entra_oid=%s "
++                            "FOR UPDATE", (tenant, oid))
++                person = cur.fetchone()
++                member = user["userType"] == "Member"
++                if not member and not person:
++                    continue
++                if not person:
++                    match_email = _email(user.get("userPrincipalName")) or profile["email"]
++                    person = _find_person(cur, tenant, oid, match_email, graph_verified=True)
++                if person and not _email(user.get("mail")):
++                    profile["email"] = person.get("email") or profile["email"]
++                if not person:
++                    person = _insert_person(cur, tenant, oid, profile)
++                _update_profile(cur, person, tenant, oid, profile,
++                                active=member and user["accountEnabled"])
++                count += int(member)
++            marks = ",".join(["%s"] * len(ids))
++            cur.execute("UPDATE directory_users SET is_active=0 WHERE entra_tenant_id=%s "
++                        f"AND entra_oid IS NOT NULL AND entra_oid NOT IN ({marks})", (tenant, *sorted(ids)))
++            cur.execute("INSERT INTO directory_sync_state "
++                        "(id,attempted_at,succeeded_at,user_count,error_message) VALUES (1,NOW(),NOW(),%s,NULL) "
++                        "ON DUPLICATE KEY UPDATE attempted_at=NOW(),succeeded_at=NOW(),"
++                        "user_count=VALUES(user_count),error_message=NULL", (count,))
++            conn.commit()
++            return count
++    except Exception:
++        conn.rollback()
++        raise
++    finally:
++        if locked:
++            with conn.cursor() as cur:
++                _unlock(cur)
++        conn.close()
++
++
++def sync_directory() -> dict:
++    try:
++        count = _apply_graph_users(_graph_users())
++        return {"ok": True, "synced_users": count, "message": f"Entra 사용자 {count}명을 동기화했습니다."}
++    except Exception as exc:
++        message = str(exc) if isinstance(exc, DirectoryError) else "사용자 동기화를 완료하지 못했습니다."
++        logger.warning("directory_sync_failed", error_type=type(exc).__name__)
++        execute("INSERT INTO directory_sync_state (id,attempted_at,error_message) VALUES (1,NOW(),%s) "
++                "ON DUPLICATE KEY UPDATE attempted_at=NOW(),error_message=VALUES(error_message)", (message[:500],))
++        return {"ok": False, "synced_users": 0, "error": message}
+--- app-baseline/app/core/user_directory_migration.py
++++ stage-app/app/core/user_directory_migration.py
+@@ -0,0 +1,393 @@
++"""Move Cella authorization out of AD once, retaining the AD rollback archive.
++
++MariaDB DDL commits implicitly. Each foreign key is replaced in one ALTER, and
++every restart validates any partially copied rows before continuing. A committed
++completion marker is the only permission to stop comparing against the archive;
++after that marker, legacy rows are never read or copied by this module again.
++"""
++
++from collections import Counter
++from dataclasses import dataclass, replace
++import hashlib
++import json
++
++import structlog
++
++from app.config import get_settings
++from app.db.mariadb import get_maria_conn
++
++
++logger = structlog.get_logger(__name__)
++MIGRATION_KEY = "ad_to_directory_v1"
++_SOURCE = "ad_users"
++_DIRECTORY = "directory_users"
++_MARKERS = "directory_migrations"
++_REQUIRED_COLUMNS = {
++    "id", "username", "display_name", "email", "department", "full_dn",
++    "is_active", "synced_at", "created_at", "updated_at", "deal_id_prefix",
++    "can_view_fi", "can_view_visitor_analytics",
++}
++_IDENTITY_COLUMNS = {
++    "entra_oid": "VARCHAR(64) NULL",
++    "entra_tenant_id": "VARCHAR(64) NULL",
++    "identity_source": "VARCHAR(16) NOT NULL DEFAULT 'legacy'",
++    "last_signin_at": "DATETIME NULL",
++}
++_FK_RULES = {"RESTRICT", "CASCADE", "SET NULL", "NO ACTION", "SET DEFAULT"}
++
++
++class DirectoryMigrationError(RuntimeError):
++    """A preservation check failed; the migration must not mark completion."""
++
++
++def _quote(name):
++    if not isinstance(name, str) or not name or "\x00" in name:
++        raise DirectoryMigrationError("Invalid database identifier")
++    return "`" + name.replace("`", "``") + "`"
++
++
++def _table(schema, name):
++    return f"{_quote(schema)}.{_quote(name)}"
++
++
++def _exists(cur, schema, table):
++    cur.execute(
++        "SELECT 1 AS present FROM INFORMATION_SCHEMA.TABLES "
++        "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND TABLE_TYPE = 'BASE TABLE'",
++        (schema, table),
++    )
++    return bool(cur.fetchone())
++
++
++def _columns(cur, schema, table):
++    cur.execute(
++        "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS column_type, "
++        "IS_NULLABLE AS is_nullable, COLUMN_DEFAULT AS column_default, "
++        "EXTRA AS extra, COLLATION_NAME AS collation_name, COLUMN_KEY AS column_key "
++        "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s "
++        "AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
++        (schema, table),
++    )
++    return {row["name"]: row for row in cur.fetchall()}
++
++
++def _ddl(conn, cur, sql):
++    # Explicit boundaries: rollback cannot undo earlier successful MariaDB DDL.
++    conn.commit()
++    cur.execute(sql)
++    conn.commit()
++
++
++def _ensure_login_assignment_flag(conn, cur, schema):
++    if _exists(cur, schema, "users"):
++        columns = _columns(cur, schema, "users")
++        if "requires_group_assignment" not in columns:
++            _ddl(
++                conn, cur, f"ALTER TABLE {_table(schema, 'users')} "
++                "ADD COLUMN requires_group_assignment TINYINT(1) NOT NULL DEFAULT 0",
++            )
++
++
++def _ensure_schema(conn, cur, schema, source_columns):
++    if not _exists(cur, schema, _DIRECTORY):
++        # LIKE retains every original column, index, default and collation.
++        _ddl(conn, cur, f"CREATE TABLE {_table(schema, _DIRECTORY)} "
++             f"LIKE {_table(schema, _SOURCE)}")
++    columns = _columns(cur, schema, _DIRECTORY)
++    for name, definition in source_columns.items():
++        if columns.get(name) != definition:
++            raise DirectoryMigrationError(f"Directory schema conflicts with source column: {name}")
++    additions = [
++        f"ADD COLUMN {_quote(name)} {definition}"
++        for name, definition in _IDENTITY_COLUMNS.items() if name not in columns
++    ]
++    if additions:
++        _ddl(conn, cur, f"ALTER TABLE {_table(schema, _DIRECTORY)} " + ", ".join(additions))
++    cur.execute(
++        "SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, "
++        "COLUMN_NAME AS column_name, SEQ_IN_INDEX AS position, SUB_PART AS sub_part "
++        "FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = %s "
++        "AND TABLE_NAME = %s ORDER BY INDEX_NAME, SEQ_IN_INDEX",
++        (schema, _DIRECTORY),
++    )
++    indexes = {}
++    for row in cur.fetchall():
++        if not row["non_unique"] and row["sub_part"] is None:
++            indexes.setdefault(row["name"], []).append(row["column_name"])
++    if not any(set(cols) == {"entra_tenant_id", "entra_oid"} and len(cols) == 2
++               for cols in indexes.values()):
++        _ddl(conn, cur, f"ALTER TABLE {_table(schema, _DIRECTORY)} "
++             "ADD UNIQUE INDEX ux_directory_entra_identity (entra_tenant_id, entra_oid)")
++    _ensure_login_assignment_flag(conn, cur, schema)
++    _ddl(conn, cur, f"CREATE TABLE IF NOT EXISTS {_table(schema, _MARKERS)} ("
++         "migration_key VARCHAR(100) NOT NULL PRIMARY KEY, "
++         "completed_at DATETIME NOT NULL, details_json LONGTEXT NOT NULL) ENGINE=InnoDB")
++
++
++@dataclass(frozen=True)
++class _ForeignKey:
++    schema: str
++    table: str
++    name: str
++    columns: tuple
++    referenced_schema: str
++    referenced_table: str
++    referenced_columns: tuple
++    delete_rule: str
++    update_rule: str
++
++
++def _foreign_keys(cur, schema):
++    cur.execute(
++        "SELECT k.TABLE_SCHEMA AS child_schema, k.TABLE_NAME AS child_table, "
++        "k.CONSTRAINT_NAME AS name, k.COLUMN_NAME AS column_name, "
++        "k.ORDINAL_POSITION AS position, k.REFERENCED_TABLE_SCHEMA AS parent_schema, "
++        "k.REFERENCED_TABLE_NAME AS parent_table, k.REFERENCED_COLUMN_NAME AS parent_column, "
++        "r.DELETE_RULE AS delete_rule, r.UPDATE_RULE AS update_rule "
++        "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k "
++        "JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r "
++        "ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA "
++        "AND r.TABLE_NAME = k.TABLE_NAME AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME "
++        "WHERE k.REFERENCED_TABLE_SCHEMA = %s "
++        "AND k.REFERENCED_TABLE_NAME IN ('ad_users', 'directory_users') "
++        "ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
++        (schema,),
++    )
++    grouped = {}
++    for row in cur.fetchall():
++        grouped.setdefault((row["child_schema"], row["child_table"], row["name"]), []).append(row)
++    result = []
++    for (child_schema, child_table, name), rows in grouped.items():
++        first = rows[0]
++        if (first["delete_rule"] not in _FK_RULES or first["update_rule"] not in _FK_RULES
++                or [int(row["position"]) for row in rows] != list(range(1, len(rows) + 1))):
++            raise DirectoryMigrationError("Invalid foreign key metadata")
++        result.append(_ForeignKey(
++            child_schema, child_table, name, tuple(row["column_name"] for row in rows),
++            first["parent_schema"], first["parent_table"],
++            tuple(row["parent_column"] for row in rows), first["delete_rule"], first["update_rule"],
++        ))
++    return result
++
++
++def _rebound_key(foreign_key):
++    if foreign_key.referenced_table == _DIRECTORY:
++        return foreign_key
++    # MariaDB 10.11 cannot drop and add the same constraint name in one ALTER.
++    # A new deterministic name keeps the replacement atomic and retryable.
++    identity = "\x00".join((foreign_key.schema, foreign_key.table, foreign_key.name))
++    name = "directory_fk_" + hashlib.sha256(identity.encode()).hexdigest()[:24]
++    return replace(foreign_key, name=name, referenced_table=_DIRECTORY)
++
++
++def _rebind_sql(foreign_key):
++    replacement = _rebound_key(foreign_key)
++    return (
++        f"ALTER TABLE {_table(foreign_key.schema, foreign_key.table)} "
++        f"DROP FOREIGN KEY {_quote(foreign_key.name)}, "
++        f"ADD CONSTRAINT {_quote(replacement.name)} FOREIGN KEY "
++        f"({', '.join(map(_quote, foreign_key.columns))}) "
++        f"REFERENCES {_table(foreign_key.referenced_schema, _DIRECTORY)} "
++        f"({', '.join(map(_quote, foreign_key.referenced_columns))}) "
++        f"ON DELETE {foreign_key.delete_rule} ON UPDATE {foreign_key.update_rule}"
++    )
++
++
++def _read_rows(cur, schema, table):
++    # Locking reads see current committed data after DDL, not an older snapshot.
++    cur.execute(f"SELECT * FROM {_table(schema, table)} FOR UPDATE")
++    return list(cur.fetchall())
++
++
++def _validate_copy(source_rows, directory_rows, columns, *, complete):
++    source = {row["id"]: row for row in source_rows}
++    target = {row["id"]: row for row in directory_rows}
++    if len(source) != len(source_rows) or len(target) != len(directory_rows):
++        raise DirectoryMigrationError("Duplicate directory IDs")
++    if set(target) - set(source):
++        raise DirectoryMigrationError("Directory contains IDs absent from the migration source")
++    if complete and set(source) != set(target):
++        raise DirectoryMigrationError("Directory row count or IDs changed during migration")
++    for person_id, target_row in target.items():
++        if any(source[person_id].get(name) != target_row.get(name) for name in columns):
++            raise DirectoryMigrationError(f"Directory copy conflict for ID {person_id}")
++
++
++def _assert_unchanged(before, after, label):
++    # Counter retains duplicate memberships as well as their exact values.
++    def signature(rows):
++        return Counter(tuple(sorted(row.items())) for row in rows)
++    if signature(before) != signature(after):
++        raise DirectoryMigrationError(f"{label} changed during migration")
++
++
++def _entra_bindings(users, directory_rows, tenant, *, require_bound=False):
++    linked = [row for row in users if row.get("entra_oid")]
++    if linked and not tenant:
++        raise DirectoryMigrationError("Entra tenant is required to import existing sign-in identities")
++    directory = {row["id"]: row for row in directory_rows}
++    bindings = []
++    claimed_people, claimed_oids = set(), set()
++    for user in linked:
++        person_id, oid = user.get("ad_user_id"), str(user["entra_oid"]).strip()
++        if person_id not in directory or not oid:
++            raise DirectoryMigrationError("Existing Entra login has no valid directory identity")
++        if person_id in claimed_people or oid.casefold() in claimed_oids:
++            raise DirectoryMigrationError("Existing Entra identities conflict")
++        person = directory[person_id]
++        existing = (person.get("entra_tenant_id"), person.get("entra_oid"))
++        if existing != (tenant, oid) and (require_bound or existing != (None, None)):
++            raise DirectoryMigrationError(f"Entra identity conflicts for directory ID {person_id}")
++        claimed_people.add(person_id)
++        claimed_oids.add(oid.casefold())
++        bindings.append((oid, tenant, user.get("last_login"), person_id))
++    return bindings
++
++
++def _marker(cur, schema):
++    if not _exists(cur, schema, _MARKERS):
++        return None
++    cur.execute(f"SELECT completed_at, details_json FROM {_table(schema, _MARKERS)} "
++                "WHERE migration_key = %s", (MIGRATION_KEY,))
++    return cur.fetchone()
++
++
++def _status(cur, schema, marker):
++    exists = _exists(cur, schema, _DIRECTORY)
++    if marker and not exists:
++        raise DirectoryMigrationError("Migration is marked complete but directory_users is missing")
++    total, linked = 0, 0
++    if exists:
++        columns = _columns(cur, schema, _DIRECTORY)
++        expression = "SUM(entra_oid IS NOT NULL AND entra_tenant_id IS NOT NULL)"
++        if not {"entra_oid", "entra_tenant_id"}.issubset(columns):
++            expression = "0"
++        cur.execute(f"SELECT COUNT(*) AS total, {expression} AS entra_linked "
++                    f"FROM {_table(schema, _DIRECTORY)}")
++        counts = cur.fetchone()
++        total, linked = int(counts["total"]), int(counts["entra_linked"] or 0)
++    return {
++        "completed": bool(marker), "migration_key": MIGRATION_KEY,
++        "directory_users": total, "entra_linked": linked,
++        "completed_at": str(marker["completed_at"]) if marker else None,
++    }
++
++
++def migration_status() -> dict:
++    """Read migration state without creating tables or reading the AD archive."""
++    conn = get_maria_conn()
++    try:
++        with conn.cursor() as cur:
++            cur.execute("SELECT DATABASE() AS db_name")
++            schema = cur.fetchone()["db_name"]
++            return _status(cur, schema, _marker(cur, schema))
++    finally:
++        conn.close()
++
++
++def ensure_directory_tables() -> dict:
++    """Copy and verify the legacy directory once; raise on any preservation failure.
++
++    This is a startup migration, before request handlers and directory sync run.
++    The old AD writer must be stopped for rollout. Concurrent legacy changes are
++    detected, never overwritten. A failed DDL step can be retried after inspection.
++    """
++    conn = get_maria_conn()
++    locked = False
++    lock_name = None
++    try:
++        with conn.cursor() as cur:
++            cur.execute("SELECT DATABASE() AS db_name")
++            schema = cur.fetchone()["db_name"]
++            if not schema:
++                raise DirectoryMigrationError("A selected database is required")
++            lock_name = "cella:directory-migration:" + hashlib.sha256(schema.encode()).hexdigest()[:24]
++            cur.execute("SELECT GET_LOCK(%s, 30) AS acquired", (lock_name,))
++            locked = cur.fetchone()["acquired"] == 1
++            if not locked:
++                raise DirectoryMigrationError("Could not acquire the directory migration lock")
++            marker = _marker(cur, schema)
++            if marker:
++                _ensure_login_assignment_flag(conn, cur, schema)
++                return dict(_status(cur, schema, marker), migrated=False)
++            if not _exists(cur, schema, _SOURCE):
++                raise DirectoryMigrationError("Migration source ad_users is missing; refusing an empty migration")
++            source_columns = _columns(cur, schema, _SOURCE)
++            if not _REQUIRED_COLUMNS.issubset(source_columns):
++                raise DirectoryMigrationError("Migration source is missing required profile or permission columns")
++            _ensure_schema(conn, cur, schema, source_columns)
++
++            conn.begin()
++            source = _read_rows(cur, schema, _SOURCE)
++            directory = _read_rows(cur, schema, _DIRECTORY)
++            _validate_copy(source, directory, source_columns, complete=False)
++            foreign_keys = _foreign_keys(cur, schema)
++            child_tables = {(fk.schema, fk.table) for fk in foreign_keys}
++            child_tables.update((schema, name) for name in ("users", "user_groups")
++                                if _exists(cur, schema, name))
++            children = {(db, table): _read_rows(cur, db, table)
++                        for db, table in sorted(child_tables)}
++            users = children.get((schema, "users"), [])
++            source_ids = {row["id"] for row in source}
++            for name in ("users", "user_groups"):
++                if any(row.get("ad_user_id") is not None and row["ad_user_id"] not in source_ids
++                       for row in children.get((schema, name), [])):
++                    raise DirectoryMigrationError(f"{name} has an orphaned directory reference")
++
++            writable_columns = [name for name, col in source_columns.items()
++                                if "GENERATED" not in col["extra"].upper()]
++            column_sql = ", ".join(map(_quote, writable_columns))
++            selected = ", ".join("s." + _quote(name) for name in writable_columns)
++            cur.execute(f"INSERT INTO {_table(schema, _DIRECTORY)} ({column_sql}) "
++                        f"SELECT {selected} FROM {_table(schema, _SOURCE)} s "
++                        f"LEFT JOIN {_table(schema, _DIRECTORY)} d ON d.id = s.id WHERE d.id IS NULL")
++            directory = _read_rows(cur, schema, _DIRECTORY)
++            tenant = str(get_settings().entra_tenant_id or "").strip()
++            bindings = _entra_bindings(users, directory, tenant)
++            for binding in bindings:
++                cur.execute(f"UPDATE {_table(schema, _DIRECTORY)} SET entra_oid = %s, "
++                            "entra_tenant_id = %s, identity_source = 'entra', "
++                            "last_signin_at = COALESCE(last_signin_at, %s), "
++                            "updated_at = updated_at WHERE id = %s", binding)
++            _validate_copy(source, _read_rows(cur, schema, _DIRECTORY), source_columns, complete=True)
++            conn.commit()
++
++            for foreign_key in foreign_keys:
++                if foreign_key.referenced_table == _SOURCE:
++                    _ddl(conn, cur, _rebind_sql(foreign_key))
++
++            conn.begin()
++            _assert_unchanged(source, _read_rows(cur, schema, _SOURCE), "AD source")
++            final_directory = _read_rows(cur, schema, _DIRECTORY)
++            _validate_copy(source, final_directory, source_columns, complete=True)
++            # Check the imported immutable identities as well as the original grants.
++            _entra_bindings(users, final_directory, tenant, require_bound=True)
++            for (db, table), rows in children.items():
++                _assert_unchanged(rows, _read_rows(cur, db, table), f"{db}.{table}")
++            expected_keys = {_rebound_key(fk) for fk in foreign_keys}
++            if set(_foreign_keys(cur, schema)) != expected_keys:
++                raise DirectoryMigrationError("Foreign key definitions changed during migration")
++            verification = {
++                "source_users": len(source), "login_accounts": len(users),
++                "group_memberships": len(children.get((schema, "user_groups"), [])),
++                "fi_grants": sum(bool(row["can_view_fi"]) for row in source),
++                "visitor_grants": sum(bool(row["can_view_visitor_analytics"]) for row in source),
++                "entra_links": len(bindings), "foreign_keys": len(foreign_keys),
++            }
++            cur.execute(f"INSERT INTO {_table(schema, _MARKERS)} "
++                        "(migration_key, completed_at, details_json) VALUES (%s, UTC_TIMESTAMP(), %s)",
++                        (MIGRATION_KEY, json.dumps(verification, sort_keys=True)))
++            conn.commit()
++            return dict(_status(cur, schema, _marker(cur, schema)), migrated=True)
++    except Exception:
++        conn.rollback()
++        raise
++    finally:
++        try:
++            if locked:
++                with conn.cursor() as cur:
++                    cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
++        except Exception:
++            logger.warning("directory_migration_lock_release_failed")
++        finally:
++            conn.close()
+--- app-baseline/app/db/mariadb.py
++++ stage-app/app/db/mariadb.py
+@@ -106,10 +106,10 @@
+ 
+ 
+ def ensure_fi_permission_column():
+-    """Add ad_users.can_view_fi if missing (idempotent)."""
++    """Add directory_users.can_view_fi if missing (idempotent)."""
+     try:
+         execute(
+-            "ALTER TABLE ad_users "
++            "ALTER TABLE directory_users "
+             "ADD COLUMN can_view_fi TINYINT(1) NOT NULL DEFAULT 0 "
+             "COMMENT '재무 손익(FI_LLM_Flat) 열람 허용'"
+         )
+@@ -126,18 +126,18 @@
+     try:
+         existing = fetch_one(
+             "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ad_users' "
++            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'directory_users' "
+             "AND COLUMN_NAME = 'can_view_visitor_analytics'"
+         )
+         if existing:
+             return
+         execute(
+-            "ALTER TABLE ad_users "
++            "ALTER TABLE directory_users "
+             "ADD COLUMN can_view_visitor_analytics TINYINT(1) NOT NULL DEFAULT 0 "
+             "COMMENT 'Admin이 부여한 방문자 분석 탭 열람 허용'"
+         )
+         execute(
+-            "UPDATE ad_users SET can_view_visitor_analytics = 1 "
++            "UPDATE directory_users SET can_view_visitor_analytics = 1 "
+             "WHERE department LIKE %s",
+             ("%데이터 비즈니스팀%",),
+         )
+--- app-baseline/app/db/models.py
++++ stage-app/app/db/models.py
+@@ -8,7 +8,7 @@
+ 
+ @dataclass
+ class User:
+-    """User model populated from MariaDB users + ad_users tables."""
++    """User model populated from MariaDB users + directory_users tables."""
+     id: int = 0
+     email: str = ""
+     name: str = ""
+@@ -19,3 +19,4 @@
+     can_view_visitor_analytics: bool = False
+     password_hash: str = ""
+     must_change_password: bool = False
++    requires_group_assignment: bool = False
+--- app-baseline/app/reports/store.py
++++ stage-app/app/reports/store.py
+@@ -180,7 +180,7 @@
+     return rid
+ 
+ 
+-# 이름은 AD 한글 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
++# 이름은 사용자 디렉터리 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
+ _NAME = "COALESCE(a.display_name, u.display_name, u.email)"
+ 
+ 
+@@ -196,7 +196,7 @@
+         f"{_NAME} AS owner_name "
+         "FROM reports r "
+         "JOIN users u ON u.id = r.user_id "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
+         "WHERE r.id = %s AND (r.user_id = %s OR s.id IS NOT NULL)",
+         (user_id, report_id, user_id),
+@@ -214,7 +214,7 @@
+         "(SELECT COUNT(*) FROM report_shares x WHERE x.report_id = r.id) AS share_count "
+         "FROM reports r "
+         "JOIN users u ON u.id = r.user_id "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
+         "WHERE r.user_id = %s OR s.id IS NOT NULL "
+         "ORDER BY r.created_at DESC LIMIT %s",
+@@ -232,7 +232,7 @@
+         "FROM report_shares s "
+         "JOIN reports r ON r.id = s.report_id AND r.user_id = %s "
+         "JOIN users u ON u.id = s.user_id "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE s.report_id = %s ORDER BY s.created_at",
+         (owner_id, report_id),
+     )
+@@ -273,7 +273,7 @@
+ def search_share_targets(q: str, me_id: int, limit: int = 8) -> List[Dict[str, Any]]:
+     """공유할 사람 찾기. **가입한 사용자만** 나온다 — 로그인해야 열 수 있기 때문이다.
+ 
+-    미가입자에게 미리 권한을 걸어두는 FI 방식([[ad_users]])과 다른 이유: 공유는 지금
++    미가입자에게 미리 권한을 걸어두는 FI 방식([[directory_users]])과 다른 이유: 공유는 지금
+     보여주려고 누르는 동작이라, 열 수 없는 사람을 목록에 올리면 공유한 줄 알게 된다.
+     """
+     term = (q or "").strip()
+@@ -283,7 +283,7 @@
+     return fetch_all(
+         f"SELECT u.id, {_NAME} AS name, COALESCE(a.email, u.email) AS email, "
+         "COALESCE(a.department, '') AS department "
+-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE u.id <> %s AND (a.display_name LIKE %s OR u.display_name LIKE %s "
+         "  OR u.email LIKE %s OR a.email LIKE %s OR a.department LIKE %s) "
+         f"ORDER BY {_NAME} LIMIT %s",
+@@ -353,7 +353,7 @@
+         "FROM report_shares s "
+         "JOIN reports r ON r.id = s.report_id "
+         "JOIN users u ON u.id = s.shared_by "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE s.user_id = %s ORDER BY s.created_at DESC LIMIT %s",
+         (user_id, limit),
+     )
+--- app-baseline/scripts/sync_ad_users.py
++++ stage-app/scripts/sync_ad_users.py
+@@ -594,4 +594,7 @@
+ 
+ 
+ if __name__ == "__main__":
+-    _tracked_main()
++    # Existing scheduler commands now refresh the Cella directory from Entra.
++    # The legacy helpers remain available for explicit rollback only.
++    from scripts.sync_entra_users import main as sync_entra_main
++    raise SystemExit(sync_entra_main())
+--- app-baseline/scripts/sync_entra_users.py
++++ stage-app/scripts/sync_entra_users.py
+@@ -0,0 +1,30 @@
++"""Refresh Cella employee profiles from Entra; preserve Admin-managed grants."""
++import json
++from pathlib import Path
++import sys
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from dotenv import load_dotenv
++load_dotenv(Path(__file__).resolve().parents[1] / ".env")
++
++
++def main() -> int:
++    from app.core.user_directory_migration import ensure_directory_tables, migration_status
++    from app.core.user_directory import ensure_directory_sync_table, sync_directory
++    if "--dry-run" in sys.argv:
++        print(json.dumps(migration_status(), default=str, ensure_ascii=True))
++        return 0
++    ensure_directory_tables()
++    ensure_directory_sync_table()
++    from app.core.self_check import track_job
++    with track_job("entra_directory_sync") as job:
++        result = sync_directory()
++        print(json.dumps(result, ensure_ascii=True))
++        if not result["ok"]:
++            raise RuntimeError(result["error"])
++        job.set_note(f"Entra directory users: {result['synced_users']}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

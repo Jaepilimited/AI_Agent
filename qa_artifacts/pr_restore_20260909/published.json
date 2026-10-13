@@ -1,0 +1,8 @@
+{
+  "published": true,
+  "backup": "/home/jeffrey/AI_Agent/.release_backups/pr-list-20260909-165422",
+  "changed": [
+    "app/core/safety.py"
+  ],
+  "hashes_match": true
+}

@@ -1,0 +1,123 @@
+{
+  "queried_at_kst": "2026-09-18T15:46:07.002989+09:00",
+  "results": [
+    {
+      "id": "skin1004-319714.marketing_analysis.Integrated_marketing_cost",
+      "rows": [
+        {
+          "n": 107669,
+          "min_Date": "2010-07-19",
+          "max_Date": "2026-12-01",
+          "nonnull_Date": 107532,
+          "latest_nonfuture_Date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 860256,
+      "billed_bytes": 10485760,
+      "query_job_id": "67f2675a-35f7-478c-b05a-a7a99a09d149"
+    },
+    {
+      "id": "skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance",
+      "rows": [
+        {
+          "n": 19538,
+          "min_Week_Start_Date_Sunday": "2024-02-04",
+          "max_Week_Start_Date_Sunday": "2026-09-06",
+          "nonnull_Week_Start_Date_Sunday": 19538,
+          "latest_nonfuture_Week_Start_Date_Sunday": "2026-09-06"
+        }
+      ],
+      "dry_bytes": 156304,
+      "billed_bytes": 10485760,
+      "query_job_id": "441fc190-675b-49fb-b63d-81d1c3e65bf1"
+    },
+    {
+      "id": "skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS",
+      "rows": [
+        {
+          "n": 292968,
+          "min_Contact_date": null,
+          "max_Contact_date": null,
+          "nonnull_Contact_date": 0,
+          "latest_nonfuture_Contact_date": null,
+          "min_Content_upload_date": "2010-07-19",
+          "max_Content_upload_date": "2026-09-17",
+          "nonnull_Content_upload_date": 252305,
+          "latest_nonfuture_Content_upload_date": "2026-09-17",
+          "min_Measurement_date": "2010-07-19",
+          "max_Measurement_date": "2026-09-18",
+          "nonnull_Measurement_date": 245193,
+          "latest_nonfuture_Measurement_date": "2026-09-18",
+          "min_Request_date": null,
+          "max_Request_date": null,
+          "nonnull_Request_date": 0,
+          "latest_nonfuture_Request_date": null
+        }
+      ],
+      "dry_bytes": 3979984,
+      "billed_bytes": 10485760,
+      "query_job_id": "89541451-522a-4e42-82df-bd5076cb84f9"
+    },
+    {
+      "id": "skin1004-319714.marketing_analysis.integrated_ad",
+      "rows": [
+        {
+          "n": 143676,
+          "min_date": "2019-06-01",
+          "max_date": "2026-12-01",
+          "nonnull_date": 143676,
+          "latest_nonfuture_date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 1149408,
+      "billed_bytes": 10485760,
+      "query_job_id": "85e0346c-e4cf-43fa-8773-5e5925db5451"
+    },
+    {
+      "id": "skin1004-319714.marketing_analysis.shopify_analysis_sales",
+      "rows": [
+        {
+          "n": 1866652,
+          "min_Date": "2021-10-06",
+          "max_Date": "2026-09-17",
+          "nonnull_Date": 1866652,
+          "latest_nonfuture_Date": "2026-09-17"
+        }
+      ],
+      "dry_bytes": 14933216,
+      "billed_bytes": 15728640,
+      "query_job_id": "01c2170d-7c82-44dd-a09c-dbbe5b5ec770"
+    },
+    {
+      "id": "skin1004-319714.promotion_calendar.promotion",
+      "rows": [
+        {
+          "n": 399,
+          "min_start_date": "2021-06-11",
+          "max_start_date": "2026-12-21",
+          "nonnull_start_date": 399,
+          "latest_nonfuture_start_date": "2026-09-18",
+          "min_end_date": "2021-06-11",
+          "max_end_date": "2026-12-23",
+          "nonnull_end_date": 399,
+          "latest_nonfuture_end_date": "2026-09-17",
+          "min_created_at": "2026-04-23 07:02:20.250000+00:00",
+          "max_created_at": "2026-09-17 10:09:03+00:00",
+          "nonnull_created_at": 399,
+          "latest_nonfuture_created_at": "2026-09-17",
+          "min_updated_at": "2026-04-27 03:30:10.409000+00:00",
+          "max_updated_at": "2026-09-17 10:09:24+00:00",
+          "nonnull_updated_at": 399,
+          "latest_nonfuture_updated_at": "2026-09-17",
+          "min_synced_at": "2026-04-27 03:30:11.321376+00:00",
+          "max_synced_at": "2026-09-17 10:09:24+00:00",
+          "nonnull_synced_at": 399,
+          "latest_nonfuture_synced_at": "2026-09-17"
+        }
+      ],
+      "dry_bytes": 15960,
+      "billed_bytes": 10485760,
+      "query_job_id": "deddc920-dcd5-48ee-a4d5-f71f9961406e"
+    }
+  ]
+}

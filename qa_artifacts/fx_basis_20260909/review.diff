@@ -1,0 +1,614 @@
+--- live/app/core/fx_rates.py
++++ candidate/app/core/fx_rates.py
+@@ -17,7 +17,7 @@
+ from __future__ import annotations
+ 
+ from calendar import monthrange as _monthrange
+-from datetime import date, datetime
++from datetime import date, datetime, timedelta
+ from typing import Any
+ 
+ from app.db.mariadb import execute, fetch_all, fetch_one
+@@ -57,10 +57,16 @@
+     execute(_DDL)
+ 
+ 
+-def put(for_date: date, rows: list[dict[str, Any]], source: str) -> int:
+-    """하루치를 통째로 upsert. 같은 날 두 번 넣어도 마지막 값만 남는다."""
+-
+-    ensure_tables()
++def put(
++    for_date: date, rows: list[dict[str, Any]], source: str, *, only_missing: bool = False,
++) -> int:
++    """최신값을 upsert. 과거 보충은 이미 수집한 값과 출처를 그대로 보존한다."""
++
++    ensure_tables()
++    update = (
++        "currency=currency" if only_missing else
++        "krw=VALUES(krw), unit=VALUES(unit), source=VALUES(source), fetched_at=NOW()"
++    )
+     saved = 0
+     for row in rows:
+         currency = str(row.get("currency", "")).upper()[:8]
+@@ -73,8 +79,7 @@
+         execute(
+             "INSERT INTO fx_rates (for_date, currency, krw, unit, source) "
+             "VALUES (%s,%s,%s,%s,%s) "
+-            "ON DUPLICATE KEY UPDATE krw=VALUES(krw), unit=VALUES(unit), "
+-            "source=VALUES(source), fetched_at=NOW()",
++            "ON DUPLICATE KEY UPDATE " + update,
+             (for_date, currency, krw, int(row.get("unit") or 1), source[:40]),
+         )
+         saved += 1
+@@ -96,11 +101,23 @@
+     """
+     year, month = (day.year, day.month - 1) if day.month > 1 else (day.year - 1, 12)
+     last = _monthrange(year, month)[1]
+-    return date(year, month, min(day.day, last))
+-
+-
+-#: 비교 기준일이 '한 달 전' 에서 이만큼까지 떨어지는 것은 정상이다 (주말·공휴일).
+-#: ⚠️ 이보다 멀면 전월대비가 아니다 — 이름을 바꾼다.
++    return date(year, month, min(day.day, last))
++
++
++def missing_history_target(day: date) -> date | None:
++    """한 달 전 날짜에 빠진 통화가 있으면 릴레이에 그 날짜를 요청한다.
++
++    직전 영업일 값만으로는 해당 날짜의 고시 유무를 알 수 없다. 휴일 보정은
++    과거 조회 API가 반환하는 날짜로 하므로 여기서는 정확한 날짜를 확인한다.
++    """
++    ensure_tables()
++    target = month_before(day)
++    present = {str(row["currency"]) for row in _rows_for(target)}
++    return None if set(CURRENCIES) <= present else target
++
++
++#: 비교 기준일이 '한 달 전' 에서 이만큼까지 떨어지는 것은 정상이다 (주말·공휴일).
++#: ⚠️ 이보다 오래된 값은 전월대비 조회에서 제외한다.
+ BASIS_TOLERANCE_DAYS = 7
+ 
+ 
+@@ -116,17 +133,18 @@
+     return f"{basis} 대비"
+ 
+ 
+-def _basis_date(day: date):
++def _basis_date(day: date):
+     """전월대비의 기준일 — 한 달 전 **이전**에서 가장 가까운 보유일.
+ 
+     ⛔ 한 달 전 날짜를 콕 집어 찾으면 주말·공휴일에 **조용히 0건**이 된다.
+-       그 날짜 이하에서 가장 가까운 값을 쓴다.
++       그 날짜 이하에서 가장 가까운 값을 쓰되, 허용 기간보다 오래된 값은 제외한다.
+     ⚠️ 없으면 None 이다 — 그때는 변동률을 만들지 않는다. 없는 것을 0% 로 적으면
+        "안 움직였다" 로 읽힌다 (이 파일이 이미 지키는 규칙이다).
+     """
+-    row = fetch_one(
+-        "SELECT MAX(for_date) d FROM fx_rates WHERE for_date <= %s",
+-        (month_before(day),),
++    target = month_before(day)
++    row = fetch_one(
++        "SELECT MAX(for_date) d FROM fx_rates WHERE for_date <= %s AND for_date >= %s",
++        (target, target - timedelta(days=BASIS_TOLERANCE_DAYS)),
+     ) or {}
+     basis = row.get("d")
+     if isinstance(basis, datetime):
+--- live/app/api/jandi_briefing_api.py
++++ candidate/app/api/jandi_briefing_api.py
+@@ -210,10 +210,19 @@
+     rows = payload.get("rates")
+     if not isinstance(rows, list) or not rows:
+         raise HTTPException(status_code=400, detail="rates must be a non-empty list")
+-    saved = fx_rates.put(for_date, rows[:40], str(payload.get("source", "")))
++    only_missing = payload.get("only_missing", False)
++    if not isinstance(only_missing, bool):
++        raise HTTPException(status_code=400, detail="only_missing must be a boolean")
++    saved = fx_rates.put(
++        for_date, rows[:40], str(payload.get("source", "")), only_missing=only_missing,
++    )
+     fx_rates.cleanup(for_date - timedelta(days=90))
++    history_target = None if only_missing else fx_rates.missing_history_target(for_date)
+     logger.info("fx_relay_saved", for_date=str(for_date), saved=saved)
+-    return {"saved": saved, "for_date": str(for_date)}
++    return {
++        "saved": saved, "for_date": str(for_date),
++        "history_needed_for": str(history_target) if history_target else "",
++    }
+ 
+ 
+ @router.post("/api/internal/briefing-outbox/ack")
+--- live/scripts/fx_relay.py
++++ candidate/scripts/fx_relay.py
+@@ -124,10 +124,14 @@
+     ⚠️ ECB 는 주말·공휴일에 고시가 없다 — 그때는 **직전 영업일 값**을 그 날짜로
+        돌려준다. 응답의 `date` 를 그대로 쓰는 이유다 (요청한 날짜를 쓰면 거짓이 된다).
+     """
+-    others = ",".join(c for c in CURRENCIES if c != "USD")
+-    try:
+-        data = _get_json(f"https://api.frankfurter.app/{day}?from=USD&to=KRW,{others}")
+-        rates = data["rates"]
++    others = ",".join(c for c in CURRENCIES if c != "USD")
++    try:
++        requested = date.fromisoformat(day)
++        data = _get_json(f"https://api.frankfurter.app/{day}?from=USD&to=KRW,{others}")
++        quoted = date.fromisoformat(str(data.get("date") or ""))
++        if not 0 <= (requested - quoted).days <= 7:
++            raise ValueError("과거 고시일이 요청일 이전 7일 범위에 없습니다")
++        rates = data["rates"]
+         krw = float(rates["KRW"])
+         rows = []
+         for currency in CURRENCIES:
+@@ -137,7 +141,7 @@
+                 value = krw / float(rates[currency]) * UNITS.get(currency, 1)
+             rows.append({"currency": currency, "krw": round(value, 4),
+                          "unit": UNITS.get(currency, 1)})
+-        return rows, "frankfurter.app", str(data.get("date") or day)
++        return rows, "frankfurter.app", str(quoted)
+     except Exception as exc:
+         print(f"[!] {day} 과거 조회 실패: {type(exc).__name__} {exc}", file=sys.stderr)
+         return None
+@@ -166,7 +170,27 @@
+             pass
+ 
+ 
+-def main() -> int:
++def _publish(client, token: str, fetched: tuple, *, only_missing: bool = False) -> dict:
++    """고시를 저장하고, 서버가 알려준 누락 비교일을 돌려준다."""
++    rows, source, quoted = fetched
++    payload = {"for_date": quoted, "rates": rows, "source": source}
++    if only_missing:
++        payload["only_missing"] = True
++    status, body = push(client, token, payload)
++    if status == 404:
++        raise RuntimeError(
++            "WAS 가 404 를 돌려줬습니다. BRIEFING_RELAY_TOKEN 이 서버와 다르거나 "
++            "서버에 설정되지 않았습니다 (.env 는 배포에서 제외된다).")
++    if status != 200:
++        raise RuntimeError(f"전송 실패: HTTP {status} {body[:200]}")
++    result = json.loads(body)
++    if not isinstance(result, dict):
++        raise ValueError("환율 저장 응답 형식이 올바르지 않습니다")
++    print(f"[o] {body}")
++    return result
++
++
++def main() -> int:
+     parser = argparse.ArgumentParser(description="오늘의 환율 릴레이 (DB_PC 전용)")
+     parser.add_argument("--dry-run", action="store_true", help="가져오기만 하고 보내지 않는다")
+     parser.add_argument("--date", metavar="YYYY-MM-DD",
+@@ -205,18 +229,20 @@
+         return _fail(f"SSH 접속 실패 {WAS_USER}@{WAS_HOST}: {type(exc).__name__} {exc}")
+ 
+     try:
+-        status, body = push(client, token, {
+-            "for_date": quoted, "rates": rows, "source": source,
+-        })
+-        if status == 404:
+-            return _fail(
+-                "WAS 가 404 를 돌려줬습니다. BRIEFING_RELAY_TOKEN 이 서버와 다르거나 "
+-                "서버에 설정되지 않았습니다 (.env 는 배포에서 제외된다).")
+-        if status != 200:
+-            return _fail(f"전송 실패: HTTP {status} {body[:200]}")
+-        print(f"[o] {body}")
+-        return 0
+-    finally:
++        result = _publish(client, token, fetched, only_missing=bool(args.date))
++        target = result.get("history_needed_for")
++        if target and not args.date:
++            # 서버가 실제 고시일의 한 달 전을 판정한다. 기존 일별 고시는 보존하고
++            # 누락분만 채워, 최초 백필 날짜에 비교 기준이 멈추는 것을 막는다.
++            history = fetch_history(str(target))
++            if not history:
++                return _fail("현재 환율은 저장했지만 전월 비교 환율을 가져오지 못했습니다.")
++            print(f"[i] 전월 비교 {target} · 실제 고시일 {history[2]}")
++            _publish(client, token, history, only_missing=True)
++        return 0
++    except Exception as exc:
++        return _fail(f"환율 저장 실패: {type(exc).__name__} {exc}")
++    finally:
+         client.close()
+ 
+ 
+--- live/tests/test_fx_monthly_basis.py
++++ candidate/tests/test_fx_monthly_basis.py
+@@ -0,0 +1,261 @@
++"""Monthly FX comparisons must use a nearby quote and preserve collected history."""
++
++import asyncio
++import re
++import sqlite3
++from datetime import date
++from types import SimpleNamespace
++
++import pytest
++from fastapi import HTTPException, Request
++
++from app.core import fx_rates
++
++
++@pytest.fixture
++def fx_db(monkeypatch):
++    """Run the production queries; translate only MariaDB syntax and row types."""
++    connection = sqlite3.connect(":memory:")
++    connection.row_factory = sqlite3.Row
++
++    def query(sql, params=()):
++        sql = re.sub(r"\) ENGINE=.*", ")", sql, flags=re.DOTALL)
++        sql = sql.replace("%s", "?").replace("NOW()", "CURRENT_TIMESTAMP")
++        sql = sql.replace(
++            "ON DUPLICATE KEY UPDATE", "ON CONFLICT(for_date, currency) DO UPDATE SET",
++        )
++        sql = re.sub(r"VALUES\((\w+)\)", r"excluded.\1", sql)
++        return connection.execute(
++            sql, tuple(value.isoformat() if isinstance(value, date) else value
++                       for value in params),
++        )
++
++    def fetch_all(sql, params=()):
++        rows = [dict(row) for row in query(sql, params).fetchall()]
++        for row in rows:
++            if row.get("d") is not None:
++                row["d"] = date.fromisoformat(row["d"])
++        return rows
++
++    def fetch_one(sql, params=()):
++        rows = fetch_all(sql, params)
++        return rows[0] if rows else None
++
++    monkeypatch.setattr(fx_rates, "execute", lambda sql, params=(): query(sql, params).rowcount)
++    monkeypatch.setattr(fx_rates, "fetch_all", fetch_all)
++    monkeypatch.setattr(fx_rates, "fetch_one", fetch_one)
++    fx_rates.ensure_tables()
++    yield connection
++    connection.close()
++
++
++def seed(connection, day, currency="USD", krw=1300, unit=1, source="live-api"):
++    connection.execute(
++        "INSERT INTO fx_rates (for_date, currency, krw, unit, source, fetched_at) "
++        "VALUES (?, ?, ?, ?, ?, ?)",
++        (day, currency, krw, unit, source, "2026-08-07 09:10:00"),
++    )
++
++
++def test_old_bootstrap_quote_cannot_become_september_monthly_comparison(fx_db):
++    seed(fx_db, "2026-07-24", krw=1250)
++    seed(fx_db, "2026-08-26", krw=1350)
++    seed(fx_db, "2026-09-09", krw=1400)
++
++    result = fx_rates.latest(date(2026, 9, 9))
++
++    assert result["for_date"] == "2026-09-09"
++    assert result["basis_date"] == ""
++    assert result["basis_note"] == ""
++    assert result["items"][0]["krw"] == 1400
++    assert result["items"][0]["was_krw"] is None
++    assert result["items"][0]["change_pct"] is None
++    assert fx_rates.change_label(result["items"][0]) == ""
++
++
++def test_weekend_target_uses_nearest_earlier_quote_within_tolerance(fx_db):
++    seed(fx_db, "2026-08-06", krw=1200)
++    seed(fx_db, "2026-08-07", krw=1250)
++    seed(fx_db, "2026-08-10", krw=1350)
++    seed(fx_db, "2026-09-09", krw=1400)
++
++    result = fx_rates.latest(date(2026, 9, 9))
++
++    assert result["basis_date"] == "2026-08-07"
++    assert result["basis_note"] == "전월대비 2026-08-07"
++    assert result["items"][0]["was_krw"] == 1250
++    assert result["items"][0]["change_pct"] == 12.0
++
++
++@pytest.mark.parametrize("basis, expected", [
++    ("2026-08-02", "2026-08-02"),
++    ("2026-08-01", ""),
++])
++def test_basis_tolerance_has_an_inclusive_lower_bound(fx_db, basis, expected):
++    seed(fx_db, basis)
++    seed(fx_db, "2026-09-09")
++    assert fx_rates.latest(date(2026, 9, 9))["basis_date"] == expected
++
++
++def test_unchanged_quote_is_zero_but_absent_currency_has_no_comparison(fx_db):
++    seed(fx_db, "2026-08-07", krw=1400)
++    seed(fx_db, "2026-09-09", krw=1400)
++    seed(fx_db, "2026-09-09", "JPY", krw=900, unit=100)
++
++    result = fx_rates.latest(date(2026, 9, 9))
++    usd, jpy = result["items"]
++
++    assert usd["was_krw"] == 1400
++    assert usd["change_pct"] == 0
++    assert fx_rates.change_label(usd) == "보합"
++    assert jpy["was_krw"] is None
++    assert jpy["change_pct"] is None
++    assert fx_rates.change_label(jpy) == ""
++
++
++@pytest.mark.parametrize("current, basis", [
++    ("2026-03-31", "2026-02-28"),
++    ("2024-03-31", "2024-02-29"),
++    ("2026-01-31", "2025-12-31"),
++])
++def test_month_comparison_clamps_to_calendar_month_end(fx_db, current, basis):
++    seed(fx_db, basis)
++    seed(fx_db, current, krw=1400)
++    assert fx_rates.latest(date.fromisoformat(current))["basis_date"] == basis
++
++
++def test_backfill_preserves_existing_quote_unit_source_and_fetch_time(fx_db):
++    seed(fx_db, "2026-08-07", krw=1300)
++    seed(fx_db, "2026-08-07", "JPY", krw=900, unit=100)
++
++    fx_rates.put(date(2026, 8, 7), [
++        {"currency": "USD", "krw": 1400, "unit": 1},
++        {"currency": "JPY", "krw": 9, "unit": 1},
++        {"currency": "EUR", "krw": 1600, "unit": 1},
++    ], "history-api", only_missing=True)
++
++    existing = fx_db.execute(
++        "SELECT currency, krw, unit, source, fetched_at FROM fx_rates "
++        "WHERE currency IN ('USD', 'JPY') ORDER BY currency",
++    ).fetchall()
++    assert [tuple(row) for row in existing] == [
++        ("JPY", 900, 100, "live-api", "2026-08-07 09:10:00"),
++        ("USD", 1300, 1, "live-api", "2026-08-07 09:10:00"),
++    ]
++    inserted = fx_db.execute(
++        "SELECT krw, unit, source FROM fx_rates WHERE currency = 'EUR'",
++    ).fetchone()
++    assert tuple(inserted) == (1600, 1, "history-api")
++
++
++def test_current_quote_still_updates_existing_rate(fx_db):
++    seed(fx_db, "2026-09-09", "JPY", krw=9, unit=1, source="earlier-api")
++
++    saved = fx_rates.put(date(2026, 9, 9), [
++        {"currency": "JPY", "krw": 910, "unit": 100},
++    ], "live-api")
++
++    row = fx_db.execute("SELECT krw, unit, source, fetched_at FROM fx_rates").fetchone()
++    assert saved == 1
++    assert tuple(row)[:3] == (910, 100, "live-api")
++    assert row["fetched_at"] != "2026-08-07 09:10:00"
++
++
++ALL_CURRENCIES = ("USD", "JPY", "CNY", "EUR", "SGD", "PHP", "MYR", "IDR", "AUD")
++
++
++@pytest.mark.parametrize("current, history_day, currencies, expected", [
++    ("2026-09-09", "2026-08-09", (), "2026-08-09"),
++    ("2026-09-09", "2026-08-09", ("USD",), "2026-08-09"),
++    ("2026-09-09", "2026-08-09", ALL_CURRENCIES[:-1] + ("KRW",), "2026-08-09"),
++    ("2026-09-09", "2026-08-09", ALL_CURRENCIES, None),
++    ("2026-09-09", "2026-08-07", ALL_CURRENCIES, "2026-08-09"),
++    ("2026-09-10", "2026-08-07", ALL_CURRENCIES, "2026-08-10"),
++    ("2026-03-31", "2026-02-28", (), "2026-02-28"),
++])
++def test_history_request_requires_every_currency_on_exact_target(
++    fx_db, current, history_day, currencies, expected,
++):
++    for currency in currencies:
++        seed(fx_db, history_day, currency)
++
++    target = fx_rates.missing_history_target(date.fromisoformat(current))
++
++    assert (target.isoformat() if target else None) == expected
++
++
++@pytest.fixture
++def relay_push(monkeypatch, fx_db):
++    from app.api import jandi_briefing_api as api
++
++    monkeypatch.setattr(
++        api, "get_settings", lambda: SimpleNamespace(briefing_relay_token="fx-test-token"),
++    )
++    request = Request({
++        "type": "http", "client": ("127.0.0.1", 8000),
++        "headers": [(b"x-relay-token", b"fx-test-token")],
++    })
++    return lambda payload: asyncio.run(api.relay_fx(request, payload))
++
++
++def test_current_push_requests_missing_month_and_keeps_cleanup_boundary(relay_push, fx_db):
++    seed(fx_db, "2026-06-10")
++    seed(fx_db, "2026-06-11")
++
++    response = relay_push({
++        "for_date": "2026-09-09", "source": "live-api",
++        "rates": [{"currency": "USD", "krw": 1400, "unit": 1}],
++    })
++
++    assert response == {
++        "saved": 1, "for_date": "2026-09-09", "history_needed_for": "2026-08-09",
++    }
++    rows = fx_db.execute("SELECT for_date, krw FROM fx_rates ORDER BY for_date").fetchall()
++    assert [tuple(row) for row in rows] == [("2026-06-11", 1300), ("2026-09-09", 1400)]
++
++
++def test_current_push_does_not_request_complete_history(relay_push, fx_db):
++    for currency in ALL_CURRENCIES:
++        seed(fx_db, "2026-08-09", currency)
++
++    response = relay_push({
++        "for_date": "2026-09-09", "source": "live-api", "only_missing": False,
++        "rates": [{"currency": "USD", "krw": 1400, "unit": 1}],
++    })
++
++    assert response == {"saved": 1, "for_date": "2026-09-09", "history_needed_for": ""}
++
++
++def test_history_push_preserves_quote_and_never_requests_another_month(
++    relay_push, fx_db, monkeypatch,
++):
++    seed(fx_db, "2026-08-07", krw=1300)
++
++    def unexpected_history_lookup(day):
++        raise AssertionError("Backfill must not trigger another historical lookup")
++
++    monkeypatch.setattr(fx_rates, "missing_history_target", unexpected_history_lookup)
++    response = relay_push({
++        "for_date": "2026-08-07", "source": "history-api", "only_missing": True,
++        "rates": [{"currency": "USD", "krw": 1500, "unit": 1},
++                  {"currency": "JPY", "krw": 900, "unit": 100}],
++    })
++
++    assert response == {"saved": 2, "for_date": "2026-08-07", "history_needed_for": ""}
++    row = fx_db.execute(
++        "SELECT krw, source, fetched_at FROM fx_rates WHERE currency='USD'",
++    ).fetchone()
++    assert tuple(row) == (1300, "live-api", "2026-08-07 09:10:00")
++    assert fx_db.execute("SELECT krw FROM fx_rates WHERE currency='JPY'").fetchone()[0] == 900
++
++
++@pytest.mark.parametrize("only_missing", ["false", "true", 0, 1, None])
++def test_only_missing_requires_a_boolean_before_any_write(relay_push, fx_db, only_missing):
++    with pytest.raises(HTTPException) as caught:
++        relay_push({
++            "for_date": "2026-09-09", "source": "live-api", "only_missing": only_missing,
++            "rates": [{"currency": "USD", "krw": 1400, "unit": 1}],
++        })
++
++    assert caught.value.status_code == 400
++    assert fx_db.execute("SELECT COUNT(*) FROM fx_rates").fetchone()[0] == 0
+--- live/tests/test_fx_relay_monthly.py
++++ candidate/tests/test_fx_relay_monthly.py
+@@ -0,0 +1,136 @@
++"""The daily relay must keep the rolling monthly comparison populated."""
++import importlib.util
++import json
++from pathlib import Path
++import sys
++from types import SimpleNamespace
++
++import pytest
++
++
++@pytest.fixture
++def relay():
++    path = Path(__file__).resolve().parents[1] / "scripts" / "fx_relay.py"
++    spec = importlib.util.spec_from_file_location("fx_relay_monthly_test", path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++@pytest.fixture
++def run_relay(monkeypatch, relay):
++    sent, requested = [], []
++    closed = []
++    client = SimpleNamespace(
++        set_missing_host_key_policy=lambda policy: None,
++        connect=lambda *args, **kwargs: None,
++        close=lambda: closed.append(True),
++    )
++    monkeypatch.setitem(sys.modules, "paramiko", SimpleNamespace(
++        SSHClient=lambda: client, AutoAddPolicy=lambda: None,
++    ))
++    monkeypatch.setenv("CRAVER_SSH_PW", "test-password")
++    monkeypatch.setenv("BRIEFING_RELAY_TOKEN", "test-token")
++    monkeypatch.setattr(sys, "argv", ["fx_relay.py"])
++    current = ([{"currency": "USD", "krw": 1340.8644, "unit": 1}],
++               "open.er-api.com", "2026-09-09")
++    history = ([{"currency": "USD", "krw": 1415.95, "unit": 1}],
++               "frankfurter.app", "2026-08-07")
++    monkeypatch.setattr(relay, "fetch_rates", lambda: current)
++
++    def fetch_history(day):
++        requested.append(day)
++        return history
++
++    monkeypatch.setattr(relay, "fetch_history", fetch_history)
++
++    def run(responses, args=()):
++        monkeypatch.setattr(sys, "argv", ["fx_relay.py", *args])
++        replies = iter(responses)
++
++        def push(connection, token, payload):
++            assert connection is client and token == "test-token"
++            sent.append(payload)
++            status, body = next(replies)
++            return status, json.dumps(body)
++
++        monkeypatch.setattr(relay, "push", push)
++        return relay.main()
++
++    return SimpleNamespace(run=run, sent=sent, requested=requested, closed=closed)
++
++
++def test_daily_run_fills_requested_month_and_uses_actual_weekend_quote(run_relay):
++    status = run_relay.run([
++        (200, {"saved": 9, "for_date": "2026-09-09", "history_needed_for": "2026-08-09"}),
++        (200, {"saved": 9, "for_date": "2026-08-07"}),
++    ])
++    assert status == 0
++    assert run_relay.requested == ["2026-08-09"]
++    assert [p["for_date"] for p in run_relay.sent] == ["2026-09-09", "2026-08-07"]
++    assert run_relay.sent[1]["only_missing"] is True
++    assert run_relay.sent[1]["source"] == "frankfurter.app"
++    assert run_relay.closed == [True]
++
++
++def test_complete_history_does_not_fetch_or_overwrite_old_quotes(run_relay):
++    assert run_relay.run([(200, {"saved": 9, "history_needed_for": ""})]) == 0
++    assert run_relay.requested == []
++    assert len(run_relay.sent) == 1
++
++
++def test_history_fetch_failure_is_visible_after_current_quote_saved(monkeypatch, relay, run_relay):
++    monkeypatch.setattr(relay, "fetch_history", lambda day: None)
++    status = run_relay.run([(200, {"saved": 9, "history_needed_for": "2026-08-09"})])
++    assert status == 1
++    assert len(run_relay.sent) == 1
++    assert run_relay.sent[0]["for_date"] == "2026-09-09"
++    assert run_relay.closed == [True]
++
++
++def test_history_publish_failure_is_not_reported_as_success(run_relay):
++    status = run_relay.run([
++        (200, {"saved": 9, "history_needed_for": "2026-08-09"}),
++        (500, {"detail": "database unavailable"}),
++    ])
++    assert status == 1
++    assert run_relay.closed == [True]
++
++
++def test_manual_backfill_never_overwrites_native_daily_quotes(run_relay):
++    assert run_relay.run([(200, {"saved": 9, "history_needed_for": "2026-07-07"})],
++                         args=["--date", "2026-08-09"]) == 0
++    assert run_relay.requested == ["2026-08-09"]
++    assert len(run_relay.sent) == 1
++    assert run_relay.sent[0]["for_date"] == "2026-08-07"
++    assert run_relay.sent[0]["only_missing"] is True
++
++
++def test_dry_run_does_not_connect_or_write(run_relay):
++    assert run_relay.run([], args=["--dry-run"]) == 0
++    assert run_relay.sent == []
++    assert run_relay.closed == []
++
++
++def history_response():
++    return {"amount": 1.0, "base": "USD", "date": "2026-08-07", "rates": {
++        "KRW": 1415.95, "JPY": 158.34, "CNY": 6.7477, "EUR": 0.86693,
++        "SGD": 1.2809, "PHP": 60.883, "MYR": 4.091, "IDR": 17856.5, "AUD": 1.4204,
++    }}
++
++
++def test_history_keeps_provider_date_and_hundred_unit(monkeypatch, relay):
++    monkeypatch.setattr(relay, "_get_json", lambda url: history_response())
++    rows, source, quoted = relay.fetch_history("2026-08-09")
++    assert quoted == "2026-08-07"
++    assert source == "frankfurter.app"
++    yen = next(row for row in rows if row["currency"] == "JPY")
++    assert yen == {"currency": "JPY", "krw": 894.2466, "unit": 100}
++
++
++@pytest.mark.parametrize("quoted", [None, "", "2026-07-24", "2026-08-10", "invalid"])
++def test_history_without_a_valid_nearby_quote_is_not_misdated(monkeypatch, relay, quoted):
++    data = history_response()
++    data["date"] = quoted
++    monkeypatch.setattr(relay, "_get_json", lambda url: data)
++    assert relay.fetch_history("2026-08-09") is None

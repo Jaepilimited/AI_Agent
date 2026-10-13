@@ -1,0 +1,18 @@
+{
+  "checked_at_utc": "2026-09-09T04:02:25.305696+00:00",
+  "target_ssh_host": "10.1.100.5",
+  "read_only": true,
+  "ssh_connected": true,
+  "remote_exit_code": 0,
+  "web_host_observations": {
+    "asset_status": 200,
+    "served_hash_matches": true,
+    "validated_contents_match": true,
+    "health": 200,
+    "unauth_status": 401,
+    "auth_header": "login-required",
+    "nginx": "active",
+    "checked_via": "Web host loopback through nginx with production Host header"
+  },
+  "elapsed_seconds": 0.678
+}

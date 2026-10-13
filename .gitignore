@@ -192,3 +192,8 @@ data/sql_results/
 
 # 셀라 기원 MV — 40MB 바이너리는 저장소에 두지 않는다 (서버에 한 번만 올린다)
 app/static/media/*.mp4
+
+# 에이전트 스킬 설치본 (npx skills add) — 1.4GB·13,000여 파일의 외부 도구다.
+# 배포에서는 이미 빠진다(EXCLUDE_DIRS '.agents') — 여기 적는 것은 git status 를
+# 공유 세션 서넛이 읽을 수 있게 지키기 위해서다 (미커밋 258줄 중 58줄이 이것이었다)
+.agents/

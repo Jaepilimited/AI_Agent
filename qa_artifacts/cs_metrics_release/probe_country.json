@@ -1,0 +1,26 @@
+{
+  "case": "country",
+  "query": "2026년 8월 해외 CS 미국 환불 완료 건수 알려줘",
+  "sources": [
+    "해외CS"
+  ],
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "SELECT\n  COUNT(*) AS completed_refund_count,\n  COUNT(DISTINCT shopify_order_id) AS distinct_orders,\n  SUM(refund_amount_usd) AS total_refund_amount_usd,\n  SUM(refund_amount_krw) AS total_refund_amount_krw,\n  COUNTIF(refund_amount_krw IS NULL) AS refunds_without_krw\nFROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\nWHERE country_name = 'United States'\n  AND process_status = 'completed'\n  AND DATE(completed_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'\nLIMIT 10000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "completed_refund_count": 41,
+      "distinct_orders": 41,
+      "total_refund_amount_usd": "3357.93",
+      "total_refund_amount_krw": "4737155",
+      "refunds_without_krw": 0
+    }
+  ],
+  "seconds": 19.39,
+  "fast_answer": "1",
+  "tool_loop": null
+}

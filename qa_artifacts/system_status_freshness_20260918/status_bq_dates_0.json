@@ -1,0 +1,111 @@
+{
+  "queried_at_kst": "2026-09-18T15:46:07.265507+09:00",
+  "results": [
+    {
+      "id": "skin1004-319714.Export_control.export_logistics",
+      "rows": [
+        {
+          "n": 2742,
+          "min_order_date": "2025-06-11",
+          "max_order_date": "2027-04-17",
+          "nonnull_order_date": 2742,
+          "latest_nonfuture_order_date": "2026-09-18",
+          "min_created_at": "2026-05-14 05:48:43+00:00",
+          "max_created_at": "2026-09-18 03:55:28+00:00",
+          "nonnull_created_at": 2742,
+          "latest_nonfuture_created_at": "2026-09-18",
+          "min_updated_at": "2026-05-18 10:01:26+00:00",
+          "max_updated_at": "2026-09-18 06:45:30+00:00",
+          "nonnull_updated_at": 2742,
+          "latest_nonfuture_updated_at": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 65808,
+      "billed_bytes": 10485760,
+      "query_job_id": "2fa16fe2-3f85-4352-ad36-3486de93567c"
+    },
+    {
+      "id": "skin1004-319714.Platform_Data.raw_data",
+      "rows": [
+        {
+          "n": 14313516,
+          "min_Date": "2022-12-29 00:00:00+00:00",
+          "max_Date": "2026-09-18 00:00:00+00:00",
+          "nonnull_Date": 14313516,
+          "latest_nonfuture_Date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 114508128,
+      "billed_bytes": 115343360,
+      "query_job_id": "0568630d-b1e2-44a2-9f86-8f2272d4c159"
+    },
+    {
+      "id": "skin1004-319714.Review_Data.Korea_mall_Review",
+      "rows": [
+        {
+          "n": 77006,
+          "min_collected_date": "2025-12-10",
+          "max_collected_date": "2026-09-18",
+          "nonnull_collected_date": 77006,
+          "latest_nonfuture_collected_date": "2026-09-18",
+          "min_review_date": "2015-01-23",
+          "max_review_date": "2026-09-18",
+          "nonnull_review_date": 77006,
+          "latest_nonfuture_review_date": "2026-09-18"
+        }
+      ],
+      "dry_bytes": 1232096,
+      "billed_bytes": 10485760,
+      "query_job_id": "dac7d25e-968c-4c62-92d6-cb1d6098c1ba"
+    },
+    {
+      "id": "skin1004-319714.Review_Data.Oversea_mall_Review",
+      "rows": [
+        {
+          "n": 151658,
+          "min_collected_date": "2025-12-08",
+          "max_collected_date": "2026-09-18",
+          "nonnull_collected_date": 151658,
+          "latest_nonfuture_collected_date": "2026-09-18",
+          "min_review_date": "2019-11-23",
+          "max_review_date": "2026-09-17",
+          "nonnull_review_date": 151658,
+          "latest_nonfuture_review_date": "2026-09-17"
+        }
+      ],
+      "dry_bytes": 2426528,
+      "billed_bytes": 10485760,
+      "query_job_id": "d462b53a-0d93-4e1e-b102-dcf0330a29be"
+    },
+    {
+      "id": "skin1004-319714.Review_Data.Store_Review",
+      "rows": [
+        {
+          "n": 1889,
+          "min_review_date": "2024-01-30",
+          "max_review_date": "2026-09-15",
+          "nonnull_review_date": 1889,
+          "latest_nonfuture_review_date": "2026-09-15"
+        }
+      ],
+      "dry_bytes": 15112,
+      "billed_bytes": 10485760,
+      "query_job_id": "d61a8b75-f302-4119-a69f-046d8834b0d1"
+    },
+    {
+      "id": "skin1004-319714.Sales_Integration.Exchange_Rate",
+      "rows": [
+        {
+          "n": 1066,
+          "min_Year_month": "2020-01-01",
+          "max_Year_month": "2026-10-01",
+          "nonnull_Year_month": 1066,
+          "latest_nonfuture_Year_month": "2026-09-01"
+        }
+      ],
+      "dry_bytes": 8528,
+      "billed_bytes": 10485760,
+      "query_job_id": "e266d7a0-eefe-4ad8-a0eb-940d11731f8a"
+    }
+  ]
+}

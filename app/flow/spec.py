@@ -41,6 +41,7 @@ class Node:
     #      `flow_gates_match_code` 가 **실패로 올린다** — 조용히 낡지 않는다.
     group: str = "main"
     unreachable: str = ""          # 비어 있지 않으면 "도달 불가" + 그 이유
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,7 @@ class Edge:
 _ORCH = "app.agents.orchestrator"
 
 NODES: tuple[Node, ...] = (
-    Node("input", "USER INPUT", group="io"),
+    Node("input", "질문 입력", group="io"),
     # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 **전에 한 번만** 돈다.
     # 질문 문자열을 바꾸므로 뒤의 모든 판정이 이 결과를 본다.
     Node("alias_expand", "은어·오타 보정",
@@ -79,6 +80,7 @@ NODES: tuple[Node, ...] = (
     Node("intercept.followup", "후속 질문 이어 받기",
          fn="app.core.followup_rewrite.rewrite",
          knobs=("followup_rewrite_enabled", "query_rewrites 저장"),
+         description="짧은 후속 질문에 앞 대화의 맥락을 채워 다시 처리합니다. 시각화만 요청하면 직전 SQL을 재실행합니다.",
          gate="if not _followup_done:"),
     Node("intercept.notion_save", "노션 저장 관문",
          fn="app.core.notion_save.handle",
@@ -162,27 +164,31 @@ NODES: tuple[Node, ...] = (
                 "orchestrator._GUARDED")),
     Node("router.llm", "라우터 · LLM 재판정", fn=f"{_ORCH}.OrchestratorAgent._classify_with_llm",
          knobs=("prompts/query_analyzer.txt",)),
+    Node("router.source_gate", "사내 자료 필요 여부",
+         fn=f"{_ORCH}.OrchestratorAgent._needs_source",
+         knobs=("source_gate_enabled",),
+         description="확신이 낮은 300자 이하 질문 중 판정 가능한 질문만 확인합니다. 자료가 필요하면 경로를 재판정하고, 필요 없으면 일반 답변으로 보냅니다."),
 
-    Node("route_filter.allowed", "enabled-source filter",
+    Node("route_filter.allowed", "선택한 소스 확인",
          fn=f"{_ORCH}.OrchestratorAgent._allowed_routes",
          knobs=("orchestrator._SOURCE_ROUTE_MAP",)),
 
-    Node("multi_prefix.fanout", "@@ multi-source parallel fan-out",
+    Node("multi_prefix.fanout", "여러 소스 병렬 실행",
          fn=f"{_ORCH}.OrchestratorAgent._build_multi_prefix_tasks",
          knobs=("orchestrator.MULTI_PREFIX_ROUTE_TARGETS",)),
-    Node("multi_prefix.merge", "@@ multi-source merge", group="main"),
+    Node("multi_prefix.merge", "병렬 결과 합치기", group="main"),
 
-    Node("route.direct", "direct", group="route"),
-    Node("route.bigquery", "bigquery", group="route",
+    Node("route.direct", "일반 답변", group="route"),
+    Node("route.bigquery", "데이터 조회", group="route",
          subgraph="app.agents.sql_agent.build_sql_agent_graph"),
-    Node("route.notion", "notion", group="route"),
-    Node("route.cs", "cs", group="route"),
-    Node("route.gws", "gws", group="route"),
-    Node("route.multi", "multi", group="route"),
-    Node("route.model_rights", "model_rights", group="route"),
-    Node("route.report", "report", group="route"),
-    Node("route.inventory", "inventory", group="route"),
-    Node("route.awards", "awards", group="route"),
+    Node("route.notion", "사내 문서 검색", group="route"),
+    Node("route.cs", "국내 CS", group="route"),
+    Node("route.gws", "메일·캘린더", group="route"),
+    Node("route.multi", "복합 자료 조회", group="route"),
+    Node("route.model_rights", "초상권 확인", group="route"),
+    Node("route.report", "보고서 생성", group="route"),
+    Node("route.inventory", "재고 조회", group="route"),
+    Node("route.awards", "수상·랭킹 조회", group="route"),
     # ⚠️ 여기 있던 `route.team` 은 2026-08-25 에 **배선째 걷어냈다.** 도달 불가 표시는
     #    "지우지도 화살표를 긋지도 않는" 세 번째 선택지였는데, 코드를 실제로 지운
     #    다음에는 그 표시 자체가 낡은 사실이 된다. 팀 자료는 이제 벡터 색인의 링크
@@ -214,7 +220,7 @@ NODES: tuple[Node, ...] = (
     #     그러면 "답변 포맷 뒤에 Claude 를 부른다" 는 거짓 그림이 된다. 그래서 안 그린다
     #   ⚠️ Bedrock 은 우리 코드가 부르지 않는다 — 게이트웨이(LiteLLM)가 뒤에서 부른다.
     #     그래서 fn 이 없다. 계정·리전·모델 배포는 전부 플랫폼 운영자 몫이다
-    Node("llm.claude", "Claude Opus 5 · ClaudeClient",
+    Node("llm.claude", "Claude · ClaudeClient",
          fn="app.core.llm.ClaudeClient",
          knobs=("ANTHROPIC_OPUS_MODEL", "ANTHROPIC_EFFORT"), group="llm"),
     Node("llm.gateway", "사내 LLM 게이트웨이 (LiteLLM)",
@@ -287,8 +293,9 @@ def multi_prefix_targets() -> tuple[str, ...]:
 
 
 def generated_nodes() -> tuple[Node, ...]:
+    labels = {n.id.removeprefix("route."): n.label for n in NODES if n.group == "route"}
     return tuple(
-        Node(f"multi_prefix.branch.{target}", f"@@ branch: {target}", group="branch")
+        Node(f"multi_prefix.branch.{target}", f"@@ 병렬: {labels.get(target, target)}", group="branch")
         for target in multi_prefix_targets()
     )
 
@@ -296,8 +303,11 @@ def generated_nodes() -> tuple[Node, ...]:
 def generated_edges() -> tuple[Edge, ...]:
     routes = classifier_routes()
     return (
-        Edge("router.keyword", "router.llm", label="not confident", conditional=True),
-        Edge("router.keyword", "route_filter.allowed", label="confident", conditional=True),
+        Edge("router.keyword", "router.llm", label="불확실 · 자료 관문 비활성/문맥상 우회", conditional=True),
+        Edge("router.keyword", "router.source_gate", label="불확실 · 짧은 질문 · 관문 활성", conditional=True),
+        Edge("router.source_gate", "router.llm", label="사내 자료 필요", conditional=True),
+        Edge("router.source_gate", "route_filter.allowed", label="자료 불필요 · direct", conditional=True),
+        Edge("router.keyword", "route_filter.allowed", label="확신 · 직접 잠금 · 시스템 작업 · 긴 질문", conditional=True),
         Edge("router.llm", "route_filter.allowed", label="classified", conditional=True),
         *tuple(
             Edge("route_filter.allowed", route,
@@ -361,8 +371,8 @@ EDGES: tuple[Edge, ...] = (
          label="회사 기본 사실", conditional=True),
     Edge("intercept.company", "intercept.fi_guard", label="통과", conditional=True),
 
-    Edge("intercept.fi_guard", "route.bigquery",
-         label="권한 없음 · 거절", conditional=True),
+    Edge("intercept.fi_guard", "response",
+         label="권한 없음 · 조회 없이 거절", conditional=True),
     Edge("intercept.fi_guard", "intercept.ingredient", label="통과", conditional=True),
 
     Edge("intercept.ingredient", "route.bigquery",
@@ -415,8 +425,9 @@ EDGES: tuple[Edge, ...] = (
     Edge("route.report", "llm.claude", label="해석 문장 (insight)", conditional=True),
     Edge("route.report", "llm.gemini", label="계획 (planner)", conditional=True),
     Edge("router.llm", "llm.gemini", label="재판정"),
+    Edge("router.source_gate", "llm.gemini", label="자료 필요 여부 판정"),
     Edge("llm.claude", "llm.gateway",
-         label="LLM_GATEWAY_URL·KEY 설정 (2026-09-28~ 켜짐)", conditional=True),
+         label="LLM_GATEWAY_URL·KEY 모두 설정", conditional=True),
     Edge("llm.claude", "llm.anthropic", label="미설정 · 직접 호출", conditional=True),
     Edge("llm.gateway", "llm.bedrock", label="OpenAI 호환 → Bedrock · 가드레일 · Langfuse"),
 )

@@ -1,0 +1,178 @@
+{
+  "dates": [
+    {
+      "for_date": "2026-07-24",
+      "currencies": 9,
+      "source": "frankfurter.app",
+      "last_fetched": "2026-08-26 10:17:47"
+    },
+    {
+      "for_date": "2026-08-26",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-08-27 08:40:04"
+    },
+    {
+      "for_date": "2026-08-27",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-08-28 08:40:04"
+    },
+    {
+      "for_date": "2026-08-28",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-08-29 08:40:04"
+    },
+    {
+      "for_date": "2026-08-29",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-08-30 08:40:04"
+    },
+    {
+      "for_date": "2026-08-30",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-08-31 08:53:58"
+    },
+    {
+      "for_date": "2026-08-31",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-01 08:40:05"
+    },
+    {
+      "for_date": "2026-09-01",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-02 08:40:04"
+    },
+    {
+      "for_date": "2026-09-02",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-03 08:40:04"
+    },
+    {
+      "for_date": "2026-09-03",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-04 09:10:04"
+    },
+    {
+      "for_date": "2026-09-04",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-05 09:10:06"
+    },
+    {
+      "for_date": "2026-09-05",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-06 09:10:03"
+    },
+    {
+      "for_date": "2026-09-06",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-07 09:10:04"
+    },
+    {
+      "for_date": "2026-09-07",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-08 09:10:03"
+    },
+    {
+      "for_date": "2026-09-08",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-09 09:10:05"
+    },
+    {
+      "for_date": "2026-09-09",
+      "currencies": 9,
+      "source": "open.er-api.com",
+      "last_fetched": "2026-09-09 11:10:05"
+    }
+  ],
+  "today": "2026-09-09",
+  "latest": {
+    "status": "ready",
+    "for_date": "2026-09-09",
+    "basis_date": "",
+    "basis_note": "",
+    "stale_days": 0,
+    "source": "open.er-api.com",
+    "items": [
+      {
+        "currency": "USD",
+        "unit": 1,
+        "krw": 1340.8644,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "JPY",
+        "unit": 100,
+        "krw": 871.7242,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "CNY",
+        "unit": 1,
+        "krw": 199.2887,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "EUR",
+        "unit": 1,
+        "krw": 1558.639,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "SGD",
+        "unit": 1,
+        "krw": 1060.0515,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "PHP",
+        "unit": 1,
+        "krw": 21.4389,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "MYR",
+        "unit": 1,
+        "krw": 330.1702,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "IDR",
+        "unit": 100,
+        "krw": 7.6062,
+        "was_krw": null,
+        "change_pct": null
+      },
+      {
+        "currency": "AUD",
+        "unit": 1,
+        "krw": 967.839,
+        "was_krw": null,
+        "change_pct": null
+      }
+    ]
+  },
+  "hashes": {
+    "app/core/fx_rates.py": "dc947b1042034b4ae4999096450dc07984af4cb957c0ed03c0701d4bd20a9fec",
+    "scripts/fx_relay.py": "78d93bbe09a5f32d37071d19aa25e6ca8967317fe7f23f9b39b4a127ab1d6f2c"
+  }
+}

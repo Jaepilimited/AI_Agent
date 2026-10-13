@@ -1,0 +1,14 @@
+--- was/app/main.py
++++ next/app/main.py
+@@ -426,9 +426,8 @@
+ 
+     @app.get("/")
+     async def index(request: Request):
+-        # Check if user is authenticated
+-        token = request.cookies.get("token")
+-        if not token:
++        # The session middleware validates Entra proof and the active account.
++        if not getattr(request.state, "user_id", None):
+             return RedirectResponse(url="/login", status_code=302)
+         from fastapi.responses import HTMLResponse
+         return HTMLResponse(_CHAT_HTML_CACHE, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})

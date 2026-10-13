@@ -1,0 +1,1519 @@
+{
+  "assets": {
+    "app/frontend/chat.html": "b87ad0a0cf9f927fa606a29556465e49aeebc3927f1b59a35bee114ab4207c21",
+    "app/frontend/chat.js": "d491fe0eb15c5ab1b94d9a5af57f4d57d8309e545eb35a713d91998c57317441",
+    "app/static/style.css": "67087bfc48ac20e2de86b30e0d53030ab0a01aacfdf5ac949dfc5ef738658b4b"
+  },
+  "results": [
+    {
+      "scenario": "desktop-light",
+      "fail_second": false,
+      "before": {
+        "url": "http://notification-probe.invalid/chat",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "elements": [
+          {
+            "selector": "#notif-badge",
+            "className": "notif-badge",
+            "text": "2",
+            "html": "2",
+            "rect": {
+              "x": 232,
+              "y": 906,
+              "width": 18,
+              "height": 18
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(255, 255, 255)",
+              "background": "rgb(232, 146, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "notif-badge",
+              "className": "notif-badge"
+            }
+          },
+          {
+            "selector": "#btn-notifications",
+            "className": "sidebar-dashboard-btn",
+            "text": "알림\n2",
+            "html": "\n          <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"></path><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"></path></svg>\n          <span>알림</span>\n          <span class=\"notif-badge\" id=\"notif-badge\" style=\"\">2</span>\n        ",
+            "rect": {
+              "x": 12,
+              "y": 897,
+              "width": 255,
+              "height": 36
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgba(0, 0, 0, 0.55)",
+              "background": "rgba(0, 0, 0, 0.04)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "BUTTON",
+              "id": "btn-notifications",
+              "className": "sidebar-dashboard-btn"
+            }
+          },
+          {
+            "selector": "#notif-overlay",
+            "className": "closed",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 1000
+            },
+            "style": {
+              "display": "block",
+              "visibility": "hidden",
+              "opacity": "0",
+              "transform": "none",
+              "zIndex": "10000",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0.5)",
+              "pointerEvents": "none",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "welcome-suggestions",
+              "className": "suggestions"
+            }
+          },
+          {
+            "selector": "#notif-drawer",
+            "className": "closed",
+            "text": "알림\n브리핑 끄기\n모두 읽음\n×",
+            "html": "\n    <div class=\"drawer-header\">\n      <span class=\"drawer-title\">알림</span>\n      <button class=\"drawer-mark-all\" id=\"notif-briefing-off\" data-off=\"0\" title=\"매일 아침 브리핑 받기/끄기\">브리핑 끄기</button>\n      <button class=\"drawer-mark-all\" id=\"notif-mark-all\">모두 읽음</button>\n      <button class=\"drawer-close\" id=\"notif-drawer-close\">×</button>\n    </div>\n    <div class=\"status-drawer-body\" id=\"notif-items\"></div>\n  ",
+            "rect": {
+              "x": 1440,
+              "y": 0,
+              "width": 380,
+              "height": 1000
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "matrix(1, 0, 0, 1, 380, 0)",
+              "zIndex": "10001",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgb(245, 244, 242)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "chat-messages",
+              "className": "chat-messages"
+            }
+          },
+          {
+            "selector": "#notif-items",
+            "className": "status-drawer-body",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 1441,
+              "y": 61,
+              "width": 379,
+              "height": 939
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "auto"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "chat-messages",
+              "className": "chat-messages"
+            }
+          },
+          null,
+          null
+        ]
+      },
+      "after": {
+        "url": "http://notification-probe.invalid/chat",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "elements": [
+          {
+            "selector": "#notif-badge",
+            "className": "notif-badge",
+            "text": "2",
+            "html": "2",
+            "rect": {
+              "x": 232,
+              "y": 906,
+              "width": 18,
+              "height": 18
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(255, 255, 255)",
+              "background": "rgb(232, 146, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#btn-notifications",
+            "className": "sidebar-dashboard-btn",
+            "text": "알림\n2",
+            "html": "\n          <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"></path><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"></path></svg>\n          <span>알림</span>\n          <span class=\"notif-badge\" id=\"notif-badge\" style=\"\">2</span>\n        ",
+            "rect": {
+              "x": 12,
+              "y": 897,
+              "width": 255,
+              "height": 36
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(232, 146, 0)",
+              "background": "rgba(232, 146, 0, 0.15)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#notif-overlay",
+            "className": "open",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 1000
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "10000",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0.5)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#notif-drawer",
+            "className": "open",
+            "text": "알림\n브리핑 끄기\n모두 읽음\n×\n업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전\n오늘의 브리핑 업무 브리핑 재현\n브리핑 내용이 표시되는지 확인합니다.\n이번 주 매출을 알려줘 →\n4시간 전",
+            "html": "\n    <div class=\"drawer-header\">\n      <span class=\"drawer-title\">알림</span>\n      <button class=\"drawer-mark-all\" id=\"notif-briefing-off\" data-off=\"0\" title=\"매일 아침 브리핑 받기/끄기\">브리핑 끄기</button>\n      <button class=\"drawer-mark-all\" id=\"notif-mark-all\">모두 읽음</button>\n      <button class=\"drawer-close\" id=\"notif-drawer-close\">×</button>\n    </div>\n    <div class=\"status-drawer-body\" id=\"notif-items\"><div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>업데이트</b> 공지 알림 재현</span><span class=\"notif-note\">공지 내용이 표시되는지 확인합니다.</span><span class=\"notif-time\">4시간 전</span></span></div><div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>오늘의 브리핑</b> 업무 브리핑 재현</span><span class=\"notif-note\">브리핑 내용이 표시되는지 확인합니다.</span><button class=\"notif-ask\" data-q=\"이번 주 매출을 알려줘\">이번 주 매출을 알려줘 →</button><span class=\"notif-time\">4시간 전</span></span></div></div>\n  ",
+            "rect": {
+              "x": 1060,
+              "y": 0,
+              "width": 380,
+              "height": 1000
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "matrix(1, 0, 0, 1, 0, 0)",
+              "zIndex": "10001",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgb(245, 244, 242)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-items",
+              "className": "status-drawer-body"
+            }
+          },
+          {
+            "selector": "#notif-items",
+            "className": "status-drawer-body",
+            "text": "업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전\n오늘의 브리핑 업무 브리핑 재현\n브리핑 내용이 표시되는지 확인합니다.\n이번 주 매출을 알려줘 →\n4시간 전",
+            "html": "<div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>업데이트</b> 공지 알림 재현</span><span class=\"notif-note\">공지 내용이 표시되는지 확인합니다.</span><span class=\"notif-time\">4시간 전</span></span></div><div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>오늘의 브리핑</b> 업무 브리핑 재현</span><span class=\"notif-note\">브리핑 내용이 표시되는지 확인합니다.</span><button class=\"notif-ask\" data-q=\"이번 주 매출을 알려줘\">이번 주 매출을 알려줘 →</button><span class=\"notif-time\">4시간 전</span></span></div>",
+            "rect": {
+              "x": 1061,
+              "y": 61,
+              "width": 379,
+              "height": 939
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "auto"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-items",
+              "className": "status-drawer-body"
+            }
+          },
+          {
+            "selector": ".notif-item",
+            "className": "notif-item unseen",
+            "text": "업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전",
+            "html": "<span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>업데이트</b> 공지 알림 재현</span><span class=\"notif-note\">공지 내용이 표시되는지 확인합니다.</span><span class=\"notif-time\">4시간 전</span></span>",
+            "rect": {
+              "x": 1081,
+              "y": 77,
+              "width": 339,
+              "height": 81.296875
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "",
+              "className": "notif-note"
+            }
+          },
+          {
+            "selector": ".notif-note",
+            "className": "notif-note",
+            "text": "공지 내용이 표시되는지 확인합니다.",
+            "html": "공지 내용이 표시되는지 확인합니다.",
+            "rect": {
+              "x": 1112,
+              "y": 112.296875,
+              "width": 172.734375,
+              "height": 15
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgba(0, 0, 0, 0.55)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "",
+              "className": "notif-note"
+            }
+          }
+        ]
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/chat",
+          "type": "document"
+        },
+        {
+          "method": "GET",
+          "path": "/vis-network/standalone/umd/vis-network.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/style.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/static/cella-pet.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/static/purify.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/npm/marked/marked.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/chart.umd.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/splash-dark-new.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/answer-loading.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/css2",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/personal-briefing.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/chat.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/cella-pet.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/cella-origin.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/me",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/static/cella-avatar.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/api/personal-briefing",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/personal/suggestions",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/datasources",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/notifications",
+          "type": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/conversations",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/safety/status",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/announcement",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/google/status",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/static/splash.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/api/notifications",
+          "type": "fetch",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/notifications/viewed",
+          "type": "fetch"
+        }
+      ],
+      "page_errors": [],
+      "console": [],
+      "item_count": 2,
+      "items_text": "업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전\n오늘의 브리핑 업무 브리핑 재현\n브리핑 내용이 표시되는지 확인합니다.\n이번 주 매출을 알려줘 →\n4시간 전"
+    },
+    {
+      "scenario": "desktop-dark",
+      "fail_second": false,
+      "before": {
+        "url": "http://notification-probe.invalid/chat",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "elements": [
+          {
+            "selector": "#notif-badge",
+            "className": "notif-badge",
+            "text": "2",
+            "html": "2",
+            "rect": {
+              "x": 232,
+              "y": 906,
+              "width": 18,
+              "height": 18
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(255, 255, 255)",
+              "background": "rgb(232, 146, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "notif-badge",
+              "className": "notif-badge"
+            }
+          },
+          {
+            "selector": "#btn-notifications",
+            "className": "sidebar-dashboard-btn",
+            "text": "알림\n2",
+            "html": "\n          <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"></path><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"></path></svg>\n          <span>알림</span>\n          <span class=\"notif-badge\" id=\"notif-badge\" style=\"\">2</span>\n        ",
+            "rect": {
+              "x": 12,
+              "y": 897,
+              "width": 255,
+              "height": 36
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgba(255, 255, 255, 0.55)",
+              "background": "rgba(255, 255, 255, 0.05)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "BUTTON",
+              "id": "btn-notifications",
+              "className": "sidebar-dashboard-btn"
+            }
+          },
+          {
+            "selector": "#notif-overlay",
+            "className": "closed",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 1000
+            },
+            "style": {
+              "display": "block",
+              "visibility": "hidden",
+              "opacity": "0",
+              "transform": "none",
+              "zIndex": "10000",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgba(0, 0, 0, 0.5)",
+              "pointerEvents": "none",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "welcome-suggestions",
+              "className": "suggestions"
+            }
+          },
+          {
+            "selector": "#notif-drawer",
+            "className": "closed",
+            "text": "알림\n브리핑 끄기\n모두 읽음\n×",
+            "html": "\n    <div class=\"drawer-header\">\n      <span class=\"drawer-title\">알림</span>\n      <button class=\"drawer-mark-all\" id=\"notif-briefing-off\" data-off=\"0\" title=\"매일 아침 브리핑 받기/끄기\">브리핑 끄기</button>\n      <button class=\"drawer-mark-all\" id=\"notif-mark-all\">모두 읽음</button>\n      <button class=\"drawer-close\" id=\"notif-drawer-close\">×</button>\n    </div>\n    <div class=\"status-drawer-body\" id=\"notif-items\"></div>\n  ",
+            "rect": {
+              "x": 1440,
+              "y": 0,
+              "width": 380,
+              "height": 1000
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "matrix(1, 0, 0, 1, 380, 0)",
+              "zIndex": "10001",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgb(20, 20, 20)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "chat-messages",
+              "className": "chat-messages"
+            }
+          },
+          {
+            "selector": "#notif-items",
+            "className": "status-drawer-body",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 1441,
+              "y": 61,
+              "width": 379,
+              "height": 939
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "auto"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "chat-messages",
+              "className": "chat-messages"
+            }
+          },
+          null,
+          null
+        ]
+      },
+      "after": {
+        "url": "http://notification-probe.invalid/chat",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "elements": [
+          {
+            "selector": "#notif-badge",
+            "className": "notif-badge",
+            "text": "2",
+            "html": "2",
+            "rect": {
+              "x": 232,
+              "y": 906,
+              "width": 18,
+              "height": 18
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(255, 255, 255)",
+              "background": "rgb(232, 146, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#btn-notifications",
+            "className": "sidebar-dashboard-btn",
+            "text": "알림\n2",
+            "html": "\n          <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"></path><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"></path></svg>\n          <span>알림</span>\n          <span class=\"notif-badge\" id=\"notif-badge\" style=\"\">2</span>\n        ",
+            "rect": {
+              "x": 12,
+              "y": 897,
+              "width": 255,
+              "height": 36
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(232, 146, 0)",
+              "background": "rgba(232, 146, 0, 0.15)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#notif-overlay",
+            "className": "open",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 1000
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "10000",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgba(0, 0, 0, 0.5)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#notif-drawer",
+            "className": "open",
+            "text": "알림\n브리핑 끄기\n모두 읽음\n×\n업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전\n오늘의 브리핑 업무 브리핑 재현\n브리핑 내용이 표시되는지 확인합니다.\n이번 주 매출을 알려줘 →\n4시간 전",
+            "html": "\n    <div class=\"drawer-header\">\n      <span class=\"drawer-title\">알림</span>\n      <button class=\"drawer-mark-all\" id=\"notif-briefing-off\" data-off=\"0\" title=\"매일 아침 브리핑 받기/끄기\">브리핑 끄기</button>\n      <button class=\"drawer-mark-all\" id=\"notif-mark-all\">모두 읽음</button>\n      <button class=\"drawer-close\" id=\"notif-drawer-close\">×</button>\n    </div>\n    <div class=\"status-drawer-body\" id=\"notif-items\"><div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>업데이트</b> 공지 알림 재현</span><span class=\"notif-note\">공지 내용이 표시되는지 확인합니다.</span><span class=\"notif-time\">4시간 전</span></span></div><div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>오늘의 브리핑</b> 업무 브리핑 재현</span><span class=\"notif-note\">브리핑 내용이 표시되는지 확인합니다.</span><button class=\"notif-ask\" data-q=\"이번 주 매출을 알려줘\">이번 주 매출을 알려줘 →</button><span class=\"notif-time\">4시간 전</span></span></div></div>\n  ",
+            "rect": {
+              "x": 1060,
+              "y": 0,
+              "width": 380,
+              "height": 1000
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "matrix(1, 0, 0, 1, 0, 0)",
+              "zIndex": "10001",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgb(20, 20, 20)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-items",
+              "className": "status-drawer-body"
+            }
+          },
+          {
+            "selector": "#notif-items",
+            "className": "status-drawer-body",
+            "text": "업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전\n오늘의 브리핑 업무 브리핑 재현\n브리핑 내용이 표시되는지 확인합니다.\n이번 주 매출을 알려줘 →\n4시간 전",
+            "html": "<div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>업데이트</b> 공지 알림 재현</span><span class=\"notif-note\">공지 내용이 표시되는지 확인합니다.</span><span class=\"notif-time\">4시간 전</span></span></div><div class=\"notif-item unseen\"><span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>오늘의 브리핑</b> 업무 브리핑 재현</span><span class=\"notif-note\">브리핑 내용이 표시되는지 확인합니다.</span><button class=\"notif-ask\" data-q=\"이번 주 매출을 알려줘\">이번 주 매출을 알려줘 →</button><span class=\"notif-time\">4시간 전</span></span></div>",
+            "rect": {
+              "x": 1061,
+              "y": 61,
+              "width": 379,
+              "height": 939
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "auto"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-items",
+              "className": "status-drawer-body"
+            }
+          },
+          {
+            "selector": ".notif-item",
+            "className": "notif-item unseen",
+            "text": "업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전",
+            "html": "<span class=\"notif-dot\"></span><span class=\"notif-body\"><span class=\"notif-text\"><b>업데이트</b> 공지 알림 재현</span><span class=\"notif-note\">공지 내용이 표시되는지 확인합니다.</span><span class=\"notif-time\">4시간 전</span></span>",
+            "rect": {
+              "x": 1081,
+              "y": 77,
+              "width": 339,
+              "height": 81.296875
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(235, 235, 235)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "",
+              "className": "notif-note"
+            }
+          },
+          {
+            "selector": ".notif-note",
+            "className": "notif-note",
+            "text": "공지 내용이 표시되는지 확인합니다.",
+            "html": "공지 내용이 표시되는지 확인합니다.",
+            "rect": {
+              "x": 1112,
+              "y": 112.296875,
+              "width": 172.734375,
+              "height": 15
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgba(255, 255, 255, 0.55)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "",
+              "className": "notif-note"
+            }
+          }
+        ]
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/chat",
+          "type": "document"
+        },
+        {
+          "method": "GET",
+          "path": "/vis-network/standalone/umd/vis-network.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/style.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/static/cella-pet.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/static/purify.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/npm/marked/marked.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/chart.umd.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/splash-dark-new.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/answer-loading.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/css2",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/personal-briefing.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/chat.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/cella-pet.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/cella-origin.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/me",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/static/cella-avatar.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/api/personal-briefing",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/personal/suggestions",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/datasources",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/notifications",
+          "type": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/conversations",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/static/splash-dark-new.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/safety/status",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/announcement",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/google/status",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/notifications",
+          "type": "fetch",
+          "status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/api/notifications/viewed",
+          "type": "fetch"
+        }
+      ],
+      "page_errors": [],
+      "console": [],
+      "item_count": 2,
+      "items_text": "업데이트 공지 알림 재현\n공지 내용이 표시되는지 확인합니다.\n4시간 전\n오늘의 브리핑 업무 브리핑 재현\n브리핑 내용이 표시되는지 확인합니다.\n이번 주 매출을 알려줘 →\n4시간 전"
+    },
+    {
+      "scenario": "desktop-click-api-failure",
+      "fail_second": true,
+      "before": {
+        "url": "http://notification-probe.invalid/chat",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "elements": [
+          {
+            "selector": "#notif-badge",
+            "className": "notif-badge",
+            "text": "2",
+            "html": "2",
+            "rect": {
+              "x": 232,
+              "y": 906,
+              "width": 18,
+              "height": 18
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(255, 255, 255)",
+              "background": "rgb(232, 146, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "SPAN",
+              "id": "notif-badge",
+              "className": "notif-badge"
+            }
+          },
+          {
+            "selector": "#btn-notifications",
+            "className": "sidebar-dashboard-btn",
+            "text": "알림\n2",
+            "html": "\n          <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"></path><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"></path></svg>\n          <span>알림</span>\n          <span class=\"notif-badge\" id=\"notif-badge\" style=\"\">2</span>\n        ",
+            "rect": {
+              "x": 12,
+              "y": 897,
+              "width": 255,
+              "height": 36
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgba(0, 0, 0, 0.55)",
+              "background": "rgba(0, 0, 0, 0.04)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "BUTTON",
+              "id": "btn-notifications",
+              "className": "sidebar-dashboard-btn"
+            }
+          },
+          {
+            "selector": "#notif-overlay",
+            "className": "closed",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 1000
+            },
+            "style": {
+              "display": "block",
+              "visibility": "hidden",
+              "opacity": "0",
+              "transform": "none",
+              "zIndex": "10000",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0.5)",
+              "pointerEvents": "none",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "welcome-suggestions",
+              "className": "suggestions"
+            }
+          },
+          {
+            "selector": "#notif-drawer",
+            "className": "closed",
+            "text": "알림\n브리핑 끄기\n모두 읽음\n×",
+            "html": "\n    <div class=\"drawer-header\">\n      <span class=\"drawer-title\">알림</span>\n      <button class=\"drawer-mark-all\" id=\"notif-briefing-off\" data-off=\"0\" title=\"매일 아침 브리핑 받기/끄기\">브리핑 끄기</button>\n      <button class=\"drawer-mark-all\" id=\"notif-mark-all\">모두 읽음</button>\n      <button class=\"drawer-close\" id=\"notif-drawer-close\">×</button>\n    </div>\n    <div class=\"status-drawer-body\" id=\"notif-items\"></div>\n  ",
+            "rect": {
+              "x": 1440,
+              "y": 0,
+              "width": 380,
+              "height": 1000
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "matrix(1, 0, 0, 1, 380, 0)",
+              "zIndex": "10001",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgb(245, 244, 242)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "chat-messages",
+              "className": "chat-messages"
+            }
+          },
+          {
+            "selector": "#notif-items",
+            "className": "status-drawer-body",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 1441,
+              "y": 61,
+              "width": 379,
+              "height": 939
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "auto"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "chat-messages",
+              "className": "chat-messages"
+            }
+          },
+          null,
+          null
+        ]
+      },
+      "after": {
+        "url": "http://notification-probe.invalid/chat",
+        "viewport": {
+          "width": 1440,
+          "height": 1000
+        },
+        "elements": [
+          {
+            "selector": "#notif-badge",
+            "className": "notif-badge",
+            "text": "2",
+            "html": "2",
+            "rect": {
+              "x": 232,
+              "y": 906,
+              "width": 18,
+              "height": 18
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(255, 255, 255)",
+              "background": "rgb(232, 146, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#btn-notifications",
+            "className": "sidebar-dashboard-btn",
+            "text": "알림\n2",
+            "html": "\n          <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9\"></path><path d=\"M13.73 21a2 2 0 0 1-3.46 0\"></path></svg>\n          <span>알림</span>\n          <span class=\"notif-badge\" id=\"notif-badge\" style=\"\">2</span>\n        ",
+            "rect": {
+              "x": 12,
+              "y": 897,
+              "width": 255,
+              "height": 36
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(232, 146, 0)",
+              "background": "rgba(232, 146, 0, 0.15)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#notif-overlay",
+            "className": "open",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 0,
+              "y": 0,
+              "width": 1440,
+              "height": 1000
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "10000",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0.5)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-overlay",
+              "className": "open"
+            }
+          },
+          {
+            "selector": "#notif-drawer",
+            "className": "open",
+            "text": "알림\n브리핑 끄기\n모두 읽음\n×",
+            "html": "\n    <div class=\"drawer-header\">\n      <span class=\"drawer-title\">알림</span>\n      <button class=\"drawer-mark-all\" id=\"notif-briefing-off\" data-off=\"0\" title=\"매일 아침 브리핑 받기/끄기\">브리핑 끄기</button>\n      <button class=\"drawer-mark-all\" id=\"notif-mark-all\">모두 읽음</button>\n      <button class=\"drawer-close\" id=\"notif-drawer-close\">×</button>\n    </div>\n    <div class=\"status-drawer-body\" id=\"notif-items\"></div>\n  ",
+            "rect": {
+              "x": 1060,
+              "y": 0,
+              "width": 380,
+              "height": 1000
+            },
+            "style": {
+              "display": "flex",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "matrix(1, 0, 0, 1, 0, 0)",
+              "zIndex": "10001",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgb(245, 244, 242)",
+              "pointerEvents": "auto",
+              "overflowY": "visible"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-items",
+              "className": "status-drawer-body"
+            }
+          },
+          {
+            "selector": "#notif-items",
+            "className": "status-drawer-body",
+            "text": "",
+            "html": "",
+            "rect": {
+              "x": 1061,
+              "y": 61,
+              "width": 379,
+              "height": 939
+            },
+            "style": {
+              "display": "block",
+              "visibility": "visible",
+              "opacity": "1",
+              "transform": "none",
+              "zIndex": "auto",
+              "color": "rgb(26, 26, 26)",
+              "background": "rgba(0, 0, 0, 0)",
+              "pointerEvents": "auto",
+              "overflowY": "auto"
+            },
+            "centerHit": {
+              "tag": "DIV",
+              "id": "notif-items",
+              "className": "status-drawer-body"
+            }
+          },
+          null,
+          null
+        ]
+      },
+      "calls": [
+        {
+          "method": "GET",
+          "path": "/chat",
+          "type": "document"
+        },
+        {
+          "method": "GET",
+          "path": "/vis-network/standalone/umd/vis-network.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/style.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/static/cella-pet.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/static/purify.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/npm/marked/marked.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/chart.umd.min.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/static/splash-dark-new.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/answer-loading.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/css2",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css",
+          "type": "stylesheet"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/personal-briefing.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/chat.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/cella-pet.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/frontend/cella-origin.js",
+          "type": "script"
+        },
+        {
+          "method": "GET",
+          "path": "/api/auth/me",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/static/cella-avatar.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/api/personal-briefing",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/personal/suggestions",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/datasources",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/notifications",
+          "type": "fetch",
+          "status": 200
+        },
+        {
+          "method": "GET",
+          "path": "/api/conversations",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/safety/status",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/api/announcement",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/auth/google/status",
+          "type": "fetch"
+        },
+        {
+          "method": "GET",
+          "path": "/static/splash.png",
+          "type": "image"
+        },
+        {
+          "method": "GET",
+          "path": "/api/notifications",
+          "type": "fetch",
+          "status": 503
+        },
+        {
+          "method": "POST",
+          "path": "/api/notifications/viewed",
+          "type": "fetch"
+        }
+      ],
+      "page_errors": [],
+      "console": [
+        {
+          "type": "error",
+          "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)"
+        }
+      ],
+      "item_count": 0,
+      "items_text": ""
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "expected_sources": {
+    "domestic": "google_sheets",
+    "overseas": "google_sheets_overseas"
+  },
+  "endpoints": {
+    "domestic": "/api/dashboard/summary",
+    "overseas": "/api/overseas/dashboard/summary"
+  }
+}

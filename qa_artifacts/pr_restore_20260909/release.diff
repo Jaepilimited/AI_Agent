@@ -1,0 +1,14 @@
+--- production/app/core/safety.py
++++ candidate/app/core/safety.py
+@@ -409,7 +409,10 @@
+             if _qt in _SKIP_TEAMS:
+                 continue
+             _label = _QDRANT_TEAM_LABELS.get(_qt, _qt)
+-            services[_label] = {"status": "ok", "detail": f"{_qc} chunks"}
++            services[_label] = {"status": "ok", "detail": f"{_qc} chunks"}
++            if _qt == "PR":
++                from app.core.pr_issues import SHEET_URL as _PR_SHEET_URL
++                services[_label]["url"] = _PR_SHEET_URL
+ 
+     except Exception as e:
+         services["Notion"] = {"status": "error", "detail": str(e)[:30]}

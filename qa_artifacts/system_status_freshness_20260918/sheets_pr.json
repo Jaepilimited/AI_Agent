@@ -1,0 +1,24 @@
+{
+  "queried_at_kst": "2026-09-18T15:42:36.565257+09:00",
+  "source_vs_manifest": {
+    "source_rows": 356,
+    "stored_rows": 356,
+    "matches": true,
+    "source_hash": "d94e7beeb4d7034d78269f6eebe4cfcf21983fb58c99c428ccc4b7f41c3e5b6e",
+    "stored_hash": "d94e7beeb4d7034d78269f6eebe4cfcf21983fb58c99c428ccc4b7f41c3e5b6e",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0
+  },
+  "manifest_vs_cloud": {
+    "source_rows": 356,
+    "stored_rows": 356,
+    "matches": true,
+    "source_hash": "d94e7beeb4d7034d78269f6eebe4cfcf21983fb58c99c428ccc4b7f41c3e5b6e",
+    "stored_hash": "d94e7beeb4d7034d78269f6eebe4cfcf21983fb58c99c428ccc4b7f41c3e5b6e",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0
+  },
+  "cloud_pr_total": 356,
+  "manifest_synced_at": "2026-09-18T04:50:00",
+  "pending_recovery": false
+}

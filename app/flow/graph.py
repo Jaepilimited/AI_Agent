@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import importlib
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+from app.config import get_settings
 from app.flow import spec
 from app.flow.spec import Edge, Node
 
@@ -80,7 +82,44 @@ def _as_dict(n: Node) -> Dict[str, Any]:
     # 화면에서 흐릿하게·점선으로 그려 "엣지를 빠뜨린 것"과 구분한다.
     return {"id": n.id, "label": n.label, "fn": n.fn, "group": n.group,
             "knobs": list(n.knobs), "has_subgraph": bool(n.subgraph),
-            "unreachable": n.unreachable}
+            "unreachable": n.unreachable, "description": n.description}
+
+
+def source_metadata(settings) -> List[Dict[str, Any]]:
+    """Read source names and physical tables from the runtime registry and schema.
+
+    This describes configured dependencies, not a live database inventory. No
+    queries or network calls are needed to build the architecture view.
+    """
+    from app.agents.orchestrator import OrchestratorAgent
+    from app.agents.sql_agent import _source_table_map
+
+    tables_by_source = _source_table_map(settings)
+    # These routes query their domain stores directly, outside Text-to-SQL.
+    # Read table names from their actual DDL instead of keeping a second list.
+    domain_schemas = {
+        "inventory": ("app.core.inventory._DDL", "app.core.inventory._DDL_EXPIRY"),
+        "awards": ("app.core.awards._DDL",),
+        "model_rights": ("app.core.model_rights._DDL_MODELS",
+                         "app.core.model_rights._DDL_PERIODS",
+                         "app.core.model_rights._DDL_FACES"),
+    }
+    domain_tables = {}
+    for route, schemas in domain_schemas.items():
+        names = []
+        for schema in schemas:
+            names.extend(re.findall(r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`?(\w+)`?",
+                                    resolve(schema), flags=re.IGNORECASE))
+        domain_tables[route] = [f"{settings.mariadb_database}.{name}" for name in names]
+
+    sources = []
+    for entry in OrchestratorAgent._DB_REGISTRY:
+        route = entry["route"]
+        tables = tables_by_source.get(entry["key"], domain_tables.get(route, []))
+        kind = "데이터베이스" if tables else "문서" if route in ("notion", "cs") else "서비스"
+        sources.append({"id": entry["key"], "label": entry["label"],
+                        "kind": kind, "route": route, "tables": list(tables)})
+    return sources
 
 
 def build() -> Dict[str, Any]:
@@ -97,6 +136,21 @@ def build() -> Dict[str, Any]:
     nodes_spec = spec.all_nodes()
     edges_spec = spec.all_edges()
     nodes: List[Dict[str, Any]] = [_as_dict(n) for n in nodes_spec]
+    # The diagram describes the process serving this request. Expose model IDs
+    # and transport choice only; gateway credentials and URLs stay private.
+    settings = get_settings()
+    gateway_active = bool(settings.llm_gateway_url.strip() and settings.llm_gateway_key.strip())
+    for node in nodes:
+        if node["id"] == "llm.claude":
+            node["label"] = f"{settings.anthropic_opus_model} · ClaudeClient"
+            node["description"] = "현재 서버 설정의 Claude 모델입니다. 전송 경로는 게이트웨이 URL과 키 설정 여부로 결정됩니다."
+        elif node["id"] == "llm.gemini":
+            node["label"] = f"{settings.gemini_flash_model} · Google API"
+            node["description"] = "현재 서버 설정의 Flash 모델입니다. 경로 재판정과 자료 필요 여부 판정에 사용합니다."
+        elif node["id"] in ("llm.gateway", "llm.anthropic"):
+            active = gateway_active if node["id"] == "llm.gateway" else not gateway_active
+            node["active"] = active
+            node["description"] = "현재 서버 설정에서 사용하는 전송 경로입니다." if active else "설정 조건이 바뀌면 사용하는 대체 전송 경로입니다."
 
     subgraphs: Dict[str, SubGraph] = {
         n.id: expand_langgraph(n.subgraph, prefix=n.id.split(".")[-1])
@@ -108,6 +162,9 @@ def build() -> Dict[str, Any]:
         {"src": e.src, "dst": e.dst, "label": e.label, "conditional": e.conditional}
         for e in edges_spec if e.src not in subgraphs
     ]
+    for edge in edges:
+        if edge["src"] == "llm.claude" and edge["dst"] in ("llm.gateway", "llm.anthropic"):
+            edge["active"] = gateway_active if edge["dst"] == "llm.gateway" else not gateway_active
 
     for parent_id, sub in subgraphs.items():
         nodes.extend({**_as_dict(s), "parent": parent_id} for s in sub.nodes)
@@ -128,4 +185,4 @@ def build() -> Dict[str, Any]:
             for exit_id in sub.exits for dst in downstream
         )
 
-    return {"nodes": nodes, "edges": edges}
+    return {"nodes": nodes, "edges": edges, "sources": source_metadata(settings)}

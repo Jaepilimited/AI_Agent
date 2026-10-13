@@ -1,24 +1,20 @@
 # Cluster 34
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 2
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 1
 
 ## Purpose
-SKIN1004 AI Agent 프로젝트 내에서 시스템 알림 및 메일 발송을 담당하는 기능군입니다. 현재 사내 보안 정책 및 네트워크 방화벽 제한으로 인해 실제 발송 기능은 대기 상태이며, 이를 해결하기 위한 IT 인프라 요청 문서와 메일 발송 모듈을 포함하고 있습니다.
+이 클러스터는 SKIN1004 AI Agent 프로젝트의 도메인 및 데이터 모델이 위치하는 패키지 진입점을 정의합니다. `app/models` 디렉터리를 파이썬 패키지로 인식하게 하여, 시스템 전반에서 데이터 모델 관련 모듈을 일관되게 참조하고 구조화할 수 있도록 지원합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/mailer.py` — 사내 SMTP 릴레이를 통한 메일 발송을 담당하는 핵심 모듈입니다.
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/IT_REQUEST_MAIL_JANDI.md` — AI Craver 알림 발송 경로 개방 및 방화벽 허용을 위해 IT 부서에 제출할 요청 사항을 정리한 문서입니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/models/__init__.py` — `models` 디렉터리를 도메인 및 데이터 모델용 파이썬 패키지로 식별시키는 초기화 파일
 
 ## Key Concepts
-- **사내 SMTP 릴레이 (SMTP Relay)** — 시스템 내부에서 외부 또는 사내 수신자에게 메일을 안전하게 전달하기 위한 메일 전송 프로토콜(SMTP) 인프라입니다.
-- **네트워크 방화벽 차단** — 현재 WAS 및 APP 서버 양쪽에서 SMTP 포트(25, 587)가 차단되어 있고, 로컬 MTA(Mail Transfer Agent)가 없으며, 기존 프록시 서버(`10.1.50.2:3128`)는 HTTP 전용이라 TCP 릴레이가 불가능한 기술적 제약 사항을 의미합니다.
-- **AI Craver 알림** — AI Agent가 업무 수행 중 발생하는 주요 이벤트나 알림을 담당자에게 전달하기 위한 알림 채널 구축 목표입니다.
+- `app/models` — 프로젝트 내 비즈니스 도메인 엔티티 및 데이터 스키마 정의를 관리하는 패키지 네임스페이스
+- Package Initialization — 내부 모듈 간의 임포트 경로를 확립하고 패키지 수준의 접근을 가능하게 하는 초기화 구조
 
 ## How It Fits In
-이 클러스터는 독립적인 알림 인프라 레이어를 구성합니다. 현재는 네트워크 격리 상태로 인해 기능이 비활성화되어 있으며, 향후 IT 부서에서 방화벽을 개방하고 발신 계정을 제공하는 시점에 `app/core/mailer.py` 모듈이 활성화되어 프로젝트 전체의 알림 시스템(메일 및 잔디 연동 등)과 연결될 예정입니다.
+현재 클러스터 분석 기준으로 감지된 타 클러스터와의 직접적인 연관 관계(Cross-cluster relations)는 없습니다. 향후 데이터 계층 모듈이나 비즈니스 로직 및 에이전트 서비스가 확장될 때 모델 패키지의 네임스페이스 역할을 수행합니다.
 
 ## Common Questions This Page Answers
-- **현재 메일 발송 기능이 작동하지 않는 이유는 무엇인가요?**
-  - WAS/APP 서버에서 SMTP 포트(25/587)가 차단되어 있고, 프록시 서버가 HTTP 전용이라 TCP 릴레이를 지원하지 않기 때문입니다.
-- **메일 발송 기능을 활성화하려면 어떤 조치가 필요한가요?**
-  - IT 부서에 방화벽 개방 및 발신 계정 발급을 요청해야 하며, 상세 요구사항은 `docs/IT_REQUEST_MAIL_JANDI.md` 문서에 정리되어 있습니다.
+- 프로젝트 내 도메인 및 데이터 모델 패키지의 기본 초기화 파일 위치는 어디인가?
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/models/__init__.py` 파일의 주된 역할은 무엇인가?

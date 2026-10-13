@@ -1,0 +1,57 @@
+{
+  "checked_at_utc": "2026-09-09T00:26:09.017853+00:00",
+  "target_ssh_host": "10.1.100.5",
+  "read_only": true,
+  "ssh_connected": true,
+  "remote_exit_code": 0,
+  "web_host_observations": {
+    "checked_at_utc": "2026-09-09T00:26:11.840636+00:00",
+    "host": "web-ai-01",
+    "nginx_active": {
+      "exit_code": 0,
+      "stdout": "active",
+      "stderr": ""
+    },
+    "nginx_service": {
+      "exit_code": 0,
+      "stdout": "MainPID=37285\nResult=success\nNRestarts=0\nSubState=running\nActiveEnterTimestamp=Fri 2026-08-21 06:00:57 KST",
+      "stderr": ""
+    },
+    "http_listeners": [
+      "LISTEN 0      511          0.0.0.0:443       0.0.0.0:*          ",
+      "LISTEN 0      511          0.0.0.0:80        0.0.0.0:*          "
+    ],
+    "web_address_assigned": true,
+    "local_health": {
+      "target": "http://127.0.0.1:80/health",
+      "status": 200,
+      "location": null,
+      "server": "nginx/1.24.0 (Ubuntu)",
+      "content_type": "application/json",
+      "body": "{\"status\":\"ok\",\"service\":\"Craver AI Agent\"}"
+    },
+    "web_address_health": {
+      "target": "http://10.1.100.5:80/health",
+      "status": 200,
+      "location": null,
+      "server": "nginx/1.24.0 (Ubuntu)",
+      "content_type": "application/json",
+      "body": "{\"status\":\"ok\",\"service\":\"Craver AI Agent\"}"
+    },
+    "local_https_health": {
+      "target": "https://127.0.0.1:443/health",
+      "status": null,
+      "error_type": "SSLCertVerificationError",
+      "error": "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate in certificate chain (_ssl.c:1000)"
+    },
+    "upstream_was_health": {
+      "target": "http://10.1.150.5:3000/health",
+      "status": 200,
+      "location": null,
+      "server": "uvicorn",
+      "content_type": "application/json",
+      "body": "{\"status\":\"ok\",\"service\":\"Craver AI Agent\"}"
+    }
+  },
+  "elapsed_seconds": 0.745
+}

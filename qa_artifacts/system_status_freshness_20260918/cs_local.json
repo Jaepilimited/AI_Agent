@@ -1,0 +1,237 @@
+{
+  "checked_at": "2026-09-18T06:48:49.969293+00:00",
+  "results": [
+    {
+      "region": "domestic",
+      "checked_at": "2026-09-18T06:48:49.430300+00:00",
+      "url": "http://34.64.99.254:8061/api/dashboard/summary",
+      "http_status": 200,
+      "keys": [
+        "channels",
+        "charts",
+        "lastUpdated",
+        "metrics",
+        "period",
+        "rows",
+        "source",
+        "total"
+      ],
+      "source": "google_sheets",
+      "period": {
+        "start": "2000-01-01",
+        "end": "2026-09-18"
+      },
+      "total": 543,
+      "metrics": {
+        "totalCount": {
+          "value": 543.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "exchangeCount": {
+          "value": 54.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "returnCount": {
+          "value": 415.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "completedCount": {
+          "value": 472.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "inProgressCount": {
+          "value": 11.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "totalCompensationAmount": {
+          "value": 11629235.0,
+          "unit": "원",
+          "changeRate": null,
+          "changeLabel": "신규"
+        }
+      },
+      "timestamp_fields": {
+        "lastUpdated": "2026-09-18T11:23:49+09:00"
+      },
+      "nonzero_daily_first": {
+        "date": "2025-11-20",
+        "total": 1,
+        "return": 1,
+        "exchange": 0,
+        "redelivery": 0,
+        "excluded": 0
+      },
+      "nonzero_daily_last": {
+        "date": "2026-09-18",
+        "total": 1,
+        "return": 1,
+        "exchange": 0,
+        "redelivery": 0,
+        "excluded": 0
+      },
+      "row_count": 543,
+      "row_field_names": [
+        "barcode",
+        "claimType",
+        "compensationAmount",
+        "completedAt",
+        "couponAmount",
+        "customerEmail",
+        "customerName",
+        "fxDate",
+        "hasReturnInvoice",
+        "id",
+        "items",
+        "managerName",
+        "optionName",
+        "orderAmount",
+        "orderAmountKrw",
+        "orderNo",
+        "outboundInvoiceNo",
+        "processStatus",
+        "processStatusRaw",
+        "productCode",
+        "productName",
+        "quantity",
+        "reason",
+        "reasonDetail",
+        "receivedAt",
+        "refundAmount",
+        "refundAmountKrw",
+        "returnInvoiceNo",
+        "returnShippingFee",
+        "salesChannel",
+        "shippingFeePaid",
+        "updatedAt",
+        "usdKrwRate"
+      ]
+    },
+    {
+      "region": "overseas",
+      "checked_at": "2026-09-18T06:48:49.430300+00:00",
+      "url": "http://34.64.99.254:8061/api/overseas/dashboard/summary",
+      "http_status": 200,
+      "keys": [
+        "avgRefundAmount",
+        "channels",
+        "charts",
+        "lastUpdated",
+        "metrics",
+        "period",
+        "rows",
+        "source",
+        "total"
+      ],
+      "source": "bigquery_overseas",
+      "period": {
+        "start": "2000-01-01",
+        "end": "2026-09-18"
+      },
+      "total": 1204,
+      "metrics": {
+        "totalCount": {
+          "value": 1204.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "exchangeCount": {
+          "value": 0.0,
+          "unit": "건",
+          "changeRate": 0.0,
+          "changeLabel": null
+        },
+        "returnCount": {
+          "value": 1204.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "completedCount": {
+          "value": 1166.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "inProgressCount": {
+          "value": 38.0,
+          "unit": "건",
+          "changeRate": null,
+          "changeLabel": "신규"
+        },
+        "totalCompensationAmount": {
+          "value": 90619.35,
+          "unit": "USD",
+          "changeRate": null,
+          "changeLabel": "신규"
+        }
+      },
+      "timestamp_fields": {
+        "lastUpdated": "2026-09-18T15:21:48+09:00"
+      },
+      "nonzero_daily_first": {
+        "date": "2026-01-01",
+        "total": 2,
+        "return": 2,
+        "exchange": 0,
+        "redelivery": 0,
+        "excluded": 0
+      },
+      "nonzero_daily_last": {
+        "date": "2026-09-18",
+        "total": 2,
+        "return": 2,
+        "exchange": 0,
+        "redelivery": 0,
+        "excluded": 0
+      },
+      "row_count": 1204,
+      "row_field_names": [
+        "barcode",
+        "claimType",
+        "compensationAmount",
+        "completedAt",
+        "couponAmount",
+        "customerEmail",
+        "customerName",
+        "fxDate",
+        "hasReturnInvoice",
+        "id",
+        "items",
+        "managerName",
+        "optionName",
+        "orderAmount",
+        "orderAmountKrw",
+        "orderNo",
+        "outboundInvoiceNo",
+        "processStatus",
+        "processStatusRaw",
+        "productCode",
+        "productName",
+        "quantity",
+        "reason",
+        "reasonDetail",
+        "receivedAt",
+        "refundAmount",
+        "refundAmountKrw",
+        "returnInvoiceNo",
+        "returnShippingFee",
+        "salesChannel",
+        "shippingFeePaid",
+        "updatedAt",
+        "usdKrwRate"
+      ]
+    }
+  ],
+  "location": "local"
+}

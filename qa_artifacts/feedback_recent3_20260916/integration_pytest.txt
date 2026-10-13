@@ -1,0 +1,394 @@
+C:\Users\DB_PC\AppData\Local\Programs\Python\Python311\Lib\site-packages\pytest_asyncio\plugin.py:247: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFFFFFFFFFFFFFFFFFFFFFFF................................................ [ 39%]
+........................................................................ [ 79%]
+......................................                                   [100%]
+================================== FAILURES ===================================
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-normal-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:32 [info     ] sql_agent_started              query='주문번호 2026082224631661 CS 정보좀'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-normal-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-fast-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:33 [info     ] sql_agent_started              query='주문번호 2026082224631661 CS 정보좀'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-fast-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-tool_loop-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:33 [info     ] sql_agent_started              query='주문번호 2026082224631661 CS 정보좀'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-tool_loop-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4594: in run_sql_agent_stream
+    yield from run_sql_tool_loop_stream(
+app\agents\sql_tool_agent.py:151: in run_sql_tool_loop_stream
+    schema_context = _build_schema_context(query, allowed_tables)
+app\agents\sql_agent.py:1348: in _build_schema_context
+    bq = get_bigquery_client()
+app\core\bigquery.py:168: in get_bigquery_client
+    _client = BigQueryClient()
+app\core\bigquery.py:25: in __init__
+    self.client = bigquery.Client(project=self.settings.gcp_project_id)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\cloud\bigquery\client.py:261: in __init__
+    super(Client, self).__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:340: in __init__
+    Client.__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:197: in __init__
+    credentials, _ = google.auth.default(scopes=scopes)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\auth\_default.py:748: in default
+    raise exceptions.DefaultCredentialsError(_CLOUD_SDK_MISSING_CREDENTIALS)
+E   google.auth.exceptions.DefaultCredentialsError: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:34 [info     ] gemini_client_initialized      model=gemini-3.1-pro-preview
+2026-09-16 12:43:34 [info     ] gemini_flash_client_initialized model=gemini-3.8-flash
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-normal-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:38 [info     ] sql_agent_started              query='주문번호 139515930570616967 CS 정보 알려줘. (접수일 언제인지 ,출고송장 번호는 뭔지 등)'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-normal-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-fast-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:38 [info     ] sql_agent_started              query='주문번호 139515930570616967 CS 정보 알려줘. (접수일 언제인지 ,출고송장 번호는 뭔지 등)'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-fast-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-tool_loop-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:38 [info     ] sql_agent_started              query='주문번호 139515930570616967 CS 정보 알려줘. (접수일 언제인지 ,출고송장 번호는 뭔지 등)'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-tool_loop-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4594: in run_sql_agent_stream
+    yield from run_sql_tool_loop_stream(
+app\agents\sql_tool_agent.py:151: in run_sql_tool_loop_stream
+    schema_context = _build_schema_context(query, allowed_tables)
+app\agents\sql_agent.py:1348: in _build_schema_context
+    bq = get_bigquery_client()
+app\core\bigquery.py:168: in get_bigquery_client
+    _client = BigQueryClient()
+app\core\bigquery.py:25: in __init__
+    self.client = bigquery.Client(project=self.settings.gcp_project_id)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\cloud\bigquery\client.py:261: in __init__
+    super(Client, self).__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:340: in __init__
+    Client.__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:197: in __init__
+    credentials, _ = google.auth.default(scopes=scopes)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\auth\_default.py:748: in default
+    raise exceptions.DefaultCredentialsError(_CLOUD_SDK_MISSING_CREDENTIALS)
+E   google.auth.exceptions.DefaultCredentialsError: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-normal-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:41 [info     ] sql_agent_started              query='네이버 주문정보 2026081423496661 CS 데이터 알려줘.'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-normal-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-fast-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:42 [info     ] sql_agent_started              query='네이버 주문정보 2026081423496661 CS 데이터 알려줘.'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-fast-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-tool_loop-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:42 [info     ] sql_agent_started              query='네이버 주문정보 2026081423496661 CS 데이터 알려줘.'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-tool_loop-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4594: in run_sql_agent_stream
+    yield from run_sql_tool_loop_stream(
+app\agents\sql_tool_agent.py:151: in run_sql_tool_loop_stream
+    schema_context = _build_schema_context(query, allowed_tables)
+app\agents\sql_agent.py:1348: in _build_schema_context
+    bq = get_bigquery_client()
+app\core\bigquery.py:168: in get_bigquery_client
+    _client = BigQueryClient()
+app\core\bigquery.py:25: in __init__
+    self.client = bigquery.Client(project=self.settings.gcp_project_id)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\cloud\bigquery\client.py:261: in __init__
+    super(Client, self).__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:340: in __init__
+    Client.__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:197: in __init__
+    credentials, _ = google.auth.default(scopes=scopes)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\auth\_default.py:748: in default
+    raise exceptions.DefaultCredentialsError(_CLOUD_SDK_MISSING_CREDENTIALS)
+E   google.auth.exceptions.DefaultCredentialsError: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-normal-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:45 [info     ] sql_agent_started              query='2026081423496661 CS 정보 알려줘.'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-normal-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-fast-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:46 [info     ] sql_agent_started              query='2026081423496661 CS 정보 알려줘.'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-fast-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4623: in run_sql_agent_stream
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-tool_loop-False] _
+tests\test_cs_order_integration.py:58: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = await sql_agent.run_sql_agent(question, **kwargs)
+app\agents\sql_agent.py:3773: in run_sql_agent
+    answer = await asyncio.to_thread(_run_sync)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+app\agents\sql_agent.py:3755: in _run_sync
+    state.update(generate_sql(state))
+tests\test_cs_order_integration.py:47: in unexpected
+    raise AssertionError("Exact CS order request escaped to cached/generated SQL or dashboard")
+E   AssertionError: Exact CS order request escaped to cached/generated SQL or dashboard
+---------------------------- Captured stdout call -----------------------------
+2026-09-16 12:43:46 [info     ] sql_agent_started              query='2026081423496661 CS 정보 알려줘.'
+_ test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-tool_loop-True] _
+tests\test_cs_order_integration.py:56: in test_original_order_questions_keep_invoices_without_generation_or_cache
+    answer = "".join(sql_agent.run_sql_agent_stream(question, **kwargs))
+app\agents\sql_agent.py:4594: in run_sql_agent_stream
+    yield from run_sql_tool_loop_stream(
+app\agents\sql_tool_agent.py:151: in run_sql_tool_loop_stream
+    schema_context = _build_schema_context(query, allowed_tables)
+app\agents\sql_agent.py:1348: in _build_schema_context
+    bq = get_bigquery_client()
+app\core\bigquery.py:168: in get_bigquery_client
+    _client = BigQueryClient()
+app\core\bigquery.py:25: in __init__
+    self.client = bigquery.Client(project=self.settings.gcp_project_id)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\cloud\bigquery\client.py:261: in __init__
+    super(Client, self).__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:340: in __init__
+    Client.__init__(
+..\..\..\AppData\Roaming\Python\Python311\site-packages\google\cloud\client\__init__.py:197: in __init__
+    credentials, _ = google.auth.default(scopes=scopes)
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\google\auth\_default.py:748: in default
+    raise exceptions.DefaultCredentialsError(_CLOUD_SDK_MISSING_CREDENTIALS)
+E   google.auth.exceptions.DefaultCredentialsError: Your default credentials were not found. To set up Application Default Credentials, see https://cloud.google.com/docs/authentication/external/set-up-adc for more information.
+============================== warnings summary ===============================
+..\..\..\AppData\Local\Programs\Python\Python311\Lib\site-packages\langgraph\cache\base\__init__.py:8
+  C:\Users\DB_PC\AppData\Local\Programs\Python\Python311\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-tool_loop-True]
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyPacked has no __module__ attribute
+
+tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-tool_loop-True]
+  <frozen importlib._bootstrap>:241: DeprecationWarning: builtin type SwigPyObject has no __module__ attribute
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-normal-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-normal-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-fast-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-fast-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-tool_loop-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 2026082224631661 CS \uc815\ubcf4\uc880-tool_loop-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-normal-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-normal-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-fast-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-fast-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-tool_loop-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\uc8fc\ubb38\ubc88\ud638 139515930570616967 CS \uc815\ubcf4 \uc54c\ub824\uc918. (\uc811\uc218\uc77c \uc5b8\uc81c\uc778\uc9c0 ,\ucd9c\uace0\uc1a1\uc7a5 \ubc88\ud638\ub294 \ubb54\uc9c0 \ub4f1)-tool_loop-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-normal-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-normal-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-fast-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-fast-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-tool_loop-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[\ub124\uc774\ubc84 \uc8fc\ubb38\uc815\ubcf4 2026081423496661 CS \ub370\uc774\ud130 \uc54c\ub824\uc918.-tool_loop-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-normal-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-normal-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-fast-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-fast-True]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-tool_loop-False]
+FAILED tests/test_cs_order_integration.py::test_original_order_questions_keep_invoices_without_generation_or_cache[2026081423496661 CS \uc815\ubcf4 \uc54c\ub824\uc918.-tool_loop-True]
+24 failed, 158 passed, 3 warnings in 44.76s
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute

@@ -1,0 +1,27 @@
+{
+  "service": "active",
+  "/health": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "service": "Craver AI Agent"
+    }
+  },
+  "/health/ready": {
+    "status": 200,
+    "body": {
+      "status": "ready",
+      "notion_warmup": true,
+      "notion_pages": 10,
+      "bq_schema": true,
+      "cs_loaded": true,
+      "cs_db_count": 920
+    }
+  },
+  "/frontend/chat.js": {
+    "status": 200,
+    "bp_migration": true,
+    "dashboard_url": true
+  },
+  "hashes_match": true
+}

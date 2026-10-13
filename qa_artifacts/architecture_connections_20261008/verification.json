@@ -1,0 +1,35 @@
+{
+  "hashes": {
+    "app/flow/spec.py": true,
+    "app/flow/graph.py": true,
+    "app/core/static_checks.py": true,
+    "app/frontend/chat.html": true,
+    "app/frontend/chat.js": true,
+    "app/static/style.css": true
+  },
+  "service": "active",
+  "health": {
+    "http://127.0.0.1:3000/health": 200
+  },
+  "served_assets": {
+    "frontend/chat.js": true,
+    "static/style.css": true
+  },
+  "nodes": 52,
+  "edges": 92,
+  "web_nginx_to_was": {
+    "health": {
+      "status": 200,
+      "marker": true
+    },
+    "frontend/chat.js": {
+      "status": 200,
+      "marker": true
+    },
+    "static/style.css": {
+      "status": 200,
+      "marker": true
+    }
+  },
+  "local_web_access": "Unavailable from DB_PC network; verified via Web server loopback with production Host header"
+}

@@ -1,0 +1,628 @@
+--- was/app/core/session_auth.py
++++ release/app/core/session_auth.py
+@@ -0,0 +1,78 @@
++"""Validate Cella sessions without confusing account linkage with authentication."""
++
++from datetime import datetime, timezone
++from uuid import UUID
++
++import jwt
++
++from app.config import get_settings, validate_jwt_secret
++
++LOGIN_REQUIRED_HEADERS = {"X-Cella-Auth": "login-required", "Cache-Control": "no-store"}
++LOGIN_REQUIRED_MESSAGE = "회사 계정(Entra ID)으로 다시 로그인해 주세요."
++_MONITORS = {"golden_runner", "self_check"}
++
++
++def _uuid(value) -> str:
++    try:
++        return str(UUID(str(value)))
++    except (ValueError, TypeError, AttributeError) as exc:
++        raise jwt.InvalidTokenError("Invalid Entra identity") from exc
++
++
++def decode_session(token: str, settings=None, *, request=None) -> dict:
++    """Only the verified OIDC callback can establish Entra authentication proof.
++
++    Existing cookies have no proof and cannot be upgraded from a database link.
++    Internal monitors use a separate, narrowly scoped token on direct loopback.
++    """
++    settings = settings or get_settings()
++    payload = jwt.decode(
++        token, validate_jwt_secret(settings.jwt_secret_key), algorithms=["HS256"],
++        options={"require": ["exp", "user_id"]},
++    )
++    if type(payload["user_id"]) is not int or payload["user_id"] <= 0:
++        raise jwt.InvalidTokenError("Invalid session user")
++
++    purpose = payload.get("purpose")
++    provider = payload.get("auth_provider")
++    if purpose == "service":
++        issued, expires = payload.get("iat"), payload.get("exp")
++        if (
++            provider != "internal_monitor" or payload.get("service") not in _MONITORS
++            or payload.get("scope") != "chat:probe"
++            or type(issued) not in (int, float) or type(expires) not in (int, float)
++            or not 0 < expires - issued <= 7200
++            or request is None or request.method != "POST"
++            or request.url.path != "/v1/chat/completions"
++            or not request.client or request.client.host not in {"127.0.0.1", "::1"}
++            or any(k.lower() == "forwarded" or k.lower().startswith("x-forwarded-")
++                   for k in request.headers)
++        ):
++            raise jwt.InvalidTokenError("Service session is outside its scope")
++        return payload
++
++    if purpose not in (None, "session"):
++        raise jwt.InvalidTokenError("Token is not a login session")
++    if provider == "entra":
++        if purpose != "session":
++            raise jwt.InvalidTokenError("Missing session purpose")
++        if _uuid(payload.get("entra_tid")) != _uuid(getattr(settings, "entra_tenant_id", "")):
++            raise jwt.InvalidTokenError("Entra tenant mismatch")
++        _uuid(payload.get("entra_oid"))
++    elif provider not in (None, "password") or not getattr(settings, "password_login_enabled", False):
++        raise jwt.InvalidTokenError("Entra authentication is required")
++    return payload
++
++
++def create_service_token(user_id: int, email: str, role: str = "user", *,
++                         service: str, lifetime_seconds: int = 900) -> str:
++    """Issue a server monitor credential; it cannot open or refresh a browser session."""
++    if service not in _MONITORS or not 0 < lifetime_seconds <= 7200:
++        raise ValueError("Invalid monitor token scope or lifetime")
++    now = int(datetime.now(timezone.utc).timestamp())
++    payload = {
++        "purpose": "service", "auth_provider": "internal_monitor", "scope": "chat:probe",
++        "service": service, "user_id": user_id, "email": email, "role": role,
++        "brand_filter": "", "iat": now, "exp": now + lifetime_seconds,
++    }
++    return jwt.encode(payload, validate_jwt_secret(get_settings().jwt_secret_key), algorithm="HS256")
+--- was/app/api/auth_api.py
++++ release/app/api/auth_api.py
+@@ -234,7 +234,8 @@
+     }
+ 
+ 
+-def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: str = "user") -> str:
++def _create_token(user_id: int, email: str = "", brand_filter: str = "", role: str = "user", *,
++                  auth_provider: str = "password", entra_oid: str = "", entra_tid: str = "") -> str:
+     settings = get_settings()
+     payload = {
+         "user_id": user_id,
+@@ -242,7 +243,12 @@
+         "exp": datetime.now(timezone.utc) + timedelta(days=_TOKEN_EXPIRE_DAYS),
+         "brand_filter": brand_filter,
+         "role": role,
++        "purpose": "session",
++        "auth_provider": auth_provider,
++        "iat": datetime.now(timezone.utc),
+     }
++    if auth_provider == "entra":
++        payload.update(entra_oid=entra_oid, entra_tid=entra_tid)
+     return jwt.encode(payload, validate_jwt_secret(settings.jwt_secret_key), algorithm=_ALGORITHM)
+ 
+ 
+@@ -541,14 +547,21 @@
+ 
+ 
+ @auth_api_router.get("/me")
+-async def me(response: Response, user: User = Depends(get_current_user)):
++async def me(response: Response, user: User = Depends(get_current_user), *, request: Request):
+     """Get current authenticated user. Refreshes cookie (sliding session)."""
+     # Sliding refresh, debounced: only re-issue cookie if last refresh was > _ME_REFRESH_COOLDOWN ago.
+     now = time.time()
+     last = _me_last_refresh.get(user.id, 0)
+     if now - last > _ME_REFRESH_COOLDOWN:
+         bf = await asyncio.to_thread(_lookup_brand_filter, user.id)
+-        fresh_token = _create_token(user.id, user.email or "", brand_filter=bf, role=user.role)
++        # Authentication proof belongs to this request, never the shared User cache
++        # or directory linkage. Refresh cannot turn a legacy login into Entra.
++        claims = request.state.session_claims
++        fresh_token = _create_token(
++            user.id, user.email or "", brand_filter=bf, role=user.role,
++            auth_provider=claims.get("auth_provider") or "password",
++            entra_oid=claims.get("entra_oid", ""), entra_tid=claims.get("entra_tid", ""),
++        )
+         _set_cookie(response, fresh_token)
+         _me_last_refresh[user.id] = now
+         _me_last_refresh.move_to_end(user.id)
+--- was/app/api/auth_middleware.py
++++ release/app/api/auth_middleware.py
+@@ -7,11 +7,10 @@
+ import jwt
+ from fastapi import HTTPException, Request
+ 
+-from app.config import ALL_MODELS, get_settings, validate_jwt_secret
++from app.config import ALL_MODELS, get_settings
++from app.core.session_auth import decode_session, LOGIN_REQUIRED_HEADERS, LOGIN_REQUIRED_MESSAGE
+ from app.db.mariadb import fetch_one
+ from app.db.models import User
+-
+-_ALGORITHM = "HS256"
+ 
+ # Same TTL convention as the AD user cache — bounds how stale a role/
+ # permission change can be for an already-cached user without needing
+@@ -43,29 +42,20 @@
+     """Extract user_id from JWT cookie. Raises 401 on failure."""
+     token = request.cookies.get("token")
+     if not token:
+-        raise HTTPException(status_code=401, detail="Not authenticated")
++        raise HTTPException(status_code=401, detail=LOGIN_REQUIRED_MESSAGE, headers=LOGIN_REQUIRED_HEADERS)
+ 
+     settings = get_settings()
+     try:
+-        payload = jwt.decode(
+-            token,
+-            validate_jwt_secret(settings.jwt_secret_key),
+-            algorithms=[_ALGORITHM],
+-        )
+-    except jwt.ExpiredSignatureError:
+-        raise HTTPException(status_code=401, detail="Token expired")
++        payload = decode_session(token, settings, request=request)
+     except jwt.InvalidTokenError:
+-        raise HTTPException(status_code=401, detail="Invalid token")
++        raise HTTPException(status_code=401, detail=LOGIN_REQUIRED_MESSAGE, headers=LOGIN_REQUIRED_HEADERS)
+ 
+-    user_id = payload.get("user_id")
+-    if not user_id:
+-        raise HTTPException(status_code=401, detail="Invalid token payload")
+-
++    request.state.session_claims = payload
+     # Wave 1: Cache brand_filter and role from JWT claims
+     request.state.jwt_brand_filter = payload.get("brand_filter", "")
+     request.state.jwt_role = payload.get("role", "")
+ 
+-    return int(user_id)
++    return payload["user_id"]
+ 
+ 
+ async def get_current_user(request: Request) -> User:
+@@ -91,7 +81,7 @@
+             (user_id,),
+         )
+         if not row:
+-            raise HTTPException(status_code=401, detail="User not found")
++            raise HTTPException(status_code=401, detail=LOGIN_REQUIRED_MESSAGE, headers=LOGIN_REQUIRED_HEADERS)
+         if row.get("account_active") == 0 or row.get("directory_active") == 0:
+             raise HTTPException(status_code=403, detail="이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
+ 
+--- was/app/api/middleware.py
++++ release/app/api/middleware.py
+@@ -5,13 +5,63 @@
+ 
+ import jwt as pyjwt
+ import structlog
+-from fastapi import FastAPI, Request
++from fastapi import FastAPI, HTTPException, Request
+ from fastapi.middleware.cors import CORSMiddleware
++from fastapi.responses import JSONResponse, RedirectResponse
+ from starlette.middleware.base import BaseHTTPMiddleware
+ 
+-from app.config import get_settings, validate_jwt_secret
++from app.config import get_settings
++from app.api.auth_middleware import get_current_user
++from app.core.session_auth import decode_session, LOGIN_REQUIRED_HEADERS
+ 
+ logger = structlog.get_logger(__name__)
++
++_PUBLIC_GET = {
++    "/login", "/api/auth/methods", "/auth/entra/status", "/auth/entra/login",
++    "/auth/entra/callback", "/users/auth/openid_connect/callback",
++    "/auth/google/callback", "/api/auth/google/callback", "/settings",
++    "/health", "/health/ready", "/favicon.ico",
++    "/api/auth/password-reset/google/start", "/api/auth/password-reset/google/land",
++}
++_PUBLIC_POST = {
++    "/api/auth/logout", "/api/auth/signup", "/api/auth/signin",
++    "/api/auth/password-reset-request", "/api/auth/password-reset/google/complete",
++}
++_RELAY_ROUTES = {
++    ("GET", "/api/internal/briefing-outbox"),
++    ("POST", "/api/internal/briefing-outbox/ack"),
++    ("POST", "/api/internal/fx"),
++}
++_PUBLIC_ASSET_SUFFIXES = {
++    "js", "css", "png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "woff", "woff2", "ttf",
++}
++
++
++def _public_request(request: Request) -> bool:
++    path = request.url.path.rstrip("/") or "/"
++    method = request.method
++    if method == "OPTIONS" or (method, path) in _RELAY_ROUTES:
++        return True  # Relay handlers retain their own token and loopback checks.
++    if method == "POST":
++        return path in _PUBLIC_POST
++    if method not in {"GET", "HEAD"}:
++        return False
++    if path in _PUBLIC_GET:
++        return True
++    if path.startswith(("/static/", "/frontend/")):
++        return path.rsplit(".", 1)[-1].lower() in _PUBLIC_ASSET_SUFFIXES
++    return bool(getattr(get_settings(), "password_login_enabled", False)) and path in {
++        "/api/auth/departments", "/api/auth/users-by-dept", "/api/auth/search-name",
++    }
++
++
++def _page_request(request: Request) -> bool:
++    path = request.url.path.rstrip("/") or "/"
++    return request.method in {"GET", "HEAD"} and (
++        path in {"/", "/coa-finder", "/face-search", "/harness", "/dashboard", "/docs", "/redoc",
++                 "/auth/google/login"}
++        or path.lower().endswith(".html")
++    )
+ 
+ 
+ def setup_middleware(app: FastAPI) -> None:
+@@ -29,27 +79,34 @@
+ 
+ 
+ class RequestLoggingMiddleware(BaseHTTPMiddleware):
+-    """Middleware that logs request/response details and extracts user from JWT cookie."""
++    """Require a validated login on application routes and log request details."""
+ 
+     async def dispatch(self, request: Request, call_next):
+         request_id = str(uuid.uuid4())[:8]
+         start_time = time.time()
+ 
+-        # Extract user email from JWT cookie
+         user_email = ""
++        auth_response = None
+         token = request.cookies.get("token")
+-        if token:
++        if _public_request(request):
+             try:
+-                settings = get_settings()
+-                payload = pyjwt.decode(
+-                    token,
+-                    validate_jwt_secret(settings.jwt_secret_key),
+-                    algorithms=["HS256"],
+-                )
++                payload = decode_session(token, get_settings(), request=request) if token else {}
+                 user_email = payload.get("email", "")
+                 request.state.user_id = payload.get("user_id", "")
+-            except Exception:
++            except pyjwt.InvalidTokenError:
+                 pass
++        else:
++            try:
++                await get_current_user(request)
++                user_email = request.state.user_email
++            except HTTPException as exc:
++                if exc.status_code == 401 and _page_request(request):
++                    auth_response = RedirectResponse("/login", status_code=302, headers=LOGIN_REQUIRED_HEADERS)
++                else:
++                    auth_response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code,
++                                                 headers=exc.headers)
++                if exc.status_code == 401:
++                    auth_response.delete_cookie("token", path="/")
+ 
+         request.state.user_email = user_email
+ 
+@@ -65,7 +122,7 @@
+             )
+ 
+         try:
+-            response = await call_next(request)
++            response = auth_response if auth_response is not None else await call_next(request)
+             elapsed_ms = int((time.time() - start_time) * 1000)
+ 
+             if request.url.path not in ("/health", "/admin/maintenance/status", "/safety/status"):
+--- was/app/api/entra_routes.py
++++ release/app/api/entra_routes.py
+@@ -134,7 +134,8 @@
+     brand_filter = await asyncio.to_thread(_lookup_brand_filter, int(user["id"]))
+     token = _create_token(int(user["id"]), claims.get("preferred_username", "") or "",
+                           brand_filter=brand_filter,
+-                          role=user.get("role", "user"))
++                          role=user.get("role", "user"), auth_provider="entra",
++                          entra_oid=claims["oid"], entra_tid=claims["tid"])
+     redirect = RedirectResponse(url=pending.get("next_path") or "/", status_code=303)
+     _set_cookie(redirect, token)
+     logger.warning("entra_login_success", user_id=int(user["id"]))
+--- was/app/api/coa_finder_api.py
++++ release/app/api/coa_finder_api.py
+@@ -15,7 +15,7 @@
+ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+ from pydantic import BaseModel
+ 
+-from app.api.auth_middleware import get_current_user
++from app.api.auth_middleware import get_current_user, _extract_user_id
+ from app.core import coa_finder as cf
+ from app.core.google_auth import GoogleAuthManager
+ 
+@@ -49,7 +49,9 @@
+        fetch 로 부르는 경로라, 로그인 HTML 로 리다이렉트하면 프론트가
+        그 페이지를 조회 결과로 읽는다.
+     """
+-    if not request.cookies.get("token"):
++    try:
++        _extract_user_id(request)
++    except HTTPException:
+         return RedirectResponse(url="/login", status_code=302)
+     return FileResponse("app/static/coa_finder.html", media_type="text/html")
+ 
+--- was/app/main.py
++++ release/app/main.py
+@@ -426,9 +426,8 @@
+ 
+     @app.get("/")
+     async def index(request: Request):
+-        # Check if user is authenticated
+-        token = request.cookies.get("token")
+-        if not token:
++        # The session middleware validates Entra proof and the active account.
++        if not getattr(request.state, "user_id", None):
+             return RedirectResponse(url="/login", status_code=302)
+         from fastapi.responses import HTMLResponse
+         return HTMLResponse(_CHAT_HTML_CACHE, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"})
+--- was/app/core/golden_runner.py
++++ release/app/core/golden_runner.py
+@@ -25,7 +25,7 @@
+ import json
+ import re
+ import time
+-from datetime import datetime, timedelta, timezone
++from datetime import datetime
+ from pathlib import Path
+ from typing import Optional
+ 
+@@ -110,20 +110,16 @@
+ 
+ def _make_token(auth: str) -> str:
+     """골든 전용 토큰. email 이 실사용자와 달라 사용 통계·audit 에서 분리된다."""
+-    import jwt as _pyjwt
+-
+-    from app.config import get_settings
+-
+-    s = get_settings()
++    from app.core.session_auth import create_service_token
++
+     if auth == "user":
+         uid, role = _ensure_golden_user(), "user"
+     else:
+         adm = fetch_one("SELECT id FROM users WHERE role='admin' ORDER BY id LIMIT 1")
+         uid, role = (adm or {}).get("id", 1), "admin"
+-    return _pyjwt.encode(
+-        {"user_id": uid, "email": GOLDEN_EMAIL, "role": role, "brand_filter": "",
+-         "exp": datetime.now(timezone.utc) + timedelta(hours=2)},
+-        s.jwt_secret_key, algorithm="HS256",
++    return create_service_token(
++        uid, GOLDEN_EMAIL, role=role,
++        service="golden_runner", lifetime_seconds=7200,
+     )
+ 
+ 
+--- was/app/core/self_check.py
++++ release/app/core/self_check.py
+@@ -918,18 +918,17 @@
+     내용이 맞는지는 보지 않는다 — LLM 표현 변동으로 오탐이 나기 때문이다.
+     """
+     import httpx as _httpx
+-    import jwt as _pyjwt
+ 
+     from app.config import get_settings
++    from app.core.session_auth import create_service_token
+ 
+     s = get_settings()
+     adm = fetch_one("SELECT id, email, role FROM users WHERE role='admin' ORDER BY id LIMIT 1")
+     if not adm:
+         return CheckResult(False, "admin 계정이 없어 카나리아를 돌릴 수 없다")
+-    token = _pyjwt.encode(
+-        {"user_id": adm["id"], "email": adm["email"], "role": "admin", "brand_filter": "",
+-         "exp": datetime.now(timezone.utc) + timedelta(minutes=15)},
+-        s.jwt_secret_key, algorithm="HS256",
++    token = create_service_token(
++        adm["id"], adm["email"], role="admin",
++        service="self_check", lifetime_seconds=900,
+     )
+ 
+     problems = []
+--- was/app/frontend/chat.js
++++ release/app/frontend/chat.js
+@@ -5,6 +5,70 @@
+ 
+ (function () {
+   "use strict";
++
++  var _authRedirectStarted = false;
++  var _questionPendingReauth = "";
++  var _reauthDraftKey = "cella:reauth-question";
++  var _originalFetch = window.fetch.bind(window);
++
++  function _privateApiUrl(input) {
++    try {
++      var url = new URL(input && input.url ? input.url : input, window.location.href);
++      var path = url.pathname.replace(/\/+$/, "") || "/";
++      if (path === "/api/auth/google/callback") return null;
++      var isPrivate = /^\/(api|v1)\//.test(path) || [
++        "/auth/google/status", "/auth/google/login", "/auth/google/revoke",
++        "/safety/status", "/admin/maintenance/status"
++      ].indexOf(path) !== -1;
++      return url.origin === window.location.origin && isPrivate ? url : null;
++    } catch (e) { return null; }
++  }
++
++  function _loginRequiredError() {
++    var error = new Error("Entra ID 로그인이 필요합니다.");
++    error.name = "CellaLoginRequiredError";
++    return error;
++  }
++
++  function _redirectToLogin() {
++    if (_authRedirectStarted) return;
++    _authRedirectStarted = true;
++    var draft = (chatInput && chatInput.value) || _questionPendingReauth;
++    if (draft && currentUser && currentUser.id) {
++      try {
++        sessionStorage.setItem(_reauthDraftKey, JSON.stringify({ userId: currentUser.id, text: draft }));
++      } catch (e) { /* The login redirect must also work when browser storage is unavailable. */ }
++    }
++    window.location.assign("/login");
++  }
++
++  function _restoreReauthDraft() {
++    try {
++      var saved = sessionStorage.getItem(_reauthDraftKey);
++      if (!saved) return;
++      sessionStorage.removeItem(_reauthDraftKey);
++      var draft = JSON.parse(saved);
++      if (draft.userId === currentUser.id && typeof draft.text === "string" && !chatInput.value) {
++        chatInput.value = draft.text;
++        chatInput.dispatchEvent(new Event("input"));
++      }
++    } catch (e) { /* A missing draft does not prevent sign-in. */ }
++  }
++
++  window.fetch = function(input, options) {
++    var privateUrl = _privateApiUrl(input);
++    if (_authRedirectStarted && privateUrl) return Promise.reject(_loginRequiredError());
++    return _originalFetch(input, options).then(function(response) {
++      var sameOriginResponse = !response.url || new URL(response.url, window.location.href).origin === window.location.origin;
++      if (privateUrl && sameOriginResponse && response.status === 401 &&
++          response.headers.get("X-Cella-Auth") === "login-required") {
++        _redirectToLogin();
++        throw _loginRequiredError();
++      }
++      if (_authRedirectStarted && privateUrl) throw _loginRequiredError();
++      return response;
++    });
++  };
+ 
+   // ===== Markdown links (출처/소스 링크 포함) — 항상 새 창으로 =====
+   if (window.marked && typeof marked.use === "function") {
+@@ -1040,7 +1104,7 @@
+   async function init() {
+     try {
+       var resp = await fetch("/api/auth/me");
+-      if (!resp.ok) { window.location.href = "/login"; return; }
++      if (!resp.ok) { _redirectToLogin(); return; }
+       currentUser = await resp.json();
+       applyGroupAssignmentState();
+       // 만족도 설문 — 띄울지는 서버가 정한다 (접속일수 10일차부터 20일 간격)
+@@ -1061,7 +1125,7 @@
+         return;
+       }
+     } catch (e) {
+-      window.location.href = "/login";
++      _redirectToLogin();
+       return;
+     }
+ 
+@@ -1080,13 +1144,13 @@
+         if (currentUser.must_change_password) {
+           // 서버가 아직 플래그를 지운 것으로 안 보인다 — 앱을 반쯤 켜인 채로
+           // 두는 대신 다시 로그인 경로로 보내 확실한 상태에서 다시 시작한다.
+-          window.location.href = "/login";
++          _redirectToLogin();
+           return;
+         }
+         _finishInit();
+       })
+       .catch(function () {
+-        window.location.href = "/login";
++        _redirectToLogin();
+       });
+   }
+ 
+@@ -1119,6 +1183,7 @@
+     }
+ 
+     setupEventListeners();
++    _restoreReauthDraft();
+     showAdminButton();
+     await loadConversations();
+     updateTheme();
+@@ -2292,6 +2357,7 @@
+   }
+ 
+   async function sendMessage() {
++    if (_authRedirectStarted) return;
+     if (requiresGroupAssignment()) {
+       applyGroupAssignmentState();
+       return;
+@@ -2322,6 +2388,7 @@
+     //    서버(`route_and_execute` → `parse_db_prefix`)는 질문 문자열의 `@@` 를 직접
+     //    해석한다. 떼고 저장하면 "@@보고서 일본 매출" 이 그냥 조회로 되살아난다.
+     var userQuestionForSave = text;
++    _questionPendingReauth = text;
+ 
+     // Parse @@ source selections from input text (최장 일치 — 공백 포함 키 지원)
+     var _parsed = parseSourceTokens(text);
+@@ -2393,6 +2460,7 @@
+     // Save only text to DB (no images in SQLite). Target convoIdAtSend
+     // explicitly — the user could switch conversations during this await.
+     await saveMessageTo(convoIdAtSend, "user", text || "[Image]", userQuestionForSave);
++    if (_authRedirectStarted) return;
+     scrollToBottom();
+ 
+     // Use in-memory messages for API (reliable, no DOM parsing)
+@@ -2439,6 +2507,7 @@
+         }),
+         signal: currentAbortController.signal,
+       });
++      if (!response.ok) throw new Error("요청에 실패했습니다. (HTTP " + response.status + ")");
+ 
+       // The server accepted the request and opened the response stream.
+       _renderAnswerLoading(contentEl, _preRoute);
+@@ -2508,6 +2577,13 @@
+         }
+       }
+     } catch (e) {
++      if (_authRedirectStarted || e.name === "CellaLoginRequiredError") {
++        _stopTokenDrain();
++        aiMsgEl.remove();
++        isStreaming = false;
++        currentAbortController = null;
++        return;
++      }
+       if (e.name === "AbortError") {
+         _stopTokenDrain();  // Stop token drain to prevent freeze
+         var typing = aiMsgEl.querySelector(".typing-indicator");
+@@ -2621,6 +2697,7 @@
+ 
+     isStreaming = false;
+     currentAbortController = null;
++    _questionPendingReauth = "";
+   }
+ 
+   // ===== Follow-up Suggestions =====
+@@ -6142,12 +6219,10 @@
+           var groupBadge = u.group_names
+             ? '<span class="admin-ad-group-badge">' + escapeHtml(u.group_names) + '</span>'
+             : '<span class="admin-ad-group-badge none">미배정</span>';
+-          var accountBadge = u.user_id
+-            ? '<span class="admin-ad-group-badge">셀라 계정 있음</span>'
+-            : '<span class="admin-ad-group-badge none">첫 로그인 대기</span>';
+-          var identityBadge = u.entra_linked
+-            ? '<span class="admin-ad-group-badge">Entra 연결</span>'
+-            : '<span class="admin-ad-group-badge none">Entra 연결 대기</span>';
++          var hasEntraSignin = !!(u.entra_linked && u.user_id && u.last_signin_at);
++          var identityBadge = hasEntraSignin
++            ? '<span class="admin-ad-group-badge">Entra 로그인 완료</span>'
++            : '<span class="admin-ad-group-badge none">Entra 로그인 필요</span>';
+ 
+           html += '<div class="admin-ad-user">';
+           html += '<div class="admin-ad-avatar">' + escapeHtml(initial) + '</div>';
+@@ -6155,7 +6230,7 @@
+           html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small></div>';
+           html += '<div class="admin-ad-email">' + escapeHtml(u.email || "N/A") + '</div>';
+           html += '<div class="admin-ad-dept">' + escapeHtml(deptShort) + '</div>';
+-          html += '<div class="admin-directory-state" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">' + identityBadge + accountBadge + '</div>';
++          html += '<div class="admin-directory-state" style="margin-top:4px">' + identityBadge + '</div>';
+           html += '</div>';
+           html += groupBadge;
+           if (isAdmin()) {
+--- was/app/frontend/chat.html
++++ release/app/frontend/chat.html
+@@ -469,7 +469,7 @@
+         <button class="admin-btn-secondary" id="btn-sync-directory">Entra 동기화</button>
+         <span id="admin-directory-status" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)"></span>
+       </div>
+-      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">Entra ID로 로그인하면 별도 회원가입 없이 셀라 계정이 연결됩니다. 첫 로그인 전에도 손익·방문자 권한과 그룹을 미리 배정할 수 있습니다.</p>
++      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">모든 직원은 Entra ID로 로그인해야 합니다. 기존 계정·권한은 로그인 후 자동 승계됩니다. 로그인 전에도 권한과 그룹을 미리 배정할 수 있습니다.</p>
+       <div class="admin-toolbar">
+         <select id="admin-dept-filter" class="admin-select">
+           <option value="">전체 부서</option>

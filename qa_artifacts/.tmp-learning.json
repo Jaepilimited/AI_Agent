@@ -1,0 +1,1 @@
+{"skill":"qa-only","type":"pitfall","key":"password-reset-mobile-scroll-lock","insight":"On production at 375x812, opening the reset request panel expands content to 923px while body overflow-y remains hidden, leaving the submit control below the viewport and unscrollable.","confidence":10,"source":"observed","files":["qa_artifacts/qa-report-10.1.100.5-2026-09-01.md"]}

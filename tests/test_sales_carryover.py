@@ -84,8 +84,11 @@ def test_assemble_classifies_each_company_and_orders_missing_first():
     assert by["Up Co"].status == "증가" and by["Up Co"].pct == 50.0
     assert by["New Co"].status == "신규" and by["New Co"].pct is None
     d = cmp.as_dict()
-    assert d["summary"] == {"companies": 5, "total_a": 1850, "total_b": 776, "diff": -1074,
-                            "gone": 1, "decreased": 1, "increased": 1, "new": 1, "truncated": 0}
+    expect = {"companies": 5, "total_a": 1850, "total_b": 776, "diff": -1074,
+              "gone": 1, "decreased": 1, "increased": 1, "new": 1, "truncated": 0}
+    assert {k: d["summary"][k] for k in expect} == expect
+    # 전체 합계 줄이 쓰는 값 — 팀 줄과 같은 모양이어야 화면이 한 열로 선다
+    assert d["summary"]["s_a"] == 1850 and d["summary"]["n_a"] == 39 and d["summary"]["next_diff"] == 183
     assert d["next_month"] == "2026-09"
     assert d["filter"] == {"brand": ["SK", "CBT"], "sales_type": "B2B"}
 
@@ -138,7 +141,9 @@ def test_compare_validates_then_runs_one_query_with_injected_runner():
 
     cmp = sc.compare("20260930", "20260912", None, runner=runner, snapshots=SNAPS)
     assert cmp.date_a == "20260912" and cmp.month == "2026-09"
-    assert len(calls) == 1 and "SALES_ALL_Backup_20260912" in calls[0]
+    # 매출 대조 + 팀/담당자, 두 조회 (스냅샷 목록은 주입했으므로 안 읽는다)
+    assert len(calls) == 2 and all("SALES_ALL_Backup_20260912" in c for c in calls)
+    assert sum("Manager_NEW" in c for c in calls) == 1
 
 
 def test_list_snapshots_parses_table_ids_and_caches(monkeypatch):
@@ -264,3 +269,101 @@ def test_page_redirects_to_login_without_session(client):
     client.cookies.clear()
     r = client.get("/sales-carryover", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/login"
+
+
+# ── 팀·담당자 (2026-09-23 사용자 요청: "거래처 팀 담당자까지 나오게 해줘") ────────
+
+def _who(company, team, manager, s):
+    return {"Company_Name": company, "team": team, "manager": manager, "s": s}
+
+
+def test_team_label_uses_official_korean_name_and_keeps_unknown_codes():
+    assert sc.team_label("B2B1") == "영업1팀(B2B1)"
+    assert sc.team_label("WEST_MKT") == "서구권마케팅팀(WEST_MKT)"
+    assert sc.team_label("NEWTEAM") == "NEWTEAM"     # 지어내지 않는다
+    assert sc.team_label(None) == "" and sc.team_label(" ") == ""
+
+
+def test_who_sql_reads_manager_new_from_both_snapshots_over_the_same_window():
+    sql = sc.build_who_sql("20260912", "20260930", "2026-09")
+    assert sql.count("Manager_NEW") == 2 and sql.count("Team_NEW") == 2
+    assert "SALES_ALL_Backup_20260912" in sql and "SALES_ALL_Backup_20260930" in sql
+    assert "UNION ALL" in sql and "DATETIME '2026-11-01'" in sql
+    assert "Sales_Type = 'B2B'" in sql
+
+
+def test_multiple_owners_are_all_listed_largest_sales_first():
+    # 실측: 실리콘투 = B2B1·B2B2·WEST_MKT 담당자 4명 — 하나로 뭉개지 않는다
+    raw = [_raw("실리콘투", "2026-08", 100, 90, 3, 3), _raw("Solo", "2026-08", 10, 10, 1, 1)]
+    who = [_who("실리콘투", "B2B2", "정하윤", 50), _who("실리콘투", "B2B1", "이지영", 30),
+           _who("실리콘투", "WEST_MKT", "최보미", 20), _who("실리콘투", "B2B2", "정하윤", 5),  # 두 스냅샷 중복
+           _who("Solo", "KBT", "한오정", 10)]
+    cmp = sc.assemble("20260831", "20260912", "2026-08", raw, who)
+    by = {r.company: r for r in cmp.rows}
+    assert by["실리콘투"].team == "영업2팀(B2B2), 영업1팀(B2B1), 서구권마케팅팀(WEST_MKT)"
+    assert by["실리콘투"].manager == "정하윤, 이지영, 최보미"
+    assert by["Solo"].team == "한국사업팀(KBT)" and by["Solo"].manager == "한오정"
+    d = cmp.as_dict()["rows"][0]
+    assert "team" in d and "manager" in d
+
+
+def test_missing_owner_info_leaves_blank_cells_and_says_so_only_on_query_failure():
+    raw = [_raw("X", "2026-08", 100, 90, 3, 3)]
+    cmp = sc.assemble("20260831", "20260912", "2026-08", raw, [])
+    assert cmp.rows[0].team == "" and cmp.rows[0].manager == ""
+    assert not any("담당자" in n for n in cmp.notices)
+
+    def runner(sql):
+        if "Manager_NEW" in sql:
+            raise RuntimeError("boom")
+        return raw
+    cmp2 = sc.compare("20260831", "20260912", "2026-08", runner=runner, snapshots=SNAPS)
+    assert cmp2.rows and cmp2.rows[0].team == ""
+    assert any("팀·담당자 정보를 붙이지 못했습니다" in n for n in cmp2.notices)
+
+
+def test_page_has_team_and_manager_columns_and_csv_header():
+    page = (ROOT / "app/static/sales_carryover.html").read_text(encoding="utf-8")
+    js = (ROOT / "app/static/sales_carryover.js").read_text(encoding="utf-8")
+    # 팀 열은 없다 — 팀 줄이 그 팀을 말한다. 열을 더하면 가로 스크롤이 되살아난다 (2026-09-23 사용자 지적)
+    assert 'data-key="manager"' in page and 'data-key="team"' not in page
+    assert page.count("<th ") == 9 and page.count("<col ") == 9, "열 9개 · colgroup 9개가 폭을 나눈다"
+    assert "table-layout: fixed" in page
+    assert '"거래처", "팀", "담당자", "상태"' in js   # CSV 에는 팀이 그대로 남는다
+
+
+# ── 팀별 묶음·합계 (2026-09-23 사용자 요청: "팀별로 정리되고 sum값도 같이 나오게") ────
+
+def test_team_groups_sum_every_company_once_under_its_first_team():
+    raw = [_raw("A", "2026-08", 1000, 0, 5, 0), _raw("B", "2026-08", 500, 400, 4, 4),
+           _raw("C", "2026-08", 300, 330, 2, 2), _raw("C", "2026-09", 10, 60, 1, 2),
+           _raw("D", "2026-08", 0, 50, 0, 1)]
+    who = [_who("A", "B2B1", "김", 1000), _who("B", "B2B2", "이", 500),
+           _who("C", "B2B2", "박", 300), _who("C", "B2B1", "박", 100),   # 두 팀 — 큰 쪽(B2B2)에만
+           _who("D", "KBT", "최", 50)]
+    cmp = sc.assemble("20260831", "20260912", "2026-08", raw, who)
+    groups = {g["team"]: g for g in sc.team_groups(cmp.rows)}
+    assert set(groups) == {"영업1팀(B2B1)", "영업2팀(B2B2)", "한국사업팀(KBT)"}
+    b2b2 = groups["영업2팀(B2B2)"]
+    assert b2b2["companies"] == 2 and b2b2["s_a"] == 800 and b2b2["s_b"] == 730 and b2b2["diff"] == -70
+    assert b2b2["decreased"] == 1 and b2b2["increased"] == 1 and b2b2["next_diff"] == 50
+    assert groups["영업1팀(B2B1)"]["companies"] == 1 and groups["영업1팀(B2B1)"]["gone"] == 1
+    # 팀 합계를 다 더하면 전체와 같다 — 한 거래처가 두 팀에 들어가면 여기서 깨진다
+    d = cmp.as_dict()
+    assert sum(g["s_a"] for g in d["teams"]) == d["summary"]["s_a"]
+    assert sum(g["companies"] for g in d["teams"]) == d["summary"]["companies"]
+    # 많이 빠진 팀부터
+    assert [g["team"] for g in d["teams"]] == ["영업1팀(B2B1)", "영업2팀(B2B2)", "한국사업팀(KBT)"]
+    assert d["rows"][0]["primary_team"] == "영업1팀(B2B1)"
+
+
+def test_company_without_team_info_groups_under_a_visible_label():
+    cmp = sc.assemble("20260831", "20260912", "2026-08", [_raw("X", "2026-08", 10, 5, 1, 1)], [])
+    assert sc.team_groups(cmp.rows)[0]["team"] == "(팀 없음)"
+
+
+def test_page_has_team_summary_toggle_and_csv_team_block():
+    page = (ROOT / "app/static/sales_carryover.html").read_text(encoding="utf-8")
+    js = (ROOT / "app/static/sales_carryover.js").read_text(encoding="utf-8")
+    assert 'id="sc-teams-only"' in page
+    assert "sc-team" in js and "sc-total" in js and "# 팀별 합계" in js

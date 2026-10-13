@@ -1,31 +1,25 @@
 # Cluster 23
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 7
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 3
 
 ## Purpose
-Cluster 23은 SKIN1004 AI Agent 프로젝트에서 데이터의 신뢰성과 보고서 생성의 정확성을 보장하는 핵심 인프라를 제공합니다. LLM의 환각(Hallucination)을 방지하기 위해 SQL 생성과 지표 계산을 엄격한 규칙 기반 템플릿으로 제한하고, 원본 데이터베이스의 최신 상태(Data Freshness)를 스스로 감시하는 메커니즘을 구축합니다.
+SKIN1004 AI Agent 커스텀 프론트엔드 및 내부 서비스를 지원하는 공통 MariaDB 데이터베이스 계층과 관련 구현 계획을 관리합니다. 운영 환경(포트 3000)과 개발 환경(포트 3001) 모두 MariaDB 백엔드를 사용하며, 쿼리 실행 및 팀별 자료 관리를 위한 기반 인터페이스를 제공합니다.
 
 ## Key Files
-- `app/core/data_freshness.py` — 파생 사본이 원본 데이터베이스의 업데이트를 지연 없이 따라가고 있는지 시스템이 스스로 감시하는 모듈
-- `app/db/models.py` — MariaDB와 연동되는 사용자(User) 정보 등 핵심 데이터 모델 정의
-- `app/knowledge_map/md_parser.py` — 마크다운 파일의 헤더 구조(H1-H6), 링크, 파일명 기반 날짜 등을 파싱하는 도구
-- `app/knowledge_map/semantic.py` — Gemini Flash를 활용하여 개별 파일의 개념, 관계, 요약을 추출하는 의미론적 분석기
-- `app/reports/blocks.py` — 보고서를 구성하는 최소 단위인 분석 블록을 정의하며, LLM 대신 사전에 정의된 규칙을 통해 지표 발견(Finding) 문장을 기계적으로 생성
-- `app/reports/semantic.py` — 지표, 축, 필터를 검증된 어휘로 고정하여 LLM이 SQL을 직접 작성하지 않고도 안전하게 데이터를 조회할 수 있도록 돕는 의미론 계층
-- `app/reports/spec.py` — 보고서에서 무엇을 조회하고 점검하며 계산할지 선언하는 스펙 정의서
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/db/__init__.py` — SKIN1004 AI 커스텀 프론트엔드를 위한 Database 패키지 초기화 파일.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/db/mariadb.py` — 모든 환경에서 MariaDB를 다루기 위한 DB 계층 구현체(`fetch_all`, `fetch_one`, `execute`, `execute_lastid` 인터페이스 제공).
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/docs/superpowers/plans/2026-04-02-db-hub-team-resources.md` — DB HUB 팀별 자료 시스템 구현 계획 문서.
 
 ## Key Concepts
-- **숫자는 코드가, 문장은 템플릿이 (Numbers by Code, Text by Template)** — LLM이 보고서의 핵심 숫자나 통계치를 직접 작성하지 못하도록 차단합니다. "1위가 전체의 X%를 차지한다"와 같은 발견(Finding) 문장은 데이터로부터 기계적인 규칙에 의해 생성됩니다.
-- **의미론 계층 (Semantic Layer)** — 플래너(LLM)는 "어떤 지표를 어떤 축으로 볼 것인가"만 결정하고, 실제 SQL 쿼리는 검증된 조합 안에서 안전하게 자동 생성되도록 제약합니다.
-- **데이터 신선도 감시 (Data Freshness)** — 사람이 데이터 누락이나 지연을 인지하기 전에, 시스템이 스스로 원본 데이터의 업데이트 여부를 추적하고 동기화 상태를 점검합니다.
+- `MariaDB Interface` — `fetch_all`, `fetch_one`, `execute`, `execute_lastid`로 구성된 일관된 데이터베이스 쿼리 및 트랜잭션 실행 인터페이스.
+- `Dual Environment Backend` — 운영(3000) 및 개발(3001) 환경 구분 없이 동일하게 MariaDB 백엔드를 적용하는 아키텍처.
+- `DB HUB Team Resources` — DB HUB 기반의 사내 팀별 자료 시스템 구축 및 관리 방안.
 
 ## How It Fits In
-이 클러스터는 보고서 작성 및 데이터 추출의 안정성을 담보하는 구체적인 구현체입니다.
-- `app/reports/blocks.py`는 **cluster_06**의 `concept:report_blocks`를 구현하여, 정형화된 보고서 블록 생성 규칙을 제공합니다.
-- `app/reports/spec.py`는 **cluster_09**의 `concept:fact_extraction`을 구현하여, LLM의 개입 없이 사실 관계(Fact)를 안전하게 추출하는 명세를 정의합니다.
+- `cluster_18`: `mariadb.py`는 `cluster_18`의 MariaDB 커넥션 풀(`concept:mariadb_connection_pool`) 구조를 구현하여 DB 연결을 효율적으로 관리합니다.
+- `cluster_09`: `mariadb.py`는 데이터베이스 스키마 마이그레이션(`concept:schema_migration`) 및 지식 위키(`concept:knowledge_wiki`) 기능 구현에 활용되어 데이터 지속성과 문서 연동을 지원합니다.
 
 ## Common Questions This Page Answers
-- **Q. LLM이 보고서 작성 중 잘못된 숫자나 SQL을 생성하는 것을 어떻게 방지하나요?**  
-  A. `app/reports/semantic.py`와 `app/reports/spec.py`를 통해 LLM의 역할을 지표와 축의 선택으로 제한하고, 실제 SQL 생성과 지표 계산은 사전에 검증된 규칙과 코드가 전담합니다.
-- **Q. 데이터베이스 동기화가 지연되는 문제를 시스템이 어떻게 스스로 감지하나요?  
-  A. `app/core/data_freshness.py`가 파생 사본과 원본의 상태를 비교하여 사람이 인지하기 전에 선제적으로 데이터 신선도를 모니터링합니다.
+- 운영(3000)과 개발(3001) 환경에서 데이터 조회를 위해 공통으로 사용하는 DB 인터페이스 메서드는 무엇인가요?
+- MariaDB를 통해 쿼리 실행 후 방금 생성된 ID를 가져오려면 어떤 함수(`execute_lastid`)를 사용해야 하나요?
+- DB HUB 팀별 자료 시스템의 구체적인 구현 계획은 어느 문서(`2026-04-02-db-hub-team-resources.md`)에 정리되어 있나요?

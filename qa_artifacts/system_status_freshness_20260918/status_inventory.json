@@ -1,0 +1,960 @@
+{
+  "queried_at_kst": "2026-09-18T15:43:24.045717+09:00",
+  "registry": [
+    {
+      "key": "보고서",
+      "aliases": [
+        "리포트",
+        "report",
+        "reports"
+      ],
+      "route": "report",
+      "group": "보고서",
+      "icon": "doc",
+      "label": "보고서",
+      "desc": "질문에 맞춰 절을 조합한 분석 보고서 (본인 + 지목해 공유한 사람만 열람)"
+    },
+    {
+      "key": "매출",
+      "aliases": [
+        "sales",
+        "매출데이터",
+        "세일즈"
+      ],
+      "route": "bigquery",
+      "group": "매출 데이터",
+      "icon": "chart",
+      "label": "매출",
+      "desc": "통합 매출 — 글로벌 전 플랫폼"
+    },
+    {
+      "key": "제품",
+      "aliases": [
+        "product",
+        "제품데이터"
+      ],
+      "route": "bigquery",
+      "group": "매출 데이터",
+      "icon": "box",
+      "label": "제품",
+      "desc": "제품별 판매 수량"
+    },
+    {
+      "key": "손익",
+      "aliases": [
+        "pl",
+        "손익계산서",
+        "영업이익",
+        "판관비",
+        "재무손익"
+      ],
+      "route": "bigquery",
+      "group": "매출 데이터",
+      "icon": "chart",
+      "label": "손익",
+      "desc": "재무 손익 — 영업이익/원가/판관비 (월 단위)"
+    },
+    {
+      "key": "광고",
+      "aliases": [
+        "ad",
+        "ads",
+        "광고데이터",
+        "광고비"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "megaphone",
+      "label": "광고",
+      "desc": "통합 광고 데이터"
+    },
+    {
+      "key": "마케팅",
+      "aliases": [
+        "marketing",
+        "마케팅비용"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "dollar",
+      "label": "마케팅",
+      "desc": "통합 마케팅 비용"
+    },
+    {
+      "key": "인플루언서",
+      "aliases": [
+        "influencer",
+        "인플"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "users",
+      "label": "인플루언서",
+      "desc": "인플루언서 마케팅"
+    },
+    {
+      "key": "Shopify",
+      "aliases": [
+        "shopify",
+        "쇼피파이"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "cart",
+      "label": "Shopify",
+      "desc": "글로벌 자사몰 판매"
+    },
+    {
+      "key": "플랫폼",
+      "aliases": [
+        "platform",
+        "플랫폼데이터"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "store",
+      "label": "플랫폼",
+      "desc": "플랫폼 순위/가격"
+    },
+    {
+      "key": "아마존검색",
+      "aliases": [
+        "amazon",
+        "아마존"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "search",
+      "label": "아마존검색",
+      "desc": "아마존 검색 분석"
+    },
+    {
+      "key": "프로모션",
+      "aliases": [
+        "promotion",
+        "행사",
+        "기획전",
+        "프로모"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "calendar",
+      "label": "프로모션",
+      "desc": "프로모션 캘린더 (실행 일정)"
+    },
+    {
+      "key": "메타광고",
+      "aliases": [
+        "meta",
+        "메타"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "phone",
+      "label": "메타광고",
+      "desc": "메타 광고 라이브러리"
+    },
+    {
+      "key": "국내몰 리뷰",
+      "aliases": [
+        "스마트스토어 리뷰",
+        "smartstore review",
+        "네이버 리뷰",
+        "올리브영 리뷰",
+        "무신사 리뷰",
+        "국내 리뷰"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "star",
+      "label": "국내몰 리뷰",
+      "desc": "스마트스토어·올리브영·무신사 등 8채널"
+    },
+    {
+      "key": "해외몰 리뷰",
+      "aliases": [
+        "아마존 리뷰",
+        "amazon review",
+        "큐텐 리뷰",
+        "qoo10 review",
+        "쿠텐 리뷰",
+        "쇼피 리뷰",
+        "shopee review",
+        "해외 리뷰"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "star",
+      "label": "해외몰 리뷰",
+      "desc": "Qoo10·Shopee·Amazon·해외 자사몰"
+    },
+    {
+      "key": "매장 리뷰",
+      "aliases": [
+        "플래그십 리뷰",
+        "오프라인 리뷰",
+        "스토어 리뷰",
+        "구글맵 리뷰"
+      ],
+      "route": "bigquery",
+      "group": "마케팅 데이터",
+      "icon": "star",
+      "label": "매장 리뷰",
+      "desc": "명동·뉴욕 플래그십 (구글맵·네이버 플레이스)"
+    },
+    {
+      "key": "국내CS",
+      "aliases": [
+        "국내 CS",
+        "domestic cs",
+        "domestic_cs"
+      ],
+      "route": "bigquery",
+      "group": "고객지원",
+      "icon": "headset",
+      "label": "국내CS",
+      "desc": "대시보드 국내 CS 현황·처리 기록·사유·보상"
+    },
+    {
+      "key": "해외CS",
+      "aliases": [
+        "해외 CS",
+        "overseas cs",
+        "overseas_cs",
+        "글로벌 CS",
+        "글로벌CS"
+      ],
+      "route": "bigquery",
+      "group": "고객지원",
+      "icon": "headset",
+      "label": "해외CS",
+      "desc": "대시보드 CS 현황·Shopify 환불 상세"
+    },
+    {
+      "key": "물류",
+      "aliases": [
+        "log",
+        "수출물류",
+        "물류관리",
+        "선적",
+        "출고",
+        "logistics",
+        "export"
+      ],
+      "route": "bigquery",
+      "group": "물류 데이터",
+      "icon": "box",
+      "label": "물류",
+      "desc": "수출 물류 — 발주·선적·출고·ETD/ETA·포워더"
+    },
+    {
+      "key": "초상권",
+      "aliases": [
+        "모델",
+        "모델사진",
+        "모델초상권",
+        "rights",
+        "bc"
+      ],
+      "route": "model_rights",
+      "group": "BC",
+      "icon": "users",
+      "label": "초상권",
+      "desc": "모델 사진 사용 가능 여부·기한 ([BC] 모델 초상권 현황)"
+    },
+    {
+      "key": "B2B1",
+      "aliases": [
+        "b2b1",
+        "국내영업",
+        "b2b국내"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "B2B1",
+      "desc": "해외영업 (매출/거래처/재고)"
+    },
+    {
+      "key": "B2B2",
+      "aliases": [
+        "b2b2",
+        "b2b",
+        "해외영업"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "B2B2",
+      "desc": "B2B 프로세스/온보딩"
+    },
+    {
+      "key": "BCM",
+      "aliases": [
+        "bcm",
+        "브랜드커뮤니케이션"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "BCM",
+      "desc": "브랜드커뮤니케이션팀"
+    },
+    {
+      "key": "Craver",
+      "aliases": [
+        "craver",
+        "크레이버",
+        "경영기획"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "Craver",
+      "desc": "경영기획"
+    },
+    {
+      "key": "DB",
+      "aliases": [
+        "db",
+        "데이터분석",
+        "데이터팀"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "DB",
+      "desc": "데이터분석팀"
+    },
+    {
+      "key": "GM EAST",
+      "aliases": [
+        "gm_east",
+        "east",
+        "동부",
+        "gm동부"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "globe",
+      "label": "GM EAST",
+      "desc": "글로벌마케팅 동부"
+    },
+    {
+      "key": "GM WEST",
+      "aliases": [
+        "gm_west",
+        "west",
+        "서부",
+        "gm서부"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "globe",
+      "label": "GM WEST",
+      "desc": "글로벌마케팅 서부"
+    },
+    {
+      "key": "JBT",
+      "aliases": [
+        "jbt",
+        "일본사업"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "JBT",
+      "desc": "일본사업팀"
+    },
+    {
+      "key": "KBT",
+      "aliases": [
+        "kbt",
+        "국내사업"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "doc",
+      "label": "KBT",
+      "desc": "국내사업팀"
+    },
+    {
+      "key": "BP",
+      "aliases": [
+        "bp",
+        "뷰티파트너",
+        "제품qa",
+        "제품문의",
+        "고객상담",
+        "CS",
+        "cs",
+        "cs문서",
+        "cs자료",
+        "notion_cs"
+      ],
+      "route": "cs",
+      "group": "Notion",
+      "icon": "flask",
+      "label": "BP",
+      "desc": "제품 Q&A·CS 문서 (성분·사용법·제품정보·응대 규정)"
+    },
+    {
+      "key": "PEOPLE",
+      "aliases": [
+        "people",
+        "피플",
+        "인사",
+        "hr",
+        "피플팀"
+      ],
+      "route": "notion",
+      "group": "Notion",
+      "icon": "people",
+      "label": "PEOPLE",
+      "desc": "연차, 보상, 퇴사, 복지"
+    },
+    {
+      "key": "PR",
+      "aliases": [
+        "pr",
+        "홍보",
+        "보도자료",
+        "프레인"
+      ],
+      "route": "notion",
+      "group": "브랜드 성과",
+      "icon": "sheet",
+      "label": "PR",
+      "desc": "프레인 PR 이슈 (리스트 탭)"
+    },
+    {
+      "key": "OP",
+      "aliases": [
+        "op",
+        "운영",
+        "운영팀",
+        "재고",
+        "inventory",
+        "stock"
+      ],
+      "route": "inventory",
+      "group": "Notion",
+      "icon": "box",
+      "label": "OP",
+      "desc": "재고 (SKU·창고별 수량)"
+    },
+    {
+      "key": "수상",
+      "aliases": [
+        "awards",
+        "어워드",
+        "랭킹정보",
+        "수상랭킹"
+      ],
+      "route": "awards",
+      "group": "브랜드 성과",
+      "icon": "star",
+      "label": "수상",
+      "desc": "수상·랭킹·설문 이력 (주최사·순위·마케팅 활용 표기)"
+    },
+    {
+      "key": "gws",
+      "aliases": [
+        "google workspace",
+        "workspace",
+        "워크스페이스",
+        "google",
+        "구글",
+        "지메일",
+        "gmail",
+        "캘린더",
+        "드라이브"
+      ],
+      "route": "gws",
+      "group": "시스템",
+      "icon": "link",
+      "label": "Google Workspace",
+      "desc": "Gmail, Calendar, Drive"
+    }
+  ],
+  "bq_sources": {
+    "국내CS": [
+      "skin1004-319714.cs_dashboard.domestic_cs_records"
+    ],
+    "해외CS": [
+      "skin1004-319714.cs_dashboard.overseas_cs_refunds"
+    ],
+    "매출": [
+      "skin1004-319714.Sales_Integration.SALES_ALL_Backup"
+    ],
+    "제품": [
+      "skin1004-319714.Sales_Integration.Product"
+    ],
+    "광고": [
+      "skin1004-319714.marketing_analysis.integrated_ad"
+    ],
+    "마케팅": [
+      "skin1004-319714.marketing_analysis.Integrated_marketing_cost"
+    ],
+    "Shopify": [
+      "skin1004-319714.marketing_analysis.shopify_analysis_sales"
+    ],
+    "플랫폼": [
+      "skin1004-319714.Platform_Data.raw_data"
+    ],
+    "인플루언서": [
+      "skin1004-319714.marketing_analysis.influencer_input_ALL_TEAMS"
+    ],
+    "아마존검색": [
+      "skin1004-319714.marketing_analysis.amazon_search_analytics_catalog_performance"
+    ],
+    "프로모션": [
+      "skin1004-319714.promotion_calendar.promotion"
+    ],
+    "물류": [
+      "skin1004-319714.Export_control.export_logistics",
+      "skin1004-319714.Sales_Integration.Exchange_Rate"
+    ],
+    "국내몰 리뷰": [
+      "skin1004-319714.Review_Data.Korea_mall_Review"
+    ],
+    "해외몰 리뷰": [
+      "skin1004-319714.Review_Data.Oversea_mall_Review"
+    ],
+    "매장 리뷰": [
+      "skin1004-319714.Review_Data.Store_Review"
+    ],
+    "메타광고": [
+      "skin1004-319714.ad_data.meta data_test"
+    ],
+    "손익": [
+      "skin1004-319714.Sales_Integration.FI_LLM_Flat"
+    ]
+  },
+  "monitored_tables": {
+    "매출": [
+      "Sales_Integration",
+      "SALES_ALL_Backup"
+    ],
+    "제품": [
+      "Sales_Integration",
+      "Product"
+    ],
+    "광고": [
+      "marketing_analysis",
+      "integrated_ad"
+    ],
+    "마케팅": [
+      "marketing_analysis",
+      "Integrated_marketing_cost"
+    ],
+    "Shopify": [
+      "marketing_analysis",
+      "shopify_analysis_sales"
+    ],
+    "인플루언서": [
+      "marketing_analysis",
+      "influencer_input_ALL_TEAMS"
+    ],
+    "아마존검색": [
+      "marketing_analysis",
+      "amazon_search_analytics_catalog_performance"
+    ],
+    "플랫폼": [
+      "Platform_Data",
+      "raw_data"
+    ],
+    "메타광고": [
+      "ad_data",
+      "meta data_test"
+    ],
+    "아마존 리뷰": [
+      "Review_Data",
+      "New_Amazon_Review"
+    ],
+    "큐텐 리뷰": [
+      "Review_Data",
+      "New_Qoo10_Review"
+    ],
+    "쇼피 리뷰": [
+      "Review_Data",
+      "New_Shopee_Review"
+    ],
+    "스마트스토어 리뷰": [
+      "Review_Data",
+      "New_Smartstore_Review"
+    ],
+    "프로모션": [
+      "promotion_calendar",
+      "promotion"
+    ],
+    "물류": [
+      "Export_control",
+      "export_logistics"
+    ],
+    "환율": [
+      "Sales_Integration",
+      "Exchange_Rate"
+    ],
+    "국내CS": [
+      "cs_dashboard",
+      "domestic_cs_records"
+    ],
+    "해외CS": [
+      "cs_dashboard",
+      "overseas_cs_refunds"
+    ]
+  },
+  "db_time": {
+    "server_now": "2026-09-18 15:43:25",
+    "utc_now": "2026-09-18 06:43:25",
+    "session_timezone": "SYSTEM"
+  },
+  "latest_jobs": [
+    {
+      "job_id": "ad_media_snapshot_daily",
+      "started_at": "2026-09-18 04:20:00",
+      "finished_at": "2026-09-18 04:20:01",
+      "ok": 1,
+      "detail": "매체 20종 유지",
+      "duration_ms": 1235
+    },
+    {
+      "job_id": "ad_sync",
+      "started_at": "2026-09-07 22:00:02",
+      "finished_at": "2026-09-07 22:00:03",
+      "ok": 1,
+      "detail": "AD sync 완료",
+      "duration_ms": 991
+    },
+    {
+      "job_id": "awards_sync_daily",
+      "started_at": "2026-09-18 04:40:00",
+      "finished_at": "2026-09-18 04:40:02",
+      "ok": 1,
+      "detail": "{'rows': 206, 'written': 206, 'empty': False, 'dry_run': False}",
+      "duration_ms": 2529
+    },
+    {
+      "job_id": "briefing_daily",
+      "started_at": "2026-09-18 08:20:00",
+      "finished_at": "2026-09-18 08:20:14",
+      "ok": 1,
+      "detail": "기준일 2026-09-15 · 생성 3건 · 변화없음 80건 · 메일 0건 | 최근7일 열람 2.4% · 같은날 질문 13.6%",
+      "duration_ms": 14004
+    },
+    {
+      "job_id": "cs_cache_hourly",
+      "started_at": "2026-09-18 15:40:00",
+      "finished_at": "2026-09-18 15:40:02",
+      "ok": 1,
+      "detail": "CS Q&A 923건",
+      "duration_ms": 2213
+    },
+    {
+      "job_id": "entra_directory_sync",
+      "started_at": "2026-09-17 22:00:02",
+      "finished_at": "2026-09-17 22:00:02",
+      "ok": 0,
+      "detail": "RuntimeError: Entra 사용자 조회 서버에 연결하지 못했습니다. graph.microsoft.com:443 네트워크 허용을 확인해 주세요.",
+      "duration_ms": 17
+    },
+    {
+      "job_id": "feedback_digest_daily",
+      "started_at": "2026-09-18 08:00:00",
+      "finished_at": "2026-09-18 08:00:00",
+      "ok": 1,
+      "detail": "신규 0건(코멘트 0) · 미처리 2건",
+      "duration_ms": 17
+    },
+    {
+      "job_id": "golden_daily",
+      "started_at": "2026-09-18 05:30:00",
+      "finished_at": "2026-09-18 05:36:30",
+      "ok": 1,
+      "detail": "54/54 통과 (daily)",
+      "duration_ms": 390935
+    },
+    {
+      "job_id": "ingredient_sync_daily",
+      "started_at": "2026-09-18 04:00:00",
+      "finished_at": "2026-09-18 04:00:05",
+      "ok": 1,
+      "detail": "{'sheet_products': 84, 'with_ingredients': 84, 'bq_products': 248, 'matched': 116, 'unmatched': 132}",
+      "duration_ms": 5775
+    },
+    {
+      "job_id": "jandi_notify_hourly",
+      "started_at": "2026-09-18 15:25:00",
+      "finished_at": "2026-09-18 15:25:00",
+      "ok": 1,
+      "detail": "recipients=3 queued=0",
+      "duration_ms": 53
+    },
+    {
+      "job_id": "knowledge_map_build",
+      "started_at": "2026-09-18 03:00:00",
+      "finished_at": "2026-09-18 03:01:10",
+      "ok": 1,
+      "detail": "{'files': 186, 'changed': 186, 'nodes': 2774, 'edges': 4939, 'clusters': 38, 'flash_calls': 186, 'wiki_calls': 38, 'duration_sec': 70.25}",
+      "duration_ms": 70413
+    },
+    {
+      "job_id": "model_rights_sync_daily",
+      "started_at": "2026-09-18 04:30:00",
+      "finished_at": "2026-09-18 04:30:04",
+      "ok": 1,
+      "detail": "{'models': 34, 'periods': 301, 'tabs': 3}",
+      "duration_ms": 4403
+    },
+    {
+      "job_id": "model_rights_sync_manual",
+      "started_at": "2026-08-12 14:53:07",
+      "finished_at": "2026-08-12 14:53:13",
+      "ok": 1,
+      "detail": "production environment verification: {'models': 34, 'periods': 293, 'tabs': 3}",
+      "duration_ms": 5695
+    },
+    {
+      "job_id": "notion_push_halfhourly",
+      "started_at": "2026-09-18 15:35:00",
+      "finished_at": "2026-09-18 15:35:00",
+      "ok": 1,
+      "detail": "sent=0 failed=0",
+      "duration_ms": 9
+    },
+    {
+      "job_id": "op_inventory_sync_daily",
+      "started_at": "2026-09-18 11:20:00",
+      "finished_at": "2026-09-18 11:20:06",
+      "ok": 1,
+      "detail": "{'rows': 19116, 'skus': 2238, 'sheet_updated_at': '2026. 9. 18', 'written': 19116, 'dry_run': False, 'expiry': {'rows': 3264, 'skus': 1580, 'sheet_updated_at': '9/17 마감 재고 현황', 'written': 3264, 'removed': 46}}",
+      "duration_ms": 6399
+    },
+    {
+      "job_id": "personal_briefing_daily",
+      "started_at": "2026-09-18 07:30:00",
+      "finished_at": "2026-09-18 07:30:53",
+      "ok": 1,
+      "detail": "selected=14 succeeded=14 failed=0 queued=3",
+      "duration_ms": 53196
+    },
+    {
+      "job_id": "product_info_sync_daily",
+      "started_at": "2026-09-18 04:20:00",
+      "finished_at": "2026-09-18 04:20:29",
+      "ok": 1,
+      "detail": "제품 55종",
+      "duration_ms": 29365
+    },
+    {
+      "job_id": "pr_issues_sync_daily",
+      "started_at": "2026-09-18 04:50:00",
+      "finished_at": "2026-09-18 04:50:07",
+      "ok": 1,
+      "detail": "{'rows': 356, 'count': 356, 'unknown_teams': {'(미기재)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '브랜드상품팀\\n나하나님': 2, '영업2\\n이지영님\\n이새님': 2, '이해인': 2, '일본사업팀\\n신혜영님\\n강대영님': 3, '전체': 1}, 'month_unknown': 81, 'month_inferred': 28, 'first_month': '2024-06', 'last_month': '2026-11', 'written': 0, 'deleted': ",
+      "duration_ms": 7407
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-18 05:00:00",
+      "finished_at": null,
+      "ok": null,
+      "detail": null,
+      "duration_ms": null
+    },
+    {
+      "job_id": "quality_snapshot_daily",
+      "started_at": "2026-09-18 00:05:00",
+      "finished_at": "2026-09-18 00:05:00",
+      "ok": 1,
+      "detail": "2026-09-17 · flags 2",
+      "duration_ms": 49
+    },
+    {
+      "job_id": "query_profile_daily",
+      "started_at": "2026-09-18 03:20:00",
+      "finished_at": "2026-09-18 03:20:10",
+      "ok": 1,
+      "detail": "{'users': 67}",
+      "duration_ms": 10567
+    },
+    {
+      "job_id": "saved_questions_daily",
+      "started_at": "2026-09-18 07:30:00",
+      "finished_at": "2026-09-18 07:30:08",
+      "ok": 1,
+      "detail": "selected=3 succeeded=3 failed=0 empty=0",
+      "duration_ms": 8238
+    },
+    {
+      "job_id": "schema_docs_daily",
+      "started_at": "2026-09-18 03:40:00",
+      "finished_at": "2026-09-18 03:46:55",
+      "ok": 1,
+      "detail": "38개 테이블 · 61컬럼 갱신",
+      "duration_ms": 415658
+    },
+    {
+      "job_id": "self_check_daily",
+      "started_at": "2026-09-18 07:30:00",
+      "finished_at": "2026-09-18 07:31:22",
+      "ok": 1,
+      "detail": "51/59 통과",
+      "duration_ms": 82167
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-18 01:00:00",
+      "finished_at": "2026-09-18 01:01:14",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 74731
+    },
+    {
+      "job_id": "value_lists_daily",
+      "started_at": "2026-09-18 03:50:00",
+      "finished_at": "2026-09-18 03:50:33",
+      "ok": 1,
+      "detail": "22개 목록 갱신",
+      "duration_ms": 33646
+    },
+    {
+      "job_id": "weekly_growth_report",
+      "started_at": "2026-09-14 00:10:00",
+      "finished_at": "2026-09-14 00:10:00",
+      "ok": 1,
+      "detail": "{'week_start': '2026-09-07', 'week_end': '2026-09-14', 'sql_cache_hits': 336, 'sql_cache_total': 74, 'sql_cache_new': 68, 'skill_memory_pos': 0, 'skill_memory_neg': 8, 'knowledge_gaps': 0, 'wiki_node_count': 34579}",
+      "duration_ms": 97
+    },
+    {
+      "job_id": "wiki_extract_hourly",
+      "started_at": "2026-09-18 15:15:00",
+      "finished_at": "2026-09-18 15:15:00",
+      "ok": 1,
+      "detail": "{'pairs_seen': 5, 'pairs_skipped': 5, 'facts_written': 0}",
+      "duration_ms": 141
+    }
+  ],
+  "last_selfcheck": {
+    "id": 64,
+    "run_at": "2026-09-18 07:31:21",
+    "total": 59,
+    "passed": 51,
+    "failed": 8,
+    "repaired": 0,
+    "duration_ms": 81851
+  },
+  "selfcheck_failures": [
+    {
+      "check_id": "ad_sync_fresh",
+      "category": "batch",
+      "severity": "critical",
+      "ok": 0,
+      "detail": "Entra 사용자 조회 서버에 연결하지 못했습니다. graph.microsoft.com:443 네트워크 허용을 확인해 주세요.",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:21"
+    },
+    {
+      "check_id": "job_heartbeats",
+      "category": "batch",
+      "severity": "critical",
+      "ok": 0,
+      "detail": "실패 1건 — Entra 사용자 동기화 (APP 서버 22:00): RuntimeError: Entra 사용자 조회 서버에 연결하지 못했습니다. graph.microsoft.c",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:21"
+    },
+    {
+      "check_id": "logistics_quantity_outlier",
+      "category": "datasource",
+      "severity": "warning",
+      "ok": 0,
+      "detail": "수량 칸에 주문번호로 보이는 값 1건 — 합계가 통째로 틀린다: 2026-01-14 코스타리카 202601120126=202,602,190,028ea",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "pr_unknown_team",
+      "category": "datasource",
+      "severity": "info",
+      "ok": 0,
+      "detail": "미등록 작성팀(원문 유지): {'(미기재)': 3, 'B2B3': 31, 'BOP': 10, 'BP': 23, 'GM EAST 1': 2, 'GM EAST 2': 7, 'GM EAST1': 4, 'GM WEST MKT': 1, 'KM': 7, 'KM + DD': 1, 'gm west mkt': 1, '브랜드상품팀\\n나하나님': 2, '영업2\\n이지영님\\n이새님': 2, '이해인': 2, '일본사업팀\\n신혜영님\\n강대영님': 3, '전체': 1}",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "google_account_health",
+      "category": "datasource",
+      "severity": "warning",
+      "ok": 0,
+      "detail": "연결 15명 중 정상 14명 / 재연결 필요 1명 — 채은영(ad_290@noemail.local): invalid",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "fixed_bugs_regression",
+      "category": "quality",
+      "severity": "warning",
+      "ok": 0,
+      "detail": "최근 14일에 고쳤는데 회귀가 없는 붐따 10건 (누적 31건) — 예: 네이버 주문정보 2026081423496661 CS 데이터 알려줘. · 주문번호 139515930570616967 CS 정보 알려줘. (접수일 언제인지 ,출고송장 번호는 뭔지 등) · 주문번호 2026082224631661 CS 정보좀",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "static_stale_copies",
+      "category": "static",
+      "severity": "warning",
+      "ok": 0,
+      "detail": "같은 문서의 옛 조각 20개가 색인에 남아 있다 — 검색에서 최신본과 경쟁한다: Affiliate 업무 캘린더(8), 미팅록(7), 스킨1004 제품 라인업 (3)",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:22"
+    },
+    {
+      "check_id": "static_notion_dates",
+      "category": "static",
+      "severity": "warning",
+      "ok": 0,
+      "detail": "수정일 없이 색인된 노션 청크 53/467 (11.3%) — 인테그레이션 미공유 페이지다. 낡은 값이 최신을 이긴다. 목록: docs/notion_unshared_pages.md",
+      "repaired": 0,
+      "repair_note": "",
+      "created_at": "2026-09-18 07:31:22"
+    }
+  ],
+  "mail": {
+    "enabled": false,
+    "status": "꺼짐 (SMTP 미개방 — IT 요청 대기)"
+  },
+  "gws_token_file_count": 20,
+  "report_block_count": 15,
+  "health": {
+    "http://127.0.0.1:3000/health": {
+      "status": 200,
+      "body": {
+        "status": "ok",
+        "service": "Craver AI Agent"
+      }
+    },
+    "http://127.0.0.1:3000/health/ready": {
+      "status": 200,
+      "body": {
+        "status": "ready",
+        "notion_warmup": true,
+        "notion_pages": 10,
+        "bq_schema": true,
+        "cs_loaded": true,
+        "cs_db_count": 923
+      }
+    },
+    "http://10.1.100.5/health/ready": {
+      "error_type": "ConnectTimeout",
+      "error": "HTTPConnectionPool(host='10.1.100.5', port=80): Max retries exceeded with url: /health/ready (Caused by ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x7425e1a54920>, 'Connection to 10.1.100.5 timed out. (connect timeout=10)'))"
+    }
+  }
+}

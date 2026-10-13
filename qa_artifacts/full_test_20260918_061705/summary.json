@@ -1,0 +1,28 @@
+{
+  "exit_code": 0,
+  "total": 4322,
+  "counts": {
+    "backend": {
+      "passed": 4096,
+      "failed": 0,
+      "error": 0,
+      "skipped": 21
+    },
+    "frontend": {
+      "passed": 205,
+      "failed": 0,
+      "error": 0,
+      "skipped": 0
+    }
+  },
+  "pytest_seconds": 153.232,
+  "head_unchanged": true,
+  "worktree_status_unchanged": true,
+  "sample_classname": "tests.frontend.test_answer_loading_progress",
+  "skip_reasons": {
+    "팀 자료 링크가 벡터 색인에 있는가: 살아 있는 데이터 검사 — 서버 자가 점검(07:30)의 몫": 1,
+    "수정일 없이 색인된 노션 문서 (낡은 값이 최신을 이긴다): 살아 있는 데이터 검사 — 서버 자가 점검(07:30)의 몫": 1,
+    "같은 문서의 옛 조각이 남아 있는가: 살아 있는 데이터 검사 — 서버 자가 점검(07:30)의 몫": 1,
+    "requires the explicitly enabled isolated MariaDB integration server": 18
+  }
+}

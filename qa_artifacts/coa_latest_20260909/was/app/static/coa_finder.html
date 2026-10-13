@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko" class="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>인증서류 찾기 — 셀라</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <script>
+    if (localStorage.theme === "dark") {
+      document.documentElement.classList.replace("light", "dark");
+    }
+  </script>
+  <style>
+    /* ⛔ style.css 는 채팅 SPA 용이라 `html, body { height:100%; overflow:hidden }` 을 건다.
+       이 페이지는 표가 화면 밖으로 자라는 평범한 문서라 그대로 두면 **스크롤이 통째로
+       죽는다** — 96행을 찾아 놓고 두 번째 행부터 볼 수 없었다 (2026-09-01 사용자 제보).
+       에러도 빈 화면도 아니라 찾기가 늦다. 되살리는 것은 이 페이지에서만 한다. */
+    html, body { height: auto; overflow: auto; }
+    .cf-wrap { max-width: 1200px; margin: 0 auto; padding: 24px; color: var(--text); }
+    .cf-wrap h1 { font-size: 1.4em; margin-bottom: 8px; }
+    .cf-intro { color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5; }
+    /* 안내문의 코드 조각이 줄바꿈에서 쪼개지면 다른 낱말처럼 읽힌다 */
+    .cf-intro code { white-space: nowrap; }
+    .cf-input { width: 100%; min-height: 140px; background: var(--bg-input);
+                border: 1px solid var(--border); border-radius: 8px;
+                color: var(--text); padding: 12px; font-family: inherit;
+                font-size: 0.92em; resize: vertical; }
+    .cf-input:focus { outline: none; border-color: var(--border-strong); }
+    .cf-bar { display: flex; gap: 12px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+    .cf-bar button { background: var(--bg-elevated); color: var(--text);
+                      border: 1px solid var(--border); border-radius: 6px;
+                      padding: 8px 16px; cursor: pointer; font-family: inherit;
+                      font-size: 0.92em; }
+    .cf-bar button:hover:not(:disabled) { background: var(--bg-hover); }
+    .cf-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cf-summary { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+    .cf-error { color: var(--text); background: var(--bg-elevated);
+                border: 1px solid var(--border-strong); border-radius: 6px;
+                padding: 8px 12px; margin-bottom: 12px; font-size: 0.9em; }
+    .cf-error:empty { display: none; }
+    table.cf { width: 100%; border-collapse: collapse; }
+    table.cf th, table.cf td { border-bottom: 1px solid var(--border);
+                               padding: 8px 10px; text-align: left; vertical-align: top;
+                               font-size: 0.92em; }
+    table.cf th { color: var(--text-muted); font-weight: 600; }
+    table.cf a.cf-file { color: var(--text); }
+    .cf-scroll { overflow-x: auto; }
+    .st-found { color: var(--text); }
+    .st-none { color: var(--text-muted); }
+    .st-check, .st-many { color: var(--text); font-weight: 600; }
+    .cf-note { color: var(--text-muted); font-size: 0.85em; }
+    /* 후보가 여럿인 칸의 파일 한 줄. 체크박스와 파일명을 가로로 두되, 이름이
+       길어 줄바꿈될 때 두 번째 줄이 체크박스 밑으로 파고들지 않게 flex 로 묶는다 */
+    .cf-line { display: flex; align-items: baseline; gap: 6px; }
+    /* 크기·수정일은 파일명 뒤에 붙되 줄바꿈되지 않는다 — 잘리면 다른 값처럼 읽힌다 */
+    .cf-meta { color: var(--text-muted); font-size: 0.85em; white-space: nowrap;
+               font-variant-numeric: tabular-nums; }
+    .cf-line > input { flex: none; }
+    .cf-toggle { display: inline-flex; align-items: center; gap: 6px;
+                 color: var(--text-secondary); font-size: 0.92em; cursor: pointer; }
+    .cf-toggle .cf-note { font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <div class="cf-wrap">
+    <h1>인증서류 찾기 (COA · MSDS)</h1>
+    <p class="cf-intro">엑셀에서 SKU · DESCRIPTION · LOT 열을 복사해 붙여넣거나
+      .xlsx 파일을 올리세요. 공유드라이브에서 롯트가 정확히 일치하는 파일만 찾습니다.<br>
+      받은 ZIP 안은 <code>COA/</code> · <code>MSDS/</code> · <code>제품COA/</code> 폴더로 나뉘고,
+      한 종류만 따로 받을 수도 있습니다.<br>
+      후보가 <b>여러건</b>인 칸은 파일마다 체크박스가 붙습니다 — 필요한 것만 골라 받으세요.
+      후보 줄의 크기·수정일을 보면 열지 않고도 고를 때가 많습니다.
+      다만 골라도 어느 것이 맞는지 확인된 것은 아니라서, 확정되지 않은 파일은
+      ZIP 안 <code>_확인필요_목록.txt</code> 에 사유와 함께 적힙니다
+      (파일 이름은 원래대로 나갑니다).</p>
+
+    <textarea class="cf-input" id="cf-paste"
+              placeholder="SKU&#9;DESCRIPTION&#9;LOT"></textarea>
+    <div class="cf-bar">
+      <input type="file" id="cf-file" accept=".xlsx">
+      <button id="cf-run" type="button">찾기</button>
+      <!-- 종류별 받기. ⛔ 버튼을 JS 가 만들게 하지 마라 — 스크립트가 낡거나
+           죽으면 버튼이 통째로 사라지고 그때 에러는 안 난다 (COA(제품) 열과 같은 규칙) -->
+      <button id="cf-dl-coa" type="button" disabled>COA만 받기</button>
+      <button id="cf-dl-msds" type="button" disabled>MSDS만 받기</button>
+      <button id="cf-download" type="button" disabled>선택 전체 받기</button>
+      <button id="cf-dl-none" type="button" disabled>COA 없는 목록 받기</button>
+      <label class="cf-toggle" for="cf-only-none">
+        <input type="checkbox" id="cf-only-none"> 없음만 보기
+        <span class="cf-note">(화면만 가립니다 · 받기는 체크한 행 전체가 대상입니다)</span>
+      </label>
+      <span class="cf-summary" id="cf-progress"></span>
+    </div>
+    <div id="cf-error" class="cf-error"></div>
+    <div class="cf-scroll">
+      <table class="cf" id="cf-table" hidden>
+        <thead><tr>
+          <th><input type="checkbox" id="cf-all"></th>
+          <th>SKU</th><th>제품명</th><th>롯트</th><th>COA</th><th>MSDS</th>
+          <!-- 제품명으로 찾은 COA. ⛔ 이 열은 **다른 롯트**의 증명서라
+               절대 '찾음' 이 되지 않는다 (칸마다 따로 선택해야 받아진다) -->
+          <th>COA(제품)</th>
+        </tr></thead>
+        <tbody id="cf-body"></tbody>
+      </table>
+    </div>
+  </div>
+  <script src="/static/coa_finder.js"></script>
+</body>
+</html>

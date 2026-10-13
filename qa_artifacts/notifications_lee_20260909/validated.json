@@ -1,0 +1,16 @@
+{
+  "plan": {
+    "source": "app/frontend/chat.js",
+    "before": "d491fe0eb15c5ab1b94d9a5af57f4d57d8309e545eb35a713d91998c57317441",
+    "after": "dbd3d3a953f8a60a0cfda16b26f3be52de62b0dd17ce9c04da74e4f7f43ee88f",
+    "tests": [
+      "tests/frontend/test_notifications_drawer.py",
+      "tests/frontend/test_entra_directory_management.py"
+    ],
+    "scope": "Notification drawer only; no service restart or database writes"
+  },
+  "test_hashes": {
+    "tests/frontend/test_notifications_drawer.py": "6e026ae49c5696890af7aae9ea5884580e1f027585d3dee46682473d758f7c50",
+    "tests/frontend/test_entra_directory_management.py": "84a2576020d62b1165a39ad16a3f844037d71530ac2b81f6ad36bc3f93eabdad"
+  }
+}

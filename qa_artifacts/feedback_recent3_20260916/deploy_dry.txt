@@ -1,0 +1,35 @@
+대상: was (10.1.150.5)
+전송 파일: 975개 / 81.4 MB
+  [보존] !! git 이 모르는 소스 3개(940줄)가 이번 전송에 포함됩니다
+           app/core/cs_dashboard.py  429줄
+           app/core/cs_order_details.py  283줄  <- 79초 전에 바뀜
+           app/core/cs_metrics.py  228줄
+         작업트리가 사라지면 이 코드는 프로덕션에만 남습니다. 커밋을 권합니다
+         !! 방금 바뀐 것이 있습니다 - 다른 세션이 편집 중일 수 있습니다
+         (막지 않습니다 - 전송은 그대로 진행됩니다)
+    _healthcheck.py
+    AGENTS.md
+    ai_capture_temp.png
+    all_products.txt
+    ANALYSIS_SUMMARY.txt
+    analyze_warns.py
+    app\__init__.py
+    app\agents\__init__.py
+    app\agents\cs_agent.py
+    app\agents\face_clip_agent.py
+    app\agents\gws_agent.py
+    app\agents\notion_agent.py
+    app\agents\orchestrator.py
+    app\agents\qdrant_agent.py
+    app\agents\skill_memory.py
+    app\agents\sql_agent.py
+    app\agents\sql_tool_agent.py
+    app\api\__init__.py
+    app\api\admin_api.py
+    app\api\admin_group_api.py
+    app\api\attachment_api.py
+    app\api\auth_api.py
+    app\api\auth_middleware.py
+    app\api\auth_routes.py
+    app\api\coa_finder_api.py
+    ... (총 975개)  [--dry 이므로 전송 안 함]

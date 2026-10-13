@@ -1,0 +1,66 @@
+{
+  "app/agents/orchestrator.py": {
+    "before": "4fe9c3d65297367606d95267cba6c1301ed740d38dd7ccc72960951c8c379682",
+    "after": "dd51f2cbd4073a34d051cfb9c35113d3bb19019eae5849b92dbe668729778a29"
+  },
+  "app/agents/sql_agent.py": {
+    "before": "c3898010ce6dd05e163ddba0a8cf4f646bc672a168b24a740f74b8a52b024705",
+    "after": "ef72dc8a8fae10864484579974c5129dce801396c35f5c7114a45f39378dac92"
+  },
+  "app/agents/sql_tool_agent.py": {
+    "before": "500d64b712cd5f03438812dcf63c91fc812a8575d8066949cce754fa6ac893de",
+    "after": "c3574f410372139e1db22df7373e1b9a444a4ed17e6f6fda3f5b5bc45dabd959"
+  },
+  "app/config.py": {
+    "before": "9e3a1684f11505010fff60197f6701d9c2584f7cb395d68c94c417622890b6d5",
+    "after": "bb04f4c46ef592dbdf651c40571ace7eafc3b1795fbc1849e17e1f60e4899571"
+  },
+  "app/core/bigquery.py": {
+    "before": "3497510f6787a6549d921308db3c4e0319929c7db870f9937cc7d9af40548122",
+    "after": "8c39b043a9c84ebe3f6c46553906143aa38a64bcd83eb760cf3f9f933fe9246c"
+  },
+  "app/core/safety.py": {
+    "before": "79b62873ac5ef221a8a5c300a054f1d55bfebab4d9c3e3a05703fd8159ace880",
+    "after": "5629a0514108c4cd3188d9e219ce7b85fd2e475bf17862eb064224cafff1d942"
+  },
+  "app/core/schema_watch.py": {
+    "before": "7b46633af1c458f9ee75c9daea5cbf3b91b441a8410dd7bbb5c5fe675fe2daaf",
+    "after": "1ac6987bb4224311201eaa72c26b119102fe8d769f1a99e2bd21fa0ad8eef33c"
+  },
+  "app/core/security.py": {
+    "before": "1a8d72bf188af16cc5e3eb8e1071aa8f466fa480edd6d37c3ef0fd98ac290412",
+    "after": "a76271e9b2aacad302152680f3ba736c6371000eaf045e4f475d2faeff820f71"
+  },
+  "app/core/value_lists.py": {
+    "before": "53d98ff9d27e17b85656b77dce2400e2accda3b2daebadedbedcecd5a858f68c",
+    "after": "64001c6096a9ae5b9d392c3444dbb7a8a3470a1175ee719aac8cef68675fdcc2"
+  },
+  "app/frontend/chat.js": {
+    "before": "bc95f0d73dbce3254a58cf267bd30a8afaae33aeb71223761f5f631f6b0eae4a",
+    "after": "4001752f0dfe5b81b8175f219c7e59990db977de69e4398bceda5200e4ef3ce6"
+  },
+  "prompts/sql_generator.txt": {
+    "before": "0f4fea4ccdc1150bc3481d4e855fd861f03a53f3d228aa1507402b764f9b1a0e",
+    "after": "50fa70ca05c0f1444cb71e6c902ce7119f6694907873f1f29a38949650406352"
+  },
+  "app/core/cs_metrics.py": {
+    "before": null,
+    "after": "583b61ffdbd39c062d796e87d60322a16adec10759326f9e00a23ffc4d60c8af"
+  },
+  "docs/CS_METRICS.md": {
+    "before": null,
+    "after": "912906697b2c2c28c0266ff5342c13af7478a15665b393c720f9ca773c5f9d53"
+  },
+  "tests/test_cs_metrics_contract.py": {
+    "before": null,
+    "after": "bc27293cea9defc3926bf332fc890dc73574b79124306caa8162bb6e7b0a9aa6"
+  },
+  "tests/test_cs_metrics_routing.py": {
+    "before": null,
+    "after": "59e987c47f46b7b84d04d1884d82ddfc1e5d8fee13945aa885dfa6386ee93b71"
+  },
+  "tests/test_cs_metrics_sources.py": {
+    "before": null,
+    "after": "d20ff09d324e4c79f8d5aa6b31c19c33279aa1882fad88006f621390194cfcd0"
+  }
+}

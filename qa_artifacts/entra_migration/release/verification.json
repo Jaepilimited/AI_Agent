@@ -1,0 +1,73 @@
+{
+  "was": {
+    "file_states": {
+      "app/api/admin_api.py": "release",
+      "app/api/admin_group_api.py": "release",
+      "app/api/auth_api.py": "release",
+      "app/api/auth_middleware.py": "release",
+      "app/api/entra_routes.py": "release",
+      "app/api/routes.py": "release",
+      "app/config.py": "release",
+      "app/core/briefing.py": "release",
+      "app/core/entra_auth.py": "release",
+      "app/core/feedback_inbox.py": "release",
+      "app/core/password_reset.py": "release",
+      "app/core/password_reset_google.py": "release",
+      "app/core/personal_briefing.py": "release",
+      "app/core/query_profile.py": "release",
+      "app/core/saved_questions.py": "release",
+      "app/core/self_check.py": "release",
+      "app/core/user_directory.py": "release",
+      "app/core/user_directory_migration.py": "release",
+      "app/db/mariadb.py": "release",
+      "app/db/models.py": "release",
+      "app/frontend/chat.html": "release",
+      "app/frontend/chat.js": "release",
+      "app/main.py": "release",
+      "app/reports/store.py": "release",
+      "deploy/crontab.app-server": "release",
+      "scripts/sync_ad_users.py": "release",
+      "scripts/sync_entra_users.py": "release"
+    },
+    "service": "active",
+    "health": {
+      "status": "ok",
+      "service": "Craver AI Agent"
+    },
+    "login_methods": {
+      "password": false,
+      "entra": true
+    },
+    "migration_table_exists": 1,
+    "preservation": "2026-09-08 12:48:03 [info     ] db_mode_mariadb                port=3000\n2026-09-08 12:48:03 [info     ] mariadb_pool_initialized       cached=5 max=40\n{\"preserved_directory_people\": 521, \"preserved_accounts\": 85, \"preserved_memberships\": 281, \"counts\": {\"accounts\": 85, \"entra_linked\": \"4\"}}\n{\"migration\": {\"completed\": true, \"migration_key\": \"ad_to_directory_v1\", \"directory_users\": 521, \"entra_linked\": 4, \"completed_at\": \"2026-09-08 03:38:36\"}, \"repeat_startup_migrated\": false}",
+    "unauthenticated_routes": {
+      "/api/admin/directory/users": "401",
+      "/api/admin/directory/stats": "401",
+      "/api/admin/ad/users": "404"
+    },
+    "page_has_directory_ui": true,
+    "admin_query_probe": "2026-09-08 12:48:04 [info     ] db_mode_mariadb                port=3000\n2026-09-08 12:48:04 [info     ] mariadb_pool_initialized       cached=5 max=40\n{\"active_employees\": 454, \"before_first_login\": 375, \"admin_stats\": {\"total_ad_users\": 454, \"assigned_users\": 281, \"unassigned_users\": 173, \"total_groups\": 2, \"fi_allowed_users\": 8}}"
+  },
+  "app": {
+    "file_states": {
+      "app/config.py": "release",
+      "app/core/briefing.py": "release",
+      "app/core/feedback_inbox.py": "release",
+      "app/core/password_reset.py": "release",
+      "app/core/password_reset_google.py": "release",
+      "app/core/personal_briefing.py": "release",
+      "app/core/query_profile.py": "release",
+      "app/core/saved_questions.py": "release",
+      "app/core/self_check.py": "release",
+      "app/core/user_directory.py": "release",
+      "app/core/user_directory_migration.py": "release",
+      "app/db/mariadb.py": "release",
+      "app/db/models.py": "release",
+      "app/reports/store.py": "release",
+      "scripts/sync_ad_users.py": "release",
+      "scripts/sync_entra_users.py": "release"
+    },
+    "legacy_cron_active": false,
+    "entra_cron_active": true
+  }
+}

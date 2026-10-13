@@ -1,0 +1,27 @@
+{
+  "queried_at_kst": "2026-09-18T15:40:06.016428+09:00",
+  "inventory": {
+    "source_rows": 15018,
+    "stored_rows": 15018,
+    "matches": true,
+    "source_hash": "5ed430be0f57bb0774481252177a43fcece45c4bb318857ea4549ebec3b7ebb6",
+    "stored_hash": "5ed430be0f57bb0774481252177a43fcece45c4bb318857ea4549ebec3b7ebb6",
+    "missing_from_copy": 0,
+    "extra_in_copy": 0,
+    "source_stamp": "2026. 9. 18",
+    "tab_counts": {
+      "new": 11130,
+      "erp": 7986
+    }
+  },
+  "expiry": {
+    "source_rows": 3264,
+    "stored_rows": 3264,
+    "matches": false,
+    "source_hash": "05f2aa1d8b0f6aca73a8d5aab9841090248e57adb9e54e5c8738cf0f8e3baa0c",
+    "stored_hash": "b3b09393a098c189d7dacb241656aa7244861c23f83c863e085dc30d108c754b",
+    "missing_from_copy": 3,
+    "extra_in_copy": 3,
+    "source_stamp": "9/17 마감 재고 현황"
+  }
+}

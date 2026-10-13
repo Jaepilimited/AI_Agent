@@ -1,0 +1,22 @@
+{
+  "case": "domestic",
+  "query": "2026년 8월 국내 CS 처리 기록은 총 몇 건이야?",
+  "sources": null,
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "SELECT \n  COUNT(*) AS total_processing_records,\n  COUNT(DISTINCT order_key) AS distinct_orders,\n  COUNTIF(order_key IS NULL) AS records_without_order_key\nFROM `skin1004-319714.cs_dashboard.domestic_cs_records`\nWHERE received_at BETWEEN '2026-08-01' AND '2026-08-31'\nLIMIT 10000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "total_processing_records": 51,
+      "distinct_orders": 47,
+      "records_without_order_key": 0
+    }
+  ],
+  "seconds": 23.55,
+  "fast_answer": "1",
+  "tool_loop": null
+}

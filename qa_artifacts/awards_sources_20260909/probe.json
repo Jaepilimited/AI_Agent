@@ -1,0 +1,25 @@
+{
+  "counts": {
+    "total": 206,
+    "with_source": "4",
+    "with_url": "0"
+  },
+  "source_values": [
+    {
+      "source_url": "",
+      "n": 202
+    },
+    {
+      "source_url": "\uc548\uc138\uc724 \ubb38\uc758 \ud544\uc694",
+      "n": 3
+    },
+    {
+      "source_url": "-",
+      "n": 1
+    }
+  ],
+  "hashes": {
+    "app/core/awards.py": "fb99d432e9349e2ed3a25f7a550eb8c3010663b406944336444be3931aa7e05e",
+    "tests/test_awards.py": null
+  }
+}

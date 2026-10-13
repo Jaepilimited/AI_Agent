@@ -1,33 +1,24 @@
 # Cluster 46
 
-> Auto-generated 2026-07-04T03:00:14.613803+09:00 · Files: 10
+> Auto-generated 2026-10-07T03:01:58.998564+09:00 · Files: 2
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트의 핵심 백본(Backbone) 인프라와 공통 코어를 담당합니다. 이중 LLM 클라이언트 지원, RAG(Retrieval-Augmented Generation) 파이프라인, SQL 안전성 검증, 그리고 시스템의 자율적 성장을 측정하는 모니터링 도구를 통합하여 제공합니다.
+이 클러스터는 SKIN1004 AI Agent 프로젝트의 코드베이스 분석 및 Knowledge Map을 구축하고 내보내는 오케스트레이션 계층입니다. 전체 소스 코드의 탐색부터 구문 분석, 그래프 생성, 그리고 최종 문서화 산출물 작성까지의 전체 파이프라인을 실행합니다.
 
 ## Key Files
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/bigquery.py` — BigQuery 쿼리 실행 및 클라이언트 관리 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/chart.py` — 프론트엔드에서 인터랙티브하게 렌더링할 수 있는 Chart.js 설정 JSON 생성 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/embeddings.py` — 벡터 검색을 위한 BGE-M3 임베딩 모델 관리
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/growth_report.py` — SQL 캐시 히트율 및 신규 패턴 등을 측정하여 시스템의 자율적 성장을 기록하는 주간 보고서 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/llm.py` — Gemini 3 Pro와 Claude (Opus 4.6 / Sonnet 4.6)를 통합 지원하는 이중 LLM 클라이언트 인터페이스
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/response_formatter.py` — 일관된 마크다운 레이아웃과 시각적 위계를 보장하는 응답 포스트 프로세서
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/security.py` — Text-to-SQL 에이전트가 생성한 SQL의 실행 전 안전성을 검증하는 보안 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/rag/chunker.py` — Semantic(의미론적) 및 Hierarchical(계층적) 방식을 결합한 하이브리드 청킹 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/rag/indexer.py` — BigQuery 벡터 인덱싱 및 RAG 임베딩 빌드 모듈
-- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/rag/parser.py` — Docling 라이브러리를 활용하여 PDF, HWP, PPT 문서를 마크다운으로 변환하는 파서
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/builder.py` — Knowledge Map 파이프라인 오케스트레이터 (`discover` → `cache` → `parse` → `flash` → `graph` → `export` 단계 순차 수행).
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/exporters.py` — 분석 결과 산출물 작성기 (`graph.json`, `wiki/*.md`, `GRAPH_REPORT.md`, `wiki/index.md`, `wiki/log.md` 파일 생성).
 
 ## Key Concepts
-- **Dual LLM Client**: Open WebUI의 모델 선택에 따라 Gemini 3 Pro와 Claude 모델을 유연하게 전환하여 호출할 수 있는 단일 인터페이스를 제공합니다.
-- **Hybrid Chunking**: RAG 검색 정확도를 높이기 위해 단순 길이 기준 분할이 아닌, 의미론적(Semantic) 흐름과 문서 구조의 계층(Hierarchical)을 모두 고려하여 텍스트를 최적의 단위로 쪼갭니다.
-- **SQL Safety Validation**: Text-to-SQL 에이전트가 생성한 쿼리가 데이터베이스에 해를 끼치지 않도록 실행 전에 구문을 분석하고 안전성을 검증합니다.
-- **Growth Report**: 시스템이 자율적으로 진화하는 과정을 모니터링하기 위해 `sql_cache_hits`, `sql_cache_new` 등의 지표를 수집하고 분석합니다.
+- **Knowledge Map Build Pipeline**: 소스 파일 검색(`discover`), 캐싱(`cache`), 파싱(`parse`), 추출 및 그래프화(`flash`, `graph`), 결과 출력(`export`)으로 이어지는 지식 그래프 구축 흐름.
+- **Artifact Exporters**: 구성된 코드베이스 관계망을 시각화 및 문서화 데이터(`graph.json`, 위키 문서, 분석 리포트)로 변환하여 파일 시스템에 기록하는 모듈.
+- **Graph & Wiki Outputs**: 프로젝트 구조를 요약하고 탐색할 수 있도록 제공하는 `GRAPH_REPORT.md`, `wiki/index.md`, `wiki/log.md` 및 개별 wiki 페이지들.
 
 ## How It Fits In
-이 클러스터는 다른 상위 에이전트나 비즈니스 로직 레이어에 핵심 유틸리티와 인프라 서비스를 제공하는 공통 레이어입니다. 명시적인 타 클러스터 간 의존성은 감지되지 않았으나, 프로젝트 내의 모든 LLM 호출, RAG 기반 문서 검색, BigQuery 연동 및 보안 검증이 이 클러스터의 모듈들을 기반으로 수행됩니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge_map/builder.py`는 클러스터 30의 `concept:graph_clustering`을 구현([implements])합니다.
+- 전체 코드베이스 구조와 의존성을 분석하여 다른 도메인 클러스터나 에이전트 시스템이 참조할 수 있는 지식 맵 산출물(JSON 및 Wiki 문서)을 공급하는 역할을 담당합니다.
 
 ## Common Questions This Page Answers
-- PDF, HWP, PPT 등 다양한 포맷의 문서를 어떻게 파싱하고 RAG용 벡터로 인덱싱하나요?
-- Text-to-SQL 에이전트가 생성한 SQL 쿼리의 보안 및 안전성은 어떻게 보장하나요?
-- 프론트엔드에서 정적 이미지가 아닌 인터랙티브한 차트를 보여주기 위해 백엔드는 어떤 데이터를 제공하나요?
-- 시스템이 자율적으로 학습하고 성장하는 지표(Growth Report)는 어떻게 측정되나요?
+- Knowledge Map 생성 파이프라인은 어떤 단계(`discover` → `cache` → `parse` → `flash` → `graph` → `export`)로 실행되는가?
+- Knowledge Map 생성 과정에서 최종적으로 어떤 파일들(`graph.json`, `wiki/*.md`, `GRAPH_REPORT.md` 등)이 출력되는가?
+- 그래프 클러스터링 알고리즘 결과를 실제 위키 문서나 JSON 리포트로 변환하는 진입점은 어디인가?

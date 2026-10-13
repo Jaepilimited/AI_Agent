@@ -1,0 +1,16 @@
+{
+  "health": 200,
+  "service": "active",
+  "assets": {
+    "app/frontend/personal-briefing.js": {
+      "status": 200,
+      "served_hash_matches": true,
+      "file_hash_matches": true
+    },
+    "app/static/style.css": {
+      "status": 200,
+      "served_hash_matches": true,
+      "file_hash_matches": true
+    }
+  }
+}

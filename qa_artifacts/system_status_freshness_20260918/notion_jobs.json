@@ -1,0 +1,421 @@
+{
+  "queried_at_kst": "2026-09-18 15:40:22.148705+09:00",
+  "server_local_time": "2026-09-18T15:40:22.460373",
+  "db_clock": {
+    "db_now": "2026-09-18 15:40:22",
+    "db_utc": "2026-09-18 06:40:22"
+  },
+  "jobs": [
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-18 05:00:00",
+      "finished_at": null,
+      "ok": null,
+      "detail": null,
+      "duration_ms": null
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-18 01:00:00",
+      "finished_at": "2026-09-18 01:01:14",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 74731
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-17 05:00:00",
+      "finished_at": "2026-09-17 05:05:21",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 7, 'deleted': 0, 'unchanged': 84, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 321616
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-17 01:00:00",
+      "finished_at": "2026-09-17 01:01:23",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 83012
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-16 05:00:00",
+      "finished_at": null,
+      "ok": null,
+      "detail": null,
+      "duration_ms": null
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-16 01:00:00",
+      "finished_at": "2026-09-16 01:01:24",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 84824
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-15 05:00:00",
+      "finished_at": "2026-09-15 05:06:02",
+      "ok": 1,
+      "detail": "{'new': 1, 'updated': 6, 'deleted': 0, 'unchanged': 84, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 362278
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-15 01:00:00",
+      "finished_at": "2026-09-15 01:01:26",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 86146
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-14 05:00:00",
+      "finished_at": null,
+      "ok": null,
+      "detail": null,
+      "duration_ms": null
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-14 01:00:00",
+      "finished_at": "2026-09-14 01:01:29",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 89964
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-13 05:00:00",
+      "finished_at": "2026-09-13 05:02:59",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 0, 'deleted': 0, 'unchanged': 90, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 179636
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-13 01:00:00",
+      "finished_at": "2026-09-13 01:01:16",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 76657
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-12 05:00:00",
+      "finished_at": "2026-09-12 05:08:33",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 8, 'deleted': 0, 'unchanged': 82, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 513168
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-12 01:00:00",
+      "finished_at": "2026-09-12 01:01:33",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 93926
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-11 05:00:00",
+      "finished_at": null,
+      "ok": null,
+      "detail": null,
+      "duration_ms": null
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-11 01:00:00",
+      "finished_at": "2026-09-11 01:01:31",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 91398
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-10 05:00:00",
+      "finished_at": "2026-09-10 05:05:19",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 7, 'deleted': 0, 'unchanged': 83, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 319302
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-10 01:00:00",
+      "finished_at": "2026-09-10 01:01:24",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 84435
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-09 05:00:00",
+      "finished_at": "2026-09-09 05:05:44",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 3, 'deleted': 0, 'unchanged': 87, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 343999
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-09 01:00:00",
+      "finished_at": "2026-09-09 01:01:21",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 81721
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-08 05:00:00",
+      "finished_at": "2026-09-08 05:04:20",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 7, 'deleted': 0, 'unchanged': 83, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 260921
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-08 01:00:00",
+      "finished_at": "2026-09-08 01:01:20",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 80024
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-07 05:00:00",
+      "finished_at": "2026-09-07 05:02:52",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 0, 'deleted': 0, 'unchanged': 90, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 172634
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-07 01:00:00",
+      "finished_at": "2026-09-07 01:01:16",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 76039
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-06 05:00:00",
+      "finished_at": "2026-09-06 05:02:45",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 0, 'deleted': 0, 'unchanged': 90, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 165195
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-06 01:00:00",
+      "finished_at": "2026-09-06 01:01:19",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 79893
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-05 05:00:00",
+      "finished_at": "2026-09-05 05:05:47",
+      "ok": 1,
+      "detail": "{'new': 5, 'updated': 3, 'deleted': 0, 'unchanged': 82, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 347837
+    },
+    {
+      "job_id": "team_sync_daily",
+      "started_at": "2026-09-05 01:00:00",
+      "finished_at": "2026-09-05 01:01:16",
+      "ok": 1,
+      "detail": "1117건 동기화",
+      "duration_ms": 76050
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-04 09:30:57",
+      "finished_at": "2026-09-04 09:33:42",
+      "ok": 1,
+      "detail": "{'new': 4, 'updated': 0, 'deleted': 0, 'unchanged': 85, 'errors': 0, 'skipped_404': 3, 'excluded': 15, 'reloaded': True}",
+      "duration_ms": 165554
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-04 08:56:29",
+      "finished_at": "2026-09-04 08:59:40",
+      "ok": 1,
+      "detail": "{'new': 1, 'updated': 0, 'deleted': 0, 'unchanged': 85, 'errors': 0, 'skipped_404': 20, 'excluded': 0, 'reloaded': True}",
+      "duration_ms": 190222
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-04 08:47:52",
+      "finished_at": "2026-09-04 08:50:39",
+      "ok": 1,
+      "detail": "{'new': 1, 'updated': 0, 'deleted': 0, 'unchanged': 85, 'errors': 0, 'skipped_404': 20, 'excluded': 0, 'reloaded': True}",
+      "duration_ms": 167235
+    },
+    {
+      "job_id": "qdrant_pipeline_daily",
+      "started_at": "2026-09-04 05:00:00",
+      "finished_at": "2026-09-04 05:04:03",
+      "ok": 1,
+      "detail": "{'new': 0, 'updated': 3, 'deleted': 0, 'unchanged': 82, 'errors': 0, 'skipped_404': 20, 'reloaded': True}",
+      "duration_ms": 243620
+    }
+  ],
+  "related_job_ids": [
+    {
+      "job_id": "notion_push_halfhourly"
+    },
+    {
+      "job_id": "qdrant_pipeline_daily"
+    }
+  ],
+  "team_resources": [
+    {
+      "team": "B2B1",
+      "resource_type": "other",
+      "n": 1,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "B2B2",
+      "resource_type": "google_sheet",
+      "n": 33,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "B2B2",
+      "resource_type": "notion",
+      "n": 36,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "B2B2",
+      "resource_type": "google_drive",
+      "n": 36,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "B2B2",
+      "resource_type": "other",
+      "n": 408,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "BCM",
+      "resource_type": "google_sheet",
+      "n": 4,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "BCM",
+      "resource_type": "other",
+      "n": 6,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "Craver",
+      "resource_type": "other",
+      "n": 29,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "CS",
+      "resource_type": "notion",
+      "n": 68,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "CS",
+      "resource_type": "other",
+      "n": 443,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "DB",
+      "resource_type": "other",
+      "n": 2,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "GM EAST",
+      "resource_type": "other",
+      "n": 18,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "GM WEST",
+      "resource_type": "other",
+      "n": 8,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "IT",
+      "resource_type": "other",
+      "n": 3,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "JBT",
+      "resource_type": "other",
+      "n": 2,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "KBT",
+      "resource_type": "other",
+      "n": 2,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    },
+    {
+      "team": "PEOPLE",
+      "resource_type": "other",
+      "n": 18,
+      "min_synced_at": "2026-09-18 01:01:09",
+      "max_synced_at": "2026-09-18 01:01:09"
+    }
+  ],
+  "unshared": {
+    "at": "2026-09-18 05:03:05",
+    "updated_at": "2026-09-18 05:03:05",
+    "by_team": {
+      "JBT": 1,
+      "[GM]WEST": 1,
+      "IT": 1
+    },
+    "pages": [
+      {
+        "page_id": "1d22b4283b0081858380dfce20788776",
+        "team": "JBT",
+        "kind": "page"
+      },
+      {
+        "page_id": "2a32b4283b0080968e3ad4a19f3ad26c",
+        "team": "[GM]WEST",
+        "kind": "page"
+      },
+      {
+        "page_id": "2b62b4283b00807e9012f6a61cb112db",
+        "team": "IT",
+        "kind": "page"
+      }
+    ]
+  }
+}

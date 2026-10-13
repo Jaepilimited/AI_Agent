@@ -1,0 +1,10 @@
+{
+  "source": "app/frontend/chat.js",
+  "before": "d491fe0eb15c5ab1b94d9a5af57f4d57d8309e545eb35a713d91998c57317441",
+  "after": "dbd3d3a953f8a60a0cfda16b26f3be52de62b0dd17ce9c04da74e4f7f43ee88f",
+  "tests": [
+    "tests/frontend/test_notifications_drawer.py",
+    "tests/frontend/test_entra_directory_management.py"
+  ],
+  "scope": "Notification drawer only; no service restart or database writes"
+}

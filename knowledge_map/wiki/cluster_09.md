@@ -1,27 +1,36 @@
 # Cluster 09
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 3
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 28
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent가 수집한 원천 데이터(일정, 메일, 대화 기록 등)를 가공하여 신뢰할 수 있는 지식 자산으로 변환하고 사용자에게 브리핑하는 역할을 합니다. LLM의 환각 현상(Hallucination)을 원천 차단하면서, 과거 대화 맥락에서 유용한 사실(Fact)을 추출하여 지속 가능한 지식 저장소(Knowledge Base)를 구축하는 데 초점을 맞춥니다.
+운영 신뢰도 및 데이터 드리프트 모니터링, 피드백 기반 품질 개선, 자체 사내 지식 위키(Knowledge Graph/Wiki) 파이프라인을 총괄하는 핵심 모듈 군이다. 프롬프트 수작업 의존을 줄이고 실제 데이터 변화를 감지하며, 실패한 질문을 골든셋으로 승격시켜 지속 가능한 LLM 답변 품질을 유지한다.
 
 ## Key Files
-- `app/core/work_briefing.py` — 일정과 메일 데이터를 연동하여 출근 브리핑 문서를 생성하며, LLM이 임의의 사실을 왜곡·조작하지 못하도록 엄격한 검증 파이프라인을 제공합니다.
-- `app/knowledge/__init__.py` — 지속적인 사실 추출 및 검색을 담당하는 Knowledge layer의 진입점입니다.
-- `app/knowledge/wiki_extractor.py` — 과거 대화 기록(Q&A)에서 재사용 가능한 지식(Fact)을 추출하여 MariaDB 기반의 `knowledge_wiki` 테이블에 저장하는 Gemini Flash 기반 모듈입니다. (1주차 범위에서는 shadow-mode로 동작)
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/golden_runner.py` — 배포 전 및 데일리 골든셋 회귀 테스트 실행.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/failure_learning.py` — 붐따(👎) 피드백을 골든 테스트셋 후보로 승격하여 재발 방지.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/feedback_inbox.py` — 방치되던 붐따 코멘트 수집 및 처리 워크플로 관리.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/schema_watch.py` — BigQuery 스키마 및 테이블 변경사항 모니터링.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/ad_media_watch.py` — 광고 매체 데이터 누락 및 급작스러운 이탈 감지.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/value_lists.py` — DB `DISTINCT` 값을 실시간 주입하여 프롬프트의 정적 데이터 노후화 방지.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/ingredients.py` — 제품 전성분 스프레드시트 적재 및 성분 기반 정밀 필터링.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/company_facts.py` — 사업자등록번호 등 고정 식별값의 지연 없는 즉답 캐싱.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge/wiki_extractor.py` — 대화 기록에서 엔티티 및 사실을 추출하여 위키 데이터 생성.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/knowledge/wiki_graph.py` — 위키 사실 기반 엔티티 간 관계(Triple) 그래프 구축.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/reports/store.py` — 원가·마진 등 민감 지표가 포함된 보고서의 대상 지정 열람 권한 제어.
 
 ## Key Concepts
-- **출근 브리핑 (Work Briefing)**: 사용자가 업무를 시작할 때 필요한 일정과 메일 정보를 한 장의 문서로 요약하여 제공하는 기능입니다. 첫 화면 및 잔디(Jandi) 공용 본문으로 발송됩니다.
-- **환각 방지 (Hallucination Prevention)**: LLM이 존재하지 않는 가상의 일정이나 메일을 지어내지 못하도록 제어하는 설계 원칙입니다. LLM은 오직 문장을 선택하는 역할만 수행하며, 모든 항목은 실제 존재하는 `event_id` 또는 `message_id`와 매핑되어야만 사용자에게 노출됩니다. 매핑되지 않은 항목은 코드가 판정하여 즉시 폐기합니다.
-- **지식 추출 (Knowledge Extraction)**: 과거 대화 내역(`messages` 테이블)에서 유용한 비즈니스 사실을 추출하여 구조화된 지식 위키(`knowledge_wiki`)로 영속화하는 프로세스입니다.
+- **붐따 피드백 순환 (Failure Learning)**: 사용자가 누른 👎 피드백과 코멘트를 단순 통계 집계에 그치지 않고 골든셋 회귀 평가로 연결하는 체계.
+- **Dynamic Value Lists**: 메가와리 프로모션 분기나 국가 목록처럼 주기적으로 변하는 값을 프롬프트에 하드코딩하지 않고 데이터베이스에서 실시간 추출.
+- **Knowledge Wiki & Graph**: 과거 대화와 내부 데이터를 `text-embedding-004` 및 Gemini로 축적하여 엔티티별 컴파일 페이지 및 그래프 트리플을 구성하는 사내 지식 체계.
+- **Identity Scrubbing**: `scrub_identity_processor`를 통해 로그에서 사용자 식별자(`user_id` 등)를 마스킹하여 개인정보를 보호하는 메커니즘.
 
 ## How It Fits In
-이 클러스터는 시스템의 신뢰성과 지속 가능성을 보장하는 핵심 레이어입니다.
-- `app/core/work_briefing.py`는 **cluster_07**의 `concept:hallucination_prevention` 설계 원칙을 직접 구현([implements])합니다. LLM의 자유도를 제한하고 코드 레벨에서 ID 매핑을 강제함으로써, 메가와리(Megawari) 등 SKIN1004의 민감한 비즈니스 데이터가 왜곡되어 브리핑되는 현상을 방지합니다.
-- 추출된 지식은 향후 에이전트가 사용자 질문에 답변할 때 RAG(Retrieval-Augmented Generation)의 신뢰할 수 있는 참조 데이터로 활용됩니다.
+- **Cluster 25 (Regression & Audit)**: `failure_learning.py`와 `golden_runner.py`가 회귀 테스트 체계를 구현하고, `log_scrub.py`가 감사 로깅 정책을 뒷받침합니다.
+- **Cluster 18 (Schema Monitoring)**: `schema_watch.py`를 통해 BigQuery 스키마 드리프트를 조기 경보하여 SQL 생성 라우터 오류를 차단합니다.
+- **Cluster 03 (Personalization & KG)**: `personal_briefing_store.py` 및 `wiki_graph.py`가 사용자 개인화 브리핑과 사내 지식 그래프 구축을 담당합니다.
+- **Cluster 20 (Reports Management)**: `reports/store.py`가 원가/마진 보고서의 엄격한 사용자 지정 권한 제어를 제공합니다.
 
 ## Common Questions This Page Answers
-- **출근 브리핑 생성 시 LLM의 환각 현상을 어떻게 방지하나요?**
-  - LLM은 문장 선택 역할만 수행하며, 생성된 모든 항목은 실제 `event_id` 및 `message_id`와 일치하는지 코드가 검증합니다. 일치하지 않는 가짜 항목은 즉시 버려집니다.
-- **과거 대화에서 지식을 추출하는 과정은 어떻게 진행되나요?**
-  - `wiki_extractor.py`가 Gemini Flash를 활용해 `messages` 테이블의 Q&A 쌍을 분석하고, 유의미한 사실을 추출하여 MariaDB의 `knowledge_wiki`에 저장합니다. 초기에는 안정성을 위해 shadow-mode로 동작합니다.
+- BigQuery 테이블 구조나 매체 데이터가 갑자기 변경되었을 때 에이전트는 어떻게 감지하는가?
+- 오답(붐따)으로 보고된 실패 사례가 다음 배포 때 다시 재발하지 않도록 방지하는 방법은 무엇인가?
+- 보고서 조회 권한 및 로그 내 개인정보 마스킹은 어떻게 관리되는가?

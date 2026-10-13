@@ -1,0 +1,1390 @@
+{
+  "queried_at_kst": "2026-09-18 15:46:46.263780+09:00",
+  "database_rows": 1117,
+  "cards": [
+    {
+      "id": "8d4fd910-71e6-5241-ad6a-9e009914238a",
+      "team": "JBT",
+      "page_id": "teamres-57873",
+      "page_url": "https://app.notion.com/p/1d22b4283b0081858380dfce20788776",
+      "content_sha256": "540c97a1437b0e0c5fa1c9f39e881e1f95e4b5e88354ba78390fb628748d3d40",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c64589f1-1522-55e5-a11b-5b3b05d1bef6",
+      "team": "B2B2",
+      "page_id": "teamres-57913",
+      "page_url": "https://www.notion.so/skin1004/07d3489594fa4db6829d1fee397ecdf1",
+      "content_sha256": "6c39e7ad3cee18e23deda6210d8095b9b4a34afb69478519fbe898816e7aff61",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "06a843d2-e41c-5ad9-bf55-3d14885f43ba",
+      "team": "BCM",
+      "page_id": "teamres-57949",
+      "page_url": "https://docs.google.com/spreadsheets/d/1-E8ZUihRJvQUsMgO_BqiokCZhWrthaqybWEle1NgJl8/edit?gid=957823969#gid=957823969",
+      "content_sha256": "a0f264bf0f9741505e0cf2dcd9150ad019b9190defd3af8a64ea5d53da15e878",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1fe48617-0c94-577d-a0de-e52a4dc598e1",
+      "team": "BCM",
+      "page_id": "teamres-57950",
+      "page_url": "https://docs.google.com/spreadsheets/d/1XfnEhfuoVhyN_nrBql0s_oEbgtcoiPZd64AKZL9hftQ/edit?gid=0#gid=0",
+      "content_sha256": "275fccdca7208e18d9e4529108e9b2a3b8657483c06f400a2615f3771dfc0044",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c6fd406b-53c0-5cee-b12d-9c11225ce2a3",
+      "team": "B2B2",
+      "page_id": "teamres-58033",
+      "page_url": "https://docs.google.com/spreadsheets/d/1eVko7HkJ8xHNwErLqOH97qL3xGGfIU_fyk2E6so7Nf8/edit?gid=413097839#gid=413097839",
+      "content_sha256": "b566c4292c415018a013d34608f8258dc9359663308e7a489d3d58a2d7d99e35",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4e1ca1d3-d135-58da-95f3-76e43d818385",
+      "team": "B2B2",
+      "page_id": "teamres-58000",
+      "page_url": "https://www.notion.so/33c2b4283b0080419504ce71e65a2fbf",
+      "content_sha256": "8e2b7711100f39e9fe08fca8138f153dd501eeb8fef81dd790e4ad0ca14fc57f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "3ebc2950-3722-5532-86b1-3f7a1431b800",
+      "team": "B2B2",
+      "page_id": "teamres-58002",
+      "page_url": "https://www.notion.so/2d92b4283b008058a179c9a410a0571d",
+      "content_sha256": "5f4f103f46ea8359823e22a9fc3973b37c8bc9bcdb5a16f5bf01251a39c6216e",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "6168223a-9ccb-5168-acfc-73fa6707a837",
+      "team": "B2B2",
+      "page_id": "teamres-58003",
+      "page_url": "https://www.notion.so/2d92b4283b008015abd3fd7ac0510d44",
+      "content_sha256": "50221022cceb5b6112e81978af7cc5034fd979ea74e072b8ac2612c1f3be8b4b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "3848e13c-9c50-5bce-a951-969ad717745e",
+      "team": "B2B2",
+      "page_id": "teamres-58005",
+      "page_url": "https://www.notion.so/2d92b4283b0080f8a562d1fbf217c2dd",
+      "content_sha256": "a59600e02ef39641e4fbd886039504afed3884b18f7c89c185adc715665217b7",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d87cf5fb-cdbe-5446-9bb7-6c50b00f74b3",
+      "team": "B2B2",
+      "page_id": "teamres-58006",
+      "page_url": "https://www.notion.so/2d92b4283b0080fe8f09fa2f9c9bde1a",
+      "content_sha256": "80a0f0238d34981ec0e6bba9c48f65d0140b1404c4bba1028fc834090b66951e",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c3eb84e5-4134-5b44-a4d3-100d8a96e2f5",
+      "team": "B2B2",
+      "page_id": "teamres-58008",
+      "page_url": "https://www.notion.so/2d92b4283b0080e0a320f26e4cd19dac",
+      "content_sha256": "c4e51a58bff4db55b14db6ae1b32b02f2c9c612a4cca5feaac04832f19c96fc6",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e3a85f2d-da40-5e27-a788-8559e14eef10",
+      "team": "B2B2",
+      "page_id": "teamres-58010",
+      "page_url": "https://www.notion.so/2d92b4283b0080899966d102d0892f03",
+      "content_sha256": "174562c7a5b6602dbcf955d3175ba5e6f7489ace8d22df3a41559c0b2f4d687f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "95f1f37b-f850-5102-9dbd-19d2a7e3f0e2",
+      "team": "B2B2",
+      "page_id": "teamres-58011",
+      "page_url": "https://www.notion.so/2d92b4283b008053a413eb8592a140cd",
+      "content_sha256": "e63481640ff542aba38f1c688608c4ea668e8a5446802058ad7742e5ef06cc3c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "f360de7d-04c3-5153-8872-7d38d93965bc",
+      "team": "B2B2",
+      "page_id": "teamres-58012",
+      "page_url": "https://www.notion.so/2d92b4283b0080c58064fe175eecc001",
+      "content_sha256": "8c60dcb6a5da41cee3e381c27987f218c8d79ce45eb2ca4f8a875d0f606b44a3",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "6c816fef-57b0-5c0d-b0d0-447e91dbb860",
+      "team": "B2B2",
+      "page_id": "teamres-58018",
+      "page_url": "https://www.notion.so/2d92b4283b0080fa9360c57d42719646",
+      "content_sha256": "5e2fe2a9a8260f449e8db8ff76236f2f2cc8f805eaad1188748ba04c3476ead8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e0b81b62-fd1a-5526-b229-22f8d3dd75ca",
+      "team": "B2B2",
+      "page_id": "teamres-58021",
+      "page_url": "https://www.notion.so/3172b4283b0080489090fd6ec57d0733",
+      "content_sha256": "504e561424bb18570414199c0bca80eaf23b0478f98bddcada00388ce75320b8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "8f2c9791-ae27-5f21-854f-448563ed3e89",
+      "team": "B2B2",
+      "page_id": "teamres-58023",
+      "page_url": "https://www.notion.so/2d92b4283b0080c4bb33c445b60c5549",
+      "content_sha256": "ecc3e1f60667093b4c3cd495c325b90d6c35c99c950f217b107d29db3466a84a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "dca0220c-253c-5442-a090-d952c7dfb053",
+      "team": "B2B2",
+      "page_id": "teamres-58024",
+      "page_url": "https://www.notion.so/2d92b4283b0080a1a6cdded78bcc7db7",
+      "content_sha256": "18f0f0466ef43d5d88e6513882f237d3c61dc526c183e1a041a30becd6072748",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "718cef43-2b9f-5e3c-bb86-0fe57a741e48",
+      "team": "B2B2",
+      "page_id": "teamres-58027",
+      "page_url": "https://www.notion.so/2d92b4283b008079ace0f4e1fae563b2",
+      "content_sha256": "a071ce4578a964897feb7a484b38075270a8a8fde9eb69bf32fa7046cbf3cf39",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1c6efa6a-4170-54b6-a562-1e6ac8f44462",
+      "team": "B2B2",
+      "page_id": "teamres-58028",
+      "page_url": "https://www.notion.so/2d92b4283b00807d8bd8fe1493b21a90",
+      "content_sha256": "b2c413e35e6e6d7c9b83d37b418419cf9e3aa9929961633c04e158899f51efed",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b95149f4-923f-567c-a899-59f0b8e710a6",
+      "team": "B2B2",
+      "page_id": "teamres-58029",
+      "page_url": "https://www.notion.so/2d92b4283b00808b85b9c2b2290148d5",
+      "content_sha256": "0ce07c6e789bcc5a6344c0354060197e7d4d14e7df0f241eed21aa9d79fde78f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b14da04f-6e56-5bf8-a870-72133f782d4a",
+      "team": "B2B2",
+      "page_id": "teamres-58114",
+      "page_url": "https://portal.cravercorp.com/app/approval/document/48126",
+      "content_sha256": "3181a7594b26df0ea8090e2a810ffd8774044676e577aee08ed9d4672315dfa8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "901f9cd4-341e-5cde-9be4-31c6d93b4d72",
+      "team": "B2B2",
+      "page_id": "teamres-58119",
+      "page_url": "https://docs.google.com/spreadsheets/d/1XQp90IhBV2T-ClF99rug_l_v-1H_LxM5/edit?gid=1261621339#gid=1261621339",
+      "content_sha256": "a2a4c74a6c4f0e7723cd01f18f74c3a3dbf93317a7d26aa8fadea730fd3f7b31",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "57630186-9b85-5566-9bcb-4421c128518e",
+      "team": "B2B2",
+      "page_id": "teamres-58378",
+      "page_url": "https://drive.google.com/drive/folders/1XI074RRPKFs_mhCxpMfLN7TQqeHzOGFd?usp=sharing",
+      "content_sha256": "4a6bac19e116155a0f96cdf90038379b7db91c47cc85f57eb5bf83dcac930bf9",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5d991575-d24f-5ba5-9b72-59f1523b9ace",
+      "team": "B2B2",
+      "page_id": "teamres-58135",
+      "page_url": "https://drive.google.com/drive/folders/1aXxjqqFm0zUlUTd2l-1JxuCXctFg13rG?usp=drive_link",
+      "content_sha256": "daf87504b3ae0131f84b5a3f4f16c94db58f689e7677f39123591389844f1e98",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "a049593c-0712-58c3-aff5-60cc269b656f",
+      "team": "B2B2",
+      "page_id": "teamres-58137",
+      "page_url": "https://drive.google.com/drive/folders/1ylD5yej2mHNohvzWreT2lzLTk4yIICAT?usp=sharing",
+      "content_sha256": "82dad01861604d833e6f9266c10e74665d026f7eda83fa7f45b5668d008274d8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "90ac5aef-3f80-5db0-8ea7-47167f139718",
+      "team": "B2B2",
+      "page_id": "teamres-58140",
+      "page_url": "https://lookerstudio.google.com/u/0/reporting/c021c6c6-ac73-4753-a36b-cc95a889811b/page/p_9f6nk6brqd",
+      "content_sha256": "f686afde75c2f698eaecdab9081aeabb8c2fe08ebf134982dcc659f8c43eb294",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "229759a7-8660-5dbe-aa60-634968c1b9cc",
+      "team": "B2B2",
+      "page_id": "teamres-58153",
+      "page_url": "https://drive.google.com/drive/folders/1ZeJ5zUOvdd53a_S3hb9ADYtqt9viogjC?usp=drive_link",
+      "content_sha256": "f6ab586c650b32865549bb4764c655cb89d1fddd7cb65798327e90d6636ec919",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "13bbdb21-d0db-5de1-ada2-fcb925cd50fe",
+      "team": "B2B2",
+      "page_id": "teamres-58180",
+      "page_url": "https://docs.google.com/spreadsheets/d/1Sw8o8oNqyOiRoPi_pjzIeQiPTFGqW7GB7HqntalBqqM/edit?gid=965713678#gid=965713678",
+      "content_sha256": "d6206e68cb22fab217d3f2353d27b0944f8bc218b3d8562439da0ff139e3848b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "7e1d2ab1-db1a-5205-8bd5-a6e99e49f2a8",
+      "team": "B2B2",
+      "page_id": "teamres-58182",
+      "page_url": "https://docs.google.com/spreadsheets/d/1w48w07Is6V6ssj4T9cVosTCsEoO0R6kRRofq5ldsrVc/edit#gid=523437832",
+      "content_sha256": "5ad67ff8a5df0636d2975bab42caac2026e36ace32fb1db537ce3cc1c1312aa1",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "da4b01f3-f937-5bc5-bc8c-083ece0ca3e2",
+      "team": "B2B2",
+      "page_id": "teamres-58196",
+      "page_url": "https://docs.google.com/spreadsheets/d/1qElLdqWTPxnEaTRT3_2Tfm80o-DcJcAjuV_H0OO4WFg/edit?gid=1959505975#gid=1959505975",
+      "content_sha256": "b41d05f77d93464d3ddfe790fde0eb11fb7e9c5e79195f496d6e4aee72e1a8d8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "14eda590-a991-5ce8-8bba-6fe21f8d9e44",
+      "team": "B2B2",
+      "page_id": "teamres-58304",
+      "page_url": "https://drive.google.com/drive/folders/1dtwZDD0cLBK7ljs-1-3WmzDG8QUrlxQY",
+      "content_sha256": "491989e7e3223b03417e97e4ddbd6f667c1de2d1e2edd02ce42877a9912fb61c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "143f7da9-0775-577b-94f2-83c8cfc7d134",
+      "team": "B2B2",
+      "page_id": "teamres-58307",
+      "page_url": "https://drive.google.com/drive/u/0/folders/15knfaakhWl7Ab-MlSWDXNCn1ccl0DdII",
+      "content_sha256": "445868fe113ebb62a0203927af20ba18cd020c3d137ba9c8ff1a0b9a20def8a9",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5e888943-28cd-5774-8c6b-f982e13b4966",
+      "team": "B2B2",
+      "page_id": "teamres-58326",
+      "page_url": "https://drive.google.com/drive/folders/1oq0NJVloZl9RzOQdEQCDqgukh1KsNHwf",
+      "content_sha256": "68bb7be5a8087176cb0c2f8b75ea0924fac97d12087200e85f7280189b80c42b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5f206932-12ad-585d-8ba1-d8018f59ae8a",
+      "team": "B2B2",
+      "page_id": "teamres-58100",
+      "page_url": "https://portal.cravercorp.com/app/approval/document/67968?page=0&offset=20&property=draftedAt&direction=desc&searchtype=&keyword=&fromDate=&toDate=&duration=all",
+      "content_sha256": "6f21670b47fc4135cfca0948e3dbf0bc29d3f6e5d115e0d5d52ce0c9d8b6deb8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "dbe3b9b1-285c-5953-9bdc-1206fc8e98b8",
+      "team": "B2B2",
+      "page_id": "teamres-58369",
+      "page_url": "https://portal.cravercorp.com/app/approval/document/9997",
+      "content_sha256": "282382a87ab949d828be99276ab95c60331e4f628df53e58bea9c68569e97c2d",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "41e16e99-a141-5332-9de0-3fc8cb1ac846",
+      "team": "B2B2",
+      "page_id": "teamres-58120",
+      "page_url": "https://docs.google.com/spreadsheets/d/16MRz3SHUyOe-OzbQYYsnGCoYFej4wu9Nla_7-SeDCuU/edit?gid=1538721789#gid=1538721789",
+      "content_sha256": "62fdf3b54cac3c57d5b54cdb04855339c0ac6ade9272412610932882dec5da6d",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "42b9031c-be53-5c6e-809e-52f55e88e471",
+      "team": "B2B2",
+      "page_id": "teamres-58138",
+      "page_url": "https://docs.google.com/spreadsheets/d/1K3eUuB2KJXaK7dZMdQgTHQrwt1Ha_0H0c3kPGvHGh4c/edit?usp=sharing",
+      "content_sha256": "adf12356b021389e60fe8f8213327c9fd1802d9153dbeef2012b7c13db6862ea",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "7d1fbe80-44de-582a-856e-21e13254931e",
+      "team": "B2B2",
+      "page_id": "teamres-58141",
+      "page_url": "https://lookerstudio.google.com/u/0/reporting/41182756-3fce-4c48-9c76-429ba9d99aaf/page/p_mde0034oqd",
+      "content_sha256": "d71e2c1c9ffca8c51a4300e94c67c5cf8211c94ba80d5ebcc9a21b8c771e41fb",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "f496bf72-fec3-5ade-923d-3dd3298c85b0",
+      "team": "B2B2",
+      "page_id": "teamres-58154",
+      "page_url": "https://drive.google.com/drive/folders/1uWLpwWHxlRsuz066ab1gJwn6Rjy0PPrB?usp=drive_link",
+      "content_sha256": "2dbe9f70e9b9dc92b1e51f245bf2d06c2d7ca10fa11c1554bd8b17aef95d018d",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4dcf7e05-55bd-568f-a984-7106458941b7",
+      "team": "B2B2",
+      "page_id": "teamres-58181",
+      "page_url": "https://docs.google.com/spreadsheets/d/1XfnEhfuoVhyN_nrBql0s_oEbgtcoiPZd64AKZL9hftQ/edit?gid=0#gid=0",
+      "content_sha256": "6323f5ac55de5d9a3c5cba1855509c311b7e041e75618dcea489fbd3590384bc",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "fc2886e5-f0e4-5ea5-af76-7810cf96bcbd",
+      "team": "B2B2",
+      "page_id": "teamres-58183",
+      "page_url": "https://docs.google.com/spreadsheets/d/1guZpT7g5rKs6FHUtOFVH0unzzjak84I1LY8FXVWmsQQ/edit#gid=75044886",
+      "content_sha256": "efd9099590a67e1e13d65d6abfeed4cf8761cf86f9bb9a2bbf5f7393bfc08a27",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "57ad87f8-db20-54c6-8cad-0d9ce4c058a9",
+      "team": "B2B2",
+      "page_id": "teamres-58197",
+      "page_url": "https://docs.google.com/spreadsheets/d/1ywzlz8rZj1eLJc9hWfdVmm6AKGAG9CVEfIpoq1lV-ww/edit?pli=1&gid=1670657751#gid=1670657751",
+      "content_sha256": "82f5466cc0646e79d37d6fc6f86c6a5e8d7aecb3ccfc625c563316e995dd47ba",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "054c3b0d-eb49-5991-a080-5b1e00d8a6cb",
+      "team": "B2B2",
+      "page_id": "teamres-58200",
+      "page_url": "https://trends.google.com/",
+      "content_sha256": "9b84c13d6c09777d1ce7b020689b6d341103cfef3aafb41a26c553453d3419d7",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "888a873f-ca4a-5e65-83d3-db1e5ebcb363",
+      "team": "B2B2",
+      "page_id": "teamres-58305",
+      "page_url": "https://drive.google.com/drive/folders/1Pz_oC-xqyhL0YA8HldpXnm4R-oc8BTmg",
+      "content_sha256": "734543163af198ddb7e01e9593dda135d9fb145d3226508460420ba3bb37a43d",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "61b51ef0-c954-578d-8be3-58802d9b87ba",
+      "team": "B2B2",
+      "page_id": "teamres-58308",
+      "page_url": "https://drive.google.com/drive/u/0/folders/1oKVYsBVVDC5uTRdc1FJmUIxH2agk_urw",
+      "content_sha256": "025312e4e20577b252e3cc019b489587a02b8d07eafdd63e5b999b6199d5f37b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "0b6be0f8-6c0a-5a05-bfe6-075d32a48a44",
+      "team": "B2B2",
+      "page_id": "teamres-58327",
+      "page_url": "https://drive.google.com/drive/folders/1TpWOtu4w4ernPihbJctcn051zkvkC6EL",
+      "content_sha256": "e4b0b7c0423fdb7abd2c69afd8581dcc0dab2eee300b5c2df6884dee882b9797",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1355991e-80da-56be-8663-a119fc0c1ed8",
+      "team": "B2B2",
+      "page_id": "teamres-58370",
+      "page_url": "https://portal.cravercorp.com/app/approval/document/27555",
+      "content_sha256": "fca92112ba5e009a0292a752b2a15820686051514521057e605acc71881621b4",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "11bb23da-48c0-54aa-97b4-cef226f7346e",
+      "team": "B2B2",
+      "page_id": "teamres-58139",
+      "page_url": "https://docs.google.com/spreadsheets/d/1At-9RMYc8q9odEUkTAz4U3SkKGMGIUsCwSIAU4rqc1M/edit?usp=sharing",
+      "content_sha256": "71dbc41d0685f499e52173e08c2bc5ee0fcb981c96a2cf5b2add46231d120979",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4cbd1549-0de1-53c3-8ae2-98fc62b43149",
+      "team": "B2B2",
+      "page_id": "teamres-58142",
+      "page_url": "https://docs.google.com/spreadsheets/d/1GSaTOt5uWj5szgtGpxvvrfjYvAabCkgZcedPsjJFY7E/edit?gid=1197162927#gid=1197162927",
+      "content_sha256": "af817613e403cf493c2c5b3441e526a3474cac4bf2ec8d903743a7d2078f2c43",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d4735d32-b225-5ab9-b57d-8591ad901ac6",
+      "team": "B2B2",
+      "page_id": "teamres-58155",
+      "page_url": "https://drive.google.com/drive/folders/1dhLz0fZqVGYPL5-bJVWIKHgd_sA3g8l0?usp=drive_link",
+      "content_sha256": "a508c185872a081a8eac18f014fcb1afd22cc8081de4be83ddfcc9d4f4638725",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "534b30f5-e546-59a4-83ef-e4d2cd2c94b8",
+      "team": "B2B2",
+      "page_id": "teamres-58184",
+      "page_url": "https://docs.google.com/spreadsheets/d/1eU6ZHgxM_9NEgmWGvRfQQx1X7n4WD0kfLZ7byNoLFcM/edit?pli=1&gid=747752968#gid=747752968",
+      "content_sha256": "454d4961cb9e427a77e42a661ace7e4938a28e3c06c3c8047ac644f867084df4",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "0806dce9-93e2-5e96-9792-ef13a5d829c1",
+      "team": "B2B2",
+      "page_id": "teamres-58198",
+      "page_url": "https://docs.google.com/spreadsheets/d/1TRz9eGo4wb0w75xqhy1ArAR3TzS9U3MQOiV976-4zLk/edit?gid=127564115#gid=127564115",
+      "content_sha256": "8521665f4a55b1e1cd68fe4a8951a6966c754fd492c52daacfd71bae26e8d126",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "eccfef3c-a424-5d23-b755-55da540ec7f5",
+      "team": "B2B2",
+      "page_id": "teamres-58201",
+      "page_url": "https://app.ahrefs.com/",
+      "content_sha256": "1a8d85e687ffd71fc4c367debada05d0ee43f5d29bdeea663bde99c9077b3062",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "a44f3861-593d-56eb-9841-83fc48d9dc11",
+      "team": "CS",
+      "page_id": "teamres-58037",
+      "page_url": "https://www.notion.so/3362b4283b00812fade4f256c3d8d2f9",
+      "content_sha256": "dafc714e111df855f537f74cfb966a2406c8a27fbe72ba058259deb6db14146c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4e6741e5-5c9b-5fd7-a07c-4a07081068e2",
+      "team": "CS",
+      "page_id": "teamres-58038",
+      "page_url": "https://www.notion.so/3362b4283b0081bd96d2c4eb891462e7",
+      "content_sha256": "064986563808d925a4d9983285b38325373894d421bbea6f1f25469065487978",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "bd6f83e8-6dc1-5ff1-901f-37581ce620ef",
+      "team": "CS",
+      "page_id": "teamres-58039",
+      "page_url": "https://www.notion.so/3362b4283b008114b109e5e6b4577282",
+      "content_sha256": "0b947ae8155fd3d65809d2ee0b472aa385508a388c957e7134cb60d237a45c2b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "17620850-2e73-5ed4-9755-fb0b9e10fb67",
+      "team": "CS",
+      "page_id": "teamres-58041",
+      "page_url": "https://www.notion.so/3362b4283b0081b881baf69fb494e1bd",
+      "content_sha256": "3aaaecc7d58476c0971658d4c571324a9aee54349bdc9663ba3b192fae775315",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "6bf58d4c-d6a7-5160-a1bb-f9a222d0fb2a",
+      "team": "CS",
+      "page_id": "teamres-58042",
+      "page_url": "https://www.notion.so/3362b4283b008108814cf9bf2173ac47",
+      "content_sha256": "89b706c6becb735d47ea0deeca051f83eb0973734e4c733818f8faa67ec14aa8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d349b2dd-086f-5f60-a984-6bccec092945",
+      "team": "CS",
+      "page_id": "teamres-58043",
+      "page_url": "https://www.notion.so/3362b4283b008146a7d6c6bed70c9e03",
+      "content_sha256": "f99abd91b11157329c38ba1b9b7c6daba44e42732881a2dcb2e7fcddeec17eeb",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "9699b720-7efa-5ab8-b532-049b42b6245a",
+      "team": "CS",
+      "page_id": "teamres-58044",
+      "page_url": "https://www.notion.so/3362b4283b00816f9114fa492bd1267f",
+      "content_sha256": "c483aff0fe3f0d1c83fde99b4b5ad3d823509637357f6f9476c78d12b1446d3a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "f0d7837a-be01-5925-b575-ce08d0ac8afe",
+      "team": "B2B2",
+      "page_id": "teamres-58309",
+      "page_url": "https://drive.google.com/drive/folders/19ZkSL0vudXK4MRj2kiigwmZT3DvMFBQd",
+      "content_sha256": "3e0ac776d5146130258da5a9b51c600b37408e8da11b655b2bb43c1c6465c13c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "05010cc5-95d3-5680-8dd3-58b37d2f79a2",
+      "team": "B2B2",
+      "page_id": "teamres-58065",
+      "page_url": "https://portal.cravercorp.com/app/approval/document/45979?page=0&offset=20&property=draftedAt&direction=desc&searchtype=&keyword=&fromDate=&toDate=&duration=all",
+      "content_sha256": "045a73776daec1e23f268497b05f7f01277c52246da85088191c25045c109272",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "a9b60685-f5af-5a60-9a1d-b0067c21f40e",
+      "team": "B2B2",
+      "page_id": "teamres-58156",
+      "page_url": "https://drive.google.com/drive/folders/16fVVAj2y214vHb55dG8AVT8T2Ak_h7Kf?usp=drive_link",
+      "content_sha256": "57b9bd2e8a1a06d654993912e21911d1ac644c40f1c5ce12c518308bd2e64659",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "258643e6-6f2f-5949-bd20-48aaabd6e5e2",
+      "team": "B2B2",
+      "page_id": "teamres-58185",
+      "page_url": "https://docs.google.com/spreadsheets/d/1Egi1QUi8S3D0T5_YfvJT8OLHaZhxFAMy8il8wojp8Yc/edit?gid=1635402552#gid=1635402552",
+      "content_sha256": "45520946413dcef3bd4a603c0105b4e63d936009903c487a17422a46302c0f63",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5d202505-dac2-59de-a039-f95641869f15",
+      "team": "B2B2",
+      "page_id": "teamres-58269",
+      "page_url": "https://docs.google.com/spreadsheets/d/1CjsfUIzg_MEwKTGVkLtyfJ74QKnc8Eflgvf-2Hjm45w/edit?gid=1852118747#gid=1852118747",
+      "content_sha256": "e2d057280b08ce76de0b5eb8c8dc8161d84b8dc061b4f4c9a4770826ffe86cc2",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ee1f3efc-69d2-5b58-b9e2-2fe116161857",
+      "team": "B2B2",
+      "page_id": "teamres-58310",
+      "page_url": "https://drive.google.com/drive/u/0/folders/1IG-0T-wH7uMNsAZ8P3MK87KG_Np0ylgi",
+      "content_sha256": "913a93b0256e166811b151954d7f131dac9c1492477dbc3b6ad6201bfa714658",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "dec651a2-9f2e-571d-86dd-df7b06e118f1",
+      "team": "B2B2",
+      "page_id": "teamres-58330",
+      "page_url": "https://docs.google.com/spreadsheets/d/1dY20YIUI3mSiPE5dHJ8TvVFdj0UEmxDeRaSfj_p6iZc/edit?gid=1337654533#gid=1337654533",
+      "content_sha256": "5c239b5c77b8e7048ed34138d1f3b164daa2382ba6a8e755179704675dbc297f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "9f8957db-2dc1-51a0-97de-47b011a8e013",
+      "team": "B2B2",
+      "page_id": "teamres-58341",
+      "page_url": "https://docs.google.com/spreadsheets/d/1bwBRdSX-z-NcPI84oXJAZjKwPk_XeAc92J-1ouqzPOA/edit?gid=1317151334#gid=1317151334",
+      "content_sha256": "2cc093291bf66b26b2648d376073b6eaa233581a34df81ef9186d6ca0192b0c4",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b8e7e685-f1a1-56be-b88e-94bfdf6bd808",
+      "team": "B2B2",
+      "page_id": "teamres-58372",
+      "page_url": "https://portal.cravercorp.com/app/approval/document/43269?page=0&offset=20&property=draftedAt&direction=desc&searchtype=&keyword=&fromDate=&toDate=&duration=all",
+      "content_sha256": "0db360c2a174adacb7681678ce2ddabe2b93f0b99361c3a24425875e1ef87f5a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "a8014eed-b808-5cd7-8675-d53922cada15",
+      "team": "B2B2",
+      "page_id": "teamres-58157",
+      "page_url": "https://drive.google.com/drive/folders/1IUVoHwL-rgMWX5jS1UX05RdHsvSqu2JS?usp=drive_link",
+      "content_sha256": "d6fb9c87a39df7eb7b707b42d4ac1dbc9c897a4ef1d4717490cc4b6d5e7e340f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "966a58c3-7a12-569e-94ff-f46f3fd92003",
+      "team": "B2B2",
+      "page_id": "teamres-58186",
+      "page_url": "https://x-scm.cravercorp.com/",
+      "content_sha256": "b8b1de61e2751b4ced6aba4c484bfc6725f2bc3b38451f0054e93c37f39c46e0",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ee66d747-1d96-565c-a090-82eb0fdf19ac",
+      "team": "B2B2",
+      "page_id": "teamres-58270",
+      "page_url": "https://docs.google.com/spreadsheets/d/1CjsfUIzg_MEwKTGVkLtyfJ74QKnc8Eflgvf-2Hjm45w/edit?gid=588866285#gid=588866285",
+      "content_sha256": "79548cff22539d0041cde317701745c17474e6c6e31e6072267d334fdc4bf26b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "dec223c0-630e-5a70-836d-895924534728",
+      "team": "B2B2",
+      "page_id": "teamres-58342",
+      "page_url": "https://docs.google.com/spreadsheets/d/17H2kqJ3DClTS1fATOnopOl3MjTg8ubXmNxGqfpSlLng/edit?gid=2076845734#gid=2076845734",
+      "content_sha256": "044eb8840b4313ee7e193373a75de6c0d1753cfb8d9b44cea9010f76c89fc9ac",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1f37c571-6f1e-5132-9f82-19bafb6abf01",
+      "team": "B2B2",
+      "page_id": "teamres-58158",
+      "page_url": "https://drive.google.com/drive/folders/1iQKrLjtmkkcEdwvkdbIzXid--k6Kg53Z?usp=drive_link",
+      "content_sha256": "bf826aeea9a1c8f9d1920fcf001ebe679aeb50db3bcd2d8eb34b49e9fe498b2e",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "6d70ae8b-8cca-56e5-9233-cb60f2a0a4d8",
+      "team": "B2B2",
+      "page_id": "teamres-58271",
+      "page_url": "https://docs.google.com/spreadsheets/d/1Li412qTmEJfKYIcEWsygKoYp5WeGlBYL/edit?gid=2130024913#gid=2130024913",
+      "content_sha256": "3f25ac251b57182243ecf4bec4a57e2c39f2a5d2be135903429dbbda183bd0be",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c946b3d5-adbd-5339-bcf7-248609284b34",
+      "team": "B2B2",
+      "page_id": "teamres-58343",
+      "page_url": "https://docs.google.com/spreadsheets/d/1Svx64RoKzFRx0aRcoAyFHp3TK0E6LScq_aPwVGRt5cg/edit?gid=0#gid=0",
+      "content_sha256": "92cc5786a03dfb675a23542b2bea11afa107b341f5bda4862e5644844e6497d2",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "892faa02-a860-5f13-885b-9c22c9a2fe76",
+      "team": "B2B2",
+      "page_id": "teamres-58159",
+      "page_url": "https://drive.google.com/drive/folders/1iEU0I5DZlvnpjV5zD5K5vzwLq3hOMqSE?usp=drive_link",
+      "content_sha256": "37c49064d2149ad60730740bbf17336736f40f0c08393dcc458f8c82760eac8b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "8fd64d6f-88d3-5982-8da4-a9c3504e6bb4",
+      "team": "B2B2",
+      "page_id": "teamres-58160",
+      "page_url": "https://drive.google.com/drive/folders/1ErTaZW-R23fRmII_WfOn5fDufBoQEdSo?usp=drive_link",
+      "content_sha256": "a242c593c51f85f7abea6a02525ceec6c2400261d04b676c5439f4e074a385e3",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ae9db34c-e03b-5cf7-bb02-f513383ceab1",
+      "team": "B2B2",
+      "page_id": "teamres-58161",
+      "page_url": "https://drive.google.com/drive/folders/1UYOsnCpC94kzb2cjQYsBdgPGP29UxHlQ?usp=drive_link",
+      "content_sha256": "018812c5241fb495dea3fe22e38100509fd6462fc3075cbe35bd51e898063707",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "7da2495e-ed3a-50ee-9e28-ebacb6fbe9c9",
+      "team": "B2B2",
+      "page_id": "teamres-58273",
+      "page_url": "https://docs.google.com/spreadsheets/d/1eU6ZHgxM_9NEgmWGvRfQQx1X7n4WD0kfLZ7byNoLFcM/edit?usp=sharing",
+      "content_sha256": "f62f44cd0a9c548c860bdee2ebd6be9f12d0a6190fe82f7293d0fa5b667a0a3c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d09c85a6-2877-5baa-83cc-35ca384a5c09",
+      "team": "B2B2",
+      "page_id": "teamres-58297",
+      "page_url": "mailto:info@lebencos.com",
+      "content_sha256": "b39ce3b42835fd3a3f3822cc8b5a542cf3e3d6ddb3b7d6d90bf083166a2a6e9e",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "93975b9d-2bc8-5ce4-a6d9-68d68053fe09",
+      "team": "B2B2",
+      "page_id": "teamres-58162",
+      "page_url": "https://drive.google.com/drive/folders/1QDKgPMYV3TTEpcKUmwCYBVv549kAUYyi?usp=drive_link",
+      "content_sha256": "7a258214bb93d1ccf88c50f46c2f4f5d695153b00b45afd6f441d95c7d7bf88f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5d3a377e-4a7a-5a25-ba00-19c911250cd1",
+      "team": "B2B2",
+      "page_id": "teamres-58163",
+      "page_url": "https://drive.google.com/drive/folders/11VZDi3pcBClfGbywDByKH-8I1KEUG8Zr?usp=drive_link",
+      "content_sha256": "a7f4f6e0bd39e6693b1d1e72380743d38e2c6ed77a4c12a8a0d7083dc10c0881",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "bd0ce5b5-4c6f-5073-b014-aa1f15c0523b",
+      "team": "B2B2",
+      "page_id": "teamres-58164",
+      "page_url": "https://drive.google.com/drive/folders/1m5DV-WtiXxdQs5aBKvW2PZxQEs2hMcPr?usp=drive_link",
+      "content_sha256": "9360ab303e6083d627661cfcbf269bd9c4b9771364ff21cc19f884815cdc0bae",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "95032339-50aa-5351-9d77-58b12a5539f4",
+      "team": "B2B2",
+      "page_id": "teamres-58376",
+      "page_url": "https://docs.google.com/spreadsheets/d/1iJUtIjUlE2dyvBfiCjp7yHD9-iu_KTroAXM8iRhrcP0/edit?gid=451466924#gid=451466924",
+      "content_sha256": "0eb9752688b164ecb17f3b29571e6602751fb68a858908a8f48b3fbb9b5cb5f1",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "42d57536-10a9-5f63-98fe-518689ad9e08",
+      "team": "B2B2",
+      "page_id": "teamres-58165",
+      "page_url": "https://drive.google.com/drive/folders/1lwPQABT5gR7eOBSHubvssvXrkZ7XMU6o?usp=drive_link",
+      "content_sha256": "08b33e537a02bfb840172d27baafdbb8ce3ec30d05bb0bd3c2143db93a1f79cb",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "12142c05-f561-5e13-ac4e-6e2413ac7a62",
+      "team": "B2B2",
+      "page_id": "teamres-58377",
+      "page_url": "https://drive.google.com/drive/folders/1hwu9POAaode9nsDTeDgL6wwLEb2tm9Ed",
+      "content_sha256": "ddce38dccec11e326ee99de5807eead8cf6134cc15d90d8554db7cffb702f7b7",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "20e141f8-2b1b-5334-bef2-715ab0c9dd83",
+      "team": "B2B2",
+      "page_id": "teamres-58166",
+      "page_url": "https://drive.google.com/drive/folders/1Fp2JdbCpDYFwk2gmRi2VWq5NbQjGgJqG?usp=drive_link",
+      "content_sha256": "946ca90c30bb1af668f3ac84fdde670c24f7ef82361b7b3bf8a8cab4d84ab434",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1dfe89a3-24ed-5ed2-bbc9-e14d299f3478",
+      "team": "B2B2",
+      "page_id": "teamres-58303",
+      "page_url": "mailto:eurp@nemobrands.com",
+      "content_sha256": "8d6faa4523ce52aea40daf802e9fb4608d762bd4c880553cfaf6daf13a829d22",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "8c9875bd-776b-54c4-9c8b-adeec24f354e",
+      "team": "B2B2",
+      "page_id": "teamres-58167",
+      "page_url": "https://drive.google.com/drive/folders/1Sq1QRrQ1N-hX_dFEurAv8KSeaq_aiEue?usp=drive_link",
+      "content_sha256": "5fbb64844e91ee6ae13b6fbbe30a45fe93b9c0fec209dc026a95dbbcb3e72aed",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "19d9864c-c8d4-53f5-a6bf-4d439eac8f5a",
+      "team": "B2B2",
+      "page_id": "teamres-58168",
+      "page_url": "https://drive.google.com/drive/folders/1Q_l_APamVnajpeIJwhF7vc8VfFTNUusC?usp=drive_link",
+      "content_sha256": "d55a5c84b6979d20c97862be8e0c4b3bd1b67cf702ee5417c2408c56cf35aa8f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1e0723f3-5293-5839-828d-9912ba8fa5a3",
+      "team": "B2B2",
+      "page_id": "teamres-58169",
+      "page_url": "https://docs.google.com/spreadsheets/d/1aDB8pree3OVKB8j-zp7tE43qf18CN_Rs/edit?usp=drive_link&ouid=110321667053742937568&rtpof=true&sd=true",
+      "content_sha256": "a041a12699ec44548a52befe48019f323a63811187a38e4406efcc571d9ee97e",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5c2b8410-a3b7-50a9-b147-4ebc51643741",
+      "team": "B2B2",
+      "page_id": "teamres-58170",
+      "page_url": "https://drive.google.com/drive/folders/11XAsM3EdESFj7l5RPfQ1BXXfyA6qrcOP?usp=drive_link",
+      "content_sha256": "607b4b030a20bc42489059f878748df1f5a11d8af6d692ffc0019c8e7754e9e3",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "eecfa25a-ebc2-5169-bab2-6a587d5f62e6",
+      "team": "B2B2",
+      "page_id": "teamres-58282",
+      "page_url": "https://docs.google.com/spreadsheets/d/1m6M-bF-CoF6alV-AC2RtvswTPeYg8GhMwXAJg7ZT0zg/edit?gid=0#gid=0",
+      "content_sha256": "36fad155f0d40f1bec1d63e638d25fca1523092d737c9df624dc4bf86d3f518f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "be3d9b65-e547-5e5d-8b7d-c983317f2b04",
+      "team": "B2B2",
+      "page_id": "teamres-58171",
+      "page_url": "https://drive.google.com/drive/folders/16Rot7bQor1olgmvclEHKUV0wD71wcq0E?usp=drive_link",
+      "content_sha256": "9d9e9d538b15835d43c5ccf7ba4e5f5bb8c049834d570edf5532bb4a512b6151",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "494c021e-714a-5b5d-b7a1-a21bba3e7a64",
+      "team": "B2B2",
+      "page_id": "teamres-58172",
+      "page_url": "https://drive.google.com/drive/folders/1lEZnZ4H8zj8N0mAfH6kSw-wl5FWHGvUL?usp=drive_link",
+      "content_sha256": "33c0fd662045defc9ecb20fdddeeeace592a18bcaf6fc699f47236af7b6e66f3",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c107cc8b-502e-56c1-933d-e8af5dd5639b",
+      "team": "B2B2",
+      "page_id": "teamres-58173",
+      "page_url": "https://drive.google.com/drive/folders/1c_XBZjWCEYvM4TxyCYDwg20pa3zEVEC2?usp=drive_link",
+      "content_sha256": "775c4579d1222393b79d1ec380bd088ee6c73b473113394d9299698d8c41b501",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b05c57b5-8b67-5f8c-86ae-8b282b1b4c91",
+      "team": "B2B2",
+      "page_id": "teamres-58284",
+      "page_url": "https://docs.google.com/spreadsheets/d/1m6M-bF-CoF6alV-AC2RtvswTPeYg8GhMwXAJg7ZT0zg/edit?gid=0#gid=0",
+      "content_sha256": "5687fe76f77f994d0eadc95909a3b4163ca7a88c0af2e92bd2b32d7143ee29b4",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "48e340de-95b3-5e66-a79a-2089e3b22956",
+      "team": "B2B2",
+      "page_id": "teamres-58174",
+      "page_url": "https://drive.google.com/drive/folders/1PqOG6y833SE4Lrzl-CbZxcNLt3nMtLVc?usp=drive_link",
+      "content_sha256": "b099257c6eca6bfc2235e1c1b6fdf796ffe71d5b918b5596f5df3df9ef721d59",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c911213c-ba6a-5234-a03a-58fe3817e8a0",
+      "team": "B2B2",
+      "page_id": "teamres-58175",
+      "page_url": "https://docs.google.com/spreadsheets/d/1xy0yLf228UMUvyg8C6UlGMb213cGDaZN/edit?gid=1167261129#gid=1167261129",
+      "content_sha256": "faa6e78180c0cfcf7297d7ff4ad97209b5cfb23c3c6b32afe7d29b060b48d165",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "032aef9f-728e-5afb-8538-faf6e4e815da",
+      "team": "B2B2",
+      "page_id": "teamres-58287",
+      "page_url": "https://docs.google.com/spreadsheets/d/1m6M-bF-CoF6alV-AC2RtvswTPeYg8GhMwXAJg7ZT0zg/edit?gid=525816340#gid=525816340",
+      "content_sha256": "9d1344b8c3bd96de348caafe27c74ac792af88c87be023af5f070067baf2eba0",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b14de62c-495d-5efc-a9dd-160a42cbb470",
+      "team": "B2B2",
+      "page_id": "teamres-58176",
+      "page_url": "https://drive.google.com/drive/folders/190uztIiGA-w6j3DCkStyO1fexqeweRT1",
+      "content_sha256": "864a7015d170e383d9c229a370d22f1ffae01e71f836915782c4268978cfa6da",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "8c30106b-016f-5801-8023-123c7ba24560",
+      "team": "B2B2",
+      "page_id": "teamres-58177",
+      "page_url": "https://drive.google.com/drive/folders/1K-rkkOuO-7B6w8NrB4TxUcvFxojJnzpv",
+      "content_sha256": "d0e0a1cf27c265bdaba544b2d131f206f630fe0d5b7e74c5499223f01ad9d7fa",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5fa90e64-dbf4-5647-8bef-a488790efb27",
+      "team": "B2B2",
+      "page_id": "teamres-58178",
+      "page_url": "https://docs.google.com/spreadsheets/d/11gX_Gg7JkGQ2GoLeeU5MXZ-qTieZPL_Fu3w7lPuHW7A/edit?gid=855474103#gid=855474103",
+      "content_sha256": "18f8b32fa68a1828b68dfb99ce80c97685e9c14baf33d8b2449d5e91cec6b17c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "3f639844-75f7-532a-894c-0389af02881e",
+      "team": "B2B2",
+      "page_id": "teamres-58179",
+      "page_url": "https://docs.google.com/spreadsheets/d/1jbaZ7p2NnkaiYDHd_N5KwFbPI_mYUXdiXIHtOzoP29E/edit?gid=1565372101#gid=1565372101",
+      "content_sha256": "ee2e2b72ff1147f98d47a60d736de069f23c399a380a2c5edfc35be2bb705961",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "289bc01c-ef61-5c95-a9e5-2ea8cc46f0d7",
+      "team": "CS",
+      "page_id": "teamres-58407",
+      "page_url": "https://www.notion.so/3362b4283b0081689a9fd501da6900a6",
+      "content_sha256": "f39fb7d83e9347b7aa5cecba16d7432fc416db6e4e6328d844367476a25c46e8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "fc0cb0b8-828e-5986-a782-f9fc6e311a9f",
+      "team": "CS",
+      "page_id": "teamres-58408",
+      "page_url": "https://www.notion.so/3362b4283b00818b9e06cfcdc2553b3d",
+      "content_sha256": "6b771d06dad0232c2309b31cc7b7f77bd95607ee966ac23e4369eb83c600b19b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "956c1e8e-d0c7-5bf3-8398-7c460dd67c5f",
+      "team": "CS",
+      "page_id": "teamres-58411",
+      "page_url": "https://www.notion.so/3362b4283b0081b5bd98da2bc927ada7",
+      "content_sha256": "40503a1d26ac5c1cc8e5269237bb7d3f3d622ef468519b2e776e4a1497a226b6",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "74170560-0566-59a9-b04b-eb7849b15534",
+      "team": "CS",
+      "page_id": "teamres-58412",
+      "page_url": "https://www.notion.so/3362b4283b0081159627c05b9a824fce",
+      "content_sha256": "7bce690dce8ebd4625bf6244887b8aa2e92eecc81ccd5d4513f358c22218935c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "66099ce3-ef77-50d7-95d8-8a7b2d24ee17",
+      "team": "CS",
+      "page_id": "teamres-58413",
+      "page_url": "https://www.notion.so/3362b4283b0081c7ae50c1c921eeae3d",
+      "content_sha256": "fa1caabb29513c9b5e78420ea9ef64a7ada5c4593514bd46da114ba78f9e564b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "7b41feac-0cdd-51da-b0c9-31c2a0966401",
+      "team": "B2B2",
+      "page_id": "teamres-58451",
+      "page_url": "mailto:winniehan47@gmail.com",
+      "content_sha256": "630869b71eb96f7d33ac64ccfa27c9022e113896b6e7ea74d7b63507c1c19955",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "14441bb7-fb24-5d83-acb3-01e655b7f41b",
+      "team": "B2B2",
+      "page_id": "teamres-58461",
+      "page_url": "mailto:htbair3@hanatour.com",
+      "content_sha256": "0126e08fd84a78ef22fd07fa7b1f398f4868b17e893f16813362ca6f32055abd",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "430aeee4-601a-561a-8eee-75da16e83445",
+      "team": "B2B2",
+      "page_id": "teamres-58490",
+      "page_url": "https://map.naver.com/p/search/%EC%86%A5%EB%B0%A5/place/2034673709?c=18.87%2C0%2C0%2C0%2Cdh&placePath=%2Fhome%3FfromPanelNum%3D2&from=map&fromPanelNum=2&fromPanelNum=2&timestamp=202602201452&timestamp=202602201448&locale=ko&locale=ko&svcName=map_pcv5&svcName=map_pcv5&searchText=%EC%86%A5%EB%B0%A5&searchText=%EC%86%A5%EB%B0%A5&entry=bmp",
+      "content_sha256": "0e9966d340f542e9553d2197b1e44ff881a08d6c25a15c77eb709a31f850d959",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "a18b42c8-63e0-5f6c-91e1-d8a7db639fae",
+      "team": "CS",
+      "page_id": "teamres-58406",
+      "page_url": "https://www.notion.so/3362b4283b00818f93e7def3643bdb85",
+      "content_sha256": "b8dcfdbdcc722d04ac54bf5603cf5e0b217f1f6e6b741c848e7f431801293869",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "60885ca9-89bc-5c93-841d-f8c49554c3a8",
+      "team": "CS",
+      "page_id": "teamres-58410",
+      "page_url": "https://www.notion.so/3362b4283b008101a6e8e2bfaa863b65",
+      "content_sha256": "6d990f98ec3616030a4e9cd596392269648adcd57ad4752044396a5a61e6ff26",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "90f017ec-5f99-5515-9d15-b36c4277b474",
+      "team": "B2B2",
+      "page_id": "teamres-58452",
+      "page_url": "mailto:gllalacho@hanmail.net",
+      "content_sha256": "0769f2b6a8359165bca9b3e851e8b60c11a282eb3c950b405bf222946b8e0b14",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c2871521-d2ea-5d6e-935d-fb8fcddbb79b",
+      "team": "B2B2",
+      "page_id": "teamres-58462",
+      "page_url": "mailto:hotelbiz@hanatour.com",
+      "content_sha256": "196689d29f8c00cd5e2859cb73ded76354e12b377a4cdbdca3f935af0b9bc9b1",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "8df7b0a8-d648-56c3-9bbb-264cbd4182e2",
+      "team": "B2B2",
+      "page_id": "teamres-58465",
+      "page_url": "https://docs.google.com/spreadsheets/d/1qbg6F-Kz8A6a1EaIUe4cYjcuqw0tSUum/edit?gid=816643699#gid=816643699",
+      "content_sha256": "77ef835c3e4fda054041686ef26a6f42d57d1df428fff6d4df4ba75bb4fe525a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "26f39c27-0bb2-5609-a7f4-69fc9a5cdac5",
+      "team": "B2B2",
+      "page_id": "teamres-58491",
+      "page_url": "https://map.naver.com/p/search/%EC%86%A5%EB%B0%A5/place/2032423183?c=18.87%2C0%2C0%2C0%2Cdh&placePath=%2Fhome%3Fentry%3Dbmp&from=map&fromPanelNum=2&timestamp=202602201451&locale=ko&svcName=map_pcv5&searchText=%EC%86%A5%EB%B0%A5",
+      "content_sha256": "61e634946fe2d4242c63afa69856b9ca18e3a26425287616f93761b0a010076a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "3f110996-5bde-5ad3-ae6c-4fb5d7a7ced0",
+      "team": "B2B2",
+      "page_id": "teamres-58443",
+      "page_url": "https://docs.google.com/spreadsheets/d/1U55URCTeJrcN1LlFCM7m1AonR--k7TN74i8QQShUb5c/edit?gid=1453648971#gid=1453648971",
+      "content_sha256": "5e9cfda7b09aa3149bd2a3d341fcb13310d829633cb6e2639b09ff32a12ce747",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "aa3943bf-ee29-57eb-84da-e5f93cbdc3ea",
+      "team": "B2B2",
+      "page_id": "teamres-58463",
+      "page_url": "mailto:HANASVC@hanatour.com",
+      "content_sha256": "2b152cd2fb0e359ed355a8d18833ecd29770bf932fb0ca9327ac4f815c972153",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "3f7b3000-75fa-5f5f-8647-8bccc054e9dd",
+      "team": "B2B2",
+      "page_id": "teamres-58471",
+      "page_url": "https://drive.google.com/drive/u/0/folders/1XI074RRPKFs_mhCxpMfLN7TQqeHzOGFd",
+      "content_sha256": "33f8ecf836ab23807df4b9e084c3b5dd4081338f665850ce95b67bbee2fd2d40",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b8d6ad85-4505-59e6-8a0a-198e6823a48e",
+      "team": "B2B2",
+      "page_id": "teamres-58444",
+      "page_url": "/13d2b4283b008082800eefb93130c2ff",
+      "content_sha256": "1cc02a8a2b053d499acf067aac4eb1031b9364dee30efe25dc96ddc4e234eed0",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d88fbf58-9cf9-592a-9770-f1dda1de3d19",
+      "team": "CS",
+      "page_id": "teamres-58499",
+      "page_url": "https://www.notion.so/3362b4283b00817bb00cedf97c27356c",
+      "content_sha256": "99acc1d583a0bedfa319e58f01c738ca32b9b1855184a324116efd8060acc11c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e546ff63-8ef2-5b6c-b735-0037bbdd080b",
+      "team": "CS",
+      "page_id": "teamres-58500",
+      "page_url": "https://www.notion.so/3362b4283b0081c49ef9ca91cf80496c",
+      "content_sha256": "ab0e7dc38c66a1a34e2abec3ca1e5a9fa9e96da691feb14046cd692f03d5b488",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "f2cbdb2b-8296-5fee-b8c2-1e63b612e54a",
+      "team": "CS",
+      "page_id": "teamres-58501",
+      "page_url": "https://www.notion.so/3362b4283b008127b21dd1ea81ff4534",
+      "content_sha256": "6dae6c575c263a9e9ced1c6dcfa770b474c7923d237a1f7ec95a303c082c0df8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c269efbe-9929-5612-83b2-2a7264b25ab0",
+      "team": "CS",
+      "page_id": "teamres-58502",
+      "page_url": "https://www.notion.so/3362b4283b00815db608f153f66b891f",
+      "content_sha256": "6a2a1a7833695ed2c76f058ec23c7f40486193f1cd748666467ee64d66a15640",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "bee1238f-6063-58b3-ba90-3e6e11717b35",
+      "team": "CS",
+      "page_id": "teamres-58503",
+      "page_url": "https://www.notion.so/3362b4283b008175ad1ae9bcc497e0aa",
+      "content_sha256": "bba2312c78ee9f7b203e2533981224900a6b66fb4dd485e8c913a90cea36f7c3",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ea7d1ff6-920a-53a5-bba3-3a479b346ada",
+      "team": "CS",
+      "page_id": "teamres-58504",
+      "page_url": "https://www.notion.so/3362b4283b0081859b6af40bef947f24",
+      "content_sha256": "6444fe5b365f11096a86bb986f86ad96293dc8ab4f3cb7388035893c72e07583",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "9bf54423-2eb7-5935-a8f0-89408c2f625e",
+      "team": "CS",
+      "page_id": "teamres-58505",
+      "page_url": "https://www.notion.so/3362b4283b0081938c65d8972f83410d",
+      "content_sha256": "c3d1ab140ee82157bd1566c0ccc88d0c520d4a552b81a1bffdc01c1093f7aa30",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "973f5869-77e2-5880-9321-f7846169a858",
+      "team": "CS",
+      "page_id": "teamres-58506",
+      "page_url": "https://www.notion.so/3362b4283b008141957dd3fc32f713c7",
+      "content_sha256": "97c97e217ab4f80ff5fae9ec8b2d05c0ddde8ff3c06b0aea0348d7474c49dee5",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "f430e30f-2c93-57dc-acd3-23f1b508588c",
+      "team": "CS",
+      "page_id": "teamres-58507",
+      "page_url": "https://www.notion.so/3362b4283b00814eb885d6a6ea70f741",
+      "content_sha256": "fcf475bed22bd710e146bec1982d3d105db5425ea857c77f2a938978865eb14b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "b4981fd1-16cc-5e99-a5c0-514b99f93617",
+      "team": "CS",
+      "page_id": "teamres-58508",
+      "page_url": "https://www.notion.so/3362b4283b0081a4af1ac566bed912ec",
+      "content_sha256": "00b69034b6428c70373e9cc1bcf686e9be85fafb9e53dafb9eb1aaf063bfb732",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "120d4126-03d7-5b02-aa6a-797b4de5a744",
+      "team": "CS",
+      "page_id": "teamres-58509",
+      "page_url": "https://www.notion.so/3362b4283b0081f88dc8dc33b040d324",
+      "content_sha256": "462c4f508ad2b851cfd9f7da59045b6ef9ebbe071d59985235e891a7e10f4f68",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4e10c74f-c00a-5c55-ac81-66a40f438284",
+      "team": "CS",
+      "page_id": "teamres-58510",
+      "page_url": "https://www.notion.so/3362b4283b0081aa8d6fe8414010561a",
+      "content_sha256": "acd29b70905119d7e4d3916a81fe767dd781dd1960d2542dcce1d175627d7611",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "5032c3d9-3fe2-5937-b863-469d95e1ff0d",
+      "team": "CS",
+      "page_id": "teamres-58511",
+      "page_url": "https://www.notion.so/3362b4283b0081aeab20d11483bbf14f",
+      "content_sha256": "d5be98249ff81ad1e3001ff15a1376adae66b7f5d3cae0abaaa503461a8e496c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d3b402c4-8076-5cb3-af2a-6ee18f1102c3",
+      "team": "CS",
+      "page_id": "teamres-58512",
+      "page_url": "https://www.notion.so/3362b4283b0081dfafc7def846aa5104",
+      "content_sha256": "3ebe5888fb78d753f1eac98e900a135ff5c0a68c9283b47cf0fcceff4a6bde33",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "790161c9-3fc0-5ec8-81c3-5058a408a9a6",
+      "team": "CS",
+      "page_id": "teamres-58513",
+      "page_url": "https://www.notion.so/3362b4283b0081ecb120e76b784ab397",
+      "content_sha256": "e3fe60a5b9e2c3fb3aad6081ec51c2f8a749a7fe74b0c30b77209d551d076895",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "04db114f-d11a-5a38-80ee-9ac2e444ccd4",
+      "team": "CS",
+      "page_id": "teamres-58514",
+      "page_url": "https://www.notion.so/3362b4283b008135b959eabbae570497",
+      "content_sha256": "8977f8d403e885f711c4e21cd7c2d9d45729eb6ee0193ed46225ceb7bc0ceba6",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "414fb271-48a1-54c4-9716-5b6f700bfb58",
+      "team": "CS",
+      "page_id": "teamres-58515",
+      "page_url": "https://www.notion.so/3362b4283b00815e963cc0f406078b69",
+      "content_sha256": "a64c2dd1037b48b789d8794d701b374c2e72ff54dce6513efe959fc8b471dc4c",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c2a56440-d88b-5aea-99d9-185b69c120a4",
+      "team": "CS",
+      "page_id": "teamres-58516",
+      "page_url": "https://www.notion.so/3362b4283b0081c78da5e93e441f3427",
+      "content_sha256": "01c861e04068d3a779ccae8d9ce351cacd21ebe0352b61d3703dd9e321d7e1cc",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e58cf454-e7c6-5404-a402-80f4ca82ae68",
+      "team": "CS",
+      "page_id": "teamres-58517",
+      "page_url": "https://www.notion.so/3362b4283b00810798dfe207a3bee615",
+      "content_sha256": "a121c5f9b053589ed8ca1ffc7a39473cb077125d03a4ba56293f2e486d386726",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "124ab9b9-2311-5b4b-8643-945fbfde8d50",
+      "team": "CS",
+      "page_id": "teamres-58518",
+      "page_url": "https://www.notion.so/3362b4283b008133b7aec7c7dcde883d",
+      "content_sha256": "d2044d9db8702ca7371e08abbcc8472b5f978ce6f47d5f80c029a9b65a3ea5cd",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d52b1f5f-98b8-52e4-ba2a-f73da1e43577",
+      "team": "CS",
+      "page_id": "teamres-58519",
+      "page_url": "https://www.notion.so/3362b4283b00817a8fecc04290528042",
+      "content_sha256": "952d0ae2aef5a0679dd13d7a0ba8730f2fcec3041a3f2abce89a7cd6fa65bd0d",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e034e8eb-ec73-533b-b224-3a6d30052da4",
+      "team": "CS",
+      "page_id": "teamres-58520",
+      "page_url": "https://www.notion.so/3362b4283b00812b9778d8c144f29274",
+      "content_sha256": "1de6fee652efc84ff795ecba52c1a5c1b905cf99f913a10df072d22aa3e63e73",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "9de038cc-2be2-57d9-b25d-79acf38439fa",
+      "team": "CS",
+      "page_id": "teamres-58521",
+      "page_url": "https://www.notion.so/3362b4283b008135b27cf903ddf1971b",
+      "content_sha256": "e6f85cf4188bcecbb44d89587f6a2f2187de2df50243e3df6a76bf39f3665032",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1ccc0553-d4e1-5de5-94fb-bc057301dc44",
+      "team": "CS",
+      "page_id": "teamres-58522",
+      "page_url": "https://www.notion.so/3362b4283b00816c83eacc19d2705c0c",
+      "content_sha256": "5d4e10204beb6b0543027f92bf7140810e3546206d4d8ac6379ba53c4c2a7635",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "602415b6-d8d7-5c89-ad1d-a971ca2e987d",
+      "team": "CS",
+      "page_id": "teamres-58523",
+      "page_url": "https://www.notion.so/3362b4283b0081c89e0fe17d0b7b5165",
+      "content_sha256": "90afc865d6b5d6aa0cc92cd37c291cf27679b69aa94ce554dbebff897168082a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e6386dcf-e10c-52f5-8f85-cfd5ba18c924",
+      "team": "CS",
+      "page_id": "teamres-58524",
+      "page_url": "https://www.notion.so/3362b4283b0081fda440e908962e5169",
+      "content_sha256": "1a8c2fc45a3bd9db88a82cac024b7b7e127c8bc98467d802973bf7d99596d9ae",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4f9f5dd4-2494-57c1-ba17-ca07dc61a31f",
+      "team": "CS",
+      "page_id": "teamres-58525",
+      "page_url": "https://www.notion.so/3362b4283b0081b98d3cd61ce891efd7",
+      "content_sha256": "b490d01c9d26d3ddbf1437315a225db340545828d19a5198340b880d716ccf2a",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "47b15ba0-1652-5acf-a9c7-39f686ab28fc",
+      "team": "CS",
+      "page_id": "teamres-58529",
+      "page_url": "https://www.notion.so/3362b4283b0081609884e9b884f3b8ab",
+      "content_sha256": "20e57c106653e4cec782343662432111ee664f2c3b5caa0d291f972dc4cc2335",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "e20803b0-5d7a-5c3a-8d40-ec81c9dc3c52",
+      "team": "CS",
+      "page_id": "teamres-58530",
+      "page_url": "https://www.notion.so/3362b4283b0081aea824e3c26130da02",
+      "content_sha256": "1bdb3668856f687ff12090a0494769a438e683d62ada0fee1dcd151fe502953b",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "04692c5f-c768-5713-8054-e7fc2af40ac0",
+      "team": "CS",
+      "page_id": "teamres-58531",
+      "page_url": "https://www.notion.so/3362b4283b00817f9aeecd54fef00670",
+      "content_sha256": "b1f62f324870de7d2d7ed03a763faec130bc2d77fe173204fd85eb3b230a6ec6",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4034f90b-501e-5d6f-bef7-914929a3f2ca",
+      "team": "CS",
+      "page_id": "teamres-58532",
+      "page_url": "https://www.notion.so/3362b4283b008190b92cc074d1a9b56e",
+      "content_sha256": "74de43879f6e0347adcbb6977b3f6550c37e693079c46e05e0705bc974635548",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "a8ebce57-14b9-5108-851f-b4ad4e90c535",
+      "team": "CS",
+      "page_id": "teamres-58533",
+      "page_url": "https://www.notion.so/3362b4283b0081a38090d9d5f9b7d465",
+      "content_sha256": "125935b598cc7b2e0aff305d563c5a1c7d135f6fcc3a1ea355dae56b7123056e",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "3702bb72-8bc0-5f9e-9ba1-f6ebc064757c",
+      "team": "CS",
+      "page_id": "teamres-58534",
+      "page_url": "https://www.notion.so/3362b4283b0081d9acfdcf9a79d160fa",
+      "content_sha256": "f17c7a13003eeab33e8c596983a06e50d8bf4414b5e1ea91571d732b8413849f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "f11b68b4-c1e2-5259-8541-7ee3b5ea90ce",
+      "team": "CS",
+      "page_id": "teamres-58535",
+      "page_url": "https://www.notion.so/3362b4283b0081f29892f8f710bf4042",
+      "content_sha256": "ffb5f9e620480f790fe8f2907ceb64fca4816c75c432674955c94b8d3d55ddce",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ccd7956c-ee22-5034-8f2c-4450a932d3f2",
+      "team": "CS",
+      "page_id": "teamres-58536",
+      "page_url": "https://www.notion.so/3362b4283b008111a815d5501c5aefa5",
+      "content_sha256": "8b092cd97109be6f1c0ea7c0b3a5b3cdd03ab4c7dd7b657499e4e9fe12cae1c8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "4cd0f296-c31d-5773-8238-dac7de518fc6",
+      "team": "CS",
+      "page_id": "teamres-58537",
+      "page_url": "https://www.notion.so/3362b4283b008150ae1ecb0b1857b7db",
+      "content_sha256": "81182696b4f52dc7871f384c1f5e340894b8319e4fcd430a9d100dcf356e18f3",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "c1ce7f58-542b-5244-a72c-8c56e8d28236",
+      "team": "CS",
+      "page_id": "teamres-58538",
+      "page_url": "https://www.notion.so/3362b4283b0081978d62f6c652d18351",
+      "content_sha256": "f26c8c95544f33c15320e4f64bb6246e006f3e2c1ce916ae3fb8f496725fdb19",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "48912d56-4d41-52c0-91e9-67351fcbf6e7",
+      "team": "CS",
+      "page_id": "teamres-58539",
+      "page_url": "https://www.notion.so/3362b4283b0081db8f99d8797a6791c0",
+      "content_sha256": "face3c807634febe705775b4e92ccac625edd0e7a06a8404d4bc0c49bc92c921",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "fd7efd21-f19c-567e-b280-9cdd2baa0f7c",
+      "team": "CS",
+      "page_id": "teamres-58540",
+      "page_url": "https://www.notion.so/3362b4283b0081e38356eba04017c016",
+      "content_sha256": "31dc1cdbe62563c1ea15493d96d45184bdd032d91b5080d4c379b1dd5d764f0f",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "85559655-ea61-5238-8fd7-b7906d2ee4a3",
+      "team": "CS",
+      "page_id": "teamres-58492",
+      "page_url": "https://www.notion.so/3362b4283b00814cb068f676f1125d22",
+      "content_sha256": "db7989557b1635387e6f4443d87f9c382355fdd94d15fcb22907bdb940b91de8",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "d2dbbe3e-3ede-57ff-8fe7-e48c299b98ee",
+      "team": "CS",
+      "page_id": "teamres-58493",
+      "page_url": "https://www.notion.so/3362b4283b00811fafaeefa9b51e74a7",
+      "content_sha256": "f7c9eab39949dae676f833c39035e2f9c42c24e8288cfb4b5711180e903afb45",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "0db478a5-0b75-5b01-a066-9d7b16e25972",
+      "team": "CS",
+      "page_id": "teamres-58494",
+      "page_url": "https://www.notion.so/3362b4283b00812fbd3add716027241c",
+      "content_sha256": "bcb3e29c2c087e755f88094cb6541062562b38dab70a72ef9d6e3087f0ef7e17",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ba3a954e-7114-5f73-b001-c944dcf9d96b",
+      "team": "CS",
+      "page_id": "teamres-58495",
+      "page_url": "https://www.notion.so/3362b4283b0081988ea3c76ab5ff91de",
+      "content_sha256": "3550d6b6e06729a9b2dbb88304679fcdc228d06c6b7998c079510d57aea014b7",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "1c89898d-9428-535f-b54c-ac230dde507f",
+      "team": "CS",
+      "page_id": "teamres-58496",
+      "page_url": "https://www.notion.so/3362b4283b00819b9fadd7cb4ffee817",
+      "content_sha256": "0d240bd92f235e63724463068466679813017fa09061dd246d087d734a3aaea7",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "6b2532e6-1452-515a-86e2-8f96bc2662ac",
+      "team": "CS",
+      "page_id": "teamres-58497",
+      "page_url": "https://www.notion.so/3362b4283b0081bbb6dee89251d1e304",
+      "content_sha256": "fe12f1fd9eee36175efc69b1a704bc5a3f02fd0070290b06b0cb866b04bd3c87",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "19251e9f-1da2-58b9-a40b-0260906c82fa",
+      "team": "CS",
+      "page_id": "teamres-58498",
+      "page_url": "https://www.notion.so/3362b4283b00815f930efb78b46ec628",
+      "content_sha256": "44e0064b15d29e854e90e990754d197365606bdb7b5b005c37968bea71bbad10",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "6d339dea-6b34-521e-b56b-fc3ab8f14ff3",
+      "team": "CS",
+      "page_id": "teamres-58526",
+      "page_url": "https://www.notion.so/3362b4283b008139a740c855e69d546d",
+      "content_sha256": "5a64f89813c322f981ddb62d8a7a97357177a75b2d0c2eab6ee231661935e773",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "73cf88e7-f28a-5493-91ce-15f883af2527",
+      "team": "CS",
+      "page_id": "teamres-58527",
+      "page_url": "https://www.notion.so/3362b4283b0081da87f1f3daa513494b",
+      "content_sha256": "3423ec34fde0c050acd25fed208b5237412b39ebf9ae41711ee0b6b9c212f049",
+      "last_edited_time": "2026-09-18 01:01:09"
+    },
+    {
+      "id": "ba2c103a-25d6-5e39-9e63-9f83ca308afa",
+      "team": "CS",
+      "page_id": "teamres-58528",
+      "page_url": "https://www.notion.so/3362b4283b0081f4af1aeb3152fac2b7",
+      "content_sha256": "e1b4aa2e256f1affaca3a05517cb58846db6b9afb4fb2a721ee9ccad1ee486d0",
+      "last_edited_time": "2026-09-18 01:01:09"
+    }
+  ]
+}

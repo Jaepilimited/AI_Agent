@@ -1,0 +1,390 @@
+{
+  "communities": {
+    "0": [
+      "main_rationale_266",
+      "main_warmup_notion_titles",
+      "notion_agent_notionagent",
+      "notion_agent_notionagent_block_to_text",
+      "notion_agent_notionagent_close_client",
+      "notion_agent_notionagent_collect_sheet_urls",
+      "notion_agent_notionagent_extract_google_sheet_url",
+      "notion_agent_notionagent_extract_search_term",
+      "notion_agent_notionagent_fetch_blocks",
+      "notion_agent_notionagent_fetch_title_with_fallback",
+      "notion_agent_notionagent_format_properties",
+      "notion_agent_notionagent_generate_answer",
+      "notion_agent_notionagent_get_client",
+      "notion_agent_notionagent_get_entry_title",
+      "notion_agent_notionagent_init",
+      "notion_agent_notionagent_llm_select_pages",
+      "notion_agent_notionagent_read_blocks_recursive",
+      "notion_agent_notionagent_read_database_entries",
+      "notion_agent_notionagent_read_page_blocks",
+      "notion_agent_notionagent_read_page_fallback",
+      "notion_agent_notionagent_read_page_properties",
+      "notion_agent_notionagent_request_with_retry",
+      "notion_agent_notionagent_run",
+      "notion_agent_notionagent_search_pages",
+      "notion_agent_notionagent_warm_up",
+      "notion_agent_rationale_1012",
+      "notion_agent_rationale_102",
+      "notion_agent_rationale_114",
+      "notion_agent_rationale_153",
+      "notion_agent_rationale_235",
+      "notion_agent_rationale_327",
+      "notion_agent_rationale_379",
+      "notion_agent_rationale_406",
+      "notion_agent_rationale_474",
+      "notion_agent_rationale_527",
+      "notion_agent_rationale_582",
+      "notion_agent_rationale_613",
+      "notion_agent_rationale_637",
+      "notion_agent_rationale_681",
+      "notion_agent_rationale_774",
+      "notion_agent_rationale_853",
+      "notion_agent_rationale_864",
+      "notion_agent_rationale_915",
+      "notion_agent_rationale_92",
+      "notion_agent_rationale_939",
+      "notion_agent_rationale_969"
+    ],
+    "1": [
+      "app_api_routes_py",
+      "main_get_scheduler",
+      "routes_chat_completions",
+      "routes_dashboard",
+      "routes_estimate_tokens",
+      "routes_get_announcement",
+      "routes_get_orchestrator",
+      "routes_health_check",
+      "routes_list_datasources",
+      "routes_list_models",
+      "routes_maintenance_status",
+      "routes_orchestrator",
+      "routes_rationale_1",
+      "routes_rationale_215",
+      "routes_rationale_355",
+      "routes_rationale_369",
+      "routes_rationale_37",
+      "routes_rationale_390",
+      "routes_rationale_398",
+      "routes_rationale_405",
+      "routes_rationale_413",
+      "routes_rationale_425",
+      "routes_rationale_441",
+      "routes_rationale_456",
+      "routes_rationale_464",
+      "routes_rationale_60",
+      "routes_rationale_66",
+      "routes_rationale_75",
+      "routes_safety_status",
+      "routes_save_roadmap",
+      "routes_scheduler_run_now",
+      "routes_scheduler_status",
+      "routes_set_announcement",
+      "routes_stream_response",
+      "routes_toggle_maintenance"
+    ],
+    "2": [
+      "app_main_py",
+      "main_apscheduler",
+      "main_create_app",
+      "main_ensure_admin",
+      "main_ensure_audit_table",
+      "main_extract_wiki_hourly",
+      "main_lifespan",
+      "main_qdrant_pipeline_job",
+      "main_rationale_1",
+      "main_rationale_201",
+      "main_rationale_232",
+      "main_rationale_278",
+      "main_rationale_326",
+      "main_rationale_340",
+      "main_rationale_350",
+      "main_rationale_361",
+      "main_rationale_394",
+      "main_rationale_407",
+      "main_rationale_417",
+      "main_rationale_432",
+      "main_rationale_441",
+      "main_rationale_64",
+      "main_set_scheduler",
+      "main_start_maintenance_monitor",
+      "main_sync_team_resources_job",
+      "main_warmup_bq_schema",
+      "main_warmup_cs_db",
+      "main_warmup_face_search",
+      "main_warmup_llm_clients",
+      "main_warmup_qdrant",
+      "main_warmup_qdrant_cache",
+      "main_warmup_team_resources",
+      "routes_scheduler_run"
+    ],
+    "3": [
+      "notion_qdrant_pipeline_chunk_text",
+      "notion_qdrant_pipeline_crawl_database_pages",
+      "notion_qdrant_pipeline_crawl_page_blocks",
+      "notion_qdrant_pipeline_crawl_target",
+      "notion_qdrant_pipeline_embed_texts",
+      "notion_qdrant_pipeline_get_local_page_map",
+      "notion_qdrant_pipeline_main",
+      "notion_qdrant_pipeline_notion_headers",
+      "notion_qdrant_pipeline_qdrant_headers",
+      "notion_qdrant_pipeline_rationale_1",
+      "notion_qdrant_pipeline_rationale_104",
+      "notion_qdrant_pipeline_rationale_140",
+      "notion_qdrant_pipeline_rationale_174",
+      "notion_qdrant_pipeline_rationale_214",
+      "notion_qdrant_pipeline_rationale_231",
+      "notion_qdrant_pipeline_rationale_284",
+      "notion_qdrant_pipeline_rationale_331",
+      "notion_qdrant_pipeline_rationale_432",
+      "notion_qdrant_pipeline_rationale_81",
+      "notion_qdrant_pipeline_run_incremental_sync",
+      "notion_qdrant_pipeline_run_pipeline",
+      "notion_qdrant_pipeline_update_local_json",
+      "notion_qdrant_pipeline_upload_to_qdrant_cloud",
+      "scripts_notion_qdrant_pipeline_py"
+    ],
+    "4": [
+      "app_agents_qdrant_agent_py",
+      "gemini_embedding_model",
+      "pipeline_crawl_target",
+      "pipeline_database_targets",
+      "pipeline_embed_texts",
+      "pipeline_local_json_path",
+      "pipeline_run_incremental_sync",
+      "pipeline_run_pipeline",
+      "pipeline_update_local_json",
+      "pipeline_upload_to_qdrant_cloud",
+      "qdrant_agent_embed_query",
+      "qdrant_agent_format_results",
+      "qdrant_agent_load_store",
+      "qdrant_agent_local_json",
+      "qdrant_agent_rationale_1",
+      "qdrant_agent_rationale_84",
+      "qdrant_agent_reload_vectors",
+      "qdrant_agent_run",
+      "qdrant_agent_search",
+      "qdrant_agent_team_map",
+      "qdrant_cloud_collection",
+      "qdrant_sync_database_targets",
+      "qdrant_sync_sync_source",
+      "qdrant_sync_upsert"
+    ],
+    "5": [
+      "crawl_notion_pages_get_pages",
+      "crawl_notion_pages_playwright",
+      "crawl_notion_pages_update_desc",
+      "gemini_flash_client",
+      "main_warmup_notion",
+      "notion_agent_NotionAgent",
+      "notion_agent_allowed_pages",
+      "notion_agent_generate_answer",
+      "notion_agent_llm_select",
+      "notion_agent_page_titles_cache",
+      "notion_agent_read_blocks",
+      "notion_agent_read_database",
+      "notion_agent_retry",
+      "notion_agent_search_pages",
+      "notion_agent_warmup",
+      "notion_api_v1",
+      "notion_mcp_client",
+      "notion_mcp_get_tools",
+      "routes_rationale_470",
+      "routes_readiness_check"
+    ],
+    "6": [
+      "qdrant_sync_notion_chunk_text",
+      "qdrant_sync_notion_crawl_database_pages",
+      "qdrant_sync_notion_crawl_page_blocks",
+      "qdrant_sync_notion_delete_source_points",
+      "qdrant_sync_notion_embed_texts",
+      "qdrant_sync_notion_get_source_count",
+      "qdrant_sync_notion_main",
+      "qdrant_sync_notion_notion_headers",
+      "qdrant_sync_notion_qdrant_headers",
+      "qdrant_sync_notion_rationale_1",
+      "qdrant_sync_notion_rationale_116",
+      "qdrant_sync_notion_rationale_161",
+      "qdrant_sync_notion_rationale_221",
+      "qdrant_sync_notion_rationale_81",
+      "qdrant_sync_notion_settings",
+      "qdrant_sync_notion_sync_source",
+      "qdrant_sync_notion_upsert_to_qdrant",
+      "scripts_qdrant_sync_notion_py"
+    ],
+    "7": [
+      "scripts_upload_to_notion_py",
+      "upload_to_notion_main",
+      "upload_to_notion_md_to_blocks",
+      "upload_to_notion_md_to_rich_text",
+      "upload_to_notion_rationale_168",
+      "upload_to_notion_rationale_42",
+      "upload_to_notion_rationale_62",
+      "upload_to_notion_update_log_page",
+      "upload_to_notion_upload_log",
+      "upload_to_notion_upload_update_log"
+    ],
+    "8": [
+      "crawl_notion_pages_crawl_page_playwright",
+      "crawl_notion_pages_get_pages_to_crawl",
+      "crawl_notion_pages_main",
+      "crawl_notion_pages_rationale_1",
+      "crawl_notion_pages_rationale_151",
+      "crawl_notion_pages_rationale_26",
+      "crawl_notion_pages_rationale_48",
+      "crawl_notion_pages_update_description",
+      "scripts_crawl_notion_pages_py"
+    ],
+    "9": [
+      "app_agents_notion_agent_py",
+      "notion_agent_extract_title_from_api",
+      "notion_agent_format_uuid",
+      "notion_agent_rationale_1",
+      "notion_agent_rationale_53"
+    ],
+    "10": [
+      "app_mcp_notion_mcp_py",
+      "notion_mcp_get_notion_mcp_tools",
+      "notion_mcp_rationale_1",
+      "notion_mcp_rationale_12"
+    ],
+    "11": [
+      "embed_graph_json",
+      "embed_graph_script",
+      "embed_graph_viewer"
+    ],
+    "12": [
+      "notion_agent_rationale_349"
+    ],
+    "13": [
+      "knowledge_map_embed_graph_py"
+    ]
+  },
+  "cohesion": {
+    "0": 0.07,
+    "1": 0.07,
+    "2": 0.06,
+    "3": 0.14,
+    "4": 0.12,
+    "5": 0.13,
+    "6": 0.21,
+    "7": 0.27,
+    "8": 0.31,
+    "9": 0.4,
+    "10": 0.5,
+    "11": 0.67,
+    "12": 1.0,
+    "13": 1.0
+  },
+  "gods": [
+    {
+      "id": "notion_agent_notionagent",
+      "label": "NotionAgent",
+      "degree": 39
+    },
+    {
+      "id": "qdrant_sync_notion_sync_source",
+      "label": "sync_source()",
+      "degree": 10
+    },
+    {
+      "id": "notion_agent_NotionAgent",
+      "label": "NotionAgent Class",
+      "degree": 9
+    },
+    {
+      "id": "notion_qdrant_pipeline_crawl_target",
+      "label": "crawl_target()",
+      "degree": 7
+    },
+    {
+      "id": "notion_qdrant_pipeline_run_incremental_sync",
+      "label": "run_incremental_sync()",
+      "degree": 7
+    },
+    {
+      "id": "notion_api_v1",
+      "label": "Notion REST API v1 (api.notion.com)",
+      "degree": 7
+    },
+    {
+      "id": "qdrant_agent_run",
+      "label": "run()",
+      "degree": 6
+    },
+    {
+      "id": "routes_chat_completions",
+      "label": "chat_completions()",
+      "degree": 6
+    },
+    {
+      "id": "qdrant_agent_reload_vectors",
+      "label": "reload_vectors()",
+      "degree": 5
+    },
+    {
+      "id": "qdrant_agent_search",
+      "label": "_search()",
+      "degree": 5
+    }
+  ],
+  "surprises": [
+    {
+      "source": "SKIN1004 Enterprise AI - FastAPI application entry point.  Single server on po",
+      "target": "NotionAgent",
+      "source_files": [
+        "app\\main.py",
+        "app\\agents\\notion_agent.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `SKIN1004 Enterprise AI - FastAPI application entry point.  Single server on po` unexpectedly reaches hub `NotionAgent`"
+    },
+    {
+      "source": "Create and configure the FastAPI application.",
+      "target": "NotionAgent",
+      "source_files": [
+        "app\\main.py",
+        "app\\agents\\notion_agent.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `Create and configure the FastAPI application.` unexpectedly reaches hub `NotionAgent`"
+    },
+    {
+      "source": "Ensure jeffrey@skin1004korea.com is admin with all models in MariaDB.",
+      "target": "NotionAgent",
+      "source_files": [
+        "app\\main.py",
+        "app\\agents\\notion_agent.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `Ensure jeffrey@skin1004korea.com is admin with all models in MariaDB.` unexpectedly reaches hub `NotionAgent`"
+    },
+    {
+      "source": "Create audit_logs table if it doesn't exist (MariaDB or SQLite).",
+      "target": "NotionAgent",
+      "source_files": [
+        "app\\main.py",
+        "app\\agents\\notion_agent.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `Create audit_logs table if it doesn't exist (MariaDB or SQLite).` unexpectedly reaches hub `NotionAgent`"
+    },
+    {
+      "source": "Pre-load BigQuery schemas (sales + all marketing tables) into per-table cache at",
+      "target": "NotionAgent",
+      "source_files": [
+        "app\\main.py",
+        "app\\agents\\notion_agent.py"
+      ],
+      "confidence": "INFERRED",
+      "relation": "uses",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `Pre-load BigQuery schemas (sales + all marketing tables) into per-table cache at` unexpectedly reaches hub `NotionAgent`"
+    }
+  ]
+}

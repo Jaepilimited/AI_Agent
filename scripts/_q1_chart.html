@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>2026 Q1 국가별 매출 비율</title>
+<style>
+  body { background: #1a1a2e; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: 'Segoe UI', sans-serif; }
+  .container { text-align: center; color: #fff; }
+  h2 { margin-bottom: 8px; font-size: 20px; color: #f0f0f0; }
+  p { color: #aaa; font-size: 13px; margin: 0 0 24px; }
+  .chart-wrap { position: relative; width: 480px; height: 480px; margin: 0 auto; }
+  canvas { width: 100% !important; height: 100% !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>📊 2026년 1분기 국가별 매출 비율</h2>
+  <p>SKIN1004 전체 브랜드 합산 (2026.01~03)</p>
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+<script>
+const data = {
+  labels: ['기타', '미국', '일본', '중화권', '국내'],
+  datasets: [{
+    data: [1564.8, 420.5, 123.7, 109.9, 64.7],
+    backgroundColor: ['#6c757d', '#4e9af1', '#f87c56', '#f5c842', '#56c4a0'],
+    borderColor: '#1a1a2e',
+    borderWidth: 3,
+    hoverOffset: 12
+  }]
+};
+
+const total = 2283.6;
+
+const centerTextPlugin = {
+  id: 'centerText',
+  afterDraw(chart) {
+    const { ctx, chartArea: { left, top, right, bottom } } = chart;
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#aaa';
+    ctx.font = '14px Segoe UI';
+    ctx.fillText('총 매출', cx, cy - 16);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px Segoe UI';
+    ctx.fillText(total.toFixed(1) + '억', cx, cy + 12);
+    ctx.restore();
+  }
+};
+
+new Chart(document.getElementById('chart'), {
+  type: 'doughnut',
+  data,
+  plugins: [centerTextPlugin],
+  options: {
+    cutout: '62%',
+    layout: { padding: 20 },
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: '#ddd',
+          padding: 16,
+          font: { size: 13 },
+          generateLabels(chart) {
+            const ds = chart.data.datasets[0];
+            return chart.data.labels.map((label, i) => {
+              const val = ds.data[i];
+              const pct = (val / total * 100).toFixed(1);
+              return {
+                text: `${label}  ${pct}%  (${val}억)`,
+                fillStyle: ds.backgroundColor[i],
+                strokeStyle: ds.borderColor,
+                lineWidth: 0,
+                index: i
+              };
+            });
+          }
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label(ctx) {
+            const val = ctx.parsed;
+            const pct = (val / total * 100).toFixed(1);
+            return ` ${ctx.label}: ${val}억 (${pct}%)`;
+          }
+        }
+      },
+      datalabels: false
+    },
+    animation: { duration: 800 }
+  }
+});
+</script>
+</body>
+</html>

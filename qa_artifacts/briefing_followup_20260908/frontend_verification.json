@@ -1,0 +1,40 @@
+{
+  "scope": "briefing mail scroll layout",
+  "changed_source_files": [
+    "app/frontend/personal-briefing.js",
+    "app/static/style.css",
+    "tests/frontend/test_briefing_document.py"
+  ],
+  "tests": [
+    {
+      "command": "python -m pytest tests/frontend/test_briefing_document.py tests/frontend/test_personal_briefing_welcome.py -q",
+      "result": "58 passed in 16.25s",
+      "source_state": "includes explicit observer cleanup before document replacement and skeleton rendering"
+    },
+    {
+      "command": "python -m pytest tests/frontend/test_briefing_document.py -q -k 'long_mail_uses or mail_height_tracks or short_mail_keeps or mobile_mail_stays or releases_its_resize_observer'",
+      "result": "6 passed, 36 deselected in 3.22s",
+      "source_state": "final test helper waits for browser layout and observer delivery before geometry assertions"
+    }
+  ],
+  "syntax_check": "node --check app/frontend/personal-briefing.js: exit 0",
+  "diff_check": "git diff --check -- app/frontend/personal-briefing.js app/static/style.css tests/frontend/test_briefing_document.py: exit 0",
+  "red_reproductions": [
+    "Original fixed 420px cap: long-mail height and resize/reopen cases failed; mobile and short-mail controls passed.",
+    "Callback-only observer cleanup: collapsed refresh and invalidate retained the old native observer; both regressions failed before explicit cleanup."
+  ],
+  "layout": {
+    "desktop_mail_before_px": 420,
+    "desktop_mail_after_px": 667,
+    "desktop_right_px": 666.4375,
+    "short_mail_before_and_after_px": 213.578125,
+    "mail_rows_preserved": 24,
+    "total_mail_scroll_height_px": 2478
+  },
+  "screenshots": [
+    "desktop_before.png", "desktop_after.png",
+    "mobile_before.png", "mobile_after.png",
+    "short_mail_before.png", "short_mail_after.png"
+  ],
+  "data": "Synthetic regression fixture rendered with the actual frontend files; no production credentials accessed."
+}

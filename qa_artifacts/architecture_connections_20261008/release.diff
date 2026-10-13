@@ -1,0 +1,274 @@
+--- production/app/frontend/chat.html
++++ candidate/app/frontend/chat.html
+@@ -476,11 +476,15 @@
+         <div class="flow-main">
+           <div id="flow-overview"></div>
+           <div class="flow-toolbar" id="flow-graph-controls" hidden>
+-            <button class="admin-btn-secondary" id="btn-flow-collapse">자세히 보기</button>
+-            <button class="admin-btn-secondary" id="btn-flow-fit">전체 보기</button>
++            <div class="flow-view-switch" role="group" aria-label="연결 그래프 상세 수준">
++              <button type="button" id="btn-flow-core" aria-pressed="true">핵심 연결</button>
++              <button type="button" id="btn-flow-collapse" aria-pressed="false">전체 노드</button>
++            </div>
++            <button class="admin-btn-secondary" id="btn-flow-reset">전체 흐름</button>
++            <button class="admin-btn-secondary" id="btn-flow-fit" hidden>화면에 맞춤</button>
+             <button class="admin-btn-secondary" id="btn-flow-zoom-in" aria-label="확대">+</button>
+             <button class="admin-btn-secondary" id="btn-flow-zoom-out" aria-label="축소">−</button>
+-            <span class="flow-legend">
++            <span class="flow-legend" id="flow-raw-legend" hidden>
+               <span><i class="flow-dot flow-dot-io"></i>입·출력</span>
+               <span><i class="flow-dot flow-dot-main"></i>관문·라우터</span>
+               <span><i class="flow-dot flow-dot-route"></i>경로</span>
+--- production/app/frontend/chat.js
++++ candidate/app/frontend/chat.js
+@@ -5705,6 +5705,8 @@
+   var _flowSelected = null;
+   var _flowReturnFocus = null;
+   var _flowRequest = 0;
++  var _flowMap = null;
++  var _flowGroupSelected = null;
+   var _FLOW_HIDDEN_GROUPS = { sub: 1, branch: 1 };
+ 
+   // Categories describe responsibilities, not an invented execution sequence.
+@@ -5754,6 +5756,7 @@
+ 
+   function setFlowView(view) {
+     _flowView = view;
++    document.getElementById("tab-flow").classList.toggle("flow-network-view", view === "network");
+     hideFlowDetail();
+     document.getElementById("flow-overview").hidden = view !== "overview";
+     document.getElementById("flow-canvas").hidden = view !== "network";
+@@ -5801,11 +5804,132 @@
+     return out;
+   }
+ 
++  // Presentation groups retain every original node and edge; no path contraction.
++  function _flowMapGroup(n) {
++    if (n.group === "llm" || n.id.indexOf("llm.") === 0) return "models";
++    if (n.id === "response") return "response";
++    if (n.id === "input") return "input";
++    if (["alias_expand", "at_parse"].indexOf(n.id) !== -1 || n.id.indexOf("intercept.") === 0) return "gates";
++    if (["source_gate", "source_pin", "followup"].indexOf(n.id) !== -1 || /^(router|route_filter)\./.test(n.id)) return "routing";
++    if (n.id.indexOf("multi_prefix.") === 0) return "parallel";
++    if (n.id === "route.bigquery" || n.parent === "route.bigquery" || n.id === "answer_check") return "data";
++    if (/^route\.(notion|cs|gws|multi)$/.test(n.id)) return "knowledge";
++    if (/^route\.(inventory|awards|model_rights|report)$/.test(n.id)) return "specialist";
++    if (n.id === "route.direct") return "direct";
++    return "other";
++  }
++
++  function _flowAggregate(graph) {
++    var specs = [
++      ["input", "질문 입력", "사용자 요청", 22, 138],
++      ["gates", "질문 정리·사전 처리", "별칭 · 명령 · 확정 규칙", 238, 138],
++      ["routing", "경로 선택", "의도 분류 · 소스 확인", 454, 138],
++      ["parallel", "병렬 분기", "여러 요청의 개별 처리", 454, 260],
++      ["data", "데이터 분석", "SQL · 실행 · 답변 검증", 670, 42],
++      ["knowledge", "지식과 업무", "문서 · CS · 개인 업무", 670, 126],
++      ["specialist", "전문 처리", "재고 · 수상 · 권리 · 보고", 670, 210],
++      ["direct", "일반 대화", "직접 답변 경로", 670, 294],
++      ["response", "최종 응답", "사용자에게 답변 전달", 886, 138],
++      ["models", "모델 호출과 전송", "현재 사용 / 비활성 경로는 상세에서 확인", 454, 408],
++      ["other", "기타 처리", "추가된 원본 노드", 238, 260]
++    ];
++    var groups = specs.map(function(s) { return { id: s[0], label: s[1], description: s[2], x: s[3], y: s[4], width: s[0] === "models" ? 386 : 170, members: [], internal: [] }; });
++    var byGroup = {}, membership = {}, pairs = {};
++    groups.forEach(function(g) { byGroup[g.id] = g; });
++    graph.nodes.forEach(function(n) { var id = _flowMapGroup(n); membership[n.id] = id; byGroup[id].members.push(n); });
++    graph.edges.forEach(function(edge) {
++      var src = membership[edge.src], dst = membership[edge.dst];
++      if (!src || !dst) return;
++      if (src === dst) { byGroup[src].internal.push(edge); return; }
++      var key = src + ":" + dst;
++      if (!pairs[key]) pairs[key] = { src: src, dst: dst, originals: [] };
++      pairs[key].originals.push(edge);
++    });
++    return { groups: groups.filter(function(g) { return g.members.length; }), byGroup: byGroup, membership: membership, edges: Object.keys(pairs).map(function(k) { return pairs[k]; }) };
++  }
++
++  function highlightFlowMap(id) {
++    var map = document.querySelector(".flow-map");
++    if (!map || !_flowMap) return;
++    var related = {};
++    if (id) related[id] = true;
++    map.querySelectorAll(".flow-map-edge").forEach(function(edge) {
++      var incident = edge.dataset.src === id || edge.dataset.dst === id;
++      edge.classList.toggle("is-active", !!id && incident);
++      edge.classList.toggle("is-muted", !!id && !incident);
++      if (incident) { related[edge.dataset.src] = true; related[edge.dataset.dst] = true; }
++    });
++    map.querySelectorAll("[data-flow-group]").forEach(function(button) {
++      button.classList.toggle("is-muted", !!id && !related[button.dataset.flowGroup]);
++      button.classList.toggle("is-focused", button.dataset.flowGroup === id);
++      button.setAttribute("aria-pressed", String(button.dataset.flowGroup === _flowGroupSelected));
++    });
++    var status = document.getElementById("flow-map-status");
++    if (status) status.textContent = id ? _flowMap.byGroup[id].label + " · " + _flowMap.edges.filter(function(e) { return e.src === id || e.dst === id; }).reduce(function(sum, e) { return sum + e.originals.length; }, 0) + "개의 원본 외부 연결 · 선택하면 상세 보기" : "그룹에 마우스를 올리거나 Tab 키로 이동해 연결을 따라가세요.";
++  }
++
++  function renderFlowMap(container) {
++    _flowMap = _flowAggregate(_flowGraph);
++    var map = _flowMap;
++    var svg = "<svg class='flow-map-lines' width='1080' height='500' viewBox='0 0 1080 500' aria-hidden='true'><defs><marker id='flow-map-arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M 0 0 L 10 5 L 0 10 z' fill='context-stroke'/></marker></defs>";
++    map.edges.forEach(function(e, i) {
++      var a = map.byGroup[e.src], b = map.byGroup[e.dst], sx = a.x + a.width + 3, sy = a.y + 37, tx = b.x - 8, ty = b.y + 37, path;
++      var support = e.src === "models" || e.dst === "models";
++      if (support) {
++        var lane = 381 + (i % 3) * 6;
++        path = "M" + sx + "," + sy + " H" + (sx + 10) + " V" + lane + " H" + (tx - 8) + " V" + ty + " H" + tx;
++      } else if (b.x - a.x > 240 || b.x <= a.x) {
++        var top = 29 + (i % 3) * 4;
++        path = "M" + sx + "," + sy + " H" + (sx + 10) + " V" + top + " H" + (tx - 8) + " V" + ty + " H" + tx;
++      } else {
++        var mid = (sx + tx) / 2;
++        path = "M" + sx + "," + sy + " C" + mid + "," + sy + " " + mid + "," + ty + " " + tx + "," + ty;
++      }
++      svg += "<g class='flow-map-edge" + (support ? " is-support" : "") + "' data-src='" + e.src + "' data-dst='" + e.dst + "' data-count='" + e.originals.length + "'><title>" + escapeHtml(a.label + " → " + b.label + " · 원본 연결 " + e.originals.length + "개") + "</title><path d='" + path + "' marker-end='url(#flow-map-arrow)'/></g>";
++    });
++    svg += "</svg>";
++    container.innerHTML = "<div class='flow-map-intro'><div><strong>핵심 연결 지도</strong><span>" + map.groups.length + "개 역할 그룹 · " + _flowGraph.nodes.length + "개 원본 노드</span></div><p>화살표는 그룹 사이의 실제 연결을 묶은 것입니다. 모든 질문이 같은 순서로 실행되지는 않습니다.</p></div><div class='flow-map-scroll' tabindex='0' role='region' aria-label='연결 지도. 좁은 화면에서는 좌우로 스크롤하세요.'><div class='flow-map'>" +
++      [[22,"입력"],[238,"사전 처리"],[454,"분류와 분기"],[670,"실행 경로"],[886,"응답"]].map(function(s) { return "<span class='flow-map-caption' style='left:" + s[0] + "px'>" + s[1] + "</span>"; }).join("") +
++      "<div class='flow-map-support-label'>MODEL LAYER <span>별도 호출 구조</span></div>" + svg + map.groups.map(function(g) {
++        return "<button type='button' class='flow-map-node flow-map-" + g.id + "' data-flow-group='" + g.id + "' data-member-ids='" + escapeHtml(JSON.stringify(g.members.map(function(n) { return n.id; }))) + "' data-internal-count='" + g.internal.length + "' aria-pressed='false' aria-label='" + escapeHtml(g.label + ", 원본 노드 " + g.members.length + "개, 내부 연결 " + g.internal.length + "개. 상세 보기") + "' style='left:" + g.x + "px;top:" + g.y + "px;width:" + g.width + "px'><span class='flow-map-node-head'><strong>" + g.label + "</strong><span>" + g.members.length + "</span></span><span class='flow-map-description'>" + g.description + "</span><span class='flow-map-node-foot'>내부 연결 " + g.internal.length + "개 <span aria-hidden='true'>↗</span></span></button>";
++      }).join("") + "</div></div><div class='flow-map-footer'><span id='flow-map-status' role='status'>그룹에 마우스를 올리거나 Tab 키로 이동해 연결을 따라가세요.</span><span class='flow-map-scroll-hint'>좁은 화면에서는 좌우로 스크롤 ↔</span></div>";
++    container.querySelectorAll("[data-flow-group]").forEach(function(button) {
++      var id = button.dataset.flowGroup;
++      button.addEventListener("mouseenter", function() { highlightFlowMap(id); });
++      button.addEventListener("mouseleave", function() { highlightFlowMap(_flowGroupSelected); });
++      button.addEventListener("focus", function() { highlightFlowMap(id); });
++      button.addEventListener("blur", function() { highlightFlowMap(_flowGroupSelected); });
++      button.addEventListener("click", function() { _flowReturnFocus = button; showFlowGroupDetail(id); });
++    });
++  }
++
++  function showFlowGroupDetail(id) {
++    var g = _flowMap.byGroup[id], detail = document.getElementById("flow-detail");
++    _flowGroupSelected = id;
++    highlightFlowMap(id);
++    detail.innerHTML = "<button type='button' class='flow-close' aria-label='닫기'>×</button><div class='flow-detail-id'>역할별 묶음 · 원본 연결 기준</div><h3>" + g.label + "</h3><p>노드 " + g.members.length + "개 · 내부 연결 " + g.internal.length + "개</p><section class='flow-connections'><h4>포함된 원본 노드</h4>" + g.members.map(function(n) { return "<button type='button' data-flow-member='" + _flowGraph.nodes.indexOf(n) + "'><strong>" + escapeHtml(n.label) + "</strong><span>" + escapeHtml(n.id) + (n.active === false ? " · 비활성" : n.active === true ? " · 현재 사용" : "") + "</span></button>"; }).join("") + "</section>";
++    [["들어오는 원본 연결", "dst", "src"],["나가는 원본 연결", "src", "dst"]].forEach(function(direction) {
++      var edges = _flowGraph.edges.filter(function(e) { return _flowMap.membership[e[direction[1]]] === id && _flowMap.membership[e[direction[2]]] !== id; });
++      detail.innerHTML += "<section class='flow-connections'><h4>" + direction[0] + " · " + edges.length + "</h4>" + (edges.length ? edges.map(function(e) { return "<p><strong>" + escapeHtml(e.src) + " → " + escapeHtml(e.dst) + "</strong><br>" + escapeHtml(e.label || (e.conditional ? "조건부 연결" : "직접 연결")) + "</p>"; }).join("") : "<p>등록된 연결 없음</p>") + "</section>";
++    });
++    detail.querySelectorAll("[data-flow-member]").forEach(function(button) { button.addEventListener("click", function() { showFlowDetail(_flowGraph.nodes[Number(button.dataset.flowMember)]); }); });
++    var close = detail.querySelector(".flow-close");
++    close.addEventListener("click", function() { hideFlowDetail(); if (_flowReturnFocus && _flowReturnFocus.isConnected) _flowReturnFocus.focus(); });
++    detail.onkeydown = function(event) { if (event.key === "Escape") { event.preventDefault(); close.click(); } };
++    detail.hidden = false;
++    detail.focus({ preventScroll: true });
++  }
++
+   function renderFlowCanvas() {
+     if (!_flowGraph) return;
+     var container = document.getElementById("flow-canvas");
+     if (!container) return;
+     if (_flowNetwork) { _flowNetwork.destroy(); _flowNetwork = null; }
++    ["btn-flow-fit", "btn-flow-zoom-in", "btn-flow-zoom-out", "flow-raw-legend"].forEach(function(id) { document.getElementById(id).hidden = _flowCollapsed; });
++    document.getElementById("btn-flow-core").setAttribute("aria-pressed", String(_flowCollapsed));
++    document.getElementById("btn-flow-collapse").setAttribute("aria-pressed", String(!_flowCollapsed));
++    container.classList.toggle("flow-summary-canvas", _flowCollapsed);
++    if (_flowCollapsed) { renderFlowMap(container); return; }
+     if (typeof vis === "undefined") {
+       container.innerHTML = "<div class='flow-state'>연결 그래프 도구를 불러오지 못했습니다. 구조 한눈에 보기에서 연결을 확인할 수 있습니다.</div>";
+       return;
+@@ -5883,6 +6007,8 @@
+     var detail = document.getElementById("flow-detail");
+     if (detail) detail.hidden = true;
+     _flowSelected = null;
++    _flowGroupSelected = null;
++    highlightFlowMap(null);
+     document.querySelectorAll(".flow-node[aria-pressed='true']").forEach(function(button) { button.setAttribute("aria-pressed", "false"); });
+   }
+ 
+@@ -5910,7 +6036,7 @@
+                + knobs + "</ul>" : "") +
+       (n.has_subgraph ? "<p style='color:var(--text-secondary)'>하위 그래프 있음 "
+                         + "(LangGraph 에서 자동 추출"
+-                        + (_flowCollapsed ? " · '자세히 보기' 에서 펼쳐진다" : "") + ")</p>" : "");
++                        + (_flowCollapsed ? " · '전체 노드'에서 펼쳐집니다" : "") + ")</p>" : "");
+     [ ["들어오는 연결", "dst", "src"], ["나가는 연결", "src", "dst"] ].forEach(function(direction) {
+       var links = _flowGraph.edges.filter(function(edge) { return edge[direction[1]] === n.id; });
+       detail.innerHTML += "<section class='flow-connections'><h4>" + direction[0] + " <span>" + links.length + "</span></h4>" + (links.length ? links.map(function(edge) {
+@@ -5954,7 +6080,7 @@
+         meta.textContent = "노드 " + g.nodes.length + "개 · 연결 " + g.edges.length + "개 · " +
+           (generated && !isNaN(generated.getTime()) ? "서버 생성 " + generated.toLocaleString("ko-KR") : "생성 시각 정보 없음");
+         if (hint) {
+-          hint.textContent = "노드를 선택하면 실행 지점·설정값·실제 연결을 볼 수 있습니다. 연결 그래프의 간략 보기에서는 하위 단계와 병렬 분기를 접어 표시합니다.";
++          hint.textContent = "노드를 선택하면 실행 지점·설정값·실제 연결을 볼 수 있습니다. 핵심 연결은 원본 노드를 역할별로 묶으며, 전체 노드에서 개별 연결을 확인할 수 있습니다.";
+         }
+       })
+       .catch(function(e) {
+@@ -5976,14 +6102,16 @@
+     if (!_flowNetwork) return;
+     _flowNetwork.moveTo({ scale: _flowNetwork.getScale() * factor, animation: { duration: 150 } });
+   }
+-  var _btnFlowCollapse = document.getElementById("btn-flow-collapse");
+-  if (_btnFlowCollapse) {
+-    _btnFlowCollapse.addEventListener("click", function() {
+-      _flowCollapsed = !_flowCollapsed;
+-      _btnFlowCollapse.textContent = _flowCollapsed ? "자세히 보기" : "간략 보기";
+-      renderFlowCanvas();
+-    });
+-  }
++  var _btnFlowCollapse = document.getElementById("btn-flow-collapse");
++  if (_btnFlowCollapse) {
++    _btnFlowCollapse.addEventListener("click", function() {
++      hideFlowDetail();
++      _flowCollapsed = false;
++      renderFlowCanvas();
++    });
++  }
++  document.getElementById("btn-flow-core").addEventListener("click", function() { hideFlowDetail(); _flowCollapsed = true; renderFlowCanvas(); });
++  document.getElementById("btn-flow-reset").addEventListener("click", function() { hideFlowDetail(); if (_flowNetwork) _flowNetwork.unselectAll(); });
+   var _btnFlowFit = document.getElementById("btn-flow-fit");
+   if (_btnFlowFit) {
+     _btnFlowFit.addEventListener("click", function() {
+--- production/app/static/style.css
++++ candidate/app/static/style.css
+@@ -6543,6 +6543,46 @@
+ .flow-connections button strong { font-size: 13px; font-weight: 500; }
+ .flow-connections button span, .flow-connections p { font-size: 12px; color: var(--text-secondary); }
+ .flow-state { padding: 55px 20px; text-align: center; color: var(--text-secondary); font-size: 14px; line-height: 1.8; }
++.flow-network-view .flow-heading h2 { font-size: 21px; margin: 3px 0; }
++.flow-network-view .flow-heading p, .flow-network-view .flow-eyebrow { display: none; }
++.flow-network-view .flow-meta { margin: 5px 0 8px; }
++.flow-network-view .flow-viewbar { padding: 8px 0 0; }
++#tab-flow.flow-network-view .flow-layout { margin-top: 10px; }
++#tab-flow.flow-network-view .flow-main { gap: 8px; }
++#tab-flow.flow-network-view .flow-hint { margin-top: 8px; padding-top: 8px; }
++#tab-flow #flow-canvas.flow-summary-canvas { height: auto; overflow: hidden; }
++.flow-map-intro { padding: 16px 20px 0; }
++.flow-map-intro > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
++.flow-map-intro strong { font-size: 17px; color: var(--text); letter-spacing: -.4px; }
++.flow-map-intro span, .flow-map-intro p { font-size: 14px; color: var(--text-secondary); }
++.flow-map-intro p { margin: 7px 0 0; line-height: 1.6; }
++.flow-map-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
++.flow-map { position: relative; width: 1080px; height: 500px; margin: 0 auto; isolation: isolate; }
++.flow-map-caption { position: absolute; top: 10px; color: var(--text-secondary); font-size: 14px; font-weight: 600; }
++.flow-map-support-label { position: absolute; top: 427px; left: 22px; font-size: 14px; letter-spacing: 1.2px; color: #2b858b; font-weight: 650; }
++.flow-map-support-label span { display: block; margin-top: 6px; letter-spacing: 0; font-weight: 400; color: var(--text-secondary); }
++.flow-map-lines { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
++.flow-map-edge { stroke: #a7a7a2; stroke-width: 1.5; fill: none; transition: opacity .15s; }
++.flow-map-edge.is-support { stroke: #5a9b9d; stroke-dasharray: 5 5; }
++.flow-map-edge.is-active { stroke: #be7538; stroke-width: 2.5; }
++.flow-map-edge.is-support.is-active { stroke: #27878d; }
++.flow-map-edge.is-muted { opacity: .12; }
++.flow-map-node { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 3px; height: 74px; box-sizing: border-box; padding: 8px 10px; text-align: left; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--bg-surface); color: var(--text); font: inherit; cursor: pointer; box-shadow: 0 3px 10px rgba(0,0,0,.035); transition: border-color .15s, opacity .15s, box-shadow .15s; }
++.flow-map-node-head { display: flex; align-items: center; justify-content: space-between; gap: 3px; }
++.flow-map-node-head strong { font-size: 14px; font-weight: 650; line-height: 1.25; white-space: nowrap; letter-spacing: -.6px; }
++.flow-map-node-head > span { min-width: 19px; height: 19px; display: grid; place-items: center; border-radius: 5px; background: var(--bg-elevated); color: var(--text-secondary); font-size: 14px; }
++.flow-map-description { font-size: 14px; color: var(--text-secondary); letter-spacing: -.8px; white-space: nowrap; }
++.flow-map-node-foot { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 14px; line-height: 1.1; }
++.flow-map-routing, .flow-map-data, .flow-map-knowledge, .flow-map-specialist, .flow-map-direct { border-color: #ccad8a; }
++.flow-map-routing { background: color-mix(in srgb, var(--bg-surface) 94%, #c98b4d); }
++.flow-map-models { border-color: #649b9b; background: color-mix(in srgb, var(--bg-surface) 95%, #388f93); }
++.flow-map-node.is-focused { border-color: #b16d30; box-shadow: 0 0 0 3px rgba(190,117,56,.13); }
++.flow-map-models.is-focused { border-color: #27878d; box-shadow: 0 0 0 3px rgba(39,135,141,.13); }
++.flow-map-node.is-muted { opacity: .3; }
++.flow-map-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--border); padding: 11px 20px; color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
++.flow-map-scroll-hint { display: none; }
++@media (max-width: 1180px) { .flow-map-scroll-hint { display: inline; } }
++@media (prefers-reduced-motion: reduce) { .flow-map-node, .flow-map-edge { transition: none; } }
+ #tab-flow .flow-hint { padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--border); color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
+ @media (max-width: 1150px) {
+   .flow-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); }

@@ -1,0 +1,14 @@
+{
+  "app/core/coa_finder.py": {
+    "before": "48279ccf9a735344bd51f4f647af31047ff72d07e814b75ffc14bd5b3f4df3c8",
+    "after": "b1cbd09d31c194b590a25b34cccbfc68c6221b73ed3c2ba12a940aa5ae32fc3c"
+  },
+  "app/api/coa_finder_api.py": {
+    "before": "75e7f1a502f5599130d4c803c37224dd0f1c4e98b4deeaf1de48c8cb3465d6c9",
+    "after": "387ab26033a902e3d4c07a88d38da0e844fab73bce5f084bd557053614375e92"
+  },
+  "app/static/coa_finder.html": {
+    "before": "02e38961ba57fe918308b7e4d9aebbb96a38507abcc664842c1160617647c1aa",
+    "after": "b991b076bca5002ff983d0f6be1139a512ffccf9de401f887d1fa4e2c7c00696"
+  }
+}

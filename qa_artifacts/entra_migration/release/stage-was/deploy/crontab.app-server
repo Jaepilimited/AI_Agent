@@ -1,0 +1,28 @@
+# AI Craver — App Server(10.1.150.105) crontab
+# 적용: crontab deploy/crontab.app-server  (jeffrey 계정)
+# 전제: 앱 경로 /home/jeffrey/AI_Agent, venv /home/jeffrey/AI_Agent/venv
+#
+# 주의:
+# - APScheduler 잡(팀리소스 01:00, 위키추출 매시:15, Qdrant 05:00, 품질 00:05,
+#   주간리포트 월 00:10)은 FastAPI 앱 내부(app/main.py)에서 실행되므로
+#   WAS의 앱 프로세스가 담당한다. 여기에 중복 등록하지 말 것 (이중 실행 위험).
+# - Entra 사용자 명단은 APP 서버에서 동기화한다. WAS에 같은 잡을 중복 등록하지 않는다.
+
+SHELL=/bin/bash
+APP_DIR=/home/jeffrey/AI_Agent
+PY=/home/jeffrey/AI_Agent/venv/bin/python
+
+# Entra → 셀라 사용자 명단. 손익·방문자·SK/DD 권한은 셀라 설정을 보존한다.
+# Graph User.Read.All Application + 관리자 동의 및 Graph HTTPS 프록시 허용 필요.
+0 22 * * * cd $APP_DIR && HTTPS_PROXY=http://10.1.50.2:3128 HTTP_PROXY=http://10.1.50.2:3128 NO_PROXY=localhost,127.0.0.1,10.1.0.0/16 $PY scripts/sync_entra_users.py >> logs/entra_sync_cron.log 2>&1
+
+# Knowledge Map 빌드는 여기 없다 — 2026-08-05 WAS 로 이관했다.
+#
+# 이 잡은 app/knowledge_map/semantic.py 에서 Gemini(Flash)를 호출한다.
+# APP 서버는 프록시 화이트리스트에 Gemini 가 없어(Jandi 만 열림) 구조적으로 돌 수 없고,
+# 실제로 이관 이후 한 번도 성공하지 못한 채 매일 실패하고 있었다.
+# WAS 에서는 Gemini 가 열려 있어 51초에 완주한다(files=72 nodes=870 edges=1665).
+#
+# ⚠️ 여기에 다시 등록하지 말 것 — WAS APScheduler(id=knowledge_map_daily, 03:00)와
+#    이중 실행이 되고, 여기서는 어차피 실패한다.
+# 이전 주석에 있던 "외부 네트워크 호출 없음" 기재는 오류였다.

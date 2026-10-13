@@ -1,0 +1,22 @@
+--- was/app/api/coa_finder_api.py
++++ next/app/api/coa_finder_api.py
+@@ -15,7 +15,7 @@
+ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+ from pydantic import BaseModel
+ 
+-from app.api.auth_middleware import get_current_user
++from app.api.auth_middleware import get_current_user, _extract_user_id
+ from app.core import coa_finder as cf
+ from app.core.google_auth import GoogleAuthManager
+ 
+@@ -49,7 +49,9 @@
+        fetch 로 부르는 경로라, 로그인 HTML 로 리다이렉트하면 프론트가
+        그 페이지를 조회 결과로 읽는다.
+     """
+-    if not request.cookies.get("token"):
++    try:
++        _extract_user_id(request)
++    except HTTPException:
+         return RedirectResponse(url="/login", status_code=302)
+     return FileResponse("app/static/coa_finder.html", media_type="text/html")
+ 

@@ -1,0 +1,189 @@
+{
+  "config_added_fields": [
+    "entra_tenant_id",
+    "entra_client_id",
+    "entra_client_secret",
+    "entra_redirect_uri",
+    "entra_employee_domains"
+  ],
+  "files": {
+    "app/config.py": {
+      "added": 7,
+      "baseline_sha256": "2edd241b64ec720d7bb924def939cfa91213490017d67d8d4ac23205c3c692da",
+      "bytes": 10436,
+      "diff_lines": 16,
+      "hunks": 1,
+      "local_source_sha256": "9e3a1684f11505010fff60197f6701d9c2584f7cb395d68c94c417622890b6d5",
+      "mode": "app_add_required_entra_settings_only",
+      "removed": 0,
+      "stage_sha256": "a3df6a47446cbd5c0f89786a1222e58e0c6872e474e195426a657dd8d5b2ee8c"
+    },
+    "app/core/briefing.py": {
+      "added": 3,
+      "baseline_sha256": "a5f24940579c4967e0532e1f3ba34b7392abecb932cfdbabb771beb56a2a97ac",
+      "bytes": 49489,
+      "diff_lines": 25,
+      "hunks": 2,
+      "local_source_sha256": "ff703c73831d8dbe1e111f066e1f4d322540010efb43d8224c27f7261fc95bd5",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 3,
+      "stage_sha256": "ff703c73831d8dbe1e111f066e1f4d322540010efb43d8224c27f7261fc95bd5"
+    },
+    "app/core/feedback_inbox.py": {
+      "added": 1,
+      "baseline_sha256": "aeef1d892fb312aa625964066fe34552d6328c9c0b95bb56fa6c7088f45f6470",
+      "bytes": 20378,
+      "diff_lines": 11,
+      "hunks": 1,
+      "local_source_sha256": "ad72e984f99dc1dcee4b2714b23bb7eb19e81e8437d4099b416dae58cfe1d16a",
+      "mode": "app_table_reference_only",
+      "removed": 1,
+      "stage_sha256": "34278d4cbf536aca962a0d47fce19a64956ceae78802a8f0203a6d957d3acab1"
+    },
+    "app/core/password_reset.py": {
+      "added": 1,
+      "baseline_sha256": "c922a6ab14985f8dd03fab6dd910220e7207037212d865231f6f2b418cce69db",
+      "bytes": 5280,
+      "diff_lines": 11,
+      "hunks": 1,
+      "local_source_sha256": "21cb99578110212ef474667b5c74bc87c85f4bfacee59bb989b6dfecb7f9384f",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 1,
+      "stage_sha256": "21cb99578110212ef474667b5c74bc87c85f4bfacee59bb989b6dfecb7f9384f"
+    },
+    "app/core/password_reset_google.py": {
+      "added": 2,
+      "baseline_sha256": "ad92a8f5755d1d0f18bea774dd1be5d92bc1351f35d6d6331585392cc5feff39",
+      "bytes": 17411,
+      "diff_lines": 20,
+      "hunks": 2,
+      "local_source_sha256": "0d7f9ea6b29c3dfc5e4cb5f54be7234dc8665c9b21d74c9c6475b3754bb6e539",
+      "mode": "app_table_reference_only",
+      "removed": 2,
+      "stage_sha256": "1805d473f9c3dc574d32d33d119d470dac537a33c2fb35e01c12c4acb56c196f"
+    },
+    "app/core/personal_briefing.py": {
+      "added": 1,
+      "baseline_sha256": "7e7e1cc0799130d2d40bd0ebe3d53e3764302234ac771f74196fc968e5ebff2a",
+      "bytes": 36938,
+      "diff_lines": 11,
+      "hunks": 1,
+      "local_source_sha256": "274a38f4a5d7bcd3a9d19a2ffbaa49c58193527cebe6e2bc7187814b6bb413a7",
+      "mode": "app_table_reference_only",
+      "removed": 1,
+      "stage_sha256": "059abca70070bc77b702c4139fa84696a1b11d4696626e34c0749e5fbd3f0315"
+    },
+    "app/core/query_profile.py": {
+      "added": 1,
+      "baseline_sha256": "e5bc2198bb8fdd853bfc395b89f23e1849a096dbe8cc79c755e024bf25f65189",
+      "bytes": 19813,
+      "diff_lines": 11,
+      "hunks": 1,
+      "local_source_sha256": "ae73a1d1f6c387c7d7c0e8ac36a2be5d88b8fdabb365c7bd04dde0d6a5fe4df2",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 1,
+      "stage_sha256": "ae73a1d1f6c387c7d7c0e8ac36a2be5d88b8fdabb365c7bd04dde0d6a5fe4df2"
+    },
+    "app/core/saved_questions.py": {
+      "added": 15,
+      "baseline_sha256": "6c42fc9f951b8694874515f0ae90b289bbcaf3f4e598f5bf5e4de96f295db383",
+      "bytes": 11668,
+      "diff_lines": 39,
+      "hunks": 2,
+      "local_source_sha256": "5c7d395f0d72672d524c06c4f6f797daf4bb706810ba88fc4d2b16da558dbc2e",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 3,
+      "stage_sha256": "5c7d395f0d72672d524c06c4f6f797daf4bb706810ba88fc4d2b16da558dbc2e"
+    },
+    "app/core/self_check.py": {
+      "added": 15,
+      "baseline_sha256": "aa9e11cb74fc7486948e37142aaa716e301cad4f536d7e90d321fc56c29b1bde",
+      "bytes": 69125,
+      "diff_lines": 101,
+      "hunks": 10,
+      "local_source_sha256": "677568032f2723a48c9032413709f3a59a752bf04be637a5fc436b8307e2244b",
+      "mode": "app_directory_sync_only",
+      "removed": 13,
+      "stage_sha256": "c72f5654d40acb640db5540a78aedcd6ad4df0201495f37feb1e2ba24eb15063"
+    },
+    "app/core/user_directory.py": {
+      "added": 330,
+      "baseline_sha256": null,
+      "bytes": 17188,
+      "diff_lines": 333,
+      "hunks": 1,
+      "local_source_sha256": "548c43824d357298988fcb00b36fc95d948410883a2224db82a36c1ac4721d0a",
+      "mode": "new_directory_module",
+      "removed": 0,
+      "stage_sha256": "548c43824d357298988fcb00b36fc95d948410883a2224db82a36c1ac4721d0a"
+    },
+    "app/core/user_directory_migration.py": {
+      "added": 393,
+      "baseline_sha256": null,
+      "bytes": 18390,
+      "diff_lines": 396,
+      "hunks": 1,
+      "local_source_sha256": "375923c4f9a109653931587fbe9043acbc700239cdf6cca21770cb78e67a2470",
+      "mode": "new_directory_module",
+      "removed": 0,
+      "stage_sha256": "375923c4f9a109653931587fbe9043acbc700239cdf6cca21770cb78e67a2470"
+    },
+    "app/db/mariadb.py": {
+      "added": 5,
+      "baseline_sha256": "cea3193d7a9227f6f7326d8f8ad8974467b1ce9702cbd21f7ae4db676092aa02",
+      "bytes": 21970,
+      "diff_lines": 37,
+      "hunks": 2,
+      "local_source_sha256": "23dbd2f353dd635de19ac84322cb78f94de53eed81a613493d0c74255584e889",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 5,
+      "stage_sha256": "23dbd2f353dd635de19ac84322cb78f94de53eed81a613493d0c74255584e889"
+    },
+    "app/db/models.py": {
+      "added": 2,
+      "baseline_sha256": "d72972aaee5810ea3f22438302a9b8c051e118e3615b59ffc3f6acd2aa2ebac0",
+      "bytes": 621,
+      "diff_lines": 16,
+      "hunks": 2,
+      "local_source_sha256": "e579cc7184491330d7c6e62119e998441f05f078d731b4d7e95d3b06f0a12df9",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 1,
+      "stage_sha256": "e579cc7184491330d7c6e62119e998441f05f078d731b4d7e95d3b06f0a12df9"
+    },
+    "app/reports/store.py": {
+      "added": 7,
+      "baseline_sha256": "2dd30ae9a3fa42f5a736974b7a6dcc0aba7f56d339cde4a9b80c4cd4ba62b9c3",
+      "bytes": 17099,
+      "diff_lines": 65,
+      "hunks": 7,
+      "local_source_sha256": "e3d0500625ae02ebda09e612c1a456fa8a9ac92fbae59c4a0d8bff48d82dcaf8",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 7,
+      "stage_sha256": "e3d0500625ae02ebda09e612c1a456fa8a9ac92fbae59c4a0d8bff48d82dcaf8"
+    },
+    "scripts/sync_ad_users.py": {
+      "added": 4,
+      "baseline_sha256": "43d630d270741441bb48eeda8fa9d5b453111d25e2f8a425ddd8d74fb2a0c7dc",
+      "bytes": 25862,
+      "diff_lines": 11,
+      "hunks": 1,
+      "local_source_sha256": "e75933e573d5d132c9471722e8237e09d21464b152024105d425a56da8f4c445",
+      "mode": "reviewed_local_same_baseline",
+      "removed": 1,
+      "stage_sha256": "e75933e573d5d132c9471722e8237e09d21464b152024105d425a56da8f4c445"
+    },
+    "scripts/sync_entra_users.py": {
+      "added": 30,
+      "baseline_sha256": null,
+      "bytes": 1073,
+      "diff_lines": 33,
+      "hunks": 1,
+      "local_source_sha256": "7a9979ba7e55ea88dd0b5cc09c1e337db4c891f666ccb5dafcb4be20d309ffe3",
+      "mode": "new_directory_module",
+      "removed": 0,
+      "stage_sha256": "7a9979ba7e55ea88dd0b5cc09c1e337db4c891f666ccb5dafcb4be20d309ffe3"
+    }
+  },
+  "stage": "stage-app",
+  "syntax": "all_16_python_files_passed"
+}

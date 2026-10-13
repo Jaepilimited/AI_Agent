@@ -1,0 +1,40 @@
+{
+  "captured_at_utc": "2026-09-09T00:36:31.407664+00:00",
+  "files": {
+    "app/core/sales_outlook.py": {
+      "sha256": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+      "modified_at_utc": "2026-09-09T00:28:11.259379+00:00",
+      "bytes": 18675,
+      "matches_phase1": true,
+      "matches_amendment": true
+    },
+    "app/agents/sql_agent.py": {
+      "sha256": "7ecaef837b14b09e4c41fc00519c065dfb0dd3cfb89b876d14fdff70df343b88",
+      "modified_at_utc": "2026-09-09T00:28:11.253379+00:00",
+      "bytes": 236142,
+      "matches_phase1": false,
+      "matches_amendment": false
+    },
+    "prompts/sql_generator.txt": {
+      "sha256": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+      "modified_at_utc": "2026-09-09T00:23:11.533398+00:00",
+      "bytes": 109873,
+      "matches_phase1": true,
+      "matches_amendment": true
+    },
+    "app/core/feedback_inbox.py": {
+      "sha256": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd",
+      "modified_at_utc": "2026-09-09T00:23:11.534398+00:00",
+      "bytes": 39872,
+      "matches_phase1": true,
+      "matches_amendment": true
+    }
+  },
+  "outlook_helper": {
+    "live": "def _outlook_result_answer(query: str, sql: str, results) -> Optional[str]:\n    \"\"\"Keep registered future revenue and unsupported forecasts out of prose generation.\"\"\"\n    answer = _render_sales_outlook(query, sql, results)\n    if answer is None:\n        return None\n    # The renderer discloses the validated month and future registration dates.\n    # A generic SQL upper bound can be exclusive and outside that month.\n    return answer + f\"\\n\\n<details><summary>실행된 쿼리</summary>\\n\\n```sql\\n{sql}\\n```\\n</details>\"",
+    "matches_phase1": false,
+    "matches_amendment": true
+  },
+  "sql_normalized_matches_amendment": false,
+  "frozen_plan_sha256": "990f3366af0b61bd262ddbd79c175a3d7be89f4f067cc2fc6b74a32f97fbd276"
+}

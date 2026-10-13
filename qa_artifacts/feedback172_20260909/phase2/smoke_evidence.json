@@ -1,0 +1,123 @@
+{
+  "started_at_kst": "2026-09-09T09:24:13.199726+09:00",
+  "scope": "two bounded read-only BigQuery queries; no conversation or database writes",
+  "query": "이번달 전사 예상실적이 얼마로 마감할거 같아?",
+  "incident_as_of": "2026-09-08",
+  "current_as_of": "2026-09-09",
+  "executions": [
+    {
+      "sql": "SELECT\n  DATE '2026-09-01' AS outlook_period_start,\n  DATE '2026-09-30' AS outlook_period_end,\n  DATE '2026-09-08' AS outlook_as_of,\n  COUNT(*) AS outlook_row_count,\n  COALESCE(SUM(CASE WHEN DATE(Date) <= DATE '2026-09-08'\n    THEN Sales1_R ELSE 0 END), 0) AS revenue_through_as_of,\n  COALESCE(SUM(CASE WHEN DATE(Date) > DATE '2026-09-08'\n    THEN Sales1_R ELSE 0 END), 0) AS revenue_after_as_of,\n  COALESCE(SUM(Sales1_R), 0) AS revenue_in_period\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= DATETIME '2026-09-01 00:00:00'\n  AND Date < DATETIME '2026-10-01 00:00:00'\nLIMIT 1000",
+      "started_at_kst": "2026-09-09T09:24:13.697479+09:00",
+      "maximum_bytes_billed": 5368709120,
+      "timeout_seconds": 30,
+      "rows": [
+        {
+          "outlook_period_start": "2026-09-01",
+          "outlook_period_end": "2026-09-30",
+          "outlook_as_of": "2026-09-08",
+          "outlook_row_count": 378559,
+          "revenue_through_as_of": 12198894347.238382,
+          "revenue_after_as_of": 53456435789.19358,
+          "revenue_in_period": 65655330136.4319
+        }
+      ],
+      "elapsed_seconds": 2.367,
+      "job_id": "61718833-1536-41e2-a339-afc29c586c46",
+      "total_bytes_processed": 532894176,
+      "total_bytes_billed": 533725184,
+      "cache_hit": false
+    },
+    {
+      "sql": "SELECT\n  DATE '2026-09-01' AS outlook_period_start,\n  DATE '2026-09-30' AS outlook_period_end,\n  DATE '2026-09-09' AS outlook_as_of,\n  COUNT(*) AS outlook_row_count,\n  COALESCE(SUM(CASE WHEN DATE(Date) <= DATE '2026-09-09'\n    THEN Sales1_R ELSE 0 END), 0) AS revenue_through_as_of,\n  COALESCE(SUM(CASE WHEN DATE(Date) > DATE '2026-09-09'\n    THEN Sales1_R ELSE 0 END), 0) AS revenue_after_as_of,\n  COALESCE(SUM(Sales1_R), 0) AS revenue_in_period\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= DATETIME '2026-09-01 00:00:00'\n  AND Date < DATETIME '2026-10-01 00:00:00'\nLIMIT 1000",
+      "started_at_kst": "2026-09-09T09:24:16.074357+09:00",
+      "maximum_bytes_billed": 5368709120,
+      "timeout_seconds": 30,
+      "rows": [
+        {
+          "outlook_period_start": "2026-09-01",
+          "outlook_period_end": "2026-09-30",
+          "outlook_as_of": "2026-09-09",
+          "outlook_row_count": 378559,
+          "revenue_through_as_of": 12366072639.818384,
+          "revenue_after_as_of": 53289257496.613556,
+          "revenue_in_period": 65655330136.43191
+        }
+      ],
+      "elapsed_seconds": 1.787,
+      "job_id": "db4e74e3-1db9-4d83-8d51-a5b8b27141a3",
+      "total_bytes_processed": 532894176,
+      "total_bytes_billed": 533725184,
+      "cache_hit": false
+    }
+  ],
+  "guards": {
+    "model_attempts": 0,
+    "cache_attempts": 0,
+    "mariadb_attempts": 0,
+    "sql_example_record_suppressed": 1
+  },
+  "source_hashes": {
+    "app/core/sales_outlook.py": "6a78dc122f88e72149b2d4c2f0f58d071230059e0101980a7f15d2e5db9797d7",
+    "app/agents/sql_agent.py": "db9db52489b1df9f9c8cb3d9b94e413f4c81fffbefac0533ea910e2eade2f028",
+    "prompts/sql_generator.txt": "d578cab34ec01b1c0cd3842aaf3c979aa5eb740c70157511451bb1ce8a8b630d",
+    "app/core/feedback_inbox.py": "3e0cd9eec0b97aa15ce1d3a247575e70c53c75ebbfb90442731024eb3ac2cebd"
+  },
+  "incident_replay": {
+    "answer": "조회 기간은 **2026-09-01 ~ 2026-09-30**, 누적 구분 기준일은 **2026-09-08**입니다.\n\n누적 구간은 2026-09-01 ~ 2026-09-08, 이후 등록 구간은 2026-09-09 ~ 2026-09-30입니다.\n\n| 구분 | 등록 금액 |\n|---|---:|\n| 기준일까지 누적매출 | 약 122.0억 원 (12,198,894,347원) |\n| 이후 날짜 등록분 | 약 534.6억 원 (53,456,435,789원) |\n| 월 전체 등록 합계 | 약 656.6억 원 (65,655,330,136원) |\n\n원 금액은 원 단위로 반올림했습니다.\n\n**월 전체 등록 합계는 확정된 마감 예상치가 아닙니다.** 아직 등록되지 않은 매출, 취소, 날짜 변경은 확인되지 않았습니다. 등록 금액을 날짜로 구분한 결과이며, 이후 등록분의 실현 여부까지 검증한 수치는 아닙니다.",
+    "rows": [
+      {
+        "outlook_period_start": "2026-09-01",
+        "outlook_period_end": "2026-09-30",
+        "outlook_as_of": "2026-09-08",
+        "outlook_row_count": 378559,
+        "revenue_through_as_of": 12198894347.238382,
+        "revenue_after_as_of": 53456435789.19358,
+        "revenue_in_period": 65655330136.4319
+      }
+    ],
+    "note": "Current source data with the incident cutoff; prior probe values are comparison evidence."
+  },
+  "current_stream": {
+    "answer": "> ⚠️ 이 조회 기간은 오늘(2026-09-09) 이후인 2026-10-01 까지를 포함합니다. 발주·예정 물량처럼 아직 일어나지 않은 행이 함께 집계될 수 있습니다.\n\n조회 기간은 **2026-09-01 ~ 2026-09-30**, 누적 구분 기준일은 **2026-09-09**입니다.\n\n누적 구간은 2026-09-01 ~ 2026-09-09, 이후 등록 구간은 2026-09-10 ~ 2026-09-30입니다.\n\n| 구분 | 등록 금액 |\n|---|---:|\n| 기준일까지 누적매출 | 약 123.7억 원 (12,366,072,640원) |\n| 이후 날짜 등록분 | 약 532.9억 원 (53,289,257,497원) |\n| 월 전체 등록 합계 | 약 656.6억 원 (65,655,330,136원) |\n\n원 금액은 원 단위로 반올림했습니다.\n\n**월 전체 등록 합계는 확정된 마감 예상치가 아닙니다.** 아직 등록되지 않은 매출, 취소, 날짜 변경은 확인되지 않았습니다. 등록 금액을 날짜로 구분한 결과이며, 이후 등록분의 실현 여부까지 검증한 수치는 아닙니다.\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT\n  DATE '2026-09-01' AS outlook_period_start,\n  DATE '2026-09-30' AS outlook_period_end,\n  DATE '2026-09-09' AS outlook_as_of,\n  COUNT(*) AS outlook_row_count,\n  COALESCE(SUM(CASE WHEN DATE(Date) <= DATE '2026-09-09'\n    THEN Sales1_R ELSE 0 END), 0) AS revenue_through_as_of,\n  COALESCE(SUM(CASE WHEN DATE(Date) > DATE '2026-09-09'\n    THEN Sales1_R ELSE 0 END), 0) AS revenue_after_as_of,\n  COALESCE(SUM(Sales1_R), 0) AS revenue_in_period\nFROM `skin1004-319714.Sales_Integration.SALES_ALL_Backup`\nWHERE Date >= DATETIME '2026-09-01 00:00:00'\n  AND Date < DATETIME '2026-10-01 00:00:00'\nLIMIT 1000\n```\n</details>",
+    "chunk_count": 1
+  },
+  "semantic_checks": {
+    "incident_date": true,
+    "incident_period_preserved": true,
+    "incident_amounts_reconcile": true,
+    "current_date": true,
+    "current_amounts_reconcile": true,
+    "current_date_visible": true,
+    "all_three_amount_labels_visible": true,
+    "registered_total_not_presented_as_forecast": true,
+    "no_bad_prior_estimate_or_elapsed_date": true,
+    "real_sql_in_stream_answer": true,
+    "model_not_called": true,
+    "cache_not_called": true,
+    "mariadb_not_called": true,
+    "two_queries_only": true
+  },
+  "prior_probe_comparison": {
+    "revenue_through_as_of": {
+      "expected_krw": "12198894347.2383854",
+      "actual_krw": "12198894347.238382",
+      "matches_within_two_won": true
+    },
+    "revenue_after_as_of": {
+      "expected_krw": "53456435789.193554017",
+      "actual_krw": "53456435789.19358",
+      "matches_within_two_won": true
+    },
+    "revenue_in_period": {
+      "expected_krw": "65655330136.431939417",
+      "actual_krw": "65655330136.4319",
+      "matches_within_two_won": true
+    }
+  },
+  "incident_expected_display_present": true,
+  "table_modified_at": "2026-09-08 03:24:57.263000+00:00",
+  "passed": true,
+  "incident_figures_still_match": true,
+  "finished_at_kst": "2026-09-09T09:24:18.269407+09:00",
+  "elapsed_seconds": 5.07
+}

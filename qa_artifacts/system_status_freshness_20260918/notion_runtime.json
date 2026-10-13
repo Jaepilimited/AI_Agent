@@ -1,0 +1,47 @@
+{
+  "queried_at_kst": "2026-09-18 15:45:16.999475+09:00",
+  "systemd": [
+    "MainPID=283891",
+    "NRestarts=3",
+    "ExecMainStartTimestamp=Fri 2026-09-18 14:16:28 KST",
+    "ActiveState=active",
+    "SubState=running",
+    "ActiveEnterTimestamp=Fri 2026-09-18 14:16:28 KST"
+  ],
+  "systemd_exit": 0,
+  "journal_exit": 0,
+  "journal_events": [
+    {
+      "at_kst": "2026-09-18 05:03:05.889344+09:00",
+      "markers": [
+        "로컬 JSON 저장"
+      ],
+      "pid": "280355"
+    },
+    {
+      "at_kst": "2026-09-18 05:03:05.922149+09:00",
+      "markers": [
+        "동기화 완료"
+      ],
+      "pid": "280355"
+    },
+    {
+      "at_kst": "2026-09-18 05:03:05.922465+09:00",
+      "markers": [
+        "404스킵"
+      ],
+      "pid": "280355"
+    },
+    {
+      "at_kst": "2026-09-18 05:03:19.621353+09:00",
+      "markers": [
+        "Started"
+      ],
+      "pid": "281979"
+    }
+  ],
+  "pid_presence_verification": {
+    "old_pipeline_pid_280355_present": false,
+    "replacement_pid_281979_present": false
+  }
+}

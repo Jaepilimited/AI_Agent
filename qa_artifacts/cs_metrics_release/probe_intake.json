@@ -1,0 +1,25 @@
+{
+  "case": "intake",
+  "query": "이번 달 글로벌 자사몰 CS 인입 건수 알려줘",
+  "sources": null,
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "SELECT \n  COUNT(*) AS refund_records,\n  COUNT(DISTINCT shopify_order_id) AS distinct_orders,\n  SUM(refund_amount_usd) AS total_refund_amount_usd,\n  SUM(refund_amount_krw) AS total_refund_amount_krw,\n  COUNTIF(refund_amount_krw IS NULL) AS refunds_without_krw\nFROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\nWHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-09-01' AND '2026-09-30'\nLIMIT 1000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "refund_records": 42,
+      "distinct_orders": 42,
+      "total_refund_amount_usd": "2542.58",
+      "total_refund_amount_krw": "3335343",
+      "refunds_without_krw": 1
+    }
+  ],
+  "seconds": 17.75,
+  "fast_answer": "1",
+  "tool_loop": null,
+  "answer": "> 해외 자료는 **Shopify 환불 기록**입니다. 전체 해외 CS 접수 건수나 전체 반품 건수를 뜻하지 않습니다.\n> 원화 환불액은 환산액이 있는 건만 집계합니다. 환율 미확보 건은 0원이 아닙니다.\n\n⚠️ 이 조회 기간은 오늘(2026-09-16) 이후인 2026-09-30까지를 포함하며, 아직 완료되지 않은 달이라 최종 수치가 아닙니다. 또한 해외 자료는 전체 CS 접수가 아닌 **Shopify 환불 기록** 기준입니다.\n\n### 📊 이번 달(2026년 9월) 글로벌 자사몰 환불 처리 현황\n#### 요약\n2026년 9월 환불 생성일 기준 글로벌 자사몰 환불 기록은 총 **42건**(고유 주문 **42건**)이며, 총 환불액은 **$2,542.58**(원화 환산 완료액 기준 **3,335,343원**)입니다.\n\n#### 상세 데이터 (표)\n| 구분 | 환불 기록 건수 | 고유 주문 수 | 총 환불액 (USD) | 총 환불액 (KRW) | 환율 미확보 건수 |\n| :--- | ---: | ---: | ---: | ---: | ---: |\n| 2026년 9월 (환불 생성일 기준) | 42 | 42 | $2,542.58 | 3,335,343원 | 1 |\n\n*주: 원화 환불액은 환산액이 존재하는 건(41건)만 합산된 금액이며, 환율 미확보 1건은 제외된 수치입니다.*\n\n#### 분석 및 인사이트\n- 모든 환불 기록(42건)이 서로 다른 고유 주문(42건)에서 발생하여 주문당 다중 환불 없이 1:1로 처리되었습니다.\n- 환불 1건당 평균 환불 금액은 약 **$60.54** 수준입니다.\n- 전체 42건 중 1건은 원화 환산액이 집계되지 않아 실제 원화 총 환불 규모는 표기된 금액보다 클 수 있습니다.\n\n---\n*조회 기준: 2026-09-16 | 내부 데이터베이스*\n> 💡 **이런 것도 물어보세요**\n> - 지난달(2026년 8월) 글로벌 자사몰 환불 건수와 환불액은 얼마인가요?\n> - 이번 달 글로벌 자사몰 일자별 환불 추이를 보여줘\n> - 올해(2026년) 월별 글로벌 자사몰 환불 건수 및 USD 환불액 추이 알려줘\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT \n  COUNT(*) AS refund_records,\n  COUNT(DISTINCT shopify_order_id) AS distinct_orders,\n  SUM(refund_amount_usd) AS total_refund_amount_usd,\n  SUM(refund_amount_krw) AS total_refund_amount_krw,\n  COUNTIF(refund_amount_krw IS NULL) AS refunds_without_krw\nFROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\nWHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-09-01' AND '2026-09-30'\nLIMIT 1000\n```\n</details>\n\n> ⚠️ 이 조회 기간은 오늘(2026-09-16) 이후인 2026-09-30 까지를 포함합니다. 발주·예정 물량처럼 아직 일어나지 않은 행이 함께 집계될 수 있습니다."
+}

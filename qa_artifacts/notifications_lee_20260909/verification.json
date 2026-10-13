@@ -1,0 +1,29 @@
+{
+  "service": "active",
+  "origins": {
+    "http://127.0.0.1:3000": {
+      "asset_status": 200,
+      "served_hash_matches": true,
+      "validated_contents_match": true,
+      "health": 200,
+      "unauth_status": 401,
+      "auth_header": "login-required"
+    },
+    "http://10.1.100.5": {
+      "asset_status": 200,
+      "served_hash_matches": true,
+      "validated_contents_match": true,
+      "health": 200,
+      "unauth_status": 401,
+      "auth_header": "login-required",
+      "nginx": "active",
+      "checked_via": "Web host loopback through nginx with production Host header"
+    }
+  },
+  "file_hash_matches": true,
+  "live_sha256": "e46504f8c6fc873f8dcda56ffffcd98ac20cbe4ea5ddc5460ba29d76d31896ef",
+  "desktop_web_error": {
+    "type": "URLError",
+    "error": "<urlopen error timed out>"
+  }
+}

@@ -1,0 +1,81 @@
+--- production/app/frontend/chat.js
++++ candidate/app/frontend/chat.js
+@@ -3657,6 +3657,7 @@
+   // 메일이 나가지 않는 동안(SMTP 차단) 앱 안에서 알린다. 대상 판정은 서버가 하고
+   // 프론트는 그린다 — 여기서 사용자 id 를 다루지 않는다.
+   var _notifTimer = null;
++  var _notifLoadId = 0;
+ 
+   function _timeAgo(iso) {
+     if (!iso) return "";
+@@ -3677,14 +3678,45 @@
+     else { b.style.display = "none"; }
+   }
+ 
++  function notifLoadIsCurrent(loadId) {
++    var drawer = document.getElementById("notif-drawer");
++    return loadId === _notifLoadId && drawer && drawer.classList.contains("open");
++  }
++
++  function renderNotifLoadState(failed) {
++    var box = document.getElementById("notif-items");
++    if (!box) return;
++    box.innerHTML = failed
++      ? '<div class="notif-empty" role="status"><p>알림을 불러오지 못했습니다.</p>' +
++        '<button type="button" class="notif-ask" id="notif-retry">다시 시도</button></div>'
++      : '<div class="notif-empty" role="status">알림을 불러오는 중입니다...</div>';
++    if (failed) {
++      document.getElementById("notif-retry").addEventListener("click", function () {
++        pollNotifications(true);
++      });
++    }
++  }
++
+   async function pollNotifications(render) {
++    var loadId = render ? ++_notifLoadId : _notifLoadId;
++    if (render && notifLoadIsCurrent(loadId)) renderNotifLoadState(false);
+     try {
+       var r = await fetch("/api/notifications", { credentials: "same-origin" });
+-      if (!r.ok) return;
++      // 이 주소는 로그인이 필수다. 인증 헤더가 없는 401도 같은 복귀 경로를 쓴다.
++      if (r.status === 401) { _redirectToLogin(); return; }
++      if (!r.ok) throw new Error("알림 조회 실패");
+       var data = await r.json();
++      if (!data || !Array.isArray(data.items)) throw new Error("알림 응답 오류");
+       renderNotifBadge(data.unseen || 0);
+-      if (render) renderNotifList(data.items || []);
+-    } catch (e) { /* 알림 실패가 채팅을 막지 않는다 */ }
++      if (render && notifLoadIsCurrent(loadId)) {
++        renderNotifList(data.items);
++        // 목록이 실제로 열린 뒤에만 브리핑 열람을 기록한다. 실패·닫힌 요청은 제외한다.
++        fetch("/api/notifications/viewed", { method: "POST", credentials: "same-origin" })
++          .catch(function () { /* 기록 실패가 화면을 막지 않는다 */ });
++      }
++    } catch (e) {
++      if (render && !_authRedirectStarted && notifLoadIsCurrent(loadId)) renderNotifLoadState(true);
++    }
+   }
+ 
+   function renderNotifList(items) {
+@@ -3746,19 +3778,17 @@
+   }
+ 
+   function openNotifDrawer() {
+-    pollNotifications(true);
+-    // 알림함을 연 것 = 브리핑을 본 것. 공유·붐따는 각자의 지점에서 따로 찍힌다
+-    fetch("/api/notifications/viewed", { method: "POST", credentials: "same-origin" })
+-      .catch(function () { /* 기록 실패가 화면을 막지 않는다 */ });
+     document.getElementById("notif-overlay").className = "open";
+     var d = document.getElementById("notif-drawer");
+     d.classList.remove("closed"); d.classList.add("open");
++    pollNotifications(true);
+   }
+ 
+   function closeNotifDrawer() {
+     document.getElementById("notif-overlay").className = "closed";
+     var d = document.getElementById("notif-drawer");
+     d.classList.remove("open"); d.classList.add("closed");
++    _notifLoadId += 1;
+     pollNotifications(false);   // 보고서를 열었으면 배지가 줄어든다
+   }
+ 

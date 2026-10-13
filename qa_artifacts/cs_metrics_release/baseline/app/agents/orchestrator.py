@@ -1,0 +1,4668 @@
+"""Orchestrator Agent (v3.0 core).
+
+v2.0: Query Analyzer -> route_type -> single Agent call
+v3.0: Orchestrator -> specialized Sub Agent delegation
+v3.1: Conversation context continuity (messages passthrough)
+v3.2: Dual model support (Gemini 2.5 Pro / Sonnet 4.5)
+v3.3: Google Search grounding + multi-source analysis (internal + external)
+v3.4: CS DB route — customer service Q&A from Google Spreadsheet
+"""
+
+import asyncio
+import json
+import re
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import structlog
+
+from app.core.llm import MODEL_CLAUDE, MODEL_GEMINI, get_flash_client, get_llm_client
+from app.core.prompt_fragments import FOLLOWUP_INSTRUCTION, LANGUAGE_DETECTION_RULE
+from app.core.response_formatter import ensure_formatting
+from app.core.security import FI_ACCESS_DENIED_MESSAGE
+
+# Existing agent
+from app.agents.sql_agent import run_sql_agent
+
+# v3.0 new agents
+from app.agents.notion_agent import NotionAgent
+from app.agents.gws_agent import GWSAgent
+
+logger = structlog.get_logger(__name__)
+
+
+def _model_display_name() -> str:
+    """답변에 노출되는 모델 이름 — **설정에서 만든다.**
+
+    손으로 적어 두면 모델을 올려도 프롬프트에 옛 이름이 남는다. 실제로
+    `claude-opus-5` 로 올린 직후에도 "Claude Opus 4.8 기반"이라고 답했다
+    (2026-08-13). 값은 기동 시 고정이라 프롬프트 캐시도 그대로 유지된다.
+    """
+    from app.config import get_settings
+    parts = (get_settings().anthropic_opus_model or "").replace("claude-", "").split("-")
+    tier = parts[0].capitalize() if parts and parts[0] else "Opus"
+    ver = ".".join(parts[1:])
+    return (f"Claude {tier} {ver}".strip() +
+            " (Anthropic) — 빠른 대화. SQL 생성/차트에는 Gemini Flash 사용")
+
+
+def _strip_model_claim(text: str) -> str:
+    """Neutralize the direct prompt before a different provider receives it."""
+    model_claim = (
+        f"당신은 Craver의 AI 어시스턴트입니다. ({_model_display_name()} 기반)"
+    )
+    if model_claim not in text:
+        return text
+    neutral_intro = (
+        "당신은 Craver의 AI 어시스턴트입니다.\n"
+        "어떤 모델로 동작 중인지 답변에서 밝히지 마세요. "
+        "물으면 확인해 드릴 수 없다고 답하세요."
+    )
+    return text.replace(model_claim, neutral_intro)
+
+
+
+def _content_to_text(content) -> str:
+    """Extract plain text from content (str or multimodal list)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                parts.append(part.get("text", ""))
+        return " ".join(parts).strip()
+    return str(content)
+
+
+_re_chart_block = re.compile(r"```chart-config[\s\S]*?```", re.MULTILINE)
+_re_details_block = re.compile(r"<details[\s\S]*?</details>", re.MULTILINE)
+_re_follow_block = re.compile(r"> 💡 \*\*이런 것도 물어보세요\*\*[\s\S]*$", re.MULTILINE)
+_re_bq_table_ref = re.compile(r"skin1004-319714\.[A-Za-z_]\w*\.[A-Za-z_]\w*")
+_re_sql_in_details = re.compile(
+    r"<details[^>]*>[\s\S]*?```sql\s*([\s\S]*?)```[\s\S]*?</details>")
+
+
+def _strip_assistant_noise(content: str) -> str:
+    """Remove chart JSON, SQL blocks, and follow-up sections from assistant response.
+
+    These blocks are machine-readable or boilerplate and waste context space.
+    Keeps markdown text (summaries, tables, insights) for SQL generation context.
+
+    SQL 블록을 지우더라도 거기 쓰인 테이블명은 태그로 보존한다 — 후속 질문
+    ("지난달이랑 비교해줘")의 주제 유지에 필요한 유일한 앵커다. 본문 텍스트에
+    주제 단어가 없으면(예: 판매수량 답변에 'Product' 단어 부재) 스키마 lazy-load
+    매칭도, LLM의 테이블 선택도 매출로 흘러간다 (2026-08-10 6종 시나리오 테스트).
+    태그는 맨 앞에 붙인다 — 1500자 절단에서 살아남아야 하므로.
+    """
+    tables = list(dict.fromkeys(_re_bq_table_ref.findall(content)))
+    content = _re_chart_block.sub("[차트 생략]", content)
+    content = _re_details_block.sub("[SQL 생략]", content)
+    content = _re_follow_block.sub("", content)
+    content = content.strip()
+    if tables:
+        content = "[실행된 쿼리 테이블: " + ", ".join(tables) + "] " + content
+    return content
+
+
+_DIRECT_HISTORY_CHAR_BUDGET = 60_000
+_DIRECT_HISTORY_ANCHOR_COUNT = 2
+_DIRECT_HISTORY_ANCHOR_CHAR_CAP = 2_000
+
+
+def _truncate_history_content(content, max_chars: int):
+    """Trim textual message content without mutating the original message."""
+    if isinstance(content, str):
+        return content[:max_chars]
+    if not isinstance(content, list):
+        return str(content)[:max_chars]
+
+    remaining = max_chars
+    truncated = []
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "text":
+            if remaining <= 0:
+                continue
+            text = str(part.get("text", ""))[:remaining]
+            truncated.append({**part, "text": text})
+            remaining -= len(text)
+        else:
+            truncated.append(part)
+    return truncated
+
+
+def _clean_messages_for_history(messages: List[Dict]) -> List[Dict]:
+    """Strip chart/SQL noise from assistant messages before sending to LLM history.
+
+    Short messages are not discarded merely because a conversation has many
+    turns. Only histories over a content-size budget are compacted; in that
+    case the opening user/assistant anchor and the newest messages are kept.
+    """
+    cleaned = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role in ("assistant", "model") and isinstance(content, str):
+            content = _strip_assistant_noise(content)
+        cleaned.append({**msg, "content": content})
+
+    total_chars = sum(len(_content_to_text(msg.get("content", ""))) for msg in cleaned)
+    if total_chars <= _DIRECT_HISTORY_CHAR_BUDGET:
+        return cleaned
+
+    anchor_count = min(_DIRECT_HISTORY_ANCHOR_COUNT, len(cleaned))
+    anchors = []
+    for msg in cleaned[:anchor_count]:
+        anchors.append({
+            **msg,
+            "content": _truncate_history_content(
+                msg.get("content", ""), _DIRECT_HISTORY_ANCHOR_CHAR_CAP
+            ),
+        })
+
+    used_chars = sum(len(_content_to_text(msg.get("content", ""))) for msg in anchors)
+    remaining = max(0, _DIRECT_HISTORY_CHAR_BUDGET - used_chars)
+    newest = []
+    for msg in reversed(cleaned[anchor_count:]):
+        content = msg.get("content", "")
+        content_chars = len(_content_to_text(content))
+        if content_chars <= remaining:
+            newest.append(msg)
+            remaining -= content_chars
+            continue
+        if remaining > 0:
+            newest.append({
+                **msg,
+                "content": _truncate_history_content(content, remaining),
+            })
+        break
+
+    return anchors + list(reversed(newest))
+
+
+_DIRECT_TEMPORARY_FAILURE = (
+    "죄송합니다. AI 서비스가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요."
+)
+_DIRECT_PARTIAL_FAILURE = (
+    "\n\n> ⚠️ 응답 생성이 일시적으로 중단되었습니다. **다시 시도**해 주세요."
+)
+
+# 2단계 게이트 한 번에 허용하는 시간. 실측 중앙값 1.38초(gemini-3.8-flash)이므로
+# 6초는 넉넉하다.
+# ⛔ 상한이 없으면 `_gemini_retry` 가 4회(백오프 0.5·1.5·4.0초)를 다 태우고,
+#    NEED 면 그 뒤에 `_classify_with_llm` 이 **같은 예산을 한 번 더** 태운다.
+#    둘 다 사용자가 첫 글자를 보기 전이다.
+# ⚠️ 시간이 다하면 다른 실패와 똑같이 **NEED** 로 떨어진다 (안전한 쪽 실패).
+_SOURCE_GATE_TIMEOUT_SECONDS = 6.0
+
+
+# ── 소스가 꺼져 있어 조회를 건너뛴 사실은 코드가 말한다 (2026-09-15 붐따 #174·#175·#177)
+# System Status 의 소스 선택이 실제 라우팅에 닿게 된 뒤(2026-09-03), `전체 해제` 나
+# 그룹 해제를 해 둔 사람의 매출 질문이 확신 `bigquery` 로 분류되고도 조용히 `direct`
+# 로 떨어졌다. 그러면 LLM 이 "조회가 붙지 않았다" 며 변명하거나 숫자를 지어낸다.
+# 실측(9/3 전후): 확신 매출 질문의 direct 오분류 1.9%(5명) → 18.2%(13명).
+# ⛔ 프롬프트가 아니라 코드가 답변 **맨 앞**에 적는다 (수량 이상치 공시와 같은 자리).
+# ⚠️ `enabled_sources is None`(서버 기본값)일 때는 붙이지 않는다 — 그건 사용자가
+#    끈 것이 아니라 설계된 기본이고, 매번 뜨는 안내는 곧 아무도 안 읽는다.
+_SOURCE_OFF_LABELS = {
+    "bigquery": ("매출·데이터", "`@@매출`"),
+    "multi": ("매출·데이터", "`@@매출`"),
+    "gws": ("Google Workspace(메일·캘린더·드라이브)", "`@@gws`"),
+    "notion": ("사내 문서(Notion)", "`@@` + 팀 이름"),
+    "cs": ("제품 Q&A", "`@@BP`"),
+    "inventory": ("OP 재고", "`@@OP`"),
+    "model_rights": ("초상권", "`@@초상권`"),
+    "awards": ("수상/랭킹", "`@@수상`"),
+    "report": ("보고서", "`@@보고서`"),
+}
+
+
+def _sources_off_notice(original_route: str, enabled_sources) -> str:
+    """사용자가 좁혀 둔 소스 목록 때문에 데이터 경로가 direct 로 떨어졌을 때
+    답변 맨 앞에 붙일 문구. 붙일 일이 없으면 빈 문자열."""
+    if enabled_sources is None:
+        return ""
+    label_hint = _SOURCE_OFF_LABELS.get(original_route)
+    if not label_hint:
+        return ""
+    label, hint = label_hint
+    n = len(enabled_sources)
+    state = "전체 해제 상태" if n == 0 else f"{n}개만 선택된 상태"
+    return (
+        "> ⚠️ **데이터 조회를 실행하지 않았습니다.** 이 질문은 "
+        f"{label} 조회로 판정됐지만, System Status 의 데이터 소스가 꺼져 있어"
+        f"({state}) 직접 대화로만 답했습니다. 아래 답변에 수치가 있다면 조회 결과가 "
+        "아닙니다. 사이드바 **System Status → 전체 선택** 을 누르거나, 질문 앞에 "
+        f"{hint} 를 붙여 다시 물어봐 주세요."
+    )
+
+
+def _system_instruction_to_text(system_instruction) -> str:
+    """Flatten Anthropic system blocks for the Gemini fallback."""
+    if isinstance(system_instruction, str):
+        return system_instruction
+    if not isinstance(system_instruction, list):
+        return str(system_instruction or "")
+    return "\n\n".join(
+        str(block.get("text", ""))
+        for block in system_instruction
+        if isinstance(block, dict) and block.get("text")
+    )
+
+
+def _stream_direct_with_fallback(
+    primary_client,
+    query: str,
+    messages=None,
+    system_instruction=None,
+    temperature: float = 0.3,
+    fallback_client=None,
+):
+    """Stream Claude, then use Gemini if Claude fails before the first token.
+
+    Claude performs its own bounded transient retry. The provider switch happens
+    only after those attempts are exhausted and only when no answer text reached
+    the user. A partially delivered answer is never restarted because that would
+    splice two different generations together.
+    """
+    messages = messages or []
+    emitted = False
+    try:
+        if len(messages) > 1 and hasattr(primary_client, "generate_with_history_stream"):
+            stream = primary_client.generate_with_history_stream(
+                messages=_clean_messages_for_history(messages),
+                system_instruction=system_instruction,
+                temperature=temperature,
+            )
+        else:
+            stream = primary_client.generate_stream(
+                query,
+                system_instruction=system_instruction,
+                temperature=temperature,
+            )
+        for chunk in stream:
+            emitted = True
+            yield chunk
+        return
+    except Exception as e:
+        logger.warning(
+            "direct_primary_stream_failed",
+            emitted=emitted,
+            error_type=type(e).__name__,
+        )
+        if emitted:
+            yield _DIRECT_PARTIAL_FAILURE
+            return
+
+    try:
+        fallback = fallback_client or get_flash_client()
+        fallback_system = _strip_model_claim(
+            _system_instruction_to_text(system_instruction)
+        )
+        if len(messages) > 1 and hasattr(fallback, "generate_with_history"):
+            answer = fallback.generate_with_history(
+                messages=_clean_messages_for_history(messages),
+                system_instruction=fallback_system,
+                temperature=temperature,
+            )
+        else:
+            answer = fallback.generate(
+                query,
+                system_instruction=fallback_system,
+                temperature=temperature,
+            )
+        answer = (answer or "").strip()
+        if answer:
+            logger.info("direct_fallback_succeeded", provider="gemini_flash")
+            yield answer
+            return
+        logger.warning("direct_fallback_empty", provider="gemini_flash")
+    except Exception as e:
+        logger.error(
+            "direct_fallback_failed",
+            provider="gemini_flash",
+            error_type=type(e).__name__,
+        )
+    yield _DIRECT_TEMPORARY_FAILURE
+
+
+def _build_conversation_context(messages: List[Dict[str, str]]) -> str:
+    """Build conversation context — keep last 10 turns (20 messages).
+
+    맥락 소실 최소화 원칙 (2026-08-10 아키텍처 변경):
+    - 마지막 AI 답변은 3000자, 그 이전 답변은 800자 — 후속 질문이 참조하는 건
+      거의 항상 직전 답변이므로 토큰 예산을 최신에 몰아준다.
+    - 마지막으로 실행된 SQL은 원문 그대로 맨 끝에 부착한다. 테이블·지표·필터·
+      기간이 전부 담긴 무손실 앵커라, 요약 텍스트가 어떻게 절단되든 후속 질문
+      ("지난달이랑 비교해줘", "국가별로 나눠줘")의 기준이 살아남는다.
+      지시문("주제를 유지하라")만으로는 LLM이 매출로 회귀하는 것을 실측으로
+      확인했다 — 정보를 직접 주는 것이 유일하게 안정적이다.
+    """
+    if not messages or len(messages) <= 1:
+        return ""
+
+    history = messages[:-1]
+    lines = []
+
+    if len(history) > 20:
+        lines.append(f"[이전 대화 {len(history) - 20}개 메시지 생략 — 최근 10턴만 표시]")
+        history = history[-20:]
+
+    last_ai_idx = max(
+        (i for i, m in enumerate(history) if m.get("role") in ("assistant", "model")),
+        default=-1,
+    )
+    last_sql = ""
+    for i, msg in enumerate(history):
+        role = msg.get("role", "user")
+        raw = _content_to_text(msg.get("content", ""))
+        if not raw:
+            continue
+        if role == "user":
+            if len(raw) > 300:
+                raw = raw[:300] + "..."
+            lines.append(f"사용자: {raw}")
+        elif role in ("assistant", "model"):
+            sqls = _re_sql_in_details.findall(raw)
+            if sqls:
+                last_sql = sqls[-1].strip()
+            content = _strip_assistant_noise(raw)
+            cap = 3000 if i == last_ai_idx else 800
+            if len(content) > cap:
+                content = content[:cap] + "..."
+            lines.append(f"AI: {content}")
+
+    # ⛔ 앵커 하나로는 부족했다 — 실측 40%가 600자에서 잘렸고, **직전 턴만** 남아
+    #    두 턴 전 조건을 이어받을 수 없었다. 같은 대화에서 매출이 300억 달라진
+    #    사고가 그것이다 (붐따 #116). 조회 턴 전체를 **구조로** 함께 싣는다.
+    #    ⚠️ 답변 원문·표·차트는 넣지 않는다 — 길이만 먹고 후속 해석에는 상태가 정확하다.
+    try:
+        from app.core.turn_state import compact_context, extract_states
+        _states = extract_states(messages)
+        if _states:
+            lines.append(compact_context(_states))
+    except Exception as _e:
+        logger.warning("turn_state_context_failed", error=str(_e)[:120])
+
+    if last_sql:
+        lines.append(
+            "[직전 실행 SQL — 후속 질문은 이 테이블·지표·필터를 기준으로 해석]\n"
+            + last_sql[:1800]      # 실측 90퍼센타일 1,583자 — 600 은 40%가 잘렸다
+        )
+    return "\n".join(lines)
+
+
+# ── 후속 발화 ↔ 주제 전환 ───────────────────────────────────────────────────
+# ⛔ **컨텍스트는 전달되는데 라우팅이 그것을 안 본다** (2026-08-18 재현).
+#    실측:
+#        턴1 "2026년 7월 미국 매출 얼마야?"  → bigquery  219.7억
+#        턴2 "센텔라 앰플은?"                → **CS 로 납치** — 제품 소개문이 나왔다
+#        턴3 "일본사업팀은?"                 → bigquery 복귀 (팀 낱말이 데이터 가드에 걸려 우연히 살았다)
+#    턴2 에서 기대한 것은 "7월 미국에서 센텔라 앰플 매출" 이다. 맥락이 매출인데도
+#    제품명 하나로 경로가 갈렸다. `_keyword_classify_ex()` 가 **현재 문장만** 받기
+#    때문이고, 확신 분류라 LLM 재판정도 타지 않는다.
+#    경로가 틀리면 컨텍스트를 아무리 잘 넘겨도 소용이 없다 — CS 에이전트는 매출을
+#    답할 수 없다.
+#
+# ⛔ 대응은 낱말 목록이 아니다. 이미 `_should_continue_bigquery_for_correction` 이
+#    "라고했지"·"그거말고" 같은 목록으로 막고 있었지만 "센텔라 앰플은?" 은 못 잡았다.
+#    **문장이 독립적으로 성립하는가**를 구조로 본다 (붙여넣기 감지·외부 사실
+#    그라운딩과 같은 방식):
+#      - 서술어도 의문사도 없이 **명사구로 끝나면** 앞 조회의 축을 바꾸는 발화다
+#      - 서술어가 붙으면("센텔라 앰플 성분 알려줘") 독립 질문이므로 정상 라우팅한다
+#    ⚠️ 주제 전환도 같은 규칙으로 처리된다 — 노션 문서를 묻는 완전한 문장은
+#       그대로 notion 으로 가고, 그 뒤의 후속 명사구는 **notion 을** 이어받는다.
+
+# 서술어·의문사가 있으면 독립 질문이다 (있는 그대로 라우팅)
+_PREDICATE_HINT = (
+    "줘", "해줘", "알려", "보여", "뭐", "무엇", "어떻", "왜", "언제", "어디", "누구",
+    "인가", "일까", "있어", "있나", "있는", "될까", "되나", "하나요", "하는지",
+    "얼마", "몇", "찾아", "정리", "분석", "비교", "설명", "가능",
+)
+# 후속 발화의 꼬리 — 명사구 + 조사로 끝난다 ("인도네시아는?", "센텔라 앰플은?")
+_FOLLOWUP_TAIL = re.compile(
+    r"(?:은|는|도|만|의|와|과|랑|이랑|말고|빼고|대신|기준으로|별로)\s*[?？]?\s*$")
+# 앞 발화를 잇는 접속어
+_FOLLOWUP_LEAD = ("그럼", "그러면", "그리고", "아니면", "그거", "저거", "이거", "거기")
+_FOLLOWUP_MAX_LEN = 25          # 이보다 길면 대개 독립 문장이다
+
+# ── 경로 집합 (아키텍처 캔버스·정적 검사가 읽는 단일 소스) ──
+#
+# ⛔ 이 두 집합을 함수 안에 리터럴로 두면 **캔버스가 조용히 낡는다.** 실제로
+#    2026-08-24 리뷰에서 걸렸다 — `app/flow/spec.py` 가 라우터에서 9개 경로가
+#    나오는 것처럼 그렸는데, 분류기는 6개만 낸다. 거짓 화살표 6개가 admin 화면에
+#    "권위 있어 보이는 거짓말"로 떠 있었다. 캔버스의 명제 자체가
+#    *그래프는 생성된다, 그려지지 않는다* 인데 그 명제를 캔버스가 어겼다.
+#
+# ROUTER_ROUTES — 분류기가 **낼 수 있는 값의 전부**.
+#   `_keyword_classify_ex` 의 모든 `return (...)` 리터럴과 `_classify_with_llm` 의
+#   허용 집합이 정확히 이 여섯이다 (2026-08-24 실측). 새 경로를 분류기에 추가하면
+#   여기부터 고쳐야 하고, 그래야 캔버스·정적 검사가 따라온다.
+ROUTER_ROUTES = frozenset({"bigquery", "notion", "gws", "cs", "multi", "direct"})
+
+# HANDLER_ROUTES — 경로 이름 → `_handle_<이름>` 실행 핸들러가 있는 것.
+#   ⚠️ `team` 은 여기 있지만 **어떤 진입점도 team 을 만들지 않는다** (분류기에 없고
+#      `_DB_REGISTRY` 에도 엔트리가 없다). 죽은 배선인 채로 남아 있다는 사실 자체를
+#      캔버스가 '도달 불가' 로 표시한다 — 목록에서 빼면 그 사실이 다시 안 보인다.
+HANDLER_ROUTES = ("bigquery", "notion", "gws", "cs", "multi")
+
+# @@ multi-source selections have their own fan-out.  This is deliberately
+# separate from the classifier's `multi` route: the latter runs the combined
+# BigQuery + web-analysis workflow, while this table selects parallel handlers
+# for explicitly chosen @@ sources.
+MULTI_PREFIX_ROUTE_TARGETS = {
+    "bigquery": "bigquery",
+    "multi": "bigquery",
+    "notion": "notion",
+    "cs": "cs",
+    "gws": "gws",
+}
+
+
+def _multi_prefix_target(route: str) -> str:
+    """Return the execution target for one explicitly selected @@ source."""
+    return MULTI_PREFIX_ROUTE_TARGETS.get(route, "direct")
+
+
+def multi_prefix_target_routes() -> tuple[str, ...]:
+    """Unique fan-out targets, shared by dispatch and the architecture canvas."""
+    return tuple(sorted(set(MULTI_PREFIX_ROUTE_TARGETS.values()) | {"direct"}))
+
+# 직전 답변에 남는 경로 표지 (답변 형식이 경로마다 다르다)
+# ⛔ **표지는 그 경로에서만 나오는 문자열이어야 한다** (2026-09-04 실사용 제보).
+#    notion 표지에 일반적인 `"출처:"` 가 들어 있었는데, CS 답변 꼬리가
+#    `*출처: CS 제품 Q&A 데이터베이스*` 라서 **CS 답변이 notion 으로 읽혔다.**
+#    notion 이 cs 보다 먼저 검사되므로 아래 `cs` 항목까지 가지도 못한다.
+#    결과: 제품 Q&A 로 잘 답한 다음 턴에 "히알루-테카 퍼밍 크림은?" 이 notion 을
+#    물려받아 **경로와 링크만** 답했다. 골든셋 기대어 규칙과 같은 사상 —
+#    *실패 답변에도 들어가는 낱말은 표지가 될 수 없다.*
+# ⚠️ 순서로 때우지 마라 (cs 를 앞에 두는 식). 표지 자체가 고유해야 한다.
+_ROUTE_MARKERS = (
+    ("bigquery", ("[직전 실행 SQL", "내부 데이터베이스", "```chart-config")),
+    ("notion", ("Notion 사내 문서 검색", "사내 문서에서")),
+    ("gws", ("[메일]", "[일정]", "구글 캘린더", "드라이브")),
+    ("cs", ("CS 데이터", "제품 Q&A")),
+    # ⛔ 2026-09-07 리뷰: 여기 없어서 수상 표를 받은 다음 턴("이 어워드는?" 류)이
+    #    direct 로 떨어졌다 — direct 는 full history 를 받으므로 LLM 이 △ 표기를
+    #    보고 "조건부라 사용 가능합니다" 를 만들 수 있다(활용 가부는 법적 판단이라
+    #    `awards.format_answer` 가 절대 단정하지 않게 지켜 둔 것과 정면으로 부딪힌다).
+    #    두 문구는 `format_answer` 가 매번 붙이는 것이라 이 경로에서만 나온다 —
+    #    "출처:" 가 CS 꼬리에 걸려 notion 으로 샌 사고와 같은 함정을 피하려고
+    #    `app/core/awards.py` 를 포함해 grep 으로 재확인했다: 두 문자열 다 다른
+    #    경로의 표지·정형 문구와 겹치지 않는다.
+    ("awards", ("활용 표기:", "실제 사용 가부는 담당자 확인")),
+)
+
+
+def _is_followup_utterance(query: str) -> bool:
+    """앞 발화의 축만 바꾸는 발화인가 (독립 질문이 아닌가)."""
+    q = (query or "").strip()
+    if not q or len(q) > _FOLLOWUP_MAX_LEN:
+        return False
+    body = q
+    for lead in _FOLLOWUP_LEAD:
+        if body.startswith(lead):
+            body = body[len(lead):].strip()
+            break
+    if not body:
+        return False
+    if any(h in body for h in _PREDICATE_HINT):
+        return False                      # 서술어·의문사가 있으면 독립 질문
+    return bool(_FOLLOWUP_TAIL.search(body))
+
+
+def _previous_route(conversation_context: str) -> Optional[str]:
+    """직전 턴이 어느 경로로 답했는지 — **마지막 AI 답변**에 남은 표지로 판정한다.
+
+    ⛔ 컨텍스트 **끝부분**을 보면 안 된다. `[직전 실행 SQL …]` 앵커가 맨 끝에
+       고정으로 붙어서, 노션으로 주제를 옮긴 뒤에도 계속 bigquery 로 읽힌다
+       (2026-08-18 실측: 매출 → 가이드라인 → "유가 협업은?" 이 bigquery 로 갔다).
+       앵커는 "직전 턴이 무엇이었나"가 아니라 "마지막으로 돈 SQL"이다.
+    """
+    ctx = conversation_context or ""
+    if not ctx:
+        return None
+    # 앵커를 떼고, 마지막 "AI:" 블록만 본다
+    body = ctx.split("[직전 실행 SQL")[0]
+    idx = body.rfind("\nAI:")
+    if idx == -1:
+        idx = body.rfind("AI:")
+    last_answer = body[idx:] if idx != -1 else body[-2500:]
+    for route, markers in _ROUTE_MARKERS:
+        if any(m in last_answer for m in markers):
+            return route
+    # 마지막 답변에 표지가 없고 SQL 앵커만 있으면, 직전 조회를 이어받는다
+    if "[직전 실행 SQL" in ctx:
+        return "bigquery"
+    return None
+
+
+# 지표를 가리키는 낱말 — 이런 후속은 **문서가 아니라 데이터**를 묻는 것이다
+_METRIC_NOUNS = ("매출", "비용", "광고비", "수량", "판매량", "협업", "시딩", "조회수",
+                 "좋아요", "클릭", "노출", "전환", "roas", "ctr", "리뷰", "원가",
+                 "재고", "반품", "환불", "순위", "비중", "점유율")
+
+
+# 시각화 지시를 이루는 낱말들. 이것만으로 이뤄진 발화는 **새 주제가 없다**.
+_VIZ_NOUNS = ("그래프", "차트", "시각화", "도표", "플롯", "chart", "graph")
+# 차트 종류·조사·동사 등 시각화 지시에 딸려 오는 부속어 (긴 것부터 지운다)
+_VIZ_FILLER = (
+    "시계열", "막대그래프", "꺾은선", "막대", "파이", "원형", "도넛", "누적",
+    "영역", "산점도", "히트맵", "라인", "선형", "바",
+    "그려주", "그려", "보여주", "보여", "만들어", "그리", "뽑아", "바꿔",
+    "주세요", "해줘", "해서", "다시", "부탁", "please",
+    "이걸", "이거", "그거", "저거", "위에", "위", "좀", "한번",
+    "으로", "로", "를", "을", "은", "는", "도", "만", "요", "줘", "해",
+)
+_VIZ_STRIP = re.compile(
+    "|".join(re.escape(w) for w in sorted(_VIZ_FILLER, key=len, reverse=True))
+)
+_VIZ_MAX_LEN = 30
+
+
+def _is_visualization_only_request(query: str) -> bool:
+    """'그래프로 그려줘' 처럼 **시각화 지시밖에 없는** 발화인가.
+
+    ⛔ 이런 발화엔 새 주제가 없어 직전 턴의 데이터를 가리킬 수밖에 없다. 그런데
+       `_is_followup_utterance()` 는 `"줘"` 가 `_PREDICATE_HINT` 에 들어 있어 이걸
+       **독립 질문**으로 본다 → 경로를 못 물려받고 direct 로 떨어진다.
+       direct 에는 차트를 만드는 경로가 없다 (`chart-config` 는 `sql_agent` 한 곳).
+       그 결과 LLM 이 **ASCII 막대를 지어냈고, 눈금과 값이 맞지 않는 가짜 시계열**이
+       나갔다 (2026-08-21 사용자 제보). 없는 것을 없다고 하지 않고 그린 것이 문제다.
+
+    ⚠️ 주제가 하나라도 남으면 독립 질문이다 — "일본 매출 그래프 그려줘" 는 그대로
+       라우팅돼야 한다 (직전 주제가 무엇이든 일본 매출을 새로 조회해야 한다).
+    """
+    q = (query or "").strip().lower()
+    if not q or len(q) > _VIZ_MAX_LEN:
+        return False
+    if not any(n in q for n in _VIZ_NOUNS):
+        return False
+    for noun in _VIZ_NOUNS:
+        q = q.replace(noun, " ")
+    q = _VIZ_STRIP.sub(" ", q)
+    # 남은 것이 문장부호·공백뿐이면 시각화 지시만 있었던 것이다
+    return not re.sub(r"[\s,.!?~·…\-()]+", "", q)
+
+
+def _inherit_route_for_followup(query: str, conversation_context: str) -> Optional[str]:
+    """후속 발화면 직전 경로를 물려준다. 아니면 None (정상 라우팅).
+
+    ⚠️ **무조건 상속하면 안 된다.** 실측: 가이드라인(notion) 답변 뒤 "유가 협업은?"
+       이 notion 을 물려받아 사내 문서를 뒤졌고, `유가` 가 사람 이름 **유가연** 에
+       걸려 엉뚱한 답이 나왔다 (2026-08-18).
+       지표를 가리키는 낱말은 **문서가 아니라 데이터**를 묻는 것이므로 상속하지 않고
+       정상 라우팅한다. 반대로 제품명·국가명·팀명은 축 값이라 그대로 상속한다
+       ("센텔라 앰플은?" 은 매출 맥락에서 그 제품의 매출을 묻는 것이다).
+    """
+    # ⛔ **활용 가부만은 서술어가 붙어도 상속시킨다** (2026-09-08).
+    #    `_is_followup_utterance` 는 서술어·의문사가 있으면 "독립 질문" 으로 보고
+    #    상속을 아예 안 태운다 — 의도된 설계다(가이드라인 답변 뒤 "유가 협업은?" 이
+    #    사람 이름에 걸린 사고 때문). 그런데 그 규칙 때문에 수상 표를 받은 뒤
+    #    **"이거 광고에 써도 돼?" 가 direct 로 떨어져**, 대화 맥락에 남은 △ 표를 보고
+    #    LLM 이 "조건부라 사용 가능합니다" 를 지어낼 수 있었다. 활용 가부는 법적
+    #    판단이고, 못 쓰는 수상을 쓸 수 있다고 답하면 실제 문제가 된다.
+    # ⚠️ **직전이 수상 답변일 때만** 연다. 그래서 초상권(model_rights) 경로를 훔칠 수
+    #    없다 — 사진 사용 가부를 물으려면 그 앞 턴이 수상 답변이어야 하기 때문이다.
+    if _previous_route(conversation_context) == "awards":
+        from app.core.awards import asks_usage_permission
+
+        if asks_usage_permission(query):
+            logger.info("route_inherited_awards_usage", query=query[:60])
+            return "awards"
+
+    viz_only = _is_visualization_only_request(query)
+    if not (_is_followup_utterance(query) or viz_only):
+        return None
+    prev = _previous_route(conversation_context)
+    if not prev:
+        return None
+    if viz_only:
+        # 시각화 지시만 있는 발화엔 지표 낱말이 없다 — 아래 가드를 탈 이유가 없고,
+        # 태워도 항상 통과한다. 어느 경로였든 "방금 그것"을 그리라는 뜻이다.
+        logger.info("route_inherited_viz_only", query=query[:60], route=prev)
+        return prev
+    if prev != "bigquery" and any(w in query.lower() for w in _METRIC_NOUNS):
+        logger.info("route_inherit_skipped_metric", query=query[:60], prev=prev)
+        return None
+    logger.info("route_inherited_followup", query=query[:60], route=prev)
+    return prev
+
+
+_BIGQUERY_CORRECTION_MARKERS = (
+    "라고했지", "라고했잖", "언급도안", "언급안", "언급하지않",
+    "말한적없", "그거말고", "잘못나왔", "잘못됐", "잘못되었",
+    "빼고다시", "제외하고다시", "다시뽑", "다시조회", "다시집계",
+)
+
+
+def _should_continue_bigquery_for_correction(query: str, conversation_context: str) -> bool:
+    """직전 SQL 결과를 고치는 후속 발화를 새 CS 질문으로 분류하지 않는다.
+
+    제품 라인명이 정정 문장에 다시 등장하면 키워드 분류기는 그 문장을 독립적인
+    CS 질문으로 확신한다. 직전 답변에 실제 실행 SQL이 있고, 현재 문장도 명시적인
+    정정/재조회 표현일 때만 BigQuery 흐름을 이어간다. SQL 앵커가 없는 일반 제품
+    문의는 건드리지 않는다.
+    """
+    if "[직전 실행 SQL" not in (conversation_context or ""):
+        return False
+    compact = re.sub(r"\s+", "", (query or "").lower())
+    return any(marker in compact for marker in _BIGQUERY_CORRECTION_MARKERS)
+
+
+# Direct-lock keywords — queries containing these skip LLM reclassification
+_DIRECT_LOCK_KW = frozenset([
+    "회사", "뭐하는", "소개", "누가 만들", "주인", "재밌", "안녕", "하이",
+    "hello", "hi", "부동산", "주식", "투자", "아파트", "전세", "월세",
+    "대출", "연봉", "이직", "항공", "비행기", "호텔", "숙소", "맛집",
+])
+
+_FI_QUERY_KEYWORDS = (
+    "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
+)
+
+
+def _requests_fi_data(query: str, enabled_sources=None, db_entry=None) -> bool:
+    if any(keyword in (query or "") for keyword in _FI_QUERY_KEYWORDS):
+        return True
+    if "손익" in (enabled_sources or []):
+        return True
+    entries = db_entry if isinstance(db_entry, list) else [db_entry]
+    return any(isinstance(entry, dict) and entry.get("key") == "손익" for entry in entries)
+
+
+# ── 성분 미포함 질문 차단 ──────────────────────────────────────────────────────
+#
+# 자사 제품의 **전성분 데이터가 시스템에 없다** (2026-08-05 확인: BigQuery 전 데이터셋에
+# 자사 제품 성분 테이블 없음. Product 테이블에도 성분 컬럼 없음. CS Q&A 시트에 텍스트로만 존재).
+#
+# 그래서 "X 안 들어간 제품" 류 질문에 SQL 이 제품명 문자열 매칭(`LIKE '%RETINOL%'`)으로
+# 답해 왔고, 제품명에 성분이 안 적힌 제품이 "미포함"으로 분류돼 **나이아신아마이드가 든
+# 제품이 '나이아신아마이드 미포함 1위'로 나오는 오답**이 났다 (노션 AI Tester 미해결 건).
+#
+# 포함/미포함은 대칭이 아니다. "들어간 제품"은 라인·제품명으로 근사라도 되지만,
+# **"안 들어간 제품"은 전성분을 모르면 원리적으로 판정할 수 없다.** 부재는 증명해야 하는데
+# 증명할 데이터가 없다. 면책 문구를 붙인 순위표는 여전히 틀린 순위표다 — 그래서 막는다.
+
+_INGREDIENT_TERMS = (
+    "나이아신아마이드", "레티놀", "히알루론산", "판테놀", "세라마이드", "살리실산",
+    "아데노신", "알부틴", "비타민c", "비타민 c", "아스코르빅", "마데카소사이드",
+    "알란토인", "스쿠알란", "콜라겐", "펩타이드", "글리세린", "우레아",
+    "파라벤", "향료", "인공향료", "알코올", "에탄올", "미네랄오일", "실리콘",
+    "에센셜오일", "aha", "bha", "pha", "성분",
+)
+
+_EXCLUSION_TERMS = (
+    "안 들어간", "안들어간", "안 들어있는", "안들어있는", "들어가지 않은", "들어있지 않은",
+    "없는", "미포함", "불포함", "제외한", "제외하고", "빼고", "뺀", "무첨가", "프리", "free",
+)
+
+def _line_names_for_help() -> str:
+    """안내문에 쓸 제품 라인 이름 — 단일 소스는 프롬프트의 `### 제품 라인` 표다."""
+    try:
+        from app.core import product_lines
+        names = sorted(product_lines.known_lines())
+        if names:
+            return " · ".join(names)
+    except Exception:
+        pass
+    return "센텔라, 히알루시카, 톤브라이트닝, 포어마이징 등"
+
+
+INGREDIENT_EXCLUSION_MESSAGE = (
+    "**성분 미포함 기준으로는 순위를 낼 수 없습니다.**\n\n"
+    # ⛔ 예전엔 "전성분 데이터를 보유하고 있지 않습니다" 였다 — 2026-08-06 에
+    #    전성분을 적재한 뒤로 **사실이 아니다** (2026-09-03 정정). 커버리지가
+    #    전 제품을 덮지 못할 뿐이라, 없는 것은 "미포함 순위" 지 데이터가 아니다.
+    "제품별 전성분은 보유하고 있지만 **전 제품을 덮지는 못합니다** "
+    "(시트에 없는 제품은 성분을 *모르는* 것이지 *안 들어간* 것이 아닙니다). "
+    "특정 성분이 **들어있지 않다**는 것은 확인할 방법이 없습니다.\n"
+    "(제품명에 성분이 안 적혀 있다고 해서 실제로 안 들어간 것은 아닙니다. "
+    "이 방식으로 답하면 해당 성분이 든 제품이 '미포함 1위'로 올라오는 오답이 납니다.)\n\n"
+    "**대신 이렇게 하실 수 있습니다**\n"
+    # ⛔ 라인 목록을 손으로 적지 마라 — 단일 소스는 프롬프트의 `### 제품 라인` 표다
+    #    (여기 적어 둔 탓에 센텔라테카·히알루테카가 빠져 있었다, 2026-09-03)
+    "- **제품 라인 기준**으로 물어보시면 정확합니다 — " + _line_names_for_help() + "\n"
+    "  예) \"센텔라 라인 제외한 제품 판매량 순위\"\n"
+    "- **개별 제품의 전성분**은 `@@BP` (제품 Q&A)를 선택해 물어보시면 확인됩니다\n"
+    "  예) \"@@BP 센텔라 앰플 전성분 알려줘\""
+)
+
+
+_INCLUSION_TERMS = ("들어간", "들어있는", "포함", "함유", "든 제품", "있는 제품")
+
+# 감지에 쓰는 성분어 중 "성분" 은 일반어라 성분명 추출 대상에서 뺀다.
+_GENERIC_TERMS = {"성분", "전성분"}
+
+
+def _extract_ingredient(query: str) -> Optional[str]:
+    """질문에서 성분명을 뽑는다. 일반어('성분')만 있으면 None."""
+    q = (query or "").lower()
+    hits = [t for t in _INGREDIENT_TERMS if t in q and t not in _GENERIC_TERMS]
+    if not hits:
+        return None
+    return max(hits, key=len)  # "비타민 c" 처럼 긴 쪽 우선
+
+
+def _ingredient_filter_intent(query: str) -> Optional[tuple[str, bool]]:
+    """성분 기준 제품 필터링 질문인가.
+
+    Returns:
+        (성분명, contains) 또는 None. contains=False 면 '미포함' 질문.
+    """
+    q = (query or "").lower()
+    if not any(t in q for t in _INGREDIENT_TERMS):
+        return None
+    excl = any(t in q for t in _EXCLUSION_TERMS)
+    incl = any(t in q for t in _INCLUSION_TERMS)
+    if not (excl or incl):
+        return None
+    ing = _extract_ingredient(query)
+    if not ing:
+        return None
+    return (ing, not excl)
+
+
+def _requests_ingredient_exclusion(query: str) -> bool:
+    """성분 '미포함' 기준 필터링을 요구하는 질문인가 (하위 호환)."""
+    intent = _ingredient_filter_intent(query)
+    return bool(intent and not intent[1])
+
+
+
+def _scope_sources(enabled_sources, db_entry):
+    """@@ 로 고른 소스를 테이블 화이트리스트의 근거로 쓴다.
+
+    ⚠️ 프론트도 @@ 를 파싱해 enabled_sources 를 보내지만, 서버가 그걸 **믿기만 하면**
+    프론트를 거치지 않는 클라이언트(API·골든 하네스)는 스코프 없이 전 테이블을 조회한다.
+    실제로 `@@메타광고` 질문이 화이트리스트 밖 integrated_ad 를 읽고 있었다 (2026-08-11).
+    FI 권한과 같은 원칙 — 판정 근거는 서버가 직접 가진다.
+    클라이언트가 값을 보냈으면 그대로 존중하고(칩 선택), 없을 때만 파싱 결과로 채운다.
+    """
+    if enabled_sources is not None:
+        return enabled_sources
+    if not db_entry:
+        return None
+    return [e["key"] for e in db_entry]
+
+
+def _euro(word: str) -> str:
+    """받침에 맞는 `으로`/`로`. "'전체' 으로" 처럼 틀리면 자동 생성 티가 난다."""
+    from app.reports.blocks import _josa
+
+    w = (word or "").rstrip()
+    if not w:
+        return " 으로"
+    return " 으로" if _josa(w, "은는").endswith("은") else "로"
+
+
+import re as _re
+
+
+def _product_line_named(question: str) -> set:
+    """질문이 제품 라인을 지목했는가. 어휘 단일 소스는 프롬프트의 `### 제품 라인` 표다."""
+    try:
+        from app.core import product_lines
+        return product_lines.mentioned(question or "")
+    except Exception:
+        return set()
+
+
+def _product_catalog_section() -> str:
+    """대표 제품 목록 — **실측 주입** (2026-09-03).
+
+    ⛔ 예전엔 여기에 목록을 손으로 적어 뒀다. 그래서 2026-01 출시해 36만 개 팔린
+       **센텔라 테카 앰플**을 *"공식 제품 목록에서 확인되지 않습니다"* 라고 답했다
+       (사용자 제보). 데이터에는 다 있었고 **프롬프트만 낡아 있었다.**
+    ⚠️ 조회 실패로 목록이 비어도 답변이 죽으면 안 된다 — 그때는 "목록 없음 +
+       단정 금지" 문구가 대신 들어간다 (`product_catalog.section()`).
+    """
+    try:
+        from app.core.product_catalog import section
+        return section()
+    except Exception as e:  # 캐시 테이블 부재·DB 순단 등
+        logger.warning("product_catalog_section_failed", error=str(e)[:140])
+        return ("## 대표 제품\n⚠️ 제품 목록을 불러오지 못했습니다. 제품명을 지어내지 말고,"
+                " 목록에 없다는 이유로 **없는 제품이라고 단정하지 마세요.**")
+
+
+class OrchestratorAgent:
+    """Orchestrator-Worker pattern conductor.
+
+    Analyzes query intent and delegates to appropriate Sub Agent.
+    Supports both Gemini 2.5 Pro and Claude Sonnet 4.5 based on user selection.
+    """
+
+    def __init__(self):
+        logger.info("orchestrator_initialized")
+
+        # Build _SOURCE_ROUTE_MAP from _DB_REGISTRY (key + aliases → route)
+        if not self._SOURCE_ROUTE_MAP:
+            for entry in self._DB_REGISTRY:
+                self._SOURCE_ROUTE_MAP[entry["key"]] = entry["route"]
+                for alias in entry.get("aliases", []):
+                    self._SOURCE_ROUTE_MAP[alias] = entry["route"]
+
+        # v3.0 new agents (lazy init)
+        self._notion_agent = None
+        self._gws_agent = None
+
+        # Strong refs for fire-and-forget background tasks (prevents GC mid-flight)
+        self._bg_tasks: set = set()
+
+    @property
+    def notion_agent(self):
+        if self._notion_agent is None:
+            self._notion_agent = NotionAgent()
+        return self._notion_agent
+
+    @property
+    def gws_agent(self):
+        if self._gws_agent is None:
+            self._gws_agent = GWSAgent()
+        return self._gws_agent
+
+    # Source name → route mapping (matches frontend DATA_SOURCE_KEYS, clean names)
+    # Auto-built from _DB_REGISTRY: key → route
+    _SOURCE_ROUTE_MAP = {}  # populated in __init__
+
+    # ═══ @@ 데이터소스 선택 시스템 ═══
+    # 사용자가 "@@매출 이번달 합계" 형태로 데이터소스를 직접 지정
+    # route: 라우팅 대상, label: 사용자에게 표시되는 이름, desc: 설명
+    _DB_REGISTRY = [
+        # ── BigQuery 매출 ──
+        # ── 보고서 (산출물 — 테이블이 아니다) ──
+        {"key": "보고서", "aliases": ["리포트", "report", "reports"], "route": "report", "group": "보고서", "icon": "doc", "label": "보고서", "desc": "질문에 맞춰 절을 조합한 분석 보고서 (본인 + 지목해 공유한 사람만 열람)"},
+        {"key": "매출", "aliases": ["sales", "매출데이터", "세일즈"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "매출", "desc": "통합 매출 — 글로벌 전 플랫폼"},
+        {"key": "제품", "aliases": ["product", "제품데이터"], "route": "bigquery", "group": "매출 데이터", "icon": "box", "label": "제품", "desc": "제품별 판매 수량"},
+        {"key": "손익", "aliases": ["pl", "손익계산서", "영업이익", "판관비", "재무손익"], "route": "bigquery", "group": "매출 데이터", "icon": "chart", "label": "손익", "desc": "재무 손익 — 영업이익/원가/판관비 (월 단위)"},
+        # ── BigQuery 마케팅 ──
+        {"key": "광고", "aliases": ["ad", "ads", "광고데이터", "광고비"], "route": "bigquery", "group": "마케팅 데이터", "icon": "megaphone", "label": "광고", "desc": "통합 광고 데이터"},
+        {"key": "마케팅", "aliases": ["marketing", "마케팅비용"], "route": "bigquery", "group": "마케팅 데이터", "icon": "dollar", "label": "마케팅", "desc": "통합 마케팅 비용"},
+        {"key": "인플루언서", "aliases": ["influencer", "인플"], "route": "bigquery", "group": "마케팅 데이터", "icon": "users", "label": "인플루언서", "desc": "인플루언서 마케팅"},
+        {"key": "Shopify", "aliases": ["shopify", "쇼피파이"], "route": "bigquery", "group": "마케팅 데이터", "icon": "cart", "label": "Shopify", "desc": "글로벌 자사몰 판매"},
+        {"key": "플랫폼", "aliases": ["platform", "플랫폼데이터"], "route": "bigquery", "group": "마케팅 데이터", "icon": "store", "label": "플랫폼", "desc": "플랫폼 순위/가격"},
+        {"key": "아마존검색", "aliases": ["amazon", "아마존"], "route": "bigquery", "group": "마케팅 데이터", "icon": "search", "label": "아마존검색", "desc": "아마존 검색 분석"},
+        {"key": "프로모션", "aliases": ["promotion", "행사", "기획전", "프로모"], "route": "bigquery", "group": "마케팅 데이터", "icon": "calendar", "label": "프로모션", "desc": "프로모션 캘린더 (실행 일정)"},
+        {"key": "메타광고", "aliases": ["meta", "메타"], "route": "bigquery", "group": "마케팅 데이터", "icon": "phone", "label": "메타광고", "desc": "메타 광고 라이브러리"},
+        {"key": "국내몰 리뷰", "aliases": ["스마트스토어 리뷰", "smartstore review", "네이버 리뷰", "올리브영 리뷰", "무신사 리뷰", "국내 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "국내몰 리뷰", "desc": "스마트스토어·올리브영·무신사 등 8채널"},
+        {"key": "해외몰 리뷰", "aliases": ["아마존 리뷰", "amazon review", "큐텐 리뷰", "qoo10 review", "쿠텐 리뷰", "쇼피 리뷰", "shopee review", "해외 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "해외몰 리뷰", "desc": "Qoo10·Shopee·Amazon·해외 자사몰"},
+        {"key": "매장 리뷰", "aliases": ["플래그십 리뷰", "오프라인 리뷰", "스토어 리뷰", "구글맵 리뷰"], "route": "bigquery", "group": "마케팅 데이터", "icon": "star", "label": "매장 리뷰", "desc": "명동·뉴욕 플래그십 (구글맵·네이버 플레이스)"},
+        # ── BigQuery 물류 ──
+        # ⚠️ 키는 사용자가 부르는 이름(`물류`)이다. `LOG` 는 별칭으로 남겼다
+        #    (2026-09-03 사용자 요청으로 `LOG` → `물류` 변경).
+        # ⚠️ Qdrant `TEAM_MAP` 에 `물류 → LOG`(물류팀 노션 문서)가 이미 있다.
+        #    그 팀은 아직 `_DB_REGISTRY` 에 없어 지금은 충돌하지 않지만,
+        #    노출한다면 이름을 갈라야 한다 (`물류 문서` 등)
+        {"key": "물류", "aliases": ["log", "수출물류", "물류관리", "선적", "출고", "logistics", "export"], "route": "bigquery", "group": "물류 데이터", "icon": "box", "label": "물류", "desc": "수출 물류 — 발주·선적·출고·ETD/ETA·포워더"},
+        {"key": "초상권", "aliases": ["모델", "모델사진", "모델초상권", "rights", "bc"], "route": "model_rights", "group": "BC", "icon": "users", "label": "초상권", "desc": "모델 사진 사용 가능 여부·기한 ([BC] 모델 초상권 현황)"},
+        # ── Notion (팀별자료 — 벡터 검색, 알파벳순) ──
+        {"key": "B2B1", "aliases": ["b2b1", "국내영업", "b2b국내"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B1", "desc": "해외영업 (매출/거래처/재고)"},
+        {"key": "B2B2", "aliases": ["b2b2", "b2b", "해외영업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "B2B2", "desc": "B2B 프로세스/온보딩"},
+        {"key": "BCM", "aliases": ["bcm", "브랜드커뮤니케이션"], "route": "notion", "group": "Notion", "icon": "doc", "label": "BCM", "desc": "브랜드커뮤니케이션팀"},
+        {"key": "Craver", "aliases": ["craver", "크레이버", "경영기획"], "route": "notion", "group": "Notion", "icon": "doc", "label": "Craver", "desc": "경영기획"},
+        {"key": "CS", "aliases": ["cs", "cs문서", "cs자료", "notion_cs"], "route": "notion", "group": "Notion", "icon": "doc", "label": "CS", "desc": "CS팀 Notion 문서"},
+        {"key": "DB", "aliases": ["db", "데이터분석", "데이터팀"], "route": "notion", "group": "Notion", "icon": "doc", "label": "DB", "desc": "데이터분석팀"},
+        {"key": "GM EAST", "aliases": ["gm_east", "east", "동부", "gm동부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM EAST", "desc": "글로벌마케팅 동부"},
+        {"key": "GM WEST", "aliases": ["gm_west", "west", "서부", "gm서부"], "route": "notion", "group": "Notion", "icon": "globe", "label": "GM WEST", "desc": "글로벌마케팅 서부"},
+        {"key": "JBT", "aliases": ["jbt", "일본사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "JBT", "desc": "일본사업팀"},
+        {"key": "KBT", "aliases": ["kbt", "국내사업"], "route": "notion", "group": "Notion", "icon": "doc", "label": "KBT", "desc": "국내사업팀"},
+        {"key": "BP", "aliases": ["bp", "뷰티파트너", "제품qa", "제품문의", "고객상담"], "route": "cs", "group": "Notion", "icon": "flask", "label": "BP", "desc": "제품 Q&A (성분/사용법)"},
+        {"key": "PEOPLE", "aliases": ["people", "피플", "인사", "hr", "피플팀"], "route": "notion", "group": "Notion", "icon": "people", "label": "PEOPLE", "desc": "연차, 보상, 퇴사, 복지"},
+        {"key": "PR", "aliases": ["pr", "홍보", "보도자료", "프레인"], "route": "notion", "group": "브랜드 성과", "icon": "sheet", "label": "PR", "desc": "프레인 PR 이슈 (리스트 탭)"},
+        # OP — 운영팀 재고. ⚠️ 벡터가 아니라 **표 조회**다 (`route: "inventory"`).
+        #    시트가 SKU × 창고 수량이라 임베딩으로는 숫자를 못 지킨다 (2026-08-25 결정).
+        {"key": "OP", "aliases": ["op", "운영", "운영팀", "재고", "inventory", "stock"], "route": "inventory", "group": "Notion", "icon": "box", "label": "OP", "desc": "재고 (SKU·창고별 수량)"},
+        # 수상/랭킹 — ⚠️ 벡터가 아니라 **표 조회**다 (`route: "awards"`).
+        #    랭킹이 숫자라 임베딩으로는 1위와 10위를 구분하지 못한다 (2026-09-07 결정).
+        {"key": "수상", "aliases": ["awards", "어워드", "랭킹정보", "수상랭킹"],
+         "route": "awards", "group": "브랜드 성과", "icon": "star", "label": "수상",
+         "desc": "수상·랭킹·설문 이력 (주최사·순위·마케팅 활용 표기)"},
+        # ── 시스템 ──
+        {"key": "gws", "aliases": ["google workspace", "workspace", "워크스페이스", "google", "구글", "지메일", "gmail", "캘린더", "드라이브"], "route": "gws", "group": "시스템", "icon": "link", "label": "Google Workspace", "desc": "Gmail, Calendar, Drive"},
+        # ── 확장 ──
+    ]
+
+    # 특수 명령어 (@@전체, @@ALL, @@전체해제, @@목록)
+    _DB_SPECIAL = {
+        "전체": "select_all", "all": "select_all",
+        "전체해제": "deselect_all", "해제": "deselect_all", "none": "deselect_all",
+        "목록": "list", "list": "list", "help": "list",
+    }
+
+    @classmethod
+    def get_db_registry(cls):
+        """Return the full DB registry (for API/frontend)."""
+        return cls._DB_REGISTRY
+
+    @classmethod
+    def parse_db_prefix(cls, query: str):
+        """Parse @@prefix(es) from query. Supports multiple: @@a @@b 질문
+
+        Returns:
+            (db_entry_or_special_or_list, clean_query)
+            - db_entry dict → single source
+            - list[dict] → multiple sources
+            - "select_all"/"deselect_all"/"list" string → special command
+            - None → no @@ prefix
+        """
+        import re
+        q = query.strip()
+        if "@@" not in q:
+            return None, query
+
+        # ⚠️ \S+ 토큰화 금지 — "@@아마존 리뷰"가 공백에서 잘려 별칭 '아마존'(아마존검색)에
+        # 걸리면 엉뚱한 소스로 격리된다. UI 칩도 "@@아마존 리뷰 " 형태로 입력하므로
+        # 실사용 버그였다 (2026-08-06 Playwright 전수 테스트에서 발견).
+        # → 등록된 키/별칭을 길이 내림차순(최장 일치)으로 스캔한다.
+        names = []
+        for entry in cls._DB_REGISTRY:
+            names.append((entry["key"].lower(), entry))
+            for a in entry["aliases"]:
+                names.append((a.lower(), entry))
+        names.sort(key=lambda x: len(x[0]), reverse=True)
+        special_names = sorted(cls._DB_SPECIAL.items(), key=lambda x: len(x[0]), reverse=True)
+
+        ql = q.lower()
+        spans = []      # (start, end, entry|None)
+        specials = []
+        i = 0
+        while True:
+            i = ql.find("@@", i)
+            if i < 0:
+                break
+            rest = ql[i + 2:]
+            hit = None
+            for prefix, special in special_names:
+                if rest.startswith(prefix):
+                    end = i + 2 + len(prefix)
+                    nxt = ql[end:end + 1]
+                    if nxt in ("", " ", "\t", "\n", ":"):
+                        hit = ("special", special, end + (1 if nxt == ":" else 0))
+                        break
+            if hit is None:
+                for name, entry in names:
+                    if rest.startswith(name):
+                        end = i + 2 + len(name)
+                        nxt = ql[end:end + 1]
+                        if nxt in ("", " ", "\t", "\n", ":"):
+                            hit = ("entry", entry, end + (1 if nxt == ":" else 0))
+                            break
+            if hit is None:
+                m = re.match(r"@@\S*", ql[i:])
+                spans.append((i, i + m.end(), None))
+                i = i + m.end()
+            else:
+                kind, obj, end = hit
+                spans.append((i, end, obj if kind == "entry" else None))
+                if kind == "special":
+                    specials.append(obj)
+                i = end
+
+        # 매칭 구간(+뒤따르는 공백 1개)을 제거해 clean 구성
+        out, last = [], 0
+        for s_, e_, _ in spans:
+            out.append(q[last:s_])
+            if e_ < len(q) and q[e_] == " ":
+                e_ += 1
+            last = e_
+        out.append(q[last:])
+        clean = "".join(out).strip()
+
+        if len(spans) == 1 and specials:
+            return specials[0], clean
+
+        entries = []
+        for _, _, obj in spans:
+            if obj is not None and obj not in entries:
+                entries.append(obj)
+
+        if not entries:
+            return None, query
+        if len(entries) == 1:
+            return entries[0], clean
+        return entries, clean
+
+    @classmethod
+    def _single_enabled_source_entry(cls, enabled_sources):
+        """Resolve one client-selected source to its registry entry.
+
+        The browser removes the visible ``@@source`` token before sending the
+        question and carries the selection in ``enabled_sources`` instead.
+        Treat exactly one selected source like the server-side @@ fast path;
+        two or more selections must keep the existing discovery flow.
+        """
+        if not enabled_sources or len(enabled_sources) != 1:
+            return None
+
+        selected = str(enabled_sources[0]).strip().casefold()
+        for entry in cls._DB_REGISTRY:
+            names = (entry["key"], entry.get("label", ""), *entry.get("aliases", []))
+            if any(selected == str(name).strip().casefold() for name in names if name):
+                return entry
+        return None
+
+    def _allowed_routes(self, enabled_sources: Optional[List[str]]) -> Optional[set]:
+        """Derive the set of allowed routes from enabled_sources.
+
+        Default (None): BigQuery + GWS + Direct only. CS/Notion/Team은 @@ 선택 시에만.
+        Returns {"direct"} if explicitly empty list (all sources disabled).
+        """
+        if enabled_sources is None:
+            # 기본: 데이터(BQ) + GWS + Direct만. CS/Notion/Team은 @@ 명시 시에만 활성화
+            return {"direct", "bigquery", "multi", "gws"}
+        routes = {"direct"}  # direct만 기본 허용
+        for src in enabled_sources:
+            route = self._SOURCE_ROUTE_MAP.get(src)
+            if route:
+                routes.add(route)
+        # Allow multi if bigquery is enabled
+        if "bigquery" in routes:
+            routes.add("multi")
+        return routes
+
+    def _handler_map(self) -> Dict[str, Any]:
+        """Resolve registered `_handle_*` methods without a third route table.
+
+        ⛔ `notion` 은 여기 없다 — 호출부가 전부 `_handle_qdrant(..., team_key=...)`
+        를 직접 고른다 (벡터 검색). 예전엔 `_handle_notion` 도 있었지만 **어느 경로도
+        부르지 않는 죽은 배선**이었다 (2026-08-25 제거).
+        """
+        return {
+            route: handler
+            for route in HANDLER_ROUTES
+            if (handler := getattr(self, f"_handle_{route}", None)) is not None
+        }
+
+    def _resolve_handler(self, route: str):
+        """라우트 → 핸들러. **표에 없으면 direct 로 떨어지되, 조용히 떨어지지 않는다.**
+
+        ⛔ `handlers.get(route, self._handle_direct)` 는 네 곳에 있는데, 표에 없는
+           라우트가 오면 아무 말 없이 평범한 direct 답변을 내보낸다. 실제로 `report` 가
+           그 상태다 — `_handle_report` 는 있는데 `HANDLER_ROUTES` 에는 없어서,
+           관문이 놓친 `route="report"` 는 **보고서를 만들지 않고 direct 로 나간다.**
+           지금은 관문이 두 채널을 다 보게 고쳐져 새는 경로가 안 보이지만, 다음에
+           라우트를 추가하는 사람이 같은 함정에 그대로 빠진다.
+
+        에러를 던지지는 않는다 — 사용자에게 답은 나가야 한다. 대신 **로그에 남긴다.**
+        (프로덕션은 INFO 를 버리므로 WARNING 이어야 한다.)
+        """
+        handlers = self._handler_map()
+        handler = handlers.get(route)
+        if handler is not None:
+            return handler
+        # ⚠️ `notion` 은 **일부러** 표에 없다 — 호출부가 `_handle_qdrant(..., team_key=)`
+        #    를 직접 고르기 때문이다. 여기서 경고하면 정상 동작마다 경고가 찍히고,
+        #    그렇게 만든 소음은 진짜 경고를 덮는다 (이 커밋에서 실제로 한 번 그랬다).
+        if route not in ("direct", "notion", None, ""):
+            logger.warning("route_demoted_to_direct", route=route,
+                           known=sorted(handlers),
+                           note="핸들러 표에 없어 direct 로 나간다 — 의도한 것인지 확인할 것")
+        return self._handle_direct
+
+    def _build_multi_prefix_tasks(
+        self, entries, query, messages, conversation_context, model_type, user_email,
+        brand_filter=None, can_view_fi=False, enabled_sources=None, user_id=None,
+    ):
+        """Build the shared @@ multi-source parallel fan-out tasks."""
+        tasks = []
+        scoped_sources = _scope_sources(enabled_sources, entries)
+        for entry in entries:
+            target = _multi_prefix_target(entry["route"])
+            if target == "bigquery":
+                task = self._handle_bigquery(
+                    query, messages, conversation_context, model_type, user_email,
+                    brand_filter=brand_filter, can_view_fi=can_view_fi,
+                    enabled_sources=scoped_sources, source_explicit=True,
+                    user_id=user_id,
+                )
+            elif target == "notion":
+                task = self._handle_qdrant(
+                    query, messages, conversation_context, model_type, user_email,
+                    team_key=entry["key"],
+                )
+            elif target == "cs":
+                task = self._handle_cs(query, messages, conversation_context, model_type, user_email)
+            elif target == "gws":
+                task = self._handle_gws(query, messages, conversation_context, model_type, user_email)
+            else:
+                task = self._handle_direct(query, messages, conversation_context, model_type, user_email)
+            tasks.append((target, entry, task))
+        return tasks
+
+    @staticmethod
+    def _merge_multi_prefix_results(tasks, results) -> str:
+        """Render parallel @@ results identically for streaming and non-streaming calls."""
+        combined_parts = []
+        for task, result in zip(tasks, results):
+            label = task[1]["label"]
+            if isinstance(result, Exception):
+                combined_parts.append(f"### {label}\n⚠️ 오류: {result}")
+            elif isinstance(result, dict) and "answer" in result:
+                combined_parts.append(f"### {label}\n{result['answer']}")
+            elif isinstance(result, str):
+                combined_parts.append(f"### {label}\n{result}")
+        return "\n\n---\n\n".join(combined_parts)
+
+    @classmethod
+    def _build_db_command_response(cls, command: str) -> str:
+        """Build response for @@전체, @@전체해제, @@목록 special commands."""
+        if command == "list":
+            lines = ["## 📂 사용 가능한 데이터소스\n"]
+            lines.append("`@@데이터소스명 질문` 형태로 특정 데이터만 검색합니다.\n")
+            current_group = ""
+            for e in cls._DB_REGISTRY:
+                g = e.get("group", "")
+                if g != current_group:
+                    current_group = g
+                    lines.append(f"\n### {g}")
+                aliases = ", ".join(f"`@@{a}`" for a in e["aliases"][:2]) if e["aliases"] else ""
+                alias_text = f" ({aliases})" if aliases else ""
+                lines.append(f"- `@@{e['key']}`{alias_text} — {e['desc']}")
+            lines.append("\n### 특수 명령")
+            lines.append("- `@@전체` — 모든 데이터소스 활성화")
+            lines.append("- `@@전체해제` — 모든 데이터소스 비활성화 (직접 대화만)")
+            lines.append("- `@@목록` — 이 목록 표시")
+            return "\n".join(lines)
+
+        if command == "select_all":
+            return "✅ **모든 데이터소스가 활성화**되었습니다.\n\n질문하시면 AI가 자동으로 적절한 데이터소스를 선택합니다.\n\n> 💡 특정 소스만 사용하려면 `@@매출 이번달 합계` 형태로 입력하세요."
+
+        if command == "deselect_all":
+            return "🔕 **모든 데이터소스가 비활성화**되었습니다.\n\n데이터 검색 없이 AI 직접 대화만 가능합니다.\n\n> 다시 활성화하려면 `@@전체` 또는 `@@ALL`을 입력하세요."
+
+        return ""
+
+    async def route_and_execute(
+        self,
+        query: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        model_type: str = MODEL_CLAUDE,
+        user_email: str = "",
+        images: Optional[List[dict]] = None,
+        brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
+        enabled_sources: Optional[List[str]] = None,
+        stream_callback=None,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        """Main entry point: analyze query -> delegate to Sub Agent -> return result.
+
+        Args:
+            query: User's natural language question (latest message).
+            messages: Full conversation history for context continuity.
+            model_type: Always MODEL_CLAUDE (user-facing model selection removed).
+            user_email: User's email for GWS OAuth authentication.
+            images: Extracted images [{"data": bytes, "mime_type": str}].
+            brand_filter: Comma-separated brand codes (e.g. "SK,CL,CBT" or "UM").
+            enabled_sources: List of enabled source keys from frontend checkboxes.
+            stream_callback: Optional async callable(chunk: str) for real-time streaming.
+
+        Returns:
+            {"source": str, "answer": str, ...}
+        """
+        messages = messages or []
+        images = images or []
+        conversation_context = _build_conversation_context(messages)
+        _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
+        _sources_off_note = ""  # 소스가 꺼져 조회를 건너뛴 사실 (코드가 공시한다)
+
+        # ═══ 노션 저장 관문 ═══
+        # ⛔ 라우터보다, 그리고 @@ 소스 판정보다 **먼저** 돈다 — `@@물류` 를 켠 채로
+        #    "이 답변 노션에 넣어줘" 라고 해도 저장돼야 한다.
+        # ⚠️ 스트리밍 경로에도 **같은 관문**이 있다. 한쪽만 고치면 답이 갈린다.
+        from app.core import notion_save
+        _notion_answer = await asyncio.to_thread(
+            notion_save.handle, query, messages, user_id)
+        if _notion_answer:
+            logger.info("notion_save_handled", path="route_and_execute", query=query[:100])
+            return {"source": "direct", "answer": _notion_answer}
+
+        # ═══ @@ 데이터소스 직접 지정 ═══
+        # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
+        from app.core.term_aliases import expand_aliases
+        query, _alias_hits = expand_aliases(query)
+        if _alias_hits:
+            logger.info("alias_expanded", hits=_alias_hits)
+
+        db_entry, clean_query = self.parse_db_prefix(query)
+
+        # Special commands: @@전체, @@전체해제, @@목록
+        if isinstance(db_entry, str):
+            return {"source": "direct", "answer": self._build_db_command_response(db_entry)}
+
+        # Normalize to list for uniform handling
+        if db_entry and not isinstance(db_entry, list):
+            db_entry = [db_entry]
+
+        # 브라우저는 @@ 토큰을 지우고 enabled_sources 만 보낸다. 단 하나를 골랐다면
+        # raw @@ 와 같은 확정 라우트로 취급한다. 여러 소스는 기존 분류 흐름을 유지한다.
+        single_source_entry = (
+            None if db_entry else self._single_enabled_source_entry(enabled_sources)
+        )
+
+        # Dashboard 탭의 URL은 화면과 같은 JSON 카탈로그에서 결정적으로 답한다.
+        # "프로모션 일정" 같은 데이터 질문은 링크 의도가 없으므로 기존 BQ 경로를 탄다.
+        if not db_entry and single_source_entry is None:
+            from app.core.dashboard_links import answer_dashboard_link_query
+            _dashboard_answer = answer_dashboard_link_query(query)
+            if _dashboard_answer:
+                logger.info("dashboard_link_answered", path="route_and_execute", query=query[:100])
+                return {"source": "direct", "answer": _dashboard_answer}
+
+            # 검증된 조직 담당국가는 검색 문서보다 우선한다. #152에서 EAST2 질문이
+            # 무관한 Notion 문서를 근거로 인도네시아를 포함한 오답을 낸 재발 방지.
+            from app.core.org_structure import answer_team_country_scope
+            _org_answer = answer_team_country_scope(query)
+            if _org_answer:
+                logger.info("org_structure_answered", path="route_and_execute", query=query[:100])
+                return {"source": "direct", "answer": _org_answer}
+
+            # 부정만 하고 정보가 없으면 되묻는다 (실측 1,393건 중 2건).
+            # ⛔ SELF 판정 전반에 걸지 마라 — "파이썬 코드 짜줘" 에 되물으면
+            #    그 자체가 불편이다. `bare` 에서만 뜬다.
+            # ⚠️ 끌 수 있어야 한다 — 2단계 게이트와 **독립**이다 (설계 §6).
+            from app.config import get_settings as _get_settings
+            from app.core.route_intent import clarify_message, rejection_kind
+            if (_get_settings().bare_rejection_clarify_enabled
+                    and rejection_kind(query) == "bare"):
+                _ask = clarify_message(_previous_route(conversation_context))
+                if _ask:
+                    # ⛔ INFO 로 남기지 마라 — 프로덕션은 앱 INFO 를 통째로 버린다
+                    #    (14일간 0건). 배포 후 발동 여부를 볼 수 있는 유일한 자리다.
+                    logger.warning("clarify_asked_bare_rejection", path="route_and_execute")
+                    return {"source": "direct", "answer": _ask}
+
+            # 식별번호는 검색할 것이 없다 — 같은 질문이 8명에게서 5~11초씩 걸렸다
+            # (붐따 #154). 결정적으로 답하는 것은 0초다.
+            from app.core.company_facts import answer as _company_answer
+            _fact = _company_answer(query)
+            if _fact:
+                logger.info("company_facts_answered", path="route_and_execute", query=query[:100])
+                return {"source": "direct", "answer": _fact}
+
+        if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
+            logger.info("fi_access_denied", path="route_and_execute", query=query[:100])
+            return {"source": "bigquery", "answer": FI_ACCESS_DENIED_MESSAGE}
+
+        _ing_intent = _ingredient_filter_intent(query)
+        if _ing_intent:
+            logger.info("ingredient_query", path="route_and_execute",
+                        ingredient=_ing_intent[0], contains=_ing_intent[1])
+            return await self._handle_ingredient_query(query, _ing_intent, model_type)
+
+        # 유통기한 — 재고보다 **먼저** 본다. 둘 다 '재고' 를 신호로 쓰는데
+        # 세는 기준이 달라, 뒤에 두면 유통기한 질문이 재고 표로 답해진다
+        _exp_term = self._expiry_term(query, clean_query, db_entry, enabled_sources)
+        if _exp_term:
+            logger.info("expiry_query", path="route_and_execute", term=_exp_term[:60])
+            return await self._handle_expiry_query(_exp_term)
+
+        # 재고 — 성분과 같은 이유로 LLM 에 SQL 을 맡기지 않는다 (2026-08-25)
+        _inv_term = self._inventory_term(query, clean_query, db_entry, enabled_sources)
+        if _inv_term:
+            logger.info("inventory_query", path="route_and_execute", term=_inv_term[:60])
+            return await self._handle_inventory_query(_inv_term)
+
+        # 수상/랭킹 — 재고·성분과 같은 이유로 표 조회다 (2026-09-07)
+        _awd_term = self._awards_term(query, clean_query, db_entry, enabled_sources)
+        if _awd_term is not None:
+            logger.info("awards_query", path="route_and_execute", term=_awd_term[:60])
+            return await self._handle_awards_query(_awd_term)
+
+        from app.core.model_rights import model_rights_intent
+        _mr_entries = db_entry if isinstance(db_entry, list) else ([db_entry] if isinstance(db_entry, dict) else [])
+        _mr_selected = any(e.get("route") == "model_rights" for e in _mr_entries)             or (enabled_sources and list(enabled_sources) == ["초상권"])
+        if _mr_selected or model_rights_intent(query, has_image=bool(images)):
+            _q_mr = (clean_query or query) if _mr_entries else query
+            logger.info("model_rights_query", path="route_and_execute", query=_q_mr[:80])
+            return await self._handle_model_rights(_q_mr, model_type, images=images)
+
+        # `@@보고서` 로 지정했으면 문구를 보지 않는다. 지정했을 땐 접두어를 뗀
+        # 본문으로 만들어야 제목·필터가 깨끗하다
+        # ⛔ `/보고서`·칩 선택은 `db_entry` 가 아니라 `enabled_sources` 로만 온다.
+        #    앞쪽만 보면 route="report" 가 확정된 뒤 핸들러가 없어 조용히 direct 로
+        #    강등된다 (스트리밍 경로 주석 참조). `model_rights` 와 같은 모양으로 맞춘다.
+        _rep_selected = bool(
+            any(e.get("route") == "report" for e in (db_entry or []))
+            or (enabled_sources and list(enabled_sources) == ["보고서"])
+        )
+        _rep = await self._handle_report(
+            (clean_query or query) if _rep_selected else query,
+            user_email, explicit=_rep_selected, messages=messages)
+        if _rep:
+            return _rep
+
+        if db_entry:
+            query = clean_query or query
+            if not query.strip():
+                labels = ", ".join(e["label"] for e in db_entry)
+                return {"source": "direct", "answer": f"**{labels}** 데이터소스가 선택되었습니다.\n\n질문을 입력해주세요."}
+
+            # Single source → direct route (fast path)
+            if len(db_entry) == 1:
+                entry = db_entry[0]
+                route = entry["route"]
+                logger.info("db_prefix_routed", prefix=entry["key"], route=route, query=query[:80])
+                handler = self._resolve_handler(route)
+                if route == "bigquery":
+                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True, user_id=user_id)
+                elif route == "multi":
+                    result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=_scope_sources(enabled_sources, db_entry), source_explicit=True)
+                elif route == "notion":
+                    result = await self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"])
+                elif route == "direct":
+                    result = await self._handle_direct(query, messages, conversation_context, model_type, user_email)
+                else:
+                    result = await handler(query, messages, conversation_context, model_type, user_email)
+                if "answer" in result:
+                    result["answer"] = ensure_formatting(result["answer"], domain=route)
+                return result
+
+            # Multiple sources → parallel execute and merge
+            logger.info("db_multi_prefix", sources=[e["key"] for e in db_entry], query=query[:80])
+            import asyncio as _aio
+            tasks = self._build_multi_prefix_tasks(
+                db_entry, query, messages, conversation_context, model_type, user_email,
+                brand_filter=brand_filter, can_view_fi=can_view_fi,
+                enabled_sources=enabled_sources, user_id=user_id,
+            )
+            results = await _aio.gather(*[t[2] for t in tasks], return_exceptions=True)
+            combined = self._merge_multi_prefix_results(tasks, results)
+            return {"source": "multi", "answer": ensure_formatting(combined, domain="multi")}
+
+        # Image present → force direct route (vision LLM)
+        if images:
+            logger.info("orchestrator_image_route_forced", image_count=len(images), query=query[:100])
+            result = await self._handle_direct(
+                query, messages, conversation_context, model_type, user_email, images=images
+            )
+            if "answer" in result:
+                result["answer"] = (ensure_formatting(result["answer"], domain="direct")
+                                    + self._image_data_notice(query))
+            return result
+
+        # Fast path: one selected source is authoritative. In particular, a
+        # BigQuery source must not lose this path merely because `multi` is also
+        # an allowed classifier outcome.
+        allowed = self._allowed_routes(enabled_sources)
+        _single_route = (
+            single_source_entry["route"] if single_source_entry is not None else None
+        )
+        if _single_route:
+            logger.info(
+                "single_source_fast_path",
+                route=_single_route,
+                source=single_source_entry["key"],
+            )
+        elif allowed is not None:
+            _data_routes = allowed - {"direct"}
+            if len(_data_routes) == 1:
+                _single_route = next(iter(_data_routes))
+                logger.info("single_source_fast_path", route=_single_route, enabled_sources=enabled_sources)
+
+        if _single_route:
+            route = _single_route
+        elif _should_continue_bigquery_for_correction(query, conversation_context):
+            route = "bigquery"
+            logger.info("bigquery_correction_followup", query=query[:100])
+        elif _inherit_route_for_followup(query, conversation_context):
+            # 앞 조회의 축만 바꾸는 발화("인도네시아는?"·"센텔라 앰플은?") →
+            # 직전 경로를 잇는다. 주제를 바꾸는 완전한 문장은 여기 안 걸린다.
+            route = _inherit_route_for_followup(query, conversation_context)
+        else:
+            # Step 1: Classify query intent
+            # Fast path: keyword match first, LLM fallback only for short ambiguous queries
+            route, _confident = self._keyword_classify_ex(query)
+            is_system_task = query.strip().startswith("### Task:")
+            _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
+            # LLM 우선 하이브리드: 키워드가 확신 없이 분류한 경우는 LLM 판정이 기본값.
+            # 명백한 케이스(확신 분류·직접 잠금·시스템 태스크)만 키워드로 끝낸다.
+            if not _confident and not is_system_task and not _is_direct_locked:
+                if len(query.strip()) <= 300:
+                    from app.config import get_settings as _get_settings
+                    flash = get_flash_client()
+                    # 2단계: **소스가 필요한가**를 먼저 묻는다 (예/아니오)
+                    # ⚠️ 꺼져 있으면 게이트를 통째로 건너뛴다 = 도입 이전 동작.
+                    from app.core.route_intent import gate_can_judge
+                    if not _get_settings().source_gate_enabled:
+                        route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif not gate_can_judge(query, conversation_context):
+                        # ⛔ 게이트는 발화 하나만 본다 — "B2B"·"B2C" 처럼 짧고
+                        #    앞 대화가 있는 발화는 뜻이 직전 턴에 있어 게이트
+                        #    혼자로는 판단할 수 없다. 안전한 쪽(뒤진다)으로 간다.
+                        logger.warning("source_gate_skipped", path="route_and_execute",
+                                       query=query[:80])
+                        route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif await self._needs_source(query, flash):
+                        # ⛔ SELF 만 세면 분자만 있고 분모가 없다 — SELF 가 두 배로
+                        #    늘어난 것과 트래픽이 두 배가 된 것을 구분할 수 없다.
+                        logger.warning("source_gate_need", path="route_and_execute",
+                                       query=query[:80])
+                        route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    else:
+                        logger.warning("source_gate_self", path="route_and_execute",
+                                       query=query[:80])
+                        _source_free = True
+                        route = "direct"
+            # Apply enabled_sources filter — redirect to direct if route is disabled
+            # Exception: keyword-classified notion/cs/team routes bypass the default filter
+            # (these are confidently classified by specific keywords, not ambiguous)
+            if allowed is not None and route not in allowed:
+                if enabled_sources is None and route in ("notion", "cs"):
+                    logger.info("route_keyword_override", route=route, reason="keyword-classified, bypassing default filter")
+                else:
+                    _sources_off_note = _sources_off_notice(route, enabled_sources)
+                    if enabled_sources is not None:
+                        # ⛔ WARNING 이다 — INFO 는 프로덕션에서 통째로 버려져
+                        #    이 필터가 13명의 매출 질문을 조용히 떨어뜨리는 동안
+                        #    아무 흔적도 없었다 (2026-09-15)
+                        logger.warning("route_filtered_by_sources", path="route_and_execute",
+                                       original_route=route,
+                                       enabled_sources=list(enabled_sources)[:40],
+                                       query=query[:80])
+                    else:
+                        logger.info("route_filtered_by_sources", original_route=route, allowed=list(allowed))
+                    route = "direct"
+
+        logger.info(
+            "orchestrator_routed",
+            query=query[:100],
+            route=route,
+            model_type=model_type,
+            has_context=bool(conversation_context),
+            enabled_sources=enabled_sources,
+        )
+
+        # Load few-shot skill examples for direct route (non-blocking, fire-and-forget on error)
+        _skill_ctx = ""
+        if route == "direct":
+            try:
+                from app.agents.skill_memory import load_skill_context
+                _skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
+            except Exception:
+                pass
+
+        # Step 2: Execute via Sub Agent with context
+        handler = self._resolve_handler(route)
+        if route == "bigquery":
+            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources, user_id=user_id)
+        elif route == "multi":
+            result = await handler(query, messages, conversation_context, model_type, user_email, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources)
+        elif route == "notion":
+            result = await self._handle_qdrant(
+                query, messages, conversation_context, model_type, user_email,
+                team_key=self._notion_query_team(query, single_source_entry),
+            )
+        elif route == "awards":
+            # ⛔ `awards` 는 `HANDLER_ROUTES` 에 없다 — `@@`/명시 선택은 이미 위쪽
+            #    `_awd_term` 관문이 가로채므로, 여기 오는 것은 오직 후속 발화의
+            #    경로 상속뿐이다. `_resolve_handler` 의 direct 강등에 맡기면 이
+            #    분기 자체가 없던 것과 같아져(항상 `_handle_direct`) 표지를
+            #    추가한 의미가 사라진다 — `explicit=True` 로 다시 표 조회를 태운다.
+            from app.core.awards import awards_intent as _awd_intent
+            result = await self._handle_awards_query(
+                _awd_intent(clean_query or query, explicit=True))
+        elif route == "direct" or handler == self._handle_direct:
+            result = await self._handle_direct(query, messages, conversation_context, model_type, user_email, images=images, stream_callback=stream_callback, skill_context=_skill_ctx)
+            if _sources_off_note and result.get("answer"):
+                # 표보다 먼저 — 사람은 각주를 안 본다. 스트리밍 경로도 같은 자리다
+                result["answer"] = _sources_off_note + "\n\n" + result["answer"]
+        else:
+            result = await handler(query, messages, conversation_context, model_type, user_email)
+
+        # Step 3: Coherence check — fire-and-forget background (was blocking 2-3s)
+        # Only log mismatches; don't delay the response
+        if "answer" in result and route not in ("direct", "multi", "cs"):
+            try:
+                task = asyncio.create_task(self._verify_coherence(query, result["answer"], route))
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
+            except Exception:
+                pass
+
+        # Step 4: Post-process response for consistent markdown formatting
+        if "answer" in result:
+            result["answer"] = ensure_formatting(result["answer"], domain=route)
+
+        if _source_free and isinstance(result, dict) and result.get("answer"):
+            from app.core.route_intent import source_free_footer
+            result["answer"] = result["answer"] + source_free_footer()
+
+        return result
+
+    async def route_and_stream(
+        self,
+        query: str,
+        messages=None,
+        model_type: str = MODEL_CLAUDE,
+        user_email: str = "",
+        images=None,
+        brand_filter=None,
+        can_view_fi: bool = False,
+        enabled_sources=None,
+        user_id=None,
+    ):
+        """Async generator: yields (type, data) tuples for real-time streaming.
+
+        Yields:
+            ("source", source_name) — route source tag
+            ("chunk", text) — streamed text chunk
+            ("done", full_answer) — final complete answer (for non-streaming routes)
+        """
+        import asyncio
+
+        messages = messages or []
+        images = images or []
+        conversation_context = _build_conversation_context(messages)
+        _source_free = False  # SELF 게이트로 direct 로 떨어졌는지 (Task 7)
+        _sources_off_note = ""  # 소스가 꺼져 조회를 건너뛴 사실 (코드가 공시한다)
+
+        # ⚠️ 비스트리밍과 **같은 관문** — 한쪽만 달면 경로에 따라 답이 갈린다.
+        from app.core import notion_save
+        _notion_answer = await asyncio.to_thread(
+            notion_save.handle, query, messages, user_id)
+        if _notion_answer:
+            logger.info("notion_save_handled", path="route_and_stream", query=query[:100])
+            yield ("source", "direct")
+            yield ("done", _notion_answer)
+            return
+
+        # ═══ @@ 데이터소스 직접 지정 (streaming) ═══
+        # 사내 은어·오타 보정 — 라우팅/SQL/캐시/성분 조회 전에 한 번만 (app/core/term_aliases.py)
+        from app.core.term_aliases import expand_aliases
+        query, _alias_hits = expand_aliases(query)
+        if _alias_hits:
+            logger.info("alias_expanded", hits=_alias_hits)
+
+        db_entry, clean_query = self.parse_db_prefix(query)
+
+        # Special commands
+        if isinstance(db_entry, str):
+            yield ("source", "direct")
+            yield ("done", self._build_db_command_response(db_entry))
+            return
+
+        # Normalize to list
+        if db_entry and not isinstance(db_entry, list):
+            db_entry = [db_entry]
+
+        # chat.js 는 @@ 토큰을 질문에서 제거하므로 enabled_sources 가 브라우저
+        # 단일 선택의 유일한 근거다. 복수 선택에는 이 fast path 를 적용하지 않는다.
+        single_source_entry = (
+            None if db_entry else self._single_enabled_source_entry(enabled_sources)
+        )
+
+        # 비스트리밍 경로와 동일한 공유 카탈로그 fast path.
+        if not db_entry and single_source_entry is None:
+            from app.core.dashboard_links import answer_dashboard_link_query
+            _dashboard_answer = answer_dashboard_link_query(query)
+            if _dashboard_answer:
+                logger.info("dashboard_link_answered", path="route_and_stream", query=query[:100])
+                yield ("source", "direct")
+                yield ("done", _dashboard_answer)
+                return
+
+            # 비스트리밍 경로와 같은 결정적 조직정보 fast path.
+            from app.core.org_structure import answer_team_country_scope
+            _org_answer = answer_team_country_scope(query)
+            if _org_answer:
+                logger.info("org_structure_answered", path="route_and_stream", query=query[:100])
+                yield ("source", "direct")
+                yield ("done", _org_answer)
+                return
+
+            # ⚠️ 비스트리밍과 **같은 관문** — 한쪽만 달면 경로에 따라 답이 갈린다.
+            #    끄는 설정도 함께 본다 (한쪽만 끄면 그것도 경로에 따라 갈린다).
+            from app.config import get_settings as _get_settings
+            from app.core.route_intent import clarify_message, rejection_kind
+            if (_get_settings().bare_rejection_clarify_enabled
+                    and rejection_kind(query) == "bare"):
+                _ask = clarify_message(_previous_route(conversation_context))
+                if _ask:
+                    # ⛔ INFO 는 프로덕션에서 버려진다 — 비스트리밍과 같은 레벨로 남긴다
+                    logger.warning("clarify_asked_bare_rejection", path="route_and_stream")
+                    yield ("source", "direct")
+                    yield ("done", _ask)
+                    return
+
+            # 비스트리밍과 같은 관문 — 한쪽만 달면 경로에 따라 답이 갈린다.
+            from app.core.company_facts import answer as _company_answer
+            _fact = _company_answer(query)
+            if _fact:
+                logger.info("company_facts_answered", path="route_and_stream", query=query[:100])
+                yield ("source", "direct")
+                yield ("done", _fact)
+                return
+
+        if not can_view_fi and _requests_fi_data(query, enabled_sources, db_entry):
+            logger.info("fi_access_denied", path="route_and_stream", query=query[:100])
+            yield ("source", "bigquery")
+            yield ("done", FI_ACCESS_DENIED_MESSAGE)
+            return
+
+        _ing_intent = _ingredient_filter_intent(query)
+        if _ing_intent:
+            logger.info("ingredient_query", path="route_and_stream",
+                        ingredient=_ing_intent[0], contains=_ing_intent[1])
+            _r = await self._handle_ingredient_query(query, _ing_intent, model_type)
+            yield ("source", "bigquery")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 유통기한 — 재고보다 먼저 (위 경로와 같은 순서를 지킨다)
+        _exp_term = self._expiry_term(query, clean_query, db_entry, enabled_sources)
+        if _exp_term:
+            logger.info("expiry_query", path="route_and_stream", term=_exp_term[:60])
+            _r = await self._handle_expiry_query(_exp_term)
+            yield ("source", "inventory")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 재고 — **두 경로 모두**에 걸어야 한다. 한쪽만 걸면 경로에 따라 답이 갈린다
+        _inv_term = self._inventory_term(query, clean_query, db_entry, enabled_sources)
+        if _inv_term:
+            logger.info("inventory_query", path="route_and_stream", term=_inv_term[:60])
+            _r = await self._handle_inventory_query(_inv_term)
+            yield ("source", "inventory")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 수상/랭킹 — **두 경로 모두**에 걸어야 한다. 한쪽만 걸면 경로에 따라 답이 갈린다
+        _awd_term = self._awards_term(query, clean_query, db_entry, enabled_sources)
+        if _awd_term is not None:
+            logger.info("awards_query", path="route_and_stream", term=_awd_term[:60])
+            _r = await self._handle_awards_query(_awd_term)
+            yield ("source", "awards")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        from app.core.model_rights import model_rights_intent
+        _mr_entries = db_entry if isinstance(db_entry, list) else ([db_entry] if isinstance(db_entry, dict) else [])
+        _mr_selected = any(e.get("route") == "model_rights" for e in _mr_entries)             or (enabled_sources and list(enabled_sources) == ["초상권"])
+        if _mr_selected or model_rights_intent(query, has_image=bool(images)):
+            _q_mr = (clean_query or query) if _mr_entries else query
+            logger.info("model_rights_query", path="route_and_stream", query=_q_mr[:80])
+            _r = await self._handle_model_rights(_q_mr, model_type, images=images)
+            # ⚠️ "direct" 로 흘리면 audit_logs 에서 일반 대화와 섞여 **초상권 경로를
+            #    사후에 관측할 수 없다** (2026-08-19 조사에서 실제로 막혔다).
+            yield ("source", "model_rights")
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # 보고서는 조회를 여러 번 돌아 5~10초 걸린다. source 를 먼저 흘려 로딩 표시를 띄운다.
+        # ⚠️ 진행 문구를 ("chunk", ...) 로 보내면 안 된다 — routes.py 가 streamed_live 를 세워
+        #    뒤따르는 ("done", 본문) 을 통째로 버린다 (2026-08-12 확인).
+        from app.reports import clarify as _rep_clarify
+        from app.reports import registry as _rep_reg
+        # ⛔ `@@보고서` 는 `db_entry` 로 오지만 `/보고서`(슬래시 프리셋)·칩 선택은
+        #    **`enabled_sources` 로만** 온다. 예전엔 앞쪽만 봐서, 사용자가 보고서를
+        #    고르고 본문에 "보고서" 라고 안 적으면 관문이 놓쳤다. 그러면 `@@` 단일소스
+        #    경로가 route="report" 를 확정하는데 `HANDLER_ROUTES` 에 report 가 없어
+        #    **조용히 `_handle_direct` 로 강등**된다 — 버튼을 눌렀는데 일반 답변이
+        #    나가고 에러도 안내도 없다 (2026-08-24 아키텍처 캔버스 작업 중 발견).
+        #    CLAUDE.md 는 "`@@보고서` 면 문구를 보지 않는다"고 약속하고 있었다.
+        #    바로 위 `model_rights` 관문과 **같은 모양**으로 맞춘다.
+        _rep_selected = bool(
+            any(e.get("route") == "report" for e in _mr_entries)
+            or (enabled_sources and list(enabled_sources) == ["보고서"])
+        )
+        _rep_query = (clean_query or query) if _rep_selected else query
+        _rep_pending = _rep_clarify.pending(messages)
+        if _rep_selected or _rep_reg.wants_report(_rep_query) or _rep_pending:
+            yield ("source", "bigquery")
+            _r = await self._handle_report(
+                _rep_query, user_email, explicit=_rep_selected, messages=messages)
+            if _r:
+                yield ("done", _r.get("answer", ""))
+                return
+
+        if db_entry:
+            query = clean_query or query
+
+            if not query.strip():
+                labels = ", ".join(e["label"] for e in db_entry)
+                yield ("source", "direct")
+                yield ("done", f"**{labels}** 데이터소스가 선택되었습니다.\n\n질문을 입력해주세요.")
+                return
+
+            # Single source → existing fast path
+            if len(db_entry) == 1:
+                entry = db_entry[0]
+                route = entry["route"]
+                logger.info("db_prefix_routed_stream", prefix=entry["key"], route=route)
+                yield ("source", route + ":" + entry["label"])
+
+                if route == "bigquery":
+                    # @@ single-source path: wiki_context not injected here (by design —
+                    # wiki lookup runs after route_and_stream's source yield at line ~618,
+                    # but this early-return path exits before that block is reached).
+                    from app.core.safety import get_maintenance_manager as _gmm
+                    _mm2 = _gmm()
+                    if _mm2.active and _mm2.manual:
+                        yield ("chunk", f"**데이터 점검 중입니다** — 관리자가 수동으로 점검을 활성화했습니다. 잠시 후 다시 시도해 주세요.\n\n*사유: {_mm2.reason}*")
+                        yield ("done", "")
+                        return
+                    from app.agents.sql_agent import run_sql_agent_stream
+                    _q = asyncio.Queue()
+                    _loop = asyncio.get_running_loop()
+                    def _bq():
+                        try:
+                            for chunk in run_sql_agent_stream(query, conversation_context=conversation_context, model_type=model_type, brand_filter=brand_filter, enabled_sources=_scope_sources(enabled_sources, db_entry), can_view_fi=can_view_fi, user_id=user_id):
+                                _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
+                        except Exception as e:
+                            _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
+                        _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
+                    _loop.run_in_executor(None, _bq)
+                    while True:
+                        mt, data = await _q.get()
+                        if mt == "end":
+                            break
+                        yield ("chunk", data)
+                    yield ("done", "")
+                    return
+
+                from app.core.safety import get_circuit
+                circuit = get_circuit(route)
+                handler = self._resolve_handler(route)
+                try:
+                    if route == "notion":
+                        result = await asyncio.wait_for(self._handle_qdrant(query, messages, conversation_context, model_type, user_email, team_key=entry["key"]), timeout=30.0)
+                    else:
+                        result = await asyncio.wait_for(handler(query, messages, conversation_context, model_type, user_email), timeout=300.0 if route == "multi" else 30.0)
+                except asyncio.TimeoutError:
+                    result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 더 짧은 기간이나 구체적인 조건으로 다시 질문해 보세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"2025년 1분기 일본 매출 알려줘\" (기간+국가 한정)\n> - \"이번 달 아마존 매출 현황\" (채널 지정)\n> - \"센텔라 앰플 최근 3개월 매출 추이\" (제품 지정)", "source": route}
+                    if entry["key"] == "PR":
+                        result = self._pr_unavailable_result("PR 자료 검색이 지연되고 있습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
+            else:
+                # Multiple sources → parallel, merge results
+                logger.info("db_multi_prefix_stream", sources=[e["key"] for e in db_entry])
+                yield ("source", "multi:" + "+".join(e["label"] for e in db_entry))
+
+                tasks = self._build_multi_prefix_tasks(
+                    db_entry, query, messages, conversation_context, model_type, user_email,
+                    brand_filter=brand_filter, can_view_fi=can_view_fi,
+                    enabled_sources=enabled_sources,
+                )
+                results = await asyncio.gather(*[t[2] for t in tasks], return_exceptions=True)
+                result = {"answer": self._merge_multi_prefix_results(tasks, results)}
+            if "answer" in result:
+                result["answer"] = ensure_formatting(
+                    result["answer"], domain="multi" if len(db_entry) > 1 else route)
+            answer = result.get("answer", "")
+            pos = 0
+            while pos < len(answer):
+                end = min(pos + 80, len(answer))
+                if end < len(answer):
+                    nl = answer.find("\n", pos, end + 20)
+                    if nl > pos:
+                        end = nl + 1
+                yield ("chunk", answer[pos:end])
+                pos = end
+                await asyncio.sleep(0.02)
+            yield ("done", "")
+            return
+
+        # Image → non-streaming direct
+        if images:
+            result = await self._handle_direct(
+                query, messages, conversation_context, model_type, user_email, images=images
+            )
+            yield ("source", "direct")
+            yield ("done", ensure_formatting(result.get("answer", ""), domain="direct")
+                   + self._image_data_notice(query))
+            return
+
+        is_system_task = query.strip().startswith("### Task:")
+
+        # Fast path: exactly one selected source fixes the route before any
+        # keyword/LLM classification. Multiple selections retain the old flow.
+        allowed = self._allowed_routes(enabled_sources)
+        _single_route = (
+            single_source_entry["route"] if single_source_entry is not None else None
+        )
+        if _single_route:
+            logger.info(
+                "stream_single_source_fast_path",
+                route=_single_route,
+                source=single_source_entry["key"],
+            )
+        elif allowed is not None:
+            _data_routes = allowed - {"direct"}
+            if len(_data_routes) == 1:
+                _single_route = next(iter(_data_routes))
+                logger.info("stream_single_source_fast_path", route=_single_route)
+
+        if _single_route:
+            route, _confident = _single_route, True
+        elif _should_continue_bigquery_for_correction(query, conversation_context):
+            route, _confident = "bigquery", True
+            logger.info("stream_bigquery_correction_followup", query=query[:100])
+        elif _inherit_route_for_followup(query, conversation_context):
+            # ⚠️ 스트리밍·비스트리밍 **두 경로 모두**에 걸어야 한다. 한쪽만 고치면
+            #    경로에 따라 답이 갈린다 (direct 프롬프트가 두 벌이던 사고와 같다).
+            route = _inherit_route_for_followup(query, conversation_context)
+            _confident = True
+        else:
+            route, _confident = self._keyword_classify_ex(query)
+
+        # Wave 1: Emit source hint IMMEDIATELY
+        yield ("source", route)
+
+        # Wiki lookup runs AFTER source yield — loading indicator shows first.
+        wiki_context = ""
+        if single_source_entry is None:
+            try:
+                from app.knowledge.wiki_search import search_with_pages
+                wiki_context = await search_with_pages(query, limit=4)
+                if wiki_context:
+                    logger.info("wiki_context_injected", length=len(wiki_context))
+            except Exception as e:
+                logger.warning("wiki_lookup_failed", error=str(e)[:200])
+
+        if not _single_route:
+            # Re-classify short ambiguous queries with LLM (only if no strong direct signal)
+            _is_direct_locked = any(kw in query.lower() for kw in _DIRECT_LOCK_KW)
+            # LLM 우선 하이브리드: 확신 없는 분류는 LLM 판정이 기본값 (비스트리밍과 동일)
+            if not _confident and not is_system_task and not _is_direct_locked:
+                if len(query.strip()) <= 300:
+                    from app.config import get_settings as _get_settings
+                    flash = get_flash_client()
+                    # ⚠️ 꺼져 있으면 게이트를 건너뛴다 = 도입 이전 동작 (비스트리밍과 동일)
+                    from app.core.route_intent import gate_can_judge
+                    if not _get_settings().source_gate_enabled:
+                        new_route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif not gate_can_judge(query, conversation_context):
+                        # ⛔ 비스트리밍과 동일 — 짧고 앞 대화가 있는 발화는
+                        #    게이트 혼자로는 판단할 수 없다 (route_and_execute 참고)
+                        logger.warning("source_gate_skipped", path="route_and_stream",
+                                       query=query[:80])
+                        new_route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    elif await self._needs_source(query, flash):
+                        # ⛔ 분모다 — SELF 만 세면 비율을 낼 수 없다
+                        logger.warning("source_gate_need", path="route_and_stream",
+                                       query=query[:80])
+                        new_route = await self._classify_with_llm(
+                            query, conversation_context, flash)
+                    else:
+                        logger.warning("source_gate_self", path="route_and_stream",
+                                       query=query[:80])
+                        _source_free = True
+                        new_route = "direct"
+                    if new_route != route:
+                        route = new_route
+                        yield ("source", route)
+
+            # Apply enabled_sources filter
+            # Exception: keyword-classified notion/cs/team bypass default filter
+            # ⛔ `awards` 도 넣는다 — 비스트리밍은 이 필터가 `_inherit_route_for_followup`
+            #    분기 밖(`else:` 안)에 있어 상속이 자동으로 비켜가지만, 스트리밍은
+            #    `if not _single_route:` 하나로 재분류·필터를 함께 묶어 두어 상속으로
+            #    받은 `awards` 도 그대로 걸린다. 여기서 안 빼면 기본 소스(수상 미선택)
+            #    사용자의 후속 발화가 매번 `direct` 로 되돌아가 표지·핸들러를 추가한
+            #    의미가 사라진다 — awards 자체가 (재고·유통기한처럼) `enabled_sources`
+            #    와 무관하게 상시 열려 있는 관문이라 이 예외가 그 설계와 일치한다.
+            if allowed is not None and route not in allowed:
+                if enabled_sources is None and route in ("notion", "cs", "awards"):
+                    logger.info("stream_route_keyword_override", route=route)
+                else:
+                    _sources_off_note = _sources_off_notice(route, enabled_sources)
+                    if enabled_sources is not None:
+                        logger.warning("route_filtered_by_sources", path="route_and_stream",
+                                       original_route=route,
+                                       enabled_sources=list(enabled_sources)[:40],
+                                       query=query[:80])
+                    else:
+                        logger.info("stream_route_filtered", original_route=route, allowed=list(allowed))
+                    if route != "direct":
+                        route = "direct"
+                        yield ("source", route)
+
+        # Skill memory: few-shot examples from 👍 feedback (direct route only)
+        # ⛔ **재분류가 끝난 뒤에** 읽는다. 앞에 두면 게이트가 direct 로 뒤집은
+        #    요청이 비스트리밍에서는 예시를 받고 스트리밍에서는 못 받는다 —
+        #    프로덕션은 스트리밍이라 늘 지는 쪽이었다. 비스트리밍(`_skill_ctx`)도
+        #    최종 route 로 읽는다. 한쪽만 고치면 경로에 따라 답이 갈린다.
+        _stream_skill_ctx = ""
+        if route == "direct":
+            try:
+                from app.agents.skill_memory import load_skill_context
+                _stream_skill_ctx = await asyncio.to_thread(load_skill_context, "direct", query)
+            except Exception:
+                pass
+
+        # 수상/랭킹 (후속 발화 상속) — `awards` 는 `HANDLER_ROUTES` 에 없어 아래
+        # "Non-streaming routes" 의 direct 강등에 맡기면 표지·상속을 추가한 의미가
+        # 사라진다 (route_and_execute 와 같은 이유로 `explicit=True` 로 표 조회를 다시 태운다).
+        if route == "awards":
+            from app.core.awards import awards_intent as _awd_intent
+            _r = await self._handle_awards_query(_awd_intent(clean_query or query, explicit=True))
+            yield ("done", _r.get("answer", ""))
+            return
+
+        # Direct route → real-time streaming
+        if route == "direct" and not is_system_task:
+            if _sources_off_note:
+                # ⚠️ 비스트리밍과 **같은 자리**(답변 맨 앞). 한쪽만 걸면 경로에 따라 답이 갈린다
+                yield ("chunk", _sources_off_note + "\n\n")
+            llm = get_llm_client(MODEL_CLAUDE)
+            today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
+            system = self._build_direct_system_prompt()
+
+            # Static prompt as a cached block; dynamic parts appended as separate,
+            # uncached blocks so they don't invalidate the cached prefix (see
+            # ClaudeClient._wrap_system and _build_direct_system_prompt).
+            date_line = f"오늘 날짜는 {today}입니다."
+            extra_blocks: List[str] = []
+            if self._needs_web_search(query):
+                _loop_s = asyncio.get_running_loop()
+                search_context = await _loop_s.run_in_executor(None, self._gather_search_context, query)
+                if search_context:
+                    extra_blocks.append(f"## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}")
+            if wiki_context:
+                extra_blocks.append(
+                    "## 참고: 신뢰 상태가 표시된 지식 위키 컨텍스트\n"
+                    f"{wiki_context}\n"
+                    "위 내용은 원문 자체가 아니라 이전 답변에서 추출된 조직 기억입니다. "
+                    "각 항목의 신뢰 규칙을 반드시 지키고, 원 데이터 조회 결과와 다르면 "
+                    "원 데이터와 충돌 사실을 우선 설명하세요."
+                )
+            if _stream_skill_ctx:
+                extra_blocks.append(_stream_skill_ctx)
+
+            final_system = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": date_line},
+            ] + [{"type": "text", "text": block} for block in extra_blocks]
+
+            # Stream via thread + queue
+            _q: asyncio.Queue = asyncio.Queue()
+            _loop = asyncio.get_running_loop()
+
+            def _worker():
+                try:
+                    for chunk in _stream_direct_with_fallback(
+                        llm,
+                        query,
+                        messages=messages,
+                        system_instruction=final_system,
+                        temperature=0.5,
+                    ):
+                        _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
+                except Exception as e:  # final boundary: never expose provider details
+                    logger.error("direct_stream_boundary_failed", error_type=type(e).__name__)
+                    _loop.call_soon_threadsafe(
+                        _q.put_nowait, ("chunk", _DIRECT_TEMPORARY_FAILURE)
+                    )
+                _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
+
+            _loop.run_in_executor(None, _worker)
+
+            full_answer = ""
+            while True:
+                msg_type, data = await _q.get()
+                if msg_type == "end":
+                    break
+                full_answer += data
+                yield ("chunk", data)
+
+            if _source_free:
+                from app.core.route_intent import source_free_footer
+                yield ("chunk", source_free_footer())
+
+            # Streaming complete — signal done (content already sent via chunks)
+            yield ("done", "")
+            return
+
+        # BQ route → streaming format_answer
+        if route == "bigquery":
+            import asyncio as _aio
+            from app.agents.sql_agent import run_sql_agent_stream
+
+            # Maintenance check (mirrors non-streaming path)
+            from app.core.safety import get_maintenance_manager
+            _mm = get_maintenance_manager()
+            if _mm.active and _mm.manual:
+                yield ("chunk", f"**데이터 점검 중입니다** — 관리자가 수동으로 점검을 활성화했습니다. 잠시 후 다시 시도해 주세요.\n\n*사유: {_mm.reason}*")
+                yield ("done", "")
+                return
+
+            _q: _aio.Queue = _aio.Queue()
+            _loop = _aio.get_running_loop()
+
+            def _bq_worker():
+                try:
+                    for chunk in run_sql_agent_stream(
+                        query,
+                        conversation_context=conversation_context,
+                        model_type=model_type,
+                        brand_filter=brand_filter,
+                        enabled_sources=enabled_sources,
+                        wiki_context=wiki_context,
+                        can_view_fi=can_view_fi,
+                        user_id=user_id,
+                    ):
+                        _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", chunk))
+                except Exception as e:
+                    _loop.call_soon_threadsafe(_q.put_nowait, ("chunk", f"오류: {e}"))
+                _loop.call_soon_threadsafe(_q.put_nowait, ("end", None))
+
+            _loop.run_in_executor(None, _bq_worker)
+
+            # Wave 2: 5min timeout for BQ route (SQL gen + execute + format)
+            _bq_start = asyncio.get_event_loop().time()
+            while True:
+                try:
+                    msg_type, data = await asyncio.wait_for(_q.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    elapsed = asyncio.get_event_loop().time() - _bq_start
+                    if elapsed > 90.0:
+                        yield ("chunk", "\n\n⚠️ 데이터 분석이 90초를 초과했습니다. 더 구체적인 조건(기간, 국가, 제품 등)으로 다시 질문해주세요.")
+                        break
+                    continue
+                if msg_type == "end":
+                    break
+                yield ("chunk", data)
+
+            yield ("done", "")
+            return
+
+        # 지식 회수 루프: cs/multi 라우트에 wiki 팩트 주입 (direct/BQ는 위에서 이미 처리)
+        _handler_ctx = conversation_context
+        if wiki_context and route in ("cs", "multi"):
+            _wiki_block = f"\n\n[참고: 관련 사내 지식]\n{wiki_context}"
+            _handler_ctx = (conversation_context + _wiki_block) if conversation_context else _wiki_block.lstrip()
+
+        # CS/Multi → true token streaming (same pattern as the BigQuery route
+        # above: prep runs async, only the final LLM answer streams).
+        # No circuit breaker here, matching the BigQuery streaming path —
+        # generator-based flows don't compose with the is_available() gate.
+        #
+        if route in ("cs", "multi"):
+            from app.core.stream_bridge import stream_with_timeout, StreamTimeout
+
+            if route == "cs":
+                from app.agents.cs_agent import run_stream as _route_stream_fn
+                _contextualized_query = (
+                    f"[이전 대화]\n{_handler_ctx}\n\n[현재 질문]\n{query}" if _handler_ctx else query
+                )
+                _stream_gen = _route_stream_fn(_contextualized_query, model_type=model_type)
+                _stream_timeout = 30.0
+            else:  # multi
+                _stream_gen = self._handle_multi_stream(
+                    query, _handler_ctx, model_type, brand_filter=brand_filter, can_view_fi=can_view_fi, enabled_sources=enabled_sources
+                )
+                _stream_timeout = 300.0
+
+            try:
+                async for chunk in stream_with_timeout(_stream_gen, timeout_s=_stream_timeout):
+                    yield ("chunk", chunk)
+            except StreamTimeout:
+                logger.warning("route_timeout", route=route, timeout_s=_stream_timeout)
+                yield ("chunk", "\n\n⚠️ 분석이 예상보다 오래 걸리고 있습니다. 조회 범위를 좁혀서 다시 시도해 주세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - 기간을 한정: \"2025년 1분기\" 대신 \"2025년 3월\"\n> - 국가/채널 지정: \"일본 큐텐 매출\"\n> - 제품 지정: \"센텔라 앰플 매출 추이\"")
+            except Exception as e:
+                logger.error("route_execution_failed", route=route, error=str(e))
+                yield ("chunk", "⚠️ 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n다른 방식으로 질문하시면 도움이 될 수 있습니다:\n- 질문을 더 구체적으로 (기간, 국가, 제품 등 조건 추가)\n- 복잡한 질문은 나누어서 하나씩 질문")
+            yield ("done", "")
+            return
+
+        # Non-streaming routes (Notion, GWS) → simulate streaming
+        # Timeout: GWS 60s, others 30s.
+        # 주의: 예전엔 여기 45s 인데 gws_agent 내부는 300s 라 어긋나 있었다 —
+        # 주석엔 "inner agent 30s" 라고 적혀 있었지만 실제 값은 300s 였다.
+        # 지금은 내부가 (도구 호출 + 정리 40s) 구조라 60s 면 충분하다.
+        from app.core.safety import get_circuit
+
+        handler = self._resolve_handler(route)
+        _route_timeout = 60.0 if route == "gws" else 30.0
+        _pr_scoped = route == "notion" and self._notion_query_team(query, single_source_entry) == "PR"
+
+        # Check circuit breaker before calling
+        circuit = get_circuit(route)
+        if not circuit.is_available():
+            logger.warning("circuit_open_fallback", route=route)
+            result = {"answer": f"⚠️ {route} 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.", "source": route}
+            if _pr_scoped:
+                result = self._pr_unavailable_result("PR 자료 검색 서비스가 일시적으로 불안정합니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
+        else:
+            try:
+                if route == "notion":
+                    result = await asyncio.wait_for(
+                        self._handle_qdrant(
+                            query, messages, conversation_context, model_type, user_email,
+                            team_key=self._notion_query_team(query, single_source_entry),
+                        ),
+                        timeout=20.0,
+                    )
+                else:
+                    result = await asyncio.wait_for(
+                        handler(query, messages, _handler_ctx, model_type, user_email),
+                        timeout=_route_timeout,
+                    )
+                circuit.record_success()
+            except asyncio.TimeoutError:
+                logger.warning("route_timeout", route=route, timeout_s=_route_timeout)
+                circuit.record_failure()
+                result = {"answer": "⚠️ 분석이 예상보다 오래 걸리고 있습니다. 조회 범위를 좁혀서 다시 시도해 주세요.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - 기간을 한정: \"2025년 1분기\" 대신 \"2025년 3월\"\n> - 국가/채널 지정: \"일본 큐텐 매출\"\n> - 제품 지정: \"센텔라 앰플 매출 추이\"", "source": route}
+                if _pr_scoped:
+                    result = self._pr_unavailable_result("PR 자료 검색이 지연되고 있습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
+            except Exception as e:
+                logger.error("route_execution_failed", route=route, error=str(e))
+                circuit.record_failure()
+                result = {"answer": "⚠️ 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.\n\n다른 방식으로 질문하시면 도움이 될 수 있습니다:\n- 질문을 더 구체적으로 (기간, 국가, 제품 등 조건 추가)\n- 복잡한 질문은 나누어서 하나씩 질문", "source": route}
+                if _pr_scoped:
+                    result = self._pr_unavailable_result("PR 자료를 검색하지 못했습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
+
+        if "answer" in result:
+            result["answer"] = ensure_formatting(result["answer"], domain=route)
+
+        # Simulate streaming: larger chunks for faster perceived delivery
+        import asyncio as _aio
+        answer = result.get("answer", "")
+        if answer:
+            pos = 0
+            while pos < len(answer):
+                # ~80 chars per chunk at line boundaries (fast, natural)
+                end = min(pos + 80, len(answer))
+                if end < len(answer):
+                    nl = answer.find("\n", pos, end + 20)
+                    if nl > pos:
+                        end = nl + 1
+                    else:
+                        sp = answer.rfind(" ", pos, end + 10)
+                        if sp > pos:
+                            end = sp + 1
+                yield ("chunk", answer[pos:end])
+                pos = end
+                await _aio.sleep(0.015)  # 15ms — smooth, fast delivery
+        yield ("done", "")
+
+    async def _needs_source(self, query: str, llm) -> bool:
+        """이 질문은 사내 자료를 뒤져야 답할 수 있는가.
+
+        ⛔ "어느 소스냐"(6지선다)를 묻기 **전에** 이것을 먼저 묻는다. 6지선다는
+           "소스 중 하나여야 한다"를 전제하고 있어서, 소스가 필요 없는 질문에
+           답이 없다 — `노션` 낱말 하나에 끌려 문서 검색으로 갔다 (붐따 #164).
+           실측(2026-09-07, 16문항): 6지선다는 #164 오답, 예/아니오는 14/16.
+        ⛔ 실패하면 **True(뒤진다)** 다. 사내 데이터 우선 — 뒤져 보고 없다고
+           말하는 편이, 뒤지지 않고 지어내는 것보다 낫다.
+        """
+        from app.core.route_intent import SOURCE_GATE_PROMPT, parse_gate
+        try:
+            raw = await asyncio.wait_for(
+                asyncio.to_thread(
+                    llm.generate, f"{SOURCE_GATE_PROMPT}\n\n질문: {query}",
+                    temperature=0.0),
+                timeout=_SOURCE_GATE_TIMEOUT_SECONDS)
+        except Exception as exc:                      # noqa: BLE001
+            # ⚠️ `asyncio.TimeoutError` 도 여기로 온다 — 다른 실패와 **같이** 다룬다
+            #    (NEED 로 떨어진다. 안전한 쪽 실패다).
+            logger.warning("source_gate_failed", error_type=type(exc).__name__,
+                           error=str(exc)[:200])
+            return True
+        return parse_gate(raw) == "NEED"
+
+    async def _classify_with_llm(self, query: str, conversation_context: str, llm) -> str:
+        """LLM-based classification (used only when keyword match is ambiguous).
+
+        Uses Flash model for speed. Only called when there's conversation context
+        and keyword matching returned 'direct'.
+        """
+        context_section = ""
+        if conversation_context:
+            context_section = f"""
+## 이전 대화 (참고용)
+{conversation_context}
+
+"""
+
+        prompt = f"""사용자 질문을 분석하여 적절한 처리 경로를 결정하세요.
+
+경로 옵션:
+- bigquery: 순수 데이터 조회 (매출, 수량, 주문, 재고 등 숫자 조회/집계만 필요)
+  + **프로모션/행사 일정도 여기다** — 어느 팀이 어느 몰에서 언제 프로모션을 하는지는
+    사내 프로모션 캘린더(BigQuery)에 있다. 문서도 개인 캘린더도 아니다
+- notion: 사내 문서, 정책, 매뉴얼, 프로세스 관련
+- gws: Google Drive 파일, Gmail 메일, **개인** Calendar 일정 (내 일정·회의·미팅)
+- cs: 제품 CS 상담 (성분, 사용법, 비건인증, 피부 관련 질문, 제품 문의)
+- multi: 내부 데이터 + 외부 정보가 모두 필요한 복합 분석 질문
+  예시: "날씨가 매출에 영향?", "매출 하락 원인", "시장 트렌드와 매출 비교", "인도네시아 경제 상황이 판매에 미치는 영향"
+- direct: 일반 지식, 용어 설명, 간단한 질문, 실시간 정보 (날씨, 뉴스 등)
+
+판단 기준:
+- 데이터 조회만 → bigquery
+- 제품 성분/사용법/CS 문의 → cs
+- ⚠️ 제품명 + 국가/지역(남미, 북미, 동남아, 유럽, 특정 국가 등) + 반응/매출/판매/인기/실적 → bigquery (판매 데이터 조회)
+  예: "포어마이징 벨벳 선크림 남미 반응" → bigquery (CS 아님!)
+  예: "히알루론산 세럼 동남아 얼마나 팔려?" → bigquery
+- ⚠️ "프로모션/행사/기획전 + 일정·스케줄·언제·예정" → **bigquery** (프로모션 캘린더)
+  예: "인도네시아 프로모션 일정" · "8월에 무슨 행사 있어?" · "쇼피 프로모션 언제야?"
+  반면 "내 일정", "회의 잡힌 거", "미팅 언제야" 는 gws (개인 캘린더)
+- SKIN1004 데이터 + 외부맥락(날씨/시장/경쟁/원인/영향/트렌드) → multi
+- 외부 정보만 → direct
+- ⚠️ SKIN1004/매출/제품과 무관한 질문(부동산, 주식, 일반상식, 개인질문 등)은 이전 대화가 BQ였어도 반드시 direct!
+- 이전 대화 맥락을 참고하여 "그거", "아까", "다시" 같은 참조를 이해하세요.
+- ⚠️ 이전 답변에 대한 확인/설명 요청 → direct: "이거 ~기준인가요?", "방금 거 ~맞나요?", "위에 나온 거 ~인가요?", "저거 ~뭔가요?", "어느 ~기준?", "~기준이 뭐야?" 등 새로운 데이터 조회 없이 이전 답변을 설명/확인하는 질문은 반드시 direct!
+- ⚠️ 이전 답변이 📊 BigQuery 데이터(숫자/표 형태, 개수/집계 결과)이고, 현재 질문이 그 데이터 목록/명세 요청("명시해줘", "뭔지 알려줘", "목록 보여줘", "어떤 거야", "뭐뭐야", "보여줘봐", "뭔가요") → bigquery (새로운 데이터 조회 필요)
+{context_section}현재 질문: {query}
+
+경로 하나만 답변 (bigquery/notion/gws/cs/multi/direct):"""
+
+        try:
+            response = await asyncio.to_thread(llm.generate, prompt, temperature=0.0)
+            route = response.strip().lower().split()[0] if response.strip() else "direct"
+
+            if route in ROUTER_ROUTES:
+                return route
+        except Exception as e:
+            logger.warning("llm_classify_failed", error=str(e))
+
+        # Keyword-based fallback
+        return self._keyword_classify(query)
+
+    # Data-related keywords (triggers BigQuery)
+    _DATA_KEYWORDS = [
+        "매출", "수량", "주문", "sales", "revenue",
+        "쇼피", "아마존", "틱톡", "국가별", "월별",
+        "대륙별", "플랫폼별", "연도별", "분기별",
+        "몰별", "채널별", "브랜드별", "제품별", "카테고리별", "카테고리", "SKU",
+        # ⛔ 예전엔 그냥 "라인" 이었다 — **"가이드라인" 안에서 매치돼** 문서 질문이
+        #    데이터로 갔다 (2026-08-13 실측: "인플루언서 시딩 가이드라인 알려줘" → bigquery).
+        #    보고서 필터의 '요인도 → 인도' 와 같은 부류다. 낱말 경계를 못 보는 단순 포함
+        #    검사에서는 **짧은 낱말을 그대로 두지 마라** ("온라인·오프라인·타임라인"도 걸린다)
+        "라인별", "제품 라인", "라인 매출",
+        "차트", "그래프", "그려", "시각화", "도표", "플롯", "그래프로", "차트로", "시각화해",
+        "막대그래프", "원형그래프", "꺾은선", "파이차트", "바차트", "그려줘",
+        "재고", "판매", "거래", "실적", "성과", "수출", "팔린", "팔리",
+        # ⚠️ 이 낱말들이 없어 "FOC 무상출고 비용 얼마나 나갔어" 가 direct 로 샜다 (2026-08-13)
+        "foc", "무상출고", "무상 출고", "바우처", "원가", "광고비", "roas", "객단가",
+        # 구어체로 물어도 데이터다 — 이것들이 없어 LLM 재판정으로 넘어가 왕복이 늘었다
+        "메가와리", "신제품", "할인", "팔렸", "잘나가", "잘 나가",
+        # 수출 물류(@@물류) — ⚠️ 짧고 뜻이 겹치는 낱말(`출고`·`발주`·`통관`)은
+        #    `_GUARDED` 에서 낱말 경계를 확인한다 (`무상출고`·`재발주` 오탐 방지)
+        # ⛔ `eta`·`etd` 를 맨 낱말로 넣지 마라 — **`meta`·`retail`·`beta` 안에 들어 있고**
+        #    `_GUARDED` 도 못 막는다 (`standalone()` 은 앞 글자가 한글일 때만 본다).
+        "물류", "선적", "포워더", "인코텀즈", "컨테이너", "팔레트", "출항",
+        "수출신고", "유니패스", "선하증권", "리드타임", "출고일", "도착예정",
+        # ⚠️ 사람이 실제로 쓰는 말 (붐따 #161) — `면장` 은 수출신고필증의
+        #    현장 용어이고, `세일즈운영팀` 은 OP 담당자를 가리킨다.
+        #    ⛔ `운영팀` 만 넣지 마라 — `@@OP`(재고) 별칭과 겹친다
+        "면장", "수출신고필증", "세일즈운영팀", "세일즈 운영팀",
+        "데이터", "조회", "집계", "합계", "평균",
+        "분석", "추이", "증감", "성장률",
+        "top", "순위", "랭킹",
+        # Product listing queries → BigQuery Product table
+        "제품 리스트", "제품 목록", "제품 종류", "전체 제품",
+        "어떤 제품", "제품이 뭐", "제품 수", "몇 개 제품",
+        "제품 현황", "제품 카테고리",
+        # Marketing / Advertising (마케팅 테이블)
+        "광고", "광고비", "광고 비용", "마케팅", "마캐팅", "마케팅비", "마케팅 비용", "지출",
+        "ROAS", "roas", "ROI", "roi", "CTR", "ctr",
+        "노출", "노출수", "impression", "클릭", "클릭수", "click",
+        "전환", "전환율", "conversion", "구매전환",
+        "페이스북", "facebook", "메타", "meta", "publisher_platform",
+        "구글 광고", "google ads", "네이버 광고", "네이버 검색광고",
+        "카카오모먼츠", "kakao",
+        "GMV", "gmv",
+        # Influencer (인플루언서 테이블)
+        "인플루언서", "influencer", "팔로워", "좋아요",
+        "조회수", "공유수", "댓글수", "저장수",
+        "콘텐츠", "캠페인", "에이전시", "티어",
+        # 띄어쓰기 없이 쓰는 사람이 많아 두 표기를 함께 둔다
+        "유가 협업", "무가 협업", "유가협업", "무가협업", "시딩", "매니저별",
+        # Review (리뷰 테이블)
+        "리뷰", "review", "평점", "별점",
+        "리뷰 분석", "고객 리뷰", "제품 리뷰",
+        "스마트스토어 리뷰", "아마존 리뷰", "쇼피 리뷰", "큐텐 리뷰",
+        # Shopify
+        "shopify", "쇼피파이", "자사몰 매출", "반품", "환불",
+        # Platform metrics
+        "플랫폼 순위", "제품 순위", "랭킹 데이터", "할인가",
+        "예스스타일", "yesstyle", "스타일코리안", "스타일바나", "올리브영",
+        "졸스", "소시올라", "pureseoul", "barecare",
+        "순위 상승", "순위 변동", "순위 추이", "경쟁사 순위",
+        # Repurchase
+        "재구매", "재구매율", "리텐션", "코호트",
+        # Financial P&L (FI_LLM_Flat)
+        "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
+        # Region / Continent / Team / Account
+        "cis", "동남아", "유럽", "북미", "남미", "중동", "대륙",
+        "신규", "업체", "거래처", "바이어", "b2b", "b2c",
+        "세일즈", "매상", "비중", "비율", "갯수", "개수",
+        "판매량", "전년 대비", "전년대비",
+        "베스트셀러", "인기 제품", "가장 많이 팔",
+    ]
+
+    # External-only keywords (triggers web search when combined with data keywords → multi)
+    # These are ONLY external context — "분석", "데이터" etc. belong in _DATA_KEYWORDS
+    _EXTERNAL_KEYWORDS = [
+        "날씨", "영향",
+        # NOTE: "원인", "이유", "왜" removed — these with data keywords mean
+        # "analyze our data to find the cause", not "search the web". Same logic as "상관".
+        "트렌드", "경쟁", "뉴스",
+        "환율", "전망", "예측",
+        "연관",
+        # NOTE: "상관" removed — "상관관계" is internal data correlation analysis,
+        # not external web context. Routes correctly to bigquery instead of multi.
+        "경제", "물가", "인플레이션", "정책변화",
+        "소비자", "인구",
+        "시즌", "계절", "명절", "할인행사",
+        # NOTE: "시장" removed — too ambiguous, causes false multi-routing
+        # for pure data queries like "인도네시아 시장 매출". Other external
+        # keywords (트렌드, 영향 etc.) still catch true multi-intent queries.
+    ]
+
+    _GWS_KEYWORDS = [
+        "드라이브", "drive", "메일", "gmail", "캘린더", "calendar",
+        "회의록", "회의", "미팅", "일정", "스케줄", "구글시트", "스프레드시트",
+        "내 메일", "내 드라이브", "내 캘린더", "내 일정",
+        "파일 찾아", "파일 검색", "시트 찾아", "시트 열어",
+        "메일 보여", "메일 찾아", "메일 요약", "메일 정리",
+        "이번주 일정", "오늘 일정", "이번달 일정",
+        "받은 메일", "보낸 메일", "읽지 않은 메일",
+    ]
+
+    _NOTION_KEYWORDS = [
+        "노션", "notion",
+        "정책", "매뉴얼", "프로세스", "가이드", "반품 정책", "반품정책",
+        "사내 문서", "위키", "제품 정보",
+    ]
+
+    _CS_KEYWORDS = [
+        "cs", "고객 상담", "고객상담", "faq",
+        "성분", "비건", "peta", "동물실험",
+        "사용법", "사용 방법", "사용방법", "루틴", "스킨케어",
+        "제품 문의", "제품문의",
+        "센텔라", "히알루", "톤브라이트닝", "포어마이징",
+        "티트리카", "프로바이오", "랩인네이처",
+        "commonlabs", "zombie beauty", "좀비뷰티", "커먼랩스",
+        "자극", "알레르기", "보관", "유통기한", "개봉 후", "개봉후",
+        "임산부", "수유", "아토피", "민감", "트러블",
+        "피부 타입", "피부타입", "건성", "지성", "복합성",
+        "사용 순서", "사용순서", "바르는 순서",
+        "세럼", "앰플", "토너", "클렌저", "선크림", "크림", "마스크",
+        "레티놀", "pha", "bha", "aha",
+        "영유아", "어린이", "아기", "아이 피부", "아이에게", "아이가 써", "아이한테",
+        "붉어", "따가", "가려", "피부 반응",
+        "예민", "홍조", "건조", "좁쌀", "뾰루지",
+        "불량", "교환", "환불", "반품", "이물질",
+        "피부과", "시술", "직사광선",
+        "병풀", "패치 테스트", "패치테스트",
+        "skin1004", "스킨1004",
+        "방부제", "향료", "인공색소", "파라벤", "sls", "글루텐",
+        "직구", "매장",
+        "기름지", "피부 관리", "피부관리",
+        "지속시간", "선물세트", "뚜껑", "함께 써도", "같이 써도",
+        "정품", "적립금", "배송 기간", "배송기간", "배송 얼마나",
+    ]
+
+    _TEAM_KEYWORDS = [
+        "자료 어디", "시트 어디", "시트 찾아", "링크 찾아", "링크 줘",
+        "어디있어", "어디 있어", "자료 줘",
+        "jbt 시트", "bcm 시트", "east 시트", "west 시트",
+        "jbt 자료", "bcm 자료", "east 자료", "west 자료",
+        "bea", "bxm", "플래그십",
+        "예산 시트", "pr 시트", "운영 시트", "대시보드 링크",
+        "팀 자료", "팀별 자료", "db hub", "데이터 허브",
+        # PEOPLE/HR keywords
+        "연차", "휴가", "휴일대체", "휴직", "육아휴직", "퇴사", "퇴직금", "경조", "경조휴가", "졸업",
+        "회의실 예약", "명함", "법인서류", "법인카드", "증명서", "급여", "계약서",
+        "채용", "면접", "인수인계", "성과급", "성과금", "보상", "인센티브",
+        "vpn", "프린터", "잔디", "다우오피스", "노트북", "비밀번호 초기화", "계정 초기화",
+        "복지", "사내근로복지", "피플팀", "교육 신청",
+        "수습", "수습기간", "수습 기간", "야근", "식대", "재택근무", "재택",
+        "4대보험", "연말정산", "워크샵", "동호회", "멘토링", "승진",
+        "출퇴근", "점심시간",
+        "모니터", "키보드", "마우스", "외장하드", "포맷",
+        "장애 신고", "시스템 장애", "보안 프로그램",
+        # Company info
+        "사업자", "등록번호", "법인번호", "법인등록", "대표자", "대표이사",
+        "조직도", "회사 정보", "회사정보", "기업 정보", "기업정보",
+        # ⚠️ 업무 문서·절차 키워드는 여기(_TEAM_KEYWORDS)에 넣지 마라.
+        # 이 목록을 쓰는 아래쪽 검사에는 **데이터 가드가 없어서** "티어별 매출" 같은
+        # 데이터 질문까지 notion 으로 새어나간다. 대신 _TEAM_SPECIFIC 에 넣으면
+        # _DATA_OVERRIDE 가드가 걸려 데이터 질문은 bigquery 로 남는다.
+    ]
+
+    # How-to / guide keywords — when combined with platform/tool names, route to Notion
+    # e.g. "틱톡샵 접속 방법 알려줘" → Notion (documented process), NOT sales data
+    _HOWTO_KEYWORDS = [
+        "접속 방법", "접속방법", "접속법", "로그인 방법", "로그인방법",
+        "설정 방법", "설정방법", "설정법", "세팅 방법", "세팅방법",
+        "등록 방법", "등록방법", "등록법",
+        "연동 방법", "연동방법", "연동법",
+        "어떻게 접속", "어떻게 들어가",
+        "어떻게 로그인", "어떻게 설정", "어떻게 등록", "어떻게 연동",
+        "접속하는 법", "들어가는 법",
+        "접속하는 방법", "들어가는 방법",
+        "접속해", "접속하", "어디서 접속", "어디로 접속",
+    ]
+
+    # Broader how-to keywords — only routed to Notion when a platform/tool name is also present
+    # (avoids stealing CS queries like "센텔라 사용법")
+    _HOWTO_BROAD_KEYWORDS = [
+        "사용 방법", "사용방법", "사용법", "이용 방법", "이용방법", "이용법",
+        "어떻게 사용", "어떻게 이용",
+        "사용하는 법", "사용하는 방법",
+        "가이드", "튜토리얼", "매뉴얼",
+        "방법 알려", "방법알려", "방법 좀", "방법좀",
+        "링크", "url", "주소",
+    ]
+
+    # Platform/tool names that, combined with how-to keywords, indicate a Notion doc question
+    _PLATFORM_TOOL_NAMES = [
+        "틱톡", "tiktok", "쇼피", "shopee", "라자다", "lazada", "아마존", "amazon",
+        "쇼피파이", "shopify", "큐텐", "qoo10",
+        "스마트스토어", "smartstore", "네이버",
+        "셀러센터", "seller center", "셀러 센터",
+        "노션", "notion", "지라", "jira", "슬랙", "slack",
+        "빅쿼리", "bigquery", "구글 애널리틱스", "ga4",
+        "erp", "sap", "crm",
+    ]
+
+    # Capability question patterns ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
+    # NOTE: "되나", "돼?" excluded — too broad (matches CS: "임산부가 써도 되나요")
+    # ── 낱말 경계를 봐야 하는 낱말 ──────────────────────────────────────────
+    # ⛔ 한국어는 띄어쓰기가 낱말 경계를 보장하지 않는다. 아래는 **더 긴 낱말 안에서
+    #    뜻이 뒤집히는** 것들이라 앞 글자를 확인한다 (`app/core/textmatch.py`).
+    #      전**환율**(전환율) ≠ 환율 · 가이드**라인** ≠ 라인 · 객**단가** ≠ 단가
+    #      **성과**급 ≠ 성과 · 요**인도** ≠ 인도
+    # ⚠️ 여기에 아무 낱말이나 넣지 마라 — "월별매출"의 `매출`은 잡혀야 맞다.
+    #    새 충돌은 tests/test_no_silent_failures.py 의 충돌 검출기가 알려준다.
+    _GUARDED = {"환율", "라인", "단가", "성과", "현황", "경쟁", "인도", "행사", "티어"}
+
+    def _image_data_notice(self, query: str) -> str:
+        """이미지가 붙은 **데이터 질문**이면 조회를 안 했다고 공시한다 (붐따 #161).
+
+        ⛔ 이미지가 붙으면 vision 경로로 강제되는데, 그 경로는 BigQuery 스키마를
+           아예 받지 않는다. 그래서 "면장 정보가 없습니다"·"담당자 데이터가 조회
+           대상에 없습니다" 라고 **단정**했고 둘 다 사실이 아니었다.
+        """
+        try:
+            from app.core.image_route_notice import notice
+            return notice(query, True, self._has(query.lower(), self._DATA_KEYWORDS))
+        except Exception as e:                # noqa: BLE001
+            logger.warning("image_data_notice_failed", error=str(e)[:160])
+            return ""
+
+    def _has(self, q: str, words) -> bool:
+        """키워드 포함 검사 — `_GUARDED` 낱말만 경계를 본다."""
+        from app.core.textmatch import contains_any
+        return contains_any(q, words, self._GUARDED)
+
+    # ⚠️ **부정형이 통째로 빠져 있었다** — `수 있어` 만 있고 `수 없나` 가 없어서,
+    #    "여기 Today 에 뜨는 내용을 노션에 자동화해서 뜨게 할 수 없나?" 가
+    #    `노션` 때문에 사내 문서 검색으로 갔다 (붐따 #164, 2026-09-04).
+    #    답변은 "[영업2팀] 타 팀 협업 요청" 문서였다 — 자기 기능을 물은 질문에.
+    #    되는지 묻는 말과 안 되는지 묻는 말은 **같은 질문**이다.
+    _CAPABILITY_PATTERNS = ["가능해", "가능한가", "가능하나", "수 있어",
+                            "수 없나", "수 없을까", "수는 없나", "수는 없을까",
+                            "뭐할 수", "뭐 할 수"]
+
+    # ── 이 서비스 자신의 기능을 묻는 질문 ────────────────────────────────────
+    # ⛔ 이런 질문은 **사내 문서에도 CS Q&A 에도 답이 없다.** 실측(2026-08-13):
+    #    "보고서 기능은 어떤 때 쓰면 좋아?" → notion 으로 새서 사내 문서를 뒤졌고,
+    #    "보고서 사용법 알려줘" → '사용법' 때문에 **확신을 갖고 cs**(제품 사용법)로 갔다.
+    #    확신 분류라 LLM 재판정도 못 탄다 — 조용히 엉뚱한 답이 나가는 형태다.
+    # 대응은 키워드 추가가 아니라 **대상 판정**이다: 질문의 대상이 우리 자신인가.
+    # ⚠️ `이 시스템`·`이 서비스`·`이 앱` 은 있는데 **`이 프로그램` 만 빠져** 있어
+    #    "이 프로그램 전체 가이드는 없어?" 가 사내 문서 검색으로 갔다 (2026-09-07).
+    #    한 낱말이 빠지면 에러가 아니라 **조용히 엉뚱한 답**이 나가는 자리다.
+    _APP_SELF = ["셀라", "cella", "이 시스템", "이시스템", "이 서비스", "이 앱",
+                 "이 프로그램", "이프로그램", "이 툴",
+                 "챗봇", "어시스턴트", "너는", "너가", "네가", "니가", "당신"]
+    _FEATURE_WORD = ["기능", "사용법", "쓰는 법", "쓰는법", "만드는 법", "만드는 방법",
+                     "어떻게 써", "어떻게 쓰", "뭘 할 수", "뭐 할 수", "무엇을 할 수"]
+
+    # ── 용어 뜻을 묻는 질문 ──────────────────────────────────────────────────
+    # ⛔ "roas가 뭐야?" 가 **확신을 갖고 bigquery** 로 갔다 (2026-08-13 실측).
+    #    'roas' 가 데이터 키워드라서다. 뜻을 묻는 질문에 SQL 을 만들면 답이 나올 수 없다.
+    #    가이드에도 "ROAS가 뭐야?" 는 일반 질문 예시로 적혀 있다.
+    _DEFINE_PAT = ["가 뭐", "이 뭐", "는 뭐", "은 뭐", "란 뭐", "이란 뭐",
+                   "무슨 뜻", "뜻이 뭐", "의미가 뭐", "뭔가요", "뭐예요", "뭐에요"]
+    # 조회 의도 — 이게 있으면 뜻이 아니라 값을 묻는 것이다
+    _QUERY_SCOPE = ["얼마", "몇 ", "개수", "합계", "순위", "top", "추이", "비중",
+                    "년", "월", "분기", "상반기", "하반기", "작년", "올해", "지난",
+                    "이번", "별 ", "별로", "보여줘", "조회"]
+
+    def _is_definition_question(self, q: str) -> bool:
+        """지표·용어의 **뜻**을 묻는가. 값을 묻는 것과 갈라야 한다.
+
+        "roas가 뭐야?" 는 설명, "지난달 roas 얼마야" 는 조회다. 기간·집계·수량 표현이
+        하나라도 있으면 조회로 본다 (뜻을 물으면서 기간을 적지는 않는다).
+        """
+        if not any(p in q for p in self._DEFINE_PAT):
+            return False
+        if any(s in q for s in self._QUERY_SCOPE):
+            return False
+        return len(q.strip()) <= 40 and not any(ch.isdigit() for ch in q)
+
+    # ── 기간 + 집계 의도 = 조회 질문 ──────────────────────────────────────────
+    # ⛔ "2026년 7월 shopify 반품 몇 건이야?" 가 **확신을 갖고 cs** 로 갔다
+    #    (2026-08-18 전수 QA 실측). `반품` 이 CS 낱말이라서다. 그 답변은
+    #    "CS 데이터베이스에서 확인할 수 없습니다" 였는데, `@@Shopify` 로 지정하면
+    #    같은 질문이 **305건** 을 정확히 돌려준다 — 데이터가 있는데 없다고 답했다.
+    #    확신 분류라 LLM 재판정도 못 탄다. 조용한 실패의 전형이다.
+    # 대응은 `반품` 을 데이터 낱말로 옮기는 게 아니다 — 그러면 "반품 절차 알려줘"
+    #    같은 진짜 CS 질문이 조회로 샌다. **질문의 모양**으로 가른다:
+    #    기간이 적혀 있고 + 개수·금액을 물으면, 그건 제품 문의가 아니라 집계다.
+    #    (문서 질문에서 이미 쓰는 `_DOC_WORD` + `_QTY_INTENT` 와 같은 계열의 판정)
+    _PERIOD_PAT = ["년", "월", "분기", "상반기", "하반기", "올해", "작년", "재작년",
+                   "지난달", "이번 달", "이번달", "최근", "누적", "전체 기간"]
+    _AGG_INTENT = ["몇 건", "몇건", "몇 개", "몇개", "얼마", "건수", "수량", "합계",
+                   "총액", "집계", "순위", "top", "추이", "비중", "평균"]
+
+    def _is_period_aggregate_question(self, q: str) -> bool:
+        """기간과 집계 의도가 **함께** 있는가 → 제품 문의가 아니라 조회다.
+
+        ⚠️ 둘 다 있어야 한다. 기간만 보면 "이번 달 반품 문의 어떻게 응대해?" 가
+        조회로 새고, 집계만 보면 "성분 몇 개 들어가?" 가 샌다.
+        """
+        return self._has(q, self._PERIOD_PAT) and self._has(q, self._AGG_INTENT)
+
+    # ── 찾아 달라는 것 vs 만들어 달라는 것 ────────────────────────────────
+    # ⛔ 붐따 #163 (2026-09-04). "나 개인 업무 노션 페이지 구성할건데
+    #    제안해달라고!!!" 가 `노션` 때문에 **확신을 갖고 notion** 으로 갔다.
+    #    사내 문서를 세 번 뒤져 CS 티트리카 · 영업2팀 신규 입사자 · ERP 기안
+    #    가이드를 내놓았고, 제보자는 "너 진자 붐따임" 이라고 썼다. 바로 다음
+    #    턴에 검색 없이 답하자 원하던 구성안이 나왔다 — **자료가 없어서가
+    #    아니라 찾아 달라는 것과 만들어 달라는 것을 못 가른 것**이다.
+    # ⚠️ 대응은 `노션` 을 키워드에서 빼는 게 아니다 — "노션 사용법 알려줘" 는
+    #    계속 문서여야 한다. **질문의 모양**으로 가른다 (`_DOC_WORD` 와 같은 계열).
+    _RE_AUTHORING = re.compile(
+        r"(제안|추천|구성|구성안|작성|기획|설계|구상|초안|템플릿|만들어|짜|써)"
+        r"\s*(해\s*줘|해\s*주|해\s*달|해\s*줄|줘|주세요|주라|줄래|달라|"
+        r"할\s*건데|하려고|하고\s*싶)")
+    # 있는 것을 **찾아** 달라는 말. 하나라도 있으면 생성 요청이 아니다
+    _LOOKUP_WORD = ["찾아", "어디 있", "어디있", "어디서", "링크", "url",
+                    "주소", "있나요", "검색"]
+
+    def _is_authoring_request(self, q: str) -> bool:
+        """문서를 **찾아** 달라는 것이 아니라 **만들어** 달라는 것인가.
+
+        ⚠️ 데이터·보고서는 각자 경로가 따로 있다. 여기서 가로채면 조회가 죽는다
+           — "매출 보고서 만들어줘" 는 `wants_report()` 가 먼저 가져간다.
+        """
+        if not self._RE_AUTHORING.search(q):
+            return False
+        if self._has(q, self._DATA_KEYWORDS):
+            return False
+        if any(w in q for w in ("보고서", "리포트", "report")):
+            return False
+        return not any(w in q for w in self._LOOKUP_WORD)
+
+    # PR 두 글자는 product·promotion 등의 일부이므로 영문 경계를 따로 확인한다.
+    # 홍보용 문구 작성이나 일반 실적·행사 조회는 PR 자료 검색이 아니다.
+    _PR_LOOKUP_RE = re.compile(
+        r"(?<![a-z0-9_])pr\s+이슈(?=$|[\s?!.,]|[은는을를이가에의])"
+        r"|(?<![가-힣])보도자료(?=$|[\s?!.,]|[은는를이가에의])"
+        r"|(?<![가-힣])프레인(?=$|[\s?!.,]|[은는이가에의])"
+        r"|(?<![가-힣])홍보\s*(?:관련\s*)?(?:자료|이슈|활동|내역|현황|리스트|시트|내용|기록)",
+        re.I,
+    )
+
+    def _is_pr_lookup_query(self, query: str) -> bool:
+        q = query.lower()
+        if not self._PR_LOOKUP_RE.search(q):
+            return False
+        if query.strip().startswith("### Task:") or self._has_pasted_data(query):
+            return False
+        if self._RE_AUTHORING.search(q) and not any(w in q for w in self._LOOKUP_WORD):
+            return False
+        return not (self._is_definition_question(q) or self._is_self_feature_question(q))
+
+    def _notion_query_team(self, query: str, selected_entry=None):
+        """명시적으로 고른 소스를 우선하고, 일반 PR 질문만 PR 구역으로 좁힌다."""
+        if selected_entry:
+            return selected_entry["key"]
+        return "PR" if self._is_pr_lookup_query(query) else None
+
+    def _is_self_feature_question(self, q: str) -> bool:
+        """우리 서비스 자신의 기능을 설명해 달라는 질문인가.
+
+        ⚠️ **외부 플랫폼·사내 툴 이름이 있으면 아니다** — "틱톡샵 접속 방법"·"잔디 사용법"
+           은 사내 문서(notion)가 맞다. "센텔라 앰플 사용법"도 CS 가 맞다.
+        """
+        if any(p in q for p in self._PLATFORM_TOOL_NAMES):
+            return False
+        try:
+            # 보고서 기능 질문은 보고서 쪽 규칙이 이미 정의해 뒀다 — 한 곳에서만 정한다
+            from app.reports.registry import _DATA_NOUN, _REPORT_META
+            if _REPORT_META.search(q):
+                return True
+            data_noun = bool(_DATA_NOUN.search(q))
+        except Exception:
+            data_noun = False
+        if not any(s in q for s in self._APP_SELF):
+            return False
+        # 자기 얘기이면서 기능을 묻거나, 데이터 명사가 하나도 없으면 설명 요구다
+        return any(f in q for f in self._FEATURE_WORD) or not data_noun
+
+    # Compound notion keywords that take priority over _DATA_KEYWORDS exclusion
+    # e.g. "반품 정책 알려줘" → notion (not blocked by "반품" in data keywords)
+    _COMPOUND_NOTION = ["반품 정책", "반품정책"]
+
+    # Wave 2: Hard-override keywords — always direct, no exceptions
+    _DIRECT_OVERRIDE = [
+        # Greetings / short social
+        "안녕", "하이", "hello", "hi", "감사", "고마워", "ㅎㅇ", "ㅋㅋ", "ㅎㅎ",
+        # Company identity (주의: "회사 매출" 같은 데이터 질문과 구분 필요 — _DATA_OVERRIDE_GUARD로 방어)
+        "뭐하는", "소개", "누가 만들", "주인",
+        # External topics (never route to BQ/Notion)
+        "부동산", "주식", "투자", "아파트", "전세", "월세", "대출", "연봉", "이직",
+        "비트코인", "코인", "암호화폐", "주가", "상장",
+        "항공", "비행기", "호텔", "숙소", "여행지", "맛집",
+        "날씨 알려", "오늘 날씨",
+        # Fun / chitchat
+        "재밌", "농담", "웃긴", "심심",
+    ]
+
+    # 위 override 키워드가 있어도 데이터 키워드가 있으면 bigquery로 허용
+    _DATA_OVERRIDE_GUARD = [
+        "매출", "판매", "수량", "주문", "광고", "마케팅", "인플루언서",
+        "비용", "실적", "국가별", "월별", "분기별", "채널별", "비율", "차트", "그려",
+    ]
+
+    def _keyword_classify(self, query: str) -> str:
+        """(호환용) 라우트만 반환 — 확신 플래그가 필요하면 _keyword_classify_ex."""
+        return self._keyword_classify_ex(query)[0]
+
+    # ⛔ **사용자가 자기 데이터를 붙여넣었는데 앱이 그걸 무시하고 조회했다** (2026-08-18 실측).
+    #    권역별 마케팅 비용 표 60행을 붙여 "이 표를 정리해줘" 라고 했더니, 표는 쳐다보지도
+    #    않고 BigQuery 에서 전혀 다른 권역 ROAS 를 가져와 답했다. 숫자는 그럴듯한데
+    #    **묻지 않은 데이터**다 — 붙여넣은 사람은 자기 표가 반영된 줄 안다.
+    #    붙여넣은 표는 우리 DB 에 없는 값일 수 있으므로(그래서 붙여넣는다) 조회로 답하면 안 된다.
+    #    ⚠️ 판정은 **구조**로 한다. "표"·"붙여넣" 같은 낱말을 세면 목록 밖에서 재발한다.
+    _INLINE_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.M)
+    _INLINE_TSV_ROW = re.compile(r"^[^\n\t]+\t[^\n\t]+\t", re.M)
+
+    # "문서 찾아줘" · "자료 좀 공유해줘" — 문서를 **달라는** 요청의 모양.
+    # ⛔ `문서`·`자료` 만 보면 "자료가 부족하다" 같은 말이 걸린다. 달라는
+    #    동사가 붙어야 요청이다 (붐따 #153).
+    # ⚠️ 조사에 `에서`·`에` 가 빠져 있어 "사내 문서**에서** 찾아줘" 가 안 걸렸다
+    #    (2026-09-07 실측). 동사는 **바로 뒤에** 와야 하므로 "문서에서 오류를
+    #    찾아" 같은 문장은 여전히 걸리지 않는다.
+    _DOC_REQUEST_RE = re.compile(
+        r"(?:문서|자료)\s*(?:에서|에|를|을|은|는|좀|들)?\s*"
+        r"(?:찾아|찾을|찾는|검색|공유|보여|올려|알려|주세요|줘|줄래|있나|있어|있을까)")
+
+    def _has_pasted_data(self, query: str) -> bool:
+        """질문 안에 **사용자가 가져온 데이터 덩어리**가 있는가.
+
+        마크다운 표 4행 이상, 또는 탭 구분 3행 이상이면 붙여넣은 데이터로 본다
+        (3행 이하는 예시로 든 것일 수 있어 조회를 막지 않는다).
+        """
+        # ⛔ 파일로 올린 표는 **크기와 무관하게** 붙여넣은 표다. 200자 문턱은
+        #    "예시로 두어 줄 적은 것" 을 거르려는 것인데, 8행 × 3열짜리 첨부는
+        #    그 문턱에 걸려 **조회로 새고 묻지도 않은 데이터가 답으로 나간다**.
+        #    표식은 서버가 붙이므로(`table_attachment.to_block`) 사용자가 흉내낼
+        #    일도 없다
+        from app.core.table_attachment import ATTACHMENT_MARKER
+        if ATTACHMENT_MARKER in (query or ""):
+            return True
+        if len(query or "") < 200:
+            return False
+        if len(self._INLINE_TABLE_ROW.findall(query)) >= 4:
+            return True
+        return len(self._INLINE_TSV_ROW.findall(query)) >= 3
+
+
+    # 일정을 가리키는 말. 이것만 걸렸을 때는 "누구의 일정인가"를 따로 판정한다
+    _CAL_WORDS = ["일정", "스케줄", "캘린더", "calendar", "schedule"]
+
+    # 회사 축 — 이 낱말이 있으면 개인 캘린더가 아니라 사내 프로모션 캘린더를 묻는 것이다.
+    # ⚠️ 국가는 손으로 적지 않는다 — 값 목록 캐시(실측)에서 읽는다. 캐시가 비면
+    #    축이 없다고 보고 LLM 에 넘긴다 (없는 목록으로 확신하지 않는다).
+    _MALL_WORDS = ["큐텐", "qoo10", "쇼피", "shopee", "아마존", "amazon", "틱톡", "tiktok",
+                   "라자다", "lazada", "올리브영", "무신사", "스마트스토어", "자사몰",
+                   "shopify", "쇼피파이", "채널별", "몰별", "플랫폼별"]
+
+    def _has_business_axis(self, q: str) -> bool:
+        """질문이 회사 축(국가·몰/채널·팀)을 가리키는가."""
+        if any(w in q for w in self._MALL_WORDS):
+            return True
+        try:
+            from app.agents.sql_agent import TEAM_CODE2KR
+            for code, kr in TEAM_CODE2KR.items():
+                if kr in q or (len(code) >= 4 and code.lower() in q):
+                    return True
+        except Exception:
+            pass
+        try:
+            from app.core.value_lists import _cached
+            for c in (_cached("Country") or []):
+                if len(c) >= 2 and c in q:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _keyword_classify_ex(self, query: str) -> tuple:
+        """키워드 분류 + 확신 플래그 → (route, confident).
+
+        Priority: Hard overrides > System tasks > Full data request > How-to (Notion) > Notion (explicit) > GWS > CS > Data > External > Direct
+
+        confident=False 는 "특정 의도 키워드에 걸려서가 아니라 **폴스루/가드 강등**으로
+        direct 가 됐다"는 뜻이다. 호출부는 이 경우 LLM 분류를 기본값으로 쓴다
+        (2026-08-06 LLM 우선 하이브리드 — 키워드 목록에 단어가 없어 direct 로 새던
+        사고 4건이 계기. 명백한 케이스만 키워드로 끝내 지연·비용을 아낀다).
+        """
+        # Open WebUI system tasks (title/tag/follow-up) → direct, skip BQ false routing
+        if query.strip().startswith("### Task:"):
+            return ("direct", True)
+
+        # 붙여넣은 데이터가 있으면 **그 데이터로 답해야 한다** — 조회하면 다른 숫자가 나온다
+        if self._has_pasted_data(query):
+            logger.info("route_pasted_data", chars=len(query))
+            return ("direct", True)
+
+        q = query.lower()
+
+        # 5자 미만 초단문 — 인사일 수도, "B2B" 같은 후속 조건일 수도 있다 → LLM 판단
+        if len(q.strip()) < 5:
+            return ("direct", False)
+
+        # Wave 2: Hard-override to direct (greetings, external topics, chitchat)
+        # 단, 데이터 키워드가 있으면 override 건너뜀 ("회사 1분기 매출" 등)
+        if self._has(q, self._DIRECT_OVERRIDE):
+            if not any(kw in q for kw in self._DATA_OVERRIDE_GUARD):
+                return ("direct", True)
+
+        # Capability questions ("이미지 분석 가능해?", "차트 그릴 수 있어?") → direct
+        # 단, PEOPLE/HR·팀 키워드가 있으면 건너뜀 ("육아휴직 쓸 수 있어" 등은 팀 자료 질문)
+        if any(p in q for p in self._CAPABILITY_PATTERNS):
+            if not self._has(q, self._TEAM_KEYWORDS):
+                return ("direct", True)
+
+        # 이 서비스 **자신의 기능**을 묻는 질문 → direct. 사내 문서에도 CS Q&A 에도 답이 없다
+        if self._is_self_feature_question(q):
+            return ("direct", True)
+
+        # 만들어 달라는 요청 → direct. 사내 문서를 뒤져도 나올 것이 없다
+        if self._is_authoring_request(q):
+            return ("direct", True)
+
+        # 지표·용어의 **뜻**을 묻는 질문 → direct (SQL 을 만들 대상이 아니다)
+        if self._is_definition_question(q):
+            return ("direct", True)
+
+        if self._is_pr_lookup_query(query):
+            return ("notion", True)
+
+        # Full data request → always bigquery (handled by _handle_bigquery → _handle_fulldata_request)
+        if self._has(q, self._FULLDATA_KEYWORDS):
+            return ("bigquery", True)
+
+        # Team/HR resource check — BEFORE howto/notion to catch HR queries
+        # BUT if strong data keywords present → bigquery takes priority
+        _TEAM_SPECIFIC = ["jbt ", "bcm ", "east ", "west ", "bea ", "bxm ", "플래그십",
+                          "팀 자료", "팀별 자료", "db hub", "데이터 허브",
+                          "연차", "휴가", "휴일대체", "퇴사", "퇴직금", "경조", "졸업",
+                          "성과급", "성과금", "보상", "인센티브",
+                          "회의실 예약", "명함", "법인서류", "채용", "면접",
+                          "vpn", "프린터", "피플팀", "복지", "교육 신청",
+                          "잔디", "다우오피스", "급여", "증명서", "계약서",
+                          # 업무 문서·절차 (데이터 키워드가 함께 있으면 아래 가드가 bigquery 로 보낸다)
+                          "가이드라인", "매뉴얼", "메뉴얼", "가격표", "단가표", "공급가",
+                          "등록 절차", "등록절차", "신청 절차", "신청절차", "출장", "erp"]
+        _DATA_OVERRIDE = ["매출", "비용", "합계", "월별", "조회수", "저장수", "좋아요수",
+                          "협업건", "유가 협업", "무가 협업", "시딩", "인플루언서",
+                          "광고비", "roas", "ctr", "cpv", "cpe", "전환", "클릭",
+                          # ⛔ 리뷰는 BigQuery 도메인인데 이 목록에 없었다. 그래서
+                          #    "플래그십 스토어 리뷰 몇 건" 이 `플래그십`(팀 문서 낱말)에
+                          #    걸려 notion 으로 새고 조회를 못 했다 (이주훈 님 제보 2026-08-14).
+                          #    ⚠️ `_QTY_INTENT`(몇·얼마)로 통째로 뒤집으면 "연차 몇 개 남았어"
+                          #       같은 인사 질문까지 bigquery 로 간다 — 낱말을 좁게 더한다.
+                          #    "리뷰 작성 가이드라인" 은 아래 _DOC_WORD 가드가 notion 으로 지킨다
+                          "리뷰", "평점", "별점",
+                          # ⛔ `판매`·`프로모션`·`광고` 가 빠져 있어 **팀 낱말이
+                          #    데이터 질문을 이겼다** (2026-09-07 실사용 실측).
+                          #      · "b2c west 판매에서 … 판매액이 높아?"  → notion
+                          #      · "9월 jbt 프로모션 뭐 있음?"          → notion
+                          #      · "메타 … west 권역 광고 소재 평균 top5" → notion
+                          #    `매출`·`광고비`·`리뷰` 는 이미 있었다 — 같은 부류의
+                          #    누락이지 새 예외가 아니다.
+                          # ⚠️ 문서 질문이 딸려 가지 않는 이유: 바로 아래 `_DOC_WORD`
+                          #    관문이 "광고 심의 가이드라인"·"프로모션 진행 절차" 를
+                          #    받아 notion 으로 되돌린다 (회귀가 양방향으로 지킨다).
+                          "판매", "프로모션", "광고"]
+        # ⛔ 문서를 달라는 말이 있으면 데이터 명사가 섞여 있어도 문서다 (2026-08-13 실측:
+        #    "인플루언서 시딩 가이드라인 알려줘" 가 '시딩' 때문에 bigquery 로 갔다).
+        #    단 **수량·금액을 묻는 말이 있으면 조회**다 — "시딩 비용 얼마 썼어"는 그대로 데이터.
+        #    ⛔ "데이터 분석 파트 자료 어디 있어?" 가 **확신을 갖고 bigquery** 로 갔다
+        #       (2026-08-18 전수 QA 실측). `데이터 분석` 이 데이터 낱말이라서다.
+        #       1.3초 만에 "기간과 채널을 알려달라"는 되묻기가 나갔다 — 문서를 찾아
+        #       달라는 사람에게 조회 조건을 되물은 것이다. 문서 **위치**를 묻는 말도
+        #       문서 요청이다.
+        _DOC_WORD = ["가이드라인", "가이드", "매뉴얼", "메뉴얼", "양식", "템플릿",
+                     "절차", "정책", "규정", "프로세스", "작성법", "작성 방법",
+                     "자료 어디", "자료가 어디", "문서 어디", "문서가 어디",
+                     "어디 있어", "어디있어", "어디 있나", "어디서 봐", "어디서 찾",
+                     "어디서 확인"]
+        _QTY_INTENT = ["얼마", "몇 ", "합계", "비용", "매출", "수량", "순위", "top",
+                       "추이", "비중", "집계", "금액", "단가", "예산"]
+        has_team = self._has(q, _TEAM_SPECIFIC)
+        has_data = self._has(q, _DATA_OVERRIDE)
+        if has_team and not has_data:
+            return ("notion", True)
+        # ⛔ `_DOC_WORD` 에 **`문서`·`자료` 자체가 없었다** — "문서 어디 있어" 는
+        #    있는데 "문서 찾아줘" 는 없어서, "…글로벌e 전환 관련해서 문서
+        #    찾아줘" 가 **확신을 갖고 bigquery** 로 갔다 (붐따 #153, 2026-08-26).
+        #    확신 분류라 LLM 재판정도 못 탄다.
+        #    ⚠️ 낱말을 하나씩 늘리지 않고 **「문서/자료를 달라」는 모양**으로 본다.
+        #       `_QTY_INTENT` 가드는 그대로다 — "매출 자료 보여줘" 는 조회다
+        if (self._has(q, _DOC_WORD) or self._DOC_REQUEST_RE.search(q)) \
+                and not self._has(q, _QTY_INTENT):
+            return ("notion", True)
+
+        # How-to / guide questions about platforms → Notion (not BigQuery)
+        if self._has(q, self._HOWTO_KEYWORDS):
+            return ("notion", True)
+        if self._has(q, self._HOWTO_BROAD_KEYWORDS):
+            if any(p in q for p in self._PLATFORM_TOOL_NAMES):
+                return ("notion", True)
+
+        # Pre-compute data keyword match (used in Notion guard + later routing)
+        has_data = self._has(q, self._DATA_KEYWORDS)
+
+        # Notion check — but defer to bigquery when strong data keywords present
+        if self._has(q, self._NOTION_KEYWORDS):
+            # ⛔ **제품 라인을 지목했으면 노션 문서가 아니라 제품 Q&A(BP)다**
+            #    (2026-09-04 실사용 제보). `제품 정보` 가 노션 확신어라서
+            #    "히알루테카 제품 정보 알려줘" 가 notion 으로 갔고, 답변은
+            #    **경로와 링크만** 주고 "상세 텍스트는 포함되어 있지 않습니다" 로 끝났다.
+            #    CS 시트에는 그 라인 Q&A 가 있었고 전성분 테이블에도 있었다 —
+            #    **데이터가 없어서가 아니라 엉뚱한 곳을 뒤져서** 못 답한 것이다.
+            #    ⚠️ 후속 발화("히알루-테카 퍼밍 크림은?")는 직전 경로를 물려받으므로
+            #       첫 질문이 틀리면 대화 전체가 함께 틀린다.
+            #    ⚠️ 노션을 명시했으면("노션에서 …") 그대로 노션이다.
+            _named_line = bool(_product_line_named(q))
+            _explicit_notion = any(k in q for k in ("노션", "notion", "사내 문서", "위키"))
+            if _named_line and not _explicit_notion:
+                pass  # 아래 CS 판정으로 넘긴다
+            elif any(kw in q for kw in self._COMPOUND_NOTION):
+                return ("notion", True)
+            elif not has_data:
+                # ⛔ **「데이터 낱말이 없다」는 확신의 근거가 아니다.** 이 가지의
+                #    유일한 근거는 `노션` 같은 낱말 하나 + 다른 낱말의 **부재**인데,
+                #    그것으로 `confident=True` 를 주는 바람에 LLM 재판정이
+                #    통째로 건너뛰어졌다.
+                #    실측(2026-09-07, 실사용 60일 1,295건): 이 가지가 결정한 것은
+                #    **9건뿐인데 그중 7건이 오분류**였다 —
+                #      · "개인 업무 노션 페이지 구성 제안해달라고"        (붐따 #163)
+                #      · "Today 내용을 노션에 자동화해서 뜨게 할 수 없나" (붐따 #164)
+                #      · "지메일 연동해서 업무 정리하는 거 노션으로 쏠 수 있어?"
+                #      · "연동된 Notion 페이지 리스트 알려줘" 외
+                #    제대로 맞힌 1건은 "…사내 문서에서 찾아줘" 인데, 확인해 보니
+                #    위쪽 `_DOC_REQUEST_RE` 가 조사 `에서` 를 안 받아 흘려보내고
+                #    있었다 — 그 구멍을 함께 막았으므로 이제 위에서 잡힌다.
+                #    즉 **확신을 뺀다고 잃는 것이 없다** (막기 전이었다면 잃었다).
+                # ⚠️ 값은 `notion` 그대로 둔다 — LLM 판정이 실패하면 이 값이 남는다
+                #    (안전한 쪽으로 실패). 확신만 내린다.
+                return ("notion", False)
+
+        # GWS check — highest priority for personal workspace queries
+        # 단, "화상회의 프로그램 뭐 써" 같은 툴 식별 질문은 개인 데이터 검색이 아니므로 제외
+        _TOOL_IDENTITY_PATTERNS = ["뭐 써", "뭐써", "뭐 사용해", "뭐사용해", "어떤 프로그램",
+                                     "어떤 툴", "무슨 프로그램", "무슨 툴"]
+        # 프로모션 캘린더 도입(2026-08-11)으로 '일정·스케줄·캘린더'가 두 도메인에 걸친다.
+        # "인도네시아 프로모션 일정" 은 BigQuery 프로모션 테이블이지 개인 구글 캘린더가 아니다.
+        # 키워드를 늘리는 대신 **확신 플래그의 조건을 좁힌다** (오분류 대응 원칙).
+        # 단 "내 캘린더"·메일·드라이브처럼 개인 워크스페이스가 명시되면 그대로 GWS.
+        _PROMO_TERMS = ["프로모션", "프로모", "행사", "기획전", "메가와리", "메가세일",
+                        "런칭", "출시 일정", "판촉"]
+        _PERSONAL_SCOPE = ["내 ", "제 ", "메일", "gmail", "드라이브", "drive",
+                           "회의록", "회의", "미팅", "스프레드시트", "구글시트"]
+        if self._has(q, self._GWS_KEYWORDS):
+            # ⛔ 예전엔 "프로모션 낱말이 있으면 bigquery, 아니면 무조건 gws" 한 줄이었다.
+            #    그래서 **"일본 큐텐 8월 일정"** 처럼 프로모션이라 안 적고 사업 축으로 물으면
+            #    개인 구글 캘린더를 뒤졌다 (2026-08-19 점검에서 발견).
+            #    낱말을 더 쌓는 대신 **범위(scope)로 판정한다** — 이 질문이 개인 것인가,
+            #    회사 것인가. 둘 다 아니면 확신하지 않고 LLM 에 넘긴다 (확신 오분류가 최악이다).
+            _cal_only = (self._has(q, self._CAL_WORDS)
+                         and not any(p in q for p in _PERSONAL_SCOPE))
+            if _cal_only:
+                if any(t in q for t in _PROMO_TERMS) or self._has_business_axis(q):
+                    return ("bigquery", True)   # 사내 프로모션 캘린더
+                # 개인 것도 회사 것도 가리키지 않는 맨 "일정" — 판단을 LLM 에 맡긴다
+                return ("direct", False)
+            if not any(p in q for p in _TOOL_IDENTITY_PATTERNS):
+                return ("gws", True)
+
+        # Web search guard: if search keywords match but NO SKIN1004 business context → direct
+        # "올해 한국 GDP 성장률" → direct (general knowledge)
+        # "올해 미국 매출" → bigquery (매출 = SKIN1004 data)
+        if has_data and self._has(q, self._SEARCH_KEYWORDS):
+            if not self._has(q, self._BIZ_CONTEXT):
+                return ("direct", False)  # 가드 강등 — 확신 없음, LLM 재판정 대상
+
+        # CS check — product Q&A, ingredients, usage, skincare
+        # When both CS + DATA keywords present, only prefer BQ for strong analytics keywords
+        # (매출, 수량, 주문 etc.), not ambiguous ones like "라인", "제품 목록"
+        _STRONG_DATA = [
+            "매출", "수량", "주문", "sales", "revenue",
+            "판매량", "판매 수량", "세일즈", "매상", "갯수", "개수",
+            "국가별", "월별", "분기별", "대륙별", "플랫폼별", "연도별", "채널별", "카테고리별", "카테고리",
+            # Region keywords — when paired with product names → sales data intent, not CS
+            "남미", "북미", "동남아", "유럽", "중동", "cis", "아시아",
+            "인도네시아", "말레이시아", "태국", "베트남", "필리핀", "미국", "일본", "중국",
+            "재고", "집계", "합계", "통계", "데이터", "조회",
+            "차트", "그래프", "그려", "시각화", "도표", "플롯", "그래프로", "차트로", "시각화해",
+            "막대그래프", "원형그래프", "꺾은선", "파이차트", "바차트", "그려줘",
+            "top", "순위", "랭킹", "성장률", "증감", "추이",
+            "비교", "비중", "비율", "전년 대비", "전년대비", "대비",
+            "베스트셀러", "인기 제품", "가장 많이 팔",
+            # Marketing strong data keywords
+            "광고비", "광고 비용", "마케팅비", "마케팅 비용", "퍼포먼스", "시딩", "총액", "메가와리", "ROAS", "CTR",
+            "노출수", "클릭수", "전환율", "전환수",
+            "인플루언서", "리뷰", "GMV",
+            "신규", "업체", "거래처", "바이어", "b2b", "b2c",
+            # Meta ads — override CS even when "skin1004" present
+            "광고", "메타 광고", "메타광고", "활성 광고", "비활성 광고",
+            "분포", "현황", "건수",
+            # Repurchase
+            "재구매", "재구매율", "리텐션", "코호트", "재방문",
+            # Financial P&L (FI_LLM_Flat)
+            "영업이익", "매출총이익", "매출원가", "판관비", "손익", "이익률", "원가율", "광고선전비",
+            # ⛔ `매출`·`수량`·`광고비` 는 있는데 **`판매액` 이 없어**, 제품명이 붙은
+            #    판매액 조회가 제품 Q&A(cs) 로 갔다 (2026-09-07 실사용 실측).
+            #      "센텔라테카 앰플 50ML … 판매액알려줘"        → cs
+            #      "제품별 성장성 매트릭스 보여줘"              → cs
+            # ⚠️ `판매` 를 통째로 넣지 마라 — "이 제품 판매 중단됐나요?" 같은
+            #    진짜 제품 문의가 조회로 샌다. **재는 말**만 넣는다.
+            "판매액", "판매량", "성장성",
+        ]
+        # Team resource check — team data lookups (before CS to avoid overlap)
+        # ⛔ **여기에는 데이터 가드가 없었다.** 바로 위 _TEAM_KEYWORDS 정의에 "이 목록을
+        #    쓰는 아래쪽 검사에는 데이터 가드가 없다"고 경고까지 적혀 있었는데 그대로였다.
+        #    그래서 "플래그십 스토어 리뷰 몇 건이야" 가 `플래그십` 하나에 걸려 notion 으로
+        #    새고 조회를 못 했다 (이주훈 님 제보 2026-08-14).
+        #    ⚠️ 데이터 낱말이 **함께** 있을 때만 뒤집는다 — 통째로 뒤집으면
+        #       "조직도 알려줘"·"연차 규정" 같은 진짜 문서 질문이 bigquery 로 샌다.
+        if self._has(q, self._TEAM_KEYWORDS) and not self._has(q, self._DATA_KEYWORDS):
+            return ("notion", True)
+
+        has_strong_data = self._has(q, _STRONG_DATA)
+        if self._has(q, self._CS_KEYWORDS) and not has_strong_data:
+            # 기간 + 집계를 함께 물으면 제품 문의가 아니라 조회다 (위 헬퍼 주석 참조)
+            if not self._is_period_aggregate_question(q):
+                return ("cs", True)
+        has_external = self._has(q, self._EXTERNAL_KEYWORDS)
+
+        # Both data + external context needed → multi-source analysis
+        if has_data and has_external:
+            # "매출 트렌드" = pure data trend, not multi-source
+            # Only override when the ONLY external keyword is "트렌드"
+            # and it's adjacent to a data word (매출/판매/실적)
+            external_hits = [kw for kw in self._EXTERNAL_KEYWORDS if kw in q]
+            if external_hits == ["트렌드"]:
+                data_trend = ["매출 트렌드", "매출트렌드", "판매 트렌드", "실적 트렌드", "주문 트렌드"]
+                if any(p in q for p in data_trend):
+                    return ("bigquery", True)
+            return ("multi", True)
+
+        if has_data:
+            # Guard: data keywords present but NO SKIN1004 business context → direct
+            # e.g. "육룡이 나르샤 평점" → "평점" matches data but not about our products
+            if self._has(q, self._BIZ_CONTEXT):
+                return ("bigquery", True)
+            return ("direct", False)  # 데이터 단어는 있는데 사업 맥락 불명 — LLM 재판정
+        return ("direct", False)  # 아무 키워드도 안 걸림 — LLM 재판정
+
+    # Keywords that indicate user wants full/unlimited data from previous query
+    _FULLDATA_KEYWORDS = [
+        "전체 데이터 줘", "전체 데이터", "전체데이터", "다 줘", "다줘",
+        "전부 줘", "전부줘", "전부 다 줘", "전부다줘",
+        "제한 없이", "제한없이", "리밋 없이", "리밋없이",
+        "가져가겠", "가져갈게", "그래도 줘", "그래도줘",
+        "전체 보여", "전체보여", "다 보여", "다보여",
+        "전부 가져", "전부가져", "모두 줘", "모두줘",
+        "full data", "no limit", "all data",
+    ]
+
+    def _is_fulldata_request(self, query: str, conversation_context: str) -> bool:
+        """Check if user is requesting full data after a truncation warning."""
+        q = query.lower().strip()
+        has_keyword = self._has(q, self._FULLDATA_KEYWORDS)
+        has_truncation_context = "10,000행 제한" in conversation_context or "LIMIT에 도달" in conversation_context
+        return has_keyword and has_truncation_context
+
+    # ── BQ 의도 확인 (grill-me style) ──────────────────────────────
+    # 기간·채널이 모두 빠진 매우 짧은 BQ 쿼리에서만 활성화.
+    _BQ_PERIOD_KW = [
+        "이번달", "이번 달", "지난달", "지난 달", "저번달", "저번 달",
+        "이번주", "지난주", "이번 분기", "지난 분기",
+        "올해", "작년", "재작년", "올 해", "작 년",
+        "2022", "2023", "2024", "2025", "2026",
+        "1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월",
+        "q1", "q2", "q3", "q4", "분기", "반기", "최근", "최근 3", "최근 6", "최근 1년",
+        "전월", "전년", "전주", "주간", "월간", "연간", "누적",
+    ]
+    _BQ_CHANNEL_KW = [
+        "아마존", "amazon", "쇼피", "shopee", "큐텐", "qoo10", "틱톡", "tiktok",
+        "라자다", "lazada", "shopify", "쇼피파이", "스마트스토어", "네이버",
+        "올리브영", "예스스타일", "전체", "all", "합산", "통합", "b2b", "b2c",
+        "글로벌", "한국", "일본", "미국", "동남아", "유럽", "중동",
+    ]
+
+    def _bq_needs_clarification(
+        self, query: str, conversation_context: str, source_explicit: bool = False
+    ) -> bool:
+        """기간·채널 모두 없는 짧은 BQ 쿼리면 True.
+
+        ⚠️ 사용자가 `@@`나 데이터소스 칩으로 소스를 직접 고른 경우는 되묻지 않는다.
+        이미 범위를 좁히는 행동을 한 사람에게 "아마존? 큐텐? 쇼피?"라고 되묻는 것은
+        무의미하고(그 소스에 없는 판매몰을 묻게 된다), 스트리밍 경로는 애초에
+        되묻지 않아 같은 질문이 경로에 따라 다르게 동작했다 (2026-08-11 발견).
+        """
+        if source_explicit:
+            return False
+        if len(query.strip()) > 40:
+            return False
+        if conversation_context:
+            return False
+        q = query.lower()
+        has_period = any(kw in q for kw in self._BQ_PERIOD_KW)
+        has_channel = any(kw in q for kw in self._BQ_CHANNEL_KW)
+        return not has_period and not has_channel
+
+    async def _ask_bq_clarification(self, query: str, model_type: str) -> str:
+        """Flash로 1~2개 의도 확인 질문 생성."""
+        flash = get_flash_client()
+        prompt = f"""SKIN1004 데이터 분석 AI입니다. 사용자가 "{query}라고 질문했습니다.
+더 정확한 답변을 위해 필요한 정보를 1~2개 질문으로 물어보세요.
+- 기간 (이번달? 올해? 특정 분기?)
+- 채널/플랫폼 (전체? 아마존? 큐텐? 쇼피?)
+중 빠진 것만 물어보세요. 마크다운 없이 자연스럽게 짧게 (2줄 이내)."""
+        try:
+            return await asyncio.to_thread(flash.generate, prompt, temperature=0.3)
+        except Exception:
+            return "어떤 기간과 채널(플랫폼)을 기준으로 보고 싶으신가요? (예: 이번달 아마존, 올해 전체 등)"
+
+    async def _handle_bigquery(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+        brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
+        enabled_sources: Optional[List[str]] = None,
+        source_explicit: bool = False,
+        user_id: Optional[int] = None,
+    ) -> dict:
+        """BigQuery Agent with conversation context.
+
+        Falls back to a helpful data-error message if SQL generation fails,
+        preserving context that this was a SKIN1004 internal data query.
+        """
+        # 의도 확인: 기간·채널 없는 짧은 쿼리 → 먼저 물어보기
+        # (소스를 직접 고른 질문은 제외 — 스트리밍 경로와 동작을 맞춘다)
+        if self._bq_needs_clarification(
+            query, conversation_context,
+            source_explicit=source_explicit or enabled_sources is not None,
+        ):
+            clarify_q = await self._ask_bq_clarification(query, model_type)
+            return {"source": "bigquery", "answer": clarify_q}
+
+        # Check for "full data" follow-up request
+        if self._is_fulldata_request(query, conversation_context):
+            return await self._handle_fulldata_request(
+                query,
+                messages,
+                conversation_context,
+                model_type,
+                can_view_fi=can_view_fi,
+            )
+
+        # Maintenance check: warn but don't block (production-ready)
+        from app.core.safety import get_maintenance_manager
+        mm = get_maintenance_manager()
+        if mm.active and mm.manual:
+            # Manual maintenance = hard block (admin explicitly requested)
+            return {
+                "source": "bigquery",
+                "answer": (
+                    "**데이터 점검 중입니다** — "
+                    "관리자가 수동으로 점검을 활성화했습니다. "
+                    "잠시 후 다시 시도해 주세요.\n\n"
+                    f"*사유: {mm.reason}*"
+                ),
+            }
+        try:
+            answer = await run_sql_agent(
+                query,
+                conversation_context=conversation_context,
+                model_type=model_type,
+                brand_filter=brand_filter,
+                enabled_sources=enabled_sources,
+                can_view_fi=can_view_fi,
+                user_id=user_id,
+            )
+            # Check if SQL agent returned an error (it returns error as string, not exception)
+            if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
+                # Retry once before falling back
+                logger.warning("bigquery_sql_failed_retry", query=query[:100])
+                answer = await run_sql_agent(
+                    query,
+                    conversation_context=conversation_context,
+                    model_type=model_type,
+                    brand_filter=brand_filter,
+                    enabled_sources=enabled_sources,
+                    can_view_fi=can_view_fi,
+                    user_id=user_id,
+                )
+                if "오류" in answer and ("SQL" in answer or "생성되지" in answer):
+                    logger.warning("bigquery_sql_failed_fallback_to_direct", query=query[:100])
+                    return await self._handle_bigquery_fallback(
+                        query, messages, conversation_context, model_type, user_email
+                    )
+            # 실시간 팩트 캡처 — 답변에서 재사용 가능한 사실 추출 → knowledge_wiki (fire-and-forget)
+            _bq_task = asyncio.create_task(self._capture_bq_facts(query, answer))
+            self._bg_tasks.add(_bq_task)
+            _bq_task.add_done_callback(self._bg_tasks.discard)
+            return {"source": "bigquery", "answer": answer}
+        except Exception as e:
+            logger.error("orchestrator_bigquery_failed", error=str(e))
+            return await self._handle_bigquery_fallback(
+                query, messages, conversation_context, model_type, user_email
+            )
+
+    async def _capture_bq_facts(self, query: str, answer: str) -> None:
+        """BQ 답변에서 팩트 추출 → knowledge_wiki 저장 (fire-and-forget)."""
+        try:
+            from app.knowledge.wiki_extractor import extract_and_save_from_qa
+            await asyncio.to_thread(extract_and_save_from_qa, query, answer)
+        except Exception as e:
+            logger.debug("bq_fact_capture_failed", error=str(e)[:100])
+
+    async def _handle_bigquery_fallback(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+    ) -> dict:
+        """Fallback when BigQuery SQL generation fails.
+
+        Instead of generic direct LLM (which may answer with unrelated general knowledge),
+        we give the LLM context that this was a SKIN1004 internal data query so it provides
+        a helpful "data unavailable" response with suggestions.
+        """
+        llm = get_llm_client(MODEL_CLAUDE)
+        fallback_prompt = f"""사용자가 Craver 내부 매출/판매 데이터를 조회하려 했으나, 데이터베이스에서 조회에 실패했습니다.
+
+사용자 질문: {query}
+
+다음 규칙에 따라 답변하세요:
+1. 요청한 데이터를 조회할 수 없었다는 점을 간결하게 안내하세요.
+2. 질문을 좀 더 구체적으로 바꿔보라고 제안하세요 (예: 기간, 국가, 채널, 제품명 등을 명시).
+3. 가능한 질문 예시를 2-3개 제시하세요.
+4. 일반적인 인터넷 정보로 답변하지 마세요. 이것은 Craver 내부 데이터 질문입니다.
+5. 한국어로 답변하세요.
+6. "오류가 발생" 같은 표현 대신 "데이터를 조회하지 못했습니다" 등 부드러운 표현을 쓰세요."""
+
+        try:
+            answer = await asyncio.to_thread(llm.generate, fallback_prompt, temperature=0.3)
+            return {"source": "bigquery_fallback", "answer": answer}
+        except Exception:
+            return {
+                "source": "bigquery_fallback",
+                "answer": (
+                    "### 📊 데이터 조회 안내\n\n"
+                    "요청하신 데이터를 조회하지 못했습니다. "
+                    "질문을 좀 더 구체적으로 해주시면 다시 시도해보겠습니다.\n\n"
+                    "---\n\n"
+                    "> 💡 **이런 식으로 질문해 보세요**\n"
+                    "> - \"2024년 미국 아마존 월별 매출 알려줘\"\n"
+                    "> - \"2024년 미국 채널별 매출 top5 비교해줘\"\n"
+                    "> - \"센텔라 앰플 120ml 미국 매출 추이 알려줘\""
+                ),
+            }
+
+    async def _handle_fulldata_request(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        can_view_fi: bool = False,
+    ) -> dict:
+        """Re-run previous BigQuery SQL without LIMIT when user requests full data."""
+        from app.agents.sql_agent import _extract_previous_sql, run_sql_agent_unlimited
+
+        # Extract previous SQL from conversation history
+        previous_sql = ""
+        for msg in reversed(messages):
+            content = msg.get("content", "")
+            if msg.get("role") == "assistant" and "```sql" in content:
+                previous_sql = _extract_previous_sql(content)
+                break
+
+        if not previous_sql:
+            # Try extracting from conversation context
+            previous_sql = _extract_previous_sql(conversation_context)
+
+        if not previous_sql:
+            return {
+                "source": "bigquery",
+                "answer": "이전 쿼리를 찾을 수 없습니다. 원래 질문을 다시 해주세요.",
+            }
+
+        # Find the original question for context
+        original_query = query
+        for msg in reversed(messages):
+            content = msg.get("content", "")
+            if msg.get("role") == "user" and content != query:
+                # This was the previous user question (the actual data query)
+                if any(kw in content.lower() for kw in ["매출", "수량", "데이터", "조회"]):
+                    original_query = content
+                    break
+
+        logger.info("fulldata_request", original_query=original_query[:100], sql=previous_sql[:200])
+
+        try:
+            answer = await run_sql_agent_unlimited(
+                previous_sql=previous_sql,
+                query=original_query,
+                model_type=model_type,
+                can_view_fi=can_view_fi,
+            )
+            return {"source": "bigquery", "answer": answer}
+        except Exception as e:
+            logger.error("fulldata_request_failed", error=str(e))
+            return {
+                "source": "bigquery",
+                "answer": "죄송합니다. 전체 데이터 조회 중 일시적인 문제가 발생했습니다.\n\n**해결 방법:**\n- 잠시 후 동일한 질문을 다시 시도해 주세요\n- 조회 범위를 좁혀보세요 (예: 특정 국가나 짧은 기간)\n- 원래 질문을 다시 입력하면 요약 결과를 먼저 확인할 수 있습니다",
+            }
+
+    async def _handle_report(self, query: str, user_email: str,
+                             explicit: bool = False,
+                             messages: Optional[List[Dict[str, Any]]] = None) -> Optional[dict]:
+        """등록된 보고서에 해당하는 질문이면 보고서를 만들고 요약을 돌려준다.
+
+        해당 없으면 None — 평소 라우팅으로 흘러간다.
+
+        보고서는 **본인과 본인이 지목해 공유한 사람만** 열람하므로 소유자를 확정할 수
+        있어야 한다 (공유를 걸 수 있는 사람도 소유자뿐이다). 이메일로
+        `users.id` 를 서버에서 조회한다 (JWT·프론트 값을 믿지 않는 기존 원칙과 같다).
+        신원을 못 잡으면 만들지 않는다 — 주인 없는 보고서를 남기지 않기 위해서다.
+        """
+        from app.reports import clarify, registry, service
+
+        pending = clarify.pending(messages)
+        if pending:
+            if clarify.is_cancelled(query):
+                logger.info("report_clarification_cancelled", query=pending["question"][:80])
+                return {
+                    "source": "bigquery",
+                    "answer": "보고서 생성을 취소했습니다.",
+                    "report_clarification": False,
+                }
+            query = clarify.enrich(pending["question"], query)
+            # 첫 요청이 `@@보고서`/보고서 칩이었다면 다음 답변에도 명시성을 이어간다.
+            explicit = pending["explicit"]
+
+        # 보고서는 명시적으로 요청했을 때만 만든다 — `@@보고서` 지정(explicit) 이거나
+        # 질문에 "보고서/리포트" 라고 적었을 때. `@@보고서` 는 문구를 보지 않는다
+        if not pending and not explicit and not registry.wants_report(query):
+            return None
+
+        # ⚠️ 아래 건너뜀은 **사용자가 보고서를 달라고 했는데 일반 답변이 나가는** 상황이다.
+        #    에러가 아니라 조용한 강등이라 아무도 모른다. INFO 로 남기면 프로덕션에서
+        #    통째로 버려져(앱 INFO 0건) 영영 안 보인다 — 반드시 WARNING 이다 (CLAUDE.md).
+        if not user_email:
+            logger.warning("report_skipped_no_user", query=query[:80])
+            return None
+
+        from app.db.mariadb import fetch_one
+        row = await asyncio.to_thread(
+            fetch_one, "SELECT id FROM users WHERE email = %s", (user_email,))
+        if not row:
+            logger.warning("report_skipped_unknown_user", email=user_email[:40],
+                           query=query[:80])
+            return None
+
+        # 첫 요청에서는 조회하지 않는다. 최소 두 가지를 확인해 대상·판단·드릴다운 축을
+        # 구체화한 다음, 바로 다음 사용자 답변에서만 실제 보고서를 만든다.
+        if not pending:
+            logger.info("report_clarification_requested", explicit=explicit, query=query[:80])
+            return {
+                "source": "bigquery",
+                "answer": clarify.build_prompt(query, explicit=explicit),
+                "report_clarification": True,
+            }
+
+        try:
+            result = await asyncio.to_thread(
+                lambda: service.run(query, row["id"], explicit=explicit))
+        except Exception as e:
+            logger.warning("report_failed", error=str(e)[:300], query=query[:80])
+            return {
+                "source": "bigquery",
+                "answer": "보고서를 만드는 중 문제가 발생했습니다. "
+                          "잠시 후 다시 시도해주시고, 계속되면 DB팀에 알려주세요.",
+            }
+        if not result:
+            # wants_report 가 True 였는데 여기까지 와서 비었다 = 라우팅이 갈린 것이다.
+            # 조용히 흘려보내면 "보고서 달랬는데 왜 안 나오지"가 재현 불가로 남는다
+            logger.warning("report_route_yielded_nothing", query=query[:80])
+            return None
+
+        logger.info("report_delivered", report_id=result["report_id"],
+                    spec=result["spec"], sec=result.get("elapsed_sec"))
+        return {"source": "bigquery", "answer": service.to_markdown(result),
+                "report_id": result["report_id"]}
+
+    async def _handle_model_rights(self, query: str, model_type: str, images=None) -> dict:
+        """모델 초상권 질문 — 판정(기간·만료)은 DB 데이터가 하고 LLM 은 설명만 한다.
+
+        시트 → MariaDB 적재본(model_rights)에서 오늘 날짜 기준 판정을 끝낸
+        컨텍스트를 만들어 넘긴다. 잘못 쓰면 모델당 수백만 원짜리 실수라
+        LLM 이 기간을 계산하게 두지 않는다 (전성분 핸들러와 같은 원칙).
+
+        사진이 첨부되면 얼굴 인식(buffalo_l ONNX, 서브프로세스)으로 등록된 모델과
+        대조해 인물을 식별한다 — 사진 일부(크롭)여도 얼굴만 보이면 매칭된다.
+        서브프로세스인 이유: onnxruntime 세션 ~400MB 를 2GB WAS 앱에 상주시키지
+        않기 위해 (실행 후 즉시 반환).
+        """
+        import asyncio as _asyncio
+
+        from app.core.model_rights import SHEET_URL, get_rights_context
+
+        face_note = ""
+        _identified = False   # 사진 속 인물을 실제로 특정했는가
+        if images:
+            try:
+                import json as _json
+                import os as _os
+                import sys as _sys
+                import tempfile as _tmp
+
+                from pathlib import Path as _P
+                with _tmp.NamedTemporaryFile(suffix=".jpg", delete=False) as _tf:
+                    _tf.write(images[0]["data"])
+                    _img_path = _tf.name
+                _script = str(_P(__file__).resolve().parent.parent.parent
+                              / "scripts" / "identify_model_face.py")
+                proc = await _asyncio.create_subprocess_exec(
+                    _sys.executable, _script, _img_path,
+                    stdout=_asyncio.subprocess.PIPE, stderr=_asyncio.subprocess.PIPE)
+                out, err = await _asyncio.wait_for(proc.communicate(), timeout=120)
+                _os.unlink(_img_path)
+                _lines = [l for l in out.decode("utf-8", "replace").splitlines() if l.strip().startswith("{")]
+                r = _json.loads(_lines[-1]) if _lines else {}
+                if r.get("match"):
+                    _identified = True
+                    face_note = (f"[사진 인식 결과] 업로드된 사진 속 인물: **{r['match']}** "
+                                 f"(유사도 {r['score']:.2f}, 얼굴 {r['n_faces']}개 감지)\n")
+                    query = f"{r['match']} — {query}"
+                elif r.get("maybe"):
+                    _identified = True
+                    face_note = (f"[사진 인식 결과] 확신은 낮지만 **{r['maybe']}** 로 보임 "
+                                 f"(유사도 {r['score']:.2f}) — 확실하지 않으니 이름으로 재확인 권장\n")
+                    query = f"{r['maybe']} — {query}"
+                elif r.get("n_faces"):
+                    face_note = (f"[사진 인식 결과] 얼굴은 감지했으나 등록된 모델({r.get('enrolled', 0)}명)과 "
+                                 "일치하지 않음 — 모델 이름으로 질문해 주세요\n")
+                else:
+                    face_note = "[사진 인식 결과] 사진에서 얼굴을 찾지 못함\n"
+                logger.info("model_face_identify", result={k: v for k, v in r.items() if k != "second"})
+            except Exception as e:
+                logger.error("model_face_identify_failed", error=str(e)[:200])
+                face_note = "[사진 인식 결과] 인식 실패 — 모델 이름으로 질문해 주세요\n"
+
+        # 사진을 붙였는데 인물을 특정하지 못했으면 전체 목록으로 되돌아가지 않는다 —
+        # "누구야" 에 모델 34명과 에이전시 연락처를 쏟아붓게 된다 (2026-08-19 실측).
+        _unidentified_photo = bool(images) and not _identified
+        try:
+            ctx = await _asyncio.to_thread(get_rights_context, query,
+                                           not _unidentified_photo)
+        except Exception as e:
+            logger.error("model_rights_failed", error=str(e)[:200])
+            ctx = ""
+        if not ctx and _unidentified_photo:
+            return {"source": "model_rights", "answer": (
+                f"{face_note}\n사진 속 인물을 초상권 DB 에서 특정하지 못했습니다.\n\n"
+                f"제가 가지고 있는 초상권 정보는 아래 시트가 전부입니다 — 쓰시려는 소재가 "
+                f"여기 적힌 **매체·지역·기간 범위** 안에 들어가는지 확인해 주세요.\n\n"
+                f"📄 [모델 초상권 현황 시트]({SHEET_URL})\n\n"
+                "**모델 이름을 알려주시면** 제가 바로 판정해 드립니다 "
+                "(예: \"라리사 지금 써도 돼?\"). 이름을 모르시면 촬영을 진행한 팀이나 "
+                "라인 담당자에게 확인이 필요합니다.")}
+        if ctx and face_note:
+            ctx = face_note + "\n" + ctx
+        if not ctx:
+            return {"source": "model_rights", "answer": (
+                "모델 초상권 데이터가 아직 적재되지 않았습니다 — 관리자에게 시트 동기화를 "
+                f"요청해 주세요.\n\n그동안은 원본 시트에서 직접 확인하실 수 있습니다.\n\n"
+                f"📄 [모델 초상권 현황 시트]({SHEET_URL})")}
+
+        from app.core.llm import get_flash_client
+        prompt = (
+            "너는 마케팅팀의 모델 초상권 안내 담당이다. 아래 판정 데이터만 근거로 "
+            "사용자 질문에 답하라.\n"
+            "규칙: 판정(사용 가능/만료/불가)은 데이터에 이미 계산돼 있다 — 절대 스스로 "
+            "기간을 재계산하지 마라. 만료·불가·불명 건은 반드시 담당자 문의를 안내하라. "
+            "표로 정리하고, 마지막에 '기재된 매체·기간 외 사용 시 추가 초상권 비용 발생' "
+            "경고를 짧게 붙여라.\n\n"
+            f"## 초상권 판정 데이터\n{ctx}\n\n## 사용자 질문\n{query}"
+        )
+        try:
+            llm = get_flash_client()
+            answer = await _asyncio.to_thread(llm.generate, prompt, temperature=0.1)
+        except Exception as e:
+            logger.error("model_rights_llm_failed", error=str(e)[:200])
+            answer = f"### 모델 초상권 현황 (자동 판정)\n\n```\n{ctx}\n```"
+        # 원본 확인 경로는 코드가 붙인다. 프롬프트에 맡기면 빠뜨린다 (노션 연식 경고와 같은 결론)
+        answer = answer.rstrip() + f"\n\n---\n📄 원본: [모델 초상권 현황 시트]({SHEET_URL}) — 판정이 '불명'이거나 찾는 모델이 없으면 시트에서 직접 확인해 주세요."
+        return {"source": "model_rights", "answer": answer}
+
+    @staticmethod
+    def _inventory_term(query, clean_query, db_entry, enabled_sources):
+        """재고 질문이면 찾을 제품어를 돌려준다 (`@@OP` 지정이면 낱말을 안 봐도 재고).
+
+        ⛔ `@@OP` 로 지정했으면 **접두사가 걷힌 문장**을 써야 한다. 원문을 그대로
+           넘겼다가 검색어가 `'OP 포어마이징 클레'` 가 돼 0건이 났다 (2026-08-25 실측).
+           `@@Google Workspace` 가 질문에 "Workspace" 를 남기던 것과 같은 부류다.
+        """
+        from app.core.inventory import inventory_intent
+
+        entries = db_entry if isinstance(db_entry, list) else (
+            [db_entry] if isinstance(db_entry, dict) else [])
+        explicit = bool(any(e.get("route") == "inventory" for e in entries)
+                        or (enabled_sources and list(enabled_sources) == ["OP"]))
+        text = (clean_query or query) if explicit else query
+        return inventory_intent(text, explicit=explicit)
+
+    @staticmethod
+    def _expiry_term(query: str, clean_query: str, db_entry, enabled_sources):
+        """유통기한 질문인가 — 재고보다 **먼저** 본다 (둘 다 '재고' 를 신호로 쓴다).
+
+        ⚠️ `db_entry` 는 **딕셔너리일 수도 리스트일 수도** 있다 (`@@` 를 여러 개 붙인
+           경우). `.get()` 을 그냥 부르면 리스트에서 터진다 — `_inventory_term` 과
+           같은 방식으로 정규화한다.
+        """
+        from app.core.inventory import expiry_intent
+
+        entries = db_entry if isinstance(db_entry, list) else (
+            [db_entry] if isinstance(db_entry, dict) else [])
+        explicit = bool(any(e.get("route") == "inventory" for e in entries)
+                        or (enabled_sources and list(enabled_sources) == ["OP"]))
+        text = (clean_query or query) if explicit else query
+        return expiry_intent(text, explicit=explicit)
+
+
+    async def _handle_inventory_query(self, term: str) -> dict:
+        """OP 재고 — **조회 시점에 시트를 직접 읽어** 답한다.
+
+        ⛔ LLM 이 숫자를 쓰지 않는다. 표도 합계도 코드가 만든다 — 재고는
+           **틀리게 답하는 것이 못 답하는 것보다 나쁘다** (성분과 같은 사상).
+        ⛔ 적재 사본으로 답하지 않는다 (2026-08-25 사용자 지시). 하루 두 번 받아 둔
+           숫자로 답하면 그 사이 입출고를 모른 채 옛 값을 자신 있게 말한다.
+        ⚠️ 시트가 언제 갱신됐는지 **항상 함께 밝힌다.**
+        """
+        import asyncio as _asyncio
+
+        from app.core.inventory import (SHEET_URL, _index, freshness, live_stock,
+                                        search, usable_words)
+
+        if not term:
+            return None                      # 방어 — 호출부가 판정을 먼저 한다
+        try:
+            snap = await _asyncio.to_thread(live_stock)
+            index = _index(snap["rows"])
+            kept, dropped = await _asyncio.to_thread(usable_words, term.split(), index)
+            shown = " ".join(kept) or term
+            rows = search(shown, 15, index=index)
+        except Exception as e:
+            logger.error("inventory_query_failed", error=str(e)[:200])
+            return {"source": "inventory",
+                    "answer": "재고 데이터를 조회하지 못했습니다. 잠시 후 다시 시도해 주세요."}
+
+        nl = chr(10)
+        stamp = snap.get("sheet_updated_at") or "시점 미상"
+        if not index:
+            return {"source": "inventory", "answer": (
+                "### 📦 재고" + nl + nl + "재고 데이터를 읽지 못했습니다." + nl + nl
+                + "원본 시트: [OP 재고 확인 시트](" + SHEET_URL + ")")}
+
+        if not rows:
+            return {"source": "inventory", "answer": (
+                "### 📦 재고 조회 결과" + nl + nl
+                + "**'" + term + "'** 에 해당하는 품목을 찾지 못했습니다." + nl + nl
+                + "조회 대상 품목은 {:,}개입니다. 품목명 일부나 SKU 로 다시 물어봐 주세요.".format(len(index))
+                + nl + nl + "---" + nl + "*시트 기준: " + stamp + " · [원본 시트](" + SHEET_URL + ")*")}
+
+        # ⛔ 못 읽었거나 낡았으면 **표보다 먼저** 말한다 — 각주는 아무도 안 읽는다
+        lines = ["### 📦 재고 조회 결과", ""]
+        for note in (snap.get("note"), freshness(stamp).get("note")):
+            if note:
+                lines += ["> " + note, ""]
+        # ⛔ 쓰지 않은 낱말을 쓴 것처럼 보이면 안 된다 — 실제로 찾은 말과
+        #    뺀 말을 그대로 적는다 (드라이브 검색을 넓혔을 때와 같은 규칙)
+        if not kept:                      # 제품어 없음 → 전체에서 많은 순
+            shown, dropped = "전체", []
+        found = "**'{}'**{} {}개 품목을 찾았습니다.".format(
+            shown, _euro(shown), len(rows))
+        if dropped:
+            from app.reports.blocks import _josa
+            listed = ", ".join("'" + d + "'" for d in dropped)
+            # 조사는 **따옴표가 아니라 마지막 낱말**의 받침으로 정한다
+            last = dropped[-1]
+            particle = _josa(last, "은는")[len(last):]
+            found += " (품목명에 없는 말 {}{} 빼고 찾았습니다.)".format(listed, particle)
+        lines += [found, "",
+                  "| SKU | 품목명 | 총 재고 | 창고별 |", "|---|---|---:|---|"]
+        for r in rows:
+            name = str(r.get("item_name") or "").replace("|", "/")[:52]
+            by = str(r.get("by_location") or "").replace("|", " · ")[:110]
+            lines.append("| {} | {} | {:,} | {} |".format(
+                r.get("sku"), name, int(r.get("total_qty") or 0), by))
+        lines += ["", "---",
+                  "*시트 기준: " + stamp + " · 조회 시점에 시트를 직접 읽었습니다"
+                  + (" · 대상 {:,}개 품목".format(len(index)))
+                  + " · [원본 시트](" + SHEET_URL + ")*"]
+        return {"source": "inventory", "answer": nl.join(lines)}
+
+    @staticmethod
+    def _awards_term(query, clean_query, db_entry, enabled_sources):
+        """수상/랭킹 질문이면 검색어를, 아니면 None (`@@수상` 지정이면 낱말을 안 봐도 켠다).
+
+        ⚠️ `db_entry` 는 딕셔너리일 수도 리스트일 수도 있다 (`@@` 를 여러 개 붙인
+           경우) — `_inventory_term` 과 같은 방식으로 정규화한다. `db_entry.get()` 을
+           그냥 부르면 리스트에서 터진다.
+        ⛔ `awards_intent(explicit=True)` 는 낱말이 없으면 **빈 문자열**을 돌려준다.
+           호출부는 반드시 `is not None` 으로 받을 것 — 참 판정이면 `@@수상` 만
+           찍은 사용자가 경로를 못 타고 에러 없이 일반 답변을 받는다.
+        """
+        from app.core.awards import awards_intent
+
+        entries = db_entry if isinstance(db_entry, list) else (
+            [db_entry] if isinstance(db_entry, dict) else [])
+        explicit = bool(any(e.get("route") == "awards" for e in entries)
+                        or (enabled_sources and list(enabled_sources) == ["수상"]))
+        text = (clean_query or query) if explicit else query
+        return awards_intent(text, explicit=explicit)
+
+    async def _handle_awards_query(self, term: str) -> Dict[str, Any]:
+        """수상/랭킹 — 벡터가 아니라 **표 조회**다 (재고·성분과 같은 사상)."""
+        import asyncio as _asyncio
+
+        from app.core.awards import (asks_usage_permission, format_answer,
+                                     search, usage_permission_answer)
+
+        # ⛔ 활용 가부 질문은 **조회하지 않는다.** 검색어로 쓸 낱말이 없어 기본 목록
+        #    40행이 나가는데, "써도 되나" 에 표를 들이미는 것은 답이 아니라 잡음이다.
+        #    고정 안내는 코드가 쓰므로 단정이 구조적으로 불가능하다.
+        if asks_usage_permission(term):
+            logger.info("awards_usage_question", term=term[:60])
+            return {"answer": usage_permission_answer(), "route": "awards",
+                    "source": "awards", "sources": ["수상/랭킹 시트"]}
+
+        result = await _asyncio.to_thread(search, term)
+        return {"answer": format_answer(result), "route": "awards",
+                "source": "awards", "sources": ["수상/랭킹 시트"]}
+
+    async def _handle_expiry_query(self, term: str) -> dict:
+        """OP 유통기한 — 로트별 잔량을 **임박한 순**으로 보여준다.
+
+        ⛔ 재고 수량과 합산하지 않는다. 로트 단위라 창고 재고와 세는 기준이 다르고,
+           더하면 같은 물건을 두 번 센다. 그래서 표도 절도 따로 낸다.
+        """
+        import asyncio as _asyncio
+
+        from app.core.inventory import SHEET_URL, expiry_search
+
+        if not term:
+            return None
+        try:
+            res = await _asyncio.to_thread(expiry_search, term, 20)
+        except Exception as e:
+            logger.error("expiry_query_failed", error=str(e)[:200])
+            return {"source": "inventory",
+                    "answer": "유통기한 데이터를 조회하지 못했습니다. 잠시 후 다시 시도해 주세요."}
+
+        nl = chr(10)
+        rows = res["rows"]
+        stamp = res.get("sheet_updated_at") or "시점 미상"
+        # 제품어가 없으면 전체에서 임박한 순이다 — 검색어 자리에 질문의 말을
+        # 그대로 넣으면 그 말로 찾은 것처럼 보인다
+        shown = res.get("shown") or "전체"
+        dropped_note = res.get("dropped") if res.get("shown") else []
+        if not rows:
+            return {"source": "inventory", "answer": (
+                "### 📅 유통기한 조회 결과" + nl + nl
+                + "**'" + term + "'** 에 해당하는 로트를 찾지 못했습니다." + nl + nl
+                + "---" + nl + "*시트 기준: " + stamp + " · [원본 시트](" + SHEET_URL + ")*")}
+
+        lines = ["### 📅 유통기한 조회 결과", ""]
+        if res.get("note"):
+            lines += ["> " + res["note"], ""]
+        head = "**'{}'**{} 로트 {:,}건을 찾았습니다 (임박한 순 {}건 표시).".format(
+            shown, _euro(shown), res["total"], len(rows))
+        if dropped_note:
+            from app.reports.blocks import _josa
+            listed = ", ".join("'" + d + "'" for d in dropped_note)
+            last = dropped_note[-1]
+            head += " (품목명에 없는 말 {}{} 빼고 찾았습니다.)".format(
+                listed, _josa(last, "은는")[len(last):])
+        lines += [head, "",
+                  "| 유통기한 | SKU | 품목명 | LOT | 수량 |", "|---|---|---|---|---:|"]
+        from app.core.inventory import is_undated
+        for r in rows:
+            name = str(r.get("item_name") or "").replace("|", "/")[:44]
+            # ⛔ `2099-12-31` 은 날짜가 아니라 **미지정 자리표시자**다.
+            #    그대로 찍으면 "2099년까지 괜찮다" 로 읽힌다
+            when = str(r.get("expiry_date") or "")
+            lines.append("| {} | {} | {} | {} | {:,} |".format(
+                "미지정" if is_undated(when) else when, r.get("sku"), name,
+                str(r.get("lot") or "-")[:18], int(r.get("qty") or 0)))
+        # ⛔ 총계를 재고와 나란히 두지 않는다 — 세는 기준이 다르다는 말을 함께 적는다
+        foot = "*로트 잔량 합계 {:,}개. 이 수치는 **창고 재고와 세는 기준이 달라**" \
+               " 재고 수량과 더하면 안 됩니다.".format(
+                   sum(int(r.get("qty") or 0) for r in rows))
+        # 미지정을 말없이 섞지 않는다 — 몇 건이 날짜를 모르는지 밝힌다
+        if res.get("undated"):
+            foot += " 찾은 {:,}건 중 {:,}건은 시트에 유통기한이 적혀 있지 않습니다" \
+                    "(2099-12-31 자리표시자).".format(res["total"], res["undated"])
+        lines += ["", foot + "*",
+                  "", "---",
+                  "*시트 기준: " + stamp + " · 조회 시점에 시트를 직접 읽었습니다 · "
+                  "[원본 시트](" + SHEET_URL + ")*"]
+        return {"source": "inventory", "answer": nl.join(lines)}
+
+    async def _handle_ingredient_query(self, query: str, intent, model_type: str) -> dict:
+        """성분 기준 제품 질문을 전성분 데이터로 답한다.
+
+        LLM 이 SQL 을 짜게 두지 않는다. 성분 판정은 결정적이어야 하고, 제품명
+        문자열 매칭으로 흘러가면 처음의 오답(성분이 든 제품이 '미포함 1위')이
+        그대로 재현되기 때문이다. 여기서 제품 목록을 확정한 뒤 그 목록으로만
+        집계한다.
+        """
+        import asyncio as _asyncio
+
+        ingredient, contains = intent
+        from app.core.ingredients import resolve_products_by_ingredient
+
+        try:
+            res = await _asyncio.to_thread(resolve_products_by_ingredient, ingredient, contains)
+        except Exception as e:
+            logger.error("ingredient_resolve_failed", error=str(e)[:200])
+            return {"source": "bigquery", "answer": INGREDIENT_EXCLUSION_MESSAGE}
+
+        products = res.get("products") or []
+        if not res.get("total_known"):
+            # 적재가 안 됐거나 비어 있으면 예전처럼 정직하게 거절한다
+            return {"source": "bigquery", "answer": INGREDIENT_EXCLUSION_MESSAGE}
+
+        label = "포함" if contains else "미포함"
+        if not products:
+            return {"source": "bigquery", "answer": (
+                f"**{ingredient} {label} 제품이 없습니다.**\n\n"
+                f"{res['coverage_note']}"
+            )}
+
+        # 확정된 제품 목록으로만 집계 — 성분 판정은 이미 끝났다
+        from app.core.bigquery import get_bigquery_client
+
+        inlist = ", ".join("'" + p.replace("'", "\\'") + "'" for p in products[:900])
+        sql = (
+            "SELECT Product AS product_name, SUM(Total_Qty) AS qty\n"
+            "FROM `skin1004-319714.Sales_Integration.Product`\n"
+            f"WHERE Product IN ({inlist})\n"
+            "  AND Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)\n"
+            "  AND Product != 'Sachet'\n"
+            "GROUP BY product_name ORDER BY qty DESC LIMIT 20"
+        )
+        try:
+            bq = get_bigquery_client()
+            rows = await _asyncio.to_thread(bq.execute_query, sql, 180.0, 100)
+        except Exception as e:
+            logger.error("ingredient_bq_failed", error=str(e)[:200])
+            return {"source": "bigquery", "answer": (
+                f"{ingredient} {label} 제품 {len(products)}종을 찾았으나 판매 데이터 조회에 실패했습니다."
+            )}
+
+        lines = [
+            f"### 🧪 {ingredient} {label} 제품 판매수량 (최근 12개월)",
+            "",
+            f"전성분 기준으로 **{len(products)}종**이 해당합니다.",
+            "",
+            "| 순위 | 제품 | 판매수량 |",
+            "| ---: | :--- | ---: |",
+        ]
+        for i, r in enumerate(rows[:15], 1):
+            q = int(r.get("qty") or 0)
+            lines.append(f"| {i} | {r.get('product_name')} | {q:,} |")
+        lines += [
+            "",
+            f"> ⚠️ {res['coverage_note']}",
+        ]
+        return {"source": "bigquery", "answer": "\n".join(lines)}
+
+    @staticmethod
+    def _pr_unavailable_result(message):
+        from app.agents.qdrant_agent import pr_answer_with_source
+        return {"source": "notion", "answer": pr_answer_with_source(message)}
+
+    async def _handle_qdrant(self, query, messages, conversation_context, model_type, user_email="", team_key=None):
+        from app.agents.qdrant_agent import run as run_qdrant
+        # 벡터 임베딩에는 순수 query만 사용 — 대화 히스토리를 넣으면 검색 정확도 하락
+        try:
+            result = await run_qdrant(query, team_key=team_key, model_type=model_type)
+            return {"source": "notion", "answer": result}
+        except Exception as e:
+            from app.agents.qdrant_agent import resolve_team_filter
+            if resolve_team_filter(team_key) == "PR":
+                logger.error("pr_search_failed", error=str(e))
+                return self._pr_unavailable_result("PR 자료를 검색하지 못했습니다. 잠시 후 다시 시도하거나 원본 리스트 탭에서 확인해 주세요.")
+            return {"source": "notion", "answer": f"사내 문서 검색 중 오류: {str(e)}"}
+
+    async def _handle_gws(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+    ) -> dict:
+        """Google Workspace Sub Agent execution with context and per-user auth."""
+        contextualized_query = query
+        if conversation_context:
+            contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
+        result = await self.gws_agent.run(contextualized_query, user_email=user_email)
+        return {"source": "gws", "answer": result}
+
+    async def _handle_cs(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+    ) -> dict:
+        """CS DB Sub Agent execution — customer service Q&A lookup."""
+        from app.agents.cs_agent import run as run_cs_agent
+
+        contextualized_query = query
+        if conversation_context:
+            contextualized_query = f"[이전 대화]\n{conversation_context}\n\n[현재 질문]\n{query}"
+        try:
+            result = await run_cs_agent(contextualized_query, model_type=model_type)
+            return {"source": "cs", "answer": result}
+        except Exception as e:
+            logger.error("orchestrator_cs_failed", error=str(e))
+            return {"source": "cs", "answer": "죄송합니다. CS 데이터 조회 중 일시적인 문제가 발생했습니다.\n\n**다시 시도해 주세요.** 제품명이나 성분명을 포함하면 더 정확한 결과를 얻을 수 있습니다.\n\n> 💡 **이런 식으로 질문해 보세요**\n> - \"센텔라 앰플 사용법 알려줘\"\n> - \"마다가스카르 센텔라 성분이 뭐야?\"\n> - \"히알루 시카 수분크림 특징\""}
+
+
+    async def _multi_prepare(
+        self,
+        query: str,
+        conversation_context: str,
+        model_type: str,
+        brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
+        enabled_sources: Optional[List[str]] = None,
+    ):
+        """Shared prep for _handle_multi/_handle_multi_stream: run web search +
+        BigQuery in parallel, return everything the synthesis step needs.
+
+        Returns:
+            (web_context, bq_answer, sub_results, ctx_section, today)
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        sub_results = {}
+
+        # 대화 맥락: 참조형 질문("아까 그 데이터", "위 md처럼") 해석에 필요 (2026-06-11, fid 36)
+        _ctx = (conversation_context or "").strip()
+        ctx_section = f"\n## 이전 대화 맥락\n{_ctx[:3000]}\n" if _ctx else ""
+
+        # --- Prepare prompts ---
+        search_prompt = f"""질문과 관련된 최신 외부 정보를 검색하여 핵심만 간결히 정리하세요.
+내부 매출 데이터는 제외. 시장 동향, 뉴스, 경쟁 환경 위주.
+오늘: {today}
+질문: {query}
+항목별로 간결하게 정리:"""
+
+        data_query_prompt = f"""사용자의 복합 질문에서 BigQuery 매출/주문 데이터 조회에 필요한 부분만 추출하세요.
+외부 분석(날씨, 시장, 원인 등)은 제외하고, 순수 데이터 조회 질문으로 변환하세요.
+{ctx_section}
+원래 질문: {query}
+
+예시:
+- "날씨가 인도네시아 매출에 영향?" → "인도네시아 최근 매출 데이터 조회"
+- "경쟁사 대비 태국 쇼피 매출 분석" → "태국 쇼피 매출 데이터 조회"
+- "환율 변동으로 베트남 매출 하락 원인" → "베트남 최근 월별 매출 추이"
+
+질문에 "아까", "그", "위에" 같은 참조가 있으면 위 대화 맥락에서 대상을 찾아 구체적인 질문으로 변환하세요.
+데이터 조회 질문만 한 줄로 작성:"""
+
+        # --- Steps 1+2: Google Search + BigQuery in parallel (v6.4) ---
+        # v6.5: Use Flash for search (was Pro — 60-80s → 30-40s)
+        def _web_search_sync():
+            flash = get_flash_client()
+            return flash.generate_with_search(search_prompt, temperature=0.2, max_output_tokens=4096)
+
+        async def _bq_query_async():
+            # Maintenance: only hard-block on manual maintenance
+            from app.core.safety import get_maintenance_manager
+            mm = get_maintenance_manager()
+            if mm.active and mm.manual:
+                return "", "데이터 점검 중으로 매출 데이터 조회가 일시 중단되었습니다."
+
+            flash = get_flash_client()
+            data_query = await asyncio.to_thread(flash.generate, data_query_prompt, temperature=0.0)
+            data_query = data_query.strip()
+            logger.info("multi_data_query_rewritten", original=query[:100], rewritten=data_query[:100])
+            from app.agents.sql_agent import run_sql_agent
+            answer = await run_sql_agent(
+                data_query,
+                conversation_context=conversation_context,
+                model_type=model_type,
+                brand_filter=brand_filter,
+                enabled_sources=enabled_sources,
+                can_view_fi=can_view_fi,
+            )
+            return data_query, answer
+
+        web_context = ""
+        bq_answer = ""
+
+        try:
+            gathered = await asyncio.gather(
+                asyncio.to_thread(_web_search_sync),
+                _bq_query_async(),
+                return_exceptions=True,
+            )
+
+            # Web search result
+            if isinstance(gathered[0], Exception):
+                logger.warning("multi_web_search_failed", error=str(gathered[0]))
+                sub_results["web_search"] = {"error": str(gathered[0])}
+            else:
+                web_context = gathered[0] or ""
+                sub_results["web_search"] = {"answer": web_context}
+                logger.info("multi_web_search_done", length=len(web_context))
+
+            # BQ result
+            if isinstance(gathered[1], Exception):
+                logger.warning("multi_bigquery_failed", error=str(gathered[1]))
+                sub_results["bigquery"] = {"error": str(gathered[1])}
+            else:
+                _, bq_answer = gathered[1]
+                if "오류" in bq_answer and "SQL" in bq_answer:
+                    logger.warning("multi_bigquery_sql_failed", answer=bq_answer[:100])
+                    bq_answer = ""
+                    sub_results["bigquery"] = {"error": "데이터 조회 실패"}
+                else:
+                    sub_results["bigquery"] = {"answer": bq_answer}
+                    logger.info("multi_bigquery_done", length=len(bq_answer))
+        except Exception as e:
+            logger.error("multi_parallel_failed", error=str(e))
+
+        return web_context, bq_answer, sub_results, ctx_section, today
+
+    def _build_multi_synthesis_prompt(
+        self, query: str, ctx_section: str, bq_answer: str, web_context: str, today: str
+    ) -> str:
+        """Build the multi-route synthesis prompt (shared by _handle_multi/_handle_multi_stream)."""
+        return f"""당신은 Craver의 데이터 분석 전문 AI입니다.
+내부 데이터와 외부 정보를 종합하여 **분석 보고서 형식**으로 답변하세요.
+
+## 사용자 질문
+{query}
+{ctx_section}
+{"사용자 질문이 이전 대화를 참조하면('아까', '그', '위 형식처럼' 등) 위 대화 맥락을 반영해 답변하세요." if ctx_section else ""}
+## 내부 데이터 (BigQuery 매출/주문 데이터)
+{bq_answer if bq_answer else "데이터 조회 결과 없음"}
+
+## 외부 정보 (Google 검색)
+{web_context if web_context else "외부 정보 수집 실패"}
+
+## 답변 형식 (반드시 아래 구조를 따르세요)
+
+### 📈 [질문 주제] 분석
+
+#### 요약
+[3-4문장 핵심 결론. 가장 중요한 수치는 **굵게**]
+
+#### 내부 데이터 분석
+[BigQuery 매출/수량 데이터 기반. 핵심 수치를 표로 정리. 추이나 변화를 수치로 제시]
+
+#### 외부 맥락
+[Google 검색 기반 시장/경제/날씨 정보. 관련 외부 요인 정리]
+
+#### 종합 인사이트
+[내부 데이터 + 외부 맥락을 연결한 분석]
+> [핵심 시사점 1-2개를 인용 형식으로 강조]
+
+#### 제안 사항
+- [데이터 기반의 실행 가능한 제안 1-3개. 구체적 행동 포함]
+
+---
+*분석 기준: Craver 내부 데이터 + Google 검색 ({today})*
+
+> 💡 **이런 것도 물어보세요**
+> - [관련 데이터 심화 분석 질문]
+> - [다른 시장/국가/기간 비교 질문]
+> - [관련 외부 요인 추가 분석 질문]
+
+## 작성 규칙
+1. 금액: 1억 이상은 "약 OO.O억원", 1억 미만은 천 단위 쉼표. 퍼센트는 소수점 1자리까지.
+2. 내부 데이터 **사실**과 외부 맥락 **분석**을 명확히 구분하세요. (데이터 = 팩트, 외부 = 맥락)
+3. 핵심 수치는 **굵게** 표시하세요.
+4. 전문적이면서 친근한 톤으로 — 비즈니스 분석 보고서 품질로 작성하세요.
+5. 후속 질문은 우리 시스템이 답변 가능한 구체적 질문만 제안하세요.
+"""
+
+    async def _handle_multi(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+        brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
+        enabled_sources: Optional[List[str]] = None,
+        source_explicit: bool = False,
+    ) -> dict:
+        """Multi-source analysis: internal data (BigQuery) + external info (Google Search).
+
+        v6.4: Steps 1+2 run in parallel via asyncio.to_thread, synthesis uses Flash.
+
+        source_explicit 은 `@@` 단일 소스 경로에서 넘어온다 (되묻기 억제용).
+        내부 BQ 조회는 _multi_prepare 가 sql_agent 를 직접 부르므로 되묻기 자체가 없다.
+        """
+        web_context, bq_answer, sub_results, ctx_section, today = await self._multi_prepare(
+            query, conversation_context, model_type, brand_filter, can_view_fi, enabled_sources
+        )
+        synthesis_prompt = self._build_multi_synthesis_prompt(query, ctx_section, bq_answer, web_context, today)
+
+        # --- Step 3: Synthesize with Flash for speed (v6.4) ---
+        flash = get_flash_client()
+        try:
+            answer = await asyncio.to_thread(flash.generate, synthesis_prompt, temperature=0.3)
+        except Exception as e:
+            logger.warning("multi_synthesize_failed", error=str(e))
+            # Fallback: just concatenate the parts
+            parts = []
+            if bq_answer:
+                parts.append(f"## 내부 데이터\n{bq_answer}")
+            if web_context:
+                parts.append(f"## 외부 정보\n{web_context}")
+            answer = "\n\n".join(parts) if parts else "분석에 필요한 정보를 수집하지 못했습니다."
+
+        return {
+            "source": "multi",
+            "answer": answer,
+            "sub_results": sub_results,
+        }
+
+    async def _handle_multi_stream(
+        self,
+        query: str,
+        conversation_context: str,
+        model_type: str,
+        brand_filter: Optional[str] = None,
+        can_view_fi: bool = False,
+        enabled_sources: Optional[List[str]] = None,
+    ):
+        """Streaming variant of _handle_multi — yields answer text chunks.
+
+        Reuses the same parallel web-search + BigQuery prep as _handle_multi;
+        only the final synthesis call streams instead of blocking.
+        """
+        web_context, bq_answer, _sub_results, ctx_section, today = await self._multi_prepare(
+            query, conversation_context, model_type, brand_filter, can_view_fi, enabled_sources
+        )
+        synthesis_prompt = self._build_multi_synthesis_prompt(query, ctx_section, bq_answer, web_context, today)
+
+        flash = get_flash_client()
+        from app.core.stream_bridge import stream_sync_generator
+        try:
+            async for chunk in stream_sync_generator(lambda: flash.generate_stream(synthesis_prompt, temperature=0.3)):
+                yield chunk
+        except Exception as e:
+            logger.warning("multi_synthesize_stream_failed", error=str(e))
+            parts = []
+            if bq_answer:
+                parts.append(f"## 내부 데이터\n{bq_answer}")
+            if web_context:
+                parts.append(f"## 외부 정보\n{web_context}")
+            yield "\n\n".join(parts) if parts else "분석에 필요한 정보를 수집하지 못했습니다."
+
+    async def _handle_system_task(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+    ) -> dict:
+        """Handle Open WebUI system tasks (title/tag/follow-up) with Flash.
+
+        These are auto-generated requests from Open WebUI, not user queries.
+        Using Flash for speed since these are lightweight formatting tasks.
+        """
+        flash = get_flash_client()
+        q_start = query[:200].lower()
+
+        # Follow-up suggestion — custom prompt for quality
+        if "follow" in q_start or "suggest" in q_start:
+            return await self._handle_followup_task(messages, flash)
+
+        # Title / Tag generation — include conversation context
+        try:
+            # Build conversation snippet for title/tag context
+            conv_parts = []
+            for msg in messages:
+                content = msg.get("content", "")
+                if msg.get("role") == "user" and not content.strip().startswith("### Task:"):
+                    conv_parts.append(f"사용자: {content[:200]}")
+                elif msg.get("role") == "assistant":
+                    conv_parts.append(f"AI: {content[:200]}")
+            conv_snippet = "\n".join(conv_parts[-6:])  # Last 3 turns
+
+            prompt_with_context = f"""{query}
+
+### Chat History:
+{conv_snippet}"""
+            answer = await asyncio.to_thread(flash.generate, prompt_with_context, temperature=0.3)
+            return {"source": "direct", "answer": answer}
+        except Exception as e:
+            logger.warning("system_task_failed", error=str(e))
+            return {"source": "direct", "answer": ""}
+
+    async def _handle_followup_task(
+        self,
+        messages: List[Dict[str, str]],
+        flash,
+    ) -> dict:
+        """Generate high-quality follow-up suggestions for Open WebUI chips.
+
+        Only suggests questions that our system can clearly answer:
+        - BigQuery data queries (specific country/period/product)
+        - CS product questions (ingredients, usage, certifications)
+        - Notion document queries
+        """
+        # Extract previous user question and assistant answer
+        prev_user = ""
+        prev_assistant = ""
+        for msg in reversed(messages):
+            content = msg.get("content", "")
+            if msg.get("role") == "assistant" and not prev_assistant:
+                prev_assistant = content[:800]
+            elif msg.get("role") == "user" and not prev_user:
+                if not content.strip().startswith("### Task:"):
+                    prev_user = content
+            if prev_user and prev_assistant:
+                break
+
+        if not prev_user:
+            return {"source": "direct", "answer": '{"follow_ups": []}'}
+
+        prompt = f"""이전 대화를 기반으로, 사용자가 바로 물어볼 수 있는 후속 질문 3개를 JSON으로 생성하세요.
+
+이전 질문: {prev_user}
+이전 답변: {prev_assistant[:500]}
+
+## 필수 규칙
+1. 우리 시스템이 **명확하게 답변할 수 있는** 질문만 제안
+   - ✅ 매출/판매 데이터: "2024년 미국 아마존 월별 매출 보여줘"
+   - ✅ 마케팅/광고 데이터: "2025년 TikTok 광고비 총액 알려줘", "Facebook ROAS 분석해줘", "인플루언서 팀별 비용 비교"
+   - ✅ 리뷰 데이터: "아마존 최근 리뷰 보여줘", "쇼피 제품별 리뷰 분석"
+   - ✅ 제품 성분/사용법/CS: "센텔라 앰플 사용법 알려줘"
+   - ✅ 노션 문서/업무 가이드: "틱톡샵 접속 방법 알려줘", "해외 출장 가이드북", "스마트스토어 운영 방법", "광고 입력 업무 절차"
+   - ✅ 제품 비교/순위: "태국 쇼피 top5 제품 비교해줘"
+   - ❌ 모호한 질문: "~일까요?", "~궁금해요", "~있을까?"
+   - ❌ 예측/의견: "~할 것 같아?", "~전망은?"
+2. 구체적 조건 포함 (국가명, 기간, 제품명, 플랫폼, 광고매체 등)
+3. "~알려줘", "~보여줘", "~비교해줘" 형태의 직접적인 요청문
+4. 이전 답변의 데이터를 확장하는 방향 (다른 기간, 다른 국가, 다른 광고매체, 상세 분석)
+5. 매출 질문 후속 → 마케팅/광고 데이터도 제안, 마케팅 질문 후속 → 매출 연계 제안
+
+JSON만 반환:
+{{"follow_ups": ["질문1", "질문2", "질문3"]}}"""
+
+        try:
+            answer = await asyncio.to_thread(flash.generate, prompt, temperature=0.3)
+            return {"source": "direct", "answer": answer}
+        except Exception as e:
+            logger.warning("followup_generation_failed", error=str(e))
+            return {"source": "direct", "answer": '{"follow_ups": []}'}
+
+    def _build_direct_system_prompt(self) -> str:
+        """Build system prompt for direct LLM route (shared by _handle_direct and route_and_stream).
+
+        Deliberately excludes the current date — the caller appends it as a
+        separate, uncached block so this (large, static) prompt stays byte-identical
+        across requests and reuses Anthropic's prompt cache. See ClaudeClient._wrap_system.
+        """
+        model_name = _model_display_name()
+        # Import the full system prompt from _handle_direct inline (it's too long to duplicate)
+        # We reference the same structure
+        return f"""당신은 Craver의 AI 어시스턴트입니다. ({model_name} 기반)
+이 시스템은 **임재필(Jeffrey Im)**이 기획·개발하여 운영하고 있습니다.
+
+{LANGUAGE_DETECTION_RULE}
+
+## 회사 소개 (공식 정보 — 웹검색 불필요, 이 정보만으로 답변)
+<!-- ⚠️ 이 블록은 손으로 적은 사본이라 반드시 낡는다. 실제로 소재지가 사내 노션과
+     어긋나 있었다(3층 누락, 2026-08-27 발견·정정). 원본은 노션
+     `PEOPLE > CRAVER 지식in > 회사 정보 Craver` 이고, 고칠 때는 그쪽을 먼저 확인할 것.
+     ⛔ 사업자·법인 등록번호는 여기 두지 않는다 — `app/core/company_facts.py` 가
+        출처를 밝히며 즉답한다 (붐따 #154). 두 곳에 적으면 언젠가 갈린다. -->
+
+- **기업명**: (주)크레이버코퍼레이션 (Craver Corporation) · **슬로건**: "WHAT DO YOU CRAVE?"
+- **대표자**: 전항일 / 천주혁 (공동대표) · **설립일**: 2014년 8월
+- **소재지**: 서울특별시 강남구 테헤란로 129, 빗썸금융타워 3층·11층·12층 (06133) · **업종**: 뷰티 > 화장품
+- **브랜드**: SKIN1004(스킨천사) · umma(우마) 가 주력, CommonLabs(커먼랩스) · Zombie Beauty(좀비뷰티) 는 소규모
+  ※ CBT·JBT·KBT 등은 브랜드가 아니라 **팀**이다. 브랜드로 소개하지 말 것
+- **브랜드 철학**: "Clean Beauty from Madagascar Centella Asiatica" — Cruelty-Free & Vegan
+- **글로벌 포지션**: K-뷰티 최고속 성장 기업. Shopee·YesStyle·StyleKorean·Stylevana 카테고리 1위
+- **글로벌 리테일**: Costco, ULTA, H&M, 올리브영 · **진출 시장**: 한국·북미·유럽·동남아·일본·중국·중남미·중동
+- **주요 온라인 채널**: 올리브영, 아마존, 쇼피, 라자다, 틱톡샵, 큐텐, 자사몰(skin1004.com)
+- **성장 전략**: 카테고리 확장·신제품 고도화, 글로벌 리테일 확장, 국가별 현지화, 인재 투자
+"우리 회사" = Craver Corporation / SKIN1004. 회사 질문은 이 정보로 답변(웹검색 불필요).
+
+{_product_catalog_section()}
+
+## 시스템 기능
+사용자가 "이 시스템/셀라가 뭘 할 수 있냐"고 물으면 **아래 목록으로 답하세요.**
+⛔ 여기 적힌 기능을 "없다"고 답하지 마세요 — 실제로 있는 기능입니다.
+- BigQuery SQL 실행 (매출/수량/순위) · 차트 자동 생성 · 이미지 분석
+- Notion 사내 문서 검색 · CS 제품 Q&A · Google 실시간 웹검색
+- Google Workspace 연동 (Gmail/Calendar/Drive)
+- **보고서** — 질문 하나로 총량·추세·구성·전년 대비·순위 같은 절을 조합한 문서를 만듭니다.
+  - **만들어지는 조건**: 질문에 "보고서"(또는 "리포트")라고 적거나, 입력창에서 `@@보고서`를 고를 때만.
+    조회를 8~12회 돌아 10~60초가 걸리는 기능이라 원할 때만 나가도록 해 두었습니다.
+  - 채팅에는 요약 몇 줄과 [보고서 열기] 링크가 옵니다. 질문 속 국가·팀·브랜드 조건은 모든 절에 적용됩니다.
+  - **열람**: 기본은 만든 사람만. 보고서 위 `공유` 버튼으로 사내 구성원을 지목하면 그 사람도 열 수 있고,
+    지목하지 않은 사람은 링크를 알아도 열리지 않습니다.
+  - 숫자는 전부 조회 결과에서 나오고 검산용 쿼리가 함께 저장됩니다.
+  - 예: "2026년 일본 매출 보고서 만들어줘" / "우마 브랜드 매출 보고서" / "@@보고서 미국 B2C 채널별 매출"
+- **출근 브리핑(첫 화면의 `Today`)** — 오늘 일정·메일 요약·할 일·마감·업무 지표를
+  매일 아침 07:30에 만들어 첫 화면에 띄웁니다.
+  - **잔디로 받기**를 등록하면 같은 내용을 매일 잔디로 보내드립니다. 받는 시각은
+    08:00~18:30 사이에서 30분 단위로 고르고, 절(일정·메일·할 일·기한·지표·환율)마다
+    끄고 켤 수 있습니다. 등록은 첫 화면 브리핑의 `잔디로 받기` 에서 합니다.
+  - 지금 브리핑을 자동으로 내보낼 수 있는 곳은 **잔디**입니다. 다른 도구 연동이
+    추가되면 이 목록에 함께 적힙니다. 목록에 없는 연동을 있는 것처럼 답하지 마세요.
+- **@@ 데이터소스 지정** — 입력창에 `@@`를 치면 어떤 데이터를 뒤질지 직접 고를 수 있습니다.
+- 사이드바: Dashboard(사내 대시보드) · System Status(데이터 상태) · Knowledge Wiki(축적된 사내 지식)
+
+## 사내 대시보드 카탈로그
+대시보드 관련 질문에는 아래 목록에서 찾아 링크와 함께 답변하세요.
+
+**인플루언서 시딩**
+- [통합] 인플루언서 마케팅 대시보드 (Looker): https://lookerstudio.google.com/reporting/34ac7165-6f4c-42ba-9fe6-f54e5373f50f/page/cwFHF
+- 틱톡 해시태그 콘텐츠 대시보드 (Looker): https://lookerstudio.google.com/reporting/a099c5fd-e316-455c-8686-a54b807b5b4c/page/MMeaE
+- 인스타그램 계정 멘션 콘텐츠 대시보드 (Looker): https://lookerstudio.google.com/reporting/0ada621f-2504-432c-bc87-f75003526fe4/page/TuqPF
+- 팀별 업로드 컨텐츠 성과 지표 (Sheets): 양승민
+
+**매출 및 제품순위**
+- 데일리 메트릭스 2024~ (Looker): https://lookerstudio.google.com/reporting/c021c6c6-ac73-4753-a36b-cc95a889811b/page/p_mde0034oqd
+- 프로덕트 매트릭스 (Looker): https://lookerstudio.google.com/reporting/41182756-3fce-4c48-9c76-429ba9d99aaf/page/p_mde0034oqd
+- 플랫폼 대시보드 (Looker): https://lookerstudio.google.com/reporting/93148b10-d6a8-42f5-acdb-8192e5e79612/page/p_9an4m8l4wd
+- 제품 순위 트렌드 (Web): https://skin1004official.github.io/platform-metrics/
+- GM EAST 제품 대시보드 (Looker): https://lookerstudio.google.com/reporting/ef02f5de-bd14-435f-842d-01ef928896f6/page/ydIsF
+- 리뷰 대시보드 (Looker): https://lookerstudio.google.com/reporting/bd0bd4fa-fb97-472a-82a4-cfa1a42f27a2/page/p_jauu8i71yd
+- 아마존 대시보드 (Looker): https://lookerstudio.google.com/reporting/0932b147-5a33-4734-9895-7ede8bd99074/page/R2inF
+- Shopify 대시보드 (Looker): https://lookerstudio.google.com/reporting/afe86a46-018a-4918-ae64-4219ccf5b029/page/gK5fF
+- KBT 전용 대시보드 (Looker): https://lookerstudio.google.com/reporting/dd6a2a6c-5654-47ab-b29a-f279e602e5cf/page/bfsiE
+
+**퍼포먼스마케팅**
+- 통합 마케팅 대시보드 (Looker): https://lookerstudio.google.com/reporting/a1a1a9d1-be92-4d66-8d6f-acd12859dd2e/page/bfsiE
+- 틱톡 광고 대시보드 (Looker): https://lookerstudio.google.com/reporting/09154ceb-118d-4eea-9637-953516517860/page/kw8cE
+- 메타 광고 대시보드 (Looker): https://lookerstudio.google.com/reporting/a56e222e-48c2-43d2-844e-1cb536489bc6/page/MMeaE
+- TeamMint 대시보드 (Looker): https://lookerstudio.google.com/reporting/d5ab4952-0dda-4881-aa52-8b20f97edcf9/page/wpRLF
+- 통합 ROI 마케팅 대시보드 (Looker): https://lookerstudio.google.com/u/0/reporting/2214aeda-dfa0-4321-ae7c-79ceef01a6c9/page/bfsiE
+- GM WEST Ecomm 통합 대시보드 (Looker): https://datastudio.google.com/reporting/847f5a3b-54e4-47a9-98a2-d974f2020036/page/6jpvF
+- Amazon Ads Search Term Report (Looker): https://datastudio.google.com/reporting/d5d70074-5c8f-4877-b0fd-e385cf6d28b8/page/p_yvoevgrh5d
+
+**기타**
+- 유럽 판매채널 모니터링 (Looker): https://lookerstudio.google.com/reporting/db521aea-53b0-49fd-8352-c6142a097fe3/page/ji3HF/edit
+- 메가와리 대시보드 (Looker): https://lookerstudio.google.com/reporting/3ada86c9-85a4-4191-bdf0-1fb879d6a2ac/page/d51NF
+- 메타 광고 진행현황 분석 (Looker): https://lookerstudio.google.com/u/0/reporting/533e0388-3905-4a39-93ca-0516ed8167cb/page/p_577xmorfyd
+- 프로모션 캘린더 (Web): http://34.64.99.254:8041/
+- 물류관리 시스템 (Web): http://34.64.99.254:8051/
+- CS 대시보드 (Web): http://34.64.99.254:8061/
+
+**솔루션**
+- 이메일 및 틱톡 자동발송 시스템 (Notion): https://www.notion.so/skin1004/DM-Mail-2e82b4283b0080968d39f19678257d23
+- TikTok 이메일 팔로워 추출 (Sheets): https://docs.google.com/spreadsheets/d/1ZbQMPBi2S7uk6zK7r8QcvSmMDJogSGq7j8KDNu2Aya0/edit?gid=0#gid=0
+
+## 핵심 원칙
+- 전문적이면서 친근한 톤. 바로 답변 시작. 서론/인사 없이 핵심부터.
+- 질문한 내용만 답변. 모르면 솔직하게. 추측하지 않기.
+- ⛔ **"조회를 진행하겠습니다", "잠시만 기다려 주세요" 같은 예고를 하지 마라.** 너는 이 턴이 끝나면 스스로 조회를 시작할 수 없다 — 그 약속은 지켜지지 않는 거짓말이 된다. 사내 데이터(매출·거래·수량 등) 조회가 필요한 질문이 왔다면, 조회를 약속하는 대신 "질문을 이렇게 다시 보내주시면 바로 조회됩니다: 'B2B 국가별 첫 거래일 알려줘'"처럼 **바로 조회되는 재질문 형태**를 안내하라.
+- 짧은 질문에는 짧게 (1-3문장), 복잡한 주제는 헤더/표/bullet으로 구조화.
+- 핵심 수치는 **굵게**. 인사이트는 > 인용으로.
+- 후속 질문 제안은 답변 맨 끝에 **항상 포함**하세요 (예외: "안녕", "고마워" 같은 순수 인사만 생략):
+{FOLLOWUP_INSTRUCTION}
+  ⚠️ "[후속 질문]", "[구체적 후속 질문 N ...]" 같은 플레이스홀더 문자열을 **절대 그대로 출력하지 마세요**. 대괄호 안의 안내문은 템플릿일 뿐이며, 반드시 실제 질문 문장으로 치환해야 합니다.
+  ⚠️ 답변이 1-2문장으로 매우 짧더라도, 지식형/사실형 질문(회사 정보, 제품, 데이터, 업무 등)이면 후속 질문 3개를 반드시 생성하세요.
+- 지식/설명형 답변 끝에 *AI 생성 답변 · (오늘 날짜)* (오늘 날짜는 별도로 안내됩니다)
+- 사용자가 "아까", "그거", "방금", "다시" 등으로 이전 답변을 참조하면 반드시 그 내용을 활용해 답변하세요. 질문 자체가 이전 대화와 완전히 무관하다면 맥락 없이 해당 질문에만 답변해도 됩니다.
+- Craver 업무와 무관하다는 이유만으로 답변을 거부하지 마세요. 여행지·맛집·항공권·부동산 시세·일반 상식 등은 GPT처럼 자유롭게 답변하되, 실제 예약/결제/거래 실행 기능은 없다는 점만 자연스럽게 안내하세요.
+- 의료·법률·투자처럼 전문 자격이 필요한 주제는 일반적인 정보로 답변하되, 특정 개인에 대한 진단·처방·소송전략·매수매도 지시처럼 전문가의 개별 판단이 필요한 조언은 삼가고 "정확한 판단은 전문가 상담을 권장합니다" 정도로만 안내하세요. 주제 자체를 이유로 거절하지 마세요.
+- ⛔ 절대로 내부 사고 과정(thinking)을 사용자에게 노출하지 마세요. "The user is asking...", "I should...", "Let me check..." 같은 영어 사고 과정을 출력하면 안 됩니다. 바로 답변만 출력하세요.
+
+## 답변 형식 표준
+- 개념 설명은 정의 → 핵심 포인트 → 활용 예시, 절차는 번호 목록(1.→2.→3.), 나열은 bullet.
+- **3개 이상을 비교할 때는 반드시 마크다운 표**를 쓰세요.
+- 간단한 인사에는 인사 + "매출 조회, 사내 문서 검색, CS 제품 문의, 일정·메일 확인, 이미지 분석 등을 도와드릴 수 있습니다." 한 줄을 포함하세요.
+- 의미 없는 입력(특수문자·숫자·자음/모음·이모지만)에는 "입력하신 내용을 이해하기 어렵습니다. 매출 조회, 사내 문서 검색, 일정 확인 등 궁금한 점을 문장으로 질문해 주세요." 라고 안내하세요.
+- 실시간 검색 정보를 포함할 때는 출처를 간략히 명시하세요."""
+
+    # Keywords that indicate the query needs real-time web search
+    # ── 우리 비즈니스 맥락인가 ────────────────────────────────────────────────
+    # ⛔ **예전엔 이 판정을 두 목록이 따로 했다** (`_SKIN1004_TERMS`·`_BIZ_CONTEXT`).
+    #    같은 질문에 답하는데 내용이 달라서, 한쪽에만 낱말을 넣으면 다른 관문에서
+    #    걸려 direct 로 떨어졌다 — "할인 많이 준 채널"·"신제품 몇 개"·"FOC 비용"이
+    #    전부 그렇게 샜다 (2026-08-13). 하나로 합쳐 그 부류를 없앴다.
+    # 새 데이터 낱말은 `_DATA_KEYWORDS`(데이터 질문인가)와 여기(우리 것인가) **둘 다** 본다.
+    _BIZ_CONTEXT = [
+        "skin1004", "스킨", "센텔라", "히알루", "커먼랩스", "좀비뷰티",
+        "랩인네이처", "크레이버", "매출", "수량", "주문", "판매",
+        "재고", "실적", "매상", "세일즈", "쇼피", "아마존",
+        "틱톡", "라자다", "큐텐", "shopify", "쇼피파이", "광고비",
+        "광고", "메타", "roas", "ctr", "마케팅비", "노출수",
+        "클릭수", "인플루언서", "유가 협업", "무가 협업", "유가협업", "무가협업",
+        # ⛔ `유가 협업` 은 `_DATA_KEYWORDS` 에만 있고 여기 없어서 **direct 로 강등**됐다.
+        #    두 목록은 서로 다른 질문에 답하는데("데이터인가" vs "우리 사업 맥락인가"),
+        #    한쪽에만 넣으면 다른 관문에서 걸린다 — 이 저장소가 반복해서 겪은 실패다
+        #    (2026-08-18: "유가 협업은?" 이 LLM 재판정으로 노션에 가서
+        #     `유가` 가 사람 이름 **유가연** 에 걸렸다).
+        #    ⚠️ 맨 낱말 "협업" 은 넣지 않는다 — "협업 툴 뭐 써" 같은 질문이 조회로 샌다
+        "리뷰", "반품", "환불", "b2b",
+        "b2c", "거래처", "바이어", "업체", "예스스타일", "스타일코리안",
+        "졸스", "소시올라", "올리브영", "순위", "랭킹", "플랫폼",
+        "카테고리", "노출", "재구매", "코호트", "영업이익", "매출총이익",
+        "판관비", "손익", "이익률", "영업이익률", "올해 가장 많이 팔린 제품 top5", "올해",
+        "팔린", "팔리", "베스트셀러", "판매량", "인기 제품", "할인",
+        "바우처", "foc", "무상출고", "무상 출고", "원가", "객단가",
+        "신제품", "팔렸", "잘나가", "잘 나가", "프로모션", "기획전",
+        "마케팅 비용", "마케팅", "비용", "퍼포먼스", "시딩", "총액",
+        "얼마", "메가와리", "첫 거래일자", "거래 시작일", "거래일", "거래 시작",
+        "첫 거래", "거래 이력", "거래 내역", "수출", "가장 많이 팔린 제품", "평점",
+        "별점", "스마트스토어", "네이버스토어", "yesstyle", "재구매율", "순위 상승",
+        "순위 변동", "매출원가", "원가율", "광고선전비", "국가별", "월별",
+        "팀별", "채널별", "제품별", "브랜드별", "사업부", "데이터",
+        # ⛔ 여기에 **"있나요"·"존재" 를 두지 마라** (2026-08-26 제거). 업무 어휘가
+        #    아니라 의문 어미다 — "판교에 현대백화점 있나요?" 처럼 회사와 무관한
+        #    존재 질문까지 전부 "사내 질문" 으로 분류돼 검색 그라운딩이 막혔다.
+        #    스키마 질문("매출 테이블에 원가 컬럼 있나요?")은 테이블·컬럼·매출·원가로
+        #    이미 잡힌다 — 어미까지 넣을 이유가 없다. `라인` ⊂ `가이드라인` 과 같은 부류.
+        "물류", "선적", "포워더", "인코텀즈", "통관", "수출신고", "컨테이너",
+        "테이블", "컬럼", "포함", "revenue",
+        "platform", "campaign", "google ads", "cost", "impression", "conversion",
+        "cpc", "cpv", "cpe",
+    ]
+
+    _SEARCH_KEYWORDS = [
+        "날씨", "뉴스", "오늘", "현재", "실시간", "최신", "지금",
+        "환율", "주가", "코스피", "나스닥", "다우",
+        "검색", "찾아봐", "알아봐",
+        "경쟁사", "시장", "트렌드", "업계",
+        "정책", "법률", "규정",
+        "이벤트", "행사",
+        "대통령", "총리", "선거", "국회", "정부",
+        "올해", "이번 달", "이번달", "최근",
+        # 엔터테인먼트/외부 정보
+        "넷플릭스", "netflix", "영화", "드라마", "인기작",
+        "유튜브", "youtube", "스포츠", "축구", "야구",
+        "주식", "비트코인", "코인", "부동산",
+        "맛집", "여행", "관광", "항공", "비행기", "호텔", "숙소", "여행지",
+    ]
+
+    # 시간을 가리키기만 하는 말. 이것 하나로는 "바깥 정보가 필요하다"는 근거가 못 된다.
+    # "안녕? **오늘** 뭐 도와줄 수 있어?" 가 이것 때문에 구글 검색을 돌아 첫 토큰이
+    # 2.5초 → 12~17초가 됐다 (2026-08-13 실측).
+    _AMBIENT_TIME = {"오늘", "지금", "현재", "최근", "올해", "이번 달", "이번달", "실시간"}
+    # 어시스턴트 자신에 대한 질문 — 검색해 올 바깥 정보가 애초에 없다
+    _SELF_REF = ["안녕", "도와", "할 수 있", "할수있", "어시스턴트", "너는", "네가",
+                 "기능", "사용법", "쓰는 법"]
+
+
+    # ⛔ **회사 밖 사실을 그라운딩 없이 답하면 지어낸다** (2026-08-11 제보).
+    #    "리센느 멤버는 몇명임?" 에 **"우연, 이한, 벨라, 케이티, 민주"** 라고 답했다 —
+    #    전부 지어낸 이름이다(실제는 원이·리브·미나미·메이·제나). 같은 대화에서
+    #    같은 주제가 세 번 다르게 나갔다: ① 환각 ② "연동돼 있지 않습니다" ③ 검색이
+    #    걸려 정답 + 스스로 정정. 제보자가 "어떤 로직으로 답을 가져오는지 모르겠다"고
+    #    쓴 것이 정확히 이 불일치다.
+    #
+    #    ⛔ 대응은 키워드(_SEARCH_KEYWORDS)에 아이돌 이름을 쌓는 것이 아니다 —
+    #       끝이 없고, 목록에 없는 고유명사에서 그대로 재발한다. **구조로 판정한다**:
+    #       바깥 사실을 묻는 형태인데(몇 명·누구·언제…) 우리 업무 어휘가 하나도 없고
+    #       어시스턴트 자신에 대한 질문도 아니면, 답의 근거가 모델 기억뿐이다.
+    #       그때는 검색을 태운다. 느려지는 대신 지어내지 않는다.
+    _FACT_ASK = ("몇 명", "몇명", "누구", "언제", "어디", "며칠", "몇 년", "몇년",
+                 "이름이 뭐", "뭐야", "뭔가요", "무엇", "얼마나", "어느 나라",
+                 "데뷔", "출시일", "설립", "창업", "본명", "나이", "생일")
+
+    # 존재·소재를 묻는 형태도 같은 부류다 — 답의 근거가 모델 기억뿐이다.
+    # ⛔ 2026-08-26 실제: "강남역에 무지개쇼핑센터가 있어?" 가 검색을 타지 않아
+    #    "확인할 수 없습니다" 로 나갔다. **검색을 태웠으면 5.1초에 정답이 나온다**
+    #    (대한무지개종합상가 · 서초구 사임당로 151 · 강남역 5번 출구 도보 10분).
+    #    지어내지는 않았지만, 확인할 수 있는 것을 확인하지 않고 되물은 것이다.
+    _EXIST_ASK = ("있어", "있나", "있니", "있습니까", "있는지", "있을까", "있었")
+
+    # 앞 대화를 가리키는 말 — 바깥 사실이 아니라 방금 한 이야기를 가리킨다.
+    # "다른 방법 있어?" 까지 검색하면 5초를 버리고 **엉뚱한 웹 문서를 근거로** 끌어온다.
+    # ⚠️ 이건 *말*에 대한 닫힌 목록이라 세상이 바뀌어도 낡지 않는다 — 아이돌 이름처럼
+    #    끝없이 늘어나는 목록과는 다르다 (그래서 여기에 고유명사를 쌓으면 안 된다).
+    _CONVERSATIONAL = ("다른", "또", "더", "혹시", "그런", "이런", "저런", "예시",
+                       "방법", "그거", "이거", "그것", "이것", "위에", "아까", "방금")
+
+    def _is_external_fact_question(self, q: str) -> bool:
+        """바깥 고유명사에 대한 사실 질문인가 — 모델 기억으로 답하면 안 되는 부류."""
+        from app.core.textmatch import contains_any
+
+        # ⚠️ `~할 수 있어?` 는 존재가 아니라 **가능/요청**이다. `수 있` 이 앞에 붙으면
+        #    존재 질문으로 보지 않는다 ("설명해줄 수 있어?" 가 검색을 탔다)
+        exists = (any(t in q for t in self._EXIST_ASK)
+                  and not _re.search(r"수\s*있", q))
+        asks = any(t in q for t in self._FACT_ASK) or exists
+        if not asks:
+            return False
+        # ⚠️ 짧은 낱말은 **경계를 봐야** 한다 — `또` 가 `또는` 에, `더` 가 `더보기` 에
+        #    걸린다 (`라인` ⊂ `가이드라인` 과 같은 함정)
+        if contains_any(q, self._CONVERSATIONAL, guarded=set(self._CONVERSATIONAL)):
+            return False            # 앞 대화를 가리키는 질문이다
+        if any(s in q for s in self._SELF_REF):
+            return False            # 자기 기능 질문은 검색할 바깥 정보가 없다
+        # 업무 어휘가 하나라도 있으면 사내 질문이다 — 여기서 판단하지 않는다
+        if contains_any(q, self._BIZ_CONTEXT, guarded=self._GUARDED):
+            return False
+        if contains_any(q, self._DATA_KEYWORDS, guarded=self._GUARDED):
+            return False
+        return True
+
+    def _needs_web_search(self, query: str) -> bool:
+        """Check if query needs real-time web search or can be answered directly."""
+        q = query.lower().strip()
+        # Skip search for company/product questions (answered from system prompt)
+        _NO_SEARCH = ["회사", "소개", "뭐하는", "크레이버", "skin1004", "센텔라", "재밌", "원피스"]
+        if any(kw in q for kw in _NO_SEARCH):
+            return False
+        # Check search keywords FIRST — even short queries like "현재 대통령" need search
+        hits = [kw for kw in self._SEARCH_KEYWORDS if kw in q]
+        if hits:
+            # 걸린 게 시간어뿐이고 질문 대상이 어시스턴트 자신이면 검색하지 않는다.
+            # ⚠️ 키워드를 빼서 고치지 않는다 — "오늘 환율"·"지금 뉴스"는 그대로 검색해야
+            #    하므로, 시간어 **외에** 실제 주제어가 하나라도 있으면 검색으로 간다
+            if all(h in self._AMBIENT_TIME for h in hits) and any(s in q for s in self._SELF_REF):
+                return False
+            return True
+        # 바깥 고유명사에 대한 사실 질문 → 모델 기억으로 답하면 지어낸다 (위 주석 참조)
+        if self._is_external_fact_question(q):
+            return True
+        # Very short queries (greetings, single words) → no search
+        if len(q) <= 10:
+            return False
+        # Year/date reference in query → likely needs current info
+        import re
+        if re.search(r'202[4-9]년|202[4-9]\s', q):
+            return True
+        # Questions about external topics
+        if len(q) > 30 and "?" in query:
+            return True
+        return False
+
+    async def _handle_direct(
+        self,
+        query: str,
+        messages: List[Dict[str, str]],
+        conversation_context: str,
+        model_type: str,
+        user_email: str = "",
+        images: Optional[List[dict]] = None,
+        stream_callback=None,
+        skill_context: str = "",
+    ) -> dict:
+        """General question: uses full conversation history for natural dialogue.
+
+        Uses Google Search grounding only when the query needs real-time info.
+        Simple questions (greetings, SKIN1004 Q&A) skip search for faster response.
+        When images are provided, uses vision LLM directly.
+        """
+        # Handle Open WebUI system tasks (follow-up/title/tag generation)
+        if query.strip().startswith("### Task:"):
+            return await self._handle_system_task(query, messages)
+
+        images = images or []
+        llm = get_llm_client(MODEL_CLAUDE)
+        today = datetime.now().strftime("%Y년 %m월 %d일 (%A)")
+
+        # ⛔ 프롬프트 사본을 여기 두지 마라 — **스트리밍/비스트리밍 두 벌이 갈려**
+        #    한쪽만 고쳤다가 "보고서라는 별도 메뉴는 없습니다" 라고 답한 적이 있다
+        #    (2026-08-13). 단일 소스는 `_build_direct_system_prompt()` 하나다.
+        system = self._build_direct_system_prompt()
+
+        # Date/time is dynamic per day — keep it out of the cached static block so
+        # the (much larger) instructions above it stay byte-identical across requests
+        # and reuse Anthropic's prompt cache. See app/core/llm.py ClaudeClient._wrap_system.
+        date_line = f"오늘 날짜는 {today}입니다."
+
+        try:
+            # Vision mode: images present → use generate_with_images
+            if images:
+                vision_text = query or "이 이미지에 대해 설명해주세요."
+                # ⛔ 이 경로는 BigQuery 스키마를 받지 않는다 — 사내에 무엇이
+                #    있는지 모른다. 모르는 것을 "없습니다" 라고 쓰지 못하게 한다
+                #    (붐따 #161: 실제로 있는 수출신고번호·OP담당자를 없다고
+                #    답해 사용자가 물러섰다). 보증은 답변 뒤 공시다
+                from app.core.image_route_notice import PROMPT_RULE as _img_rule
+                _vision_system = f"{system}\n\n{date_line}\n{_img_rule}"
+                answer = await asyncio.to_thread(
+                    llm.generate_with_images,
+                    vision_text,
+                    images,
+                    system_instruction=_vision_system,
+                    fallback_system_instruction=_strip_model_claim(_vision_system),
+                    temperature=0.5,
+                )
+                return {"source": "direct", "answer": answer}
+
+            # Search grounding: run in thread pool to avoid blocking event loop
+            extra_blocks: List[str] = []
+            if skill_context:
+                extra_blocks.append(skill_context)
+            if self._needs_web_search(query):
+                _loop_s = asyncio.get_running_loop()
+                search_context = await _loop_s.run_in_executor(None, self._gather_search_context, query)
+                if search_context:
+                    extra_blocks.append(f"## 참고할 최신 검색 정보 (Google 검색 결과)\n{search_context}")
+
+            final_system = [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": date_line},
+            ] + [{"type": "text", "text": block} for block in extra_blocks]
+
+            # Claude streaming for all direct queries (TTFB 1.7s vs Gemini 7s)
+            import asyncio as _aio
+
+            if stream_callback:
+                # Real-time streaming via thread + async queue
+                _q: _aio.Queue = _aio.Queue()
+                _loop = _aio.get_running_loop()
+
+                def _stream_worker():
+                    try:
+                        for chunk in _stream_direct_with_fallback(
+                            llm,
+                            query,
+                            messages=messages,
+                            system_instruction=final_system,
+                            temperature=0.5 if len(messages) > 1 else 0.3,
+                        ):
+                            _loop.call_soon_threadsafe(_q.put_nowait, chunk)
+                    except Exception as e:  # final boundary: keep details in logs only
+                        logger.error(
+                            "direct_stream_boundary_failed",
+                            error_type=type(e).__name__,
+                        )
+                        _loop.call_soon_threadsafe(
+                            _q.put_nowait, _DIRECT_TEMPORARY_FAILURE
+                        )
+                    finally:
+                        _loop.call_soon_threadsafe(_q.put_nowait, None)
+
+                _loop.run_in_executor(None, _stream_worker)
+                answer = ""
+                while True:
+                    chunk = await _q.get()
+                    if chunk is None:
+                        break
+                    answer += chunk
+                    await stream_callback(chunk)
+            else:
+                # Non-streaming fallback
+                if messages and len(messages) > 1:
+                    answer = await asyncio.to_thread(
+                        llm.generate_with_history,
+                        messages=_clean_messages_for_history(messages),
+                        system_instruction=final_system,
+                        fallback_system_instruction=_strip_model_claim(
+                            f"{system}\n\n{date_line}"
+                        ),
+                        temperature=0.5,
+                    )
+                else:
+                    answer = await asyncio.to_thread(
+                        llm.generate,
+                        query,
+                        system_instruction=final_system,
+                        fallback_system_instruction=_strip_model_claim(
+                            f"{system}\n\n{date_line}"
+                        ),
+                        temperature=0.5,
+                    )
+
+            # ⛔ **빈 답변을 그대로 내보내지 않는다.** 모델이 출력 토큰을 다 쓰고도
+            #    text 블록 없이 끝나는 일이 실제로 있다 (2026-09-15 골든 run#88:
+            #    출력 1,191 토큰 · `answer_len=0` · 예외도 경고도 없었다).
+            #    **예외가 아니라서 아래 `except` 에 걸리지 않는다** — HTTP 200 에
+            #    빈 화면이 나가고, 사용자가 말해 주기 전까지 아무도 모른다.
+            # ⚠️ 스트리밍은 이미 흘려보낸 뒤라 되돌릴 수 없다 — 대신 안내를 한 조각
+            #    더 보낸다. 실패한 쪽이 조용한 것보다 낫다.
+            if not (answer or "").strip():
+                logger.warning(
+                    "direct_empty_answer",
+                    streamed=bool(stream_callback),
+                    query=query[:80],
+                )
+                answer = _DIRECT_TEMPORARY_FAILURE
+                if stream_callback:
+                    await stream_callback(answer)
+
+            return {"source": "direct", "answer": answer}
+        except Exception as e:
+            logger.error("direct_llm_failed", error_type=type(e).__name__)
+            return {"source": "direct", "answer": _DIRECT_TEMPORARY_FAILURE}
+
+    async def _verify_coherence(self, query: str, answer: str, route: str) -> str:
+        """Verify the answer actually addresses the user's question.
+
+        Uses Flash for a lightweight check. Only flags CRITICAL mismatches:
+        - Asked about product A, answered about product B
+        - Asked about country X, answered about country Y
+        - Asked about 2026 full year, answered only 1 month WITHOUT acknowledging it
+
+        Does NOT flag (these are normal):
+        - Partial data (agent already explains limitations)
+        - CS DB not having specific info (expected behavior)
+        - Craver-specific answers (this IS a Craver system)
+        - Answer already contains its own caveats/warnings
+
+        Skips: direct route, multi route, short answers, answers with existing warnings.
+        """
+        if len(answer) < 30:
+            return answer
+
+        # Skip if answer already acknowledges limitations
+        limitation_phrases = [
+            "데이터가 없", "조회되지 않", "찾을 수 없", "찾지 못했",
+            "정보가 없", "제공하지 못", "확인되지 않",
+            "부분적", "일부만", "까지의 데이터",
+            "⚠️", "⚠",
+        ]
+        answer_start = answer[:500]
+        if any(phrase in answer_start for phrase in limitation_phrases):
+            return answer
+
+        # Skip for CS route — CS DB has inherent limitations, agent handles "not found" gracefully
+        if route == "cs":
+            return answer
+
+        try:
+            flash = get_flash_client()
+            today = datetime.now().strftime("%Y년 %m월 %d일")
+            check_prompt = f"""이것은 Craver 화장품 회사의 내부 AI 시스템입니다.
+모든 답변은 Craver 자체 데이터(매출, 제품, 문서)에 기반합니다.
+오늘: {today}
+
+사용자 질문: {query}
+AI 답변 (앞부분): {answer[:600]}
+
+## 판단 기준
+다음 경우에만 scope_match=false로 판단하세요:
+1. 질문한 제품과 완전히 다른 제품을 답변함 (예: 센텔라를 물었는데 히알루 답변)
+2. 질문한 국가/채널과 완전히 다른 국가/채널을 답변함 (예: 미국을 물었는데 일본 답변)
+
+## 이것은 정상이므로 scope_match=true로 판단하세요:
+- 데이터가 부분적이어서 일부 기간/항목만 답변한 경우 (정상 — 있는 데이터만 답변)
+- "정보가 없습니다", "찾을 수 없습니다" 등 솔직한 답변 (정상 — 올바른 대응)
+- Craver 자사 제품/매출로 답변한 경우 (정상 — 이 시스템의 목적)
+- 답변이 질문 주제를 다루지만 완전하지 않은 경우 (정상 — 데이터 한계)
+
+JSON만 반환:
+{{"scope_match": true/false, "issue": "불일치 설명 또는 빈문자열"}}"""
+
+            result = await asyncio.to_thread(flash.generate, check_prompt, temperature=0.0)
+            import json as _json
+            clean = result.strip()
+            if clean.startswith("```"):
+                clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            parsed = _json.loads(clean)
+
+            if not parsed.get("scope_match", True) and parsed.get("issue"):
+                issue = parsed["issue"]
+                logger.warning("coherence_issue_detected", query=query[:80], issue=issue)
+                warning = f"> ⚠️ **참고**: {issue} (오늘 기준: {today})\n\n"
+                return warning + answer
+
+        except Exception as e:
+            logger.debug("coherence_check_skipped", error=str(e))
+
+        return answer
+
+    def _gather_search_context(self, query: str) -> str:
+        """Gather real-time info via Gemini Search for non-Gemini models.
+
+        Returns search context string, or empty string if not needed / failed.
+
+        ⚠️ **Flash 를 쓴다.** multi 경로는 v6.5 에서 이미 Pro→Flash 로 바꿨는데
+        (60-80s → 30-40s) direct 경로만 Pro 로 남아 있었다. 같은 질문 실측
+        (2026-08-13): Pro 7.8~8.4s vs Flash 2.0~2.1s. 이 호출은 Claude 가 답을
+        쓰기 **전에** 동기로 끼어들므로 첫 토큰이 그만큼 통째로 밀린다.
+        """
+        try:
+            gemini = get_flash_client()
+            search_result = gemini.generate_with_search(
+                f"다음 질문에 답하기 위해 필요한 최신 정보를 검색하여 핵심만 정리하세요. "
+                f"길게 설명하지 말고 사실 위주로 간결하게 정리하세요.\n\n질문: {query}",
+                temperature=0.1,
+            )
+            logger.info("search_context_gathered", length=len(search_result))
+            return search_result
+        except Exception as e:
+            logger.warning("search_context_failed", error=str(e))
+            return "(실시간 검색에 실패했습니다. 최신 정보가 반영되지 않을 수 있습니다.)"

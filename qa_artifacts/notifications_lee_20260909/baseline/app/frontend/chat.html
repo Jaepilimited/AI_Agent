@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko" class="light">
+<head>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafaf9">
+  <title>Cella</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="icon" type="image/png" href="/static/favicon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/cella-pet.css">
+  <!-- Markdown + Code highlighting -->
+  <script src="/static/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css" id="hljs-theme">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <!-- Chart.js (로컬 번들 — CDN 차단 환경 대응) -->
+  <script src="/static/chart.umd.min.js"></script>
+  <script>
+    if (localStorage.theme === "dark") {
+      document.documentElement.classList.replace("light", "dark");
+    }
+  </script>
+</head>
+<body>
+  <!-- Announcement banner (hidden by default, shown when active) -->
+  <div id="announcement-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#e89200;color:#fff;text-align:center;padding:10px 48px;font-size:14px;font-weight:600;letter-spacing:0.01em;box-shadow:0 2px 8px rgba(0,0,0,0.18);">
+    <span id="announcement-text"></span>
+    <button onclick="document.getElementById('announcement-banner').style.display='none'" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1;" title="닫기">✕</button>
+  </div>
+  <div class="chat-app">
+    <!-- Mobile overlay -->
+    <div class="mobile-overlay" id="mobile-overlay"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="대화 목록">
+      <!-- Header: logo (clickable → home), brand, new-chat + collapse -->
+      <div class="sidebar-header">
+        <a href="#" class="sidebar-home-link" id="sidebar-home-link" title="홈으로">
+          <img class="logo" id="sidebar-logo" src="/static/splash-dark-new.png" alt="Cella">
+          <span class="brand-gradient">Cella</span>
+        </a>
+        <div class="sidebar-header-actions">
+          <button class="sidebar-icon-btn" id="btn-new-chat" title="새 대화" aria-label="새 대화">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="sidebar-icon-btn" id="btn-collapse-sidebar" title="사이드바 접기" aria-label="사이드바 접기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="sidebar-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="convo-search" placeholder="대화 검색..." aria-label="대화 검색">
+      </div>
+
+      <!-- Conversation list (grouped by date) -->
+      <div class="sidebar-conversations" id="convo-list" role="list" aria-label="대화 목록"></div>
+
+      <!-- Dashboard button -->
+      <div class="sidebar-dashboard sidebar-bottom-btn">
+        <button class="sidebar-dashboard-btn" id="btn-dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Dashboard</span>
+        </button>
+      </div>
+
+      <!-- 인증서류 찾기 -->
+      <div class="sidebar-dashboard sidebar-bottom-btn">
+        <button class="sidebar-dashboard-btn" id="btn-coa-finder">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15l2 2 4-4"/></svg>
+          <span>인증서류 찾기</span>
+        </button>
+      </div>
+
+      <!-- System Status button (opens drawer) + inline indicator -->
+      <div class="sidebar-dashboard sidebar-bottom-btn sidebar-status-wrap">
+        <button class="sidebar-dashboard-btn" id="btn-system-status">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          <span>System Status</span>
+          <div class="sidebar-status-inline" id="sidebar-status-inline"></div>
+        </button>
+      </div>
+
+      <!-- 알림 (공유받은 보고서) — 로그인한 모든 사용자에게 보인다 -->
+      <div class="sidebar-dashboard sidebar-bottom-btn">
+        <button class="sidebar-dashboard-btn" id="btn-notifications">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <span>알림</span>
+          <span class="notif-badge" id="notif-badge" style="display:none">0</span>
+        </button>
+      </div>
+
+      <!-- Wiki button (visible to admin only) -->
+      <div class="sidebar-dashboard sidebar-bottom-btn" id="wiki-btn-wrap" style="display:none">
+        <button class="sidebar-dashboard-btn" id="btn-wiki">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          <span>Knowledge Wiki</span>
+        </button>
+      </div>
+
+      <!-- Admin button (visible to admin only) -->
+      <div class="sidebar-dashboard sidebar-bottom-btn" id="admin-btn-wrap" style="display:none">
+        <button class="sidebar-dashboard-btn sidebar-admin-btn" id="btn-admin">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Admin</span>
+          <span class="sidebar-badge" id="selfcheck-badge" style="display:none"></span>
+        </button>
+      </div>
+
+      <!-- User footer -->
+      <div class="sidebar-footer">
+        <div class="user-avatar" id="user-avatar">A</div>
+        <span class="user-name" id="user-name"></span>
+        <button class="sidebar-icon-btn" id="btn-briefing-settings" title="설정" aria-label="설정">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.09a2 2 0 0 1 1 1.74v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button class="sidebar-icon-btn" id="btn-logout" title="로그아웃">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Collapsed sidebar expand button -->
+    <button class="sidebar-expand-btn" id="btn-expand-sidebar" style="display:none" title="사이드바 열기">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+    </button>
+
+    <!-- Main chat area -->
+    <main class="chat-main">
+      <!-- Top bar -->
+      <div class="chat-topbar">
+        <button class="menu-toggle" id="btn-menu" aria-label="Menu">&#9776;</button>
+        <input type="hidden" id="model-select" value="skin1004-Analysis">
+        <div class="topbar-spacer"></div>
+        <button class="topbar-icon-btn" id="btn-copy-all" title="대화 전체 복사">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="topbar-gws-btn" id="btn-gws-connect" title="Google 계정 연결">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+          <span id="gws-connect-label">Google 연결</span>
+        </button>
+      </div>
+
+      <!-- Scroll to bottom button -->
+      <button class="scroll-to-bottom" id="btn-scroll-bottom" style="display:none" aria-label="Scroll to bottom">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <!-- Messages / Welcome -->
+      <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="대화 메시지">
+        <div class="chat-welcome" id="chat-welcome">
+          <div class="welcome-greeting">
+            <div class="welcome-first-line">
+              <img class="welcome-logo" id="welcome-logo" src="/static/splash-dark-new.png" alt="">
+              <h1 class="welcome-hello"><span id="welcome-user-name"></span>님,</h1>
+            </div>
+            <h1 class="welcome-sub">What do you crave?</h1>
+          </div>
+          <div class="suggestions" id="welcome-suggestions">
+            <button class="suggestion-chip" data-q="2026년 일본 매출 보고서 만들어줘">일본 매출</button>
+            <button class="suggestion-chip" data-q="이번 달 Facebook 광고 ROAS를 국가별로 분석해줘">광고 ROAS</button>
+            <button class="suggestion-chip" data-q="이번 달 아마존 리뷰 평점과 주요 의견을 분석해줘">리뷰 분석</button>
+            <button class="suggestion-chip" data-q="센텔라 앰플 재고 알려줘">재고</button>
+            <button class="suggestion-chip" data-q="센텔라 앰플 사용법과 주요 성분을 알려줘">제품 사용법</button>
+            <button class="suggestion-chip" data-q="노션에서 해외 출장 가이드북을 찾아 요약해줘">사내문서</button>
+            <button class="suggestion-chip" data-q="오늘 받은 메일 내용을 요약해줘">오늘 메일</button>
+          </div>
+          <section class="personal-briefing" id="personal-briefing" aria-labelledby="personal-briefing-title">
+            <div class="personal-briefing-heading">
+              <h2 id="personal-briefing-title">Today</h2>
+              <span class="personal-briefing-updated" id="personal-briefing-updated" aria-live="polite">불러오는 중</span>
+              <button type="button" class="personal-briefing-refresh" id="personal-briefing-refresh"
+                      title="지금 다시 불러오기" aria-label="Today 새로고침">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+              </button>
+            </div>
+            <article class="briefing-doc" id="briefing-doc" hidden></article>
+            <div class="personal-briefing-grid" id="personal-briefing-grid" aria-live="polite"></div>
+          </section>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div class="chat-input-area" id="chat-input-area">
+        <div id="group-assignment-notice" role="status" aria-live="polite" hidden style="margin-bottom:12px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-elevated);font-size:13px;line-height:1.6;color:var(--text)">
+          <strong>데이터 조회 그룹 배정 대기</strong>
+          <p style="margin:4px 0 10px">회사 계정이 연결되었습니다. 관리자가 데이터 조회 그룹을 배정하면 질문을 이용할 수 있습니다.</p>
+          <button type="button" class="admin-btn-secondary" id="btn-check-group-assignment">배정 상태 확인</button>
+          <span id="group-assignment-status" style="margin-left:8px;color:var(--text-muted)"></span>
+        </div>
+        <!-- Source filter badge (shown when not all sources enabled) -->
+        <div class="source-filter-badge" id="source-filter-badge" style="display:none"></div>
+        <!-- // slash command dropdown -->
+        <div class="slash-source-dropdown" id="slash-source-dropdown" style="display:none"></div>
+        <!-- Follow-up suggestions (shown after AI response) -->
+        <div class="followup-suggestions" id="followup-suggestions" style="display:none"></div>
+        <!-- Image preview strip (shown when images are pending) -->
+        <div class="image-preview-strip" id="image-preview-strip" style="display:none"></div>
+          <!-- 올린 엑셀·CSV 를 무엇으로 읽었는지 보여주는 칩 (붐따 #161).
+               ⛔ 마크업에 둔다 — JS 가 만들면 스크립트가 낡을 때 통째로 사라진다 -->
+          <div class="table-preview-strip" id="table-preview-strip" style="display:none"></div>
+        <div class="chat-input-wrapper">
+          <button class="btn-attach" id="btn-attach" title="이미지 첨부" aria-label="Attach image">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <!-- ⚠️ 엑셀·CSV 도 받는다 (붐따 #161) — 표를 사진으로 찍어 올리면 값이
+               잘못 읽히고, 그건 아무도 대조하지 않는다 -->
+          <input type="file" id="file-input"
+                 accept="image/png,image/jpeg,image/gif,image/webp,.xlsx,.xlsm,.csv,.tsv"
+                 multiple hidden>
+          <textarea id="chat-input" rows="1" placeholder="메시지를 입력하세요...  (@@: 데이터소스 지정 · Shift+Enter: 줄바꿈)" autofocus></textarea>
+          <button class="btn-send" id="btn-send" disabled aria-label="Send">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Dashboard Drawer -->
+  <div id="skin-dashboard-overlay" class="closed"></div>
+  <div id="skin-dashboard-drawer" class="closed" role="dialog" aria-label="Dashboard">
+    <div class="drawer-header">
+      <button class="drawer-close" id="drawer-close">&times;</button>
+    </div>
+    <iframe id="dashboard-iframe"></iframe>
+  </div>
+
+  <!-- System Status Drawer -->
+  <div id="skin-status-overlay" class="closed"></div>
+  <div id="skin-status-drawer" class="closed" role="dialog" aria-label="System Status">
+    <div class="drawer-header">
+      <span class="drawer-title">System Status</span>
+      <button class="drawer-close" id="status-drawer-close">&times;</button>
+    </div>
+    <div class="status-drawer-body" id="status-items"></div>
+  </div>
+
+  <!-- 알림 Drawer -->
+  <div id="notif-overlay" class="closed"></div>
+  <div id="notif-drawer" class="closed" role="dialog" aria-label="알림">
+    <div class="drawer-header">
+      <span class="drawer-title">알림</span>
+      <button class="drawer-mark-all" id="notif-briefing-off" data-off="0" title="매일 아침 브리핑 받기/끄기">브리핑 끄기</button>
+      <button class="drawer-mark-all" id="notif-mark-all">모두 읽음</button>
+      <button class="drawer-close" id="notif-drawer-close">&times;</button>
+    </div>
+    <div class="status-drawer-body" id="notif-items"></div>
+  </div>
+
+  <!-- Wiki Drawer -->
+  <div id="skin-wiki-overlay" class="closed"></div>
+  <div id="skin-wiki-drawer" class="closed" role="dialog" aria-label="Knowledge Wiki">
+    <div class="drawer-header">
+      <span class="drawer-title">Knowledge Wiki</span>
+      <button class="drawer-close" id="wiki-drawer-close">&times;</button>
+    </div>
+    <div class="wiki-stats-bar" id="wiki-stats-bar"></div>
+    <div class="wiki-tabs">
+      <button class="wiki-tab active" data-tab="map">지도</button>
+      <button class="wiki-tab" data-tab="insights">🧠 인사이트</button>
+      <button class="wiki-tab" data-tab="recent">최근 추출</button>
+      <button class="wiki-tab" data-tab="reports">🚩 신고</button>
+      <button class="wiki-tab" data-tab="graph">관계 그래프</button>
+    </div>
+    <div class="wiki-tab-content active" id="wiki-tab-map"></div>
+    <div class="wiki-tab-content" id="wiki-tab-insights"></div>
+    <div class="wiki-tab-content" id="wiki-tab-recent"></div>
+    <div class="wiki-tab-content" id="wiki-tab-reports"></div>
+    <div class="wiki-tab-content" id="wiki-tab-graph"></div>
+    <!-- Entity page modal -->
+    <div id="wiki-entity-modal" class="closed">
+      <div class="wiki-entity-modal-body">
+        <button class="wiki-entity-modal-close" id="wiki-entity-modal-close">&times;</button>
+        <div id="wiki-entity-modal-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin Drawer -->
+  <div id="skin-admin-overlay" class="closed"></div>
+  <div id="skin-admin-drawer" class="closed" role="dialog" aria-label="Admin">
+    <div class="drawer-header">
+      <span class="drawer-title">Admin</span>
+      <button class="drawer-close" id="admin-drawer-close">&times;</button>
+    </div>
+    <!-- Stats bar -->
+    <div class="admin-stats-bar" id="admin-stats-bar"></div>
+    <!-- Tabs -->
+    <div class="admin-tabs">
+      <button class="admin-tab active" data-tab="groups">그룹 관리</button>
+      <button class="admin-tab" data-tab="users">셀라 사용자</button>
+      <button class="admin-tab" data-tab="visitors">방문자</button>
+      <button class="admin-tab" data-tab="growth">성장 지표</button>
+      <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
+      <button class="admin-tab" data-tab="golden">골든셋</button>
+      <button class="admin-tab" data-tab="feedback">붐따 처리함</button>
+      <button class="admin-tab" data-tab="flow">아키텍처</button>
+    </div>
+    <!-- Tab: Visitors -->
+    <div class="admin-tab-content" id="tab-visitors">
+      <div class="admin-drawer-body admin-visitor-body">
+        <section class="visitor-analytics" id="visitor-analytics" aria-label="방문자 분석">
+          <div class="visitor-analytics-head">
+            <div>
+              <span class="visitor-kicker">USAGE</span>
+              <h2>방문자 흐름</h2>
+              <p>로그인 사용자 기준 · 하루 1명으로 집계</p>
+            </div>
+            <div class="visitor-range" role="group" aria-label="방문자 분석 기간">
+              <button class="visitor-range-btn active" data-days="30">30일</button>
+              <button class="visitor-range-btn" data-days="90" disabled title="90일치 데이터가 쌓인 후 사용할 수 있습니다">90일</button>
+              <button class="visitor-range-btn" data-days="365" disabled title="1년치 데이터가 쌓인 후 사용할 수 있습니다">1년</button>
+            </div>
+          </div>
+
+          <div class="visitor-permission-access" id="visitor-permission-access" hidden>
+            <div>
+              <strong>방문자 권한 대상 관리</strong>
+              <span>셀라 사용자에서 사람별로 방문자 열람 권한을 부여하거나 회수할 수 있습니다.</span>
+            </div>
+            <button type="button" class="admin-btn-secondary" id="btn-manage-visitor-access">권한 대상 관리</button>
+          </div>
+          <div class="visitor-permission-readonly" id="visitor-permission-readonly-hint" hidden>
+            <strong>방문자 분석 열람 권한이 있습니다.</strong>
+            <span>권한 대상 변경은 관리자 계정에서 할 수 있습니다.</span>
+          </div>
+
+          <div class="visitor-collection-note" id="visitor-collection-note">
+            <span class="visitor-live-dot" aria-hidden="true"></span>
+            <strong>8월 11일부터 수집 중</strong>
+            <span>과거 방문 데이터는 포함되지 않습니다</span>
+          </div>
+
+          <div class="visitor-kpis" aria-live="polite">
+            <article class="visitor-kpi visitor-kpi-primary">
+              <span class="visitor-kpi-label" id="visitor-range-label">수집 시작 이후 순방문자</span>
+              <div><strong id="visitor-unique">—</strong><span>명</span></div>
+              <small id="visitor-trend">비교 데이터 수집 중</small>
+            </article>
+            <article class="visitor-kpi">
+              <span class="visitor-kpi-label">오늘 방문자</span>
+              <div><strong id="visitor-today">—</strong><span>명</span></div>
+              <small id="visitor-registered">가입 사용자 —명</small>
+            </article>
+            <article class="visitor-kpi">
+              <span class="visitor-kpi-label">페이지 방문</span>
+              <div><strong id="visitor-page-visits">—</strong><span>회</span></div>
+              <small id="visitor-period-caption">8월 11일 이후 합계</small>
+            </article>
+          </div>
+
+          <div class="visitor-panel visitor-chart-panel">
+            <div class="visitor-panel-head">
+              <div><strong>순방문자 추이</strong><span id="visitor-chart-unit">월별</span></div>
+              <span id="visitor-tracking-since">추적 시작일 확인 중</span>
+            </div>
+            <div class="visitor-chart-wrap">
+              <canvas id="visitor-chart" aria-label="기간별 순방문자 추이"></canvas>
+              <div class="visitor-chart-empty" id="visitor-chart-empty" hidden>방문 데이터가 쌓이면 추이가 표시됩니다.</div>
+            </div>
+          </div>
+
+          <div class="visitor-panel visitor-table-panel">
+            <div class="visitor-panel-head">
+              <div><strong>방문자 목록</strong><span id="visitor-list-count">0명</span></div>
+              <span class="visitor-list-note">선택 기준 상위 50명 · 전체 방문은 통계에 포함</span>
+            </div>
+            <div class="visitor-table-scroll">
+              <table class="visitor-table">
+                <thead><tr>
+                  <th>사용자</th>
+                  <th>부서</th>
+                  <th class="visitor-sort-heading" aria-sort="descending"><button type="button" class="visitor-sort-btn active" data-sort="recent" aria-pressed="true">최근 방문 <span aria-hidden="true">↓</span></button></th>
+                  <th class="visitor-sort-heading" aria-sort="none"><button type="button" class="visitor-sort-btn" data-sort="active_days" aria-pressed="false">방문일 <span aria-hidden="true">↓</span></button></th>
+                  <th class="visitor-sort-heading" aria-sort="none"><button type="button" class="visitor-sort-btn" data-sort="visits" aria-pressed="false">열람 <span aria-hidden="true">↓</span></button></th>
+                </tr></thead>
+                <tbody id="visitor-table-body"><tr><td colspan="5" class="visitor-table-empty">방문 기록을 불러오는 중입니다.</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <!-- Tab: Golden Set -->
+    <div class="admin-tab-content" id="tab-golden">
+      <div class="admin-toolbar">
+        <button class="admin-btn-primary" id="btn-run-golden">데일리 런 실행</button>
+        <button class="admin-btn-secondary" id="btn-run-golden-full">전체 런</button>
+        <span id="golden-summary" class="admin-stat-label"></span>
+      </div>
+      <div class="admin-drawer-body" id="admin-golden-body"></div>
+    </div>
+    <!-- Tab: Feedback inbox (붐따) -->
+    <div class="admin-tab-content" id="tab-feedback">
+      <div class="admin-toolbar">
+        <select id="feedback-filter" class="admin-select">
+          <!-- ⛔ 기본은 '전체' 다. '미확인' 을 기본으로 두면 완료로 바꾼 항목이 목록에서
+               **사라져** 처리됐다는 표시가 뜨지 않는다 — 방금 한 일이 화면에서 지워지니
+               "처리해도 처리됐다고 안 나온다" 가 된다 (2026-08-25 사용자 제보).
+               처리함은 처리한 결과가 보여야 처리함이다. -->
+          <option value="" selected>전체</option>
+          <option value="new">미확인</option>
+          <option value="ack">처리 중</option>
+          <option value="done">완료</option>
+          <option value="wontfix">보류</option>
+        </select>
+        <span id="feedback-summary" class="admin-stat-label"></span>
+      </div>
+      <div class="admin-drawer-body" id="admin-feedback-body"></div>
+    </div>
+    <!-- Tab: Self Check -->
+    <div class="admin-tab-content" id="tab-selfcheck">
+      <div class="admin-toolbar">
+        <button class="admin-btn-primary" id="btn-run-selfcheck">지금 점검</button>
+        <span id="selfcheck-summary" class="admin-stat-label"></span>
+      </div>
+      <div class="admin-drawer-body" id="admin-selfcheck-body"></div>
+    </div>
+    <!-- Tab: Flow (아키텍처 캔버스) -->
+    <!-- ⚠️ 크기는 CSS 가 정한다 (`.flow-layout`). 인라인으로 되돌리지 마라 —
+         420px 서랍 안에 캔버스+320px 패널을 나란히 놓은 탓에 그림이 30px
+         폭으로 눌려 있었다 (2026-08-25 실측). 이 탭은 `flow-mode` 로 서랍을 넓힌다. -->
+    <div class="admin-tab-content" id="tab-flow">
+      <div class="flow-layout">
+        <div class="flow-main">
+          <div class="flow-toolbar">
+            <button class="admin-btn-secondary" id="btn-flow-collapse">자세히 보기</button>
+            <button class="admin-btn-secondary" id="btn-flow-fit">전체 보기</button>
+            <button class="admin-btn-secondary" id="btn-flow-zoom-in" aria-label="확대">+</button>
+            <button class="admin-btn-secondary" id="btn-flow-zoom-out" aria-label="축소">−</button>
+            <span class="flow-legend">
+              <span><i class="flow-dot flow-dot-io"></i>입·출력</span>
+              <span><i class="flow-dot flow-dot-main"></i>관문·라우터</span>
+              <span><i class="flow-dot flow-dot-route"></i>경로</span>
+              <span><i class="flow-dot flow-dot-branch"></i>@@ 병렬 가지</span>
+              <span><i class="flow-dot flow-dot-sub"></i>하위 그래프</span>
+              <span><i class="flow-dot flow-dot-dead"></i>도달 불가</span>
+              <span><i class="flow-line flow-line-cond"></i>조건부</span>
+            </span>
+          </div>
+          <div id="flow-canvas"></div>
+          <!-- 상세는 오버레이다. 옆에 나란히 두면 320px 을 캔버스에서 뺏어가는데,
+               가로로 긴 계층 그래프에서 그 폭이 곧 글자 크기다 (2026-08-25 실측). -->
+          <div id="flow-detail" class="flow-side" hidden></div>
+        </div>
+      </div>
+      <div class="flow-hint" id="flow-hint">노드를 클릭하면 실행 지점·설정값이 나옵니다.</div>
+    </div>
+    <!-- Tab: Groups -->
+    <div class="admin-tab-content active" id="tab-groups">
+      <div class="admin-toolbar">
+        <button class="admin-btn-primary" id="btn-create-group">+ 새 그룹</button>
+      </div>
+      <div class="admin-drawer-body" id="admin-group-list"></div>
+    </div>
+    <!-- Tab: Cella Users -->
+    <div class="admin-tab-content" id="tab-users">
+      <div class="admin-toolbar" style="align-items:center">
+        <button class="admin-btn-secondary" id="btn-sync-directory">Entra 동기화</button>
+        <span id="admin-directory-status" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)"></span>
+      </div>
+      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">모든 직원은 Entra ID로 로그인해야 합니다. 기존 계정·권한은 로그인 후 자동 승계됩니다. 로그인 전에도 권한과 그룹을 미리 배정할 수 있습니다.</p>
+      <div class="admin-toolbar">
+        <select id="admin-dept-filter" class="admin-select">
+          <option value="">전체 부서</option>
+        </select>
+        <select id="admin-group-filter" class="admin-select">
+          <option value="">전체 그룹</option>
+          <option value="unassigned">미배정</option>
+          <option value="fi_allowed">손익 허용</option>
+          <option value="visitor_allowed">방문자 허용</option>
+        </select>
+        <input type="text" id="admin-search" class="admin-input" placeholder="이름/이메일 검색">
+      </div>
+      <p id="admin-directory-error" role="alert" hidden style="margin:12px 20px 0;font-size:12px;color:var(--error)"></p>
+      <div class="admin-drawer-body" id="admin-user-list"></div>
+    </div>
+    <!-- Tab: Growth -->
+    <div class="admin-tab-content" id="tab-growth">
+      <div class="admin-toolbar">
+        <button class="admin-btn-secondary" id="btn-refresh-growth">새로고침</button>
+      </div>
+      <div class="admin-drawer-body" id="admin-growth-body">로딩 중…</div>
+    </div>
+  </div>
+
+  <!-- Theme Toggle -->
+  <button id="skin-theme-toggle" aria-label="Toggle theme"></button>
+
+  <script src="/frontend/answer-loading.js"></script>
+  <script src="/frontend/personal-briefing.js"></script>
+  <script src="/frontend/chat.js"></script>
+  <script src="/frontend/cella-pet.js"></script>
+  <!-- 셀라의 기원 — 아바타 클릭·첫 방문 1회 초대.
+       ⛔ cella-pet.js 를 고치지 않고 얹기만 한다 (그 파일은 다른 세션이 작업 중) -->
+  <script src="/frontend/cella-origin.js"></script>
+</body>
+</html>

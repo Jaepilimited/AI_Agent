@@ -1,0 +1,27 @@
+{
+  "files": {
+    "app/core/fx_rates.py": {
+      "before": "ea51282dbaa35e1bea09df592bba11ed19f52ad4b5d59ee00a0fd2960addbd01",
+      "after": "dc947b1042034b4ae4999096450dc07984af4cb957c0ed03c0701d4bd20a9fec"
+    },
+    "app/api/jandi_briefing_api.py": {
+      "before": "eb86d6e02522da39466ac093220c5c2a3099840483aa82b6418c4ba84e170a93",
+      "after": "c2addae993f4c3fc50110a241ff65ef8b4c2f66cf8c519e17d34d79f2066fc0c"
+    },
+    "scripts/fx_relay.py": {
+      "before": "c7914d17e0f3044a4491f66cc9c4447a0e7758bf9197cfa257fc4f16fcc8abcb",
+      "after": "78d93bbe09a5f32d37071d19aa25e6ca8967317fe7f23f9b39b4a127ab1d6f2c"
+    },
+    "tests/test_fx_monthly_basis.py": {
+      "before": null,
+      "after": "1215ea6b64b52a7c492f934c6d5315c48a31d6caf81cbb73bd8b056d16e90db4"
+    },
+    "tests/test_fx_relay_monthly.py": {
+      "before": null,
+      "after": "607ac703d53a434e6ccf8c4b97a99eb7c3741ddc92455bc7c314c74027dee73f"
+    }
+  },
+  "history_sha": "cce369497ae0d9159ce86f85a8195125aa3746438f540706adce3e47e64e8649",
+  "latest_day": "2026-09-09",
+  "target": "2026-08-09"
+}

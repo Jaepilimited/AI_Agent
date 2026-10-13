@@ -1,0 +1,62 @@
+{
+  "app/agents/gws_agent.py": {
+    "before": "0cb88eabc9cb865445dfe914aafcad028a7771c9fc70f5378d9aa96fa52b32e4",
+    "after": "0cb88eabc9cb865445dfe914aafcad028a7771c9fc70f5378d9aa96fa52b32e4"
+  },
+  "app/core/google_workspace.py": {
+    "before": "a10819e22fbd38236ba8a825ee75388392981a1084609c5d4125db3ed1ee56e4",
+    "after": "a10819e22fbd38236ba8a825ee75388392981a1084609c5d4125db3ed1ee56e4"
+  },
+  "app/core/chart.py": {
+    "before": "93c7cee2c3b6381544ad127e2db11cab0c85568fe269e90c670aa7194e0bf707",
+    "after": "93c7cee2c3b6381544ad127e2db11cab0c85568fe269e90c670aa7194e0bf707"
+  },
+  "app/frontend/chat.js": {
+    "before": "47a8b7b3f79fd7d2f854b08e9a195d7e6c058ca585c86a953550ce84b2fa50eb",
+    "after": "47a8b7b3f79fd7d2f854b08e9a195d7e6c058ca585c86a953550ce84b2fa50eb"
+  },
+  "app/core/feedback_inbox.py": {
+    "before": "d4ab2e74682aea0693a4c922eac9611b540c4de6f711b17e9a0d1058f1b638ab",
+    "after": "d4ab2e74682aea0693a4c922eac9611b540c4de6f711b17e9a0d1058f1b638ab"
+  },
+  "app/core/calendar_stats.py": {
+    "before": "339efc09f62e4c004f158873443a737c15894e85bd1d25fa32d5b033c369ca45",
+    "after": "679d78fadd9cd1340ceab0e0d21102e0815b53c4443aa3002ac6a5b57d3b4408"
+  },
+  "tests/test_gws_calendar_stats.py": {
+    "before": "9e1c04c5fa4cac649b5c9aee39967932925c432b305fc41f236f116dd37b8be6",
+    "after": "95c3a02f901189236eb6d3752fe04cc5adb69756d41402fd547ecb9ec36de09e"
+  },
+  "tests/test_calendar_history_api.py": {
+    "before": "173e47531417eb463e4b5eae535e3fb4371918de760ceb30fae5789f4f905d9c",
+    "after": "173e47531417eb463e4b5eae535e3fb4371918de760ceb30fae5789f4f905d9c"
+  },
+  "tests/test_gws_digest.py": {
+    "before": "e5fc2e9a582f69bf352a39b02f67d9541ed129353d70a40b5eb2282957f0eef0",
+    "after": "e5fc2e9a582f69bf352a39b02f67d9541ed129353d70a40b5eb2282957f0eef0"
+  },
+  "tests/test_gws_gmail.py": {
+    "before": "33e819cf4439952d5802001eabfa02496627ac0c4aee62a9002f99dd100237a2",
+    "after": "33e819cf4439952d5802001eabfa02496627ac0c4aee62a9002f99dd100237a2"
+  },
+  "tests/test_feedback_resolution_sync.py": {
+    "before": "a477e81582d9711fea82a7cac5060d2827d9c41e0370d84367f4dd29b7da7f14",
+    "after": "a477e81582d9711fea82a7cac5060d2827d9c41e0370d84367f4dd29b7da7f14"
+  },
+  "tests/test_chart_many_series.py": {
+    "before": "04870b63cf93a390b7258a04701652de46e6add1f70fb1bc4c2a9c7073f4493b",
+    "after": "04870b63cf93a390b7258a04701652de46e6add1f70fb1bc4c2a9c7073f4493b"
+  },
+  "tests/test_chart_yoy.py": {
+    "before": "e8e1b2c9df72da39733dced106f1443547325fdd451af9844423f246284e2c13",
+    "after": "e8e1b2c9df72da39733dced106f1443547325fdd451af9844423f246284e2c13"
+  },
+  "tests/test_chart_series_label.py": {
+    "before": "9772239a5f84e89168a072541837afba147242eae2854bd0034b202ba18ba013",
+    "after": "9772239a5f84e89168a072541837afba147242eae2854bd0034b202ba18ba013"
+  },
+  "tests/frontend/test_chart_daily_ticks.py": {
+    "before": "7a83d5058222df5c056d6ba6890994b41d508b0d1e659dd925efad76f9d4d955",
+    "after": "7a83d5058222df5c056d6ba6890994b41d508b0d1e659dd925efad76f9d4d955"
+  }
+}

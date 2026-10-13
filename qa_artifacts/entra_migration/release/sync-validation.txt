@@ -1,0 +1,4 @@
+2026-09-08 12:41:10 [info     ] db_mode_mariadb                port=3000
+2026-09-08 12:41:10 [info     ] mariadb_pool_initialized       cached=5 max=40
+2026-09-08 12:41:10 [warning  ] directory_sync_failed          error_type=DirectoryError
+{"result": {"ok": false, "synced_users": 0, "error": "Entra \uc0ac\uc6a9\uc790 \uc870\ud68c \uc11c\ubc84\uc5d0 \uc5f0\uacb0\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. graph.microsoft.com:443 \ub124\ud2b8\uc6cc\ud06c \ud5c8\uc6a9\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694."}, "status": {"attempted_at": "2026-09-08T12:41:10", "succeeded_at": null, "user_count": 0, "error_message": "Entra \uc0ac\uc6a9\uc790 \uc870\ud68c \uc11c\ubc84\uc5d0 \uc5f0\uacb0\ud558\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4. graph.microsoft.com:443 \ub124\ud2b8\uc6cc\ud06c \ud5c8\uc6a9\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694."}, "unchanged_on_failure": true}

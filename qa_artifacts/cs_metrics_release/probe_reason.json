@@ -1,0 +1,27 @@
+{
+  "case": "reason",
+  "query": "2026년 8월 환불 사유별 건수 알려줘",
+  "sources": [
+    "해외CS"
+  ],
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "SELECT\n  COALESCE(NULLIF(return_type_normalized, ''), '미분류') AS refund_reason,\n  COUNT(*) AS refund_records,\n  COUNT(DISTINCT shopify_order_id) AS distinct_orders,\n  SUM(refund_amount_usd) AS successful_refund_amount_usd,\n  SUM(refund_amount_krw) AS recorded_refund_amount_krw,\n  COUNTIF(refund_amount_krw IS NULL) AS refunds_without_krw\nFROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\nWHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'\nGROUP BY refund_reason\nORDER BY refund_records DESC\nLIMIT 1000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "refund_reason": "미분류",
+      "refund_records": 94,
+      "distinct_orders": 93,
+      "successful_refund_amount_usd": "7015.31",
+      "recorded_refund_amount_krw": "9845404",
+      "refunds_without_krw": 11
+    }
+  ],
+  "seconds": 20.55,
+  "fast_answer": "1",
+  "tool_loop": null
+}

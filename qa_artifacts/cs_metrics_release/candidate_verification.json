@@ -1,0 +1,7 @@
+{
+  "candidate_hashes": true,
+  "scope_gate": true,
+  "amount_fact": "\nCS 금액 합계 (코드 계산 · 통화 변경 금지):\n- 환불액 (USD): **USD 7,015.31**\n",
+  "refunds": 94,
+  "missing_krw": 11
+}

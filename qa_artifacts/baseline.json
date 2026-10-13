@@ -1,0 +1,46 @@
+{
+  "date": "2026-09-01",
+  "url": "http://10.1.100.5",
+  "status": "done_with_concerns",
+  "healthScore": 91,
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Mobile reset request submit button is unreachable",
+      "severity": "high",
+      "category": "functional"
+    },
+    {
+      "id": "ISSUE-002",
+      "title": "Reset request trigger is skipped by keyboard focus",
+      "severity": "medium",
+      "category": "accessibility"
+    }
+  ],
+  "categoryScores": {
+    "console": 70,
+    "links": 100,
+    "visual": 100,
+    "functional": 85,
+    "ux": 100,
+    "performance": 100,
+    "content": 100,
+    "accessibility": 92
+  },
+  "liveChecks": {
+    "health": 200,
+    "login": 200,
+    "rootRedirect": 302,
+    "syntheticUnknownUserRequest": 200
+  },
+  "blockedScenarios": [
+    "valid AD test user request and duplicate handling",
+    "admin request banner and temporary-password issuance",
+    "forced password change after temporary login"
+  ],
+  "automatedTests": {
+    "passed": 81,
+    "failed": 0,
+    "warnings": 1
+  }
+}

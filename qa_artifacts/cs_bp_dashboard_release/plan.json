@@ -1,0 +1,82 @@
+{
+  "app/agents/cs_agent.py": {
+    "before": "d08dd837dced4f7c7a16bdfef96ec8c34f441abb20207f3352c14549db6d7343",
+    "after": "d62270c6c81b3f8a47f955f61cedf1a26a1fbdd0d788e17a9181a3c4928601e9"
+  },
+  "app/agents/orchestrator.py": {
+    "before": "dd51f2cbd4073a34d051cfb9c35113d3bb19019eae5849b92dbe668729778a29",
+    "after": "6bc0751a6015ec53ce7c0ba5b6c5a29b528e2ba8f0f9769cba95adaa1616de71"
+  },
+  "app/agents/sql_agent.py": {
+    "before": "ef72dc8a8fae10864484579974c5129dce801396c35f5c7114a45f39378dac92",
+    "after": "c38d79d0bee4160573153134f3a3f707732787f66c78d0bdbab5305a75fb25f9"
+  },
+  "app/api/routes.py": {
+    "before": "35a799fd37b404614379ef76c4fbd6fcccd02c41edb975b46a8ea3f93f496496",
+    "after": "e13a2a3bdd71d814b15379ef832f5505a53f01f7ecb72201da75a584a4f404dd"
+  },
+  "app/core/cs_metrics.py": {
+    "before": "583b61ffdbd39c062d796e87d60322a16adec10759326f9e00a23ffc4d60c8af",
+    "after": "9c7901110914fc8add55adcb7abf2c0d7a02ee51ea1c6351b541bddce0463259"
+  },
+  "app/core/dashboard_links.py": {
+    "before": "21bca3c72d87a05e4e92d73db6feeb8fa01504ff01e5a52178ce4cb2ed8b2b5b",
+    "after": "86ab5c947d582880879898d6071bf6c1dc11883f2c94e11156191b7742a87d9c"
+  },
+  "app/core/safety.py": {
+    "before": "5629a0514108c4cd3188d9e219ce7b85fd2e475bf17862eb064224cafff1d942",
+    "after": "b4d471e6f96ddcdc1827ab5497a8faeecbab3bece2068d72918c90c5e4b3d67f"
+  },
+  "app/frontend/chat.js": {
+    "before": "4001752f0dfe5b81b8175f219c7e59990db977de69e4398bceda5200e4ef3ce6",
+    "after": "e104d840c6a4b0f61aeb194af94b0e0bc7fbafd20ebabb8233fd896501b33aef"
+  },
+  "app/static/dashboard-catalog.json": {
+    "before": "3c5cf692ea8565d47bcdf9cea084275a74c9ce0733c2ff87fece8e165fd3c68e",
+    "after": "0951910fd7c1a12b171a3bbdc037a801e7c29cc3bb9ea8f76a22a8d09c68f38b"
+  },
+  "docs/CS_METRICS.md": {
+    "before": "912906697b2c2c28c0266ff5342c13af7478a15665b393c720f9ca773c5f9d53",
+    "after": "235a633ee3ff3a361978ea13e8f6655c1d84fe682dc194f9e8a7152dafc173ae"
+  },
+  "tests/test_cs_metrics_routing.py": {
+    "before": "59e987c47f46b7b84d04d1884d82ddfc1e5d8fee13945aa885dfa6386ee93b71",
+    "after": "0f2605bbba251a69c1fca50120cd7b627514b360b2aff82c6f416d1d44c6ac91"
+  },
+  "tests/test_cs_metrics_sources.py": {
+    "before": "d20ff09d324e4c79f8d5aa6b31c19c33279aa1882fad88006f621390194cfcd0",
+    "after": "0beaafaeea677ffb412a1205724a43e36adafe329db35439ccdb454a6e0afd83"
+  },
+  "tests/test_dashboard_links.py": {
+    "before": null,
+    "after": "5bdeb2585de000bf3582bcbef9e3b5937e43b5726130d2de4a5be094c594c6c1"
+  },
+  "tests/test_router.py": {
+    "before": null,
+    "after": "32dcdf458c0058ba41b05af986c9f0080501db71fbf99efba3a444d2adc09660"
+  },
+  "tests/test_source_selection.py": {
+    "before": null,
+    "after": "90633caa594c74b2829dff996530603c3a3092b9fbd0d7df820006a030d77323"
+  },
+  "app/core/cs_dashboard.py": {
+    "before": null,
+    "after": "c472bb6b0ffc594cb1be9d933036a6be0283bd9dbb3e87ce057aeb39a04edc8d"
+  },
+  "tests/test_cs_dashboard.py": {
+    "before": null,
+    "after": "9d84a5bd0ac139c3b6598da6ed919fac3a3cadebaf53b2a82f9206eebd2dc833"
+  },
+  "tests/test_cs_dashboard_integration.py": {
+    "before": null,
+    "after": "983ec387d942be522f0549909eafbf1b8811375adb5becaead3e1f3e5aa4e314"
+  },
+  "tests/test_cs_bp_source_ui.py": {
+    "before": null,
+    "after": "138d5283078b19b1b11166d81716bc1d2880d0c5262480a5f55b2621cfad58fc"
+  },
+  "tests/test_bp_consolidation.py": {
+    "before": null,
+    "after": "55fe31736402fdb84c671a675768d2e37880135cdda5daa26e75c2cb55409a03"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "app/frontend/personal-briefing.js": {
+    "before": "298405e8697e3d5e5fd159373cbcdebd23ae63bdfcc18c7a50ef769c2278968c",
+    "after": "0f24a6d6ebe83728b40929d2cf793f39dd84281d5a01a1ab90152c02ff2469e8"
+  },
+  "app/static/style.css": {
+    "before": "277a1b9fe6405f8bc19b16642b09546279f121b3f0160a3770e59c5129b76ce4",
+    "after": "4d1488ca63f13341241647952e6b4f9eb19c5a792cc9fbdc6f9b33b033f748cb"
+  }
+}

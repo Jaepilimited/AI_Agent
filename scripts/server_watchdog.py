@@ -109,6 +109,7 @@ def run_cmd(cmd: str, timeout: int = 15) -> tuple[int, str]:
             timeout=timeout, cwd=PROJECT_DIR,
             encoding="utf-8", errors="replace",
             env=build_pm2_subprocess_env(),
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         return result.returncode, (result.stdout + result.stderr).strip()
     except subprocess.TimeoutExpired:

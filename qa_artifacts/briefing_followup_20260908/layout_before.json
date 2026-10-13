@@ -1,0 +1,26 @@
+{
+  "desktop": {
+    "top": 179.890625,
+    "height": 420,
+    "rightTop": 179.890625,
+    "rightHeight": 666.4375,
+    "client": 420,
+    "scroll": 2478
+  },
+  "mobile": {
+    "top": 247.890625,
+    "height": 420,
+    "rightTop": 768.6875,
+    "rightHeight": 922.140625,
+    "client": 420,
+    "scroll": 2478
+  },
+  "short_mail": {
+    "top": 179.890625,
+    "height": 213.578125,
+    "rightTop": 179.890625,
+    "rightHeight": 666.4375,
+    "client": 214,
+    "scroll": 214
+  }
+}

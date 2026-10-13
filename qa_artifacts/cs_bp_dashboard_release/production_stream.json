@@ -1,0 +1,18 @@
+{
+  "query": "@@해외CS 2026년 8월 환불 건수와 링크 알려줘",
+  "events": [
+    [
+      "source",
+      "bigquery:해외CS"
+    ],
+    [
+      "chunk",
+      "**해외 CS 대시보드 · 2026-08-01 ~ 2026-08-31**\n\n현재 셀라에서 대시보드 집계를 불러오지 못했습니다. 원본 화면에서 확인해 주세요.\n\n[CS 대시보드에서 요약 보기](http://34.64.99.254:8061/global/dashboard?scope=all&channel=all&claimType=all&status=all&startDate=2026-08-01&endDate=2026-08-31)"
+    ],
+    [
+      "done",
+      ""
+    ]
+  ],
+  "elapsed_seconds": 0.55
+}

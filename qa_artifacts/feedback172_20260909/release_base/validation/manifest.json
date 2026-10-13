@@ -1,0 +1,15 @@
+{
+  "captured_at_utc": "2026-09-09T00:08:00.009475+00:00",
+  "files": [
+    {
+      "path": "tests/test_named_period.py",
+      "sha256": "391f9bf5869c5b87641c0f3ad6c27efab6d569a94b4a6b707f47c2cdb29e6716",
+      "source": "local test input only"
+    },
+    {
+      "path": "tests/conftest.py",
+      "sha256": "eaafc463cfa8c8494e5c7dc2708204e8ad9cd40302169b15bbf75e4ca3af8639",
+      "source": "local test input only"
+    }
+  ]
+}

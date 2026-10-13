@@ -1,0 +1,35 @@
+{
+  "case": "both",
+  "query": "2026년 8월 국내 CS 처리 기록 수와 해외 CS 환불 건수를 각각 비교해줘",
+  "sources": [
+    "국내CS",
+    "해외CS"
+  ],
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "WITH domestic AS (\n  SELECT\n    '국내 CS' AS cs_scope,\n    '처리 기록' AS metric_type,\n    COUNT(*) AS record_count,\n    COUNT(DISTINCT order_key) AS distinct_orders,\n    COUNTIF(order_key IS NULL) AS records_without_order_key\n  FROM `skin1004-319714.cs_dashboard.domestic_cs_records`\n  WHERE received_at BETWEEN '2026-08-01' AND '2026-08-31'\n),\noverseas AS (\n  SELECT\n    '해외 CS (Shopify)' AS cs_scope,\n    '환불 건수' AS metric_type,\n    COUNT(*) AS record_count,\n    COUNT(DISTINCT shopify_order_id) AS distinct_orders,\n    0 AS records_without_order_key\n  FROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\n  WHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'\n)\nSELECT * FROM domestic\nUNION ALL\nSELECT * FROM overseas\nLIMIT 10000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "cs_scope": "국내 CS",
+      "metric_type": "처리 기록",
+      "record_count": 51,
+      "distinct_orders": 47,
+      "records_without_order_key": 0
+    },
+    {
+      "cs_scope": "해외 CS (Shopify)",
+      "metric_type": "환불 건수",
+      "record_count": 94,
+      "distinct_orders": 93,
+      "records_without_order_key": 0
+    }
+  ],
+  "seconds": 19.38,
+  "fast_answer": "1",
+  "tool_loop": null,
+  "answer": "> 국내 자료는 **CS 처리 기록** 단위입니다. 고유 CS 사건 수와 다르며, 주문수는 중복 주문을 제외합니다.\n> 해외 자료는 **Shopify 환불 기록**입니다. 전체 해외 CS 접수 건수나 전체 반품 건수를 뜻하지 않습니다.\n\n### 📊 2026년 8월 국내 CS 처리 기록 및 해외 CS 환불 건수 비교\n\n#### 요약\n2026년 8월 국내 CS 처리 기록은 **51건**(고유 주문 47건), 해외 CS(Shopify) 환불 건수는 **94건**(고유 주문 93건)으로 집계되었습니다. 본 집계는 접수일(국내) 및 환불 생성일(해외) 기준이며, 서로 다른 집계 단위이므로 단순 합산되지 않습니다.\n\n#### 상세 데이터 (표)\n\n| 구분 | 지표 유형 | 건수 (건) | 고유 주문 수 (건) | 미매핑 주문 (건) |\n|:---|:---|---:|---:|---:|\n| 국내 CS | 처리 기록 | 51 | 47 | 0 |\n| 해외 CS (Shopify) | 환불 건수 | 94 | 93 | 0 |\n\n*(참고: 국내는 접수일 기준 CS 처리 기록 단위이며, 해외는 환불 생성일 기준 Shopify 환불 건수입니다. 두 지표의 기준 단위가 달라 단순 합산하여 전체 CS 건수로 산출하지 않습니다.)*\n\n#### 시각화\n\n\n```chart-config\n{\"type\": \"bar\", \"data\": {\"labels\": [\"해외 CS (Shopify)\", \"국내 CS\"], \"datasets\": [{\"label\": \"건수\", \"data\": [94.0, 51.0], \"backgroundColor\": [\"rgba(99, 102, 241, 0.85)\", \"rgba(245, 158, 11, 0.85)\"], \"borderColor\": [\"rgba(99, 102, 241, 1)\", \"rgba(245, 158, 11, 1)\"], \"borderWidth\": 2, \"borderRadius\": 6}]}, \"options\": {\"responsive\": true, \"maintainAspectRatio\": false, \"animation\": {\"duration\": 800, \"easing\": \"easeOutQuart\"}, \"plugins\": {\"title\": {\"display\": true, \"text\": \"2026년 8월 국내 CS 처리 기록 수 vs 해외 CS 환불 건수\", \"font\": {\"size\": 16, \"weight\": \"bold\"}, \"padding\": {\"bottom\": 16}}, \"legend\": {\"display\": false, \"position\": \"top\", \"labels\": {\"usePointStyle\": true, \"padding\": 16, \"font\": {\"size\": 12}}}, \"tooltip\": {\"backgroundColor\": \"rgba(0,0,0,0.8)\", \"titleFont\": {\"size\": 13}, \"bodyFont\": {\"size\": 12}, \"cornerRadius\": 8, \"padding\": 12, \"displayColors\": true}}, \"scales\": {\"x\": {\"title\": {\"display\": true, \"text\": \"구분\", \"font\": {\"size\": 13}}, \"grid\": {\"display\": false}, \"ticks\": {\"font\": {\"size\": 11}}}, \"y\": {\"title\": {\"display\": true, \"text\": \"건수\", \"font\": {\"size\": 13}}, \"grid\": {\"color\": \"rgba(0,0,0,0.06)\"}, \"ticks\": {\"font\": {\"size\": 11}}, \"beginAtZero\": true}}}}\n```\n\n#### 분석 및 인사이트\n- **국내 처리 기록**: 총 51건의 처리 기록 중 고유 주문은 47건으로, 일부 주문에 대해 다중 CS 처리가 발생했습니다.\n- **해외 환불 건수**: 총 94건의 환불 기록 중 고유 주문은 93건으로, 대부분 단일 주문당 1건의 환불이 진행되었습니다.\n- **주문 식별 안정성**: 국내 및 해외 데이터 모두 주문 식별값 누락(0건) 없이 정상 매핑되어 집계되었습니다.\n\n---\n*조회 기준: 2026-09-16 | 내부 데이터베이스*\n> 💡 **이런 것도 물어보세요**\n> - 2026년 8월 해외 CS(Shopify) 총 환불 금액(USD/KRW)은 얼마인가요?\n> - 2026년 8월 국내 CS 처리 기록의 유형별(문의/반품/교환 등) 건수 분포는 어떻게 되나요?\n> - 2026년 7월 대비 8월 국내 CS 처리 기록 및 해외 환불 건수 증감률은 어떻게 되나요?\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\nWITH domestic AS (\n  SELECT\n    '국내 CS' AS cs_scope,\n    '처리 기록' AS metric_type,\n    COUNT(*) AS record_count,\n    COUNT(DISTINCT order_key) AS distinct_orders,\n    COUNTIF(order_key IS NULL) AS records_without_order_key\n  FROM `skin1004-319714.cs_dashboard.domestic_cs_records`\n  WHERE received_at BETWEEN '2026-08-01' AND '2026-08-31'\n),\noverseas AS (\n  SELECT\n    '해외 CS (Shopify)' AS cs_scope,\n    '환불 건수' AS metric_type,\n    COUNT(*) AS record_count,\n    COUNT(DISTINCT shopify_order_id) AS distinct_orders,\n    0 AS records_without_order_key\n  FROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\n  WHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'\n)\nSELECT * FROM domestic\nUNION ALL\nSELECT * FROM overseas\nLIMIT 10000\n```\n</details>"
+}

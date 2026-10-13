@@ -1,0 +1,13 @@
+{
+  "queried_at_kst": "2026-09-18T15:47:36.803961+09:00",
+  "requests": [
+    {
+      "url": "http://10.1.100.5/health",
+      "error_type": "ConnectTimeout"
+    },
+    {
+      "url": "http://10.1.100.5/health/ready",
+      "error_type": "ConnectTimeout"
+    }
+  ]
+}

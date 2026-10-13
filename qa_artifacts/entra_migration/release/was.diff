@@ -1,0 +1,2289 @@
+--- was/app/api/admin_api.py
++++ release/app/api/admin_api.py
+@@ -70,7 +70,7 @@
+         SELECT u.id, u.email, u.display_name, u.role, u.allowed_models,
+                a.display_name as ad_name, a.email as ad_email, a.department
+         FROM users u
+-        LEFT JOIN ad_users a ON u.ad_user_id = a.id
++        LEFT JOIN directory_users a ON u.ad_user_id = a.id
+         ORDER BY u.created_at
+     """)
+     result = []
+@@ -395,7 +395,7 @@
+                       COALESCE(SUM(v.visit_count), 0) AS visits
+                FROM user_visits v
+                JOIN users u ON u.id = v.user_id
+-               LEFT JOIN ad_users a ON a.id = u.ad_user_id
++               LEFT JOIN directory_users a ON a.id = u.ad_user_id
+                WHERE v.visit_date BETWEEN %s AND %s
+                GROUP BY u.id, a.display_name, u.display_name, a.email, u.email, a.department
+                ORDER BY {visitor_order}
+--- was/app/api/admin_group_api.py
++++ release/app/api/admin_group_api.py
+@@ -1,10 +1,8 @@
+-"""Admin endpoints: AD user & group management (MariaDB)."""
++"""Admin endpoints: Cella employee directory and group management."""
+ 
+ import asyncio
+ import secrets
+ import string
+-import subprocess
+-import sys
+ from typing import Optional
+ 
+ import bcrypt as _bcrypt
+@@ -19,7 +17,7 @@
+ logger = structlog.get_logger(__name__)
+ 
+ group_router = APIRouter(prefix="/api/admin/groups", tags=["admin-groups"])
+-ad_router = APIRouter(prefix="/api/admin/ad", tags=["admin-ad"])
++ad_router = APIRouter(prefix="/api/admin/directory", tags=["admin-directory"])
+ 
+ 
+ def _require_admin(user: User = Depends(get_current_user)) -> User:
+@@ -129,6 +127,7 @@
+         # Empty string → NULL (clear filter)
+         bf_val = req.brand_filter.strip() if req.brand_filter.strip() else None
+         await _execute("UPDATE access_groups SET brand_filter = %s WHERE id = %s", (bf_val, group_id))
++        invalidate_user_cache()
+ 
+     logger.info("group_updated", group_id=group_id, by=admin.email)
+     return {"ok": True}
+@@ -143,6 +142,7 @@
+ 
+     await _execute("DELETE FROM user_groups WHERE group_id = %s", (group_id,))
+     await _execute("DELETE FROM access_groups WHERE id = %s", (group_id,))
++    invalidate_user_cache()
+     logger.info("group_deleted", name=group["name"], by=admin.email)
+     return {"ok": True}
+ 
+@@ -154,7 +154,7 @@
+     """List members of a group."""
+     members = await _fetch_all("""
+         SELECT a.id, a.username, a.display_name, a.email, a.department
+-        FROM ad_users a
++        FROM directory_users a
+         JOIN user_groups ug ON a.id = ug.ad_user_id
+         WHERE ug.group_id = %s
+         ORDER BY a.display_name
+@@ -177,12 +177,12 @@
+     if req.department:
+         if req.include_sub:
+             dept_users = await _fetch_all(
+-                "SELECT id FROM ad_users WHERE is_active = 1 AND department LIKE %s",
++                "SELECT id FROM directory_users WHERE is_active = 1 AND department LIKE %s",
+                 (f"{req.department}%",),
+             )
+         else:
+             dept_users = await _fetch_all(
+-                "SELECT id FROM ad_users WHERE is_active = 1 AND department = %s",
++                "SELECT id FROM directory_users WHERE is_active = 1 AND department = %s",
+                 (req.department,),
+             )
+         user_ids.extend(u["id"] for u in dept_users)
+@@ -210,6 +210,7 @@
+             params,
+         )
+         added = len(new_ids)
++        invalidate_user_cache()
+ 
+     logger.info("users_assigned", group=group["name"], added=added, skipped=skipped,
+                 dept=req.department, by=admin.email)
+@@ -228,6 +229,7 @@
+             f"DELETE FROM user_groups WHERE group_id = %s AND ad_user_id IN ({placeholders})",
+             (group_id, *req.ad_user_ids),
+         )
++        invalidate_user_cache()
+ 
+     logger.info("users_removed", group_id=group_id, removed=removed, by=admin.email)
+     return {"ok": True, "removed": removed}
+@@ -275,8 +277,9 @@
+     sql = f"""
+         SELECT a.id, a.username, a.display_name, a.email, a.department,
+                a.can_view_fi, a.can_view_visitor_analytics, u.id AS user_id,
++               (a.entra_oid IS NOT NULL) AS entra_linked, a.identity_source, a.last_signin_at,
+                GROUP_CONCAT(g.name SEPARATOR ', ') as group_names
+-        FROM ad_users a
++        FROM directory_users a
+         LEFT JOIN users u ON u.ad_user_id = a.id
+         LEFT JOIN user_groups ug ON a.id = ug.ad_user_id
+         LEFT JOIN access_groups g ON ug.group_id = g.id
+@@ -285,6 +288,8 @@
+         ORDER BY a.department, a.display_name
+     """
+     users = await _fetch_all(sql, tuple(params))
++    for row in users:
++        row["entra_linked"] = bool(row.get("entra_linked"))
+     return users
+ 
+ 
+@@ -296,14 +301,14 @@
+ ):
+     """Grant or revoke FI_LLM_Flat access for one AD user."""
+     target = await _fetch_one(
+-        "SELECT id, username, display_name FROM ad_users WHERE id = %s",
++        "SELECT id, username, display_name FROM directory_users WHERE id = %s",
+         (ad_user_id,),
+     )
+     if not target:
+         raise HTTPException(status_code=404, detail="AD user not found")
+ 
+     await _execute(
+-        "UPDATE ad_users SET can_view_fi = %s WHERE id = %s",
++        "UPDATE directory_users SET can_view_fi = %s WHERE id = %s",
+         (1 if req.can_view_fi else 0, ad_user_id),
+     )
+     logger.info("admin_update_fi", target=target["username"], by=admin.email)
+@@ -323,7 +328,7 @@
+     """Grant or revoke the visitor analytics tab for one AD user."""
+     target = await _fetch_one(
+         "SELECT a.id, a.username, a.display_name, u.id AS user_id "
+-        "FROM ad_users a LEFT JOIN users u ON u.ad_user_id = a.id "
++        "FROM directory_users a LEFT JOIN users u ON u.ad_user_id = a.id "
+         "WHERE a.id = %s",
+         (ad_user_id,),
+     )
+@@ -331,7 +336,7 @@
+         raise HTTPException(status_code=404, detail="AD user not found")
+ 
+     await _execute(
+-        "UPDATE ad_users SET can_view_visitor_analytics = %s WHERE id = %s",
++        "UPDATE directory_users SET can_view_visitor_analytics = %s WHERE id = %s",
+         (1 if req.can_view_visitor_analytics else 0, ad_user_id),
+     )
+     if target.get("user_id"):
+@@ -368,7 +373,7 @@
+ ):
+     """관리자가 로컬 로그인 비밀번호를 초기화한다 — 잊어버린 사람의 유일한 복귀 경로.
+ 
+-    비밀번호는 `users` 테이블에 있다 (`can_view_fi` 는 `ad_users` — 혼동 금지).
++    비밀번호는 `users` 테이블에 있다 (`can_view_fi` 는 `directory_users` — 혼동 금지).
+     평문은 이 응답에 딱 한 번 실리고, DB·로그 어디에도 남지 않는다.
+     `must_change_password` 를 세워 두면, 로그인은 되지만 본인이 새 비밀번호를
+     정할 때까지(`/api/auth/change-password`) 그 외 어떤 요청도 `get_current_user`
+@@ -385,7 +390,7 @@
+ 
+     target = await _fetch_one(
+         "SELECT u.id AS user_id, u.display_name, a.username "
+-        "FROM users u JOIN ad_users a ON u.ad_user_id = a.id "
++        "FROM users u JOIN directory_users a ON u.ad_user_id = a.id "
+         "WHERE a.id = %s",
+         (ad_user_id,),
+     )
+@@ -451,7 +456,7 @@
+     """List all departments with user counts."""
+     depts = await _fetch_all("""
+         SELECT department, COUNT(*) as cnt
+-        FROM ad_users
++        FROM directory_users
+         WHERE is_active = 1
+         GROUP BY department
+         ORDER BY department
+@@ -461,34 +466,9 @@
+ 
+ @ad_router.post("/sync")
+ async def sync_ad_users(admin: User = Depends(_require_admin)):
+-    """Trigger AD user sync (runs the CRM repo's sync-ad-users.py, which carries the
+-    DEPARTMENT_OVERRIDES fix for members whose AD OU path is truncated)."""
+-    script = r"C:\Users\DB_PC\Desktop\python_bcj\CRM\skin1004-crm\scripts\sync-ad-users.py"
+-    try:
+-        proc = await asyncio.to_thread(
+-            subprocess.run,
+-            [sys.executable, "-X", "utf8", script],
+-            capture_output=True, text=True, timeout=60,
+-        )
+-        logger.info("ad_sync_triggered", by=admin.email, returncode=proc.returncode)
+-        return {
+-            "ok": proc.returncode == 0,
+-            "output": proc.stdout[-500:] if proc.stdout else "",
+-            "error": proc.stderr[-300:] if proc.stderr else "",
+-        }
+-    except subprocess.TimeoutExpired:
+-        raise HTTPException(status_code=504, detail="AD sync timed out")
+-    except Exception as e:
+-        logger.error(
+-            "ad_sync_failed",
+-            error_type=type(e).__name__,
+-            error=str(e)[:200],
+-        )
+-        # ⛔ 실행 경로·프로세스 오류 원문은 관리자 화면에도 노출하지 않는다.
+-        raise HTTPException(
+-            status_code=500,
+-            detail="AD 동기화 요청 처리에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+-        )
++    """Refresh employee profiles from Entra without changing Cella grants."""
++    from app.core.user_directory import sync_directory
++    return await asyncio.to_thread(sync_directory)
+ 
+ 
+ @ad_router.get("/stats")
+@@ -496,10 +476,10 @@
+     """Quick stats for admin dashboard (single query)."""
+     row = await _fetch_one("""
+         SELECT
+-            (SELECT COUNT(*) FROM ad_users WHERE is_active = 1) as total_ad_users,
++            (SELECT COUNT(*) FROM directory_users WHERE is_active = 1) as total_ad_users,
+             (SELECT COUNT(DISTINCT ad_user_id) FROM user_groups) as assigned_users,
+             (SELECT COUNT(*) FROM access_groups) as total_groups,
+-            (SELECT COUNT(*) FROM ad_users WHERE is_active = 1 AND can_view_fi = 1) as fi_allowed_users
++            (SELECT COUNT(*) FROM directory_users WHERE is_active = 1 AND can_view_fi = 1) as fi_allowed_users
+     """)
+     return {
+         "total_ad_users": row["total_ad_users"],
+--- was/app/api/auth_api.py
++++ release/app/api/auth_api.py
+@@ -65,7 +65,7 @@
+ # hire whose AD account was created *today* is invisible to signup/signin until then,
+ # which turns into a same-day "I can't find my name / it says user not found" incident
+ # every time someone onboards mid-day. Self-heal: when a lookup against the local
+-# ad_users cache/table comes up empty, kick off one live AD fetch + upsert in the
++# directory_users cache/table comes up empty, kick off one live AD fetch + upsert in the
+ # background before answering the failing request.
+ #
+ # ⛔ This must NEVER be awaited on the request path. A live full resync (fetch_ad_users
+@@ -169,8 +169,8 @@
+ def _decode_escaped_name(raw: str) -> str:
+     r"""가입할 때 `이주원` 같은 이스케이프를 되돌린다.
+ 
+-    ⛔ 가입은 `ad_users.display_name` 을 **복사**한다. 그 순간 깨져 있으면 사본이
+-       `users` 에 굳고, `ad_users` 가 나중에 고쳐져도 사본은 그대로다 — 로그인
++    ⛔ 가입은 `directory_users.display_name` 을 **복사**한다. 그 순간 깨져 있으면 사본이
++       `users` 에 굳고, `directory_users` 가 나중에 고쳐져도 사본은 그대로다 — 로그인
+        자동완성은 `COALESCE(u.display_name, ad.display_name)` 이라 깨진 사본이
+        이긴다. 그러면 사람은 자기 이름을 못 찾고, 그 행을 클릭하지 못하면
+        프론트에서 막혀 **서버에는 기록조차 남지 않는다** (2026-09-01 실제 사고).
+@@ -223,7 +223,7 @@
+ 
+ 
+ def _user_response(user_row: dict) -> dict:
+-    """Build UserResponse dict from a joined users+ad_users row."""
++    """Build UserResponse dict from a joined users+directory_users row."""
+     return {
+         "id": user_row["id"],
+         "email": user_row.get("ad_email") or user_row.get("email") or "",
+@@ -327,7 +327,7 @@
+     users = await _db_fetch_all("""
+         SELECT ad.id, ad.display_name, ad.email,
+                CASE WHEN u.id IS NOT NULL THEN 1 ELSE 0 END as registered
+-        FROM ad_users ad
++        FROM directory_users ad
+         LEFT JOIN users u ON ad.id = u.ad_user_id
+         WHERE ad.is_active = 1 AND ad.department = %s
+         ORDER BY ad.display_name
+@@ -348,7 +348,7 @@
+                ad.username,
+                COALESCE(ad.email, u.email) AS email,
+                ad.department
+-        FROM ad_users ad
++        FROM directory_users ad
+         LEFT JOIN users u ON ad.id = u.ad_user_id COLLATE utf8mb4_unicode_ci
+         WHERE ad.is_active = 1 AND ad.department IS NOT NULL AND ad.department != ''
+         ORDER BY COALESCE(u.display_name, ad.display_name), ad.department
+@@ -378,7 +378,7 @@
+ ):
+     """Find AD users by name (searches display_name, ad_name, username).
+ 
+-    Self-heals on a miss: a brand-new hire may not be in ad_users yet if they're
++    Self-heals on a miss: a brand-new hire may not be in directory_users yet if they're
+     signing up before tonight's scheduled sync — kick off one live AD resync in the
+     background so onboarding never blocks on the cron schedule. This call itself does
+     not wait for it (see `_trigger_ad_fallback_resync`); if it lands, the *next*
+@@ -395,7 +395,7 @@
+ # ── Auth endpoints ──
+ 
+ async def _lookup_ad_user(department: str, name: str, ad_user_id: int | None) -> dict | None:
+-    """Look up an ad_users row by id (preferred) or department+display_name.
++    """Look up an directory_users row by id (preferred) or department+display_name.
+ 
+     Self-heals on a miss: kicks off a background AD resync so a same-day hire's
+     *next* attempt isn't blocked by the nightly-only sync schedule — but does not
+@@ -404,12 +404,12 @@
+     """
+     if ad_user_id:
+         ad_user = await _db_fetch_one(
+-            "SELECT id, display_name, email, department FROM ad_users WHERE is_active = 1 AND id = %s",
++            "SELECT id, display_name, email, department FROM directory_users WHERE is_active = 1 AND id = %s",
+             (ad_user_id,),
+         )
+     else:
+         ad_user = await _db_fetch_one(
+-            "SELECT id, display_name, email, department FROM ad_users "
++            "SELECT id, display_name, email, department FROM directory_users "
+             "WHERE is_active = 1 AND department = %s AND display_name = %s",
+             (department, name),
+         )
+@@ -432,7 +432,7 @@
+     itself is gone/inactive, and there's no "other department" to point at.
+     """
+     if not ad_user_id and await _db_fetch_one(
+-        "SELECT 1 FROM ad_users WHERE is_active = 1 AND display_name = %s AND department != %s LIMIT 1",
++        "SELECT 1 FROM directory_users WHERE is_active = 1 AND display_name = %s AND department != %s LIMIT 1",
+         (name, department),
+     ):
+         return _WRONG_TEAM_HINT
+@@ -567,7 +567,7 @@
+     if not can_view_fi and user.ad_user_id:
+         try:
+             fi_row = await _db_fetch_one(
+-                "SELECT can_view_fi FROM ad_users WHERE id = %s",
++                "SELECT can_view_fi FROM directory_users WHERE id = %s",
+                 (user.ad_user_id,),
+             )
+             can_view_fi = bool(fi_row and fi_row.get("can_view_fi"))
+@@ -606,6 +606,7 @@
+             user.role, user.can_view_visitor_analytics,
+         ),
+         "must_change_password": user.must_change_password,
++        "requires_group_assignment": user.requires_group_assignment,
+         "allowed_models": _resolve_models(user.role, user.allowed_models),
+         "brand_filters": brand_filters,
+         "my_brand_filter": my_brand_filters[0]["brands"] if my_brand_filters else None,
+--- was/app/api/auth_middleware.py
++++ release/app/api/auth_middleware.py
+@@ -15,7 +15,7 @@
+ 
+ # Same TTL convention as the AD user cache — bounds how stale a role/
+ # permission change can be for an already-cached user without needing
+-# explicit cache invalidation on every users/ad_users write path.
++# explicit cache invalidation on every users/directory_users write path.
+ _USER_CACHE_TTL = 60.0
+ _user_cache: dict[int, tuple[User, float]] = {}
+ 
+@@ -28,6 +28,15 @@
+     "/api/auth/change-password",
+     "/api/auth/logout",
+ }
++
++GROUP_ASSIGNMENT_MESSAGE = "회사 계정이 연결되었습니다. 관리자가 데이터 조회 그룹을 배정하면 질문과 보고서를 이용할 수 있습니다."
++
++
++def _requires_data_group(path: str) -> bool:
++    return path == "/v1/chat/completions" or any(
++        path == prefix or path.startswith(prefix + "/")
++        for prefix in ("/api/reports", "/api/sql-results", "/api/saved-questions")
++    )
+ 
+ 
+ def _extract_user_id(request: Request) -> int:
+@@ -70,15 +79,21 @@
+         row = await asyncio.to_thread(
+             fetch_one,
+             "SELECT u.id, u.email, u.display_name, u.role, u.allowed_models, u.ad_user_id, "
+-            "u.must_change_password, "
++            "u.must_change_password, u.is_active AS account_active, a.is_active AS directory_active, "
++            "(u.requires_group_assignment AND NOT EXISTS "
++            "(SELECT 1 FROM user_groups ug JOIN access_groups g ON g.id=ug.group_id "
++            "WHERE ug.ad_user_id=u.ad_user_id AND g.brand_filter IS NOT NULL "
++            "AND g.brand_filter<>'')) AS requires_group_assignment, "
+             "a.display_name as ad_name, a.email as ad_email, a.department, "
+             "COALESCE(a.can_view_visitor_analytics, 0) AS can_view_visitor_analytics "
+-            "FROM users u LEFT JOIN ad_users a ON u.ad_user_id = a.id "
++            "FROM users u LEFT JOIN directory_users a ON u.ad_user_id = a.id "
+             "WHERE u.id = %s",
+             (user_id,),
+         )
+         if not row:
+             raise HTTPException(status_code=401, detail="User not found")
++        if row.get("account_active") == 0 or row.get("directory_active") == 0:
++            raise HTTPException(status_code=403, detail="이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
+ 
+         user = User(
+             id=row["id"],
+@@ -90,6 +105,7 @@
+             ad_user_id=row.get("ad_user_id"),
+             can_view_visitor_analytics=bool(row.get("can_view_visitor_analytics")),
+             must_change_password=bool(row.get("must_change_password")),
++            requires_group_assignment=bool(row.get("requires_group_assignment")),
+         )
+         _user_cache[user_id] = (user, time.monotonic())
+ 
+@@ -103,15 +119,21 @@
+             detail="비밀번호가 초기화되었습니다. 계속하려면 먼저 비밀번호를 변경해 주세요.",
+         )
+ 
++    if user.role != "admin" and user.requires_group_assignment and _requires_data_group(request.url.path):
++        raise HTTPException(status_code=403, detail=GROUP_ASSIGNMENT_MESSAGE)
++
+     return user
+ 
+ 
+-def invalidate_user_cache(user_id: int) -> None:
++def invalidate_user_cache(user_id: int | None = None) -> None:
+     """Drop a cached User so the next request re-reads it from MariaDB instead of
+     serving up to `_USER_CACHE_TTL` stale seconds of role/permission/
+     must_change_password state. Call after any write that changes what's cached —
+     e.g. clearing must_change_password on a successful password change."""
+-    _user_cache.pop(user_id, None)
++    if user_id is None:
++        _user_cache.clear()
++    else:
++        _user_cache.pop(user_id, None)
+ 
+ 
+ async def get_optional_user(request: Request) -> Optional[User]:
+--- was/app/api/entra_routes.py
++++ release/app/api/entra_routes.py
+@@ -123,31 +123,13 @@
+         return _notice("회사 계정 확인에 실패했습니다",
+                        "잠시 후 다시 시도하거나, 관리자에게 문의해 주세요.", status=500)
+ 
+-    oid = str(claims["oid"])
+-    user = await asyncio.to_thread(entra_auth.find_user_by_oid, oid)
+-    if not user:
+-        # 첫 로그인 — 기존 계정에 한 번 맞춰 잇는다.
+-        user = await asyncio.to_thread(entra_auth.match_existing_account, claims)
+-        if user:
+-            await asyncio.to_thread(entra_auth.link_oid, int(user["id"]), oid)
+-            logger.warning("entra_account_linked", user_id=int(user["id"]))
+-
+-    if not user:
+-        # ⛔ 여기서 계정을 새로 만들지 않는다. 셀라 계정은 AD 기반으로 발급되며,
+-        #    아무나 들어오면 권한(FI 열람 등)의 근거가 사라진다.
+-        logger.warning("entra_no_matching_account")
+-        # ⛔ 여기 **없어진 로그인 방식으로 다시 시도하라**는 안내가 있었다.
+-        #    ID/PW 를 끈 뒤로는 할 수 없는 일을 시키는 문장이다 (2026-09-08).
+-        #    안내는 실제로 할 수 있는 것만 적는다.
+-        # ⚠️ 옛 문구를 여기 그대로 인용하지 마라 — 회귀가 소스를 문자열로
+-        #    읽어서 주석에 걸린다 (저장소의 알려진 함정, 실제로 한 번 걸렸다).
+-        # ⚠️ 이 사람은 회사 계정은 멀쩡한데 셀라 계정에 못 이어진 것이다 —
+-        #    본인이 할 수 있는 일이 없으므로 관리자에게 보낸다.
+-        return _notice(
+-            "셀라 계정을 찾지 못했습니다",
+-            "회사 계정은 확인됐지만 연결된 셀라 계정이 없습니다. "
+-            "관리자에게 문의해 주세요.",
+-            status=404)
++    from app.core.user_directory import DirectoryError, provision_from_claims
++    from app.api.auth_middleware import invalidate_user_cache
++    try:
++        user = await asyncio.to_thread(provision_from_claims, claims)
++    except DirectoryError as exc:
++        return _notice("회사 계정 연결을 확인해 주세요", str(exc), status=exc.status)
++    invalidate_user_cache(int(user["id"]))
+ 
+     brand_filter = await asyncio.to_thread(_lookup_brand_filter, int(user["id"]))
+     token = _create_token(int(user["id"]), claims.get("preferred_username", "") or "",
+--- was/app/api/routes.py
++++ release/app/api/routes.py
+@@ -108,7 +108,7 @@
+     return {"status": "ok"}
+ 
+ 
+-@router.post("/v1/chat/completions")
++@router.post("/v1/chat/completions", dependencies=[Depends(get_current_user)])
+ async def chat_completions(http_request: Request, request: ChatCompletionRequest):
+     """OpenAI-compatible chat completions endpoint.
+ 
+@@ -132,21 +132,25 @@
+         try:
+             row = await asyncio.to_thread(
+                 fetch_one,
+-                "SELECT u.role, a.can_view_fi, g.brand_filter FROM users u "
+-                "LEFT JOIN ad_users a ON u.ad_user_id = a.id "
+-                "LEFT JOIN user_groups ug ON u.ad_user_id = ug.ad_user_id "
+-                "LEFT JOIN access_groups g ON ug.group_id = g.id AND g.brand_filter IS NOT NULL "
+-                "WHERE u.id = %s LIMIT 1",
++                "SELECT u.role, a.can_view_fi, "
++                "(SELECT GROUP_CONCAT(DISTINCT g.brand_filter) FROM user_groups ug "
++                "JOIN access_groups g ON g.id=ug.group_id WHERE ug.ad_user_id=u.ad_user_id "
++                "AND g.brand_filter IS NOT NULL AND g.brand_filter<>'') AS brand_filter FROM users u "
++                "LEFT JOIN directory_users a ON u.ad_user_id = a.id "
++                "WHERE u.id = %s AND u.is_active=1 "
++                "AND (u.ad_user_id IS NULL OR a.is_active=1) LIMIT 1",
+                 (user_id,),
+             )
+-            if row:
+-                is_admin = row["role"] == "admin"
+-                brand_filter = None if is_admin else (row.get("brand_filter") or None)
+-                can_view_fi = is_admin or bool(row.get("can_view_fi"))
++            if not row:
++                raise RuntimeError("Active user permissions were not found")
++            is_admin = row["role"] == "admin"
++            brand_filter = None if is_admin else (row.get("brand_filter") or None)
++            can_view_fi = is_admin or bool(row.get("can_view_fi"))
+             if brand_filter:
+                 logger.info("brand_filter_from_db", user_id=user_id, brand_filter=brand_filter)
+         except Exception as e:
+             logger.warning("chat_access_lookup_failed", user_id=user_id, error=str(e))
++            raise HTTPException(status_code=503, detail="조회 권한을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.") from None
+ 
+     logger.info(
+         "chat_completion_request",
+--- was/app/config.py
++++ release/app/config.py
+@@ -109,6 +109,7 @@
+     entra_client_id: str = ""
+     entra_client_secret: str = ""
+     entra_redirect_uri: str = ""
++    entra_employee_domains: str = ""
+ 
+     # Open WebUI integration (read OAuth tokens from its DB)
+     openwebui_db_path: str = ""
+--- was/app/core/briefing.py
++++ release/app/core/briefing.py
+@@ -136,7 +136,7 @@
+ def resolve_scope(department: str, team_map: Dict[str, str]) -> Dict[str, str]:
+     """이 사람에게 보여줄 축을 정한다.
+ 
+-    AD 부서 문자열에 공식 팀명이 들어 있으면 그 팀. ⚠️ 표기 공백이 다르다
++    사용자 부서 문자열에 공식 팀명이 들어 있으면 그 팀. ⚠️ 표기 공백이 다르다
+     ("서구권 마케팅팀" vs `서구권마케팅팀`) — 공백을 지우고 비교한다.
+     못 찾으면 전사로 두되, **왜 이 숫자를 보는지 문구에 밝힌다**.
+     """
+@@ -923,11 +923,11 @@
+     except Exception as e:
+         # 광고 집계 장애가 검증된 매출 브리핑까지 숨기면 안 된다.
+         logger.warning("briefing_marketing_failed", error=type(e).__name__)
+-    # ⚠️ 퇴사자에게 매일 매출 브리핑을 보내지 않는다 (AD 부서로 걸러진다)
++    # ⚠️ 퇴사자에게 매일 매출 브리핑을 보내지 않는다 (사용자 부서로 걸러진다)
+     users = fetch_all(
+         "SELECT u.id, u.display_name, COALESCE(a.email, u.email) AS email, "
+         "       COALESCE(a.department, '') AS department "
+-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE u.is_active = 1 AND COALESCE(u.briefing_opt_out, 0) = 0 "
+         "  AND COALESCE(a.department,'') NOT LIKE %s", ("%퇴사%",)) or []
+ 
+--- was/app/core/entra_auth.py
++++ release/app/core/entra_auth.py
+@@ -268,8 +268,9 @@
+         algorithms=["RS256"],
+         audience=settings.entra_client_id,
+         issuer=doc["issuer"].replace("{tenantid}", settings.entra_tenant_id),
+-    )
+-    if claims.get("tid") and claims["tid"] != settings.entra_tenant_id:
++        options={"require": ["exp", "iss", "aud", "tid", "oid", "nonce"]},
++    )
++    if str(claims.get("tid") or "").lower() != settings.entra_tenant_id.lower():
+         raise EntraUnavailable("회사 계정이 아닙니다",
+                                "회사 EntraID 계정으로 로그인해 주세요.")
+     if _sha256(str(claims.get("nonce", ""))) != nonce_hash:
+@@ -308,7 +309,7 @@
+ 
+     ⛔ 이메일 문자열 비교만으로는 안 된다 (활성 AD 436명 중 238명이 `mail` 공백,
+        도메인도 `@cravercorp.com` / `@skin1004korea.com` 로 섞여 있다). 그래서
+-       UPN·이메일의 **로컬파트**로 `ad_users` 를 찾는다 — 실측상 로컬파트는
++       UPN·이메일의 **로컬파트**로 `directory_users` 를 찾는다 — 실측상 로컬파트는
+        조직 전체에서 유일하다(436명 = 436개, 충돌 0건).
+     ⛔ 후보가 둘 이상이면 아무것도 고르지 않는다.
+     """
+@@ -318,7 +319,7 @@
+     for local in locals_:
+         rows = fetch_one(
+             "SELECT u.id, u.display_name, u.role, u.ad_user_id, COUNT(*) OVER () AS n "
+-            "FROM users u JOIN ad_users a ON u.ad_user_id = a.id "
++            "FROM users u JOIN directory_users a ON u.ad_user_id = a.id "
+             "WHERE a.is_active = 1 AND LOWER(SUBSTRING_INDEX(a.email, '@', 1)) = %s",
+             (local,),
+         )
+--- was/app/core/feedback_inbox.py
++++ release/app/core/feedback_inbox.py
+@@ -469,7 +469,7 @@
+                 row = fetch_one(
+                     "SELECT COALESCE(a.email, u.email) AS email, f.comment "
+                     "FROM message_feedback f JOIN users u ON u.id = f.user_id "
+-                    "LEFT JOIN ad_users a ON a.id = u.ad_user_id WHERE f.id = %s",
++                    "LEFT JOIN directory_users a ON a.id = u.ad_user_id WHERE f.id = %s",
+                     (int(feedback_id),))
+                 if row and row.get("email"):
+                     label = {STATUS_DONE: "해결됨", STATUS_WONTFIX: "고치지 않음"}[status]
+--- was/app/core/password_reset.py
++++ release/app/core/password_reset.py
+@@ -84,7 +84,7 @@
+         "       a.display_name, a.department, "
+         "       (u.id IS NOT NULL) AS registered "
+         "FROM password_reset_requests r "
+-        "JOIN ad_users a ON a.id = r.ad_user_id "
++        "JOIN directory_users a ON a.id = r.ad_user_id "
+         "LEFT JOIN users u ON u.ad_user_id = a.id "
+         "WHERE r.status = 'open' ORDER BY r.created_at LIMIT %s", (int(limit),)) or []
+ 
+--- was/app/core/password_reset_google.py
++++ release/app/core/password_reset_google.py
+@@ -326,7 +326,7 @@
+ 
+ 
+ def company_domains() -> set[str]:
+-    """회사 메일 도메인을 **AD 에 실제로 있는 값**으로 판정한다.
++    """회사 메일 도메인을 **사용자 디렉터리에 실제로 있는 값**으로 판정한다.
+ 
+     ⛔ 손으로 적으면 반드시 낡고, 낡으면 에러가 아니라 조용한 매칭 실패다
+        (`{{VALUES:Continent1}}` 를 손으로 적었다가 겪은 것과 같은 부류).
+@@ -335,14 +335,14 @@
+     """
+     rows = fetch_all(
+         "SELECT DISTINCT LOWER(SUBSTRING_INDEX(email, '@', -1)) AS d "
+-        "FROM ad_users WHERE email LIKE %s",
++        "FROM directory_users WHERE email LIKE %s",
+         ("%@%",),
+     )
+     return {r["d"] for r in rows if r["d"] and r["d"] not in _PUBLIC_MAIL_DOMAINS}
+ 
+ 
+ def _find_by_company_local_part(email: str) -> Optional[dict]:
+-    """회사 도메인이 **둘 이상**이라, 구글이 돌려준 대표 주소와 AD 주소가 다를 수 있다.
++    """회사 도메인이 **둘 이상**이라, 구글 대표 주소와 사용자 디렉터리 주소가 다를 수 있다.
+ 
+     실측(2026-09-01): AD 의 `mail` 이 빈 238명은 `userPrincipalName` 이
+     `@cravercorp.com` 인데, 그중 다수가 구글에는 `@skin1004korea.com` 으로
+@@ -364,7 +364,7 @@
+ 
+     rows = fetch_all(
+         "SELECT u.id, u.display_name, u.ad_user_id FROM users u "
+-        "JOIN ad_users a ON u.ad_user_id = a.id "
++        "JOIN directory_users a ON u.ad_user_id = a.id "
+         "WHERE a.is_active = 1 AND LOWER(SUBSTRING_INDEX(a.email, '@', 1)) = %s",
+         (local,),
+     )
+--- was/app/core/personal_briefing.py
++++ release/app/core/personal_briefing.py
+@@ -738,7 +738,7 @@
+         fetch_all,
+         "SELECT u.id,COALESCE(a.email,u.email) email,COALESCE(a.display_name,u.display_name) name,"
+         "COALESCE(a.department,'') department,u.role,u.allowed_models,u.ad_user_id "
+-        "FROM users u LEFT JOIN ad_users a ON a.id=u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id=u.ad_user_id "
+         # ⛔ `last_login` 으로 거르지 마라 — `/signin` 에서만 찍혀서 가입 직후
+         #    자동 로그인된 사람은 영영 NULL 이다 (활성 63명 중 28명, 2026-08-26 실측).
+         #    NULL 은 "안 쓴다" 가 아니라 "모른다" 다. 진짜 게이트는 아래 `has_credentials`
+--- was/app/core/query_profile.py
++++ release/app/core/query_profile.py
+@@ -247,7 +247,7 @@
+ 
+             department_rows = fetch_all(
+                 "SELECT COALESCE(a.department, '') AS department FROM users u "
+-                "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++                "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+                 "WHERE COALESCE(a.email, u.email) = %s LIMIT 1",
+                 (user_email,),
+             ) or []
+--- was/app/core/saved_questions.py
++++ release/app/core/saved_questions.py
+@@ -240,8 +240,15 @@
+             try:
+                 access = await asyncio.to_thread(
+                     fetch_one,
+-                    "SELECT a.email, a.can_view_fi FROM users u "
+-                    "JOIN ad_users a ON a.id = u.ad_user_id "
++                    "SELECT a.email, a.can_view_fi, u.role, "
++                    "(u.requires_group_assignment AND NOT EXISTS "
++                    "(SELECT 1 FROM user_groups ug JOIN access_groups g ON g.id=ug.group_id "
++                    "WHERE ug.ad_user_id=u.ad_user_id AND g.brand_filter IS NOT NULL "
++                    "AND g.brand_filter<>'')) AS requires_group_assignment, "
++                    "(SELECT GROUP_CONCAT(DISTINCT g.brand_filter) FROM user_groups ug "
++                    "JOIN access_groups g ON g.id=ug.group_id WHERE ug.ad_user_id=u.ad_user_id "
++                    "AND g.brand_filter IS NOT NULL AND g.brand_filter<>'') AS brand_filter FROM users u "
++                    "JOIN directory_users a ON a.id = u.ad_user_id "
+                     "WHERE u.id = %s AND u.is_active = 1 AND a.is_active = 1 LIMIT 1",
+                     (user_id,),
+                 )
+@@ -249,12 +256,17 @@
+                     # ⛔ 권한 조회 실패를 False로 대체하면 DB가 아닌 기본값이 보안 결정을 하게 된다.
+                     raise RuntimeError("사용자 FI 권한을 DB에서 확인할 수 없습니다")
+                 permission = bool(access["can_view_fi"])
++                is_admin = access.get("role") == "admin"
++                if access.get("requires_group_assignment") and not is_admin:
++                    raise RuntimeError("관리자의 데이터 조회 그룹 배정이 필요합니다")
+                 result = await orchestrator.route_and_execute(
+                     str(row["question"]),
+                     [],
+                     model,
+                     user_email=str(access.get("email") or ""),
+-                    can_view_fi=permission,
++                    can_view_fi=is_admin or permission,
++                    brand_filter=None if is_admin else (access.get("brand_filter") or None),
++                    user_id=user_id,
+                 )
+                 answer_value = result.get("answer", "") if isinstance(result, dict) else result
+                 answer = "" if answer_value is None else str(answer_value).strip()
+--- was/app/core/self_check.py
++++ release/app/core/self_check.py
+@@ -166,7 +166,7 @@
+     "quality_snapshot_daily": (26, "품질 스냅샷 (00:05)"),
+     "self_check_daily": (26, "자가 점검 (07:30)"),
+     "weekly_growth_report": (24 * 8, "주간 성장 리포트 (월 00:10)"),
+-    "ad_sync": (26, "AD 동기화 (APP 서버 22:00)"),
++    "entra_directory_sync": (26, "Entra 사용자 동기화 (APP 서버 22:00)"),
+     "knowledge_map_build": (26, "지식맵 빌드 (WAS 03:00)"),
+     "ingredient_sync_daily": (26, "제품 전성분 적재 (04:00)"),
+     "op_inventory_sync_daily": (26, "OP 재고 시트 적재 (11:20·16:20)"),
+@@ -215,10 +215,12 @@
+ 
+ 
+ def _check_ad_sync_fresh() -> CheckResult:
+-    row = fetch_one("SELECT MAX(synced_at) AS m FROM ad_users")
+-    last = row and row.get("m")
++    row = fetch_one("SELECT succeeded_at,error_message FROM directory_sync_state WHERE id=1")
++    if row and row.get("error_message"):
++        return CheckResult(False, row["error_message"])
++    last = row and row.get("succeeded_at")
+     if not last:
+-        return CheckResult(False, "synced_at 기록이 없다")
++        return CheckResult(False, "Entra 전체 사용자 동기화 대기 — Graph 읽기 권한과 네트워크를 확인해 주세요.")
+     age_h = (datetime.now() - last).total_seconds() / 3600
+     # 매일 22:00 실행 → 26시간이면 한 번 걸렀다는 뜻
+     return CheckResult(age_h <= 26, f"마지막 동기화 {last} ({age_h:.1f}시간 전)")
+@@ -378,8 +380,8 @@
+ def _check_orphan_user_groups_ad() -> CheckResult:
+     return _orphan(
+         "SELECT COUNT(*) c FROM user_groups ug "
+-        "LEFT JOIN ad_users a ON ug.ad_user_id = a.id WHERE a.id IS NULL",
+-        "user_groups→ad_users",
++        "LEFT JOIN directory_users a ON ug.ad_user_id = a.id WHERE a.id IS NULL",
++        "user_groups→directory_users",
+     )
+ 
+ 
+@@ -406,18 +408,18 @@
+ def _check_name_encoding() -> CheckResult:
+     r"""`\uXXXX` 로 이스케이프된 채 저장된 이름을 찾는다. **두 표를 다 본다.**
+ 
+-    ⛔ 예전엔 `ad_users` 만 봤다. 그런데 로그인 자동완성이 실제로 그리는 값은
++    ⛔ 예전엔 `directory_users` 만 봤다. 그런데 로그인 자동완성이 실제로 그리는 값은
+        `COALESCE(u.display_name, ad.display_name)` 이라 **`users` 쪽이 이긴다** —
+-       `ad_users` 가 멀쩡해도 `users` 가 깨져 있으면 사람은 자기 이름을 못 찾고,
++       `directory_users` 가 멀쩡해도 `users` 가 깨져 있으면 사람은 자기 이름을 못 찾고,
+        그 행을 클릭하지 못하면 `auth.js` 가 프론트에서 막아 **서버 기록이 아예 없다**.
+        2026-09-01 이주원 님(users.id=68)이 그랬고 2개월간 검사 밖이었다.
+ 
+     치유 범위가 표마다 다르다:
+-      - `ad_users` : **비활성만**. 활성은 다음 AD sync 가 덮어쓴다 (CLAUDE.md 규칙)
++      - `directory_users` : **비활성만**. 활성은 다음 AD sync 가 덮어쓴다 (CLAUDE.md 규칙)
+       - `users`    : **전부**. 덮어써 주는 것이 없어 여기서 안 고치면 영영 그대로다
+     """
+     ad_rows = fetch_all(
+-        "SELECT id, username, display_name, is_active FROM ad_users "
++        "SELECT id, username, display_name, is_active FROM directory_users "
+         f"WHERE {_ESCAPED_NAME_COND}"
+     )
+     user_rows = fetch_all(
+@@ -428,7 +430,7 @@
+     total = len(ad_rows) + len(user_rows)
+     detail = (
+         f"이스케이프된 이름 {total}건 "
+-        f"(users {len(user_rows)}건 · ad_users {len(ad_rows)}건 중 비활성 {len(inactive)}건)"
++        f"(users {len(user_rows)}건 · directory_users {len(ad_rows)}건 중 비활성 {len(inactive)}건)"
+     )
+     if user_rows:
+         # ⚠️ 어느 계정인지 적는다 — 로그인 화면에서만 드러나는 결함이라
+@@ -466,11 +468,11 @@
+ def _repair_name_encoding(payload: dict) -> str:
+     fixed = 0
+     for uid in payload.get("ids", []):
+-        row = fetch_one("SELECT display_name FROM ad_users WHERE id = %s", (uid,))
++        row = fetch_one("SELECT display_name FROM directory_users WHERE id = %s", (uid,))
+         decoded = _decode_escaped((row or {}).get("display_name") or "")
+         if decoded is None:
+             continue
+-        execute("UPDATE ad_users SET display_name = %s WHERE id = %s", (decoded, uid))
++        execute("UPDATE directory_users SET display_name = %s WHERE id = %s", (decoded, uid))
+         fixed += 1
+     # `users` 는 활성 여부와 무관하게 고친다 — 덮어써 주는 sync 가 없다.
+     healed = 0
+@@ -535,7 +537,7 @@
+ 
+ 
+ def _check_fi_grant_count() -> CheckResult:
+-    row = fetch_one("SELECT COUNT(*) c FROM ad_users WHERE can_view_fi = 1")
++    row = fetch_one("SELECT COUNT(*) c FROM directory_users WHERE can_view_fi = 1")
+     n = (row or {}).get("c", 0)
+     # 인원이 바뀌는 것 자체는 정상이다. 0명이면 설정이 날아간 것이고,
+     # 갑자기 대폭 늘면 사고다 — 둘 다 사람이 봐야 한다.
+@@ -1219,7 +1221,7 @@
+     rows = fetch_all(
+         "SELECT u.id, COALESCE(a.email, u.email) email, "
+         "COALESCE(a.display_name, u.display_name) name "
+-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE u.is_active = 1"
+     ) or []
+     mgr = GoogleAuthManager()
+@@ -1279,7 +1281,7 @@
+ 
+ CHECKS: list[Check] = [
+     Check("ad_sync_fresh", "batch", SEV_CRITICAL,
+-          "AD 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
++          "Entra 사용자 동기화가 26시간 내 성공했는가", _check_ad_sync_fresh),
+     Check("wiki_extract_fresh", "batch", SEV_WARNING,
+           "위키 추출이 3시간 내 동작했는가", _check_wiki_extract_fresh),
+     Check("quality_snapshot_fresh", "batch", SEV_WARNING,
+@@ -1293,7 +1295,7 @@
+     Check("notion_push", "batch", SEV_WARNING,
+           "브리핑 노션 대기열이 비워지고 있는가", _check_notion_push),
+     Check("orphan_user_groups_ad", "integrity", SEV_WARNING,
+-          "user_groups 가 실재하는 AD 사용자를 가리키는가", _check_orphan_user_groups_ad),
++          "user_groups 가 실재하는 셀라 사용자를 가리키는가", _check_orphan_user_groups_ad),
+     Check("orphan_user_groups_grp", "integrity", SEV_WARNING,
+           "user_groups 가 실재하는 그룹을 가리키는가", _check_orphan_user_groups_grp),
+     Check("users_email_present", "integrity", SEV_WARNING,
+--- was/app/core/user_directory.py
++++ release/app/core/user_directory.py
+@@ -0,0 +1,330 @@
++"""Cella-owned employees and permissions, authenticated by Entra ID."""
++from __future__ import annotations
++
++import secrets
++from urllib.parse import urlparse
++from uuid import UUID
++
++import bcrypt
++import requests
++import structlog
++
++from app.config import ALL_MODELS, get_settings
++from app.db.mariadb import execute, fetch_one, get_maria_conn
++
++logger = structlog.get_logger(__name__)
++_LOCK = "cella_directory_identity"
++_GRAPH = "https://graph.microsoft.com/v1.0/users"
++_SELECT = "id,displayName,mail,userPrincipalName,department,userType,accountEnabled"
++
++
++class DirectoryError(Exception):
++    def __init__(self, message: str, status: int = 403):
++        super().__init__(message)
++        self.status = status
++
++
++def _uuid(value: object) -> str:
++    try:
++        return str(UUID(str(value)))
++    except (ValueError, TypeError, AttributeError):
++        raise DirectoryError("회사 계정 식별자를 확인하지 못했습니다.") from None
++
++
++def require_active_identity(claims: dict) -> tuple[str, str]:
++    """Called only after cryptographic ID-token verification."""
++    tenant = _uuid(get_settings().entra_tenant_id)
++    if _uuid(claims.get("tid")) != tenant:
++        raise DirectoryError("회사 Entra ID 계정으로 로그인해 주세요.")
++    oid = _uuid(claims.get("oid"))
++    username = str(claims.get("preferred_username") or claims.get("upn") or "")
++    if str(claims.get("acct", "0")) != "0" or "#ext#" in username.lower():
++        raise DirectoryError("외부 게스트 계정은 셀라를 이용할 수 없습니다.")
++    idp = str(claims.get("idp") or "").lower().rstrip("/")
++    issuers = {f"https://sts.windows.net/{tenant}",
++               f"https://login.microsoftonline.com/{tenant}/v2.0"}
++    if idp and idp not in issuers:
++        raise DirectoryError("회사 소속 계정으로 로그인해 주세요.")
++    return tenant, oid
++
++
++def _email(value: object) -> str:
++    value = str(value or "").strip().lower()
++    if value.count("@") != 1 or len(value) > 255 or any(c.isspace() for c in value):
++        return ""
++    local, domain = value.split("@")
++    return value if local and "." in domain and "#ext#" not in local else ""
++
++
++def _profile(claims: dict) -> dict:
++    email = _email(claims.get("preferred_username")) or _email(claims.get("upn"))
++    email = email or _email(claims.get("email"))
++    return {"email": email, "display_name": str(claims.get("name") or "")[:200],
++            "department": str(claims.get("department") or "")[:200]}
++
++
++def _lock(cur) -> None:
++    cur.execute("SELECT GET_LOCK(%s, 15) AS acquired", (_LOCK,))
++    if not cur.fetchone().get("acquired"):
++        raise DirectoryError("사용자 정보를 처리 중입니다. 잠시 후 다시 시도해 주세요.", 503)
++
++
++def _unlock(cur) -> None:
++    cur.execute("SELECT RELEASE_LOCK(%s)", (_LOCK,))
++
++
++def _company_domains(cur) -> set[str]:
++    configured = getattr(get_settings(), "entra_employee_domains", "") or ""
++    if configured.strip():
++        return {v.strip().lower() for v in configured.split(",") if v.strip()}
++    # The imported staff roster is the bootstrap authority until Graph is enabled.
++    cur.execute("SELECT DISTINCT LOWER(SUBSTRING_INDEX(email, '@', -1)) AS domain "
++                "FROM directory_users WHERE email LIKE %s",
++                ("%@%",))
++    domains = {r["domain"] for r in cur.fetchall() if r.get("domain")}
++    return domains - {"gmail.com", "outlook.com", "hotmail.com", "live.com",
++                      "yahoo.com", "naver.com", "noemail.local"}
++
++
++def _find_person(cur, tenant: str, oid: str, email: str, *, graph_verified: bool = False) -> dict | None:
++    cur.execute("SELECT * FROM directory_users WHERE entra_tenant_id=%s AND entra_oid=%s "
++                "FOR UPDATE", (tenant, oid))
++    person = cur.fetchone()
++    if person:
++        return person
++    if not email or (not graph_verified and email.split("@")[1] not in _company_domains(cur)):
++        raise DirectoryError("회사 사용자 명단과 계정을 연결하지 못했습니다. 관리자에게 문의해 주세요.")
++    # One-time migration match. Bound identities are never reassigned by email.
++    cur.execute("SELECT * FROM directory_users "
++                "WHERE LOWER(SUBSTRING_INDEX(email, '@', 1))=%s FOR UPDATE",
++                (email.split("@")[0],))
++    matches = cur.fetchall()
++    if len(matches) > 1:
++        raise DirectoryError("동일한 계정 이름이 여러 명에게 연결돼 있습니다. 관리자에게 문의해 주세요.")
++    if not matches:
++        return None
++    person = matches[0]
++    if person.get("entra_oid") and (person["entra_oid"] != oid or
++                                    person.get("entra_tenant_id") != tenant):
++        raise DirectoryError("이미 다른 회사 계정과 연결된 사용자입니다. 관리자에게 문의해 주세요.")
++    return person
++
++
++def _insert_person(cur, tenant: str, oid: str, profile: dict) -> dict:
++    cur.execute("INSERT INTO directory_users "
++                "(username,display_name,email,department,is_active,can_view_fi,"
++                "can_view_visitor_analytics,entra_tenant_id,entra_oid,identity_source,synced_at) "
++                "VALUES (%s,%s,%s,%s,1,0,0,%s,%s,'entra',NOW())",
++                ("entra:" + oid, profile["display_name"], profile["email"],
++                 profile["department"], tenant, oid))
++    return {"id": cur.lastrowid, "is_active": 1, **profile}
++
++
++def _update_profile(cur, person: dict, tenant: str, oid: str, profile: dict,
++                    *, signed_in: bool = False, active: bool = True) -> None:
++    # Empty optional claims must not erase an imported department/name.
++    name = profile["display_name"] or person.get("display_name") or ""
++    email = profile["email"] or person.get("email") or ""
++    if signed_in and person.get("email"):
++        # A login UPN may use a different domain from the employee's mailbox.
++        # Keep the contact/OAuth address until a directory mail update supplies it.
++        email = person["email"]
++    department = profile["department"] or person.get("department") or ""
++    extra = ", last_signin_at=NOW()" if signed_in else ""
++    cur.execute("UPDATE directory_users SET display_name=%s,email=%s,department=%s,"
++                "entra_tenant_id=%s,entra_oid=%s,identity_source='entra',is_active=%s,"
++                "synced_at=NOW()" + extra + " WHERE id=%s",
++                (name, email, department, tenant, oid, int(active), person["id"]))
++
++
++def provision_from_claims(claims: dict) -> dict:
++    """Preserve the directory person; create a login account exactly once."""
++    tenant, oid = require_active_identity(claims)
++    profile = _profile(claims)
++    try:
++        conn = get_maria_conn()
++    except Exception as exc:
++        logger.warning("directory_connection_failed", error_type=type(exc).__name__)
++        raise DirectoryError("사용자 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", 503) from None
++    locked = False
++    try:
++        with conn.cursor() as cur:
++            _lock(cur)
++            locked = True
++            conn.begin()
++            person = _find_person(cur, tenant, oid, profile["email"])
++            if person is None:
++                person = _insert_person(cur, tenant, oid, profile)
++            if not person.get("is_active"):
++                raise DirectoryError("이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
++            cur.execute("SELECT id,role,email,entra_oid,is_active,ad_user_id FROM users "
++                        "WHERE ad_user_id=%s OR entra_oid=%s FOR UPDATE", (person["id"], oid))
++            accounts = cur.fetchall()
++            if len(accounts) > 1:
++                raise DirectoryError("사용자 연결이 중복돼 있습니다. 관리자에게 문의해 주세요.")
++            account = accounts[0] if accounts else None
++            created = account is None
++            if account:
++                if not account.get("is_active"):
++                    raise DirectoryError("이용이 중지된 계정입니다. 관리자에게 문의해 주세요.")
++                if account.get("entra_oid") not in (None, "", oid) or account["ad_user_id"] != person["id"]:
++                    raise DirectoryError("기존 사용자 연결을 확인해 주세요.", 409)
++                cur.execute("UPDATE users SET entra_oid=%s,last_login=NOW(),"
++                            "must_change_password=0 WHERE id=%s", (oid, account["id"]))
++            else:
++                password_hash = bcrypt.hashpw(secrets.token_urlsafe(48).encode(),
++                                               bcrypt.gensalt()).decode()
++                cur.execute("INSERT INTO users "
++                            "(email,password_hash,display_name,role,allowed_models,ad_user_id,"
++                            "is_active,last_login,entra_oid,must_change_password,requires_group_assignment) "
++                            "VALUES (%s,%s,%s,'user',%s,%s,1,NOW(),%s,0,%s)",
++                            (person.get("email") or profile["email"] or f"entra_{oid}@noemail.local",
++                             password_hash, profile["display_name"] or person.get("display_name") or "",
++                             ALL_MODELS, person["id"], oid, 1))
++                account = {"id": cur.lastrowid, "role": "user", "ad_user_id": person["id"]}
++            _update_profile(cur, person, tenant, oid, profile, signed_in=True)
++            conn.commit()
++            return {"id": int(account["id"]), "role": account["role"],
++                    "ad_user_id": int(person["id"]), "created": created}
++    except DirectoryError:
++        conn.rollback()
++        raise
++    except Exception as exc:
++        conn.rollback()
++        logger.warning("directory_provision_failed", error_type=type(exc).__name__)
++        raise DirectoryError("사용자 정보를 저장하지 못했습니다. 관리자에게 문의해 주세요.", 503) from None
++    finally:
++        if locked:
++            with conn.cursor() as cur:
++                _unlock(cur)
++        conn.close()
++
++
++def ensure_directory_sync_table() -> None:
++    execute("""CREATE TABLE IF NOT EXISTS directory_sync_state (
++        id TINYINT PRIMARY KEY, attempted_at DATETIME NULL, succeeded_at DATETIME NULL,
++        user_count INT NOT NULL DEFAULT 0, error_message VARCHAR(500) NULL
++    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
++
++
++def directory_sync_status() -> dict:
++    row = fetch_one("SELECT attempted_at,succeeded_at,user_count,error_message "
++                    "FROM directory_sync_state WHERE id=1") or {}
++    return {k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in row.items()}
++
++
++def _graph_users() -> list[dict]:
++    s = get_settings()
++    tenant = _uuid(s.entra_tenant_id)
++    try:
++        response = requests.post(
++            f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
++            data={"client_id": s.entra_client_id, "client_secret": s.entra_client_secret,
++                  "grant_type": "client_credentials", "scope": "https://graph.microsoft.com/.default"},
++            timeout=15,
++        )
++        if response.status_code != 200:
++            raise DirectoryError("Entra 사용자 조회 인증을 확인해 주세요.", 503)
++        token_response = response.json()
++        if not isinstance(token_response, dict):
++            raise DirectoryError("Entra 사용자 조회 인증을 확인해 주세요.", 503)
++        token = token_response.get("access_token")
++        if not token:
++            raise DirectoryError("Entra 사용자 조회 인증을 확인해 주세요.", 503)
++        url, params, seen, users = _GRAPH, {"$select": _SELECT, "$top": 999}, set(), []
++        while url:
++            parsed = urlparse(url)
++            if parsed.scheme != "https" or parsed.netloc != "graph.microsoft.com" or url in seen:
++                raise DirectoryError("Entra 사용자 목록의 다음 페이지를 확인하지 못했습니다.", 503)
++            seen.add(url)
++            response = requests.get(url, params=params, headers={"Authorization": "Bearer " + token},
++                                    timeout=20)
++            if response.status_code == 403:
++                raise DirectoryError("Entra 전체 사용자 동기화 권한이 없습니다. IT 관리자에게 "
++                                     "Microsoft Graph User.Read.All 앱 권한과 관리자 동의를 요청해 주세요.", 503)
++            if response.status_code != 200:
++                raise DirectoryError("Entra 사용자 목록을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.", 503)
++            page = response.json()
++            if not isinstance(page, dict) or not isinstance(page.get("value"), list):
++                raise DirectoryError("Entra 사용자 목록 응답을 확인하지 못했습니다.", 503)
++            users.extend(page["value"])
++            url, params = page.get("@odata.nextLink"), None
++        if not users:
++            raise DirectoryError("Entra 사용자 목록이 비어 있어 기존 사용자 정보를 유지했습니다.", 503)
++        return users
++    except requests.RequestException:
++        raise DirectoryError("Entra 사용자 조회 서버에 연결하지 못했습니다. "
++                             "graph.microsoft.com:443 네트워크 허용을 확인해 주세요.", 503) from None
++    except (ValueError, TypeError):
++        raise DirectoryError("Entra 사용자 목록 응답을 확인하지 못했습니다.", 503) from None
++
++
++def _apply_graph_users(users: list[dict]) -> int:
++    if not isinstance(users, list) or not users or any(not isinstance(user, dict) for user in users):
++        raise DirectoryError("Entra 사용자 목록이 불완전하여 기존 사용자 정보를 유지했습니다.", 503)
++    tenant = _uuid(get_settings().entra_tenant_id)
++    normalized = []
++    ids = set()
++    for user in users:
++        oid = _uuid(user.get("id"))
++        if oid in ids or user.get("userType") not in ("Member", "Guest") or not isinstance(user.get("accountEnabled"), bool):
++            raise DirectoryError("Entra 사용자 목록이 불완전하여 기존 사용자 정보를 유지했습니다.", 503)
++        ids.add(oid)
++        normalized.append((oid, user))
++    conn = get_maria_conn()
++    locked = False
++    try:
++        with conn.cursor() as cur:
++            _lock(cur)
++            locked = True
++            conn.begin()
++            count = 0
++            for oid, user in normalized:
++                profile = {"display_name": str(user.get("displayName") or "")[:200],
++                           "email": _email(user.get("mail")) or _email(user.get("userPrincipalName")),
++                           "department": str(user.get("department") or "")[:200]}
++                cur.execute("SELECT * FROM directory_users WHERE entra_tenant_id=%s AND entra_oid=%s "
++                            "FOR UPDATE", (tenant, oid))
++                person = cur.fetchone()
++                member = user["userType"] == "Member"
++                if not member and not person:
++                    continue
++                if not person:
++                    match_email = _email(user.get("userPrincipalName")) or profile["email"]
++                    person = _find_person(cur, tenant, oid, match_email, graph_verified=True)
++                if person and not _email(user.get("mail")):
++                    profile["email"] = person.get("email") or profile["email"]
++                if not person:
++                    person = _insert_person(cur, tenant, oid, profile)
++                _update_profile(cur, person, tenant, oid, profile,
++                                active=member and user["accountEnabled"])
++                count += int(member)
++            marks = ",".join(["%s"] * len(ids))
++            cur.execute("UPDATE directory_users SET is_active=0 WHERE entra_tenant_id=%s "
++                        f"AND entra_oid IS NOT NULL AND entra_oid NOT IN ({marks})", (tenant, *sorted(ids)))
++            cur.execute("INSERT INTO directory_sync_state "
++                        "(id,attempted_at,succeeded_at,user_count,error_message) VALUES (1,NOW(),NOW(),%s,NULL) "
++                        "ON DUPLICATE KEY UPDATE attempted_at=NOW(),succeeded_at=NOW(),"
++                        "user_count=VALUES(user_count),error_message=NULL", (count,))
++            conn.commit()
++            return count
++    except Exception:
++        conn.rollback()
++        raise
++    finally:
++        if locked:
++            with conn.cursor() as cur:
++                _unlock(cur)
++        conn.close()
++
++
++def sync_directory() -> dict:
++    try:
++        count = _apply_graph_users(_graph_users())
++        return {"ok": True, "synced_users": count, "message": f"Entra 사용자 {count}명을 동기화했습니다."}
++    except Exception as exc:
++        message = str(exc) if isinstance(exc, DirectoryError) else "사용자 동기화를 완료하지 못했습니다."
++        logger.warning("directory_sync_failed", error_type=type(exc).__name__)
++        execute("INSERT INTO directory_sync_state (id,attempted_at,error_message) VALUES (1,NOW(),%s) "
++                "ON DUPLICATE KEY UPDATE attempted_at=NOW(),error_message=VALUES(error_message)", (message[:500],))
++        return {"ok": False, "synced_users": 0, "error": message}
+--- was/app/core/user_directory_migration.py
++++ release/app/core/user_directory_migration.py
+@@ -0,0 +1,393 @@
++"""Move Cella authorization out of AD once, retaining the AD rollback archive.
++
++MariaDB DDL commits implicitly. Each foreign key is replaced in one ALTER, and
++every restart validates any partially copied rows before continuing. A committed
++completion marker is the only permission to stop comparing against the archive;
++after that marker, legacy rows are never read or copied by this module again.
++"""
++
++from collections import Counter
++from dataclasses import dataclass, replace
++import hashlib
++import json
++
++import structlog
++
++from app.config import get_settings
++from app.db.mariadb import get_maria_conn
++
++
++logger = structlog.get_logger(__name__)
++MIGRATION_KEY = "ad_to_directory_v1"
++_SOURCE = "ad_users"
++_DIRECTORY = "directory_users"
++_MARKERS = "directory_migrations"
++_REQUIRED_COLUMNS = {
++    "id", "username", "display_name", "email", "department", "full_dn",
++    "is_active", "synced_at", "created_at", "updated_at", "deal_id_prefix",
++    "can_view_fi", "can_view_visitor_analytics",
++}
++_IDENTITY_COLUMNS = {
++    "entra_oid": "VARCHAR(64) NULL",
++    "entra_tenant_id": "VARCHAR(64) NULL",
++    "identity_source": "VARCHAR(16) NOT NULL DEFAULT 'legacy'",
++    "last_signin_at": "DATETIME NULL",
++}
++_FK_RULES = {"RESTRICT", "CASCADE", "SET NULL", "NO ACTION", "SET DEFAULT"}
++
++
++class DirectoryMigrationError(RuntimeError):
++    """A preservation check failed; the migration must not mark completion."""
++
++
++def _quote(name):
++    if not isinstance(name, str) or not name or "\x00" in name:
++        raise DirectoryMigrationError("Invalid database identifier")
++    return "`" + name.replace("`", "``") + "`"
++
++
++def _table(schema, name):
++    return f"{_quote(schema)}.{_quote(name)}"
++
++
++def _exists(cur, schema, table):
++    cur.execute(
++        "SELECT 1 AS present FROM INFORMATION_SCHEMA.TABLES "
++        "WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND TABLE_TYPE = 'BASE TABLE'",
++        (schema, table),
++    )
++    return bool(cur.fetchone())
++
++
++def _columns(cur, schema, table):
++    cur.execute(
++        "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS column_type, "
++        "IS_NULLABLE AS is_nullable, COLUMN_DEFAULT AS column_default, "
++        "EXTRA AS extra, COLLATION_NAME AS collation_name, COLUMN_KEY AS column_key "
++        "FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s "
++        "AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
++        (schema, table),
++    )
++    return {row["name"]: row for row in cur.fetchall()}
++
++
++def _ddl(conn, cur, sql):
++    # Explicit boundaries: rollback cannot undo earlier successful MariaDB DDL.
++    conn.commit()
++    cur.execute(sql)
++    conn.commit()
++
++
++def _ensure_login_assignment_flag(conn, cur, schema):
++    if _exists(cur, schema, "users"):
++        columns = _columns(cur, schema, "users")
++        if "requires_group_assignment" not in columns:
++            _ddl(
++                conn, cur, f"ALTER TABLE {_table(schema, 'users')} "
++                "ADD COLUMN requires_group_assignment TINYINT(1) NOT NULL DEFAULT 0",
++            )
++
++
++def _ensure_schema(conn, cur, schema, source_columns):
++    if not _exists(cur, schema, _DIRECTORY):
++        # LIKE retains every original column, index, default and collation.
++        _ddl(conn, cur, f"CREATE TABLE {_table(schema, _DIRECTORY)} "
++             f"LIKE {_table(schema, _SOURCE)}")
++    columns = _columns(cur, schema, _DIRECTORY)
++    for name, definition in source_columns.items():
++        if columns.get(name) != definition:
++            raise DirectoryMigrationError(f"Directory schema conflicts with source column: {name}")
++    additions = [
++        f"ADD COLUMN {_quote(name)} {definition}"
++        for name, definition in _IDENTITY_COLUMNS.items() if name not in columns
++    ]
++    if additions:
++        _ddl(conn, cur, f"ALTER TABLE {_table(schema, _DIRECTORY)} " + ", ".join(additions))
++    cur.execute(
++        "SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, "
++        "COLUMN_NAME AS column_name, SEQ_IN_INDEX AS position, SUB_PART AS sub_part "
++        "FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = %s "
++        "AND TABLE_NAME = %s ORDER BY INDEX_NAME, SEQ_IN_INDEX",
++        (schema, _DIRECTORY),
++    )
++    indexes = {}
++    for row in cur.fetchall():
++        if not row["non_unique"] and row["sub_part"] is None:
++            indexes.setdefault(row["name"], []).append(row["column_name"])
++    if not any(set(cols) == {"entra_tenant_id", "entra_oid"} and len(cols) == 2
++               for cols in indexes.values()):
++        _ddl(conn, cur, f"ALTER TABLE {_table(schema, _DIRECTORY)} "
++             "ADD UNIQUE INDEX ux_directory_entra_identity (entra_tenant_id, entra_oid)")
++    _ensure_login_assignment_flag(conn, cur, schema)
++    _ddl(conn, cur, f"CREATE TABLE IF NOT EXISTS {_table(schema, _MARKERS)} ("
++         "migration_key VARCHAR(100) NOT NULL PRIMARY KEY, "
++         "completed_at DATETIME NOT NULL, details_json LONGTEXT NOT NULL) ENGINE=InnoDB")
++
++
++@dataclass(frozen=True)
++class _ForeignKey:
++    schema: str
++    table: str
++    name: str
++    columns: tuple
++    referenced_schema: str
++    referenced_table: str
++    referenced_columns: tuple
++    delete_rule: str
++    update_rule: str
++
++
++def _foreign_keys(cur, schema):
++    cur.execute(
++        "SELECT k.TABLE_SCHEMA AS child_schema, k.TABLE_NAME AS child_table, "
++        "k.CONSTRAINT_NAME AS name, k.COLUMN_NAME AS column_name, "
++        "k.ORDINAL_POSITION AS position, k.REFERENCED_TABLE_SCHEMA AS parent_schema, "
++        "k.REFERENCED_TABLE_NAME AS parent_table, k.REFERENCED_COLUMN_NAME AS parent_column, "
++        "r.DELETE_RULE AS delete_rule, r.UPDATE_RULE AS update_rule "
++        "FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE k "
++        "JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS r "
++        "ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA "
++        "AND r.TABLE_NAME = k.TABLE_NAME AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME "
++        "WHERE k.REFERENCED_TABLE_SCHEMA = %s "
++        "AND k.REFERENCED_TABLE_NAME IN ('ad_users', 'directory_users') "
++        "ORDER BY k.TABLE_SCHEMA, k.TABLE_NAME, k.CONSTRAINT_NAME, k.ORDINAL_POSITION",
++        (schema,),
++    )
++    grouped = {}
++    for row in cur.fetchall():
++        grouped.setdefault((row["child_schema"], row["child_table"], row["name"]), []).append(row)
++    result = []
++    for (child_schema, child_table, name), rows in grouped.items():
++        first = rows[0]
++        if (first["delete_rule"] not in _FK_RULES or first["update_rule"] not in _FK_RULES
++                or [int(row["position"]) for row in rows] != list(range(1, len(rows) + 1))):
++            raise DirectoryMigrationError("Invalid foreign key metadata")
++        result.append(_ForeignKey(
++            child_schema, child_table, name, tuple(row["column_name"] for row in rows),
++            first["parent_schema"], first["parent_table"],
++            tuple(row["parent_column"] for row in rows), first["delete_rule"], first["update_rule"],
++        ))
++    return result
++
++
++def _rebound_key(foreign_key):
++    if foreign_key.referenced_table == _DIRECTORY:
++        return foreign_key
++    # MariaDB 10.11 cannot drop and add the same constraint name in one ALTER.
++    # A new deterministic name keeps the replacement atomic and retryable.
++    identity = "\x00".join((foreign_key.schema, foreign_key.table, foreign_key.name))
++    name = "directory_fk_" + hashlib.sha256(identity.encode()).hexdigest()[:24]
++    return replace(foreign_key, name=name, referenced_table=_DIRECTORY)
++
++
++def _rebind_sql(foreign_key):
++    replacement = _rebound_key(foreign_key)
++    return (
++        f"ALTER TABLE {_table(foreign_key.schema, foreign_key.table)} "
++        f"DROP FOREIGN KEY {_quote(foreign_key.name)}, "
++        f"ADD CONSTRAINT {_quote(replacement.name)} FOREIGN KEY "
++        f"({', '.join(map(_quote, foreign_key.columns))}) "
++        f"REFERENCES {_table(foreign_key.referenced_schema, _DIRECTORY)} "
++        f"({', '.join(map(_quote, foreign_key.referenced_columns))}) "
++        f"ON DELETE {foreign_key.delete_rule} ON UPDATE {foreign_key.update_rule}"
++    )
++
++
++def _read_rows(cur, schema, table):
++    # Locking reads see current committed data after DDL, not an older snapshot.
++    cur.execute(f"SELECT * FROM {_table(schema, table)} FOR UPDATE")
++    return list(cur.fetchall())
++
++
++def _validate_copy(source_rows, directory_rows, columns, *, complete):
++    source = {row["id"]: row for row in source_rows}
++    target = {row["id"]: row for row in directory_rows}
++    if len(source) != len(source_rows) or len(target) != len(directory_rows):
++        raise DirectoryMigrationError("Duplicate directory IDs")
++    if set(target) - set(source):
++        raise DirectoryMigrationError("Directory contains IDs absent from the migration source")
++    if complete and set(source) != set(target):
++        raise DirectoryMigrationError("Directory row count or IDs changed during migration")
++    for person_id, target_row in target.items():
++        if any(source[person_id].get(name) != target_row.get(name) for name in columns):
++            raise DirectoryMigrationError(f"Directory copy conflict for ID {person_id}")
++
++
++def _assert_unchanged(before, after, label):
++    # Counter retains duplicate memberships as well as their exact values.
++    def signature(rows):
++        return Counter(tuple(sorted(row.items())) for row in rows)
++    if signature(before) != signature(after):
++        raise DirectoryMigrationError(f"{label} changed during migration")
++
++
++def _entra_bindings(users, directory_rows, tenant, *, require_bound=False):
++    linked = [row for row in users if row.get("entra_oid")]
++    if linked and not tenant:
++        raise DirectoryMigrationError("Entra tenant is required to import existing sign-in identities")
++    directory = {row["id"]: row for row in directory_rows}
++    bindings = []
++    claimed_people, claimed_oids = set(), set()
++    for user in linked:
++        person_id, oid = user.get("ad_user_id"), str(user["entra_oid"]).strip()
++        if person_id not in directory or not oid:
++            raise DirectoryMigrationError("Existing Entra login has no valid directory identity")
++        if person_id in claimed_people or oid.casefold() in claimed_oids:
++            raise DirectoryMigrationError("Existing Entra identities conflict")
++        person = directory[person_id]
++        existing = (person.get("entra_tenant_id"), person.get("entra_oid"))
++        if existing != (tenant, oid) and (require_bound or existing != (None, None)):
++            raise DirectoryMigrationError(f"Entra identity conflicts for directory ID {person_id}")
++        claimed_people.add(person_id)
++        claimed_oids.add(oid.casefold())
++        bindings.append((oid, tenant, user.get("last_login"), person_id))
++    return bindings
++
++
++def _marker(cur, schema):
++    if not _exists(cur, schema, _MARKERS):
++        return None
++    cur.execute(f"SELECT completed_at, details_json FROM {_table(schema, _MARKERS)} "
++                "WHERE migration_key = %s", (MIGRATION_KEY,))
++    return cur.fetchone()
++
++
++def _status(cur, schema, marker):
++    exists = _exists(cur, schema, _DIRECTORY)
++    if marker and not exists:
++        raise DirectoryMigrationError("Migration is marked complete but directory_users is missing")
++    total, linked = 0, 0
++    if exists:
++        columns = _columns(cur, schema, _DIRECTORY)
++        expression = "SUM(entra_oid IS NOT NULL AND entra_tenant_id IS NOT NULL)"
++        if not {"entra_oid", "entra_tenant_id"}.issubset(columns):
++            expression = "0"
++        cur.execute(f"SELECT COUNT(*) AS total, {expression} AS entra_linked "
++                    f"FROM {_table(schema, _DIRECTORY)}")
++        counts = cur.fetchone()
++        total, linked = int(counts["total"]), int(counts["entra_linked"] or 0)
++    return {
++        "completed": bool(marker), "migration_key": MIGRATION_KEY,
++        "directory_users": total, "entra_linked": linked,
++        "completed_at": str(marker["completed_at"]) if marker else None,
++    }
++
++
++def migration_status() -> dict:
++    """Read migration state without creating tables or reading the AD archive."""
++    conn = get_maria_conn()
++    try:
++        with conn.cursor() as cur:
++            cur.execute("SELECT DATABASE() AS db_name")
++            schema = cur.fetchone()["db_name"]
++            return _status(cur, schema, _marker(cur, schema))
++    finally:
++        conn.close()
++
++
++def ensure_directory_tables() -> dict:
++    """Copy and verify the legacy directory once; raise on any preservation failure.
++
++    This is a startup migration, before request handlers and directory sync run.
++    The old AD writer must be stopped for rollout. Concurrent legacy changes are
++    detected, never overwritten. A failed DDL step can be retried after inspection.
++    """
++    conn = get_maria_conn()
++    locked = False
++    lock_name = None
++    try:
++        with conn.cursor() as cur:
++            cur.execute("SELECT DATABASE() AS db_name")
++            schema = cur.fetchone()["db_name"]
++            if not schema:
++                raise DirectoryMigrationError("A selected database is required")
++            lock_name = "cella:directory-migration:" + hashlib.sha256(schema.encode()).hexdigest()[:24]
++            cur.execute("SELECT GET_LOCK(%s, 30) AS acquired", (lock_name,))
++            locked = cur.fetchone()["acquired"] == 1
++            if not locked:
++                raise DirectoryMigrationError("Could not acquire the directory migration lock")
++            marker = _marker(cur, schema)
++            if marker:
++                _ensure_login_assignment_flag(conn, cur, schema)
++                return dict(_status(cur, schema, marker), migrated=False)
++            if not _exists(cur, schema, _SOURCE):
++                raise DirectoryMigrationError("Migration source ad_users is missing; refusing an empty migration")
++            source_columns = _columns(cur, schema, _SOURCE)
++            if not _REQUIRED_COLUMNS.issubset(source_columns):
++                raise DirectoryMigrationError("Migration source is missing required profile or permission columns")
++            _ensure_schema(conn, cur, schema, source_columns)
++
++            conn.begin()
++            source = _read_rows(cur, schema, _SOURCE)
++            directory = _read_rows(cur, schema, _DIRECTORY)
++            _validate_copy(source, directory, source_columns, complete=False)
++            foreign_keys = _foreign_keys(cur, schema)
++            child_tables = {(fk.schema, fk.table) for fk in foreign_keys}
++            child_tables.update((schema, name) for name in ("users", "user_groups")
++                                if _exists(cur, schema, name))
++            children = {(db, table): _read_rows(cur, db, table)
++                        for db, table in sorted(child_tables)}
++            users = children.get((schema, "users"), [])
++            source_ids = {row["id"] for row in source}
++            for name in ("users", "user_groups"):
++                if any(row.get("ad_user_id") is not None and row["ad_user_id"] not in source_ids
++                       for row in children.get((schema, name), [])):
++                    raise DirectoryMigrationError(f"{name} has an orphaned directory reference")
++
++            writable_columns = [name for name, col in source_columns.items()
++                                if "GENERATED" not in col["extra"].upper()]
++            column_sql = ", ".join(map(_quote, writable_columns))
++            selected = ", ".join("s." + _quote(name) for name in writable_columns)
++            cur.execute(f"INSERT INTO {_table(schema, _DIRECTORY)} ({column_sql}) "
++                        f"SELECT {selected} FROM {_table(schema, _SOURCE)} s "
++                        f"LEFT JOIN {_table(schema, _DIRECTORY)} d ON d.id = s.id WHERE d.id IS NULL")
++            directory = _read_rows(cur, schema, _DIRECTORY)
++            tenant = str(get_settings().entra_tenant_id or "").strip()
++            bindings = _entra_bindings(users, directory, tenant)
++            for binding in bindings:
++                cur.execute(f"UPDATE {_table(schema, _DIRECTORY)} SET entra_oid = %s, "
++                            "entra_tenant_id = %s, identity_source = 'entra', "
++                            "last_signin_at = COALESCE(last_signin_at, %s), "
++                            "updated_at = updated_at WHERE id = %s", binding)
++            _validate_copy(source, _read_rows(cur, schema, _DIRECTORY), source_columns, complete=True)
++            conn.commit()
++
++            for foreign_key in foreign_keys:
++                if foreign_key.referenced_table == _SOURCE:
++                    _ddl(conn, cur, _rebind_sql(foreign_key))
++
++            conn.begin()
++            _assert_unchanged(source, _read_rows(cur, schema, _SOURCE), "AD source")
++            final_directory = _read_rows(cur, schema, _DIRECTORY)
++            _validate_copy(source, final_directory, source_columns, complete=True)
++            # Check the imported immutable identities as well as the original grants.
++            _entra_bindings(users, final_directory, tenant, require_bound=True)
++            for (db, table), rows in children.items():
++                _assert_unchanged(rows, _read_rows(cur, db, table), f"{db}.{table}")
++            expected_keys = {_rebound_key(fk) for fk in foreign_keys}
++            if set(_foreign_keys(cur, schema)) != expected_keys:
++                raise DirectoryMigrationError("Foreign key definitions changed during migration")
++            verification = {
++                "source_users": len(source), "login_accounts": len(users),
++                "group_memberships": len(children.get((schema, "user_groups"), [])),
++                "fi_grants": sum(bool(row["can_view_fi"]) for row in source),
++                "visitor_grants": sum(bool(row["can_view_visitor_analytics"]) for row in source),
++                "entra_links": len(bindings), "foreign_keys": len(foreign_keys),
++            }
++            cur.execute(f"INSERT INTO {_table(schema, _MARKERS)} "
++                        "(migration_key, completed_at, details_json) VALUES (%s, UTC_TIMESTAMP(), %s)",
++                        (MIGRATION_KEY, json.dumps(verification, sort_keys=True)))
++            conn.commit()
++            return dict(_status(cur, schema, _marker(cur, schema)), migrated=True)
++    except Exception:
++        conn.rollback()
++        raise
++    finally:
++        try:
++            if locked:
++                with conn.cursor() as cur:
++                    cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
++        except Exception:
++            logger.warning("directory_migration_lock_release_failed")
++        finally:
++            conn.close()
+--- was/app/db/mariadb.py
++++ release/app/db/mariadb.py
+@@ -106,10 +106,10 @@
+ 
+ 
+ def ensure_fi_permission_column():
+-    """Add ad_users.can_view_fi if missing (idempotent)."""
++    """Add directory_users.can_view_fi if missing (idempotent)."""
+     try:
+         execute(
+-            "ALTER TABLE ad_users "
++            "ALTER TABLE directory_users "
+             "ADD COLUMN can_view_fi TINYINT(1) NOT NULL DEFAULT 0 "
+             "COMMENT '재무 손익(FI_LLM_Flat) 열람 허용'"
+         )
+@@ -126,18 +126,18 @@
+     try:
+         existing = fetch_one(
+             "SELECT 1 AS ok FROM INFORMATION_SCHEMA.COLUMNS "
+-            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ad_users' "
++            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'directory_users' "
+             "AND COLUMN_NAME = 'can_view_visitor_analytics'"
+         )
+         if existing:
+             return
+         execute(
+-            "ALTER TABLE ad_users "
++            "ALTER TABLE directory_users "
+             "ADD COLUMN can_view_visitor_analytics TINYINT(1) NOT NULL DEFAULT 0 "
+             "COMMENT 'Admin이 부여한 방문자 분석 탭 열람 허용'"
+         )
+         execute(
+-            "UPDATE ad_users SET can_view_visitor_analytics = 1 "
++            "UPDATE directory_users SET can_view_visitor_analytics = 1 "
+             "WHERE department LIKE %s",
+             ("%데이터 비즈니스팀%",),
+         )
+--- was/app/db/models.py
++++ release/app/db/models.py
+@@ -8,7 +8,7 @@
+ 
+ @dataclass
+ class User:
+-    """User model populated from MariaDB users + ad_users tables."""
++    """User model populated from MariaDB users + directory_users tables."""
+     id: int = 0
+     email: str = ""
+     name: str = ""
+@@ -19,3 +19,4 @@
+     can_view_visitor_analytics: bool = False
+     password_hash: str = ""
+     must_change_password: bool = False
++    requires_group_assignment: bool = False
+--- was/app/frontend/chat.html
++++ release/app/frontend/chat.html
+@@ -188,6 +188,12 @@
+ 
+       <!-- Input area -->
+       <div class="chat-input-area" id="chat-input-area">
++        <div id="group-assignment-notice" role="status" aria-live="polite" hidden style="margin-bottom:12px;padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:var(--bg-elevated);font-size:13px;line-height:1.6;color:var(--text)">
++          <strong>데이터 조회 그룹 배정 대기</strong>
++          <p style="margin:4px 0 10px">회사 계정이 연결되었습니다. 관리자가 데이터 조회 그룹을 배정하면 질문을 이용할 수 있습니다.</p>
++          <button type="button" class="admin-btn-secondary" id="btn-check-group-assignment">배정 상태 확인</button>
++          <span id="group-assignment-status" style="margin-left:8px;color:var(--text-muted)"></span>
++        </div>
+         <!-- Source filter badge (shown when not all sources enabled) -->
+         <div class="source-filter-badge" id="source-filter-badge" style="display:none"></div>
+         <!-- // slash command dropdown -->
+@@ -292,7 +298,7 @@
+     <!-- Tabs -->
+     <div class="admin-tabs">
+       <button class="admin-tab active" data-tab="groups">그룹 관리</button>
+-      <button class="admin-tab" data-tab="users">AD 사용자</button>
++      <button class="admin-tab" data-tab="users">셀라 사용자</button>
+       <button class="admin-tab" data-tab="visitors">방문자</button>
+       <button class="admin-tab" data-tab="growth">성장 지표</button>
+       <button class="admin-tab" data-tab="selfcheck">자가 점검</button>
+@@ -320,7 +326,7 @@
+           <div class="visitor-permission-access" id="visitor-permission-access" hidden>
+             <div>
+               <strong>방문자 권한 대상 관리</strong>
+-              <span>AD 사용자에서 사람별로 방문자 열람 권한을 부여하거나 회수할 수 있습니다.</span>
++              <span>셀라 사용자에서 사람별로 방문자 열람 권한을 부여하거나 회수할 수 있습니다.</span>
+             </div>
+             <button type="button" class="admin-btn-secondary" id="btn-manage-visitor-access">권한 대상 관리</button>
+           </div>
+@@ -454,12 +460,16 @@
+     <div class="admin-tab-content active" id="tab-groups">
+       <div class="admin-toolbar">
+         <button class="admin-btn-primary" id="btn-create-group">+ 새 그룹</button>
+-        <button class="admin-btn-secondary" id="btn-sync-ad">AD 동기화</button>
+       </div>
+       <div class="admin-drawer-body" id="admin-group-list"></div>
+     </div>
+-    <!-- Tab: AD Users -->
++    <!-- Tab: Cella Users -->
+     <div class="admin-tab-content" id="tab-users">
++      <div class="admin-toolbar" style="align-items:center">
++        <button class="admin-btn-secondary" id="btn-sync-directory">Entra 동기화</button>
++        <span id="admin-directory-status" role="status" aria-live="polite" style="font-size:12px;color:var(--text-muted)"></span>
++      </div>
++      <p id="admin-directory-help" style="margin:12px 20px 0;font-size:12px;line-height:1.6;color:var(--text-muted)">Entra ID로 로그인하면 별도 회원가입 없이 셀라 계정이 연결됩니다. 첫 로그인 전에도 손익·방문자 권한과 그룹을 미리 배정할 수 있습니다.</p>
+       <div class="admin-toolbar">
+         <select id="admin-dept-filter" class="admin-select">
+           <option value="">전체 부서</option>
+@@ -472,6 +482,7 @@
+         </select>
+         <input type="text" id="admin-search" class="admin-input" placeholder="이름/이메일 검색">
+       </div>
++      <p id="admin-directory-error" role="alert" hidden style="margin:12px 20px 0;font-size:12px;color:var(--error)"></p>
+       <div class="admin-drawer-body" id="admin-user-list"></div>
+     </div>
+     <!-- Tab: Growth -->
+--- was/app/frontend/chat.js
++++ release/app/frontend/chat.js
+@@ -981,6 +981,58 @@
+   var fileInput = document.getElementById("file-input");
+   var chatInputArea = document.getElementById("chat-input-area");
+   var personalBriefingController = null;
++  var defaultChatPlaceholder = chatInput.getAttribute("placeholder");
++  var groupAssignmentRefresh = null;
++
++  function requiresGroupAssignment() {
++    return !!(currentUser && currentUser.requires_group_assignment);
++  }
++
++  function applyGroupAssignmentState() {
++    var pending = requiresGroupAssignment();
++    document.getElementById("group-assignment-notice").hidden = !pending;
++    chatInput.disabled = pending;
++    btnAttach.disabled = pending;
++    fileInput.disabled = pending;
++    chatInput.placeholder = pending ? "관리자의 데이터 조회 그룹 배정을 기다리고 있습니다." : defaultChatPlaceholder;
++    if (pending) chatInput.setAttribute("aria-describedby", "group-assignment-notice");
++    else chatInput.removeAttribute("aria-describedby");
++    document.querySelectorAll(".suggestion-chip, .followup-chip").forEach(function(chip) {
++      chip.disabled = pending;
++    });
++    updateSendButton();
++  }
++
++  function refreshGroupAssignment() {
++    if (!requiresGroupAssignment() || groupAssignmentRefresh) return;
++    var button = document.getElementById("btn-check-group-assignment");
++    var status = document.getElementById("group-assignment-status");
++    button.disabled = true;
++    status.textContent = "확인 중...";
++    groupAssignmentRefresh = fetch("/api/auth/me")
++      .then(function(response) {
++        if (!response.ok) throw new Error("배정 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.");
++        return response.json();
++      })
++      .then(function(freshUser) {
++        if (!freshUser || freshUser.id !== currentUser.id ||
++            [true, false, 0, 1].indexOf(freshUser.requires_group_assignment) === -1) {
++          throw new Error("Incomplete group assignment response");
++        }
++        currentUser = freshUser;
++        applyGroupAssignmentState();
++        _applyFiSourceVisibility();
++        showAdminButton();
++        status.textContent = requiresGroupAssignment() ? "아직 그룹 배정 대기 중입니다." : "";
++      })
++      .catch(function() {
++        status.textContent = "배정 상태를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.";
++      })
++      .finally(function() {
++        button.disabled = false;
++        groupAssignmentRefresh = null;
++      });
++  }
+ 
+   // ===== Init =====
+   init();
+@@ -990,6 +1042,7 @@
+       var resp = await fetch("/api/auth/me");
+       if (!resp.ok) { window.location.href = "/login"; return; }
+       currentUser = await resp.json();
++      applyGroupAssignmentState();
+       // 만족도 설문 — 띄울지는 서버가 정한다 (접속일수 10일차부터 20일 간격)
+       _surveyPrompt = currentUser.survey_prompt || null;
+       _applyFiSourceVisibility();
+@@ -1023,6 +1076,7 @@
+       .then(function (r) { if (!r.ok) throw new Error("me failed"); return r.json(); })
+       .then(function (freshUser) {
+         currentUser = freshUser;
++        applyGroupAssignmentState();
+         if (currentUser.must_change_password) {
+           // 서버가 아직 플래그를 지운 것으로 안 보인다 — 앱을 반쯤 켜인 채로
+           // 두는 대신 다시 로그인 경로로 보내 확실한 상태에서 다시 시작한다.
+@@ -1078,6 +1132,11 @@
+ 
+   // ===== Event Listeners =====
+   function setupEventListeners() {
++    document.getElementById("btn-check-group-assignment").addEventListener("click", refreshGroupAssignment);
++    document.addEventListener("visibilitychange", function() {
++      if (document.visibilityState === "visible") refreshGroupAssignment();
++    });
++    window.addEventListener("focus", refreshGroupAssignment);
+     btnSend.addEventListener("click", sendMessage);
+     chatInput.addEventListener("keydown", function (e) {
+       // Enter (no shift) OR Ctrl/Cmd+Enter → send
+@@ -1450,7 +1509,7 @@
+     if (suggestionsBox) {
+       suggestionsBox.addEventListener("click", function (event) {
+         var chip = event.target.closest(".suggestion-chip");
+-        if (!chip || !chip.dataset.q) return;
++        if (!chip || !chip.dataset.q || requiresGroupAssignment()) return;
+         chatInput.value = chip.dataset.q;
+         chatInput.dispatchEvent(new Event("input"));
+         sendMessage();
+@@ -1951,7 +2010,7 @@
+ 
+   // ===== Image Helpers =====
+   function updateSendButton() {
+-    btnSend.disabled = !(chatInput.value.trim() || pendingImages.length > 0
++    btnSend.disabled = requiresGroupAssignment() || !(chatInput.value.trim() || pendingImages.length > 0
+                          || pendingTables.length > 0);
+   }
+ 
+@@ -1966,6 +2025,7 @@
+   }
+ 
+   function addImageFiles(fileList) {
++    if (requiresGroupAssignment()) return;
+     for (var i = 0; i < fileList.length; i++) {
+       var file = fileList[i];
+       if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
+@@ -2106,7 +2166,7 @@
+ 
+   function _resetSendBtn() {
+     btnSend.classList.remove("stop-mode");
+-    btnSend.disabled = false;
++    btnSend.disabled = requiresGroupAssignment();
+     btnSend.title = "전송";
+     btnSend.onclick = null;
+   }
+@@ -2232,6 +2292,10 @@
+   }
+ 
+   async function sendMessage() {
++    if (requiresGroupAssignment()) {
++      applyGroupAssignmentState();
++      return;
++    }
+     var text = chatInput.value.trim();
+     var hasImages = pendingImages.length > 0;
+     // ⛔ 아직 읽는 중인 표가 있으면 기다린다 — 지금 보내면 그 표 없이 나가고,
+@@ -4567,6 +4631,7 @@
+         items.slice(0, 4).forEach(function (item) {
+           var chip = document.createElement("button");
+           chip.className = "suggestion-chip mine";
++          chip.disabled = requiresGroupAssignment();
+           chip.dataset.q = item.text;
+           /* ⚠️ 질문 원문은 칩에 넣기엔 길다. 줄이되 **원문을 툴팁으로** 남긴다 —
+              무엇을 보내는지 모르고 누르게 하면 안 된다. */
+@@ -4661,13 +4726,13 @@
+     if (activeTabName === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
+     // Hide write-actions for non-admin
+     document.getElementById("btn-create-group").style.display = isAdmin() ? "" : "none";
+-    document.getElementById("btn-sync-ad").style.display = isAdmin() ? "" : "none";
++    document.getElementById("btn-sync-directory").style.display = isAdmin() ? "" : "none";
+     if (visitorOnly) return;
+     // Load all data in parallel
+     Promise.all([
+-      fetch("/api/admin/ad/stats").then(function(r) { return r.json(); }),
++      fetch("/api/admin/directory/stats").then(function(r) { return r.json(); }),
+       fetch("/api/admin/groups").then(function(r) { return r.json(); }),
+-      fetch("/api/admin/ad/departments").then(function(r) { return r.json(); }),
++      fetch("/api/admin/directory/departments").then(function(r) { return r.json(); }),
+     ]).then(function(results) {
+       renderAdminStats(results[0]);
+       renderAdminGroups(results[1]);
+@@ -5196,7 +5261,7 @@
+       document.getElementById("skin-admin-drawer").classList.toggle("visitor-mode", tab.dataset.tab === "visitors");
+       // ⚠️ 아키텍처 탭은 서랍을 넓혀야 한다 — 420px 안에서는 캔버스가 30px 폭이다
+       document.getElementById("skin-admin-drawer").classList.toggle("flow-mode", tab.dataset.tab === "flow");
+-      if (tab.dataset.tab === "users") loadAdminADUsers();
++      if (tab.dataset.tab === "users") loadAdminDirectoryUsers();
+       if (tab.dataset.tab === "visitors") loadVisitorAnalytics(_visitorAnalyticsDays);
+       if (tab.dataset.tab === "growth") loadGrowthReport();
+       if (tab.dataset.tab === "selfcheck") loadSelfCheck();
+@@ -5899,11 +5964,11 @@
+ 
+   // Stats
+   function loadAdminStats() {
+-    fetch("/api/admin/ad/stats").then(function(r) { return r.json(); }).then(renderAdminStats).catch(function() {});
++    fetch("/api/admin/directory/stats").then(function(r) { return r.json(); }).then(renderAdminStats).catch(function() {});
+   }
+   function renderAdminStats(s) {
+     document.getElementById("admin-stats-bar").innerHTML =
+-      '<div class="admin-stat"><div class="admin-stat-num">' + s.total_ad_users + '</div><div class="admin-stat-label">AD 사용자</div></div>' +
++      '<div class="admin-stat"><div class="admin-stat-num">' + s.total_ad_users + '</div><div class="admin-stat-label">셀라 사용자</div></div>' +
+       '<div class="admin-stat"><div class="admin-stat-num">' + s.assigned_users + '</div><div class="admin-stat-label">배정됨</div></div>' +
+       '<div class="admin-stat"><div class="admin-stat-num">' + s.unassigned_users + '</div><div class="admin-stat-label">미배정</div></div>' +
+       '<div class="admin-stat"><div class="admin-stat-num">' + s.fi_allowed_users + '</div><div class="admin-stat-label">손익 허용</div></div>' +
+@@ -5912,18 +5977,24 @@
+ 
+   // Departments — hierarchical tree
+   function loadAdminDepts() {
+-    fetch("/api/admin/ad/departments").then(function(r) { return r.json(); }).then(renderAdminDepts).catch(function() {});
++    fetch("/api/admin/directory/departments").then(function(r) { return r.json(); }).then(renderAdminDepts).catch(function() {});
++  }
++  function adminDepartmentParts(department) {
++    var parts = (department || "").split(" > ");
++    if (parts[0] === "Craver_Accounts" && parts[1] === "Users" && parts.length > 2) {
++      return parts.slice(2);
++    }
++    return parts;
+   }
+   function renderAdminDepts(depts) {
+     _adminDepts = depts;
+     var sel = document.getElementById("admin-dept-filter");
++    var selectedDept = sel.value;
+     sel.innerHTML = '<option value="">전체 부서</option>';
+ 
+     var tree = {};
+     depts.forEach(function(d) {
+-      var parts = d.department.split(" > ");
+-      var meaningful = parts.slice(2);
+-      if (!meaningful.length) meaningful = [parts[parts.length - 1]];
++      var meaningful = adminDepartmentParts(d.department);
+       for (var i = 0; i < meaningful.length; i++) {
+         var key = meaningful.slice(0, i + 1).join(" > ");
+         if (!tree[key]) tree[key] = {count: 0, depth: i, label: meaningful[i]};
+@@ -5941,6 +6012,7 @@
+         indent + prefix + escapeHtml(node.label) + ' (' + node.count + ')</option>';
+     });
+     sel.innerHTML += optHtml;
++    sel.value = selectedDept;
+   }
+ 
+   // Groups
+@@ -5952,11 +6024,13 @@
+     var container = document.getElementById("admin-group-list");
+     // Update group filter in users tab
+     var gf = document.getElementById("admin-group-filter");
+-    var gfHtml = '<option value="">전체 그룹</option><option value="unassigned">미배정</option><option value="fi_allowed">손익 허용</option>';
++    var selectedGroup = gf.value;
++    var gfHtml = '<option value="">전체 그룹</option><option value="unassigned">미배정</option><option value="fi_allowed">손익 허용</option><option value="visitor_allowed">방문자 허용</option>';
+     groups.forEach(function(g) {
+-      gfHtml += '<option value="' + g.id + '">' + g.name + '</option>';
++      gfHtml += '<option value="' + g.id + '">' + escapeHtml(g.name) + '</option>';
+     });
+     gf.innerHTML = gfHtml;
++    gf.value = selectedGroup;
+ 
+     if (!groups.length) {
+       container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">그룹이 없습니다. 새 그룹을 만들어보세요.</div>';
+@@ -6001,36 +6075,41 @@
+     });
+   });
+ 
+-  // AD sync
+-  document.getElementById("btn-sync-ad").addEventListener("click", function() {
+-    if (!confirm("AD 사용자 목록을 동기화하시겠습니까?")) return;
++  // Entra directory sync preserves the existing Cella permission records.
++  document.getElementById("btn-sync-directory").addEventListener("click", function() {
+     var btn = this;
++    var status = document.getElementById("admin-directory-status");
+     btn.textContent = "동기화 중...";
+     btn.disabled = true;
+-    fetch("/api/admin/ad/sync", {method: "POST"})
+-      .then(function(r) { return r.json(); })
++    status.textContent = "Entra 사용자 정보를 불러오는 중입니다.";
++    status.style.color = "var(--text-muted)";
++    fetch("/api/admin/directory/sync", {method: "POST"})
++      .then(function(r) {
++        return r.json().then(function(res) {
++          if (!r.ok || !res.ok) {
++            throw new Error(res.error || res.detail || res.message || "사용자 정보를 동기화하지 못했습니다.");
++          }
++          return res;
++        });
++      })
+       .then(function(res) {
+-        btn.textContent = "AD 동기화";
++        status.textContent = "Entra 동기화 완료 · " + Number(res.synced_users || 0).toLocaleString("ko-KR") + "명" +
++          (res.message ? " · " + res.message : "");
++        loadAdminStats();
++        loadAdminDepts();
++        loadAdminGroups();
++        loadAdminDirectoryUsers();
++      }).catch(function(e) {
++        status.textContent = "동기화 실패: " + e.message + " 기존 사용자 목록과 권한은 유지됩니다.";
++        status.style.color = "var(--error)";
++      }).finally(function() {
++        btn.textContent = "Entra 동기화";
+         btn.disabled = false;
+-        if (res.ok) {
+-          alert("AD 동기화 완료!\n" + res.output.split("\n").slice(-5).join("\n"));
+-          loadAdminStats();
+-          loadAdminADUsers();
+-        } else {
+-          alert("동기화 실패: " + (res.error || "Unknown"));
+-        }
+-      }).catch(function(e) {
+-        btn.textContent = "AD 동기화";
+-        btn.disabled = false;
+-        alert("동기화 오류: " + e.message);
+       });
+   });
+ 
+-  // AD users list
+-  function loadAdminADUsers() {
+-    // 요청 목록은 사용자 조회 실패와 무관하게 먼저 보인다. 그렇지 않으면 관리자에게
+-    // 가장 중요한 재설정 요청이 목록 API의 일시 장애에 가려진다.
+-    renderPasswordResetRequests();
++  // Directory rows are assignable before their first Cella sign-in.
++  function loadAdminDirectoryUsers() {
+     var dept = document.getElementById("admin-dept-filter").value;
+     var groupFilter = document.getElementById("admin-group-filter").value;
+     var search = document.getElementById("admin-search").value;
+@@ -6043,9 +6122,14 @@
+     else if (groupFilter === "visitor_allowed") params.set("visitor_only", "true");
+     else if (groupFilter) params.set("group_id", groupFilter);
+ 
+-    fetch("/api/admin/ad/users?" + params.toString())
+-      .then(function(r) { return r.json(); })
++    fetch("/api/admin/directory/users?" + params.toString())
++      .then(function(r) {
++        if (!r.ok) throw new Error("사용자 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
++        return r.json();
++      })
+       .then(function(users) {
++        if (!Array.isArray(users)) throw new Error("사용자 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
++        document.getElementById("admin-directory-error").hidden = true;
+         var container = document.getElementById("admin-user-list");
+         if (!users.length) {
+           container.innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">검색 결과가 없습니다.</div>';
+@@ -6058,16 +6142,20 @@
+           var groupBadge = u.group_names
+             ? '<span class="admin-ad-group-badge">' + escapeHtml(u.group_names) + '</span>'
+             : '<span class="admin-ad-group-badge none">미배정</span>';
+-          var signupBadge = u.user_id
+-            ? ''
+-            : ' <span class="admin-ad-group-badge none">미가입</span>';
++          var accountBadge = u.user_id
++            ? '<span class="admin-ad-group-badge">셀라 계정 있음</span>'
++            : '<span class="admin-ad-group-badge none">첫 로그인 대기</span>';
++          var identityBadge = u.entra_linked
++            ? '<span class="admin-ad-group-badge">Entra 연결</span>'
++            : '<span class="admin-ad-group-badge none">Entra 연결 대기</span>';
+ 
+           html += '<div class="admin-ad-user">';
+-          html += '<div class="admin-ad-avatar">' + initial + '</div>';
++          html += '<div class="admin-ad-avatar">' + escapeHtml(initial) + '</div>';
+           html += '<div class="admin-ad-info">';
+-          html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small>' + signupBadge + '</div>';
++          html += '<div class="admin-ad-name">' + escapeHtml(u.display_name) + ' <small style="color:var(--text-muted)">(' + escapeHtml(u.username) + ')</small></div>';
+           html += '<div class="admin-ad-email">' + escapeHtml(u.email || "N/A") + '</div>';
+           html += '<div class="admin-ad-dept">' + escapeHtml(deptShort) + '</div>';
++          html += '<div class="admin-directory-state" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">' + identityBadge + accountBadge + '</div>';
+           html += '</div>';
+           html += groupBadge;
+           if (isAdmin()) {
+@@ -6075,10 +6163,6 @@
+             html += '<input type="checkbox" class="admin-fi-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_fi ? ' checked' : '') + '> 손익</label>';
+             html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;cursor:pointer">';
+             html += '<input type="checkbox" class="admin-visitor-toggle" data-ad-user-id="' + u.id + '"' + (u.can_view_visitor_analytics ? ' checked' : '') + '> 방문자</label>';
+-            // 가입한 사람만 로컬 비밀번호가 있다 — 미가입 AD 사용자는 초기화할 것이 없다
+-            if (u.user_id) {
+-              html += '<button class="admin-ad-reset-pw" data-ad-user-id="' + u.id + '" data-name="' + escapeHtml(u.display_name) + '">비밀번호 초기화</button>';
+-            }
+             html += '<button class="admin-ad-assign" onclick="adminAssignUser(' + u.id + ', \'' + escapeHtml(u.display_name) + '\')">배정</button>';
+           }
+           html += '</div>';
+@@ -6088,7 +6172,7 @@
+           checkbox.addEventListener("change", function() {
+             var requested = checkbox.checked;
+             checkbox.disabled = true;
+-            fetch("/api/admin/ad/users/" + checkbox.dataset.adUserId + "/fi", {
++            fetch("/api/admin/directory/users/" + checkbox.dataset.adUserId + "/fi", {
+               method: "PUT",
+               headers: { "Content-Type": "application/json" },
+               body: JSON.stringify({ can_view_fi: requested })
+@@ -6099,7 +6183,7 @@
+               checkbox.disabled = false;
+               loadAdminStats();
+               if (document.getElementById("admin-group-filter").value === "fi_allowed" && !requested) {
+-                loadAdminADUsers();
++                loadAdminDirectoryUsers();
+               }
+             }).catch(function(e) {
+               checkbox.checked = !requested;
+@@ -6112,7 +6196,7 @@
+           checkbox.addEventListener("change", function() {
+             var requested = checkbox.checked;
+             checkbox.disabled = true;
+-            fetch("/api/admin/ad/users/" + checkbox.dataset.adUserId + "/visitor-analytics", {
++            fetch("/api/admin/directory/users/" + checkbox.dataset.adUserId + "/visitor-analytics", {
+               method: "PUT",
+               headers: { "Content-Type": "application/json" },
+               body: JSON.stringify({ can_view_visitor_analytics: requested })
+@@ -6121,6 +6205,9 @@
+               return r.json();
+             }).then(function() {
+               checkbox.disabled = false;
++              if (document.getElementById("admin-group-filter").value === "visitor_allowed" && !requested) {
++                loadAdminDirectoryUsers();
++              }
+             }).catch(function(e) {
+               checkbox.checked = !requested;
+               checkbox.disabled = false;
+@@ -6128,12 +6215,14 @@
+             });
+           });
+         });
+-        container.querySelectorAll(".admin-ad-reset-pw").forEach(function(btn) {
+-          btn.addEventListener("click", function() { resetPasswordFor(btn); });
+-        });
+-      }).catch(function(e) { console.error("Failed to load AD users:", e); });
+-  }
+-
++      }).catch(function(e) {
++        var error = document.getElementById("admin-directory-error");
++        error.textContent = e.message;
++        error.hidden = false;
++      });
++  }
++
++  // Legacy password helpers remain dormant while Entra provides sign-in.
+   // ── 비밀번호 재설정 요청 (로그인 화면 → 관리자) ──────────────────────────
+   // 이름·팀은 이미 로그인 화면에 노출되므로, 이것은 본인 확인이나 자동 초기화가
+   // 아니다. 관리자가 확인 후 임시 비밀번호를 한 번 발급하는 접수함이다.
+@@ -6231,12 +6320,12 @@
+   }
+ 
+   // Filters
+-  document.getElementById("admin-dept-filter").addEventListener("change", loadAdminADUsers);
+-  document.getElementById("admin-group-filter").addEventListener("change", loadAdminADUsers);
++  document.getElementById("admin-dept-filter").addEventListener("change", loadAdminDirectoryUsers);
++  document.getElementById("admin-group-filter").addEventListener("change", loadAdminDirectoryUsers);
+   var _searchTimer = null;
+   document.getElementById("admin-search").addEventListener("input", function() {
+     clearTimeout(_searchTimer);
+-    _searchTimer = setTimeout(loadAdminADUsers, 300);
++    _searchTimer = setTimeout(loadAdminDirectoryUsers, 300);
+   });
+ 
+   // Assign user to group
+@@ -6256,7 +6345,7 @@
+       headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({ad_user_ids: [userId]})
+     }).then(function(r) { return r.json(); })
+-    .then(function() { loadAdminADUsers(); loadAdminGroups(); loadAdminStats(); })
++    .then(function() { loadAdminDirectoryUsers(); loadAdminGroups(); loadAdminStats(); })
+     .catch(function(e) { alert("배정 실패: " + e.message); });
+   };
+ 
+@@ -6269,9 +6358,10 @@
+     var topDepts = {};
+     _adminDepts.forEach(function(d) {
+       var parts = d.department.split(" > ");
+-      // Top-level = depth 2 (e.g. "Craver_Accounts > Users > Brand")
+-      var topKey = parts.slice(0, 3).join(" > ");
+-      var topLabel = parts[2] || parts[parts.length - 1];
++      var meaningful = adminDepartmentParts(d.department);
++      var topDepth = parts.length - meaningful.length + 1;
++      var topKey = parts.slice(0, topDepth).join(" > ");
++      var topLabel = meaningful[0];
+       if (!topDepts[topKey]) topDepts[topKey] = { label: topLabel, fullPath: topKey, children: [], totalCount: 0 };
+       topDepts[topKey].children.push(d);
+       topDepts[topKey].totalCount += d.cnt;
+@@ -6337,9 +6427,9 @@
+       var html = "";
+       children.sort(function(a, b) { return a.department.localeCompare(b.department); });
+       children.forEach(function(d) {
+-        var parts = d.department.split(" > ");
+-        var label = parts.slice(3).join(" > ") || parts[parts.length - 1];
+-        var indent = Math.max(0, parts.length - 4);
++        var parts = adminDepartmentParts(d.department);
++        var label = parts.slice(1).join(" > ") || parts[0];
++        var indent = Math.max(0, parts.length - 2);
+         var indentStr = "";
+         for (var i = 0; i < indent; i++) indentStr += "\u00A0\u00A0\u00A0";
+         var prefix = indent > 0 ? "└ " : "";
+@@ -6386,8 +6476,11 @@
+ 
+       // Fetch users for the top dept (includes all sub), then filter client-side
+       var topKey = topSelect.value;
+-      fetch("/api/admin/ad/users?dept=" + encodeURIComponent(topKey))
+-        .then(function(r) { return r.json(); })
++      fetch("/api/admin/directory/users?dept=" + encodeURIComponent(topKey))
++        .then(function(r) {
++          if (!r.ok) throw new Error("사용자 목록을 불러오지 못했습니다.");
++          return r.json();
++        })
+         .then(function(users) {
+           // Filter to only checked departments
+           var deptSet = {};
+--- was/app/main.py
++++ release/app/main.py
+@@ -112,6 +112,11 @@
+ 
+         loop.set_exception_handler(_quiet_proactor_reset)
+ 
++        # Preserve identity and permission IDs before any directory consumer starts.
++        from app.core.user_directory_migration import ensure_directory_tables
++        from app.core.user_directory import ensure_directory_sync_table
++        await asyncio.to_thread(ensure_directory_tables)
++        await asyncio.to_thread(ensure_directory_sync_table)
+         # Ensure admin user exists in MariaDB
+         await asyncio.to_thread(_ensure_admin)
+         await asyncio.to_thread(_ensure_audit_table)
+@@ -390,7 +395,7 @@
+     app.include_router(conversation_router)  # /api/conversations/*
+     app.include_router(admin_router)         # /api/admin/*
+     app.include_router(group_router)         # /api/admin/groups/*
+-    app.include_router(ad_router)            # /api/admin/ad/*
++    app.include_router(ad_router)            # /api/admin/directory/*
+     app.include_router(eval_router)          # /api/admin/eval/*
+     app.include_router(harness_router)       # /harness, /api/harness/*
+     app.include_router(face_search_router)   # /face-search, /face-search/query, /face-search/thumb/*
+@@ -472,7 +477,7 @@
+     try:
+         # Find AD user for jeffrey
+         ad_user = fetch_one(
+-            "SELECT id, email FROM ad_users WHERE email = %s AND is_active = 1",
++            "SELECT id, email FROM directory_users WHERE email = %s AND is_active = 1",
+             ("jeffrey@skin1004korea.com",),
+         )
+         if not ad_user:
+--- was/app/reports/store.py
++++ release/app/reports/store.py
+@@ -180,7 +180,7 @@
+     return rid
+ 
+ 
+-# 이름은 AD 한글 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
++# 이름은 사용자 디렉터리 이름을 우선한다 (users.display_name 은 가입 시점 값이라 낡을 수 있다)
+ _NAME = "COALESCE(a.display_name, u.display_name, u.email)"
+ 
+ 
+@@ -196,7 +196,7 @@
+         f"{_NAME} AS owner_name "
+         "FROM reports r "
+         "JOIN users u ON u.id = r.user_id "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
+         "WHERE r.id = %s AND (r.user_id = %s OR s.id IS NOT NULL)",
+         (user_id, report_id, user_id),
+@@ -214,7 +214,7 @@
+         "(SELECT COUNT(*) FROM report_shares x WHERE x.report_id = r.id) AS share_count "
+         "FROM reports r "
+         "JOIN users u ON u.id = r.user_id "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "LEFT JOIN report_shares s ON s.report_id = r.id AND s.user_id = %s "
+         "WHERE r.user_id = %s OR s.id IS NOT NULL "
+         "ORDER BY r.created_at DESC LIMIT %s",
+@@ -232,7 +232,7 @@
+         "FROM report_shares s "
+         "JOIN reports r ON r.id = s.report_id AND r.user_id = %s "
+         "JOIN users u ON u.id = s.user_id "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE s.report_id = %s ORDER BY s.created_at",
+         (owner_id, report_id),
+     )
+@@ -273,7 +273,7 @@
+ def search_share_targets(q: str, me_id: int, limit: int = 8) -> List[Dict[str, Any]]:
+     """공유할 사람 찾기. **가입한 사용자만** 나온다 — 로그인해야 열 수 있기 때문이다.
+ 
+-    미가입자에게 미리 권한을 걸어두는 FI 방식([[ad_users]])과 다른 이유: 공유는 지금
++    미가입자에게 미리 권한을 걸어두는 FI 방식([[directory_users]])과 다른 이유: 공유는 지금
+     보여주려고 누르는 동작이라, 열 수 없는 사람을 목록에 올리면 공유한 줄 알게 된다.
+     """
+     term = (q or "").strip()
+@@ -283,7 +283,7 @@
+     return fetch_all(
+         f"SELECT u.id, {_NAME} AS name, COALESCE(a.email, u.email) AS email, "
+         "COALESCE(a.department, '') AS department "
+-        "FROM users u LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "FROM users u LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE u.id <> %s AND (a.display_name LIKE %s OR u.display_name LIKE %s "
+         "  OR u.email LIKE %s OR a.email LIKE %s OR a.department LIKE %s) "
+         f"ORDER BY {_NAME} LIMIT %s",
+@@ -353,7 +353,7 @@
+         "FROM report_shares s "
+         "JOIN reports r ON r.id = s.report_id "
+         "JOIN users u ON u.id = s.shared_by "
+-        "LEFT JOIN ad_users a ON a.id = u.ad_user_id "
++        "LEFT JOIN directory_users a ON a.id = u.ad_user_id "
+         "WHERE s.user_id = %s ORDER BY s.created_at DESC LIMIT %s",
+         (user_id, limit),
+     )
+--- was/scripts/sync_ad_users.py
++++ release/scripts/sync_ad_users.py
+@@ -594,4 +594,7 @@
+ 
+ 
+ if __name__ == "__main__":
+-    _tracked_main()
++    # Existing scheduler commands now refresh the Cella directory from Entra.
++    # The legacy helpers remain available for explicit rollback only.
++    from scripts.sync_entra_users import main as sync_entra_main
++    raise SystemExit(sync_entra_main())
+--- was/scripts/sync_entra_users.py
++++ release/scripts/sync_entra_users.py
+@@ -0,0 +1,30 @@
++"""Refresh Cella employee profiles from Entra; preserve Admin-managed grants."""
++import json
++from pathlib import Path
++import sys
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++from dotenv import load_dotenv
++load_dotenv(Path(__file__).resolve().parents[1] / ".env")
++
++
++def main() -> int:
++    from app.core.user_directory_migration import ensure_directory_tables, migration_status
++    from app.core.user_directory import ensure_directory_sync_table, sync_directory
++    if "--dry-run" in sys.argv:
++        print(json.dumps(migration_status(), default=str, ensure_ascii=True))
++        return 0
++    ensure_directory_tables()
++    ensure_directory_sync_table()
++    from app.core.self_check import track_job
++    with track_job("entra_directory_sync") as job:
++        result = sync_directory()
++        print(json.dumps(result, ensure_ascii=True))
++        if not result["ok"]:
++            raise RuntimeError(result["error"])
++        job.set_note(f"Entra directory users: {result['synced_users']}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+--- was/deploy/crontab.app-server
++++ release/deploy/crontab.app-server
+@@ -17,7 +17,7 @@
+ # App Server → AD 172.16.1.13 (LDAP 389/636), App Server → DB 10.1.200.5 (3306) 방화벽 필요
+ # 외부 통신: 동기화 결과를 잔디 웹훅(wh.jandi.com)으로 알림 → App Server → Proxy(3128) 경로 필요.
+ #            프록시/화이트리스트 미비 시 알림만 실패하고 동기화 자체는 정상 완료된다(타임아웃 5초).
+-0 22 * * * cd $APP_DIR && $PY scripts/sync_ad_users.py >> logs/ad_sync_cron.log 2>&1
++0 22 * * * cd $APP_DIR && $PY scripts/sync_entra_users.py >> logs/entra_sync_cron.log 2>&1
+ 
+ # Knowledge Map 빌드는 여기 없다 — 2026-08-05 WAS 로 이관했다.
+ #

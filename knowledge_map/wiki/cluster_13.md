@@ -1,28 +1,27 @@
 # Cluster 13
 
-> Auto-generated 2026-09-09T03:00:59.448358+09:00 · Files: 6
+> Auto-generated 2026-10-13T03:01:36.793771+09:00 · Files: 3
 
 ## Purpose
-이 클러스터는 SKIN1004 AI Agent 프로젝트에서 Microsoft Entra ID(구 Azure AD)를 활용한 사용자 인증 및 셀라(Cella) 전체 직원 디렉터리 조회 시스템의 설계와 구현 계획을 다룹니다. 또한, 공유드라이브 내 COA(시험성적서) 및 MSDS(물질안전보건자료) 롯트(Lot) 번호 일괄 검색 기능의 구현 계획과 최근 업데이트 로그를 포함하고 있습니다.
+이 클러스터는 SKIN1004 AI Agent의 데이터 서빙, 입력 변환, 코드 무결성 검증을 위한 핵심 코어 유틸리티 모음입니다. 대용량 SQL 쿼리 결과의 CSV 다운로드 제공, 사용자 업로드 엑셀/CSV 파일의 텍스트 표 변환, 에러 없이 발생하는 잠재적 결함(silent failure)을 방지하는 정적 검사 기능을 담당합니다.
 
 ## Key Files
-- `docs/ENTRA_DIRECTORY_RELEASE_20260908.md` — Entra ID 사용자 관리 전환 및 릴리스 정보
-- `docs/IT_REQUEST_ENTRA_DIRECTORY_20260908.md` — 셀라 Entra 전체 직원 조회를 위한 IT 요청 및 설정 가이드
-- `docs/superpowers/plans/2026-09-08-entra-directory.md` — Entra Directory 연동 기능의 단계별 구현 계획
-- `docs/superpowers/specs/2026-09-08-entra-directory-design.md` — Entra 로그인 및 셀라 소유 사용자 디렉터리 아키텍처 설계서
-- `docs/superpowers/plans/2026-08-28-coa-lot-finder.md` — 공유드라이브 내 COA/MSDS 롯트 일괄 찾기 기능 구현 계획
-- `docs/update_log_2026-09-03.md` — COA 파인더, 비밀번호 복구, 요청 처리 개선 사항이 포함된 업데이트 로그
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/sql_result_store.py` — SQL 쿼리 실행 결과 전체를 임시 보관하여 사용자가 잘리지 않은 전체 데이터를 CSV로 다운로드할 수 있도록 지원합니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/static_checks.py` — 코드와 정적 자산을 분석해 런타임 에러를 뿜지 않고 조용히 실패하는 고장(silent failure)을 찾아내는 공통 검사 로직을 제공합니다.
+- `C:/Users/DB_PC/Desktop/python_bcj/AI_Agent/app/core/table_attachment.py` — 사용자가 첨부한 엑셀(.xlsx) 및 CSV 파일을 복사-붙여넣기한 표와 동일한 형태인 TSV 텍스트로 파싱하여 에이전트 입력으로 전달합니다.
 
 ## Key Concepts
-- **Entra Directory** — Microsoft Entra ID API를 통해 셀라(Cella) 임직원 계정 정보를 동기화하고, AI Agent 내에서 사용자 디렉터리를 조회 및 관리하는 체계입니다.
-- **COA/MSDS Lot Finder** — 제품의 롯트(Lot) 번호를 기반으로 구글 공유드라이브에 저장된 COA 및 MSDS 문서를 자동으로 탐색하고 매칭해 주는 기능입니다.
-- **Silent Failure Prevention** — 에이전트 요청이 아무런 응답 없이 종료되는 현상(조용히 죽던 요청)을 개선하여 시스템 안정성을 높이는 예외 처리 메커니즘입니다.
+- **Full SQL Result Export (`sql_result_store.py`)**: 채팅 인터페이스(`app/agents/sql_agent.py`의 `_fast_table_markdown`)는 상위 N행(예: 146행 중 15행)만 마크다운 표로 미리보기하므로, 전체 데이터를 확인해야 하는 사용자(예: 인도네시아 월별 매출 전체 조회)를 위해 CSV 다운로드 경로를 제공합니다.
+- **Silent Failure Prevention (`static_checks.py`)**: 개발 중 실행되는 테스트(`tests/test_no_silent_failures.py`)와 운영 서버 자가 점검이 동일한 단일 검사 함수를 호출하도록 일원화하여, 규칙 중복 구현으로 인한 점검 누락 문제를 방지합니다.
+- **Table Attachment Normalization (`table_attachment.py`)**: 기존에 이미지 업로드만 지원되어 사용자가 표를 캡처해 올리던 문제를 해결하기 위해, 엑셀/CSV 업로드 파일을 파싱해 직접 텍스트 기반 TSV 형태로 변환합니다.
 
 ## How It Fits In
-이 클러스터는 사용자 인증 및 조직도 데이터를 관리하는 핵심 보안/인프라 레이어에 해당합니다. 
-- `docs/ENTRA_DIRECTORY_RELEASE_20260908.md` 파일은 데이터베이스 연결 효율화를 위해 **cluster_08**의 `concept:mariadb_connection_pool`을 참조하여 설계되었습니다. Entra ID를 통해 인증된 사용자 정보는 MariaDB 커넥션 풀을 거쳐 안전하고 신속하게 데이터베이스에 반영됩니다.
+코어 계층(`app/core/`)에 위치하며 독립적인 데이터 처리 및 검증 책임을 갖습니다:
+- `sql_result_store.py`는 `app/agents/sql_agent.py`의 표 출력 제약을 보완합니다.
+- `table_attachment.py`는 채팅 인터페이스의 파일 입력 경로와 연결되어 멀티모달 입력 대신 구조화된 텍스트 테이블 입력을 처리합니다.
+- `static_checks.py`는 개발 환경(`tests/`)과 운영 서버의 일일 점검 양쪽에서 공통 기준선으로 활용됩니다.
 
 ## Common Questions This Page Answers
-- 셀라(Cella) 전체 직원 정보를 Microsoft Entra ID와 어떻게 연동하고 동기화하나요?
-- 구글 공유드라이브에서 특정 제품의 COA 및 MSDS 롯트 번호를 일괄적으로 검색하는 로직은 어떻게 설계되어 있나요?
-- Entra ID 로그인 전환 과정에서 필요한 IT 설정 및 권한 요구사항은 무엇인가요?
+- SQL 쿼리 결과가 상위 15행만 표시되어 전체 기간 데이터가 누락되어 보일 때 어떻게 전체 데이터를 다운로드할 수 있나요?
+- 사용자가 캡처 이미지가 아닌 실제 엑셀 파일이나 CSV 파일을 첨부했을 때 에이전트는 이를 어떤 형식으로 변환해 읽나요?
+- 개발 환경의 pytest와 운영 서버의 일일 자가 점검 스크립트가 동일한 정적 검사 규칙을 적용받도록 하려면 어디를 수정해야 하나요?

@@ -1,0 +1,74 @@
+{
+  "case": "overseas",
+  "query": "2026년 8월 해외 CS 국가별 환불 건수와 USD 환불액, 원화 미환산 건수 알려줘",
+  "sources": [
+    "해외CS"
+  ],
+  "route": [
+    "bigquery",
+    true
+  ],
+  "sql": "SELECT\n  COALESCE(NULLIF(country_name, ''), '국가 미상') AS country_name,\n  COUNT(*) AS refund_count,\n  SUM(refund_amount_usd) AS total_refund_amount_usd,\n  COUNTIF(refund_amount_krw IS NULL) AS uncalculated_krw_count\nFROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\nWHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'\nGROUP BY country_name\nORDER BY refund_count DESC\nLIMIT 1000",
+  "valid": true,
+  "error": null,
+  "rows": [
+    {
+      "country_name": "United States",
+      "refund_count": 41,
+      "total_refund_amount_usd": "3357.93",
+      "uncalculated_krw_count": 0
+    },
+    {
+      "country_name": "Mexico",
+      "refund_count": 25,
+      "total_refund_amount_usd": "2834.49",
+      "uncalculated_krw_count": 0
+    },
+    {
+      "country_name": "국가 미상",
+      "refund_count": 18,
+      "total_refund_amount_usd": "222.78",
+      "uncalculated_krw_count": 10
+    },
+    {
+      "country_name": "France",
+      "refund_count": 3,
+      "total_refund_amount_usd": "62.6",
+      "uncalculated_krw_count": 1
+    },
+    {
+      "country_name": "Canada",
+      "refund_count": 3,
+      "total_refund_amount_usd": "255.95",
+      "uncalculated_krw_count": 0
+    },
+    {
+      "country_name": "Italy",
+      "refund_count": 1,
+      "total_refund_amount_usd": "75.52",
+      "uncalculated_krw_count": 0
+    },
+    {
+      "country_name": "Argentina",
+      "refund_count": 1,
+      "total_refund_amount_usd": "152.16",
+      "uncalculated_krw_count": 0
+    },
+    {
+      "country_name": "Belgium",
+      "refund_count": 1,
+      "total_refund_amount_usd": "41.28",
+      "uncalculated_krw_count": 0
+    },
+    {
+      "country_name": "Armenia",
+      "refund_count": 1,
+      "total_refund_amount_usd": "12.6",
+      "uncalculated_krw_count": 0
+    }
+  ],
+  "seconds": 21.69,
+  "fast_answer": "1",
+  "tool_loop": null,
+  "answer": "> 해외 자료는 **Shopify 환불 기록**입니다. 전체 해외 CS 접수 건수나 전체 반품 건수를 뜻하지 않습니다.\n> 원화 환불액은 환산액이 있는 건만 집계합니다. 환율 미확보 건은 0원이 아닙니다.\n\n### 📊 2026년 8월 해외 CS 국가별 환불 현황 (Shopify 환불 생성일 기준)\n\n#### 요약\n2026년 8월 해외 CS 환불 건수는 총 94건, 환불 총액은 **$6,995.31**이며, 원화 미환산 건수는 총 **11건**(국가 미상 10건, France 1건)으로 집계되었습니다. **미국(41건, $3,357.93)**과 **멕시코(25건, $2,834.49)**가 전체 환불 건수의 **70.2%**, 환불 금액의 **88.5%**를 차지했습니다.\n\n#### 상세 데이터 (표)\n> ※ 본 자료는 Shopify 환불 기록 기준이며, 원화 환불액은 환산액이 존재하는 건만 반영됩니다(환율 미확보 건은 0원이 아님).\n\n| 국가명 | 환불 건수 | USD 환불액 ($) | 원화 미환산 건수 |\n|:---|---:|---:|---:|\n| United States | 41 | 3,357.93 | 0 |\n| Mexico | 25 | 2,834.49 | 0 |\n| 국가 미상 | 18 | 222.78 | 10 |\n| France | 3 | 62.60 | 1 |\n| Canada | 3 | 255.95 | 0 |\n| Italy | 1 | 75.52 | 0 |\n| Argentina | 1 | 152.16 | 0 |\n| Belgium | 1 | 41.28 | 0 |\n| Armenia | 1 | 12.60 | 0 |\n\n#### 시각화\n\n\n```chart-config\n{\"type\": \"bar\", \"data\": {\"labels\": [\"United States\", \"Mexico\", \"국가 미상\", \"France\", \"Canada\", \"Italy\", \"Argentina\", \"Belgium\", \"Armenia\"], \"datasets\": [{\"label\": \"환불 건수\", \"data\": [41.0, 25.0, 18.0, 3.0, 3.0, 1.0, 1.0, 1.0, 1.0], \"backgroundColor\": [\"rgba(99, 102, 241, 0.85)\", \"rgba(245, 158, 11, 0.85)\", \"rgba(16, 185, 129, 0.85)\", \"rgba(239, 68, 68, 0.85)\", \"rgba(139, 92, 246, 0.85)\", \"rgba(6, 182, 212, 0.85)\", \"rgba(249, 115, 22, 0.85)\", \"rgba(132, 204, 22, 0.85)\", \"rgba(236, 72, 153, 0.85)\"], \"borderColor\": [\"rgba(99, 102, 241, 1)\", \"rgba(245, 158, 11, 1)\", \"rgba(16, 185, 129, 1)\", \"rgba(239, 68, 68, 1)\", \"rgba(139, 92, 246, 1)\", \"rgba(6, 182, 212, 1)\", \"rgba(249, 115, 22, 1)\", \"rgba(132, 204, 22, 1)\", \"rgba(236, 72, 153, 1)\"], \"borderWidth\": 2, \"borderRadius\": 6}]}, \"options\": {\"responsive\": true, \"maintainAspectRatio\": false, \"animation\": {\"duration\": 800, \"easing\": \"easeOutQuart\"}, \"plugins\": {\"title\": {\"display\": true, \"text\": \"2026년 8월 해외 CS 국가별 환불 건수\", \"font\": {\"size\": 16, \"weight\": \"bold\"}, \"padding\": {\"bottom\": 16}}, \"legend\": {\"display\": false, \"position\": \"top\", \"labels\": {\"usePointStyle\": true, \"padding\": 16, \"font\": {\"size\": 12}}}, \"tooltip\": {\"backgroundColor\": \"rgba(0,0,0,0.8)\", \"titleFont\": {\"size\": 13}, \"bodyFont\": {\"size\": 12}, \"cornerRadius\": 8, \"padding\": 12, \"displayColors\": true}}, \"indexAxis\": \"y\", \"scales\": {\"x\": {\"title\": {\"display\": true, \"text\": \"환불 건수\", \"font\": {\"size\": 13}}, \"grid\": {\"color\": \"rgba(0,0,0,0.06)\"}, \"ticks\": {\"font\": {\"size\": 11}}, \"beginAtZero\": true}, \"y\": {\"title\": {\"display\": true, \"text\": \"국가\", \"font\": {\"size\": 13}}, \"grid\": {\"display\": false}, \"ticks\": {\"font\": {\"size\": 11}}}}}}\n```\n\n#### 분석 및 인사이트\n- **북미권 집중도**: 미국과 멕시코 2개국이 전체 환불 건수의 70.2%, 전체 환불액의 88.5%를 차지해 환불 발생이 북미 지역에 집중되어 있습니다.\n- **국가 미상 및 미환산 비중**: 국가 미상 환불은 18건(환불액 $222.78)이며, 이 중 10건(France 1건 포함 총 11건)은 원화 환산액이 미확보된 상태입니다.\n- **건당 환불액 편차**: 멕시코(건당 약 $113.38)와 미국(건당 약 $81.90)이 주요 발생국 중 상대적으로 높은 건당 환불 단가를 기록했습니다.\n\n---\n*조회 기준: 2026-09-16 | 내부 데이터베이스 (환불 생성일: 2026-08-01 ~ 2026-08-31)*\n\n> 💡 **이런 것도 물어보세요**\n> - 2026년 7월 해외 CS 국가별 환불 건수와 USD 환불액도 조회해줘\n> - 2026년 8월 해외 CS 환불 건들의 일자별 환불 추이 알려줘\n> - 2026년 8월 미국과 멕시코의 환불 사유별 건수와 금액 분석해줘\n\n<details><summary>실행된 쿼리</summary>\n\n```sql\nSELECT\n  COALESCE(NULLIF(country_name, ''), '국가 미상') AS country_name,\n  COUNT(*) AS refund_count,\n  SUM(refund_amount_usd) AS total_refund_amount_usd,\n  COUNTIF(refund_amount_krw IS NULL) AS uncalculated_krw_count\nFROM `skin1004-319714.cs_dashboard.overseas_cs_refunds`\nWHERE DATE(refund_created_at, 'Asia/Seoul') BETWEEN '2026-08-01' AND '2026-08-31'\nGROUP BY country_name\nORDER BY refund_count DESC\nLIMIT 1000\n```\n</details>"
+}
